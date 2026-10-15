@@ -3,7 +3,7 @@ export async function api(path, { method = 'GET', body } = {}) {
     method,
     credentials: 'same-origin',
     headers: {
-      'x-lead-console': '1',
+      'x-shipdeck': '1',
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -12,7 +12,7 @@ export async function api(path, { method = 'GET', body } = {}) {
   if (!res.ok) {
     // Session ended or Azure DevOps rejected the token: ask the app to show sign-in.
     if (res.status === 401 && (data?.code === 'signin-required' || data?.code === 'token-rejected')) {
-      window.dispatchEvent(new CustomEvent('lc:signed-out', { detail: { reason: data.code, message: data.error } }));
+      window.dispatchEvent(new CustomEvent('shipdeck:signed-out', { detail: { reason: data.code, message: data.error } }));
     }
     throw Object.assign(new Error(data?.error || `Request failed (${res.status})`), { status: res.status, code: data?.code });
   }

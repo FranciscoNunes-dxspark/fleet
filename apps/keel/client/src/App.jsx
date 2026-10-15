@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api.js';
 import { AppContext, useApi, useApp } from './context.js';
-import { Drawer, ErrorBox, Loading } from './ui.jsx';
+import { Drawer, ErrorBox, Loading, Logo } from './ui.jsx';
 import { loadPrefs, showDesktop } from './notify.js';
 import Inbox from './pages/Inbox.jsx';
 import PullRequests from './pages/PullRequests.jsx';
@@ -43,8 +43,8 @@ export default function App() {
       setReason(e.detail?.reason || 'signin-required');
       setAuth((a) => (a?.mode === 'login' ? { ...a, signedIn: false } : a));
     };
-    window.addEventListener('lc:signed-out', onSignedOut);
-    return () => window.removeEventListener('lc:signed-out', onSignedOut);
+    window.addEventListener('shipdeck:signed-out', onSignedOut);
+    return () => window.removeEventListener('shipdeck:signed-out', onSignedOut);
   }, []);
 
   if (!auth) return <div className="boot"><Loading label="Starting…" /></div>;
@@ -104,7 +104,7 @@ function Console({ authMode, onSignedOut }) {
       if (items.length > 3) {
         const summary = `${items.length} updates in Azure DevOps`;
         if (prefs.inApp) toast(summary, 'note', { body: items.slice(0, 3).map((n) => n.title).join(' · '), action: { label: 'Open inbox', onClick: () => navigate('/inbox') }, ttl: 10000 });
-        showDesktop({ title: summary, body: items.slice(0, 4).map((n) => n.title).join('\n'), tag: 'lead-console-batch', onClick: () => navigate('/inbox') });
+        showDesktop({ title: summary, body: items.slice(0, 4).map((n) => n.title).join('\n'), tag: 'shipdeck-batch', onClick: () => navigate('/inbox') });
         return;
       }
       for (const n of items) {
@@ -203,7 +203,7 @@ function Shell() {
 
   // Browser tab title carries the "act now" count, so it shows on a background tab.
   useEffect(() => {
-    document.title = s?.high ? `(${s.high}) Lead Console` : 'Lead Console';
+    document.title = s?.high ? `(${s.high}) Shipdeck` : 'Shipdeck';
   }, [s?.high]);
 
   const hardRefresh = async () => {
@@ -235,9 +235,9 @@ function Shell() {
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
+          <Logo />
           <div>
-            <div className="brand-name">Lead Console</div>
+            <div className="brand-name">Shipdeck</div>
             <div className="brand-org truncate" title={meta.orgUrl}>{meta.orgUrl.replace(/^https?:\/\//, '')}</div>
           </div>
         </div>

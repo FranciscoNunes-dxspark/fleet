@@ -15,11 +15,12 @@ const WIDGETS = [
   { id: 'mine', title: 'My work', link: '/work?view=mine', linkText: 'My items' },
 ];
 const DEFAULT_LAYOUT = WIDGETS.map((w) => ({ id: w.id, visible: w.id !== 'mine' }));
-const STORAGE_KEY = 'leadConsole.dashboard.v1';
+const STORAGE_KEY = 'shipdeck.dashboard.v1';
+const LEGACY_KEY = 'leadConsole.dashboard.v1'; // before the rename to Shipdeck
 
 function loadLayout() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY) || 'null');
     if (!Array.isArray(saved)) return DEFAULT_LAYOUT;
     const known = saved.filter((s) => WIDGETS.some((w) => w.id === s.id));
     // Widgets added in later versions show up at the end.

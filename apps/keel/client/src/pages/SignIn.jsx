@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api.js';
+import { Logo } from '../ui.jsx';
 
 const SCOPES = [
   ['Code', 'Read & write'],
@@ -36,9 +37,9 @@ export default function SignIn({ orgUrl, reason, onSignedIn }) {
     <div className="signin">
       <form className="signin-card" onSubmit={submit}>
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
+          <Logo size={32} />
           <div>
-            <div className="brand-name">Lead Console</div>
+            <div className="brand-name">Shipdeck</div>
             <div className="brand-org">{org}</div>
           </div>
         </div>

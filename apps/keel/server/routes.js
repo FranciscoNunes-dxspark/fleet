@@ -9,8 +9,8 @@ export function apiRouter() {
   // a CORS preflight (which we never approve), so other sites can't drive this
   // API with your PAT behind it.
   r.use((req, res, next) => {
-    if (req.method !== 'GET' && req.get('x-lead-console') !== '1') {
-      return res.status(403).json({ error: 'Missing x-lead-console header' });
+    if (req.method !== 'GET' && req.get('x-shipdeck') !== '1') {
+      return res.status(403).json({ error: 'Missing x-shipdeck header' });
     }
     next();
   });

@@ -211,7 +211,7 @@ function NotificationSettings() {
       // Show it even while the tab is in front, so you can see it right away.
       const saved = prefs.onlyWhenHidden;
       savePrefs({ ...prefs, onlyWhenHidden: false });
-      showDesktop({ title: 'Lead Console', body: 'Desktop notifications are on.', tag: 'lead-console-test' });
+      showDesktop({ title: 'Shipdeck', body: 'Desktop notifications are on.', tag: 'shipdeck-test' });
       savePrefs({ ...prefs, onlyWhenHidden: saved });
     }
   };

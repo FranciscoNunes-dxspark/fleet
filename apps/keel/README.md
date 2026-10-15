@@ -1,4 +1,6 @@
-# Lead Console for Azure DevOps
+# Shipdeck
+
+A tech lead's console for Azure DevOps
 
 A local Node.js app for a tech lead who works across several Azure DevOps projects and repos. It shows what needs you right now, such as reviews waiting on you, red pipelines, blocked work and stale PRs. You can act on most of it without opening Azure DevOps.
 
@@ -67,7 +69,7 @@ You get a notification when:
 - a pipeline or deployment starts failing
 - an item becomes blocked, or a P1 bug has no owner
 
-Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Lead Console`.
+Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Shipdeck`.
 
 ## Security
 
@@ -75,7 +77,7 @@ What the app already does:
 
 - Your PAT stays on the server and never reaches the browser. The server binds to `127.0.0.1`, so other machines can't reach it.
 - **DNS-rebinding guard:** requests whose `Host` isn't `localhost` or `127.0.0.1` (or a host you list in `ALLOWED_HOSTS`) are refused, so a malicious website can't point its own domain at your machine and read this API.
-- Writes need the `x-lead-console` header and a same-site `Origin`, so other sites can't trigger votes, comments or pipeline runs from your browser.
+- Writes need the `x-shipdeck` header and a same-site `Origin`, so other sites can't trigger votes, comments or pipeline runs from your browser.
 - A strict Content-Security-Policy, `X-Frame-Options: DENY`, no-referrer and `no-store` on API responses. PR Markdown is sanitized, and the only images loaded are those from your own organization.
 
 What you should do:
@@ -125,7 +127,7 @@ The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Nod
    ```
 4. **Keep it running** with pm2, so it restarts on crash and after reboot:
    ```bash
-   sudo npm i -g pm2 && pm2 start server/index.js --name lead-console && pm2 save && pm2 startup
+   sudo npm i -g pm2 && pm2 start server/index.js --name shipdeck && pm2 save && pm2 startup
    ```
 5. **Put nginx in front.** Live updates need buffering off on `/api/events`:
    ```nginx
@@ -156,7 +158,7 @@ The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Nod
 6. **Back up and protect `data/`.** It holds everyone's settings and the encrypted sessions. Keep `SESSION_SECRET` safe: without it, stored sessions can't be decrypted and everyone signs in again. Anyone who has both `data/` and the secret can use the stored tokens.
 7. **Updating:**
    ```bash
-   git pull && npm ci && npm run build && pm2 restart lead-console
+   git pull && npm ci && npm run build && pm2 restart shipdeck
    ```
 
 Teammates create their own token from the sign-in page's "How to create a token" steps. Ask them to use the scopes listed above and a sensible expiry.
@@ -167,7 +169,7 @@ Teammates create their own token from the sign-in page's "How to create a token"
 client/          React + Vite UI (dark theme, IBM Plex)
 server/
   index.js       Express: /api + built UI from dist/
-  routes.js      HTTP layer; writes require the x-lead-console header
+  routes.js      HTTP layer; writes require the x-shipdeck header
   service.js     Scopes everything to tracked projects/repos, caching
   azdo/          REST client (PAT auth, retries on 429/5xx, paging, concurrency limit) + provider
   mock/          Demo provider with the same interface as azdo/provider.js

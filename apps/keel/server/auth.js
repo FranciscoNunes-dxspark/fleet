@@ -86,7 +86,7 @@ function readCookie(req, name) {
   }
   return null;
 }
-const cookieName = (secure) => (secure ? '__Host-lc_session' : 'lc_session');
+const cookieName = (secure) => (secure ? '__Host-shipdeck_session' : 'shipdeck_session');
 
 // -------------------------------------------------------------- the module
 export function createAuth() {
@@ -192,7 +192,7 @@ export function createAuth() {
   });
 
   router.post('/login', async (req, res) => {
-    if (req.get('x-lead-console') !== '1') return res.status(403).json({ error: 'Missing x-lead-console header' });
+    if (req.get('x-shipdeck') !== '1') return res.status(403).json({ error: 'Missing x-shipdeck header' });
     const ip = req.ip;
     const wait = limiter.blockedFor(ip);
     if (wait) {
@@ -236,7 +236,7 @@ export function createAuth() {
   });
 
   router.post('/logout', (req, res) => {
-    if (req.get('x-lead-console') !== '1') return res.status(403).json({ error: 'Missing x-lead-console header' });
+    if (req.get('x-shipdeck') !== '1') return res.status(403).json({ error: 'Missing x-shipdeck header' });
     const cur = current(req);
     if (cur) endSession(cur.hash);
     clearCookies(res);
