@@ -1,7 +1,9 @@
 // Notification preferences live in this browser (they're about this screen,
 // not about Azure DevOps), and desktop notifications use the Notification API.
 
-const KEY = 'shipdeck.notifications.v1';
+import { PREF_KEYS, pushPref } from './prefs.js';
+
+const KEY = PREF_KEYS.notifications;
 const LEGACY_KEY = 'leadConsole.notifications.v1'; // before the rename to Shipdeck
 
 export const CATEGORIES = [
@@ -37,6 +39,7 @@ export function savePrefs(prefs) {
   } catch {
     // Storage blocked: preferences last for this visit only.
   }
+  pushPref('notifications', prefs); // follows your account to other devices
 }
 
 export const desktopSupported = () => typeof window !== 'undefined' && 'Notification' in window;

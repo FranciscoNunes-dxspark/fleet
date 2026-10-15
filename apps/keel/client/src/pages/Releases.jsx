@@ -22,10 +22,11 @@ const folderLabel = (path) => (!path || path === '\\' ? 'No folder' : path.repla
 
 /** Deployments waiting for a decision: classic release approvals and YAML environment checks. */
 export function ApprovalsPanel({ approvals }) {
-  const { refresh, toast } = useApp();
+  const { refresh, toast, can } = useApp();
+  const canDecide = can('approvals.decide');
   const [comments, setComments] = useState({});
   const [busy, setBusy] = useState(null);
-  const mine = approvals.filter((a) => a.canDecide);
+  const mine = approvals.filter((a) => a.canDecide && canDecide);
 
   const decide = async (a, status) => {
     setBusy(a.key);
@@ -63,7 +64,7 @@ export function ApprovalsPanel({ approvals }) {
               </div>
               {a.instructions && <p className="approval-instructions small">“{a.instructions}”</p>}
             </div>
-            {a.canDecide ? (
+            {a.canDecide && canDecide ? (
               <div className="approval-actions">
                 <input
                   className="input" placeholder="Comment (optional)" value={comments[a.key] || ''}
@@ -104,7 +105,8 @@ function StageChip({ stage }) {
 }
 
 export function ReleasesTab({ defs }) {
-  const { refresh, toast } = useApp();
+  const { refresh, toast, can } = useApp();
+  const canRun = can('releases.run');
   const [q, setQ] = useState('');
   const [deploying, setDeploying] = useState(null);
 
@@ -174,13 +176,13 @@ export function ReleasesTab({ defs }) {
                           </> : '—'}
                         </td>
                         <td className="row-actions">
-                          <Confirm text={`Create a new release of ${d.name} from the latest artifacts?`} onConfirm={() => createRelease(d)} className="btn btn-small btn-ghost">Create release</Confirm>
-                          <button
+                          {canRun && <Confirm text={`Create a new release of ${d.name} from the latest artifacts?`} onConfirm={() => createRelease(d)} className="btn btn-small btn-ghost">Create release</Confirm>}
+                          {canRun && <button
                             type="button" className="btn btn-small btn-ghost" aria-expanded={deploying === d.key} disabled={!d.releases.length}
                             onClick={() => setDeploying((k) => (k === d.key ? null : d.key))}
                           >
                             Deploy…
-                          </button>
+                          </button>}
                         </td>
                       </tr>
                       {deploying === d.key && (

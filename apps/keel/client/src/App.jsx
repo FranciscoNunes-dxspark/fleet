@@ -19,17 +19,26 @@ import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
 import ReleaseNotes from './pages/ReleaseNotes.jsx';
 import Settings from './pages/Settings.jsx';
-import SignIn from './pages/SignIn.jsx';
+import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
+import Users from './pages/Users.jsx';
+import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
+import { applyTheme } from './theme.js';
 
 /**
  * Auth gate. In login mode (hosted), shows sign-in until there's a session,
  * and again whenever the server says the session ended or the token was
  * rejected. In local mode it's a pass-through.
  */
+/**
+ * Auth gate. Hosted mode (AUTH_MODE=login): first-run setup, invite and reset
+ * links, sign-in, then connecting Azure DevOps, before the console itself.
+ * Local mode is a pass-through.
+ */
 export default function App() {
   const [auth, setAuth] = useState(null);
   const [reason, setReason] = useState(null);
   const [session, setSession] = useState(0);
+  const [linkToken, setLinkToken] = useState(() => (window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)$/) || [])[1] || null);
 
   const check = useCallback(() => {
     fetch('/api/auth/status', { credentials: 'same-origin' })
@@ -44,23 +53,50 @@ export default function App() {
       setReason(e.detail?.reason || 'signin-required');
       setAuth((a) => (a?.mode === 'login' ? { ...a, signedIn: false } : a));
     };
+    const onToken = (e) => {
+      setReason(e.detail?.reason || 'token-required');
+      setAuth((a) => (a?.mode === 'login' ? { ...a, needsToken: true } : a));
+    };
     window.addEventListener('shipdeck:signed-out', onSignedOut);
-    return () => window.removeEventListener('shipdeck:signed-out', onSignedOut);
+    window.addEventListener('shipdeck:token-required', onToken);
+    return () => {
+      window.removeEventListener('shipdeck:signed-out', onSignedOut);
+      window.removeEventListener('shipdeck:token-required', onToken);
+    };
   }, []);
 
+  const restart = () => {
+    setReason(null);
+    setSession((n) => n + 1); // fresh console state for the new session
+    check();
+  };
+  const signOut = async () => {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } finally {
+      setReason(null);
+      setAuth((a) => ({ ...a, signedIn: false, user: null }));
+    }
+  };
+
   if (!auth) return <div className="boot"><Loading label="Starting…" /></div>;
-  if (auth.mode === 'login' && !auth.signedIn) {
-    return (
-      <SignIn
-        orgUrl={auth.orgUrl}
-        reason={reason}
-        onSignedIn={() => {
-          setReason(null);
-          setSession((n) => n + 1); // fresh console state for the new session
-          check();
-        }}
-      />
-    );
+  if (auth.mode === 'login') {
+    if (linkToken) {
+      return (
+        <LinkAccept
+          orgUrl={auth.orgUrl}
+          token={linkToken}
+          onDone={() => {
+            window.history.replaceState({}, '', '/');
+            setLinkToken(null);
+            restart();
+          }}
+        />
+      );
+    }
+    if (auth.setupRequired) return <Setup orgUrl={auth.orgUrl} onDone={restart} />;
+    if (!auth.signedIn) return <SignIn orgUrl={auth.orgUrl} reason={reason} onDone={restart} />;
+    if (auth.needsToken) return <ConnectAzure orgUrl={auth.orgUrl} user={auth.user} reason={reason} onDone={restart} onSignOut={signOut} />;
   }
   return <Console key={session} authMode={auth.mode} onSignedOut={() => { setReason(null); setAuth((a) => ({ ...a, signedIn: false })); }} />;
 }
@@ -120,7 +156,16 @@ function Console({ authMode, onSignedOut }) {
   }, [bump, toast, navigate, openTarget]);
 
   const loadMeta = useCallback(() => {
-    api('/meta').then((m) => { setMeta(m); setMetaError(null); }).catch(setMetaError);
+    api('/meta').then((m) => {
+      // Preferences saved on your account win over this browser's copy.
+      if (m.prefs && Object.keys(m.prefs).length) {
+        if (adoptServerPrefs(m.prefs)) applyTheme();
+      } else {
+        seedServerPrefs(m.prefs);
+      }
+      setMeta(m);
+      setMetaError(null);
+    }).catch(setMetaError);
   }, []);
   useEffect(loadMeta, [loadMeta, refreshKey]);
 
@@ -139,7 +184,10 @@ function Console({ authMode, onSignedOut }) {
     }
   }, [onSignedOut]);
 
-  const ctx = useMemo(() => ({ meta, refreshKey, refresh: bump, openDrawer: setDrawer, openTarget, toast, live, authMode, signOut }), [meta, refreshKey, bump, toast, live, openTarget, authMode, signOut]);
+  // What this person's role allows (the server enforces the same rules).
+  const can = useCallback((perm) => !meta || (meta.permissions || []).includes(perm), [meta]);
+
+  const ctx = useMemo(() => ({ meta, refreshKey, refresh: bump, openDrawer: setDrawer, openTarget, toast, live, authMode, signOut, can }), [meta, refreshKey, bump, toast, live, openTarget, authMode, signOut, can]);
 
   if (metaError && !meta) {
     return (
@@ -196,7 +244,7 @@ function useStableHeight(ref, refreshKey) {
 }
 
 function Shell() {
-  const { meta, refresh, toast, refreshKey, authMode, signOut } = useApp();
+  const { meta, refresh, toast, refreshKey, authMode, signOut, can } = useApp();
   const mainRef = useRef(null);
   useStableHeight(mainRef, refreshKey);
   const { data: attention } = useApi('/attention');
@@ -232,6 +280,7 @@ function Shell() {
     { to: '/team', label: 'Team' },
     { to: '/insights', label: 'Insights' },
     { to: '/release-notes', label: 'Release notes' },
+    ...(authMode === 'login' && can('users.manage') ? [{ to: '/users', label: 'Users' }] : []),
   ];
 
   return (
@@ -261,7 +310,10 @@ function Shell() {
           </button>
           <LiveStatus />
           {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut}>Sign out</button>}
-          <div className="me truncate" title={meta.me.uniqueName}>Signed in as {meta.me.displayName}</div>
+          <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
+            Signed in as {meta.account?.name || meta.me.displayName}
+            {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
+          </div>
         </div>
       </nav>
 
@@ -290,6 +342,7 @@ function Shell() {
           <Route path="/insights" element={<Insights />} />
           <Route path="/release-notes" element={<ReleaseNotes />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/users" element={<Users />} />
         </Routes>
       </main>
     </div>

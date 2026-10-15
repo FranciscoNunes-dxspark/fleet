@@ -8,7 +8,8 @@ import { CATEGORY_TONE } from './WorkItems.jsx';
 export default function WorkItemDetail({ id }) {
   const { data: w, error, reload } = useApi(`/workitems/${id}`);
   const { data: people } = useApi('/people');
-  const { refresh, toast, openDrawer, meta } = useApp();
+  const { refresh, toast, openDrawer, meta, can } = useApp();
+  const editable = can('workitems.write');
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState('');
 
@@ -58,7 +59,7 @@ export default function WorkItemDetail({ id }) {
         <div><dt>Created</dt><dd>{age(w.createdAt)} ago by {w.createdBy?.displayName}</dd></div>
       </dl>
 
-      <section className="detail-section">
+      {editable && <section className="detail-section">
         <h3>Update</h3>
         <div className="form-grid">
           <label>State
@@ -83,7 +84,7 @@ export default function WorkItemDetail({ id }) {
             <button type="button" className="btn btn-small" disabled={busy} onClick={toggleBlocked}>{blocked ? 'Remove blocked tag' : 'Mark as blocked'}</button>
           </div>}
         </div>
-      </section>
+      </section>}
 
       {(w.parent || w.children.length > 0) && (
         <section className="detail-section">
@@ -143,14 +144,16 @@ export default function WorkItemDetail({ id }) {
           ))}
           {!w.comments.length && <li className="muted small">No comments yet.</li>}
         </ul>
+        {editable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', text: comment }, 'Comment posted')) setComment(''); }}>
           <textarea className="input" rows={3} placeholder="Add a comment" value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Comment" />
           <button type="submit" className="btn btn-primary btn-small" disabled={!comment.trim() || busy}>Post comment</button>
         </form>
+        )}
       </section>
 
       <section className="detail-actions sticky-actions">
-        {w.type !== 'Epic' && w.type !== 'Feature' && (
+        {can('prs.write') && w.type !== 'Epic' && w.type !== 'Feature' && (
           <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newpr', workItemId: w.id })}>Create pull request</button>
         )}
         <ExternalLink href={w.webUrl}>Open in Azure DevOps</ExternalLink>

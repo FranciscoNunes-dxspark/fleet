@@ -104,13 +104,33 @@ Sharing it with your team needs more than the steps above. Every viewer should a
 
 ## Hosting it for your team (Hostinger or any server)
 
-With `AUTH_MODE=login`, the console shows a sign-in page. Each person signs in with **their own** Azure DevOps PAT, so votes, approvals and comments are recorded under their own name. This needs no Microsoft Entra app registration.
+With `AUTH_MODE=login`, Shipdeck has its own accounts. Each person signs in with an email and password, then links **their own** Azure DevOps PAT once, so votes, approvals and comments are recorded under their own name. This needs no Microsoft Entra app registration.
 
-- **What the server stores:** each PAT is checked against your organization, then stored encrypted (AES-256-GCM) using `SESSION_SECRET`. It's never sent back to a browser.
-- **What the browser holds:** only a random session cookie (HttpOnly, SameSite=Strict, and Secure/`__Host-` behind HTTPS).
-- **Sessions:** a session lasts `SESSION_DAYS` (7 by default, renewed while you use it, 30 days at most). Signing out deletes the stored token. If Azure DevOps stops accepting a token (expired or revoked), that person is asked to sign in again.
-- **Rate limits:** after 10 failed sign-ins from one IP, that IP is blocked for 15 minutes.
-- **Per person:** settings, inbox snoozes, notifications and live updates are all separate.
+### Accounts and roles
+
+| Role | Can do |
+|---|---|
+| **Admin** | Everything, plus manage users and production monitors |
+| **Developer** | Pull requests (create, vote, comment, complete), work items and boards, run pipelines and releases, approve deployments |
+| **PM** | Work items and boards, run pipelines and releases, approve deployments. Pull requests are read-only |
+
+Everyone can see everything. Roles only limit what a person can change, and the server enforces them, not just the screens. Azure DevOps permissions still apply on top: a PM can't approve a deployment that Azure DevOps doesn't let them approve.
+
+- **First admin:** on first start the sign-in page asks for a setup code. Set `ADMIN_SETUP_CODE` in `.env`, or use the one the server prints in its log (`pm2 logs shipdeck`). The first account becomes Admin.
+- **Inviting people:** **Users → Invite someone** creates a link for an email address and role. Shipdeck doesn't send email, so copy the link and send it yourself. It works once and expires in 7 days. The person picks their name and password, then links their token.
+- **Forgotten passwords:** on **Users**, choose **Reset password** to get a new link. Using it signs that person out everywhere.
+- **Managing access:** change a role, disable an account (signs it out at once) or remove it. There's always at least one active Admin.
+- **Synced settings:** projects, teams, inbox snoozes, theme, notification choices and the dashboard layout belong to the account, so they follow you to any device.
+
+### What's stored where
+
+- **Passwords** are hashed with scrypt.
+- **Tokens:** each PAT is checked against your organization, then stored encrypted (AES-256-GCM) using `SESSION_SECRET`. It's never sent back to a browser. **Settings → Your account** replaces or disconnects it. If Azure DevOps stops accepting a token (expired or revoked), that person is asked for a new one.
+- **Browser:** only a random session cookie (HttpOnly, SameSite=Strict, and Secure/`__Host-` behind HTTPS).
+- **Sessions** last `SESSION_DAYS` (7 by default, renewed while you use it, 30 days at most). Changing your password signs out your other devices.
+- **Rate limits:** after 10 failed sign-ins from one IP, or 5 for one email address, sign-in is blocked for 15 minutes.
+
+To try accounts and roles before deploying, run on demo data with `AUTH_MODE=login` and `AZDO_MOCK=1`. Demo accounts are kept apart from real ones, and any token-shaped value links to the demo organization.
 
 ### What you need on Hostinger
 
@@ -131,6 +151,7 @@ The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Nod
    AZDO_ORG_URL=https://dev.azure.com/contoso
    AUTH_MODE=login
    SESSION_SECRET=<output of: openssl rand -hex 32>
+   ADMIN_SETUP_CODE=<a code only you know, for creating the first admin>
    ALLOWED_HOSTS=console.yourcompany.com
    TRUST_PROXY=1
    HOST=127.0.0.1
@@ -166,17 +187,19 @@ The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Nod
    ```bash
    sudo certbot --nginx -d console.yourcompany.com
    ```
-6. **Back up and protect `data/`.** It holds everyone's settings and the encrypted sessions. Keep `SESSION_SECRET` safe: without it, stored sessions can't be decrypted and everyone signs in again. Anyone who has both `data/` and the secret can use the stored tokens.
+6. **Back up and protect `data/`.** It holds the accounts, everyone's settings and the encrypted tokens. Keep `SESSION_SECRET` safe: without it, stored tokens can't be decrypted and everyone has to link theirs again. Anyone who has both `data/` and the secret can use the stored tokens.
 7. **Updating:**
    ```bash
    git pull && npm ci && npm run build && pm2 restart shipdeck
    ```
 
-Teammates create their own token from the sign-in page's "How to create a token" steps. Ask them to use the scopes listed above and a sensible expiry.
+8. **Create your account:** open the site, enter the setup code, then invite your team from **Users**.
+
+Teammates create their own token from the "How to create a token" steps shown after they first sign in. Ask them to use the scopes listed above and a sensible expiry.
 
 ## Appearance
 
-**Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal or Magenta). The browser-tab icon follows the accent. The choice is saved in your browser.
+**Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal or Magenta). The browser-tab icon follows the accent. The choice is saved in your browser, and with sign-in it also follows your account to other devices.
 
 ## How it works
 

@@ -11,7 +11,8 @@ export const CATEGORY_TONE = { Proposed: 'muted', InProgress: 'info', Resolved: 
 
 export default function WorkItems() {
   const { data, error, reload } = useApi('/workitems');
-  const { meta, openDrawer, refresh, toast } = useApp();
+  const { meta, openDrawer, refresh, toast, can } = useApp();
+  const editable = can('workitems.write');
   const [params, setParams] = useSearchParams();
   const view = params.get('view') || 'open';
   const assignee = params.get('assignee') || '';
@@ -143,7 +144,7 @@ export default function WorkItems() {
                       <select
                         className={`input input-inline state-${w.stateCategory}`}
                         value={w.state}
-                        disabled={saving === w.id}
+                        disabled={!editable || saving === w.id}
                         onChange={(e) => update(w, { state: e.target.value }, `${w.id} moved to ${e.target.value}`)}
                         aria-label={`State of ${w.id}`}
                       >
@@ -154,7 +155,7 @@ export default function WorkItems() {
                       <select
                         className="input input-inline"
                         value={w.assignedTo?.uniqueName || ''}
-                        disabled={saving === w.id}
+                        disabled={!editable || saving === w.id}
                         onChange={(e) => update(w, { assignedTo: e.target.value }, e.target.value ? `${w.id} assigned` : `${w.id} unassigned`)}
                         aria-label={`Assignee of ${w.id}`}
                       >

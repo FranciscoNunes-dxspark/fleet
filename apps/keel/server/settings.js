@@ -59,6 +59,7 @@ export function createSettingsStore(file) {
     const next = merge(base, patch);
     if (patch.projects) next.projects = patch.projects;
     if (patch.snoozed) next.snoozed = patch.snoozed;
+    if (patch.prefs) next.prefs = patch.prefs;
     delete next.firstRun;
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify(next, null, 2));

@@ -10,7 +10,7 @@ const blank = () => ({ key: Math.random(), id: null, name: '', url: '', appInsig
  * server stores them encrypted and never sends them back (only "hasApiKey").
  */
 export default function ProductionSettings() {
-  const { toast, refresh, authMode } = useApp();
+  const { toast, refresh, authMode, can } = useApp();
   const { data: rel } = useApi('/releases');
   const { data: pipes } = useApi('/pipelines');
   const [rows, setRows] = useState(null);
@@ -28,6 +28,14 @@ export default function ProductionSettings() {
   }, [rows === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!rows) return <section className="panel" id="production"><Loading label="Loading monitors…" /></section>;
+  if (!can('monitors.manage')) {
+    return (
+      <section className="panel" id="production">
+        <h2 className="section-title">Production monitors</h2>
+        <p className="muted small">{rows.length ? `${rows.length} monitor${rows.length === 1 ? ' is' : 's are'} set up.` : 'No monitors yet.'} Only admins can add or change production monitors.</p>
+      </section>
+    );
+  }
 
   const set = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 

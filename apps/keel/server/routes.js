@@ -1,4 +1,5 @@
 import express from 'express';
+import { PERMISSIONS, can } from './accounts.js';
 
 /** API routes; `req.ctx` is the signed-in user's { service, watcher } (see index.js). */
 export function apiRouter() {
@@ -15,13 +16,23 @@ export function apiRouter() {
     next();
   });
 
+  /** Role check: refuses the request unless the signed-in role has `perm`. */
+  const need = (perm) => (req, res, next) => (can(req.ctx.role || 'admin', perm)
+    ? next()
+    : res.status(403).json({ error: 'Your role in Shipdeck does not allow this.', code: 'forbidden' }));
+
   const num = (v) => {
     const n = Number(v);
     if (!Number.isInteger(n) || n <= 0) throw Object.assign(new Error('Invalid id'), { status: 400 });
     return n;
   };
 
-  r.get('/meta', async (req, res) => res.json(await req.ctx.service.meta()));
+  r.get('/meta', async (req, res) => {
+    const role = req.ctx.role || 'admin';
+    res.json({ ...(await req.ctx.service.meta()), account: req.ctx.user || null, role, permissions: PERMISSIONS[role] || [] });
+  });
+  // Preferences that follow you across devices (theme, notifications, dashboard layout).
+  r.put('/prefs', async (req, res) => res.json(await req.ctx.service.savePrefs(req.body || {})));
   // Live updates (Server-Sent Events): 'changed', 'notify' and 'status' events.
   r.get('/events', (req, res) => req.ctx.watcher.attach(req, res));
   r.post('/refresh', (req, res) => {
@@ -50,7 +61,7 @@ export function apiRouter() {
 
   r.get('/people',async (req, res) => res.json(await req.ctx.service.people()));
   r.get('/prs', async (req, res) => res.json(await req.ctx.service.pullRequests()));
-  r.post('/prs', async (req, res) => res.status(201).json(await req.ctx.service.createPullRequest(req.body || {})));
+  r.post('/prs', need('prs.write'), async (req, res) => res.status(201).json(await req.ctx.service.createPullRequest(req.body || {})));
   r.get('/repos', async (req, res) => res.json(await req.ctx.service.repos()));
   r.get('/repos/:projectId/:repoId/branches', async (req, res) => res.json(await req.ctx.service.branches(req.params.projectId, req.params.repoId)));
   r.get('/repos/:projectId/:repoId/compare', async (req, res) => res.json(await req.ctx.service.compare(
@@ -60,7 +71,7 @@ export function apiRouter() {
     const { projectId, repoId, id } = req.params;
     res.json(await req.ctx.service.pullRequest(projectId, repoId, num(id)));
   });
-  r.post('/prs/:projectId/:repoId/:id/actions', async (req, res) => {
+  r.post('/prs/:projectId/:repoId/:id/actions', need('prs.write'), async (req, res) => {
     const { projectId, repoId, id } = req.params;
     await req.ctx.service.prAction(projectId, repoId, num(id), req.body || {});
     res.json(await req.ctx.service.pullRequest(projectId, repoId, num(id)));
@@ -68,7 +79,7 @@ export function apiRouter() {
 
   r.get('/workitems', async (req, res) => res.json(await req.ctx.service.workItems()));
   r.get('/workitems/:id', async (req, res) => res.json(await req.ctx.service.workItem(num(req.params.id))));
-  r.post('/workitems/:id/actions', async (req, res) => {
+  r.post('/workitems/:id/actions', need('workitems.write'), async (req, res) => {
     const id = num(req.params.id);
     await req.ctx.service.workItemAction(id, req.body || {});
     res.json(await req.ctx.service.workItem(id));
@@ -83,30 +94,30 @@ export function apiRouter() {
   })));
   r.get('/epics', async (req, res) => res.json(await req.ctx.service.epics({ includeClosed: req.query.closed === '1' })));
   r.get('/pipelines', async (req, res) => res.json(await req.ctx.service.pipelines()));
-  r.post('/pipelines/queue', async (req, res) => {
+  r.post('/pipelines/queue', need('pipelines.run'), async (req, res) => {
     const { projectId, definitionId, branch } = req.body || {};
     res.json(await req.ctx.service.queueBuild(projectId, num(definitionId), branch));
   });
 
   r.get('/production', async (req, res) => res.json(await req.ctx.service.production()));
   r.get('/production/monitors', (req, res) => res.json(req.ctx.service.monitors().list()));
-  r.put('/production/monitors', async (req, res) => {
+  r.put('/production/monitors', need('monitors.manage'), async (req, res) => {
     const saved = await req.ctx.service.monitors().save(req.body?.monitors);
     req.ctx.service.invalidate('builds');
     res.json(saved);
   });
-  r.post('/production/test', async (req, res) => res.json(await req.ctx.service.monitors().test(req.body || {})));
+  r.post('/production/test', need('monitors.manage'), async (req, res) => res.json(await req.ctx.service.monitors().test(req.body || {})));
   r.get('/releases', async (req, res) => res.json(await req.ctx.service.releases()));
-  r.post('/releases/create', async (req, res) => {
+  r.post('/releases/create', need('releases.run'), async (req, res) => {
     const { projectId, definitionId, description } = req.body || {};
     res.json(await req.ctx.service.createRelease(projectId, num(definitionId), description));
   });
-  r.post('/releases/deploy', async (req, res) => {
+  r.post('/releases/deploy', need('releases.run'), async (req, res) => {
     const { projectId, releaseId, environmentId, comment } = req.body || {};
     await req.ctx.service.deployReleaseStage(projectId, num(releaseId), num(environmentId), comment);
     res.json({ ok: true });
   });
-  r.post('/approvals/:kind/:id', async (req, res) => {
+  r.post('/approvals/:kind/:id', need('approvals.decide'), async (req, res) => {
     if (!['release', 'yaml'].includes(req.params.kind)) return res.status(400).json({ error: 'Unknown approval kind' });
     await req.ctx.service.decideApproval(req.params.kind, req.params.id, req.body || {});
     res.json({ ok: true });

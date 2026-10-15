@@ -326,3 +326,53 @@ test('monitors refuse private and internal addresses', async () => {
   const ok = await assertPublicUrl('https://8.8.8.8/');
   assert.equal(ok.hostname, '8.8.8.8');
 });
+
+test('accounts: passwords, invites, roles and the last-admin rule', async () => {
+  process.env.SESSION_SECRET ||= 'test-secret-for-unit-tests-0123456789abcdef';
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
+  const { createAccounts, verifyPassword, hashPassword, can } = await import('../server/accounts.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shipdeck-acc-'));
+  const acc = createAccounts(path.join(dir, 'users.json'));
+
+  assert.ok(await verifyPassword('correct horse', await hashPassword('correct horse')));
+  assert.ok(!(await verifyPassword('wrong', await hashPassword('correct horse'))));
+
+  assert.equal(acc.needsSetup(), true);
+  await assert.rejects(acc.createFirstAdmin({ email: 'lead@x.com', name: 'Lead', password: 'short' }), /10 characters/);
+  const admin = await acc.createFirstAdmin({ email: 'Lead@X.com', name: 'Lead', password: 'a-long-password' });
+  assert.equal(admin.email, 'lead@x.com');
+  assert.equal(acc.needsSetup(), false);
+  await assert.rejects(acc.createFirstAdmin({ email: 'x@x.com', password: 'another-long-one' }), /already set up/);
+
+  // Invite a PM; the link works once.
+  const { user, token } = acc.invite({ email: 'pm@x.com', name: 'Pat', role: 'pm' });
+  assert.equal(user.status, 'invited');
+  assert.equal(acc.peekLink(token).role, 'pm');
+  await acc.acceptLink(token, { password: 'pm-password-123' });
+  assert.throws(() => acc.peekLink(token), /invalid or has expired/);
+  const pm = await acc.signIn('PM@x.com', 'pm-password-123');
+  assert.equal(pm.role, 'pm');
+  await assert.rejects(acc.signIn('pm@x.com', 'nope'), /incorrect/);
+  await assert.rejects(acc.signIn('nobody@x.com', 'nope'), /incorrect/); // same message: no account probing
+
+  // Roles: PMs can't act on pull requests; only admins manage users.
+  assert.equal(can('pm', 'prs.write'), false);
+  assert.equal(can('pm', 'approvals.decide'), true);
+  assert.equal(can('developer', 'users.manage'), false);
+  assert.equal(can('admin', 'users.manage'), true);
+
+  // Never lose the last admin.
+  assert.throws(() => acc.update(admin.id, { role: 'developer' }, admin.id), /at least one active admin/);
+  assert.throws(() => acc.remove(admin.id, pm.id), /at least one active admin/);
+  acc.update(pm.id, { disabled: true }, admin.id);
+  await assert.rejects(acc.signIn('pm@x.com', 'pm-password-123'), /disabled/);
+
+  // Tokens are stored encrypted.
+  acc.setToken(admin.id, 'TOKENVALUE123', { id: 'azdo-1', displayName: 'Lead' });
+  assert.ok(!fs.readFileSync(path.join(dir, 'users.json'), 'utf8').includes('TOKENVALUE123'));
+  assert.equal(acc.tokenOf(admin.id), 'TOKENVALUE123');
+  assert.equal(acc.get(admin.id).hasToken, true);
+  assert.ok(!('pat' in acc.get(admin.id)) && !('passwordHash' in acc.get(admin.id)));
+});

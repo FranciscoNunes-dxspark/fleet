@@ -107,7 +107,8 @@ const POLICY = {
 export default function PrDetail({ target }) {
   const { data: pr, error, reload } = useApi(prPath(target));
   const { data: people } = useApi('/people');
-  const { refresh, toast, openDrawer } = useApp();
+  const { refresh, toast, openDrawer, can } = useApp();
+  const writable = can('prs.write');
   const [busy, setBusy] = useState(null);
   const [comment, setComment] = useState('');
   const [reviewer, setReviewer] = useState('');
@@ -151,7 +152,7 @@ export default function PrDetail({ target }) {
         <br /><code className="branch">{pr.sourceBranch} → {pr.targetBranch}</code>
       </p>
 
-      {pr.status === 'active' && (
+      {writable && pr.status === 'active' && (
         <section className="detail-section">
           <h3>Your vote {pr.myVote !== null && <span className="muted small">currently: {VOTES[pr.myVote].label}</span>}</h3>
           {pr.isMine && (
@@ -205,7 +206,7 @@ export default function PrDetail({ target }) {
           ))}
           {!pr.reviewers.length && <li className="text-bad small">No reviewers yet.</li>}
         </ul>
-        {candidates.length > 0 && (
+        {writable && candidates.length > 0 && (
           <form className="inline-form" onSubmit={async (e) => { e.preventDefault(); if (reviewer && await act({ type: 'addReviewer', reviewerId: reviewer }, 'Reviewer added')) setReviewer(''); }}>
             <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label="Reviewer to add">
               <option value="">Add a reviewer…</option>
@@ -257,10 +258,12 @@ export default function PrDetail({ target }) {
           ))}
           {!pr.threads.recent.length && <li className="muted small">No comments yet.</li>}
         </ul>
+        {writable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', content: comment }, 'Comment posted')) setComment(''); }}>
           <textarea className="input" rows={3} placeholder="Leave a comment (Markdown supported)" value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Comment" />
           <button type="submit" className="btn btn-primary btn-small" disabled={!comment.trim() || !!busy}>Post comment</button>
         </form>
+        )}
       </section>
 
       {completing && pr.status === 'active' && (
@@ -271,14 +274,14 @@ export default function PrDetail({ target }) {
 
       <section className="detail-actions sticky-actions">
         {pr.status !== 'active' && <span className="small muted">This pull request is {pr.status}.</span>}
-        {pr.status === 'active' && pr.isDraft && <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'publish' }, 'Published')}>Publish draft</button>}
-        {pr.status === 'active' && !pr.isDraft && !completing && (
+        {writable && pr.status === 'active' && pr.isDraft && <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'publish' }, 'Published')}>Publish draft</button>}
+        {writable && pr.status === 'active' && !pr.isDraft && !completing && (
           <button type="button" className="btn btn-small btn-primary" disabled={!!busy || pr.hasConflicts} title={pr.hasConflicts ? 'Resolve the merge conflicts first' : undefined} onClick={() => setCompleting(true)}>Complete…</button>
         )}
-        {pr.status === 'active' && !pr.isDraft && (pr.autoComplete
+        {writable && pr.status === 'active' && !pr.isDraft && (pr.autoComplete
           ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, 'Auto-complete cancelled')}>Cancel auto-complete</button>
           : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, 'Auto-complete set')}>Set auto-complete</button>)}
-        {pr.status === 'active' && <Confirm text="Abandon this pull request?" onConfirm={() => act({ type: 'abandon' }, 'Pull request abandoned')} className="btn btn-small btn-ghost text-bad">Abandon</Confirm>}
+        {writable && pr.status === 'active' && <Confirm text="Abandon this pull request?" onConfirm={() => act({ type: 'abandon' }, 'Pull request abandoned')} className="btn btn-small btn-ghost text-bad">Abandon</Confirm>}
         <ExternalLink href={pr.webUrl}>Open in Azure DevOps</ExternalLink>
       </section>
     </div>

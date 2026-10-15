@@ -159,6 +159,8 @@ function BuildsTab({ data }) {
 }
 
 function PipelineRow({ p, showFolder, onQueue }) {
+  const { can } = useApp();
+  const canRun = can('pipelines.run');
   const rowRef = useRef(null);
   const run = p.running[0];
   return (
@@ -207,7 +209,7 @@ function PipelineRow({ p, showFolder, onQueue }) {
       <td className={`num ${p.passRate !== null && p.passRate < 0.8 ? 'text-warn strong' : ''}`}>{pct(p.passRate)}</td>
       <td className="num muted">{p.medianDurationMin != null ? `${Math.round(p.medianDurationMin)}m` : '—'}</td>
       <td className="row-actions">
-        <Confirm text={`Run on ${p.branch}?`} onConfirm={() => onQueue(p, rowRef.current)} className="btn btn-small btn-ghost">Run</Confirm>
+        {canRun && <Confirm text={`Run on ${p.branch}?`} onConfirm={() => onQueue(p, rowRef.current)} className="btn btn-small btn-ghost">Run</Confirm>}
         <ExternalLink href={(run || p.lastRun)?.webUrl}>Open</ExternalLink>
       </td>
     </tr>

@@ -284,6 +284,7 @@ export function createService({
         orgUrl: provider.orgUrl,
         me: who,
         refreshSeconds: settings.refreshSeconds,
+        prefs: settings.prefs || {},
         thresholds: settings.thresholds,
         autoComplete: settings.autoComplete,
         blockedTag: settings.blockedTag,
@@ -645,6 +646,16 @@ export function createService({
     async projectOptions(projectId) {
       const [teams, repoList] = await Promise.all([provider.listTeams(projectId), provider.listRepos(projectId)]);
       return { teams, repos: repoList };
+    },
+
+    /** Per-account UI preferences, merged key by key (small, known keys only). */
+    async savePrefs(patch) {
+      const allowed = ['theme', 'notifications', 'dashboard'];
+      const clean = Object.fromEntries(Object.entries(patch).filter(([k, v]) => allowed.includes(k) && v && typeof v === 'object'));
+      if (JSON.stringify(clean).length > 20_000) throw Object.assign(new Error('Preferences are too large'), { status: 413 });
+      const current = (await store.load()).prefs || {};
+      const saved = await store.save({ prefs: { ...current, ...clean } });
+      return saved.prefs;
     },
 
     async saveSettings(patch) {

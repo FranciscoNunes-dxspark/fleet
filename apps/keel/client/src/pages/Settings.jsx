@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { ErrorBox, Loading, PageHeader } from '../ui.jsx';
+import { ErrorBox, Loading, PageHeader, Confirm } from '../ui.jsx';
 import { ACCENTS, MODES, loadTheme, saveTheme } from '../theme.js';
 import ProductionSettings from './ProductionSettings.jsx';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
@@ -170,6 +170,8 @@ export default function Settings() {
         </div>
       </section>
 
+      <AccountSettings />
+
       <ProductionSettings />
 
       <AppearanceSettings />
@@ -295,6 +297,85 @@ function AppearanceSettings() {
             ))}
           </div>
         </div>
+      </div>
+    </section>
+  );
+}
+
+const ROLE_NAMES = { admin: 'Admin', developer: 'Developer', pm: 'PM' };
+
+/** Hosted mode only: your password and your Azure DevOps connection. */
+function AccountSettings() {
+  const { meta, authMode, toast } = useApp();
+  const [pw, setPw] = useState({ current: '', next: '' });
+  const [pat, setPat] = useState('');
+  const [busy, setBusy] = useState(null);
+  if (authMode !== 'login' || !meta.account) return null;
+
+  const run = async (name, fn, ok) => {
+    setBusy(name);
+    try {
+      await fn();
+      toast(ok);
+      return true;
+    } catch (e) {
+      toast(e.message, 'bad');
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="panel">
+      <h2 className="section-title">Your account</h2>
+      <dl className="facts account-facts">
+        <div><dt>Name</dt><dd>{meta.account.name}</dd></div>
+        <div><dt>Email</dt><dd>{meta.account.email}</dd></div>
+        <div><dt>Role</dt><dd>{ROLE_NAMES[meta.role]}</dd></div>
+        <div><dt>Azure DevOps</dt><dd>Connected as {meta.me.displayName}</dd></div>
+      </dl>
+
+      <div className="account-forms">
+        <form
+          className="account-form"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (await run('token', () => api('/auth/token', { method: 'POST', body: { pat } }), 'Azure DevOps token updated')) setPat('');
+          }}
+        >
+          <h3 className="small">Replace your Azure DevOps token</h3>
+          <p className="muted small">Use this when your token is about to expire. It's checked with Azure DevOps before it replaces the old one.</p>
+          <input className="input" type="password" autoComplete="off" spellCheck={false} placeholder="Paste a new token" value={pat} onChange={(e) => setPat(e.target.value)} aria-label="New personal access token" />
+          <div className="account-actions">
+            <button type="submit" className="btn btn-small btn-primary" disabled={!pat.trim() || busy === 'token'}>{busy === 'token' ? 'Checking…' : 'Replace token'}</button>
+            <Confirm
+              text="Disconnect Azure DevOps? You'll be asked for a token again."
+              onConfirm={async () => {
+                await api('/auth/token', { method: 'DELETE' });
+                window.dispatchEvent(new CustomEvent('shipdeck:token-required', { detail: { reason: 'token-required' } }));
+              }}
+              className="btn btn-small btn-ghost text-bad"
+            >
+              Disconnect
+            </Confirm>
+          </div>
+        </form>
+
+        <form
+          className="account-form"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (await run('password', () => api('/auth/password', { method: 'POST', body: pw }), 'Password changed. Other devices were signed out.')) setPw({ current: '', next: '' });
+          }}
+        >
+          <h3 className="small">Change password</h3>
+          <input className="input" type="password" autoComplete="current-password" placeholder="Current password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} aria-label="Current password" required />
+          <input className="input" type="password" autoComplete="new-password" placeholder="New password (10+ characters)" minLength={10} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} aria-label="New password" required />
+          <div className="account-actions">
+            <button type="submit" className="btn btn-small" disabled={busy === 'password'}>{busy === 'password' ? 'Saving…' : 'Change password'}</button>
+          </div>
+        </form>
       </div>
     </section>
   );

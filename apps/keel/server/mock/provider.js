@@ -441,7 +441,10 @@ function getPR(projectId, repoId, prId) {
  * review request arrives, a pipeline breaks or a deployment needs approval,
  * so live updates and notifications can be tried without a real org.
  */
+let demoActivityStarted = false;
 function startDemoActivity() {
+  if (demoActivityStarted) return;
+  demoActivityStarted = true;
   let step = 0;
   const events = [
     () => {

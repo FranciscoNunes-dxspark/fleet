@@ -22,11 +22,14 @@ if (config.authMode === 'login') {
   // Everyone signs in with their own PAT; each request runs as that person.
   const auth = createAuth({ monitoring });
   app.use('/api/auth', auth.router);
+  app.use('/api/admin/users', auth.adminRouter);
   app.use('/api', auth.requireUser, apiRouter());
+  auth.announceSetup();
 } else {
   // One person: the PAT in .env (or demo data).
   const service = createService({ monitoring });
-  const ctx = { service, watcher: createWatcher(service) };
+  // Local mode: the one person using it is the admin.
+  const ctx = { service, watcher: createWatcher(service), role: 'admin', user: null };
   app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: service.provider.orgUrl }));
   app.use('/api', (req, res, next) => {
     req.ctx = ctx;

@@ -71,7 +71,8 @@ export default function Board() {
   const doneDays = Number(params.get('done')) || 14;
   const query = new URLSearchParams({ ...(project && { project }), ...(team && { team }), ...(boardParam && { board: boardParam }), mode, doneDays }).toString();
   const { data, error, reload } = useApi(`/board?${query}`);
-  const { openDrawer, meta, toast, refresh } = useApp();
+  const { openDrawer, meta, toast, refresh, can } = useApp();
+  const movable = can('workitems.write');
 
   const [showAllDone, setShowAllDone] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
@@ -316,8 +317,9 @@ export default function Board() {
                           blocked={blocked(w)}
                           moving={!!moved[w.id]}
                           split={col.split}
-                          onToggleDone={col.split ? () => toggleDone(w) : null}
+                          onToggleDone={col.split && movable ? () => toggleDone(w) : null}
                           onOpen={() => openDrawer({ type: 'workitem', id: w.id })}
+                          draggable={movable}
                           onDragStart={() => setDragging(w)}
                           onDragEnd={() => { setDragging(null); setOver(null); }}
                         />
@@ -348,13 +350,13 @@ export default function Board() {
   );
 }
 
-function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, onDragStart, onDragEnd }) {
+function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, onDragStart, onDragEnd, draggable = true }) {
   const kidsDone = kids.filter((t) => t.stateCategory === 'Completed').length;
   return (
     <div
       role="button"
       tabIndex={0}
-      draggable
+      draggable={draggable}
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart(); }}
       onDragEnd={onDragEnd}
       onClick={onOpen}
@@ -374,7 +376,7 @@ function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, o
         {kids.length > 0 && <span className="muted small">{kidsDone}/{kids.length} tasks</span>}
         {blocked && <Chip tone="bad">Blocked</Chip>}
         {w.stateCategory === 'InProgress' && <span className="muted small" title="Time in this state">{age(w.stateChangedAt)}</span>}
-        {split && (
+        {split && onToggleDone && (
           <button
             type="button"
             className={`split-toggle ${w.board?.done ? 'on' : ''}`}

@@ -13,7 +13,8 @@ const orgUrl = (process.env.AZDO_ORG_URL || '').trim().replace(/\/+$/, '');
 const pat = (process.env.AZDO_PAT || '').trim();
 const mockRequested = process.argv.includes('--mock') || /^(1|true|yes)$/i.test(process.env.AZDO_MOCK || '');
 // local: one user, PAT from .env. login: each person signs in with their own PAT.
-const authMode = !mockRequested && orgUrl && /^login$/i.test(process.env.AUTH_MODE || '') ? 'login' : 'local';
+// Sign-in also works on demo data, to try accounts and roles before deploying.
+const authMode = (orgUrl || mockRequested) && /^login$/i.test(process.env.AUTH_MODE || '') ? 'login' : 'local';
 
 export const config = {
   root: ROOT,

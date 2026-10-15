@@ -1,7 +1,9 @@
-// Appearance: light/dark/system mode plus an accent color, saved per browser.
+// Appearance: light/dark/system mode plus an accent color, saved to your account.
 // Applied as data attributes on <html>; the colors themselves are CSS tokens.
 
-const KEY = 'shipdeck.theme.v1';
+import { PREF_KEYS, pushPref } from './prefs.js';
+
+const KEY = PREF_KEYS.theme;
 
 export const MODES = [
   { id: 'system', label: 'System' },
@@ -57,6 +59,7 @@ export function saveTheme(theme) {
     // Storage blocked: the theme lasts for this visit.
   }
   applyTheme(theme);
+  pushPref('theme', theme); // follows your account to other devices
 }
 
 /** Re-applies when the OS switches light/dark while "System" is chosen. */

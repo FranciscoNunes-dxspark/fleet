@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, hours, pct, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, ErrorBox, PageHeader } from '../ui.jsx';
+import { PREF_KEYS, pushPref } from '../prefs.js';
 
 const WIDGETS = [
   { id: 'production', title: 'Production', link: '/production', linkText: 'Details' },
@@ -16,7 +17,7 @@ const WIDGETS = [
   { id: 'mine', title: 'My work', link: '/work?view=mine', linkText: 'My items' },
 ];
 const DEFAULT_LAYOUT = WIDGETS.map((w) => ({ id: w.id, visible: w.id !== 'mine' }));
-const STORAGE_KEY = 'shipdeck.dashboard.v1';
+const STORAGE_KEY = PREF_KEYS.dashboard;
 const LEGACY_KEY = 'leadConsole.dashboard.v1'; // before the rename to Shipdeck
 
 function loadLayout() {
@@ -37,6 +38,7 @@ function saveLayout(layout) {
   } catch {
     // Storage unavailable (private mode): layout lasts for this visit only.
   }
+  pushPref('dashboard', layout); // follows your account to other devices
 }
 
 export default function Dashboard() {

@@ -6,7 +6,7 @@ import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle,
 
 export default function PullRequests() {
   const { data, error, reload } = useApi('/prs');
-  const { meta, openDrawer } = useApp();
+  const { meta, openDrawer, can } = useApp();
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState('');
   const [project, setProject] = useState('');
@@ -63,7 +63,7 @@ export default function PullRequests() {
   return (
     <div className="page">
       <PageHeader title="Pull requests" sub={`${data.prs.length} active across ${data.repos.length} repos`}>
-        <button type="button" className="btn btn-primary" onClick={() => openDrawer({ type: 'newpr' })}>New pull request</button>
+        {can('prs.write') && <button type="button" className="btn btn-primary" onClick={() => openDrawer({ type: 'newpr' })}>New pull request</button>}
       </PageHeader>
 
       <div className="filters">
