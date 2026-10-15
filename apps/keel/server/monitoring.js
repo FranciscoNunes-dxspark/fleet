@@ -1,4 +1,4 @@
-// Production monitoring, shared by everyone using this Shipdeck server:
+// Production monitoring, shared by everyone using this Keel server:
 // - a health check of each monitor's URL every minute (up/down, status, latency)
 // - Application Insights metrics every 5 minutes, when an App ID + API key is set
 //   (requests, failure rate, p95 duration, exceptions, top failing operations)
@@ -66,7 +66,7 @@ async function httpCheck(m) {
     const res = await fetch(m.url, {
       method: 'GET',
       redirect: 'follow',
-      headers: { 'User-Agent': 'Shipdeck-Monitor/1.0', Accept: '*/*' },
+      headers: { 'User-Agent': 'Keel-Monitor/1.0', Accept: '*/*' },
       signal: AbortSignal.timeout(10_000),
     });
     res.body?.cancel().catch(() => {});

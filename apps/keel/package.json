@@ -1,8 +1,8 @@
 {
-  "name": "shipdeck",
+  "name": "keel",
   "version": "0.1.0",
   "private": true,
-  "description": "Shipdeck: a tech lead's console for Azure DevOps. PRs, work items, boards, pipelines and releases across projects and repos.",
+  "description": "Keel: a tech lead's console for Azure DevOps. PRs, work items, boards, pipelines and releases across projects and repos.",
   "type": "module",
   "engines": {
     "node": ">=20.12"

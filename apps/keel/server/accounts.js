@@ -1,4 +1,4 @@
-// Shipdeck accounts for hosted mode: email + password, a role, and each
+// Keel accounts for hosted mode: email + password, a role, and each
 // person's own Azure DevOps token (encrypted). Stored in data/users.json.
 //
 // Roles: admin (everything, including users and production monitors),
@@ -102,7 +102,7 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
 
     /** The very first admin (needs the setup code; see auth.js). */
     async createFirstAdmin({ email, name, password }) {
-      if (activeAdmins().length) throw err('Shipdeck is already set up.', 409);
+      if (activeAdmins().length) throw err('Keel is already set up.', 409);
       checkPassword(password);
       const e = normEmail(email);
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw err('Enter a valid email address.');
@@ -190,7 +190,7 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
       if (!u) throw err('No such user.', 404);
       const losesAdmin = (role && role !== 'admin') || disabled === true;
       if (u.role === 'admin' && losesAdmin && activeAdmins().filter((a) => a.id !== id).length === 0) {
-        throw err('Shipdeck needs at least one active admin.', 409);
+        throw err('Keel needs at least one active admin.', 409);
       }
       if (id === actorId && disabled) throw err("You can't disable your own account.", 409);
       if (role !== undefined) {
@@ -207,7 +207,7 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
       const u = byId(id);
       if (!u) throw err('No such user.', 404);
       if (id === actorId) throw err("You can't remove your own account.", 409);
-      if (u.role === 'admin' && activeAdmins().filter((a) => a.id !== id).length === 0) throw err('Shipdeck needs at least one active admin.', 409);
+      if (u.role === 'admin' && activeAdmins().filter((a) => a.id !== id).length === 0) throw err('Keel needs at least one active admin.', 409);
       db.users = db.users.filter((x) => x.id !== id);
       save();
     },

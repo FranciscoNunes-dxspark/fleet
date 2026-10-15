@@ -219,7 +219,7 @@ function NotificationSettings() {
       // Show it even while the tab is in front, so you can see it right away.
       const saved = prefs.onlyWhenHidden;
       savePrefs({ ...prefs, onlyWhenHidden: false });
-      showDesktop({ title: 'Shipdeck', body: 'Desktop notifications are on.', tag: 'shipdeck-test' });
+      showDesktop({ title: 'Keel', body: 'Desktop notifications are on.', tag: 'keel-test' });
       savePrefs({ ...prefs, onlyWhenHidden: saved });
     }
   };
@@ -353,7 +353,7 @@ function AccountSettings() {
               text="Disconnect Azure DevOps? You'll be asked for a token again."
               onConfirm={async () => {
                 await api('/auth/token', { method: 'DELETE' });
-                window.dispatchEvent(new CustomEvent('shipdeck:token-required', { detail: { reason: 'token-required' } }));
+                window.dispatchEvent(new CustomEvent('keel:token-required', { detail: { reason: 'token-required' } }));
               }}
               className="btn btn-small btn-ghost text-bad"
             >

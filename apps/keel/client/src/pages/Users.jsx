@@ -11,7 +11,7 @@ const ROLES = [
 ];
 const STATUS = { active: { tone: 'ok', label: 'Active' }, invited: { tone: 'info', label: 'Invited' }, disabled: { tone: 'muted', label: 'Disabled' } };
 
-/** Admin only: who can use this Shipdeck, and as what. */
+/** Admin only: who can use Keel, and as what. */
 export default function Users() {
   const { meta, can, toast } = useApp();
   const { data, error, reload } = useApi(can('users.manage') ? '/admin/users' : null);
@@ -75,7 +75,7 @@ export default function Users() {
           </label>
           <button type="submit" className="btn btn-primary" disabled={busy}>Create invite link</button>
         </div>
-        <p className="muted small">{ROLES.find((r) => r.id === form.role).hint}. Shipdeck doesn&apos;t send email: copy the link and send it yourself. It works once and expires in 7 days.</p>
+        <p className="muted small">{ROLES.find((r) => r.id === form.role).hint}. Keel doesn&apos;t send email: copy the link and send it yourself. It works once and expires in 7 days.</p>
       </form>
 
       {link && (

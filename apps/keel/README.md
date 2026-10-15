@@ -1,4 +1,4 @@
-# Shipdeck
+# Keel
 
 A tech lead's console for Azure DevOps
 
@@ -52,7 +52,7 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 | **Pipelines** | Running pipelines first, then the rest grouped by their Azure DevOps folder. Each pipeline is judged on its repo's default branch, and PR validation runs are ignored. Shows a run strip, pass rate, failure streak, last green run, and re-run. |
 | **Releases** (Pipelines tab) | Classic release pipelines, grouped by folder. Each stage shows its latest deployment (release, status, when, who) and anything deploying now. You can create a release from the latest artifacts, or deploy and redeploy any recent release to any stage. Stage approvals and gates still apply. |
 | **Approvals** | Pending classic release approvals and YAML environment checks, in one list at the top of Pipelines and in your Inbox. Approve or reject with an optional comment. Buttons only appear where Azure DevOps says you may decide. |
-| **Production** | Your production apps next to the deploys that change them. Each monitor checks a URL every minute (up or down, response time, uptime) and can read Application Insights every 5 minutes (failure rate, p95, exceptions, top failing operations). Link a monitor to the release stage or pipeline that deploys it: deploys appear on its charts, and Shipdeck flags it when failures rise after one ("failures up from 0.4% to 6.4% since Release-65"). Outages and regressions go to the Inbox and notifications. |
+| **Production** | Your production apps next to the deploys that change them. Each monitor checks a URL every minute (up or down, response time, uptime) and can read Application Insights every 5 minutes (failure rate, p95, exceptions, top failing operations). Link a monitor to the release stage or pipeline that deploys it: deploys appear on its charts, and Keel flags it when failures rise after one ("failures up from 0.4% to 6.4% since Release-65"). Outages and regressions go to the Inbox and notifications. |
 | **Team** | Each person's in-progress items, sprint points, hours left, open PRs, reviews owed and oldest PR. Counts link to filtered views. |
 | **Insights** | Weekly merge throughput, median and 85th-percentile time to merge, open PR age, approvals given (review concentration), merges by author, and per-repo flow. |
 | **Release notes** | Merged PRs in a date range, plus the work items they delivered, as Markdown grouped into features, fixes, and PRs by repo. Copy it or download it. |
@@ -63,11 +63,11 @@ Thresholds, the blocked tag, auto-complete defaults and the refresh interval are
 
 Set it up in **Settings → Production monitors**:
 
-- **URL to check:** your app's home page or a health endpoint. It's checked every minute from the Shipdeck server. Only public addresses are allowed. Set `MONITOR_ALLOW_PRIVATE=1` if you really mean to monitor internal endpoints.
-- **Application Insights (optional):** in the Azure portal, open the app's Application Insights → **API Access**. Copy the **Application ID**, then **Create API key** with *Read telemetry*. Paste both into Shipdeck, never into chat or tickets. The key is stored encrypted, and Settings shows only that one is saved.
+- **URL to check:** your app's home page or a health endpoint. It's checked every minute from the Keel server. Only public addresses are allowed. Set `MONITOR_ALLOW_PRIVATE=1` if you really mean to monitor internal endpoints.
+- **Application Insights (optional):** in the Azure portal, open the app's Application Insights → **API Access**. Copy the **Application ID**, then **Create API key** with *Read telemetry*. Paste both into Keel, never into chat or tickets. The key is stored encrypted, and Settings shows only that one is saved.
 - **Deploys come from:** the classic release stage or the pipeline that deploys this app. This adds deploy markers and regression detection.
 
-Use **Test** to check a URL and key before saving. Monitors are shared by everyone using the same Shipdeck server. Azure Monitor alert rules aren't included: reading them needs a Microsoft Entra identity (a service principal) rather than an API key.
+Use **Test** to check a URL and key before saving. Monitors are shared by everyone using the same Keel server. Azure Monitor alert rules aren't included: reading them needs a Microsoft Entra identity (a service principal) rather than an API key.
 
 ## Live updates and notifications
 
@@ -80,7 +80,7 @@ You get a notification when:
 - a pipeline or deployment starts failing
 - an item becomes blocked, or a P1 bug has no owner
 
-Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Shipdeck`.
+Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Keel`.
 
 ## Security
 
@@ -88,7 +88,7 @@ What the app already does:
 
 - Your PAT stays on the server and never reaches the browser. The server binds to `127.0.0.1`, so other machines can't reach it.
 - **DNS-rebinding guard:** requests whose `Host` isn't `localhost` or `127.0.0.1` (or a host you list in `ALLOWED_HOSTS`) are refused, so a malicious website can't point its own domain at your machine and read this API.
-- Writes need the `x-shipdeck` header and a same-site `Origin`, so other sites can't trigger votes, comments or pipeline runs from your browser.
+- Writes need the `x-keel` header and a same-site `Origin`, so other sites can't trigger votes, comments or pipeline runs from your browser.
 - A strict Content-Security-Policy, `X-Frame-Options: DENY`, no-referrer and `no-store` on API responses. PR Markdown is sanitized, and the only images loaded are those from your own organization.
 
 What you should do:
@@ -104,7 +104,7 @@ Sharing it with your team needs more than the steps above. Every viewer should a
 
 ## Hosting it for your team (Hostinger or any server)
 
-With `AUTH_MODE=login`, Shipdeck has its own accounts. Each person signs in with an email and password, then links **their own** Azure DevOps PAT once, so votes, approvals and comments are recorded under their own name. This needs no Microsoft Entra app registration.
+With `AUTH_MODE=login`, Keel has its own accounts. Each person signs in with an email and password, then links **their own** Azure DevOps PAT once, so votes, approvals and comments are recorded under their own name. This needs no Microsoft Entra app registration.
 
 ### Accounts and roles
 
@@ -116,8 +116,8 @@ With `AUTH_MODE=login`, Shipdeck has its own accounts. Each person signs in with
 
 Everyone can see everything. Roles only limit what a person can change, and the server enforces them, not just the screens. Azure DevOps permissions still apply on top: a PM can't approve a deployment that Azure DevOps doesn't let them approve.
 
-- **First admin:** on first start the sign-in page asks for a setup code. Set `ADMIN_SETUP_CODE` in `.env`, or use the one the server prints in its log (`pm2 logs shipdeck`). The first account becomes Admin.
-- **Inviting people:** **Users → Invite someone** creates a link for an email address and role. Shipdeck doesn't send email, so copy the link and send it yourself. It works once and expires in 7 days. The person picks their name and password, then links their token.
+- **First admin:** on first start the sign-in page asks for a setup code. Set `ADMIN_SETUP_CODE` in `.env`, or use the one the server prints in its log (`pm2 logs keel`). The first account becomes Admin.
+- **Inviting people:** **Users → Invite someone** creates a link for an email address and role. Keel doesn't send email, so copy the link and send it yourself. It works once and expires in 7 days. The person picks their name and password, then links their token.
 - **Forgotten passwords:** on **Users**, choose **Reset password** to get a new link. Using it signs that person out everywhere.
 - **Managing access:** change a role, disable an account (signs it out at once) or remove it. There's always at least one active Admin.
 - **Synced settings:** projects, teams, inbox snoozes, theme, notification choices and the dashboard layout belong to the account, so they follow you to any device.
@@ -159,7 +159,7 @@ The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Nod
    ```
 4. **Keep it running** with pm2, so it restarts on crash and after reboot:
    ```bash
-   sudo npm i -g pm2 && pm2 start server/index.js --name shipdeck && pm2 save && pm2 startup
+   sudo npm i -g pm2 && pm2 start server/index.js --name keel && pm2 save && pm2 startup
    ```
 5. **Put nginx in front.** Live updates need buffering off on `/api/events`:
    ```nginx
@@ -190,7 +190,7 @@ The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Nod
 6. **Back up and protect `data/`.** It holds the accounts, everyone's settings and the encrypted tokens. Keep `SESSION_SECRET` safe: without it, stored tokens can't be decrypted and everyone has to link theirs again. Anyone who has both `data/` and the secret can use the stored tokens.
 7. **Updating:**
    ```bash
-   git pull && npm ci && npm run build && pm2 restart shipdeck
+   git pull && npm ci && npm run build && pm2 restart keel
    ```
 
 8. **Create your account:** open the site, enter the setup code, then invite your team from **Users**.
@@ -207,7 +207,7 @@ Teammates create their own token from the "How to create a token" steps shown af
 client/          React + Vite UI (dark theme, IBM Plex)
 server/
   index.js       Express: /api + built UI from dist/
-  routes.js      HTTP layer; writes require the x-shipdeck header
+  routes.js      HTTP layer; writes require the x-keel header
   service.js     Scopes everything to tracked projects/repos, caching
   azdo/          REST client (PAT auth, retries on 429/5xx, paging, concurrency limit) + provider
   mock/          Demo provider with the same interface as azdo/provider.js

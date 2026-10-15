@@ -1,4 +1,4 @@
-// One encryption key for everything Shipdeck stores that must stay secret:
+// One encryption key for everything Keel stores that must stay secret:
 // sign-in tokens and Azure (Application Insights) API keys. AES-256-GCM.
 import crypto from 'node:crypto';
 import fs from 'node:fs';

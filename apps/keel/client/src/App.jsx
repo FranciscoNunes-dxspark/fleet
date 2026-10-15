@@ -57,11 +57,11 @@ export default function App() {
       setReason(e.detail?.reason || 'token-required');
       setAuth((a) => (a?.mode === 'login' ? { ...a, needsToken: true } : a));
     };
-    window.addEventListener('shipdeck:signed-out', onSignedOut);
-    window.addEventListener('shipdeck:token-required', onToken);
+    window.addEventListener('keel:signed-out', onSignedOut);
+    window.addEventListener('keel:token-required', onToken);
     return () => {
-      window.removeEventListener('shipdeck:signed-out', onSignedOut);
-      window.removeEventListener('shipdeck:token-required', onToken);
+      window.removeEventListener('keel:signed-out', onSignedOut);
+      window.removeEventListener('keel:token-required', onToken);
     };
   }, []);
 
@@ -142,7 +142,7 @@ function Console({ authMode, onSignedOut }) {
       if (items.length > 3) {
         const summary = `${items.length} updates in Azure DevOps`;
         if (prefs.inApp) toast(summary, 'note', { body: items.slice(0, 3).map((n) => n.title).join(' · '), action: { label: 'Open inbox', onClick: () => navigate('/inbox') }, ttl: 10000 });
-        showDesktop({ title: summary, body: items.slice(0, 4).map((n) => n.title).join('\n'), tag: 'shipdeck-batch', onClick: () => navigate('/inbox') });
+        showDesktop({ title: summary, body: items.slice(0, 4).map((n) => n.title).join('\n'), tag: 'keel-batch', onClick: () => navigate('/inbox') });
         return;
       }
       for (const n of items) {
@@ -253,7 +253,7 @@ function Shell() {
 
   // Browser tab title carries the "act now" count, so it shows on a background tab.
   useEffect(() => {
-    document.title = s?.high ? `(${s.high}) Shipdeck` : 'Shipdeck';
+    document.title = s?.high ? `(${s.high}) Keel` : 'Keel';
   }, [s?.high]);
 
   const hardRefresh = async () => {
@@ -289,7 +289,7 @@ function Shell() {
         <div className="brand">
           <Logo />
           <div>
-            <div className="brand-name">Shipdeck</div>
+            <div className="brand-name">Keel</div>
             <div className="brand-org truncate" title={meta.orgUrl}>{meta.orgUrl.replace(/^https?:\/\//, '')}</div>
           </div>
         </div>

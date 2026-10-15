@@ -83,9 +83,9 @@ export default function ProductionSettings() {
     <section className="panel" id="production">
       <h2 className="section-title">Production monitors</h2>
       <p className="muted small">
-        Shipdeck checks each URL every minute. With an Application Insights App ID and API key (Application Insights → API Access → Create API key, "Read telemetry"),
+        Keel checks each URL every minute. With an Application Insights App ID and API key (Application Insights → API Access → Create API key, "Read telemetry"),
         it also tracks failure rates, exceptions and slow requests. Keys are stored encrypted on the server and never shown again.
-        {authMode === 'login' && ' Monitors are shared by everyone who uses this Shipdeck.'}
+        {authMode === 'login' && ' Monitors are shared by everyone who uses this Keel server.'}
       </p>
 
       <div className="monitor-edit-list">

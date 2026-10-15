@@ -4,10 +4,20 @@
 import { api } from './api.js';
 
 export const PREF_KEYS = {
-  theme: 'shipdeck.theme.v1',
-  notifications: 'shipdeck.notifications.v1',
-  dashboard: 'shipdeck.dashboard.v1',
+  theme: 'keel.theme.v1',
+  notifications: 'keel.notifications.v1',
+  dashboard: 'keel.dashboard.v1',
 };
+
+// Keep what this browser saved before the rename from Shipdeck.
+for (const key of Object.values(PREF_KEYS)) {
+  try {
+    const old = localStorage.getItem(key.replace(/^keel\./, 'shipdeck.'));
+    if (old && !localStorage.getItem(key)) localStorage.setItem(key, old);
+  } catch {
+    // Storage blocked: nothing to carry over.
+  }
+}
 
 /** Copy the account's saved preferences into this browser (called with /meta). */
 export function adoptServerPrefs(prefs = {}) {

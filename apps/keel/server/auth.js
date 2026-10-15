@@ -62,7 +62,7 @@ function readCookie(req, name) {
   }
   return null;
 }
-const cookieName = (secure) => (secure ? '__Host-shipdeck_session' : 'shipdeck_session');
+const cookieName = (secure) => (secure ? '__Host-keel_session' : 'keel_session');
 
 // -------------------------------------------------------------- the module
 export function createAuth({ monitoring = null } = {}) {
@@ -82,7 +82,7 @@ export function createAuth({ monitoring = null } = {}) {
   const setupCode = process.env.ADMIN_SETUP_CODE || crypto.randomBytes(6).toString('hex');
   const announceSetup = () => {
     if (accounts.needsSetup()) {
-      console.log(`\n  Shipdeck has no admin yet. Open it in a browser and use this setup code:\n\n      ${setupCode}\n`);
+      console.log(`\n  Keel has no admin yet. Open it in a browser and use this setup code:\n\n      ${setupCode}\n`);
     }
   };
 
@@ -180,9 +180,9 @@ export function createAuth({ monitoring = null } = {}) {
     return { hash, user };
   }
 
-  const appHeader = (req, res, next) => (req.method === 'GET' || req.get('x-shipdeck') === '1'
+  const appHeader = (req, res, next) => (req.method === 'GET' || req.get('x-keel') === '1'
     ? next()
-    : res.status(403).json({ error: 'Missing x-shipdeck header' }));
+    : res.status(403).json({ error: 'Missing x-keel header' }));
 
   const throttle = (req, res, emailKey) => {
     const wait = Math.max(ipLimiter.blockedFor(req.ip), emailKey ? emailLimiter.blockedFor(emailKey) : 0);
@@ -220,11 +220,11 @@ export function createAuth({ monitoring = null } = {}) {
 
   router.post('/setup', (req, res) => send(res, async () => {
     if (throttle(req, res)) return;
-    if (!accounts.needsSetup()) throw Object.assign(new Error('Shipdeck is already set up. Sign in instead.'), { status: 409 });
+    if (!accounts.needsSetup()) throw Object.assign(new Error('Keel is already set up. Sign in instead.'), { status: 409 });
     const code = String(req.body?.code || '').trim();
     if (!code || !crypto.timingSafeEqual(Buffer.from(tokenPad(code)), Buffer.from(tokenPad(setupCode)))) {
       failed(req);
-      throw Object.assign(new Error('That setup code is wrong. It is printed in the server log when Shipdeck starts.'), { status: 403 });
+      throw Object.assign(new Error('That setup code is wrong. It is printed in the server log when Keel starts.'), { status: 403 });
     }
     const user = await accounts.createFirstAdmin(req.body || {});
     startSession(req, res, user);

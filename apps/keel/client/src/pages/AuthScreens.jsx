@@ -20,7 +20,7 @@ function Card({ orgUrl, title, children, onSubmit }) {
         <div className="brand">
           <Logo size={32} />
           <div>
-            <div className="brand-name">Shipdeck</div>
+            <div className="brand-name">Keel</div>
             <div className="brand-org">{org}</div>
           </div>
         </div>
@@ -69,7 +69,7 @@ export function SignIn({ orgUrl, reason, onDone }) {
       <Field label="Password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       {error && <p className="text-bad small" role="alert">{error}</p>}
       <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-      <p className="muted small signin-foot">No account yet? Ask your Shipdeck admin for an invite link. Forgot your password? Your admin can send you a reset link.</p>
+      <p className="muted small signin-foot">No account yet? Ask your Keel admin for an invite link. Forgot your password? Your admin can send you a reset link.</p>
     </Card>
   );
 }
@@ -83,9 +83,9 @@ export function SetupScreen({ orgUrl, onDone }) {
     onDone();
   });
   return (
-    <Card orgUrl={orgUrl} title="Set up Shipdeck" onSubmit={submit}>
+    <Card orgUrl={orgUrl} title="Set up Keel" onSubmit={submit}>
       <p className="signin-lead">Create the admin account. You&apos;ll invite everyone else from the Users page afterwards.</p>
-      <Field label="Setup code" hint="(printed in the server log when Shipdeck starts)" value={form.code} onChange={set('code')} autoComplete="off" spellCheck={false} required autoFocus />
+      <Field label="Setup code" hint="(printed in the server log when Keel starts)" value={form.code} onChange={set('code')} autoComplete="off" spellCheck={false} required autoFocus />
       <Field label="Your name" value={form.name} onChange={set('name')} autoComplete="name" required />
       <Field label="Email" type="email" value={form.email} onChange={set('email')} autoComplete="username" required />
       <Field label="Password" hint="(at least 10 characters)" type="password" value={form.password} onChange={set('password')} autoComplete="new-password" minLength={10} required />
@@ -121,7 +121,7 @@ export function LinkAccept({ orgUrl, token, onDone }) {
   if (!info) return <div className="boot"><Loading /></div>;
   const reset = info.purpose === 'reset';
   return (
-    <Card orgUrl={orgUrl} title={reset ? 'Choose a new password' : 'Welcome to Shipdeck'} onSubmit={submit}>
+    <Card orgUrl={orgUrl} title={reset ? 'Choose a new password' : 'Welcome to Keel'} onSubmit={submit}>
       <p className="signin-lead">
         {reset ? <>Set a new password for <strong>{info.email}</strong>. You&apos;ll be signed out on other devices.</>
           : <>You&apos;ve been invited as <strong>{ROLE[info.role]}</strong> with <strong>{info.email}</strong>. Choose your password to finish.</>}
@@ -147,7 +147,7 @@ export function ConnectAzure({ orgUrl, user, reason, onDone, onSignOut }) {
     <Card orgUrl={orgUrl} title="Connect Azure DevOps" onSubmit={submit}>
       {reason === 'token-rejected' && <p className="callout small">Azure DevOps stopped accepting your token (it may have expired or been revoked). Paste a new one to continue.</p>}
       <p className="signin-lead">
-        Hi {user?.name?.split(' ')[0] || 'there'}. Link your own Azure DevOps personal access token. What you do in Shipdeck, such as votes, approvals and comments, is recorded under your name.
+        Hi {user?.name?.split(' ')[0] || 'there'}. Link your own Azure DevOps personal access token. What you do in Keel, such as votes, approvals and comments, is recorded under your name.
       </p>
       <Field label="Personal access token" type="password" autoComplete="off" spellCheck={false} value={pat} onChange={(e) => setPat(e.target.value)} placeholder="Paste your token" required autoFocus />
       {error && <p className="text-bad small" role="alert">{error}</p>}

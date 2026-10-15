@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { initials, VOTES } from './format.js';
 
-/** Shipdeck's rocket mark (same drawing as public/favicon.svg). */
+/** Keel's mark: a sailboat with its keel and ballast bulb (same drawing as public/favicon.svg). */
 export function Logo({ size = 28 }) {
   return (
     <svg className="brand-mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
       <rect width="32" height="32" rx="7" fill="var(--accent)" />
-      <g transform="rotate(45 16 16)">
-        <path d="M14 22.5h4l-.6 3.2L16 28l-1.4-2.3z" fill="#ffd166" />
-        <path d="M12.2 17.5 9 21v2.5l3.2-1.4z" fill="var(--on-accent)" />
-        <path d="M19.8 17.5 23 21v2.5l-3.2-1.4z" fill="var(--on-accent)" />
-        <path d="M16 4c2.9 2.3 4.4 5.8 4.4 9.8v8.7h-8.8v-8.7C11.6 9.8 13.1 6.3 16 4z" fill="#ffffff" />
-        <circle cx="16" cy="12.6" r="2" fill="var(--accent)" stroke="var(--on-accent)" strokeWidth="1" />
-      </g>
+      <path d="M16.6 3.8 23.8 11.4h-7.2z" fill="#ffffff" />
+      <path d="M15.4 5.8 10.6 11.4h4.8z" fill="#ffffff" opacity=".75" />
+      <path d="M4 12.6h24c-.7 2.7-2.6 4.6-5.6 4.9H10.2C7.3 17.2 5.2 15.4 4 12.6z" fill="#ffffff" />
+      <path d="M14.2 17.4h4l-1 5.6h-2.2z" fill="var(--on-accent)" />
+      <path d="M12.4 24.2c0-.9 1.8-1.6 4-1.6s4 .7 4 1.6-1.8 1.6-4 1.6-4-.7-4-1.6z" fill="var(--on-accent)" />
     </svg>
   );
 }

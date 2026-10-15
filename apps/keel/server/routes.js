@@ -10,8 +10,8 @@ export function apiRouter() {
   // a CORS preflight (which we never approve), so other sites can't drive this
   // API with your PAT behind it.
   r.use((req, res, next) => {
-    if (req.method !== 'GET' && req.get('x-shipdeck') !== '1') {
-      return res.status(403).json({ error: 'Missing x-shipdeck header' });
+    if (req.method !== 'GET' && req.get('x-keel') !== '1') {
+      return res.status(403).json({ error: 'Missing x-keel header' });
     }
     next();
   });
@@ -19,7 +19,7 @@ export function apiRouter() {
   /** Role check: refuses the request unless the signed-in role has `perm`. */
   const need = (perm) => (req, res, next) => (can(req.ctx.role || 'admin', perm)
     ? next()
-    : res.status(403).json({ error: 'Your role in Shipdeck does not allow this.', code: 'forbidden' }));
+    : res.status(403).json({ error: 'Your role in Keel does not allow this.', code: 'forbidden' }));
 
   const num = (v) => {
     const n = Number(v);

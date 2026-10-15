@@ -43,10 +43,10 @@ export function applyTheme(theme = loadTheme()) {
   root.dataset.mode = mode;
   root.dataset.accent = theme.accent;
   root.style.colorScheme = mode;
-  // Tint the favicon rocket with the accent so pinned tabs match.
+  // Tint the favicon with the accent so pinned tabs match.
   const accent = getComputedStyle(root).getPropertyValue('--accent').trim() || '#3ec486';
   const onAccent = getComputedStyle(root).getPropertyValue('--on-accent').trim() || '#0c1a13';
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='${accent}'/><g transform='rotate(45 16 16)'><path d='M14 22.5h4l-.6 3.2L16 28l-1.4-2.3z' fill='#ffd166'/><path d='M12.2 17.5 9 21v2.5l3.2-1.4z' fill='${onAccent}'/><path d='M19.8 17.5 23 21v2.5l-3.2-1.4z' fill='${onAccent}'/><path d='M16 4c2.9 2.3 4.4 5.8 4.4 9.8v8.7h-8.8v-8.7C11.6 9.8 13.1 6.3 16 4z' fill='#ffffff'/><circle cx='16' cy='12.6' r='2' fill='${accent}' stroke='${onAccent}' stroke-width='1'/></g></svg>`;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='${accent}'/><path d='M16.6 3.8 23.8 11.4h-7.2z' fill='#ffffff'/><path d='M15.4 5.8 10.6 11.4h4.8z' fill='#ffffff' opacity='.75'/><path d='M4 12.6h24c-.7 2.7-2.6 4.6-5.6 4.9H10.2C7.3 17.2 5.2 15.4 4 12.6z' fill='#ffffff'/><path d='M14.2 17.4h4l-1 5.6h-2.2z' fill='${onAccent}'/><path d='M12.4 24.2c0-.9 1.8-1.6 4-1.6s4 .7 4 1.6-1.8 1.6-4 1.6-4-.7-4-1.6z' fill='${onAccent}'/></svg>`;
   const link = document.querySelector('link[rel="icon"]');
   if (link) link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
   return mode;

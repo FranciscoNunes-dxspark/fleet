@@ -333,7 +333,7 @@ test('accounts: passwords, invites, roles and the last-admin rule', async () => 
   const path = await import('node:path');
   const fs = await import('node:fs');
   const { createAccounts, verifyPassword, hashPassword, can } = await import('../server/accounts.js');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shipdeck-acc-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-acc-'));
   const acc = createAccounts(path.join(dir, 'users.json'));
 
   assert.ok(await verifyPassword('correct horse', await hashPassword('correct horse')));
