@@ -79,7 +79,22 @@ export function createAuth({ monitoring = null } = {}) {
   const contexts = new Map(); // accountId -> { service, watcher, lastUsed }
 
   // First run: no admin yet. The setup code proves you can read the server log.
-  const setupCode = process.env.ADMIN_SETUP_CODE || crypto.randomBytes(6).toString('hex');
+  // A generated code is kept in data/ so it stays the same across restarts
+  // (dev reloads, host restarts) until the first admin exists.
+  const setupCodeFile = path.join(config.dataDir, `setup-code${suffix}.txt`);
+  const setupCode = process.env.ADMIN_SETUP_CODE || (() => {
+    if (!accounts.needsSetup()) return crypto.randomBytes(16).toString('hex');
+    try {
+      const saved = fs.readFileSync(setupCodeFile, 'utf8').trim();
+      if (/^[0-9a-f]{12}$/.test(saved)) return saved;
+    } catch {
+      // none yet
+    }
+    const code = crypto.randomBytes(6).toString('hex');
+    fs.mkdirSync(config.dataDir, { recursive: true });
+    fs.writeFileSync(setupCodeFile, code, { mode: 0o600 });
+    return code;
+  })();
   const announceSetup = () => {
     if (accounts.needsSetup()) {
       console.log(`\n  Keel has no admin yet. Open it in a browser and use this setup code:\n\n      ${setupCode}\n`);
@@ -227,6 +242,7 @@ export function createAuth({ monitoring = null } = {}) {
       throw Object.assign(new Error('That setup code is wrong. It is printed in the server log when Keel starts.'), { status: 403 });
     }
     const user = await accounts.createFirstAdmin(req.body || {});
+    fs.rm(setupCodeFile, { force: true }, () => {});
     startSession(req, res, user);
     res.json({ user: accounts.publicUser(user) });
   }));
