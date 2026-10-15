@@ -1,0 +1,826 @@
+import { stageSummary } from '../domain/releases.js';
+
+// Demo provider: a deterministic, in-memory Azure DevOps organization.
+// It implements exactly the same methods and return shapes as
+// server/azdo/provider.js, and write actions really mutate the data so the
+// whole UI can be exercised without credentials.
+
+const ORG = 'https://dev.azure.com/contoso-demo';
+const NOW = Date.now();
+const H = 3_600_000;
+const D = 24 * H;
+const iso = (ms) => new Date(ms).toISOString();
+const ago = (ms) => iso(NOW - ms);
+
+function rng(seed) {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = rng(42);
+const pick = (arr) => arr[Math.floor(rand() * arr.length)];
+const between = (a, b) => a + rand() * (b - a);
+const sample = (arr, n) => [...arr].sort(() => rand() - 0.5).slice(0, n);
+
+const person = (id, displayName, email) => ({ id, displayName, uniqueName: email, imageUrl: null, isContainer: false });
+const ME = person('u-lead', 'You (Tech Lead)', 'lead@contoso-demo.com');
+const PEOPLE = [
+  ME,
+  person('u-priya', 'Priya Shah', 'priya@contoso-demo.com'),
+  person('u-marcus', 'Marcus Chen', 'marcus@contoso-demo.com'),
+  person('u-sofia', 'Sofia Alvarez', 'sofia@contoso-demo.com'),
+  person('u-dan', "Dan O'Brien", 'dan@contoso-demo.com'),
+  person('u-aisha', 'Aisha Bello', 'aisha@contoso-demo.com'),
+  person('u-tom', 'Tom Kowalski', 'tom@contoso-demo.com'),
+  person('u-lena', 'Lena Fischer', 'lena@contoso-demo.com'),
+];
+const DEVS = PEOPLE.slice(1);
+
+const AGILE = {
+  'User Story': [['New', 'Proposed'], ['Active', 'InProgress'], ['Resolved', 'Resolved'], ['Closed', 'Completed'], ['Removed', 'Removed']],
+  Bug: [['New', 'Proposed'], ['Active', 'InProgress'], ['Resolved', 'Resolved'], ['Closed', 'Completed'], ['Removed', 'Removed']],
+  Task: [['New', 'Proposed'], ['Active', 'InProgress'], ['Closed', 'Completed'], ['Removed', 'Removed']],
+  Feature: [['New', 'Proposed'], ['Active', 'InProgress'], ['Resolved', 'Resolved'], ['Closed', 'Completed'], ['Removed', 'Removed']],
+  Epic: [['New', 'Proposed'], ['Active', 'InProgress'], ['Resolved', 'Resolved'], ['Closed', 'Completed'], ['Removed', 'Removed']],
+};
+const SCRUM = {
+  'Product Backlog Item': [['New', 'Proposed'], ['Approved', 'Proposed'], ['Committed', 'InProgress'], ['Done', 'Completed'], ['Removed', 'Removed']],
+  Bug: [['New', 'Proposed'], ['Approved', 'Proposed'], ['Committed', 'InProgress'], ['Done', 'Completed'], ['Removed', 'Removed']],
+  Task: [['To Do', 'Proposed'], ['In Progress', 'InProgress'], ['Done', 'Completed'], ['Removed', 'Removed']],
+  Feature: [['New', 'Proposed'], ['In Progress', 'InProgress'], ['Done', 'Completed'], ['Removed', 'Removed']],
+  Epic: [['New', 'Proposed'], ['In Progress', 'InProgress'], ['Done', 'Completed'], ['Removed', 'Removed']],
+};
+
+const EPICS = {
+  Commerce: [['Checkout 2.0', ['Guest checkout', 'Payments resilience', 'Refunds']], ['Search & discovery', ['Typo-tolerant search', 'Catalog performance']]],
+  Platform: [['Zero-trust identity', ['Enterprise SSO', 'Login protection']], ['Observability', ['Distributed tracing', 'Audit trail']]],
+  Mobile: [['Mobile 3.0', ['Offline mode', 'Theming']], ['Engagement', ['Push notifications']]],
+};
+const toStateMap = (proc) => Object.fromEntries(Object.entries(proc).map(([t, s]) => [t, s.map(([name, category]) => ({ name, category }))]));
+
+const PROJECTS = [
+  { id: 'p-commerce', name: 'Commerce', process: AGILE, story: 'User Story', repos: ['storefront-web', 'checkout-api', 'payments-service', 'catalog-service'] },
+  { id: 'p-platform', name: 'Platform', process: AGILE, story: 'User Story', repos: ['identity-service', 'api-gateway', 'infra-terraform', 'shared-libs'] },
+  { id: 'p-mobile', name: 'Mobile', process: SCRUM, story: 'Product Backlog Item', repos: ['mobile-app', 'notifications-service'] },
+].map((p) => ({
+  ...p,
+  stateMap: toStateMap(p.process),
+  team: { id: `t-${p.id}`, name: `${p.name} Team` },
+  group: { id: `g-${p.id}`, displayName: `[${p.name}]\\${p.name} Team`, uniqueName: '', imageUrl: null, isContainer: true },
+  repoObjs: p.repos.map((r) => ({
+    id: `r-${r}`,
+    name: r,
+    projectId: p.id,
+    projectName: p.name,
+    defaultBranch: r === 'infra-terraform' ? 'master' : 'main',
+    webUrl: `${ORG}/${p.name}/_git/${r}`,
+  })),
+}));
+const projectById = (id) => PROJECTS.find((p) => p.id === id || p.name === id);
+const ALL_REPOS = PROJECTS.flatMap((p) => p.repoObjs);
+
+const SPRINTS = (p) => ({
+  previous: { id: `${p.id}-s41`, name: 'Sprint 41', path: `${p.name}\\Sprint 41`, startDate: ago(20 * D), finishDate: ago(7 * D) },
+  current: { id: `${p.id}-s42`, name: 'Sprint 42', path: `${p.name}\\Sprint 42`, startDate: ago(6 * D), finishDate: iso(NOW + 8 * D) },
+});
+
+// ---------------------------------------------------------------- work items
+const STORY_TITLES = [
+  'Guest checkout with saved addresses', 'Paginate order history API', 'Apple Pay support on web', 'Rate limit login attempts per IP',
+  'Product search typo tolerance', 'Migrate catalog images to CDN', 'Refund flow for partial shipments', 'SSO with customer Azure AD tenants',
+  'Push notification preferences screen', 'Offline cart sync for mobile', 'Export invoices as PDF', 'Feature flags for promo banners',
+  'Audit log for admin actions', 'Terraform module for Redis cache', 'Upgrade shared-libs to .NET 9', 'Dark mode for mobile app',
+  'Inventory reservation timeout', 'Gateway request tracing headers', 'Split payments-service DB schema', 'Accessibility pass on checkout',
+];
+const BUG_TITLES = [
+  'Checkout total rounds incorrectly for JPY', 'Token refresh loop after password change', 'Crash on Android 14 when opening camera',
+  'Duplicate webhook delivery on retry', 'Search returns archived products', 'Gateway 502 under load on /orders', 'Coupon applied twice on reload',
+  'Push notifications not delivered on iOS 18', 'Memory leak in catalog image resizer', 'Timezone shift in order export',
+];
+const TASK_TITLES = ['Write integration tests', 'Update API contract', 'Code review follow-ups', 'Add telemetry', 'Update runbook', 'Spike: evaluate approach', 'DB migration script', 'UI polish'];
+
+const workItems = new Map();
+let nextWi = 4100;
+
+function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, severity, tags = [], points, remaining, ageDays, stateDays, parentId, blocked }) {
+  const states = p.process[type];
+  const [state, stateCategory] = states[stateIdx];
+  const id = nextWi++;
+  const created = NOW - ageDays * D;
+  const stateChanged = NOW - Math.min(stateDays, ageDays) * D;
+  const item = {
+    id,
+    rev: 3,
+    projectName: p.name,
+    type,
+    title,
+    state,
+    stateCategory,
+    reason: null,
+    assignedTo,
+    createdBy: pick(PEOPLE),
+    iterationPath: sprint ? sprint.path : p.name,
+    areaPath: p.name,
+    tags,
+    priority,
+    severity: type === 'Bug' ? severity : null,
+    storyPoints: type === 'Task' ? null : points,
+    remainingWork: type === 'Task' ? remaining : null,
+    blocked: !!blocked,
+    parentId: parentId ?? null,
+    createdAt: iso(created),
+    changedAt: iso(Math.max(stateChanged, NOW - between(0, stateDays) * D)),
+    stateChangedAt: iso(stateChanged),
+    closedAt: stateCategory === 'Completed' ? iso(stateChanged) : null,
+    webUrl: `${ORG}/${p.name}/_workitems/edit/${id}`,
+    _description: `${title}.\n\nAs a customer I want this to work reliably so that I can complete my task without contacting support.`,
+    _acceptance: '• Happy path covered by automated tests\n• Telemetry added\n• Docs updated',
+    _comments: rand() < 0.5 ? [{ author: pick(DEVS), text: 'Picked this up, will update by EOD.', createdAt: iso(stateChanged + H) }] : [],
+    _prs: [],
+  };
+  workItems.set(id, item);
+  return item;
+}
+
+for (const p of PROJECTS) {
+  const { previous, current } = SPRINTS(p);
+  const features = [];
+  EPICS[p.name].forEach(([epicTitle, featureTitles], ei) => {
+    const epic = addWorkItem(p, { type: 'Epic', title: epicTitle, stateIdx: 1, assignedTo: ME, priority: ei + 1, ageDays: 120, stateDays: 60 });
+    featureTitles.forEach((ft, fi) => {
+      const done = ei === 0 && fi === 0 && rand() < 0.5;
+      features.push(addWorkItem(p, {
+        type: 'Feature', title: ft, parentId: epic.id, stateIdx: done ? p.process.Feature.findIndex(([, c]) => c === 'Completed') : fi === 0 ? 1 : 0,
+        assignedTo: pick(DEVS), priority: 2, ageDays: 90, stateDays: between(3, 30),
+      }));
+    });
+  });
+  const stories = [...STORY_TITLES].sort(() => rand() - 0.5).slice(0, 9);
+  stories.forEach((title, i) => {
+    const sprint = i < 6 ? current : i < 8 ? previous : null;
+    const stateIdx = sprint === previous ? 3 : sprint ? [0, 1, 1, 2, 3, 1][i] ?? 1 : 0;
+    const assignedTo = sprint ? pick(DEVS) : rand() < 0.5 ? null : pick(DEVS);
+    const story = addWorkItem(p, {
+      type: p.story, title, stateIdx, sprint, assignedTo, priority: pick([1, 2, 2, 3]), points: pick([1, 2, 3, 5, 8]),
+      ageDays: between(8, 40), stateDays: stateIdx === 1 ? between(0.5, 9) : between(1, 6),
+      tags: i === 2 ? ['Blocked', 'needs-design'] : i === 4 ? ['tech-debt'] : [],
+      parentId: i < 8 ? features[i % features.length].id : undefined,
+    });
+    if (sprint === current) {
+      const tasks = sample(TASK_TITLES, 2 + Math.floor(rand() * 2));
+      tasks.forEach((t, j) => {
+        const done = story.stateCategory === 'Completed' || j === 0;
+        const taskStates = p.process.Task;
+        addWorkItem(p, {
+          type: 'Task', title: `${t} — ${title.split(' ').slice(0, 3).join(' ')}`, sprint,
+          stateIdx: done ? taskStates.findIndex(([, c]) => c === 'Completed') : j === 1 ? 1 : 0,
+          assignedTo: story.assignedTo, priority: 2, remaining: done ? 0 : pick([2, 4, 6, 8]), ageDays: 6, stateDays: between(0.2, 5), parentId: story.id,
+        });
+      });
+    }
+  });
+  const bugs = [...BUG_TITLES].sort(() => rand() - 0.5).slice(0, 5);
+  bugs.forEach((title, i) => {
+    const sprint = i < 3 ? current : null;
+    addWorkItem(p, {
+      type: 'Bug', title, sprint, stateIdx: [1, 0, 2, 0, 0][i], priority: [1, 1, 2, 3, 2][i], severity: ['1 - Critical', '2 - High', '3 - Medium', '3 - Medium', '4 - Low'][i],
+      assignedTo: i === 1 ? null : pick(DEVS), points: pick([1, 2, 3]), ageDays: between(1, 25), stateDays: i === 0 ? 7.5 : between(0.5, 4),
+      tags: i === 3 ? ['customer-reported'] : [], blocked: p.name === 'Platform' && i === 0,
+    });
+  });
+}
+// A few items for the lead personally.
+for (const p of PROJECTS.slice(0, 2)) {
+  addWorkItem(p, { type: 'Task', title: `Architecture review: ${p.name} Q4 roadmap`, sprint: SPRINTS(p).current, stateIdx: 1, assignedTo: ME, priority: 2, remaining: 6, ageDays: 5, stateDays: 2 });
+}
+
+// ------------------------------------------------------------- pull requests
+const PR_TITLES = [
+  'Add retry policy to payment provider client', 'Refactor cart totals into pricing module', 'Fix flaky checkout e2e test', 'Introduce OpenTelemetry tracing',
+  'Bump dependencies (security patches)', 'Implement refund endpoint', 'Cache product listings in Redis', 'Remove legacy v1 auth middleware',
+  'Add PDF invoice export', 'Fix timezone handling in order export', 'Paginate order history', 'Mobile: dark mode theme tokens',
+  'Mobile: offline cart persistence', 'Terraform: Redis module + outputs', 'Gateway: propagate traceparent header', 'Identity: rate limit login by IP',
+  'Catalog: typo-tolerant search analyzer', 'Notifications: APNs token refresh', 'Shared-libs: .NET 9 upgrade', 'Split payments schema (part 1)',
+  'Feature flags for promo banners', 'Admin audit log events', 'Fix duplicate webhook delivery', 'Accessibility fixes on checkout form',
+  'Mobile: camera permission crash on Android 14', 'Gateway: 502s under load — tune keepalive', 'Coupon idempotency key', 'Image resizer memory leak fix',
+];
+const BRANCH = (t) => `feature/${t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}`;
+
+const prs = new Map();
+let nextPr = 812;
+
+function makeThreads(pr, author, reviewers) {
+  const n = Math.floor(rand() * 5);
+  const threads = [];
+  for (let i = 0; i < n; i++) {
+    const who = pick(reviewers.length ? reviewers : DEVS);
+    threads.push({
+      threadId: i + 1,
+      status: rand() < 0.45 ? 'active' : 'fixed',
+      filePath: rand() < 0.7 ? pick(['/src/Program.cs', '/src/services/Pricing.cs', '/src/api/orders.ts', '/README.md', '/tests/checkout.spec.ts']) : null,
+      author: who,
+      content: pick(['Can we add a test for the empty case?', 'Nit: naming.', 'This will N+1 on large carts — batch it?', 'Should this be behind a feature flag?', 'LGTM after the null check.', 'Why not reuse the existing helper in shared-libs?']),
+      publishedAt: iso(Date.parse(pr.createdAt) + between(0.5, 30) * H),
+    });
+    if (rand() < 0.5) threads.push({ threadId: i + 1, status: threads.at(-1).status, filePath: threads.at(-1).filePath, author, content: 'Good catch, updated.', publishedAt: iso(Date.parse(threads.at(-1).publishedAt) + 2 * H) });
+  }
+  return threads;
+}
+
+function addPR(p, repo, { title, author, ageH, status = 'active', closedAgeH, isDraft = false, mergeStatus = 'succeeded', reviewers, autoComplete = false, target }) {
+  const id = nextPr++;
+  const createdAt = ago(ageH * H);
+  const pr = {
+    key: `${p.id}/${repo.id}/${id}`,
+    id,
+    title,
+    projectId: p.id,
+    projectName: p.name,
+    repoId: repo.id,
+    repoName: repo.name,
+    author,
+    createdAt,
+    closedAt: closedAgeH != null ? ago(closedAgeH * H) : null,
+    status,
+    isDraft,
+    mergeStatus,
+    sourceBranch: BRANCH(title),
+    targetBranch: target || repo.defaultBranch,
+    reviewers,
+    labels: rand() < 0.2 ? [pick(['hotfix', 'breaking-change', 'needs-qa'])] : [],
+    autoComplete,
+    webUrl: `${ORG}/${p.name}/_git/${repo.name}/pullrequest/${id}`,
+  };
+  const candidates = [...workItems.values()].filter((w) => w.projectName === p.name && w.type !== 'Task');
+  pr._workItemIds = rand() < 0.8 ? sample(candidates, 1 + Math.floor(rand() * 2)).map((w) => w.id) : [];
+  pr._workItemIds.forEach((wid) => workItems.get(wid)._prs.push({ projectId: p.id, repoId: repo.id, id }));
+  pr._threads = makeThreads(pr, author, reviewers.filter((r) => !r.isContainer));
+  pr._buildOk = rand() < 0.8;
+  const pool = ['src/api/Controllers/OrdersController.cs', 'src/api/Services/PricingService.cs', 'src/api/Startup.cs', 'src/web/components/Cart.tsx',
+    'src/web/components/CheckoutForm.tsx', 'src/web/styles/checkout.css', 'tests/Pricing.Tests/PricingServiceTests.cs', 'README.md', 'azure-pipelines.yml',
+    'src/shared/Money.cs', 'docs/adr/0007-pricing-module.md', 'src/web/hooks/useCart.ts'];
+  pr._files = sample(pool, 2 + Math.floor(rand() * 7)).map((path, i) => ({
+    path: `/${path}`,
+    kind: i === 0 && rand() < 0.4 ? 'added' : i === 1 && rand() < 0.15 ? 'deleted' : i === 2 && rand() < 0.15 ? 'renamed' : 'edited',
+    originalPath: null,
+  })).map((f) => (f.kind === 'renamed' ? { ...f, originalPath: f.path.replace(/(\.\w+)$/, '.old$1') } : f)).sort((a, b) => a.path.localeCompare(b.path));
+  prs.set(pr.key, pr);
+  return pr;
+}
+
+const rv = (who, vote = 0, isRequired = false) => ({ ...who, vote, isRequired, hasDeclined: false });
+
+function activeReviewers(p, author, ageH) {
+  const people = sample(PEOPLE.filter((x) => x.id !== author.id), 1 + Math.floor(rand() * 3));
+  const list = people.map((x) => {
+    const r = rand();
+    const vote = ageH < 4 ? 0 : r < 0.45 ? 0 : r < 0.75 ? 10 : r < 0.85 ? 5 : r < 0.95 ? -5 : -10;
+    return rv(x, vote);
+  });
+  if (rand() < 0.6) list.push(rv(p.group, rand() < 0.3 ? 10 : 0, true));
+  return list;
+}
+
+// Active PRs: random mix plus hand-placed cases so every lead signal shows up.
+for (let i = 0; i < 26; i++) {
+  const p = pick(PROJECTS);
+  const repo = pick(p.repoObjs);
+  const author = rand() < 0.12 ? ME : pick(DEVS);
+  const ageH = Math.pow(rand(), 3) * 14 * 24 + 0.5;
+  addPR(p, repo, {
+    title: PR_TITLES[i % PR_TITLES.length], author, ageH,
+    isDraft: rand() < 0.1, mergeStatus: rand() < 0.1 ? 'conflicts' : 'succeeded',
+    reviewers: activeReviewers(p, author, ageH),
+  });
+}
+{
+  const [c, pl, m] = PROJECTS;
+  addPR(c, c.repoObjs[1], { title: 'Hotfix: currency rounding for JPY totals', author: DEVS[0], ageH: 14, reviewers: [rv(ME), rv(DEVS[2]), rv(c.group, 0, true)], target: 'main' });
+  addPR(pl, pl.repoObjs[0], { title: 'Identity: rotate signing keys automatically', author: DEVS[3], ageH: 30, reviewers: [rv(ME), rv(DEVS[5], 10)] });
+  addPR(m, m.repoObjs[0], { title: 'Mobile: migrate to new navigation stack', author: DEVS[4], ageH: 52, reviewers: [] });
+  addPR(pl, pl.repoObjs[1], { title: 'Gateway: drop deprecated /v1 routes', author: DEVS[1], ageH: 70, reviewers: [rv(DEVS[2], -10), rv(ME, 0)] });
+  addPR(c, c.repoObjs[0], { title: 'Storefront: lazy-load product carousel', author: DEVS[5], ageH: 40, reviewers: [rv(DEVS[0], 10), rv(ME, 10), rv(c.group, 10, true)] });
+  addPR(c, c.repoObjs[2], { title: 'Payments: PCI log scrubbing', author: DEVS[6], ageH: 24 * 13, mergeStatus: 'conflicts', reviewers: [rv(DEVS[1], -5), rv(ME, 5)] });
+  addPR(pl, pl.repoObjs[2], { title: 'Terraform: private endpoints for SQL', author: ME, ageH: 20, reviewers: [rv(DEVS[3], 0), rv(DEVS[6], 10)] });
+}
+
+// Completed/abandoned PRs over the last ~90 days for insights and release notes.
+for (let i = 0; i < 140; i++) {
+  const p = pick(PROJECTS);
+  const repo = pick(p.repoObjs);
+  const author = rand() < 0.1 ? ME : pick(DEVS);
+  const closedAgeH = between(2, 90 * 24);
+  const cycleH = Math.pow(rand(), 1.8) * 140 + 1;
+  const reviewers = sample(PEOPLE.filter((x) => x.id !== author.id), 1 + Math.floor(rand() * 2)).map((x) => rv(x, rand() < 0.8 ? 10 : 5));
+  addPR(p, repo, {
+    title: PR_TITLES[(i * 7) % PR_TITLES.length], author, ageH: closedAgeH + cycleH, closedAgeH,
+    status: rand() < 0.06 ? 'abandoned' : 'completed', reviewers,
+  });
+}
+
+// --------------------------------------------------------------------- builds
+const builds = [];
+let nextBuild = 20500;
+const definitions = ALL_REPOS.flatMap((r, i) => [
+  { id: 100 + i * 2, name: `${r.name}-CI`, path: '\\', repo: r, failRate: { 'checkout-api': 0.35, 'mobile-app': 0.3, 'identity-service': 0.2 }[r.name] ?? 0.06 },
+  ...(i % 3 === 0 ? [{ id: 101 + i * 2, name: `${r.name}-nightly`, path: '\\nightly', repo: r, failRate: 0.15, nightly: true }] : []),
+]);
+for (const def of definitions) {
+  const p = projectById(def.repo.projectId);
+  const runs = def.nightly ? 14 : 30;
+  for (let i = 0; i < runs; i++) {
+    // Force a red latest default-branch run for the "known broken" pipelines.
+    const forcedFail = i === 0 && ['checkout-api-CI', 'mobile-app-CI'].includes(def.name);
+    const finished = forcedFail ? NOW - 20 * 60_000 : def.nightly ? NOW - (i * D + 3 * H) : NOW - between(0.5, 14 * 24) * H;
+    const r = rand();
+    const result = forcedFail || r < def.failRate ? 'failed' : r < def.failRate + 0.04 ? 'partiallySucceeded' : r < def.failRate + 0.06 ? 'canceled' : 'succeeded';
+    const prBuild = !def.nightly && !forcedFail && rand() < 0.4;
+    builds.push({
+      id: nextBuild++,
+      projectId: p.id,
+      projectName: p.name,
+      definition: { id: def.id, name: def.name, path: def.path },
+      buildNumber: `${new Date(finished).toISOString().slice(0, 10).replace(/-/g, '')}.${i + 1}`,
+      status: 'completed',
+      result,
+      reason: def.nightly ? 'schedule' : prBuild ? 'pullRequest' : 'individualCI',
+      sourceBranch: prBuild ? `refs/pull/${800 + i}/merge` : def.repo.defaultBranch,
+      repoId: def.repo.id,
+      repoName: def.repo.name,
+      requestedFor: def.nightly ? person('svc', 'Scheduler', '') : pick(DEVS),
+      queuedAt: iso(finished - 9 * 60_000),
+      startedAt: iso(finished - 8 * 60_000),
+      finishedAt: iso(finished),
+      webUrl: `${ORG}/${p.name}/_build/results?buildId=${nextBuild - 1}`,
+    });
+  }
+}
+{
+  const def = definitions.find((d) => d.name === 'storefront-web-CI');
+  const p = projectById(def.repo.projectId);
+  builds.push({
+    id: nextBuild++, projectId: p.id, projectName: p.name, definition: { id: def.id, name: def.name, path: def.path },
+    buildNumber: 'running.1', status: 'inProgress', result: null, reason: 'individualCI', sourceBranch: 'main', repoId: def.repo.id,
+    repoName: def.repo.name, requestedFor: DEVS[2], queuedAt: ago(6 * 60_000), startedAt: ago(5 * 60_000), finishedAt: null,
+    webUrl: `${ORG}/${p.name}/_build/results?buildId=${nextBuild - 1}`,
+  });
+}
+
+// --------------------------------------------------- classic releases + approvals
+let nextRelease = 300;
+let nextEnv = 9000;
+const relWebUrl = (p, id) => `${ORG}/${p.name}/_releaseProgress?releaseId=${id}&_a=release-pipeline-progress`;
+const RELEASE_DEFS = [
+  { id: 1, project: PROJECTS[0], name: 'Storefront release', path: '\\Web', artifact: 'storefront-web-CI', stages: ['QA', 'Staging', 'Production'] },
+  { id: 2, project: PROJECTS[1], name: 'Identity service release', path: '\\Services', artifact: 'identity-service-CI', stages: ['Dev', 'QA', 'Production'] },
+  { id: 3, project: PROJECTS[0], name: 'Checkout API release', path: '\\Services', artifact: 'checkout-api-CI', stages: ['QA', 'Production'] },
+].map((d) => ({ ...d, stageDefs: d.stages.map((name, i) => ({ id: d.id * 10 + i, name, rank: i + 1 })), releases: [] }));
+
+function addRelease(def, { daysAgo, statuses, by = pick(DEVS) }) {
+  const id = nextRelease++;
+  const created = NOW - daysAgo * D;
+  const r = {
+    id, name: `Release-${id - 250}`, createdOn: iso(created), createdBy: by, webUrl: relWebUrl(def.project, id),
+    envs: def.stageDefs.map((sd, i) => ({
+      id: nextEnv++, definitionEnvironmentId: sd.id, name: sd.name, status: statuses[i] || 'notStarted',
+      at: iso(created + (i + 1) * 2 * H), requestedFor: i === 0 ? null : by, reason: i === 0 ? 'automated' : 'manual',
+    })),
+  };
+  def.releases.unshift(r);
+  return r;
+}
+{
+  const [store, identity, checkout] = RELEASE_DEFS;
+  for (let i = 9; i >= 2; i--) addRelease(store, { daysAgo: i * 2, statuses: ['succeeded', 'succeeded', 'succeeded'] });
+  addRelease(store, { daysAgo: 1, statuses: ['succeeded', 'succeeded', 'inProgress'] }); // waiting on a Production approval
+  for (let i = 6; i >= 1; i--) addRelease(identity, { daysAgo: i * 3, statuses: ['succeeded', i === 1 ? 'rejected' : 'succeeded', i === 1 ? 'notStarted' : 'succeeded'] });
+  for (let i = 5; i >= 1; i--) addRelease(checkout, { daysAgo: i * 2.5, statuses: ['succeeded', i <= 2 ? 'notStarted' : 'succeeded'] });
+}
+const releaseApprovals = [];
+{
+  const store = RELEASE_DEFS[0];
+  const r = store.releases[0];
+  releaseApprovals.push({
+    kind: 'release', id: 5001, projectId: store.project.id, projectName: store.project.name, pipeline: store.name, stage: 'Production',
+    run: { name: r.name, webUrl: r.webUrl }, createdOn: ago(5 * H), instructions: 'Check the Staging smoke tests first.', minRequired: 1,
+    approvers: [ME], canDecide: null, _release: r, _env: r.envs[2],
+  });
+}
+// A YAML environment check waiting on the running storefront build.
+const pipelineApprovals = [{
+  kind: 'yaml', id: 'a1b2c3d4-0000-4000-8000-000000000001', projectId: PROJECTS[0].id, projectName: PROJECTS[0].name,
+  pipeline: 'storefront-web-CI', stage: 'Deploy to Production', run: null, createdOn: ago(25 * 60_000),
+  instructions: 'Please validate the release before continuing', minRequired: 1, approvers: [], canDecide: true,
+}];
+
+function finishLater(env, status = 'succeeded', ms = 15_000) {
+  setTimeout(() => Object.assign(env, { status, at: iso(Date.now()) }), ms).unref?.();
+}
+
+// ------------------------------------------------------------------ provider
+const strip = ({ _description, _acceptance, _comments, _prs, _board, ...rest }) => ({ ...rest });
+const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
+const delay = (v) => new Promise((r) => setTimeout(() => r(v), 40 + Math.random() * 120));
+const notFound = (what) => Object.assign(new Error(`${what} not found`), { status: 404 });
+
+function getPR(projectId, repoId, prId) {
+  const pr = prs.get(`${projectById(projectId)?.id}/${repoId}/${prId}`);
+  if (!pr) throw notFound(`Pull request ${prId}`);
+  return pr;
+}
+
+/**
+ * Keeps the demo org alive: every 45s a teammate votes on your PR, a new
+ * review request arrives, a pipeline breaks or a deployment needs approval,
+ * so live updates and notifications can be tried without a real org.
+ */
+function startDemoActivity() {
+  let step = 0;
+  const events = [
+    () => {
+      const pr = [...prs.values()].find((p) => p.status === 'active' && p.author.id === ME.id && p.reviewers.some((r) => !r.isContainer && r.vote === 0));
+      const r = pr?.reviewers.find((x) => !x.isContainer && x.vote === 0);
+      if (r) r.vote = 10;
+    },
+    () => {
+      const p = pick(PROJECTS);
+      const author = pick(DEVS);
+      const pr = addPR(p, pick(p.repoObjs), {
+        title: pick(['Add health checks to the gateway', 'Fix N+1 query in order history', 'Bump Node to 22 LTS', 'Retry flaky payment webhook']),
+        author, ageH: 0, reviewers: [rv(ME), rv(pick(DEVS.filter((d) => d.id !== author.id)))],
+      });
+      pr.createdAt = iso(Date.now());
+    },
+    () => {
+      const def = definitions.find((d) => !d.nightly && !builds.some((b) => b.definition.id === d.id && b.status === 'completed' && b.result === 'failed' && Date.now() - Date.parse(b.finishedAt) < H));
+      if (!def) return;
+      const p = projectById(def.repo.projectId);
+      builds.unshift({
+        id: nextBuild++, projectId: p.id, projectName: p.name, definition: { id: def.id, name: def.name, path: def.path },
+        buildNumber: `${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.live`, status: 'completed', result: 'failed', reason: 'individualCI',
+        sourceBranch: def.repo.defaultBranch, repoId: def.repo.id, repoName: def.repo.name, requestedFor: pick(DEVS),
+        queuedAt: iso(Date.now() - 8 * 60_000), startedAt: iso(Date.now() - 7 * 60_000), finishedAt: iso(Date.now()), webUrl: `${ORG}/${p.name}/_build/results?buildId=${nextBuild - 1}`,
+      });
+    },
+    () => {
+      if (pipelineApprovals.length) return;
+      pipelineApprovals.push({
+        kind: 'yaml', id: `a1b2c3d4-0000-4000-8000-${String(Date.now()).slice(-12)}`, projectId: PROJECTS[0].id, projectName: PROJECTS[0].name,
+        pipeline: 'storefront-web-CI', stage: 'Deploy to Production', run: null, createdOn: iso(Date.now()),
+        instructions: 'Please validate the release before continuing', minRequired: 1, approvers: [], canDecide: true,
+      });
+    },
+  ];
+  const t = setInterval(() => events[step++ % events.length](), 45_000);
+  t.unref?.();
+}
+
+export function createMockProvider() {
+  startDemoActivity();
+  return {
+    kind: 'mock',
+    orgUrl: ORG,
+    fetchOrgImage: () => Promise.reject(Object.assign(new Error('No images in demo mode'), { status: 404 })),
+    me: () => delay({ ...ME }),
+    listProjects: () => delay(PROJECTS.map((p) => ({ id: p.id, name: p.name, description: `${p.name} product area`, webUrl: `${ORG}/${p.name}` }))),
+    listTeams: (projectId) => delay([projectById(projectId).team]),
+    listTeamMembers: (projectId) => delay(projectId === 'p-mobile' ? [ME, ...DEVS.slice(3)] : PEOPLE.slice(0, 6)),
+    getTeamAreas: (projectId) => delay([{ value: projectById(projectId).name, includeChildren: true }]),
+    getCurrentIteration: (projectId) => delay(SPRINTS(projectById(projectId)).current),
+    listRepos: (projectId) => delay(projectById(projectId).repoObjs.map((r) => ({ ...r }))),
+
+    listPullRequests: (projectId, { status = 'active', closedAfter } = {}) => delay(
+      [...prs.values()]
+        .filter((pr) => pr.projectId === projectById(projectId).id)
+        .filter((pr) => (status === 'completed' ? pr.status === 'completed' : status === 'all' ? true : pr.status === status))
+        .filter((pr) => !closedAfter || (pr.closedAt && Date.parse(pr.closedAt) >= Date.parse(closedAfter)))
+        .map(stripPR),
+    ),
+
+    async getPullRequest(projectId, repoId, prId) {
+      const pr = getPR(projectId, repoId, prId);
+      const approvals = pr.reviewers.filter((r) => r.vote >= 5 && !r.isContainer).length;
+      const linked = pr._workItemIds.map((id) => workItems.get(id)).filter(Boolean);
+      return delay({
+        ...stripPR(pr),
+        description: pr._description ?? `## Summary\n${pr.title}.\n\n## Changes\n- Moved logic into \`PricingService\`\n- **Breaking:** removed the v1 endpoint\n\n| Area | Risk |\n|---|---|\n| API | Low |\n| Web | Medium |\n\n## Testing\n- [x] Unit tests added\n- [ ] Verified on QA\n\nCC @<${DEVS[0].id}>`,
+        autoCompleteSetBy: pr.autoComplete ? pr.author : null,
+        completionOptions: null,
+        threads: {
+          total: new Set(pr._threads.map((t) => t.threadId)).size,
+          active: new Set(pr._threads.filter((t) => t.status === 'active').map((t) => t.threadId)).size,
+          recent: [...pr._threads].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)).slice(0, 15),
+        },
+        workItems: linked.map(({ id, title, type, state, stateCategory, webUrl }) => ({ id, title, type, state, stateCategory, webUrl })),
+        files: { iteration: 1, total: pr._files.length, truncated: false, items: pr._files.map((f) => ({ ...f })) },
+        policies: [
+          { name: 'Minimum number of reviewers (2)', status: approvals >= 2 ? 'approved' : 'queued', isBlocking: true },
+          { name: `Build: ${pr.repoName}-CI`, status: pr.isDraft ? 'queued' : pr._buildOk ? 'approved' : 'rejected', isBlocking: true },
+          { name: 'Work items linked', status: linked.length ? 'approved' : 'rejected', isBlocking: false },
+          { name: 'Comments resolved', status: pr._threads.some((t) => t.status === 'active') ? 'rejected' : 'approved', isBlocking: true },
+        ],
+      });
+    },
+
+    getPullRequestWorkItemIds: (projectId, repoId, prId) => delay([...getPR(projectId, repoId, prId)._workItemIds]),
+
+    listReleases(projectId) {
+      const p = projectById(projectId);
+      return delay(RELEASE_DEFS.filter((d) => d.project.id === p.id).map((d) => ({
+        id: d.id, name: d.name, path: d.path, projectId: p.id, projectName: p.name,
+        webUrl: `${ORG}/${p.name}/_release?definitionId=${d.id}&view=mine&_a=releases`,
+        artifacts: [{ type: 'Build', alias: `_${d.artifact}`, sourceId: definitions.find((x) => x.name === d.artifact)?.id ?? null, sourceName: d.artifact, isPrimary: true }],
+        stages: stageSummary(d.stageDefs, d.releases),
+        releases: d.releases.slice(0, 10).map((r) => ({
+          id: r.id, name: r.name, createdOn: r.createdOn, createdBy: r.createdBy, webUrl: r.webUrl,
+          stages: r.envs.map((e) => ({ id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: e.name, status: e.status })),
+        })),
+      })));
+    },
+
+    listReleaseApprovals: (projectId) => delay(releaseApprovals
+      .filter((a) => a.projectId === projectById(projectId).id)
+      .map(({ _release, _env, ...a }) => ({ ...a }))),
+
+    listPipelineApprovals(projectId, projectName, runningBuilds = []) {
+      const run = runningBuilds.find((b) => b.definition.name === 'storefront-web-CI');
+      return delay(pipelineApprovals
+        .filter((a) => a.projectId === projectById(projectId).id)
+        .map((a) => ({ ...a, run: run ? { name: run.buildNumber, webUrl: run.webUrl, branch: run.sourceBranch } : a.run })));
+    },
+
+    async decideReleaseApproval(projectName, approvalId, status) {
+      const i = releaseApprovals.findIndex((a) => a.id === Number(approvalId));
+      if (i < 0) throw notFound('Approval');
+      const [a] = releaseApprovals.splice(i, 1);
+      if (status === 'approved') finishLater(a._env, 'succeeded', 10_000);
+      else Object.assign(a._env, { status: 'rejected', at: iso(Date.now()) });
+      return delay();
+    },
+
+    async decidePipelineApproval(projectName, approvalId) {
+      const i = pipelineApprovals.findIndex((a) => a.id === approvalId);
+      if (i < 0) throw notFound('Approval');
+      pipelineApprovals.splice(i, 1);
+      return delay();
+    },
+
+    async createRelease(projectName, definitionId) {
+      const def = RELEASE_DEFS.find((d) => d.id === Number(definitionId));
+      if (!def) throw notFound('Release pipeline');
+      const r = addRelease(def, { daysAgo: 0, statuses: ['inProgress'], by: ME });
+      finishLater(r.envs[0]);
+      return delay({ id: r.id, name: r.name, webUrl: r.webUrl });
+    },
+
+    async deployReleaseStage(projectName, releaseId, environmentId) {
+      const r = RELEASE_DEFS.flatMap((d) => d.releases).find((x) => x.id === Number(releaseId));
+      const env = r?.envs.find((e) => e.id === Number(environmentId));
+      if (!env) throw notFound('Release stage');
+      Object.assign(env, { status: 'inProgress', at: iso(Date.now()), requestedFor: ME, reason: 'manual' });
+      finishLater(env);
+      return delay();
+    },
+
+    listBranches(projectId, repoId) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      if (!repo) throw notFound('Repository');
+      const fromPrs = [...prs.values()].filter((p) => p.repoId === repoId).map((p) => p.sourceBranch);
+      const extra = ['feature/4107-invoice-pdf', 'bugfix/coupon-double-apply', 'chore/upgrade-node-22', 'release/2026.10'];
+      const names = [...new Set([repo.defaultBranch, 'develop', ...extra, ...fromPrs])];
+      return delay(names.map((name, i) => ({
+        name,
+        pushedAt: i < 8 ? ago((i + 1) * 5 * H) : null,
+        pushedBy: i < 8 ? pick(DEVS) : null,
+      })));
+    },
+
+    compareBranches(projectId, repoId, source, target) {
+      if (source === target) return delay({ ahead: 0, behind: 0, commits: [], files: { total: 0, items: [] }, existing: [], template: null });
+      const local = rng([...`${repoId}${source}`].reduce((s, c) => s + c.charCodeAt(0), 0));
+      const n = 1 + Math.floor(local() * 4);
+      const msgs = ['Add PDF renderer for invoices', 'Wire export endpoint', 'Tests for invoice totals', 'Fix rounding in VAT lines (AB#4107)', 'Address review comments'];
+      const pool = ['/src/api/Controllers/InvoicesController.cs', '/src/api/Services/InvoicePdf.cs', '/src/web/pages/Invoices.tsx', '/tests/InvoicePdfTests.cs', '/README.md', '/src/legacy/OldExporter.cs'];
+      const existing = [...prs.values()].filter((p) => p.repoId === repoId && p.status === 'active' && p.sourceBranch === source && p.targetBranch === target);
+      return delay({
+        ahead: n,
+        behind: Math.floor(local() * 6),
+        commits: msgs.slice(0, n).map((m, i) => ({ id: `c0ffee${i}${n}`, message: m, author: pick(DEVS).displayName, date: ago((i + 1) * 3 * H) })),
+        files: { total: 2 + n, items: pool.slice(0, 2 + n).map((path) => ({ path, kind: path.includes('legacy') ? 'deleted' : path.includes('Pdf') ? 'added' : 'edited', originalPath: null })) },
+        existing: existing.map(({ id, title, webUrl, projectId: pid, repoId: rid }) => ({ id, title, webUrl, projectId: pid, repoId: rid })),
+        template: '## Summary\n\n<!-- What does this change and why? -->\n\n## How was it tested?\n\n- [ ] Unit tests\n- [ ] Manually on QA\n',
+      });
+    },
+
+    async createPullRequest(projectId, repoId, input) {
+      const p = projectById(projectId);
+      const repo = p?.repoObjs.find((r) => r.id === repoId);
+      if (!repo) throw notFound('Repository');
+      const id = nextPr++;
+      const pr = {
+        key: `${p.id}/${repo.id}/${id}`, id, title: input.title, projectId: p.id, projectName: p.name, repoId: repo.id, repoName: repo.name,
+        author: ME, createdAt: iso(Date.now()), closedAt: null, status: 'active', isDraft: !!input.isDraft, mergeStatus: 'succeeded',
+        sourceBranch: input.source, targetBranch: input.target,
+        reviewers: (input.reviewers || []).map((r) => rv(PEOPLE.find((x) => x.id === r.id) || { id: r.id, displayName: r.id, uniqueName: '' }, 0, !!r.isRequired)),
+        labels: [], autoComplete: !!input.autoComplete && !input.isDraft, webUrl: `${ORG}/${p.name}/_git/${repo.name}/pullrequest/${id}`,
+        _workItemIds: (input.workItemIds || []).map(Number).filter((wid) => workItems.has(wid)),
+        _threads: [], _buildOk: true, _files: [], _description: input.description || '',
+      };
+      pr._workItemIds.forEach((wid) => workItems.get(wid)._prs.push({ projectId: p.id, repoId: repo.id, id }));
+      prs.set(pr.key, pr);
+      return delay(stripPR(pr));
+    },
+
+    async votePullRequest(projectId, repoId, prId, vote) {
+      const pr = getPR(projectId, repoId, prId);
+      const mine = pr.reviewers.find((r) => r.id === ME.id);
+      if (mine) mine.vote = vote;
+      else pr.reviewers.push(rv(ME, vote));
+      return delay();
+    },
+
+    async addReviewer(projectId, repoId, prId, reviewerId, isRequired = false) {
+      const pr = getPR(projectId, repoId, prId);
+      const who = PEOPLE.find((x) => x.id === reviewerId);
+      if (!who) throw notFound('Reviewer');
+      if (!pr.reviewers.some((r) => r.id === reviewerId)) pr.reviewers.push(rv(who, 0, isRequired));
+      return delay();
+    },
+
+    async commentPullRequest(projectId, repoId, prId, content) {
+      const pr = getPR(projectId, repoId, prId);
+      pr._threads.push({ threadId: pr._threads.length + 100, status: 'active', filePath: null, author: ME, content, publishedAt: iso(Date.now()) });
+      return delay();
+    },
+
+    async updatePullRequest(projectId, repoId, prId, change) {
+      const pr = getPR(projectId, repoId, prId);
+      if (change.publish) pr.isDraft = false;
+      if (change.abandon) Object.assign(pr, { status: 'abandoned', closedAt: iso(Date.now()) });
+      if (change.autoComplete !== undefined) pr.autoComplete = !!change.autoComplete;
+      if (change.complete) {
+        if (pr.mergeStatus === 'conflicts') throw Object.assign(new Error('The pull request has merge conflicts. Resolve them before completing.'), { status: 409 });
+        const opts = change.completionOptions || {};
+        const approvals = pr.reviewers.filter((r) => r.vote >= 5 && !r.isContainer).length;
+        if (approvals < 2 && !opts.bypassPolicy) {
+          throw Object.assign(new Error('TF401027: The policy "Minimum number of reviewers (2)" is not satisfied. Get approvals, or override policies if you have permission.'), { status: 400 });
+        }
+        Object.assign(pr, { status: 'completed', closedAt: iso(Date.now()), autoComplete: false });
+        if (opts.transitionWorkItems) {
+          for (const wid of pr._workItemIds) {
+            const w = workItems.get(wid);
+            const done = projectById(w.projectName).stateMap[w.type].find((s) => s.category === 'Completed');
+            if (done && w.stateCategory !== 'Completed') Object.assign(w, { state: done.name, stateCategory: 'Completed', closedAt: iso(Date.now()) });
+          }
+        }
+      }
+      return delay();
+    },
+
+    getStateMap: (projectId) => delay(projectById(projectId).stateMap),
+
+    queryWorkItems(projectId, c = {}) {
+      const p = projectById(projectId);
+      const typeOk = (w) => {
+        if (c.types?.length) return c.types.includes(w.type);
+        const cats = c.categories || (c.parentId ? null : ['requirement', 'bug', 'task']);
+        if (!cats) return true;
+        const cat = { Bug: 'bug', Task: 'task', Feature: 'feature', Epic: 'epic' }[w.type] || 'requirement';
+        return cats.includes(cat);
+      };
+      const list = [...workItems.values()].filter((w) => w.projectName === p.name
+        && typeOk(w)
+        && w.stateCategory !== 'Removed'
+        && (!c.open || w.stateCategory !== 'Completed')
+        && (!c.iterationPath || w.iterationPath === c.iterationPath || w.iterationPath.startsWith(`${c.iterationPath}\\`))
+        && (!c.areaPaths?.length || c.areaPaths.some((a) => w.areaPath === a.value || (a.includeChildren && w.areaPath.startsWith(`${a.value}\\`))))
+        && (!c.assignedToMe || w.assignedTo?.id === ME.id)
+        && (!c.unassigned || !w.assignedTo)
+        && (!c.tag || w.tags.some((t) => t.toLowerCase().includes(c.tag.toLowerCase())))
+        && (!c.changedWithinDays || Date.parse(w.changedAt) >= NOW - c.changedWithinDays * D)
+        && (!c.parentId || w.parentId === Number(c.parentId))
+        && (!c.doneWithinDays || (w.stateCategory === 'Completed' && Date.parse(w.changedAt) >= Date.now() - c.doneWithinDays * D)));
+      const withBoard = (w) => (c.extraFields?.length
+        ? { ...strip(w), boardFields: { 'Mock_Kanban.Column': w._board?.column ?? null, 'Mock_Kanban.Column.Done': !!w._board?.done, 'Mock_Kanban.Lane': w._board?.lane ?? null } }
+        : strip(w));
+      return delay(list.sort((a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt)).slice(0, c.top || 1000).map(withBoard));
+    },
+
+    getBoards(projectId) {
+      const p = projectById(projectId);
+      const scrum = p.process === SCRUM;
+      const map = (pairs) => Object.fromEntries(pairs);
+      const fields = { column: 'Mock_Kanban.Column', done: 'Mock_Kanban.Column.Done', lane: 'Mock_Kanban.Lane' };
+      const lanes = p.name === 'Commerce' ? [{ id: 'l0', name: null }, { id: 'l1', name: 'Expedite' }] : [{ id: 'l0', name: null }];
+      const req = scrum
+        ? { name: 'Backlog items', types: ['Product Backlog Item', 'Bug'], columns: [
+          ['New', 'incoming', { 'Product Backlog Item': 'New', Bug: 'New' }], ['Approved', 'inProgress', { 'Product Backlog Item': 'Approved', Bug: 'Approved' }],
+          ['Committed', 'inProgress', { 'Product Backlog Item': 'Committed', Bug: 'Committed' }, true, 4], ['Done', 'outgoing', { 'Product Backlog Item': 'Done', Bug: 'Done' }]] }
+        : { name: 'Stories', types: ['User Story', 'Bug'], columns: [
+          ['New', 'incoming', { 'User Story': 'New', Bug: 'New' }], ['Ready', 'inProgress', { 'User Story': 'New', Bug: 'New' }, false, 6],
+          ['Active', 'inProgress', { 'User Story': 'Active', Bug: 'Active' }, true, 4], ['Review', 'inProgress', { 'User Story': 'Resolved', Bug: 'Resolved' }, false, 3],
+          ['Closed', 'outgoing', { 'User Story': 'Closed', Bug: 'Closed' }]] };
+      const portfolio = (name, type, states) => ({ name, types: [type], columns: states.map(([n, t, st]) => [n, t, { [type]: st }]) });
+      const featureStates = scrum ? [['New', 'incoming', 'New'], ['In Progress', 'inProgress', 'In Progress'], ['Done', 'outgoing', 'Done']] : [['New', 'incoming', 'New'], ['Active', 'inProgress', 'Active'], ['Closed', 'outgoing', 'Closed']];
+      const defs = [{ ...req, isRequirement: true, rank: 0 }, { ...portfolio('Features', 'Feature', featureStates), rank: 1 }, { ...portfolio('Epics', 'Epic', featureStates), rank: 2 }];
+      return delay({
+        boards: defs.map((d, i) => ({
+          id: `${p.id}-board-${i}`, name: d.name, level: null, rank: d.rank, isRequirement: !!d.isRequirement, hidden: false, types: d.types,
+          columns: d.columns.map(([name, columnType, stateMappings, isSplit = false, itemLimit = 0], j) => ({ id: `c${i}${j}`, name, columnType, isSplit, itemLimit, stateMappings })),
+          lanes: d.isRequirement ? lanes : [{ id: 'l0', name: null }], fields,
+        })),
+        taskTypes: ['Task'],
+        workTypes: [...req.types, 'Task'],
+      });
+    },
+
+    getHierarchy(projectId, { includeClosed = false } = {}) {
+      const p = projectById(projectId);
+      const all = [...workItems.values()].filter((w) => w.projectName === p.name && w.stateCategory !== 'Removed');
+      const roots = all.filter((w) => w.type === 'Epic' && (includeClosed || w.stateCategory !== 'Completed'));
+      const items = [];
+      const links = [];
+      const walk = (w) => {
+        items.push(strip(w));
+        for (const c of all.filter((x) => x.parentId === w.id)) {
+          links.push({ parent: w.id, child: c.id });
+          walk(c);
+        }
+      };
+      roots.forEach(walk);
+      return delay({ roots: roots.map((r) => r.id), links, items });
+    },
+
+    getWorkItems: (ids) => delay(ids.map((id) => workItems.get(Number(id))).filter(Boolean).map(strip)),
+
+    async getWorkItem(id) {
+      const w = workItems.get(Number(id));
+      if (!w) throw notFound(`Work item ${id}`);
+      const pickRel = ({ id: i, title, type, state, stateCategory, assignedTo, webUrl }) => ({ id: i, title, type, state, stateCategory, assignedTo, webUrl });
+      return delay({
+        ...strip(w),
+        description: w._description,
+        acceptanceCriteria: w.type === 'Task' ? '' : w._acceptance,
+        parent: w.parentId ? pickRel(workItems.get(w.parentId)) : null,
+        children: [...workItems.values()].filter((c) => c.parentId === w.id).map(pickRel),
+        pullRequests: w._prs.map((x) => ({ ...x })),
+        comments: [...w._comments].reverse(),
+      });
+    },
+
+    async updateWorkItem(id, changes) {
+      const w = workItems.get(Number(id));
+      if (!w) throw notFound(`Work item ${id}`);
+      const p = projectById(w.projectName);
+      if (changes.state !== undefined) {
+        const st = p.stateMap[w.type].find((s) => s.name === changes.state);
+        if (!st) throw Object.assign(new Error(`State '${changes.state}' is not valid for ${w.type}`), { status: 400 });
+        Object.assign(w, { state: st.name, stateCategory: st.category, stateChangedAt: iso(Date.now()), closedAt: st.category === 'Completed' ? iso(Date.now()) : null });
+      }
+      if (changes.assignedTo !== undefined) {
+        w.assignedTo = changes.assignedTo ? PEOPLE.find((x) => x.uniqueName === changes.assignedTo) || null : null;
+      }
+      if (changes.priority !== undefined) w.priority = Number(changes.priority);
+      if (changes.iterationPath !== undefined) w.iterationPath = changes.iterationPath;
+      if (changes.tags !== undefined) w.tags = changes.tags;
+      if (changes.fields) {
+        const b = (w._board ||= {});
+        if ('Mock_Kanban.Column' in changes.fields) b.column = changes.fields['Mock_Kanban.Column'];
+        if ('Mock_Kanban.Column.Done' in changes.fields) b.done = !!changes.fields['Mock_Kanban.Column.Done'];
+        if ('Mock_Kanban.Lane' in changes.fields) b.lane = changes.fields['Mock_Kanban.Lane'];
+      }
+      w.changedAt = iso(Date.now());
+      w.rev++;
+      return delay();
+    },
+
+    async commentWorkItem(projectName, id, text) {
+      const w = workItems.get(Number(id));
+      if (!w) throw notFound(`Work item ${id}`);
+      w._comments.push({ author: ME, text, createdAt: iso(Date.now()) });
+      return delay();
+    },
+
+    listBuilds: (projectId, { sinceDays = 14 } = {}) => delay(builds
+      .filter((b) => b.projectId === projectById(projectId).id)
+      .filter((b) => !b.finishedAt || Date.parse(b.finishedAt) >= Date.now() - sinceDays * D)
+      .map((b) => ({ ...b, sourceBranch: b.sourceBranch.replace(/^refs\/heads\//, '') }))),
+
+    async queueBuild(projectId, definitionId, branch) {
+      const prev = builds.find((b) => b.definition.id === definitionId);
+      if (!prev) throw notFound('Pipeline');
+      const b = {
+        ...prev, id: nextBuild++, status: 'inProgress', result: null, reason: 'manual', sourceBranch: branch || prev.sourceBranch,
+        requestedFor: ME, queuedAt: iso(Date.now()), startedAt: iso(Date.now()), finishedAt: null, buildNumber: `manual.${nextBuild}`,
+      };
+      builds.unshift(b);
+      // Finish it shortly afterwards so the UI can show the transition.
+      setTimeout(() => Object.assign(b, { status: 'completed', result: 'succeeded', finishedAt: iso(Date.now()) }), 20_000).unref?.();
+      return delay({ id: b.id, webUrl: b.webUrl });
+    },
+  };
+}

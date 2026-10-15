@@ -1,0 +1,33 @@
+{
+  "name": "devops-lead-console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tech-lead console for Azure DevOps: PRs, work items, sprints and pipelines across projects and repos.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"node --watch-path=server server/index.js\" \"vite\"",
+    "dev:mock": "concurrently -k -n api,web -c blue,magenta \"node --watch-path=server server/index.js --mock\" \"vite\"",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "start:mock": "node server/index.js --mock",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "dompurify": "^3.4.17",
+    "express": "^5.3.0",
+    "marked": "^18.1.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "vite": "^8.3.4"
+  }
+}
