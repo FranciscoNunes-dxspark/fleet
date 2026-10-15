@@ -14,6 +14,7 @@ import { buildAttention } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
+import { deployMarkers, evaluateMonitor } from './domain/production.js';
 
 const MIN = 60_000;
 
@@ -55,6 +56,8 @@ export const teamsOf = (cfg = {}) => (Array.isArray(cfg.teams)
 export function createService({
   provider = config.mock ? createMockProvider() : createAzdoProvider(),
   settings: store = createSettingsStore(defaultSettingsFile()),
+  // Shared production monitoring (one per server); null when not running.
+  monitoring = null,
 } = {}) {
   const cache = new Cache(MIN);
   const cached = (key, fn, ttl) => cache.get(key, fn, ttl);
@@ -216,6 +219,16 @@ export function createService({
       .map((d) => ({ ...d, key: `${d.projectId}:release:${d.id}`, health: releaseHealth(d.stages) }));
   });
 
+  /** Production monitors with their deploy markers and health verdict. */
+  async function production() {
+    if (!monitoring) return [];
+    const [rels, pipes, builds] = await Promise.all([releases().catch(() => []), pipelines().catch(() => []), rawBuilds().catch(() => [])]);
+    return monitoring.status().map((m) => {
+      const markers = deployMarkers(m, { releases: rels, pipelines: pipes, builds });
+      return { ...m, markers, ...evaluateMonitor(m, markers) };
+    });
+  }
+
   /** Pending approvals from classic releases and YAML environment checks, in one list. */
   const approvals = () => cached('builds:approvals', async () => {
     const [projects, who, builds] = await Promise.all([tracked(), me(), rawBuilds()]);
@@ -279,11 +292,11 @@ export function createService({
     },
 
     async attention() {
-      const [settings, prs, items, pipes, load, paths, rels, appr] = await Promise.all([
+      const [settings, prs, items, pipes, load, paths, rels, appr, prod] = await Promise.all([
         store.load(), activePRs(), openItems(), pipelines(), workload(), currentIterationPaths(),
-        releases().catch(() => []), approvals().catch(() => []),
+        releases().catch(() => []), approvals().catch(() => []), production().catch(() => []),
       ]);
-      return buildAttention({ prs, items, pipelines: pipes, workload: load, settings, currentIterationPaths: paths, releases: rels, approvals: appr });
+      return buildAttention({ prs, items, pipelines: pipes, workload: load, settings, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod });
     },
 
     async snooze(key, days) {
@@ -542,8 +555,18 @@ export function createService({
           prs.map((p) => `${p.key}:${p.mergeStatus}:${p.isDraft}:${p.title}:${p.reviewers.map((r) => r.vote).join(',')}`).join('|'),
           items.map((w) => `${w.id}:${w.rev ?? ''}:${w.changedAt}`).join('|'),
           rels.map((d) => d.stages.map((s) => `${s.latest?.releaseId}:${s.latest?.status}:${s.active?.status}`).join(',')).join('|'),
+          (monitoring ? monitoring.status() : []).map((m) => `${m.id}:${m.last?.at}:${m.ai?.at}`).join('|'),
         ].join('#'),
       };
+    },
+
+    async production() {
+      return { enabled: !!monitoring, monitors: await production() };
+    },
+
+    monitors: () => {
+      if (!monitoring) throw Object.assign(new Error('Production monitoring is not available on this server'), { status: 404 });
+      return monitoring;
     },
 
     async releases() {

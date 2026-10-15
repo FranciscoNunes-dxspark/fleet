@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { ErrorBox, Loading, PageHeader } from '../ui.jsx';
+import { ACCENTS, MODES, loadTheme, saveTheme } from '../theme.js';
+import ProductionSettings from './ProductionSettings.jsx';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
 
 const THRESHOLDS = [
@@ -168,6 +170,10 @@ export default function Settings() {
         </div>
       </section>
 
+      <ProductionSettings />
+
+      <AppearanceSettings />
+
       <NotificationSettings />
 
       <section className="panel">
@@ -243,6 +249,53 @@ function NotificationSettings() {
         ))}
       </div>
       <button type="button" className="btn btn-small btn-ghost" onClick={test}>Send a test notification</button>
+    </section>
+  );
+}
+
+/** Light/dark/system and accent color; saved in this browser and applied instantly. */
+function AppearanceSettings() {
+  const [theme, setTheme] = useState(loadTheme);
+  const update = (patch) => {
+    const next = { ...theme, ...patch };
+    setTheme(next);
+    saveTheme(next);
+  };
+  return (
+    <section className="panel">
+      <h2 className="section-title">Appearance</h2>
+      <p className="muted small">Saved in this browser and applied right away.</p>
+      <div className="appearance">
+        <div className="appearance-row">
+          <span className="appearance-label">Mode</span>
+          <div className="segmented segmented-compact" role="radiogroup" aria-label="Color mode">
+            {MODES.map((m) => (
+              <button key={m.id} type="button" role="radio" aria-checked={theme.mode === m.id} className={theme.mode === m.id ? 'on' : ''} onClick={() => update({ mode: m.id })}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="appearance-row">
+          <span className="appearance-label">Accent</span>
+          <div className="swatches" role="radiogroup" aria-label="Accent color">
+            {ACCENTS.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                role="radio"
+                aria-checked={theme.accent === a.id}
+                className={`swatch ${theme.accent === a.id ? 'on' : ''}`}
+                onClick={() => update({ accent: a.id })}
+                title={a.label}
+              >
+                <span className="swatch-dot" style={{ background: a.swatch }} aria-hidden="true" />
+                {a.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

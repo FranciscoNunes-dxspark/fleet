@@ -5,6 +5,7 @@ const KEY = 'shipdeck.notifications.v1';
 const LEGACY_KEY = 'leadConsole.notifications.v1'; // before the rename to Shipdeck
 
 export const CATEGORIES = [
+  { id: 'production', label: 'Production down, degraded, or worse after a deploy' },
   { id: 'approval', label: 'Deployments waiting for your approval' },
   { id: 'review', label: 'Pull requests waiting for your review' },
   { id: 'myPr', label: 'Votes on your pull requests, and when they complete' },

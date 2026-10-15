@@ -282,3 +282,47 @@ test('sign-in attempts are limited per IP and reset on success', async () => {
   l.fail('a', t + 1500); l.reset('a');
   assert.equal(l.blockedFor('a', t + 1501), 0);
 });
+
+test('production verdicts: down, slow, failing, and a regression after a deploy', async () => {
+  const { evaluateMonitor } = await import('../server/domain/production.js');
+  const now = Date.parse('2026-10-15T12:00:00Z');
+  const at = (h) => new Date(now - h * H).toISOString();
+  const base = { url: 'https://x', latencyWarnMs: 1000, consecutiveFailures: 0, ai: null, aiError: null };
+  assert.equal(evaluateMonitor({ ...base, last: { ok: true, ms: 200, at: at(0) } }, [], now).state, 'up');
+  const down = evaluateMonitor({ ...base, last: { ok: false, error: 'HTTP 503', at: at(0) }, consecutiveFailures: 3, downSince: at(0.5) }, [], now);
+  assert.equal(down.state, 'down');
+  assert.match(down.issues[0].text, /Down for 30m: HTTP 503/);
+  assert.equal(evaluateMonitor({ ...base, last: { ok: true, ms: 2500, at: at(0) } }, [], now).issues[0].code, 'slow');
+  // 0.5% failures before the deploy 3h ago, 8% after.
+  const series = [];
+  for (let h = 9; h >= 0; h -= 0.5) series.push({ at: at(h), total: 100, failed: h > 3 ? 0.5 : 8 });
+  const ai = { total: 200, failed: 16, failRate: 0.08, series };
+  const r = evaluateMonitor({ ...base, last: { ok: true, ms: 200, at: at(0) }, ai }, [{ at: at(3), label: 'Release-9' }], now);
+  assert.deepEqual(r.issues.map((i) => i.code), ['failures', 'deploy-regression']);
+  assert.match(r.issues[1].text, /since Release-9 \(3h ago\)/);
+  assert.equal(r.state, 'degraded');
+});
+
+test('deploy markers come from the linked release stage', async () => {
+  const { deployMarkers } = await import('../server/domain/production.js');
+  const releases = [{
+    projectId: 'p', id: 7,
+    releases: [
+      { name: 'R3', webUrl: 'u3', stages: [{ name: 'QA', status: 'succeeded', at: ago(2) }, { name: 'Prod', status: 'notStarted', at: ago(2) }] },
+      { name: 'R2', webUrl: 'u2', stages: [{ name: 'QA', status: 'succeeded', at: ago(30) }, { name: 'Prod', status: 'succeeded', at: ago(26) }] },
+    ],
+  }];
+  const m = deployMarkers({ link: { type: 'release', projectId: 'p', definitionId: 7, stage: 'Prod' } }, { releases }, Date.now() - 7 * 24 * H);
+  assert.deepEqual(m.map((d) => d.label), ['R2']);
+});
+
+test('monitors refuse private and internal addresses', async () => {
+  const { assertPublicUrl } = await import('../server/monitoring.js');
+  for (const url of ['http://127.0.0.1/health', 'http://10.1.2.3/', 'http://169.254.169.254/latest/meta-data', 'http://192.168.1.10', 'http://[::1]/']) {
+    await assert.rejects(assertPublicUrl(url), /private or internal/, url);
+  }
+  await assert.rejects(assertPublicUrl('ftp://example.com'), /http and https/);
+  await assert.rejects(assertPublicUrl('https://user:pass@example.com'), /credentials/);
+  const ok = await assertPublicUrl('https://8.8.8.8/');
+  assert.equal(ok.hostname, '8.8.8.8');
+});

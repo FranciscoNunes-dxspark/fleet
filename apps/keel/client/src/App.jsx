@@ -14,6 +14,7 @@ import Board from './pages/Board.jsx';
 import Epics from './pages/Epics.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Pipelines from './pages/Pipelines.jsx';
+import Production from './pages/Production.jsx';
 import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
 import ReleaseNotes from './pages/ReleaseNotes.jsx';
@@ -89,6 +90,7 @@ function Console({ authMode, onSignedOut }) {
     else if (target.type === 'release') navigate('/pipelines?tab=releases');
     else if (target.type === 'pipeline' || target.type === 'approval') navigate('/pipelines');
     else if (target.type === 'person') navigate('/team');
+    else if (target.type === 'production') navigate('/production');
   }, [navigate]);
 
   // Live updates: the server polls Azure DevOps and tells us when to refetch,
@@ -226,6 +228,7 @@ function Shell() {
     { to: '/board', label: 'Board' },
     { to: '/epics', label: 'Epics' },
     { to: '/pipelines', label: 'Pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
+    { to: '/production', label: 'Production', count: s?.productionIssues, tone: 'bad' },
     { to: '/team', label: 'Team' },
     { to: '/insights', label: 'Insights' },
     { to: '/release-notes', label: 'Release notes' },
@@ -282,6 +285,7 @@ function Shell() {
           <Route path="/sprint" element={<Navigate to="/board?mode=sprint" replace />} />
           <Route path="/epics" element={<Epics />} />
           <Route path="/pipelines" element={<Pipelines />} />
+          <Route path="/production" element={<Production />} />
           <Route path="/team" element={<Team />} />
           <Route path="/insights" element={<Insights />} />
           <Route path="/release-notes" element={<ReleaseNotes />} />

@@ -88,6 +88,14 @@ export function apiRouter() {
     res.json(await req.ctx.service.queueBuild(projectId, num(definitionId), branch));
   });
 
+  r.get('/production', async (req, res) => res.json(await req.ctx.service.production()));
+  r.get('/production/monitors', (req, res) => res.json(req.ctx.service.monitors().list()));
+  r.put('/production/monitors', async (req, res) => {
+    const saved = await req.ctx.service.monitors().save(req.body?.monitors);
+    req.ctx.service.invalidate('builds');
+    res.json(saved);
+  });
+  r.post('/production/test', async (req, res) => res.json(await req.ctx.service.monitors().test(req.body || {})));
   r.get('/releases', async (req, res) => res.json(await req.ctx.service.releases()));
   r.post('/releases/create', async (req, res) => {
     const { projectId, definitionId, description } = req.body || {};

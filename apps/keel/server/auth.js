@@ -18,6 +18,7 @@ import { createAzdoProvider } from './azdo/provider.js';
 import { createService } from './service.js';
 import { createSettingsStore, userSettingsFile } from './settings.js';
 import { createWatcher } from './watcher.js';
+import { decrypt, encrypt, getKey } from './secrets.js';
 
 const DAY = 86_400_000;
 const MAX_SESSION_MS = 30 * DAY;
@@ -25,38 +26,8 @@ const IDLE_CONTEXT_MS = 60 * 60_000;
 const FAIL_WINDOW_MS = 15 * 60_000;
 const MAX_FAILS = 10;
 
-// ------------------------------------------------------------------ crypto
-function loadKey() {
-  const secret = process.env.SESSION_SECRET;
-  if (secret) {
-    if (secret.length < 32) throw new Error('SESSION_SECRET must be at least 32 characters');
-    return crypto.createHash('sha256').update(secret).digest();
-  }
-  // No secret configured: generate one once and keep it next to the data.
-  const file = path.join(config.dataDir, 'secret.key');
-  try {
-    return Buffer.from(fs.readFileSync(file, 'utf8').trim(), 'hex');
-  } catch {
-    const key = crypto.randomBytes(32);
-    fs.mkdirSync(config.dataDir, { recursive: true });
-    fs.writeFileSync(file, key.toString('hex'), { mode: 0o600 });
-    return key;
-  }
-}
-
-export function encrypt(key, text) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const enc = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
-  return Buffer.concat([iv, cipher.getAuthTag(), enc]).toString('base64url');
-}
-
-export function decrypt(key, blob) {
-  const buf = Buffer.from(blob, 'base64url');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, buf.subarray(0, 12));
-  decipher.setAuthTag(buf.subarray(12, 28));
-  return Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString('utf8');
-}
+// Encryption lives in secrets.js (shared with Azure API keys); re-exported for tests.
+export { encrypt, decrypt } from './secrets.js';
 
 const hashId = (sid) => crypto.createHash('sha256').update(sid).digest('hex');
 
@@ -89,8 +60,8 @@ function readCookie(req, name) {
 const cookieName = (secure) => (secure ? '__Host-shipdeck_session' : 'shipdeck_session');
 
 // -------------------------------------------------------------- the module
-export function createAuth() {
-  const key = loadKey();
+export function createAuth({ monitoring = null } = {}) {
+  const key = getKey();
   const sessionDays = Math.max(1, Number(process.env.SESSION_DAYS) || 7);
   const sessionsFile = path.join(config.dataDir, 'sessions.json');
   const limiter = createLimiter();
@@ -122,7 +93,7 @@ export function createAuth() {
     let ctx = contexts.get(s.userId);
     if (!ctx) {
       const provider = createAzdoProvider({ orgUrl: config.orgUrl, pat: decrypt(key, s.pat) });
-      const service = createService({ provider, settings: createSettingsStore(userSettingsFile(s.userId)) });
+      const service = createService({ provider, settings: createSettingsStore(userSettingsFile(s.userId)), monitoring });
       ctx = { service, watcher: createWatcher(service), lastUsed: Date.now() };
       contexts.set(s.userId, ctx);
     }

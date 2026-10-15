@@ -7,6 +7,7 @@ import { apiRouter } from './routes.js';
 import { hostGuard, securityHeaders } from './security.js';
 import { createWatcher } from './watcher.js';
 import { createAuth } from './auth.js';
+import { createMonitoring } from './monitoring.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -14,14 +15,17 @@ if (config.trustProxy) app.set('trust proxy', /^\d+$/.test(config.trustProxy) ? 
 app.use(hostGuard);
 app.use(securityHeaders);
 
+// Production checks run once per server and are shared by everyone using it.
+const monitoring = createMonitoring();
+
 if (config.authMode === 'login') {
   // Everyone signs in with their own PAT; each request runs as that person.
-  const auth = createAuth();
+  const auth = createAuth({ monitoring });
   app.use('/api/auth', auth.router);
   app.use('/api', auth.requireUser, apiRouter());
 } else {
   // One person: the PAT in .env (or demo data).
-  const service = createService();
+  const service = createService({ monitoring });
   const ctx = { service, watcher: createWatcher(service) };
   app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: service.provider.orgUrl }));
   app.use('/api', (req, res, next) => {

@@ -728,7 +728,9 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
             createdOn: r.createdOn,
             createdBy: ident(r.createdBy),
             webUrl: relUrl(projectName, r.id),
-            stages: (r.environments || []).map((e) => ({ id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: e.name, status: e.status })),
+            stages: (normalized.find((n) => n.id === r.id)?.envs || []).map((e) => ({
+              id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: (r.environments || []).find((x) => x.id === e.id)?.name, status: e.status, at: e.at, requestedFor: e.requestedFor,
+            })),
           })),
         };
       }));

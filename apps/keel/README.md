@@ -52,11 +52,22 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 | **Pipelines** | Running pipelines first, then the rest grouped by their Azure DevOps folder. Each pipeline is judged on its repo's default branch, and PR validation runs are ignored. Shows a run strip, pass rate, failure streak, last green run, and re-run. |
 | **Releases** (Pipelines tab) | Classic release pipelines, grouped by folder. Each stage shows its latest deployment (release, status, when, who) and anything deploying now. You can create a release from the latest artifacts, or deploy and redeploy any recent release to any stage. Stage approvals and gates still apply. |
 | **Approvals** | Pending classic release approvals and YAML environment checks, in one list at the top of Pipelines and in your Inbox. Approve or reject with an optional comment. Buttons only appear where Azure DevOps says you may decide. |
+| **Production** | Your production apps next to the deploys that change them. Each monitor checks a URL every minute (up or down, response time, uptime) and can read Application Insights every 5 minutes (failure rate, p95, exceptions, top failing operations). Link a monitor to the release stage or pipeline that deploys it: deploys appear on its charts, and Shipdeck flags it when failures rise after one ("failures up from 0.4% to 6.4% since Release-65"). Outages and regressions go to the Inbox and notifications. |
 | **Team** | Each person's in-progress items, sprint points, hours left, open PRs, reviews owed and oldest PR. Counts link to filtered views. |
 | **Insights** | Weekly merge throughput, median and 85th-percentile time to merge, open PR age, approvals given (review concentration), merges by author, and per-repo flow. |
 | **Release notes** | Merged PRs in a date range, plus the work items they delivered, as Markdown grouped into features, fixes, and PRs by repo. Copy it or download it. |
 
 Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Settings are saved to `data/settings.json`.
+
+## Production monitoring
+
+Set it up in **Settings → Production monitors**:
+
+- **URL to check:** your app's home page or a health endpoint. It's checked every minute from the Shipdeck server. Only public addresses are allowed. Set `MONITOR_ALLOW_PRIVATE=1` if you really mean to monitor internal endpoints.
+- **Application Insights (optional):** in the Azure portal, open the app's Application Insights → **API Access**. Copy the **Application ID**, then **Create API key** with *Read telemetry*. Paste both into Shipdeck, never into chat or tickets. The key is stored encrypted, and Settings shows only that one is saved.
+- **Deploys come from:** the classic release stage or the pipeline that deploys this app. This adds deploy markers and regression detection.
+
+Use **Test** to check a URL and key before saving. Monitors are shared by everyone using the same Shipdeck server. Azure Monitor alert rules aren't included: reading them needs a Microsoft Entra identity (a service principal) rather than an API key.
 
 ## Live updates and notifications
 
@@ -162,6 +173,10 @@ The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Nod
    ```
 
 Teammates create their own token from the sign-in page's "How to create a token" steps. Ask them to use the scopes listed above and a sensible expiry.
+
+## Appearance
+
+**Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal or Magenta). The browser-tab icon follows the accent. The choice is saved in your browser.
 
 ## How it works
 

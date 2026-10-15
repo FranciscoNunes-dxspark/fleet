@@ -5,6 +5,7 @@ import { age, hours, pct, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, ErrorBox, PageHeader } from '../ui.jsx';
 
 const WIDGETS = [
+  { id: 'production', title: 'Production', link: '/production', linkText: 'Details' },
   { id: 'attention', title: 'Needs you', link: '/inbox', linkText: 'Open inbox' },
   { id: 'reviews', title: 'Your review queue', link: '/prs', linkText: 'All pull requests' },
   { id: 'pipelines', title: 'Pipelines', link: '/pipelines', linkText: 'All pipelines' },
@@ -112,6 +113,7 @@ export default function Dashboard() {
 
 function WidgetBody({ id }) {
   switch (id) {
+    case 'production': return <ProductionWidget />;
     case 'attention': return <AttentionWidget />;
     case 'reviews': return <ReviewsWidget />;
     case 'pipelines': return <PipelinesWidget />;
@@ -156,7 +158,7 @@ function AttentionWidget() {
             <li key={i.key} className={`mini-sev sev-${i.severity}`}>
               {i.target.type === 'pr' || i.target.type === 'workitem'
                 ? <button type="button" className="link-btn mini-title" onClick={() => openDrawer(i.target)}>{i.title}</button>
-                : <Link className="mini-title" to={i.target.type === 'person' ? '/team' : i.target.type === 'release' ? '/pipelines?tab=releases' : '/pipelines'}>{i.title}</Link>}
+                : <Link className="mini-title" to={i.target.type === 'person' ? '/team' : i.target.type === 'release' ? '/pipelines?tab=releases' : i.target.type === 'production' ? '/production' : '/pipelines'}>{i.title}</Link>}
               <span className="muted small truncate">{i.reasons[0].text}</span>
             </li>
           ))}
@@ -359,6 +361,31 @@ function MineWidget() {
         </li>
       ))}
       {!mine.length && !myPrs.length && <li className="muted small">Nothing assigned to you.</li>}
+    </ul>
+  );
+}
+
+const PROD_TONE = { up: 'ok', degraded: 'warn', down: 'bad', unknown: 'muted' };
+const PROD_LABEL = { up: 'Up', degraded: 'Degraded', down: 'Down', unknown: 'No data' };
+
+function ProductionWidget() {
+  const { data, fallback } = useWidgetData('/production');
+  if (fallback) return fallback;
+  if (!data.monitors.length) return <p className="muted small">No monitors yet. <Link to="/settings#production">Add your production apps</Link> to watch them here.</p>;
+  return (
+    <ul className="mini-list">
+      {data.monitors.map((m) => (
+        <li key={m.id}>
+          <span className="prod-row">
+            <Chip tone={PROD_TONE[m.state]}>{PROD_LABEL[m.state]}</Chip>
+            <Link className="mini-title" to="/production">{m.name}</Link>
+          </span>
+          <span className="muted small truncate">
+            {m.issues[0]?.text
+              || [m.last?.ok ? `${Math.round(m.last.ms)}ms` : null, m.uptime24h != null ? `${pct(m.uptime24h)} up (24h)` : null, m.ai ? `${pct(m.ai.failRate)} failing` : null].filter(Boolean).join(' · ')}
+          </span>
+        </li>
+      ))}
     </ul>
   );
 }

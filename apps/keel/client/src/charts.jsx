@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 // Small single-series charts. One hue (the accent), text in ink tokens,
 // recessive gridlines, and a hover/focus tooltip on every mark.
 
-function useWidth() {
+export function useWidth() {
   const ref = useRef(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {

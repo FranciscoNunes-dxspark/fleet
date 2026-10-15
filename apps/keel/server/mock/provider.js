@@ -397,8 +397,11 @@ function addRelease(def, { daysAgo, statuses, by = pick(DEVS) }) {
   const [store, identity, checkout] = RELEASE_DEFS;
   for (let i = 9; i >= 2; i--) addRelease(store, { daysAgo: i * 2, statuses: ['succeeded', 'succeeded', 'succeeded'] });
   addRelease(store, { daysAgo: 1, statuses: ['succeeded', 'succeeded', 'inProgress'] }); // waiting on a Production approval
-  for (let i = 6; i >= 1; i--) addRelease(identity, { daysAgo: i * 3, statuses: ['succeeded', i === 1 ? 'rejected' : 'succeeded', i === 1 ? 'notStarted' : 'succeeded'] });
-  for (let i = 5; i >= 1; i--) addRelease(checkout, { daysAgo: i * 2.5, statuses: ['succeeded', i <= 2 ? 'notStarted' : 'succeeded'] });
+  for (let i = 6; i >= 1; i--) addRelease(identity, { daysAgo: i * 3, statuses: ['succeeded', 'succeeded', 'succeeded'] });
+  // Reaches Production ~4h ago (stage 3 at created + 6h): the demo error spike starts then.
+  addRelease(identity, { daysAgo: 10 / 24, statuses: ['succeeded', 'succeeded', 'succeeded'] });
+  // The latest Checkout release failed in QA.
+  for (let i = 5; i >= 1; i--) addRelease(checkout, { daysAgo: i * 2.5, statuses: [i === 1 ? 'rejected' : 'succeeded', i <= 2 ? 'notStarted' : 'succeeded'] });
 }
 const releaseApprovals = [];
 {
@@ -537,7 +540,7 @@ export function createMockProvider() {
         stages: stageSummary(d.stageDefs, d.releases),
         releases: d.releases.slice(0, 10).map((r) => ({
           id: r.id, name: r.name, createdOn: r.createdOn, createdBy: r.createdBy, webUrl: r.webUrl,
-          stages: r.envs.map((e) => ({ id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: e.name, status: e.status })),
+          stages: r.envs.map((e) => ({ id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: e.name, status: e.status, at: e.at, requestedFor: e.requestedFor })),
         })),
       })));
     },

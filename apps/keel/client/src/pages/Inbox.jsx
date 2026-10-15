@@ -7,6 +7,7 @@ import { Empty, ErrorBox, ExternalLink, Loading, PageHeader } from '../ui.jsx';
 
 const KINDS = [
   { id: 'all', label: 'Everything' },
+  { id: 'production', label: 'Production' },
   { id: 'approval', label: 'Approvals' },
   { id: 'review', label: 'Your reviews' },
   { id: 'pr', label: 'Pull requests' },
@@ -34,6 +35,7 @@ export default function Inbox() {
     if (t.type === 'pr' || t.type === 'workitem') openDrawer(t);
     else if (t.type === 'pipeline' || t.type === 'approval') navigate('/pipelines');
     else if (t.type === 'release') navigate('/pipelines?tab=releases');
+    else if (t.type === 'production') navigate('/production');
     else if (t.type === 'person') navigate('/team');
   };
 
@@ -53,6 +55,7 @@ export default function Inbox() {
   };
 
   const headline = [
+    s.productionIssues && `${s.productionIssues} production app${s.productionIssues === 1 ? '' : 's'} need${s.productionIssues === 1 ? 's' : ''} attention`,
     s.approvals && `${s.approvals} deployment${s.approvals === 1 ? '' : 's'} waiting for your approval`,
     s.myReviews && `${s.myReviews} review${s.myReviews === 1 ? '' : 's'} waiting on you`,
     s.failingPipelines && `${s.failingPipelines} pipeline${s.failingPipelines === 1 ? '' : 's'} red`,

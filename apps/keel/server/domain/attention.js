@@ -20,9 +20,26 @@ const isP1Bug = (w) => w.type === 'Bug' && (Number(w.priority) === 1 || String(w
  * The lead's inbox: one entry per PR / work item / pipeline / person with
  * every reason it needs attention, ranked by the worst reason.
  */
-export function buildAttention({ prs, items, pipelines, workload, settings, currentIterationPaths = [], releases = [], approvals = [], now = Date.now() }) {
+export function buildAttention({ prs, items, pipelines, workload, settings, currentIterationPaths = [], releases = [], approvals = [], production = [], now = Date.now() }) {
   const t = settings.thresholds;
   const out = [];
+
+  // Production first: an outage or a bad deploy outranks everything else.
+  for (const m of production) {
+    const issues = m.issues.filter((i) => i.severity !== 'low');
+    if (!issues.length) continue;
+    out.push({
+      key: `prod:${m.id}:${issues.map((i) => i.code).sort().join(',')}`,
+      kind: 'production',
+      severity: worst(issues),
+      title: `${m.name} is ${m.state === 'down' ? 'down' : 'degraded'}`,
+      context: m.url || 'Application Insights',
+      reasons: issues.map(({ code, severity, text }) => ({ code, severity, text })),
+      at: m.downSince || m.last?.at || m.ai?.at || null,
+      target: { type: 'production' },
+      webUrl: m.url || null,
+    });
+  }
 
   // Deployments waiting on an approval you can give: these block a release.
   for (const a of approvals.filter((x) => x.canDecide)) {
@@ -187,6 +204,7 @@ export function buildAttention({ prs, items, pipelines, workload, settings, curr
       activePrs: prs.length,
       failingPipelines: pipelines.filter((p) => p.health === 'failing').length + releases.filter((d) => d.health === 'failing').length,
       approvals: approvals.filter((x) => x.canDecide).length,
+      productionIssues: production.filter((m) => m.state === 'down' || m.state === 'degraded').length,
       blockedItems: items.filter((w) => w.stateCategory !== 'Completed' && isBlocked(w, settings.blockedTag)).length,
       p1Bugs: items.filter((w) => w.stateCategory !== 'Completed' && isP1Bug(w)).length,
       high: visible.filter((i) => i.severity === 'high').length,

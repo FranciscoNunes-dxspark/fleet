@@ -3,7 +3,7 @@
 
 const VOTE_TEXT = { 10: 'approved', 5: 'approved with suggestions', '-5': 'is waiting for changes on', '-10': 'rejected' };
 
-const CATEGORY_BY_KIND = { approval: 'approval', review: 'review', pipeline: 'pipeline', work: 'work', pr: 'pr' };
+const CATEGORY_BY_KIND = { approval: 'approval', review: 'review', pipeline: 'pipeline', work: 'work', pr: 'pr', production: 'production' };
 
 /**
  * snapshot = {
