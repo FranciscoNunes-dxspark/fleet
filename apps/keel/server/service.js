@@ -415,6 +415,11 @@ export function createService({
       return enrichPR(pr, who);
     },
 
+    /** Merge conflicts of a pull request (fresh each time: they change as people push). */
+    async pullRequestConflicts(projectId, repoId, id) {
+      return { conflicts: await provider.listPullRequestConflicts(projectId, repoId, id) };
+    },
+
     async prAction(projectId, repoId, id, action) {
       const settings = await store.load();
       switch (action.type) {
@@ -431,6 +436,9 @@ export function createService({
           break;
         case 'publish':
           await provider.updatePullRequest(projectId, repoId, id, { publish: true });
+          break;
+        case 'restartMerge':
+          await provider.restartMerge(projectId, repoId, id);
           break;
         case 'abandon':
           await provider.updatePullRequest(projectId, repoId, id, { abandon: true });

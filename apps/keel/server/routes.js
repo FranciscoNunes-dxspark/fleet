@@ -78,6 +78,10 @@ export function apiRouter() {
     const { projectId, repoId, id } = req.params;
     res.json(await req.ctx.service.pullRequest(projectId, repoId, num(id)));
   });
+  r.get('/prs/:projectId/:repoId/:id/conflicts', async (req, res) => {
+    const { projectId, repoId, id } = req.params;
+    res.json(await req.ctx.service.pullRequestConflicts(projectId, repoId, num(id)));
+  });
   r.post('/prs/:projectId/:repoId/:id/actions', need('prs.write'), async (req, res) => {
     const { projectId, repoId, id } = req.params;
     await req.ctx.service.prAction(projectId, repoId, num(id), req.body || {});

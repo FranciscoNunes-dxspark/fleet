@@ -795,6 +795,24 @@ export function createMockProvider() {
       return delay();
     },
 
+    async listPullRequestConflicts(projectId, repoId, prId) {
+      const pr = getPR(projectId, repoId, prId);
+      if (pr.mergeStatus !== 'conflicts') return delay([]);
+      const kinds = ['editEdit', 'editEdit', 'deleteEdit', 'addAdd', 'renameRename'];
+      const files = pr._files.length ? pr._files : [{ path: '/src/app.ts' }];
+      return delay(files.slice(0, Math.min(3, files.length)).map((f, i) => ({
+        id: i + 1, path: f.path, type: kinds[(pr.id + i) % kinds.length], status: 'unresolved',
+      })));
+    },
+
+    async restartMerge(projectId, repoId, prId) {
+      const pr = getPR(projectId, repoId, prId);
+      const after = pr.mergeStatus === 'conflicts' ? 'conflicts' : 'succeeded';
+      pr.mergeStatus = 'queued';
+      setTimeout(() => { pr.mergeStatus = after; }, 4000).unref?.();
+      return delay();
+    },
+
     async updatePullRequest(projectId, repoId, prId, change) {
       const pr = getPR(projectId, repoId, prId);
       if (change.publish) pr.isDraft = false;

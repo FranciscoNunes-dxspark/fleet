@@ -6,6 +6,7 @@ import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.js
 import { Markdown } from '../markdown.jsx';
 import { t, tj, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
+import MergeStatus from './MergeStatus.jsx';
 
 // Labels are getters so they follow the current language.
 const FILE_KIND = {
@@ -156,6 +157,10 @@ export default function PrDetail({ target }) {
         <br /><code className="branch">{pr.sourceBranch} → {pr.targetBranch}</code>
       </p>
 
+      {pr.status === 'active' && pr.mergeStatus !== 'succeeded' && (
+        <MergeStatus pr={pr} target={target} writable={writable} busy={busy} onRefresh={reload} onRestart={() => act({ type: 'restartMerge' }, t('Merge restarted'))} />
+      )}
+
       {writable && pr.status === 'active' && (
         <section className="detail-section">
           <h3>{t('Your vote')} {pr.myVote !== null && <span className="muted small">{t('currently: {vote}', { vote: VOTES[pr.myVote].label })}</span>}</h3>
@@ -284,6 +289,9 @@ export default function PrDetail({ target }) {
         {writable && pr.status === 'active' && !pr.isDraft && (pr.autoComplete
           ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-complete cancelled'))}>{t('Cancel auto-complete')}</button>
           : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</button>)}
+        {writable && pr.status === 'active' && pr.mergeStatus === 'succeeded' && (
+          <button type="button" className="btn btn-small btn-ghost" disabled={!!busy} title={t('Restart merge checks again without a push, for example after the target branch changed.')} onClick={() => act({ type: 'restartMerge' }, t('Merge restarted'))}>{t('Restart merge')}</button>
+        )}
         {writable && pr.status === 'active' && <Confirm text={t('Abandon this pull request?')} onConfirm={() => act({ type: 'abandon' }, t('Pull request abandoned'))} className="btn btn-small btn-ghost text-bad">{t('Abandon')}</Confirm>}
         <ExternalLink href={pr.webUrl}>{t('Open in Azure DevOps')}</ExternalLink>
       </section>

@@ -144,6 +144,7 @@ export function createMultiService(entries) {
     compare: viaProject('compare'),
     pullRequest: viaProject('pullRequest'),
     prAction: viaProject('prAction'),
+    pullRequestConflicts: viaProject('pullRequestConflicts'),
 
     async workItems() {
       const parts = await each((s) => s.workItems());

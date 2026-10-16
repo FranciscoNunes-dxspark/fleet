@@ -66,6 +66,11 @@ const attachmentsOf = (relations = []) => relations
 /** Azure DevOps colors are bare hex ("CC293D"); anything else is ignored (it ends up in a style). */
 const hexColor = (c) => (/^#?[0-9a-f]{6}$/i.test(String(c || '')) ? `#${String(c).replace('#', '')}` : null);
 
+// GitConflictType: Azure DevOps sends the name (or the number in older versions).
+const CONFLICT_TYPES = ['none', 'addAdd', 'addRename', 'deleteEdit', 'deleteRename', 'directoryFile', 'directoryChild', 'editDelete', 'editEdit', 'fileDirectory', 'rename1to2', 'rename2to1', 'renameAdd', 'renameDelete', 'renameRename'];
+const RESOLUTION = ['unresolved', 'partiallyResolved', 'resolved'];
+const enumName = (v, names) => (typeof v === 'number' ? names[v] : String(v || names[0]).replace(/^./, (c) => c.toLowerCase()));
+
 const stripRef = (ref) => (ref || '').replace(/^refs\/heads\//, '');
 
 /** Azure DevOps change types are comma lists like "edit, rename"; collapse to one kind. */
@@ -169,6 +174,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       status: r.status,
       isDraft: !!r.isDraft,
       mergeStatus: r.mergeStatus || 'notSet',
+      mergeFailureMessage: r.mergeFailureMessage || null,
       sourceBranch: stripRef(r.sourceRefName),
       targetBranch: stripRef(r.targetRefName),
       reviewers: (r.reviewers || []).map((rv) => ({
@@ -515,6 +521,39 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         method: 'POST',
         body: { comments: [{ parentCommentId: 0, content, commentType: 1 }], status: 1 },
       });
+    },
+
+    /** A pull request's merge conflicts: [{ id, path, type, status }], unresolved first. */
+    async listPullRequestConflicts(projectId, repoId, prId) {
+      const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/pullRequests/${prId}/conflicts`, {
+        apiVersion: '7.1-preview.1',
+        query: { $top: 500, includeObsolete: false },
+      });
+      return (d.value || [])
+        .map((c) => ({
+          id: c.conflictId,
+          path: c.conflictPath || '',
+          type: enumName(c.conflictType, CONFLICT_TYPES),
+          status: enumName(c.resolutionStatus, RESOLUTION),
+        }))
+        .sort((a, b) => (a.status === 'resolved') - (b.status === 'resolved') || a.path.localeCompare(b.path));
+    },
+
+    /**
+     * Runs the pull request merge again (Azure DevOps' "Restart merge"), e.g.
+     * after conflicts were fixed by a push or the target branch moved. Queues
+     * the merge; where that's refused, re-applying the merge options also
+     * starts a new merge.
+     */
+    async restartMerge(projectId, repoId, prId) {
+      const url = `${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/pullrequests/${prId}`;
+      try {
+        await api(url, { method: 'PATCH', body: { mergeStatus: 'queued' } });
+      } catch (err) {
+        if (err.status !== 400) throw err;
+        const current = await api(url);
+        await api(url, { method: 'PATCH', body: { mergeOptions: current.mergeOptions || { detectRenameFalsePositives: false } } });
+      }
     },
 
     async updatePullRequest(projectId, repoId, prId, change) {
