@@ -302,4 +302,8 @@ export default {
   '1 repo': '1 repositório',
   '{n} repos': '{n} repositórios',
   'team areas only': 'só as áreas das equipas',
+  // Repo folders for Start in Claude, in Projects and repositories
+  'Local folder, for Start in Claude': 'Pasta local, para Começar no Claude',
+  'saved in this browser': 'guardada neste browser',
+  'Local folder for {name}': 'Pasta local de {name}',
 };

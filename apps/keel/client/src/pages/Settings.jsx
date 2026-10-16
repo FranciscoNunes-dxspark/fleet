@@ -163,17 +163,28 @@ export default function Settings() {
                         <label className="check"><input type="checkbox" disabled={!teamsOf(cfg).length} checked={!!cfg.scopeToTeamArea} onChange={(e) => setProject(p.id, { scopeToTeamArea: e.target.checked })} /> {t("Only work items in these teams' area paths")}</label>
                       </fieldset>
                       <div className="repo-pick">
-                        <label className="check"><input type="radio" name={`repos-${p.id}`} checked={cfg.repos === 'all' || !Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: 'all' })} /> {t('All repos ({n})', { n: opt.repos.length })}</label>
-                        <label className="check"><input type="radio" name={`repos-${p.id}`} checked={Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: opt.repos.map((r) => r.id) })} /> {t('Only these:')}</label>
-                        {Array.isArray(cfg.repos) && (
-                          <div className="repo-group">
-                            {opt.repos.map((r) => (
-                              <label key={r.id} className="check">
-                                <input type="checkbox" checked={cfg.repos.includes(r.id)} onChange={(e) => setProject(p.id, { repos: e.target.checked ? [...cfg.repos, r.id] : cfg.repos.filter((x) => x !== r.id) })} /> {r.name}
-                              </label>
-                            ))}
+                        <div className="repo-group">
+                          <label className="check"><input type="radio" name={`repos-${p.id}`} checked={cfg.repos === 'all' || !Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: 'all' })} /> {t('All repos ({n})', { n: opt.repos.length })}</label>
+                          <label className="check"><input type="radio" name={`repos-${p.id}`} checked={Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: opt.repos.map((r) => r.id) })} /> {t('Only these:')}</label>
+                        </div>
+                        <div className="repo-rows">
+                          <div className="repo-row repo-row-head small muted">
+                            <span>{t('Repository')}</span>
+                            <span>{t('Local folder, for Start in Claude')} <span className="saved-note">{t('saved in this browser')}</span></span>
                           </div>
-                        )}
+                          {opt.repos.map((r) => {
+                            const only = Array.isArray(cfg.repos);
+                            const on = !only || cfg.repos.includes(r.id);
+                            return (
+                              <div key={r.id} className={`repo-row${on ? '' : ' off'}`}>
+                                {only
+                                  ? <label className="check"><input type="checkbox" checked={on} onChange={(e) => setProject(p.id, { repos: e.target.checked ? [...cfg.repos, r.id] : cfg.repos.filter((x) => x !== r.id) })} /> {r.name}</label>
+                                  : <span className="repo-name">{r.name}</span>}
+                                <RepoFolder repo={r} />
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   )
@@ -230,7 +241,6 @@ export default function Settings() {
 
       <NotificationSettings />
 
-      <ClaudeSettings />
 
       {/* Last on the page, so it stays pinned to the bottom wherever you are. */}
       {dirty && (
@@ -441,41 +451,38 @@ function AccountSettings() {
   );
 }
 
-/** Where each repo is cloned on this computer, for the work item "Start in Claude" buttons. */
-function ClaudeSettings() {
-  const { data: repos } = useApi('/repos');
+/**
+ * Where a repo is cloned on this computer, for the work item "Start in Claude"
+ * buttons. Saved in this browser when you leave the field (folders differ
+ * between computers), not with the rest of the settings.
+ */
+function RepoFolder({ repo }) {
   const { toast } = useApp();
-  const [folders, setFolders] = useState(loadFolders);
-  const [draft, setDraft] = useState(loadFolders);
-  if (!repos?.length) return null;
-
-  // Saved when you leave the field (or press Enter), if it changed and is a valid path.
-  const save = (repo) => {
-    const value = (draft[repo.id] || '').trim();
-    if (folderProblem(value) || value === (folders[repo.id] || '')) return;
-    saveFolder(repo.id, value);
-    setFolders(loadFolders());
-    toast(t(value ? 'Folder saved for {name}' : 'Folder cleared for {name}', { name: repo.name }));
+  const [saved, setSaved] = useState(() => loadFolders()[repo.id] || '');
+  const [value, setValue] = useState(saved);
+  const problem = folderProblem(value);
+  const save = () => {
+    const v = value.trim();
+    if (problem || v === saved) return;
+    saveFolder(repo.id, v);
+    setSaved(v);
+    toast(t(v ? 'Folder saved for {name}' : 'Folder cleared for {name}', { name: repo.name }));
   };
-
   return (
-    <section className="panel">
-      <h2 className="section-title">{t('Start in Claude')} <span className="saved-note">{t('Saved automatically')}</span></h2>
-      <p className="muted small">{t('Where each repository is cloned on this computer. The Claude Code and Claude Desktop buttons on a work item open Claude there. Saved in this browser only, because folders differ between computers.')}</p>
-      <div className="claude-folders">
-        {repos.map((r) => {
-          const value = draft[r.id] ?? '';
-          const problem = folderProblem(value);
-          return (
-            <form key={r.id} className="claude-folders-row" onSubmit={(e) => { e.preventDefault(); save(r); }}>
-              <label htmlFor={`folder-${r.id}`}><span>{r.name}</span> <span className="muted small">{r.projectName}</span></label>
-              <input id={`folder-${r.id}`} className="input mono" value={value} placeholder="C:\src\repo-name" spellCheck={false} autoComplete="off" aria-invalid={!!problem}
-                onChange={(e) => setDraft({ ...draft, [r.id]: e.target.value })} onBlur={() => save(r)} />
-              {problem && <span className="small text-bad claude-folders-error">{t(problem)}</span>}
-            </form>
-          );
-        })}
-      </div>
-    </section>
+    <div className="repo-folder">
+      <input
+        className="input mono"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), save())}
+        placeholder={`C:\\src\\${repo.name}`}
+        spellCheck={false}
+        autoComplete="off"
+        aria-label={t('Local folder for {name}', { name: repo.name })}
+        aria-invalid={!!problem}
+      />
+      {problem && <span className="small text-bad">{t(problem)}</span>}
+    </div>
   );
 }

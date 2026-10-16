@@ -976,3 +976,16 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
   .project-line { grid-template-columns: minmax(0, 1fr) auto; }
   .project-summary { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
 }
+
+/* A project's repositories: tick (with "Only these") and the local folder for Claude. */
+.repo-rows { display: grid; gap: 4px; margin-top: 6px; }
+.repo-row { display: grid; grid-template-columns: minmax(160px, 260px) minmax(0, 1fr); gap: 4px 12px; align-items: center; }
+.repo-row.off .repo-name, .repo-row.off .check { color: var(--muted); }
+.repo-row-head { padding-bottom: 2px; }
+.repo-name { font-size: 13.5px; }
+.repo-folder { display: grid; gap: 2px; min-width: 0; }
+.repo-folder .input { width: 100%; padding-top: 4px; padding-bottom: 4px; font-size: 12.5px; }
+@media (max-width: 640px) {
+  .repo-row { grid-template-columns: 1fr; }
+  .repo-row-head span:last-child { display: none; }
+}
