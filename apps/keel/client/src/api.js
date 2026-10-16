@@ -1,3 +1,5 @@
+import { t, tx } from './i18n.js';
+
 export async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(`/api${path}`, {
     method,
@@ -18,7 +20,8 @@ export async function api(path, { method = 'GET', body } = {}) {
     if (data?.code === 'token-required' || data?.code === 'token-rejected') {
       window.dispatchEvent(new CustomEvent('keel:token-required', { detail: { reason: data.code, message: data.error } }));
     }
-    throw Object.assign(new Error(data?.error || `Request failed (${res.status})`), { status: res.status, code: data?.code });
+    // Server messages are English; shown in the chosen language when translated.
+    throw Object.assign(new Error(data?.error ? tx(data.error) : t('Request failed ({status})', { status: res.status })), { status: res.status, code: data?.code });
   }
   return data;
 }

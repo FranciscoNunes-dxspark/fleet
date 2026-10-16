@@ -23,6 +23,7 @@ import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/
 import Users from './pages/Users.jsx';
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
 import { applyTheme } from './theme.js';
+import { applySavedLanguage, getLanguage } from './i18n.js';
 
 /**
  * Auth gate. In login mode (hosted), shows sign-in until there's a session,
@@ -34,7 +35,18 @@ import { applyTheme } from './theme.js';
  * links, sign-in, then connecting Azure DevOps, before the console itself.
  * Local mode is a pass-through.
  */
+/** Re-renders everything when the language changes (Settings, or another device via synced prefs). */
 export default function App() {
+  const [lang, setLang] = useState(getLanguage);
+  useEffect(() => {
+    const onChange = (e) => setLang(e.detail);
+    window.addEventListener('keel:language', onChange);
+    return () => window.removeEventListener('keel:language', onChange);
+  }, []);
+  return <AuthGate key={lang} />;
+}
+
+function AuthGate() {
   const [auth, setAuth] = useState(null);
   const [reason, setReason] = useState(null);
   const [session, setSession] = useState(0);
@@ -159,7 +171,10 @@ function Console({ authMode, onSignedOut }) {
     api('/meta').then((m) => {
       // Preferences saved on your account win over this browser's copy.
       if (m.prefs && Object.keys(m.prefs).length) {
-        if (adoptServerPrefs(m.prefs)) applyTheme();
+        if (adoptServerPrefs(m.prefs)) {
+          applyTheme();
+          applySavedLanguage();
+        }
       } else {
         seedServerPrefs(m.prefs);
       }

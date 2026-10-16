@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { ErrorBox, Loading, PageHeader, Confirm } from '../ui.jsx';
 import { ACCENTS, MODES, loadTheme, saveTheme } from '../theme.js';
+import { LANGUAGES, getLanguage, setLanguage } from '../i18n.js';
 import ProductionSettings from './ProductionSettings.jsx';
 import { folderProblem, loadFolders, saveFolder } from '../claude.js';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
@@ -269,8 +270,18 @@ function AppearanceSettings() {
   return (
     <section className="panel">
       <h2 className="section-title">Appearance</h2>
-      <p className="muted small">Saved in this browser and applied right away.</p>
+      <p className="muted small">Applied right away and saved to your account, so it follows you to other devices.</p>
       <div className="appearance">
+        <div className="appearance-row">
+          <span className="appearance-label">Language</span>
+          <div className="segmented segmented-compact" role="radiogroup" aria-label="Language">
+            {LANGUAGES.map((l) => (
+              <button key={l.id} type="button" role="radio" lang={l.id} aria-checked={getLanguage() === l.id} className={getLanguage() === l.id ? 'on' : ''} onClick={() => setLanguage(l.id)}>
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="appearance-row">
           <span className="appearance-label">Mode</span>
           <div className="segmented segmented-compact" role="radiogroup" aria-label="Color mode">

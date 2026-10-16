@@ -650,7 +650,7 @@ export function createService({
 
     /** Per-account UI preferences, merged key by key (small, known keys only). */
     async savePrefs(patch) {
-      const allowed = ['theme', 'notifications', 'dashboard'];
+      const allowed = ['theme', 'notifications', 'dashboard', 'language'];
       const clean = Object.fromEntries(Object.entries(patch).filter(([k, v]) => allowed.includes(k) && v && typeof v === 'object'));
       if (JSON.stringify(clean).length > 20_000) throw Object.assign(new Error('Preferences are too large'), { status: 413 });
       const current = (await store.load()).prefs || {};

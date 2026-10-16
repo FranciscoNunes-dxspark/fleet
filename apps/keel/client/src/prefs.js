@@ -7,6 +7,7 @@ export const PREF_KEYS = {
   theme: 'keel.theme.v1',
   notifications: 'keel.notifications.v1',
   dashboard: 'keel.dashboard.v1',
+  language: 'keel.language.v1',
 };
 
 // Keep what this browser saved before the rename from Shipdeck.

@@ -1,3 +1,5 @@
+import { locale } from './i18n.js';
+
 const HOUR = 3_600_000;
 
 export function age(iso, now = Date.now()) {
@@ -14,12 +16,12 @@ export function hours(h) {
 
 export function date(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString(locale(), { month: 'short', day: 'numeric' });
 }
 
 export function dateTime(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export const pct = (x) => (x == null ? '—' : `${Math.round(x * 100)}%`);
