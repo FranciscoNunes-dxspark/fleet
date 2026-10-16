@@ -3,6 +3,12 @@
    severity, so they always mean "look here". */
 
 :root {
+  /* Work item type colors, shared by lists, the tree and the inbox. */
+  --type-default: var(--info);
+  --type-bug: var(--bad);
+  --type-task: var(--warn);
+  --type-epic: #c58cf0;
+  --type-feature: #b39ddb;
   --bg: #161718;
   --surface: #1e1f21;
   --surface-2: #26282a;
@@ -233,6 +239,12 @@ label { font-size: 13px; color: var(--ink-2); }
 .strip::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--sev-low); border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px); }
 .strip.sev-high::before { background: var(--bad); }
 .strip.sev-medium::before { background: var(--warn); }
+/* Work items wear their type's color; the group heading already says how urgent. */
+.strip.wi-strip::before { background: var(--type-default); }
+.strip.wi-strip.wi-bug::before { background: var(--type-bug); }
+.strip.wi-strip.wi-task::before { background: var(--type-task); }
+.strip.wi-strip.wi-epic::before { background: var(--type-epic); }
+.strip.wi-strip.wi-feature::before { background: var(--type-feature); }
 .strip-main { min-width: 0; }
 .strip-title { background: none; border: 0; padding: 0; text-align: left; font-weight: 600; font-size: 15px; color: var(--ink); cursor: pointer; }
 .strip-title:hover { color: var(--accent-ink); text-decoration: underline; }
@@ -316,9 +328,9 @@ tr.saving { opacity: 0.55; }
 .chip-btn:hover { text-decoration: underline; }
 
 .type { font-size: 12px; font-weight: 500; padding-left: 9px; position: relative; color: var(--ink-2); }
-.type::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--info); }
-.type-bug::before { background: var(--bad); }
-.type-task::before { background: var(--warn); }
+.type::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--type-default); }
+.type-bug::before { background: var(--type-bug); }
+.type-task::before { background: var(--type-task); }
 
 /* ------------------------------------------------------------ feedback */
 .loading { display: flex; gap: 10px; align-items: center; padding: 28px 0; color: var(--muted); }
@@ -554,8 +566,8 @@ button.tree-caret:hover { background: var(--surface-2); color: var(--ink); }
 .tree-row .type { flex: none; width: 128px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-meta { flex: none; display: flex; align-items: center; gap: 10px; }
-.type-epic::before { background: #c58cf0; }
-.type-feature::before { background: #b39ddb; }
+.type-epic::before { background: var(--type-epic); }
+.type-feature::before { background: var(--type-feature); }
 .progress { display: inline-flex; align-items: center; gap: 8px; }
 .progress-bar { display: inline-flex; gap: 2px; width: 120px; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; flex: none; }
 .progress-done { background: var(--accent); }

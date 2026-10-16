@@ -28,6 +28,7 @@ const SEVERITY = {
 // Keel writes the titles of these kinds; the others (pull requests, work items) carry the
 // Azure DevOps title, shown as is so templates can't rewrite e.g. a PR titled "Site is down".
 const KEEL_TITLES = ['production', 'approval', 'pipeline', 'team'];
+const typeSlug = (type) => type.replace(/\s+/g, '-').toLowerCase();
 const itemTitle = (i) => (KEEL_TITLES.includes(i.kind) ? tx(i.title) : i.title);
 
 export default function Inbox() {
@@ -106,7 +107,7 @@ export default function Inbox() {
             <h2 className={`group-title sev-text-${sev}`}>{SEVERITY[sev]} <span className="muted">{group.length}</span></h2>
             <ol className="strips">
               {group.map((item) => (
-                <li key={item.key} className={`strip sev-${item.severity}`}>
+                <li key={item.key} className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}`}>
                   <div className="strip-main">
                     <button type="button" className="strip-title" onClick={() => open(item)}>{itemTitle(item)}</button>
                     <div className="strip-context">{tx(item.context)}</div>

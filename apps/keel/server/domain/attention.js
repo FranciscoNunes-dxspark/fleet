@@ -136,6 +136,7 @@ export function buildAttention({ prs, items, pipelines, workload, settings, curr
       out.push({
         key: `wi:${w.id}`,
         kind: 'work',
+        workItemType: w.type,
         severity: worst(reasons),
         title: w.title,
         context: `${w.projectName} · ${w.type} ${w.id} · ${w.assignedTo?.displayName || 'Unassigned'}`,
