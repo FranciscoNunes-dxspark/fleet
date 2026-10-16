@@ -1,7 +1,19 @@
 // Turns two consecutive snapshots of what the lead cares about into the
 // notifications worth interrupting them for. Pure, so it's easy to test.
 
-const VOTE_TEXT = { 10: 'approved', 5: 'approved with suggestions', '-5': 'is waiting for changes on', '-10': 'rejected' };
+// Whole sentences (not fragments), so they read well and translate cleanly.
+const VOTE_TITLE = {
+  10: (n) => `${n} approved your pull request`,
+  5: (n) => `${n} approved your pull request with suggestions`,
+  '-5': (n) => `${n} is waiting for changes on your pull request`,
+  '-10': (n) => `${n} rejected your pull request`,
+};
+const RUN_TITLE = {
+  succeeded: (p) => `Your run of ${p} succeeded`,
+  partiallySucceeded: (p) => `Your run of ${p} partially succeeded`,
+  failed: (p) => `Your run of ${p} failed`,
+  canceled: (p) => `Your run of ${p} was canceled`,
+};
 
 const CATEGORY_BY_KIND = { approval: 'approval', review: 'review', pipeline: 'pipeline', work: 'work', pr: 'pr', production: 'production' };
 
@@ -44,7 +56,7 @@ export function diffSnapshots(prev, next) {
       out.push({
         key: `vote:${pr.key}:${r.id}:${r.vote}`,
         category: 'myPr',
-        title: `${r.displayName} ${VOTE_TEXT[r.vote] || 'voted on'} your pull request`,
+        title: (VOTE_TITLE[r.vote] || ((n) => `${n} voted on your pull request`))(r.displayName),
         body: pr.title,
         target: { type: 'pr', projectId: pr.projectId, repoId: pr.repoId, id: pr.id },
         severity: r.vote < 0 ? 'high' : 'medium',
@@ -73,7 +85,7 @@ export function diffSnapshots(prev, next) {
     out.push({
       key: `run:${b.id}`,
       category: 'run',
-      title: `${b.definition.name} ${ok ? 'succeeded' : b.result === 'partiallySucceeded' ? 'partially succeeded' : b.result || 'finished'}`,
+      title: (RUN_TITLE[b.result] || ((p) => `Your run of ${p} finished`))(b.definition.name),
       body: `${b.buildNumber} on ${b.sourceBranch}`,
       target: { type: 'pipeline' },
       webUrl: b.webUrl,

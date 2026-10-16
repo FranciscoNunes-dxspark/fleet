@@ -4,15 +4,16 @@ import { useApi, useApp } from '../context.js';
 import { isBlocked } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle } from '../ui.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
+import { t } from '../i18n.js';
 
 const isContainer = (w) => /^(epic|feature)$/i.test(w.type);
 
 /** Done / in progress / not started as one bar, with the numbers spelled out beside it. */
 function Progress({ r }) {
-  if (!r.total) return <span className="muted small progress-empty">No backlog items yet</span>;
+  if (!r.total) return <span className="muted small progress-empty">{t('No backlog items yet')}</span>;
   const pct = (n) => `${(n / r.total) * 100}%`;
   const notStarted = r.total - r.done - r.inProgress;
-  const label = `${r.done} of ${r.total} done, ${r.inProgress} in progress, ${notStarted} not started`;
+  const label = t('{done} of {total} done, {doing} in progress, {todo} not started', { done: r.done, total: r.total, doing: r.inProgress, todo: notStarted });
   return (
     <span className="progress" title={label}>
       <span className="progress-bar" role="img" aria-label={label}>
@@ -21,7 +22,7 @@ function Progress({ r }) {
       </span>
       <span className="progress-text small">
         <strong>{Math.round((r.done / r.total) * 100)}%</strong>
-        <span className="muted"> {r.done}/{r.total} items{r.points ? ` · ${r.donePoints}/${r.points} pts` : ''}</span>
+        <span className="muted"> {t('{done}/{total} items', { done: r.done, total: r.total })}{r.points ? ` · ${t('{done}/{total} pts', { done: r.donePoints, total: r.points })}` : ''}</span>
       </span>
     </span>
   );
@@ -40,14 +41,14 @@ function TreeNode({ node, depth, expanded, toggle, needle, blockedTag }) {
   // story, its tasks collapse into the "2/5 tasks" count instead.
   const visibleKids = node.children.filter((c) => (container || !/task/i.test(c.item.type)) && (!needle || matches(c, needle) || matches(node, needle)));
   const tasks = container ? [] : node.children.filter((c) => /task/i.test(c.item.type));
-  const tasksDone = tasks.filter((t) => t.item.stateCategory === 'Completed').length;
+  const tasksDone = tasks.filter((k) => k.item.stateCategory === 'Completed').length;
   const r = node.rollup;
 
   return (
     <li className={`tree-node depth-${depth}`}>
       <div className={`tree-row ${container ? 'tree-container' : 'tree-leaf'} ${w.stateCategory === 'Completed' ? 'tree-done' : ''}`}>
         {container && visibleKids.length > 0 ? (
-          <button type="button" className="tree-caret" aria-expanded={!!open} aria-label={`${open ? 'Collapse' : 'Expand'} ${w.title}`} onClick={() => toggle(w.id)}>
+          <button type="button" className="tree-caret" aria-expanded={!!open} aria-label={t(open ? 'Collapse {title}' : 'Expand {title}', { title: w.title })} onClick={() => toggle(w.id)}>
             {open ? '▾' : '▸'}
           </button>
         ) : <span className="tree-caret" aria-hidden="true" />}
@@ -60,15 +61,15 @@ function TreeNode({ node, depth, expanded, toggle, needle, blockedTag }) {
           {container ? (
             <>
               <Progress r={r} />
-              {r.features > 0 && /epic/i.test(w.type) && <span className="muted small">{r.features} feature{r.features === 1 ? '' : 's'}</span>}
-              {r.openBugs > 0 && <span className="small text-warn">{r.openBugs} open bug{r.openBugs === 1 ? '' : 's'}</span>}
-              {r.blocked > 0 && <Chip tone="bad">{r.blocked} blocked</Chip>}
+              {r.features > 0 && /epic/i.test(w.type) && <span className="muted small">{t(r.features === 1 ? '{n} feature' : '{n} features', { n: r.features })}</span>}
+              {r.openBugs > 0 && <span className="small text-warn">{t(r.openBugs === 1 ? '{n} open bug' : '{n} open bugs', { n: r.openBugs })}</span>}
+              {r.blocked > 0 && <Chip tone="bad">{t('{n} blocked', { n: r.blocked })}</Chip>}
             </>
           ) : (
             <>
-              {w.storyPoints != null && <Chip>{w.storyPoints} pts</Chip>}
-              {tasks.length > 0 && <span className="muted small">{tasksDone}/{tasks.length} tasks</span>}
-              {isBlocked(w, blockedTag) && w.stateCategory !== 'Completed' && <Chip tone="bad">Blocked</Chip>}
+              {w.storyPoints != null && <Chip>{t('{n} pts', { n: w.storyPoints })}</Chip>}
+              {tasks.length > 0 && <span className="muted small">{t('{done}/{total} tasks', { done: tasksDone, total: tasks.length })}</span>}
+              {isBlocked(w, blockedTag) && w.stateCategory !== 'Completed' && <Chip tone="bad">{t('Blocked')}</Chip>}
             </>
           )}
           <Avatar person={w.assignedTo} size={20} />
@@ -104,7 +105,7 @@ export default function Epics() {
     epics: p.epics.filter((e) => (!needle || matches(e, needle)) && (!hideEmpty || e.rollup.total || e.children.length)),
   })), [data, needle, hideEmpty]);
 
-  if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading label="Loading epics and their backlogs…" />;
+  if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading label={t('Loading epics and their backlogs…')} />;
 
   const total = data.projects.reduce((s, p) => s + p.epics.length, 0);
   // Expand every epic and feature (backlog items have no children worth opening).
@@ -113,20 +114,25 @@ export default function Epics() {
 
   return (
     <div className="page">
-      <PageHeader title="Epics" sub={`${total} ${includeClosed ? '' : 'open '}epic${total === 1 ? '' : 's'} across your tracked projects. Progress counts backlog items (stories, PBIs, bugs) under each epic and feature.`}>
-        {loading && <span className="spinner" aria-label="Refreshing" />}
+      <PageHeader
+        title={t('Epics')}
+        sub={`${t(includeClosed
+          ? (total === 1 ? '{n} epic across your tracked projects.' : '{n} epics across your tracked projects.')
+          : (total === 1 ? '{n} open epic across your tracked projects.' : '{n} open epics across your tracked projects.'), { n: total })} ${t('Progress counts backlog items (stories, PBIs, bugs) under each epic and feature.')}`}
+      >
+        {loading && <span className="spinner" aria-label={t('Refreshing')} />}
       </PageHeader>
       <div className="filters">
-        <input type="search" className="input" placeholder="Search epics, features, items or ID" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search epics" />
-        <Toggle checked={includeClosed} onChange={setIncludeClosed}>Include closed epics</Toggle>
-        <Toggle checked={hideEmpty} onChange={setHideEmpty}>Hide empty epics</Toggle>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setExpanded(new Set(allIds))}>Expand all</button>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setExpanded(new Set())}>Collapse all</button>
+        <input type="search" className="input" placeholder={t('Search epics, features, items or ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search epics')} />
+        <Toggle checked={includeClosed} onChange={setIncludeClosed}>{t('Include closed epics')}</Toggle>
+        <Toggle checked={hideEmpty} onChange={setHideEmpty}>{t('Hide empty epics')}</Toggle>
+        <button type="button" className="btn btn-ghost btn-small" onClick={() => setExpanded(new Set(allIds))}>{t('Expand all')}</button>
+        <button type="button" className="btn btn-ghost btn-small" onClick={() => setExpanded(new Set())}>{t('Collapse all')}</button>
       </div>
 
       {!projects.some((p) => p.epics.length) && (
-        <Empty title={total ? 'No epics match.' : 'No epics in your tracked projects.'}>
-          {total ? 'Clear the search or filters.' : 'Epics appear here once they exist in Azure DevOps (in your teams\' area paths, if you limited it in Settings).'}
+        <Empty title={total ? t('No epics match.') : t('No epics in your tracked projects.')}>
+          {total ? t('Clear the search or filters.') : t('Epics appear here once they exist in Azure DevOps (in your teams\' area paths, if you limited it in Settings).')}
         </Empty>
       )}
 

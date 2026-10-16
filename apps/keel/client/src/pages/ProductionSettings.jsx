@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { Loading } from '../ui.jsx';
+import { t, tx } from '../i18n.js';
 
 const blank = () => ({ key: Math.random(), id: null, name: '', url: '', appInsightsAppId: '', apiKey: undefined, hasApiKey: false, link: null, latencyWarnMs: 2000 });
 
@@ -27,12 +28,12 @@ export default function ProductionSettings() {
     if (window.location.hash === '#production') document.getElementById('production')?.scrollIntoView({ block: 'start' });
   }, [rows === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!rows) return <section className="panel" id="production"><Loading label="Loading monitors…" /></section>;
+  if (!rows) return <section className="panel" id="production"><Loading label={t('Loading monitors…')} /></section>;
   if (!can('monitors.manage')) {
     return (
       <section className="panel" id="production">
-        <h2 className="section-title">Production monitors</h2>
-        <p className="muted small">{rows.length ? `${rows.length} monitor${rows.length === 1 ? ' is' : 's are'} set up.` : 'No monitors yet.'} Only admins can add or change production monitors.</p>
+        <h2 className="section-title">{t('Production monitors')}</h2>
+        <p className="muted small">{rows.length ? t(rows.length === 1 ? '{n} monitor is set up.' : '{n} monitors are set up.', { n: rows.length }) : t('No monitors yet.')} {t('Only admins can add or change production monitors.')}</p>
       </section>
     );
   }
@@ -60,7 +61,7 @@ export default function ProductionSettings() {
         body: { monitors: rows.map(({ id, name, url, appInsightsAppId, apiKey, link, latencyWarnMs }) => ({ id, name, url, appInsightsAppId, apiKey, link, latencyWarnMs })) },
       });
       setRows(saved.map((m) => ({ ...m, key: m.id, apiKey: undefined })));
-      toast('Production monitors saved');
+      toast(t('Production monitors saved'));
       refresh();
     } catch (e) {
       toast(e.message, 'bad');
@@ -70,70 +71,69 @@ export default function ProductionSettings() {
   };
 
   const test = async (r) => {
-    setTests((t) => ({ ...t, [r.key]: { running: true } }));
+    setTests((ts) => ({ ...ts, [r.key]: { running: true } }));
     try {
       const res = await api('/production/test', { method: 'POST', body: { id: r.id, url: r.url, appInsightsAppId: r.appInsightsAppId, apiKey: r.apiKey } });
-      setTests((t) => ({ ...t, [r.key]: res }));
+      setTests((ts) => ({ ...ts, [r.key]: res }));
     } catch (e) {
-      setTests((t) => ({ ...t, [r.key]: { error: e.message } }));
+      setTests((ts) => ({ ...ts, [r.key]: { error: e.message } }));
     }
   };
 
   return (
     <section className="panel" id="production">
-      <h2 className="section-title">Production monitors</h2>
+      <h2 className="section-title">{t('Production monitors')}</h2>
       <p className="muted small">
-        Keel checks each URL every minute. With an Application Insights App ID and API key (Application Insights → API Access → Create API key, "Read telemetry"),
-        it also tracks failure rates, exceptions and slow requests. Keys are stored encrypted on the server and never shown again.
-        {authMode === 'login' && ' Monitors are shared by everyone who uses this Keel server.'}
+        {t('Keel checks each URL every minute. With an Application Insights App ID and API key (Application Insights → API Access → Create API key, "Read telemetry"), it also tracks failure rates, exceptions and slow requests. Keys are stored encrypted on the server and never shown again.')}
+        {authMode === 'login' && ` ${t('Monitors are shared by everyone who uses this Keel server.')}`}
       </p>
 
       <div className="monitor-edit-list">
         {rows.map((r) => {
-          const t = tests[r.key];
+          const result = tests[r.key];
           return (
             <fieldset key={r.key} className="monitor-edit">
-              <legend>{r.name || 'New monitor'}</legend>
+              <legend>{r.name || t('New monitor')}</legend>
               <div className="monitor-grid">
-                <label>Name<input className="input" value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder="Sports (production)" /></label>
-                <label>URL to check<input className="input" value={r.url} onChange={(e) => set(r.key, { url: e.target.value })} placeholder="https://sports.example.com/health" inputMode="url" /></label>
-                <label>Application Insights App ID <span className="muted small">(optional)</span>
+                <label>{t('Name')}<input className="input" value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder={t('Sports (production)')} /></label>
+                <label>{t('URL to check')}<input className="input" value={r.url} onChange={(e) => set(r.key, { url: e.target.value })} placeholder="https://sports.example.com/health" inputMode="url" /></label>
+                <label>Application Insights App ID <span className="muted small">{t('(optional)')}</span>
                   <input className="input mono" value={r.appInsightsAppId} onChange={(e) => set(r.key, { appInsightsAppId: e.target.value })} placeholder="00000000-0000-0000-0000-000000000000" />
                 </label>
-                <label>API key
+                <label>{t('API key')}
                   <input
                     className="input mono"
                     type="password"
                     autoComplete="off"
                     value={r.apiKey || ''}
                     onChange={(e) => set(r.key, { apiKey: e.target.value })}
-                    placeholder={r.hasApiKey ? 'Saved. Type a new key to replace it' : 'Paste the API key'}
+                    placeholder={r.hasApiKey ? t('Saved. Type a new key to replace it') : t('Paste the API key')}
                     disabled={r.apiKey === null}
                   />
-                  {r.hasApiKey && r.apiKey !== null && <button type="button" className="link-btn small" onClick={() => set(r.key, { apiKey: null })}>Remove saved key</button>}
-                  {r.apiKey === null && <span className="small text-warn">The saved key will be removed when you save. <button type="button" className="link-btn" onClick={() => set(r.key, { apiKey: undefined })}>Undo</button></span>}
+                  {r.hasApiKey && r.apiKey !== null && <button type="button" className="link-btn small" onClick={() => set(r.key, { apiKey: null })}>{t('Remove saved key')}</button>}
+                  {r.apiKey === null && <span className="small text-warn">{t('The saved key will be removed when you save.')} <button type="button" className="link-btn" onClick={() => set(r.key, { apiKey: undefined })}>{t('Undo')}</button></span>}
                 </label>
-                <label>Deploys come from
+                <label>{t('Deploys come from')}
                   <select className="input" value={linkValue(r.link)} onChange={(e) => set(r.key, { link: linkOptions.find((o) => o.value === e.target.value)?.link || null })}>
-                    <option value="">Not linked</option>
+                    <option value="">{t('Not linked')}</option>
                     {['Release stages', 'Pipelines'].map((g) => (
-                      <optgroup key={g} label={g}>
+                      <optgroup key={g} label={t(g)}>
                         {linkOptions.filter((o) => o.group === g).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </optgroup>
                     ))}
                   </select>
                 </label>
-                <label>Slow above (ms)<input className="input" type="number" min={100} max={30000} value={r.latencyWarnMs} onChange={(e) => set(r.key, { latencyWarnMs: Number(e.target.value) })} /></label>
+                <label>{t('Slow above (ms)')}<input className="input" type="number" min={100} max={30000} value={r.latencyWarnMs} onChange={(e) => set(r.key, { latencyWarnMs: Number(e.target.value) })} /></label>
               </div>
               <div className="monitor-edit-actions">
-                <button type="button" className="btn btn-small" onClick={() => test(r)} disabled={t?.running || (!r.url && !r.appInsightsAppId)}>{t?.running ? 'Testing…' : 'Test'}</button>
-                <button type="button" className="btn btn-small btn-ghost text-bad" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>Remove monitor</button>
-                {t && !t.running && (
+                <button type="button" className="btn btn-small" onClick={() => test(r)} disabled={result?.running || (!r.url && !r.appInsightsAppId)}>{result?.running ? t('Testing…') : t('Test')}</button>
+                <button type="button" className="btn btn-small btn-ghost text-bad" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>{t('Remove monitor')}</button>
+                {result && !result.running && (
                   <span className="small">
-                    {t.error && <span className="text-bad">{t.error}</span>}
-                    {t.http && <span className={t.http.ok ? 'text-ok' : 'text-bad'}>URL: {t.http.ok ? `OK, HTTP ${t.http.status} in ${t.http.ms}ms` : t.http.error}</span>}
-                    {t.http && t.ai && ' · '}
-                    {t.ai && <span className={t.ai.ok ? 'text-ok' : 'text-bad'}>Application Insights: {t.ai.ok ? `OK (${t.ai.total} requests in the last hour)` : t.ai.error}</span>}
+                    {result.error && <span className="text-bad">{result.error}</span>}
+                    {result.http && <span className={result.http.ok ? 'text-ok' : 'text-bad'}>{result.http.ok ? t('URL: OK, HTTP {status} in {ms}ms', { status: result.http.status, ms: result.http.ms }) : t('URL: {error}', { error: tx(result.http.error) })}</span>}
+                    {result.http && result.ai && ' · '}
+                    {result.ai && <span className={result.ai.ok ? 'text-ok' : 'text-bad'}>{result.ai.ok ? t('Application Insights: OK ({n} requests in the last hour)', { n: result.ai.total }) : `Application Insights: ${tx(result.ai.error)}`}</span>}
                   </span>
                 )}
               </div>
@@ -142,8 +142,8 @@ export default function ProductionSettings() {
         })}
       </div>
       <div className="monitor-edit-actions">
-        <button type="button" className="btn btn-small" onClick={() => setRows((rs) => [...rs, blank()])}>Add monitor</button>
-        <button type="button" className="btn btn-primary btn-small" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save monitors'}</button>
+        <button type="button" className="btn btn-small" onClick={() => setRows((rs) => [...rs, blank()])}>{t('Add monitor')}</button>
+        <button type="button" className="btn btn-primary btn-small" onClick={save} disabled={busy}>{busy ? t('Saving…') : t('Save monitors')}</button>
       </div>
     </section>
   );

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { t } from './i18n.js';
 
 // Small single-series charts. One hue (the accent), text in ink tokens,
 // recessive gridlines, and a hover/focus tooltip on every mark.
@@ -32,10 +33,10 @@ export function ColumnChart({ data, label, valueLabel, formatX = (x) => x, heigh
       <figcaption className="chart-title">{label}</figcaption>
       <div className="chart-body" ref={ref}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label} className="chart-svg">
-          {ticks.map((t) => (
-            <g key={t}>
-              <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} className="grid" />
-              <text x={pad.l - 6} y={y(t) + 4} className="axis" textAnchor="end">{t}</text>
+          {ticks.map((tick) => (
+            <g key={tick}>
+              <line x1={pad.l} x2={W - pad.r} y1={y(tick)} y2={y(tick)} className="grid" />
+              <text x={pad.l - 6} y={y(tick) + 4} className="axis" textAnchor="end">{tick}</text>
             </g>
           ))}
           {data.map((d, i) => {
@@ -71,7 +72,7 @@ export function ColumnChart({ data, label, valueLabel, formatX = (x) => x, heigh
   );
 }
 
-export function BarList({ data, label, valueLabel, empty = 'No data in this range.' }) {
+export function BarList({ data, label, valueLabel, empty = t('No data in this range.') }) {
   const max = Math.max(1, ...data.map((d) => d.value));
   const total = data.reduce((s, d) => s + d.value, 0);
   return (

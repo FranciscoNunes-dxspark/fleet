@@ -4,6 +4,10 @@ import { useApi, useApp } from '../context.js';
 import { age, hours, pct, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, ErrorBox, PageHeader } from '../ui.jsx';
 import { PREF_KEYS, pushPref } from '../prefs.js';
+import { locale, t, tj, tx } from '../i18n.js';
+
+// WIDGETS title / linkText stay English here; they are translated with t() at render
+// so they follow the current language.
 
 const WIDGETS = [
   { id: 'production', title: 'Production', link: '/production', linkText: 'Details' },
@@ -16,6 +20,10 @@ const WIDGETS = [
   { id: 'epics', title: 'Epic progress', link: '/epics', linkText: 'All epics' },
   { id: 'mine', title: 'My work', link: '/work?view=mine', linkText: 'My items' },
 ];
+// Keel writes the titles of these kinds; the others (pull requests, work items) carry the
+// Azure DevOps title, shown as is so templates can't rewrite e.g. a PR titled "Site is down".
+const KEEL_TITLES = ['production', 'approval', 'pipeline', 'team'];
+const itemTitle = (i) => (KEEL_TITLES.includes(i.kind) ? tx(i.title) : i.title);
 const DEFAULT_LAYOUT = WIDGETS.map((w) => ({ id: w.id, visible: w.id !== 'mine' }));
 const STORAGE_KEY = PREF_KEYS.dashboard;
 const LEGACY_KEY = 'leadConsole.dashboard.v1'; // before the rename to Shipdeck
@@ -60,31 +68,31 @@ export default function Dashboard() {
   const setVisible = (id, visible) => update(layout.map((l) => (l.id === id ? { ...l, visible } : l)));
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const first = meta.me.displayName.replace(/\(.*?\)/, '').trim().split(/\s+/)[0];
+  const greeting = t(hour < 12 ? 'Good morning, {name}' : hour < 18 ? 'Good afternoon, {name}' : 'Good evening, {name}', { name: first });
   const shown = layout.filter((l) => l.visible);
   const hidden = layout.filter((l) => !l.visible);
 
   return (
     <div className="page page-wide">
-      <PageHeader title={`${greeting}, ${first}`} sub={`${meta.trackedProjects.map((p) => p.name).join(', ') || 'No projects tracked yet'}`}>
+      <PageHeader title={greeting} sub={meta.trackedProjects.map((p) => p.name).join(', ') || t('No projects tracked yet')}>
         <button type="button" className={`btn btn-small ${editing ? 'btn-primary' : ''}`} onClick={() => setEditing((e) => !e)}>
-          {editing ? 'Done' : 'Customize'}
+          {editing ? t('Done') : t('Customize')}
         </button>
       </PageHeader>
 
       {editing && (
         <div className="panel customize">
-          <p className="small muted">Use the arrows on each widget to reorder it, or hide what you don't need. Your layout is saved in this browser.</p>
+          <p className="small muted">{t("Use the arrows on each widget to reorder it, or hide what you don't need. Your layout is saved in this browser.")}</p>
           {hidden.length > 0 && (
             <div className="chips">
-              <span className="small">Hidden:</span>
+              <span className="small">{t('Hidden:')}</span>
               {hidden.map((h) => (
-                <button key={h.id} type="button" className="toggle" onClick={() => setVisible(h.id, true)}>+ {WIDGETS.find((w) => w.id === h.id).title}</button>
+                <button key={h.id} type="button" className="toggle" onClick={() => setVisible(h.id, true)}>+ {t(WIDGETS.find((w) => w.id === h.id).title)}</button>
               ))}
             </div>
           )}
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => update(DEFAULT_LAYOUT)}>Reset to default</button>
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => update(DEFAULT_LAYOUT)}>{t('Reset to default')}</button>
         </div>
       )}
 
@@ -92,17 +100,18 @@ export default function Dashboard() {
         {shown.map((l) => {
           const def = WIDGETS.find((w) => w.id === l.id);
           const i = layout.findIndex((x) => x.id === l.id);
+          const title = t(def.title);
           return (
-            <section key={l.id} className={`widget widget-${l.id}`} aria-label={def.title}>
+            <section key={l.id} className={`widget widget-${l.id}`} aria-label={title}>
               <header className="widget-head">
-                <h2>{def.title}</h2>
+                <h2>{title}</h2>
                 {editing ? (
                   <span className="widget-edit">
-                    <button type="button" className="btn btn-ghost btn-small" onClick={() => move(i, -1)} aria-label={`Move ${def.title} earlier`}>↑</button>
-                    <button type="button" className="btn btn-ghost btn-small" onClick={() => move(i, 1)} aria-label={`Move ${def.title} later`}>↓</button>
-                    <button type="button" className="btn btn-ghost btn-small" onClick={() => setVisible(l.id, false)}>Hide</button>
+                    <button type="button" className="btn btn-ghost btn-small" onClick={() => move(i, -1)} aria-label={t('Move {widget} earlier', { widget: title })}>↑</button>
+                    <button type="button" className="btn btn-ghost btn-small" onClick={() => move(i, 1)} aria-label={t('Move {widget} later', { widget: title })}>↓</button>
+                    <button type="button" className="btn btn-ghost btn-small" onClick={() => setVisible(l.id, false)}>{t('Hide')}</button>
                   </span>
-                ) : <Link to={def.link} className="small">{def.linkText}</Link>}
+                ) : <Link to={def.link} className="small">{t(def.linkText)}</Link>}
               </header>
               <WidgetBody id={l.id} />
             </section>
@@ -130,7 +139,7 @@ function WidgetBody({ id }) {
 
 function useWidgetData(path) {
   const r = useApi(path);
-  const fallback = r.error ? <ErrorBox error={r.error} onRetry={r.reload} /> : <div className="widget-loading" aria-label="Loading"><span className="spinner" /></div>;
+  const fallback = r.error ? <ErrorBox error={r.error} onRetry={r.reload} /> : <div className="widget-loading" aria-label={t('Loading')}><span className="spinner" /></div>;
   return { data: r.data, fallback: r.data ? null : fallback };
 }
 
@@ -149,23 +158,23 @@ function AttentionWidget() {
   return (
     <>
       <div className="stat-row">
-        <Stat value={s.high} label="act now" tone={s.high ? 'bad' : undefined} to="/inbox" />
-        <Stat value={s.myReviews} label="reviews for you" to="/prs" />
-        {s.approvals > 0 && <Stat value={s.approvals} label="approvals" tone="accent" to="/pipelines" />}
-        <Stat value={s.blockedItems} label="blocked" tone={s.blockedItems ? 'warn' : undefined} to="/work?view=blocked" />
+        <Stat value={s.high} label={t('act now')} tone={s.high ? 'bad' : undefined} to="/inbox" />
+        <Stat value={s.myReviews} label={t('reviews for you')} to="/prs" />
+        {s.approvals > 0 && <Stat value={s.approvals} label={t('approvals')} tone="accent" to="/pipelines" />}
+        <Stat value={s.blockedItems} label={t('blocked')} tone={s.blockedItems ? 'warn' : undefined} to="/work?view=blocked" />
       </div>
       {top.length ? (
         <ul className="mini-list">
           {top.map((i) => (
             <li key={i.key} className={`mini-sev sev-${i.severity}`}>
               {i.target.type === 'pr' || i.target.type === 'workitem'
-                ? <button type="button" className="link-btn mini-title" onClick={() => openDrawer(i.target)}>{i.title}</button>
-                : <Link className="mini-title" to={i.target.type === 'person' ? '/team' : i.target.type === 'release' ? '/pipelines?tab=releases' : i.target.type === 'production' ? '/production' : '/pipelines'}>{i.title}</Link>}
-              <span className="muted small truncate">{i.reasons[0].text}</span>
+                ? <button type="button" className="link-btn mini-title" onClick={() => openDrawer(i.target)}>{itemTitle(i)}</button>
+                : <Link className="mini-title" to={i.target.type === 'person' ? '/team' : i.target.type === 'release' ? '/pipelines?tab=releases' : i.target.type === 'production' ? '/production' : '/pipelines'}>{itemTitle(i)}</Link>}
+              <span className="muted small truncate">{tx(i.reasons[0].text)}</span>
             </li>
           ))}
         </ul>
-      ) : <p className="muted small">Nothing needs you right now.</p>}
+      ) : <p className="muted small">{t('Nothing needs you right now.')}</p>}
     </>
   );
 }
@@ -179,10 +188,10 @@ function ReviewsWidget() {
   return (
     <>
       <div className="stat-row">
-        <Stat value={mine.length} label="waiting on you" tone={mine.length ? 'accent' : undefined} to="/prs" />
-        <Stat value={data.prs.length} label="open PRs" to="/prs" />
-        <Stat value={stale} label="stale" tone={stale ? 'warn' : undefined} to="/prs" />
-        <Stat value={data.prs.filter((p) => p.hasConflicts).length} label="conflicts" />
+        <Stat value={mine.length} label={t('waiting on you')} tone={mine.length ? 'accent' : undefined} to="/prs" />
+        <Stat value={data.prs.length} label={t('open PRs')} to="/prs" />
+        <Stat value={stale} label={t('stale')} tone={stale ? 'warn' : undefined} to="/prs" />
+        <Stat value={data.prs.filter((p) => p.hasConflicts).length} label={t('conflicts')} />
       </div>
       {mine.length ? (
         <ul className="mini-list">
@@ -193,7 +202,7 @@ function ReviewsWidget() {
             </li>
           ))}
         </ul>
-      ) : <p className="muted small">No pull requests are waiting on your vote.</p>}
+      ) : <p className="muted small">{t('No pull requests are waiting on your vote.')}</p>}
     </>
   );
 }
@@ -207,22 +216,22 @@ function PipelinesWidget() {
   return (
     <>
       <div className="stat-row">
-        <Stat value={failing.length} label="failing" tone={failing.length ? 'bad' : 'ok'} to="/pipelines" />
-        <Stat value={unstable.length} label="unstable" tone={unstable.length ? 'warn' : undefined} to="/pipelines" />
-        <Stat value={running.length} label="running now" to="/pipelines" />
-        <Stat value={data.length} label="tracked" />
+        <Stat value={failing.length} label={t('failing')} tone={failing.length ? 'bad' : 'ok'} to="/pipelines" />
+        <Stat value={unstable.length} label={t('unstable')} tone={unstable.length ? 'warn' : undefined} to="/pipelines" />
+        <Stat value={running.length} label={t('running now')} to="/pipelines" />
+        <Stat value={data.length} label={t('tracked')} />
       </div>
       <ul className="mini-list">
         {[...failing, ...running.filter((p) => p.health !== 'failing')].slice(0, 5).map((p) => (
           <li key={p.key}>
             <a className="mini-title" href={(p.running[0] || p.lastRun)?.webUrl} target="_blank" rel="noreferrer noopener">{p.definition.name}</a>
             <span className="small">
-              {p.running.length ? <Chip tone="info">Running</Chip> : <Chip tone="bad">Failing</Chip>}
-              <span className="muted"> {p.running.length ? `started ${age(p.running[0].startedAt || p.running[0].queuedAt)} ago` : `${p.failStreak} in a row`}</span>
+              {p.running.length ? <Chip tone="info">{t('Running')}</Chip> : <Chip tone="bad">{t('Failing')}</Chip>}
+              <span className="muted"> {p.running.length ? t('started {age} ago', { age: age(p.running[0].startedAt || p.running[0].queuedAt) }) : t('{n} in a row', { n: p.failStreak })}</span>
             </span>
           </li>
         ))}
-        {!failing.length && !running.length && <li className="muted small">All default branches are green.</li>}
+        {!failing.length && !running.length && <li className="muted small">{t('All default branches are green.')}</li>}
       </ul>
     </>
   );
@@ -235,23 +244,23 @@ function WorkWidget() {
   const open = data.items;
   const by = (cat) => open.filter((w) => w.stateCategory === cat).length;
   const segs = [
-    { id: 'InProgress', label: 'In progress', n: by('InProgress'), cls: 'seg-doing' },
-    { id: 'Resolved', label: 'Resolved', n: by('Resolved'), cls: 'seg-resolved' },
-    { id: 'Proposed', label: 'Not started', n: by('Proposed'), cls: 'seg-todo' },
+    { id: 'InProgress', label: t('In progress'), aria: '{n} in progress', n: by('InProgress'), cls: 'seg-doing' },
+    { id: 'Resolved', label: t('Resolved'), aria: '{n} resolved', n: by('Resolved'), cls: 'seg-resolved' },
+    { id: 'Proposed', label: t('Not started'), aria: '{n} not started', n: by('Proposed'), cls: 'seg-todo' },
   ];
   const total = open.length || 1;
   const blockedTag = meta.blockedTag.toLowerCase();
-  const blocked = open.filter((w) => w.blocked || w.state.toLowerCase() === blockedTag || w.tags.some((t) => t.toLowerCase() === blockedTag)).length;
+  const blocked = open.filter((w) => w.blocked || w.state.toLowerCase() === blockedTag || w.tags.some((tag) => tag.toLowerCase() === blockedTag)).length;
   const p1 = open.filter((w) => w.type === 'Bug' && (Number(w.priority) === 1 || String(w.severity || '').startsWith('1'))).length;
   return (
     <>
       <div className="stat-row">
-        <Stat value={open.length} label="open items" to="/work" />
-        <Stat value={blocked} label="blocked" tone={blocked ? 'bad' : undefined} to="/work?view=blocked" />
-        <Stat value={p1} label="P1 bugs" tone={p1 ? 'bad' : undefined} to="/work?view=bugs" />
-        <Stat value={open.filter((w) => !w.assignedTo).length} label="unassigned" to="/work?view=unassigned" />
+        <Stat value={open.length} label={t('open items')} to="/work" />
+        <Stat value={blocked} label={t('blocked')} tone={blocked ? 'bad' : undefined} to="/work?view=blocked" />
+        <Stat value={p1} label={t('P1 bugs')} tone={p1 ? 'bad' : undefined} to="/work?view=bugs" />
+        <Stat value={open.filter((w) => !w.assignedTo).length} label={t('unassigned')} to="/work?view=unassigned" />
       </div>
-      <div className="stack-bar" role="img" aria-label={segs.map((s) => `${s.n} ${s.label.toLowerCase()}`).join(', ')}>
+      <div className="stack-bar" role="img" aria-label={segs.map((s) => t(s.aria, { n: s.n })).join(', ')}>
         {segs.filter((s) => s.n).map((s) => <span key={s.id} className={s.cls} style={{ width: `${(s.n / total) * 100}%` }} />)}
       </div>
       <ul className="legend small">
@@ -270,7 +279,7 @@ function TeamWidget() {
   return (
     <ul className="load-list">
       {rows.map((r) => (
-        <li key={r.person.id} title={`${r.inProgress} in progress, ${r.reviewsPending} reviews owed, ${r.prsAuthored} open PRs`}>
+        <li key={r.person.id} title={t('{doing} in progress, {reviews} reviews owed, {prs} open PRs', { doing: r.inProgress, reviews: r.reviewsPending, prs: r.prsAuthored })}>
           <span className="person"><Avatar person={r.person} size={20} /><span className="truncate">{r.person.displayName}</span></span>
           <span className="load-track">
             {r.inProgress > 0 && <span className="seg-doing" style={{ width: `${(r.inProgress / max) * 100}%` }} />}
@@ -280,9 +289,9 @@ function TeamWidget() {
         </li>
       ))}
       <li className="legend small">
-        <span><span className="legend-swatch seg-doing" />In progress</span>
-        <span><span className="legend-swatch seg-review" />Reviews owed</span>
-        <span className="muted">Flag above {meta.thresholds.maxInProgressPerPerson} / {meta.thresholds.maxPendingReviewsPerPerson}</span>
+        <span><span className="legend-swatch seg-doing" />{t('In progress')}</span>
+        <span><span className="legend-swatch seg-review" />{t('Reviews owed')}</span>
+        <span className="muted">{t('Flag above {doing} / {reviews}', { doing: meta.thresholds.maxInProgressPerPerson, reviews: meta.thresholds.maxPendingReviewsPerPerson })}</span>
       </li>
     </ul>
   );
@@ -291,25 +300,25 @@ function TeamWidget() {
 function FlowWidget() {
   const { data, fallback } = useWidgetData('/insights?days=14');
   if (fallback) return fallback;
-  const t = data.totals;
+  const totals = data.totals;
   const days = [...data.weekly];
   const max = Math.max(1, ...days.map((w) => w.merged));
   return (
     <>
       <div className="stat-row">
-        <Stat value={t.merged} label="PRs merged" to="/insights" />
-        <Stat value={hours(t.medianCycleHours)} label="median to merge" />
-        <Stat value={pct(t.buildPassRate)} label="build pass rate" />
+        <Stat value={totals.merged} label={t('PRs merged')} to="/insights" />
+        <Stat value={hours(totals.medianCycleHours)} label={t('median to merge')} />
+        <Stat value={pct(totals.buildPassRate)} label={t('build pass rate')} />
       </div>
-      <div className="mini-columns" role="img" aria-label={days.map((w) => `week of ${w.week}: ${w.merged} merged`).join(', ')}>
+      <div className="mini-columns" role="img" aria-label={days.map((w) => t('week of {week}: {n} merged', { week: w.week, n: w.merged })).join(', ')}>
         {days.map((w) => (
-          <span key={w.week} className="mini-col" title={`Week of ${new Date(w.week).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}: ${w.merged} merged`}>
+          <span key={w.week} className="mini-col" title={t('Week of {week}: {n} merged', { week: new Date(w.week).toLocaleDateString(locale(), { month: 'short', day: 'numeric' }), n: w.merged })}>
             <span className="mini-col-bar" style={{ height: `${Math.max(w.merged ? 6 : 0, (w.merged / max) * 100)}%` }} />
             <span className="mini-col-label">{w.merged}</span>
           </span>
         ))}
       </div>
-      <p className="muted small">Merged pull requests per week.</p>
+      <p className="muted small">{t('Merged pull requests per week.')}</p>
     </>
   );
 }
@@ -319,7 +328,7 @@ function EpicsWidget() {
   if (fallback) return fallback;
   const epics = data.projects.flatMap((p) => p.epics).filter((e) => e.rollup.total)
     .sort((a, b) => (b.rollup.inProgress - a.rollup.inProgress) || (b.rollup.total - a.rollup.total)).slice(0, 6);
-  if (!epics.length) return <p className="muted small">No open epics with backlog items.</p>;
+  if (!epics.length) return <p className="muted small">{t('No open epics with backlog items.')}</p>;
   return (
     <ul className="mini-list">
       {epics.map((e) => {
@@ -353,7 +362,7 @@ function MineWidget() {
       {myPrs.map((p) => (
         <li key={p.key}>
           <button type="button" className="link-btn mini-title" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>{p.title}</button>
-          <span className="small"><Chip tone={REVIEW_STATE[p.reviewState].tone}>{REVIEW_STATE[p.reviewState].label}</Chip> <span className="muted">your PR · {age(p.createdAt)}</span></span>
+          <span className="small"><Chip tone={REVIEW_STATE[p.reviewState].tone}>{REVIEW_STATE[p.reviewState].label}</Chip> <span className="muted">{t('your PR · {age}', { age: age(p.createdAt) })}</span></span>
         </li>
       ))}
       {mine.slice(0, 6).map((w) => (
@@ -362,18 +371,23 @@ function MineWidget() {
           <span className="muted small">{w.type} {w.id} · {w.state}</span>
         </li>
       ))}
-      {!mine.length && !myPrs.length && <li className="muted small">Nothing assigned to you.</li>}
+      {!mine.length && !myPrs.length && <li className="muted small">{t('Nothing assigned to you.')}</li>}
     </ul>
   );
 }
 
 const PROD_TONE = { up: 'ok', degraded: 'warn', down: 'bad', unknown: 'muted' };
-const PROD_LABEL = { up: 'Up', degraded: 'Degraded', down: 'Down', unknown: 'No data' };
+const PROD_LABEL = {
+  get up() { return t('Up'); },
+  get degraded() { return t('Degraded'); },
+  get down() { return t('Down'); },
+  get unknown() { return t('No data'); },
+};
 
 function ProductionWidget() {
   const { data, fallback } = useWidgetData('/production');
   if (fallback) return fallback;
-  if (!data.monitors.length) return <p className="muted small">No monitors yet. <Link to="/settings#production">Add your production apps</Link> to watch them here.</p>;
+  if (!data.monitors.length) return <p className="muted small">{tj('No monitors yet. {link} to watch them here.', { link: <Link to="/settings#production">{t('Add your production apps')}</Link> })}</p>;
   return (
     <ul className="mini-list">
       {data.monitors.map((m) => (
@@ -383,8 +397,8 @@ function ProductionWidget() {
             <Link className="mini-title" to="/production">{m.name}</Link>
           </span>
           <span className="muted small truncate">
-            {m.issues[0]?.text
-              || [m.last?.ok ? `${Math.round(m.last.ms)}ms` : null, m.uptime24h != null ? `${pct(m.uptime24h)} up (24h)` : null, m.ai ? `${pct(m.ai.failRate)} failing` : null].filter(Boolean).join(' · ')}
+            {tx(m.issues[0]?.text)
+              || [m.last?.ok ? `${Math.round(m.last.ms)}ms` : null, m.uptime24h != null ? t('{pct} up (24h)', { pct: pct(m.uptime24h) }) : null, m.ai ? t('{pct} failing', { pct: pct(m.ai.failRate) }) : null].filter(Boolean).join(' · ')}
           </span>
         </li>
       ))}

@@ -1,4 +1,4 @@
-import { locale } from './i18n.js';
+import { locale, t } from './i18n.js';
 
 const HOUR = 3_600_000;
 
@@ -35,26 +35,26 @@ export const initials = (name = '') => name
   .join('') || '?';
 
 export const VOTES = {
-  10: { label: 'Approved', tone: 'ok', glyph: '✓' },
-  5: { label: 'Approved with suggestions', tone: 'ok', glyph: '✓' },
-  0: { label: 'No vote yet', tone: 'none', glyph: '' },
-  '-5': { label: 'Waiting for author', tone: 'warn', glyph: '…' },
-  '-10': { label: 'Rejected', tone: 'bad', glyph: '✕' },
+  10: { get label() { return t('Approved'); }, tone: 'ok', glyph: '✓' },
+  5: { get label() { return t('Approved with suggestions'); }, tone: 'ok', glyph: '✓' },
+  0: { get label() { return t('No vote yet'); }, tone: 'none', glyph: '' },
+  '-5': { get label() { return t('Waiting for author'); }, tone: 'warn', glyph: '…' },
+  '-10': { get label() { return t('Rejected'); }, tone: 'bad', glyph: '✕' },
 };
 
 export const REVIEW_STATE = {
-  draft: { label: 'Draft', tone: 'muted' },
-  rejected: { label: 'Rejected', tone: 'bad' },
-  'waiting-author': { label: 'Waiting on author', tone: 'warn' },
-  'no-reviewers': { label: 'No reviewers', tone: 'bad' },
-  approved: { label: 'Approved', tone: 'ok' },
-  'in-review': { label: 'In review', tone: 'info' },
+  draft: { get label() { return t('Draft'); }, tone: 'muted' },
+  rejected: { get label() { return t('Rejected'); }, tone: 'bad' },
+  'waiting-author': { get label() { return t('Waiting on author'); }, tone: 'warn' },
+  'no-reviewers': { get label() { return t('No reviewers'); }, tone: 'bad' },
+  approved: { get label() { return t('Approved'); }, tone: 'ok' },
+  'in-review': { get label() { return t('In review'); }, tone: 'info' },
 };
 
 // Mirrors server/domain/attention.js: CMMI flag, a tag, or a custom state named like the tag.
 export const isBlocked = (w, blockedTag) => {
   const name = String(blockedTag || '').toLowerCase();
-  return w.blocked || (!!name && (w.state?.toLowerCase() === name || w.tags.some((t) => t.toLowerCase() === name)));
+  return w.blocked || (!!name && (w.state?.toLowerCase() === name || w.tags.some((tag) => tag.toLowerCase() === name)));
 };
 
 export const shortIteration =(path) => (path ? path.split('\\').pop() : '');

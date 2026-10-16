@@ -8,3 +8,6 @@ import work from './pt/work.js';
 import server from './pt/server.js';
 
 export default { ...server, ...shell, ...settings, ...code, ...work };
+
+// Text the server sends: its templates are the only ones tx() matches against.
+export { server as serverText };

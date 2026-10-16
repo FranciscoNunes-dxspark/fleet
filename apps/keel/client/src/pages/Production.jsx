@@ -4,6 +4,7 @@ import { useApi } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
 import { useWidth } from '../charts.jsx';
 import { Chip, Empty, ErrorBox, Loading, PageHeader } from '../ui.jsx';
+import { t, tj, tx } from '../i18n.js';
 
 const STATE = {
   up: { tone: 'ok', label: 'Up' },
@@ -23,18 +24,23 @@ export default function Production() {
   return (
     <div className="page">
       <PageHeader
-        title="Production"
+        title={t('Production')}
         sub={monitors.length
-          ? `${monitors.length} monitor${monitors.length === 1 ? '' : 's'} · ${problems ? `${problems} need${problems === 1 ? 's' : ''} attention` : 'all healthy'} · URLs checked every minute, Application Insights every 5 minutes`
-          : 'Watch your production apps next to the deploys that change them.'}
+          ? [
+            t(monitors.length === 1 ? '{n} monitor' : '{n} monitors', { n: monitors.length }),
+            problems ? t(problems === 1 ? '{n} needs attention' : '{n} need attention', { n: problems }) : t('all healthy'),
+            t('URLs checked every minute, Application Insights every 5 minutes'),
+          ].join(' · ')
+          : t('Watch your production apps next to the deploys that change them.')}
       >
-        <Link className="btn btn-small" to="/settings#production">Manage monitors</Link>
+        <Link className="btn btn-small" to="/settings#production">{t('Manage monitors')}</Link>
       </PageHeader>
 
       {!monitors.length && (
-        <Empty title="No production monitors yet.">
-          Add one in <Link to="/settings#production">Settings → Production monitors</Link>: a URL to check, and optionally an Application Insights App ID and API key
-          for error rates. Link it to the release stage or pipeline that deploys it to see deploys on the charts.
+        <Empty title={t('No production monitors yet.')}>
+          {tj('Add one in {link}: a URL to check, and optionally an Application Insights App ID and API key for error rates. Link it to the release stage or pipeline that deploys it to see deploys on the charts.', {
+            link: <Link to="/settings#production">{t('Settings → Production monitors')}</Link>,
+          })}
         </Empty>
       )}
 
@@ -57,31 +63,31 @@ function MonitorCard({ m }) {
           <h2>{m.name}</h2>
           {m.url && <a className="small muted" href={m.url} target="_blank" rel="noreferrer noopener">{m.url}</a>}
         </div>
-        <Chip tone={s.tone}>{s.label}</Chip>
+        <Chip tone={s.tone}>{t(s.label)}</Chip>
       </header>
 
       {m.issues.length > 0 && (
         <ul className="reasons monitor-issues">
-          {m.issues.map((i) => <li key={i.code} className={`reason reason-${i.severity}`}>{i.text}</li>)}
+          {m.issues.map((i) => <li key={i.code} className={`reason reason-${i.severity}`}>{tx(i.text)}</li>)}
         </ul>
       )}
 
       <dl className="fact-row monitor-facts">
         {m.url && <>
-          <div className="fact"><dt>Response</dt><dd>{m.last ? (m.last.ok ? ms(m.last.ms) : m.last.status || 'Failed') : '—'}</dd><dd className="muted small">{m.last ? `checked ${age(m.last.at)} ago` : 'not checked yet'}</dd></div>
-          <div className="fact"><dt>Uptime, 24h</dt><dd>{m.uptime24h == null ? '—' : pct(m.uptime24h)}</dd><dd className="muted small">p95 {ms(m.p95ms)}</dd></div>
+          <div className="fact"><dt>{t('Response')}</dt><dd>{m.last ? (m.last.ok ? ms(m.last.ms) : m.last.status || t('Failed')) : '—'}</dd><dd className="muted small">{m.last ? t('checked {age} ago', { age: age(m.last.at) }) : t('not checked yet')}</dd></div>
+          <div className="fact"><dt>{t('Uptime, 24h')}</dt><dd>{m.uptime24h == null ? '—' : pct(m.uptime24h)}</dd><dd className="muted small">p95 {ms(m.p95ms)}</dd></div>
         </>}
         {ai && <>
-          <div className="fact"><dt>Requests, 1h</dt><dd>{ai.total.toLocaleString()}</dd><dd className="muted small">p95 {ms(ai.p95)}</dd></div>
-          <div className="fact"><dt>Failing, 1h</dt><dd className={ai.failRate >= 0.05 ? 'text-bad' : ''}>{pct(ai.failRate)}</dd><dd className="muted small">{ai.failed.toLocaleString()} requests</dd></div>
-          <div className="fact"><dt>Exceptions, 1h</dt><dd>{ai.exceptions.toLocaleString()}</dd><dd className="muted small">Application Insights</dd></div>
+          <div className="fact"><dt>{t('Requests, 1h')}</dt><dd>{ai.total.toLocaleString()}</dd><dd className="muted small">p95 {ms(ai.p95)}</dd></div>
+          <div className="fact"><dt>{t('Failing, 1h')}</dt><dd className={ai.failRate >= 0.05 ? 'text-bad' : ''}>{pct(ai.failRate)}</dd><dd className="muted small">{t(ai.failed === 1 ? '{n} request' : '{n} requests', { n: ai.failed.toLocaleString() })}</dd></div>
+          <div className="fact"><dt>{t('Exceptions, 1h')}</dt><dd>{ai.exceptions.toLocaleString()}</dd><dd className="muted small">Application Insights</dd></div>
         </>}
       </dl>
 
       <div className="monitor-charts">
         {m.url && m.history.length > 1 && (
           <TimeChart
-            title="Response time, 24h"
+            title={t('Response time, 24h')}
             points={m.history.map((h) => ({ at: h.at, value: h.ok ? h.ms : null, failed: !h.ok }))}
             markers={markers}
             format={ms}
@@ -90,9 +96,9 @@ function MonitorCard({ m }) {
         )}
         {ai?.series?.length > 1 && (
           <TimeChart
-            title="Failed requests, 24h"
+            title={t('Failed requests, 24h')}
             bars
-            points={ai.series.map((b) => ({ at: b.at, value: b.total ? b.failed / b.total : 0, detail: `${b.failed} of ${b.total}` }))}
+            points={ai.series.map((b) => ({ at: b.at, value: b.total ? b.failed / b.total : 0, detail: t('{failed} of {total}', { failed: b.failed, total: b.total }) }))}
             markers={markers}
             format={(v) => pct(v)}
           />
@@ -102,7 +108,7 @@ function MonitorCard({ m }) {
       <div className="monitor-lists">
         {ai?.topFailures?.length > 0 && (
           <div>
-            <h3 className="small">Top failing operations, 1h</h3>
+            <h3 className="small">{t('Top failing operations, 1h')}</h3>
             <ul className="mini-list">
               {ai.topFailures.map((f) => (
                 <li key={`${f.name}${f.code}`}><span className="mono small">{f.name}</span><span className="muted small">{f.count} × HTTP {f.code}</span></li>
@@ -112,7 +118,7 @@ function MonitorCard({ m }) {
         )}
         {m.markers.length > 0 && (
           <div>
-            <h3 className="small">Recent deploys</h3>
+            <h3 className="small">{t('Recent deploys')}</h3>
             <ul className="mini-list">
               {m.markers.slice(0, 5).map((d) => (
                 <li key={`${d.label}${d.at}`}>
@@ -123,8 +129,8 @@ function MonitorCard({ m }) {
             </ul>
           </div>
         )}
-        {m.aiError && <p className="small text-warn">Application Insights: {m.aiError}</p>}
-        {!m.link && <p className="muted small">Link this monitor to its release stage or pipeline in Settings to see deploys here.</p>}
+        {m.aiError && <p className="small text-warn">Application Insights: {tx(m.aiError)}</p>}
+        {!m.link && <p className="muted small">{t('Link this monitor to its release stage or pipeline in Settings to see deploys here.')}</p>}
       </div>
     </section>
   );
@@ -192,12 +198,12 @@ function TimeChart({ title, points, markers, format, limit, bars = false }) {
             </g>
           ))}
           {hover && <line x1={x(hover.at)} x2={x(hover.at)} y1={pad.t} y2={H - pad.b} className="hover-line" />}
-          <text x={pad.l} y={H - 4} className="axis">24h ago</text>
-          <text x={W - pad.r} y={H - 4} className="axis" textAnchor="end">now</text>
+          <text x={pad.l} y={H - 4} className="axis">{t('24h ago')}</text>
+          <text x={W - pad.r} y={H - 4} className="axis" textAnchor="end">{t('now')}</text>
         </svg>
         {hover && (
           <div className="tooltip" style={{ left: `${(x(hover.at) / W) * 100}%`, top: `${(pad.t / H) * 100}%`, transform: 'translate(-50%, 0)' }}>
-            <strong>{hover.failed ? 'Check failed' : hover.value == null ? '—' : format(hover.value)}</strong>
+            <strong>{hover.failed ? t('Check failed') : hover.value == null ? '—' : format(hover.value)}</strong>
             <div className="muted">{dateTime(hover.at)}{hover.detail ? ` · ${hover.detail}` : ''}</div>
           </div>
         )}

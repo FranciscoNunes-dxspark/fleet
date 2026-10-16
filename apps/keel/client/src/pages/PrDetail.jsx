@@ -4,12 +4,14 @@ import { useApi, useApp } from '../context.js';
 import { age, dateTime, REVIEW_STATE, VOTES } from '../format.js';
 import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { Markdown } from '../markdown.jsx';
+import { t, tj, tx } from '../i18n.js';
 
+// Labels are getters so they follow the current language.
 const FILE_KIND = {
-  added: { letter: 'A', tone: 'ok', label: 'Added' },
-  edited: { letter: 'M', tone: 'info', label: 'Modified' },
-  deleted: { letter: 'D', tone: 'bad', label: 'Deleted' },
-  renamed: { letter: 'R', tone: 'warn', label: 'Renamed' },
+  added: { letter: 'A', tone: 'ok', get label() { return t('Added'); }, count: '{n} added' },
+  edited: { letter: 'M', tone: 'info', get label() { return t('Modified'); }, count: '{n} modified' },
+  deleted: { letter: 'D', tone: 'bad', get label() { return t('Deleted'); }, count: '{n} deleted' },
+  renamed: { letter: 'R', tone: 'warn', get label() { return t('Renamed'); }, count: '{n} renamed' },
 };
 /**
  * Builds a folder tree from file paths, collapsing chains of single-child
@@ -45,8 +47,8 @@ function FileRow({ f, webUrl }) {
   return (
     <li className="file-row">
       <span className={`file-kind chip chip-${kind.tone}`} title={kind.label} aria-label={kind.label}>{kind.letter}</span>
-      <a className="file-name" href={`${webUrl}?_a=files&path=${encodeURIComponent(f.path)}`} target="_blank" rel="noreferrer noopener" title={`Open the diff for ${f.path} in Azure DevOps`}>{f.name}</a>
-      {f.originalPath && <span className="muted small file-from" title={f.originalPath}>from {f.originalPath.split('/').pop()}</span>}
+      <a className="file-name" href={`${webUrl}?_a=files&path=${encodeURIComponent(f.path)}`} target="_blank" rel="noreferrer noopener" title={t('Open the diff for {path} in Azure DevOps', { path: f.path })}>{f.name}</a>
+      {f.originalPath && <span className="muted small file-from" title={f.originalPath}>{t('from {name}', { name: f.originalPath.split('/').pop() })}</span>}
     </li>
   );
 }
@@ -73,35 +75,35 @@ function FolderBody({ node, webUrl, depth }) {
 
 function ChangedFiles({ files, webUrl }) {
   const counts = Object.entries(FILE_KIND)
-    .map(([k, v]) => [v.label, files.items.filter((f) => f.kind === k).length])
+    .map(([k, v]) => [v.count, files.items.filter((f) => f.kind === k).length])
     .filter(([, n]) => n)
-    .map(([label, n]) => `${n} ${label.toLowerCase()}`);
+    .map(([key, n]) => t(key, { n }));
   const tree = fileTree(files.items);
   return (
     <section className="detail-section">
-      <h3>Files changed <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span></h3>
-      {files.error && <p className="text-bad small">Couldn't load the file list: {files.error}</p>}
-      {!files.error && !files.items.length && <p className="muted small">No file changes in the latest update.</p>}
+      <h3>{t('Files changed')} <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span></h3>
+      {files.error && <p className="text-bad small">{t("Couldn't load the file list: {error}", { error: tx(files.error) })}</p>}
+      {!files.error && !files.items.length && <p className="muted small">{t('No file changes in the latest update.')}</p>}
       <FolderBody node={tree} webUrl={webUrl} depth={0} />
-      {files.truncated && <p className="muted small">Azure DevOps returned the first 2,000 files only.</p>}
+      {files.truncated && <p className="muted small">{t('Azure DevOps returned the first 2,000 files only.')}</p>}
     </section>
   );
 }
 
 const VOTE_BUTTONS = [
-  { vote: 10, label: 'Approve', tone: 'ok' },
-  { vote: 5, label: 'Approve with suggestions', tone: 'ok' },
-  { vote: -5, label: 'Wait for author', tone: 'warn' },
-  { vote: -10, label: 'Reject', tone: 'bad' },
-  { vote: 0, label: 'Reset vote', tone: 'none' },
+  { vote: 10, get label() { return t('Approve'); }, tone: 'ok' },
+  { vote: 5, get label() { return t('Approve with suggestions'); }, tone: 'ok' },
+  { vote: -5, get label() { return t('Wait for author'); }, tone: 'warn' },
+  { vote: -10, get label() { return t('Reject'); }, tone: 'bad' },
+  { vote: 0, get label() { return t('Reset vote'); }, tone: 'none' },
 ];
 
 const POLICY = {
-  approved: { tone: 'ok', label: 'Passed' },
-  rejected: { tone: 'bad', label: 'Failed' },
-  running: { tone: 'info', label: 'Running' },
-  queued: { tone: 'muted', label: 'Pending' },
-  broken: { tone: 'bad', label: 'Broken' },
+  approved: { tone: 'ok', get label() { return t('Passed'); } },
+  rejected: { tone: 'bad', get label() { return t('Failed'); } },
+  running: { tone: 'info', get label() { return t('Running'); } },
+  queued: { tone: 'muted', get label() { return t('Pending'); } },
+  broken: { tone: 'bad', get label() { return t('Broken'); } },
 };
 
 export default function PrDetail({ target }) {
@@ -142,23 +144,22 @@ export default function PrDetail({ target }) {
       <div className="chips">
         {pr.status === 'active'
           ? <Chip tone={state.tone}>{state.label}</Chip>
-          : <Chip tone={pr.status === 'completed' ? 'ok' : 'muted'}>{pr.status === 'completed' ? 'Completed' : 'Abandoned'}</Chip>}
-        {pr.hasConflicts && <Chip tone="bad">Merge conflicts</Chip>}
-        {pr.autoComplete && <Chip tone="ok">Auto-complete set</Chip>}
+          : <Chip tone={pr.status === 'completed' ? 'ok' : 'muted'}>{pr.status === 'completed' ? t('Completed') : t('Abandoned')}</Chip>}
+        {pr.hasConflicts && <Chip tone="bad">{t('Merge conflicts')}</Chip>}
+        {pr.autoComplete && <Chip tone="ok">{t('Auto-complete set')}</Chip>}
         {pr.labels.map((l) => <Chip key={l}>{l}</Chip>)}
       </div>
       <p className="detail-meta">
-        <Avatar person={pr.author} size={20} /> {pr.author?.displayName} opened {age(pr.createdAt)} ago
+        <Avatar person={pr.author} size={20} /> {t('{name} opened {age} ago', { name: pr.author?.displayName || '', age: age(pr.createdAt) })}
         <br /><code className="branch">{pr.sourceBranch} → {pr.targetBranch}</code>
       </p>
 
       {writable && pr.status === 'active' && (
         <section className="detail-section">
-          <h3>Your vote {pr.myVote !== null && <span className="muted small">currently: {VOTES[pr.myVote].label}</span>}</h3>
+          <h3>{t('Your vote')} {pr.myVote !== null && <span className="muted small">{t('currently: {vote}', { vote: VOTES[pr.myVote].label })}</span>}</h3>
           {pr.isMine && (
             <p className="muted small vote-note">
-              This is your pull request. Azure DevOps records your vote, but branch policies usually don't count it toward the required approvals
-              unless "Allow requestors to approve their own changes" is on.
+              {t('This is your pull request. Azure DevOps records your vote, but branch policies usually don\'t count it toward the required approvals unless "Allow requestors to approve their own changes" is on.')}
             </p>
           )}
           <div className="vote-row">
@@ -169,7 +170,7 @@ export default function PrDetail({ target }) {
                 className={`btn btn-small vote-btn vote-btn-${b.tone} ${pr.myVote === b.vote && b.vote !== 0 ? 'selected' : ''}`}
                 disabled={!!busy}
                 aria-pressed={pr.myVote === b.vote}
-                onClick={() => act({ type: 'vote', vote: b.vote }, b.vote === 0 ? 'Vote reset' : `Voted: ${b.label}`)}
+                onClick={() => act({ type: 'vote', vote: b.vote }, b.vote === 0 ? t('Vote reset') : t('Voted: {vote}', { vote: b.label }))}
               >
                 {busy === `vote${b.vote}` ? '…' : b.label}
               </button>
@@ -179,47 +180,47 @@ export default function PrDetail({ target }) {
       )}
 
       <section className="detail-section">
-        <h3>Checks</h3>
+        <h3>{t('Checks')}</h3>
         {pr.policies.length ? (
           <ul className="check-list">
             {pr.policies.map((p) => (
               <li key={p.name}>
                 <Chip tone={POLICY[p.status]?.tone || 'muted'}>{POLICY[p.status]?.label || p.status}</Chip>
                 <span>{p.name}</span>
-                {!p.isBlocking && <span className="muted small">optional</span>}
+                {!p.isBlocking && <span className="muted small">{t('optional')}</span>}
               </li>
             ))}
           </ul>
-        ) : <p className="muted small">No branch policies apply to this target branch.</p>}
+        ) : <p className="muted small">{t('No branch policies apply to this target branch.')}</p>}
       </section>
 
       <section className="detail-section">
-        <h3>Reviewers</h3>
+        <h3>{t('Reviewers')}</h3>
         <ul className="reviewer-list">
           {pr.reviewers.map((r) => (
             <li key={r.id}>
               <Avatar person={r} vote={r.vote} size={22} />
               <span className="truncate">{r.displayName}</span>
-              {r.isRequired && <Chip>Required</Chip>}
+              {r.isRequired && <Chip>{t('Required')}</Chip>}
               <span className={`small vote-text-${VOTES[r.vote]?.tone}`}>{VOTES[r.vote]?.label}</span>
             </li>
           ))}
-          {!pr.reviewers.length && <li className="text-bad small">No reviewers yet.</li>}
+          {!pr.reviewers.length && <li className="text-bad small">{t('No reviewers yet.')}</li>}
         </ul>
         {writable && candidates.length > 0 && (
-          <form className="inline-form" onSubmit={async (e) => { e.preventDefault(); if (reviewer && await act({ type: 'addReviewer', reviewerId: reviewer }, 'Reviewer added')) setReviewer(''); }}>
-            <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label="Reviewer to add">
-              <option value="">Add a reviewer…</option>
+          <form className="inline-form" onSubmit={async (e) => { e.preventDefault(); if (reviewer && await act({ type: 'addReviewer', reviewerId: reviewer }, t('Reviewer added'))) setReviewer(''); }}>
+            <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>
+              <option value="">{t('Add a reviewer…')}</option>
               {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
             </select>
-            <button type="submit" className="btn btn-small" disabled={!reviewer || !!busy}>Add</button>
+            <button type="submit" className="btn btn-small" disabled={!reviewer || !!busy}>{t('Add')}</button>
           </form>
         )}
       </section>
 
       {pr.workItems.length > 0 && (
         <section className="detail-section">
-          <h3>Linked work items</h3>
+          <h3>{t('Linked work items')}</h3>
           <ul className="link-list">
             {pr.workItems.map((w) => (
               <li key={w.id}>
@@ -235,7 +236,7 @@ export default function PrDetail({ target }) {
 
       {pr.description && (
         <section className="detail-section">
-          <h3>Description</h3>
+          <h3>{t('Description')}</h3>
           <Markdown text={pr.description} people={mentionable} />
         </section>
       )}
@@ -243,51 +244,52 @@ export default function PrDetail({ target }) {
       {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} />}
 
       <section className="detail-section">
-        <h3>Discussion <span className="muted small">{pr.threads.active} open of {pr.threads.total} threads</span></h3>
+        <h3>{t('Discussion')} <span className="muted small">{t(pr.threads.total === 1 ? '{open} open of {total} thread' : '{open} open of {total} threads', { open: pr.threads.active, total: pr.threads.total })}</span></h3>
         <ul className="comments">
           {pr.threads.recent.map((c, i) => (
             <li key={i}>
               <div className="comment-head">
                 <Avatar person={c.author} size={18} /> <strong>{c.author?.displayName}</strong>
                 <span className="muted small">{dateTime(c.publishedAt)}</span>
-                {c.status === 'active' && <Chip tone="warn">Open</Chip>}
+                {c.status === 'active' && <Chip tone="warn">{t('Active')}</Chip>}
               </div>
               {c.filePath && <code className="small muted">{c.filePath}</code>}
               <Markdown text={c.content} people={mentionable} />
             </li>
           ))}
-          {!pr.threads.recent.length && <li className="muted small">No comments yet.</li>}
+          {!pr.threads.recent.length && <li className="muted small">{t('No comments yet.')}</li>}
         </ul>
         {writable && (
-        <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', content: comment }, 'Comment posted')) setComment(''); }}>
-          <textarea className="input" rows={3} placeholder="Leave a comment (Markdown supported)" value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Comment" />
-          <button type="submit" className="btn btn-primary btn-small" disabled={!comment.trim() || !!busy}>Post comment</button>
+        <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', content: comment }, t('Comment posted'))) setComment(''); }}>
+          <textarea className="input" rows={3} placeholder={t('Leave a comment (Markdown supported)')} value={comment} onChange={(e) => setComment(e.target.value)} aria-label={t('Comment')} />
+          <button type="submit" className="btn btn-primary btn-small" disabled={!comment.trim() || !!busy}>{t('Post comment')}</button>
         </form>
         )}
       </section>
 
       {completing && pr.status === 'active' && (
         <CompleteForm pr={pr} busy={!!busy} onCancel={() => setCompleting(false)} onComplete={async (opts) => {
-          if (await act({ type: 'complete', ...opts }, `Pull request !${pr.id} completed`)) setCompleting(false);
+          if (await act({ type: 'complete', ...opts }, t('Pull request !{id} completed', { id: pr.id }))) setCompleting(false);
         }} />
       )}
 
       <section className="detail-actions sticky-actions">
-        {pr.status !== 'active' && <span className="small muted">This pull request is {pr.status}.</span>}
-        {writable && pr.status === 'active' && pr.isDraft && <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'publish' }, 'Published')}>Publish draft</button>}
+        {pr.status !== 'active' && <span className="small muted">{pr.status === 'completed' ? t('This pull request is completed.') : pr.status === 'abandoned' ? t('This pull request is abandoned.') : t('This pull request is {status}.', { status: pr.status })}</span>}
+        {writable && pr.status === 'active' && pr.isDraft && <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'publish' }, t('Published'))}>{t('Publish draft')}</button>}
         {writable && pr.status === 'active' && !pr.isDraft && !completing && (
-          <button type="button" className="btn btn-small btn-primary" disabled={!!busy || pr.hasConflicts} title={pr.hasConflicts ? 'Resolve the merge conflicts first' : undefined} onClick={() => setCompleting(true)}>Complete…</button>
+          <button type="button" className="btn btn-small btn-primary" disabled={!!busy || pr.hasConflicts} title={pr.hasConflicts ? t('Resolve the merge conflicts first') : undefined} onClick={() => setCompleting(true)}>{t('Complete…')}</button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && (pr.autoComplete
-          ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, 'Auto-complete cancelled')}>Cancel auto-complete</button>
-          : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, 'Auto-complete set')}>Set auto-complete</button>)}
-        {writable && pr.status === 'active' && <Confirm text="Abandon this pull request?" onConfirm={() => act({ type: 'abandon' }, 'Pull request abandoned')} className="btn btn-small btn-ghost text-bad">Abandon</Confirm>}
-        <ExternalLink href={pr.webUrl}>Open in Azure DevOps</ExternalLink>
+          ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-complete cancelled'))}>{t('Cancel auto-complete')}</button>
+          : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</button>)}
+        {writable && pr.status === 'active' && <Confirm text={t('Abandon this pull request?')} onConfirm={() => act({ type: 'abandon' }, t('Pull request abandoned'))} className="btn btn-small btn-ghost text-bad">{t('Abandon')}</Confirm>}
+        <ExternalLink href={pr.webUrl}>{t('Open in Azure DevOps')}</ExternalLink>
       </section>
     </div>
   );
 }
 
+// Label and hint are English; translated with t() at render.
 const MERGE_TYPES = [
   ['squash', 'Squash commit', 'One commit on the target with all the changes'],
   ['noFastForward', 'Merge (no fast-forward)', 'Keeps every commit plus a merge commit'],
@@ -316,30 +318,33 @@ function CompleteForm({ pr, busy, onCancel, onComplete }) {
   }, []);
 
   return (
-    <section className="detail-section complete-form" aria-label="Complete pull request" ref={formRef}>
-      <h3>Complete pull request</h3>
+    <section className="detail-section complete-form" aria-label={t('Complete pull request')} ref={formRef}>
+      <h3>{t('Complete pull request')}</h3>
       {pending.length > 0 && (
         <p className="callout small">
-          {pending.length} required check{pending.length === 1 ? '' : 's'} not passed: {pending.map((p) => `${p.name} (${p.status === 'rejected' ? 'failed' : 'pending'})`).join(', ')}.
-          {' '}Azure DevOps will refuse to complete it unless you override policies, or you can set auto-complete instead.
+          {t(pending.length === 1 ? '{n} required check not passed: {checks}.' : '{n} required checks not passed: {checks}.', {
+            n: pending.length,
+            checks: pending.map((p) => t(p.status === 'rejected' ? '{name} (failed)' : '{name} (pending)', { name: p.name })).join(', '),
+          })}
+          {' '}{t('Azure DevOps will refuse to complete it unless you override policies, or you can set auto-complete instead.')}
         </p>
       )}
-      <label className="field">Merge type
+      <label className="field">{t('Merge type')}
         <select className="input" value={mergeStrategy} onChange={(e) => setMergeStrategy(e.target.value)}>
-          {MERGE_TYPES.map(([v, label, hint]) => <option key={v} value={v}>{label}: {hint}</option>)}
+          {MERGE_TYPES.map(([v, label, hint]) => <option key={v} value={v}>{t(label)}: {t(hint)}</option>)}
         </select>
       </label>
       {usesMessage && (
-        <label className="field">Merge commit message
+        <label className="field">{t('Merge commit message')}
           <textarea className="input" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
         </label>
       )}
-      <label className="check"><input type="checkbox" checked={deleteSourceBranch} onChange={(e) => setDeleteSourceBranch(e.target.checked)} /> Delete <code className="branch">{pr.sourceBranch}</code> after merging</label>
-      <label className="check"><input type="checkbox" checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> Complete linked work items{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>
-      <label className="check"><input type="checkbox" checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> Override branch policies <span className="muted small">(needs bypass permission; recorded in the PR history)</span></label>
+      <label className="check"><input type="checkbox" checked={deleteSourceBranch} onChange={(e) => setDeleteSourceBranch(e.target.checked)} /> {tj('Delete {branch} after merging', { branch: <code className="branch">{pr.sourceBranch}</code> })}</label>
+      <label className="check"><input type="checkbox" checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> {t('Complete linked work items')}{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>
+      <label className="check"><input type="checkbox" checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>
       {bypassPolicy && (
-        <label className="field">Reason for overriding
-          <input className="input" value={bypassReason} onChange={(e) => setBypassReason(e.target.value)} placeholder="e.g. Hotfix for production incident" />
+        <label className="field">{t('Reason for overriding')}
+          <input className="input" value={bypassReason} onChange={(e) => setBypassReason(e.target.value)} placeholder={t('e.g. Hotfix for production incident')} />
         </label>
       )}
       <div className="complete-actions">
@@ -349,9 +354,9 @@ function CompleteForm({ pr, busy, onCancel, onComplete }) {
           disabled={busy || (bypassPolicy && !bypassReason.trim())}
           onClick={() => onComplete({ mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems, bypassPolicy, bypassReason })}
         >
-          {busy ? 'Completing…' : bypassPolicy ? 'Override and complete merge' : 'Complete merge'}
+          {busy ? t('Completing…') : bypassPolicy ? t('Override and complete merge') : t('Complete merge')}
         </button>
-        <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>{t('Cancel')}</button>
       </div>
     </section>
   );

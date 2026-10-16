@@ -5,6 +5,7 @@ import { useApi, useApp } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
 import { Chip, Confirm, Empty, ErrorBox, ExternalLink, Loading, PageHeader, Toggle, pinInView } from '../ui.jsx';
 import { ApprovalsPanel, ReleasesTab } from './Releases.jsx';
+import { t, tj } from '../i18n.js';
 
 export default function Pipelines() {
   const builds = useApi('/pipelines');
@@ -22,25 +23,30 @@ export default function Pipelines() {
   return (
     <div className="page">
       <PageHeader
-        title="Pipelines"
+        title={t('Pipelines')}
         sub={data
-          ? `${data.length} build and YAML pipelines judged on their main branch over ${meta.thresholds.buildLookbackDays} days · ${failing} failing · ${runningCount} running now${defs.length ? ` · ${defs.length} classic release pipeline${defs.length === 1 ? '' : 's'}` : ''}`
-          : 'Loading pipelines…'}
+          ? [
+            t('{n} build and YAML pipelines judged on their main branch over {days} days', { n: data.length, days: meta.thresholds.buildLookbackDays }),
+            t('{n} failing', { n: failing }),
+            t('{n} running now', { n: runningCount }),
+            ...(defs.length ? [t(defs.length === 1 ? '{n} classic release pipeline' : '{n} classic release pipelines', { n: defs.length })] : []),
+          ].join(' · ')
+          : t('Loading pipelines…')}
       />
 
       {approvals.length > 0 && <ApprovalsPanel approvals={approvals} />}
 
-      <div className="segmented" role="tablist" aria-label="Pipeline type">
+      <div className="segmented" role="tablist" aria-label={t('Pipeline type')}>
         <button type="button" role="tab" aria-selected={tab === 'builds'} className={tab === 'builds' ? 'on' : ''} onClick={() => setParams({}, { replace: true })}>
-          Builds &amp; YAML<span className="seg-count">{data?.length ?? '…'}</span>
+          {t('Builds & YAML')}<span className="seg-count">{data?.length ?? '…'}</span>
         </button>
         <button type="button" role="tab" aria-selected={tab === 'releases'} className={tab === 'releases' ? 'on' : ''} onClick={() => setParams({ tab: 'releases' }, { replace: true })}>
-          Releases<span className="seg-count">{rel.data ? defs.length : '…'}</span>
+          {t('Releases')}<span className="seg-count">{rel.data ? defs.length : '…'}</span>
         </button>
       </div>
 
       {tab === 'builds' && (data ? <BuildsTab data={data} /> : builds.error ? <ErrorBox error={builds.error} onRetry={builds.reload} /> : <Loading />)}
-      {tab === 'releases' && (rel.data ? <ReleasesTab defs={defs} /> : rel.error ? <ErrorBox error={rel.error} onRetry={rel.reload} /> : <Loading label="Loading release pipelines…" />)}
+      {tab === 'releases' && (rel.data ? <ReleasesTab defs={defs} /> : rel.error ? <ErrorBox error={rel.error} onRetry={rel.reload} /> : <Loading label={t('Loading release pipelines…')} />)}
     </div>
   );
 }
@@ -52,11 +58,12 @@ const HEALTH = {
   unknown: { tone: 'muted', label: 'No runs' },
 };
 const RESULT = { succeeded: 'ok', partiallySucceeded: 'warn', failed: 'bad', canceled: 'muted' };
-const RESULT_LABEL = { failed: 'failed', partiallySucceeded: 'partially succeeded', canceled: 'canceled' };
+const RESULT_LABEL = { succeeded: 'succeeded', failed: 'failed', partiallySucceeded: 'partially succeeded', canceled: 'canceled' };
+const resultLabel = (r) => (RESULT_LABEL[r] ? t(RESULT_LABEL[r]) : r);
 const RUNNING = '__running__';
 
 // Azure DevOps folder paths look like "\TEAMA\Builds"; the root is "\".
-const folderLabel = (path) => (!path || path === '\\' ? 'No folder' : path.replace(/^\\/, '').split('\\').join(' / '));
+const folderLabel = (path) => (!path || path === '\\' ? t('No folder') : path.replace(/^\\/, '').split('\\').join(' / '));
 
 function BuildsTab({ data }) {
   const { refresh, toast } = useApp();
@@ -73,7 +80,7 @@ function BuildsTab({ data }) {
   const running = rows.filter((p) => p.running.length);
   const rest = rows;
   const groups = [];
-  if (running.length) groups.push({ key: RUNNING, label: 'Running now', rows: running });
+  if (running.length) groups.push({ key: RUNNING, label: t('Running now'), rows: running });
   if (byFolder) {
     const folders = new Map();
     for (const p of rest) {
@@ -84,9 +91,9 @@ function BuildsTab({ data }) {
     const multiProject = new Set([...folders.values()].map((f) => f.project)).size > 1;
     groups.push(...[...folders.values()]
       .map((f) => ({ ...f, label: multiProject ? `${f.project} · ${f.label}` : f.label }))
-      .sort((a, b) => (a.label === 'No folder') - (b.label === 'No folder') || a.label.localeCompare(b.label)));
+      .sort((a, b) => (a.label === t('No folder')) - (b.label === t('No folder')) || a.label.localeCompare(b.label)));
   } else if (rest.length) {
-    groups.push({ key: 'all', label: running.length ? 'All pipelines' : null, rows: rest });
+    groups.push({ key: 'all', label: running.length ? t('All pipelines') : null, rows: rest });
   }
 
   const toggleGroup = (key) => setCollapsed((s) => {
@@ -100,7 +107,7 @@ function BuildsTab({ data }) {
     pinInView(rowEl);
     try {
       await api('/pipelines/queue', { method: 'POST', body: { projectId: p.projectId, definitionId: p.definition.id, branch: p.branch } });
-      toast(`Queued ${p.definition.name} on ${p.branch}`);
+      toast(t('Queued {name} on {branch}', { name: p.definition.name, branch: p.branch }));
       refresh();
     } catch (e) {
       toast(e.message, 'bad');
@@ -110,23 +117,23 @@ function BuildsTab({ data }) {
   return (
     <>
       <div className="filters">
-        <input type="search" className="input" placeholder="Search pipeline, repo or folder" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search pipelines" />
-        <Toggle checked={byFolder} onChange={setByFolder}>Group by folder</Toggle>
-        <Toggle checked={onlyProblems} onChange={setOnlyProblems} count={data.filter((p) => p.health === 'failing' || p.health === 'unstable').length}>Only failing or unstable</Toggle>
+        <input type="search" className="input" placeholder={t('Search pipeline, repo or folder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search pipelines')} />
+        <Toggle checked={byFolder} onChange={setByFolder}>{t('Group by folder')}</Toggle>
+        <Toggle checked={onlyProblems} onChange={setOnlyProblems} count={data.filter((p) => p.health === 'failing' || p.health === 'unstable').length}>{t('Only failing or unstable')}</Toggle>
       </div>
 
-      {!rows.length ? <Empty title="No pipelines match." /> : (
+      {!rows.length ? <Empty title={t('No pipelines match.')} /> : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Pipeline</th>
-                <th>Health</th>
-                <th>Last run</th>
-                <th>Runs on its branch <span className="muted small">(newest first)</span></th>
-                <th className="num">Pass rate</th>
-                <th className="num">Median</th>
-                <th><span className="sr-only">Actions</span></th>
+                <th>{t('Pipeline')}</th>
+                <th>{t('Health')}</th>
+                <th>{t('Last run')}</th>
+                <th>{t('Runs on its branch')} <span className="muted small">{t('(newest first)')}</span></th>
+                <th className="num">{t('Pass rate')}</th>
+                <th className="num">{t('Median')}</th>
+                <th><span className="sr-only">{t('Actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -141,7 +148,7 @@ function BuildsTab({ data }) {
                           <button type="button" className="th-btn" aria-expanded={!isCollapsed} onClick={() => toggleGroup(g.key)}>
                             <span aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span> {g.label}
                             <span className="muted">{g.rows.length}</span>
-                            {problems > 0 && g.key !== RUNNING && <span className="text-bad small">{problems} failing</span>}
+                            {problems > 0 && g.key !== RUNNING && <span className="text-bad small">{t('{n} failing', { n: problems })}</span>}
                           </button>
                         </td>
                       </tr>
@@ -175,33 +182,33 @@ function PipelineRow({ p, showFolder, onQueue }) {
       </td>
       <td>
         <div className="chips">
-          {run && <Chip tone="info">Running</Chip>}
-          <Chip tone={HEALTH[p.health].tone}>{HEALTH[p.health].label}</Chip>
+          {run && <Chip tone="info">{t('Running')}</Chip>}
+          <Chip tone={HEALTH[p.health].tone}>{t(HEALTH[p.health].label)}</Chip>
         </div>
         {run && (
           <div className="small muted">
-            <a href={run.webUrl} target="_blank" rel="noreferrer noopener">{run.buildNumber}</a> started {age(run.startedAt || run.queuedAt)} ago
-            {run.requestedFor?.displayName ? ` by ${run.requestedFor.displayName}` : ''}{run.sourceBranch && run.sourceBranch !== p.branch ? ` on ${run.sourceBranch}` : ''}
-            {p.running.length > 1 && ` (+${p.running.length - 1} more)`}
+            {tj('{run} started {age} ago', { run: <a href={run.webUrl} target="_blank" rel="noreferrer noopener">{run.buildNumber}</a>, age: age(run.startedAt || run.queuedAt) })}
+            {run.requestedFor?.displayName ? ` ${t('by {name}', { name: run.requestedFor.displayName })}` : ''}{run.sourceBranch && run.sourceBranch !== p.branch ? ` ${t('on {branch}', { branch: run.sourceBranch })}` : ''}
+            {p.running.length > 1 && ` ${t('(+{n} more)', { n: p.running.length - 1 })}`}
           </div>
         )}
-        {p.health === 'failing' && <div className="small text-bad">{p.failStreak} in a row{p.lastGreenAt ? `, last green ${age(p.lastGreenAt)} ago` : ''}</div>}
+        {p.health === 'failing' && <div className="small text-bad">{p.lastGreenAt ? t('{n} in a row, last green {age} ago', { n: p.failStreak, age: age(p.lastGreenAt) }) : t('{n} in a row', { n: p.failStreak })}</div>}
       </td>
       <td className="small">
         {p.lastRun ? <>
-          <a href={p.lastRun.webUrl} target="_blank" rel="noreferrer noopener" title={`${p.lastRun.result} · ${dateTime(p.lastRun.finishedAt)}`}>{p.lastRun.buildNumber}</a>
-          {p.lastRun.result !== 'succeeded' && <span className={`small text-${RESULT[p.lastRun.result] === 'bad' ? 'bad' : 'warn'}`}> {RESULT_LABEL[p.lastRun.result] || p.lastRun.result}</span>}
+          <a href={p.lastRun.webUrl} target="_blank" rel="noreferrer noopener" title={`${resultLabel(p.lastRun.result)} · ${dateTime(p.lastRun.finishedAt)}`}>{p.lastRun.buildNumber}</a>
+          {p.lastRun.result !== 'succeeded' && <span className={`small text-${RESULT[p.lastRun.result] === 'bad' ? 'bad' : 'warn'}`}> {resultLabel(p.lastRun.result)}</span>}
           <div className="muted">
-            {age(p.lastRun.finishedAt)} ago · {p.lastRun.requestedFor?.displayName}
+            {t('{age} ago', { age: age(p.lastRun.finishedAt) })} · {p.lastRun.requestedFor?.displayName}
             {p.lastRun.sourceBranch !== p.branch && <> · <code className="branch">{p.lastRun.sourceBranch.replace(/^refs\/pull\/(\d+)\/merge$/, 'PR $1')}</code></>}
           </div>
         </> : '—'}
       </td>
       <td>
-        <div className="runs" aria-label={`Last ${p.recent.length} results`}>
+        <div className="runs" aria-label={t(p.recent.length === 1 ? 'Last {n} result' : 'Last {n} results', { n: p.recent.length })}>
           {p.recent.map((r) => (
-            <a key={r.id} href={r.webUrl} target="_blank" rel="noreferrer noopener" className={`run run-${RESULT[r.result] || 'muted'}`} title={`${r.buildNumber} · ${r.result} · ${dateTime(r.finishedAt)}`}>
-              <span className="sr-only">{r.result}</span>
+            <a key={r.id} href={r.webUrl} target="_blank" rel="noreferrer noopener" className={`run run-${RESULT[r.result] || 'muted'}`} title={`${r.buildNumber} · ${resultLabel(r.result)} · ${dateTime(r.finishedAt)}`}>
+              <span className="sr-only">{resultLabel(r.result)}</span>
             </a>
           ))}
         </div>
@@ -209,8 +216,8 @@ function PipelineRow({ p, showFolder, onQueue }) {
       <td className={`num ${p.passRate !== null && p.passRate < 0.8 ? 'text-warn strong' : ''}`}>{pct(p.passRate)}</td>
       <td className="num muted">{p.medianDurationMin != null ? `${Math.round(p.medianDurationMin)}m` : '—'}</td>
       <td className="row-actions">
-        {canRun && <Confirm text={`Run on ${p.branch}?`} onConfirm={() => onQueue(p, rowRef.current)} className="btn btn-small btn-ghost">Run</Confirm>}
-        <ExternalLink href={(run || p.lastRun)?.webUrl}>Open</ExternalLink>
+        {canRun && <Confirm text={t('Run on {branch}?', { branch: p.branch })} onConfirm={() => onQueue(p, rowRef.current)} className="btn btn-small btn-ghost">{t('Run')}</Confirm>}
+        <ExternalLink href={(run || p.lastRun)?.webUrl}>{t('Open')}</ExternalLink>
       </td>
     </tr>
   );

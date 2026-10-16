@@ -3,6 +3,7 @@ import { useSticky, useStickyParams } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { age, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle, useSort } from '../ui.jsx';
+import { t } from '../i18n.js';
 
 export default function PullRequests() {
   const { data, error, reload } = useApi('/prs');
@@ -62,47 +63,47 @@ export default function PullRequests() {
 
   return (
     <div className="page">
-      <PageHeader title="Pull requests" sub={`${data.prs.length} active across ${data.repos.length} repos`}>
-        {can('prs.write') && <button type="button" className="btn btn-primary" onClick={() => openDrawer({ type: 'newpr' })}>New pull request</button>}
+      <PageHeader title={t('Pull requests')} sub={t(data.repos.length === 1 ? '{n} active across {repos} repo' : '{n} active across {repos} repos', { n: data.prs.length, repos: data.repos.length })}>
+        {can('prs.write') && <button type="button" className="btn btn-primary" onClick={() => openDrawer({ type: 'newpr' })}>{t('New pull request')}</button>}
       </PageHeader>
 
       <div className="filters">
-        <input type="search" className="input" placeholder="Search title, branch, repo, ID" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search pull requests" />
-        <select className="input" value={project} onChange={(e) => { setProject(e.target.value); setRepo(''); }} aria-label="Project">
-          <option value="">All projects</option>
+        <input type="search" className="input" placeholder={t('Search title, branch, repo, ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search pull requests')} />
+        <select className="input" value={project} onChange={(e) => { setProject(e.target.value); setRepo(''); }} aria-label={t('Project')}>
+          <option value="">{t('All projects')}</option>
           {projects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
-        <select className="input" value={repo} onChange={(e) => setRepo(e.target.value)} aria-label="Repository">
-          <option value="">All repos</option>
+        <select className="input" value={repo} onChange={(e) => setRepo(e.target.value)} aria-label={t('Repository')}>
+          <option value="">{t('All repos')}</option>
           {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select>
-        <select className="input" value={author} onChange={(e) => setParam('author', e.target.value)} aria-label="Author">
-          <option value="">Any author</option>
+        <select className="input" value={author} onChange={(e) => setParam('author', e.target.value)} aria-label={t('Author')}>
+          <option value="">{t('Any author')}</option>
           {data.people.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-          {author && !data.people.some((p) => p.id === author) && <option value={author}>{authorName || 'Selected author'}</option>}
+          {author && !data.people.some((p) => p.id === author) && <option value={author}>{authorName || t('Selected author')}</option>}
         </select>
       </div>
       <div className="toggles">
-        <Toggle checked={flags.myReview} onChange={flag('myReview')} count={counts.myReview}>Needs my review</Toggle>
-        <Toggle checked={flags.mine} onChange={flag('mine')} count={counts.mine}>Created by me</Toggle>
-        <Toggle checked={flags.conflicts} onChange={flag('conflicts')} count={counts.conflicts}>Conflicts</Toggle>
-        <Toggle checked={flags.stale} onChange={flag('stale')} count={counts.stale}>Older than {meta.thresholds.stalePrDays}d</Toggle>
-        <Toggle checked={flags.hideDrafts} onChange={flag('hideDrafts')}>Hide drafts</Toggle>
-        {reviewer && <button type="button" className="toggle on" onClick={() => setParam('reviewer', '')}>Pending review by {reviewerName || 'someone'} ✕</button>}
+        <Toggle checked={flags.myReview} onChange={flag('myReview')} count={counts.myReview}>{t('Needs my review')}</Toggle>
+        <Toggle checked={flags.mine} onChange={flag('mine')} count={counts.mine}>{t('Created by me')}</Toggle>
+        <Toggle checked={flags.conflicts} onChange={flag('conflicts')} count={counts.conflicts}>{t('Conflicts')}</Toggle>
+        <Toggle checked={flags.stale} onChange={flag('stale')} count={counts.stale}>{t('Older than {n}d', { n: meta.thresholds.stalePrDays })}</Toggle>
+        <Toggle checked={flags.hideDrafts} onChange={flag('hideDrafts')}>{t('Hide drafts')}</Toggle>
+        {reviewer && <button type="button" className="toggle on" onClick={() => setParam('reviewer', '')}>{reviewerName ? t('Pending review by {name}', { name: reviewerName }) : t('Pending review by someone')} ✕</button>}
       </div>
 
       {!rows.length ? (
-        <Empty title="No pull requests match.">Clear a filter to see more.</Empty>
+        <Empty title={t('No pull requests match.')}>{t('Clear a filter to see more.')}</Empty>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <Th id="title" sort={sort} setSort={setSort}>Pull request</Th>
-                <Th id="author" sort={sort} setSort={setSort}>Author</Th>
-                <Th id="age" sort={sort} setSort={setSort} className="num">Age</Th>
-                <Th id="approvals" sort={sort} setSort={setSort}>Reviewers</Th>
-                <th>Status</th>
+                <Th id="title" sort={sort} setSort={setSort}>{t('Pull request')}</Th>
+                <Th id="author" sort={sort} setSort={setSort}>{t('Author')}</Th>
+                <Th id="age" sort={sort} setSort={setSort} className="num">{t('Age')}</Th>
+                <Th id="approvals" sort={sort} setSort={setSort}>{t('Reviewers')}</Th>
+                <th>{t('Status')}</th>
               </tr>
             </thead>
             <tbody>
@@ -122,15 +123,15 @@ export default function PullRequests() {
                   <td className={`num ${!p.isDraft && p.ageHours >= staleHours ? 'text-warn' : ''}`}>{age(p.createdAt)}</td>
                   <td>
                     <div className="avatars">
-                      {p.reviewers.length ? p.reviewers.map((r) => <Avatar key={r.id} person={r} vote={r.vote} />) : <span className="text-bad small">None</span>}
+                      {p.reviewers.length ? p.reviewers.map((r) => <Avatar key={r.id} person={r} vote={r.vote} />) : <span className="text-bad small">{t('None')}</span>}
                     </div>
                   </td>
                   <td>
                     <div className="chips">
                       <Chip tone={REVIEW_STATE[p.reviewState].tone}>{REVIEW_STATE[p.reviewState].label}</Chip>
-                      {p.needsMyReview && <Chip tone="accent">Your review</Chip>}
-                      {p.hasConflicts && <Chip tone="bad">Conflicts</Chip>}
-                      {p.autoComplete && <Chip tone="ok">Auto-complete</Chip>}
+                      {p.needsMyReview && <Chip tone="accent">{t('Your review')}</Chip>}
+                      {p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}
+                      {p.autoComplete && <Chip tone="ok">{t('Auto-complete')}</Chip>}
                       {p.labels.map((l) => <Chip key={l}>{l}</Chip>)}
                     </div>
                   </td>

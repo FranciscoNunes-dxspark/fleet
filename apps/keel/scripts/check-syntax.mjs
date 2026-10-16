@@ -17,7 +17,8 @@ for (const file of process.argv.slice(2)) {
   const imported = (src.match(/import\s*\{([^}]*)\}\s*from\s*'[./]*\/?i18n\.js'/) || [])[1] || '';
   for (const fn of ['t', 'tx', 'tj']) {
     const used = new RegExp(`(^|[^\\w.$])${fn}\\(`).test(src);
-    if (used && !new RegExp(`\\b${fn}\\b`).test(imported) && !/i18n\.js$/.test(file)) {
+    // i18n.js defines them; locale files only mention them in comments.
+    if (used && !new RegExp(`\\b${fn}\\b`).test(imported) && !/i18n\.js$|[\\/]locales[\\/]/.test(file)) {
       failed = true;
       console.log(`${file}: uses ${fn}( but doesn't import it from i18n.js`);
     }

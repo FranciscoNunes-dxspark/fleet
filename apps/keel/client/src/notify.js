@@ -2,19 +2,21 @@
 // not about Azure DevOps), and desktop notifications use the Notification API.
 
 import { PREF_KEYS, pushPref } from './prefs.js';
+import { t } from './i18n.js';
 
 const KEY = PREF_KEYS.notifications;
 const LEGACY_KEY = 'leadConsole.notifications.v1'; // before the rename to Shipdeck
 
+// Labels are getters so they follow the current language.
 export const CATEGORIES = [
-  { id: 'production', label: 'Production down, degraded, or worse after a deploy' },
-  { id: 'approval', label: 'Deployments waiting for your approval' },
-  { id: 'review', label: 'Pull requests waiting for your review' },
-  { id: 'myPr', label: 'Votes on your pull requests, and when they complete' },
-  { id: 'run', label: 'Pipeline runs you started finishing' },
-  { id: 'pipeline', label: 'Pipelines and deployments that start failing' },
-  { id: 'work', label: 'Newly blocked items and unowned P1 bugs' },
-  { id: 'pr', label: 'Other pull request alerts (no reviewers, conflicts, stale)' },
+  { id: 'production', get label() { return t('Production down, degraded, or worse after a deploy'); } },
+  { id: 'approval', get label() { return t('Deployments waiting for your approval'); } },
+  { id: 'review', get label() { return t('Pull requests waiting for your review'); } },
+  { id: 'myPr', get label() { return t('Votes on your pull requests, and when they complete'); } },
+  { id: 'run', get label() { return t('Pipeline runs you started finishing'); } },
+  { id: 'pipeline', get label() { return t('Pipelines and deployments that start failing'); } },
+  { id: 'work', get label() { return t('Newly blocked items and unowned P1 bugs'); } },
+  { id: 'pr', get label() { return t('Other pull request alerts (no reviewers, conflicts, stale)'); } },
 ];
 
 const DEFAULTS = {

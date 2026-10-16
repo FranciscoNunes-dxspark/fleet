@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, isBlocked, shortIteration } from '../format.js';
 import { Chip, Empty, ErrorBox, Loading, PageHeader, Th, useSort } from '../ui.jsx';
+import { t } from '../i18n.js';
 
 const DAY = 86_400_000;
 
@@ -27,13 +28,13 @@ export default function WorkItems() {
   const stuck = (w) => w.stateCategory === 'InProgress' && Date.now() - Date.parse(w.changedAt) >= meta.thresholds.itemStuckDays * DAY;
 
   const VIEWS = data ? [
-    { id: 'open', label: 'All open', test: () => true },
-    { id: 'sprint', label: 'Current sprint', test: inSprint },
-    { id: 'bugs', label: 'Bugs', test: (w) => w.type === 'Bug' },
-    { id: 'blocked', label: 'Blocked', test: blocked },
-    { id: 'stuck', label: `No update in ${meta.thresholds.itemStuckDays}d`, test: stuck },
-    { id: 'unassigned', label: 'Unassigned', test: (w) => !w.assignedTo },
-    { id: 'mine', label: 'Mine', test: (w) => w.assignedTo?.id === data.me.id },
+    { id: 'open', label: t('All open'), test: () => true },
+    { id: 'sprint', label: t('Current sprint'), test: inSprint },
+    { id: 'bugs', label: t('Bugs'), test: (w) => w.type === 'Bug' },
+    { id: 'blocked', label: t('Blocked'), test: blocked },
+    { id: 'stuck', label: t('No update in {n}d', { n: meta.thresholds.itemStuckDays }), test: stuck },
+    { id: 'unassigned', label: t('Unassigned'), test: (w) => !w.assignedTo },
+    { id: 'mine', label: t('Mine'), test: (w) => w.assignedTo?.id === data.me.id },
   ] : [];
 
   const { sort, setSort, apply } = useSort({ key: 'priority', dir: 1 }, {
@@ -83,9 +84,9 @@ export default function WorkItems() {
 
   return (
     <div className="page">
-      <PageHeader title="Work items" sub={`${data.items.length} open items across tracked projects`} />
+      <PageHeader title={t('Work items')} sub={t(data.items.length === 1 ? '{n} open item across tracked projects' : '{n} open items across tracked projects', { n: data.items.length })} />
 
-      <div className="segmented" role="tablist" aria-label="Work item views">
+      <div className="segmented" role="tablist" aria-label={t('Work item views')}>
         {VIEWS.map((v) => (
           <button key={v.id} type="button" role="tab" aria-selected={view === v.id} className={view === v.id ? 'on' : ''} onClick={() => setParam('view', v.id === 'open' ? '' : v.id)}>
             {v.label}<span className="seg-count">{data.items.filter(v.test).length}</span>
@@ -94,34 +95,34 @@ export default function WorkItems() {
       </div>
 
       <div className="filters">
-        <input type="search" className="input" placeholder="Search title, ID, tag, person" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search work items" />
-        <select className="input" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project">
-          <option value="">All projects</option>
+        <input type="search" className="input" placeholder={t('Search title, ID, tag, person')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search work items')} />
+        <select className="input" value={project} onChange={(e) => setProject(e.target.value)} aria-label={t('Project')}>
+          <option value="">{t('All projects')}</option>
           {projects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
-        <select className="input" value={type} onChange={(e) => setType(e.target.value)} aria-label="Type">
-          <option value="">All types</option>
-          {types.map((t) => <option key={t}>{t}</option>)}
+        <select className="input" value={type} onChange={(e) => setType(e.target.value)} aria-label={t('Type')}>
+          <option value="">{t('All types')}</option>
+          {types.map((ty) => <option key={ty}>{ty}</option>)}
         </select>
-        <select className="input" value={assignee} onChange={(e) => setParam('assignee', e.target.value)} aria-label="Assigned to">
-          <option value="">Anyone</option>
+        <select className="input" value={assignee} onChange={(e) => setParam('assignee', e.target.value)} aria-label={t('Assigned to')}>
+          <option value="">{t('Anyone')}</option>
           {data.people.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
         </select>
       </div>
 
       {!rows.length ? (
-        <Empty title="No work items match.">Try another view or clear the filters.</Empty>
+        <Empty title={t('No work items match.')}>{t('Try another view or clear the filters.')}</Empty>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
                 <Th id="id" sort={sort} setSort={setSort} className="num">ID</Th>
-                <Th id="title" sort={sort} setSort={setSort}>Title</Th>
-                <Th id="state" sort={sort} setSort={setSort}>State</Th>
-                <Th id="assignee" sort={sort} setSort={setSort}>Assigned to</Th>
-                <Th id="priority" sort={sort} setSort={setSort} className="num">Pri</Th>
-                <Th id="changed" sort={sort} setSort={setSort} className="num">Updated</Th>
+                <Th id="title" sort={sort} setSort={setSort}>{t('Title')}</Th>
+                <Th id="state" sort={sort} setSort={setSort}>{t('State')}</Th>
+                <Th id="assignee" sort={sort} setSort={setSort}>{t('Assigned to')}</Th>
+                <Th id="priority" sort={sort} setSort={setSort} className="num">{t('Pri')}</Th>
+                <Th id="changed" sort={sort} setSort={setSort} className="num">{t('Updated')}</Th>
               </tr>
             </thead>
             <tbody>
@@ -136,8 +137,8 @@ export default function WorkItems() {
                         <span className={`type type-${w.type.replace(/\s+/g, '-').toLowerCase()}`}>{w.type}</span>
                         <span>{w.projectName}</span>
                         {w.iterationPath !== w.projectName && <span>{shortIteration(w.iterationPath)}</span>}
-                        {blocked(w) && <Chip tone="bad">Blocked</Chip>}
-                        {w.tags.filter((t) => t.toLowerCase() !== blockedTag).map((t) => <Chip key={t}>{t}</Chip>)}
+                        {blocked(w) && <Chip tone="bad">{t('Blocked')}</Chip>}
+                        {w.tags.filter((tag) => tag.toLowerCase() !== blockedTag).map((tag) => <Chip key={tag}>{tag}</Chip>)}
                       </div>
                     </td>
                     <td>
@@ -145,8 +146,8 @@ export default function WorkItems() {
                         className={`input input-inline state-${w.stateCategory}`}
                         value={w.state}
                         disabled={!editable || saving === w.id}
-                        onChange={(e) => update(w, { state: e.target.value }, `${w.id} moved to ${e.target.value}`)}
-                        aria-label={`State of ${w.id}`}
+                        onChange={(e) => update(w, { state: e.target.value }, t('{id} moved to {place}', { id: w.id, place: e.target.value }))}
+                        aria-label={t('State of {id}', { id: w.id })}
                       >
                         {(states.length ? states : [{ name: w.state }]).map((s) => <option key={s.name}>{s.name}</option>)}
                       </select>
@@ -156,10 +157,10 @@ export default function WorkItems() {
                         className="input input-inline"
                         value={w.assignedTo?.uniqueName || ''}
                         disabled={!editable || saving === w.id}
-                        onChange={(e) => update(w, { assignedTo: e.target.value }, e.target.value ? `${w.id} assigned` : `${w.id} unassigned`)}
-                        aria-label={`Assignee of ${w.id}`}
+                        onChange={(e) => update(w, { assignedTo: e.target.value }, t(e.target.value ? '{id} assigned' : '{id} unassigned', { id: w.id }))}
+                        aria-label={t('Assignee of {id}', { id: w.id })}
                       >
-                        <option value="">Unassigned</option>
+                        <option value="">{t('Unassigned')}</option>
                         {w.assignedTo && !data.people.some((p) => p.uniqueName === w.assignedTo.uniqueName) && (
                           <option value={w.assignedTo.uniqueName}>{w.assignedTo.displayName}</option>
                         )}

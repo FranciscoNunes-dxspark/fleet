@@ -2,22 +2,24 @@
 // Applied as data attributes on <html>; the colors themselves are CSS tokens.
 
 import { PREF_KEYS, pushPref } from './prefs.js';
+import { t } from './i18n.js';
 
 const KEY = PREF_KEYS.theme;
 
+// Labels are getters so they follow the current language.
 export const MODES = [
-  { id: 'system', label: 'System' },
-  { id: 'dark', label: 'Dark' },
-  { id: 'light', label: 'Light' },
+  { id: 'system', get label() { return t('System'); } },
+  { id: 'dark', get label() { return t('Dark'); } },
+  { id: 'light', get label() { return t('Light'); } },
 ];
 
 // Swatch colors are for the picker; the real values live in styles.css per mode.
 export const ACCENTS = [
-  { id: 'green', label: 'Green', swatch: '#3ec486' },
-  { id: 'blue', label: 'Blue', swatch: '#5b9cf5' },
-  { id: 'violet', label: 'Violet', swatch: '#a78bfa' },
-  { id: 'teal', label: 'Teal', swatch: '#2ec4c4' },
-  { id: 'magenta', label: 'Magenta', swatch: '#d96bd0' },
+  { id: 'green', get label() { return t('Green'); }, swatch: '#3ec486' },
+  { id: 'blue', get label() { return t('Blue'); }, swatch: '#5b9cf5' },
+  { id: 'violet', get label() { return t('Violet'); }, swatch: '#a78bfa' },
+  { id: 'teal', get label() { return t('Teal'); }, swatch: '#2ec4c4' },
+  { id: 'magenta', get label() { return t('Magenta'); }, swatch: '#d96bd0' },
 ];
 
 const DEFAULT = { mode: 'dark', accent: 'green' };

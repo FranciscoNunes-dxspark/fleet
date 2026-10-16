@@ -13,13 +13,15 @@ import { Fragment, createElement } from 'react';
 // Only pushPref (a function) is used from prefs.js, and only after startup:
 // prefs.js -> api.js -> i18n.js is a cycle, so its constants can't be read here.
 import { pushPref } from './prefs.js';
-import pt from './locales/pt.js';
+import pt, { serverText as ptServer } from './locales/pt.js';
 
 export const LANGUAGES = [
   { id: 'en', label: 'English', locale: 'en-GB' },
   { id: 'pt', label: 'Português', locale: 'pt-PT' },
 ];
 const DICTS = { pt };
+// Templates for tx() come only from server text, so a UI key like '{age} ago' never rewrites a server sentence.
+const SERVER_DICTS = { pt: ptServer };
 const KEY = 'keel.language.v1'; // = PREF_KEYS.language
 
 const browserDefault = () => (/^pt\b/i.test(navigator.language || '') ? 'pt' : 'en');
@@ -85,7 +87,7 @@ export function tj(text, params = {}) {
 const compiled = {};
 function templates() {
   if (!compiled[current]) {
-    const dict = DICTS[current] || {};
+    const dict = SERVER_DICTS[current] || {};
     compiled[current] = Object.keys(dict)
       .filter((k) => /\{\w+\}/.test(k))
       .map((k) => {
@@ -109,6 +111,9 @@ const txCache = new Map();
 export function tx(text) {
   if (typeof text !== 'string' || !text || current === 'en') return text;
   const dict = DICTS[current];
+  // Server text: its own dictionary first, so a word like "unstable" keeps the server's sense.
+  const own = SERVER_DICTS[current] || {};
+  if (own[text]) return own[text];
   if (dict[text]) return dict[text];
   const cacheKey = `${current}\u0000${text}`;
   if (txCache.has(cacheKey)) return txCache.get(cacheKey);
@@ -117,7 +122,7 @@ export function tx(text) {
     const m = text.match(re);
     if (m) {
       // Captured values may themselves be translatable (e.g. a state word).
-      out = fill(target, Object.fromEntries(names.map((n, i) => [n, dict[m[i + 1]] || m[i + 1]])));
+      out = fill(target, Object.fromEntries(names.map((n, i) => [n, own[m[i + 1]] || dict[m[i + 1]] || m[i + 1]])));
       break;
     }
   }

@@ -5,13 +5,17 @@ import { age } from '../format.js';
 import { Markdown } from '../markdown.jsx';
 import { Avatar, Chip, ErrorBox, Loading } from '../ui.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
+import { t, tj } from '../i18n.js';
 
 const MAX_DESCRIPTION = 4000;
 const repoKey = (r) => `${r.projectId}|${r.id}`;
 
 const COMMITS_IN_DRAFT = 20;
 
-/** The repo's PR template, or a short summary skeleton listing (at most 20) commits. */
+/**
+ * The repo's PR template, or a short summary skeleton listing (at most 20) commits.
+ * Kept in English on purpose: it becomes the PR description in Azure DevOps, read by the whole team.
+ */
 function draftDescription(compare) {
   if (compare.template) return compare.template.slice(0, MAX_DESCRIPTION);
   const subjects = compare.commits.map((c) => c.message.split('\n')[0].trim().slice(0, 120)).filter(Boolean);
@@ -115,7 +119,7 @@ export default function NewPr({ preset = {} }) {
 
   if (reposError) return <ErrorBox error={reposError} />;
   if (!repos) return <Loading />;
-  if (!repoList.length) return <p className="muted">Track at least one repository in Settings to create pull requests.</p>;
+  if (!repoList.length) return <p className="muted">{t('Track at least one repository in Settings to create pull requests.')}</p>;
 
   const addWorkItem = async (e) => {
     e.preventDefault();
@@ -126,7 +130,7 @@ export default function NewPr({ preset = {} }) {
       setWorkItems((list) => (list.some((x) => x.id === w.id) ? list : [...list, pickWi(w)]));
       setWiInput('');
     } catch {
-      toast(`Work item ${id} wasn't found`, 'bad');
+      toast(t("Work item {id} wasn't found", { id }), 'bad');
     }
   };
 
@@ -150,7 +154,7 @@ export default function NewPr({ preset = {} }) {
           workItemIds: workItems.map((w) => w.id),
         },
       });
-      toast(`Created pull request !${pr.id}`);
+      toast(t('Created pull request !{id}', { id: pr.id }));
       refresh();
       openDrawer({ type: 'pr', projectId: pr.projectId, repoId: pr.repoId, id: pr.id });
     } catch (err) {
@@ -165,11 +169,11 @@ export default function NewPr({ preset = {} }) {
   const branchOptions = (exclude) => (
     <>
       {recent.length > 0 && (
-        <optgroup label="Recently pushed">
-          {recent.map((b) => <option key={b.name} value={b.name} disabled={b.name === exclude}>{b.name} · {age(b.pushedAt)} ago</option>)}
+        <optgroup label={t('Recently pushed')}>
+          {recent.map((b) => <option key={b.name} value={b.name} disabled={b.name === exclude}>{t('{name} · {age} ago', { name: b.name, age: age(b.pushedAt) })}</option>)}
         </optgroup>
       )}
-      <optgroup label={recent.length ? 'Other branches' : 'Branches'}>
+      <optgroup label={recent.length ? t('Other branches') : t('Branches')}>
         {others.map((b) => <option key={b.name} value={b.name} disabled={b.name === exclude}>{b.name}</option>)}
       </optgroup>
     </>
@@ -182,12 +186,12 @@ export default function NewPr({ preset = {} }) {
   return (
     // Enter in a text field shouldn't create the pull request by accident.
     <form className="detail new-pr" onSubmit={submit} onKeyDown={(e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.preventDefault(); }}>
-      <div className="detail-kicker">New pull request</div>
-      <h2 className="detail-title">{title || 'Untitled pull request'}</h2>
+      <div className="detail-kicker">{t('New pull request')}</div>
+      <h2 className="detail-title">{title || t('Untitled pull request')}</h2>
 
       <section className="detail-section">
         <div className="form-grid form-grid-wide">
-          <label>Repository
+          <label>{t('Repository')}
             <select className="input" value={repo} onChange={(e) => { setRepo(e.target.value); setTitleTouched(false); setDescTouched(false); }}>
               {[...new Set(repoList.map((r) => r.projectName))].map((p) => (
                 <optgroup key={p} label={p}>
@@ -197,43 +201,45 @@ export default function NewPr({ preset = {} }) {
             </select>
           </label>
         </div>
-        {!branches ? <Loading label="Loading branches…" /> : (
+        {!branches ? <Loading label={t('Loading branches…')} /> : (
           <div className="branch-pick">
-            <label>From
-              <select className="input mono" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source branch">
+            <label>{t('From')}
+              <select className="input mono" value={source} onChange={(e) => setSource(e.target.value)} aria-label={t('Source branch')}>
                 {branchOptions(target)}
               </select>
             </label>
             <span className="branch-arrow" aria-hidden="true">→</span>
-            <label>Into
-              <select className="input mono" value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Target branch">
+            <label>{t('Into')}
+              <select className="input mono" value={target} onChange={(e) => setTarget(e.target.value)} aria-label={t('Target branch')}>
                 {branchOptions(source)}
               </select>
             </label>
           </div>
         )}
-        {comparing && <Loading label="Comparing branches…" />}
+        {comparing && <Loading label={t('Comparing branches…')} />}
         <ErrorBox error={compareError} />
         {compare && !comparing && (
           <div className="compare-summary small">
-            <span><strong>{compare.ahead}</strong> commit{compare.ahead === 1 ? '' : 's'} to merge</span>
-            <span><strong>{compare.files.total}</strong> file{compare.files.total === 1 ? '' : 's'} changed</span>
-            {compare.behind > 0 && <span className="text-warn">{compare.behind} commit{compare.behind === 1 ? '' : 's'} behind {target}: consider updating the branch</span>}
-            {compare.ahead === 0 && <span className="text-warn">Nothing to merge: {source} has no commits that {target} doesn't</span>}
+            <span>{tj(compare.ahead === 1 ? '{n} commit to merge' : '{n} commits to merge', { n: <strong>{compare.ahead}</strong> })}</span>
+            <span>{tj(compare.files.total === 1 ? '{n} file changed' : '{n} files changed', { n: <strong>{compare.files.total}</strong> })}</span>
+            {compare.behind > 0 && <span className="text-warn">{t(compare.behind === 1 ? '{n} commit behind {branch}: consider updating the branch' : '{n} commits behind {branch}: consider updating the branch', { n: compare.behind, branch: target })}</span>}
+            {compare.ahead === 0 && <span className="text-warn">{t("Nothing to merge: {source} has no commits that {target} doesn't", { source, target })}</span>}
           </div>
         )}
         {existing.map((p) => (
           <p key={p.id} className="callout small">
-            A pull request for these branches is already open: <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>!{p.id} {p.title}</button>
+            {tj('A pull request for these branches is already open: {link}', {
+              link: <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>!{p.id} {p.title}</button>,
+            })}
           </p>
         ))}
         {compare && compare.commits.length > 0 && (
           <details className="commit-list">
-            <summary className="small">Commits ({compare.commits.length}{compare.ahead > compare.commits.length ? ` of ${compare.ahead}` : ''})</summary>
+            <summary className="small">{compare.ahead > compare.commits.length ? t('Commits ({n} of {total})', { n: compare.commits.length, total: compare.ahead }) : t('Commits ({n})', { n: compare.commits.length })}</summary>
             <ul>
               {compare.commits.map((c) => (
                 <li key={c.id} className="small">
-                  <code className="muted">{c.id.slice(0, 7)}</code> {c.message.split('\n')[0]} <span className="muted">· {c.author} · {age(c.date)} ago</span>
+                  <code className="muted">{c.id.slice(0, 7)}</code> {c.message.split('\n')[0]} <span className="muted">{t('· {author} · {age} ago', { author: c.author, age: age(c.date) })}</span>
                 </li>
               ))}
             </ul>
@@ -242,74 +248,74 @@ export default function NewPr({ preset = {} }) {
       </section>
 
       <section className="detail-section">
-        <label className="field">Title
+        <label className="field">{t('Title')}
           <input className="input" value={title} maxLength={400} onChange={(e) => { setTitle(e.target.value); setTitleTouched(true); }} required />
         </label>
         <div className="field">
           <div className="field-head">
-            <span>Description {compare?.template && !descTouched && <span className="muted small">from the repo's PR template</span>}</span>
-            <span className="segmented segmented-compact" role="tablist" aria-label="Description view">
-              <button type="button" role="tab" aria-selected={!preview} className={!preview ? 'on' : ''} onClick={() => setPreview(false)}>Write</button>
-              <button type="button" role="tab" aria-selected={preview} className={preview ? 'on' : ''} onClick={() => setPreview(true)}>Preview</button>
+            <span>{t('Description')} {compare?.template && !descTouched && <span className="muted small">{t("from the repo's PR template")}</span>}</span>
+            <span className="segmented segmented-compact" role="tablist" aria-label={t('Description view')}>
+              <button type="button" role="tab" aria-selected={!preview} className={!preview ? 'on' : ''} onClick={() => setPreview(false)}>{t('Write')}</button>
+              <button type="button" role="tab" aria-selected={preview} className={preview ? 'on' : ''} onClick={() => setPreview(true)}>{t('Preview')}</button>
             </span>
           </div>
           {preview
-            ? <div className="md-preview"><Markdown text={description || '_Nothing to preview._'} people={people || []} /></div>
-            : <textarea className="input" rows={10} value={description} onChange={(e) => { setDescription(e.target.value); setDescTouched(true); }} aria-label="Description (Markdown)" />}
-          <span className={`small ${tooLong ? 'text-bad' : 'muted'}`}>{description.length.toLocaleString()} / {MAX_DESCRIPTION.toLocaleString()} characters · Markdown</span>
+            ? <div className="md-preview"><Markdown text={description || t('_Nothing to preview._')} people={people || []} /></div>
+            : <textarea className="input" rows={10} value={description} onChange={(e) => { setDescription(e.target.value); setDescTouched(true); }} aria-label={t('Description (Markdown)')} />}
+          <span className={`small ${tooLong ? 'text-bad' : 'muted'}`}>{t('{count} / {max} characters · Markdown', { count: description.length.toLocaleString(), max: MAX_DESCRIPTION.toLocaleString() })}</span>
         </div>
       </section>
 
       <section className="detail-section">
-        <h3>Work items</h3>
+        <h3>{t('Work items')}</h3>
         <ul className="link-list">
           {workItems.map((w) => (
             <li key={w.id}>
               <span className="mono muted">{w.id}</span> <span>{w.title}</span>
               <Chip tone={CATEGORY_TONE[w.stateCategory] || 'muted'}>{w.state}</Chip>
-              {w.suggested && <span className="muted small">suggested from branch or commits</span>}
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => setWorkItems((l) => l.filter((x) => x.id !== w.id))} aria-label={`Unlink ${w.id}`}>Remove</button>
+              {w.suggested && <span className="muted small">{t('suggested from branch or commits')}</span>}
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => setWorkItems((l) => l.filter((x) => x.id !== w.id))} aria-label={t('Unlink {id}', { id: w.id })}>{t('Remove')}</button>
             </li>
           ))}
-          {!workItems.length && <li className="muted small">None linked. Many branch policies require at least one.</li>}
+          {!workItems.length && <li className="muted small">{t('None linked. Many branch policies require at least one.')}</li>}
         </ul>
         <div className="inline-form">
-          <input className="input" inputMode="numeric" placeholder="Work item ID" value={wiInput} onChange={(e) => setWiInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addWorkItem(e)} aria-label="Work item ID to link" />
-          <button type="button" className="btn btn-small" onClick={addWorkItem} disabled={!wiInput.trim()}>Link</button>
+          <input className="input" inputMode="numeric" placeholder={t('Work item ID')} value={wiInput} onChange={(e) => setWiInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addWorkItem(e)} aria-label={t('Work item ID to link')} />
+          <button type="button" className="btn btn-small" onClick={addWorkItem} disabled={!wiInput.trim()}>{t('Link')}</button>
         </div>
       </section>
 
       <section className="detail-section">
-        <h3>Reviewers <span className="muted small">branch policies may add more automatically</span></h3>
+        <h3>{t('Reviewers')} <span className="muted small">{t('branch policies may add more automatically')}</span></h3>
         <ul className="reviewer-list">
           {reviewers.map((r) => (
             <li key={r.id}>
               <Avatar person={r} size={22} />
               <span className="truncate">{r.displayName}</span>
-              <label className="check small"><input type="checkbox" checked={r.isRequired} onChange={(e) => setReviewers((l) => l.map((x) => (x.id === r.id ? { ...x, isRequired: e.target.checked } : x)))} /> Required</label>
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => setReviewers((l) => l.filter((x) => x.id !== r.id))}>Remove</button>
+              <label className="check small"><input type="checkbox" checked={r.isRequired} onChange={(e) => setReviewers((l) => l.map((x) => (x.id === r.id ? { ...x, isRequired: e.target.checked } : x)))} /> {t('Required')}</label>
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => setReviewers((l) => l.filter((x) => x.id !== r.id))}>{t('Remove')}</button>
             </li>
           ))}
         </ul>
         {candidates.length > 0 && (
-          <select className="input" value="" onChange={(e) => { const p = candidates.find((c) => c.id === e.target.value); if (p) setReviewers((l) => [...l, { ...p, isRequired: false }]); }} aria-label="Add a reviewer">
-            <option value="">Add a reviewer…</option>
+          <select className="input" value="" onChange={(e) => { const p = candidates.find((c) => c.id === e.target.value); if (p) setReviewers((l) => [...l, { ...p, isRequired: false }]); }} aria-label={t('Add a reviewer')}>
+            <option value="">{t('Add a reviewer…')}</option>
             {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
           </select>
         )}
       </section>
 
       <section className="detail-section">
-        <label className="check"><input type="checkbox" checked={isDraft} onChange={(e) => setIsDraft(e.target.checked)} /> Create as draft <span className="muted small">(reviewers aren't notified until you publish)</span></label>
-        <label className="check"><input type="checkbox" checked={autoComplete && !isDraft} disabled={isDraft} onChange={(e) => setAutoComplete(e.target.checked)} /> Set auto-complete <span className="muted small">(completes when policies pass, using your Settings defaults)</span></label>
+        <label className="check"><input type="checkbox" checked={isDraft} onChange={(e) => setIsDraft(e.target.checked)} /> {t('Create as draft')} <span className="muted small">{t("(reviewers aren't notified until you publish)")}</span></label>
+        <label className="check"><input type="checkbox" checked={autoComplete && !isDraft} disabled={isDraft} onChange={(e) => setAutoComplete(e.target.checked)} /> {t('Set auto-complete')} <span className="muted small">{t('(completes when policies pass, using your Settings defaults)')}</span></label>
       </section>
 
       <ErrorBox error={submitError} />
       <section className="detail-actions sticky-actions">
-        <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? 'Creating…' : isDraft ? 'Create draft pull request' : 'Create pull request'}</button>
-        {existing.length > 0 && <span className="small muted">A pull request for these branches already exists.</span>}
-        {tooLong && <span className="small text-bad">Shorten the description to 4,000 characters to create the pull request.</span>}
-        {!title.trim() && <span className="small muted">Add a title to create the pull request.</span>}
+        <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? t('Creating…') : isDraft ? t('Create draft pull request') : t('Create pull request')}</button>
+        {existing.length > 0 && <span className="small muted">{t('A pull request for these branches already exists.')}</span>}
+        {tooLong && <span className="small text-bad">{t('Shorten the description to 4,000 characters to create the pull request.')}</span>}
+        {!title.trim() && <span className="small muted">{t('Add a title to create the pull request.')}</span>}
       </section>
     </form>
   );

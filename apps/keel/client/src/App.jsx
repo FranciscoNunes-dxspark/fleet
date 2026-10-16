@@ -23,7 +23,7 @@ import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/
 import Users from './pages/Users.jsx';
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
 import { applyTheme } from './theme.js';
-import { applySavedLanguage, getLanguage } from './i18n.js';
+import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
 
 /**
  * Auth gate. In login mode (hosted), shows sign-in until there's a session,
@@ -35,6 +35,12 @@ import { applySavedLanguage, getLanguage } from './i18n.js';
  * links, sign-in, then connecting Azure DevOps, before the console itself.
  * Local mode is a pass-through.
  */
+// Server notifications (server/domain/changes.js): Keel writes most titles and
+// bodies, but some carry an Azure DevOps PR or work item title as is (inbox
+// entries for a PR or work item, and the body of a vote). Those stay untranslated.
+const noteTitle = (n) => (/^attention:(pr|wi):/.test(n.key || '') ? n.title : tx(n.title));
+const noteBody = (n) => (/^vote:/.test(n.key || '') ? n.body : tx(n.body));
+
 /** Re-renders everything when the language changes (Settings, or another device via synced prefs). */
 export default function App() {
   const [lang, setLang] = useState(getLanguage);
@@ -91,7 +97,7 @@ function AuthGate() {
     }
   };
 
-  if (!auth) return <div className="boot"><Loading label="Starting…" /></div>;
+  if (!auth) return <div className="boot"><Loading label={t('Starting…')} /></div>;
   if (auth.mode === 'login') {
     if (linkToken) {
       return (
@@ -124,10 +130,10 @@ function Console({ authMode, onSignedOut }) {
   const navigate = useNavigate();
 
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
-  const dismiss = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+  const dismiss = useCallback((id) => setToasts((list) => list.filter((x) => x.id !== id)), []);
   const toast = useCallback((text, tone = 'ok', { action, body, ttl = 4000 } = {}) => {
     const id = Math.random();
-    setToasts((t) => [...t.slice(-4), { id, text, tone, action, body }]);
+    setToasts((list) => [...list.slice(-4), { id, text, tone, action, body }]);
     setTimeout(() => dismiss(id), ttl);
   }, [dismiss]);
 
@@ -152,15 +158,15 @@ function Console({ authMode, onSignedOut }) {
       const items = JSON.parse(e.data).items.filter((n) => prefs.categories[n.category] !== false);
       if (!items.length) return;
       if (items.length > 3) {
-        const summary = `${items.length} updates in Azure DevOps`;
-        if (prefs.inApp) toast(summary, 'note', { body: items.slice(0, 3).map((n) => n.title).join(' · '), action: { label: 'Open inbox', onClick: () => navigate('/inbox') }, ttl: 10000 });
-        showDesktop({ title: summary, body: items.slice(0, 4).map((n) => n.title).join('\n'), tag: 'keel-batch', onClick: () => navigate('/inbox') });
+        const summary = t('{n} updates in Azure DevOps', { n: items.length });
+        if (prefs.inApp) toast(summary, 'note', { body: items.slice(0, 3).map(noteTitle).join(' · '), action: { label: t('Open inbox'), onClick: () => navigate('/inbox') }, ttl: 10000 });
+        showDesktop({ title: summary, body: items.slice(0, 4).map(noteTitle).join('\n'), tag: 'keel-batch', onClick: () => navigate('/inbox') });
         return;
       }
       for (const n of items) {
         const open = () => openTarget(n.target);
-        if (prefs.inApp) toast(n.title, n.severity === 'high' ? 'alert' : 'note', { body: n.body, action: n.target ? { label: 'Open', onClick: open } : null, ttl: 10000 });
-        showDesktop({ title: n.title, body: n.body, tag: n.key, onClick: open });
+        if (prefs.inApp) toast(noteTitle(n), n.severity === 'high' ? 'alert' : 'note', { body: noteBody(n), action: n.target ? { label: t('Open'), onClick: open } : null, ttl: 10000 });
+        showDesktop({ title: noteTitle(n), body: noteBody(n), tag: n.key, onClick: open });
       }
     });
     es.onerror = () => setLive((l) => ({ ...l, connected: false }));
@@ -187,8 +193,8 @@ function Console({ authMode, onSignedOut }) {
   // Fallback while the live connection is down: plain periodic refetching.
   useEffect(() => {
     if (live.connected || !meta?.refreshSeconds) return undefined;
-    const t = setInterval(() => document.visibilityState === 'visible' && bump(), meta.refreshSeconds * 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => document.visibilityState === 'visible' && bump(), meta.refreshSeconds * 1000);
+    return () => clearInterval(timer);
   }, [live.connected, meta?.refreshSeconds, bump]);
 
   const signOut = useCallback(async () => {
@@ -208,29 +214,29 @@ function Console({ authMode, onSignedOut }) {
     return (
       <div className="boot">
         <ErrorBox error={metaError} onRetry={loadMeta} />
-        <p className="muted">Check the terminal running the server. Common causes: an expired PAT, a wrong <code>AZDO_ORG_URL</code>, or the API server isn't running.</p>
+        <p className="muted">{tj("Check the terminal running the server. Common causes: an expired PAT, a wrong {orgUrl}, or the API server isn't running.", { orgUrl: <code>AZDO_ORG_URL</code> })}</p>
       </div>
     );
   }
-  if (!meta) return <div className="boot"><Loading label="Connecting to Azure DevOps…" /></div>;
+  if (!meta) return <div className="boot"><Loading label={t('Connecting to Azure DevOps…')} /></div>;
 
   return (
     <AppContext.Provider value={ctx}>
       <Shell />
-      <Drawer open={!!drawer} onClose={() => setDrawer(null)} label="Details">
+      <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')}>
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
         {drawer?.type === 'workitem' && <WorkItemDetail id={drawer.id} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
       </Drawer>
       <div className="toasts" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.tone}`}>
+        {toasts.map((item) => (
+          <div key={item.id} className={`toast toast-${item.tone}`}>
             <div className="toast-text">
-              <strong>{t.text}</strong>
-              {t.body && <span className="toast-body">{t.body}</span>}
+              <strong>{item.text}</strong>
+              {item.body && <span className="toast-body">{item.body}</span>}
             </div>
-            {t.action && <button type="button" className="toast-action" onClick={() => { t.action.onClick(); dismiss(t.id); }}>{t.action.label}</button>}
-            {(t.action || t.body) && <button type="button" className="toast-close" aria-label="Dismiss" onClick={() => dismiss(t.id)}>✕</button>}
+            {item.action && <button type="button" className="toast-action" onClick={() => { item.action.onClick(); dismiss(item.id); }}>{item.action.label}</button>}
+            {(item.action || item.body) && <button type="button" className="toast-close" aria-label={t('Dismiss')} onClick={() => dismiss(item.id)}>✕</button>}
           </div>
         ))}
       </div>
@@ -286,29 +292,29 @@ function Shell() {
   // Grouped by what you're doing: today's triage, planning work, shipping code, the people.
   const nav = [
     { items: [
-      { to: '/', label: 'Dashboard', icon: 'dashboard', end: true },
-      { to: '/inbox', label: 'Inbox', icon: 'inbox', count: s?.high, tone: 'bad' },
+      { to: '/', label: t('Dashboard'), icon: 'dashboard', end: true },
+      { to: '/inbox', label: t('Inbox'), icon: 'inbox', count: s?.high, tone: 'bad' },
     ] },
-    { label: 'Work', items: [
-      { to: '/work', label: 'Work items', icon: 'workItems' },
-      { to: '/board', label: 'Board', icon: 'board' },
-      { to: '/epics', label: 'Epics', icon: 'epics' },
+    { label: t('Work'), items: [
+      { to: '/work', label: t('Work items'), icon: 'workItems' },
+      { to: '/board', label: t('Board'), icon: 'board' },
+      { to: '/epics', label: t('Epics'), icon: 'epics' },
     ] },
-    { label: 'Code and delivery', items: [
-      { to: '/prs', label: 'Pull requests', icon: 'pullRequests', count: s?.myReviews, tone: 'accent' },
-      { to: '/pipelines', label: 'Pipelines', icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
-      { to: '/production', label: 'Production', icon: 'production', count: s?.productionIssues, tone: 'bad' },
+    { label: t('Code and delivery'), items: [
+      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent' },
+      { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
+      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad' },
     ] },
-    { label: 'People', items: [
-      { to: '/team', label: 'Team', icon: 'team' },
-      { to: '/insights', label: 'Insights', icon: 'insights' },
-      ...(authMode === 'login' && can('users.manage') ? [{ to: '/users', label: 'Users', icon: 'users' }] : []),
+    { label: t('People'), items: [
+      { to: '/team', label: t('Team'), icon: 'team' },
+      { to: '/insights', label: t('Insights'), icon: 'insights' },
+      ...(authMode === 'login' && can('users.manage') ? [{ to: '/users', label: t('Users'), icon: 'users' }] : []),
     ] },
   ];
 
   return (
     <div className="shell">
-      <nav className="sidebar" aria-label="Main">
+      <nav className="sidebar" aria-label={t('Main')}>
         <div className="brand">
           <Logo />
           <div>
@@ -325,7 +331,7 @@ function Shell() {
                   <li key={n.to}>
                     <NavLink to={n.to} end={n.end} className="nav-link">
                       <span className="nav-label"><Icon name={n.icon} />{n.label}</span>
-                      {n.count > 0 && <span className={`nav-count nav-count-${n.tone}`} title={`${n.count} need attention`}>{n.count}</span>}
+                      {n.count > 0 && <span className={`nav-count nav-count-${n.tone}`} title={t(n.count === 1 ? '{n} needs attention' : '{n} need attention', { n: n.count })}>{n.count}</span>}
                     </NavLink>
                   </li>
                 ))}
@@ -334,14 +340,14 @@ function Shell() {
           ))}
         </div>
         <div className="sidebar-foot">
-          <NavLink to="/settings" className="nav-link"><span className="nav-label"><Icon name="settings" />Settings</span></NavLink>
+          <NavLink to="/settings" className="nav-link"><span className="nav-label"><Icon name="settings" />{t('Settings')}</span></NavLink>
           <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning}>
-            <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> Refresh from Azure DevOps
+            <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> {t('Refresh from Azure DevOps')}
           </button>
           <LiveStatus />
-          {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut}><Icon name="signOut" size={14} /> Sign out</button>}
+          {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut}><Icon name="signOut" size={14} /> {t('Sign out')}</button>}
           <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
-            Signed in as {meta.account?.name || meta.me.displayName}
+            {t('Signed in as {name}', { name: meta.account?.name || meta.me.displayName })}
             {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
           </div>
         </div>
@@ -350,12 +356,14 @@ function Shell() {
       <main className="main" ref={mainRef}>
         {meta.mock && (
           <div className="demo-banner">
-            You're looking at demo data ({meta.mockReason}). Add <code>AZDO_ORG_URL</code> and <code>AZDO_PAT</code> to <code>.env</code> and restart to connect your organization.
+            {tj("You're looking at demo data ({reason}). Add {orgUrl} and {pat} to {env} and restart to connect your organization.", {
+              reason: tx(meta.mockReason), orgUrl: <code>AZDO_ORG_URL</code>, pat: <code>AZDO_PAT</code>, env: <code>.env</code>,
+            })}
           </div>
         )}
         {!meta.trackedProjects.length && (
           <div className="demo-banner">
-            No projects tracked yet. <NavLink to="/settings">Choose your projects and repos</NavLink> to fill the console.
+            {tj('No projects tracked yet. {link} to fill the console.', { link: <NavLink to="/settings">{t('Choose your projects and repos')}</NavLink> })}
           </div>
         )}
         <Routes>
@@ -385,22 +393,23 @@ function LiveStatus() {
   const { live } = useApp();
   const [, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 5000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setTick((n) => n + 1), 5000);
+    return () => clearInterval(timer);
   }, []);
   const ago = live.lastPollAt ? Math.max(0, Math.round((Date.now() - Date.parse(live.lastPollAt)) / 1000)) : null;
-  const agoText = ago === null ? 'checking…' : ago < 60 ? `checked ${ago}s ago` : `checked ${Math.round(ago / 60)}m ago`;
   let tone = 'ok';
-  let text = `Live · ${agoText}`;
-  let title = `Checks Azure DevOps every ${live.intervalSeconds || '…'}s while the console is open`;
+  let text = ago === null ? t('Live · checking…')
+    : ago < 60 ? t('Live · checked {n}s ago', { n: ago })
+      : t('Live · checked {n}m ago', { n: Math.round(ago / 60) });
+  let title = t('Checks Azure DevOps every {n}s while the console is open', { n: live.intervalSeconds || '…' });
   if (!live.connected) {
     tone = 'warn';
-    text = 'Reconnecting…';
-    title = 'Lost the live connection to the server. Retrying every few seconds.';
+    text = t('Reconnecting…');
+    title = t('Lost the live connection to the server. Retrying every few seconds.');
   } else if (!live.ok && live.error) {
     tone = 'bad';
-    text = "Can't reach Azure DevOps";
-    title = live.error;
+    text = t("Can't reach Azure DevOps");
+    title = tx(live.error);
   }
   return <div className={`live live-${tone}`} title={title}><span className="live-dot" aria-hidden="true" />{text}</div>;
 }

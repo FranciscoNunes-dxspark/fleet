@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { initials, VOTES } from './format.js';
+import { t } from './i18n.js';
 
 /** Keel's mark: a sailboat with its keel and ballast bulb (same drawing as public/favicon.svg). */
 export function Logo({ size = 28 }) {
@@ -16,7 +17,7 @@ export function Logo({ size = 28 }) {
 }
 
 export function Avatar({ person, size = 24, vote, title }) {
-  if (!person) return <span className="avatar avatar-empty" style={{ width: size, height: size }} title="Unassigned">–</span>;
+  if (!person) return <span className="avatar avatar-empty" style={{ width: size, height: size }} title={t('Unassigned')}>–</span>;
   const v = vote !== undefined && vote !== null ? VOTES[vote] : null;
   const label = title || `${person.displayName}${v ? ` — ${v.label}` : ''}`;
   return (
@@ -31,14 +32,14 @@ export function Person({ person, muted }) {
   return (
     <span className={`person ${muted ? 'muted' : ''}`}>
       <Avatar person={person} size={20} />
-      <span className="truncate">{person?.displayName || 'Unassigned'}</span>
+      <span className="truncate">{person?.displayName || t('Unassigned')}</span>
     </span>
   );
 }
 
 export const Chip = ({ tone = 'muted', children, title }) => <span className={`chip chip-${tone}`} title={title}>{children}</span>;
 
-export function Loading({ label = 'Loading…' }) {
+export function Loading({ label = t('Loading…') }) {
   return <div className="loading" role="status"><span className="spinner" aria-hidden="true" />{label}</div>;
 }
 
@@ -46,8 +47,8 @@ export function ErrorBox({ error, onRetry }) {
   if (!error) return null;
   return (
     <div className="error-box" role="alert">
-      <strong>Couldn't load this view.</strong> {error.message}
-      {onRetry && <button type="button" className="btn btn-small" onClick={onRetry}>Try again</button>}
+      <strong>{t("Couldn't load this view.")}</strong> {error.message}
+      {onRetry && <button type="button" className="btn btn-small" onClick={onRetry}>{t('Try again')}</button>}
     </div>
   );
 }
@@ -91,14 +92,14 @@ export function Drawer({ open, onClose, children, label }) {
     <div className="drawer-layer">
       <div className="drawer-scrim" onClick={onClose} aria-hidden="true" />
       <aside className="drawer" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={ref}>
-        <button type="button" className="drawer-close" onClick={onClose} aria-label="Close panel">✕</button>
+        <button type="button" className="drawer-close" onClick={onClose} aria-label={t('Close panel')}>✕</button>
         {children}
       </aside>
     </div>
   );
 }
 
-export function ExternalLink({ href, children = 'Open in Azure DevOps', className = 'btn btn-ghost btn-small' }) {
+export function ExternalLink({ href, children = t('Open in Azure DevOps'), className = 'btn btn-ghost btn-small' }) {
   if (!href) return null;
   return <a className={className} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
 }
@@ -222,8 +223,8 @@ export function Confirm({ text, onConfirm, children, className = 'btn btn-small'
         <span className="confirm-pop" role="dialog" aria-label={text} style={pos}>
           <span className="confirm-text">{text}</span>
           <span className="confirm-actions">
-            <button type="button" className="btn btn-small btn-ghost" onClick={close}>Cancel</button>
-            <button type="button" className="btn btn-small btn-danger" onClick={() => { close(); onConfirm(); }}>Yes</button>
+            <button type="button" className="btn btn-small btn-ghost" onClick={close}>{t('Cancel')}</button>
+            <button type="button" className="btn btn-small btn-danger" onClick={() => { close(); onConfirm(); }}>{t('Yes')}</button>
           </span>
         </span>
       )}
