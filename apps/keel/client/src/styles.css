@@ -872,3 +872,10 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .run-list > li, .run-detail, .run-detail > *, .stage-list, .tl, .tl-children, .log-tail { min-width: 0; }
 .run-detail { overflow: hidden; }
 .log-tail pre { max-width: 100%; }
+
+/* ------------------------------------------------------- new work item */
+.new-wi { display: grid; gap: 14px; }
+.new-wi-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.new-wi-grid label, .field-wide { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.field-wide .input { width: 100%; }
+.new-wi textarea { resize: vertical; min-height: 110px; }

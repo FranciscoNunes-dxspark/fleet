@@ -10,6 +10,7 @@ import PrDetail from './pages/PrDetail.jsx';
 import WorkItems from './pages/WorkItems.jsx';
 import WorkItemDetail from './pages/WorkItemDetail.jsx';
 import PipelineDetail from './pages/PipelineDetail.jsx';
+import NewWorkItem from './pages/NewWorkItem.jsx';
 import NewPr from './pages/NewPr.jsx';
 import Board from './pages/Board.jsx';
 import Epics from './pages/Epics.jsx';
@@ -230,6 +231,7 @@ function Console({ authMode, onSignedOut }) {
         {drawer?.type === 'workitem' && <WorkItemDetail id={drawer.id} />}
         {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
+        {drawer?.type === 'newworkitem' && <NewWorkItem key={JSON.stringify(drawer)} preset={drawer} />}
       </Drawer>
       <div className="toasts" aria-live="polite">
         {toasts.map((item) => (

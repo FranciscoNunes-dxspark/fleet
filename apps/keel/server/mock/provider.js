@@ -605,6 +605,7 @@ export function createMockProvider() {
     listTeamMembers: (projectId) => delay(projectId === 'p-mobile' ? [ME, ...DEVS.slice(3)] : PEOPLE.slice(0, 6)),
     getTeamAreas: (projectId) => delay([{ value: projectById(projectId).name, includeChildren: true }]),
     getCurrentIteration: (projectId) => delay(SPRINTS(projectById(projectId)).current),
+    getTeamDefaultArea: (projectId) => delay(projectById(projectId).name),
     listRepos: (projectId) => delay(projectById(projectId).repoObjs.map((r) => ({ ...r }))),
 
     listPullRequests: (projectId, { status = 'active', closedAfter } = {}) => delay(
@@ -910,6 +911,21 @@ export function createMockProvider() {
       w.changedAt = iso(Date.now());
       w.rev++;
       return delay();
+    },
+
+    async createWorkItem(projectName, type, fields, parentId) {
+      const p = projectById(projectName);
+      if (!p.process[type]) throw Object.assign(new Error(`'${type}' is not a work item type in ${p.name}`), { status: 400 });
+      if (parentId && !workItems.has(Number(parentId))) throw Object.assign(new Error(`Work item ${parentId} does not exist.`), { status: 400 });
+      const w = addWorkItem(p, {
+        type, title: fields.title, stateIdx: 0, assignedTo: PEOPLE.find((x) => x.uniqueName === fields.assignedTo) || null,
+        priority: fields.priority ? Number(fields.priority) : 2, tags: fields.tags || [], ageDays: 0, stateDays: 0, parentId: parentId ? Number(parentId) : null,
+      });
+      Object.assign(w, {
+        iterationPath: fields.iterationPath || p.name, areaPath: fields.areaPath || p.name, createdBy: ME, storyPoints: null, remainingWork: null,
+        createdAt: iso(Date.now()), changedAt: iso(Date.now()), stateChangedAt: iso(Date.now()), _description: fields.description || '', _acceptance: '', _comments: [],
+      });
+      return delay({ id: w.id, webUrl: w.webUrl });
     },
 
     async commentWorkItem(projectName, id, text) {

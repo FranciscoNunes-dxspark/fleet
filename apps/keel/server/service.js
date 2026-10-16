@@ -163,6 +163,13 @@ export function createService({
     return inTrackedRepos(lists.flat().filter((p) => p.status !== 'active'));
   }, 5 * MIN);
 
+  // Types people create from Keel: backlog and task types, not test or code-review artifacts.
+  const NOT_CREATABLE = new Set(['Test Case', 'Test Plan', 'Test Suite', 'Shared Steps', 'Shared Parameter', 'Code Review Request', 'Code Review Response', 'Feedback Request', 'Feedback Response']);
+  const TYPE_ORDER = ['User Story', 'Product Backlog Item', 'Requirement', 'Issue', 'Bug', 'Task', 'Feature', 'Epic'];
+  const creatableTypes = (stateMap) => Object.keys(stateMap || {})
+    .filter((t) => !NOT_CREATABLE.has(t))
+    .sort((a, b) => ((TYPE_ORDER.indexOf(a) + 1 || 99) - (TYPE_ORDER.indexOf(b) + 1 || 99)) || a.localeCompare(b));
+
   const openItems = () => cached('wi:open', async () => {
     const lists = await Promise.all((await tracked()).map(async (p) => {
       const [{ areaPaths }, types] = await Promise.all([scope(p), workTypes(p)]);
@@ -445,6 +452,57 @@ export function createService({
       const item = await provider.getWorkItem(id);
       const states = await provider.getStateMap(item.projectName).catch(() => ({}));
       return { ...item, allowedStates: states[item.type] || [] };
+    },
+
+    /** What the new work item form can offer: per tracked project, its types and teams (default area, current sprint). */
+    async newWorkItemOptions() {
+      const projects = await tracked();
+      return Promise.all(projects.map(async (p) => {
+        const [stateMap, teams] = await Promise.all([
+          provider.getStateMap(p.id).catch(() => ({})),
+          Promise.all(p.teams.map(async (t) => {
+            const [areaPath, iteration] = await Promise.all([
+              cached(`defarea:${p.id}:${t.id}`, () => provider.getTeamDefaultArea(p.id, t.id).catch(() => null), 30 * MIN),
+              cached(`curiter:${p.id}:${t.id}`, () => provider.getCurrentIteration(p.id, t.id).catch(() => null), 30 * MIN),
+            ]);
+            return { id: t.id, name: t.name, areaPath, iteration: iteration && { name: iteration.name, path: iteration.path } };
+          })),
+        ]);
+        return { id: p.id, name: p.name, types: creatableTypes(stateMap), teams };
+      }));
+    },
+
+    /** Creates a work item from the form; returns its id. */
+    async createWorkItem(body = {}) {
+      const p = (await tracked()).find((x) => x.id === body.projectId);
+      if (!p) throw Object.assign(new Error('Pick one of your tracked projects.'), { status: 400 });
+      const types = creatableTypes(await provider.getStateMap(p.id).catch(() => ({})));
+      if (!types.includes(body.type)) throw Object.assign(new Error('Pick a work item type.'), { status: 400 });
+      const title = String(body.title || '').trim();
+      if (!title) throw Object.assign(new Error('Give the work item a title.'), { status: 400 });
+      if (title.length > 255) throw Object.assign(new Error('The title can have at most 255 characters.'), { status: 400 });
+      const team = p.teams.find((t) => t.id === body.teamId) || p.teams[0] || null;
+      let areaPath = null;
+      let iterationPath = p.name; // the project's backlog
+      if (team) {
+        const opts = (await this.newWorkItemOptions()).find((x) => x.id === p.id)?.teams.find((t) => t.id === team.id);
+        areaPath = opts?.areaPath || null;
+        if (body.iteration === 'sprint' && opts?.iteration?.path) iterationPath = opts.iteration.path;
+      }
+      const priority = [1, 2, 3, 4].includes(Number(body.priority)) ? Number(body.priority) : null;
+      const tags = Array.isArray(body.tags) ? body.tags.map((x) => String(x).trim()).filter(Boolean).slice(0, 20) : [];
+      const parentId = Number(body.parentId) > 0 ? Number(body.parentId) : null;
+      const created = await provider.createWorkItem(p.name, body.type, {
+        title,
+        description: String(body.description || '').slice(0, 20_000),
+        assignedTo: body.assignedTo ? String(body.assignedTo) : null,
+        areaPath,
+        iterationPath,
+        priority,
+        tags,
+      }, parentId);
+      cache.invalidate('wi:');
+      return created;
     },
 
     async workItemAction(id, action) {

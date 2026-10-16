@@ -84,7 +84,9 @@ export default function WorkItems() {
 
   return (
     <div className="page">
-      <PageHeader title={t('Work items')} sub={t(data.items.length === 1 ? '{n} open item across tracked projects' : '{n} open items across tracked projects', { n: data.items.length })} />
+      <PageHeader title={t('Work items')} sub={t(data.items.length === 1 ? '{n} open item across tracked projects' : '{n} open items across tracked projects', { n: data.items.length })}>
+        {editable && <button type="button" className="btn btn-small btn-primary" onClick={() => openDrawer({ type: 'newworkitem' })}>{t('New work item')}</button>}
+      </PageHeader>
 
       <div className="segmented" role="tablist" aria-label={t('Work item views')}>
         {VIEWS.map((v) => (

@@ -78,6 +78,8 @@ export function apiRouter() {
   });
 
   r.get('/workitems', async (req, res) => res.json(await req.ctx.service.workItems()));
+  r.get('/workitems/new/options', async (req, res) => res.json(await req.ctx.service.newWorkItemOptions()));
+  r.post('/workitems', need('workitems.write'), async (req, res) => res.status(201).json(await req.ctx.service.createWorkItem(req.body || {})));
   r.get('/workitems/:id', async (req, res) => res.json(await req.ctx.service.workItem(num(req.params.id))));
   r.post('/workitems/:id/actions', need('workitems.write'), async (req, res) => {
     const id = num(req.params.id);

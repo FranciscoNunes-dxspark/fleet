@@ -7,6 +7,9 @@ import { t } from '../i18n.js';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import ClaudeStart from './ClaudeStart.jsx';
 
+// What "Add child" creates by default under each type (the form lets you change it).
+const CHILD_TYPE = { Epic: 'Feature', Feature: 'User Story', 'User Story': 'Task', 'Product Backlog Item': 'Task', Requirement: 'Task', Issue: 'Task', Bug: 'Task' };
+
 export default function WorkItemDetail({ id }) {
   const { data: w, error, reload } = useApi(`/workitems/${id}`);
   const { data: people } = useApi('/people');
@@ -159,6 +162,9 @@ export default function WorkItemDetail({ id }) {
       <section className="detail-actions sticky-actions">
         {can('prs.write') && w.type !== 'Epic' && w.type !== 'Feature' && (
           <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newpr', workItemId: w.id })}>{t('Create pull request')}</button>
+        )}
+        {editable && w.type !== 'Task' && (
+          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newworkitem', projectName: w.projectName, parentId: w.id, parentTitle: w.title, type: CHILD_TYPE[w.type] || 'Task' })}>{t('Add child')}</button>
         )}
         <ExternalLink href={w.webUrl}>{t('Open in Azure DevOps')}</ExternalLink>
       </section>

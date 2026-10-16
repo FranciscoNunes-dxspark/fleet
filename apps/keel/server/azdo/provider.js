@@ -33,6 +33,10 @@ const ident = (i) => (i ? {
 } : null);
 
 const stripRef = (ref) => (ref || '').replace(/^refs\/heads\//, '');
+// Plain text typed in Keel, as the HTML Azure DevOps stores in rich-text fields.
+const textToHtml = (text) => String(text)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  .split(/\r?\n\r?\n/).map((p) => `<div>${p.replace(/\r?\n/g, '<br>')}</div>`).join('');
 
 /** Azure DevOps change types are comma lists like "edit, rename"; collapse to one kind. */
 export function changeKind(changeType = '') {
@@ -268,6 +272,12 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
     async getTeamAreas(projectId, teamId) {
       const d = await api(`${seg(projectId)}/${seg(teamId)}/_apis/work/teamsettings/teamfieldvalues`);
       return (d.values || []).map((v) => ({ value: v.value, includeChildren: !!v.includeChildren }));
+    },
+
+    /** The area path new work items get for this team (its "default area"). */
+    async getTeamDefaultArea(projectId, teamId) {
+      const d = await api(`${seg(projectId)}/${seg(teamId)}/_apis/work/teamsettings/teamfieldvalues`);
+      return d.defaultValue || d.values?.[0]?.value || null;
     },
 
     async getCurrentIteration(projectId, teamId) {
@@ -641,6 +651,32 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
           }),
         comments: comments.map((c) => ({ author: ident(c.createdBy), text: htmlToText(c.text), createdAt: c.createdDate })),
       };
+    },
+
+    /**
+     * Creates a work item. fields: { title, description (plain text), assignedTo, areaPath,
+     * iterationPath, priority, tags }; parentId links it under an existing item.
+     */
+    async createWorkItem(projectName, type, fields, parentId) {
+      const known = await fieldSet().catch(() => new Set());
+      const ops = [];
+      const set = (field, value) => {
+        if (value !== undefined && value !== null && value !== '') ops.push({ op: 'add', path: `/fields/${field}`, value });
+      };
+      set('System.Title', fields.title);
+      // Bugs show "Repro Steps" in Azure DevOps rather than the description.
+      const descriptionField = type === 'Bug' && known.has('Microsoft.VSTS.TCM.ReproSteps') ? 'Microsoft.VSTS.TCM.ReproSteps' : 'System.Description';
+      set(descriptionField, fields.description ? textToHtml(fields.description) : null);
+      set('System.AssignedTo', fields.assignedTo);
+      set('System.AreaPath', fields.areaPath);
+      set('System.IterationPath', fields.iterationPath);
+      if (fields.priority) set('Microsoft.VSTS.Common.Priority', Number(fields.priority));
+      if (fields.tags?.length) set('System.Tags', fields.tags.join('; '));
+      if (parentId) {
+        ops.push({ op: 'add', path: '/relations/-', value: { rel: 'System.LinkTypes.Hierarchy-Reverse', url: `${org}/_apis/wit/workItems/${Number(parentId)}` } });
+      }
+      const w = await api(`${seg(projectName)}/_apis/wit/workitems/${encodeURIComponent(type)}`, { method: 'POST', body: ops, contentType: 'application/json-patch+json' });
+      return { id: w.id, webUrl: w._links?.html?.href || `${org}/${seg(projectName)}/_workitems/edit/${w.id}` };
     },
 
     async updateWorkItem(id, changes) {

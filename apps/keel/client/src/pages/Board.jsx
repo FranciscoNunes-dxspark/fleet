@@ -192,6 +192,15 @@ export default function Board() {
   return (
     <div className="page page-wide">
       <PageHeader title={t('Board')} sub={`${data.project.name} · ${data.project.teamName} · ${scopeText}`}>
+        {movable && (
+          <button
+            type="button"
+            className="btn btn-small btn-primary"
+            onClick={() => openDrawer({ type: 'newworkitem', projectId: data.project.id, teamId: data.project.teamId, types: data.board?.types || null, iteration: mode === 'sprint' ? 'sprint' : 'backlog' })}
+          >
+            {t('New item')}
+          </button>
+        )}
         {data.options.length > 1 && (
           <select
             className="input"

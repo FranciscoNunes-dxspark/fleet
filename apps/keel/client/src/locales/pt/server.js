@@ -223,4 +223,10 @@ export default {
   'The totals are already being fetched.': 'Os totais já estão a ser obtidos.',
   'The totals were fetched less than 10 minutes ago. Each fetch keeps the club database busy, so wait a little.': 'Os totais foram obtidos há menos de 10 minutos. Cada pedido ocupa a base de dados do clube, por isso aguarde um pouco.',
   'No such monitor.': 'Esse monitor não existe.',
+  // Creating work items (service.js)
+  'Pick one of your tracked projects.': 'Escolha um dos projetos que acompanha.',
+  'Pick a work item type.': 'Escolha um tipo de work item.',
+  'Give the work item a title.': 'Dê um título ao work item.',
+  'The title can have at most 255 characters.': 'O título pode ter no máximo 255 caracteres.',
+  'Work item {id} does not exist.': 'O work item {id} não existe.',
 };
