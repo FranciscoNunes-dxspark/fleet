@@ -376,3 +376,13 @@ test('accounts: passwords, invites, roles and the last-admin rule', async () => 
   assert.equal(acc.get(admin.id).hasToken, true);
   assert.ok(!('pat' in acc.get(admin.id)) && !('passwordHash' in acc.get(admin.id)));
 });
+
+test('data folder: DATA_DIR, then outside Hostinger build folders, else ./data', async () => {
+  const path = await import('node:path');
+  const { dataDirFor } = await import('../server/config.js');
+  const norm = (p) => p.split(path.sep).join('/');
+  assert.equal(norm(dataDirFor('/srv/keel', {})), norm(path.join('/srv/keel', 'data')));
+  assert.equal(norm(dataDirFor('/home/u1/domains/keel.x.com/hbuilds/versions/42/nodejs', {})), norm(path.join('/home/u1/domains/keel.x.com', 'keel-data')));
+  assert.equal(norm(dataDirFor('/home/u1/domains/keel.x.com/hbuilds/current/nodejs', {})), norm(path.join('/home/u1/domains/keel.x.com', 'keel-data')));
+  assert.equal(norm(dataDirFor('/srv/keel', { DATA_DIR: '/var/lib/keel' })), norm(path.resolve('/srv/keel', '/var/lib/keel')));
+});

@@ -48,8 +48,9 @@ if (fs.existsSync(path.join(dist, 'index.html'))) {
 app.listen(config.port, config.host, () => {
   const mode = config.mock ? `DEMO DATA (${config.mockReason})` : config.authMode === 'login' ? `${config.orgUrl} · sign-in with personal PATs` : config.orgUrl;
   console.log(`Keel API on http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}  →  ${mode}`);
+  console.log(`Data folder: ${config.dataDir}`);
   if (config.authMode === 'login') {
-    if (!process.env.SESSION_SECRET) console.warn('Note: SESSION_SECRET not set; using a generated key in data/secret.key. Keep the data/ folder private and backed up.');
+    if (!process.env.SESSION_SECRET) console.warn(`Note: SESSION_SECRET not set; using a generated key in ${config.dataDir}. Keep that folder private and backed up.`);
     if (!config.trustProxy) console.warn('Note: TRUST_PROXY not set. Behind an HTTPS proxy, set TRUST_PROXY=1 so session cookies are marked Secure.');
   } else if (config.host !== '127.0.0.1' && config.host !== 'localhost') {
     console.warn('Warning: HOST is not loopback. Anyone who can reach this port can act on Azure DevOps as you. Use AUTH_MODE=login to require sign-in.');

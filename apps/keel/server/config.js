@@ -9,6 +9,19 @@ try {
   // No .env file: fall back to the real environment.
 }
 
+/**
+ * Where accounts, sessions and settings live. DATA_DIR wins. Hosts that build
+ * every deploy into a fresh folder would wipe a data/ folder inside the app
+ * (Hostinger: ~/domains/<site>/hbuilds/versions/<build>/nodejs), so there it
+ * goes next to hbuilds instead: ~/domains/<site>/keel-data.
+ */
+export function dataDirFor(root, env = process.env) {
+  if (env.DATA_DIR?.trim()) return path.resolve(root, env.DATA_DIR.trim());
+  const hostinger = root.replace(/\\/g, '/').match(/^(.*)\/hbuilds\//);
+  if (hostinger) return path.join(hostinger[1], 'keel-data');
+  return path.join(root, 'data');
+}
+
 const orgUrl = (process.env.AZDO_ORG_URL || '').trim().replace(/\/+$/, '');
 const pat = (process.env.AZDO_PAT || '').trim();
 const mockRequested = process.argv.includes('--mock') || /^(1|true|yes)$/i.test(process.env.AZDO_MOCK || '');
@@ -30,6 +43,6 @@ export const config = {
   trustProxy: process.env.TRUST_PROXY || null,
   mock: mockRequested || !orgUrl || (authMode === 'local' && !pat),
   mockReason: mockRequested ? 'requested' : !orgUrl ? 'AZDO_ORG_URL not set' : (authMode === 'local' && !pat) ? 'AZDO_PAT not set' : null,
-  dataDir: path.join(ROOT, 'data'),
+  dataDir: dataDirFor(ROOT),
   seedProjects: (process.env.AZDO_PROJECTS || '').split(',').map((s) => s.trim()).filter(Boolean),
 };
