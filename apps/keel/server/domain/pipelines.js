@@ -51,7 +51,8 @@ export function pipelineHealth(builds, repos) {
     const completedAll = runs.filter((b) => b.status === 'completed').sort(byFinishDesc);
     const completed = completedAll.filter((b) => !isPrRun(b) && b.sourceBranch === branch);
     const running = runs.filter((b) => b.status !== 'completed')
-      .sort((a, b) => Date.parse(b.startedAt || b.queuedAt) - Date.parse(a.startedAt || a.queuedAt));
+      .sort((a, b) => (a.status === 'notStarted') - (b.status === 'notStarted')
+        || Date.parse(b.startedAt || b.queuedAt) - Date.parse(a.startedAt || a.queuedAt));
     const latest = completed[0] || null;
     const judged = completed.filter((b) => b.result !== 'canceled');
     const passRate = judged.length ? judged.filter((b) => b.result === 'succeeded').length / judged.length : null;

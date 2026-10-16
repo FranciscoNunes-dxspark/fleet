@@ -649,11 +649,13 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
 
     async listBuilds(projectId, { sinceDays = 14 } = {}) {
       const minTime = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
-      const [done, running] = await Promise.all([
+      // Queued runs are "notStarted": a run you just started waits there for an agent first.
+      const [done, running, queued] = await Promise.all([
         api(`${seg(projectId)}/_apis/build/builds`, { query: { statusFilter: 'completed', queryOrder: 'finishTimeDescending', minTime, $top: 1000 } }),
         api(`${seg(projectId)}/_apis/build/builds`, { query: { statusFilter: 'inProgress', $top: 200 } }),
+        api(`${seg(projectId)}/_apis/build/builds`, { query: { statusFilter: 'notStarted', $top: 200 } }),
       ]);
-      return [...(running.value || []), ...(done.value || [])].map((b) => ({
+      return [...(running.value || []), ...(queued.value || []), ...(done.value || [])].map((b) => ({
         id: b.id,
         projectId: b.project?.id,
         projectName: b.project?.name,

@@ -16,7 +16,9 @@ export default function Pipelines() {
 
   const data = builds.data;
   const failing = data ? data.filter((p) => p.health === 'failing').length : 0;
-  const runningCount = data ? data.reduce((s, p) => s + p.running.length, 0) : 0;
+  const allRuns = data ? data.flatMap((p) => p.running) : [];
+  const queuedCount = allRuns.filter((r) => r.status === 'notStarted').length;
+  const runningCount = allRuns.length - queuedCount;
   const defs = rel.data?.definitions || [];
   const approvals = rel.data?.approvals || [];
 
@@ -29,6 +31,7 @@ export default function Pipelines() {
             t('{n} build and YAML pipelines judged on their main branch over {days} days', { n: data.length, days: meta.thresholds.buildLookbackDays }),
             t('{n} failing', { n: failing }),
             t('{n} running now', { n: runningCount }),
+            ...(queuedCount ? [t('{n} queued', { n: queuedCount })] : []),
             ...(defs.length ? [t(defs.length === 1 ? '{n} classic release pipeline' : '{n} classic release pipelines', { n: defs.length })] : []),
           ].join(' · ')
           : t('Loading pipelines…')}
@@ -80,7 +83,7 @@ function BuildsTab({ data }) {
   const running = rows.filter((p) => p.running.length);
   const rest = rows;
   const groups = [];
-  if (running.length) groups.push({ key: RUNNING, label: t('Running now'), rows: running });
+  if (running.length) groups.push({ key: RUNNING, label: t('Running or queued'), rows: running });
   if (byFolder) {
     const folders = new Map();
     for (const p of rest) {
@@ -170,6 +173,7 @@ function PipelineRow({ p, showFolder, onQueue }) {
   const canRun = can('pipelines.run');
   const rowRef = useRef(null);
   const run = p.running[0];
+  const queued = run?.status === 'notStarted';
   return (
     <tr ref={rowRef}>
       <td className="cell-title">
@@ -182,12 +186,12 @@ function PipelineRow({ p, showFolder, onQueue }) {
       </td>
       <td>
         <div className="chips">
-          {run && <Chip tone="info">{t('Running')}</Chip>}
+          {run && <Chip tone={queued ? 'muted' : 'info'}>{t(queued ? 'Queued' : 'Running')}</Chip>}
           <Chip tone={HEALTH[p.health].tone}>{t(HEALTH[p.health].label)}</Chip>
         </div>
         {run && (
           <div className="small muted">
-            {tj('{run} started {age} ago', { run: <a href={run.webUrl} target="_blank" rel="noreferrer noopener">{run.buildNumber}</a>, age: age(run.startedAt || run.queuedAt) })}
+            {tj(queued ? '{run} queued {age} ago' : '{run} started {age} ago', { run: <a href={run.webUrl} target="_blank" rel="noreferrer noopener">{run.buildNumber}</a>, age: age(queued ? run.queuedAt : run.startedAt || run.queuedAt) })}
             {run.requestedFor?.displayName ? ` ${t('by {name}', { name: run.requestedFor.displayName })}` : ''}{run.sourceBranch && run.sourceBranch !== p.branch ? ` ${t('on {branch}', { branch: run.sourceBranch })}` : ''}
             {p.running.length > 1 && ` ${t('(+{n} more)', { n: p.running.length - 1 })}`}
           </div>

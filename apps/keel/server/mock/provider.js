@@ -820,12 +820,13 @@ export function createMockProvider() {
       const prev = builds.find((b) => b.definition.id === definitionId);
       if (!prev) throw notFound('Pipeline');
       const b = {
-        ...prev, id: nextBuild++, status: 'inProgress', result: null, reason: 'manual', sourceBranch: branch || prev.sourceBranch,
-        requestedFor: ME, queuedAt: iso(Date.now()), startedAt: iso(Date.now()), finishedAt: null, buildNumber: `manual.${nextBuild}`,
+        ...prev, id: nextBuild++, status: 'notStarted', result: null, reason: 'manual', sourceBranch: branch || prev.sourceBranch,
+        requestedFor: ME, queuedAt: iso(Date.now()), startedAt: null, finishedAt: null, buildNumber: `manual.${nextBuild}`,
       };
       builds.unshift(b);
-      // Finish it shortly afterwards so the UI can show the transition.
-      setTimeout(() => Object.assign(b, { status: 'completed', result: 'succeeded', finishedAt: iso(Date.now()) }), 20_000).unref?.();
+      // Queued, then running, then done, as in Azure DevOps.
+      setTimeout(() => Object.assign(b, { status: 'inProgress', startedAt: iso(Date.now()) }), 15_000).unref?.();
+      setTimeout(() => Object.assign(b, { status: 'completed', result: 'succeeded', finishedAt: iso(Date.now()) }), 40_000).unref?.();
       return delay({ id: b.id, webUrl: b.webUrl });
     },
   };
