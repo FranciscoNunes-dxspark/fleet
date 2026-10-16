@@ -216,9 +216,10 @@ label { font-size: 13px; color: var(--ink-2); }
 .strip {
   display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start;
   padding: 11px 14px 11px 18px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--radius); position: relative; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius); position: relative;
 }
-.strip::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--sev-low); }
+/* The stripe is rounded itself (no overflow: hidden on the row), so menus can open past the row. */
+.strip::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--sev-low); border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px); }
 .strip.sev-high::before { background: var(--bad); }
 .strip.sev-medium::before { background: var(--warn); }
 .strip-main { min-width: 0; }

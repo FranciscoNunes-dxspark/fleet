@@ -67,7 +67,7 @@ Set it up in **Settings → Production monitors**:
 - **Application Insights (optional):** in the Azure portal, open the app's Application Insights → **API Access**. Copy the **Application ID**, then **Create API key** with *Read telemetry*. Paste both into Keel, never into chat or tickets. The key is stored encrypted, and Settings shows only that one is saved.
 - **Deploys come from:** the classic release stage or the pipeline that deploys this app. This adds deploy markers and regression detection.
 
-Use **Test** to check a URL and key before saving. Monitors are shared by everyone using the same Keel server. Azure Monitor alert rules aren't included: reading them needs a Microsoft Entra identity (a service principal) rather than an API key.
+Use **Test** to check a URL and key before saving. Monitors are shared by everyone using the same Keel server, and only Admins can change them. The last 24 hours of checks are kept in the data folder (`monitor-history.json`), so charts are the same for everyone and survive restarts and deploys. When the host runs several copies of Keel, one of them runs the checks; another takes over within 3 minutes if it stops. Azure Monitor alert rules aren't included: reading them needs a Microsoft Entra identity (a service principal) rather than an API key.
 
 ## Live updates and notifications
 

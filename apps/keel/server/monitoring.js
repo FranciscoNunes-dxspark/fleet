@@ -2,11 +2,14 @@
 // - a health check of each monitor's URL every minute (up/down, status, latency)
 // - Application Insights metrics every 5 minutes, when an App ID + API key is set
 //   (requests, failure rate, p95 duration, exceptions, top failing operations)
-// Monitors live in data/monitors.json; API keys are stored encrypted.
+// Monitors and their check history live in the data folder (monitors.json,
+// monitor-history.json); API keys are stored encrypted. One server process
+// runs the checks (monitor-runner.json) and every process reads the history.
 // In demo mode the data is simulated, so nothing is fetched.
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { config } from './config.js';
 import { decrypt, encrypt, getKey } from './secrets.js';
@@ -17,6 +20,7 @@ const HOUR = 60 * MIN;
 const CHECK_EVERY = MIN;
 const AI_EVERY = 5 * MIN;
 const KEEP = 24 * HOUR;
+const RUNNER_STALE = 3 * MIN;
 const AI_HOST = 'https://api.applicationinsights.io';
 
 // ------------------------------------------------------------ URL safety
@@ -156,10 +160,14 @@ function demoAi(m) {
 
 // ------------------------------------------------------------ the runner
 export function createMonitoring({ dataDir = config.dataDir, mock = config.mock } = {}) {
-  const file = path.join(dataDir, mock ? 'monitors.mock.json' : 'monitors.json');
-  const state = new Map(); // id -> { checks: [], ai, aiError, aiAt }
-  // Shared with any other server process: reread when another one saved.
-  const store = sharedJson(file, () => ({ monitors: mock ? demoMonitors() : [] }));
+  const suffix = mock ? '.mock' : '';
+  // Definitions, history and the runner lock are files in the data folder,
+  // shared with any other server process and kept across restarts and deploys.
+  const store = sharedJson(path.join(dataDir, `monitors${suffix}.json`), () => ({ monitors: mock ? demoMonitors() : [] }));
+  const history = sharedJson(path.join(dataDir, `monitor-history${suffix}.json`), () => ({})); // id -> { checks, ai, aiError }
+  const runnerLock = sharedJson(path.join(dataDir, `monitor-runner${suffix}.json`), () => ({}));
+  const instance = `${os.hostname()}:${process.pid}:${crypto.randomBytes(3).toString('hex')}`;
+
   let monitors = [];
   const sync = () => {
     monitors = store.get().monitors || [];
@@ -168,44 +176,63 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   sync();
   const persist = () => store.save({ monitors });
   const keyOf = (m) => (m.apiKey ? decrypt(getKey(), m.apiKey) : null);
-  const st = (id) => {
-    if (!state.has(id)) state.set(id, { checks: [], ai: null, aiError: null });
-    return state.get(id);
-  };
+  const EMPTY = { checks: [], ai: null, aiError: null };
+  const entry = (all, id) => (all[id] ||= { checks: [], ai: null, aiError: null });
 
-  // Demo: back-fill 24h of history so charts have something to show.
-  if (mock) {
-    for (const m of monitors) {
-      const s = st(m.id);
-      for (let t = Date.now() - KEEP; t < Date.now(); t += 5 * MIN) s.checks.push(demoCheck(m, t));
-    }
+  /**
+   * One process runs the checks, so everyone sees the same history and the
+   * site isn't checked once per process. The runner refreshes its claim every
+   * minute; another process takes over when the claim is 3 minutes old.
+   */
+  function isRunner() {
+    const claim = runnerLock.get();
+    if (claim.id && claim.id !== instance && Date.now() - (claim.beat || 0) < RUNNER_STALE) return false;
+    runnerLock.save({ id: instance, beat: Date.now() });
+    return true;
   }
 
-  async function runChecks() {
-    await Promise.all(sync().filter((m) => m.url).map(async (m) => {
-      const r = mock && m.demo ? demoCheck(m) : await httpCheck(m);
-      const s = st(m.id);
-      s.checks.push(r);
-      while (s.checks.length && Date.parse(s.checks[0].at) < Date.now() - KEEP) s.checks.shift();
-    }));
+  /** Results computed first, then merged into a freshly read history file. */
+  async function checkAll(list) {
+    const results = await Promise.all(list.filter((m) => m.url).map(async (m) => [m.id, mock && m.demo ? demoCheck(m) : await httpCheck(m)]));
+    history.update((all) => {
+      for (const [id, r] of results) {
+        const s = entry(all, id);
+        const m = list.find((x) => x.id === id);
+        // Demo: back-fill 24h so charts have something to show.
+        if (mock && m.demo && !s.checks.length) for (let t = Date.now() - KEEP; t < Date.now(); t += 5 * MIN) s.checks.push(demoCheck(m, t));
+        s.checks.push(r);
+        while (s.checks.length && Date.parse(s.checks[0].at) < Date.now() - KEEP) s.checks.shift();
+      }
+      for (const id of Object.keys(all)) if (!monitors.some((m) => m.id === id)) delete all[id];
+    });
   }
 
-  async function runAi() {
-    await Promise.all(sync().filter((m) => m.appInsightsAppId && (m.apiKey || (mock && m.demo))).map(async (m) => {
-      const s = st(m.id);
+  async function aiAll(list) {
+    const results = await Promise.all(list.filter((m) => m.appInsightsAppId && (m.apiKey || (mock && m.demo))).map(async (m) => {
       try {
-        s.ai = mock && m.demo ? demoAi(m) : await aiSnapshot(m.appInsightsAppId, keyOf(m));
-        s.aiError = null;
+        return [m.id, mock && m.demo ? demoAi(m) : await aiSnapshot(m.appInsightsAppId, keyOf(m)), null];
       } catch (err) {
-        s.aiError = err.message;
+        return [m.id, null, err.message];
       }
     }));
+    if (!results.length) return;
+    history.update((all) => {
+      for (const [id, ai, aiError] of results) {
+        const s = entry(all, id);
+        if (ai) s.ai = ai;
+        s.aiError = aiError;
+      }
+    });
   }
 
-  runChecks();
-  runAi();
-  const t1 = setInterval(runChecks, CHECK_EVERY);
-  const t2 = setInterval(runAi, AI_EVERY);
+  const runChecks = () => (isRunner() ? checkAll(sync()) : null);
+  const runAi = () => (isRunner() ? aiAll(sync()) : null);
+  const guarded = (fn) => () => Promise.resolve(fn()).catch((err) => console.warn(`[monitoring] ${err.message}`));
+
+  guarded(runChecks)();
+  guarded(runAi)();
+  const t1 = setInterval(guarded(runChecks), CHECK_EVERY);
+  const t2 = setInterval(guarded(runAi), AI_EVERY);
   t1.unref?.();
   t2.unref?.();
 
@@ -251,10 +278,10 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         });
       }
       monitors = next;
-      for (const id of [...state.keys()]) if (!monitors.some((m) => m.id === id)) state.delete(id);
       persist();
-      runChecks();
-      runAi();
+      // New monitors get their first check now, from whichever process saved them.
+      const fresh = monitors.filter((m) => !history.get()[m.id]);
+      if (fresh.length) await Promise.all([checkAll(fresh), aiAll(fresh)]).catch(() => {});
       return monitors.map(publicConfig);
     },
 
@@ -280,8 +307,9 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
 
     /** Current status of every monitor (no secrets). */
     status() {
+      const all = history.get();
       return sync().map((m) => {
-        const s = st(m.id);
+        const s = all[m.id] || EMPTY;
         const checks = s.checks;
         const last = checks.at(-1) || null;
         const okCount = checks.filter((c) => c.ok).length;
