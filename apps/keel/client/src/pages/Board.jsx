@@ -5,6 +5,8 @@ import { useApi, useApp } from '../context.js';
 import { age, isBlocked } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle } from '../ui.jsx';
 import { locale, t, tj } from '../i18n.js';
+import { wiActionsPath } from '../orgs.js';
+import { useProjectLabel } from '../orgs.js';
 
 // Used only when a team has no board configuration we can read.
 // Labels are getters so they follow the current language.
@@ -75,6 +77,7 @@ export default function Board() {
   const { data, error, reload } = useApi(`/board?${query}`);
   const { openDrawer, meta, toast, refresh, can } = useApp();
   const movable = can('workitems.write');
+  const projectLabel = useProjectLabel();
 
   const [showAllDone, setShowAllDone] = useState(false);
   const [showTasks, setShowTasks] = useSticky('board.showTasks', false);
@@ -126,7 +129,7 @@ export default function Board() {
   const update = async (w, changes, optimistic, message) => {
     setMoved((m) => ({ ...m, [w.id]: optimistic }));
     try {
-      await api(`/workitems/${w.id}/actions`, { method: 'POST', body: { type: 'update', changes } });
+      await api(wiActionsPath(w.id, w.org), { method: 'POST', body: { type: 'update', changes } });
       toast(message);
       refresh();
     } catch (e) {
@@ -215,9 +218,9 @@ export default function Board() {
             }}
             aria-label={t('Project and team')}
           >
-            {[...new Set(data.options.map((o) => o.projectName))].map((name) => (
+            {[...new Set(data.options.map((o) => projectLabel(o.projectName, o.org)))].map((name) => (
               <optgroup key={name} label={name}>
-                {data.options.filter((o) => o.projectName === name).map((o) => (
+                {data.options.filter((o) => projectLabel(o.projectName, o.org) === name).map((o) => (
                   <option key={o.teamId} value={`${o.projectId}|${o.teamId}`}>{o.teamName}</option>
                 ))}
               </optgroup>
@@ -331,7 +334,7 @@ export default function Board() {
                           moving={!!moved[w.id]}
                           split={col.split}
                           onToggleDone={col.split && movable ? () => toggleDone(w) : null}
-                          onOpen={() => openDrawer({ type: 'workitem', id: w.id })}
+                          onOpen={() => openDrawer({ type: 'workitem', id: w.id, org: w.org })}
                           draggable={movable}
                           onDragStart={() => setDragging(w)}
                           onDragEnd={() => { setDragging(null); setOver(null); }}

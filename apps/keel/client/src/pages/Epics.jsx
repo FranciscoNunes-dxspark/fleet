@@ -32,7 +32,7 @@ function matches(node, needle) {
   return node.item.title.toLowerCase().includes(needle) || String(node.item.id) === needle || node.children.some((c) => matches(c, needle));
 }
 
-function TreeNode({ node, depth, expanded, toggle, needle, blockedTag }) {
+function TreeNode({ node, depth, expanded, toggle, needle, blockedTag, org }) {
   const { openDrawer } = useApp();
   const w = node.item;
   const container = isContainer(w);
@@ -53,7 +53,7 @@ function TreeNode({ node, depth, expanded, toggle, needle, blockedTag }) {
           </button>
         ) : <span className="tree-caret" aria-hidden="true" />}
         <span className={`type type-${w.type.replace(/\s+/g, '-').toLowerCase()}`}>{w.type}</span>
-        <button type="button" className="row-link tree-title" onClick={() => openDrawer({ type: 'workitem', id: w.id })}>
+        <button type="button" className="row-link tree-title" onClick={() => openDrawer({ type: 'workitem', id: w.id, org })}>
           {w.title} <span className="mono muted small">{w.id}</span>
         </button>
         <span className="tree-meta">
@@ -140,7 +140,7 @@ export default function Epics() {
         <section key={p.projectId} className="epic-project">
           {data.projects.length > 1 && <h2 className="section-title">{p.projectName} <span className="muted small">{p.epics.length}</span></h2>}
           <ul className="tree tree-root">
-            {p.epics.map((e) => <TreeNode key={e.item.id} node={e} depth={0} expanded={expanded} toggle={toggle} needle={needle} blockedTag={meta.blockedTag} />)}
+            {p.epics.map((e) => <TreeNode key={e.item.id} node={e} depth={0} expanded={expanded} toggle={toggle} needle={needle} blockedTag={meta.blockedTag} org={p.org} />)}
           </ul>
         </section>
       ))}

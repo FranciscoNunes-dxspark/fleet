@@ -368,7 +368,7 @@ function MineWidget() {
       ))}
       {mine.slice(0, 6).map((w) => (
         <li key={w.id}>
-          <button type="button" className="link-btn mini-title" onClick={() => openDrawer({ type: 'workitem', id: w.id })}>{w.title}</button>
+          <button type="button" className="link-btn mini-title" onClick={() => openDrawer({ type: 'workitem', id: w.id, org: w.org })}>{w.title}</button>
           <span className="muted small">{w.type} {w.id} · {w.state}</span>
         </li>
       ))}

@@ -25,6 +25,9 @@ import { createSettingsStore, userSettingsFile } from './settings.js';
 import { createWatcher } from './watcher.js';
 import { ROLE_LABELS, can, createAccounts } from './accounts.js';
 import { sharedJson } from './jsonfile.js';
+import { createOrgStore } from './orgs.js';
+import { createMultiService } from './multiorg.js';
+import { createMockVariant } from './mock/variant.js';
 
 const DAY = 86_400_000;
 const MAX_SESSION_MS = 30 * DAY;
@@ -71,10 +74,14 @@ export function createAuth({ monitoring = null } = {}) {
   // Demo mode keeps its accounts apart from real ones.
   const suffix = config.mock ? '.mock' : '';
   const sessionsFile = path.join(config.dataDir, `sessions${suffix}.json`);
-  const accounts = createAccounts(path.join(config.dataDir, `users${suffix}.json`));
-  const orgUrl = config.mock ? 'https://dev.azure.com/contoso-demo' : config.orgUrl;
-  // Demo mode: any token-shaped value "connects" to the demo organization.
-  const providerFor = (pat) => (config.mock ? createMockProvider() : createAzdoProvider({ orgUrl: config.orgUrl, pat }));
+  const orgStore = createOrgStore();
+  const primaryOrg = () => orgStore.primary();
+  const accounts = createAccounts(path.join(config.dataDir, `users${suffix}.json`), { primaryOrg: primaryOrg().key });
+  const orgUrl = primaryOrg().url;
+  // Demo mode: any token-shaped value "connects"; other demo organizations are the demo data renamed.
+  const providerFor = (pat, org = primaryOrg()) => (config.mock
+    ? (org.primary ? createMockProvider() : createMockVariant())
+    : createAzdoProvider({ orgUrl: org.url, pat }));
   const ipLimiter = createLimiter();
   const emailLimiter = createLimiter({ max: 5 });
   const contexts = new Map(); // accountId -> { service, watcher, lastUsed }
@@ -122,13 +129,26 @@ export function createAuth({ monitoring = null } = {}) {
     contexts.delete(userId);
   }
 
+  // Rebuilt when the organizations, or this person's tokens, change.
+  const contextSignature = (user) => `${orgStore.signature()}|${orgStore.all().filter((o) => accounts.hasToken(user.id, o.key)).map((o) => o.key).join(',')}`;
+
   function contextFor(user) {
     let ctx = contexts.get(user.id);
+    const sig = contextSignature(user);
+    if (ctx && ctx.sig !== sig) {
+      dropContext(user.id);
+      ctx = null;
+    }
     if (!ctx) {
-      const pat = accounts.tokenOf(user.id);
-      const provider = providerFor(pat);
-      const service = createService({ provider, settings: createSettingsStore(userSettingsFile(user.id)), monitoring });
-      ctx = { service, watcher: createWatcher(service), lastUsed: Date.now() };
+      const settings = createSettingsStore(userSettingsFile(user.id)); // one settings file for every organization
+      const entries = orgStore.all()
+        .filter((org) => accounts.hasToken(user.id, org.key))
+        .map((org) => ({
+          org,
+          service: createService({ provider: providerFor(accounts.tokenOf(user.id, org.key), org), settings, monitoring: org.primary ? monitoring : null, org }),
+        }));
+      const service = createMultiService(entries);
+      ctx = { service, watcher: createWatcher(service), lastUsed: Date.now(), sig };
       contexts.set(user.id, ctx);
     }
     ctx.lastUsed = Date.now();
@@ -228,7 +248,7 @@ export function createAuth({ monitoring = null } = {}) {
       setupRequired: accounts.needsSetup(),
       signedIn: !!cur,
       user: cur ? accounts.publicUser(cur.user) : null,
-      needsToken: cur ? !cur.user.pat : false,
+      needsToken: cur ? !accounts.hasToken(cur.user.id) : false,
     });
   });
 
@@ -254,7 +274,7 @@ export function createAuth({ monitoring = null } = {}) {
       ipLimiter.reset(req.ip);
       emailLimiter.reset(email);
       startSession(req, res, user);
-      res.json({ user: accounts.publicUser(user), needsToken: !user.pat });
+      res.json({ user: accounts.publicUser(user), needsToken: !accounts.hasToken(user.id) });
     } catch (err) {
       if (err.status === 401) failed(req, email);
       throw err;
@@ -285,7 +305,7 @@ export function createAuth({ monitoring = null } = {}) {
       const user = await accounts.acceptLink(req.params.token, req.body || {});
       endSessions((s) => s.userId === user.id); // a reset signs out other devices
       startSession(req, res, user);
-      res.json({ user: accounts.publicUser(user), needsToken: !user.pat });
+      res.json({ user: accounts.publicUser(user), needsToken: !accounts.hasToken(user.id) });
     } catch (err) {
       if (err.status === 404) failed(req);
       throw err;
@@ -301,24 +321,32 @@ export function createAuth({ monitoring = null } = {}) {
     return next();
   };
 
+  /** Organizations and whether this person has linked a token for each. */
+  router.get('/orgs', signedIn, (req, res) => {
+    res.json(orgStore.all().map((o) => ({ ...o, connected: accounts.hasToken(req.account.id, o.key), azdoName: accounts.azdoNameOf(req.account.id, o.key) })));
+  });
+
   router.post('/token', signedIn, (req, res) => send(res, async () => {
+    const org = req.body?.org ? orgStore.get(String(req.body.org)) : primaryOrg();
+    if (!org) throw Object.assign(new Error('No such organization.'), { status: 404 });
     const pat = String(req.body?.pat || '').trim();
     if (!/^[A-Za-z0-9]{40,120}$/.test(pat)) throw Object.assign(new Error("That doesn't look like a personal access token. Paste the token itself (letters and numbers only)."), { status: 400 });
     let me;
     try {
-      me = await providerFor(pat).me();
+      me = await providerFor(pat, org).me();
     } catch (err) {
       throw Object.assign(new Error(err.code === 'token-rejected'
-        ? `Azure DevOps didn't accept that token for ${orgUrl.replace(/^https?:\/\//, '')}. Check it hasn't expired and that it was created for this organization.`
+        ? `Azure DevOps didn't accept that token for ${org.url.replace(/^https?:\/\//, '')}. Check it hasn't expired and that it was created for this organization.`
         : `Couldn't reach Azure DevOps to check the token: ${err.message}`), { status: err.code === 'token-rejected' ? 400 : 502 });
     }
-    accounts.setToken(req.account.id, pat, me);
+    accounts.setToken(req.account.id, pat, me, org.key);
     dropContext(req.account.id);
-    res.json({ user: accounts.get(req.account.id), azdoName: me.displayName });
+    res.json({ user: accounts.get(req.account.id), azdoName: me.displayName, org: org.key });
   }));
 
   router.delete('/token', signedIn, (req, res) => {
-    accounts.setToken(req.account.id, null, null);
+    const org = req.query.org ? orgStore.get(String(req.query.org)) : primaryOrg();
+    accounts.setToken(req.account.id, null, null, org?.key);
     dropContext(req.account.id);
     res.json({ ok: true });
   });
@@ -372,7 +400,7 @@ export function createAuth({ monitoring = null } = {}) {
   function requireUser(req, res, next) {
     const cur = current(req);
     if (!cur) return res.status(401).json({ error: 'Sign in to continue.', code: 'signin-required' });
-    if (!cur.user.pat) return res.status(409).json({ error: 'Connect your Azure DevOps account to continue.', code: 'token-required' });
+    if (!accounts.hasToken(cur.user.id)) return res.status(409).json({ error: 'Connect your Azure DevOps account to continue.', code: 'token-required' });
     try {
       req.ctx = contextFor(cur.user);
     } catch {

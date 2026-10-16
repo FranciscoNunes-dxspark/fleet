@@ -83,7 +83,7 @@ export function diffSnapshots(prev, next) {
     if (!b.mine || b.status !== 'completed' || !wasRunning.has(b.id)) continue;
     const ok = b.result === 'succeeded';
     out.push({
-      key: `run:${b.id}`,
+      key: `run:${b.org ? `${b.org}:` : ''}${b.id}`,
       category: 'run',
       title: (RUN_TITLE[b.result] || ((p) => `Your run of ${p} finished`))(b.definition.name),
       body: `${b.buildNumber} on ${b.sourceBranch}`,

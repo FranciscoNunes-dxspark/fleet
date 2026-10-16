@@ -1,8 +1,10 @@
 import express from 'express';
 import { PERMISSIONS, can } from './accounts.js';
+import { createOrgStore } from './orgs.js';
 
 /** API routes; `req.ctx` is the signed-in user's { service, watcher } (see index.js). */
 export function apiRouter() {
+  const orgs = createOrgStore(); // reads data/orgs.json, shared with sign-in and other processes
   const r = express.Router();
   r.use(express.json({ limit: '256kb' }));
 
@@ -80,11 +82,13 @@ export function apiRouter() {
   r.get('/workitems', async (req, res) => res.json(await req.ctx.service.workItems()));
   r.get('/workitems/new/options', async (req, res) => res.json(await req.ctx.service.newWorkItemOptions()));
   r.post('/workitems', need('workitems.write'), async (req, res) => res.status(201).json(await req.ctx.service.createWorkItem(req.body || {})));
-  r.get('/workitems/:id', async (req, res) => res.json(await req.ctx.service.workItem(num(req.params.id))));
+  // Work item numbers are per organization: ?org= picks one (the primary when absent).
+  const orgOf = (req) => (req.query.org ? String(req.query.org) : undefined);
+  r.get('/workitems/:id', async (req, res) => res.json(await req.ctx.service.workItem(num(req.params.id), orgOf(req))));
   r.post('/workitems/:id/actions', need('workitems.write'), async (req, res) => {
     const id = num(req.params.id);
-    await req.ctx.service.workItemAction(id, req.body || {});
-    res.json(await req.ctx.service.workItem(id));
+    await req.ctx.service.workItemAction(id, req.body || {}, orgOf(req));
+    res.json(await req.ctx.service.workItem(id, orgOf(req)));
   });
 
   r.get('/board', async (req, res) => res.json(await req.ctx.service.board({
@@ -127,7 +131,7 @@ export function apiRouter() {
   });
   r.post('/approvals/:kind/:id', need('approvals.decide'), async (req, res) => {
     if (!['release', 'yaml'].includes(req.params.kind)) return res.status(400).json({ error: 'Unknown approval kind' });
-    await req.ctx.service.decideApproval(req.params.kind, req.params.id, req.body || {});
+    await req.ctx.service.decideApproval(req.params.kind, req.params.id, req.body || {}, req.query.org ? String(req.query.org) : undefined);
     res.json({ ok: true });
   });
 
@@ -137,6 +141,18 @@ export function apiRouter() {
     res.json(await req.ctx.service.insights(days));
   });
   r.post('/changelog', async (req, res) => res.json(await req.ctx.service.changelog(req.body || {})));
+
+  // Organizations: everyone sees the list; Admins add, rename and remove them.
+  r.get('/orgs', (req, res) => res.json(orgs.all()));
+  r.post('/orgs', need('users.manage'), (req, res) => res.status(201).json(orgs.add(req.body || {})));
+  r.patch('/orgs/:key', need('users.manage'), (req, res) => {
+    orgs.rename(req.params.key, req.body?.name);
+    res.json(orgs.get(req.params.key));
+  });
+  r.delete('/orgs/:key', need('users.manage'), (req, res) => {
+    orgs.remove(req.params.key);
+    res.json({ ok: true });
+  });
 
   r.get('/settings', async (req, res) => res.json(await req.ctx.service.settingsView()));
   r.get('/settings/projects/:projectId', async (req, res) => res.json(await req.ctx.service.projectOptions(req.params.projectId)));

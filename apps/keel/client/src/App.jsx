@@ -228,7 +228,7 @@ function Console({ authMode, onSignedOut }) {
       <Shell />
       <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')}>
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
-        {drawer?.type === 'workitem' && <WorkItemDetail id={drawer.id} />}
+        {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
         {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
         {drawer?.type === 'newworkitem' && <NewWorkItem key={JSON.stringify(drawer)} preset={drawer} />}
@@ -325,7 +325,7 @@ function Shell() {
           <Logo />
           <div>
             <div className="brand-name">Keel</div>
-            <div className="brand-org truncate" title={meta.orgUrl}>{meta.orgUrl.replace(/^https?:\/\//, '')}</div>
+            <div className="brand-org truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>{meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\//, '')}</div>
           </div>
         </div>
         <div className="nav-groups">

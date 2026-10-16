@@ -6,15 +6,18 @@ import { Avatar, Chip, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import ClaudeStart from './ClaudeStart.jsx';
+import { wiActionsPath, wiPath } from '../orgs.js';
+import { useProjectLabel } from '../orgs.js';
 
 // What "Add child" creates by default under each type (the form lets you change it).
 const CHILD_TYPE = { Epic: 'Feature', Feature: 'User Story', 'User Story': 'Task', 'Product Backlog Item': 'Task', Requirement: 'Task', Issue: 'Task', Bug: 'Task' };
 
-export default function WorkItemDetail({ id }) {
-  const { data: w, error, reload } = useApi(`/workitems/${id}`);
+export default function WorkItemDetail({ id, org }) {
+  const { data: w, error, reload } = useApi(wiPath(id, org));
   const { data: people } = useApi('/people');
   const { refresh, toast, openDrawer, meta, can } = useApp();
   const editable = can('workitems.write');
+  const projectLabel = useProjectLabel();
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState('');
 
@@ -23,7 +26,7 @@ export default function WorkItemDetail({ id }) {
   const act = async (body, done) => {
     setBusy(true);
     try {
-      await api(`/workitems/${id}/actions`, { method: 'POST', body });
+      await api(wiActionsPath(id, org), { method: 'POST', body });
       toast(done);
       refresh();
       return true;
@@ -45,7 +48,7 @@ export default function WorkItemDetail({ id }) {
 
   return (
     <div className="detail">
-      <div className="detail-kicker">{w.projectName} · {w.type} <span className="mono">{w.id}</span></div>
+      <div className="detail-kicker">{projectLabel(w.projectName, w.org || org)} · {w.type} <span className="mono">{w.id}</span></div>
       <h2 className="detail-title">{w.title}</h2>
       <div className="chips">
         <Chip tone={CATEGORY_TONE[w.stateCategory]}>{w.state}</Chip>
@@ -100,12 +103,12 @@ export default function WorkItemDetail({ id }) {
             {w.parent && (
               <li>
                 <span className="muted small">{t('Parent')}</span>
-                <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'workitem', id: w.parent.id })}><span className="mono muted">{w.parent.id}</span> {w.parent.title}</button>
+                <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'workitem', id: w.parent.id, org: w.org || org })}><span className="mono muted">{w.parent.id}</span> {w.parent.title}</button>
               </li>
             )}
             {w.children.map((c) => (
               <li key={c.id}>
-                <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'workitem', id: c.id })}><span className="mono muted">{c.id}</span> {c.title}</button>
+                <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'workitem', id: c.id, org: w.org || org })}><span className="mono muted">{c.id}</span> {c.title}</button>
                 <Chip tone={CATEGORY_TONE[c.stateCategory]}>{c.state}</Chip>
                 <span className="muted small">{c.assignedTo?.displayName || t('Unassigned')}</span>
               </li>
@@ -161,10 +164,10 @@ export default function WorkItemDetail({ id }) {
 
       <section className="detail-actions sticky-actions">
         {can('prs.write') && w.type !== 'Epic' && w.type !== 'Feature' && (
-          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newpr', workItemId: w.id })}>{t('Create pull request')}</button>
+          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newpr', workItemId: w.id, org: w.org || org })}>{t('Create pull request')}</button>
         )}
         {editable && w.type !== 'Task' && (
-          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newworkitem', projectName: w.projectName, parentId: w.id, parentTitle: w.title, type: CHILD_TYPE[w.type] || 'Task' })}>{t('Add child')}</button>
+          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newworkitem', projectName: w.projectName, org: w.org || org, parentId: w.id, parentTitle: w.title, type: CHILD_TYPE[w.type] || 'Task' })}>{t('Add child')}</button>
         )}
         <ExternalLink href={w.webUrl}>{t('Open in Azure DevOps')}</ExternalLink>
       </section>

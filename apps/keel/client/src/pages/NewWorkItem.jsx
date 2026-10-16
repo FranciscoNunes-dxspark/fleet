@@ -22,7 +22,7 @@ export default function NewWorkItem({ preset = {} }) {
   // Start once the options arrive: the preset first, then the last choices, then the first available.
   useEffect(() => {
     if (!options || form) return;
-    const project = options.find((p) => p.id === preset.projectId || p.name === preset.projectName) || options.find((p) => p.id === last.projectId) || options[0];
+    const project = options.find((p) => p.id === preset.projectId || (p.name === preset.projectName && (!preset.org || !p.org || p.org === preset.org))) || options.find((p) => p.id === last.projectId) || options[0];
     if (!project) return;
     const team = project.teams.find((x) => x.id === preset.teamId) || project.teams.find((x) => x.id === last.teamId) || project.teams[0] || null;
     const allowed = preset.types?.length ? project.types.filter((x) => preset.types.includes(x)) : project.types;
@@ -62,7 +62,7 @@ export default function NewWorkItem({ preset = {} }) {
       setLast({ projectId: form.projectId, teamId: form.teamId, type: form.type });
       toast(t('{type} {id} created', { type: form.type, id: created.id }));
       refresh();
-      openDrawer({ type: 'workitem', id: created.id });
+      openDrawer({ type: 'workitem', id: created.id, org: created.org });
     } catch (err) {
       toast(err.message, 'bad');
     } finally {

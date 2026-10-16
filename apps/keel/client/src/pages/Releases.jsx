@@ -4,6 +4,7 @@ import { useApp } from '../context.js';
 import { age, dateTime } from '../format.js';
 import { Chip, Confirm, Empty } from '../ui.jsx';
 import { t } from '../i18n.js';
+import { approvalPath } from '../orgs.js';
 
 const HEALTH = {
   failing: { tone: 'bad', label: 'Failing' },
@@ -34,7 +35,7 @@ export function ApprovalsPanel({ approvals }) {
   const decide = async (a, status) => {
     setBusy(a.key);
     try {
-      await api(`/approvals/${a.kind}/${encodeURIComponent(a.id)}`, { method: 'POST', body: { status, comment: comments[a.key] || '' } });
+      await api(approvalPath(a), { method: 'POST', body: { status, comment: comments[a.key] || '' } });
       const what = `${a.pipeline}${a.stage ? ` → ${a.stage}` : ''}`;
       toast(t(status === 'approved' ? 'Approved: {name}' : 'Rejected: {name}', { name: what }));
       refresh();

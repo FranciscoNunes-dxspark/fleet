@@ -255,7 +255,9 @@ label { font-size: 13px; color: var(--ink-2); }
 .snoozed-note { margin-top: 12px; }
 
 /* --------------------------------------------------------------- tables */
-.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+/* position: relative keeps absolutely placed bits (screen-reader text in run dots) inside the scroll area,
+   so a wide table never widens the page on a phone. */
+.table-wrap { position: relative; overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .table { width: 100%; border-collapse: collapse; }
 .table th {
   text-align: left; font-size: 12.5px; font-weight: 500; color: var(--muted);
@@ -879,3 +881,15 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .new-wi-grid label, .field-wide { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
 .field-wide .input { width: 100%; }
 .new-wi textarea { resize: vertical; min-height: 110px; }
+
+/* ---------------------------------------------------------- organizations */
+.org-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.org-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 8px; }
+.org-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.org-token { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.org-token .input { flex: 1 1 260px; min-width: 0; }
+.org-add { margin-top: 14px; display: grid; gap: 8px; }
+.org-add h3 { margin: 0; }
+.org-add-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.org-add-row label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); flex: 1 1 220px; }
+.org-add-row label > span { display: inline; }

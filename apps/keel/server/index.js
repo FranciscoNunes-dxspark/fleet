@@ -8,6 +8,12 @@ import { hostGuard, securityHeaders } from './security.js';
 import { createWatcher } from './watcher.js';
 import { createAuth } from './auth.js';
 import { createMonitoring } from './monitoring.js';
+import { createOrgStore } from './orgs.js';
+import { createMultiService } from './multiorg.js';
+import { createAzdoProvider } from './azdo/provider.js';
+import { createMockProvider } from './mock/provider.js';
+import { createMockVariant } from './mock/variant.js';
+import { createSettingsStore, defaultSettingsFile } from './settings.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -26,13 +32,31 @@ if (config.authMode === 'login') {
   app.use('/api', auth.requireUser, apiRouter());
   auth.announceSetup();
 } else {
-  // One person: the PAT in .env (or demo data).
-  const service = createService({ monitoring });
-  // Local mode: the one person using it is the admin.
-  const ctx = { service, watcher: createWatcher(service), role: 'admin', user: null };
-  app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: service.provider.orgUrl }));
+  // One person: the PAT in .env (or demo data), used for every organization
+  // (create it for "All accessible organizations" when there are several).
+  const orgStore = createOrgStore();
+  const settings = createSettingsStore(defaultSettingsFile());
+  let ctx = null;
+  const localCtx = () => {
+    if (ctx?.sig === orgStore.signature()) return ctx;
+    ctx?.watcher.close();
+    const entries = orgStore.all().map((org) => ({
+      org,
+      service: createService({
+        provider: config.mock ? (org.primary ? createMockProvider() : createMockVariant()) : createAzdoProvider({ orgUrl: org.url, pat: config.pat }),
+        settings,
+        monitoring: org.primary ? monitoring : null,
+        org,
+      }),
+    }));
+    const service = createMultiService(entries);
+    // Local mode: the one person using it is the admin.
+    ctx = { service, watcher: createWatcher(service), role: 'admin', user: null, sig: orgStore.signature() };
+    return ctx;
+  };
+  app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: orgStore.primary()?.url }));
   app.use('/api', (req, res, next) => {
-    req.ctx = ctx;
+    req.ctx = localCtx();
     next();
   }, apiRouter());
 }

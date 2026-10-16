@@ -5,6 +5,7 @@ import { useApi, useApp } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
 import { t, tx } from '../i18n.js';
 import { Chip, Confirm, ErrorBox, Loading } from '../ui.jsx';
+import { useProjectLabel } from '../orgs.js';
 
 // Pipeline details (drawer): the pipeline's latest runs, and for one run its
 // stages, jobs and steps, the failed steps' errors and last log lines, the
@@ -52,6 +53,7 @@ export default function PipelineDetail({ target }) {
   const { data, error, reload } = useApi(`/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/runs`);
   const { meta, can, toast, refresh } = useApp();
   const [openId, setOpenId] = useState(target.buildId || null);
+  const projectLabel = useProjectLabel();
 
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
   const p = data.pipeline;
@@ -78,7 +80,7 @@ export default function PipelineDetail({ target }) {
 
   return (
     <div className="detail pipeline-detail">
-      <div className="detail-kicker">{[projectName, p?.repoName].filter(Boolean).join(' / ')}</div>
+      <div className="detail-kicker">{[projectName && projectLabel(projectName, data.org || target.org), p?.repoName].filter(Boolean).join(' / ')}</div>
       <h2 className="detail-title">{name}</h2>
       <div className="chips">
         <Chip tone={health.tone}>{t(health.label)}</Chip>

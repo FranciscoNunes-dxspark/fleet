@@ -5,6 +5,8 @@ import { ErrorBox, Loading, PageHeader, Confirm } from '../ui.jsx';
 import { ACCENTS, MODES, loadTheme, saveTheme } from '../theme.js';
 import { LANGUAGES, getLanguage, setLanguage, t, tj } from '../i18n.js';
 import ProductionSettings from './ProductionSettings.jsx';
+import OrgSettings from './OrgSettings.jsx';
+import { useProjectLabel } from '../orgs.js';
 import { folderProblem, loadFolders, saveFolder } from '../claude.js';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
 
@@ -30,6 +32,7 @@ const teamsOf = (cfg = {}) => (Array.isArray(cfg.teams) ? cfg.teams : cfg.teamId
 
 export default function Settings() {
   const { data, error, reload } = useApi('/settings');
+  const projectLabel = useProjectLabel();
   const { refresh, toast } = useApp();
   const [draft, setDraft] = useState(null);
   const [options, setOptions] = useState({});
@@ -101,7 +104,7 @@ export default function Settings() {
             const opt = options[p.id];
             return (
               <li key={p.id} className={cfg.tracked ? 'tracked' : ''}>
-                <label className="check strong"><input type="checkbox" checked={!!cfg.tracked} onChange={(e) => setProject(p.id, { tracked: e.target.checked })} /> {p.name}</label>
+                <label className="check strong"><input type="checkbox" checked={!!cfg.tracked} onChange={(e) => setProject(p.id, { tracked: e.target.checked })} /> {projectLabel(p.name, p.org)}</label>
                 {p.description && <span className="muted small"> {p.description}</span>}
                 {cfg.tracked && (
                   opt === 'loading' || !opt ? <Loading label={t('Loading teams and repos…')} /> : opt.error ? <p className="text-bad small">{opt.error}</p> : (
@@ -171,6 +174,8 @@ export default function Settings() {
           </label>
         </div>
       </section>
+
+      <OrgSettings />
 
       <AccountSettings />
 

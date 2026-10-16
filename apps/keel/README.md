@@ -110,6 +110,17 @@ Sharing it with your team needs more than the steps above. Every viewer should a
 - Replace the PAT with per-user OAuth tokens for Azure DevOps (an Entra app registration with the Azure DevOps `user_impersonation` scope).
 - Serve it over HTTPS, keep secrets in Azure Key Vault, and add request logging.
 
+## Several organizations
+
+Keel can show more than one Azure DevOps organization together. The one in `AZDO_ORG_URL` is the **primary**; Admins add others in **Settings → Organizations** (stored in the data folder, `orgs.json`).
+
+- **Tokens:** with sign-in, each person links a token per organization in Settings → Organizations (the primary's stays under Your account). A token created for "All accessible organizations" works for all of them. Someone without a token for an organization simply doesn't see it. Tokens saved before there were several organizations belong to the primary one; nobody has to link theirs again. Locally, `AZDO_PAT` is used for every organization, so create it for "All accessible organizations".
+- **Everything together:** Inbox, Dashboard, Pull requests, Work items, Board, Epics, Pipelines, Releases, Team and Insights merge every organization. With more than one, project names show their organization ("Org · Project") in filters, the Board picker and the detail panels. Team counts a person once across organizations (matched by email); Insights are computed over all of them.
+- **Work item numbers** are only unique within an organization, so Keel keeps the organization with every item (the API takes `?org=` on `/workitems/:id`).
+- **Projects** of every organization are picked in Settings → Projects and repositories.
+- **If an organization fails** (an expired token, an outage), it's left out and the others still show; the primary failing works as before.
+- **Production monitors** stay shared by the server; deploy markers on their charts come from the primary organization's pipelines and releases.
+
 ## Hosting it for your team (Hostinger or any server)
 
 With `AUTH_MODE=login`, Keel has its own accounts. Each person signs in with an email and password, then links **their own** Azure DevOps PAT once, so votes, approvals and comments are recorded under their own name. This needs no Microsoft Entra app registration.

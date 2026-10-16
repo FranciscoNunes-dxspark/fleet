@@ -58,7 +58,13 @@ export function createService({
   settings: store = createSettingsStore(defaultSettingsFile()),
   // Shared production monitoring (one per server); null when not running.
   monitoring = null,
+  // The Azure DevOps organization this service talks to: { key, name, url, primary }.
+  // With several organizations there is one service each (see multiorg.js).
+  org = null,
 } = {}) {
+  // Inbox keys and snoozes of other organizations carry their key, so #4107 in
+  // one never hides #4107 in another; the primary's stay as they always were.
+  const keyPrefix = org && !org.primary ? `${org.key}/` : '';
   const cache = new Cache(MIN);
   const cached = (key, fn, ttl) => cache.get(key, fn, ttl);
 
@@ -67,6 +73,7 @@ export function createService({
 
   let seeding;
   async function ensureSeeded() {
+    if (org && !org.primary) return; // AZDO_PROJECTS names projects of the primary organization
     const settings = await store.load();
     if (!settings.firstRun) return;
     seeding ??= (async () => {
@@ -290,6 +297,10 @@ export function createService({
     provider,
     settingsStore: store,
     invalidate: (prefix) => cache.invalidate(prefix),
+    org,
+    /** Tracked projects of this organization (for the multi-organization layer). */
+    trackedProjects: () => tracked(),
+    allProjects: () => allProjects(),
 
     async meta() {
       const settings = await store.load();
@@ -298,6 +309,7 @@ export function createService({
         mock: config.mock,
         mockReason: config.mockReason,
         orgUrl: provider.orgUrl,
+        org: org || null,
         me: who,
         refreshSeconds: settings.refreshSeconds,
         prefs: settings.prefs || {},
@@ -313,7 +325,11 @@ export function createService({
         store.load(), activePRs(), openItems(), pipelines(), workload(), currentIterationPaths(),
         releases().catch(() => []), approvals().catch(() => []), production().catch(() => []),
       ]);
-      return buildAttention({ prs, items, pipelines: pipes, workload: load, settings, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod });
+      if (!keyPrefix) return buildAttention({ prs, items, pipelines: pipes, workload: load, settings, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod });
+      // This organization's snoozes, without the prefix, then its keys with it.
+      const mine = Object.fromEntries(Object.entries(settings.snoozed || {}).filter(([k]) => k.startsWith(keyPrefix)).map(([k, v]) => [k.slice(keyPrefix.length), v]));
+      const result = buildAttention({ prs, items, pipelines: pipes, workload: load, settings: { ...settings, snoozed: mine }, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod });
+      return { ...result, items: result.items.map((i) => ({ ...i, key: keyPrefix + i.key })) };
     },
 
     async snooze(key, days) {
@@ -706,6 +722,16 @@ export function createService({
     async team() {
       const [rows, paths] = await Promise.all([workload(), currentIterationPaths()]);
       return { rows, currentIterationPaths: paths };
+    },
+
+    /** Raw inputs of insights and workload, so several organizations can be judged together (multiorg.js). */
+    async insightsData(days) {
+      const [closed, active, pipes] = await Promise.all([closedPRs(days), activePRs(), pipelines()]);
+      return { closedPrs: closed, activePrs: active, pipelines: pipes };
+    },
+    async workloadData() {
+      const [settings, prs, items, team, paths] = await Promise.all([store.load(), activePRs(), openItems(), people(), currentIterationPaths()]);
+      return { people: team, prs, items, thresholds: settings.thresholds, blockedTag: settings.blockedTag, currentIterationPaths: paths };
     },
 
     async insights(days) {

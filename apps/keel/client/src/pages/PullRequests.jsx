@@ -4,10 +4,12 @@ import { useApi, useApp } from '../context.js';
 import { age, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle, useSort } from '../ui.jsx';
 import { t } from '../i18n.js';
+import { useProjectLabel } from '../orgs.js';
 
 export default function PullRequests() {
   const { data, error, reload } = useApi('/prs');
   const { meta, openDrawer, can } = useApp();
+  const projectLabel = useProjectLabel();
   const [params, setParams] = useStickyParams('prs', ['author', 'reviewer']);
   const [q, setQ] = useState('');
   const [project, setProject] = useSticky('prs.project', '');
@@ -49,7 +51,7 @@ export default function PullRequests() {
 
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 
-  const projects = [...new Map(data.repos.map((r) => [r.projectId, r.projectName])).entries()];
+  const projects = [...new Map(data.repos.map((r) => [r.projectId, projectLabel(r.projectName, r.org)])).entries()];
   const repos = data.repos.filter((r) => !project || r.projectId === project);
   const counts = {
     myReview: data.prs.filter((p) => p.needsMyReview).length,

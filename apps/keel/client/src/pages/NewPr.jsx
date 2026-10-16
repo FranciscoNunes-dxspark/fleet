@@ -6,6 +6,7 @@ import { Markdown } from '../markdown.jsx';
 import { Avatar, Chip, ErrorBox, Loading } from '../ui.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import { t, tj } from '../i18n.js';
+import { wiPath } from '../orgs.js';
 
 const MAX_DESCRIPTION = 4000;
 const repoKey = (r) => `${r.projectId}|${r.id}`;
@@ -73,7 +74,7 @@ export default function NewPr({ preset = {} }) {
   // A work item you started from is linked up front.
   useEffect(() => {
     if (!preset.workItemId) return;
-    api(`/workitems/${preset.workItemId}`)
+    api(wiPath(preset.workItemId, preset.org))
       .then((w) => setWorkItems((list) => (list.some((x) => x.id === w.id) ? list : [...list, pickWi(w)])))
       .catch(() => {});
   }, [preset.workItemId]);
@@ -126,7 +127,7 @@ export default function NewPr({ preset = {} }) {
     const id = Number(wiInput.replace(/\D/g, ''));
     if (!id) return;
     try {
-      const w = await api(`/workitems/${id}`);
+      const w = await api(wiPath(id, current?.org));
       setWorkItems((list) => (list.some((x) => x.id === w.id) ? list : [...list, pickWi(w)]));
       setWiInput('');
     } catch {

@@ -10,6 +10,13 @@ import { promisify } from 'node:util';
 import { config } from './config.js';
 import { decrypt, encrypt, getKey } from './secrets.js';
 import { sharedJson } from './jsonfile.js';
+import { DEMO_ORG_URL, orgKeyOf } from './orgs.js';
+
+/** The organization a token is for when none is named: the one in AZDO_ORG_URL. */
+export const primaryOrgKey = () => {
+  const url = config.mock ? DEMO_ORG_URL : config.orgUrl;
+  return url ? orgKeyOf(url) : 'default';
+};
 
 const scrypt = promisify(crypto.scrypt);
 const DAY = 86_400_000;
@@ -48,10 +55,26 @@ export async function verifyPassword(pw, stored) {
   return crypto.timingSafeEqual(actual, expected);
 }
 
-export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
+export function createAccounts(file = path.join(config.dataDir, 'users.json'), { primaryOrg = primaryOrgKey() } = {}) {
   // Shared with any other server process: reread when changed, saved at once.
   const store = sharedJson(file, () => ({ users: [] }));
   let db = store.get();
+  // Tokens are kept per organization (tokens[orgKey], identity in azdo[orgKey]).
+  // A token saved before there were several organizations belongs to the primary one.
+  store.update((d) => {
+    for (const u of d.users || []) {
+      if (u.pat !== undefined) {
+        if (u.pat && !u.tokens?.[primaryOrg]) {
+          u.tokens = { ...u.tokens, [primaryOrg]: u.pat };
+          u.azdo = { ...u.azdo, [primaryOrg]: { id: u.azdoId || null, name: u.azdoName || null } };
+        }
+        delete u.pat;
+        delete u.azdoId;
+        delete u.azdoName;
+      }
+    }
+  });
+  db = store.get();
   const fresh = () => {
     db = store.get();
     if (!Array.isArray(db.users)) db.users = [];
@@ -71,8 +94,9 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
     name: u.name,
     role: u.role,
     status: status(u),
-    hasToken: !!u.pat,
-    azdoName: u.azdoName || null,
+    hasToken: !!u.tokens?.[primaryOrg],
+    azdoName: u.azdo?.[primaryOrg]?.name || null,
+    orgTokens: Object.keys(u.tokens || {}),
     createdAt: u.createdAt,
     lastSeenAt: u.lastSeenAt || null,
     inviteExpiresAt: u.invite?.expiresAt || null,
@@ -184,17 +208,33 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
       save();
     },
 
-    setToken(id, pat, identity) {
+    setToken(id, pat, identity, orgKey = primaryOrg) {
       const u = (fresh(), byId(id));
       if (!u) throw err('No such user.', 404);
-      u.pat = pat ? encrypt(getKey(), pat) : null;
-      u.azdoId = identity?.id || null;
-      u.azdoName = identity?.displayName || null;
+      u.tokens = { ...u.tokens };
+      u.azdo = { ...u.azdo };
+      if (pat) {
+        u.tokens[orgKey] = encrypt(getKey(), pat);
+        u.azdo[orgKey] = { id: identity?.id || null, name: identity?.displayName || null };
+      } else {
+        delete u.tokens[orgKey];
+        delete u.azdo[orgKey];
+      }
       save();
     },
-    tokenOf: (id) => {
+    tokenOf: (id, orgKey = primaryOrg) => {
       const u = (fresh(), byId(id));
-      return u?.pat ? decrypt(getKey(), u.pat) : null;
+      return u?.tokens?.[orgKey] ? decrypt(getKey(), u.tokens[orgKey]) : null;
+    },
+    /** Does this person have a token for the organization (the primary when not named)? */
+    hasToken: (id, orgKey = primaryOrg) => {
+      const u = (fresh(), byId(id));
+      return !!u?.tokens?.[orgKey];
+    },
+    /** The Azure DevOps name a person's token for an organization belongs to. */
+    azdoNameOf: (id, orgKey = primaryOrg) => {
+      const u = (fresh(), byId(id));
+      return u?.azdo?.[orgKey]?.name || null;
     },
 
     update(id, { role, disabled, name }, actorId) {

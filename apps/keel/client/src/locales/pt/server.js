@@ -229,4 +229,6 @@ export default {
   'Give the work item a title.': 'Dê um título ao work item.',
   'The title can have at most 255 characters.': 'O título pode ter no máximo 255 caracteres.',
   'Work item {id} does not exist.': 'O work item {id} não existe.',
+  // Organizations (orgs.js): templates, so tx() can match them
+  '{key} is already connected.': '{key} já está ligada.',
 };

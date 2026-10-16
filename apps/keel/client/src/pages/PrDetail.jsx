@@ -5,6 +5,7 @@ import { age, dateTime, REVIEW_STATE, VOTES } from '../format.js';
 import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { Markdown } from '../markdown.jsx';
 import { t, tj, tx } from '../i18n.js';
+import { useProjectLabel } from '../orgs.js';
 
 // Labels are getters so they follow the current language.
 const FILE_KIND = {
@@ -108,6 +109,7 @@ const POLICY = {
 
 export default function PrDetail({ target }) {
   const { data: pr, error, reload } = useApi(prPath(target));
+  const projectLabel = useProjectLabel();
   const { data: people } = useApi('/people');
   const { refresh, toast, openDrawer, can } = useApp();
   const writable = can('prs.write');
@@ -139,7 +141,7 @@ export default function PrDetail({ target }) {
 
   return (
     <div className="detail">
-      <div className="detail-kicker">{pr.projectName} / {pr.repoName} <span className="mono">!{pr.id}</span></div>
+      <div className="detail-kicker">{projectLabel(pr.projectName, pr.org)} / {pr.repoName} <span className="mono">!{pr.id}</span></div>
       <h2 className="detail-title">{pr.title}</h2>
       <div className="chips">
         {pr.status === 'active'
@@ -224,7 +226,7 @@ export default function PrDetail({ target }) {
           <ul className="link-list">
             {pr.workItems.map((w) => (
               <li key={w.id}>
-                <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'workitem', id: w.id })}>
+                <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'workitem', id: w.id, org: pr.org })}>
                   <span className="mono muted">{w.id}</span> {w.title}
                 </button>
                 <Chip tone={w.stateCategory === 'Completed' ? 'ok' : 'muted'}>{w.state}</Chip>

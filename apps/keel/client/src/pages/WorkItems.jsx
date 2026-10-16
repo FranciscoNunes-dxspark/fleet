@@ -5,6 +5,8 @@ import { useApi, useApp } from '../context.js';
 import { age, isBlocked, shortIteration } from '../format.js';
 import { Chip, Empty, ErrorBox, Loading, PageHeader, Th, useSort } from '../ui.jsx';
 import { t } from '../i18n.js';
+import { wiActionsPath } from '../orgs.js';
+import { useProjectLabel } from '../orgs.js';
 
 const DAY = 86_400_000;
 
@@ -14,6 +16,7 @@ export default function WorkItems() {
   const { data, error, reload } = useApi('/workitems');
   const { meta, openDrawer, refresh, toast, can } = useApp();
   const editable = can('workitems.write');
+  const projectLabel = useProjectLabel();
   const [params, setParams] = useStickyParams('work', ['view', 'assignee']);
   const view = params.get('view') || 'open';
   const assignee = params.get('assignee') || '';
@@ -69,7 +72,7 @@ export default function WorkItems() {
   const update = async (w, changes, msg) => {
     setSaving(w.id);
     try {
-      await api(`/workitems/${w.id}/actions`, { method: 'POST', body: { type: 'update', changes } });
+      await api(wiActionsPath(w.id, w.org), { method: 'POST', body: { type: 'update', changes } });
       toast(msg);
       refresh();
     } catch (e) {
@@ -79,7 +82,7 @@ export default function WorkItems() {
     }
   };
 
-  const projects = [...new Map(data.items.map((w) => [w.projectId, w.projectName])).entries()];
+  const projects = [...new Map(data.items.map((w) => [w.projectId, projectLabel(w.projectName, w.org)])).entries()];
   const types = [...new Set(data.items.map((w) => w.type))].sort();
 
   return (
@@ -134,7 +137,7 @@ export default function WorkItems() {
                   <tr key={w.id} className={saving === w.id ? 'saving' : ''}>
                     <td className="num mono muted">{w.id}</td>
                     <td className="cell-title">
-                      <button type="button" className="row-link" onClick={() => openDrawer({ type: 'workitem', id: w.id })}>{w.title}</button>
+                      <button type="button" className="row-link" onClick={() => openDrawer({ type: 'workitem', id: w.id, org: w.org })}>{w.title}</button>
                       <div className="sub">
                         <span className={`type type-${w.type.replace(/\s+/g, '-').toLowerCase()}`}>{w.type}</span>
                         <span>{w.projectName}</span>
