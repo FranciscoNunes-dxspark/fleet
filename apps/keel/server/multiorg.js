@@ -170,6 +170,7 @@ export function createMultiService(entries) {
       return { ...tag(e.org, w), parent: tag(e.org, w.parent), children: tagAll(e.org, w.children) };
     },
     workItemAction: (id, action, orgKey) => byKey(orgKey).service.workItemAction(id, action),
+    reorderBoard: viaProject('reorderBoard'),
     async workItemTypes() {
       const byName = new Map();
       for (const { org, value } of await each((s) => s.workItemTypes())) {

@@ -119,6 +119,10 @@ export function apiRouter() {
     res.json(await req.ctx.service.workItem(id, orgOf(req)));
   });
 
+  r.post('/board/reorder', need('workitems.write'), async (req, res) => {
+    const { projectId, teamId, id, previousId, nextId } = req.body || {};
+    res.json(await req.ctx.service.reorderBoard(String(projectId || ''), { teamId: String(teamId || ''), id, previousId, nextId }));
+  });
   r.get('/board', async (req, res) => res.json(await req.ctx.service.board({
     projectId: req.query.project,
     teamId: req.query.team,

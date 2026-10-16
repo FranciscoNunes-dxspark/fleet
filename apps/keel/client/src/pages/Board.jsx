@@ -17,6 +17,30 @@ const CATEGORY_COLUMNS = [
   { id: 'Completed', get label() { return t('Done'); } },
 ];
 const DAY = 86_400_000;
+
+/** Backlog order (Azure DevOps' Stack Rank / Backlog Priority), then id; unranked last. */
+const byBacklogOrder = (a, b) => {
+  const ra = a.backlogOrder ?? Infinity;
+  const rb = b.backlogOrder ?? Infinity;
+  return ra === rb ? a.id - b.id : ra < rb ? -1 : 1;
+};
+/** An order value between two neighbours, for showing the card in place before the server answers. */
+const orderBetween = (prev, next, current) => {
+  if (prev != null && next != null) return (prev + next) / 2;
+  if (prev != null) return prev + 1;
+  if (next != null) return next - 1;
+  return current;
+};
+/** Where a dragged card lands among `cards` (one column cell): its neighbours and an order value. */
+function placement(cards, w, dropAt) {
+  const list = cards.filter((c) => c.id !== w.id);
+  let idx = list.length;
+  const at = dropAt ? list.findIndex((c) => c.id === dropAt.id) : -1;
+  if (at >= 0) idx = dropAt.before ? at : at + 1;
+  const prev = list[idx - 1] || null;
+  const next = list[idx] || null;
+  return { previousId: prev?.id || 0, nextId: next?.id || 0, value: orderBetween(prev?.backlogOrder, next?.backlogOrder, w.backlogOrder), explicit: at >= 0 };
+}
 const DONE_CAP = 20;
 const fullDate = (iso) => (iso ? new Date(iso).toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 
@@ -85,6 +109,7 @@ export default function Board() {
   const [assignee, setAssignee] = useSticky('board.assignee', '');
   const [dragging, setDragging] = useState(null);
   const [over, setOver] = useState(null); // "lane|column"
+  const [dropAt, setDropAt] = useState(null); // { id, before }: the card the dragged one goes next to
   // Optimistic state while an update is in flight.
   const [moved, setMoved] = useState({});
 
@@ -142,12 +167,51 @@ export default function Board() {
     }
   };
 
-  const drop = (col, lane) => {
+  // Moves a card in the team's backlog order, which is shared with Azure DevOps.
+  const reorder = async (w, place, message) => {
+    setMoved((m) => ({ ...m, [w.id]: { ...(m[w.id] || {}), backlogOrder: place.value } }));
+    try {
+      await api('/board/reorder', { method: 'POST', body: { projectId: data.project.id, teamId: data.project.teamId, id: w.id, previousId: place.previousId, nextId: place.nextId } });
+      if (message) toast(message);
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setTimeout(() => setMoved((m) => {
+        const { [w.id]: _, ...rest } = m;
+        return rest;
+      }), 4000);
+    }
+  };
+  /** Alt+↑ / Alt+↓ on a focused card: swap it with its neighbour in the column. */
+  const nudge = (w, cards, dir) => {
+    const i = cards.findIndex((c) => c.id === w.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= cards.length) return;
+    const place = dir < 0
+      ? { previousId: cards[j - 1]?.id || 0, nextId: cards[j].id, value: orderBetween(cards[j - 1]?.backlogOrder, cards[j].backlogOrder, w.backlogOrder) }
+      : { previousId: cards[j].id, nextId: cards[j + 1]?.id || 0, value: orderBetween(cards[j].backlogOrder, cards[j + 1]?.backlogOrder, w.backlogOrder) };
+    reorder(w, place, t(dir < 0 ? '{id} moved up' : '{id} moved down', { id: w.id }));
+  };
+
+  const drop = (col, lane, cards) => {
     const w = dragging;
+    const at = dropAt;
     setDragging(null);
     setOver(null);
+    setDropAt(null);
     if (!w) return;
     const laneChanged = lanes.length > 1 && laneOf(w) !== lane.name;
+    const place = placement(cards, w, at);
+    // Same column and lane: only the order changes.
+    if (col.holds(w) && !laneChanged) {
+      const i = cards.findIndex((c) => c.id === w.id);
+      const unchanged = place.previousId === (cards[i - 1]?.id || 0) && place.nextId === (cards[i + 1]?.id || 0);
+      if (place.explicit && !unchanged) reorder(w, place, t('{id} moved in {column}', { id: w.id, column: col.label }));
+      return;
+    }
+    // Dropped next to a card in another column: keep that spot too.
+    if (place.explicit) reorder(w, place);
     if (!col.accepts(w) && !laneChanged) return;
     if (!col.accepts(w) && w.board?.column !== col.key) {
       toast(t('{type} items can\'t go in "{column}" on this board', { type: w.type, column: col.label }), 'bad');
@@ -311,18 +375,19 @@ export default function Board() {
               {!lane.all && <h3 className="lane-title">{lane.name || t('Default lane')} <span className="muted small">{inLane.length}</span></h3>}
               <div className="kanban-row">
                 {shownColumns.map((col) => {
-                  const cards = inLane.filter(col.holds);
+                  const cards = inLane.filter(col.holds).sort(byBacklogOrder);
                   const capped = col.outgoing && !showAllDone && cards.length > DONE_CAP;
                   const cellKey = `${lane.id}|${col.key}`;
                   const laneChange = dragging && lanes.length > 1 && laneOf(dragging) !== lane.name;
-                  const canDrop = dragging && (col.accepts(dragging) || (laneChange && dragging.board?.column === col.key));
+                  const sameCell = dragging && !laneChange && col.holds(dragging);
+                  const canDrop = dragging && (col.accepts(dragging) || (laneChange && dragging.board?.column === col.key) || sameCell);
                   return (
                     <div
                       key={col.key}
                       className={`column ${over === cellKey && canDrop ? 'column-over' : ''} ${dragging && !canDrop && !col.holds(dragging) ? 'column-nodrop' : ''}`}
                       onDragOver={(e) => { if (canDrop) { e.preventDefault(); setOver(cellKey); } }}
                       onDragLeave={() => setOver((c) => (c === cellKey ? null : c))}
-                      onDrop={(e) => { e.preventDefault(); drop(col, lane); }}
+                      onDrop={(e) => { e.preventDefault(); drop(col, lane, cards); }}
                     >
                       {(capped ? cards.slice(0, DONE_CAP) : cards).map((w) => (
                         <Card
@@ -337,7 +402,15 @@ export default function Board() {
                           onOpen={() => openDrawer({ type: 'workitem', id: w.id, org: w.org })}
                           draggable={movable}
                           onDragStart={() => setDragging(w)}
-                          onDragEnd={() => { setDragging(null); setOver(null); }}
+                          onDragEnd={() => { setDragging(null); setOver(null); setDropAt(null); }}
+                          onDragOverCard={(e) => {
+                            if (!canDrop || dragging.id === w.id) return;
+                            const r = e.currentTarget.getBoundingClientRect();
+                            const before = e.clientY < r.top + r.height / 2;
+                            setDropAt((d) => (d?.id === w.id && d.before === before ? d : { id: w.id, before }));
+                          }}
+                          dropMark={canDrop && dropAt?.id === w.id && dragging?.id !== w.id ? (dropAt.before ? 'before' : 'after') : null}
+                          onNudge={movable ? (dir) => nudge(w, cards, dir) : null}
                         />
                       ))}
                       {!cards.length && <p className="muted small column-empty">{dragging && canDrop ? t('Drop here') : ''}</p>}
@@ -358,6 +431,7 @@ export default function Board() {
         {configured
           ? t('Columns, WIP limits and lanes come from the {board} board in Azure DevOps. Dragging a card sets its board column and the state that column maps to.', { board: data.board.name })
           : t('This team\'s board configuration couldn\'t be read, so cards are grouped by state. Dragging a card changes its state.')}
+        {movable && <> {t('Drag a card up or down (or press Alt+↑ / Alt+↓) to change its order; the order is the team\'s backlog order in Azure DevOps.')}</>}
       </p>
 
       <h2 className="section-title">{t('Who has what')}</h2>
@@ -366,7 +440,7 @@ export default function Board() {
   );
 }
 
-function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, onDragStart, onDragEnd, draggable = true }) {
+function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, onDragStart, onDragEnd, onDragOverCard, dropMark, onNudge, draggable = true }) {
   const kidsDone = kids.filter((k) => k.stateCategory === 'Completed').length;
   return (
     <div
@@ -375,9 +449,19 @@ function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, o
       draggable={draggable}
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart(); }}
       onDragEnd={onDragEnd}
+      onDragOver={onDragOverCard}
       onClick={onOpen}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onOpen())}
-      className={`card ${blocked ? 'card-blocked' : ''} ${moving ? 'card-moving' : ''} ${split && w.board?.done ? 'card-split-done' : ''}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        } else if (onNudge && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          e.preventDefault();
+          onNudge(e.key === 'ArrowUp' ? -1 : 1);
+        }
+      }}
+      aria-keyshortcuts={onNudge ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
+      className={`card ${blocked ? 'card-blocked' : ''} ${moving ? 'card-moving' : ''} ${split && w.board?.done ? 'card-split-done' : ''} ${dropMark ? `card-drop-${dropMark}` : ''}`}
     >
       <div className="card-top">
         <TypeLabel type={w.type} color={w.typeColor} />

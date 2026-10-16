@@ -18,6 +18,13 @@ import { deployMarkers, evaluateMonitor, runningDeploy } from './domain/producti
 
 const MIN = 60_000;
 
+/** Backlog order, then id; items without a rank go last. */
+const byBacklogOrder = (a, b) => {
+  const ra = a.backlogOrder ?? Infinity;
+  const rb = b.backlogOrder ?? Infinity;
+  return ra === rb ? a.id - b.id : ra < rb ? -1 : 1;
+};
+
 /**
  * Which column (and lane, and Doing/Done half) a card sits in on a team board.
  * Azure DevOps stores the column per board; cards never moved on the board
@@ -622,6 +629,8 @@ export function createService({
           return [...new Map([...open, ...done].map((w) => [w.id, tag(w)])).values()];
         });
       }
+      // Columns list cards in backlog order, like Azure DevOps (unranked last).
+      items = [...items].sort(byBacklogOrder);
       return {
         project: { id: p.id, name: p.name, teamId: team.id, teamName: team.name },
         options,
@@ -634,6 +643,22 @@ export function createService({
         items,
         states: states[p.id] || {},
       };
+    },
+
+    /**
+     * Moves a card up or down its column: places work item `id` between
+     * previousId and nextId in the team's backlog order (0 = no neighbour).
+     */
+    async reorderBoard(projectId, { teamId, id, previousId = 0, nextId = 0 } = {}) {
+      const ids = [id, previousId, nextId].map(Number);
+      if (!teamId || !Number.isInteger(ids[0]) || ids[0] <= 0 || ids.slice(1).some((n) => !Number.isInteger(n) || n < 0) || ids[0] === ids[1] || ids[0] === ids[2]) {
+        throw Object.assign(new Error('Pick a spot between two other cards'), { status: 400 });
+      }
+      const team = (await tracked()).find((p) => p.id === projectId)?.teams.find((t) => t.id === teamId);
+      if (!team) throw Object.assign(new Error('That team isn\'t tracked in Keel'), { status: 404 });
+      const result = await provider.reorderWorkItems(projectId, teamId, { ids: [ids[0]], previousId: ids[1], nextId: ids[2] });
+      cache.invalidate('wi:');
+      return { order: result };
     },
 
     async epics({ includeClosed = false } = {}) {

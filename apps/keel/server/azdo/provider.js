@@ -15,6 +15,8 @@ const WI_FIELDS = [
   'Microsoft.VSTS.Common.StateChangeDate', 'Microsoft.VSTS.Common.ActivatedDate', 'Microsoft.VSTS.Common.ClosedDate',
   'Microsoft.VSTS.Scheduling.StoryPoints', 'Microsoft.VSTS.Scheduling.Effort', 'Microsoft.VSTS.Scheduling.Size',
   'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.CMMI.Blocked',
+  // Backlog order: Stack Rank (Agile, CMMI) or Backlog Priority (Scrum).
+  'Microsoft.VSTS.Common.StackRank', 'Microsoft.VSTS.Common.BacklogPriority',
 ];
 
 const CATEGORY_GROUPS = {
@@ -236,6 +238,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         state: f['System.State'],
         stateCategory: categoryOf(byProject.get(projectName), f['System.WorkItemType'], f['System.State']),
         typeColor: typeColors.get(projectName)?.[f['System.WorkItemType']] || null,
+        backlogOrder: f['Microsoft.VSTS.Common.StackRank'] ?? f['Microsoft.VSTS.Common.BacklogPriority'] ?? null,
         reason: f['System.Reason'] || null,
         assignedTo: ident(f['System.AssignedTo']),
         createdBy: ident(f['System.CreatedBy']),
@@ -780,6 +783,19 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
     /** An attachment's bytes as a stream: { type, length, stream }. */
     downloadAttachment(attachmentId, name) {
       return download(`_apis/wit/attachments/${encodeURIComponent(attachmentId)}`, { query: { fileName: name, download: true } });
+    },
+
+    /**
+     * Moves work items in the team's backlog order (what its board sorts by),
+     * between previousId and nextId (0 = start / end of the list).
+     */
+    async reorderWorkItems(projectId, teamId, { ids, previousId = 0, nextId = 0 }) {
+      const d = await api(`${seg(projectId)}/${seg(teamId)}/_apis/work/workitemsorder`, {
+        method: 'PATCH',
+        apiVersion: '7.1',
+        body: { ids, previousId, nextId, parentId: 0 },
+      });
+      return (d.value || []).map((r) => ({ id: r.id, order: r.order }));
     },
 
     async updateWorkItem(id, changes) {

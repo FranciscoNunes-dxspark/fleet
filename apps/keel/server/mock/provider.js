@@ -138,6 +138,7 @@ function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, s
     projectName: p.name,
     type,
     typeColor: TYPE_COLORS[type] || null,
+    backlogOrder: (priority || 2) * 100_000 + id * 10,
     title,
     state,
     stateCategory,
@@ -928,6 +929,19 @@ export function createMockProvider() {
         attachments: w._attachments.map(({ by, ...a }) => a),
         comments: [...w._comments].reverse(),
       });
+    },
+
+    async reorderWorkItems(projectId, teamId, { ids, previousId = 0, nextId = 0 }) {
+      const order = (id) => workItems.get(Number(id))?.backlogOrder;
+      const prev = previousId ? order(previousId) : null;
+      const next = nextId ? order(nextId) : null;
+      const base = prev != null && next != null ? (prev + next) / 2 : prev != null ? prev + 10 : next != null ? next - 10 : 0;
+      return delay(ids.map((id, i) => {
+        const w = workItems.get(Number(id));
+        if (!w) throw notFound(`Work item ${id}`);
+        w.backlogOrder = base + i * 0.001;
+        return { id: w.id, order: w.backlogOrder };
+      }));
     },
 
     async updateWorkItem(id, changes) {
