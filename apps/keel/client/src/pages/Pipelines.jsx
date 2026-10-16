@@ -169,7 +169,7 @@ function BuildsTab({ data }) {
 }
 
 function PipelineRow({ p, showFolder, onQueue }) {
-  const { can } = useApp();
+  const { can, openDrawer } = useApp();
   const canRun = can('pipelines.run');
   const rowRef = useRef(null);
   const run = p.running[0];
@@ -177,7 +177,7 @@ function PipelineRow({ p, showFolder, onQueue }) {
   return (
     <tr ref={rowRef}>
       <td className="cell-title">
-        <span className="strong">{p.definition.name}</span>
+        <button type="button" className="link-btn strong" onClick={() => openDrawer({ type: 'pipeline', key: p.key })}>{p.definition.name}</button>
         <div className="sub">
           <span>{p.projectName}{p.repoName ? ` / ${p.repoName}` : ''}</span>
           {showFolder && p.definition.path && p.definition.path !== '\\' && <span>{folderLabel(p.definition.path)}</span>}

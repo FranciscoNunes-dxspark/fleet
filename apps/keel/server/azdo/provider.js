@@ -74,7 +74,25 @@ export function releaseHost(orgUrl) {
 /** A provider acting as the owner of `pat` (one per signed-in user). */
 export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } = {}) {
   const org = orgUrl;
-  const { api, listAll, listSkip, fetchOrgImage } = createClient({ orgUrl, pat });
+  const { api, apiText, listAll, listSkip, fetchOrgImage } = createClient({ orgUrl, pat });
+  const toBuild = (b) => ({
+    id: b.id,
+    projectId: b.project?.id,
+    projectName: b.project?.name,
+    definition: { id: b.definition?.id, name: b.definition?.name, path: b.definition?.path },
+    buildNumber: b.buildNumber,
+    status: b.status,
+    result: b.result || null,
+    reason: b.reason,
+    sourceBranch: stripRef(b.sourceBranch),
+    repoId: b.repository?.type === 'TfsGit' ? b.repository.id : null,
+    repoName: b.repository?.name || null,
+    requestedFor: ident(b.requestedFor),
+    queuedAt: b.queueTime,
+    startedAt: b.startTime || null,
+    finishedAt: b.finishTime || null,
+    webUrl: b._links?.web?.href || `${org}/${seg(b.project?.name)}/_build/results?buildId=${b.id}`,
+  });
   const rm = releaseHost(org);
   const relUrl = (project, releaseId) => `${org}/${seg(project)}/_releaseProgress?releaseId=${releaseId}&_a=release-pipeline-progress`;
 
@@ -655,24 +673,69 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         api(`${seg(projectId)}/_apis/build/builds`, { query: { statusFilter: 'inProgress', $top: 200 } }),
         api(`${seg(projectId)}/_apis/build/builds`, { query: { statusFilter: 'notStarted', $top: 200 } }),
       ]);
-      return [...(running.value || []), ...(queued.value || []), ...(done.value || [])].map((b) => ({
-        id: b.id,
-        projectId: b.project?.id,
-        projectName: b.project?.name,
-        definition: { id: b.definition?.id, name: b.definition?.name, path: b.definition?.path },
-        buildNumber: b.buildNumber,
-        status: b.status,
-        result: b.result || null,
-        reason: b.reason,
-        sourceBranch: stripRef(b.sourceBranch),
-        repoId: b.repository?.type === 'TfsGit' ? b.repository.id : null,
-        repoName: b.repository?.name || null,
-        requestedFor: ident(b.requestedFor),
-        queuedAt: b.queueTime,
-        startedAt: b.startTime || null,
-        finishedAt: b.finishTime || null,
-        webUrl: b._links?.web?.href || `${org}/${seg(b.project?.name)}/_build/results?buildId=${b.id}`,
+      return [...(running.value || []), ...(queued.value || []), ...(done.value || [])].map(toBuild);
+    },
+
+    /** A pipeline's latest runs, any status and branch, newest first. */
+    async listDefinitionRuns(projectId, definitionId, { top = 25 } = {}) {
+      const d = await api(`${seg(projectId)}/_apis/build/builds`, { query: { definitions: definitionId, queryOrder: 'queueTimeDescending', $top: top } });
+      return (d.value || []).map(toBuild);
+    },
+
+    /** A run's stages, jobs and steps (flat; parentId links them), with their issues. */
+    async getBuildTimeline(projectId, buildId) {
+      const t = await api(`${seg(projectId)}/_apis/build/builds/${buildId}/timeline`).catch((err) => (err.status === 404 ? null : Promise.reject(err)));
+      return (t?.records || []).map((r) => ({
+        id: r.id,
+        parentId: r.parentId || null,
+        type: r.type,
+        name: r.name,
+        order: r.order ?? 0,
+        state: r.state,
+        result: r.result || null,
+        startedAt: r.startTime || null,
+        finishedAt: r.finishTime || null,
+        errorCount: r.errorCount || 0,
+        warningCount: r.warningCount || 0,
+        issues: (r.issues || []).slice(0, 10).map((i) => ({ type: i.type, message: String(i.message || '').slice(0, 600) })),
+        logId: r.log?.id ?? null,
       }));
+    },
+
+    /** The last lines of one step's log, without timestamps or colour codes. */
+    async getBuildLogTail(projectId, buildId, logId, lines = 60) {
+      const meta = await api(`${seg(projectId)}/_apis/build/builds/${buildId}/logs`);
+      const count = (meta.value || []).find((l) => l.id === logId)?.lineCount || 0;
+      const text = await apiText(`${seg(projectId)}/_apis/build/builds/${buildId}/logs/${logId}`, {
+        query: count ? { startLine: Math.max(1, count - lines + 1), endLine: count } : undefined,
+      });
+      return text.split(/\r?\n/).slice(-lines)
+        .map((l) => l.replace(/^\uFEFF?\d{4}-\d\d-\d\dT[\d:.]+Z ?/, '').replace(/\u001b\[[0-9;]*m/g, ''))
+        .join('\n').trimEnd();
+    },
+
+    /** The commits a run built (first line of each message). */
+    async getBuildChanges(projectId, buildId) {
+      const d = await api(`${seg(projectId)}/_apis/build/builds/${buildId}/changes`, { query: { $top: 20 } });
+      return (d.value || []).map((c) => ({
+        id: c.id,
+        message: String(c.message || '').split('\n')[0].slice(0, 200),
+        author: c.author?.displayName || null,
+        at: c.timestamp || null,
+        webUrl: c.displayUri || null,
+      }));
+    },
+
+    /** Test results the run published, summed over its test runs (null when none, or no Test scope on the token). */
+    async getBuildTests(projectId, buildId) {
+      const d = await api(`${seg(projectId)}/_apis/test/runs`, { query: { buildUri: `vstfs:///Build/Build/${buildId}`, includeRunDetails: true } }).catch(() => null);
+      const runs = d?.value || [];
+      if (!runs.length) return null;
+      const sum = (k) => runs.reduce((n, r) => n + (r[k] || 0), 0);
+      const total = sum('totalTests');
+      const passed = sum('passedTests');
+      const other = sum('notApplicableTests') + sum('incompleteTests');
+      return { total, passed, failed: Math.max(0, total - passed - other), other };
     },
 
     /**
@@ -784,7 +847,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
           projectName,
           pipeline: loc?.build.definition.name || a.pipeline?.name || 'Pipeline run',
           stage: loc?.stage || null,
-          run: loc ? { name: loc.build.buildNumber, webUrl: loc.build.webUrl, branch: loc.build.sourceBranch } : null,
+          run: loc ? { id: loc.build.id, name: loc.build.buildNumber, webUrl: loc.build.webUrl, branch: loc.build.sourceBranch } : null,
           createdOn: a.createdOn,
           instructions: a.instructions || '',
           minRequired: a.minRequiredApprovers || 1,

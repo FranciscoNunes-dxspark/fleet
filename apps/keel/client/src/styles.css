@@ -827,3 +827,48 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .month-bars rect { fill: var(--accent); opacity: 0.85; }
 .month-bars rect:hover { opacity: 1; }
 .month-bars text { font-size: 9px; fill: var(--muted); }
+
+/* ------------------------------------------------------- pipeline details */
+.run-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.run-list > li { border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.run-list > li.open { border-color: var(--line-strong); }
+.run-row {
+  display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: "dot name meta" ". when when";
+  gap: 2px 8px; align-items: center; width: 100%; padding: 7px 10px; background: none; border: 0; text-align: left; cursor: pointer; color: var(--ink);
+}
+.run-row:hover { background: var(--surface-2); }
+.run-row .run-dot { grid-area: dot; }
+.run-name { grid-area: name; font-weight: 600; font-variant-numeric: tabular-nums; }
+.run-meta { grid-area: meta; font-size: 12.5px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-when { grid-area: when; font-size: 12px; color: var(--muted); }
+.run-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; display: inline-block; }
+.run-dot-ok { background: var(--ok); }
+.run-dot-bad { background: var(--bad); }
+.run-dot-warn { background: var(--warn); }
+.run-dot-info { background: var(--info); }
+.run-dot-muted { background: transparent; box-shadow: inset 0 0 0 2px var(--muted); }
+.run-dot-live { animation: run-pulse 1.4s ease-in-out infinite; }
+@keyframes run-pulse { 50% { box-shadow: 0 0 0 4px var(--info-soft); } }
+@media (prefers-reduced-motion: reduce) { .run-dot-live { animation: none; } }
+.run-detail { padding: 4px 12px 12px 27px; display: grid; gap: 10px; border-top: 1px solid var(--line); }
+.run-detail .callout { max-width: none; }
+.run-block h4 { margin: 4px 0 6px; font-size: 13px; }
+.stage-list, .tl-children, .tl-issues { list-style: none; margin: 0; padding: 0; }
+.tl-children { padding-left: 17px; border-left: 1px solid var(--line); margin-left: 4px; }
+.tl-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 0; background: none; border: 0; color: var(--ink); text-align: left; cursor: pointer; }
+.tl-row:disabled { cursor: default; }
+.tl-stage > .tl-row .tl-name { font-weight: 600; }
+.tl-name { min-width: 0; overflow-wrap: anywhere; }
+.tl-counts { white-space: nowrap; }
+.tl-time { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tl-issues { margin: 2px 0 6px 17px; display: grid; gap: 4px; font-size: 12.5px; overflow-wrap: anywhere; }
+.log-tail { margin: 2px 0 8px 17px; }
+.log-tail pre { margin: 4px 0 0; padding: 8px 10px; max-height: 260px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); font: 11.5px/1.45 var(--mono); white-space: pre; }
+.test-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--surface-2); gap: 2px; max-width: 360px; }
+.test-pass { background: var(--ok); }
+.test-fail { background: var(--bad); }
+.test-other { background: var(--muted); }
+/* Long log lines and error messages scroll inside their box, never the panel. */
+.run-list > li, .run-detail, .run-detail > *, .stage-list, .tl, .tl-children, .log-tail { min-width: 0; }
+.run-detail { overflow: hidden; }
+.log-tail pre { max-width: 100%; }

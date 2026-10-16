@@ -9,6 +9,7 @@ import PullRequests from './pages/PullRequests.jsx';
 import PrDetail from './pages/PrDetail.jsx';
 import WorkItems from './pages/WorkItems.jsx';
 import WorkItemDetail from './pages/WorkItemDetail.jsx';
+import PipelineDetail from './pages/PipelineDetail.jsx';
 import NewPr from './pages/NewPr.jsx';
 import Board from './pages/Board.jsx';
 import Epics from './pages/Epics.jsx';
@@ -141,7 +142,7 @@ function Console({ authMode, onSignedOut }) {
   // Where a notification or inbox entry leads.
   const openTarget = useCallback((target) => {
     if (!target) return;
-    if (target.type === 'pr' || target.type === 'workitem') setDrawer(target);
+    if (target.type === 'pr' || target.type === 'workitem' || (target.type === 'pipeline' && target.key)) setDrawer(target);
     else if (target.type === 'release') navigate('/pipelines?tab=releases');
     else if (target.type === 'pipeline' || target.type === 'approval') navigate('/pipelines');
     else if (target.type === 'person') navigate('/team');
@@ -227,6 +228,7 @@ function Console({ authMode, onSignedOut }) {
       <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')}>
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
         {drawer?.type === 'workitem' && <WorkItemDetail id={drawer.id} />}
+        {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
       </Drawer>
       <div className="toasts" aria-live="polite">

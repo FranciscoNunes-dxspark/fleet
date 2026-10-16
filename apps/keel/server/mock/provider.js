@@ -424,6 +424,114 @@ function finishLater(env, status = 'succeeded', ms = 15_000) {
   setTimeout(() => Object.assign(env, { status, at: iso(Date.now()) }), ms).unref?.();
 }
 
+// ------------------------------------------------------------------ run details
+const PLAN = [
+  ['Build', 'Build', [['Checkout', 8], ['Restore packages', 35], ['Build solution', 140], ['Publish artifact', 12]]],
+  ['Test', 'Unit tests', [['Run tests', 190], ['Publish test results', 9]]],
+  ['Deploy to QA', 'Deploy', [['Download artifact', 10], ['Deploy web app', 75], ['Smoke test', 30]]],
+];
+
+function demoTimeline(b) {
+  const records = [];
+  const start = Date.parse(b.startedAt || b.queuedAt);
+  const now = b.status === 'completed' ? Date.parse(b.finishedAt) : Date.now();
+  const failAt = b.result === 'failed' ? 'Run tests' : b.result === 'canceled' ? 'Run tests' : null;
+  let t = start;
+  let stopped = false;
+  let logId = 1;
+  PLAN.forEach(([stageName, jobName, tasks], si) => {
+    const stage = { id: `${b.id}-s${si}`, parentId: null, type: 'Stage', name: stageName, order: si + 1, errorCount: 0, warningCount: 0, issues: [], logId: null };
+    const job = { id: `${b.id}-j${si}`, parentId: stage.id, type: 'Job', name: jobName, order: 1, errorCount: 0, warningCount: 0, issues: [], logId: logId++ };
+    const stageStart = t;
+    const taskRecs = tasks.map(([name, secs], ti) => {
+      const rec = { id: `${b.id}-t${si}-${ti}`, parentId: job.id, type: 'Task', name, order: ti + 1, errorCount: 0, warningCount: 0, issues: [], logId: logId++ };
+      if (b.status === 'notStarted' || stopped) {
+        // After a failure Azure DevOps marks the rest completed + skipped; before the run starts they're pending.
+        const skipped = stopped && b.status === 'completed';
+        Object.assign(rec, { state: skipped ? 'completed' : 'pending', result: skipped ? 'skipped' : null, startedAt: null, finishedAt: null });
+        return rec;
+      }
+      const end = t + secs * 1000;
+      if (end > now && b.status !== 'completed') {
+        Object.assign(rec, { state: 'inProgress', result: null, startedAt: iso(t), finishedAt: null });
+        stopped = true;
+        t = end;
+        return rec;
+      }
+      let result = 'succeeded';
+      if (name === failAt) {
+        result = b.result === 'canceled' ? 'canceled' : 'failed';
+        if (result === 'failed') {
+          rec.errorCount = 2;
+          rec.issues = [
+            { type: 'error', message: '3 tests failed: CheckoutTests.Refund_PartialShipment_ReturnsRemainder, CheckoutTests.Refund_Currency_RoundsHalfEven, OrderTests.Cancel_AfterDispatch_IsRejected' },
+            { type: 'error', message: 'Process completed with exit code 1.' },
+          ];
+        }
+        stopped = true;
+      } else if (b.result === 'partiallySucceeded' && name === 'Build solution') {
+        result = 'succeededWithIssues';
+        rec.warningCount = 2;
+        rec.issues = [{ type: 'warning', message: "CS0618: 'PaymentClient.Charge(decimal)' is obsolete: 'Use ChargeAsync'." }, { type: 'warning', message: 'NU1603: Polly 8.4.0 was not found. Polly 8.4.1 was resolved instead.' }];
+      }
+      Object.assign(rec, { state: 'completed', result, startedAt: iso(t), finishedAt: iso(end) });
+      t = end;
+      return rec;
+    });
+    const states = taskRecs.map((r) => r.state);
+    const results = taskRecs.map((r) => r.result);
+    const state = states.every((x) => x === 'pending') ? 'pending' : states.every((x) => x === 'completed' || (x === 'pending' && b.status === 'completed')) ? 'completed' : 'inProgress';
+    const result = state !== 'completed' ? null
+      : results.includes('failed') ? 'failed' : results.includes('canceled') ? 'canceled'
+        : results.every((r) => r === 'skipped') ? 'skipped' : results.includes('succeededWithIssues') ? 'succeededWithIssues' : 'succeeded';
+    const started = taskRecs.find((r) => r.startedAt)?.startedAt || null;
+    const finished = state === 'completed' ? [...taskRecs].reverse().find((r) => r.finishedAt)?.finishedAt || null : null;
+    for (const rec of [stage, job]) {
+      Object.assign(rec, { state, result, startedAt: started, finishedAt: finished });
+      rec.errorCount = taskRecs.reduce((n, r) => n + r.errorCount, 0);
+      rec.warningCount = taskRecs.reduce((n, r) => n + r.warningCount, 0);
+    }
+    if (stageStart === t && state === 'pending') Object.assign(stage, { startedAt: null });
+    records.push(stage, job, ...taskRecs);
+  });
+  return records;
+}
+
+function demoLog(b, logId) {
+  const rec = demoTimeline(b).find((r) => r.logId === logId);
+  const lines = [
+    `##[section]Starting: ${rec?.name || 'step'}`,
+    'Task         : Command line',
+    `Agent        : Hosted Agent (ubuntu-latest)`,
+    '  Determining projects to restore...',
+    '  All projects are up-to-date for restore.',
+  ];
+  if (rec?.result === 'failed') {
+    lines.push(
+      '  Passed!  - Failed:     0, Passed:   188, Skipped:     2, Total:   190 - Catalog.Tests.dll',
+      '  Failed CheckoutTests.Refund_PartialShipment_ReturnsRemainder [41 ms]',
+      '  Error Message:',
+      '   Expected refund.Amount to be 12.50M, but found 25.00M.',
+      '  Stack Trace:',
+      '     at Checkout.Tests.CheckoutTests.Refund_PartialShipment_ReturnsRemainder() in /src/Checkout.Tests/CheckoutTests.cs:line 214',
+      '  Failed CheckoutTests.Refund_Currency_RoundsHalfEven [12 ms]',
+      '  Error Message:',
+      '   Expected 10.13M, but found 10.12M.',
+      '  Failed OrderTests.Cancel_AfterDispatch_IsRejected [8 ms]',
+      '  Error Message:',
+      '   Expected status 409 (Conflict), but found 200 (OK).',
+      'Failed!  - Failed:     3, Passed:   219, Skipped:     0, Total:   222 - Checkout.Tests.dll',
+      '##[error]Process completed with exit code 1.',
+      `##[section]Finishing: ${rec.name}`,
+    );
+  } else {
+    lines.push('  Done.', `##[section]Finishing: ${rec?.name || 'step'}`);
+  }
+  return lines.join('\n');
+}
+
+const COMMITS = ['Fix rounding in partial refunds', 'Add retry to payment webhook', 'Bump Polly to 8.4.1', 'Refactor order cancellation rules', 'Log correlation ids on checkout'];
+
 // ------------------------------------------------------------------ provider
 const strip = ({ _description, _acceptance, _comments, _prs, _board, ...rest }) => ({ ...rest });
 const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
@@ -556,7 +664,7 @@ export function createMockProvider() {
       const run = runningBuilds.find((b) => b.definition.name === 'storefront-web-CI');
       return delay(pipelineApprovals
         .filter((a) => a.projectId === projectById(projectId).id)
-        .map((a) => ({ ...a, run: run ? { name: run.buildNumber, webUrl: run.webUrl, branch: run.sourceBranch } : a.run })));
+        .map((a) => ({ ...a, run: run ? { id: run.id, name: run.buildNumber, webUrl: run.webUrl, branch: run.sourceBranch } : a.run })));
     },
 
     async decideReleaseApproval(projectName, approvalId, status) {
@@ -815,6 +923,44 @@ export function createMockProvider() {
       .filter((b) => b.projectId === projectById(projectId).id)
       .filter((b) => !b.finishedAt || Date.parse(b.finishedAt) >= Date.now() - sinceDays * D)
       .map((b) => ({ ...b, sourceBranch: b.sourceBranch.replace(/^refs\/heads\//, '') }))),
+
+    listDefinitionRuns(projectId, definitionId, { top = 25 } = {}) {
+      return delay(builds
+        .filter((b) => b.projectId === projectById(projectId).id && b.definition.id === Number(definitionId))
+        .sort((a, b) => Date.parse(b.queuedAt) - Date.parse(a.queuedAt))
+        .slice(0, top)
+        .map((b) => ({ ...b })));
+    },
+
+    getBuildTimeline(projectId, buildId) {
+      const b = builds.find((x) => x.id === Number(buildId));
+      return delay(b ? demoTimeline(b) : []);
+    },
+
+    getBuildLogTail(projectId, buildId, logId) {
+      const b = builds.find((x) => x.id === Number(buildId));
+      if (!b) throw notFound('Build');
+      return delay(demoLog(b, Number(logId)));
+    },
+
+    getBuildChanges(projectId, buildId) {
+      const b = builds.find((x) => x.id === Number(buildId));
+      if (!b) return delay([]);
+      return delay(Array.from({ length: 1 + (b.id % 3) }, (_, i) => ({
+        id: (b.id * 7919 + i * 104729).toString(16).padStart(40, 'a').slice(0, 40),
+        message: COMMITS[(b.id + i) % COMMITS.length],
+        author: DEVS[(b.id + i) % DEVS.length].displayName,
+        at: iso(Date.parse(b.queuedAt) - (i + 1) * 40 * 60_000),
+        webUrl: `${ORG}/${b.projectName}/_git/${b.repoName || 'repo'}/commit/${b.id}${i}`,
+      })));
+    },
+
+    getBuildTests(projectId, buildId) {
+      const b = builds.find((x) => x.id === Number(buildId));
+      if (!b || b.status !== 'completed' || b.result === 'canceled') return delay(null);
+      const failed = b.result === 'failed' ? 3 : 0;
+      return delay({ total: 412, passed: 412 - failed - 2, failed, other: 2 });
+    },
 
     async queueBuild(projectId, definitionId, branch) {
       const prev = builds.find((b) => b.definition.id === definitionId);

@@ -87,7 +87,7 @@ export function diffSnapshots(prev, next) {
       category: 'run',
       title: (RUN_TITLE[b.result] || ((p) => `Your run of ${p} finished`))(b.definition.name),
       body: `${b.buildNumber} on ${b.sourceBranch}`,
-      target: { type: 'pipeline' },
+      target: b.projectId && b.definition.id ? { type: 'pipeline', key: `${b.projectId}:${b.definition.id}`, buildId: b.id } : { type: 'pipeline' },
       webUrl: b.webUrl,
       severity: ok ? 'medium' : 'high',
     });

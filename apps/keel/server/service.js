@@ -548,7 +548,7 @@ export function createService({
         runs: builds
           .filter((b) => b.status !== 'completed' || Date.parse(b.finishedAt) > dayAgo)
           .map((b) => ({
-            id: b.id, definition: { name: b.definition.name }, status: b.status, result: b.result, buildNumber: b.buildNumber,
+            id: b.id, projectId: b.projectId, definition: { id: b.definition.id, name: b.definition.name }, status: b.status, result: b.result, buildNumber: b.buildNumber,
             sourceBranch: b.sourceBranch, webUrl: b.webUrl, mine: sameIdentity(b.requestedFor, who),
           })),
         // Anything else the pages show, so lists refresh even when nothing is notification-worthy.
@@ -601,6 +601,33 @@ export function createService({
       if (!p) throw Object.assign(new Error('Unknown project'), { status: 400 });
       await provider.deployReleaseStage(p.name, releaseId, environmentId, comment);
       cache.invalidate('builds');
+    },
+
+    /** One pipeline: its health row and its latest runs (any branch). */
+    async pipelineRuns(projectId, definitionId) {
+      if (!(await tracked()).some((p) => p.id === projectId)) throw Object.assign(new Error('Unknown project'), { status: 400 });
+      const id = Number(definitionId);
+      const [rows, runs] = await Promise.all([
+        pipelines(),
+        cached(`builds:runs:${projectId}:${id}`, () => provider.listDefinitionRuns(projectId, id, { top: 25 }), MIN),
+      ]);
+      return { pipeline: rows.find((r) => r.projectId === projectId && r.definition.id === id) || null, runs };
+    },
+
+    /** One run: stages, jobs and steps; the failed steps' last log lines; commits; tests; approvals it waits on. */
+    async runDetails(projectId, buildId) {
+      if (!(await tracked()).some((p) => p.id === projectId)) throw Object.assign(new Error('Unknown project'), { status: 400 });
+      const id = Number(buildId);
+      // The timeline is re-read on every live poll ("builds" keys are dropped then); logs and commits don't change.
+      const timeline = await cached(`builds:timeline:${id}`, () => provider.getBuildTimeline(projectId, id), 15 * 1000);
+      const failed = timeline.filter((r) => r.type === 'Task' && r.result === 'failed' && r.logId != null).slice(0, 3);
+      const [changes, tests, logs, waiting] = await Promise.all([
+        cached(`runchanges:${id}`, () => provider.getBuildChanges(projectId, id).catch(() => []), 60 * MIN),
+        cached(`runtests:${id}`, () => provider.getBuildTests(projectId, id).catch(() => null), 2 * MIN),
+        Promise.all(failed.map(async (r) => [r.id, await cached(`runlog:${id}:${r.logId}`, () => provider.getBuildLogTail(projectId, id, r.logId).catch(() => null), 60 * MIN)])),
+        approvals().catch(() => []),
+      ]);
+      return { timeline, logs: Object.fromEntries(logs), changes, tests, approvals: waiting.filter((a) => a.kind === 'yaml' && a.run?.id === id) };
     },
 
     async queueBuild(projectId, definitionId, branch) {

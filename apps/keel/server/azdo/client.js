@@ -164,5 +164,20 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
     });
   }
 
-  return { request, api, listAll, listSkip, fetchOrgImage };
+  /** A plain-text response, such as a build log. Same auth and token checks as request(). */
+  function apiText(path, { query, apiVersion } = {}) {
+    const url = buildUrl(path, query, apiVersion);
+    return limited(async () => {
+      const res = await fetch(url, { headers: { Authorization: authHeader, Accept: 'text/plain' }, signal: AbortSignal.timeout(30_000) });
+      const type = res.headers.get('content-type') || '';
+      // A bad or expired PAT answers with an HTML sign-in page rather than 401.
+      if (res.status === 401 || res.status === 203 || type.includes('text/html')) {
+        throw new AzdoError('Azure DevOps rejected the token: it may have expired, been revoked, or lack the needed scopes.', 401, null, 'token-rejected');
+      }
+      if (!res.ok) throw new AzdoError(`Azure DevOps GET ${url.pathname} failed (${res.status})`, res.status);
+      return res.text();
+    });
+  }
+
+  return { request, api, apiText, listAll, listSkip, fetchOrgImage };
 }

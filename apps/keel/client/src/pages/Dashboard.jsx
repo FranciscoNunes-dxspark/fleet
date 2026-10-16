@@ -208,6 +208,7 @@ function ReviewsWidget() {
 }
 
 function PipelinesWidget() {
+  const { openDrawer } = useApp();
   const { data, fallback } = useWidgetData('/pipelines');
   if (fallback) return fallback;
   const failing = data.filter((p) => p.health === 'failing');
@@ -224,7 +225,7 @@ function PipelinesWidget() {
       <ul className="mini-list">
         {[...failing, ...running.filter((p) => p.health !== 'failing')].slice(0, 5).map((p) => (
           <li key={p.key}>
-            <a className="mini-title" href={(p.running[0] || p.lastRun)?.webUrl} target="_blank" rel="noreferrer noopener">{p.definition.name}</a>
+            <button type="button" className="mini-title link-btn" onClick={() => openDrawer({ type: 'pipeline', key: p.key })}>{p.definition.name}</button>
             <span className="small">
               {p.running.length ? <Chip tone={p.running[0].status === 'notStarted' ? 'muted' : 'info'}>{t(p.running[0].status === 'notStarted' ? 'Queued' : 'Running')}</Chip> : <Chip tone="bad">{t('Failing')}</Chip>}
               <span className="muted"> {p.running.length ? (p.running[0].status === 'notStarted' ? t('queued {age} ago', { age: age(p.running[0].queuedAt) }) : t('started {age} ago', { age: age(p.running[0].startedAt || p.running[0].queuedAt) })) : t('{n} in a row', { n: p.failStreak })}</span>
