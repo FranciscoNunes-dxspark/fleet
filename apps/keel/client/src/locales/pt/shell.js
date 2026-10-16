@@ -28,7 +28,7 @@ export default {
   '{n} needs attention': '{n} precisa de atenção',
   '{n} need attention': '{n} precisam de atenção',
   'Settings': 'Definições',
-  'Refresh from Azure DevOps': 'Atualizar a partir do Azure DevOps',
+  'Refresh from Azure DevOps': 'Atualizar do Azure DevOps',
   'Sign out': 'Terminar sessão',
   'Signed in as {name}': 'Sessão iniciada como {name}',
   "You're looking at demo data ({reason}). Add {orgUrl} and {pat} to {env} and restart to connect your organization.": 'Está a ver dados de demonstração ({reason}). Adicione {orgUrl} e {pat} a {env} e reinicie para ligar a sua organização.',
