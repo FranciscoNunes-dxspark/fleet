@@ -211,6 +211,10 @@ Teammates create their own token from the "How to create a token" steps shown af
 
 **Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal or Magenta). The browser-tab icon follows the accent. The choice is saved in your browser, and with sign-in it also follows your account to other devices.
 
+**Language:** English or Português (Portugal), in the same place. It follows your account like the theme; the first visit uses the browser's language. Text from Azure DevOps (titles, names, states, board columns) is shown as it is there. Translations live in `client/src/locales/pt/`, keyed by the English text; text the server sends is matched by templates in `server.js` there.
+
+**Remembered choices:** the board's project and team, list filters, tabs and toggles stay as you left them when you move between pages or reload (per browser).
+
 ## How it works
 
 ```
