@@ -64,6 +64,14 @@ export function useStickyParams(page, keys) {
     writeOne(`${page}.params`, picked);
   }, [merged, page]);
 
-  const set = useCallback((next, opts) => setParams(next, opts), [setParams]);
+  // Remember the new choice before the URL changes: clearing the last choice
+  // (e.g. "Anyone") empties the URL, which would otherwise bring the old one back.
+  const set = useCallback((next, opts) => {
+    const value = new URLSearchParams(typeof next === 'function' ? next(merged) : next);
+    const picked = {};
+    for (const k of keys) if (value.get(k)) picked[k] = value.get(k);
+    writeOne(`${page}.params`, picked);
+    setParams(value, opts);
+  }, [setParams, merged, page]); // keys is a constant list per page
   return [merged, set];
 }
