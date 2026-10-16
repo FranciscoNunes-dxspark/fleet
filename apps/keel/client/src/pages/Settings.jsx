@@ -4,6 +4,7 @@ import { useApi, useApp } from '../context.js';
 import { ErrorBox, Loading, PageHeader, Confirm } from '../ui.jsx';
 import { ACCENTS, MODES, loadTheme, saveTheme } from '../theme.js';
 import ProductionSettings from './ProductionSettings.jsx';
+import { folderProblem, loadFolders, saveFolder } from '../claude.js';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
 
 const THRESHOLDS = [
@@ -177,6 +178,8 @@ export default function Settings() {
       <AppearanceSettings />
 
       <NotificationSettings />
+
+      <ClaudeSettings />
 
       <section className="panel">
         <h2 className="section-title">Auto-complete defaults</h2>
@@ -376,6 +379,46 @@ function AccountSettings() {
             <button type="submit" className="btn btn-small" disabled={busy === 'password'}>{busy === 'password' ? 'Saving…' : 'Change password'}</button>
           </div>
         </form>
+      </div>
+    </section>
+  );
+}
+
+/** Where each repo is cloned on this computer, for the work item "Start in Claude" buttons. */
+function ClaudeSettings() {
+  const { data: repos } = useApi('/repos');
+  const { toast } = useApp();
+  const [folders, setFolders] = useState(loadFolders);
+  const [draft, setDraft] = useState(loadFolders);
+  if (!repos?.length) return null;
+
+  const save = (repo) => {
+    const value = (draft[repo.id] || '').trim();
+    if (folderProblem(value)) return;
+    saveFolder(repo.id, value);
+    setFolders(loadFolders());
+    toast(value ? `Folder saved for ${repo.name}` : `Folder cleared for ${repo.name}`);
+  };
+
+  return (
+    <section className="panel">
+      <h2 className="section-title">Start in Claude</h2>
+      <p className="muted small">Where each repository is cloned on this computer. The Claude Code and Claude Desktop buttons on a work item open Claude there. Saved in this browser only, because folders differ between computers.</p>
+      <div className="claude-folders">
+        {repos.map((r) => {
+          const value = draft[r.id] ?? '';
+          const problem = folderProblem(value);
+          const changed = value.trim() !== (folders[r.id] || '');
+          return (
+            <form key={r.id} className="claude-folders-row" onSubmit={(e) => { e.preventDefault(); save(r); }}>
+              <label htmlFor={`folder-${r.id}`}><span>{r.name}</span> <span className="muted small">{r.projectName}</span></label>
+              <input id={`folder-${r.id}`} className="input mono" value={value} placeholder="C:\src\repo-name" spellCheck={false} autoComplete="off" aria-invalid={!!problem}
+                onChange={(e) => setDraft({ ...draft, [r.id]: e.target.value })} />
+              <button type="submit" className="btn btn-small" disabled={!changed || !!problem}>Save</button>
+              {problem && <span className="small text-bad claude-folders-error">{problem}</span>}
+            </form>
+          );
+        })}
       </div>
     </section>
   );

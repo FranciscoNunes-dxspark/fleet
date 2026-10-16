@@ -4,6 +4,7 @@ import { useApi, useApp } from '../context.js';
 import { age, dateTime, isBlocked, shortIteration } from '../format.js';
 import { Avatar, Chip, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
+import ClaudeStart from './ClaudeStart.jsx';
 
 export default function WorkItemDetail({ id }) {
   const { data: w, error, reload } = useApi(`/workitems/${id}`);
@@ -85,6 +86,8 @@ export default function WorkItemDetail({ id }) {
           </div>}
         </div>
       </section>}
+
+      {can('prs.write') && w.type !== 'Epic' && w.type !== 'Feature' && <ClaudeStart w={w} />}
 
       {(w.parent || w.children.length > 0) && (
         <section className="detail-section">

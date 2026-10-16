@@ -769,3 +769,21 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .link-panel { display: grid; gap: 8px; border-color: var(--accent); }
 .link-row { display: flex; gap: 8px; align-items: center; }
 .link-row .input { flex: 1; min-width: 0; }
+
+/* ------------------------------------------------------- start in Claude */
+.claude-start { display: grid; gap: 10px; }
+.claude-start h3 { margin-bottom: 0; }
+.claude-start p { margin: 0; }
+.claude-row { display: grid; grid-template-columns: minmax(160px, 220px) 1fr; gap: 12px; align-items: end; }
+.claude-row label { display: grid; gap: 4px; }
+.claude-folder { display: flex; gap: 8px; align-items: end; min-width: 0; }
+.claude-folder label { flex: 1; min-width: 0; }
+.claude-folder .input { width: 100%; }
+.claude-folder-set { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 8px; align-items: center; min-width: 0; padding-bottom: 6px; }
+.claude-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 560px) { .claude-row { grid-template-columns: 1fr; } }
+.claude-folders { display: grid; gap: 8px; margin-top: 10px; }
+.claude-folders-row { display: grid; grid-template-columns: minmax(180px, 260px) 1fr auto; gap: 8px; align-items: center; }
+.claude-folders-row label { display: flex; gap: 6px; align-items: baseline; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.claude-folders-error { grid-column: 2 / -1; }
+@media (max-width: 640px) { .claude-folders-row { grid-template-columns: 1fr auto; } .claude-folders-row label { grid-column: 1 / -1; } .claude-folders-error { grid-column: 1 / -1; } }
