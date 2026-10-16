@@ -69,6 +69,14 @@ Set it up in **Settings → Production monitors**:
 
 Use **Test** to check a URL and key before saving. Monitors are shared by everyone using the same Keel server, and only Admins can change them. The last 24 hours of checks are kept in the data folder (`monitor-history.json`), so charts are the same for everyone and survive restarts and deploys. When the host runs several copies of Keel, one of them runs the checks; another takes over within 3 minutes if it stops. Azure Monitor alert rules aren't included: reading them needs a Microsoft Entra identity (a service principal) rather than an API key.
 
+### ISM sites: health and platform totals
+
+The ISM product sites (WebShopSite, ShopSites, MarketSite, CartSites) answer the `platform/v1` contract (`docs/monitoring/platform-endpoints.md` in each product repository): `GET /health` and `GET /totals`.
+
+- **Health:** use the site's `/health` address as the URL to check, e.g. `https://shopeusite.azurewebsites.net/health`. Keel reads the envelope: its `down` (database unreachable) counts at once, `degraded` is flagged with the failing check's message, and product, site and version show on the monitor. An answer that isn't the envelope (restarting, an App Service error page) only counts as down after 3 polls in a row, as the contract asks.
+- **Platform totals:** add the site's totals key (its `X-Totals-Key`, from `Set-PlatformTotalsKeys.ps1`) to the monitor. It's stored encrypted like the Application Insights key. Keel fetches `/totals` every 1, 6, 12 or 24 hours (24 by default) for the current season or all seasons, one site at a time, with a 5-minute timeout. It never follows redirects with the key. Admins can fetch one site now from its page (at most every 10 minutes, since each fetch keeps the club database busy).
+- **The Platform totals page** compares sites on key figures or one area at a time, with the change since the previous fetch. Each site's page shows every figure by area, its trend this season and its monthly counts. The latest figures and up to 300 snapshots per site are kept in the data folder (`monitor-totals.json`). A 404 from `/totals` on a site whose health answers means the key is wrong or missing; the page says so.
+
 ## Live updates and notifications
 
 While the console is open (a background tab is fine), the server checks Azure DevOps every 30 seconds. You can set 15–600 seconds in Settings. Pages refresh only when something changed. When nobody has the console open, it stops polling.

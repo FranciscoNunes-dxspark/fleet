@@ -15,6 +15,7 @@ import Epics from './pages/Epics.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Pipelines from './pages/Pipelines.jsx';
 import Production from './pages/Production.jsx';
+import Totals from './pages/Totals.jsx';
 import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
 import Settings from './pages/Settings.jsx';
@@ -304,6 +305,7 @@ function Shell() {
       { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent' },
       { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
       { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad' },
+      { to: '/totals', label: t('Platform totals'), icon: 'totals' },
     ] },
     { label: t('People'), items: [
       { to: '/team', label: t('Team'), icon: 'team' },
@@ -376,6 +378,8 @@ function Shell() {
           <Route path="/epics" element={<Epics />} />
           <Route path="/pipelines" element={<Pipelines />} />
           <Route path="/production" element={<Production />} />
+          <Route path="/totals" element={<Totals />} />
+          <Route path="/totals/:id" element={<Totals />} />
           <Route path="/team" element={<Team />} />
           <Route path="/insights" element={<Insights />} />
           <Route path="/settings" element={<Settings />} />

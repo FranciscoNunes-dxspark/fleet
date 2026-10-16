@@ -51,10 +51,20 @@ export function evaluateMonitor(m, markers = [], now = Date.now()) {
   const last = m.last;
 
   if (m.url && last) {
-    if (m.consecutiveFailures >= 2) {
-      issues.push({ code: 'down', severity: 'high', text: `Down for ${ago(now - Date.parse(m.downSince || last.at))}: ${last.error || 'no response'}` });
+    // ISM sites answer an "platform/v1" envelope (see server/platform.js). Its "down" is the
+    // site's own verdict, so it counts at once; no envelope at all (restarting, error page) only
+    // counts after 3 polls in a row, as the platform contract asks.
+    const envelope = last.platform?.status || null;
+    const platformSite = !!m.platform;
+    const downAfter = platformSite ? 3 : 2;
+    const reason = last.error || 'no response';
+    if (envelope === 'down' || (!last.ok && m.consecutiveFailures >= downAfter)) {
+      issues.push({ code: 'down', severity: 'high', text: `Down for ${ago(now - Date.parse(m.downSince || last.at))}: ${reason}` });
     } else if (!last.ok) {
-      issues.push({ code: 'check-failed', severity: 'medium', text: `Last check failed: ${last.error || 'no response'}` });
+      issues.push({ code: 'check-failed', severity: platformSite ? 'low' : 'medium', text: `Last check failed: ${reason}` });
+    } else if (envelope === 'degraded') {
+      const failing = last.platform.failing?.[0];
+      issues.push({ code: 'degraded', severity: 'medium', text: `Degraded: ${failing?.message || failing?.name || 'a check failed'}` });
     } else if (last.ms > m.latencyWarnMs) {
       issues.push({ code: 'slow', severity: 'medium', text: `Slow: ${(last.ms / 1000).toFixed(1)}s (limit ${(m.latencyWarnMs / 1000).toFixed(1)}s)` });
     }
@@ -82,10 +92,12 @@ export function evaluateMonitor(m, markers = [], now = Date.now()) {
   }
 
   if (m.aiError) issues.push({ code: 'ai-error', severity: 'low', text: m.aiError });
+  if (m.totalsError) issues.push({ code: 'totals-error', severity: 'low', text: `Platform totals: ${m.totalsError}` });
 
   let state = 'unknown';
   if (issues.some((i) => i.code === 'down')) state = 'down';
-  else if (issues.some((i) => i.severity !== 'low')) state = 'degraded';
+  // A failed poll that isn't an outage yet (an ISM site restarting) still shows as degraded, without alerting.
+  else if (issues.some((i) => i.severity !== 'low') || (last && !last.ok)) state = 'degraded';
   else if (last?.ok || ai) state = 'up';
   return { state, issues };
 }

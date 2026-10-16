@@ -14,6 +14,10 @@ import path from 'node:path';
 import { config } from './config.js';
 import { decrypt, encrypt, getKey } from './secrets.js';
 import { sharedJson } from './jsonfile.js';
+import {
+  TOTALS_EVERY_HOURS, TOTALS_SEASONS, TOTALS_TIMEOUT_MS, asEnvelope, demoHealth, demoTotals, failingText, historyPoint,
+  isDemoPlatform, platformInfo, readTotals,
+} from './platform.js';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -21,6 +25,8 @@ const CHECK_EVERY = MIN;
 const AI_EVERY = 5 * MIN;
 const KEEP = 24 * HOUR;
 const RUNNER_STALE = 3 * MIN;
+const TOTALS_TICK = 5 * MIN;
+const TOTALS_HISTORY = 300; // snapshots kept per site (a year of daily fetches)
 const AI_HOST = 'https://api.applicationinsights.io';
 
 // ------------------------------------------------------------ URL safety
@@ -73,10 +79,19 @@ async function httpCheck(m) {
       headers: { 'User-Agent': 'Keel-Monitor/1.0', Accept: '*/*' },
       signal: AbortSignal.timeout(10_000),
     });
-    res.body?.cancel().catch(() => {});
+    // ISM sites answer an "platform/v1" envelope; anything else is judged on the HTTP status alone.
+    let platform = null;
+    if (/json/i.test(res.headers.get('content-type') || '')) {
+      const env = asEnvelope(await res.json().catch(() => null));
+      if (env) platform = platformInfo(env);
+    } else {
+      res.body?.cancel().catch(() => {});
+    }
     const ms = Date.now() - started;
-    const ok = res.status >= 200 && res.status < 400;
-    return { at: new Date().toISOString(), ok, status: res.status, ms, error: ok ? null : `HTTP ${res.status}` };
+    const httpOk = res.status >= 200 && res.status < 400;
+    const ok = httpOk && platform?.status !== 'down';
+    const error = ok ? null : platform ? failingText(platform, `HTTP ${res.status}`) : `HTTP ${res.status}`;
+    return { at: new Date().toISOString(), ok, status: res.status, ms, error, ...(platform ? { platform } : {}) };
   } catch (err) {
     const timeout = err.name === 'TimeoutError' || err.name === 'AbortError';
     return { at: new Date().toISOString(), ok: false, status: null, ms: Date.now() - started, error: timeout ? 'No response within 10s' : err.message };
@@ -125,11 +140,19 @@ function demoMonitors() {
     { id: id(), name: 'Storefront (production)', url: 'https://shop.contoso-demo.com/health', appInsightsAppId: 'demo-app-1', apiKey: null, link: { type: 'release', projectId: 'p-commerce', definitionId: 1, stage: 'Production' }, latencyWarnMs: 1500, demo: 'healthy' },
     { id: id(), name: 'Identity API (production)', url: 'https://id.contoso-demo.com/health', appInsightsAppId: 'demo-app-2', apiKey: null, link: { type: 'release', projectId: 'p-platform', definitionId: 2, stage: 'Production' }, latencyWarnMs: 800, demo: 'errors' },
     { id: id(), name: 'Mobile backend (production)', url: 'https://mobile-api.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'down' },
+    { id: id(), name: 'SC Berlin (WebShopSite)', url: 'https://shopeusite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-a', totalsEvery: 24, totalsSeason: 'current' },
+    { id: id(), name: 'QA RV (WebShopSite)', url: 'https://shopqasite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-qa', totalsEvery: 6, totalsSeason: 'current' },
+    { id: id(), name: 'Sydney FC (MarketSite)', url: 'https://marketussite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-c', totalsEvery: 24, totalsSeason: 'current' },
   ];
 }
 
 function demoCheck(m, at = Date.now()) {
   const wave = Math.sin(at / (17 * MIN)) * 40;
+  if (isDemoPlatform(m.demo)) {
+    const platform = platformInfo(demoHealth(m.demo, at));
+    const down = platform.status === 'down';
+    return { at: new Date(at).toISOString(), ok: !down, status: down ? 503 : 200, ms: Math.round((down ? 3010 : 160) + wave), error: down ? failingText(platform, 'HTTP 503') : null, platform };
+  }
   if (m.demo === 'down') {
     const down = Math.floor(at / (6 * MIN)) % 3 === 0; // down a third of the time
     return { at: new Date(at).toISOString(), ok: !down, status: down ? 503 : 200, ms: down ? 10_000 : 220 + wave, error: down ? 'HTTP 503' : null };
@@ -166,6 +189,8 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   const store = sharedJson(path.join(dataDir, `monitors${suffix}.json`), () => ({ monitors: mock ? demoMonitors() : [] }));
   const history = sharedJson(path.join(dataDir, `monitor-history${suffix}.json`), () => ({})); // id -> { checks, ai, aiError }
   const runnerLock = sharedJson(path.join(dataDir, `monitor-runner${suffix}.json`), () => ({}));
+  // Platform totals per monitor: { lastAttemptAt, lastError, fetchingSince, latest, history: [{ at, seasonId, values }] }.
+  const totalsStore = sharedJson(path.join(dataDir, `monitor-totals${suffix}.json`), () => ({}));
   const instance = `${os.hostname()}:${process.pid}:${crypto.randomBytes(3).toString('hex')}`;
 
   let monitors = [];
@@ -176,6 +201,8 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   sync();
   const persist = () => store.save({ monitors });
   const keyOf = (m) => (m.apiKey ? decrypt(getKey(), m.apiKey) : null);
+  const totalsKeyOf = (m) => (m.totalsKey ? decrypt(getKey(), m.totalsKey) : null);
+  const hasTotals = (m) => !!m.url && (!!m.totalsKey || (mock && isDemoPlatform(m.demo)));
   const EMPTY = { checks: [], ai: null, aiError: null };
   const entry = (all, id) => (all[id] ||= { checks: [], ai: null, aiError: null });
 
@@ -200,6 +227,11 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         const m = list.find((x) => x.id === id);
         // Demo: back-fill 24h so charts have something to show.
         if (mock && m.demo && !s.checks.length) for (let t = Date.now() - KEEP; t < Date.now(); t += 5 * MIN) s.checks.push(demoCheck(m, t));
+        if (r.platform) {
+          const { failing, status, ...meta } = r.platform;
+          s.platform = { ...meta, at: r.at };
+          r.platform = { status, ...(failing.length ? { failing } : {}) };
+        }
         s.checks.push(r);
         while (s.checks.length && Date.parse(s.checks[0].at) < Date.now() - KEEP) s.checks.shift();
       }
@@ -225,6 +257,97 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
     });
   }
 
+  // ---------------------------------------------------------- platform totals
+  const fetching = new Set(); // monitor ids this process is fetching now
+
+  async function requestTotals(m) {
+    if (mock && isDemoPlatform(m.demo)) return readTotals(200, demoTotals(m.demo));
+    const base = new URL(m.url);
+    const url = new URL(`/totals?season=${encodeURIComponent(m.totalsSeason || 'current')}`, base.origin);
+    await assertPublicUrl(url.href);
+    let res;
+    try {
+      res = await fetch(url, {
+        // No redirects: the key must only ever go to the site itself.
+        redirect: 'manual',
+        headers: { 'X-Totals-Key': totalsKeyOf(m), Accept: 'application/json', 'User-Agent': 'Keel-Monitor/1.0' },
+        signal: AbortSignal.timeout(TOTALS_TIMEOUT_MS),
+      });
+    } catch (err) {
+      const timeout = err.name === 'TimeoutError' || err.name === 'AbortError';
+      return { error: timeout ? 'The totals took longer than 5 minutes; the site may be busy.' : err.message };
+    }
+    if (res.status >= 300 && res.status < 400) return { error: `The site redirected /totals (HTTP ${res.status}); use the address it redirects to.` };
+    return readTotals(res.status, await res.json().catch(() => null));
+  }
+
+  async function fetchTotals(m) {
+    if (fetching.has(m.id)) return;
+    fetching.add(m.id);
+    totalsStore.update((all) => {
+      all[m.id] = { history: [], ...all[m.id], fetchingSince: Date.now() };
+    });
+    let result;
+    try {
+      result = await requestTotals(m);
+    } catch (err) {
+      result = { error: err.message };
+    } finally {
+      fetching.delete(m.id);
+    }
+    totalsStore.update((all) => {
+      const e = { history: [], ...all[m.id], fetchingSince: null, lastAttemptAt: Date.now() };
+      if (result.snapshot) {
+        e.latest = result.snapshot;
+        e.lastError = null;
+        e.history = [...e.history, historyPoint(result.snapshot)].slice(-TOTALS_HISTORY);
+      } else {
+        e.lastError = result.error;
+      }
+      all[m.id] = e;
+    });
+  }
+
+  const totalsDue = (m, e, now = Date.now()) => {
+    if (!hasTotals(m)) return false;
+    if (e?.fetchingSince && now - e.fetchingSince < TOTALS_TIMEOUT_MS + MIN) return false;
+    if (!e?.lastAttemptAt) return true;
+    const every = (m.totalsEvery || 24) * HOUR;
+    // After a failure, try again within the hour rather than waiting a whole day.
+    return now - e.lastAttemptAt >= (e.lastError ? Math.min(every, HOUR) : every);
+  };
+
+  // Demo: back-fill a month of daily snapshots so trends have something to show.
+  function demoBackfill(list) {
+    totalsStore.update((all) => {
+      for (const m of list.filter((x) => isDemoPlatform(x.demo) && !all[x.id]?.history?.length)) {
+        const history = [];
+        for (let d = 30; d >= 1; d--) {
+          const at = Date.now() - d * 24 * HOUR;
+          const snap = readTotals(200, demoTotals(m.demo, at), new Date(at).toISOString()).snapshot;
+          if (snap) history.push(historyPoint(snap));
+        }
+        all[m.id] = { ...all[m.id], history, lastAttemptAt: null, lastError: null, fetchingSince: null };
+      }
+    });
+  }
+
+  let totalsBusy = false;
+  async function runTotals() {
+    if (totalsBusy || !isRunner()) return;
+    totalsBusy = true;
+    try {
+      const list = sync();
+      if (mock) demoBackfill(list);
+      // One site at a time: each request can keep a club's database busy for minutes.
+      for (const m of list) {
+        if (totalsDue(m, totalsStore.get()[m.id])) await fetchTotals(m);
+      }
+    } finally {
+      totalsBusy = false;
+    }
+  }
+
   const runChecks = () => (isRunner() ? checkAll(sync()) : null);
   const runAi = () => (isRunner() ? aiAll(sync()) : null);
   const guarded = (fn) => () => Promise.resolve(fn()).catch((err) => console.warn(`[monitoring] ${err.message}`));
@@ -233,13 +356,25 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   guarded(runAi)();
   const t1 = setInterval(guarded(runChecks), CHECK_EVERY);
   const t2 = setInterval(guarded(runAi), AI_EVERY);
+  const t3 = setInterval(guarded(runTotals), TOTALS_TICK);
+  guarded(runTotals)();
   t1.unref?.();
   t2.unref?.();
+  t3.unref?.();
 
   /** Monitor definitions without secrets (for Settings). */
   const publicConfig = (m) => ({
     id: m.id, name: m.name, url: m.url || '', appInsightsAppId: m.appInsightsAppId || '', hasApiKey: !!m.apiKey || !!(mock && m.demo && m.appInsightsAppId),
     link: m.link || null, latencyWarnMs: m.latencyWarnMs || 2000,
+    hasTotalsKey: !!m.totalsKey || !!(mock && isDemoPlatform(m.demo)), totalsEvery: m.totalsEvery || 24, totalsSeason: m.totalsSeason || 'current',
+  });
+
+  const totalsHead = (m, e) => ({
+    id: m.id, name: m.name, url: m.url, enabled: hasTotals(m), every: m.totalsEvery || 24, season: m.totalsSeason || 'current',
+    lastAttemptAt: e.lastAttemptAt ? new Date(e.lastAttemptAt).toISOString() : null,
+    lastError: e.lastError || null,
+    fetching: !!(e.fetchingSince && Date.now() - e.fetchingSince < TOTALS_TIMEOUT_MS + MIN),
+    nextAt: hasTotals(m) && e.lastAttemptAt ? new Date(e.lastAttemptAt + (e.lastError ? Math.min((m.totalsEvery || 24) * HOUR, HOUR) : (m.totalsEvery || 24) * HOUR)).toISOString() : null,
   });
 
   return {
@@ -268,17 +403,34 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         let apiKey = old?.apiKey || null;
         if (typeof raw.apiKey === 'string' && raw.apiKey.trim()) apiKey = encrypt(getKey(), raw.apiKey.trim());
         if (raw.apiKey === null || raw.apiKey === '') apiKey = null;
+        let totalsKey = old?.totalsKey || null;
+        if (typeof raw.totalsKey === 'string' && raw.totalsKey.trim()) totalsKey = encrypt(getKey(), raw.totalsKey.trim());
+        if (raw.totalsKey === null || raw.totalsKey === '') totalsKey = null;
+        if (totalsKey && !url) throw Object.assign(new Error(`"${name}": platform totals need the site's URL`), { status: 400 });
+        const totalsEvery = TOTALS_EVERY_HOURS.includes(Number(raw.totalsEvery)) ? Number(raw.totalsEvery) : 24;
+        const totalsSeason = TOTALS_SEASONS.includes(raw.totalsSeason) ? raw.totalsSeason : 'current';
         const link = raw.link && ['release', 'pipeline'].includes(raw.link.type) && raw.link.projectId && raw.link.definitionId
           ? { type: raw.link.type, projectId: String(raw.link.projectId), definitionId: Number(raw.link.definitionId), ...(raw.link.type === 'release' ? { stage: String(raw.link.stage || '') } : {}) }
           : null;
         next.push({
-          id: old?.id || crypto.randomUUID(), name, url, appInsightsAppId: appId, apiKey, link,
+          id: old?.id || crypto.randomUUID(), name, url, appInsightsAppId: appId, apiKey, link, totalsKey, totalsEvery, totalsSeason,
           latencyWarnMs: Math.min(30_000, Math.max(100, Number(raw.latencyWarnMs) || 2000)),
           ...(old?.demo ? { demo: old.demo } : {}),
         });
       }
+      // A new or changed key, URL or season fetches again soon; removed monitors drop their totals.
+      const changed = new Set(next.filter((n) => {
+        const o = monitors.find((m) => m.id === n.id);
+        return !o || o.totalsKey !== n.totalsKey || o.url !== n.url || (o.totalsSeason || 'current') !== n.totalsSeason;
+      }).map((n) => n.id));
       monitors = next;
       persist();
+      totalsStore.update((all) => {
+        for (const id of Object.keys(all)) {
+          if (!monitors.some((m) => m.id === id)) delete all[id];
+          else if (changed.has(id)) all[id] = { ...all[id], lastAttemptAt: null, lastError: null };
+        }
+      });
       // New monitors get their first check now, from whichever process saved them.
       const fresh = monitors.filter((m) => !history.get()[m.id]);
       if (fresh.length) await Promise.all([checkAll(fresh), aiAll(fresh)]).catch(() => {});
@@ -303,6 +455,48 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         }
       }
       return out;
+    },
+
+    /** Platform totals for every site that has them: the latest figures and the previous fetch, for deltas. */
+    totals() {
+      const all = totalsStore.get();
+      return sync().filter((m) => hasTotals(m) || all[m.id]?.latest).map((m) => {
+        const e = all[m.id] || {};
+        const latest = e.latest || null;
+        const seasonId = latest ? (latest.season.scope === 'all' ? 'all' : latest.season.id) : null;
+        const sameSeason = (e.history || []).filter((p) => p.seasonId === seasonId);
+        return {
+          ...totalsHead(m, e),
+          latest: latest && { ...latest, totals: latest.totals.map(({ months, ...rest }) => rest) },
+          previous: sameSeason.length > 1 ? sameSeason.at(-2) : null,
+        };
+      });
+    },
+
+    /** One site's totals: the latest figures with months, and their history this season. */
+    totalsFor(id) {
+      const m = sync().find((x) => x.id === id);
+      const e = totalsStore.get()[id];
+      if (!m) throw Object.assign(new Error('No such monitor.'), { status: 404 });
+      const latest = e?.latest || null;
+      const seasonId = latest ? (latest.season.scope === 'all' ? 'all' : latest.season.id) : null;
+      return { ...totalsHead(m, e || {}), latest, history: (e?.history || []).filter((p) => p.seasonId === seasonId) };
+    },
+
+    /** Fetch one site's totals now, in the background (it can take minutes). */
+    fetchTotalsNow(id) {
+      const m = sync().find((x) => x.id === id);
+      if (!m) throw Object.assign(new Error('No such monitor.'), { status: 404 });
+      if (!hasTotals(m)) throw Object.assign(new Error('Add the site\'s totals key first.'), { status: 400 });
+      const e = totalsStore.get()[id];
+      if (fetching.has(id) || (e?.fetchingSince && Date.now() - e.fetchingSince < TOTALS_TIMEOUT_MS + MIN)) {
+        throw Object.assign(new Error('The totals are already being fetched.'), { status: 409 });
+      }
+      if (e?.lastAttemptAt && Date.now() - e.lastAttemptAt < 10 * MIN) {
+        throw Object.assign(new Error('The totals were fetched less than 10 minutes ago. Each fetch keeps the club database busy, so wait a little.'), { status: 429 });
+      }
+      fetchTotals(m).catch((err) => console.warn(`[monitoring] totals: ${err.message}`));
+      return { started: true };
     },
 
     /** Current status of every monitor (no secrets). */
@@ -330,6 +524,8 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
             .map((c) => ({ at: c.at, ok: c.ok, ms: c.ms })),
           ai: s.ai,
           aiError: s.aiError,
+          platform: s.platform || null,
+          totalsError: hasTotals(m) ? totalsStore.get()[m.id]?.lastError || null : null,
         };
       });
     },

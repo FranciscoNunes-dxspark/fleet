@@ -802,3 +802,28 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .claude-folders-row label { display: flex; gap: 6px; align-items: baseline; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .claude-folders-error { grid-column: 2 / -1; }
 @media (max-width: 640px) { .claude-folders-row { grid-template-columns: 1fr auto; } .claude-folders-row label { grid-column: 1 / -1; } .claude-folders-error { grid-column: 1 / -1; } }
+
+/* -------------------------------------------------------- platform totals */
+.toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 0 0 12px; }
+.totals-view { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.totals-view .input { min-width: 220px; }
+.nowrap { white-space: nowrap; }
+.callout-bad { background: var(--bad-soft); }
+.callout-warn { background: var(--warn-soft); }
+.callout + .callout, .totals-when + .callout { margin-top: 10px; }
+.totals-when { margin: -6px 0 14px; }
+.totals-table th.num { white-space: normal; min-width: 92px; vertical-align: bottom; }
+.totals-site { font-weight: 600; color: var(--ink); }
+.totals-table td .chip { margin-top: 4px; }
+.totals-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+.totals-area { margin-top: 16px; }
+.totals-area-table { border: 0; }
+.totals-area-table td { vertical-align: middle; }
+.spark { display: block; color: var(--accent); overflow: visible; }
+.spark-hit { fill: transparent; }
+.spark-hit:hover { fill: var(--accent-soft); }
+.spark-end { fill: var(--accent); }
+.month-bars { display: block; overflow: visible; }
+.month-bars rect { fill: var(--accent); opacity: 0.85; }
+.month-bars rect:hover { opacity: 1; }
+.month-bars text { font-size: 9px; fill: var(--muted); }

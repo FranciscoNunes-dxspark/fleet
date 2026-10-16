@@ -107,6 +107,10 @@ export function apiRouter() {
     res.json(saved);
   });
   r.post('/production/test', need('monitors.manage'), async (req, res) => res.json(await req.ctx.service.monitors().test(req.body || {})));
+  // Platform totals (platform/v1 /totals): everyone reads, admins fetch on demand.
+  r.get('/production/totals', (req, res) => res.json(req.ctx.service.monitors().totals()));
+  r.get('/production/totals/:id', (req, res) => res.json(req.ctx.service.monitors().totalsFor(req.params.id)));
+  r.post('/production/totals/:id/fetch', need('monitors.manage'), (req, res) => res.status(202).json(req.ctx.service.monitors().fetchTotalsNow(req.params.id)));
   r.get('/releases', async (req, res) => res.json(await req.ctx.service.releases()));
   r.post('/releases/create', need('releases.run'), async (req, res) => {
     const { projectId, definitionId, description } = req.body || {};

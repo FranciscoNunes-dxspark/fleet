@@ -62,6 +62,12 @@ function MonitorCard({ m }) {
         <div>
           <h2>{m.name}</h2>
           {m.url && <a className="small muted" href={m.url} target="_blank" rel="noreferrer noopener">{m.url}</a>}
+          {m.platform && (
+            <div className="small muted">
+              {[m.platform.product, m.platform.site, m.platform.version && t('version {v}', { v: m.platform.version })].filter(Boolean).join(' · ')}
+              {m.hasTotalsKey && <> · <Link to={`/totals/${m.id}`}>{t('Platform totals')}</Link></>}
+            </div>
+          )}
         </div>
         <Chip tone={s.tone}>{t(s.label)}</Chip>
       </header>

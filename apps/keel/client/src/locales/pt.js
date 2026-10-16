@@ -6,8 +6,9 @@ import settings from './pt/settings.js';
 import code from './pt/code.js';
 import work from './pt/work.js';
 import server from './pt/server.js';
+import totals from './pt/totals.js';
 
-export default { ...server, ...shell, ...settings, ...code, ...work };
+export default { ...server, ...shell, ...settings, ...code, ...work, ...totals };
 
 // Text the server sends: its templates are the only ones tx() matches against.
 export { server as serverText };

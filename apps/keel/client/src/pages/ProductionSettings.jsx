@@ -4,7 +4,8 @@ import { useApi, useApp } from '../context.js';
 import { Loading } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 
-const blank = () => ({ key: Math.random(), id: null, name: '', url: '', appInsightsAppId: '', apiKey: undefined, hasApiKey: false, link: null, latencyWarnMs: 2000 });
+const blank = () => ({ key: Math.random(), id: null, name: '', url: '', appInsightsAppId: '', apiKey: undefined, hasApiKey: false, link: null, latencyWarnMs: 2000, totalsKey: undefined, hasTotalsKey: false, totalsEvery: 24, totalsSeason: 'current' });
+const EVERY = [1, 6, 12, 24];
 
 /**
  * Settings → Production monitors. API keys are typed here and sent once; the
@@ -20,7 +21,7 @@ export default function ProductionSettings() {
 
   useEffect(() => {
     api('/production/monitors')
-      .then((list) => setRows(list.map((m) => ({ ...m, key: m.id, apiKey: undefined }))))
+      .then((list) => setRows(list.map((m) => ({ ...m, key: m.id, apiKey: undefined, totalsKey: undefined }))))
       .catch(() => setRows([]));
   }, []);
 
@@ -58,9 +59,9 @@ export default function ProductionSettings() {
     try {
       const saved = await api('/production/monitors', {
         method: 'PUT',
-        body: { monitors: rows.map(({ id, name, url, appInsightsAppId, apiKey, link, latencyWarnMs }) => ({ id, name, url, appInsightsAppId, apiKey, link, latencyWarnMs })) },
+        body: { monitors: rows.map(({ id, name, url, appInsightsAppId, apiKey, link, latencyWarnMs, totalsKey, totalsEvery, totalsSeason }) => ({ id, name, url, appInsightsAppId, apiKey, link, latencyWarnMs, totalsKey, totalsEvery, totalsSeason })) },
       });
-      setRows(saved.map((m) => ({ ...m, key: m.id, apiKey: undefined })));
+      setRows(saved.map((m) => ({ ...m, key: m.id, apiKey: undefined, totalsKey: undefined })));
       toast(t('Production monitors saved'));
       refresh();
     } catch (e) {
@@ -87,6 +88,7 @@ export default function ProductionSettings() {
         {t('Keel checks each URL every minute. With an Application Insights App ID and API key (Application Insights → API Access → Create API key, "Read telemetry"), it also tracks failure rates, exceptions and slow requests. Keys are stored encrypted on the server and never shown again.')}
         {authMode === 'login' && ` ${t('Monitors are shared by everyone who uses this Keel server.')}`}
       </p>
+      <p className="muted small">{t("ISM sites (WebShopSite, ShopSites, MarketSite, CartSites): use the site's /health address, for example https://shopeusite.azurewebsites.net/health. Keel reads its health report, and with the site's totals key it also fetches the Platform totals. ShopSites sites have no totals yet.")}</p>
 
       <div className="monitor-edit-list">
         {rows.map((r) => {
@@ -124,6 +126,30 @@ export default function ProductionSettings() {
                   </select>
                 </label>
                 <label>{t('Slow above (ms)')}<input className="input" type="number" min={100} max={30000} value={r.latencyWarnMs} onChange={(e) => set(r.key, { latencyWarnMs: Number(e.target.value) })} /></label>
+                <label>{t('Platform totals key')} <span className="muted small">{t('(optional)')}</span>
+                  <input
+                    className="input mono"
+                    type="password"
+                    autoComplete="off"
+                    value={r.totalsKey || ''}
+                    onChange={(e) => set(r.key, { totalsKey: e.target.value })}
+                    placeholder={r.hasTotalsKey ? t('Saved. Type a new key to replace it') : t("The site's X-Totals-Key")}
+                    disabled={r.totalsKey === null}
+                  />
+                  {r.hasTotalsKey && r.totalsKey !== null && <button type="button" className="link-btn small" onClick={() => set(r.key, { totalsKey: null })}>{t('Remove saved key')}</button>}
+                  {r.totalsKey === null && <span className="small text-warn">{t('The saved key will be removed when you save.')} <button type="button" className="link-btn" onClick={() => set(r.key, { totalsKey: undefined })}>{t('Undo')}</button></span>}
+                </label>
+                <label>{t('Fetch totals')}
+                  <select className="input" value={r.totalsEvery} onChange={(e) => set(r.key, { totalsEvery: Number(e.target.value) })} disabled={!r.hasTotalsKey && !r.totalsKey}>
+                    {EVERY.map((h) => <option key={h} value={h}>{t(h === 1 ? 'Every hour' : 'Every {n} hours', { n: h })}</option>)}
+                  </select>
+                </label>
+                <label>{t('Totals for')}
+                  <select className="input" value={r.totalsSeason} onChange={(e) => set(r.key, { totalsSeason: e.target.value })} disabled={!r.hasTotalsKey && !r.totalsKey}>
+                    <option value="current">{t('The current season')}</option>
+                    <option value="all">{t('All seasons together')}</option>
+                  </select>
+                </label>
               </div>
               <div className="monitor-edit-actions">
                 <button type="button" className="btn btn-small" onClick={() => test(r)} disabled={result?.running || (!r.url && !r.appInsightsAppId)}>{result?.running ? t('Testing…') : t('Test')}</button>
