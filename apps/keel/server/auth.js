@@ -24,6 +24,7 @@ import { createService } from './service.js';
 import { createSettingsStore, userSettingsFile } from './settings.js';
 import { createWatcher } from './watcher.js';
 import { ROLE_LABELS, can, createAccounts } from './accounts.js';
+import { sharedJson } from './jsonfile.js';
 
 const DAY = 86_400_000;
 const MAX_SESSION_MS = 30 * DAY;
@@ -80,44 +81,40 @@ export function createAuth({ monitoring = null } = {}) {
 
   // First run: no admin yet. The setup code proves you can read the server log.
   // A generated code is kept in data/ so it stays the same across restarts
-  // (dev reloads, host restarts) until the first admin exists.
+  // and is the same in every server process, until the first admin exists.
   const setupCodeFile = path.join(config.dataDir, `setup-code${suffix}.txt`);
-  const setupCode = process.env.ADMIN_SETUP_CODE || (() => {
-    if (!accounts.needsSetup()) return crypto.randomBytes(16).toString('hex');
-    try {
-      const saved = fs.readFileSync(setupCodeFile, 'utf8').trim();
-      if (/^[0-9a-f]{12}$/.test(saved)) return saved;
-    } catch {
-      // none yet
-    }
-    const code = crypto.randomBytes(6).toString('hex');
+  const setupCode = () => {
+    if (process.env.ADMIN_SETUP_CODE) return process.env.ADMIN_SETUP_CODE;
+    const read = () => {
+      try {
+        const saved = fs.readFileSync(setupCodeFile, 'utf8').trim();
+        return /^[0-9a-f]{12}$/.test(saved) ? saved : null;
+      } catch {
+        return null;
+      }
+    };
+    const saved = read();
+    if (saved) return saved;
     fs.mkdirSync(config.dataDir, { recursive: true });
-    fs.writeFileSync(setupCodeFile, code, { mode: 0o600 });
-    return code;
-  })();
+    try {
+      // 'wx' fails if another process created it first; then use theirs.
+      fs.writeFileSync(setupCodeFile, crypto.randomBytes(6).toString('hex'), { mode: 0o600, flag: 'wx' });
+    } catch {
+      // created by another process
+    }
+    return read();
+  };
   const announceSetup = () => {
     if (accounts.needsSetup()) {
-      console.log(`\n  Keel has no admin yet. Open it in a browser and use this setup code:\n\n      ${setupCode}\n`);
+      console.log(`\n  Keel has no admin yet. Open it in a browser and use this setup code:\n\n      ${setupCode()}\n`);
     }
   };
 
-  // sessionHash -> { userId, createdAt, expiresAt }. Old-style sessions (from
-  // token-only sign-in) carry no account and are dropped.
-  let sessions = {};
-  try {
-    sessions = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
-    for (const [h, s] of Object.entries(sessions)) if (s.pat || !accounts.raw(s.userId)) delete sessions[h];
-  } catch {
-    sessions = {};
-  }
-  let saveTimer = null;
-  const persist = () => {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      fs.mkdirSync(config.dataDir, { recursive: true });
-      fs.writeFileSync(sessionsFile, JSON.stringify(sessions, null, 1), { mode: 0o600 });
-    }, 250);
-  };
+  // sessionHash -> { userId, createdAt, expiresAt }, shared with any other
+  // server process. Old-style sessions (from token-only sign-in) carry no
+  // account and are dropped.
+  const sessionStore = sharedJson(sessionsFile, () => ({}));
+  endSessions((s) => s.pat || !accounts.raw(s.userId));
 
   function dropContext(userId) {
     const ctx = contexts.get(userId);
@@ -143,21 +140,23 @@ export function createAuth({ monitoring = null } = {}) {
   function startSession(req, res, user) {
     const sid = crypto.randomBytes(32).toString('base64url');
     const now = Date.now();
-    sessions[hashId(sid)] = { userId: user.id, createdAt: now, expiresAt: now + sessionDays * DAY };
-    persist();
+    sessionStore.update((all) => {
+      all[hashId(sid)] = { userId: user.id, createdAt: now, expiresAt: now + sessionDays * DAY };
+    });
     const secure = req.secure;
     res.cookie(cookieName(secure), sid, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge: sessionDays * DAY });
   }
 
   function endSessions(predicate) {
+    const all = sessionStore.get();
     let changed = false;
-    for (const [h, s] of Object.entries(sessions)) {
+    for (const [h, s] of Object.entries(all)) {
       if (predicate(s, h)) {
-        delete sessions[h];
+        delete all[h];
         changed = true;
       }
     }
-    if (changed) persist();
+    if (changed) sessionStore.save(all);
   }
 
   function clearCookies(res) {
@@ -178,7 +177,7 @@ export function createAuth({ monitoring = null } = {}) {
     const sid = readCookie(req, cookieName(true)) || readCookie(req, cookieName(false));
     if (!sid) return null;
     const hash = hashId(sid);
-    const s = sessions[hash];
+    const s = sessionStore.get()[hash];
     const now = Date.now();
     if (!s) return null;
     const user = accounts.raw(s.userId);
@@ -189,7 +188,7 @@ export function createAuth({ monitoring = null } = {}) {
     const next = Math.min(now + sessionDays * DAY, s.createdAt + MAX_SESSION_MS);
     if (next - s.expiresAt > 60 * 60_000) {
       s.expiresAt = next;
-      persist();
+      sessionStore.save();
     }
     accounts.touch(user.id);
     return { hash, user };
@@ -237,7 +236,7 @@ export function createAuth({ monitoring = null } = {}) {
     if (throttle(req, res)) return;
     if (!accounts.needsSetup()) throw Object.assign(new Error('Keel is already set up. Sign in instead.'), { status: 409 });
     const code = String(req.body?.code || '').trim();
-    if (!code || !crypto.timingSafeEqual(Buffer.from(tokenPad(code)), Buffer.from(tokenPad(setupCode)))) {
+    if (!code || !crypto.timingSafeEqual(Buffer.from(tokenPad(code)), Buffer.from(tokenPad(setupCode() || '')))) {
       failed(req);
       throw Object.assign(new Error('That setup code is wrong. It is printed in the server log when Keel starts.'), { status: 403 });
     }

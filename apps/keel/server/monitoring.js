@@ -6,11 +6,11 @@
 // In demo mode the data is simulated, so nothing is fetched.
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
-import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { config } from './config.js';
 import { decrypt, encrypt, getKey } from './secrets.js';
+import { sharedJson } from './jsonfile.js';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -158,18 +158,15 @@ function demoAi(m) {
 export function createMonitoring({ dataDir = config.dataDir, mock = config.mock } = {}) {
   const file = path.join(dataDir, mock ? 'monitors.mock.json' : 'monitors.json');
   const state = new Map(); // id -> { checks: [], ai, aiError, aiAt }
+  // Shared with any other server process: reread when another one saved.
+  const store = sharedJson(file, () => ({ monitors: mock ? demoMonitors() : [] }));
   let monitors = [];
-
-  try {
-    monitors = JSON.parse(fs.readFileSync(file, 'utf8')).monitors || [];
-  } catch {
-    monitors = mock ? demoMonitors() : [];
-  }
-
-  const persist = () => {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ monitors }, null, 2), { mode: 0o600 });
+  const sync = () => {
+    monitors = store.get().monitors || [];
+    return monitors;
   };
+  sync();
+  const persist = () => store.save({ monitors });
   const keyOf = (m) => (m.apiKey ? decrypt(getKey(), m.apiKey) : null);
   const st = (id) => {
     if (!state.has(id)) state.set(id, { checks: [], ai: null, aiError: null });
@@ -185,7 +182,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   }
 
   async function runChecks() {
-    await Promise.all(monitors.filter((m) => m.url).map(async (m) => {
+    await Promise.all(sync().filter((m) => m.url).map(async (m) => {
       const r = mock && m.demo ? demoCheck(m) : await httpCheck(m);
       const s = st(m.id);
       s.checks.push(r);
@@ -194,7 +191,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   }
 
   async function runAi() {
-    await Promise.all(monitors.filter((m) => m.appInsightsAppId && (m.apiKey || (mock && m.demo))).map(async (m) => {
+    await Promise.all(sync().filter((m) => m.appInsightsAppId && (m.apiKey || (mock && m.demo))).map(async (m) => {
       const s = st(m.id);
       try {
         s.ai = mock && m.demo ? demoAi(m) : await aiSnapshot(m.appInsightsAppId, keyOf(m));
@@ -219,7 +216,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   });
 
   return {
-    list: () => monitors.map(publicConfig),
+    list: () => sync().map(publicConfig),
 
     /**
      * Replace the monitor list. apiKey: a string sets a new key, null/'' clears
@@ -227,6 +224,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
      */
     async save(list) {
       if (!Array.isArray(list) || list.length > 50) throw Object.assign(new Error('Send a list of up to 50 monitors'), { status: 400 });
+      sync();
       const next = [];
       for (const raw of list) {
         const name = String(raw.name || '').trim().slice(0, 80);
@@ -265,7 +263,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
       const out = {};
       if (url) out.http = mock ? demoCheck({ demo: 'healthy' }) : await httpCheck({ url: (await assertPublicUrl(url)).href });
       if (appInsightsAppId) {
-        const key = apiKey?.trim() || keyOf(monitors.find((m) => m.id === id) || {}) || null;
+        const key = apiKey?.trim() || keyOf(sync().find((m) => m.id === id) || {}) || null;
         if (mock) out.ai = { ok: true, total: 1800 };
         else if (!key) out.ai = { ok: false, error: 'Enter the API key to test Application Insights' };
         else {
@@ -282,7 +280,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
 
     /** Current status of every monitor (no secrets). */
     status() {
-      return monitors.map((m) => {
+      return sync().map((m) => {
         const s = st(m.id);
         const checks = s.checks;
         const last = checks.at(-1) || null;

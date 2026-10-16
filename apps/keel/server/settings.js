@@ -40,9 +40,14 @@ export const userSettingsFile = (userId) => path.join(config.dataDir, 'users', `
 /** One person's settings, cached in memory and saved as JSON. */
 export function createSettingsStore(file) {
   let current = null;
+  let stamp = null;
+  // Another server process may have saved since: reread when the file changed.
+  const stampOf = () => fs.stat(file).then((s) => `${s.mtimeMs}:${s.size}`, () => 'missing');
 
   async function load() {
-    if (current) return current;
+    const now = await stampOf();
+    if (current && now === stamp) return current;
+    stamp = now;
     try {
       current = merge(DEFAULT_SETTINGS, JSON.parse(await fs.readFile(file, 'utf8')));
     } catch (err) {
@@ -64,6 +69,7 @@ export function createSettingsStore(file) {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify(next, null, 2));
     current = next;
+    stamp = await stampOf();
     return current;
   }
 

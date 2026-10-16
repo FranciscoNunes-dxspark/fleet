@@ -5,11 +5,11 @@
 // developer (all Azure DevOps actions), pm (work items, boards, approvals,
 // running pipelines and releases; no pull request actions).
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { config } from './config.js';
 import { decrypt, encrypt, getKey } from './secrets.js';
+import { sharedJson } from './jsonfile.js';
 
 const scrypt = promisify(crypto.scrypt);
 const DAY = 86_400_000;
@@ -49,16 +49,15 @@ export async function verifyPassword(pw, stored) {
 }
 
 export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
-  let db = { users: [] };
-  try {
-    db = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    db = { users: [] };
-  }
-  const save = () => {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(db, null, 1), { mode: 0o600 });
+  // Shared with any other server process: reread when changed, saved at once.
+  const store = sharedJson(file, () => ({ users: [] }));
+  let db = store.get();
+  const fresh = () => {
+    db = store.get();
+    if (!Array.isArray(db.users)) db.users = [];
+    return db;
   };
+  const save = () => store.save(db);
   const byId = (id) => db.users.find((u) => u.id === id) || null;
   const byEmail = (email) => db.users.find((u) => u.email === normEmail(email)) || null;
   const activeAdmins = () => db.users.filter((u) => u.role === 'admin' && !u.disabled && u.passwordHash);
@@ -93,22 +92,26 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
     return u;
   }
 
+  // Async methods hash or verify first, then reread and change the account,
+  // so a write by another process in the meantime isn't lost.
   return {
-    needsSetup: () => !activeAdmins().length,
-    list: () => db.users.map(publicUser).sort((a, b) => a.name.localeCompare(b.name)),
-    get: (id) => publicUser(byId(id)),
-    raw: byId,
+    needsSetup: () => (fresh(), !activeAdmins().length),
+    list: () => (fresh(), db.users.map(publicUser).sort((a, b) => a.name.localeCompare(b.name))),
+    get: (id) => (fresh(), publicUser(byId(id))),
+    raw: (id) => (fresh(), byId(id)),
     publicUser,
 
     /** The very first admin (needs the setup code; see auth.js). */
     async createFirstAdmin({ email, name, password }) {
-      if (activeAdmins().length) throw err('Keel is already set up.', 409);
+      if ((fresh(), activeAdmins().length)) throw err('Keel is already set up.', 409);
       checkPassword(password);
       const e = normEmail(email);
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw err('Enter a valid email address.');
+      const passwordHash = await hashPassword(password);
+      if ((fresh(), activeAdmins().length)) throw err('Keel is already set up.', 409);
       const u = {
         id: crypto.randomUUID(), email: e, name: String(name || '').trim() || e, role: 'admin',
-        passwordHash: await hashPassword(password), pat: null, createdAt: new Date().toISOString(),
+        passwordHash, pat: null, createdAt: new Date().toISOString(),
       };
       db.users = db.users.filter((x) => x.email !== e);
       db.users.push(u);
@@ -117,10 +120,11 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
     },
 
     async signIn(email, password) {
-      const u = byEmail(email);
+      const found = (fresh(), byEmail(email));
       // Same work and same answer whether or not the account exists.
-      const ok = await verifyPassword(password, u?.passwordHash || 'scrypt$AAAAAAAAAAAAAAAAAAAAAA==$' + 'A'.repeat(86));
-      if (!u || !ok || !u.passwordHash) throw err('Email or password is incorrect.', 401);
+      const ok = await verifyPassword(password, found?.passwordHash || 'scrypt$AAAAAAAAAAAAAAAAAAAAAA==$' + 'A'.repeat(86));
+      const u = (fresh(), byEmail(email));
+      if (!u || !ok || !u.passwordHash || u.passwordHash !== found?.passwordHash) throw err('Email or password is incorrect.', 401);
       if (u.disabled) throw err('This account has been disabled. Ask your admin.', 403);
       u.lastSeenAt = new Date().toISOString();
       save();
@@ -128,6 +132,7 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
     },
 
     invite({ email, name, role }) {
+      fresh();
       const e = normEmail(email);
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw err('Enter a valid email address.');
       if (!ROLES.includes(role)) throw err('Pick a role: Admin, Developer or PM.');
@@ -144,20 +149,23 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
 
     /** A password-reset link (also re-sends an expired invite). */
     resetLink(id) {
-      const u = byId(id);
+      const u = (fresh(), byId(id));
       if (!u) throw err('No such user.', 404);
       return issueLink(u, u.passwordHash ? 'reset' : 'invite');
     },
 
     peekLink(token) {
-      const u = fromLink(token);
+      const u = (fresh(), fromLink(token));
       return { email: u.email, name: u.name, role: u.role, purpose: u.invite.purpose };
     },
 
     async acceptLink(token, { name, password }) {
-      const u = fromLink(token);
+      fresh();
+      fromLink(token);
       checkPassword(password);
-      u.passwordHash = await hashPassword(password);
+      const passwordHash = await hashPassword(password);
+      const u = (fresh(), fromLink(token));
+      u.passwordHash = passwordHash;
       if (name && String(name).trim()) u.name = String(name).trim().slice(0, 80);
       u.invite = null;
       u.lastSeenAt = new Date().toISOString();
@@ -166,27 +174,31 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
     },
 
     async changePassword(id, current, next) {
-      const u = byId(id);
-      if (!u || !(await verifyPassword(current, u.passwordHash))) throw err('Your current password is incorrect.', 403);
+      const found = (fresh(), byId(id));
+      if (!found || !(await verifyPassword(current, found.passwordHash))) throw err('Your current password is incorrect.', 403);
       checkPassword(next);
-      u.passwordHash = await hashPassword(next);
+      const passwordHash = await hashPassword(next);
+      const u = (fresh(), byId(id));
+      if (!u) throw err('No such user.', 404);
+      u.passwordHash = passwordHash;
       save();
     },
 
     setToken(id, pat, identity) {
-      const u = byId(id);
+      const u = (fresh(), byId(id));
+      if (!u) throw err('No such user.', 404);
       u.pat = pat ? encrypt(getKey(), pat) : null;
       u.azdoId = identity?.id || null;
       u.azdoName = identity?.displayName || null;
       save();
     },
     tokenOf: (id) => {
-      const u = byId(id);
+      const u = (fresh(), byId(id));
       return u?.pat ? decrypt(getKey(), u.pat) : null;
     },
 
     update(id, { role, disabled, name }, actorId) {
-      const u = byId(id);
+      const u = (fresh(), byId(id));
       if (!u) throw err('No such user.', 404);
       const losesAdmin = (role && role !== 'admin') || disabled === true;
       if (u.role === 'admin' && losesAdmin && activeAdmins().filter((a) => a.id !== id).length === 0) {
@@ -204,7 +216,7 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
     },
 
     remove(id, actorId) {
-      const u = byId(id);
+      const u = (fresh(), byId(id));
       if (!u) throw err('No such user.', 404);
       if (id === actorId) throw err("You can't remove your own account.", 409);
       if (u.role === 'admin' && activeAdmins().filter((a) => a.id !== id).length === 0) throw err('Keel needs at least one active admin.', 409);
@@ -213,7 +225,7 @@ export function createAccounts(file = path.join(config.dataDir, 'users.json')) {
     },
 
     touch(id) {
-      const u = byId(id);
+      const u = (fresh(), byId(id));
       if (u && (!u.lastSeenAt || Date.now() - Date.parse(u.lastSeenAt) > 10 * 60_000)) {
         u.lastSeenAt = new Date().toISOString();
         save();
