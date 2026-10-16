@@ -13,6 +13,45 @@ import { Chip, Empty, ErrorBox, Loading, PageHeader } from '../ui.jsx';
 const num = (n) => (n == null ? '—' : n.toLocaleString(locale()));
 const signed = (d) => `${d > 0 ? '+' : d < 0 ? '−' : '±'}${Math.abs(d).toLocaleString(locale())}`;
 const monthName = (m) => new Date(Date.UTC(2026, m - 1, 1)).toLocaleString(locale(), { month: 'short', timeZone: 'UTC' });
+const monthLong = (m) => {
+  const name = new Date(Date.UTC(2026, m - 1, 1)).toLocaleString(locale(), { month: 'long', timeZone: 'UTC' });
+  return name.charAt(0).toUpperCase() + name.slice(1);
+};
+
+/**
+ * The months these figures have counts for, in season order (a season running
+ * August-June gives 8…12, 1…6): the most common first month starts the season.
+ */
+function seasonMonths(figures) {
+  const firsts = new Map();
+  const all = new Set();
+  for (const x of figures) {
+    if (!x.months?.length) continue;
+    firsts.set(x.months[0].month, (firsts.get(x.months[0].month) || 0) + 1);
+    for (const m of x.months) all.add(m.month);
+  }
+  const start = [...firsts].sort((a, b) => b[1] - a[1])[0]?.[0] || 1;
+  return [...all].sort((a, b) => ((a - start + 12) % 12) - ((b - start + 12) % 12));
+}
+
+/** A figure's value: the season total, or one month's count (null when it isn't counted by month). */
+const valueFor = (x, month) => {
+  if (!x) return null;
+  if (!month) return x.total;
+  return x.months ? x.months.find((m) => m.month === month)?.count ?? 0 : null;
+};
+
+/** The month picker: the whole season, or one month. */
+function MonthPicker({ months, value, onChange }) {
+  return (
+    <label className="totals-view">{t('Period')}
+      <select className="input" value={value || ''} onChange={(e) => onChange(Number(e.target.value) || 0)}>
+        <option value="">{t('Whole season')}</option>
+        {months.map((m) => <option key={m} value={m}>{monthLong(m)}</option>)}
+      </select>
+    </label>
+  );
+}
 
 /** Status of a site's totals: fetching, error, degraded, ok, or not fetched yet. */
 function SiteState({ s }) {
@@ -36,6 +75,7 @@ function TotalsOverview() {
   const navigate = useNavigate();
   // "key" = the key figures; otherwise an area's figures.
   const [view, setView] = useSticky('totals.view', 'key');
+  const [pickedMonth, setMonth] = useSticky('totals.month', 0);
 
   const types = useMemo(() => {
     const seen = new Map();
@@ -50,6 +90,9 @@ function TotalsOverview() {
     ? KEY_FIGURES.filter((k) => types.some((x) => x.type === k))
     : types.filter((x) => x.areas.includes(view)).map((x) => x.type);
   const seasons = [...new Set(data.map((s) => s.latest?.season?.name).filter(Boolean))];
+  const months = seasonMonths(data.flatMap((s) => s.latest?.totals || []));
+  const month = months.includes(pickedMonth) ? pickedMonth : 0;
+  const before = month ? months[months.indexOf(month) - 1] || null : null;
 
   return (
     <div className="page">
@@ -81,7 +124,11 @@ function TotalsOverview() {
                 </optgroup>
               </select>
             </label>
-            <span className="muted small">{t('Change since the previous fetch.')}</span>
+            {months.length > 0 && <MonthPicker months={months} value={month} onChange={setMonth} />}
+            <span className="muted small">
+              {!month ? t('Change since the previous fetch.') : before ? t('Counts in {month}; change against {before}.', { month: monthLong(month), before: monthLong(before) }) : t('Counts in {month}.', { month: monthLong(month) })}
+              {month > 0 && ` ${t('Figures counted only for the whole season show —.')}`}
+            </span>
           </div>
 
           <div className="table-wrap">
@@ -95,7 +142,7 @@ function TotalsOverview() {
               </thead>
               <tbody>
                 {data.map((s) => {
-                  const values = Object.fromEntries((s.latest?.totals || []).map((x) => [x.type, x.total]));
+                  const byType = Object.fromEntries((s.latest?.totals || []).map((x) => [x.type, x]));
                   return (
                     <tr key={s.id} className="clickable" onClick={() => navigate(`/totals/${s.id}`)}>
                       <td>
@@ -104,13 +151,15 @@ function TotalsOverview() {
                         <SiteState s={s} />
                       </td>
                       {columns.map((c) => {
-                        const v = values[c];
-                        const prev = s.previous?.values?.[c];
+                        const v = valueFor(byType[c], month);
+                        // Whole season: against the previous fetch. One month: against the month before.
+                        const prev = month ? (before ? valueFor(byType[c], before) : null) : s.previous?.values?.[c];
                         const d = v != null && prev != null ? v - prev : null;
+                        const title = month ? (before ? t('against {month}', { month: monthLong(before) }) : undefined) : s.previous ? t('since {date}', { date: dateTime(s.previous.at) }) : undefined;
                         return (
                           <td key={c} className="num">
-                            <div className="totals-value">{num(v)}</div>
-                            {d != null && d !== 0 && <div className={`small ${d > 0 ? 'text-ok' : 'text-warn'}`} title={t('since {date}', { date: dateTime(s.previous.at) })}>{signed(d)}</div>}
+                            <div className="totals-value" title={v == null && month && byType[c] ? t('Season total only') : undefined}>{num(v)}</div>
+                            {d != null && d !== 0 && <div className={`small ${d > 0 ? 'text-ok' : 'text-warn'}`} title={title}>{signed(d)}</div>}
                           </td>
                         );
                       })}
@@ -134,10 +183,14 @@ function SiteTotals({ id }) {
   const { data, error, reload } = useApi(`/production/totals/${encodeURIComponent(id)}`);
   const { can, toast, refresh } = useApp();
   const [starting, setStarting] = useState(false);
+  const [pickedMonth, setMonth] = useSticky('totals.month', 0);
 
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
   const latest = data.latest;
   const previous = data.history.length > 1 ? data.history.at(-2) : null;
+  const months = seasonMonths(latest?.totals || []);
+  const month = months.includes(pickedMonth) ? pickedMonth : 0;
+  const before = month ? months[months.indexOf(month) - 1] || null : null;
 
   const fetchNow = async () => {
     setStarting(true);
@@ -181,6 +234,12 @@ function SiteTotals({ id }) {
         {' '}{data.enabled ? t('Fetched {every}.', { every: everyLabel(data.every) }) : t('No totals key: not fetched any more.')}
         {data.nextAt && !data.fetching && <> {t('Next: {when}.', { when: dateTime(data.nextAt) })}</>}
       </p>
+      {months.length > 0 && (
+        <div className="toolbar">
+          <MonthPicker months={months} value={month} onChange={setMonth} />
+          {month > 0 && <span className="muted small">{before ? t('Counts in {month}; change against {before}.', { month: monthLong(month), before: monthLong(before) }) : t('Counts in {month}.', { month: monthLong(month) })}</span>}
+        </div>
+      )}
 
       {data.lastError && <div className="callout callout-bad">{t('The last fetch failed: {error}', { error: tx(data.lastError) })}</div>}
       {latest?.status === 'degraded' && (
@@ -200,7 +259,7 @@ function SiteTotals({ id }) {
               <thead>
                 <tr>
                   <th>{t('Figure')}</th>
-                  <th className="num">{t('Total')}</th>
+                  <th className="num">{month ? monthLong(month) : t('Total')}</th>
                   <th className="num">{t('Change')}</th>
                   <th>{t('Trend this season')}</th>
                   <th>{t('By month')}</th>
@@ -208,15 +267,18 @@ function SiteTotals({ id }) {
               </thead>
               <tbody>
                 {g.list.map((x) => {
-                  const prev = previous?.values?.[x.type];
-                  const d = prev != null ? x.total - prev : null;
+                  // Whole season: against the previous fetch. One month: against the month before.
+                  const v = valueFor(x, month);
+                  const prev = month ? (before ? valueFor(x, before) : null) : previous?.values?.[x.type];
+                  const d = v != null && prev != null ? v - prev : null;
+                  const title = month ? (before ? t('against {month}', { month: monthLong(before) }) : undefined) : previous ? t('since {date}', { date: dateTime(previous.at) }) : undefined;
                   return (
                     <tr key={x.type}>
                       <td>{figureLabel(x.type)}</td>
-                      <td className="num totals-value">{num(x.total)}</td>
-                      <td className={`num small ${d > 0 ? 'text-ok' : d < 0 ? 'text-warn' : 'muted'}`} title={previous ? t('since {date}', { date: dateTime(previous.at) }) : undefined}>{d == null ? '—' : signed(d)}</td>
+                      <td className="num totals-value" title={v == null ? t('Season total only') : undefined}>{num(v)}</td>
+                      <td className={`num small ${d > 0 ? 'text-ok' : d < 0 ? 'text-warn' : 'muted'}`} title={title}>{d == null ? '—' : signed(d)}</td>
                       <td><Spark points={data.history.map((p) => ({ at: p.at, value: p.values[x.type] }))} label={figureLabel(x.type)} /></td>
-                      <td>{x.months ? <MonthBars months={x.months} label={figureLabel(x.type)} /> : <span className="muted small">{t('Season total only')}</span>}</td>
+                      <td>{x.months ? <MonthBars months={x.months} label={figureLabel(x.type)} selected={month} /> : <span className="muted small">{t('Season total only')}</span>}</td>
                     </tr>
                   );
                 })}
@@ -254,7 +316,7 @@ function Spark({ points, label }) {
 }
 
 /** Counts per calendar month, in the order the site reports them (a season can run Aug–Jun). */
-function MonthBars({ months, label }) {
+function MonthBars({ months, label, selected = 0 }) {
   if (!months.length) return <span className="muted small">—</span>;
   const max = Math.max(1, ...months.map((m) => m.count));
   const W = 12;
@@ -265,7 +327,7 @@ function MonthBars({ months, label }) {
         const h = Math.max(1, (m.count / max) * H);
         return (
           <g key={m.month}>
-            <rect x={i * (W + 2)} y={H - h} width={W} height={h} rx="2"><title>{`${monthName(m.month)}: ${num(m.count)}`}</title></rect>
+            <rect x={i * (W + 2)} y={H - h} width={W} height={h} rx="2" className={selected && m.month !== selected ? 'dim' : undefined}><title>{`${monthName(m.month)}: ${num(m.count)}`}</title></rect>
             <text x={i * (W + 2) + W / 2} y={H + 10} textAnchor="middle">{monthName(m.month).slice(0, 1).toUpperCase()}</text>
           </g>
         );

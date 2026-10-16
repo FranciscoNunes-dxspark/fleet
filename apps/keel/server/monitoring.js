@@ -467,7 +467,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         const sameSeason = (e.history || []).filter((p) => p.seasonId === seasonId);
         return {
           ...totalsHead(m, e),
-          latest: latest && { ...latest, totals: latest.totals.map(({ months, ...rest }) => rest) },
+          latest, // with each figure's months, for the month picker (a few KB per site)
           previous: sameSeason.length > 1 ? sameSeason.at(-2) : null,
         };
       });

@@ -282,4 +282,16 @@ export default {
   'Deploy': 'Fazer deploy',
   'Redeploy': 'Voltar a fazer deploy',
   'Cancel': 'Cancelar',
+  // Settings: how sections save, compact monitors
+  'Choose what the console watches and when it should raise a flag.': 'Escolha o que a consola acompanha e quando deve assinalar algo.',
+  'Unsaved changes': 'Alterações por guardar',
+  'Unsaved changes to projects, flags or auto-complete.': 'Há alterações por guardar nos projetos, alertas ou conclusão automática.',
+  'Discard': 'Descartar',
+  'Saved automatically': 'Guardado automaticamente',
+  'Saved automatically to your account, so it follows you to other devices.': 'Guardado automaticamente na sua conta, por isso acompanha-o noutros dispositivos.',
+  'Totals {every}': 'Totais {every}',
+  'Deploys linked': 'Deploys ligados',
+  'Close': 'Fechar',
+  'Edit': 'Editar',
+  'Check': 'Verificação',
 };

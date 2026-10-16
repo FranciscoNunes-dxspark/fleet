@@ -70,6 +70,8 @@ export default function Settings() {
   const hiddenCount = data.projects.length - shownProjects.length - (needle ? pinned.filter((p) => !p.name.toLowerCase().includes(needle)).length : 0);
 
   const setThreshold =(k, v) => setDraft((d) => ({ ...d, thresholds: { ...d.thresholds, [k]: Number(v) } }));
+  // Projects, flags and auto-complete save together, from the bar at the bottom.
+  const dirty = JSON.stringify(draft) !== JSON.stringify(data.settings);
 
   const save = async () => {
     setSaving(true);
@@ -87,9 +89,7 @@ export default function Settings() {
 
   return (
     <div className="page settings">
-      <PageHeader title={t('Settings')} sub={t('Choose what the console watches and when it should raise a flag. Saved on this machine in data/.')}>
-        <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>{saving ? t('Saving…') : t('Save settings')}</button>
-      </PageHeader>
+      <PageHeader title={t('Settings')} sub={t('Choose what the console watches and when it should raise a flag.')} />
 
       <section className="panel">
         <h2 className="section-title">{t('Projects and repositories')}</h2>
@@ -175,18 +175,6 @@ export default function Settings() {
         </div>
       </section>
 
-      <OrgSettings />
-
-      <AccountSettings />
-
-      <ProductionSettings />
-
-      <AppearanceSettings />
-
-      <NotificationSettings />
-
-      <ClaudeSettings />
-
       <section className="panel">
         <h2 className="section-title">{t('Auto-complete defaults')}</h2>
         <p className="muted small">{t('Used when you set auto-complete on a pull request from the console.')}</p>
@@ -200,6 +188,29 @@ export default function Settings() {
           <label className="check"><input type="checkbox" checked={draft.autoComplete.transitionWorkItems} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, transitionWorkItems: e.target.checked } }))} /> {t('Complete linked work items')}</label>
         </div>
       </section>
+
+
+      <OrgSettings />
+
+      <AccountSettings />
+
+      <ProductionSettings />
+
+      <AppearanceSettings />
+
+      <NotificationSettings />
+
+      <ClaudeSettings />
+
+      {/* Last on the page, so it stays pinned to the bottom wherever you are. */}
+      {dirty && (
+        <div className="save-bar" role="region" aria-label={t('Unsaved changes')}>
+          <span>{t('Unsaved changes to projects, flags or auto-complete.')}</span>
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => setDraft(structuredClone(data.settings))} disabled={saving}>{t('Discard')}</button>
+          <button type="button" className="btn btn-small btn-primary" onClick={save} disabled={saving}>{saving ? t('Saving…') : t('Save settings')}</button>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -235,7 +246,7 @@ function NotificationSettings() {
 
   return (
     <section className="panel">
-      <h2 className="section-title">{t('Notifications')}</h2>
+      <h2 className="section-title">{t('Notifications')} <span className="saved-note">{t('Saved automatically')}</span></h2>
       <p className="muted small">{t('Saved in this browser right away. The console needs to be open (a background tab is fine) to notify you.')}</p>
       <div className="notify-grid">
         <label className="check"><input type="checkbox" checked={prefs.inApp} onChange={(e) => update({ inApp: e.target.checked })} /> {t('Show a pop-up in the console')}</label>
@@ -275,7 +286,7 @@ function AppearanceSettings() {
   return (
     <section className="panel">
       <h2 className="section-title">{t('Appearance')}</h2>
-      <p className="muted small">{t('Applied right away and saved to your account, so it follows you to other devices.')}</p>
+      <p className="muted small">{t('Saved automatically to your account, so it follows you to other devices.')}</p>
       <div className="appearance">
         <div className="appearance-row">
           <span className="appearance-label">{t('Language')}</span>
@@ -408,9 +419,10 @@ function ClaudeSettings() {
   const [draft, setDraft] = useState(loadFolders);
   if (!repos?.length) return null;
 
+  // Saved when you leave the field (or press Enter), if it changed and is a valid path.
   const save = (repo) => {
     const value = (draft[repo.id] || '').trim();
-    if (folderProblem(value)) return;
+    if (folderProblem(value) || value === (folders[repo.id] || '')) return;
     saveFolder(repo.id, value);
     setFolders(loadFolders());
     toast(t(value ? 'Folder saved for {name}' : 'Folder cleared for {name}', { name: repo.name }));
@@ -418,19 +430,17 @@ function ClaudeSettings() {
 
   return (
     <section className="panel">
-      <h2 className="section-title">{t('Start in Claude')}</h2>
+      <h2 className="section-title">{t('Start in Claude')} <span className="saved-note">{t('Saved automatically')}</span></h2>
       <p className="muted small">{t('Where each repository is cloned on this computer. The Claude Code and Claude Desktop buttons on a work item open Claude there. Saved in this browser only, because folders differ between computers.')}</p>
       <div className="claude-folders">
         {repos.map((r) => {
           const value = draft[r.id] ?? '';
           const problem = folderProblem(value);
-          const changed = value.trim() !== (folders[r.id] || '');
           return (
             <form key={r.id} className="claude-folders-row" onSubmit={(e) => { e.preventDefault(); save(r); }}>
               <label htmlFor={`folder-${r.id}`}><span>{r.name}</span> <span className="muted small">{r.projectName}</span></label>
               <input id={`folder-${r.id}`} className="input mono" value={value} placeholder="C:\src\repo-name" spellCheck={false} autoComplete="off" aria-invalid={!!problem}
-                onChange={(e) => setDraft({ ...draft, [r.id]: e.target.value })} />
-              <button type="submit" className="btn btn-small" disabled={!changed || !!problem}>{t('Save')}</button>
+                onChange={(e) => setDraft({ ...draft, [r.id]: e.target.value })} onBlur={() => save(r)} />
               {problem && <span className="small text-bad claude-folders-error">{t(problem)}</span>}
             </form>
           );

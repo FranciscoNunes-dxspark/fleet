@@ -2,6 +2,12 @@
 export default {
   // Totals.jsx
   'Platform totals': 'Totais da plataforma',
+  'Period': 'Período',
+  'Whole season': 'Época toda',
+  'Counts in {month}; change against {before}.': 'Contagens de {month}; variação face a {before}.',
+  'Counts in {month}.': 'Contagens de {month}.',
+  'Figures counted only for the whole season show —.': 'Os números contados só para a época toda aparecem com —.',
+  'against {month}': 'face a {month}',
   'Fetching…': 'A obter…',
   'Incomplete': 'Incompleto',
   'Not fetched yet': 'Ainda não obtido',
