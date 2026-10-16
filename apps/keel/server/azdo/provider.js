@@ -1,6 +1,7 @@
 // Real Azure DevOps provider. Every method returns the same normalized shapes
 // as server/mock/provider.js, so the domain logic and UI never see raw REST
 // payloads and the two providers stay interchangeable.
+import { marked } from 'marked';
 import { config } from '../config.js';
 import { createClient, seg } from './client.js';
 import { stageSummary } from '../domain/releases.js';
@@ -32,11 +33,25 @@ const ident = (i) => (i ? {
   isContainer: !!i.isContainer,
 } : null);
 
+/**
+ * A long-text field as { text, html }: Markdown fields (and plain values with no
+ * tags) come back as the Markdown itself; HTML fields keep their HTML for display
+ * plus a plain-text copy for prompts.
+ */
+function richField(raw, field) {
+  const value = raw.fields?.[field] || '';
+  const formats = Object.fromEntries(Object.entries(raw.multilineFieldsFormat || {}).map(([k, v]) => [k.toLowerCase(), String(v).toLowerCase()]));
+  const format = formats[field.toLowerCase()];
+  const markdown = format === 'markdown' || (!format && !/<[a-z][^>]*>/i.test(value));
+  return markdown ? { text: value, html: null } : { text: htmlToText(value), html: value };
+}
+
+// Markdown as HTML, for organizations that don't accept Markdown fields or comments yet.
+const markdownToHtml = (md) => marked.parse(String(md), { gfm: true, breaks: true, async: false });
+// Azure DevOps rejects the Markdown format with a 400 where it isn't available.
+const markdownRefused = (err) => err?.status === 400 && /markdown|multilineFieldsFormat|format/i.test(`${err.message} ${JSON.stringify(err.detail || '')}`);
+
 const stripRef = (ref) => (ref || '').replace(/^refs\/heads\//, '');
-// Plain text typed in Keel, as the HTML Azure DevOps stores in rich-text fields.
-const textToHtml = (text) => String(text)
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-  .split(/\r?\n\r?\n/).map((p) => `<div>${p.replace(/\r?\n/g, '<br>')}</div>`).join('');
 
 /** Azure DevOps change types are comma lists like "edit, rename"; collapse to one kind. */
 export function changeKind(changeType = '') {
@@ -64,7 +79,6 @@ export function htmlToText(html) {
     .trim();
 }
 
-const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 /** Classic Release Management lives on its own host in Azure DevOps Services. */
 export function releaseHost(orgUrl) {
@@ -636,11 +650,15 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
           .then((d) => d.comments || []).catch(() => []),
       ]);
       const parentIds = new Set(relIds('System.LinkTypes.Hierarchy-Reverse'));
+      const description = richField(raw, raw.fields['System.Description'] ? 'System.Description' : 'Microsoft.VSTS.TCM.ReproSteps');
+      const acceptance = richField(raw, 'Microsoft.VSTS.Common.AcceptanceCriteria');
       const pick = ({ id: i, title, type, state, stateCategory, assignedTo, webUrl }) => ({ id: i, title, type, state, stateCategory, assignedTo, webUrl });
       return {
         ...item,
-        description: htmlToText(raw.fields['System.Description'] || raw.fields['Microsoft.VSTS.TCM.ReproSteps'] || ''),
-        acceptanceCriteria: htmlToText(raw.fields['Microsoft.VSTS.Common.AcceptanceCriteria'] || ''),
+        description: description.text,
+        descriptionHtml: description.html,
+        acceptanceCriteria: acceptance.text,
+        acceptanceCriteriaHtml: acceptance.html,
         parent: related.filter((w) => parentIds.has(w.id)).map(pick)[0] || null,
         children: related.filter((w) => !parentIds.has(w.id)).map(pick),
         pullRequests: rels
@@ -649,12 +667,15 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
             const [projectId, repoId, prId] = decodeURIComponent(r.url.split('PullRequestId/')[1] || '').split('/');
             return { projectId, repoId, id: Number(prId) };
           }),
-        comments: comments.map((c) => ({ author: ident(c.createdBy), text: htmlToText(c.text), createdAt: c.createdDate })),
+        comments: comments.map((c) => {
+          const markdown = String(c.format || '').toLowerCase() === 'markdown';
+          return { author: ident(c.createdBy), text: markdown ? c.text || '' : htmlToText(c.text), html: markdown ? null : c.text || '', createdAt: c.createdDate };
+        }),
       };
     },
 
     /**
-     * Creates a work item. fields: { title, description (plain text), assignedTo, areaPath,
+     * Creates a work item. fields: { title, description (Markdown), assignedTo, areaPath,
      * iterationPath, priority, tags }; parentId links it under an existing item.
      */
     async createWorkItem(projectName, type, fields, parentId) {
@@ -666,7 +687,10 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       set('System.Title', fields.title);
       // Bugs show "Repro Steps" in Azure DevOps rather than the description.
       const descriptionField = type === 'Bug' && known.has('Microsoft.VSTS.TCM.ReproSteps') ? 'Microsoft.VSTS.TCM.ReproSteps' : 'System.Description';
-      set(descriptionField, fields.description ? textToHtml(fields.description) : null);
+      set(descriptionField, fields.description || null);
+      // The description is Markdown; Azure DevOps keeps it as Markdown when told so.
+      const markdownOp = fields.description ? { op: 'add', path: `/multilineFieldsFormat/${descriptionField}`, value: 'Markdown' } : null;
+      if (markdownOp) ops.push(markdownOp);
       set('System.AssignedTo', fields.assignedTo);
       set('System.AreaPath', fields.areaPath);
       set('System.IterationPath', fields.iterationPath);
@@ -675,7 +699,11 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       if (parentId) {
         ops.push({ op: 'add', path: '/relations/-', value: { rel: 'System.LinkTypes.Hierarchy-Reverse', url: `${org}/_apis/wit/workItems/${Number(parentId)}` } });
       }
-      const w = await api(`${seg(projectName)}/_apis/wit/workitems/${encodeURIComponent(type)}`, { method: 'POST', body: ops, contentType: 'application/json-patch+json' });
+      const create = (body) => api(`${seg(projectName)}/_apis/wit/workitems/${encodeURIComponent(type)}`, { method: 'POST', body, contentType: 'application/json-patch+json' });
+      const w = await create(ops).catch((err) => {
+        if (!markdownOp || !markdownRefused(err)) throw err;
+        return create(ops.filter((o) => o !== markdownOp).map((o) => (o.path === `/fields/${descriptionField}` ? { ...o, value: markdownToHtml(o.value) } : o)));
+      });
       return { id: w.id, webUrl: w._links?.html?.href || `${org}/${seg(projectName)}/_workitems/edit/${w.id}` };
     },
 
@@ -693,11 +721,12 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       await api(`_apis/wit/workitems/${id}`, { method: 'PATCH', body: ops, contentType: 'application/json-patch+json' });
     },
 
+    /** Posts a Markdown comment (as HTML where the organization doesn't take Markdown). */
     async commentWorkItem(projectName, id, text) {
-      await api(`${seg(projectName)}/_apis/wit/workItems/${id}/comments`, {
-        method: 'POST',
-        apiVersion: '7.1-preview.4',
-        body: { text: escapeHtml(text).replace(/\n/g, '<br>') },
+      const post = (body, query) => api(`${seg(projectName)}/_apis/wit/workItems/${id}/comments`, { method: 'POST', apiVersion: '7.1-preview.4', query, body });
+      await post({ text }, { format: 'markdown' }).catch((err) => {
+        if (!markdownRefused(err)) throw err;
+        return post({ text: markdownToHtml(text) });
       });
     },
 

@@ -278,6 +278,7 @@ export default {
   'Description view': 'Vista da descrição',
   'Write': 'Escrever',
   'Preview': 'Pré-visualizar',
+  'Markdown supported': 'Aceita Markdown',
   '_Nothing to preview._': '_Nada para pré-visualizar._',
   'Description (Markdown)': 'Descrição (Markdown)',
   '{count} / {max} characters · Markdown': '{count} / {max} caracteres · Markdown',

@@ -6,6 +6,7 @@ import { Avatar, Chip, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import ClaudeStart from './ClaudeStart.jsx';
+import { Markdown, MarkdownInput } from '../markdown.jsx';
 import { wiActionsPath, wiPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
 
@@ -133,13 +134,13 @@ export default function WorkItemDetail({ id, org }) {
       {w.description && (
         <section className="detail-section">
           <h3>{w.type === 'Bug' ? t('Description / repro steps') : t('Description')}</h3>
-          <div className="prose">{w.description}</div>
+          <Markdown text={w.description} html={w.descriptionHtml} people={people || []} />
         </section>
       )}
       {w.acceptanceCriteria && (
         <section className="detail-section">
           <h3>{t('Acceptance criteria')}</h3>
-          <div className="prose">{w.acceptanceCriteria}</div>
+          <Markdown text={w.acceptanceCriteria} html={w.acceptanceCriteriaHtml} people={people || []} />
         </section>
       )}
 
@@ -149,14 +150,14 @@ export default function WorkItemDetail({ id, org }) {
           {w.comments.map((c, i) => (
             <li key={i}>
               <div className="comment-head"><Avatar person={c.author} size={18} /> <strong>{c.author?.displayName}</strong> <span className="muted small">{dateTime(c.createdAt)}</span></div>
-              <div className="prose">{c.text}</div>
+              <Markdown text={c.text} html={c.html} people={people || []} />
             </li>
           ))}
           {!w.comments.length && <li className="muted small">{t('No comments yet.')}</li>}
         </ul>
         {editable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', text: comment }, t('Comment posted'))) setComment(''); }}>
-          <textarea className="input" rows={3} placeholder={t('Add a comment')} value={comment} onChange={(e) => setComment(e.target.value)} aria-label={t('Comment')} />
+          <MarkdownInput rows={3} placeholder={t('Add a comment')} value={comment} onChange={setComment} label={t('Comment')} people={people || []} />
           <button type="submit" className="btn btn-primary btn-small" disabled={!comment.trim() || busy}>{t('Post comment')}</button>
         </form>
         )}

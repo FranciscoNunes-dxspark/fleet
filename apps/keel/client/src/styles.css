@@ -366,6 +366,10 @@ tr.saving { opacity: 0.55; }
 .comments li { padding-bottom: 8px; border-bottom: 1px dashed var(--line); }
 .comment-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
 .comment-form { display: grid; gap: 8px; justify-items: start; margin-top: 12px; }
+.md-input { display: grid; gap: 6px; width: 100%; }
+.md-input-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.md-input .input { width: 100%; }
+.comment-form .md-preview { width: 100%; }
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 18px; margin: 16px 0 0; }
 .facts dt { font-size: 12px; color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }

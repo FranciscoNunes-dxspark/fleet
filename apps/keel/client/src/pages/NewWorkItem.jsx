@@ -4,6 +4,7 @@ import { useApi, useApp } from '../context.js';
 import { t } from '../i18n.js';
 import { useSticky } from '../sticky.js';
 import { ErrorBox, Loading } from '../ui.jsx';
+import { MarkdownInput } from '../markdown.jsx';
 
 /**
  * New work item (drawer). preset: { projectId, teamId, type, parentId, parentTitle, types }
@@ -102,9 +103,9 @@ export default function NewWorkItem({ preset = {} }) {
       <label className="field-wide">{t('Title')}
         <input className="input" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={255} required autoFocus placeholder={t('What needs to happen?')} />
       </label>
-      <label className="field-wide"><span>{form.type === 'Bug' ? t('Repro steps') : t('Description')} <span className="muted small">{t('(optional)')}</span></span>
-        <textarea className="input" rows={6} value={form.description} onChange={(e) => set({ description: e.target.value })} placeholder={form.type === 'Bug' ? t('Steps, what happened, what you expected') : ''} />
-      </label>
+      <div className="field-wide"><span>{form.type === 'Bug' ? t('Repro steps') : t('Description')} <span className="muted small">{t('(optional)')}</span></span>
+        <MarkdownInput rows={6} value={form.description} onChange={(v) => set({ description: v })} label={form.type === 'Bug' ? t('Repro steps') : t('Description')} people={people || []} placeholder={form.type === 'Bug' ? t('Steps, what happened, what you expected') : ''} />
+      </div>
 
       <div className="form-grid new-wi-grid">
         <label>{t('Assigned to')}

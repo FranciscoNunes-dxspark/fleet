@@ -138,7 +138,7 @@ function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, s
     closedAt: stateCategory === 'Completed' ? iso(stateChanged) : null,
     webUrl: `${ORG}/${p.name}/_workitems/edit/${id}`,
     _description: `${title}.\n\nAs a customer I want this to work reliably so that I can complete my task without contacting support.`,
-    _acceptance: '• Happy path covered by automated tests\n• Telemetry added\n• Docs updated',
+    _acceptance: '- Happy path covered by **automated tests**\n- Telemetry added\n- Docs updated',
     _comments: rand() < 0.5 ? [{ author: pick(DEVS), text: 'Picked this up, will update by EOD.', createdAt: iso(stateChanged + H) }] : [],
     _prs: [],
   };

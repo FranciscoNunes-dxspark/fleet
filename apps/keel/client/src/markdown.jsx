@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useApp } from './context.js';
+import { t } from './i18n.js';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -36,12 +37,35 @@ function resolveMentions(text, names) {
   return text.replace(/@<([0-9A-Za-z-]{2,64})>/g, (m, id) => `**@${names.get(id.toLowerCase()) || 'someone'}**`);
 }
 
-export function Markdown({ text, people = [] }) {
+/** Markdown text, or (html) a rich-text field Azure DevOps stores as HTML; both sanitized. */
+export function Markdown({ text, html, people = [] }) {
   const { meta } = useApp();
-  const html = useMemo(() => {
+  const safe = useMemo(() => {
     orgPrefix = meta.mock ? '' : `${meta.orgUrl}/`;
     const names = new Map(people.filter(Boolean).map((p) => [String(p.id).toLowerCase(), p.displayName]));
-    return DOMPurify.sanitize(marked.parse(resolveMentions(text || '', names)), { FORBID_TAGS: ['style', 'form', 'button', 'textarea', 'select'], FORBID_ATTR: ['style'] });
-  }, [text, people, meta.orgUrl, meta.mock]);
-  return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+    const source = html ? String(html) : marked.parse(resolveMentions(text || '', names));
+    return DOMPurify.sanitize(source, { FORBID_TAGS: ['style', 'form', 'button', 'textarea', 'select'], FORBID_ATTR: ['style'] });
+  }, [text, html, people, meta.orgUrl, meta.mock]);
+  return <div className="markdown" dangerouslySetInnerHTML={{ __html: safe }} />;
+}
+
+/** A Markdown textarea with Write / Preview tabs. Extra props go to the textarea. */
+export function MarkdownInput({ value, onChange, label, rows = 4, people, ...rest }) {
+  const [preview, setPreview] = useState(false);
+  // Back to writing once the text is posted or cleared.
+  useEffect(() => { if (!value) setPreview(false); }, [value]);
+  return (
+    <div className="md-input">
+      <div className="md-input-bar">
+        <span className="segmented segmented-compact" role="tablist" aria-label={label}>
+          <button type="button" role="tab" aria-selected={!preview} className={!preview ? 'on' : ''} onClick={() => setPreview(false)}>{t('Write')}</button>
+          <button type="button" role="tab" aria-selected={preview} className={preview ? 'on' : ''} onClick={() => setPreview(true)}>{t('Preview')}</button>
+        </span>
+        <a className="small muted" href="https://learn.microsoft.com/azure/devops/project/wiki/markdown-guidance" target="_blank" rel="noreferrer noopener">{t('Markdown supported')}</a>
+      </div>
+      {preview
+        ? <div className="md-preview" style={{ minHeight: `${rows * 1.5}em` }}><Markdown text={value || t('_Nothing to preview._')} people={people} /></div>
+        : <textarea className="input" rows={rows} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} {...rest} />}
+    </div>
+  );
 }
