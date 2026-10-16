@@ -741,7 +741,14 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .swatch-dot { width: 14px; height: 14px; border-radius: 50%; }
 
 /* ------------------------------------------------------------ production */
-.monitor-list { display: grid; gap: 14px; }
+/* Two columns on a desktop, three on a wide screen; each card stacks its charts. */
+.monitor-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); align-items: start; }
+.monitor-list .monitor { min-width: 0; }
+.monitor-list .monitor-charts { grid-template-columns: 1fr; }
+.monitor-list .monitor-lists { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.monitor-list .monitor-facts { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+.monitor-head > div { min-width: 0; }
+.monitor-head a { overflow-wrap: anywhere; }
 .monitor { border-left: 3px solid var(--line-strong); }
 .monitor-up { border-left-color: var(--ok); }
 .monitor-degraded { border-left-color: var(--warn); }
@@ -923,4 +930,49 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
   .monitor-line { grid-template-columns: minmax(0, 1fr) auto; }
   .monitor-line .chips { grid-column: 1 / -1; grid-row: 2; }
   .monitor-group label.wide { grid-column: auto; }
+}
+
+/* ------------------------------------------------------ collapsible menu */
+.brand { position: relative; }
+.brand-text { min-width: 0; }
+.sidebar-toggle {
+  order: 3; margin-left: auto; display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); cursor: pointer;
+}
+.sidebar-toggle:hover { background: var(--surface-2); color: var(--ink); }
+.shell { transition: grid-template-columns 0.15s ease-out; }
+@media (prefers-reduced-motion: reduce) { .shell { transition: none; } }
+@media (min-width: 861px) {
+  .shell-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
+  .shell-collapsed .sidebar { padding: 18px 8px; }
+  .shell-collapsed .brand { flex-direction: column; padding: 0; gap: 10px; }
+  .shell-collapsed .sidebar-toggle { order: 0; margin: 0; }
+  .shell-collapsed .brand-text,
+  .shell-collapsed .nav-text,
+  .shell-collapsed .nav-group-label,
+  .shell-collapsed .live-text,
+  .shell-collapsed .sidebar-foot .me { display: none; }
+  /* Groups are separated by a line instead of their names. */
+  .shell-collapsed .nav-groups { gap: 8px; }
+  .shell-collapsed .nav-group + .nav-group { border-top: 1px solid var(--line); padding-top: 8px; }
+  .shell-collapsed .nav-link { justify-content: center; padding: 8px; position: relative; }
+  .shell-collapsed .nav-label { gap: 0; }
+  .shell-collapsed .nav-count { position: absolute; top: 1px; right: 1px; min-width: 16px; padding: 0 4px; font-size: 10px; line-height: 16px; }
+  .shell-collapsed .refresh-btn, .shell-collapsed .signout-btn { justify-content: center; padding: 6px; gap: 0; }
+  .shell-collapsed .live { justify-content: center; padding: 0; }
+}
+@media (max-width: 860px) { .sidebar-toggle { display: none; } }
+
+/* Projects and repositories: one line per project, like the monitor list. */
+.project-list { gap: 0; border: 1px solid var(--line); border-radius: var(--radius); }
+.project-list > li { padding: 0; border: 0; border-radius: 0; }
+.project-list > li + li { border-top: 1px solid var(--line); }
+.project-list > li.tracked { box-shadow: inset 3px 0 var(--accent); }
+.project-list > li.open { background: var(--surface-2); }
+.project-line { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 7px 12px; min-height: 40px; }
+.project-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-list .project-config { margin: 0; padding: 4px 12px 12px 36px; }
+@media (max-width: 640px) {
+  .project-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .project-summary { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
 }

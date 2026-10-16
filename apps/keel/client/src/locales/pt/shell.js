@@ -193,4 +193,6 @@ export default {
   'Without a folder, Claude Code opens in your home folder and Claude Desktop asks you to pick one.': 'Sem pasta, o Claude Code abre na sua pasta pessoal e o Claude Desktop pede-lhe que escolha uma.',
   'Copy prompt': 'Copiar prompt',
   'Opens Claude with this item as the prompt. Nothing runs until you press Enter. If nothing opens: for the CLI, send one prompt in an interactive {cmd} session first; for Desktop, install Claude Desktop.': 'Abre o Claude com este item como prompt. Nada corre até premir Enter. Se nada abrir: para a CLI, envie primeiro um prompt numa sessão interativa do {cmd}; para o Desktop, instale o Claude Desktop.',
+  'Expand menu': 'Expandir menu',
+  'Collapse menu': 'Recolher menu',
 };

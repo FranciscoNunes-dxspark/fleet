@@ -38,6 +38,14 @@ export default function Settings() {
   const [options, setOptions] = useState({});
   const [saving, setSaving] = useState(false);
   const [projectQuery, setProjectQuery] = useState('');
+  // Projects whose teams and repos are open for editing (a project you just ticked opens).
+  const [openProjects, setOpenProjects] = useState(() => new Set());
+  const toggleProject = (id, force) => setOpenProjects((o) => {
+    const next = new Set(o);
+    if (force ?? !next.has(id)) next.add(id);
+    else next.delete(id);
+    return next;
+  });
 
   useEffect(() => {
     if (data && !draft) setDraft(structuredClone(data.settings));
@@ -68,6 +76,17 @@ export default function Settings() {
   const rest = data.projects.filter((p) => !pinned.includes(p) && (!needle || p.name.toLowerCase().includes(needle)));
   const shownProjects = [...pinned.filter((p) => !needle || p.name.toLowerCase().includes(needle)), ...rest.slice(0, needle ? 50 : 15)];
   const hiddenCount = data.projects.length - shownProjects.length - (needle ? pinned.filter((p) => !p.name.toLowerCase().includes(needle)).length : 0);
+
+  /** "1 team · all repos (4) · team areas only", from the draft and what Azure DevOps listed. */
+  const projectSummary = (cfg, opt) => {
+    const teams = teamsOf(cfg).length;
+    const parts = [teams ? t(teams === 1 ? '1 team' : '{n} teams', { n: teams }) : t('No team')];
+    const total = opt && opt !== 'loading' && !opt.error ? opt.repos.length : null;
+    if (Array.isArray(cfg.repos)) parts.push(total != null ? t('{n} of {total} repos', { n: cfg.repos.length, total }) : t(cfg.repos.length === 1 ? '1 repo' : '{n} repos', { n: cfg.repos.length }));
+    else parts.push(total != null ? t('All repos ({n})', { n: total }) : t('All repos'));
+    if (cfg.scopeToTeamArea && teams) parts.push(t('team areas only'));
+    return parts.join(' · ');
+  };
 
   const setThreshold =(k, v) => setDraft((d) => ({ ...d, thresholds: { ...d.thresholds, [k]: Number(v) } }));
   // Projects, flags and auto-complete save together, from the bar at the bottom.
@@ -103,10 +122,21 @@ export default function Settings() {
             const cfg = draft.projects[p.id] || {};
             const opt = options[p.id];
             return (
-              <li key={p.id} className={cfg.tracked ? 'tracked' : ''}>
-                <label className="check strong"><input type="checkbox" checked={!!cfg.tracked} onChange={(e) => setProject(p.id, { tracked: e.target.checked })} /> {projectLabel(p.name, p.org)}</label>
-                {p.description && <span className="muted small"> {p.description}</span>}
-                {cfg.tracked && (
+              <li key={p.id} className={`${cfg.tracked ? 'tracked' : ''}${cfg.tracked && openProjects.has(p.id) ? ' open' : ''}`}>
+                <div className="project-line">
+                  <label className="check strong">
+                    <input type="checkbox" checked={!!cfg.tracked} onChange={(e) => { setProject(p.id, { tracked: e.target.checked }); toggleProject(p.id, e.target.checked); }} /> {projectLabel(p.name, p.org)}
+                  </label>
+                  {cfg.tracked
+                    ? <span className="small muted project-summary">{projectSummary(cfg, opt)}</span>
+                    : p.description && <span className="small muted project-summary">{p.description}</span>}
+                  {cfg.tracked && (
+                    <button type="button" className="btn btn-small" aria-expanded={openProjects.has(p.id)} onClick={() => toggleProject(p.id)}>
+                      {openProjects.has(p.id) ? t('Close') : t('Edit')}
+                    </button>
+                  )}
+                </div>
+                {cfg.tracked && openProjects.has(p.id) && (
                   opt === 'loading' || !opt ? <Loading label={t('Loading teams and repos…')} /> : opt.error ? <p className="text-bad small">{opt.error}</p> : (
                     <div className="project-config">
                       <fieldset className="repo-pick">

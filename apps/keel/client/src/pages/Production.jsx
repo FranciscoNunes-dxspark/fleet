@@ -22,7 +22,7 @@ export default function Production() {
   const problems = monitors.filter((m) => m.state === 'down' || m.state === 'degraded').length;
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <PageHeader
         title={t('Production')}
         sub={monitors.length

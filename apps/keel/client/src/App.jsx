@@ -22,6 +22,7 @@ import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
 import Settings from './pages/Settings.jsx';
 import { Icon } from './icons.jsx';
+import { useSticky } from './sticky.js';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
@@ -270,6 +271,7 @@ function useStableHeight(ref, refreshKey) {
 }
 
 function Shell() {
+  const [collapsed, setCollapsed] = useSticky('sidebar.collapsed', false);
   const { meta, refresh, toast, refreshKey, authMode, signOut, can } = useApp();
   const mainRef = useRef(null);
   useStableHeight(mainRef, refreshKey);
@@ -318,12 +320,25 @@ function Shell() {
     ] },
   ];
 
+  // Collapsed: icons only, names on hover (desktop; phones keep the menu row).
+  const tip = (label) => (collapsed ? label : undefined);
+
   return (
-    <div className="shell">
+    <div className={`shell${collapsed ? ' shell-collapsed' : ''}`}>
       <nav className="sidebar" aria-label={t('Main')}>
         <div className="brand">
           <Logo />
-          <div>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? t('Expand menu') : t('Collapse menu')}
+            title={collapsed ? t('Expand menu') : t('Collapse menu')}
+          >
+            <Icon name={collapsed ? 'expand' : 'collapse'} />
+          </button>
+          <div className="brand-text">
             <div className="brand-name">Keel</div>
             <div className="brand-org truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>{meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\//, '')}</div>
           </div>
@@ -335,8 +350,8 @@ function Shell() {
               <ul className="nav" aria-labelledby={group.label ? `nav-group-${i}` : undefined}>
                 {group.items.map((n) => (
                   <li key={n.to}>
-                    <NavLink to={n.to} end={n.end} className="nav-link">
-                      <span className="nav-label"><Icon name={n.icon} />{n.label}</span>
+                    <NavLink to={n.to} end={n.end} className="nav-link" title={tip(n.label)} aria-label={collapsed ? n.label : undefined}>
+                      <span className="nav-label"><Icon name={n.icon} /><span className="nav-text">{n.label}</span></span>
                       {n.count > 0 && <span className={`nav-count nav-count-${n.tone}`} title={t(n.count === 1 ? '{n} needs attention' : '{n} need attention', { n: n.count })}>{n.count}</span>}
                     </NavLink>
                   </li>
@@ -346,12 +361,12 @@ function Shell() {
           ))}
         </div>
         <div className="sidebar-foot">
-          <NavLink to="/settings" className="nav-link"><span className="nav-label"><Icon name="settings" />{t('Settings')}</span></NavLink>
-          <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning}>
-            <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> {t('Refresh from Azure DevOps')}
+          <NavLink to="/settings" className="nav-link" title={tip(t('Settings'))} aria-label={collapsed ? t('Settings') : undefined}><span className="nav-label"><Icon name="settings" /><span className="nav-text">{t('Settings')}</span></span></NavLink>
+          <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning} title={tip(t('Refresh from Azure DevOps'))} aria-label={collapsed ? t('Refresh from Azure DevOps') : undefined}>
+            <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> <span className="nav-text">{t('Refresh from Azure DevOps')}</span>
           </button>
           <LiveStatus />
-          {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut}><Icon name="signOut" size={14} /> {t('Sign out')}</button>}
+          {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut} title={tip(t('Sign out'))} aria-label={collapsed ? t('Sign out') : undefined}><Icon name="signOut" size={14} /> <span className="nav-text">{t('Sign out')}</span></button>}
           <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
             {t('Signed in as {name}', { name: meta.account?.name || meta.me.displayName })}
             {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
@@ -419,5 +434,5 @@ function LiveStatus() {
     text = t("Can't reach Azure DevOps");
     title = tx(live.error);
   }
-  return <div className={`live live-${tone}`} title={title}><span className="live-dot" aria-hidden="true" />{text}</div>;
+  return <div className={`live live-${tone}`} title={`${text} · ${title}`}><span className="live-dot" aria-hidden="true" /><span className="live-text">{text}</span></div>;
 }

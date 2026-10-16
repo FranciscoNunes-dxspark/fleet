@@ -294,4 +294,12 @@ export default {
   'Close': 'Fechar',
   'Edit': 'Editar',
   'Check': 'Verificação',
+  // Project summaries in Settings
+  '1 team': '1 equipa',
+  '{n} teams': '{n} equipas',
+  'No team': 'Sem equipa',
+  '{n} of {total} repos': '{n} de {total} repositórios',
+  '1 repo': '1 repositório',
+  '{n} repos': '{n} repositórios',
+  'team areas only': 'só as áreas das equipas',
 };
