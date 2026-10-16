@@ -144,6 +144,7 @@ export default {
   'URLs checked every minute, Application Insights every 5 minutes': 'URLs verificados a cada minuto, Application Insights a cada 5 minutos',
   'Watch your production apps next to the deploys that change them.': 'Acompanhe as suas aplicações em produção lado a lado com os deploys que as alteram.',
   'Manage monitors': 'Gerir monitores',
+  'View the deploy': 'Ver o deploy',
   'No production monitors yet.': 'Ainda não há monitores de produção.',
   'Add one in {link}: a URL to check, and optionally an Application Insights App ID and API key for error rates. Link it to the release stage or pipeline that deploys it to see deploys on the charts.': 'Adicione um em {link}: um URL a verificar e, opcionalmente, um App ID e uma API key do Application Insights para as taxas de erro. Ligue-o ao stage de release ou ao pipeline que faz o deploy para ver os deploys nos gráficos.',
   'Settings → Production monitors': 'Definições → Monitores de produção',

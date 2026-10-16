@@ -14,7 +14,7 @@ import { buildAttention } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
-import { deployMarkers, evaluateMonitor } from './domain/production.js';
+import { deployMarkers, evaluateMonitor, runningDeploy } from './domain/production.js';
 
 const MIN = 60_000;
 
@@ -247,8 +247,10 @@ export function createService({
     if (!monitoring) return [];
     const [rels, pipes, builds] = await Promise.all([releases().catch(() => []), pipelines().catch(() => []), rawBuilds().catch(() => [])]);
     return monitoring.status().map((m) => {
-      const markers = deployMarkers(m, { releases: rels, pipelines: pipes, builds });
-      return { ...m, markers, ...evaluateMonitor(m, markers) };
+      const sources = { releases: rels, pipelines: pipes, builds };
+      const markers = deployMarkers(m, sources);
+      const deploy = runningDeploy(m, sources);
+      return { ...m, markers, deploy, ...evaluateMonitor(m, markers, Date.now(), deploy) };
     });
   }
 

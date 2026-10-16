@@ -377,11 +377,12 @@ function MineWidget() {
   );
 }
 
-const PROD_TONE = { up: 'ok', degraded: 'warn', down: 'bad', unknown: 'muted' };
+const PROD_TONE = { up: 'ok', degraded: 'warn', down: 'bad', deploying: 'info', unknown: 'muted' };
 const PROD_LABEL = {
   get up() { return t('Up'); },
   get degraded() { return t('Degraded'); },
   get down() { return t('Down'); },
+  get deploying() { return t('Deploying'); },
   get unknown() { return t('No data'); },
 };
 

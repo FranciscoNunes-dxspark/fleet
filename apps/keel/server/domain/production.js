@@ -31,6 +31,36 @@ export function deployMarkers(monitor, { releases = [], pipelines = [], builds =
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
 
+// A deploy running longer than this no longer hides an outage.
+export const DEPLOY_GRACE_MS = 60 * 60_000;
+
+/**
+ * The deploy running right now into the monitor's environment, if any: a
+ * release stage that is deploying (not waiting on an approval), or a run of
+ * the linked pipeline. Older than DEPLOY_GRACE_MS counts as not deploying.
+ */
+export function runningDeploy(monitor, { releases = [], pipelines = [], builds = [] }, now = Date.now()) {
+  const link = monitor.link;
+  if (!link) return null;
+  let found = [];
+  if (link.type === 'release') {
+    const def = releases.find((d) => d.projectId === link.projectId && d.id === link.definitionId);
+    found = (def?.releases || [])
+      .map((r) => ({ r, s: r.stages.find((x) => !link.stage || x.name === link.stage) }))
+      .filter(({ s }) => s?.deploying)
+      .map(({ r, s }) => ({ label: r.name, startedAt: s.startedAt || s.at, by: s.requestedFor?.displayName || null, webUrl: r.webUrl }));
+  } else {
+    const row = pipelines.find((p) => p.projectId === link.projectId && p.definition.id === link.definitionId);
+    found = builds
+      .filter((b) => b.projectId === link.projectId && b.definition.id === link.definitionId && b.status === 'inProgress'
+        && b.reason !== 'pullRequest' && (!row?.branch || b.sourceBranch === row.branch))
+      .map((b) => ({ label: b.buildNumber, startedAt: b.startedAt || b.queuedAt, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }));
+  }
+  return found
+    .filter((d) => d.startedAt && now - Date.parse(d.startedAt) < DEPLOY_GRACE_MS)
+    .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0] || null;
+}
+
 /** Failure rate over the Application Insights buckets in [from, to). */
 function failRate(series, from, to) {
   const inRange = series.filter((b) => {
@@ -43,10 +73,12 @@ function failRate(series, from, to) {
 }
 
 /**
- * Health verdict for one monitor: state (up/degraded/down/unknown) and the
- * issues behind it, each with a severity for the inbox.
+ * Health verdict for one monitor: state (up/degraded/down/deploying/unknown)
+ * and the issues behind it, each with a severity for the inbox. While a deploy
+ * is running (see runningDeploy) failed checks and errors are expected: the
+ * state is "deploying" and nothing alerts.
  */
-export function evaluateMonitor(m, markers = [], now = Date.now()) {
+export function evaluateMonitor(m, markers = [], now = Date.now(), running = null) {
   const issues = [];
   const last = m.last;
 
@@ -93,6 +125,17 @@ export function evaluateMonitor(m, markers = [], now = Date.now()) {
 
   if (m.aiError) issues.push({ code: 'ai-error', severity: 'low', text: m.aiError });
   if (m.totalsError) issues.push({ code: 'totals-error', severity: 'low', text: `Platform totals: ${m.totalsError}` });
+
+  if (running) {
+    const expected = new Set(['down', 'check-failed', 'degraded', 'slow', 'failures']);
+    return {
+      state: 'deploying',
+      issues: [
+        { code: 'deploying', severity: 'low', text: `Deploying ${running.label}, started ${ago(now - Date.parse(running.startedAt))} ago` },
+        ...issues.filter((i) => !expected.has(i.code)),
+      ],
+    };
+  }
 
   let state = 'unknown';
   if (issues.some((i) => i.code === 'down')) state = 'down';

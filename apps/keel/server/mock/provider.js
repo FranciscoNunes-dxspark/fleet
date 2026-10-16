@@ -674,7 +674,7 @@ export function createMockProvider() {
         stages: stageSummary(d.stageDefs, d.releases),
         releases: d.releases.slice(0, 10).map((r) => ({
           id: r.id, name: r.name, createdOn: r.createdOn, createdBy: r.createdBy, webUrl: r.webUrl,
-          stages: r.envs.map((e) => ({ id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: e.name, status: e.status, at: e.at, requestedFor: e.requestedFor })),
+          stages: r.envs.map((e) => ({ id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: e.name, status: e.status, at: e.at, requestedFor: e.requestedFor, deploying: e.status === 'inProgress' && !!e.deploying, startedAt: e.at })),
         })),
       })));
     },
@@ -710,6 +710,7 @@ export function createMockProvider() {
       const def = RELEASE_DEFS.find((d) => d.id === Number(definitionId));
       if (!def) throw notFound('Release pipeline');
       const r = addRelease(def, { daysAgo: 0, statuses: ['inProgress'], by: ME });
+      r.envs[0].deploying = true;
       finishLater(r.envs[0]);
       return delay({ id: r.id, name: r.name, webUrl: r.webUrl });
     },
@@ -718,7 +719,7 @@ export function createMockProvider() {
       const r = RELEASE_DEFS.flatMap((d) => d.releases).find((x) => x.id === Number(releaseId));
       const env = r?.envs.find((e) => e.id === Number(environmentId));
       if (!env) throw notFound('Release stage');
-      Object.assign(env, { status: 'inProgress', at: iso(Date.now()), requestedFor: ME, reason: 'manual' });
+      Object.assign(env, { status: 'inProgress', deploying: true, at: iso(Date.now()), requestedFor: ME, reason: 'manual' });
       finishLater(env);
       return delay();
     },

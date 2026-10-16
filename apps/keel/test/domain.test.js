@@ -316,6 +316,31 @@ test('deploy markers come from the linked release stage', async () => {
   assert.deepEqual(m.map((d) => d.label), ['R2']);
 });
 
+test('a running deploy shows as deploying instead of down, but not forever', async () => {
+  const { evaluateMonitor, runningDeploy } = await import('../server/domain/production.js');
+  const now = Date.now();
+  const stage = (over) => ({ name: 'Prod', status: 'inProgress', deploying: true, startedAt: new Date(now - 5 * 60_000).toISOString(), ...over });
+  const releases = (s) => [{ projectId: 'p', id: 7, releases: [{ name: 'R4', webUrl: 'u4', stages: [s] }] }];
+  const link = { type: 'release', projectId: 'p', definitionId: 7, stage: 'Prod' };
+
+  const deploy = runningDeploy({ link }, { releases: releases(stage()) }, now);
+  assert.equal(deploy.label, 'R4');
+  // Waiting on an approval isn't deploying, and an hour-old deploy no longer hides an outage.
+  assert.equal(runningDeploy({ link }, { releases: releases(stage({ deploying: false })) }, now), null);
+  assert.equal(runningDeploy({ link }, { releases: releases(stage({ startedAt: new Date(now - 61 * 60_000).toISOString() })) }, now), null);
+
+  const pipeline = { type: 'pipeline', projectId: 'p', definitionId: 3 };
+  const builds = [{ projectId: 'p', definition: { id: 3 }, status: 'inProgress', reason: 'individualCI', sourceBranch: 'refs/heads/main', buildNumber: '20261016.2', startedAt: new Date(now - 60_000).toISOString() }];
+  assert.equal(runningDeploy({ link: pipeline }, { builds, pipelines: [{ projectId: 'p', definition: { id: 3 }, branch: 'refs/heads/main' }] }, now).label, '20261016.2');
+
+  const failing = { url: 'https://x', latencyWarnMs: 1000, last: { ok: false, error: 'HTTP 503', at: new Date(now).toISOString() }, consecutiveFailures: 5, downSince: new Date(now - 4 * 60_000).toISOString() };
+  const v = evaluateMonitor(failing, [], now, deploy);
+  assert.equal(v.state, 'deploying');
+  assert.deepEqual(v.issues.map((i) => [i.code, i.severity]), [['deploying', 'low']]);
+  assert.match(v.issues[0].text, /^Deploying R4, started 5m ago$/);
+  assert.equal(evaluateMonitor(failing, [], now, null).state, 'down');
+});
+
 test('monitors refuse private and internal addresses', async () => {
   const { assertPublicUrl } = await import('../server/monitoring.js');
   for (const url of ['http://127.0.0.1/health', 'http://10.1.2.3/', 'http://169.254.169.254/latest/meta-data', 'http://192.168.1.10', 'http://[::1]/']) {

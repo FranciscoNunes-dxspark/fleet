@@ -139,6 +139,7 @@ function demoMonitors() {
   return [
     { id: id(), name: 'Storefront (production)', url: 'https://shop.contoso-demo.com/health', appInsightsAppId: 'demo-app-1', apiKey: null, link: { type: 'release', projectId: 'p-commerce', definitionId: 1, stage: 'Production' }, latencyWarnMs: 1500, demo: 'healthy' },
     { id: id(), name: 'Identity API (production)', url: 'https://id.contoso-demo.com/health', appInsightsAppId: 'demo-app-2', apiKey: null, link: { type: 'release', projectId: 'p-platform', definitionId: 2, stage: 'Production' }, latencyWarnMs: 800, demo: 'errors' },
+    { id: id(), name: 'Storefront canary', url: 'https://canary.shop.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: { type: 'pipeline', projectId: 'p-commerce', definitionId: 100 }, latencyWarnMs: 1500, demo: 'down' },
     { id: id(), name: 'Mobile backend (production)', url: 'https://mobile-api.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'down' },
     { id: id(), name: 'SC Berlin (WebShopSite)', url: 'https://shopeusite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-a', totalsEvery: 24, totalsSeason: 'current' },
     { id: id(), name: 'QA RV (WebShopSite)', url: 'https://shopqasite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-qa', totalsEvery: 6, totalsSeason: 'current' },

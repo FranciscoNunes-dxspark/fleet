@@ -783,6 +783,7 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .monitor-up { border-left-color: var(--ok); }
 .monitor-degraded { border-left-color: var(--warn); }
 .monitor-down { border-left-color: var(--bad); }
+.monitor-deploying { border-left-color: var(--info); }
 .monitor-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .monitor-head h2 { font-size: 16px; }
 .monitor-issues { margin: 10px 0 0; }

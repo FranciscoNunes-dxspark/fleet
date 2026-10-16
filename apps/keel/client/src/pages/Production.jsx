@@ -10,6 +10,7 @@ const STATE = {
   up: { tone: 'ok', label: 'Up' },
   degraded: { tone: 'warn', label: 'Degraded' },
   down: { tone: 'bad', label: 'Down' },
+  deploying: { tone: 'info', label: 'Deploying' },
   unknown: { tone: 'muted', label: 'No data yet' },
 };
 const HOUR = 3_600_000;
@@ -74,7 +75,12 @@ function MonitorCard({ m }) {
 
       {m.issues.length > 0 && (
         <ul className="reasons monitor-issues">
-          {m.issues.map((i) => <li key={i.code} className={`reason reason-${i.severity}`}>{tx(i.text)}</li>)}
+          {m.issues.map((i) => (
+            <li key={i.code} className={`reason reason-${i.severity}`}>
+              {tx(i.text)}
+              {i.code === 'deploying' && m.deploy?.webUrl && <> · <a href={m.deploy.webUrl} target="_blank" rel="noreferrer noopener">{t('View the deploy')}</a></>}
+            </li>
+          ))}
         </ul>
       )}
 

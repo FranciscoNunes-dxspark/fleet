@@ -79,6 +79,7 @@ export default {
   // ---------------------------------------------------------------- Production (domain/production.js, monitoring.js)
   ...ages({
     'Down for {age}: {error}': 'Em baixo há {age}: {error}',
+    'Deploying {deploy}, started {age} ago': 'A fazer deploy de {deploy}, iniciado há {age}',
     'Failures up from {before} to {after} since {deploy} ({age} ago)': 'As falhas subiram de {before} para {after} desde {deploy} (há {age})',
   }),
   'Last check failed: {error}': 'A última verificação falhou: {error}',
