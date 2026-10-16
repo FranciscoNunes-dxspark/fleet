@@ -169,6 +169,7 @@ export function createMultiService(entries) {
       return { ...tag(e.org, w), parent: tag(e.org, w.parent), children: tagAll(e.org, w.children) };
     },
     workItemAction: (id, action, orgKey) => byKey(orgKey).service.workItemAction(id, action),
+    workItemAttachment: (id, attachmentId, orgKey) => byKey(orgKey).service.workItemAttachment(id, attachmentId),
 
     async board(opts = {}) {
       const tracked = await each((s) => s.trackedProjects());

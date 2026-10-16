@@ -6,6 +6,11 @@ import { useApp } from './context.js';
 const q = (org) => (org ? `?org=${encodeURIComponent(org)}` : '');
 export const wiPath = (id, org) => `/workitems/${id}${q(org)}`;
 export const wiActionsPath = (id, org) => `/workitems/${id}/actions${q(org)}`;
+/** Download link for a work item attachment; inline shows an image in the browser. */
+export const attachmentUrl = (id, a, org, inline = false) => {
+  const params = new URLSearchParams({ ...(org ? { org } : {}), ...(inline ? { inline: '1' } : {}) }).toString();
+  return `/api/workitems/${id}/attachments/${encodeURIComponent(a.id)}${params ? `?${params}` : ''}`;
+};
 export const approvalPath = (a) => `/approvals/${a.kind}/${encodeURIComponent(a.id)}${q(a.org)}`;
 
 /** (key) → the organization's name when there are several, else null (nothing to tell apart). */

@@ -364,6 +364,14 @@ tr.saving { opacity: 0.55; }
 .inline-form { display: flex; gap: 8px; margin-top: 10px; }
 .prose { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); max-width: 75ch; }
 .comments li { padding-bottom: 8px; border-bottom: 1px dashed var(--line); }
+.attach-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.attach-thumb { display: block; aspect-ratio: 16 / 10; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg); }
+.attach-thumb:hover, .attach-thumb:focus-visible { border-color: var(--accent); }
+.attach-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.attach-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.attach-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.attach-list a { overflow-wrap: anywhere; }
+.attach-comment { flex-basis: 100%; }
 .comment-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
 .comment-form { display: grid; gap: 8px; justify-items: start; margin-top: 12px; }
 .md-input { display: grid; gap: 6px; width: 100%; }

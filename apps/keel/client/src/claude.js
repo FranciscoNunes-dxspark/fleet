@@ -65,6 +65,7 @@ export function buildPrompt(w, repo, limit = LIMITS.cli) {
     ];
     if (w.description) lines.push('', w.type === 'Bug' ? 'Description / repro steps:' : 'Description:', clip(w.description, cap));
     if (w.acceptanceCriteria) lines.push('', 'Acceptance criteria:', clip(w.acceptanceCriteria, cap));
+    if (w.attachments?.length) lines.push('', `Attachments (open the work item to see them): ${w.attachments.map((a) => a.name).join(', ')}`);
     if (w.children.length) {
       lines.push('', 'Child items:');
       for (const c of w.children.slice(0, 15)) lines.push(`- ${c.type} ${c.id} (${c.state}): ${c.title}`);

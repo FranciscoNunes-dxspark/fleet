@@ -1,6 +1,9 @@
+import { Readable } from 'node:stream';
 import express from 'express';
 import { PERMISSIONS, can } from './accounts.js';
 import { createOrgStore } from './orgs.js';
+
+const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
 /** API routes; `req.ctx` is the signed-in user's { service, watcher } (see index.js). */
 export function apiRouter() {
@@ -85,6 +88,25 @@ export function apiRouter() {
   // Work item numbers are per organization: ?org= picks one (the primary when absent).
   const orgOf = (req) => (req.query.org ? String(req.query.org) : undefined);
   r.get('/workitems/:id', async (req, res) => res.json(await req.ctx.service.workItem(num(req.params.id), orgOf(req))));
+  // Attachments are other people's files: only plain images open in the browser,
+  // everything else downloads, and nothing served here can run scripts.
+  r.get('/workitems/:id/attachments/:attachmentId', async (req, res) => {
+    const { name, length, stream } = await req.ctx.service.workItemAttachment(num(req.params.id), String(req.params.attachmentId), orgOf(req));
+    const image = INLINE_IMAGES[String(name).split('.').pop().toLowerCase()];
+    const inline = req.query.inline === '1' && image;
+    const ascii = String(name).replace(/[^\x20-\x7e]|["\\]/g, '_');
+    res.set({
+      'Content-Type': inline ? image : 'application/octet-stream',
+      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      'Cache-Control': 'private, max-age=3600',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+    });
+    if (length) res.set('Content-Length', String(length));
+    const body = Readable.fromWeb(stream);
+    body.on('error', () => res.destroy());
+    body.pipe(res);
+  });
   r.post('/workitems/:id/actions', need('workitems.write'), async (req, res) => {
     const id = num(req.params.id);
     await req.ctx.service.workItemAction(id, req.body || {}, orgOf(req));

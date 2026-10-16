@@ -112,6 +112,8 @@ export default {
   'Description': 'Descrição',
   'Acceptance criteria': 'Critérios de aceitação',
   'Comments': 'Comentários',
+  'Attachments': 'Anexos',
+  'Open {name}': 'Abrir {name}',
   'No comments yet.': 'Ainda sem comentários.',
   'Comment posted': 'Comentário publicado',
   'Add a comment': 'Adicionar um comentário',

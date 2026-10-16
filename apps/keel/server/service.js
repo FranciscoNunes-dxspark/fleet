@@ -479,6 +479,14 @@ export function createService({
       return { ...item, allowedStates: states[item.type] || [] };
     },
 
+    /** One of a work item's attachments, checked against the item: { name, length, stream }. */
+    async workItemAttachment(id, attachmentId) {
+      const file = (await provider.listAttachments(id)).find((a) => a.id.toLowerCase() === String(attachmentId).toLowerCase());
+      if (!file) throw Object.assign(new Error('Attachment not found on this work item'), { status: 404 });
+      const { length, stream } = await provider.downloadAttachment(file.id, file.name);
+      return { name: file.name, length: length ?? file.size, stream };
+    },
+
     /** What the new work item form can offer: per tracked project, its types and teams (default area, current sprint). */
     async newWorkItemOptions() {
       const projects = await tracked();

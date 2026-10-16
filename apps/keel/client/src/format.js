@@ -24,6 +24,16 @@ export function dateTime(iso) {
   return new Date(iso).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/** 1536 → "1.5 KB". */
+export function bytes(n) {
+  if (n == null || !Number.isFinite(Number(n))) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = Number(n);
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${i ? v.toFixed(v < 10 ? 1 : 0) : v} ${units[i]}`;
+}
+
 export const pct = (x) => (x == null ? '—' : `${Math.round(x * 100)}%`);
 
 export const initials = (name = '') => name

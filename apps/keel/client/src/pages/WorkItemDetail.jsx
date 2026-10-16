@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age, dateTime, isBlocked, shortIteration } from '../format.js';
+import { age, bytes, date, dateTime, isBlocked, shortIteration } from '../format.js';
 import { Avatar, Chip, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import ClaudeStart from './ClaudeStart.jsx';
 import { Markdown, MarkdownInput } from '../markdown.jsx';
-import { wiActionsPath, wiPath } from '../orgs.js';
+import { attachmentUrl, wiActionsPath, wiPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
 
 // What "Add child" creates by default under each type (the form lets you change it).
@@ -144,6 +144,8 @@ export default function WorkItemDetail({ id, org }) {
         </section>
       )}
 
+      {w.attachments?.length > 0 && <Attachments w={w} org={w.org || org} />}
+
       <section className="detail-section">
         <h3>{t('Comments')}</h3>
         <ul className="comments">
@@ -173,5 +175,35 @@ export default function WorkItemDetail({ id, org }) {
         <ExternalLink href={w.webUrl}>{t('Open in Azure DevOps')}</ExternalLink>
       </section>
     </div>
+  );
+}
+
+const IMAGE = /.(png|jpe?g|gif|webp|bmp)$/i;
+
+/** Files on the work item: pictures as thumbnails that open full size, everything as a download. */
+function Attachments({ w, org }) {
+  const images = w.attachments.filter((a) => IMAGE.test(a.name));
+  return (
+    <section className="detail-section">
+      <h3>{t('Attachments')} <span className="muted small">{w.attachments.length}</span></h3>
+      {images.length > 0 && (
+        <div className="attach-thumbs">
+          {images.map((a) => (
+            <a key={a.id} className="attach-thumb" href={attachmentUrl(w.id, a, org, true)} target="_blank" rel="noreferrer noopener" title={t('Open {name}', { name: a.name })}>
+              <img src={attachmentUrl(w.id, a, org, true)} alt={a.name} loading="lazy" />
+            </a>
+          ))}
+        </div>
+      )}
+      <ul className="attach-list">
+        {w.attachments.map((a) => (
+          <li key={a.id}>
+            <a href={attachmentUrl(w.id, a, org)} download={a.name} className="mono small">{a.name}</a>
+            <span className="muted small">{[bytes(a.size), a.addedAt && date(a.addedAt)].filter(Boolean).join(' · ')}</span>
+            {a.comment && <span className="muted small attach-comment">{a.comment}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

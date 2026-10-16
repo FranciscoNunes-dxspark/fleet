@@ -1,4 +1,5 @@
 import { stageSummary } from '../domain/releases.js';
+import { demoFile } from './files.js';
 
 // Demo provider: a deterministic, in-memory Azure DevOps organization.
 // It implements exactly the same methods and return shapes as
@@ -106,6 +107,22 @@ const TASK_TITLES = ['Write integration tests', 'Update API contract', 'Code rev
 const workItems = new Map();
 let nextWi = 4100;
 
+/** Some items carry files: bugs a screenshot and a log, a few others a spreadsheet. By id, so the demo stays the same. */
+function demoAttachments(id, type, created) {
+  const file = (n, name, by) => ({
+    id: `00000000-0000-4000-8000-${String(id * 10 + n).padStart(12, '0')}`,
+    name,
+    size: demoFile(name, id).length,
+    comment: '',
+    addedAt: iso(created + (n + 1) * H),
+    by,
+  });
+  if (type === 'Bug' && id % 2 === 0) return [file(1, 'checkout-error.png'), file(2, 'gateway.log')];
+  if (type === 'Bug') return [file(1, 'screenshot.png')];
+  if (id % 5 === 0) return [file(1, 'invoice-sample.csv')];
+  return [];
+}
+
 function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, severity, tags = [], points, remaining, ageDays, stateDays, parentId, blocked }) {
   const states = p.process[type];
   const [state, stateCategory] = states[stateIdx];
@@ -141,6 +158,7 @@ function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, s
     _acceptance: '- Happy path covered by **automated tests**\n- Telemetry added\n- Docs updated',
     _comments: rand() < 0.5 ? [{ author: pick(DEVS), text: 'Picked this up, will update by EOD.', createdAt: iso(stateChanged + H) }] : [],
     _prs: [],
+    _attachments: demoAttachments(id, type, created),
   };
   workItems.set(id, item);
   return item;
@@ -533,7 +551,7 @@ function demoLog(b, logId) {
 const COMMITS = ['Fix rounding in partial refunds', 'Add retry to payment webhook', 'Bump Polly to 8.4.1', 'Refactor order cancellation rules', 'Log correlation ids on checkout'];
 
 // ------------------------------------------------------------------ provider
-const strip = ({ _description, _acceptance, _comments, _prs, _board, ...rest }) => ({ ...rest });
+const strip = ({ _description, _acceptance, _comments, _prs, _board, _attachments, ...rest }) => ({ ...rest });
 const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
 const delay = (v) => new Promise((r) => setTimeout(() => r(v), 40 + Math.random() * 120));
 const notFound = (what) => Object.assign(new Error(`${what} not found`), { status: 404 });
@@ -883,6 +901,7 @@ export function createMockProvider() {
         parent: w.parentId ? pickRel(workItems.get(w.parentId)) : null,
         children: [...workItems.values()].filter((c) => c.parentId === w.id).map(pickRel),
         pullRequests: w._prs.map((x) => ({ ...x })),
+        attachments: w._attachments.map(({ by, ...a }) => a),
         comments: [...w._comments].reverse(),
       });
     },
@@ -923,9 +942,21 @@ export function createMockProvider() {
       });
       Object.assign(w, {
         iterationPath: fields.iterationPath || p.name, areaPath: fields.areaPath || p.name, createdBy: ME, storyPoints: null, remainingWork: null,
-        createdAt: iso(Date.now()), changedAt: iso(Date.now()), stateChangedAt: iso(Date.now()), _description: fields.description || '', _acceptance: '', _comments: [],
+        createdAt: iso(Date.now()), changedAt: iso(Date.now()), stateChangedAt: iso(Date.now()), _description: fields.description || '', _acceptance: '', _comments: [], _attachments: [],
       });
       return delay({ id: w.id, webUrl: w.webUrl });
+    },
+
+    async listAttachments(id) {
+      const w = workItems.get(Number(id));
+      if (!w) throw notFound(`Work item ${id}`);
+      return delay(w._attachments.map(({ by, ...a }) => a));
+    },
+
+    async downloadAttachment(attachmentId, name) {
+      const seed = Math.floor(Number(String(attachmentId).slice(-12)) / 10);
+      const body = demoFile(name, seed);
+      return delay({ type: 'application/octet-stream', length: body.length, stream: new Blob([body]).stream() });
     },
 
     async commentWorkItem(projectName, id, text) {

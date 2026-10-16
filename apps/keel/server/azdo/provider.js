@@ -51,6 +51,18 @@ const markdownToHtml = (md) => marked.parse(String(md), { gfm: true, breaks: tru
 // Azure DevOps rejects the Markdown format with a 400 where it isn't available.
 const markdownRefused = (err) => err?.status === 400 && /markdown|multilineFieldsFormat|format/i.test(`${err.message} ${JSON.stringify(err.detail || '')}`);
 
+/** Files attached to a work item, from its relations (the id is the attachment's GUID). */
+const attachmentsOf = (relations = []) => relations
+  .filter((r) => r.rel === 'AttachedFile')
+  .map((r) => ({
+    id: String(r.url || '').split('/').pop(),
+    name: r.attributes?.name || 'attachment',
+    size: r.attributes?.resourceSize ?? null,
+    comment: r.attributes?.comment || '',
+    addedAt: r.attributes?.authorizedDate || r.attributes?.resourceCreatedDate || null,
+  }))
+  .filter((a) => /^[0-9a-f-]{36}$/i.test(a.id));
+
 const stripRef = (ref) => (ref || '').replace(/^refs\/heads\//, '');
 
 /** Azure DevOps change types are comma lists like "edit, rename"; collapse to one kind. */
@@ -92,7 +104,7 @@ export function releaseHost(orgUrl) {
 /** A provider acting as the owner of `pat` (one per signed-in user). */
 export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } = {}) {
   const org = orgUrl;
-  const { api, apiText, listAll, listSkip, fetchOrgImage } = createClient({ orgUrl, pat });
+  const { api, apiText, download, listAll, listSkip, fetchOrgImage } = createClient({ orgUrl, pat });
   const toBuild = (b) => ({
     id: b.id,
     projectId: b.project?.id,
@@ -667,6 +679,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
             const [projectId, repoId, prId] = decodeURIComponent(r.url.split('PullRequestId/')[1] || '').split('/');
             return { projectId, repoId, id: Number(prId) };
           }),
+        attachments: attachmentsOf(rels),
         comments: comments.map((c) => {
           const markdown = String(c.format || '').toLowerCase() === 'markdown';
           return { author: ident(c.createdBy), text: markdown ? c.text || '' : htmlToText(c.text), html: markdown ? null : c.text || '', createdAt: c.createdDate };
@@ -705,6 +718,16 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         return create(ops.filter((o) => o !== markdownOp).map((o) => (o.path === `/fields/${descriptionField}` ? { ...o, value: markdownToHtml(o.value) } : o)));
       });
       return { id: w.id, webUrl: w._links?.html?.href || `${org}/${seg(projectName)}/_workitems/edit/${w.id}` };
+    },
+
+    async listAttachments(id) {
+      const raw = await api(`_apis/wit/workitems/${id}`, { query: { $expand: 'relations' } });
+      return attachmentsOf(raw.relations);
+    },
+
+    /** An attachment's bytes as a stream: { type, length, stream }. */
+    downloadAttachment(attachmentId, name) {
+      return download(`_apis/wit/attachments/${encodeURIComponent(attachmentId)}`, { query: { fileName: name, download: true } });
     },
 
     async updateWorkItem(id, changes) {

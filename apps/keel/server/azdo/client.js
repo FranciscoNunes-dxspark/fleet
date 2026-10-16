@@ -164,6 +164,28 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
     });
   }
 
+  /**
+   * Downloads a file inside the organization (a work item attachment), following
+   * one redirect to signed storage without the PAT. Returns the body as a stream.
+   */
+  function download(path, { query, apiVersion } = {}) {
+    const url = buildUrl(path, query, apiVersion);
+    return limited(async () => {
+      let res = await fetch(url, { headers: { Authorization: authHeader }, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+        const next = new URL(res.headers.get('location'), url);
+        if (next.protocol !== 'https:') throw new AzdoError('Refusing non-HTTPS download redirect', 502);
+        res = await fetch(next, { headers: next.origin === url.origin ? { Authorization: authHeader } : {}, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+      }
+      const type = res.headers.get('content-type') || '';
+      if (res.status === 401 || res.status === 203 || type.includes('text/html')) {
+        throw new AzdoError('Azure DevOps rejected the token: it may have expired, been revoked, or lack the needed scopes.', 401, null, 'token-rejected');
+      }
+      if (!res.ok) throw new AzdoError(`Azure DevOps download failed (${res.status})`, res.status === 404 ? 404 : 502);
+      return { type, length: Number(res.headers.get('content-length')) || null, stream: res.body };
+    });
+  }
+
   /** A plain-text response, such as a build log. Same auth and token checks as request(). */
   function apiText(path, { query, apiVersion } = {}) {
     const url = buildUrl(path, query, apiVersion);
@@ -179,5 +201,5 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
     });
   }
 
-  return { request, api, apiText, listAll, listSkip, fetchOrgImage };
+  return { request, api, apiText, download, listAll, listSkip, fetchOrgImage };
 }
