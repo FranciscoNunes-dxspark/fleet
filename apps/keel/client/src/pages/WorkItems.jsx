@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, isBlocked, shortIteration } from '../format.js';
@@ -13,12 +13,12 @@ export default function WorkItems() {
   const { data, error, reload } = useApi('/workitems');
   const { meta, openDrawer, refresh, toast, can } = useApp();
   const editable = can('workitems.write');
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useStickyParams('work', ['view', 'assignee']);
   const view = params.get('view') || 'open';
   const assignee = params.get('assignee') || '';
   const [q, setQ] = useState('');
-  const [project, setProject] = useState('');
-  const [type, setType] = useState('');
+  const [project, setProject] = useSticky('work.project', '');
+  const [type, setType] = useSticky('work.type', '');
   const [saving, setSaving] = useState(null);
 
   const blockedTag = meta.blockedTag.toLowerCase();

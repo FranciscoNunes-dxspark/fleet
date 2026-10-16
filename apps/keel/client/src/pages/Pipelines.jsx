@@ -1,5 +1,5 @@
 import { Fragment, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
@@ -10,7 +10,7 @@ export default function Pipelines() {
   const builds = useApi('/pipelines');
   const rel = useApi('/releases');
   const { meta } = useApp();
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useStickyParams('pipelines', ['tab']);
   const tab = params.get('tab') === 'releases' ? 'releases' : 'builds';
 
   const data = builds.data;
@@ -60,8 +60,8 @@ const folderLabel = (path) => (!path || path === '\\' ? 'No folder' : path.repla
 
 function BuildsTab({ data }) {
   const { refresh, toast } = useApp();
-  const [onlyProblems, setOnlyProblems] = useState(false);
-  const [byFolder, setByFolder] = useState(true);
+  const [onlyProblems, setOnlyProblems] = useSticky('pipelines.onlyProblems', false);
+  const [byFolder, setByFolder] = useSticky('pipelines.byFolder', true);
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [q, setQ] = useState('');
 

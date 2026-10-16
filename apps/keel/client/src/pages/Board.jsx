@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, isBlocked } from '../format.js';
@@ -63,7 +63,7 @@ function columnsFor(data, taskTypes) {
 }
 
 export default function Board() {
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useStickyParams('board', ['project', 'team', 'board', 'mode', 'done']);
   const project = params.get('project') || '';
   const team = params.get('team') || '';
   const boardParam = params.get('board') || '';
@@ -75,9 +75,9 @@ export default function Board() {
   const movable = can('workitems.write');
 
   const [showAllDone, setShowAllDone] = useState(false);
-  const [showTasks, setShowTasks] = useState(false);
+  const [showTasks, setShowTasks] = useSticky('board.showTasks', false);
   const [q, setQ] = useState('');
-  const [assignee, setAssignee] = useState('');
+  const [assignee, setAssignee] = useSticky('board.assignee', '');
   const [dragging, setDragging] = useState(null);
   const [over, setOver] = useState(null); // "lane|column"
   // Optimistic state while an update is in flight.

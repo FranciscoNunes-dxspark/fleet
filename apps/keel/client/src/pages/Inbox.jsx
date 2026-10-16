@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSticky } from '../sticky.js';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
@@ -22,7 +23,7 @@ export default function Inbox() {
   const { data, error, loading, reload } = useApi('/attention');
   const { openDrawer, refresh, toast } = useApp();
   const navigate = useNavigate();
-  const [kind, setKind] = useState('all');
+  const [kind, setKind] = useSticky('inbox.kind', 'all');
 
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 

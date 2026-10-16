@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useSticky } from '../sticky.js';
 import { BarList, ColumnChart } from '../charts.jsx';
 import { useApi } from '../context.js';
 import { date, hours, pct } from '../format.js';
@@ -7,7 +7,7 @@ import { ErrorBox, Loading, PageHeader } from '../ui.jsx';
 const RANGES = [14, 30, 90];
 
 export default function Insights() {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useSticky('insights.days', 30);
   const { data, error, reload, loading } = useApi(`/insights?days=${days}`);
 
   const header = (

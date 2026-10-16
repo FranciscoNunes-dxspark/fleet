@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSticky, useStickyParams } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { age, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle, useSort } from '../ui.jsx';
@@ -7,13 +7,13 @@ import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle,
 export default function PullRequests() {
   const { data, error, reload } = useApi('/prs');
   const { meta, openDrawer, can } = useApp();
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useStickyParams('prs', ['author', 'reviewer']);
   const [q, setQ] = useState('');
-  const [project, setProject] = useState('');
-  const [repo, setRepo] = useState('');
+  const [project, setProject] = useSticky('prs.project', '');
+  const [repo, setRepo] = useSticky('prs.repo', '');
   const author = params.get('author') || '';
   const reviewer = params.get('reviewer') || '';
-  const [flags, setFlags] = useState({ mine: false, myReview: false, conflicts: false, stale: false, hideDrafts: false });
+  const [flags, setFlags] = useSticky('prs.flags', { mine: false, myReview: false, conflicts: false, stale: false, hideDrafts: false });
   const staleHours = meta.thresholds.stalePrDays * 24;
 
   const { sort, setSort, apply } = useSort({ key: 'age', dir: -1 }, {

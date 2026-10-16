@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSticky } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { isBlocked } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle } from '../ui.jsx';
@@ -83,12 +84,12 @@ function TreeNode({ node, depth, expanded, toggle, needle, blockedTag }) {
 }
 
 export default function Epics() {
-  const [includeClosed, setIncludeClosed] = useState(false);
+  const [includeClosed, setIncludeClosed] = useSticky('epics.includeClosed', false);
   const { data, error, reload, loading } = useApi(`/epics${includeClosed ? '?closed=1' : ''}`);
   const { meta } = useApp();
   const [expanded, setExpanded] = useState(() => new Set());
   const [q, setQ] = useState('');
-  const [hideEmpty, setHideEmpty] = useState(false);
+  const [hideEmpty, setHideEmpty] = useSticky('epics.hideEmpty', false);
   const needle = q.trim().toLowerCase();
 
   const toggle = (id) => setExpanded((s) => {
