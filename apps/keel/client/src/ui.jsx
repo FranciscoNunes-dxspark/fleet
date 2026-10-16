@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { initials, VOTES } from './format.js';
 import { t } from './i18n.js';
+import { useApp } from './context.js';
+import { paletteVar, typeColorKey } from './typecolors.js';
 
 /** Keel's mark: a sailboat with its keel and ballast bulb (same drawing as public/favicon.svg). */
 export function Logo({ size = 28 }) {
@@ -39,13 +41,21 @@ export function Person({ person, muted }) {
 
 export const typeSlug = (type = '') => type.replace(/\s+/g, '-').toLowerCase();
 
-/** "▌ Bug": the work item type with its Azure DevOps color (Keel's own when there isn't one). */
-export function TypeLabel({ type, color }) {
-  return <span className={`type type-${typeSlug(type)}`} style={typeColorStyle(color)}>{type}</span>;
+/**
+ * (type, Azure DevOps color) → inline style with the type's palette color, for
+ * CSS that reads --type-color. Admins pick the colors in Settings.
+ */
+export function useTypeColor() {
+  const { meta } = useApp();
+  const chosen = meta?.typeColors;
+  return useCallback((type, adoColor) => ({ '--type-color': paletteVar(typeColorKey(type, adoColor, chosen)) }), [chosen]);
 }
 
-/** Inline style that gives an element a work item type's color, for CSS that reads --type-color. */
-export const typeColorStyle = (color) => (color ? { '--type-color': color } : undefined);
+/** "▌ Bug": the work item type with its color from the approved palette. */
+export function TypeLabel({ type, color }) {
+  const typeColor = useTypeColor();
+  return <span className={`type type-${typeSlug(type)}`} style={typeColor(type, color)}>{type}</span>;
+}
 
 export const Chip = ({ tone = 'muted', children, title }) => <span className={`chip chip-${tone}`} title={title}>{children}</span>;
 

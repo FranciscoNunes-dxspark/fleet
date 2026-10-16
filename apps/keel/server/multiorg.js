@@ -169,6 +169,18 @@ export function createMultiService(entries) {
       return { ...tag(e.org, w), parent: tag(e.org, w.parent), children: tagAll(e.org, w.children) };
     },
     workItemAction: (id, action, orgKey) => byKey(orgKey).service.workItemAction(id, action),
+    async workItemTypes() {
+      const byName = new Map();
+      for (const { org, value } of await each((s) => s.workItemTypes())) {
+        for (const t of value) {
+          const entry = byName.get(t.name) || { name: t.name, color: t.color, projects: [] };
+          entry.color ||= t.color;
+          entry.projects.push(...t.projects.map((p) => `${org.name} · ${p}`));
+          byName.set(t.name, entry);
+        }
+      }
+      return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+    },
     workItemAttachment: (id, attachmentId, orgKey) => byKey(orgKey).service.workItemAttachment(id, attachmentId),
 
     async board(opts = {}) {

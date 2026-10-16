@@ -26,7 +26,7 @@ export const ROLES = ['admin', 'developer', 'pm'];
 export const ROLE_LABELS = { admin: 'Admin', developer: 'Developer', pm: 'PM' };
 
 export const PERMISSIONS = {
-  admin: ['prs.write', 'workitems.write', 'approvals.decide', 'pipelines.run', 'releases.run', 'monitors.manage', 'users.manage'],
+  admin: ['prs.write', 'workitems.write', 'approvals.decide', 'pipelines.run', 'releases.run', 'monitors.manage', 'users.manage', 'typecolors.manage'],
   developer: ['prs.write', 'workitems.write', 'approvals.decide', 'pipelines.run', 'releases.run'],
   pm: ['workitems.write', 'approvals.decide', 'pipelines.run', 'releases.run'],
 };

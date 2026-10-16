@@ -487,6 +487,22 @@ export function createService({
       return { name: file.name, length: length ?? file.size, stream };
     },
 
+    /** Work item types in the tracked projects: [{ name, color (Azure DevOps), projects }]. */
+    async workItemTypes() {
+      const projects = await tracked();
+      const byName = new Map();
+      for (const p of projects) {
+        const types = await provider.getWorkItemTypes(p.id).catch(() => []);
+        for (const t of types) {
+          const entry = byName.get(t.name) || { name: t.name, color: t.color, projects: [] };
+          entry.color ||= t.color;
+          entry.projects.push(p.name);
+          byName.set(t.name, entry);
+        }
+      }
+      return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+    },
+
     /** What the new work item form can offer: per tracked project, its types and teams (default area, current sprint). */
     async newWorkItemOptions() {
       const projects = await tracked();

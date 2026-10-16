@@ -819,6 +819,7 @@ export function createMockProvider() {
     },
 
     getStateMap: (projectId) => delay(projectById(projectId).stateMap),
+    getWorkItemTypes: (projectId) => delay(Object.keys(projectById(projectId).stateMap).map((name) => ({ name, color: TYPE_COLORS[name] || null }))),
 
     queryWorkItems(projectId, c = {}) {
       const p = projectById(projectId);

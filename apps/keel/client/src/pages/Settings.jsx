@@ -5,6 +5,7 @@ import { ErrorBox, Loading, PageHeader, Confirm } from '../ui.jsx';
 import { ACCENTS, MODES, loadTheme, saveTheme } from '../theme.js';
 import { LANGUAGES, getLanguage, setLanguage, t, tj } from '../i18n.js';
 import ProductionSettings from './ProductionSettings.jsx';
+import TypeColorSettings from './TypeColorSettings.jsx';
 import OrgSettings from './OrgSettings.jsx';
 import { useProjectLabel } from '../orgs.js';
 import { folderProblem, loadFolders, saveFolder } from '../claude.js';
@@ -236,6 +237,8 @@ export default function Settings() {
       <AccountSettings />
 
       <ProductionSettings />
+
+      <TypeColorSettings />
 
       <AppearanceSettings />
 

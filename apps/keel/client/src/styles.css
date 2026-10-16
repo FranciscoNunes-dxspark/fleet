@@ -3,12 +3,17 @@
    severity, so they always mean "look here". */
 
 :root {
-  /* Work item type colors when Azure DevOps doesn't give one (it sets --type-color). */
-  --type-default: var(--info);
-  --type-bug: var(--bad);
-  --type-task: var(--warn);
-  --type-epic: #c58cf0;
-  --type-feature: #b39ddb;
+  /* Approved palette for work item types (dark steps): checked for 3:1 on the
+     surface and color-blind separation. Light steps are in the light theme. */
+  --tc-blue: #3987e5;
+  --tc-orange: #d95926;
+  --tc-aqua: #199e70;
+  --tc-yellow: #c98500;
+  --tc-magenta: #d55181;
+  --tc-green: #008300;
+  --tc-violet: #9085e9;
+  --tc-red: #e66767;
+  --tc-gray: #8b9099;
   --bg: #161718;
   --surface: #1e1f21;
   --surface-2: #26282a;
@@ -48,6 +53,15 @@
    theme.js. Dark is the default above; each accent is tuned per mode so
    text on accent fills keeps its contrast. */
 :root[data-mode='light'] {
+  --tc-blue: #2a78d6;
+  --tc-orange: #eb6834;
+  --tc-aqua: #1baf7a;
+  --tc-yellow: #eda100;
+  --tc-magenta: #e87ba4;
+  --tc-green: #008300;
+  --tc-violet: #6250d6;
+  --tc-red: #e34948;
+  --tc-gray: #8a8f98;
   --bg: #f4f5f6;
   --surface: #ffffff;
   --surface-2: #edeff1;
@@ -240,11 +254,7 @@ label { font-size: 13px; color: var(--ink-2); }
 .strip.sev-high::before { background: var(--bad); }
 .strip.sev-medium::before { background: var(--warn); }
 /* Work items wear their type's color; the group heading already says how urgent. */
-.strip.wi-strip::before { background: var(--type-color, var(--type-default)); }
-.strip.wi-strip.wi-bug::before { background: var(--type-color, var(--type-bug)); }
-.strip.wi-strip.wi-task::before { background: var(--type-color, var(--type-task)); }
-.strip.wi-strip.wi-epic::before { background: var(--type-color, var(--type-epic)); }
-.strip.wi-strip.wi-feature::before { background: var(--type-color, var(--type-feature)); }
+.strip.wi-strip::before { background: var(--type-color, var(--tc-blue)); }
 .strip-main { min-width: 0; }
 .strip-title { background: none; border: 0; padding: 0; text-align: left; font-weight: 600; font-size: 15px; color: var(--ink); cursor: pointer; }
 .strip-title:hover { color: var(--accent-ink); text-decoration: underline; }
@@ -328,9 +338,7 @@ tr.saving { opacity: 0.55; }
 .chip-btn:hover { text-decoration: underline; }
 
 .type { font-size: 12px; font-weight: 500; padding-left: 9px; position: relative; color: var(--ink-2); }
-.type::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--type-color, var(--type-default)); }
-.type-bug::before { background: var(--type-color, var(--type-bug)); }
-.type-task::before { background: var(--type-color, var(--type-task)); }
+.type::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--type-color, var(--tc-blue)); }
 
 /* ------------------------------------------------------------ feedback */
 .loading { display: flex; gap: 10px; align-items: center; padding: 28px 0; color: var(--muted); }
@@ -566,8 +574,6 @@ button.tree-caret:hover { background: var(--surface-2); color: var(--ink); }
 .tree-row .type { flex: none; width: 128px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-meta { flex: none; display: flex; align-items: center; gap: 10px; }
-.type-epic::before { background: var(--type-color, var(--type-epic)); }
-.type-feature::before { background: var(--type-color, var(--type-feature)); }
 .progress { display: inline-flex; align-items: center; gap: 8px; }
 .progress-bar { display: inline-flex; gap: 2px; width: 120px; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; flex: none; }
 .progress-done { background: var(--accent); }
@@ -927,6 +933,19 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .month-bars rect.dim { opacity: 0.3; }
 
 /* ------------------------------------------------- settings: saving, monitors */
+.type-color-list { list-style: none; margin: 0; padding: 0; }
+.type-color-row { display: grid; grid-template-columns: minmax(170px, 240px) 1fr; gap: 6px 16px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.type-color-row:last-child { border-bottom: 0; }
+.type-color-name { display: grid; gap: 2px; min-width: 0; }
+.tc-swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tc-swatch { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line-strong); cursor: pointer; }
+.tc-swatch.on { box-shadow: 0 0 0 2px var(--ink); }
+.tc-auto { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line-strong); background: none; color: var(--ink-2); font-size: 12px; cursor: pointer; }
+.tc-auto.on { border-color: var(--ink); color: var(--ink); font-weight: 600; }
+.tc-swatch:focus-visible, .tc-auto:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tc-swatch:disabled, .tc-auto:disabled { cursor: progress; opacity: 0.6; }
+.tc-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+@media (max-width: 640px) { .type-color-row { grid-template-columns: 1fr; } }
 .saved-note { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--muted); }
 .save-bar {
   position: sticky; bottom: 12px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;

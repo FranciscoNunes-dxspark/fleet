@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age } from '../format.js';
-import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, typeColorStyle, typeSlug } from '../ui.jsx';
+import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, typeSlug, useTypeColor } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 
 // Labels are getters so they follow the current language.
@@ -33,6 +33,7 @@ const itemTitle = (i) => (KEEL_TITLES.includes(i.kind) ? tx(i.title) : i.title);
 export default function Inbox() {
   const { data, error, loading, reload } = useApi('/attention');
   const { openDrawer, refresh, toast } = useApp();
+  const typeColor = useTypeColor();
   const navigate = useNavigate();
   const [kind, setKind] = useSticky('inbox.kind', 'all');
 
@@ -106,7 +107,7 @@ export default function Inbox() {
             <h2 className={`group-title sev-text-${sev}`}>{SEVERITY[sev]} <span className="muted">{group.length}</span></h2>
             <ol className="strips">
               {group.map((item) => (
-                <li key={item.key} className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}`} style={typeColorStyle(item.workItemTypeColor)}>
+                <li key={item.key} className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}`} style={item.workItemType ? typeColor(item.workItemType, item.workItemTypeColor) : undefined}>
                   <div className="strip-main">
                     <button type="button" className="strip-title" onClick={() => open(item)}>{itemTitle(item)}</button>
                     <div className="strip-context">{tx(item.context)}</div>

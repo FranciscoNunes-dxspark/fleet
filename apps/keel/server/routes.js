@@ -2,12 +2,14 @@ import { Readable } from 'node:stream';
 import express from 'express';
 import { PERMISSIONS, can } from './accounts.js';
 import { createOrgStore } from './orgs.js';
+import { createTypeColorStore } from './typecolors.js';
 
 const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
 /** API routes; `req.ctx` is the signed-in user's { service, watcher } (see index.js). */
 export function apiRouter() {
   const orgs = createOrgStore(); // reads data/orgs.json, shared with sign-in and other processes
+  const typeColors = createTypeColorStore(); // data/type-colors.json, the same for everyone
   const r = express.Router();
   r.use(express.json({ limit: '256kb' }));
 
@@ -34,7 +36,7 @@ export function apiRouter() {
 
   r.get('/meta', async (req, res) => {
     const role = req.ctx.role || 'admin';
-    res.json({ ...(await req.ctx.service.meta()), account: req.ctx.user || null, role, permissions: PERMISSIONS[role] || [] });
+    res.json({ ...(await req.ctx.service.meta()), typeColors: typeColors.get(), account: req.ctx.user || null, role, permissions: PERMISSIONS[role] || [] });
   });
   // Preferences that follow you across devices (theme, notifications, dashboard layout).
   r.put('/prefs', async (req, res) => res.json(await req.ctx.service.savePrefs(req.body || {})));
@@ -175,6 +177,9 @@ export function apiRouter() {
     orgs.remove(req.params.key);
     res.json({ ok: true });
   });
+
+  r.get('/workitem-types', async (req, res) => res.json({ types: await req.ctx.service.workItemTypes(), colors: typeColors.get() }));
+  r.put('/workitem-types/colors', need('typecolors.manage'), (req, res) => res.json({ colors: typeColors.set(req.body?.colors) }));
 
   r.get('/settings', async (req, res) => res.json(await req.ctx.service.settingsView()));
   r.get('/settings/projects/:projectId', async (req, res) => res.json(await req.ctx.service.projectOptions(req.params.projectId)));

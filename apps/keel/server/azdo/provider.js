@@ -540,6 +540,12 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
     },
 
     getStateMap,
+    /** A project's work item types with their Azure DevOps colors: [{ name, color }]. */
+    async getWorkItemTypes(project) {
+      const map = await getStateMap(project);
+      const colors = typeColors.get(project) || {};
+      return Object.keys(map).map((name) => ({ name, color: colors[name] || null }));
+    },
 
     async queryWorkItems(projectId, c = {}) {
       const stateMap = await getStateMap(projectId);
