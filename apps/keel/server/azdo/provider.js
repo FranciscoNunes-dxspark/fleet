@@ -63,6 +63,9 @@ const attachmentsOf = (relations = []) => relations
   }))
   .filter((a) => /^[0-9a-f-]{36}$/i.test(a.id));
 
+/** Azure DevOps colors are bare hex ("CC293D"); anything else is ignored (it ends up in a style). */
+const hexColor = (c) => (/^#?[0-9a-f]{6}$/i.test(String(c || '')) ? `#${String(c).replace('#', '')}` : null);
+
 const stripRef = (ref) => (ref || '').replace(/^refs\/heads\//, '');
 
 /** Azure DevOps change types are comma lists like "edit, rename"; collapse to one kind. */
@@ -144,6 +147,8 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
   let meCache;
   let fieldSetPromise;
   const stateMaps = new Map();
+  // Each project's work item type colors ("Bug" → "#CC293D"), filled with the state maps.
+  const typeColors = new Map();
 
   const prWebUrl = (projectName, repoName, id) => `${org}/${seg(projectName)}/_git/${seg(repoName)}/pullrequest/${id}`;
   const wiWebUrl = (projectName, id) => `${org}/${seg(projectName)}/_workitems/edit/${id}`;
@@ -188,6 +193,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       stateMaps.set(project, (async () => {
         const types = await api(`${seg(project)}/_apis/wit/workitemtypes`);
         const map = {};
+        typeColors.set(project, Object.fromEntries((types.value || []).map((t) => [t.name, hexColor(t.color)]).filter(([, c]) => c)));
         for (const t of types.value || []) {
           let states = t.states;
           if (!states) {
@@ -223,6 +229,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         title: f['System.Title'],
         state: f['System.State'],
         stateCategory: categoryOf(byProject.get(projectName), f['System.WorkItemType'], f['System.State']),
+        typeColor: typeColors.get(projectName)?.[f['System.WorkItemType']] || null,
         reason: f['System.Reason'] || null,
         assignedTo: ident(f['System.AssignedTo']),
         createdBy: ident(f['System.CreatedBy']),

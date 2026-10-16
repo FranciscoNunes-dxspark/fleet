@@ -37,6 +37,16 @@ export function Person({ person, muted }) {
   );
 }
 
+export const typeSlug = (type = '') => type.replace(/\s+/g, '-').toLowerCase();
+
+/** "▌ Bug": the work item type with its Azure DevOps color (Keel's own when there isn't one). */
+export function TypeLabel({ type, color }) {
+  return <span className={`type type-${typeSlug(type)}`} style={typeColorStyle(color)}>{type}</span>;
+}
+
+/** Inline style that gives an element a work item type's color, for CSS that reads --type-color. */
+export const typeColorStyle = (color) => (color ? { '--type-color': color } : undefined);
+
 export const Chip = ({ tone = 'muted', children, title }) => <span className={`chip chip-${tone}`} title={title}>{children}</span>;
 
 export function Loading({ label = t('Loading…') }) {

@@ -123,6 +123,9 @@ function demoAttachments(id, type, created) {
   return [];
 }
 
+// Azure DevOps' default type colors, so the demo looks like a real organization.
+const TYPE_COLORS = { Epic: '#FF7B00', Feature: '#773B93', 'User Story': '#009CCC', 'Product Backlog Item': '#009CCC', Bug: '#CC293D', Task: '#F2CB1D' };
+
 function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, severity, tags = [], points, remaining, ageDays, stateDays, parentId, blocked }) {
   const states = p.process[type];
   const [state, stateCategory] = states[stateIdx];
@@ -134,6 +137,7 @@ function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, s
     rev: 3,
     projectName: p.name,
     type,
+    typeColor: TYPE_COLORS[type] || null,
     title,
     state,
     stateCategory,

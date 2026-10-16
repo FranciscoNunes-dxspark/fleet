@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSticky } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { isBlocked } from '../format.js';
-import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle } from '../ui.jsx';
+import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle, TypeLabel } from '../ui.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import { t } from '../i18n.js';
 
@@ -52,7 +52,7 @@ function TreeNode({ node, depth, expanded, toggle, needle, blockedTag, org }) {
             {open ? '▾' : '▸'}
           </button>
         ) : <span className="tree-caret" aria-hidden="true" />}
-        <span className={`type type-${w.type.replace(/\s+/g, '-').toLowerCase()}`}>{w.type}</span>
+        <TypeLabel type={w.type} color={w.typeColor} />
         <button type="button" className="row-link tree-title" onClick={() => openDrawer({ type: 'workitem', id: w.id, org })}>
           {w.title} <span className="mono muted small">{w.id}</span>
         </button>

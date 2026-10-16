@@ -3,7 +3,7 @@ import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, isBlocked } from '../format.js';
-import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle } from '../ui.jsx';
+import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle, TypeLabel } from '../ui.jsx';
 import { locale, t, tj } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
@@ -380,7 +380,7 @@ function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, o
       className={`card ${blocked ? 'card-blocked' : ''} ${moving ? 'card-moving' : ''} ${split && w.board?.done ? 'card-split-done' : ''}`}
     >
       <div className="card-top">
-        <span className={`type type-${w.type.replace(/\s+/g, '-').toLowerCase()}`}>{w.type}</span>
+        <TypeLabel type={w.type} color={w.typeColor} />
         <span className="mono muted small">{w.id}</span>
       </div>
       <div className="card-title">{w.title}</div>

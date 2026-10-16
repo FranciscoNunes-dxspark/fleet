@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age } from '../format.js';
-import { Empty, ErrorBox, ExternalLink, Loading, PageHeader } from '../ui.jsx';
+import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, typeColorStyle, typeSlug } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 
 // Labels are getters so they follow the current language.
@@ -28,7 +28,6 @@ const SEVERITY = {
 // Keel writes the titles of these kinds; the others (pull requests, work items) carry the
 // Azure DevOps title, shown as is so templates can't rewrite e.g. a PR titled "Site is down".
 const KEEL_TITLES = ['production', 'approval', 'pipeline', 'team'];
-const typeSlug = (type) => type.replace(/\s+/g, '-').toLowerCase();
 const itemTitle = (i) => (KEEL_TITLES.includes(i.kind) ? tx(i.title) : i.title);
 
 export default function Inbox() {
@@ -107,7 +106,7 @@ export default function Inbox() {
             <h2 className={`group-title sev-text-${sev}`}>{SEVERITY[sev]} <span className="muted">{group.length}</span></h2>
             <ol className="strips">
               {group.map((item) => (
-                <li key={item.key} className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}`}>
+                <li key={item.key} className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}`} style={typeColorStyle(item.workItemTypeColor)}>
                   <div className="strip-main">
                     <button type="button" className="strip-title" onClick={() => open(item)}>{itemTitle(item)}</button>
                     <div className="strip-context">{tx(item.context)}</div>

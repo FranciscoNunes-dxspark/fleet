@@ -3,7 +3,7 @@ import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, isBlocked, shortIteration } from '../format.js';
-import { Chip, Empty, ErrorBox, Loading, PageHeader, Th, useSort } from '../ui.jsx';
+import { Chip, Empty, ErrorBox, Loading, PageHeader, Th, useSort, TypeLabel } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
@@ -139,7 +139,7 @@ export default function WorkItems() {
                     <td className="cell-title">
                       <button type="button" className="row-link" onClick={() => openDrawer({ type: 'workitem', id: w.id, org: w.org })}>{w.title}</button>
                       <div className="sub">
-                        <span className={`type type-${w.type.replace(/\s+/g, '-').toLowerCase()}`}>{w.type}</span>
+                        <TypeLabel type={w.type} color={w.typeColor} />
                         <span>{w.projectName}</span>
                         {w.iterationPath !== w.projectName && <span>{shortIteration(w.iterationPath)}</span>}
                         {blocked(w) && <Chip tone="bad">{t('Blocked')}</Chip>}
