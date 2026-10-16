@@ -386,3 +386,19 @@ test('data folder: DATA_DIR, then outside Hostinger build folders, else ./data',
   assert.equal(norm(dataDirFor('/home/u1/domains/keel.x.com/hbuilds/current/nodejs', {})), norm(path.join('/home/u1/domains/keel.x.com', 'keel-data')));
   assert.equal(norm(dataDirFor('/srv/keel', { DATA_DIR: '/var/lib/keel' })), norm(path.resolve('/srv/keel', '/var/lib/keel')));
 });
+
+test('pipelines without recent runs still get a row, judged on nothing', async () => {
+  const { pipelineHealth } = await import('../server/domain/pipelines.js');
+  const defs = [
+    { id: 7, name: 'api-CI', path: '\\', projectId: 'p1', projectName: 'P1', repoId: 'r1', repoName: 'api', defaultBranch: 'main', paused: false, lastRun: null, webUrl: 'u7' },
+    { id: 8, name: 'web-CI', path: '\\', projectId: 'p1', projectName: 'P1', repoId: 'r2', repoName: 'web', defaultBranch: 'main', paused: true, lastRun: null, webUrl: 'u8' },
+  ];
+  const build = { id: 1, projectId: 'p1', projectName: 'P1', definition: { id: 7, name: 'api-CI', path: '\\' }, repoId: 'r1', repoName: 'api', status: 'completed', result: 'succeeded', reason: 'individualCI', sourceBranch: 'main', queuedAt: '2026-10-15T10:00:00Z', startedAt: '2026-10-15T10:01:00Z', finishedAt: '2026-10-15T10:09:00Z', webUrl: 'b1' };
+  const rows = pipelineHealth([build], [{ id: 'r1', defaultBranch: 'main' }, { id: 'r2', defaultBranch: 'main' }], defs);
+  assert.deepEqual(rows.map((r) => [r.definition.name, r.health]), [['api-CI', 'healthy'], ['web-CI', 'unknown']]);
+  const idle = rows[1];
+  assert.equal(idle.branch, 'main');
+  assert.equal(idle.paused, true);
+  assert.equal(idle.webUrl, 'u8');
+  assert.deepEqual([idle.recent.length, idle.running.length, idle.passRate], [0, 0, null]);
+});

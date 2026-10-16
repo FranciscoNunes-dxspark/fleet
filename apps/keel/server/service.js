@@ -206,7 +206,16 @@ export function createService({
     return lists.flat();
   });
 
-  const pipelines = () => cached('builds', async () => pipelineHealth(await inTrackedRepos(await rawBuilds()), await repos()));
+  // Definitions change rarely; the Refresh button (or 10 minutes) picks up new ones.
+  const definitions = () => cached('defs', async () => {
+    const lists = await Promise.all((await tracked()).map((p) => provider.listDefinitions(p.id).catch(() => [])));
+    return lists.flat();
+  }, 10 * MIN);
+
+  const pipelines = () => cached('builds', async () => {
+    const [builds, repoList, defs] = await Promise.all([rawBuilds(), repos(), definitions()]);
+    return pipelineHealth(await inTrackedRepos(builds), repoList, await inTrackedRepos(defs));
+  });
 
   /** Classic release pipelines in tracked projects, limited to tracked repos via their artifacts. */
   const releases = () => cached('builds:releases', async () => {

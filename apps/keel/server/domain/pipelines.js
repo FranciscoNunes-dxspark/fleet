@@ -35,7 +35,7 @@ export function homeBranch(runs, repoDefault) {
  * judged on the pipeline's home branch (PR validation runs ignored); "last
  * run" is simply its newest completed run, whatever branch or trigger.
  */
-export function pipelineHealth(builds, repos) {
+export function pipelineHealth(builds, repos, definitions = []) {
   const repoDefault = new Map(repos.map((r) => [r.id, r.defaultBranch]));
   const byDef = new Map();
   for (const b of builds) {
@@ -87,6 +87,33 @@ export function pipelineHealth(builds, repos) {
       runCount: judged.length,
       recent: completed.slice(0, 12).map((b) => ({ id: b.id, result: b.result, finishedAt: b.finishedAt, webUrl: b.webUrl, buildNumber: b.buildNumber })),
       medianDurationMin: median(completed.filter((b) => b.startedAt).map((b) => (Date.parse(b.finishedAt) - Date.parse(b.startedAt)) / 60_000)),
+    });
+  }
+  // Pipelines with no runs in the window (or never run): listed, judged on nothing.
+  const seen = new Set(rows.map((r) => r.key));
+  for (const d of definitions) {
+    const key = `${d.projectId}:${d.id}`;
+    if (seen.has(key)) continue;
+    rows.push({
+      key,
+      projectId: d.projectId,
+      projectName: d.projectName,
+      definition: { id: d.id, name: d.name, path: d.path },
+      repoId: d.repoId,
+      repoName: d.repoName,
+      branch: d.defaultBranch || repoDefault.get(d.repoId) || null,
+      health: 'unknown',
+      latest: null,
+      lastRun: d.lastRun || null,
+      running: [],
+      passRate: null,
+      failStreak: 0,
+      lastGreenAt: d.lastRun?.result === 'succeeded' ? d.lastRun.finishedAt : null,
+      runCount: 0,
+      recent: [],
+      medianDurationMin: null,
+      paused: !!d.paused,
+      webUrl: d.webUrl || null,
     });
   }
   const order = { failing: 0, unstable: 1, healthy: 2, unknown: 3 };

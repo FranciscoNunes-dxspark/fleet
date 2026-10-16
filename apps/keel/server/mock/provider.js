@@ -940,6 +940,20 @@ export function createMockProvider() {
       .filter((b) => !b.finishedAt || Date.parse(b.finishedAt) >= Date.now() - sinceDays * D)
       .map((b) => ({ ...b, sourceBranch: b.sourceBranch.replace(/^refs\/heads\//, '') }))),
 
+    listDefinitions(projectId) {
+      const p = projectById(projectId);
+      const defs = definitions.filter((d) => d.repo.projectId === p.id).map((d) => ({
+        id: d.id, name: d.name, path: d.path, projectId: p.id, projectName: p.name, repoId: d.repo.id, repoName: d.repo.name,
+        defaultBranch: 'main', paused: false, lastRun: null, webUrl: `${ORG}/${p.name}/_build?definitionId=${d.id}`,
+      }));
+      // A pipeline that has never run (a repo added recently), so the "No runs" row shows.
+      if (p.id === PROJECTS[0].id) {
+        const r = p.repoObjs[0];
+        defs.push({ id: 990, name: `${r.name}-release-checks`, path: '\\', projectId: p.id, projectName: p.name, repoId: r.id, repoName: r.name, defaultBranch: 'main', paused: false, lastRun: null, webUrl: `${ORG}/${p.name}/_build?definitionId=990` });
+      }
+      return delay(defs);
+    },
+
     listDefinitionRuns(projectId, definitionId, { top = 25 } = {}) {
       return delay(builds
         .filter((b) => b.projectId === projectById(projectId).id && b.definition.id === Number(definitionId))

@@ -169,7 +169,7 @@ function BuildsTab({ data }) {
 }
 
 function PipelineRow({ p, showFolder, onQueue }) {
-  const { can, openDrawer } = useApp();
+  const { can, openDrawer, meta } = useApp();
   const canRun = can('pipelines.run');
   const rowRef = useRef(null);
   const run = p.running[0];
@@ -209,6 +209,7 @@ function PipelineRow({ p, showFolder, onQueue }) {
         </> : '—'}
       </td>
       <td>
+        {!p.recent.length && !run && <span className="muted small">{t('No runs in the last {n} days', { n: meta.thresholds.buildLookbackDays })}{p.paused ? ` · ${t('paused')}` : ''}</span>}
         <div className="runs" aria-label={t(p.recent.length === 1 ? 'Last {n} result' : 'Last {n} results', { n: p.recent.length })}>
           {p.recent.map((r) => (
             <a key={r.id} href={r.webUrl} target="_blank" rel="noreferrer noopener" className={`run run-${RESULT[r.result] || 'muted'}`} title={`${r.buildNumber} · ${resultLabel(r.result)} · ${dateTime(r.finishedAt)}`}>
@@ -221,7 +222,7 @@ function PipelineRow({ p, showFolder, onQueue }) {
       <td className="num muted">{p.medianDurationMin != null ? `${Math.round(p.medianDurationMin)}m` : '—'}</td>
       <td className="row-actions">
         {canRun && <Confirm text={t('Run on {branch}?', { branch: p.branch })} onConfirm={() => onQueue(p, rowRef.current)} className="btn btn-small btn-ghost">{t('Run')}</Confirm>}
-        <ExternalLink href={(run || p.lastRun)?.webUrl}>{t('Open')}</ExternalLink>
+        <ExternalLink href={(run || p.lastRun)?.webUrl || p.webUrl}>{t('Open')}</ExternalLink>
       </td>
     </tr>
   );

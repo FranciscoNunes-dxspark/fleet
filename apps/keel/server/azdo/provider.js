@@ -712,6 +712,29 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       return [...(running.value || []), ...(queued.value || []), ...(done.value || [])].map(toBuild);
     },
 
+    /**
+     * Build and YAML pipeline definitions (enabled ones), so pipelines without
+     * recent runs, or that never ran, still show up.
+     */
+    async listDefinitions(projectId) {
+      const list = await listAll(`${seg(projectId)}/_apis/build/definitions`, { query: { includeAllProperties: true, includeLatestBuilds: true, $top: 500 } });
+      return list
+        .filter((d) => d.queueStatus !== 'disabled' && d.type !== 'xaml')
+        .map((d) => ({
+          id: d.id,
+          name: d.name,
+          path: d.path,
+          projectId: d.project?.id,
+          projectName: d.project?.name,
+          repoId: d.repository?.type === 'TfsGit' ? d.repository.id : null,
+          repoName: d.repository?.name || null,
+          defaultBranch: stripRef(d.repository?.defaultBranch) || null,
+          paused: d.queueStatus === 'paused',
+          lastRun: d.latestCompletedBuild ? toBuild({ ...d.latestCompletedBuild, project: d.project, definition: d }) : null,
+          webUrl: d._links?.web?.href || null,
+        }));
+    },
+
     /** A pipeline's latest runs, any status and branch, newest first. */
     async listDefinitionRuns(projectId, definitionId, { top = 25 } = {}) {
       const d = await api(`${seg(projectId)}/_apis/build/builds`, { query: { definitions: definitionId, queryOrder: 'queueTimeDescending', $top: top } });

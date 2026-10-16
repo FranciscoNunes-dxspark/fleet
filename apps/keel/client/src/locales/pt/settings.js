@@ -229,6 +229,8 @@ export default {
   'Canceled': 'Cancelado',
   'Deploying': 'A fazer deploy',
   'Queued': 'Em fila',
+  'No runs in the last {n} days': 'Sem execuções nos últimos {n} dias',
+  'paused': 'em pausa',
   '{run} queued {age} ago': '{run} em fila há {age}',
   '{n} queued': '{n} em fila',
   'Running or queued': 'A correr ou em fila',
