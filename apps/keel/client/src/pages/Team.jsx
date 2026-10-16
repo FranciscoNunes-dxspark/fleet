@@ -22,13 +22,13 @@ export default function Team() {
 
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
   if (!data.rows.length) {
-    return <div className="page"><PageHeader title={t('Team')} /><Empty title={t('No team members found.')}>{t('Pick a team for your projects in Settings.')}</Empty></div>;
+    return <div className="page page-wide"><PageHeader title={t('Team')} /><Empty title={t('No team members found.')}>{t('Pick a team for your projects in Settings.')}</Empty></div>;
   }
 
   const id = (r) => encodeURIComponent(r.person.id);
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <PageHeader title={t('Team')} sub={t('Load across tracked projects. Flags trigger above {inProgress} items in progress or {reviews} pending reviews.', { inProgress: th.maxInProgressPerPerson, reviews: th.maxPendingReviewsPerPerson })} />
       <div className="table-wrap">
         <table className="table">

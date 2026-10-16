@@ -19,7 +19,7 @@ export default function Insights() {
       </div>
     </PageHeader>
   );
-  if (!data) return <div className="page">{header}{error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />}</div>;
+  if (!data) return <div className="page page-wide">{header}{error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />}</div>;
 
   const tot = data.totals;
   const facts = [
@@ -31,7 +31,7 @@ export default function Insights() {
   const topReviewerShare = data.byReviewer.length && data.byReviewer[0].count / data.byReviewer.reduce((s, r) => s + r.count, 0);
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       {header}
       <dl className="fact-row">
         {facts.map(([k, v, note]) => (

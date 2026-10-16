@@ -86,7 +86,7 @@ export default function WorkItems() {
   const types = [...new Set(data.items.map((w) => w.type))].sort();
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <PageHeader title={t('Work items')} sub={t(data.items.length === 1 ? '{n} open item across tracked projects' : '{n} open items across tracked projects', { n: data.items.length })}>
         {editable && <button type="button" className="btn btn-small btn-primary" onClick={() => openDrawer({ type: 'newworkitem' })}>{t('New work item')}</button>}
       </PageHeader>

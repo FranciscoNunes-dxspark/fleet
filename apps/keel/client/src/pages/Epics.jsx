@@ -113,7 +113,7 @@ export default function Epics() {
   const allIds = projects.flatMap((p) => p.epics.flatMap(containerIds));
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <PageHeader
         title={t('Epics')}
         sub={`${t(includeClosed

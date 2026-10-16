@@ -551,7 +551,7 @@ tr.saving { opacity: 0.55; }
 .pipeline-group-running td { color: var(--info); }
 
 /* ---------------------------------------------------------- board (dnd) */
-.page-wide { max-width: 1560px; }
+.page-wide { max-width: none; } /* list and board pages use the whole width; reading pages keep .page's cap */
 .card[draggable='true'] { cursor: grab; }
 .card[draggable='true']:active { cursor: grabbing; }
 .card-moving { opacity: 0.6; }

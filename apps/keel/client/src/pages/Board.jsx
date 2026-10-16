@@ -100,7 +100,7 @@ export default function Board() {
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
   if (!data.project) {
     return (
-      <div className="page">
+      <div className="page page-wide">
         <PageHeader title={t('Board')} />
         <Empty title={t('No team selected for any tracked project.')}>{t('Pick one or more teams for a project in Settings to see their board.')}</Empty>
       </div>

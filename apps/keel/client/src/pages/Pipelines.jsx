@@ -23,7 +23,7 @@ export default function Pipelines() {
   const approvals = rel.data?.approvals || [];
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <PageHeader
         title={t('Pipelines')}
         sub={data

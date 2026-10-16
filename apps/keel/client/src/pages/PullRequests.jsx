@@ -64,7 +64,7 @@ export default function PullRequests() {
   const reviewerName = data.people.find((p) => p.id === reviewer)?.displayName;
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <PageHeader title={t('Pull requests')} sub={t(data.repos.length === 1 ? '{n} active across {repos} repo' : '{n} active across {repos} repos', { n: data.prs.length, repos: data.repos.length })}>
         {can('prs.write') && <button type="button" className="btn btn-primary" onClick={() => openDrawer({ type: 'newpr' })}>{t('New pull request')}</button>}
       </PageHeader>
