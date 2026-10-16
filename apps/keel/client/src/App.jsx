@@ -17,8 +17,8 @@ import Pipelines from './pages/Pipelines.jsx';
 import Production from './pages/Production.jsx';
 import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
-import ReleaseNotes from './pages/ReleaseNotes.jsx';
 import Settings from './pages/Settings.jsx';
+import { Icon } from './icons.jsx';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
@@ -268,19 +268,27 @@ function Shell() {
     }
   };
 
+  // Grouped by what you're doing: today's triage, planning work, shipping code, the people.
   const nav = [
-    { to: '/', label: 'Dashboard', end: true },
-    { to: '/inbox', label: 'Inbox', count: s?.high, tone: 'bad' },
-    { to: '/prs', label: 'Pull requests', count: s?.myReviews, tone: 'accent' },
-    { to: '/work', label: 'Work items' },
-    { to: '/board', label: 'Board' },
-    { to: '/epics', label: 'Epics' },
-    { to: '/pipelines', label: 'Pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
-    { to: '/production', label: 'Production', count: s?.productionIssues, tone: 'bad' },
-    { to: '/team', label: 'Team' },
-    { to: '/insights', label: 'Insights' },
-    { to: '/release-notes', label: 'Release notes' },
-    ...(authMode === 'login' && can('users.manage') ? [{ to: '/users', label: 'Users' }] : []),
+    { items: [
+      { to: '/', label: 'Dashboard', icon: 'dashboard', end: true },
+      { to: '/inbox', label: 'Inbox', icon: 'inbox', count: s?.high, tone: 'bad' },
+    ] },
+    { label: 'Work', items: [
+      { to: '/work', label: 'Work items', icon: 'workItems' },
+      { to: '/board', label: 'Board', icon: 'board' },
+      { to: '/epics', label: 'Epics', icon: 'epics' },
+    ] },
+    { label: 'Code and delivery', items: [
+      { to: '/prs', label: 'Pull requests', icon: 'pullRequests', count: s?.myReviews, tone: 'accent' },
+      { to: '/pipelines', label: 'Pipelines', icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
+      { to: '/production', label: 'Production', icon: 'production', count: s?.productionIssues, tone: 'bad' },
+    ] },
+    { label: 'People', items: [
+      { to: '/team', label: 'Team', icon: 'team' },
+      { to: '/insights', label: 'Insights', icon: 'insights' },
+      ...(authMode === 'login' && can('users.manage') ? [{ to: '/users', label: 'Users', icon: 'users' }] : []),
+    ] },
   ];
 
   return (
@@ -293,23 +301,30 @@ function Shell() {
             <div className="brand-org truncate" title={meta.orgUrl}>{meta.orgUrl.replace(/^https?:\/\//, '')}</div>
           </div>
         </div>
-        <ul className="nav">
-          {nav.map((n) => (
-            <li key={n.to}>
-              <NavLink to={n.to} end={n.end} className="nav-link">
-                <span>{n.label}</span>
-                {n.count > 0 && <span className={`nav-count nav-count-${n.tone}`} title={`${n.count} need attention`}>{n.count}</span>}
-              </NavLink>
-            </li>
+        <div className="nav-groups">
+          {nav.map((group, i) => (
+            <div key={group.label || i} className="nav-group">
+              {group.label && <div className="nav-group-label" id={`nav-group-${i}`}>{group.label}</div>}
+              <ul className="nav" aria-labelledby={group.label ? `nav-group-${i}` : undefined}>
+                {group.items.map((n) => (
+                  <li key={n.to}>
+                    <NavLink to={n.to} end={n.end} className="nav-link">
+                      <span className="nav-label"><Icon name={n.icon} />{n.label}</span>
+                      {n.count > 0 && <span className={`nav-count nav-count-${n.tone}`} title={`${n.count} need attention`}>{n.count}</span>}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
         <div className="sidebar-foot">
-          <NavLink to="/settings" className="nav-link"><span>Settings</span></NavLink>
+          <NavLink to="/settings" className="nav-link"><span className="nav-label"><Icon name="settings" />Settings</span></NavLink>
           <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning}>
-            <span className={spinning ? 'spin' : ''} aria-hidden="true">↻</span> Refresh from Azure DevOps
+            <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> Refresh from Azure DevOps
           </button>
           <LiveStatus />
-          {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut}>Sign out</button>}
+          {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut}><Icon name="signOut" size={14} /> Sign out</button>}
           <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
             Signed in as {meta.account?.name || meta.me.displayName}
             {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
@@ -340,9 +355,10 @@ function Shell() {
           <Route path="/production" element={<Production />} />
           <Route path="/team" element={<Team />} />
           <Route path="/insights" element={<Insights />} />
-          <Route path="/release-notes" element={<ReleaseNotes />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />
+          {/* Release notes is hidden for now (pages/ReleaseNotes.jsx is kept); old links and unknown paths go home. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>

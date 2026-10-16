@@ -114,9 +114,15 @@ button { font: inherit; color: inherit; }
 .brand-mark { flex: none; display: block; border-radius: 7px; }
 .brand-name { font-weight: 600; }
 .brand-org { font-size: 12px; color: var(--muted); max-width: 160px; }
+.nav-groups { display: grid; gap: 14px; min-height: 0; overflow-y: auto; }
+.nav-group-label { padding: 0 10px 4px; font-size: 12px; font-weight: 500; color: var(--muted); }
 .nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.nav-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.icon { flex: none; display: block; }
+.nav-link .icon { color: var(--muted); }
+.nav-link:hover .icon, .nav-link.active .icon { color: inherit; }
 .nav-link {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: 7px 10px; border-radius: var(--radius-sm); color: var(--ink-2); font-weight: 500;
 }
 .nav-link:hover { background: var(--surface-2); text-decoration: none; color: var(--ink); }
@@ -125,7 +131,8 @@ button { font: inherit; color: inherit; }
 .nav-count-bad { background: var(--bad); color: var(--on-accent); }
 .nav-count-accent { background: var(--accent); color: var(--on-accent); }
 .sidebar-foot { margin-top: auto; display: grid; gap: 8px; }
-.refresh-btn { justify-content: flex-start; }
+.refresh-btn { justify-content: flex-start; gap: 8px; }
+.refresh-btn .spin { display: inline-flex; }
 .me { font-size: 12px; color: var(--muted); padding: 0 10px; }
 .spin { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -444,7 +451,10 @@ tr.saving { opacity: 0.55; }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { min-width: 0; }
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .nav { display: flex; overflow-x: auto; gap: 2px; width: 100%; order: 3; }
+  .nav-groups { display: flex; overflow-x: auto; gap: 2px; width: 100%; order: 3; }
+  .nav-group-label { display: none; }
+  .nav { display: flex; gap: 2px; }
+  .nav-group + .nav-group { border-left: 1px solid var(--line); padding-left: 2px; }
   .nav-link { white-space: nowrap; }
   .sidebar-foot { margin: 0 0 0 auto; display: flex; align-items: center; }
   .sidebar-foot .me { display: none; }
@@ -709,7 +719,7 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .signin-help ol { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); }
 .signin-help ul { margin: 4px 0 0; padding-left: 18px; }
 .signin-foot { margin: 0; }
-.signout-btn { justify-content: flex-start; }
+.signout-btn { justify-content: flex-start; gap: 8px; }
 
 /* Loading states sit in the middle of the space they're holding. */
 .loading { justify-content: center; text-align: center; }

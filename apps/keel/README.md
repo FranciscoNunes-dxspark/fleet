@@ -55,7 +55,7 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 | **Production** | Your production apps next to the deploys that change them. Each monitor checks a URL every minute (up or down, response time, uptime) and can read Application Insights every 5 minutes (failure rate, p95, exceptions, top failing operations). Link a monitor to the release stage or pipeline that deploys it: deploys appear on its charts, and Keel flags it when failures rise after one ("failures up from 0.4% to 6.4% since Release-65"). Outages and regressions go to the Inbox and notifications. |
 | **Team** | Each person's in-progress items, sprint points, hours left, open PRs, reviews owed and oldest PR. Counts link to filtered views. |
 | **Insights** | Weekly merge throughput, median and 85th-percentile time to merge, open PR age, approvals given (review concentration), merges by author, and per-repo flow. |
-| **Release notes** | Merged PRs in a date range, plus the work items they delivered, as Markdown grouped into features, fixes, and PRs by repo. Copy it or download it. |
+| **Release notes** | Hidden from the menu for now (the page is kept in `client/src/pages/ReleaseNotes.jsx`). Merged PRs in a date range, plus the work items they delivered, as Markdown grouped into features, fixes, and PRs by repo. |
 
 Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Settings are saved to `data/settings.json`.
 
