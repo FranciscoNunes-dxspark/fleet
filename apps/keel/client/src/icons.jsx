@@ -8,6 +8,7 @@ const PATHS = {
   board: <><rect x="3" y="4" width="5" height="15" rx="1.5" /><rect x="10" y="4" width="5" height="9" rx="1.5" /><rect x="17" y="4" width="4" height="12" rx="1.5" /></>,
   epics: <><path d="m12 3 9 5-9 5-9-5z" /><path d="m3 13 9 5 9-5" /></>,
   pullRequests: <><circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M6 8.5v7" /><path d="M18 15.5V9a3 3 0 0 0-3-3h-4" /><path d="m13 3-3 3 3 3" /></>,
+  commits: <><circle cx="12" cy="12" r="3.5" /><path d="M3 12h5.5" /><path d="M15.5 12H21" /></>,
   pipelines: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><path d="M10 6.5h4a3 3 0 0 1 3 3V14" /></>,
   production: <path d="M3 12h4l3-8 4 16 3-8h4" />,
   totals: <><path d="M18 4H6l6 8-6 8h12" /></>,

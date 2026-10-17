@@ -10,6 +10,8 @@ import PrDetail from './pages/PrDetail.jsx';
 import WorkItems from './pages/WorkItems.jsx';
 import WorkItemDetail from './pages/WorkItemDetail.jsx';
 import PipelineDetail from './pages/PipelineDetail.jsx';
+import Commits from './pages/Commits.jsx';
+import CommitDetail from './pages/CommitDetail.jsx';
 import NewWorkItem from './pages/NewWorkItem.jsx';
 import NewPr from './pages/NewPr.jsx';
 import Board from './pages/Board.jsx';
@@ -231,6 +233,7 @@ function Console({ authMode, onSignedOut }) {
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
         {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
         {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
+        {drawer?.type === 'commit' && <CommitDetail key={`${drawer.repoId}:${drawer.id}`} target={drawer} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
         {drawer?.type === 'newworkitem' && <NewWorkItem key={JSON.stringify(drawer)} preset={drawer} />}
       </Drawer>
@@ -309,6 +312,7 @@ function Shell() {
     ] },
     { label: t('Code and delivery'), items: [
       { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent' },
+      { to: '/commits', label: t('Commits'), icon: 'commits' },
       { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
       { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad' },
       { to: '/totals', label: t('Platform totals'), icon: 'totals' },
@@ -391,6 +395,7 @@ function Shell() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/prs" element={<PullRequests />} />
+          <Route path="/commits" element={<Commits />} />
           <Route path="/work" element={<WorkItems />} />
           <Route path="/board" element={<Board />} />
           <Route path="/sprint" element={<Navigate to="/board?mode=sprint" replace />} />

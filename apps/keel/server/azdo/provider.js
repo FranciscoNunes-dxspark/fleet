@@ -83,7 +83,21 @@ export function changeKind(changeType = '') {
   if (t.includes('rename')) return 'renamed';
   return 'edited';
 }
-const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+
+/**
+ * A git commit. Authors are git identities (name and email), not Azure DevOps
+ * accounts; lists cut long messages short (`truncated`), getCommit has them whole.
+ */
+export const normalizeCommit = (c) => ({
+  id: c.commitId,
+  message: c.comment || '',
+  truncated: !!c.commentTruncated,
+  author: { name: c.author?.name || '', email: c.author?.email || '', date: c.author?.date || null },
+  committedAt: c.committer?.date || null,
+  changes: c.changeCounts ? { added: c.changeCounts.Add || 0, edited: c.changeCounts.Edit || 0, deleted: c.changeCounts.Delete || 0 } : null,
+  webUrl: c.remoteUrl || null,
+});
+const q = (s) =>`'${String(s).replace(/'/g, "''")}'`;
 
 export function htmlToText(html) {
   if (!html) return '';
@@ -444,6 +458,29 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         }
       }
       return refs.map((r) => ({ name: stripRef(r.name), ...(recent.get(stripRef(r.name)) || { pushedAt: null, pushedBy: null }) }));
+    },
+
+    /** Commits on a branch (the repo's default when none is given), newest first. */
+    async listCommits(projectId, repoId, { branch, since, top = 300 } = {}) {
+      const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/commits`, {
+        query: {
+          ...(branch ? { 'searchCriteria.itemVersion.version': branch, 'searchCriteria.itemVersion.versionType': 'branch' } : {}),
+          ...(since ? { 'searchCriteria.fromDate': since } : {}),
+          'searchCriteria.$top': top,
+        },
+      });
+      return (d.value || []).map(normalizeCommit);
+    },
+
+    /** One commit: its whole message, parents and the files it changed. */
+    async getCommit(projectId, repoId, commitId) {
+      const c = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/commits/${seg(commitId)}`, { query: { changeCount: 500 } });
+      const files = (c.changes || []).filter((x) => x.item?.path && !x.item.isFolder && x.item.gitObjectType !== 'tree');
+      return {
+        ...normalizeCommit(c),
+        parents: c.parents || [],
+        files: files.map((x) => ({ path: x.item.path, kind: changeKind(x.changeType), originalPath: x.sourceServerItem || null })),
+      };
     },
 
     /** What a PR from `source` into `target` would contain. */

@@ -14,6 +14,7 @@ import { buildAttention } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
+import { commitRefs, mergeCommits } from './domain/commits.js';
 import { deployMarkers, evaluateMonitor, runningDeploy } from './domain/production.js';
 
 const MIN = 60_000;
@@ -378,6 +379,37 @@ export function createService({
         suggestedTitle: suggestTitle(source, result.commits),
         suggestedWorkItems: found.map(({ id, title, type, state, stateCategory }) => ({ id, title, type, state, stateCategory })),
       };
+    },
+
+    /**
+     * Recent commits: every tracked repo on its default branch, or one repo on
+     * any branch. A repo that can't be read (empty, no access) is listed in
+     * `failed` rather than failing the page.
+     */
+    async commits({ repoId, branch, days = 14 } = {}) {
+      const list = (await repos()).filter((r) => r.defaultBranch);
+      const chosen = repoId ? list.filter((r) => r.id === repoId) : list;
+      if (repoId && !chosen.length) throw Object.assign(new Error('That repository isn\'t one of your tracked repos'), { status: 400 });
+      const ref = repoId && branch ? String(branch) : null;
+      const since = new Date(Date.now() - days * DAY).toISOString();
+      const failed = [];
+      const perRepo = await Promise.all(chosen.map(async (repo) => {
+        try {
+          const commits = await cached(`commits:${repo.id}:${ref || ''}:${days}`, () => provider.listCommits(repo.projectId, repo.id, { branch: ref || undefined, since }), 2 * MIN);
+          return { repo, commits };
+        } catch (err) {
+          failed.push({ repoId: repo.id, repoName: repo.name, error: err.message });
+          return { repo, commits: [] };
+        }
+      }));
+      return { commits: mergeCommits(perRepo), days, branch: ref, failed };
+    },
+
+    /** One commit with its whole message and changed files (commits never change, so it's kept a while). */
+    async commit(projectId, repoId, commitId) {
+      await assertTrackedRepo(repoId);
+      const c = await cached(`commit:${repoId}:${commitId}`, () => provider.getCommit(projectId, repoId, commitId), 60 * MIN);
+      return { ...c, ...commitRefs(c.message) };
     },
 
     async createPullRequest(input) {

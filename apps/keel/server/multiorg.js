@@ -140,6 +140,21 @@ export function createMultiService(entries) {
       const e = await ownerOf(body.projectId);
       return tag(e.org, await e.service.createPullRequest(body));
     },
+    /** Commits of every organization's repos, or (with a projectId) of one repo in the organization that owns it. */
+    async commits(opts = {}) {
+      if (opts.projectId) {
+        const e = await ownerOf(opts.projectId);
+        const result = await e.service.commits(opts);
+        return { ...result, commits: tagAll(e.org, result.commits), failed: tagAll(e.org, result.failed) };
+      }
+      const parts = await each((s) => s.commits(opts));
+      return {
+        ...parts[0].value,
+        commits: parts.flatMap(({ org, value }) => tagAll(org, value.commits)).sort((a, b) => (Date.parse(b.author?.date) || 0) - (Date.parse(a.author?.date) || 0)),
+        failed: parts.flatMap(({ org, value }) => tagAll(org, value.failed)),
+      };
+    },
+    commit: viaProject('commit'),
     branches: viaProject('branches'),
     compare: viaProject('compare'),
     pullRequest: viaProject('pullRequest'),

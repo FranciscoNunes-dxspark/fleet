@@ -1048,3 +1048,34 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
   .repo-row { grid-template-columns: 1fr; }
   .repo-row-head span:last-child { display: none; }
 }
+
+/* Commits: grouped by day, one row per commit. */
+.commit-day { margin-bottom: 18px; }
+.commit-day-head { font-size: 14px; margin: 0 0 6px; display: flex; gap: 10px; align-items: baseline; }
+.commit-list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.commit-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 200px) 92px 52px; gap: 6px 16px; align-items: center; padding: 9px 14px; }
+.commit-row + .commit-row { border-top: 1px solid var(--line); }
+.commit-row:hover { background: var(--surface-2); }
+.commit-main { min-width: 0; }
+.commit-main .row-link { overflow-wrap: anywhere; }
+.commit-changes { white-space: nowrap; text-align: right; }
+.commit-time { text-align: right; white-space: nowrap; }
+.commit-message { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 13px; background: var(--surface-2); padding: 10px 12px; border-radius: var(--radius); }
+@media (max-width: 760px) {
+  .commit-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .commit-author { grid-column: 1; }
+  .commit-changes { display: none; }
+}
+
+/* Settings → Claude: setup steps, the new token, and your connections. */
+.claude-steps { margin: 12px 0; padding-left: 20px; display: grid; gap: 8px; }
+.claude-snippet { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
+.claude-snippet pre, .claude-snippet code { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius); overflow-x: auto; white-space: pre; }
+.claude-snippet code { overflow-wrap: anywhere; white-space: normal; }
+.claude-token { border: 1px solid var(--accent); border-radius: var(--radius); padding: 10px 12px; margin: 12px 0; }
+.claude-token p { margin: 4px 0 0; }
+.claude-create { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.claude-create .input { flex: 1; min-width: 200px; max-width: 360px; }
+.claude-tokens { list-style: none; margin: 6px 0 0; padding: 0; }
+.claude-tokens li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.claude-tokens li .muted { flex: 1; }
