@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { dateTime } from '../format.js';
@@ -7,6 +8,8 @@ import { useProjectLabel } from '../orgs.js';
 import { DEPLOY_STATUS } from './DeployDetail.jsx';
 
 const DAY = 86_400_000;
+// Longer lists show this many until you ask for the rest.
+const SHORT = 6;
 const day = (iso, opts = {}) => new Date(iso).toLocaleDateString(locale(), { day: 'numeric', month: 'short', timeZone: 'UTC', ...opts });
 const shiftWeek = (week, n) => new Date(Date.parse(week) + n * 7 * DAY).toISOString().slice(0, 10);
 
@@ -56,23 +59,58 @@ function asText(s, projectLabel) {
   return `${lines.join('\n')}\n`;
 }
 
+/** The first SHORT entries of a list, with "Show all" for the rest. */
+function useShort(list) {
+  const [all, setAll] = useState(false);
+  const shown = all ? list : list.slice(0, SHORT);
+  const more = list.length > SHORT && (
+    <button type="button" className="link-btn small summary-more" onClick={() => setAll((a) => !a)}>
+      {all ? t('Show fewer') : t('Show all {n}', { n: list.length })}
+    </button>
+  );
+  return [shown, more];
+}
+
 /** Work items as a list; each opens in the side panel. */
 function Items({ items, empty, onOpen, projectLabel }) {
+  const [shown, more] = useShort(items);
   if (!items.length) return <p className="muted small">{empty}</p>;
   return (
-    <ul className="summary-list">
-      {items.map((w) => (
-        <li key={`${w.org || ''}:${w.id}`}>
-          <button type="button" className="row-link" onClick={() => onOpen(w)}>{w.title}</button>
-          <div className="sub">
-            <TypeLabel type={w.type} />
-            <span>{projectLabel(w.projectName, w.org)}</span>
-            <span className="mono">#{w.id}</span>
-            {w.assignedTo && <span>{w.assignedTo}</span>}
-          </div>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="summary-list">
+        {shown.map((w) => (
+          <li key={`${w.org || ''}:${w.id}`}>
+            <button type="button" className="row-link" onClick={() => onOpen(w)}>{w.title}</button>
+            <div className="sub">
+              <TypeLabel type={w.type} />
+              <span>{projectLabel(w.projectName, w.org)}</span>
+              <span className="mono">#{w.id}</span>
+              {w.assignedTo && <span>{w.assignedTo}</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {more}
+    </>
+  );
+}
+
+/** Pull requests merged, per repository. */
+function MergedByRepo({ repos }) {
+  const [shown, more] = useShort(repos);
+  if (!repos.length) return <p className="muted small">{t('No pull requests merged.')}</p>;
+  return (
+    <>
+      <ul className="summary-list">
+        {shown.map((r) => (
+          <li key={`${r.projectName}/${r.repoName}`} className="summary-count">
+            <span>{r.repoName} <span className="muted small">{r.projectName}</span></span>
+            <span className="strong">{t(r.count === 1 ? '{n} pull request' : '{n} pull requests', { n: r.count })}</span>
+          </li>
+        ))}
+      </ul>
+      {more}
+    </>
   );
 }
 
@@ -179,18 +217,9 @@ export default function Summary() {
           </section>
           <section className="panel">
             <h2 className="section-title">{t('Code merged')} <span className="muted small">{tot.merged}</span></h2>
-            {data.mergedByRepo.length ? (
-              <ul className="summary-list">
-                {data.mergedByRepo.map((r) => (
-                  <li key={`${r.projectName}/${r.repoName}`} className="summary-count">
-                    <span>{r.repoName} <span className="muted small">{r.projectName}</span></span>
-                    <span className="strong">{t(r.count === 1 ? '{n} pull request' : '{n} pull requests', { n: r.count })}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="muted small">{t('No pull requests merged.')}</p>}
+            <MergedByRepo repos={data.mergedByRepo} />
           </section>
-          <section className="panel summary-wide">
+          <section className="panel">
             <h2 className="section-title">{t('Blocked right now')} <span className="muted small">{data.blocked.length}</span></h2>
             {list(data.blocked, t('Nothing is blocked.'))}
           </section>

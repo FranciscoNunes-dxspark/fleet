@@ -12,11 +12,13 @@ import { locale, t, tj, tx } from '../i18n.js';
 const WIDGETS = [
   { id: 'production', title: 'Production', link: '/production', linkText: 'Details' },
   { id: 'attention', title: 'Needs you', link: '/inbox', linkText: 'Open inbox' },
+  { id: 'week', title: 'This week', link: '/summary', linkText: 'Weekly summary' },
   { id: 'reviews', title: 'Your review queue', link: '/prs', linkText: 'All pull requests' },
   { id: 'pipelines', title: 'Pipelines', link: '/pipelines', linkText: 'All pipelines' },
   { id: 'work', title: 'Work in progress', link: '/work', linkText: 'All work items' },
   { id: 'team', title: 'Team load', link: '/team', linkText: 'Team' },
   { id: 'flow', title: 'Delivery, last 14 days', link: '/insights', linkText: 'Insights' },
+  { id: 'delivery', title: 'Delivery to production', link: '/insights', linkText: 'Insights' },
   { id: 'epics', title: 'Epic progress', link: '/epics', linkText: 'All epics' },
   { id: 'mine', title: 'My work', link: '/work?view=mine', linkText: 'My items' },
 ];
@@ -131,6 +133,8 @@ function WidgetBody({ id }) {
     case 'work': return <WorkWidget />;
     case 'team': return <TeamWidget />;
     case 'flow': return <FlowWidget />;
+    case 'week': return <WeekWidget />;
+    case 'delivery': return <DeliveryWidget />;
     case 'epics': return <EpicsWidget />;
     case 'mine': return <MineWidget />;
     default: return null;
@@ -147,6 +151,59 @@ function useWidgetData(path) {
 function Stat({ value, label, tone, to }) {
   const body = <><span className={`stat-value ${tone ? `text-${tone}` : ''}`}>{value}</span><span className="stat-label">{label}</span></>;
   return to ? <Link to={to} className="stat">{body}</Link> : <span className="stat">{body}</span>;
+}
+
+/** The weekly summary's numbers so far, and the latest things finished. */
+function WeekWidget() {
+  const { data, fallback } = useWidgetData('/summary');
+  const { openDrawer } = useApp();
+  if (fallback) return fallback;
+  const s = data.totals;
+  const done = [...data.features, ...data.bugs].slice(-5).reverse();
+  return (
+    <>
+      <div className="stat-row">
+        <Stat value={s.features} label={t('items finished')} to="/summary" />
+        <Stat value={s.bugs} label={t('bugs fixed')} to="/summary" />
+        <Stat value={s.merged} label={t('PRs merged')} to="/summary" />
+        <Stat value={s.deploys} label={t('deploys')} tone={s.failedDeploys ? 'warn' : undefined} to="/summary" />
+      </div>
+      {done.length ? (
+        <ul className="mini-list">
+          {done.map((w) => (
+            <li key={`${w.org || ''}:${w.id}`}>
+              <button type="button" className="link-btn mini-title" onClick={() => openDrawer({ type: 'workitem', id: w.id, org: w.org })}>{w.title}</button>
+              <span className="muted small truncate">{w.type} · {w.projectName}{w.assignedTo ? ` · ${w.assignedTo}` : ''}</span>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="muted small">{t('Nothing finished yet this week.')}</p>}
+    </>
+  );
+}
+
+// DORA bands as text colors: Elite and High read as good.
+const BAND_TONE = { elite: 'ok', high: 'ok', medium: 'warn', low: 'bad' };
+const BAND_LABEL = { elite: 'Elite', high: 'High', medium: 'Medium', low: 'Low' };
+
+/** The four DORA measures over 30 days (Insights has the detail). */
+function DeliveryWidget() {
+  const { data, fallback } = useWidgetData('/delivery?days=30');
+  if (fallback) return fallback;
+  if (!data.targets.length) return <p className="muted small">{t('No production environment found. Link a production monitor to the release stage or pipeline that deploys it, or name the classic release stage "Production".')}</p>;
+  const tot = data.totals;
+  const label = (text, b) => (b ? `${text} · ${t(BAND_LABEL[b])}` : text);
+  return (
+    <>
+      <div className="stat-row">
+        <Stat value={tot.deploysPerWeek == null ? '—' : tot.deploysPerWeek >= 10 ? Math.round(tot.deploysPerWeek) : tot.deploysPerWeek.toFixed(1)} label={label(t('deploys a week'), data.bands.frequency)} tone={BAND_TONE[data.bands.frequency]} to="/insights" />
+        <Stat value={hours(tot.medianLeadTimeHours)} label={label(t('commit to production'), data.bands.leadTime)} tone={BAND_TONE[data.bands.leadTime]} to="/insights" />
+        <Stat value={pct(tot.failureRate)} label={label(t('deploys failed'), data.bands.failureRate)} tone={BAND_TONE[data.bands.failureRate]} to="/insights" />
+        <Stat value={hours(tot.medianRecoveryHours)} label={label(t('to recover'), data.bands.recovery)} tone={BAND_TONE[data.bands.recovery]} to="/insights" />
+      </div>
+      <p className="muted small">{t(data.targets.length === 1 ? 'Last 30 days, {n} production environment.' : 'Last 30 days, {n} production environments.', { n: data.targets.length })}</p>
+    </>
+  );
 }
 
 function AttentionWidget() {

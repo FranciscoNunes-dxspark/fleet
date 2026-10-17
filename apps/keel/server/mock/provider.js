@@ -766,6 +766,14 @@ export function createMockProvider() {
 
     getPullRequestWorkItemIds: (projectId, repoId, prId) => delay([...getPR(projectId, repoId, prId)._workItemIds]),
 
+    // The demo history has no branches: a PR's commits are the two before its merge commit.
+    getPullRequestCommitIds(projectId, repoId, prId) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      const list = repo ? demoCommits(repo) : [];
+      const i = list.findIndex((c) => c.message.startsWith(`Merged PR ${prId}:`));
+      return delay(i < 0 ? [] : list.slice(i + 1).filter((c) => !c.message.startsWith('Merged PR')).slice(0, 2).map((c) => c.id));
+    },
+
     listReleases(projectId) {
       const p = projectById(projectId);
       return delay(RELEASE_DEFS.filter((d) => d.project.id === p.id).map((d) => ({

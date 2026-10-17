@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
 import { useWidth } from '../charts.jsx';
-import { Chip, Empty, ErrorBox, Loading, PageHeader } from '../ui.jsx';
+import { Chip, Empty, ErrorBox, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
 import { t, tj, tx } from '../i18n.js';
+import { deployStatus } from './DeployDetail.jsx';
 
 const STATE = {
   up: { tone: 'ok', label: 'Up' },
@@ -38,6 +39,7 @@ export default function Production() {
       >
         <Link className="btn btn-small" to="/settings#production">{t('Manage monitors')}</Link>
       </PageHeader>
+      <ProductionTabs />
 
       {!monitors.length && (
         <Empty title={t('No production monitors yet.')}>
@@ -137,15 +139,26 @@ function MonitorCard({ m }) {
         {m.markers.length > 0 && (
           <div>
             <h3 className="small">{t('Recent deploys')}</h3>
-            <ul className="mini-list">
-              {m.markers.slice(0, 5).map((d) => (
-                <li key={`${d.label}${d.at}`}>
-                  {m.targetKey && FINISHED.has(d.status)
-                    ? <button type="button" className="link-btn small" onClick={() => openDeploy(d)} title={t('What this deploy shipped')}>{d.label}</button>
-                    : <a href={d.webUrl} target="_blank" rel="noreferrer noopener" className="small">{d.label}</a>}
-                  <span className="muted small">{d.status} · {dateTime(d.at)}{d.by ? ` · ${d.by}` : ''}</span>
-                </li>
-              ))}
+            <ul className="deploy-rows">
+              {m.markers.slice(0, 5).map((d) => {
+                const status = deployStatus(d.status);
+                const body = (
+                  <>
+                    <span className="deploy-row-main">
+                      <span className="deploy-row-label">{d.label}</span>
+                      <span className="muted small">{dateTime(d.at)}{d.by ? ` · ${d.by}` : ''}</span>
+                    </span>
+                    <Chip tone={status.tone}>{t(status.label)}</Chip>
+                  </>
+                );
+                return (
+                  <li key={`${d.label}${d.at}`}>
+                    {m.targetKey && FINISHED.has(d.status)
+                      ? <button type="button" className="deploy-row" onClick={() => openDeploy(d)} title={t('What this deploy shipped')}>{body}<span className="deploy-row-go" aria-hidden="true">›</span></button>
+                      : <a className="deploy-row" href={d.webUrl} target="_blank" rel="noreferrer noopener" title={t('Open in Azure DevOps')}>{body}<span className="deploy-row-go" aria-hidden="true">↗</span></a>}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

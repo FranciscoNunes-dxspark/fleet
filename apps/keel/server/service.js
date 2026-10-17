@@ -474,7 +474,13 @@ export function createService({
           : await commitsBetween(repo.projectId, repo.id, previous.commit, deploy.commit);
       const commits = mergeCommits([{ repo, commits: raw }]);
       const ids = [...new Set(commits.flatMap((c) => c.workItemIds))].slice(0, 50);
-      const items = ids.length ? await provider.getWorkItems(ids).catch(() => []) : [];
+      // Each merged PR with the commits it brought; what's left was pushed without a PR.
+      const merges = commits.filter((c) => c.prId).slice(0, 30);
+      const [items, prCommitIds] = await Promise.all([
+        ids.length ? provider.getWorkItems(ids).catch(() => []) : [],
+        Promise.all(merges.map((c) => cached(`prcommits:${repo.id}:${c.prId}`, () => provider.getPullRequestCommitIds(repo.projectId, repo.id, c.prId), 24 * 60 * MIN).catch(() => []))),
+      ]);
+      const inPr = new Set([...merges.map((c) => c.id), ...prCommitIds.flat()]);
       return {
         ...base,
         repo: { id: repo.id, name: repo.name, projectId: repo.projectId },
@@ -482,7 +488,20 @@ export function createService({
         partial: !previous,
         redeploy: !!previous && previous.commit === deploy.commit,
         commits,
-        pullRequests: commits.filter((c) => c.prId).map((c) => ({ id: c.prId, title: c.subject.replace(/^Merged PR \d+:\s*/, ''), author: c.author?.name || null, projectId: c.projectId, repoId: c.repoId })),
+        pullRequests: merges.map((c, i) => {
+          const own = new Set(prCommitIds[i]);
+          return {
+            id: c.prId,
+            title: c.subject.replace(/^Merged PR \d+:\s*/, ''),
+            author: c.author?.name || null,
+            projectId: c.projectId,
+            repoId: c.repoId,
+            mergedAt: c.author?.date || null,
+            // The merge commit first, then the PR's own commits in this deploy.
+            commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
+          };
+        }),
+        directCommits: commits.filter((c) => !inPr.has(c.id)),
         workItems: items.map(({ id, type, title, state, stateCategory, assignedTo, webUrl }) => ({ id, type, title, state, stateCategory, assignedTo: assignedTo?.displayName || null, webUrl })),
         authors: [...new Set(commits.map((c) => c.author?.name).filter(Boolean))],
       };

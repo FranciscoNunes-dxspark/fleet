@@ -6,7 +6,7 @@ import { age, dateTime } from '../format.js';
 import { locale, t, tj, tx } from '../i18n.js';
 import { AREAS, KEY_FIGURES, areaLabel, figureLabel } from '../platformLabels.js';
 import { useSticky } from '../sticky.js';
-import { Chip, Empty, ErrorBox, Loading, PageHeader } from '../ui.jsx';
+import { Chip, Empty, ErrorBox, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
 
 // Platform totals (platform/v1 /totals): what each club site holds, fetched on a schedule.
 
@@ -104,6 +104,7 @@ function TotalsOverview() {
       >
         {can('monitors.manage') && <Link className="btn btn-small" to="/settings#production">{t('Manage sites')}</Link>}
       </PageHeader>
+      <ProductionTabs />
 
       {!data.length && (
         <Empty title={t('No sites with platform totals yet.')}>
@@ -228,6 +229,7 @@ function SiteTotals({ id }) {
           <button type="button" className="btn btn-small" onClick={fetchNow} disabled={starting || data.fetching}>{data.fetching ? t('Fetching…') : t('Fetch now')}</button>
         )}
       </PageHeader>
+      <ProductionTabs />
 
       <p className="muted small totals-when">
         {latest ? t('Fetched {when} ({age} ago), in {s}s.', { when: dateTime(latest.at), age: age(latest.at), s: Math.round(latest.durationMs / 1000) }) : t('Not fetched yet.')}

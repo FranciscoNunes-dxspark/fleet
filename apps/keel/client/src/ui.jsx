@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import { initials, VOTES } from './format.js';
 import { t } from './i18n.js';
 import { useApp } from './context.js';
@@ -93,6 +94,21 @@ export function PageHeader({ title, sub, children }) {
     </header>
   );
 }
+
+/** Tabs that are pages of their own (each with its own address), shown under the page title. */
+export function PageTabs({ label, tabs }) {
+  return (
+    <nav className="segmented page-tabs" aria-label={label}>
+      {tabs.map((tab) => (
+        <NavLink key={tab.to} to={tab.to} className={({ isActive }) => (isActive ? 'on' : '')}>{tab.label}</NavLink>
+      ))}
+    </nav>
+  );
+}
+
+// Pages that share one menu entry (see App.jsx): Pull requests and Commits; Production and Platform totals.
+export const CodeTabs = () => <PageTabs label={t('Code')} tabs={[{ to: '/prs', label: t('Pull requests') }, { to: '/commits', label: t('Commits') }]} />;
+export const ProductionTabs = () => <PageTabs label={t('Production')} tabs={[{ to: '/production', label: t('Monitors') }, { to: '/totals', label: t('Platform totals') }]} />;
 
 export function Drawer({ open, onClose, children, label }) {
   const ref = useRef(null);

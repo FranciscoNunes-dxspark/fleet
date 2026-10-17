@@ -457,6 +457,12 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       return (d.value || []).map((w) => Number(w.id));
     },
 
+    /** The commits a pull request brought (its source branch commits), as ids. */
+    async getPullRequestCommitIds(projectId, repoId, prId) {
+      const list = await listAll(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/pullrequests/${prId}/commits`, { query: { $top: 500 } });
+      return list.map((c) => c.commitId);
+    },
+
     /** All branches, with when/who last pushed for the recently active ones. */
     async listBranches(projectId, repoId) {
       const base = `${seg(projectId)}/_apis/git/repositories/${seg(repoId)}`;

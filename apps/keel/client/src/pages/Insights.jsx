@@ -1,4 +1,4 @@
-import { useSticky } from '../sticky.js';
+import { useSticky, useStickyParams } from '../sticky.js';
 import { BarList, ColumnChart } from '../charts.jsx';
 import { useApi } from '../context.js';
 import { date, hours, pct } from '../format.js';
@@ -8,19 +8,31 @@ import Delivery from './Delivery.jsx';
 
 const RANGES = [14, 30, 90];
 
+/** Two tabs over the same period: delivery to production (DORA) and code review and merging. */
 export default function Insights() {
   const [days, setDays] = useSticky('insights.days', 30);
-  const { data, error, reload, loading } = useApi(`/insights?days=${days}`);
+  const [params, setParams] = useStickyParams('insights', ['tab']);
+  const tab = params.get('tab') === 'review' ? 'review' : 'delivery';
 
-  const header = (
-    <PageHeader title={t('Insights')} sub={t('How work flows through review and delivery across your tracked repos.')}>
-      {loading && data && <span className="spinner" aria-label={t('Refreshing')} />}
-      <div className="segmented segmented-compact" role="tablist" aria-label={t('Time range')}>
-        {RANGES.map((d) => <button key={d} type="button" role="tab" aria-selected={days === d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{t('{n} days', { n: d })}</button>)}
+  return (
+    <div className="page page-wide">
+      <PageHeader title={t('Insights')} sub={t('How work flows through review and delivery across your tracked repos.')}>
+        <div className="segmented segmented-compact" role="tablist" aria-label={t('Time range')}>
+          {RANGES.map((d) => <button key={d} type="button" role="tab" aria-selected={days === d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{t('{n} days', { n: d })}</button>)}
+        </div>
+      </PageHeader>
+      <div className="segmented" role="tablist" aria-label={t('Insights')}>
+        <button type="button" role="tab" aria-selected={tab === 'delivery'} className={tab === 'delivery' ? 'on' : ''} onClick={() => setParams({}, { replace: true })}>{t('Delivery to production')}</button>
+        <button type="button" role="tab" aria-selected={tab === 'review'} className={tab === 'review' ? 'on' : ''} onClick={() => setParams({ tab: 'review' }, { replace: true })}>{t('Code review and merging')}</button>
       </div>
-    </PageHeader>
+      {tab === 'delivery' ? <Delivery days={days} /> : <ReviewInsights days={days} />}
+    </div>
   );
-  if (!data) return <div className="page page-wide">{header}{error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />}</div>;
+}
+
+function ReviewInsights({ days }) {
+  const { data, error, reload, loading } = useApi(`/insights?days=${days}`);
+  if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 
   const tot = data.totals;
   const facts = [
@@ -32,11 +44,7 @@ export default function Insights() {
   const topReviewerShare = data.byReviewer.length && data.byReviewer[0].count / data.byReviewer.reduce((s, r) => s + r.count, 0);
 
   return (
-    <div className="page page-wide">
-      {header}
-      <Delivery days={days} />
-
-      <h2 className="section-title">{t('Code review and merging')}</h2>
+    <section aria-busy={loading}>
       <dl className="fact-row">
         {facts.map(([k, v, note]) => (
           <div key={k} className="fact">
@@ -93,6 +101,6 @@ export default function Insights() {
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   );
 }

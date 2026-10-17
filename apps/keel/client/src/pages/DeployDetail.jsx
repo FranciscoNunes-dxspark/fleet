@@ -4,11 +4,30 @@ import { Chip, ErrorBox, ExternalLink, Loading, TypeLabel } from '../ui.jsx';
 import { t } from '../i18n.js';
 
 const enc = encodeURIComponent;
+// Deploy outcomes from release stages and pipeline runs; labels are translated where shown.
 export const DEPLOY_STATUS = {
   succeeded: { tone: 'ok', label: 'Succeeded' },
   partiallySucceeded: { tone: 'warn', label: 'Partially succeeded' },
   failed: { tone: 'bad', label: 'Failed' },
+  rejected: { tone: 'bad', label: 'Rejected' },
+  inProgress: { tone: 'info', label: 'In progress' },
+  queued: { tone: 'muted', label: 'Queued' },
+  canceled: { tone: 'muted', label: 'Canceled' },
 };
+export const deployStatus = (status) => DEPLOY_STATUS[status] || { tone: 'muted', label: status || '—' };
+
+function CommitList({ commits, onOpen }) {
+  return (
+    <ul className="deploy-list">
+      {commits.map((c) => (
+        <li key={c.id}>
+          <button type="button" className="row-link" onClick={() => onOpen(c)}>{c.subject || t('(no message)')}</button>
+          <div className="sub"><code className="mono">{c.id.slice(0, 8)}</code><span>{c.author?.name}</span><span>{dateTime(c.author?.date)}</span></div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * What a production deploy shipped: the work items, pull requests and commits
@@ -65,24 +84,21 @@ export default function DeployDetail({ target }) {
             {data.pullRequests.map((p) => (
               <li key={p.id}>
                 <button type="button" className="row-link" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>{p.title}</button>
-                <div className="sub"><span className="mono">!{p.id}</span>{p.author && <span>{p.author}</span>}</div>
+                <div className="sub"><span className="mono">!{p.id}</span>{p.author && <span>{p.author}</span>}{p.mergedAt && <span>{t('merged {date}', { date: dateTime(p.mergedAt) })}</span>}</div>
+                <details className="deploy-pr-commits">
+                  <summary className="small muted">{t(p.commits.length === 1 ? '{n} commit' : '{n} commits', { n: p.commits.length })}</summary>
+                  <CommitList commits={p.commits} onOpen={openCommit} />
+                </details>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      {data.commits.length > 0 && (
+      {data.directCommits.length > 0 && (
         <section className="detail-section">
-          <h3>{t('Commits')} <span className="muted small">{data.commits.length}</span></h3>
-          <ul className="deploy-list">
-            {data.commits.map((c) => (
-              <li key={c.id}>
-                <button type="button" className="row-link" onClick={() => openCommit(c)}>{c.subject || t('(no message)')}</button>
-                <div className="sub"><code className="mono">{c.id.slice(0, 8)}</code><span>{c.author?.name}</span><span>{dateTime(c.author?.date)}</span></div>
-              </li>
-            ))}
-          </ul>
+          <h3>{data.pullRequests.length ? t('Commits without a pull request') : t('Commits')} <span className="muted small">{data.directCommits.length}</span></h3>
+          <CommitList commits={data.directCommits} onOpen={openCommit} />
         </section>
       )}
 

@@ -30,8 +30,7 @@ export default function Delivery({ days }) {
 
   const head = (
     <>
-      <h2 className="section-title">{t('Delivery to production')}</h2>
-      <p className="muted small">{t('The four DORA measures, from your production deploys: how often you ship, how long a change takes to reach users, how often a deploy fails, and how fast you recover.')}</p>
+      <p className="muted small delivery-intro">{t('The four DORA measures, from your production deploys: how often you ship, how long a change takes to reach users, how often a deploy fails, and how fast you recover.')}</p>
     </>
   );
   if (!data) return <section>{head}{error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />}</section>;

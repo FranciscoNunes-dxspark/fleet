@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSticky } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { dateTime } from '../format.js';
-import { Empty, ErrorBox, Loading, PageHeader, Person } from '../ui.jsx';
+import { CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person } from '../ui.jsx';
 import { locale, t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 
@@ -92,6 +92,7 @@ export default function Commits() {
         title={t('Commits')}
         sub={`${t(rows.length === 1 ? '{n} commit' : '{n} commits', { n: rows.length })} · ${t(people === 1 ? '{n} person' : '{n} people', { n: people })} · ${t(activeRepos === 1 ? '{n} repo' : '{n} repos', { n: activeRepos })}${loading ? ` · ${t('Loading…')}` : ''}`}
       />
+      <CodeTabs />
 
       <div className="filters">
         <input type="search" className="input" placeholder={t('Search message, ID, work item')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search commits')} />
