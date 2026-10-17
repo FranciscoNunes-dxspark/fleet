@@ -6,18 +6,24 @@ import { Cache } from './cache.js';
 import { createSettingsStore, defaultSettingsFile, pruneSnoozed } from './settings.js';
 import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
-import { DAY, enrichPR, sameIdentity } from './domain/prs.js';
+import { DAY, HOUR, enrichPR, sameIdentity } from './domain/prs.js';
 import { releaseHealth } from './domain/releases.js';
 import { pipelineHealth } from './domain/pipelines.js';
 import { buildWorkload } from './domain/workload.js';
-import { buildAttention } from './domain/attention.js';
+import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
 import { commitRefs, mergeCommits } from './domain/commits.js';
-import { deployMarkers, evaluateMonitor, runningDeploy } from './domain/production.js';
+import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
+import { buildDelivery } from './domain/delivery.js';
+import { buildSummary, weekRange } from './domain/summary.js';
 
 const MIN = 60_000;
+// Classic release stages that are production by their name; monitors can point at any stage or pipeline.
+const PROD_STAGE = /\b(prod|production|prd|live)\b/i;
+// Lead time is measured over this many recent deploys per environment (each costs one commits call, then cached).
+const LEAD_TIME_DEPLOYS = 30;
 
 /** Backlog order, then id; items without a rank go last. */
 const byBacklogOrder = (a, b) => {
@@ -258,9 +264,51 @@ export function createService({
       const sources = { releases: rels, pipelines: pipes, builds };
       const markers = deployMarkers(m, sources);
       const deploy = runningDeploy(m, sources);
-      return { ...m, markers, deploy, ...evaluateMonitor(m, markers, Date.now(), deploy) };
+      return { ...m, targetKey: targetKeyOf(m.link), markers, deploy, ...evaluateMonitor(m, markers, Date.now(), deploy) };
     });
   }
+
+  /**
+   * Where production is: the release stages and pipelines production monitors
+   * are linked to (named after the monitor), plus classic release stages
+   * named like production (Production, Prod, PRD, Live).
+   */
+  async function productionTargets() {
+    const [rels, pipes, projects] = await Promise.all([releases().catch(() => []), pipelines().catch(() => []), allProjects()]);
+    const projectName = (id) => projects.find((p) => p.id === id)?.name || null;
+    const found = new Map();
+    const add = (t) => t.key && !found.has(t.key) && found.set(t.key, t);
+    for (const m of monitoring ? monitoring.status() : []) {
+      const link = m.link;
+      if (!link) continue;
+      if (link.type === 'release') {
+        add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, name: m.name });
+      } else {
+        const row = pipes.find((x) => x.projectId === link.projectId && x.definition.id === link.definitionId);
+        add({ key: targetKeyOf(link), type: 'pipeline', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, branch: row?.branch || null, name: m.name });
+      }
+    }
+    for (const d of rels) {
+      for (const st of d.stages) {
+        if (!PROD_STAGE.test(st.name)) continue;
+        const link = { type: 'release', projectId: d.projectId, definitionId: d.id, stage: st.name };
+        add({ ...link, key: targetKeyOf(link), projectName: d.projectName, name: `${d.name} · ${st.name}` });
+      }
+    }
+    return [...found.values()];
+  }
+
+  /** One environment's deploys over the last `days` days, newest first, each with the commit it shipped. */
+  const deployHistory = (target, days) => cached(`builds:deploys:${target.key}:${days}`, async () => {
+    const since = new Date(Date.now() - days * DAY).toISOString();
+    return (await provider.listDeployments(target, { since })).filter((d) => d.at).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  }, 5 * MIN);
+
+  // What one commit has over another never changes.
+  const commitsBetween = (projectId, repoId, from, to) => cached(`between:${repoId}:${from}:${to}`, () => provider.listCommitsBetween(projectId, repoId, from, to), 24 * 60 * MIN);
+
+  /** The deploy before `i` in a newest-first history that shipped code from the same repo. */
+  const previousDeploy = (history, i) => history.slice(i + 1).find((d) => d.status === 'succeeded' && d.commit && d.repoId === history[i].repoId);
 
   /** Pending approvals from classic releases and YAML environment checks, in one list. */
   const approvals = () => cached('builds:approvals', async () => {
@@ -403,6 +451,103 @@ export function createService({
         }
       }));
       return { commits: mergeCommits(perRepo), days, branch: ref, failed };
+    },
+
+    /**
+     * What a production deploy shipped: the commits since the previous
+     * successful deploy of the same environment, and the pull requests and
+     * work items they mention.
+     */
+    async deployChanges(projectId, targetKey, deployId) {
+      const target = (await productionTargets()).find((x) => x.key === targetKey && x.projectId === projectId);
+      if (!target) throw Object.assign(new Error('Unknown production environment'), { status: 404 });
+      const history = await deployHistory(target, 90);
+      const i = history.findIndex((d) => String(d.id) === String(deployId));
+      if (i < 0) throw Object.assign(new Error('That deploy is older than 90 days, or unknown'), { status: 404 });
+      const deploy = history[i];
+      const previous = previousDeploy(history, i);
+      const base = { target: { key: target.key, name: target.name, projectName: target.projectName }, deploy, previous: previous ? { id: previous.id, label: previous.label, at: previous.at } : null };
+      if (!deploy.commit || !deploy.repoId) return { ...base, commits: [], pullRequests: [], workItems: [], authors: [], unknown: true };
+      const repo = (await repos()).find((r) => r.id === deploy.repoId) || { id: deploy.repoId, name: '', projectId: target.projectId, projectName: target.projectName };
+      const raw = !previous ? [await provider.getCommit(repo.projectId, repo.id, deploy.commit)]
+        : previous.commit === deploy.commit ? []
+          : await commitsBetween(repo.projectId, repo.id, previous.commit, deploy.commit);
+      const commits = mergeCommits([{ repo, commits: raw }]);
+      const ids = [...new Set(commits.flatMap((c) => c.workItemIds))].slice(0, 50);
+      const items = ids.length ? await provider.getWorkItems(ids).catch(() => []) : [];
+      return {
+        ...base,
+        repo: { id: repo.id, name: repo.name, projectId: repo.projectId },
+        // No earlier deploy in the last 90 days: only the deployed commit itself is known.
+        partial: !previous,
+        redeploy: !!previous && previous.commit === deploy.commit,
+        commits,
+        pullRequests: commits.filter((c) => c.prId).map((c) => ({ id: c.prId, title: c.subject.replace(/^Merged PR \d+:\s*/, ''), author: c.author?.name || null, projectId: c.projectId, repoId: c.repoId })),
+        workItems: items.map(({ id, type, title, state, stateCategory, assignedTo, webUrl }) => ({ id, type, title, state, stateCategory, assignedTo: assignedTo?.displayName || null, webUrl })),
+        authors: [...new Set(commits.map((c) => c.author?.name).filter(Boolean))],
+      };
+    },
+
+    /**
+     * Each production environment's deploys over `days` days, with the lead
+     * time (commit to production, in hours) of the commits each recent
+     * successful deploy shipped. Environments that can't be read are skipped.
+     */
+    async deliveryData(days) {
+      const targets = await productionTargets();
+      const results = await Promise.all(targets.map(async (t) => {
+        let history;
+        try {
+          history = await deployHistory(t, days + 30); // a month more, to find the deploy before the first one
+        } catch (err) {
+          console.warn(`[delivery] ${t.name}: ${err.message}`);
+          return null;
+        }
+        const since = Date.now() - days * DAY;
+        const deploys = await Promise.all(history.map(async (d, i) => {
+          const out = { id: d.id, label: d.label, at: d.at, status: d.status, webUrl: d.webUrl, target: t.name };
+          if (d.status !== 'succeeded' || Date.parse(d.at) < since || !d.commit) return out;
+          const recentIndex = history.slice(0, i).filter((x) => x.status === 'succeeded').length;
+          const prev = previousDeploy(history, i);
+          if (recentIndex >= LEAD_TIME_DEPLOYS || !prev || prev.commit === d.commit) return out;
+          const commits = await commitsBetween(t.projectId, d.repoId, prev.commit, d.commit).catch(() => []);
+          return { ...out, leadTimes: commits.map((c) => (Date.parse(d.at) - Date.parse(c.author?.date)) / HOUR).filter((h) => h >= 0) };
+        }));
+        return { key: t.key, name: t.name, projectName: t.projectName, deploys };
+      }));
+      return results.filter(Boolean);
+    },
+
+    async delivery(days) {
+      return buildDelivery({ targets: await this.deliveryData(days), days });
+    },
+
+    /** Raw material for one week's summary (see domain/summary.js). */
+    async summaryData({ from }) {
+      const days = Math.ceil((Date.now() - from) / DAY) + 1;
+      const [settings, projects, open, merged, targets] = await Promise.all([store.load(), tracked(), openItems(), closedPRs(days), productionTargets()]);
+      const finished = await cached(`wi:done:${days}`, async () => {
+        const lists = await Promise.all(projects.map(async (p) => {
+          const { areaPaths } = await scope(p);
+          const items = await provider.queryWorkItems(p.id, { doneWithinDays: days, areaPaths, categories: ['requirement', 'bug', 'feature', 'epic'] });
+          return items.map((w) => ({ ...w, projectId: p.id }));
+        }));
+        return lists.flat();
+      }, 5 * MIN);
+      const deploys = (await Promise.all(targets.map((t) => deployHistory(t, days).then((list) => list.map((d) => ({ ...d, target: t.name }))).catch(() => [])))).flat();
+      return {
+        finished,
+        merged,
+        deploys,
+        blocked: open.filter((w) => isBlocked(w, settings.blockedTag)),
+        inProgress: open.filter((w) => w.stateCategory === 'InProgress').length,
+      };
+    },
+
+    async summary(week) {
+      const range = weekRange(week);
+      if (range.from < Date.now() - 180 * DAY) throw Object.assign(new Error('Summaries go back 26 weeks'), { status: 400 });
+      return buildSummary({ ...range, ...(await this.summaryData(range)) });
     },
 
     /** One commit with its whole message and changed files (commits never change, so it's kept a while). */

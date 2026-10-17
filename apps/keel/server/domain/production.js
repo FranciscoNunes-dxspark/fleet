@@ -18,7 +18,7 @@ export function deployMarkers(monitor, { releases = [], pipelines = [], builds =
     return def.releases
       .map((r) => ({ r, s: r.stages.find((x) => !link.stage || x.name === link.stage) }))
       .filter(({ s }) => s && s.at && !['notStarted', 'undefined', 'canceled'].includes(s.status))
-      .map(({ r, s }) => ({ at: s.at, label: r.name, status: s.status, by: s.requestedFor?.displayName || null, webUrl: r.webUrl }))
+      .map(({ r, s }) => ({ id: r.id, at: s.at, label: r.name, status: s.status, by: s.requestedFor?.displayName || null, webUrl: r.webUrl }))
       .filter((d) => Date.parse(d.at) >= since)
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   }
@@ -27,8 +27,16 @@ export function deployMarkers(monitor, { releases = [], pipelines = [], builds =
   return builds
     .filter((b) => b.projectId === link.projectId && b.definition.id === link.definitionId && b.status === 'completed'
       && b.reason !== 'pullRequest' && (!row?.branch || b.sourceBranch === row.branch) && Date.parse(b.finishedAt) >= since)
-    .map((b) => ({ at: b.finishedAt, label: b.buildNumber, status: b.result, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }))
+    .map((b) => ({ id: b.id, at: b.finishedAt, label: b.buildNumber, status: b.result, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }))
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+/** A stable key for the environment a monitor link points at (see service.js productionTargets). */
+export function targetKeyOf(link) {
+  if (!link) return null;
+  return link.type === 'release'
+    ? `release:${link.projectId}:${link.definitionId}:${link.stage || ''}`
+    : `pipeline:${link.projectId}:${link.definitionId}`;
 }
 
 // A deploy running longer than this no longer hides an outage.

@@ -12,6 +12,9 @@
 //   failing primary fails the request, as with a single organization.
 import { buildInsights } from './domain/insights.js';
 import { buildWorkload } from './domain/workload.js';
+import { buildDelivery } from './domain/delivery.js';
+import { buildSummary, weekRange } from './domain/summary.js';
+import { DAY } from './domain/prs.js';
 
 const SEVERITY = { high: 0, medium: 1, low: 2 };
 const HEALTH = { failing: 0, unstable: 1, healthy: 2, unknown: 3 };
@@ -155,6 +158,27 @@ export function createMultiService(entries) {
       };
     },
     commit: viaProject('commit'),
+    deployChanges: viaProject('deployChanges'),
+
+    /** Delivery metrics computed once over every organization's production environments. */
+    async delivery(days) {
+      const parts = await each((s) => s.deliveryData(days));
+      return buildDelivery({ targets: parts.flatMap(({ org, value }) => tagAll(org, value)), days });
+    },
+    async summary(week) {
+      const range = weekRange(week);
+      if (range.from < Date.now() - 180 * DAY) throw Object.assign(new Error('Summaries go back 26 weeks'), { status: 400 });
+      const parts = await each((s) => s.summaryData(range));
+      const all = (k) => parts.flatMap(({ org, value }) => tagAll(org, value[k]));
+      return buildSummary({
+        ...range,
+        finished: all('finished'),
+        merged: all('merged'),
+        deploys: all('deploys'),
+        blocked: all('blocked'),
+        inProgress: parts.reduce((n, { value }) => n + value.inProgress, 0),
+      });
+    },
     branches: viaProject('branches'),
     compare: viaProject('compare'),
     pullRequest: viaProject('pullRequest'),

@@ -4,6 +4,7 @@
 const PATHS = {
   dashboard: <><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h14V9.5" /><path d="M10 20v-6h4v6" /></>,
   inbox: <><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z" /></>,
+  summary: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8" /><path d="M8 12h8" /><path d="M8 16h5" /></>,
   workItems: <><path d="m3 6 2 2 3-3" /><path d="m3 13 2 2 3-3" /><path d="M12 7h9" /><path d="M12 14h9" /><path d="M12 20h9" /><path d="M4 20h1" /></>,
   board: <><rect x="3" y="4" width="5" height="15" rx="1.5" /><rect x="10" y="4" width="5" height="9" rx="1.5" /><rect x="17" y="4" width="4" height="12" rx="1.5" /></>,
   epics: <><path d="m12 3 9 5-9 5-9-5z" /><path d="m3 13 9 5 9-5" /></>,

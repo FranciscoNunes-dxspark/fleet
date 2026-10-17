@@ -607,6 +607,54 @@ function demoCommits(repo, branch = repo.defaultBranch) {
 }
 const stripCommit = ({ _files, ...rest }) => ({ ...rest, author: { ...rest.author } });
 
+// Deploy history for a production environment (a release stage or a pipeline):
+// the recent releases and builds above, then older, made-up deploys going back
+// 60 days, each pointing at the newest demo commit before it started.
+const deployHistories = new Map();
+function demoDeployHistory(target) {
+  const key = `${target.type}:${target.definitionId}:${target.stage || ''}`;
+  if (deployHistories.has(key)) return deployHistories.get(key);
+  const local = rng([...key].reduce((s, c) => (s * 31 + c.charCodeAt(0)) | 0, 11));
+  let list = [];
+  let repo = null;
+  if (target.type === 'release') {
+    const def = RELEASE_DEFS.find((d) => d.id === Number(target.definitionId));
+    repo = definitions.find((x) => x.name === def?.artifact)?.repo || null;
+    for (const r of def?.releases || []) {
+      const e = r.envs.find((x) => !target.stage || x.name === target.stage);
+      if (!e || !['succeeded', 'rejected', 'partiallySucceeded'].includes(e.status)) continue;
+      list.push({ id: r.id, label: r.name, at: e.at, status: e.status === 'rejected' ? 'failed' : e.status, by: (e.requestedFor || r.createdBy)?.displayName || null, webUrl: r.webUrl });
+    }
+    let n = Math.min(...list.map((d) => Number(d.label.split('-')[1])).filter(Number.isFinite), 50);
+    let t = Math.min(...list.map((d) => Date.parse(d.at)), NOW) - (1 + local() * 3) * D;
+    while (t > NOW - 60 * D) {
+      n -= 1;
+      const id = 299 - (60 - n);
+      list.push({ id, label: `Release-${n}`, at: iso(t), status: local() < 0.12 ? 'failed' : 'succeeded', by: DEVS[Math.floor(local() * DEVS.length)].displayName, webUrl: relWebUrl(def.project, id) });
+      t -= (1 + local() * 4) * D;
+    }
+  } else {
+    const def = definitions.find((d) => d.id === Number(target.definitionId));
+    repo = def?.repo || null;
+    const runs = builds.filter((b) => b.definition.id === Number(target.definitionId) && b.status === 'completed' && b.reason !== 'pullRequest' && b.result !== 'canceled');
+    list = runs.map((b) => ({ id: b.id, label: b.buildNumber, at: b.finishedAt, status: b.result, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }));
+    let t = Math.min(...list.map((d) => Date.parse(d.at)), NOW) - (0.5 + local() * 2) * D;
+    let id = 19000 + Number(target.definitionId) * 100;
+    while (t > NOW - 60 * D && repo) {
+      const p = projectById(repo.projectId);
+      list.push({ id, label: new Date(t).toISOString().slice(0, 10).replace(/-/g, ''), at: iso(t), status: local() < 0.15 ? 'failed' : 'succeeded', by: DEVS[Math.floor(local() * DEVS.length)].displayName, webUrl: `${ORG}/${p.name}/_build/results?buildId=${id}` });
+      id += 1;
+      t -= (0.5 + local() * 2) * D;
+    }
+  }
+  const commits = repo ? demoCommits(repo) : [];
+  const history = list
+    .map((d) => ({ ...d, startedAt: iso(Date.parse(d.at) - 12 * 60_000), repoId: repo?.id || null, commit: commits.find((c) => Date.parse(c.author.date) < Date.parse(d.at) - 30 * 60_000)?.id || null }))
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  deployHistories.set(key, history);
+  return history;
+}
+
 // ------------------------------------------------------------------ provider
 const strip = ({ _description, _acceptance, _comments, _prs, _board, _attachments, ...rest }) => ({ ...rest });
 const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
@@ -795,6 +843,21 @@ export function createMockProvider() {
       if (!repo) throw notFound('Repository');
       const from = since ? Date.parse(since) : 0;
       return delay(demoCommits(repo, branch || repo.defaultBranch).filter((c) => Date.parse(c.author.date) >= from).slice(0, top).map(stripCommit));
+    },
+
+    listCommitsBetween(projectId, repoId, from, to, { top = 300 } = {}) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      if (!repo) throw notFound('Repository');
+      const list = demoCommits(repo);
+      const end = list.findIndex((c) => c.id === to);
+      if (end < 0) throw notFound(`Commit ${to}`);
+      const start = list.findIndex((c) => c.id === from);
+      return delay(list.slice(end, start < 0 ? undefined : start).slice(0, top).map(stripCommit));
+    },
+
+    listDeployments(target, { since }) {
+      const from = since ? Date.parse(since) : 0;
+      return delay(demoDeployHistory(target).filter((d) => Date.parse(d.at) >= from).map((d) => ({ ...d })));
     },
 
     getCommit(projectId, repoId, commitId) {

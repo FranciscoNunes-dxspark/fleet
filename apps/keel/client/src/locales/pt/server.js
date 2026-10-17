@@ -234,4 +234,7 @@ export default {
   '{key} is already connected.': '{key} já está ligada.',
   // Commits (routes.js)
   'Invalid commit id': 'ID de commit inválido',
+  'Unknown production environment': 'Ambiente de produção desconhecido',
+  'That deploy is older than 90 days, or unknown': 'Esse deploy tem mais de 90 dias ou é desconhecido',
+  'Summaries go back 26 weeks': 'Os resumos recuam até 26 semanas',
 };

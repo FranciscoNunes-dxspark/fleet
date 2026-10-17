@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useApi } from '../context.js';
+import { useApi, useApp } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
 import { useWidth } from '../charts.jsx';
 import { Chip, Empty, ErrorBox, Loading, PageHeader } from '../ui.jsx';
@@ -14,6 +14,8 @@ const STATE = {
   unknown: { tone: 'muted', label: 'No data yet' },
 };
 const HOUR = 3_600_000;
+// Deploys whose contents can be shown (DeployDetail.jsx); running or waiting ones link to Azure DevOps.
+const FINISHED = new Set(['succeeded', 'partiallySucceeded', 'failed', 'rejected']);
 const ms = (v) => (v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${Math.round(v)}ms`);
 
 export default function Production() {
@@ -53,7 +55,10 @@ export default function Production() {
 }
 
 function MonitorCard({ m }) {
+  const { openDrawer } = useApp();
   const s = STATE[m.state] || STATE.unknown;
+  // What a deploy shipped (DeployDetail.jsx), for monitors linked to a release stage or pipeline.
+  const openDeploy = (d) => m.targetKey && d?.id != null && openDrawer({ type: 'deploy', projectId: m.link.projectId, target: m.targetKey, id: d.id });
   const ai = m.ai;
   const since = Date.now() - 24 * HOUR;
   const markers = m.markers.filter((d) => Date.parse(d.at) >= since);
@@ -79,6 +84,7 @@ function MonitorCard({ m }) {
             <li key={i.code} className={`reason reason-${i.severity}`}>
               {tx(i.text)}
               {i.code === 'deploying' && m.deploy?.webUrl && <> · <a href={m.deploy.webUrl} target="_blank" rel="noreferrer noopener">{t('View the deploy')}</a></>}
+              {i.code === 'deploy-regression' && m.targetKey && i.deploy?.id != null && <> · <button type="button" className="link-btn" onClick={() => openDeploy(i.deploy)}>{t('See what changed')}</button></>}
             </li>
           ))}
         </ul>
@@ -134,7 +140,9 @@ function MonitorCard({ m }) {
             <ul className="mini-list">
               {m.markers.slice(0, 5).map((d) => (
                 <li key={`${d.label}${d.at}`}>
-                  <a href={d.webUrl} target="_blank" rel="noreferrer noopener" className="small">{d.label}</a>
+                  {m.targetKey && FINISHED.has(d.status)
+                    ? <button type="button" className="link-btn small" onClick={() => openDeploy(d)} title={t('What this deploy shipped')}>{d.label}</button>
+                    : <a href={d.webUrl} target="_blank" rel="noreferrer noopener" className="small">{d.label}</a>}
                   <span className="muted small">{d.status} · {dateTime(d.at)}{d.by ? ` · ${d.by}` : ''}</span>
                 </li>
               ))}

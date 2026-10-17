@@ -1066,3 +1066,15 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
   .commit-author { grid-column: 1; }
   .commit-changes { display: none; }
 }
+
+/* What a deploy shipped (DeployDetail.jsx) and the weekly summary. */
+.deploy-list, .summary-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.deploy-list li, .summary-list li { min-width: 0; }
+.deploy-list .row-link, .summary-list .row-link { overflow-wrap: anywhere; }
+.summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; align-items: start; }
+.summary-grid .panel { margin-bottom: 16px; }
+.summary-wide { grid-column: 1 / -1; }
+.summary-count { display: flex; justify-content: space-between; gap: 12px; }
+.summary-n { display: grid; justify-items: end; white-space: nowrap; }
+.page-actions .segmented button:disabled { opacity: 0.45; }
+@media (max-width: 860px) { .summary-grid { grid-template-columns: 1fr; } }

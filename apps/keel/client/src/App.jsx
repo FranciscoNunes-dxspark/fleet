@@ -12,6 +12,8 @@ import WorkItemDetail from './pages/WorkItemDetail.jsx';
 import PipelineDetail from './pages/PipelineDetail.jsx';
 import Commits from './pages/Commits.jsx';
 import CommitDetail from './pages/CommitDetail.jsx';
+import DeployDetail from './pages/DeployDetail.jsx';
+import Summary from './pages/Summary.jsx';
 import NewWorkItem from './pages/NewWorkItem.jsx';
 import NewPr from './pages/NewPr.jsx';
 import Board from './pages/Board.jsx';
@@ -234,6 +236,7 @@ function Console({ authMode, onSignedOut }) {
         {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
         {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
         {drawer?.type === 'commit' && <CommitDetail key={`${drawer.repoId}:${drawer.id}`} target={drawer} />}
+        {drawer?.type === 'deploy' && <DeployDetail key={`${drawer.target}:${drawer.id}`} target={drawer} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
         {drawer?.type === 'newworkitem' && <NewWorkItem key={JSON.stringify(drawer)} preset={drawer} />}
       </Drawer>
@@ -304,6 +307,7 @@ function Shell() {
     { items: [
       { to: '/', label: t('Dashboard'), icon: 'dashboard', end: true },
       { to: '/inbox', label: t('Inbox'), icon: 'inbox', count: s?.high, tone: 'bad' },
+      { to: '/summary', label: t('Weekly summary'), icon: 'summary' },
     ] },
     { label: t('Work'), items: [
       { to: '/work', label: t('Work items'), icon: 'workItems' },
@@ -394,6 +398,7 @@ function Shell() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/inbox" element={<Inbox />} />
+          <Route path="/summary" element={<Summary />} />
           <Route path="/prs" element={<PullRequests />} />
           <Route path="/commits" element={<Commits />} />
           <Route path="/work" element={<WorkItems />} />

@@ -149,6 +149,20 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
   });
   const rm = releaseHost(org);
   const relUrl = (project, releaseId) => `${org}/${seg(project)}/_releaseProgress?releaseId=${releaseId}&_a=release-pipeline-progress`;
+  // A release's artifacts never change once it's created.
+  const artifactsByRelease = new Map();
+  const releaseArtifacts = (projectName, releaseId) => {
+    if (!releaseId) return Promise.resolve([]);
+    if (!artifactsByRelease.has(releaseId)) {
+      artifactsByRelease.set(releaseId, api(`${rm}/${seg(projectName)}/_apis/release/releases/${releaseId}`)
+        .then((r) => r.artifacts || [])
+        .catch((err) => {
+          artifactsByRelease.delete(releaseId);
+          throw err;
+        }));
+    }
+    return artifactsByRelease.get(releaseId);
+  };
 
   // Same shape as YAML approvals (listPipelineApprovals) so the UI can list both.
   const normalizeApproval = (a, projectId, projectName) => ({
@@ -466,6 +480,20 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         query: {
           ...(branch ? { 'searchCriteria.itemVersion.version': branch, 'searchCriteria.itemVersion.versionType': 'branch' } : {}),
           ...(since ? { 'searchCriteria.fromDate': since } : {}),
+          'searchCriteria.$top': top,
+        },
+      });
+      return (d.value || []).map(normalizeCommit);
+    },
+
+    /** Commits reachable from `to` but not from `from` (what a deploy of `to` adds over `from`), newest first. */
+    async listCommitsBetween(projectId, repoId, from, to, { top = 300 } = {}) {
+      const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/commits`, {
+        query: {
+          'searchCriteria.itemVersion.version': to,
+          'searchCriteria.itemVersion.versionType': 'commit',
+          'searchCriteria.compareVersion.version': from,
+          'searchCriteria.compareVersion.versionType': 'commit',
           'searchCriteria.$top': top,
         },
       });
@@ -1018,6 +1046,64 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
               deploying: e.deploying, startedAt: e.startedAt,
             })),
           })),
+        };
+      }));
+    },
+
+    /**
+     * Deployments into one environment since `since`, newest first, each with
+     * the commit it shipped: a classic release stage (target.type 'release',
+     * with definitionId and optional stage) or a pipeline's runs on its branch
+     * (type 'pipeline'). See service.js productionTargets().
+     */
+    async listDeployments(target, { since }) {
+      if (target.type === 'pipeline') {
+        const runs = await listAll(`${seg(target.projectId)}/_apis/build/builds`, {
+          query: {
+            definitions: target.definitionId,
+            minTime: since,
+            statusFilter: 'completed',
+            queryOrder: 'finishTimeDescending',
+            ...(target.branch ? { branchName: `refs/heads/${target.branch}` } : {}),
+            $top: 500,
+          },
+        });
+        return runs
+          .filter((b) => b.reason !== 'pullRequest' && b.result !== 'canceled')
+          .map((b) => ({
+            id: b.id,
+            label: b.buildNumber,
+            at: b.finishTime,
+            startedAt: b.startTime || b.queueTime,
+            status: b.result,
+            by: b.requestedFor?.displayName || null,
+            webUrl: b._links?.web?.href || `${org}/${seg(b.project?.name)}/_build/results?buildId=${b.id}`,
+            repoId: b.repository?.type === 'TfsGit' ? b.repository.id : null,
+            commit: b.sourceVersion || null,
+          }));
+      }
+      const base = `${rm}/${seg(target.projectName)}/_apis/release`;
+      const list = await api(`${base}/deployments`, {
+        query: { definitionId: target.definitionId, minStartedTime: since, queryOrder: 'descending', $top: 200 },
+      }).then((d) => d.value || []).catch((err) => (err.status === 404 ? [] : Promise.reject(err)));
+      const deployments = list.filter((d) => (!target.stage || d.releaseEnvironment?.name === target.stage)
+        && ['succeeded', 'partiallySucceeded', 'failed'].includes(d.deploymentStatus));
+      return Promise.all(deployments.map(async (d) => {
+        // The commit comes from the release's primary artifact (fetched once per release; releases don't change).
+        const artifacts = d.release?.artifacts?.length ? d.release.artifacts : await releaseArtifacts(target.projectName, d.release?.id);
+        const a = artifacts.find((x) => x.isPrimary) || artifacts[0];
+        const ref = a?.definitionReference || {};
+        const git = /git/i.test(a?.type || '');
+        return {
+          id: d.release?.id,
+          label: d.release?.name || `Release ${d.release?.id}`,
+          at: d.completedOn || d.lastModifiedOn || d.startedOn,
+          startedAt: d.startedOn || d.queuedOn || null,
+          status: d.deploymentStatus,
+          by: (d.requestedFor || d.requestedBy)?.displayName || null,
+          webUrl: relUrl(target.projectName, d.release?.id),
+          repoId: (git ? ref.definition?.id : ref.repository?.id) || null,
+          commit: (git ? ref.version?.id : ref.sourceVersion?.id) || null,
         };
       }));
     },

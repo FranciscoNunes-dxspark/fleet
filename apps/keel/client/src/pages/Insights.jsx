@@ -4,6 +4,7 @@ import { useApi } from '../context.js';
 import { date, hours, pct } from '../format.js';
 import { ErrorBox, Loading, PageHeader } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
+import Delivery from './Delivery.jsx';
 
 const RANGES = [14, 30, 90];
 
@@ -33,6 +34,9 @@ export default function Insights() {
   return (
     <div className="page page-wide">
       {header}
+      <Delivery days={days} />
+
+      <h2 className="section-title">{t('Code review and merging')}</h2>
       <dl className="fact-row">
         {facts.map(([k, v, note]) => (
           <div key={k} className="fact">

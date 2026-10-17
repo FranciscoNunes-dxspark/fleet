@@ -179,6 +179,14 @@ export function apiRouter() {
     res.json({ ok: true });
   });
 
+  // Production deploys: what one shipped, and delivery metrics (DORA) over a period.
+  r.get('/deploys/:projectId/changes', async (req, res) => res.json(await req.ctx.service.deployChanges(
+    req.params.projectId, String(req.query.target || ''), String(req.query.id || ''),
+  )));
+  r.get('/delivery', async (req, res) => res.json(await req.ctx.service.delivery(Math.min(90, Math.max(7, Number(req.query.days) || 30)))));
+  // One week's summary for everyone: ?week=YYYY-MM-DD (any day of the week; this week when absent).
+  r.get('/summary', async (req, res) => res.json(await req.ctx.service.summary(req.query.week ? String(req.query.week) : undefined)));
+
   r.get('/team', async (req, res) => res.json(await req.ctx.service.team()));
   r.get('/insights', async (req, res) => {
     const days = Math.min(180, Math.max(7, Number(req.query.days) || 30));
