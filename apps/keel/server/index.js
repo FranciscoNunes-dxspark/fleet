@@ -14,8 +14,6 @@ import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
 import { createMockVariant } from './mock/variant.js';
 import { createSettingsStore, defaultSettingsFile } from './settings.js';
-import { mcpRouter } from './mcp.js';
-import { createMcpTokens } from './mcptokens.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -25,15 +23,12 @@ app.use(securityHeaders);
 
 // Production checks run once per server and are shared by everyone using it.
 const monitoring = createMonitoring();
-// Connection tokens for the Claude connector at /mcp (Settings → Claude).
-const mcpTokens = createMcpTokens();
 
 if (config.authMode === 'login') {
   // Everyone signs in with their own PAT; each request runs as that person.
   const auth = createAuth({ monitoring });
   app.use('/api/auth', auth.router);
   app.use('/api/admin/users', auth.adminRouter);
-  app.use('/mcp', mcpRouter({ tokens: mcpTokens, contextFor: (entry) => auth.contextForAccount(entry.userId) }));
   app.use('/api', auth.requireUser, apiRouter());
   auth.announceSetup();
 } else {
@@ -60,14 +55,6 @@ if (config.authMode === 'login') {
     return ctx;
   };
   app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: orgStore.primary()?.url }));
-  // Claude, through a token made in Settings → Claude, acts as the one local person.
-  app.use('/mcp', mcpRouter({
-    tokens: mcpTokens,
-    contextFor: (entry) => {
-      if (entry.userId !== 'local') throw Object.assign(new Error('This token belongs to a Keel account; this server runs without sign-in.'), { status: 401 });
-      return { ctx: localCtx() };
-    },
-  }));
   app.use('/api', (req, res, next) => {
     req.ctx = localCtx();
     next();

@@ -1066,16 +1066,3 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
   .commit-author { grid-column: 1; }
   .commit-changes { display: none; }
 }
-
-/* Settings → Claude: setup steps, the new token, and your connections. */
-.claude-steps { margin: 12px 0; padding-left: 20px; display: grid; gap: 8px; }
-.claude-snippet { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
-.claude-snippet pre, .claude-snippet code { flex: 1; min-width: 0; margin: 0; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius); overflow-x: auto; white-space: pre; }
-.claude-snippet code { overflow-wrap: anywhere; white-space: normal; }
-.claude-token { border: 1px solid var(--accent); border-radius: var(--radius); padding: 10px 12px; margin: 12px 0; }
-.claude-token p { margin: 4px 0 0; }
-.claude-create { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
-.claude-create .input { flex: 1; min-width: 200px; max-width: 360px; }
-.claude-tokens { list-style: none; margin: 6px 0 0; padding: 0; }
-.claude-tokens li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
-.claude-tokens li .muted { flex: 1; }

@@ -7,7 +7,6 @@ import { LANGUAGES, getLanguage, setLanguage, t, tj } from '../i18n.js';
 import ProductionSettings from './ProductionSettings.jsx';
 import TypeColorSettings from './TypeColorSettings.jsx';
 import OrgSettings from './OrgSettings.jsx';
-import ClaudeSettings from './ClaudeSettings.jsx';
 import { useProjectLabel } from '../orgs.js';
 import { folderProblem, loadFolders, saveFolder } from '../claude.js';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
@@ -236,8 +235,6 @@ export default function Settings() {
       <OrgSettings />
 
       <AccountSettings />
-
-      <ClaudeSettings />
 
       <ProductionSettings />
 

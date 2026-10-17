@@ -91,39 +91,6 @@ You get a notification when:
 
 Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Keel`.
 
-## Claude: file work items by asking
-
-Keel includes a [Model Context Protocol](https://modelcontextprotocol.io) server at `/mcp`, so PMs and developers can ask Claude to file a ticket ("File a bug in Commerce: the checkout button does nothing on Safari, P2"), check for duplicates, comment on an item, or say what changed this week. Claude acts as the person who connected it: their role in Keel, their Azure DevOps token and the projects they track.
-
-| Tool | Does |
-|---|---|
-| `list_projects` | Tracked projects, the work item types you can create in each, and their teams and current sprint |
-| `search_work_items` | Open work items by words in the title or tags, type, project or assignee (`me`) |
-| `get_work_item` | One item: fields, description, acceptance criteria, parent, children and recent comments |
-| `create_work_item` | Files a work item (project, type, title, Markdown description, team, priority, tags, assignee, parent, backlog or current sprint) |
-| `add_work_item_comment` | Adds a Markdown comment |
-| `recent_commits` | Recent commits, the same data as the Commits page |
-
-Creating and commenting need the Work items permission (every role has it today). Claude is told to show what it's about to file and wait for a yes.
-
-**Connect it:** each person opens **Settings → Claude**, creates a connection and copies the token (it's shown once). The same page shows what to paste, with the token filled in:
-
-- **Claude Desktop** (needs Node.js): Settings → Developer → Edit Config, then add
-  ```json
-  { "mcpServers": { "keel": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://console.yourcompany.com/mcp", "--header", "Authorization:${KEEL_AUTH}"],
-      "env": { "KEEL_AUTH": "Bearer keel_..." } } } }
-  ```
-  and restart Claude Desktop.
-- **Claude Code:** `claude mcp add --transport http keel https://console.yourcompany.com/mcp --header "Authorization: Bearer keel_..."`
-
-Run locally, the address is `http://127.0.0.1:4280/mcp`, so Claude has to run on the same computer.
-
-**Tokens:** Keel stores only a SHA-256 of each token (`mcp-tokens.json` in the data folder), with its name and when it was last used. Remove a connection in Settings to cut Claude off at once; removing or disabling an account does the same for its tokens. Wrong tokens are rate limited per IP like sign-in. Anyone holding a token can act in Azure DevOps as its owner, so treat it like a password.
-
-**Not yet:** adding Keel as a custom connector on claude.ai (web and mobile) needs OAuth sign-in, which Keel doesn't offer yet. Use Claude Desktop or Claude Code.
-
 ## Security
 
 What the app already does:
@@ -275,7 +242,6 @@ client/          React + Vite UI (dark theme, IBM Plex)
 server/
   index.js       Express: /api + built UI from dist/
   routes.js      HTTP layer; writes require the x-keel header
-  mcp.js         Claude connector (MCP over HTTP at /mcp); tokens in mcptokens.js
   service.js     Scopes everything to tracked projects/repos, caching
   azdo/          REST client (PAT auth, retries on 429/5xx, paging, concurrency limit) + provider
   mock/          Demo provider with the same interface as azdo/provider.js
