@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSticky, useStickyParams } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { age, REVIEW_STATE } from '../format.js';
-import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle, useSort } from '../ui.jsx';
+import { Avatar, Chip, CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle, useSort } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 
@@ -68,6 +68,7 @@ export default function PullRequests() {
       <PageHeader title={t('Pull requests')} sub={t(data.repos.length === 1 ? '{n} active across {repos} repo' : '{n} active across {repos} repos', { n: data.prs.length, repos: data.repos.length })}>
         {can('prs.write') && <button type="button" className="btn btn-primary" onClick={() => openDrawer({ type: 'newpr' })}>{t('New pull request')}</button>}
       </PageHeader>
+      <CodeTabs />
 
       <div className="filters">
         <input type="search" className="input" placeholder={t('Search title, branch, repo, ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search pull requests')} />

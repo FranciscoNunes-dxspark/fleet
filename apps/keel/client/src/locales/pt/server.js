@@ -232,8 +232,9 @@ export default {
   'Work item {id} does not exist.': 'O work item {id} não existe.',
   // Organizations (orgs.js): templates, so tx() can match them
   '{key} is already connected.': '{key} já está ligada.',
-  // Commits and Claude connections (routes.js, mcptokens.js)
+  // Commits (routes.js)
   'Invalid commit id': 'ID de commit inválido',
-  'You can have at most {n} Claude connections. Remove one you no longer use.': 'Pode ter no máximo {n} ligações do Claude. Remova uma que já não use.',
-  'No such Claude connection.': 'Essa ligação do Claude não existe.',
+  'Unknown production environment': 'Ambiente de produção desconhecido',
+  'That deploy is older than 90 days, or unknown': 'Esse deploy tem mais de 90 dias ou é desconhecido',
+  'Summaries go back 26 weeks': 'Os resumos recuam até 26 semanas',
 };

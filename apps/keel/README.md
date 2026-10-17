@@ -42,20 +42,21 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 
 | Page | For |
 |---|---|
-| **Dashboard** | The home page, built from widgets: Needs you, Your review queue, Pipelines, Work in progress, Team load, Delivery, Epic progress and My work. **Customize** shows, hides and reorders them, and the layout is saved in your browser. |
+| **Dashboard** | The home page, built from widgets: Needs you, This week, Your review queue, Pipelines, Work in progress, Team load, Delivery, Delivery to production (the DORA measures), Epic progress and My work. **Customize** shows, hides and reorders them, and the layout is saved in your browser. |
 | **Inbox** | One ranked list across every tracked project. It covers PRs waiting on your vote (escalated after N hours), PRs with no reviewers, no approvals, rejections, conflicts or stale age, and approved PRs nobody merged. It also covers blocked items, unowned or unstarted P1 bugs, in-progress items with no updates, red default-branch pipelines, and overloaded teammates. You can snooze any entry for a day, 3 days or a week. |
+| **Weekly summary** | One week at a glance, for everyone (PMs included): work items finished (features and stories, bugs fixed), pull requests merged per repo, deploys to production per environment, and what's blocked right now. Step back week by week (up to 26 weeks); the week is in the address, so the link can be shared. **Copy as text** gives a plain-text version to paste into an email or chat. |
 | **Pull requests** | All active PRs across repos. Filter by project, repo or author, or use the toggles: needs my review, mine, conflicts, stale, hide drafts. The detail panel renders the description and comments as Markdown, with @mentions resolved and screenshots loaded through the server. It shows the changed files as a folder tree, and each file opens its diff in Azure DevOps. From the panel you can vote, comment, add reviewers, see policy checks and linked work items, publish drafts, set or cancel auto-complete, and abandon. |
 | **New pull request** | From the Pull requests page, or **Create pull request** on a work item. Pick a repo and branches, with recently pushed branches listed first. You see what would merge (commits ahead and behind, files changed) and a warning if a PR for those branches is already open. The repo's PR template fills the description if it has one (`.azuredevops/pull_request_template.md` and the other standard locations). Work items mentioned in the branch name or commits are suggested, and you can add reviewers (required or optional), create it as a draft, or set auto-complete. |
-| **Commits** | Commit history on the default branch of every tracked repo, newest first and grouped by day, for the last day to 90 days. Filter by project, repo, author or text, or pick one repo to see any of its branches. Commits link to the work items they mention (`#123`, `AB#123`) and to the pull request a merge commit came from. Click one for its whole message and the files it changed. |
+| **Commits** | A tab of Pull requests. Commit history on the default branch of every tracked repo, newest first and grouped by day, for the last day to 90 days. Filter by project, repo, author or text, or pick one repo to see any of its branches. Commits link to the work items they mention (`#123`, `AB#123`) and to the pull request a merge commit came from. Click one for its whole message and the files it changed. |
 | **Work items** | Open items, with views for sprint, bugs, blocked, untouched for N days, unassigned and mine. You can change state and assignee inline. The detail panel lets you change priority, toggle the blocked tag, comment, and see the hierarchy and linked PRs. |
 | **Board** | Each team's real Azure DevOps boards (Backlog items, Features, Epics and custom levels such as Reported Issues), with the same columns, WIP limits, split Doing/Done columns and swimlanes. Shows open work plus anything finished recently, not tied to a sprint, with a toggle for the current sprint. Dragging a card sets its board column and the state that column maps to. Boards hidden for a team in Azure DevOps are hidden here too. |
 | **Epics** | Navigate epics, then features, then backlog items. Progress bars roll up from stories, PBIs and bugs, along with point totals and open-bug and blocked counts. Search across the whole tree, and click any item to open it. |
 | **Pipelines** | Running pipelines first, then the rest grouped by their Azure DevOps folder. Each pipeline is judged on its repo's default branch, and PR validation runs are ignored. Shows a run strip, pass rate, failure streak, last green run, and re-run. Queued runs show too. Click a pipeline for its details: its latest runs (any branch), and for each run its stages, jobs and steps with durations, the failed steps' errors and last log lines, approvals it waits on, the commits it built and its test results (test results need the Test Management read scope on the token). A running run updates itself. |
 | **Releases** (Pipelines tab) | Classic release pipelines, grouped by folder. Each stage shows its latest deployment (release, status, when, who) and anything deploying now. You can create a release from the latest artifacts, or deploy and redeploy any recent release to any stage. Stage approvals and gates still apply. |
 | **Approvals** | Pending classic release approvals and YAML environment checks, in one list at the top of Pipelines and in your Inbox. Approve or reject with an optional comment. Buttons only appear where Azure DevOps says you may decide. |
-| **Production** | Your production apps next to the deploys that change them. Each monitor checks a URL every minute (up or down, response time, uptime) and can read Application Insights every 5 minutes (failure rate, p95, exceptions, top failing operations). Link a monitor to the release stage or pipeline that deploys it: deploys appear on its charts, and Keel flags it when failures rise after one ("failures up from 0.4% to 6.4% since Release-65"). Outages and regressions go to the Inbox and notifications. |
+| **Production** | Your production apps next to the deploys that change them. Each monitor checks a URL every minute (up or down, response time, uptime) and can read Application Insights every 5 minutes (failure rate, p95, exceptions, top failing operations). Link a monitor to the release stage or pipeline that deploys it: deploys appear on its charts, and Keel flags it when failures rise after one ("failures up from 0.4% to 6.4% since Release-65"). Outages and regressions go to the Inbox and notifications. Platform totals is its second tab. Click a deploy, or **See what changed** on a "failures up since …" warning, to see what it shipped since the previous successful deploy of that environment: the work items, each pull request with its commits, and the commits pushed without one. |
 | **Team** | Each person's in-progress items, sprint points, hours left, open PRs, reviews owed and oldest PR. Counts link to filtered views. |
-| **Insights** | Weekly merge throughput, median and 85th-percentile time to merge, open PR age, approvals given (review concentration), merges by author, and per-repo flow. |
+| **Insights** | Two tabs over the same period. **Delivery to production:** the four DORA measures (deploys per week, lead time from commit to production, failed deploys, time to recover after a failed deploy), each with its DORA performance band, a weekly deploy chart and a row per production environment. Production is what the production monitors are linked to, plus classic release stages named Production, Prod, PRD or Live. Lead time is measured over each environment's 30 most recent deploys. **Code review and merging:** weekly merge throughput, median and 85th-percentile time to merge, open PR age, approvals given (review concentration), merges by author, and per-repo flow. |
 | **Release notes** | Hidden from the menu for now (the page is kept in `client/src/pages/ReleaseNotes.jsx`). Merged PRs in a date range, plus the work items they delivered, as Markdown grouped into features, fixes, and PRs by repo. |
 
 Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Settings are saved to `data/settings.json`.
@@ -90,39 +91,6 @@ You get a notification when:
 - an item becomes blocked, or a P1 bug has no owner
 
 Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Keel`.
-
-## Claude: file work items by asking
-
-Keel includes a [Model Context Protocol](https://modelcontextprotocol.io) server at `/mcp`, so PMs and developers can ask Claude to file a ticket ("File a bug in Commerce: the checkout button does nothing on Safari, P2"), check for duplicates, comment on an item, or say what changed this week. Claude acts as the person who connected it: their role in Keel, their Azure DevOps token and the projects they track.
-
-| Tool | Does |
-|---|---|
-| `list_projects` | Tracked projects, the work item types you can create in each, and their teams and current sprint |
-| `search_work_items` | Open work items by words in the title or tags, type, project or assignee (`me`) |
-| `get_work_item` | One item: fields, description, acceptance criteria, parent, children and recent comments |
-| `create_work_item` | Files a work item (project, type, title, Markdown description, team, priority, tags, assignee, parent, backlog or current sprint) |
-| `add_work_item_comment` | Adds a Markdown comment |
-| `recent_commits` | Recent commits, the same data as the Commits page |
-
-Creating and commenting need the Work items permission (every role has it today). Claude is told to show what it's about to file and wait for a yes.
-
-**Connect it:** each person opens **Settings → Claude**, creates a connection and copies the token (it's shown once). The same page shows what to paste, with the token filled in:
-
-- **Claude Desktop** (needs Node.js): Settings → Developer → Edit Config, then add
-  ```json
-  { "mcpServers": { "keel": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://console.yourcompany.com/mcp", "--header", "Authorization:${KEEL_AUTH}"],
-      "env": { "KEEL_AUTH": "Bearer keel_..." } } } }
-  ```
-  and restart Claude Desktop.
-- **Claude Code:** `claude mcp add --transport http keel https://console.yourcompany.com/mcp --header "Authorization: Bearer keel_..."`
-
-Run locally, the address is `http://127.0.0.1:4280/mcp`, so Claude has to run on the same computer.
-
-**Tokens:** Keel stores only a SHA-256 of each token (`mcp-tokens.json` in the data folder), with its name and when it was last used. Remove a connection in Settings to cut Claude off at once; removing or disabling an account does the same for its tokens. Wrong tokens are rate limited per IP like sign-in. Anyone holding a token can act in Azure DevOps as its owner, so treat it like a password.
-
-**Not yet:** adding Keel as a custom connector on claude.ai (web and mobile) needs OAuth sign-in, which Keel doesn't offer yet. Use Claude Desktop or Claude Code.
 
 ## Security
 
@@ -275,11 +243,11 @@ client/          React + Vite UI (dark theme, IBM Plex)
 server/
   index.js       Express: /api + built UI from dist/
   routes.js      HTTP layer; writes require the x-keel header
-  mcp.js         Claude connector (MCP over HTTP at /mcp); tokens in mcptokens.js
   service.js     Scopes everything to tracked projects/repos, caching
   azdo/          REST client (PAT auth, retries on 429/5xx, paging, concurrency limit) + provider
   mock/          Demo provider with the same interface as azdo/provider.js
-  domain/        Pure logic: PR signals, inbox rules, workload, pipeline health, insights, release notes, commits
+  domain/        Pure logic: PR signals, inbox rules, workload, pipeline health, insights, release notes, commits,
+                 delivery (DORA) and the weekly summary
 test/            node:test tests for the domain logic
 ```
 

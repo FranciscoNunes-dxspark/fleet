@@ -12,6 +12,8 @@ import WorkItemDetail from './pages/WorkItemDetail.jsx';
 import PipelineDetail from './pages/PipelineDetail.jsx';
 import Commits from './pages/Commits.jsx';
 import CommitDetail from './pages/CommitDetail.jsx';
+import DeployDetail from './pages/DeployDetail.jsx';
+import Summary from './pages/Summary.jsx';
 import NewWorkItem from './pages/NewWorkItem.jsx';
 import NewPr from './pages/NewPr.jsx';
 import Board from './pages/Board.jsx';
@@ -234,6 +236,7 @@ function Console({ authMode, onSignedOut }) {
         {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
         {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
         {drawer?.type === 'commit' && <CommitDetail key={`${drawer.repoId}:${drawer.id}`} target={drawer} />}
+        {drawer?.type === 'deploy' && <DeployDetail key={`${drawer.target}:${drawer.id}`} target={drawer} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
         {drawer?.type === 'newworkitem' && <NewWorkItem key={JSON.stringify(drawer)} preset={drawer} />}
       </Drawer>
@@ -275,6 +278,10 @@ function useStableHeight(ref, refreshKey) {
 
 function Shell() {
   const [collapsed, setCollapsed] = useSticky('sidebar.collapsed', false);
+  // Phones: the menu opens as a panel from the Menu button and closes when you go somewhere.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname, search } = useLocation();
+  useEffect(() => setMenuOpen(false), [pathname, search]);
   const { meta, refresh, toast, refreshKey, authMode, signOut, can } = useApp();
   const mainRef = useRef(null);
   useStableHeight(mainRef, refreshKey);
@@ -304,6 +311,7 @@ function Shell() {
     { items: [
       { to: '/', label: t('Dashboard'), icon: 'dashboard', end: true },
       { to: '/inbox', label: t('Inbox'), icon: 'inbox', count: s?.high, tone: 'bad' },
+      { to: '/summary', label: t('Weekly summary'), icon: 'summary' },
     ] },
     { label: t('Work'), items: [
       { to: '/work', label: t('Work items'), icon: 'workItems' },
@@ -311,11 +319,9 @@ function Shell() {
       { to: '/epics', label: t('Epics'), icon: 'epics' },
     ] },
     { label: t('Code and delivery'), items: [
-      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent' },
-      { to: '/commits', label: t('Commits'), icon: 'commits' },
+      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits'] },
       { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
-      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad' },
-      { to: '/totals', label: t('Platform totals'), icon: 'totals' },
+      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals'] },
     ] },
     { label: t('People'), items: [
       { to: '/team', label: t('Team'), icon: 'team' },
@@ -328,7 +334,7 @@ function Shell() {
   const tip = (label) => (collapsed ? label : undefined);
 
   return (
-    <div className={`shell${collapsed ? ' shell-collapsed' : ''}`}>
+    <div className={`shell${collapsed ? ' shell-collapsed' : ''}${menuOpen ? ' menu-open' : ''}`}>
       <nav className="sidebar" aria-label={t('Main')}>
         <div className="brand">
           <Logo />
@@ -347,14 +353,25 @@ function Shell() {
             <div className="brand-org truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>{meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\//, '')}</div>
           </div>
         </div>
-        <div className="nav-groups">
+        <button type="button" className="btn btn-small menu-btn" aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
+          <Icon name={menuOpen ? 'close' : 'menu'} size={14} /> {menuOpen ? t('Close') : t('Menu')}
+          {!menuOpen && s?.high > 0 && <span className="nav-count nav-count-bad">{s.high}</span>}
+        </button>
+        <div className="nav-groups" id="main-menu">
           {nav.map((group, i) => (
             <div key={group.label || i} className="nav-group">
               {group.label && <div className="nav-group-label" id={`nav-group-${i}`}>{group.label}</div>}
               <ul className="nav" aria-labelledby={group.label ? `nav-group-${i}` : undefined}>
                 {group.items.map((n) => (
                   <li key={n.to}>
-                    <NavLink to={n.to} end={n.end} className="nav-link" title={tip(n.label)} aria-label={collapsed ? n.label : undefined}>
+                    <NavLink
+                      to={n.to}
+                      end={n.end}
+                      // Entries with tabs (Pull requests → Commits, Production → Platform totals) stay lit on every tab.
+                      className={({ isActive }) => `nav-link${isActive || n.also?.some((p) => pathname.startsWith(p)) ? ' active' : ''}`}
+                      title={tip(n.label)}
+                      aria-label={collapsed ? n.label : undefined}
+                    >
                       <span className="nav-label"><Icon name={n.icon} /><span className="nav-text">{n.label}</span></span>
                       {n.count > 0 && <span className={`nav-count nav-count-${n.tone}`} title={t(n.count === 1 ? '{n} needs attention' : '{n} need attention', { n: n.count })}>{n.count}</span>}
                     </NavLink>
@@ -394,6 +411,7 @@ function Shell() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/inbox" element={<Inbox />} />
+          <Route path="/summary" element={<Summary />} />
           <Route path="/prs" element={<PullRequests />} />
           <Route path="/commits" element={<Commits />} />
           <Route path="/work" element={<WorkItems />} />

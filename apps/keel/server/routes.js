@@ -3,7 +3,6 @@ import express from 'express';
 import { PERMISSIONS, can } from './accounts.js';
 import { createOrgStore } from './orgs.js';
 import { createTypeColorStore } from './typecolors.js';
-import { createMcpTokens } from './mcptokens.js';
 
 const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
@@ -11,7 +10,6 @@ const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
 export function apiRouter() {
   const orgs = createOrgStore(); // reads data/orgs.json, shared with sign-in and other processes
   const typeColors = createTypeColorStore(); // data/type-colors.json, the same for everyone
-  const mcpTokens = createMcpTokens(); // data/mcp-tokens.json, Claude connections (see mcp.js)
   const r = express.Router();
   r.use(express.json({ limit: '256kb' }));
 
@@ -181,6 +179,14 @@ export function apiRouter() {
     res.json({ ok: true });
   });
 
+  // Production deploys: what one shipped, and delivery metrics (DORA) over a period.
+  r.get('/deploys/:projectId/changes', async (req, res) => res.json(await req.ctx.service.deployChanges(
+    req.params.projectId, String(req.query.target || ''), String(req.query.id || ''),
+  )));
+  r.get('/delivery', async (req, res) => res.json(await req.ctx.service.delivery(Math.min(90, Math.max(7, Number(req.query.days) || 30)))));
+  // One week's summary for everyone: ?week=YYYY-MM-DD (any day of the week; this week when absent).
+  r.get('/summary', async (req, res) => res.json(await req.ctx.service.summary(req.query.week ? String(req.query.week) : undefined)));
+
   r.get('/team', async (req, res) => res.json(await req.ctx.service.team()));
   r.get('/insights', async (req, res) => {
     const days = Math.min(180, Math.max(7, Number(req.query.days) || 30));
@@ -197,15 +203,6 @@ export function apiRouter() {
   });
   r.delete('/orgs/:key', need('users.manage'), (req, res) => {
     orgs.remove(req.params.key);
-    res.json({ ok: true });
-  });
-
-  // Claude connections: each person makes and removes their own (the token is shown once).
-  const tokenOwner = (req) => req.ctx.user?.id || 'local';
-  r.get('/mcp/tokens', (req, res) => res.json(mcpTokens.list(tokenOwner(req))));
-  r.post('/mcp/tokens', (req, res) => res.status(201).json(mcpTokens.create(tokenOwner(req), req.body?.name)));
-  r.delete('/mcp/tokens/:id', (req, res) => {
-    mcpTokens.revoke(tokenOwner(req), req.params.id);
     res.json({ ok: true });
   });
 
