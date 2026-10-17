@@ -28,6 +28,7 @@ import { sharedJson } from './jsonfile.js';
 import { createOrgStore } from './orgs.js';
 import { createMultiService } from './multiorg.js';
 import { createMockVariant } from './mock/variant.js';
+import { createMcpTokens } from './mcptokens.js';
 
 const DAY = 86_400_000;
 const MAX_SESSION_MS = 30 * DAY;
@@ -85,6 +86,7 @@ export function createAuth({ monitoring = null } = {}) {
   const ipLimiter = createLimiter();
   const emailLimiter = createLimiter({ max: 5 });
   const contexts = new Map(); // accountId -> { service, watcher, lastUsed }
+  const mcpTokens = createMcpTokens(); // Claude connection tokens; removed with the account
 
   // First run: no admin yet. The setup code proves you can read the server log.
   // A generated code is kept in data/ so it stays the same across restarts
@@ -385,6 +387,7 @@ export function createAuth({ monitoring = null } = {}) {
   }));
   admin.delete('/:id', (req, res) => send(res, () => {
     accounts.remove(req.params.id, req.account.id);
+    mcpTokens.removeUser(req.params.id);
     endSessions((s) => s.userId === req.params.id);
     dropContext(req.params.id);
     try {
@@ -416,7 +419,33 @@ export function createAuth({ monitoring = null } = {}) {
     return next();
   }
 
-  return { router, adminRouter: admin, requireUser, announceSetup };
+  /**
+   * The context for a Claude connection token's owner (see mcp.js): the same
+   * one their browser gets. Refused for disabled or removed accounts, and until
+   * they've connected Azure DevOps.
+   */
+  function contextForAccount(userId) {
+    const user = accounts.raw(userId);
+    if (!user || user.disabled) throw Object.assign(new Error('This Keel account is disabled or was removed.'), { status: 401 });
+    const tokenRequired = () => Object.assign(new Error('Sign in to Keel and connect your Azure DevOps account first.'), { status: 409, code: 'token-required' });
+    if (!accounts.hasToken(user.id)) throw tokenRequired();
+    let ctx;
+    try {
+      ctx = contextFor(user);
+    } catch {
+      accounts.setToken(user.id, null, null);
+      throw tokenRequired();
+    }
+    return {
+      ctx,
+      onTokenRejected: () => {
+        accounts.setToken(user.id, null, null);
+        dropContext(user.id);
+      },
+    };
+  }
+
+  return { router, adminRouter: admin, requireUser, announceSetup, contextForAccount };
 }
 
 /** Pads codes to equal length for a constant-time compare. */

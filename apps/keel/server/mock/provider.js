@@ -555,6 +555,58 @@ function demoLog(b, logId) {
 
 const COMMITS = ['Fix rounding in partial refunds', 'Add retry to payment webhook', 'Bump Polly to 8.4.1', 'Refactor order cancellation rules', 'Log correlation ids on checkout'];
 
+// Commit history: a few commits a day per repo and branch for 60 days, the
+// same on every start. Completed PRs show up as their merge commits, and some
+// messages mention work items (AB#123), as Azure DevOps teams tend to write them.
+const COMMIT_MESSAGES = [
+  ...COMMITS, 'Add integration tests for order export', 'Tidy up logging', 'Update README with local setup', 'Handle null customer on guest orders',
+  'Extract pricing rules into their own module', 'Bump Node to 22 in the pipeline', 'Fix flaky date test around midnight', 'Rename OrderDto fields to match the API',
+  'Remove unused feature flag', 'Speed up catalog query with an index', 'Retry transient SQL errors', 'Add health check endpoint',
+];
+const COMMIT_FILES = ['src/api/Controllers/OrdersController.cs', 'src/api/Services/PricingService.cs', 'src/web/components/Cart.tsx', 'src/web/hooks/useCart.ts',
+  'tests/Pricing.Tests/PricingServiceTests.cs', 'README.md', 'azure-pipelines.yml', 'src/shared/Money.cs', 'src/api/appsettings.json', 'docs/adr/0008-retries.md'];
+const commitLists = new Map(); // `${repoId}|${branch}` -> commits, newest first
+const commitsById = new Map();
+const hex = (r, n) => Array.from({ length: n }, () => Math.floor(r() * 16).toString(16)).join('');
+
+function demoCommits(repo, branch = repo.defaultBranch) {
+  const key = `${repo.id}|${branch}`;
+  if (commitLists.has(key)) return commitLists.get(key);
+  const local = rng([...key].reduce((s, c) => (s * 31 + c.charCodeAt(0)) | 0, 7));
+  const items = [...workItems.values()].filter((w) => w.projectName === repo.projectName && w.type !== 'Task');
+  const merged = branch === repo.defaultBranch ? [...prs.values()].filter((p) => p.repoId === repo.id && p.status === 'completed' && p.closedAt) : [];
+  const list = [];
+  for (let t = NOW - (0.5 + local() * 6) * H; t > NOW - 60 * D; t -= (2 + local() * 14) * H) {
+    const who = DEVS[Math.floor(local() * DEVS.length)];
+    let message = COMMIT_MESSAGES[Math.floor(local() * COMMIT_MESSAGES.length)];
+    if (items.length && local() < 0.35) message += ` (AB#${items[Math.floor(local() * items.length)].id})`;
+    if (local() < 0.2) message += '\n\nKeeps the old behaviour behind a setting for one release.';
+    list.push({ when: t, who, message });
+  }
+  for (const p of merged) list.push({ when: Date.parse(p.closedAt), who: p.author, message: `Merged PR ${p.id}: ${p.title}\n\nRelated work items: ${p._workItemIds.map((id) => `#${id}`).join(', ')}` });
+  const commits = list.sort((a, b) => b.when - a.when).map(({ when, who, message }) => {
+    const id = hex(local, 40);
+    const files = [...COMMIT_FILES].sort(() => local() - 0.5).slice(0, 1 + Math.floor(local() * 5))
+      .map((path, i) => ({ path: `/${path}`, kind: i === 0 && local() < 0.3 ? 'added' : 'edited', originalPath: null }));
+    const added = files.filter((f) => f.kind === 'added').length;
+    const c = {
+      id,
+      message,
+      truncated: false,
+      author: { name: who.displayName, email: who.uniqueName, date: iso(when) },
+      committedAt: iso(when),
+      changes: { added, edited: files.length - added, deleted: 0 },
+      webUrl: `${ORG}/${repo.projectName}/_git/${repo.name}/commit/${id}`,
+      _files: files,
+    };
+    commitsById.set(id, c);
+    return c;
+  });
+  commitLists.set(key, commits);
+  return commits;
+}
+const stripCommit = ({ _files, ...rest }) => ({ ...rest, author: { ...rest.author } });
+
 // ------------------------------------------------------------------ provider
 const strip = ({ _description, _acceptance, _comments, _prs, _board, _attachments, ...rest }) => ({ ...rest });
 const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
@@ -736,6 +788,22 @@ export function createMockProvider() {
         pushedAt: i < 8 ? ago((i + 1) * 5 * H) : null,
         pushedBy: i < 8 ? pick(DEVS) : null,
       })));
+    },
+
+    listCommits(projectId, repoId, { branch, since, top = 300 } = {}) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      if (!repo) throw notFound('Repository');
+      const from = since ? Date.parse(since) : 0;
+      return delay(demoCommits(repo, branch || repo.defaultBranch).filter((c) => Date.parse(c.author.date) >= from).slice(0, top).map(stripCommit));
+    },
+
+    getCommit(projectId, repoId, commitId) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      if (!repo) throw notFound('Repository');
+      demoCommits(repo);
+      const c = commitsById.get(String(commitId).toLowerCase());
+      if (!c || !c.webUrl.includes(`/_git/${repo.name}/`)) throw notFound(`Commit ${commitId}`);
+      return delay({ ...stripCommit(c), parents: [], files: c._files.map((f) => ({ ...f })) });
     },
 
     compareBranches(projectId, repoId, source, target) {

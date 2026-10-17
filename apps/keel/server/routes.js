@@ -3,6 +3,7 @@ import express from 'express';
 import { PERMISSIONS, can } from './accounts.js';
 import { createOrgStore } from './orgs.js';
 import { createTypeColorStore } from './typecolors.js';
+import { createMcpTokens } from './mcptokens.js';
 
 const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
@@ -10,6 +11,7 @@ const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
 export function apiRouter() {
   const orgs = createOrgStore(); // reads data/orgs.json, shared with sign-in and other processes
   const typeColors = createTypeColorStore(); // data/type-colors.json, the same for everyone
+  const mcpTokens = createMcpTokens(); // data/mcp-tokens.json, Claude connections (see mcp.js)
   const r = express.Router();
   r.use(express.json({ limit: '256kb' }));
 
@@ -74,6 +76,18 @@ export function apiRouter() {
   r.get('/repos/:projectId/:repoId/compare', async (req, res) => res.json(await req.ctx.service.compare(
     req.params.projectId, req.params.repoId, String(req.query.source || ''), String(req.query.target || ''),
   )));
+  // Commit history: all tracked repos (default branches), or ?project=&repo=&branch= for one.
+  r.get('/commits', async (req, res) => res.json(await req.ctx.service.commits({
+    projectId: req.query.project ? String(req.query.project) : undefined,
+    repoId: req.query.repo ? String(req.query.repo) : undefined,
+    branch: req.query.branch ? String(req.query.branch) : undefined,
+    days: Math.min(90, Math.max(1, Number(req.query.days) || 14)),
+  })));
+  r.get('/commits/:projectId/:repoId/:commitId', async (req, res) => {
+    const { projectId, repoId, commitId } = req.params;
+    if (!/^[0-9a-f]{7,40}$/i.test(commitId)) return res.status(400).json({ error: 'Invalid commit id' });
+    return res.json(await req.ctx.service.commit(projectId, repoId, commitId.toLowerCase()));
+  });
   r.get('/prs/:projectId/:repoId/:id', async (req, res) => {
     const { projectId, repoId, id } = req.params;
     res.json(await req.ctx.service.pullRequest(projectId, repoId, num(id)));
@@ -183,6 +197,15 @@ export function apiRouter() {
   });
   r.delete('/orgs/:key', need('users.manage'), (req, res) => {
     orgs.remove(req.params.key);
+    res.json({ ok: true });
+  });
+
+  // Claude connections: each person makes and removes their own (the token is shown once).
+  const tokenOwner = (req) => req.ctx.user?.id || 'local';
+  r.get('/mcp/tokens', (req, res) => res.json(mcpTokens.list(tokenOwner(req))));
+  r.post('/mcp/tokens', (req, res) => res.status(201).json(mcpTokens.create(tokenOwner(req), req.body?.name)));
+  r.delete('/mcp/tokens/:id', (req, res) => {
+    mcpTokens.revoke(tokenOwner(req), req.params.id);
     res.json({ ok: true });
   });
 

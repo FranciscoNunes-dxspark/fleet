@@ -44,38 +44,42 @@ function fileTree(items) {
   return compact(root);
 }
 
-function FileRow({ f, webUrl }) {
+// Where a file's diff opens in Azure DevOps: a PR's Files tab by default (commits pass their own).
+const prFileHref = (webUrl, path) => `${webUrl}?_a=files&path=${encodeURIComponent(path)}`;
+
+function FileRow({ f, webUrl, fileHref = prFileHref }) {
   const kind = FILE_KIND[f.kind] || FILE_KIND.edited;
   return (
     <li className="file-row">
       <span className={`file-kind chip chip-${kind.tone}`} title={kind.label} aria-label={kind.label}>{kind.letter}</span>
-      <a className="file-name" href={`${webUrl}?_a=files&path=${encodeURIComponent(f.path)}`} target="_blank" rel="noreferrer noopener" title={t('Open the diff for {path} in Azure DevOps', { path: f.path })}>{f.name}</a>
+      <a className="file-name" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={t('Open the diff for {path} in Azure DevOps', { path: f.path })}>{f.name}</a>
       {f.originalPath && <span className="muted small file-from" title={f.originalPath}>{t('from {name}', { name: f.originalPath.split('/').pop() })}</span>}
     </li>
   );
 }
 
-function Folder({ node, webUrl, depth }) {
+function Folder({ node, webUrl, depth, fileHref }) {
   return (
     <li>
       <details open={depth < 3 || node.count <= 8}>
         <summary className="folder-row"><span className="folder-name">{node.name}/</span><span className="muted small">{node.count}</span></summary>
-        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} />
+        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} />
       </details>
     </li>
   );
 }
 
-function FolderBody({ node, webUrl, depth }) {
+function FolderBody({ node, webUrl, depth, fileHref }) {
   return (
     <ul className="file-tree">
-      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} />)}
-      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} />)}
+      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} />)}
+      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} />)}
     </ul>
   );
 }
 
-function ChangedFiles({ files, webUrl }) {
+/** Changed files as a folder tree; also used by the commit panel (CommitDetail.jsx). */
+export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.') }) {
   const counts = Object.entries(FILE_KIND)
     .map(([k, v]) => [v.count, files.items.filter((f) => f.kind === k).length])
     .filter(([, n]) => n)
@@ -85,8 +89,8 @@ function ChangedFiles({ files, webUrl }) {
     <section className="detail-section">
       <h3>{t('Files changed')} <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span></h3>
       {files.error && <p className="text-bad small">{t("Couldn't load the file list: {error}", { error: tx(files.error) })}</p>}
-      {!files.error && !files.items.length && <p className="muted small">{t('No file changes in the latest update.')}</p>}
-      <FolderBody node={tree} webUrl={webUrl} depth={0} />
+      {!files.error && !files.items.length && <p className="muted small">{empty}</p>}
+      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} />
       {files.truncated && <p className="muted small">{t('Azure DevOps returned the first 2,000 files only.')}</p>}
     </section>
   );

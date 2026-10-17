@@ -232,4 +232,8 @@ export default {
   'Work item {id} does not exist.': 'O work item {id} não existe.',
   // Organizations (orgs.js): templates, so tx() can match them
   '{key} is already connected.': '{key} já está ligada.',
+  // Commits and Claude connections (routes.js, mcptokens.js)
+  'Invalid commit id': 'ID de commit inválido',
+  'You can have at most {n} Claude connections. Remove one you no longer use.': 'Pode ter no máximo {n} ligações do Claude. Remova uma que já não use.',
+  'No such Claude connection.': 'Essa ligação do Claude não existe.',
 };
