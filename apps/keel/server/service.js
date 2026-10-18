@@ -320,20 +320,38 @@ export function createService({
   const previousDeploy = (history, i) => history.slice(i + 1).find((d) => d.status === 'succeeded' && d.commit && d.repoId === history[i].repoId);
 
   /**
-   * The branch to compare a deploy with: the one it was built from, as the
-   * repo spells it now, or the repo's default when that branch was deleted
-   * (`gone` names it). If the branches can't be read it's used as given.
+   * The branch to compare a deploy with, and its newest commit: the branch
+   * the deploy was built from (else the repo's default), as the repo spells
+   * it now. When Azure DevOps doesn't know it (deleted or renamed), the
+   * default branch is used and `gone` names the missing one; when the default
+   * is missing too, `missing` names it and there is nothing to compare with.
    */
-  async function liveBranch(repo, wanted) {
-    if (!wanted || wanted === repo.defaultBranch) return { branch: repo.defaultBranch, gone: null };
-    let names;
-    try {
-      names = (await cached(`branches:${repo.id}`, () => provider.listBranches(repo.projectId, repo.id), 2 * MIN)).map((b) => b.name);
-    } catch {
-      return { branch: wanted, gone: null };
+  async function branchTip(repo, wanted) {
+    const tipOf = async (b) => (await cached(`commits:tip:${repo.id}:${b}`, () => provider.listCommits(repo.projectId, repo.id, { branch: b, top: 1 }), 2 * MIN))[0] || null;
+    const unknown = (err) => {
+      if (err.status !== 404) throw err; // TF401175: the version descriptor could not be resolved
+      return undefined;
+    };
+    let names = null;
+    const branchNames = async () => (names ??= await cached(`branches:${repo.id}`, () => provider.listBranches(repo.projectId, repo.id), 2 * MIN)
+      .then((list) => list.map((b) => b.name)).catch(() => []));
+    // As the repo spells it now ("Develop" may be "develop"), if it's there at all.
+    const spelled = async (b) => (await branchNames()).find((n) => n === b) || names.find((n) => n.toLowerCase() === b.toLowerCase()) || null;
+
+    const first = wanted || repo.defaultBranch;
+    let tip = await tipOf(first).catch(unknown);
+    if (tip !== undefined) return { branch: first, gone: null, tip };
+    const respelled = await spelled(first);
+    if (respelled && respelled !== first) {
+      tip = await tipOf(respelled).catch(unknown);
+      if (tip !== undefined) return { branch: respelled, gone: null, tip };
     }
-    const found = names.find((n) => n === wanted) || names.find((n) => n.toLowerCase() === wanted.toLowerCase());
-    return found ? { branch: found, gone: null } : { branch: repo.defaultBranch, gone: wanted };
+    const fallback = first === repo.defaultBranch ? null : (await spelled(repo.defaultBranch)) || repo.defaultBranch;
+    if (fallback) {
+      tip = await tipOf(fallback).catch(unknown);
+      if (tip !== undefined) return { branch: fallback, gone: first, tip };
+    }
+    return { branch: null, gone: first === repo.defaultBranch ? null : first, missing: repo.defaultBranch, tip: null };
   }
 
   /**
@@ -593,18 +611,9 @@ export function createService({
         if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
         try {
           // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
-          let { branch, gone } = await liveBranch(repo, t.branch || last.branch);
-          const tipOf = (b) => cached(`commits:tip:${repo.id}:${b}`, () => provider.listCommits(repo.projectId, repo.id, { branch: b, top: 1 }), 2 * MIN);
-          let tip;
-          try {
-            [tip] = await tipOf(branch);
-          } catch (err) {
-            // Azure DevOps doesn't know the branch (deleted, or the branch list couldn't be read): use the default.
-            if (err.status !== 404 || branch === repo.defaultBranch) throw err;
-            [gone, branch] = [branch, repo.defaultBranch];
-            [tip] = await tipOf(branch);
-          }
+          const { branch, gone, missing, tip } = await branchTip(repo, t.branch || last.branch);
           const where = { ...head, branch, branchGone: gone, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
+          if (missing) return { ...where, missingBranch: missing, waiting: 0, oldestAt: null };
           if (tip && tip.id !== last.commit) {
             // Production must run a commit the branch contains; otherwise "since" means nothing and
             // the list would be the branch's whole history (years of commits that are already live).

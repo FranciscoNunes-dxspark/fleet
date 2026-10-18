@@ -15,7 +15,7 @@ export const LONG_WAIT_DAYS = 7;
 export const waitTone = (oldestAt) => (!oldestAt ? 'ok' : Date.now() - Date.parse(oldestAt) > LONG_WAIT_DAYS * DAY ? 'warn' : 'info');
 
 /** Environments whose waiting can't be counted (not linked, not comparable, unreadable). */
-export const uncounted = (e) => !!(e.error || e.unknown || e.unlinked || e.diverged);
+export const uncounted = (e) => !!(e.error || e.unknown || e.unlinked || e.diverged || e.missingBranch);
 
 /** Environments with the most waiting (the oldest change first), then the up-to-date ones, then those that can't be counted. */
 export const byWaiting = (a, b) => uncounted(a) - uncounted(b)
@@ -93,7 +93,7 @@ function Environment({ env }) {
   let chip;
   if (env.error) chip = <Chip tone="bad">{t("Couldn't read")}</Chip>;
   else if (env.unlinked) chip = <Chip tone="muted">{t('Not linked')}</Chip>;
-  else if (env.diverged) chip = <Chip tone="warn">{t("Can't compare")}</Chip>;
+  else if (env.diverged || env.missingBranch) chip = <Chip tone="warn">{t("Can't compare")}</Chip>;
   else if (env.unknown) chip = <Chip tone="muted">{t('Unknown')}</Chip>;
   else if (!waiting) chip = <Chip tone="ok">{t('Up to date')}</Chip>;
   else chip = <Chip tone={waitTone(env.oldestAt)}>{t(waiting === 1 ? '{n} change waiting' : '{n} changes waiting', { n: waiting })}{env.truncated ? '+' : ''}</Chip>;
@@ -115,7 +115,14 @@ function Environment({ env }) {
           {can('monitors.manage') && <> <Link to="/settings#production">{t('Link it in Settings → Production monitors')}</Link></>}
         </p>
       )}
-      {env.branchGone && (
+      {env.missingBranch && (
+        <p className="callout">
+          {env.branchGone
+            ? t("Production was built from {gone}, and the repo's default branch {branch} doesn't exist either, so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.", { gone: env.branchGone, branch: env.missingBranch })
+            : t("The repo's default branch {branch} doesn't exist (renamed or deleted), so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.", { branch: env.missingBranch })}
+        </p>
+      )}
+      {env.branchGone && !env.missingBranch && (
         <p className="muted small">{t('Production was built from {gone}, which no longer exists, so this compares with {branch}.', { gone: env.branchGone, branch: env.branch })}</p>
       )}
       {env.diverged && (

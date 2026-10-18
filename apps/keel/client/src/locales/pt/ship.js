@@ -28,6 +28,8 @@ export default {
   'changes waiting': 'alterações por entregar',
   'Not linked': 'Sem ligação',
   "Can't compare": 'Não comparável',
+  "Production was built from {gone}, and the repo's default branch {branch} doesn't exist either, so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.": 'A produção foi construída a partir de {gone}, e o branch predefinido do repositório, {branch}, também não existe, por isso não é possível contar o que está por entregar. Verifique o branch predefinido nas definições do repositório no Azure DevOps.',
+  "The repo's default branch {branch} doesn't exist (renamed or deleted), so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.": 'O branch predefinido do repositório, {branch}, não existe (foi renomeado ou eliminado), por isso não é possível contar o que está por entregar. Verifique o branch predefinido nas definições do repositório no Azure DevOps.',
   'Production was built from {gone}, which no longer exists, so this compares with {branch}.': 'A produção foi construída a partir de {gone}, que já não existe, por isso a comparação é feita com {branch}.',
   "This monitor isn't linked to the release stage or pipeline that deploys it, so Keel can't tell what's live.": 'Este monitor não está ligado à fase de release ou ao pipeline que faz o deploy, por isso o Keel não sabe o que está em produção.',
   'Link it in Settings → Production monitors': 'Ligue-o em Definições → Monitores de produção',

@@ -522,7 +522,7 @@ function ShipWidget() {
           <li key={`${e.org || ''}:${e.key}`}>
             <Link className="mini-title" to="/ship">{e.name}</Link>
             <span className="muted small truncate">
-              {e.error ? t("Couldn't read") : e.unlinked ? t('Not linked') : e.diverged ? t("Can't compare") : e.unknown ? t('Unknown')
+              {e.error ? t("Couldn't read") : e.unlinked ? t('Not linked') : e.diverged || e.missingBranch ? t("Can't compare") : e.unknown ? t('Unknown')
                 : !e.waiting ? t('Up to date with {label}', { label: e.lastDeploy.label })
                   : t('{n} waiting since {label} · oldest {age}', { n: e.waiting, label: e.lastDeploy.label, age: age(e.oldestAt) })}
             </span>

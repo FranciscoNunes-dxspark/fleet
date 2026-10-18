@@ -147,6 +147,8 @@ test('waiting to ship: a deleted branch falls back to the default, a differently
     listDeployments: async (target) => [{ id: 1, label: 'R1', at: at(10), status: 'succeeded', repoId: target.definitionId === 1 ? 'r1' : 'r2', commit: 'c1', branch: 'Develop' }],
     listBranches: async (projectId, repoId) => (repoId === 'r1' ? [{ name: 'master' }] : [{ name: 'master' }, { name: 'develop' }]),
     listCommits: async (projectId, repoId, { branch }) => {
+      // Like Azure DevOps: exact names only.
+      if (!(repoId === 'r1' ? ['master'] : ['master', 'develop']).includes(branch)) throw Object.assign(new Error('TF401175'), { status: 404 });
       seen.push(`${repoId}:${branch}`);
       return [commit('c1', 10, 'Head')];
     },
@@ -183,6 +185,51 @@ test('waiting to ship: a branch Azure DevOps rejects falls back to the default',
   const { targets: [env] } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
   assert.equal(env.error, undefined);
   assert.deepEqual([env.branch, env.branchGone, env.waiting], ['master', 'Develop', 0]);
+});
+
+test('waiting to ship: a default branch that is missing says so instead of failing', async () => {
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [
+      { id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'Develop' },
+      { id: 'r2', name: 'api', projectId: 'p1', projectName: 'Shop', defaultBranch: 'Develop' },
+    ],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async (target) => [{ id: 1, label: 'R1', at: at(10), status: 'succeeded', repoId: target.definitionId === 1 ? 'r1' : 'r2', commit: 'c1', branch: target.definitionId === 1 ? 'Develop' : null }],
+    // web has no Develop at all; api has it as develop.
+    listBranches: async (projectId, repoId) => (repoId === 'r1' ? [{ name: 'main' }] : [{ name: 'develop' }]),
+    listCommits: async (projectId, repoId, { branch }) => {
+      if (!(repoId === 'r1' ? ['main'] : ['develop']).includes(branch)) throw Object.assign(new Error('TF401175'), { status: 404 });
+      return [commit('c1', 10, 'Head')];
+    },
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const link = (definitionId) => ({ type: 'release', projectId: 'p1', definitionId, stage: 'Production' });
+  const monitoring = { status: () => [{ id: 'a', name: 'Web', link: link(1) }, { id: 'b', name: 'Api', link: link(2) }] };
+  const { targets } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  const by = Object.fromEntries(targets.map((x) => [x.name, x]));
+  assert.equal(by.Web.error, undefined);
+  assert.deepEqual([by.Web.missingBranch, by.Web.branch, by.Web.waiting], ['Develop', null, 0]);
+  assert.equal(by.Api.error, undefined);
+  assert.deepEqual([by.Api.branch, by.Api.missingBranch, by.Api.branchGone], ['develop', undefined, null]);
+});
+
+test('waiting to ship: other Azure DevOps errors still show', async () => {
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'main' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async () => [{ id: 1, label: 'R1', at: at(10), status: 'succeeded', repoId: 'r1', commit: 'c1', branch: 'main' }],
+    listCommits: async () => { throw Object.assign(new Error('Access denied'), { status: 403 }); },
+  };
+  const monitoring = { status: () => [{ id: 'a', name: 'Web', link: { type: 'release', projectId: 'p1', definitionId: 1, stage: 'Production' } }] };
+  const { targets: [env] } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  assert.equal(env.error, 'Access denied');
 });
 
 test('waiting to ship: every monitor shows; monitors sharing a deploy are one environment', async () => {
