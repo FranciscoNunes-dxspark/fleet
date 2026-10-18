@@ -57,7 +57,7 @@ export default function Flow({ days }) {
           label={t('Items finished per week')}
           valueLabel={t('finished')}
           data={data.weekly.map((w) => ({ key: w.week, value: w.finished, note: w.medianCycleHours != null ? t('median {time}', { time: hours(w.medianCycleHours) }) : null }))}
-          formatX={(k) => t('Wk of {date}', { date: date(k) })}
+          formatX={(k) => date(k)}
         />
         <BarList
           label={t('Cycle time')}
