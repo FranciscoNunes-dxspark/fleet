@@ -665,7 +665,13 @@ a.stat:hover .stat-label { color: var(--accent-ink); }
 .branch-pick { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: end; }
 .branch-pick label { display: grid; gap: 4px; min-width: 0; }
 .branch-pick .input { width: 100%; min-width: 0; font-size: 12.5px; }
-.branch-arrow { padding-bottom: 7px; color: var(--muted); }
+.branch-swap {
+  display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 1px; padding: 0;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--ink-2); cursor: pointer; box-shadow: var(--shadow-sm); transition: color 0.12s, border-color 0.12s;
+}
+.branch-swap:hover:not(:disabled) { color: var(--accent-ink); border-color: var(--accent); }
+.branch-swap:disabled { opacity: 0.45; cursor: default; }
 .compare-summary { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; color: var(--ink-2); }
 .commit-list { margin-top: 8px; }
 .commit-list summary { cursor: pointer; color: var(--ink-2); }
@@ -674,7 +680,9 @@ a.stat:hover .stat-label { color: var(--accent-ink); }
 .new-pr .detail-section > .check { display: flex; margin-bottom: 6px; }
 @media (max-width: 860px) {
   .branch-pick { grid-template-columns: 1fr; }
-  .branch-arrow { display: none; }
+  /* Stacked on phones: the swap sits between the two pickers, turned to point up and down. */
+  .branch-swap { justify-self: center; margin: 0; }
+  .branch-swap .icon { transform: rotate(90deg); }
 }
 .vote-note { margin: -4px 0 10px; max-width: 70ch; }
 

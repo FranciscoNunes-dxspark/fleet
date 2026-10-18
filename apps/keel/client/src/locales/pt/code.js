@@ -463,4 +463,7 @@ export default {
   'Monitors': 'Monitores',
   // Dashboard band
   'production issues': 'problemas em produção',
+  // New pull request: swap branches
+  'Swap: merge {target} into {source}': 'Trocar: fazer merge de {target} para {source}',
+  'Swap source and target branches': 'Trocar os branches de origem e de destino',
 };

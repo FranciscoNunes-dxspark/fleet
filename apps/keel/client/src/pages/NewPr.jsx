@@ -4,6 +4,7 @@ import { useApi, useApp } from '../context.js';
 import { age } from '../format.js';
 import { Markdown } from '../markdown.jsx';
 import { Avatar, Chip, ErrorBox, Loading } from '../ui.jsx';
+import { Icon } from '../icons.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import { t, tj } from '../i18n.js';
 import { wiPath } from '../orgs.js';
@@ -222,7 +223,16 @@ export default function NewPr({ preset = {} }) {
                 {branchOptions(target)}
               </select>
             </label>
-            <span className="branch-arrow" aria-hidden="true">→</span>
+            <button
+              type="button"
+              className="branch-swap"
+              onClick={() => { setSource(target); setTarget(source); }}
+              disabled={!source || !target}
+              title={t('Swap: merge {target} into {source}', { source, target })}
+              aria-label={t('Swap source and target branches')}
+            >
+              <Icon name="swap" size={16} />
+            </button>
             <label>{t('Into')}
               <select className="input mono" value={target} onChange={(e) => setTarget(e.target.value)} aria-label={t('Target branch')}>
                 {branchOptions(source)}
