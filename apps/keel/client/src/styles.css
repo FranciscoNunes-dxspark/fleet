@@ -508,13 +508,6 @@ tr.saving { opacity: 0.55; }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { min-width: 0; }
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .nav-groups { display: flex; overflow-x: auto; gap: 2px; width: 100%; order: 3; }
-  .nav-group-label { display: none; }
-  .nav { display: flex; gap: 2px; }
-  .nav-group + .nav-group { border-left: 1px solid var(--line); padding-left: 2px; }
-  .nav-link { white-space: nowrap; }
-  .sidebar-foot { margin: 0 0 0 auto; display: flex; align-items: center; }
-  .sidebar-foot .me { display: none; }
   .page { padding: 18px 16px 0; }
   .demo-banner { padding: 9px 16px; }
   .strip { grid-template-columns: 1fr; }
@@ -1122,19 +1115,55 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .deploy-row-label { font-size: 13.5px; font-weight: 500; color: var(--accent-ink); }
 .deploy-row-go { color: var(--muted); }
 
-/* Phones: a Menu button opens the whole menu as a panel (two columns, with group names). */
-.menu-btn { display: none; }
+/* Phones: a tab bar at the bottom (the places you check most, then More), and
+   More opens the whole menu as a sheet above it. Desktop never shows either:
+   the sheet's wrapper is just the sidebar's contents there. */
+.sidebar-menu { display: contents; }
+.sheet-head, .menu-scrim, .tabbar { display: none; }
 @media (max-width: 860px) {
-  .menu-btn { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
-  .sidebar .nav-groups, .sidebar .sidebar-foot { display: none; }
-  .menu-open .sidebar .nav-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 10px; width: 100%; order: 3; overflow: visible; padding-top: 4px; }
-  .menu-open .nav-group-label { display: block; }
-  .menu-open .nav { display: grid; }
-  .menu-open .nav-group + .nav-group { border-left: 0; padding-left: 0; }
-  .menu-open .nav-link { white-space: normal; }
-  .menu-open .sidebar .sidebar-foot { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; order: 4; margin: 0; padding-top: 10px; border-top: 1px solid var(--line); }
-  .menu-open .sidebar-foot .me { display: block; }
+  :root { --tabbar-h: 58px; --tabbar-space: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  .search-btn { margin-left: auto; }
+  .main { padding-bottom: calc(var(--tabbar-space) + 32px); }
+  .save-bar { bottom: calc(var(--tabbar-space) + 12px); }
+  .toasts { bottom: calc(var(--tabbar-space) + 12px); }
+
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 19;
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    padding: 0 4px env(safe-area-inset-bottom, 0px);
+    background: var(--sidebar); border-top: 1px solid var(--line);
+  }
+  .tab {
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px;
+    min-height: var(--tabbar-h); padding: 7px 2px 6px; border: 0; background: none; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 11px; font-weight: 500; line-height: 1.2; text-align: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab:hover { color: var(--ink); text-decoration: none; }
+  .tab.active { color: var(--accent-ink); }
+  .tab-icon { position: relative; display: grid; place-items: center; width: 48px; height: 28px; border-radius: 14px; transition: background 0.15s ease-out; }
+  .tab.active .tab-icon { background: var(--accent-soft); }
+  .tab-icon .nav-count { position: absolute; top: -3px; left: 28px; min-width: 17px; padding: 0 4px; font-size: 10px; line-height: 17px; box-shadow: 0 0 0 2px var(--sidebar); }
+  /* Long names (Portuguese "Caixa de entrada") take two lines rather than overflow. */
+  .tab-label { max-width: 100%; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+  .sidebar .sidebar-menu { display: none; }
+  .menu-scrim { display: block; position: fixed; inset: 0; z-index: 17; background: rgba(0, 0, 0, 0.45); animation: fade 0.15s ease-out; }
+  .menu-open .sidebar .sidebar-menu {
+    position: fixed; left: 0; right: 0; bottom: var(--tabbar-space); z-index: 18;
+    display: grid; gap: 14px; align-content: start;
+    max-height: calc(100dvh - var(--tabbar-space) - 56px); overflow-y: auto; overscroll-behavior: contain;
+    padding: 6px 16px 16px; background: var(--surface); border-radius: 16px 16px 0 0; box-shadow: var(--shadow-pop);
+    outline: none; animation: sheet-up 0.18s ease-out;
+  }
+  .sheet-head { display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1; padding: 8px 0; background: var(--surface); }
+  .sheet-head .drawer-close { position: static; float: none; }
+  .menu-open .nav-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 10px; overflow: visible; }
+  .menu-open .nav-link { padding: 10px; white-space: normal; }
+  .menu-open .sidebar-foot { margin: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+  .menu-open .sidebar-foot .live { display: flex; }
 }
+@keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } }
 
 /* Page tabs (links to sibling pages) look like the segmented tabs. */
 .segmented a {
