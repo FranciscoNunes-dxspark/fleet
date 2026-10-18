@@ -185,6 +185,7 @@ export default {
   'No tracked repos in this project': 'Nenhum repositório acompanhado neste projeto',
   'Local folder for {repo}': 'Pasta local de {repo}',
   'Save': 'Guardar',
+  'Request failed ({status})': 'O pedido falhou ({status})',
   'Local folder': 'Pasta local',
   'Change': 'Alterar',
   'Network paths aren’t supported. Use a local folder.': 'Os caminhos de rede não são suportados. Use uma pasta local.',

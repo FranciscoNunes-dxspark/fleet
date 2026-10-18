@@ -404,8 +404,17 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         if (totalsKey && !url) throw Object.assign(new Error(`"${name}": platform totals need the site's URL`), { status: 400 });
         const totalsEvery = TOTALS_EVERY_HOURS.includes(Number(raw.totalsEvery)) ? Number(raw.totalsEvery) : 24;
         const totalsSeason = TOTALS_SEASONS.includes(raw.totalsSeason) ? raw.totalsSeason : 'current';
+        // The branch production deploys from, when Keel's guess is wrong (Waiting to ship compares it with what's live).
+        const branch = typeof raw.link?.branch === 'string' ? raw.link.branch.trim().replace(/^refs\/heads\//, '') : '';
+        if (branch && (branch.length > 250 || /[\s~^:?*[\\]|\.\.|@\{|^\/|\/$/.test(branch))) {
+          throw Object.assign(new Error(`"${name}": "${branch}" isn't a valid branch name`), { status: 400 });
+        }
         const link = raw.link && ['release', 'pipeline'].includes(raw.link.type) && raw.link.projectId && raw.link.definitionId
-          ? { type: raw.link.type, projectId: String(raw.link.projectId), definitionId: Number(raw.link.definitionId), ...(raw.link.type === 'release' ? { stage: String(raw.link.stage || '') } : {}) }
+          ? {
+            type: raw.link.type, projectId: String(raw.link.projectId), definitionId: Number(raw.link.definitionId),
+            ...(raw.link.type === 'release' ? { stage: String(raw.link.stage || '') } : {}),
+            ...(branch ? { branch } : {}),
+          }
           : null;
         next.push({
           id: old?.id || crypto.randomUUID(), name, url, appInsightsAppId: appId, apiKey, link, totalsKey, totalsEvery, totalsSeason,

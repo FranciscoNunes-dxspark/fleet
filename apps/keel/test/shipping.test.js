@@ -320,3 +320,45 @@ test('waiting to ship: the newest deploy failing is shown, with what production 
   const { targets: [env] } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
   assert.deepEqual([env.lastFailed?.label, env.lastDeploy.label, env.deploy], ['B3', 'B2', null]);
 });
+
+test('production branch set in Settings: cleaned up and checked when saved, then compared with', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { createMonitoring } = await import('../server/monitoring.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-branch-'));
+  const monitoring = createMonitoring({ dataDir: dir, mock: false });
+  const appInsightsAppId = '0f1e2d3c-0000-4000-8000-000000000000';
+  const release = { type: 'release', projectId: 'p1', definitionId: 1, stage: 'Production' };
+  await assert.rejects(monitoring.save([{ name: 'Web', appInsightsAppId, link: { ...release, branch: 'a..b' } }]), /isn't a valid branch name/);
+  await monitoring.save([
+    { name: 'Web', appInsightsAppId, link: { ...release, branch: ' refs/heads/master ' } },
+    { name: 'Api', appInsightsAppId, link: { type: 'pipeline', projectId: 'p1', definitionId: 5, branch: '' } },
+  ]);
+  const links = monitoring.status().map((m) => m.link);
+  assert.equal(links[0].branch, 'master');
+  assert.equal('branch' in links[1], false, 'empty means automatic');
+
+  const asked = [];
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'develop' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    // The release says it came from develop; Settings says production is master.
+    listDeployments: async () => [{ id: 1, label: 'R1', at: at(10), status: 'succeeded', repoId: 'r1', commit: 'c1', branch: 'develop' }],
+    listCommits: async (projectId, repoId, { branch }) => {
+      asked.push(branch);
+      return [commit('c1', 10, 'Head')];
+    },
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const { targets } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  const web = targets.find((x) => x.name === 'Web');
+  assert.deepEqual([web.branch, web.branchSet], ['master', true]);
+  assert.ok(asked.includes('master'));
+  const api = targets.find((x) => x.name === 'Api');
+  assert.deepEqual([api.branch, api.branchSet], ['develop', false], 'not set: the branch the deploy came from');
+});

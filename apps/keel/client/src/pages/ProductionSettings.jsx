@@ -61,6 +61,8 @@ export default function ProductionSettings() {
       link: { type: 'pipeline', projectId: p.projectId, definitionId: p.definition.id },
     })),
   ];
+  // What Keel works out for a pipeline (the branch its automatic runs use); a release's comes from what it deployed.
+  const learnedBranch = (l) => (l?.type === 'pipeline' ? (pipes || []).find((p) => p.projectId === l.projectId && p.definition.id === l.definitionId)?.branch || null : null);
   const linkValue = (l) => (!l ? '' : l.type === 'release' ? `release|${l.projectId}|${l.definitionId}|${l.stage}` : `pipeline|${l.projectId}|${l.definitionId}`);
 
   const save = async () => {
@@ -147,7 +149,7 @@ export default function ProductionSettings() {
                     <label className="wide">{t('URL to check')}<input className="input" value={r.url} onChange={(e) => set(r.key, { url: e.target.value })} placeholder="https://sports.example.com/health" inputMode="url" /></label>
                     <label>{t('Slow above (ms)')}<input className="input" type="number" min={100} max={30000} value={r.latencyWarnMs} onChange={(e) => set(r.key, { latencyWarnMs: Number(e.target.value) })} /></label>
                     <label className="wide">{t('Deploys come from')}
-                      <select className="input" value={linkValue(r.link)} onChange={(e) => set(r.key, { link: linkOptions.find((o) => o.value === e.target.value)?.link || null })}>
+                      <select className="input" value={linkValue(r.link)} onChange={(e) => { const l = linkOptions.find((o) => o.value === e.target.value)?.link; set(r.key, { link: l ? { ...l, ...(r.link?.branch ? { branch: r.link.branch } : {}) } : null }); }}>
                         <option value="">{t('Not linked')}</option>
                         {['Release stages', 'Pipelines'].map((g) => (
                           <optgroup key={g} label={t(g)}>
@@ -156,6 +158,18 @@ export default function ProductionSettings() {
                         ))}
                       </select>
                     </label>
+                    {r.link && (
+                      <label className="wide">{t('Production branch')}
+                        <input
+                          className="input mono"
+                          value={r.link.branch || ''}
+                          onChange={(e) => set(r.key, { link: { ...r.link, branch: e.target.value } })}
+                          placeholder={learnedBranch(r.link) ? t('Automatic: {branch}', { branch: learnedBranch(r.link) }) : t('Automatic: the branch the last deploy came from')}
+                          spellCheck={false}
+                        />
+                        <span className="muted small">{t("The branch production deploys from. Waiting to ship compares it with what's live. Leave empty for Keel to work it out.")}</span>
+                      </label>
+                    )}
                   </fieldset>
                   <fieldset className="monitor-group">
                     <legend>Application Insights <span className="muted small">{t('(optional)')}</span></legend>
