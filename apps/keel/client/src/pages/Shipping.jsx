@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
-import { age, dateTime } from '../format.js';
+import { age, dateTime, REVIEW_STATE } from '../format.js';
 import { Chip, Empty, ErrorBox, ExternalLink, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
@@ -44,6 +44,41 @@ export default function Shipping() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Open pull requests into the branch this environment deploys from: what
+ * merges next, so the card shows the whole way from PR to production.
+ */
+function ComingNext({ env }) {
+  const { openDrawer } = useApp();
+  const n = env.upcoming.length;
+  return (
+    <details className="ship-next" open={n <= 5}>
+      <summary className="small">
+        {t('Coming next')}
+        <span className="muted"> · {t(n === 1 ? '{n} open pull request into {branch}' : '{n} open pull requests into {branch}', { n, branch: env.branch })}</span>
+      </summary>
+      <ul className="deploy-list">
+        {env.upcoming.map((p) => {
+          const state = REVIEW_STATE[p.reviewState] || REVIEW_STATE['in-review'];
+          return (
+            <li key={p.id}>
+              <button type="button" className="row-link" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>{p.title}</button>
+              <div className="sub">
+                <span className="mono">!{p.id}</span>
+                {p.author && <span>{p.author}</span>}
+                <span>{t('open {age}', { age: age(p.createdAt) })}</span>
+                <Chip tone={state.tone}>{state.label}</Chip>
+                {p.autoComplete && <Chip tone="ok">{t('Auto-complete')}</Chip>}
+                {p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
   );
 }
 
@@ -128,6 +163,7 @@ function Environment({ env }) {
           <ChangeSections changes={env} org={env.org} />
         </details>
       )}
+      {env.upcoming?.length > 0 && <ComingNext env={env} />}
       {last?.webUrl && <div className="ship-foot"><ExternalLink href={last.webUrl}>{t('Last deploy in Azure DevOps')}</ExternalLink></div>}
     </section>
   );

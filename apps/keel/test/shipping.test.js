@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createService } from '../server/service.js';
+import { comingNext } from '../server/domain/commits.js';
 import { DEFAULT_SETTINGS } from '../server/settings.js';
 
 const H = 3_600_000;
@@ -155,4 +156,19 @@ test('waiting to ship: every monitor shows; monitors sharing a deploy are one en
   const { targets } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
   assert.deepEqual(targets.map((x) => x.name), ['Berlin, Sydney', 'Status page']);
   assert.equal(targets[1].unlinked, true);
+});
+
+test('coming next: open pull requests into the deployed branch, closest to merging first', () => {
+  const pr = (id, extra) => ({ id, title: `PR ${id}`, repoId: 'r1', targetBranch: 'master', createdAt: at(id), reviewState: 'in-review', author: { displayName: 'Ana' }, ...extra });
+  const open = [
+    pr(1, { reviewState: 'draft' }),
+    pr(2, { reviewState: 'approved' }),
+    pr(3, { reviewState: 'approved', autoComplete: true }),
+    pr(4),
+    pr(5, { targetBranch: 'develop' }), // another branch
+    pr(6, { repoId: 'r2' }), // another repo
+  ];
+  assert.deepEqual(comingNext(open, 'r1', 'master').map((p) => p.id), [3, 2, 4, 1]);
+  assert.equal(comingNext(open, 'r1', 'master')[0].autoComplete, true);
+  assert.deepEqual(comingNext(open, 'r1', 'main'), []);
 });

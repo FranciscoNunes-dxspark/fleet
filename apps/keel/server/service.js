@@ -14,7 +14,7 @@ import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
-import { commitRefs, landedAt, mergeCommits, waitingChanges } from './domain/commits.js';
+import { comingNext, commitRefs, landedAt, mergeCommits, waitingChanges } from './domain/commits.js';
 import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
@@ -556,7 +556,8 @@ export function createService({
      * successful deploy, with their pull requests and work items.
      */
     async undeployed() {
-      const [targets, repoList] = await Promise.all([productionTargets(), repos()]);
+      // Open pull requests are "coming next" on the card of the branch they go into.
+      const [targets, repoList, openPrs] = await Promise.all([productionTargets(), repos(), activePRs().catch(() => [])]);
       // Monitors not linked to what deploys them still show, saying so, rather than vanishing.
       const unlinked = (monitoring ? monitoring.status() : []).filter((m) => !m.link)
         .map((m) => ({ key: `monitor:${m.id}`, name: m.name, projectId: null, projectName: null, unlinked: true, monitorId: m.id }));
@@ -577,7 +578,7 @@ export function createService({
         const branch = t.branch || last.branch || repo.defaultBranch;
         try {
           const [tip] = await cached(`commits:tip:${repo.id}:${branch}`, () => provider.listCommits(repo.projectId, repo.id, { branch, top: 1 }), 2 * MIN);
-          const where = { ...head, branch, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy };
+          const where = { ...head, branch, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
           if (tip && tip.id !== last.commit) {
             // Production must run a commit the branch contains; otherwise "since" means nothing and
             // the list would be the branch's whole history (years of commits that are already live).
