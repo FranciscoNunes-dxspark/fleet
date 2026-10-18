@@ -19,6 +19,7 @@ import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './do
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
+import { changedFolders, suggestReviewers } from './domain/reviewers.js';
 
 const MIN = 60_000;
 // Classic release stages that are production by their name; monitors can point at any stage or pipeline.
@@ -336,6 +337,7 @@ export function createService({
           author: c.author?.name || null,
           projectId: c.projectId,
           repoId: c.repoId,
+          webUrl: repo.webUrl ? `${repo.webUrl}/pullrequest/${c.prId}` : null,
           mergedAt: c.author?.date || null,
           // The merge commit first, then the PR's own commits.
           commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
@@ -464,6 +466,28 @@ export function createService({
         suggestedTitle: suggestTitle(source, result.commits),
         suggestedWorkItems: found.map(({ id, title, type, state, stateCategory }) => ({ id, title, type, state, stateCategory })),
       };
+    },
+
+    /**
+     * Reviewers to suggest for a change to `paths` going into `target`: people
+     * on the team who committed in the same folders in the last 180 days,
+     * fewer reviews owed first among equals. `exclude`: ids already on it;
+     * `author`: who wrote it (you, for a new pull request).
+     */
+    async suggestReviewers(projectId, repoId, { paths = [], target, exclude = [], author } = {}) {
+      await assertTrackedRepo(repoId);
+      const folders = changedFolders(paths.slice(0, 2000).map(String));
+      const since = new Date(Date.now() - 180 * DAY).toISOString();
+      const [histories, team, load, who] = await Promise.all([
+        Promise.all(folders.map(async (f) => ({
+          ...f,
+          commits: await cached(`history:${repoId}:${target || ''}:${f.dir}`, () => provider.listCommits(projectId, repoId, { branch: target || undefined, path: f.dir, since, top: 100 }), 30 * MIN).catch(() => []),
+        }))),
+        people(),
+        workload().catch(() => []),
+        me(),
+      ]);
+      return { suggestions: suggestReviewers({ histories, people: team, load, exclude: [author || who.id, ...exclude] }) };
     },
 
     /**
@@ -871,6 +895,8 @@ export function createService({
       const priority = [1, 2, 3, 4].includes(Number(body.priority)) ? Number(body.priority) : null;
       const tags = Array.isArray(body.tags) ? body.tags.map((x) => String(x).trim()).filter(Boolean).slice(0, 20) : [];
       const parentId = Number(body.parentId) > 0 ? Number(body.parentId) : null;
+      // "Related" links, e.g. a production bug to the work items the deploy shipped.
+      const relatedIds = [...new Set((Array.isArray(body.relatedIds) ? body.relatedIds : []).map(Number).filter((n) => Number.isInteger(n) && n > 0 && n !== parentId))].slice(0, 20);
       const created = await provider.createWorkItem(p.name, body.type, {
         title,
         description: String(body.description || '').slice(0, 20_000),
@@ -879,6 +905,7 @@ export function createService({
         iterationPath,
         priority,
         tags,
+        relatedIds,
       }, parentId);
       cache.invalidate('wi:');
       return created;

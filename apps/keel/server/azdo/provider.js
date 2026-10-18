@@ -529,11 +529,12 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       return refs.map((r) => ({ name: stripRef(r.name), ...(recent.get(stripRef(r.name)) || { pushedAt: null, pushedBy: null }) }));
     },
 
-    /** Commits on a branch (the repo's default when none is given), newest first. */
-    async listCommits(projectId, repoId, { branch, since, top = 300 } = {}) {
+    /** Commits on a branch (the repo's default when none is given), newest first; with `path`, only those touching it. */
+    async listCommits(projectId, repoId, { branch, since, path, top = 300 } = {}) {
       const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/commits`, {
         query: {
           ...(branch ? { 'searchCriteria.itemVersion.version': branch, 'searchCriteria.itemVersion.versionType': 'branch' } : {}),
+          ...(path ? { 'searchCriteria.itemPath': path } : {}),
           ...(since ? { 'searchCriteria.fromDate': since } : {}),
           'searchCriteria.$top': top,
         },
@@ -862,6 +863,9 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       if (fields.tags?.length) set('System.Tags', fields.tags.join('; '));
       if (parentId) {
         ops.push({ op: 'add', path: '/relations/-', value: { rel: 'System.LinkTypes.Hierarchy-Reverse', url: `${org}/_apis/wit/workItems/${Number(parentId)}` } });
+      }
+      for (const id of fields.relatedIds || []) {
+        ops.push({ op: 'add', path: '/relations/-', value: { rel: 'System.LinkTypes.Related', url: `${org}/_apis/wit/workItems/${Number(id)}` } });
       }
       const create = (body) => api(`${seg(projectName)}/_apis/wit/workitems/${encodeURIComponent(type)}`, { method: 'POST', body, contentType: 'application/json-patch+json' });
       const w = await create(ops).catch((err) => {

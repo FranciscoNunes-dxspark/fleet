@@ -921,11 +921,12 @@ export function createMockProvider() {
       })));
     },
 
-    listCommits(projectId, repoId, { branch, since, top = 300 } = {}) {
+    listCommits(projectId, repoId, { branch, since, path, top = 300 } = {}) {
       const repo = ALL_REPOS.find((r) => r.id === repoId);
       if (!repo) throw notFound('Repository');
       const from = since ? Date.parse(since) : 0;
-      return delay(demoCommits(repo, branch || repo.defaultBranch).filter((c) => Date.parse(c.author.date) >= from).slice(0, top).map(stripCommit));
+      const touches = (c) => !path || path === '/' || c._files.some((f) => f.path === path || f.path.startsWith(`${path}/`));
+      return delay(demoCommits(repo, branch || repo.defaultBranch).filter((c) => Date.parse(c.author.date) >= from && touches(c)).slice(0, top).map(stripCommit));
     },
 
     listCommitsBetween(projectId, repoId, from, to, { top = 300 } = {}) {

@@ -55,6 +55,7 @@ export default function NewPr({ preset = {} }) {
   const [workItems, setWorkItems] = useState([]);
   const [wiInput, setWiInput] = useState('');
   const [reviewers, setReviewers] = useState([]);
+  const [suggested, setSuggested] = useState(null);
   const [isDraft, setIsDraft] = useState(false);
   const [autoComplete, setAutoComplete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -117,6 +118,16 @@ export default function NewPr({ preset = {} }) {
       .catch((e) => mine === compareSeq.current && setCompareError(e))
       .finally(() => mine === compareSeq.current && setComparing(false));
   }, [current?.id, source, target]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reviewers to suggest: who recently worked in the folders this change touches (see server/domain/reviewers.js).
+  useEffect(() => {
+    setSuggested(null);
+    if (!current || !compare?.files?.items?.length) return;
+    api(`/repos/${encodeURIComponent(current.projectId)}/${encodeURIComponent(current.id)}/reviewers`, {
+      method: 'POST',
+      body: { paths: compare.files.items.map((f) => f.path), target },
+    }).then((r) => setSuggested(r.suggestions)).catch(() => setSuggested([]));
+  }, [compare]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (reposError) return <ErrorBox error={reposError} />;
   if (!repos) return <Loading />;
@@ -298,6 +309,7 @@ export default function NewPr({ preset = {} }) {
             </li>
           ))}
         </ul>
+        <SuggestedReviewers suggestions={(suggested || []).filter((x) => !reviewers.some((r) => r.id === x.person.id))} onAdd={(p) => setReviewers((l) => [...l, { ...p, isRequired: false }])} />
         {candidates.length > 0 && (
           <select className="input" value="" onChange={(e) => { const p = candidates.find((c) => c.id === e.target.value); if (p) setReviewers((l) => [...l, { ...p, isRequired: false }]); }} aria-label={t('Add a reviewer')}>
             <option value="">{t('Add a reviewer…')}</option>
@@ -323,3 +335,33 @@ export default function NewPr({ preset = {} }) {
 }
 
 const pickWi = ({ id, title, type, state, stateCategory }) => ({ id, title, type, state, stateCategory });
+
+/**
+ * People who know the code this change touches, with why: how many of its
+ * files are in folders they committed to recently, and the reviews they owe.
+ * Shared with the pull request panel (PrDetail.jsx).
+ */
+export function SuggestedReviewers({ suggestions, onAdd, busy = false }) {
+  if (!suggestions?.length) return null;
+  return (
+    <div className="suggested-reviewers">
+      <div className="small muted">{t('Suggested: they changed these folders recently')}</div>
+      <ul className="reviewer-list">
+        {suggestions.map((x) => (
+          <li key={x.person.id}>
+            <Avatar person={x.person} size={22} />
+            <span className="suggested-who">
+              <span className="truncate">{x.person.displayName}</span>
+              <span className="small muted truncate" title={x.folders.join('\n')}>
+                {t(x.commits === 1 ? '{n} commit in {folders}' : '{n} commits in {folders}', { n: x.commits, folders: x.folders.length === 1 ? x.folders[0] : t('{n} of these folders', { n: x.folders.length }) })}
+                {x.lastAt ? ` · ${t('last {age} ago', { age: age(x.lastAt) })}` : ''}
+                {' · '}<span className={x.overloaded ? 'text-warn' : ''}>{t(x.reviewsOwed === 1 ? '{n} review owed' : '{n} reviews owed', { n: x.reviewsOwed })}</span>
+              </span>
+            </span>
+            <button type="button" className="btn btn-small" onClick={() => onAdd(x.person)} disabled={busy}>{t('Add')}</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

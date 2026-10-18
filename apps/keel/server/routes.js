@@ -77,6 +77,13 @@ export function apiRouter({ channels = null } = {}) {
   r.get('/repos/:projectId/:repoId/compare', async (req, res) => res.json(await req.ctx.service.compare(
     req.params.projectId, req.params.repoId, String(req.query.source || ''), String(req.query.target || ''),
   )));
+  // Reviewers to suggest for a change: { paths, target, exclude, author } (POST: the file list can be long).
+  r.post('/repos/:projectId/:repoId/reviewers', async (req, res) => res.json(await req.ctx.service.suggestReviewers(req.params.projectId, req.params.repoId, {
+    paths: Array.isArray(req.body?.paths) ? req.body.paths : [],
+    target: req.body?.target ? String(req.body.target) : undefined,
+    exclude: Array.isArray(req.body?.exclude) ? req.body.exclude.map(String) : [],
+    author: req.body?.author ? String(req.body.author) : undefined,
+  })));
   // Commit history: all tracked repos (default branches), or ?project=&repo=&branch= for one.
   r.get('/commits', async (req, res) => res.json(await req.ctx.service.commits({
     projectId: req.query.project ? String(req.query.project) : undefined,

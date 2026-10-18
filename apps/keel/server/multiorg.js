@@ -205,6 +205,7 @@ export function createMultiService(entries) {
     },
     branches: viaProject('branches'),
     compare: viaProject('compare'),
+    suggestReviewers: viaProject('suggestReviewers'),
     pullRequest: viaProject('pullRequest'),
     prAction: viaProject('prAction'),
     pullRequestConflicts: viaProject('pullRequestConflicts'),
