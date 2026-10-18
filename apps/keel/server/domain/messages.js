@@ -42,7 +42,8 @@ export const identity = (key) => String(key).replace(/^(build:[^:]+:[^:]+):[^:]*
 /** A post about one inbox entry: { title, tone, sections, links }. */
 export function eventMessage(item, { t, tx }, keelUrl = null) {
   const title = KEEL_TITLES.has(item.kind) ? tx(item.title) : item.title;
-  const lines = [...item.reasons.map((r) => tx(r.text)), item.context ? tx(item.context) : null].filter(Boolean);
+  // The context line, unless it only repeats the link (a monitor's URL).
+  const lines = [...item.reasons.map((r) => tx(r.text)), item.context && item.context !== item.webUrl ? tx(item.context) : null].filter(Boolean);
   const links = [
     item.webUrl ? { label: item.kind === 'production' ? t('Open the site') : t('Open in Azure DevOps'), url: item.webUrl } : null,
     keelUrl ? { label: t('Open in Keel'), url: `${keelUrl}/${item.kind === 'production' ? 'production' : 'inbox'}` } : null,
