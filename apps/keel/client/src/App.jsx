@@ -27,6 +27,7 @@ import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
 import Settings from './pages/Settings.jsx';
 import { Icon } from './icons.jsx';
+import { CommandPalette } from './palette.jsx';
 import { useSticky } from './sticky.js';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
@@ -232,6 +233,7 @@ function Console({ authMode, onSignedOut }) {
   return (
     <AppContext.Provider value={ctx}>
       <Shell />
+      <CommandPalette />
       <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')}>
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
         {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
@@ -357,6 +359,9 @@ function Shell() {
         <button type="button" className="btn btn-small menu-btn" aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
           <Icon name={menuOpen ? 'close' : 'menu'} size={14} /> {menuOpen ? t('Close') : t('Menu')}
           {!menuOpen && s?.high > 0 && <span className="nav-count nav-count-bad">{s.high}</span>}
+        </button>
+        <button type="button" className="search-btn" onClick={() => window.dispatchEvent(new Event('keel:palette'))} title={tip(t('Search (Ctrl+K)'))} aria-label={t('Search (Ctrl+K)')}>
+          <Icon name="search" /><span className="nav-text">{t('Search')}</span><kbd className="nav-text">{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>
         </button>
         <div className="nav-groups" id="main-menu">
           {nav.map((group, i) => (

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSticky } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { dateTime } from '../format.js';
@@ -39,6 +40,15 @@ export default function Commits() {
   const [days, setDays] = useSticky('commits.days', 14);
   const [author, setAuthor] = useSticky('commits.author', '');
   const [q, setQ] = useState('');
+  // A link to one repo's history (?project=&repo=, from the search palette) picks it, then leaves the address clean.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    if (!params.get('repo')) return;
+    setProject(params.get('project') || '');
+    setRepo(params.get('repo'));
+    setBranch('');
+    setParams({}, { replace: true });
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chosen = repoList?.find((r) => r.id === repo) || null;
   const { data: branches } = useApi(chosen ? `/repos/${enc(chosen.projectId)}/${enc(chosen.id)}/branches` : null);
