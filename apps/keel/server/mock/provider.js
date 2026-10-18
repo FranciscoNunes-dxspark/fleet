@@ -695,7 +695,7 @@ function demoDeployHistory(target) {
   }
   const commits = repo ? demoCommits(repo) : [];
   const history = list
-    .map((d) => ({ ...d, startedAt: iso(Date.parse(d.at) - 12 * 60_000), repoId: repo?.id || null, commit: commits.find((c) => Date.parse(c.author.date) < Date.parse(d.at) - 30 * 60_000)?.id || null }))
+    .map((d) => ({ ...d, startedAt: iso(Date.parse(d.at) - 12 * 60_000), repoId: repo?.id || null, branch: repo?.defaultBranch || null, commit: commits.find((c) => Date.parse(c.author.date) < Date.parse(d.at) - 30 * 60_000)?.id || null }))
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   deployHistories.set(key, history);
   return history;

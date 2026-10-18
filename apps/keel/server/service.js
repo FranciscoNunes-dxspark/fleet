@@ -14,7 +14,7 @@ import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
-import { commitRefs, mergeCommits } from './domain/commits.js';
+import { commitRefs, landedAt, mergeCommits, waitingChanges } from './domain/commits.js';
 import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
@@ -339,7 +339,7 @@ export function createService({
           projectId: c.projectId,
           repoId: c.repoId,
           webUrl: repo.webUrl ? `${repo.webUrl}/pullrequest/${c.prId}` : null,
-          mergedAt: c.author?.date || null,
+          mergedAt: landedAt(c),
           // The merge commit first, then the PR's own commits.
           commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
         };
@@ -564,19 +564,19 @@ export function createService({
         const repo = repoList.find((r) => r.id === last.repoId);
         const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };
         if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
-        const branch = t.branch || repo.defaultBranch;
+        // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
+        const branch = t.branch || last.branch || repo.defaultBranch;
         try {
           const [tip] = await cached(`commits:tip:${repo.id}:${branch}`, () => provider.listCommits(repo.projectId, repo.id, { branch, top: 1 }), 2 * MIN);
           const raw = !tip || tip.id === last.commit ? [] : await commitsBetween(repo.projectId, repo.id, last.commit, tip.id);
           const changes = await describeChanges(repo, raw);
-          const oldest = changes.commits.reduce((min, c) => Math.min(min, Date.parse(c.author?.date) || Infinity), Infinity);
           return {
             ...head,
             branch,
             repo: { id: repo.id, name: repo.name, projectId: repo.projectId },
             lastDeploy,
             ...changes,
-            oldestAt: Number.isFinite(oldest) ? new Date(oldest).toISOString() : null,
+            ...waitingChanges(changes),
           };
         } catch (err) {
           return { ...head, lastDeploy, error: err.message };

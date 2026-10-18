@@ -22,4 +22,8 @@ export default {
   'oldest change': 'alteração mais antiga',
   'Up to date with {label}': 'Atualizado com {label}',
   '{n} waiting since {label} · oldest {age}': '{n} por entregar desde {label} · mais antiga {age}',
+  'since it was merged': 'desde o merge',
+  '{n} commit without a pull request': '{n} commit sem pull request',
+  '{n} commits without a pull request': '{n} commits sem pull request',
+  'changes waiting': 'alterações por entregar',
 };

@@ -48,7 +48,34 @@ test('waiting to ship: commits on the branch since the last good deploy, with th
   assert.deepEqual(env.pullRequests.map((p) => [p.id, p.title, p.commits.map((c) => c.id)]), [[7, 'Add refunds', ['c3', 'c2b']]]);
   assert.deepEqual(env.directCommits.map((c) => c.id), ['c4']);
   assert.deepEqual(env.workItems.map((w) => w.id), [41]);
-  assert.equal(env.oldestAt, history[2].author.date);
+  // One PR and one commit without a PR: two changes, not three commits.
+  assert.equal(env.waiting, 2);
+  // Waiting since PR 7 merged (c3), not since its first commit was written (c2b).
+  assert.equal(env.oldestAt, history[1].author.date);
+});
+
+test('waiting to ship: compared on the branch the deployed build came from', async () => {
+  const seen = [];
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'main' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async () => [{ id: 3, label: 'Release-3', at: at(10), status: 'succeeded', repoId: 'r1', commit: 'h1', branch: 'release/2026.10' }],
+    listCommits: async (projectId, repoId, { branch }) => {
+      seen.push(branch);
+      return [commit('h2', 2, 'Hotfix for checkout')];
+    },
+    listCommitsBetween: async () => [commit('h2', 2, 'Hotfix for checkout')],
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const monitoring = { status: () => [{ id: 'm1', name: 'Shop', link: { type: 'release', projectId: 'p1', definitionId: 1, stage: 'Production' } }] };
+  const { targets: [env] } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  assert.deepEqual(seen, ['release/2026.10'], 'not the repo\'s default branch');
+  assert.equal(env.branch, 'release/2026.10');
+  assert.equal(env.waiting, 1);
 });
 
 test('waiting to ship: up to date, and environments that cannot be read', async () => {

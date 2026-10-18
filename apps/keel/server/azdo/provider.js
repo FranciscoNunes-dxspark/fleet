@@ -1137,6 +1137,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
             webUrl: b._links?.web?.href || `${org}/${seg(b.project?.name)}/_build/results?buildId=${b.id}`,
             repoId: b.repository?.type === 'TfsGit' ? b.repository.id : null,
             commit: b.sourceVersion || null,
+            branch: stripRef(b.sourceBranch) || null,
           }));
       }
       const base = `${rm}/${seg(target.projectName)}/_apis/release`;
@@ -1161,6 +1162,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
           webUrl: relUrl(target.projectName, d.release?.id),
           repoId: (git ? ref.definition?.id : ref.repository?.id) || null,
           commit: (git ? ref.version?.id : ref.sourceVersion?.id) || null,
+          branch: stripRef(ref.branch?.name || ref.branch?.id) || null,
         };
       }));
     },

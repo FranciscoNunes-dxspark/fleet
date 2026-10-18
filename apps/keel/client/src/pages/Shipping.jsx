@@ -46,7 +46,8 @@ export default function Shipping() {
 function Environment({ env }) {
   const { openDrawer } = useApp();
   const projectLabel = useProjectLabel();
-  const waiting = env.commits?.length || 0;
+  // Changes, as the server counts them: each merged PR once, plus commits pushed without one.
+  const waiting = env.waiting ?? 0;
   const last = env.lastDeploy;
   const openDeploy = () => openDrawer({ type: 'deploy', projectId: env.projectId, target: env.key, id: last.id, org: env.org });
 
@@ -86,12 +87,17 @@ function Environment({ env }) {
             <div className="fact">
               <dt>{t('Waiting')}</dt>
               <dd>{waiting}</dd>
-              <dd className="muted small">{t(env.pullRequests.length === 1 ? '{n} pull request' : '{n} pull requests', { n: env.pullRequests.length })}</dd>
+              <dd className="muted small">
+                {[
+                  env.pullRequests.length && t(env.pullRequests.length === 1 ? '{n} pull request' : '{n} pull requests', { n: env.pullRequests.length }),
+                  env.directCommits.length && t(env.directCommits.length === 1 ? '{n} commit without a pull request' : '{n} commits without a pull request', { n: env.directCommits.length }),
+                ].filter(Boolean).join(' · ') || t('nothing waiting')}
+              </dd>
             </div>
             <div className="fact">
               <dt>{t('Oldest change')}</dt>
               <dd className={waitTone(env.oldestAt) === 'warn' ? 'text-warn' : ''}>{env.oldestAt ? age(env.oldestAt) : '—'}</dd>
-              <dd className="muted small">{env.oldestAt ? t('since it was committed') : t('nothing waiting')}</dd>
+              <dd className="muted small">{env.oldestAt ? t('since it was merged') : t('nothing waiting')}</dd>
             </div>
           </>}
         </dl>

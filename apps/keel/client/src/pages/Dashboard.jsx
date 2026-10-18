@@ -474,13 +474,13 @@ function ShipWidget() {
   if (fallback) return fallback;
   if (!data.targets.length) return <p className="muted small">{t('No production environment found. Link a production monitor to the release stage or pipeline that deploys it, or name the classic release stage "Production".')}</p>;
   const known = data.targets.filter((e) => !e.error && !e.unknown);
-  const waiting = known.reduce((n, e) => n + e.commits.length, 0);
+  const waiting = known.reduce((n, e) => n + e.waiting, 0);
   const prs = known.reduce((n, e) => n + e.pullRequests.length, 0);
   const oldest = known.map((e) => e.oldestAt).filter(Boolean).sort()[0] || null;
   return (
     <>
       <div className="stat-row">
-        <Stat value={waiting} label={t('commits waiting')} tone={waiting ? waitTone(oldest) : 'ok'} to="/ship" />
+        <Stat value={waiting} label={t('changes waiting')} tone={waiting ? waitTone(oldest) : 'ok'} to="/ship" />
         <Stat value={prs} label={t('PRs waiting')} to="/ship" />
         <Stat value={oldest ? age(oldest) : '—'} label={t('oldest change')} tone={oldest ? waitTone(oldest) : undefined} to="/ship" />
       </div>
@@ -490,8 +490,8 @@ function ShipWidget() {
             <Link className="mini-title" to="/ship">{e.name}</Link>
             <span className="muted small truncate">
               {e.error ? t("Couldn't read") : e.unknown ? t('Unknown')
-                : !e.commits.length ? t('Up to date with {label}', { label: e.lastDeploy.label })
-                  : t('{n} waiting since {label} · oldest {age}', { n: e.commits.length, label: e.lastDeploy.label, age: age(e.oldestAt) })}
+                : !e.waiting ? t('Up to date with {label}', { label: e.lastDeploy.label })
+                  : t('{n} waiting since {label} · oldest {age}', { n: e.waiting, label: e.lastDeploy.label, age: age(e.oldestAt) })}
             </span>
           </li>
         ))}
