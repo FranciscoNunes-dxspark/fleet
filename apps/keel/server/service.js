@@ -20,6 +20,7 @@ import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
 import { changedFolders, suggestReviewers } from './domain/reviewers.js';
+import { findFlakyTests } from './domain/tests.js';
 
 const MIN = 60_000;
 // Classic release stages that are production by their name; monitors can point at any stage or pipeline.
@@ -1110,6 +1111,30 @@ export function createService({
         approvals().catch(() => []),
       ]);
       return { timeline, logs: Object.fromEntries(logs), changes, tests, approvals: waiting.filter((a) => a.kind === 'yaml' && a.run?.id === id) };
+    },
+
+    /**
+     * Flaky tests across tracked pipelines, from their recent runs on their own
+     * branch. Only red runs' test results are read (up to 150 runs; finished
+     * runs never change, so each is read once a day at most).
+     */
+    async flakyTests() {
+      const [rows, builds] = await Promise.all([pipelines(), rawBuilds()]);
+      const judged = rows.filter((r) => r.branch && r.runCount);
+      const home = new Map(judged.map((r) => [`${r.projectId}:${r.definition.id}`, r.branch]));
+      const red = builds
+        .filter((b) => b.status === 'completed' && ['failed', 'partiallySucceeded'].includes(b.result) && b.reason !== 'pullRequest'
+          && home.get(`${b.projectId}:${b.definition.id}`) === b.sourceBranch)
+        .sort((a, b) => Date.parse(b.finishedAt) - Date.parse(a.finishedAt))
+        .slice(0, 150);
+      const read = await Promise.all(red.map(async (b) => [b.id, await cached(`tests:failed:${b.id}`, () => provider.getBuildFailedTests(b.projectId, b.id).catch(() => null), 24 * 60 * MIN)]));
+      const failedTests = new Map(read.filter(([, r]) => r));
+      return {
+        ...findFlakyTests({ pipelines: judged, builds, failedTests }),
+        // Red runs, but no test results at all: no tests published, or no Test Management scope on the token.
+        noTestData: red.length > 0 && failedTests.size === 0,
+        days: (await store.load()).thresholds.buildLookbackDays,
+      };
     },
 
     async queueBuild(projectId, definitionId, branch) {

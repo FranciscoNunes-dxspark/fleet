@@ -1175,3 +1175,5 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 /* Suggested reviewers (New pull request, pull request panel) */
 .suggested-reviewers { display: grid; gap: 6px; margin: 10px 0; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); }
 .suggested-who { display: grid; min-width: 0; flex: 1; }
+.flaky-test { max-width: 520px; }
+.flaky-test .chips { margin: 3px 0; }

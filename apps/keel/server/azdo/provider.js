@@ -141,6 +141,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
     sourceBranch: stripRef(b.sourceBranch),
     repoId: b.repository?.type === 'TfsGit' ? b.repository.id : null,
     repoName: b.repository?.name || null,
+    commit: b.sourceVersion || null,
     requestedFor: ident(b.requestedFor),
     queuedAt: b.queueTime,
     startedAt: b.startTime || null,
@@ -1015,6 +1016,27 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       const passed = sum('passedTests');
       const other = sum('notApplicableTests') + sum('incompleteTests');
       return { total, passed, failed: Math.max(0, total - passed - other), other };
+    },
+
+    /**
+     * The tests that failed in a run, from the test runs it published:
+     * { failed: [{ name, title, error }] }, or null when it published none
+     * (or the token has no Test Management read scope).
+     */
+    async getBuildFailedTests(projectId, buildId) {
+      const d = await api(`${seg(projectId)}/_apis/test/runs`, { query: { buildUri: `vstfs:///Build/Build/${buildId}`, includeRunDetails: true } }).catch(() => null);
+      const runs = d?.value || [];
+      if (!runs.length) return null;
+      const failing = runs.filter((r) => (r.totalTests || 0) - (r.passedTests || 0) - (r.notApplicableTests || 0) - (r.incompleteTests || 0) > 0);
+      const lists = await Promise.all(failing.slice(0, 5).map((r) => api(`${seg(projectId)}/_apis/test/Runs/${r.id}/results`, { query: { outcomes: 'Failed', $top: 200 } })
+        .then((x) => x.value || []).catch(() => [])));
+      return {
+        failed: lists.flat().map((x) => ({
+          name: x.automatedTestName || x.testCaseTitle,
+          title: x.testCaseTitle || x.automatedTestName,
+          error: String(x.errorMessage || '').split('\n')[0].slice(0, 300) || null,
+        })).filter((x) => x.name),
+      };
     },
 
     /**

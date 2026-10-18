@@ -6,6 +6,7 @@ import { age, dateTime, pct } from '../format.js';
 import { t, tx } from '../i18n.js';
 import { Chip, Confirm, ErrorBox, Loading } from '../ui.jsx';
 import { useProjectLabel } from '../orgs.js';
+import { FlakyTests } from './Pipelines.jsx';
 
 // Pipeline details (drawer): the pipeline's latest runs, and for one run its
 // stages, jobs and steps, the failed steps' errors and last log lines, the
@@ -122,6 +123,8 @@ export default function PipelineDetail({ target }) {
           })}
         </ul>
       </section>
+
+      <FlakyTests pipelineKey={target.key} limit={5} />
 
       <section className="detail-actions sticky-actions">
         {can('pipelines.run') && branch && (

@@ -12,7 +12,7 @@ export default function Pipelines() {
   const rel = useApi('/releases');
   const { meta } = useApp();
   const [params, setParams] = useStickyParams('pipelines', ['tab']);
-  const tab = params.get('tab') === 'releases' ? 'releases' : 'builds';
+  const tab = ['releases', 'tests'].includes(params.get('tab')) ? params.get('tab') : 'builds';
 
   const data = builds.data;
   const failing = data ? data.filter((p) => p.health === 'failing').length : 0;
@@ -46,9 +46,13 @@ export default function Pipelines() {
         <button type="button" role="tab" aria-selected={tab === 'releases'} className={tab === 'releases' ? 'on' : ''} onClick={() => setParams({ tab: 'releases' }, { replace: true })}>
           {t('Releases')}<span className="seg-count">{rel.data ? defs.length : '…'}</span>
         </button>
+        <button type="button" role="tab" aria-selected={tab === 'tests'} className={tab === 'tests' ? 'on' : ''} onClick={() => setParams({ tab: 'tests' }, { replace: true })}>
+          {t('Flaky tests')}
+        </button>
       </div>
 
       {tab === 'builds' && (data ? <BuildsTab data={data} /> : builds.error ? <ErrorBox error={builds.error} onRetry={builds.reload} /> : <Loading />)}
+      {tab === 'tests' && <FlakyTests />}
       {tab === 'releases' && (rel.data ? <ReleasesTab defs={defs} /> : rel.error ? <ErrorBox error={rel.error} onRetry={rel.reload} /> : <Loading label={t('Loading release pipelines…')} />)}
     </div>
   );
@@ -226,4 +230,83 @@ function PipelineRow({ p, showFolder, onQueue }) {
       </td>
     </tr>
   );
+}
+
+/**
+ * Tests that fail now and then on a pipeline's own branch and pass again
+ * without a fix (server/domain/tests.js). Worst first; each links to the
+ * run where it last failed.
+ */
+export function FlakyTests({ pipelineKey = null, limit = null }) {
+  const { openDrawer } = useApp();
+  const { data, error, reload } = useApi('/tests/flaky');
+  if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading label={t('Reading test results…')} />;
+  const tests = data.tests.filter((x) => !pipelineKey || x.pipeline.key === pipelineKey);
+  const shown = limit ? tests.slice(0, limit) : tests;
+  if (pipelineKey && !tests.length) return null;
+
+  const intro = !pipelineKey && (
+    <p className="muted small delivery-intro">
+      {t('Tests that failed and then passed again without a fix, on each pipeline\'s own branch over the last {days} days: re-run on the same commit and passed, or failed at least twice with passes in between. Only failed runs\' test results are read.', { days: data.days })}
+      {' '}{t('{runs} runs of {pipelines} pipelines looked at.', { runs: data.analyzed.runs, pipelines: data.analyzed.pipelines })}
+    </p>
+  );
+  const body = (
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>{t('Test')}</th>
+            {!pipelineKey && <th>{t('Pipeline')}</th>}
+            <th className="num">{t('Failed')}</th>
+            {!pipelineKey && <th className="num" title={t('Times it went from failing to passing or back')}>{t('Flips')}</th>}
+            <th>{t('Last failed')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((x) => (
+            <tr key={`${x.pipeline.org || ''}:${x.pipeline.key}:${x.name}`}>
+              <td className="flaky-test">
+                <span className="strong mono small" title={x.name}>{x.shortName}</span>
+                <div className="chips">
+                  {x.sameCommit && <Chip tone="warn" title={t('It failed, then passed when the same commit was run again')}>{t('Passed on a re-run')}</Chip>}
+                  {x.failingNow && <Chip tone="bad">{t('Failed in the latest run')}</Chip>}
+                </div>
+                {x.error && <div className="small muted truncate" title={x.error}>{x.error}</div>}
+              </td>
+              {!pipelineKey && (
+                <td>
+                  <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'pipeline', key: x.pipeline.key, org: x.pipeline.org })}>{x.pipeline.name}</button>
+                  <div className="small muted">{x.pipeline.projectName} · {x.pipeline.branch}</div>
+                </td>
+              )}
+              <td className="num">{x.fails}/{x.runs} <span className="muted small">{pct(x.failRate)}</span>{pipelineKey && <div className="small muted">{t('{n} flips', { n: x.flips })}</div>}</td>
+              {!pipelineKey && <td className="num">{x.flips}</td>}
+              <td>
+                <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'pipeline', key: x.pipeline.key, buildId: x.lastFailedRun.id, org: x.pipeline.org })}>{x.lastFailedRun.buildNumber}</button>
+                <div className="small muted">{t('{age} ago', { age: age(x.lastFailedAt) })}</div>
+              </td>
+            </tr>
+          ))}
+          {!shown.length && (
+            <tr><td colSpan={pipelineKey ? 3 : 5} className="muted">
+              {data.noTestData
+                ? t('No test results could be read for the failed runs. Either the pipelines publish no test results, or the token lacks the Test Management (Read) scope.')
+                : t('No flaky tests found in this period.')}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+  if (pipelineKey) {
+    return (
+      <section className="detail-section">
+        <h3>{t('Flaky tests')} <span className="muted small">{tests.length}</span></h3>
+        {body}
+        {limit && tests.length > limit && <p className="small muted">{t('{n} more on Pipelines → Flaky tests.', { n: tests.length - limit })}</p>}
+      </section>
+    );
+  }
+  return <section>{intro}{body}</section>;
 }

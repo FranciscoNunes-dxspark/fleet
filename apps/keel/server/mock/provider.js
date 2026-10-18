@@ -395,6 +395,46 @@ for (const def of definitions) {
   });
 }
 
+// The commit each run built: a new one per run, except that a run after a
+// failure is sometimes the same commit run again (as people re-run red builds).
+{
+  const local = rng(777);
+  const byDef = new Map();
+  for (const b of builds) byDef.set(b.definition.id, [...(byDef.get(b.definition.id) || []), b]);
+  for (const list of byDef.values()) {
+    let prev = null;
+    for (const b of list.sort((x, y) => Date.parse(x.queuedAt) - Date.parse(y.queuedAt))) {
+      b.commit = prev && prev.result === 'failed' && local() < 0.45 ? prev.commit : Array.from({ length: 40 }, () => Math.floor(local() * 16).toString(16)).join('');
+      prev = b;
+    }
+  }
+}
+
+// Tests, for the failed runs: each pipeline has a few tests that fail now and
+// then (flaky) and one that only fails when something is really broken.
+const TEST_AREAS = { web: ['Cart', 'Checkout', 'Search'], api: ['Orders', 'Payments', 'Pricing'], service: ['Handlers', 'Repository', 'Webhooks'], app: ['Camera', 'Sync', 'Login'] };
+function demoTests(def) {
+  const kind = def.repo.name.includes('web') ? 'web' : def.repo.name.includes('app') ? 'app' : def.repo.name.includes('api') ? 'api' : 'service';
+  const ns = def.repo.name.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join('');
+  const [a, b, c] = TEST_AREAS[kind];
+  return [
+    { name: `${ns}.Tests.${a}Tests.Times_out_waiting_for_the_queue`, error: 'System.TimeoutException: The operation has timed out after 30000ms.', p: 0.55 },
+    { name: `${ns}.Tests.${b}Tests.Handles_two_requests_at_once`, error: 'Expected: 2 but was: 1', p: 0.3 },
+    { name: `${ns}.Tests.${c}Tests.Formats_dates_in_the_user_time_zone`, error: 'Expected "17/10/2026" but was "16/10/2026"', p: 0.15 },
+    { name: `${ns}.Tests.${a}Tests.Rejects_an_empty_basket`, error: 'Assert.Throws() Failure: No exception was thrown', p: 0 },
+  ];
+}
+function demoFailedTests(b) {
+  const def = definitions.find((d) => d.id === b.definition.id);
+  if (!def || b.status !== 'completed' || !['failed', 'partiallySucceeded'].includes(b.result)) return null;
+  const local = rng(b.id * 13 + 5);
+  const tests = demoTests(def);
+  const failed = tests.filter((x) => local() < x.p);
+  // A failure always has a cause; streaks of red ("forced" failures) are the real breakage.
+  if (!failed.length || b.buildNumber.endsWith('.live') || /\.1$/.test(b.buildNumber)) failed.push(tests[3]);
+  return { failed: failed.map((x) => ({ name: x.name, title: x.name.split('.').pop().replace(/_/g, ' '), error: x.error })) };
+}
+
 // --------------------------------------------------- classic releases + approvals
 let nextRelease = 300;
 let nextEnv = 9000;
@@ -1261,6 +1301,11 @@ export function createMockProvider() {
         at: iso(Date.parse(b.queuedAt) - (i + 1) * 40 * 60_000),
         webUrl: `${ORG}/${b.projectName}/_git/${b.repoName || 'repo'}/commit/${b.id}${i}`,
       })));
+    },
+
+    getBuildFailedTests(projectId, buildId) {
+      const b = builds.find((x) => x.id === Number(buildId));
+      return delay(b ? demoFailedTests(b) : null);
     },
 
     getBuildTests(projectId, buildId) {

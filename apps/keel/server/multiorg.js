@@ -15,6 +15,7 @@ import { buildWorkload } from './domain/workload.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow } from './domain/flow.js';
+import { byFlakiness } from './domain/tests.js';
 import { DAY } from './domain/prs.js';
 
 const SEVERITY = { high: 0, medium: 1, low: 2 };
@@ -265,6 +266,16 @@ export function createMultiService(entries) {
     async pipelines() {
       const rows = (await each((s) => s.pipelines())).flatMap(({ org, value }) => tagAll(org, value));
       return rows.sort((a, b) => HEALTH[a.health] - HEALTH[b.health] || a.definition.name.localeCompare(b.definition.name));
+    },
+    async flakyTests() {
+      const parts = await each((s) => s.flakyTests());
+      const sum = (k) => parts.reduce((n, p) => n + p.value.analyzed[k], 0);
+      return {
+        tests: parts.flatMap(({ org, value }) => value.tests.map((x) => ({ ...x, pipeline: { ...x.pipeline, org: org.key } }))).sort(byFlakiness),
+        analyzed: { pipelines: sum('pipelines'), runs: sum('runs'), unreadable: sum('unreadable') },
+        noTestData: parts.every((p) => p.value.noTestData),
+        days: parts[0].value.days,
+      };
     },
     pipelineRuns: viaProject('pipelineRuns'),
     runDetails: viaProject('runDetails'),
