@@ -322,12 +322,18 @@ export default function NewPr({ preset = {} }) {
           ))}
         </ul>
         <SuggestedReviewers suggestions={(suggested || []).filter((x) => !reviewers.some((r) => r.id === x.person.id))} onAdd={(p) => setReviewers((l) => [...l, { ...p, isRequired: false }])} />
-        {candidates.length > 0 && (
-          <select className="input" value="" onChange={(e) => { const p = candidates.find((c) => c.id === e.target.value); if (p) setReviewers((l) => [...l, { ...p, isRequired: false }]); }} aria-label={t('Add a reviewer')}>
-            <option value="">{t('Add a reviewer…')}</option>
-            {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-          </select>
-        )}
+        <div className="inline-form">
+          {candidates.length > 0 && (
+            <select className="input" value="" onChange={(e) => { const p = candidates.find((c) => c.id === e.target.value); if (p) setReviewers((l) => [...l, { ...p, isRequired: false }]); }} aria-label={t('Add a reviewer')}>
+              <option value="">{t('Add a reviewer…')}</option>
+              {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
+            </select>
+          )}
+          {/* "me" is resolved on the server, in the repo's organization. */}
+          {!reviewers.some((r) => r.id === 'me') && (
+            <button type="button" className="btn btn-small btn-ghost" title={t('Add yourself as a reviewer')} onClick={() => setReviewers((l) => [...l, { ...meta.me, id: 'me', isRequired: false }])}>{t('Add me')}</button>
+          )}
+        </div>
       </section>
 
       <section className="detail-section">

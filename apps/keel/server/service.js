@@ -593,8 +593,17 @@ export function createService({
         if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
         try {
           // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
-          const { branch, gone } = await liveBranch(repo, t.branch || last.branch);
-          const [tip] = await cached(`commits:tip:${repo.id}:${branch}`, () => provider.listCommits(repo.projectId, repo.id, { branch, top: 1 }), 2 * MIN);
+          let { branch, gone } = await liveBranch(repo, t.branch || last.branch);
+          const tipOf = (b) => cached(`commits:tip:${repo.id}:${b}`, () => provider.listCommits(repo.projectId, repo.id, { branch: b, top: 1 }), 2 * MIN);
+          let tip;
+          try {
+            [tip] = await tipOf(branch);
+          } catch (err) {
+            // Azure DevOps doesn't know the branch (deleted, or the branch list couldn't be read): use the default.
+            if (err.status !== 404 || branch === repo.defaultBranch) throw err;
+            [gone, branch] = [branch, repo.defaultBranch];
+            [tip] = await tipOf(branch);
+          }
           const where = { ...head, branch, branchGone: gone, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
           if (tip && tip.id !== last.commit) {
             // Production must run a commit the branch contains; otherwise "since" means nothing and
@@ -772,7 +781,9 @@ export function createService({
         title,
         description,
         isDraft: !!input.isDraft,
-        reviewers: (Array.isArray(input.reviewers) ? input.reviewers : []).filter((r) => r?.id).map((r) => ({ id: String(r.id), isRequired: !!r.isRequired })),
+        // "me" is whoever is signed in to this project's organization (ids differ between organizations).
+        reviewers: await Promise.all((Array.isArray(input.reviewers) ? input.reviewers : []).filter((r) => r?.id)
+          .map(async (r) => ({ id: r.id === 'me' ? (await me()).id : String(r.id), isRequired: !!r.isRequired }))),
         workItemIds: (Array.isArray(input.workItemIds) ? input.workItemIds : []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
         autoComplete: !!input.autoComplete,
         completionOptions: {
@@ -813,7 +824,7 @@ export function createService({
           await provider.commentPullRequest(projectId, repoId, id, action.content.trim());
           break;
         case 'addReviewer':
-          await provider.addReviewer(projectId, repoId, id, action.reviewerId, !!action.isRequired);
+          await provider.addReviewer(projectId, repoId, id, action.reviewerId === 'me' ? (await me()).id : action.reviewerId, !!action.isRequired);
           break;
         case 'publish':
           await provider.updatePullRequest(projectId, repoId, id, { publish: true });
