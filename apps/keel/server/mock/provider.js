@@ -983,6 +983,15 @@ export function createMockProvider() {
       return delay(list.slice(end, start < 0 ? undefined : start).slice(0, top).map(stripCommit));
     },
 
+    aheadBehind(projectId, repoId, base, target) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      const list = repo ? demoCommits(repo) : [];
+      const b = list.findIndex((c) => c.id === base);
+      const t = list.findIndex((c) => c.id === target);
+      if (t < 0) throw notFound(`Commit ${target}`);
+      return delay(b < 0 ? { ahead: null, behind: 1 } : b >= t ? { ahead: b - t, behind: 0 } : { ahead: 0, behind: t - b });
+    },
+
     listDeployments(target, { since }) {
       const from = since ? Date.parse(since) : 0;
       return delay(demoDeployHistory(target).filter((d) => Date.parse(d.at) >= from).map((d) => ({ ...d })));

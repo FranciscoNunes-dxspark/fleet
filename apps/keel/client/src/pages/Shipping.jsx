@@ -14,8 +14,12 @@ export const LONG_WAIT_DAYS = 7;
 /** How long the oldest change has waited, as a tone for chips and numbers. */
 export const waitTone = (oldestAt) => (!oldestAt ? 'ok' : Date.now() - Date.parse(oldestAt) > LONG_WAIT_DAYS * DAY ? 'warn' : 'info');
 
-/** Environments with the most waiting (the oldest change first), then the up-to-date ones. */
-export const byWaiting = (a, b) => (Date.parse(a.oldestAt) || Infinity) - (Date.parse(b.oldestAt) || Infinity) || a.name.localeCompare(b.name);
+/** Environments whose waiting can't be counted (not linked, not comparable, unreadable). */
+export const uncounted = (e) => !!(e.error || e.unknown || e.unlinked || e.diverged);
+
+/** Environments with the most waiting (the oldest change first), then the up-to-date ones, then those that can't be counted. */
+export const byWaiting = (a, b) => uncounted(a) - uncounted(b)
+  || (Date.parse(a.oldestAt) || Infinity) - (Date.parse(b.oldestAt) || Infinity) || a.name.localeCompare(b.name);
 
 /**
  * What's merged but not in production yet: for each production environment,
@@ -44,7 +48,7 @@ export default function Shipping() {
 }
 
 function Environment({ env }) {
-  const { openDrawer } = useApp();
+  const { openDrawer, can } = useApp();
   const projectLabel = useProjectLabel();
   // Changes, as the server counts them: each merged PR once, plus commits pushed without one.
   const waiting = env.waiting ?? 0;
@@ -53,12 +57,14 @@ function Environment({ env }) {
 
   let chip;
   if (env.error) chip = <Chip tone="bad">{t("Couldn't read")}</Chip>;
+  else if (env.unlinked) chip = <Chip tone="muted">{t('Not linked')}</Chip>;
+  else if (env.diverged) chip = <Chip tone="warn">{t("Can't compare")}</Chip>;
   else if (env.unknown) chip = <Chip tone="muted">{t('Unknown')}</Chip>;
   else if (!waiting) chip = <Chip tone="ok">{t('Up to date')}</Chip>;
-  else chip = <Chip tone={waitTone(env.oldestAt)}>{t(waiting === 1 ? '{n} change waiting' : '{n} changes waiting', { n: waiting })}</Chip>;
+  else chip = <Chip tone={waitTone(env.oldestAt)}>{t(waiting === 1 ? '{n} change waiting' : '{n} changes waiting', { n: waiting })}{env.truncated ? '+' : ''}</Chip>;
 
   return (
-    <section className={`panel monitor ship-env ${env.error ? 'monitor-down' : env.unknown ? '' : !waiting ? 'monitor-up' : waitTone(env.oldestAt) === 'warn' ? 'monitor-degraded' : 'monitor-deploying'}`} aria-label={env.name}>
+    <section className={`panel monitor ship-env ${env.error ? 'monitor-down' : uncounted(env) ? '' : !waiting ? 'monitor-up' : waitTone(env.oldestAt) === 'warn' ? 'monitor-degraded' : 'monitor-deploying'}`} aria-label={env.name}>
       <header className="monitor-head">
         <div>
           <h2>{env.name}</h2>
@@ -68,6 +74,19 @@ function Environment({ env }) {
       </header>
 
       {env.error && <p className="callout callout-bad">{tx(env.error)}</p>}
+      {env.unlinked && (
+        <p className="muted small">
+          {t("This monitor isn't linked to the release stage or pipeline that deploys it, so Keel can't tell what's live.")}
+          {can('monitors.manage') && <> <Link to="/settings#production">{t('Link it in Settings → Production monitors')}</Link></>}
+        </p>
+      )}
+      {env.diverged && (
+        <p className="callout">
+          {env.deployedBranch && env.deployedBranch !== env.branch
+            ? t("Production runs a build from {deployed}, which isn't on {branch}, so what's waiting can't be counted.", { deployed: env.deployedBranch, branch: env.branch })
+            : t("Production runs a commit that isn't on {branch} (built from another branch, or the branch was rewritten), so what's waiting can't be counted.", { branch: env.branch })}
+        </p>
+      )}
       {env.unknown && (
         <p className="muted small">
           {env.untracked
@@ -76,7 +95,7 @@ function Environment({ env }) {
         </p>
       )}
 
-      {last && !env.error && (
+      {last && !env.error && !env.diverged && (
         <dl className="fact-row monitor-facts">
           <div className="fact">
             <dt>{t('Last deploy')}</dt>

@@ -35,6 +35,7 @@ test('waiting to ship: commits on the branch since the last good deploy, with th
       return history.slice(0, 3);
     },
     getPullRequestCommitIds: async () => ['c2b'],
+    aheadBehind: async () => ({ ahead: 3, behind: 0 }),
     getWorkItems: async (ids) => ids.map((id) => ({ id, type: 'Bug', title: `Item ${id}`, state: 'Active', stateCategory: 'InProgress', assignedTo: null })),
   };
   const monitoring = { status: () => [{ id: 'm1', name: 'Shop web', link: { type: 'pipeline', projectId: 'p1', definitionId: 5 } }] };
@@ -69,6 +70,7 @@ test('waiting to ship: compared on the branch the deployed build came from', asy
     },
     listCommitsBetween: async () => [commit('h2', 2, 'Hotfix for checkout')],
     getPullRequestCommitIds: async () => [],
+    aheadBehind: async () => ({ ahead: 1, behind: 0 }),
     getWorkItems: async () => [],
   };
   const monitoring = { status: () => [{ id: 'm1', name: 'Shop', link: { type: 'release', projectId: 'p1', definitionId: 1, stage: 'Production' } }] };
@@ -102,4 +104,55 @@ test('waiting to ship: up to date, and environments that cannot be read', async 
   assert.deepEqual([by['Env 5'].commits.length, by['Env 5'].oldestAt], [0, null]);
   assert.equal(by['Env 6'].error, 'No access');
   assert.equal(by['Env 7'].untracked, true);
+});
+
+test('waiting to ship: production on a commit the branch lacks is not counted', async () => {
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'develop' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    // Deployed from master (squash-merged releases): develop never contains that commit.
+    listDeployments: async () => [{ id: 9, label: 'Release-9', at: at(48), status: 'succeeded', repoId: 'r1', commit: 'm1', branch: null }],
+    listCommits: async () => [commit('d300', 1, 'Latest on develop')],
+    aheadBehind: async (projectId, repoId, base, target) => {
+      assert.deepEqual([base, target], ['m1', 'd300']);
+      return { ahead: 2400, behind: 12 };
+    },
+    listCommitsBetween: async () => assert.fail('years of history would be counted as waiting'),
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const monitoring = { status: () => [{ id: 'm1', name: 'Shop', link: { type: 'release', projectId: 'p1', definitionId: 1, stage: 'Production' } }] };
+  const { targets: [env] } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  assert.equal(env.diverged, true);
+  assert.equal(env.waiting, 0);
+  assert.equal(env.oldestAt, null);
+  assert.equal(env.lastDeploy.label, 'Release-9');
+});
+
+test('waiting to ship: every monitor shows; monitors sharing a deploy are one environment', async () => {
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'main' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async () => [{ id: 2, label: '2', at: at(3), status: 'succeeded', repoId: 'r1', commit: 'c1' }],
+    listCommits: async () => [commit('c1', 4, 'Head')],
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const shared = { type: 'release', projectId: 'p1', definitionId: 3, stage: 'Production' };
+  const monitoring = {
+    status: () => [
+      { id: 'a', name: 'Berlin', link: shared },
+      { id: 'b', name: 'Sydney', link: shared },
+      { id: 'c', name: 'Status page', link: null },
+    ],
+  };
+  const { targets } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  assert.deepEqual(targets.map((x) => x.name), ['Berlin, Sydney', 'Status page']);
+  assert.equal(targets[1].unlinked, true);
 });

@@ -557,6 +557,17 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       return (d.value || []).map(normalizeCommit);
     },
 
+    /**
+     * How two commits relate: `ahead` commits only `target` has, `behind`
+     * commits only `base` has. behind > 0 means target doesn't contain base.
+     */
+    async aheadBehind(projectId, repoId, base, target) {
+      const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/diffs/commits`, {
+        query: { baseVersion: base, baseVersionType: 'commit', targetVersion: target, targetVersionType: 'commit', diffCommonCommit: true, $top: 1 },
+      });
+      return { ahead: d.aheadCount ?? null, behind: d.behindCount ?? null };
+    },
+
     /** One commit: its whole message, parents and the files it changed. */
     async getCommit(projectId, repoId, commitId) {
       const c = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/commits/${seg(commitId)}`, { query: { changeCount: 500 } });
