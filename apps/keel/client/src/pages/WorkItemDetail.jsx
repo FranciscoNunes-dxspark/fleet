@@ -170,7 +170,7 @@ export default function WorkItemDetail({ id, org }) {
           <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newpr', workItemId: w.id, org: w.org || org })}>{t('Create pull request')}</button>
         )}
         {editable && w.type !== 'Task' && (
-          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newworkitem', projectName: w.projectName, org: w.org || org, parentId: w.id, parentTitle: w.title, type: CHILD_TYPE[w.type] || 'Task' })}>{t('Add child')}</button>
+          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newworkitem', projectName: w.projectName, org: w.org || org, parentId: w.id, parentTitle: w.title, workItemType: CHILD_TYPE[w.type] || 'Task' })}>{t('Add child')}</button>
         )}
         <ExternalLink href={w.webUrl}>{t('Open in Azure DevOps')}</ExternalLink>
       </section>

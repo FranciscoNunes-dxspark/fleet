@@ -18,6 +18,9 @@ import { commitRefs, mergeCommits } from './domain/commits.js';
 import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
+import { buildFlow, buildSprintScope } from './domain/flow.js';
+import { changedFolders, suggestReviewers } from './domain/reviewers.js';
+import { findFlakyTests } from './domain/tests.js';
 
 const MIN = 60_000;
 // Classic release stages that are production by their name; monitors can point at any stage or pipeline.
@@ -310,6 +313,43 @@ export function createService({
   /** The deploy before `i` in a newest-first history that shipped code from the same repo. */
   const previousDeploy = (history, i) => history.slice(i + 1).find((d) => d.status === 'succeeded' && d.commit && d.repoId === history[i].repoId);
 
+  /**
+   * A list of commits (one repo, newest first) as people read it: the merged
+   * pull requests with the commits they brought, the commits pushed without
+   * one, the work items they mention and who wrote them.
+   */
+  async function describeChanges(repo, raw) {
+    const commits = mergeCommits([{ repo, commits: raw }]);
+    const ids = [...new Set(commits.flatMap((c) => c.workItemIds))].slice(0, 50);
+    // Each merged PR with the commits it brought; what's left was pushed without a PR.
+    const merges = commits.filter((c) => c.prId).slice(0, 30);
+    const [items, prCommitIds] = await Promise.all([
+      ids.length ? provider.getWorkItems(ids).catch(() => []) : [],
+      Promise.all(merges.map((c) => cached(`prcommits:${repo.id}:${c.prId}`, () => provider.getPullRequestCommitIds(repo.projectId, repo.id, c.prId), 24 * 60 * MIN).catch(() => []))),
+    ]);
+    const inPr = new Set([...merges.map((c) => c.id), ...prCommitIds.flat()]);
+    return {
+      commits,
+      pullRequests: merges.map((c, i) => {
+        const own = new Set(prCommitIds[i]);
+        return {
+          id: c.prId,
+          title: c.subject.replace(/^Merged PR \d+:\s*/, ''),
+          author: c.author?.name || null,
+          projectId: c.projectId,
+          repoId: c.repoId,
+          webUrl: repo.webUrl ? `${repo.webUrl}/pullrequest/${c.prId}` : null,
+          mergedAt: c.author?.date || null,
+          // The merge commit first, then the PR's own commits.
+          commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
+        };
+      }),
+      directCommits: commits.filter((c) => !inPr.has(c.id)),
+      workItems: items.map(({ id, type, title, state, stateCategory, assignedTo, webUrl }) => ({ id, type, title, state, stateCategory, assignedTo: assignedTo?.displayName || null, webUrl })),
+      authors: [...new Set(commits.map((c) => c.author?.name).filter(Boolean))],
+    };
+  }
+
   /** Pending approvals from classic releases and YAML environment checks, in one list. */
   const approvals = () => cached('builds:approvals', async () => {
     const [projects, who, builds] = await Promise.all([tracked(), me(), rawBuilds()]);
@@ -430,6 +470,28 @@ export function createService({
     },
 
     /**
+     * Reviewers to suggest for a change to `paths` going into `target`: people
+     * on the team who committed in the same folders in the last 180 days,
+     * fewer reviews owed first among equals. `exclude`: ids already on it;
+     * `author`: who wrote it (you, for a new pull request).
+     */
+    async suggestReviewers(projectId, repoId, { paths = [], target, exclude = [], author } = {}) {
+      await assertTrackedRepo(repoId);
+      const folders = changedFolders(paths.slice(0, 2000).map(String));
+      const since = new Date(Date.now() - 180 * DAY).toISOString();
+      const [histories, team, load, who] = await Promise.all([
+        Promise.all(folders.map(async (f) => ({
+          ...f,
+          commits: await cached(`history:${repoId}:${target || ''}:${f.dir}`, () => provider.listCommits(projectId, repoId, { branch: target || undefined, path: f.dir, since, top: 100 }), 30 * MIN).catch(() => []),
+        }))),
+        people(),
+        workload().catch(() => []),
+        me(),
+      ]);
+      return { suggestions: suggestReviewers({ histories, people: team, load, exclude: [author || who.id, ...exclude] }) };
+    },
+
+    /**
      * Recent commits: every tracked repo on its default branch, or one repo on
      * any branch. A repo that can't be read (empty, no access) is listed in
      * `failed` rather than failing the page.
@@ -472,39 +534,55 @@ export function createService({
       const raw = !previous ? [await provider.getCommit(repo.projectId, repo.id, deploy.commit)]
         : previous.commit === deploy.commit ? []
           : await commitsBetween(repo.projectId, repo.id, previous.commit, deploy.commit);
-      const commits = mergeCommits([{ repo, commits: raw }]);
-      const ids = [...new Set(commits.flatMap((c) => c.workItemIds))].slice(0, 50);
-      // Each merged PR with the commits it brought; what's left was pushed without a PR.
-      const merges = commits.filter((c) => c.prId).slice(0, 30);
-      const [items, prCommitIds] = await Promise.all([
-        ids.length ? provider.getWorkItems(ids).catch(() => []) : [],
-        Promise.all(merges.map((c) => cached(`prcommits:${repo.id}:${c.prId}`, () => provider.getPullRequestCommitIds(repo.projectId, repo.id, c.prId), 24 * 60 * MIN).catch(() => []))),
-      ]);
-      const inPr = new Set([...merges.map((c) => c.id), ...prCommitIds.flat()]);
       return {
         ...base,
         repo: { id: repo.id, name: repo.name, projectId: repo.projectId },
         // No earlier deploy in the last 90 days: only the deployed commit itself is known.
         partial: !previous,
         redeploy: !!previous && previous.commit === deploy.commit,
-        commits,
-        pullRequests: merges.map((c, i) => {
-          const own = new Set(prCommitIds[i]);
-          return {
-            id: c.prId,
-            title: c.subject.replace(/^Merged PR \d+:\s*/, ''),
-            author: c.author?.name || null,
-            projectId: c.projectId,
-            repoId: c.repoId,
-            mergedAt: c.author?.date || null,
-            // The merge commit first, then the PR's own commits in this deploy.
-            commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
-          };
-        }),
-        directCommits: commits.filter((c) => !inPr.has(c.id)),
-        workItems: items.map(({ id, type, title, state, stateCategory, assignedTo, webUrl }) => ({ id, type, title, state, stateCategory, assignedTo: assignedTo?.displayName || null, webUrl })),
-        authors: [...new Set(commits.map((c) => c.author?.name).filter(Boolean))],
+        ...(await describeChanges(repo, raw)),
       };
+    },
+
+    /**
+     * What's waiting to ship: for each production environment, the commits on
+     * its branch (the repo's default, or the pipeline's own) since the last
+     * successful deploy, with their pull requests and work items.
+     */
+    async undeployed() {
+      const [targets, repoList] = await Promise.all([productionTargets(), repos()]);
+      const results = await Promise.all(targets.map(async (t) => {
+        const head = { key: t.key, name: t.name, projectId: t.projectId, projectName: t.projectName };
+        let history;
+        try {
+          history = await deployHistory(t, 90);
+        } catch (err) {
+          return { ...head, error: err.message };
+        }
+        const last = history.find((d) => d.status === 'succeeded' && d.commit && d.repoId);
+        if (!last) return { ...head, unknown: true, lastDeploy: null };
+        const repo = repoList.find((r) => r.id === last.repoId);
+        const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };
+        if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
+        const branch = t.branch || repo.defaultBranch;
+        try {
+          const [tip] = await cached(`commits:tip:${repo.id}:${branch}`, () => provider.listCommits(repo.projectId, repo.id, { branch, top: 1 }), 2 * MIN);
+          const raw = !tip || tip.id === last.commit ? [] : await commitsBetween(repo.projectId, repo.id, last.commit, tip.id);
+          const changes = await describeChanges(repo, raw);
+          const oldest = changes.commits.reduce((min, c) => Math.min(min, Date.parse(c.author?.date) || Infinity), Infinity);
+          return {
+            ...head,
+            branch,
+            repo: { id: repo.id, name: repo.name, projectId: repo.projectId },
+            lastDeploy,
+            ...changes,
+            oldestAt: Number.isFinite(oldest) ? new Date(oldest).toISOString() : null,
+          };
+        } catch (err) {
+          return { ...head, lastDeploy, error: err.message };
+        }
+      }));
+      return { targets: results };
     },
 
     /**
@@ -567,6 +645,73 @@ export function createService({
       const range = weekRange(week);
       if (range.from < Date.now() - 180 * DAY) throw Object.assign(new Error('Summaries go back 26 weeks'), { status: 400 });
       return buildSummary({ ...range, ...(await this.summaryData(range)) });
+    },
+
+    /** Raw material for work item flow: backlog items and bugs finished in the last `days` days, and open work now. */
+    async flowData(days) {
+      const [projects, open] = await Promise.all([tracked(), openItems()]);
+      const finished = await cached(`flow:done:${days}`, async () => {
+        const lists = await Promise.all(projects.map(async (p) => {
+          const { areaPaths } = await scope(p);
+          const items = await provider.queryWorkItems(p.id, { doneWithinDays: days, areaPaths, categories: ['requirement', 'bug'] });
+          return items.map((w) => ({ ...w, projectId: p.id }));
+        }));
+        return lists.flat();
+      }, 5 * MIN);
+      return { finished, open };
+    },
+
+    async flow(days) {
+      return buildFlow({ ...(await this.flowData(days)), days });
+    },
+
+    /**
+     * Each tracked team's live sprint: what it held at the end of its first
+     * day, what it holds now, and what came over unfinished from the sprint
+     * before (WIQL ASOF, so moves in and out of the sprint count).
+     */
+    async sprints() {
+      const projects = await tracked();
+      const pairs = projects.flatMap((p) => p.teams.map((team) => ({ p, team })));
+      const rows = await Promise.all(pairs.map(async ({ p, team }) => {
+        const { iteration } = await teamScope(p, team);
+        if (!iteration || iteration.status !== 'live') return null;
+        try {
+          const areaPaths = await cached(`areas:${p.id}:${team.id}`, () => provider.getTeamAreas(p.id, team.id).catch(() => null), 10 * MIN);
+          const base = { areaPaths, categories: ['requirement', 'bug'] };
+          const iterations = await cached(`iterations:${p.id}:${team.id}`, () => provider.listIterations(p.id, team.id), 30 * MIN);
+          const start = Date.parse(iteration.startDate);
+          const previous = iterations.filter((it) => Date.parse(it.finishDate) < start).pop() || null;
+          // The end of the first day: planning happens then, so changes after it are scope change.
+          const committedAt = new Date(Math.min(Date.now(), start + DAY)).toISOString();
+          // Teams can share a sprint path, so the key names the team (its area paths decide what's in it).
+          const ids = (c, ttl) => cached(`flow:ids:${p.id}:${team.id}:${JSON.stringify(c)}`, () => provider.queryWorkItemIds(p.id, { ...base, ...c }), ttl);
+          // On the first day "planned" is now: ask without ASOF (and don't keep a key per moment).
+          const firstDay = Date.now() < start + DAY;
+          const [startIds, prevOpenIds, items] = await Promise.all([
+            firstDay ? provider.queryWorkItemIds(p.id, { ...base, iterationPath: iteration.path }) : ids({ iterationPath: iteration.path, asOf: committedAt }, 60 * MIN),
+            // Open in the previous sprint at the end of its last day (and before this one began).
+            previous ? ids({ iterationPath: previous.path, open: true, asOf: new Date(Math.min(Date.parse(previous.finishDate) + DAY, start) - MIN).toISOString() }, 60 * MIN) : [],
+            cached(`flow:sprint:${p.id}:${team.id}:${iteration.path}`, () => provider.queryWorkItems(p.id, { ...base, iterationPath: iteration.path }), 2 * MIN),
+          ]);
+          const gone = startIds.filter((id) => !items.some((w) => w.id === id));
+          const removed = gone.length ? await provider.getWorkItems(gone.slice(0, 200)).catch(() => []) : [];
+          return buildSprintScope({
+            project: { id: p.id, name: p.name },
+            team,
+            iteration,
+            previous,
+            startIds,
+            prevOpenIds,
+            items,
+            removed,
+          });
+        } catch (err) {
+          console.warn(`[sprints] ${p.name} / ${team.name}: ${err.message}`);
+          return { project: { id: p.id, name: p.name }, team, iteration: { name: iteration.name, path: iteration.path }, error: err.message };
+        }
+      }));
+      return { sprints: rows.filter(Boolean) };
     },
 
     /** One commit with its whole message and changed files (commits never change, so it's kept a while). */
@@ -754,6 +899,8 @@ export function createService({
       const priority = [1, 2, 3, 4].includes(Number(body.priority)) ? Number(body.priority) : null;
       const tags = Array.isArray(body.tags) ? body.tags.map((x) => String(x).trim()).filter(Boolean).slice(0, 20) : [];
       const parentId = Number(body.parentId) > 0 ? Number(body.parentId) : null;
+      // "Related" links, e.g. a production bug to the work items the deploy shipped.
+      const relatedIds = [...new Set((Array.isArray(body.relatedIds) ? body.relatedIds : []).map(Number).filter((n) => Number.isInteger(n) && n > 0 && n !== parentId))].slice(0, 20);
       const created = await provider.createWorkItem(p.name, body.type, {
         title,
         description: String(body.description || '').slice(0, 20_000),
@@ -762,6 +909,7 @@ export function createService({
         iterationPath,
         priority,
         tags,
+        relatedIds,
       }, parentId);
       cache.invalidate('wi:');
       return created;
@@ -968,6 +1116,30 @@ export function createService({
       return { timeline, logs: Object.fromEntries(logs), changes, tests, approvals: waiting.filter((a) => a.kind === 'yaml' && a.run?.id === id) };
     },
 
+    /**
+     * Flaky tests across tracked pipelines, from their recent runs on their own
+     * branch. Only red runs' test results are read (up to 150 runs; finished
+     * runs never change, so each is read once a day at most).
+     */
+    async flakyTests() {
+      const [rows, builds] = await Promise.all([pipelines(), rawBuilds()]);
+      const judged = rows.filter((r) => r.branch && r.runCount);
+      const home = new Map(judged.map((r) => [`${r.projectId}:${r.definition.id}`, r.branch]));
+      const red = builds
+        .filter((b) => b.status === 'completed' && ['failed', 'partiallySucceeded'].includes(b.result) && b.reason !== 'pullRequest'
+          && home.get(`${b.projectId}:${b.definition.id}`) === b.sourceBranch)
+        .sort((a, b) => Date.parse(b.finishedAt) - Date.parse(a.finishedAt))
+        .slice(0, 150);
+      const read = await Promise.all(red.map(async (b) => [b.id, await cached(`tests:failed:${b.id}`, () => provider.getBuildFailedTests(b.projectId, b.id).catch(() => null), 24 * 60 * MIN)]));
+      const failedTests = new Map(read.filter(([, r]) => r));
+      return {
+        ...findFlakyTests({ pipelines: judged, builds, failedTests }),
+        // Red runs, but no test results at all: no tests published, or no Test Management scope on the token.
+        noTestData: red.length > 0 && failedTests.size === 0,
+        days: (await store.load()).thresholds.buildLookbackDays,
+      };
+    },
+
     async queueBuild(projectId, definitionId, branch) {
       const result = await provider.queueBuild(projectId, Number(definitionId), branch);
       cache.invalidate('builds');
@@ -994,7 +1166,13 @@ export function createService({
       return buildInsights({ closedPrs: closed, activePrs: active, pipelines: pipes, days });
     },
 
-    async changelog({ from, to, repoIds, title }) {
+    async changelog(body) {
+      const { prs, workItemsByPr } = await this.changelogData(body);
+      return buildChangelog({ prs, workItemsByPr: new Map(workItemsByPr), from: body.from, to: body.to, title: body.title });
+    },
+
+    /** Merged pull requests in a date range and the work items each delivered (for several organizations, multiorg.js). */
+    async changelogData({ from, to, repoIds }) {
       const fromMs = Date.parse(from);
       const toMs = Date.parse(to) + DAY; // inclusive end date
       if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs >= toMs) {
@@ -1008,8 +1186,7 @@ export function createService({
       const idLists = await Promise.all(prs.map((p) => cached(`prwi:${p.key}`, () => provider.getPullRequestWorkItemIds(p.projectId, p.repoId, p.id).catch(() => []), 60 * MIN)));
       const items = await provider.getWorkItems([...new Set(idLists.flat())]);
       const byId = new Map(items.map((w) => [w.id, w]));
-      const workItemsByPr = new Map(prs.map((p, i) => [p.key, idLists[i].map((id) => byId.get(id)).filter(Boolean)]));
-      return buildChangelog({ prs, workItemsByPr, from, to, title });
+      return { prs, workItemsByPr: prs.map((p, i) => [p.key, idLists[i].map((id) => byId.get(id)).filter(Boolean)]) };
     },
 
     async settingsView() {
@@ -1025,7 +1202,7 @@ export function createService({
 
     /** Per-account UI preferences, merged key by key (small, known keys only). */
     async savePrefs(patch) {
-      const allowed = ['theme', 'notifications', 'dashboard', 'language'];
+      const allowed = ['theme', 'notifications', 'dashboard', 'language', 'views'];
       const clean = Object.fromEntries(Object.entries(patch).filter(([k, v]) => allowed.includes(k) && v && typeof v === 'object'));
       if (JSON.stringify(clean).length > 20_000) throw Object.assign(new Error('Preferences are too large'), { status: 413 });
       const current = (await store.load()).prefs || {};

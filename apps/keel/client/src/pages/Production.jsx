@@ -6,6 +6,8 @@ import { useWidth } from '../charts.jsx';
 import { Chip, Empty, ErrorBox, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
 import { t, tj, tx } from '../i18n.js';
 import { deployStatus } from './DeployDetail.jsx';
+import { api } from '../api.js';
+import { regressionBug } from '../regressionBug.js';
 
 const STATE = {
   up: { tone: 'ok', label: 'Up' },
@@ -17,6 +19,8 @@ const STATE = {
 const HOUR = 3_600_000;
 // Deploys whose contents can be shown (DeployDetail.jsx); running or waiting ones link to Azure DevOps.
 const FINISHED = new Set(['succeeded', 'partiallySucceeded', 'failed', 'rejected']);
+// Issues worth a bug report: an outage, failing requests, and failures that rose after a deploy.
+const BUG_WORTHY = new Set(['down', 'failures', 'deploy-regression']);
 const ms = (v) => (v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${Math.round(v)}ms`);
 
 export default function Production() {
@@ -57,7 +61,22 @@ export default function Production() {
 }
 
 function MonitorCard({ m }) {
-  const { openDrawer } = useApp();
+  const { openDrawer, can, toast } = useApp();
+  const [filing, setFiling] = useState(null);
+  // A bug with what Keel knows; for a regression, what the deploy shipped (and links to its work items).
+  const fileBug = async (issue) => {
+    setFiling(issue.code);
+    try {
+      const changes = issue.code === 'deploy-regression' && m.targetKey && issue.deploy?.id != null
+        ? await api(`/deploys/${encodeURIComponent(m.link.projectId)}/changes?target=${encodeURIComponent(m.targetKey)}&id=${encodeURIComponent(issue.deploy.id)}`).catch(() => null)
+        : null;
+      openDrawer(regressionBug(m, issue, changes));
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setFiling(null);
+    }
+  };
   const s = STATE[m.state] || STATE.unknown;
   // What a deploy shipped (DeployDetail.jsx), for monitors linked to a release stage or pipeline.
   const openDeploy = (d) => m.targetKey && d?.id != null && openDrawer({ type: 'deploy', projectId: m.link.projectId, target: m.targetKey, id: d.id });
@@ -87,6 +106,7 @@ function MonitorCard({ m }) {
               {tx(i.text)}
               {i.code === 'deploying' && m.deploy?.webUrl && <> · <a href={m.deploy.webUrl} target="_blank" rel="noreferrer noopener">{t('View the deploy')}</a></>}
               {i.code === 'deploy-regression' && m.targetKey && i.deploy?.id != null && <> · <button type="button" className="link-btn" onClick={() => openDeploy(i.deploy)}>{t('See what changed')}</button></>}
+              {BUG_WORTHY.has(i.code) && can('workitems.write') && <> · <button type="button" className="link-btn" onClick={() => fileBug(i)} disabled={!!filing}>{filing === i.code ? t('Preparing…') : t('File a bug')}</button></>}
             </li>
           ))}
         </ul>

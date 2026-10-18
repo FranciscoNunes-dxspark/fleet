@@ -22,10 +22,13 @@ import Dashboard from './pages/Dashboard.jsx';
 import Pipelines from './pages/Pipelines.jsx';
 import Production from './pages/Production.jsx';
 import Totals from './pages/Totals.jsx';
+import Shipping from './pages/Shipping.jsx';
+import ReleaseNotes from './pages/ReleaseNotes.jsx';
 import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
 import Settings from './pages/Settings.jsx';
 import { Icon } from './icons.jsx';
+import { CommandPalette } from './palette.jsx';
 import { useSticky } from './sticky.js';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
@@ -231,6 +234,7 @@ function Console({ authMode, onSignedOut }) {
   return (
     <AppContext.Provider value={ctx}>
       <Shell />
+      <CommandPalette />
       <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')}>
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
         {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
@@ -319,9 +323,9 @@ function Shell() {
       { to: '/epics', label: t('Epics'), icon: 'epics' },
     ] },
     { label: t('Code and delivery'), items: [
-      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits'] },
+      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits', '/release-notes'] },
       { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
-      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals'] },
+      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals', '/ship'] },
     ] },
     { label: t('People'), items: [
       { to: '/team', label: t('Team'), icon: 'team' },
@@ -357,6 +361,9 @@ function Shell() {
           <Icon name={menuOpen ? 'close' : 'menu'} size={14} /> {menuOpen ? t('Close') : t('Menu')}
           {!menuOpen && s?.high > 0 && <span className="nav-count nav-count-bad">{s.high}</span>}
         </button>
+        <button type="button" className="search-btn" onClick={() => window.dispatchEvent(new Event('keel:palette'))} title={tip(t('Search (Ctrl+K)'))} aria-label={t('Search (Ctrl+K)')}>
+          <Icon name="search" /><span className="nav-text">{t('Search')}</span><kbd className="nav-text">{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>
+        </button>
         <div className="nav-groups" id="main-menu">
           {nav.map((group, i) => (
             <div key={group.label || i} className="nav-group">
@@ -367,7 +374,7 @@ function Shell() {
                     <NavLink
                       to={n.to}
                       end={n.end}
-                      // Entries with tabs (Pull requests → Commits, Production → Platform totals) stay lit on every tab.
+                      // Entries with tabs (Pull requests → Commits and Release notes, Production → Waiting to ship and Platform totals) stay lit on every tab.
                       className={({ isActive }) => `nav-link${isActive || n.also?.some((p) => pathname.startsWith(p)) ? ' active' : ''}`}
                       title={tip(n.label)}
                       aria-label={collapsed ? n.label : undefined}
@@ -414,19 +421,21 @@ function Shell() {
           <Route path="/summary" element={<Summary />} />
           <Route path="/prs" element={<PullRequests />} />
           <Route path="/commits" element={<Commits />} />
+          <Route path="/release-notes" element={<ReleaseNotes />} />
           <Route path="/work" element={<WorkItems />} />
           <Route path="/board" element={<Board />} />
           <Route path="/sprint" element={<Navigate to="/board?mode=sprint" replace />} />
           <Route path="/epics" element={<Epics />} />
           <Route path="/pipelines" element={<Pipelines />} />
           <Route path="/production" element={<Production />} />
+          <Route path="/ship" element={<Shipping />} />
           <Route path="/totals" element={<Totals />} />
           <Route path="/totals/:id" element={<Totals />} />
           <Route path="/team" element={<Team />} />
           <Route path="/insights" element={<Insights />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />
-          {/* Release notes is hidden for now (pages/ReleaseNotes.jsx is kept); old links and unknown paths go home. */}
+          {/* Unknown paths go home. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

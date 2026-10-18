@@ -13,7 +13,10 @@
 import { buildInsights } from './domain/insights.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildDelivery } from './domain/delivery.js';
+import { buildChangelog } from './domain/changelog.js';
 import { buildSummary, weekRange } from './domain/summary.js';
+import { buildFlow } from './domain/flow.js';
+import { byFlakiness } from './domain/tests.js';
 import { DAY } from './domain/prs.js';
 
 const SEVERITY = { high: 0, medium: 1, low: 2 };
@@ -159,6 +162,9 @@ export function createMultiService(entries) {
     },
     commit: viaProject('commit'),
     deployChanges: viaProject('deployChanges'),
+    async undeployed() {
+      return { targets: (await each((s) => s.undeployed())).flatMap(({ org, value }) => tagAll(org, value.targets)) };
+    },
 
     /** Delivery metrics computed once over every organization's production environments. */
     async delivery(days) {
@@ -179,8 +185,29 @@ export function createMultiService(entries) {
         inProgress: parts.reduce((n, { value }) => n + value.inProgress, 0),
       });
     },
+    /** Work item flow computed once over every organization's items. */
+    async flow(days) {
+      const parts = await each((s) => s.flowData(days));
+      return buildFlow({
+        finished: parts.flatMap(({ org, value }) => tagAll(org, value.finished)),
+        open: parts.flatMap(({ org, value }) => tagAll(org, value.open)),
+        days,
+      });
+    },
+    async sprints() {
+      const parts = await each((s) => s.sprints());
+      return {
+        sprints: parts.flatMap(({ org, value }) => value.sprints.map((x) => ({
+          ...x,
+          org: org.key,
+          project: tag(org, x.project),
+          ...(x.added ? { added: tagAll(org, x.added), removed: tagAll(org, x.removed), carriedOver: tagAll(org, x.carriedOver) } : {}),
+        }))),
+      };
+    },
     branches: viaProject('branches'),
     compare: viaProject('compare'),
+    suggestReviewers: viaProject('suggestReviewers'),
     pullRequest: viaProject('pullRequest'),
     prAction: viaProject('prAction'),
     pullRequestConflicts: viaProject('pullRequestConflicts'),
@@ -241,6 +268,16 @@ export function createMultiService(entries) {
       const rows = (await each((s) => s.pipelines())).flatMap(({ org, value }) => tagAll(org, value));
       return rows.sort((a, b) => HEALTH[a.health] - HEALTH[b.health] || a.definition.name.localeCompare(b.definition.name));
     },
+    async flakyTests() {
+      const parts = await each((s) => s.flakyTests());
+      const sum = (k) => parts.reduce((n, p) => n + p.value.analyzed[k], 0);
+      return {
+        tests: parts.flatMap(({ org, value }) => value.tests.map((x) => ({ ...x, pipeline: { ...x.pipeline, org: org.key } }))).sort(byFlakiness),
+        analyzed: { pipelines: sum('pipelines'), runs: sum('runs'), unreadable: sum('unreadable') },
+        noTestData: parts.every((p) => p.value.noTestData),
+        days: parts[0].value.days,
+      };
+    },
     pipelineRuns: viaProject('pipelineRuns'),
     runDetails: viaProject('runDetails'),
     queueBuild: viaProject('queueBuild'),
@@ -292,7 +329,13 @@ export function createMultiService(entries) {
         days,
       });
     },
-    changelog: (body) => primary.service.changelog(body),
+    /** Release notes over every organization (keys carry the organization, since PR and work item numbers repeat). */
+    async changelog(body = {}) {
+      const parts = await each((s) => s.changelogData(body));
+      const prs = parts.flatMap(({ org, value }) => value.prs.map((p) => ({ ...p, key: `${org.key}/${p.key}`, org: org.key })));
+      const workItemsByPr = new Map(parts.flatMap(({ org, value }) => value.workItemsByPr.map(([k, list]) => [`${org.key}/${k}`, tagAll(org, list)])));
+      return buildChangelog({ prs, workItemsByPr, from: body.from, to: body.to, title: body.title });
+    },
 
     async settingsView() {
       const parts = await each((s) => s.settingsView());

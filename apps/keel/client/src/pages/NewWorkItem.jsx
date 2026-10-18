@@ -7,8 +7,9 @@ import { ErrorBox, Loading } from '../ui.jsx';
 import { MarkdownInput } from '../markdown.jsx';
 
 /**
- * New work item (drawer). preset: { projectId, teamId, type, parentId, parentTitle, types }
- * — e.g. from the Board (its project, team and backlog level) or "Add child" on a work item.
+ * New work item (drawer). preset: { projectId, teamId, workItemType, parentId, parentTitle, types }
+ * — e.g. from the Board (its project, team and backlog level) or "Add child" on a work item —
+ * and for a bug filed from Production, its text: { title, description, priority, tags, relatedIds, kicker }.
  * The item gets the team's default area, and the current sprint or the backlog.
  */
 export default function NewWorkItem({ preset = {} }) {
@@ -27,10 +28,10 @@ export default function NewWorkItem({ preset = {} }) {
     if (!project) return;
     const team = project.teams.find((x) => x.id === preset.teamId) || project.teams.find((x) => x.id === last.teamId) || project.teams[0] || null;
     const allowed = preset.types?.length ? project.types.filter((x) => preset.types.includes(x)) : project.types;
-    const type = [preset.type, last.type].find((x) => allowed.includes(x)) || allowed[0] || '';
+    const type = [preset.workItemType, last.type].find((x) => allowed.includes(x)) || allowed[0] || '';
     setForm({
-      projectId: project.id, teamId: team?.id || '', type, title: '', description: '', assignedTo: '', priority: '2',
-      iteration: preset.parentId || preset.iteration === 'sprint' || type === 'Task' ? 'sprint' : 'backlog', tags: '',
+      projectId: project.id, teamId: team?.id || '', type, title: preset.title || '', description: preset.description || '', assignedTo: '', priority: String(preset.priority || 2),
+      iteration: preset.parentId || preset.iteration === 'sprint' || type === 'Task' ? 'sprint' : 'backlog', tags: (preset.tags || []).join(', '),
     });
   }, [options]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -57,6 +58,7 @@ export default function NewWorkItem({ preset = {} }) {
         body: {
           ...form,
           parentId: preset.parentId || null,
+          relatedIds: preset.relatedIds || [],
           tags: form.tags.split(/[;,]/).map((x) => x.trim()).filter(Boolean),
         },
       });
@@ -73,8 +75,9 @@ export default function NewWorkItem({ preset = {} }) {
 
   return (
     <form className="detail new-wi" onSubmit={submit}>
-      <div className="detail-kicker">{preset.parentId ? t('Child of {id}', { id: preset.parentId }) : t('New work item')}</div>
-      <h2 className="detail-title">{preset.parentTitle || t('New work item')}</h2>
+      <div className="detail-kicker">{preset.parentId ? t('Child of {id}', { id: preset.parentId }) : preset.kicker || t('New work item')}</div>
+      <h2 className="detail-title">{preset.parentTitle || (preset.kicker ? t('New bug') : t('New work item'))}</h2>
+      {preset.relatedIds?.length > 0 && <p className="muted small">{t(preset.relatedIds.length === 1 ? 'It will be linked to work item {ids}, which this deploy shipped.' : 'It will be linked to work items {ids}, which this deploy shipped.', { ids: preset.relatedIds.map((id) => `#${id}`).join(', ') })}</p>}
 
       <div className="form-grid new-wi-grid">
         <label>{t('Project')}

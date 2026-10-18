@@ -11,12 +11,12 @@ export function buildChangelog({ prs, workItemsByPr, from, to, title }) {
   for (const pr of [...prs].sort((a, b) => Date.parse(a.closedAt) - Date.parse(b.closedAt))) {
     const key = `${pr.projectName} / ${pr.repoName}`;
     if (!groups.has(key)) groups.set(key, { key, projectName: pr.projectName, repoName: pr.repoName, prs: [] });
-    const wis = (workItemsByPr.get(pr.key) || []).map(({ id, type, title: t, state, webUrl }) => ({ id, type, title: t, state, webUrl }));
+    const wis = (workItemsByPr.get(pr.key) || []).map(({ id, type, title: t, state, webUrl, org }) => ({ id, type, title: t, state, webUrl, ...(org ? { org } : {}) }));
     groups.get(key).prs.push({
       id: pr.id, title: pr.title, author: pr.author?.displayName, closedAt: pr.closedAt, webUrl: pr.webUrl,
-      targetBranch: pr.targetBranch, workItems: wis,
+      targetBranch: pr.targetBranch, workItems: wis, projectId: pr.projectId, repoId: pr.repoId, ...(pr.org ? { org: pr.org } : {}),
     });
-    for (const w of wis) delivered.set(w.id, w);
+    for (const w of wis) delivered.set(`${w.org || ''}:${w.id}`, w);
   }
 
   const items = [...delivered.values()].filter((w) => !isTask(w));

@@ -7,6 +7,7 @@ import { Markdown } from '../markdown.jsx';
 import { t, tj, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import MergeStatus from './MergeStatus.jsx';
+import { SuggestedReviewers } from './NewPr.jsx';
 
 // Labels are getters so they follow the current language.
 const FILE_KIND = {
@@ -227,6 +228,9 @@ export default function PrDetail({ target }) {
             <button type="submit" className="btn btn-small" disabled={!reviewer || !!busy}>{t('Add')}</button>
           </form>
         )}
+        {writable && pr.status === 'active' && pr.files?.items?.length > 0 && (
+          <PrSuggestions pr={pr} busy={!!busy} onAdd={(p) => act({ type: 'addReviewer', reviewerId: p.id }, t('Reviewer added'))} />
+        )}
       </section>
 
       {pr.workItems.length > 0 && (
@@ -374,4 +378,20 @@ function CompleteForm({ pr, busy, onCancel, onComplete }) {
       </div>
     </section>
   );
+}
+
+/** Reviewers to suggest for an open pull request, from the folders it changes. */
+function PrSuggestions({ pr, onAdd, busy }) {
+  const [suggested, setSuggested] = useState(null);
+  const paths = pr.files.items.map((f) => f.path).join('\n');
+  useEffect(() => {
+    let live = true;
+    api(`/repos/${encodeURIComponent(pr.projectId)}/${encodeURIComponent(pr.repoId)}/reviewers`, {
+      method: 'POST',
+      body: { paths: paths.split('\n'), target: pr.targetBranch, author: pr.author?.id, exclude: pr.reviewers.map((r) => r.id) },
+    }).then((r) => live && setSuggested(r.suggestions)).catch(() => live && setSuggested([]));
+    return () => { live = false; };
+  }, [pr.key, paths]); // eslint-disable-line react-hooks/exhaustive-deps
+  const left = (suggested || []).filter((x) => !pr.reviewers.some((r) => r.id === x.person.id));
+  return <SuggestedReviewers suggestions={left.slice(0, 3)} onAdd={onAdd} busy={busy} />;
 }

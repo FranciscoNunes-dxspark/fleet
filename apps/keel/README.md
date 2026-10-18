@@ -42,22 +42,26 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 
 | Page | For |
 |---|---|
-| **Dashboard** | The home page, built from widgets: Needs you, This week, Your review queue, Pipelines, Work in progress, Team load, Delivery, Delivery to production (the DORA measures), Epic progress and My work. **Customize** shows, hides and reorders them, and the layout is saved in your browser. |
+| **Dashboard** | The home page, built from widgets: Needs you, Waiting to ship, This week, Your review queue, Pipelines, Work in progress, Team load, Delivery, Delivery to production (the DORA measures), Epic progress and My work. **Customize** shows, hides and reorders them, and the layout is saved in your browser. |
 | **Inbox** | One ranked list across every tracked project. It covers PRs waiting on your vote (escalated after N hours), PRs with no reviewers, no approvals, rejections, conflicts or stale age, and approved PRs nobody merged. It also covers blocked items, unowned or unstarted P1 bugs, in-progress items with no updates, red default-branch pipelines, and overloaded teammates. You can snooze any entry for a day, 3 days or a week. |
 | **Weekly summary** | One week at a glance, for everyone (PMs included): work items finished (features and stories, bugs fixed), pull requests merged per repo, deploys to production per environment, and what's blocked right now. Step back week by week (up to 26 weeks); the week is in the address, so the link can be shared. **Copy as text** gives a plain-text version to paste into an email or chat. |
 | **Pull requests** | All active PRs across repos. Filter by project, repo or author, or use the toggles: needs my review, mine, conflicts, stale, hide drafts. The detail panel renders the description and comments as Markdown, with @mentions resolved and screenshots loaded through the server. It shows the changed files as a folder tree, and each file opens its diff in Azure DevOps. From the panel you can vote, comment, add reviewers, see policy checks and linked work items, publish drafts, set or cancel auto-complete, and abandon. |
-| **New pull request** | From the Pull requests page, or **Create pull request** on a work item. Pick a repo and branches, with recently pushed branches listed first. You see what would merge (commits ahead and behind, files changed) and a warning if a PR for those branches is already open. The repo's PR template fills the description if it has one (`.azuredevops/pull_request_template.md` and the other standard locations). Work items mentioned in the branch name or commits are suggested, and you can add reviewers (required or optional), create it as a draft, or set auto-complete. |
+| **New pull request** | From the Pull requests page, or **Create pull request** on a work item. Pick a repo and branches, with recently pushed branches listed first. You see what would merge (commits ahead and behind, files changed) and a warning if a PR for those branches is already open. The repo's PR template fills the description if it has one (`.azuredevops/pull_request_template.md` and the other standard locations). Work items mentioned in the branch name or commits are suggested, and you can add reviewers (required or optional), create it as a draft, or set auto-complete. **Suggested reviewers** are the teammates who committed in the same folders in the last 180 days, ranked down by the reviews they already owe, with why ("21 commits in 3 of these folders · last 4d ago · 4 reviews owed"); open pull requests show the same suggestions in their panel. |
 | **Commits** | A tab of Pull requests. Commit history on the default branch of every tracked repo, newest first and grouped by day, for the last day to 90 days. Filter by project, repo, author or text, or pick one repo to see any of its branches. Commits link to the work items they mention (`#123`, `AB#123`) and to the pull request a merge commit came from. Click one for its whole message and the files it changed. |
 | **Work items** | Open items, with views for sprint, bugs, blocked, untouched for N days, unassigned and mine. You can change state and assignee inline. The detail panel lets you change priority, toggle the blocked tag, comment, and see the hierarchy and linked PRs. |
 | **Board** | Each team's real Azure DevOps boards (Backlog items, Features, Epics and custom levels such as Reported Issues), with the same columns, WIP limits, split Doing/Done columns and swimlanes. Shows open work plus anything finished recently, not tied to a sprint, with a toggle for the current sprint. Dragging a card sets its board column and the state that column maps to. Boards hidden for a team in Azure DevOps are hidden here too. |
 | **Epics** | Navigate epics, then features, then backlog items. Progress bars roll up from stories, PBIs and bugs, along with point totals and open-bug and blocked counts. Search across the whole tree, and click any item to open it. |
-| **Pipelines** | Running pipelines first, then the rest grouped by their Azure DevOps folder. Each pipeline is judged on its repo's default branch, and PR validation runs are ignored. Shows a run strip, pass rate, failure streak, last green run, and re-run. Queued runs show too. Click a pipeline for its details: its latest runs (any branch), and for each run its stages, jobs and steps with durations, the failed steps' errors and last log lines, approvals it waits on, the commits it built and its test results (test results need the Test Management read scope on the token). A running run updates itself. |
+| **Pipelines** | Running pipelines first, then the rest grouped by their Azure DevOps folder. Each pipeline is judged on its repo's default branch, and PR validation runs are ignored. Shows a run strip, pass rate, failure streak, last green run, median duration (with ↑ or ↓ when this week's runs are 20% slower or faster than last week's), and re-run. Queued runs show too. Click a pipeline for its details: a chart of its latest run times, split into waiting for an agent and running, its typical wait for an agent, its latest runs (any branch), and for each run its stages, jobs and steps with durations, the failed steps' errors and last log lines, approvals it waits on, the commits it built and its test results (test results need the Test Management read scope on the token). A running run updates itself. |
+| **Flaky tests** (Pipelines tab) | Tests that fail now and then on a pipeline's own branch and pass again without a fix: re-run on the same commit and passed, or failed at least twice with passes in between. Tests that have failed every run since they first did count as broken, not flaky. Ranked by how often they flip, with how often they failed, the error and the run where they last failed. Each pipeline's panel lists its own. Only failed runs' test results are read (the last 150, each once), and they need the Test Management (Read) scope on the token. |
 | **Releases** (Pipelines tab) | Classic release pipelines, grouped by folder. Each stage shows its latest deployment (release, status, when, who) and anything deploying now. You can create a release from the latest artifacts, or deploy and redeploy any recent release to any stage. Stage approvals and gates still apply. |
 | **Approvals** | Pending classic release approvals and YAML environment checks, in one list at the top of Pipelines and in your Inbox. Approve or reject with an optional comment. Buttons only appear where Azure DevOps says you may decide. |
-| **Production** | Your production apps next to the deploys that change them. Each monitor checks a URL every minute (up or down, response time, uptime) and can read Application Insights every 5 minutes (failure rate, p95, exceptions, top failing operations). Link a monitor to the release stage or pipeline that deploys it: deploys appear on its charts, and Keel flags it when failures rise after one ("failures up from 0.4% to 6.4% since Release-65"). Outages and regressions go to the Inbox and notifications. Platform totals is its second tab. Click a deploy, or **See what changed** on a "failures up since …" warning, to see what it shipped since the previous successful deploy of that environment: the work items, each pull request with its commits, and the commits pushed without one. |
+| **Production** | Your production apps next to the deploys that change them. Each monitor checks a URL every minute (up or down, response time, uptime) and can read Application Insights every 5 minutes (failure rate, p95, exceptions, top failing operations). Link a monitor to the release stage or pipeline that deploys it: deploys appear on its charts, and Keel flags it when failures rise after one ("failures up from 0.4% to 6.4% since Release-65"). Outages and regressions go to the Inbox and notifications. Platform totals is its second tab. Click a deploy, or **See what changed** on a "failures up since …" warning, to see what it shipped since the previous successful deploy of that environment: the work items, each pull request with its commits, and the commits pushed without one. **File a bug** on an outage, failing requests or a regression opens a new bug filled in with the numbers, the top failing operations, the deploy and (for a regression) what it shipped, tagged `production` and linked to the work items that deploy delivered. |
+| **Waiting to ship** (Production tab) | For each production environment, what's merged on its branch but not deployed yet: the commits since the last successful deploy, grouped into pull requests and the work items they mention, with how long the oldest change has waited (over 7 days shows as a warning). Answers "is my fix live?" and "what goes out with the next deploy?". |
 | **Team** | Each person's in-progress items, sprint points, hours left, open PRs, reviews owed and oldest PR. Counts link to filtered views. |
-| **Insights** | Two tabs over the same period. **Delivery to production:** the four DORA measures (deploys per week, lead time from commit to production, failed deploys, time to recover after a failed deploy), each with its DORA performance band, a weekly deploy chart and a row per production environment. Production is what the production monitors are linked to, plus classic release stages named Production, Prod, PRD or Live. Lead time is measured over each environment's 30 most recent deploys. **Code review and merging:** weekly merge throughput, median and 85th-percentile time to merge, open PR age, approvals given (review concentration), merges by author, and per-repo flow. |
-| **Release notes** | Hidden from the menu for now (the page is kept in `client/src/pages/ReleaseNotes.jsx`). Merged PRs in a date range, plus the work items they delivered, as Markdown grouped into features, fixes, and PRs by repo. |
+| **Insights** | Three tabs over the same period. **Delivery to production:** the four DORA measures (deploys per week, lead time from commit to production, failed deploys, time to recover after a failed deploy), each with its DORA performance band, a weekly deploy chart and a row per production environment. Production is what the production monitors are linked to, plus classic release stages named Production, Prod, PRD or Live. Lead time is measured over each environment's 30 most recent deploys. **Code review and merging:** weekly merge throughput, median and 85th-percentile time to merge, open PR age, approvals given (review concentration), merges by author, and per-repo flow. **Work item flow:** for backlog items and bugs (not tasks), cycle time from Activated Date to finished (median and 85th percentile, by type and as a distribution), items finished per week, and aging work in progress: each item in progress by how long since it started, against those percentiles, with the ones taking longer than usual listed. **Sprint scope** shows each team's running sprint: what it held at the end of its first day, what was added or taken out since (from the work items' history, WIQL `ASOF`), what came over unfinished from the previous sprint, and done against time gone. |
+| **Release notes** (Pull requests tab) | Merged PRs in a date range (every organization), plus the work items they delivered, as Markdown grouped into features, fixes, and PRs by repo, to copy or download. For one deploy, **Copy release notes** on its panel gives exactly what it shipped. |
+
+**Search (Ctrl+K, or ⌘K on a Mac)** opens a search box from anywhere: pages and their tabs, open pull requests, open work items, pipelines and repositories (each repo opens its commit history), plus New work item, New pull request and Refresh. Type a number (`#4107` or `4107`) to open any work item, closed ones too, or `!815` for a pull request. With nothing typed it shows what you opened recently (kept in this browser).
 
 Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Settings are saved to `data/settings.json`.
 
@@ -92,12 +96,23 @@ You get a notification when:
 
 Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Keel`.
 
+### Teams and Slack
+
+Admins can have Keel post to team channels in **Settings → Teams and Slack**, whether or not anyone has Keel open:
+
+- **What gets posted:** for each channel, pick from production outages and regressions after a deploy, default-branch pipelines and release stages that start failing, deployment approvals waiting, blocked work items and P1 bugs with no owner, and pull requests with no reviewers or stale for twice the limit. Keel looks every 2 minutes and posts an entry when it appears or becomes urgent, once. A burst of more than 4 at a time goes out as one post.
+- **The weekly summary:** last week's summary (the same as the Weekly summary page) on the weekday and hour you choose, in the channel's time zone.
+- **Language:** English or Português, per channel.
+- **Setting up the webhook:** in Teams, open the channel's **Workflows** and pick "Post to a channel when a webhook request is received", then copy its address. Keel sends an Adaptive Card, which the older Office 365 connectors also take. In Slack, add an **Incoming Webhook** to the channel. **Other (JSON webhook)** sends `{ title, text, content, links }` for anything else, for example Mattermost or Discord. Use **Send a test** to check it.
+- **Whose view:** with sign-in, Keel reads Azure DevOps for a channel with the token of the Admin who added it, so it posts about their tracked projects and respects their snoozes. Locally it uses the server's PAT.
+- **Storage:** addresses are stored encrypted in the data folder (`channels.json`), only https addresses to public hosts are accepted (as for monitors), and Keel never follows a redirect from one. Set `PUBLIC_URL` (for example `https://keel.example.com`) to have posts link back to Keel. When several copies of Keel run, one of them posts.
+
 ## Security
 
 What the app already does:
 
 - Your PAT stays on the server and never reaches the browser. The server binds to `127.0.0.1`, so other machines can't reach it.
-- **DNS-rebinding guard:** requests whose `Host` isn't `localhost` or `127.0.0.1` (or a host you list in `ALLOWED_HOSTS`) are refused, so a malicious website can't point its own domain at your machine and read this API.
+- **DNS-rebinding guard:** requests whose `Host` isn't `localhost` or `127.0.0.1` (or `PUBLIC_URL`'s host, or a host you list in `ALLOWED_HOSTS`) are refused, so a malicious website can't point its own domain at your machine and read this API.
 - Writes need the `x-keel` header and a same-site `Origin`, so other sites can't trigger votes, comments or pipeline runs from your browser.
 - A strict Content-Security-Policy, `X-Frame-Options: DENY`, no-referrer and `no-store` on API responses. PR Markdown is sanitized, and the only images loaded are those from your own organization.
 
@@ -141,7 +156,7 @@ Everyone can see everything. Roles only limit what a person can change, and the 
 - **Inviting people:** **Users → Invite someone** creates a link for an email address and role. Keel doesn't send email, so copy the link and send it yourself. It works once and expires in 7 days. The person picks their name and password, then links their token.
 - **Forgotten passwords:** on **Users**, choose **Reset password** to get a new link. Using it signs that person out everywhere.
 - **Managing access:** change a role, disable an account (signs it out at once) or remove it. There's always at least one active Admin.
-- **Synced settings:** projects, teams, inbox snoozes, theme, notification choices and the dashboard layout belong to the account, so they follow you to any device.
+- **Synced settings:** projects, teams, inbox snoozes, theme, notification choices, the dashboard layout and saved views belong to the account, so they follow you to any device.
 
 ### What's stored where
 
@@ -155,7 +170,7 @@ To try accounts and roles before deploying, run on demo data with `AUTH_MODE=log
 
 ### What you need on Hostinger
 
-The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps**. PHP-only shared hosting can't run it. You also need a domain or subdomain (for example `console.yourcompany.com`) with HTTPS.
+The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps**. PHP-only shared hosting can't run it. You also need a domain or subdomain (Keel's is `keel.example.com`) with HTTPS.
 
 ### Where Keel keeps its data
 
@@ -183,11 +198,12 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
    AUTH_MODE=login
    SESSION_SECRET=<output of: openssl rand -hex 32>
    ADMIN_SETUP_CODE=<a code only you know, for creating the first admin>
-   ALLOWED_HOSTS=console.yourcompany.com
+   PUBLIC_URL=https://keel.example.com
    TRUST_PROXY=1
    HOST=127.0.0.1
    API_PORT=4280
    ```
+   `PUBLIC_URL` is the address people open. Keel serves only that host (plus `localhost`), and Teams and Slack posts link to it. If Keel is also reached by another name, such as `www.keel.example.com`, list it in `ALLOWED_HOSTS`.
 4. **Keep it running** with pm2, so it restarts on crash and after reboot:
    ```bash
    sudo npm i -g pm2 && pm2 start server/index.js --name keel && pm2 save && pm2 startup
@@ -195,7 +211,7 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
 5. **Put nginx in front.** Live updates need buffering off on `/api/events`:
    ```nginx
    server {
-     server_name console.yourcompany.com;
+     server_name keel.example.com;
      location / {
        proxy_pass http://127.0.0.1:4280;
        proxy_http_version 1.1;
@@ -216,7 +232,7 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
    ```
    Then turn on HTTPS:
    ```bash
-   sudo certbot --nginx -d console.yourcompany.com
+   sudo certbot --nginx -d keel.example.com
    ```
 6. **Back up and protect the data folder** (`data/`, or `DATA_DIR`). It holds the accounts, everyone's settings and the encrypted tokens. Keep `SESSION_SECRET` safe: without it, stored tokens can't be decrypted and everyone has to link theirs again. Anyone who has both the data folder and the secret can use the stored tokens.
 7. **Updating:**
@@ -235,6 +251,8 @@ Teammates create their own token from the "How to create a token" steps shown af
 **Language:** English or Português (Portugal), in the same place. It follows your account like the theme; the first visit uses the browser's language. Text from Azure DevOps (titles, names, states, board columns) is shown as it is there. Translations live in `client/src/locales/pt/`, keyed by the English text; text the server sends is matched by templates in `server.js` there.
 
 **Remembered choices:** the board's project and team, list filters, tabs and toggles stay as you left them when you move between pages or reload (per browser).
+
+**Saved views:** on Pull requests, Commits and Work items, **Save view** keeps the current filters under a name ("Stale in Commerce"), shown as a chip above the list. Views follow your account like the theme. **Copy link** gives an address that opens the page with those filters, to send to someone.
 
 ## How it works
 

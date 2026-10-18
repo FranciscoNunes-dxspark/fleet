@@ -1,0 +1,25 @@
+// Filled in by area; see ../pt.js.
+// Area "ship": Waiting to ship (pages/Shipping.jsx) and its dashboard widget.
+export default {
+  'Waiting to ship': 'Por entregar',
+  "What's merged but not deployed yet, per production environment.": 'O que já foi integrado mas ainda não está em produção, por ambiente de produção.',
+  'No production environment found.': 'Nenhum ambiente de produção encontrado.',
+  'Link a production monitor to the release stage or pipeline that deploys it, or name the classic release stage "Production".': 'Associe um monitor de produção à fase de release ou ao pipeline que faz o deploy, ou chame "Production" à fase da release clássica.',
+  "Couldn't read": 'Não foi possível ler',
+  'Up to date': 'Atualizado',
+  '{n} change waiting': '{n} alteração por entregar',
+  '{n} changes waiting': '{n} alterações por entregar',
+  "The last deploy shipped a repository you don't track, so what's waiting can't be listed.": 'O último deploy entregou um repositório que não acompanha, por isso não é possível listar o que está por entregar.',
+  'No successful deploy with a known commit in the last 90 days.': 'Nenhum deploy com sucesso e commit conhecido nos últimos 90 dias.',
+  'Waiting': 'Por entregar',
+  'Oldest change': 'Alteração mais antiga',
+  'since it was committed': 'desde o commit',
+  'nothing waiting': 'nada por entregar',
+  'What goes out with the next deploy': 'O que sai no próximo deploy',
+  'Last deploy in Azure DevOps': 'Último deploy no Azure DevOps',
+  'commits waiting': 'commits por entregar',
+  'PRs waiting': 'PRs por entregar',
+  'oldest change': 'alteração mais antiga',
+  'Up to date with {label}': 'Atualizado com {label}',
+  '{n} waiting since {label} · oldest {age}': '{n} por entregar desde {label} · mais antiga {age}',
+};

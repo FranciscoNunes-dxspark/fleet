@@ -10,6 +10,7 @@ import { createAuth } from './auth.js';
 import { createMonitoring } from './monitoring.js';
 import { createOrgStore } from './orgs.js';
 import { createMultiService } from './multiorg.js';
+import { createChannels } from './channels.js';
 import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
 import { createMockVariant } from './mock/variant.js';
@@ -27,9 +28,11 @@ const monitoring = createMonitoring();
 if (config.authMode === 'login') {
   // Everyone signs in with their own PAT; each request runs as that person.
   const auth = createAuth({ monitoring });
+  // Channel posts read Azure DevOps as the Admin who set the channel up.
+  const channels = createChannels({ resolveService: (ownerId) => auth.serviceFor(ownerId) });
   app.use('/api/auth', auth.router);
   app.use('/api/admin/users', auth.adminRouter);
-  app.use('/api', auth.requireUser, apiRouter());
+  app.use('/api', auth.requireUser, apiRouter({ channels }));
   auth.announceSetup();
 } else {
   // One person: the PAT in .env (or demo data), used for every organization
@@ -55,10 +58,11 @@ if (config.authMode === 'login') {
     return ctx;
   };
   app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: orgStore.primary()?.url }));
+  const channels = createChannels({ resolveService: () => localCtx().service });
   app.use('/api', (req, res, next) => {
     req.ctx = localCtx();
     next();
-  }, apiRouter());
+  }, apiRouter({ channels }));
 }
 
 const dist = path.join(config.root, 'dist');

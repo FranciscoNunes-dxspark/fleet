@@ -6,8 +6,11 @@ import { createTypeColorStore } from './typecolors.js';
 
 const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
-/** API routes; `req.ctx` is the signed-in user's { service, watcher } (see index.js). */
-export function apiRouter() {
+/**
+ * API routes; `req.ctx` is the signed-in user's { service, watcher } (see index.js).
+ * `channels` posts to Teams and Slack (channels.js), shared by the server.
+ */
+export function apiRouter({ channels = null } = {}) {
   const orgs = createOrgStore(); // reads data/orgs.json, shared with sign-in and other processes
   const typeColors = createTypeColorStore(); // data/type-colors.json, the same for everyone
   const r = express.Router();
@@ -74,6 +77,13 @@ export function apiRouter() {
   r.get('/repos/:projectId/:repoId/compare', async (req, res) => res.json(await req.ctx.service.compare(
     req.params.projectId, req.params.repoId, String(req.query.source || ''), String(req.query.target || ''),
   )));
+  // Reviewers to suggest for a change: { paths, target, exclude, author } (POST: the file list can be long).
+  r.post('/repos/:projectId/:repoId/reviewers', async (req, res) => res.json(await req.ctx.service.suggestReviewers(req.params.projectId, req.params.repoId, {
+    paths: Array.isArray(req.body?.paths) ? req.body.paths : [],
+    target: req.body?.target ? String(req.body.target) : undefined,
+    exclude: Array.isArray(req.body?.exclude) ? req.body.exclude.map(String) : [],
+    author: req.body?.author ? String(req.body.author) : undefined,
+  })));
   // Commit history: all tracked repos (default branches), or ?project=&repo=&branch= for one.
   r.get('/commits', async (req, res) => res.json(await req.ctx.service.commits({
     projectId: req.query.project ? String(req.query.project) : undefined,
@@ -146,6 +156,7 @@ export function apiRouter() {
   r.get('/pipelines', async (req, res) => res.json(await req.ctx.service.pipelines()));
   r.get('/pipelines/:projectId/:definitionId/runs', async (req, res) => res.json(await req.ctx.service.pipelineRuns(req.params.projectId, req.params.definitionId)));
   r.get('/builds/:projectId/:buildId', async (req, res) => res.json(await req.ctx.service.runDetails(req.params.projectId, req.params.buildId)));
+  r.get('/tests/flaky', async (req, res) => res.json(await req.ctx.service.flakyTests()));
   r.post('/pipelines/queue', need('pipelines.run'), async (req, res) => {
     const { projectId, definitionId, branch } = req.body || {};
     res.json(await req.ctx.service.queueBuild(projectId, num(definitionId), branch));
@@ -163,6 +174,15 @@ export function apiRouter() {
   r.get('/production/totals', (req, res) => res.json(req.ctx.service.monitors().totals()));
   r.get('/production/totals/:id', (req, res) => res.json(req.ctx.service.monitors().totalsFor(req.params.id)));
   r.post('/production/totals/:id/fetch', need('monitors.manage'), (req, res) => res.status(202).json(req.ctx.service.monitors().fetchTotalsNow(req.params.id)));
+  // Teams and Slack channels: Admins set them up; posts run on the server whether or not anyone is looking.
+  const channelsOrFail = () => {
+    if (!channels) throw Object.assign(new Error('Posting to channels is not available on this server'), { status: 404 });
+    return channels;
+  };
+  r.get('/channels', need('channels.manage'), (req, res) => res.json(channelsOrFail().list()));
+  r.put('/channels', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().save(req.body?.channels, req.ctx.user ? { id: req.ctx.user.id, name: req.ctx.user.name } : null)));
+  r.post('/channels/test', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().test(req.body || {})));
+  r.post('/channels/:id/weekly', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendWeekly(req.params.id, req.ctx.service)));
   r.get('/releases', async (req, res) => res.json(await req.ctx.service.releases()));
   r.post('/releases/create', need('releases.run'), async (req, res) => {
     const { projectId, definitionId, description } = req.body || {};
@@ -183,6 +203,8 @@ export function apiRouter() {
   r.get('/deploys/:projectId/changes', async (req, res) => res.json(await req.ctx.service.deployChanges(
     req.params.projectId, String(req.query.target || ''), String(req.query.id || ''),
   )));
+  // What's merged but not deployed yet, per production environment.
+  r.get('/deploys/pending', async (req, res) => res.json(await req.ctx.service.undeployed()));
   r.get('/delivery', async (req, res) => res.json(await req.ctx.service.delivery(Math.min(90, Math.max(7, Number(req.query.days) || 30)))));
   // One week's summary for everyone: ?week=YYYY-MM-DD (any day of the week; this week when absent).
   r.get('/summary', async (req, res) => res.json(await req.ctx.service.summary(req.query.week ? String(req.query.week) : undefined)));
@@ -192,6 +214,9 @@ export function apiRouter() {
     const days = Math.min(180, Math.max(7, Number(req.query.days) || 30));
     res.json(await req.ctx.service.insights(days));
   });
+  // Work item flow: cycle time, throughput and aging work in progress; and each team's sprint scope.
+  r.get('/flow', async (req, res) => res.json(await req.ctx.service.flow(Math.min(180, Math.max(7, Number(req.query.days) || 30)))));
+  r.get('/sprints', async (req, res) => res.json(await req.ctx.service.sprints()));
   r.post('/changelog', async (req, res) => res.json(await req.ctx.service.changelog(req.body || {})));
 
   // Organizations: everyone sees the list; Admins add, rename and remove them.
