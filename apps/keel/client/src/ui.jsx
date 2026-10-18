@@ -5,16 +5,18 @@ import { t } from './i18n.js';
 import { useApp } from './context.js';
 import { paletteVar, typeColorKey } from './typecolors.js';
 
-/** Keel's mark: a sailboat with its keel and ballast bulb (same drawing as public/favicon.svg). */
+/** Keel's mark: a sailboat on the water, its keel and ballast bulb below the waterline (same drawing as public/favicon.svg). */
 export function Logo({ size = 28 }) {
   return (
     <svg className="brand-mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
       <rect width="32" height="32" rx="7" fill="var(--accent)" />
-      <path d="M16.6 3.8 23.8 11.4h-7.2z" fill="#ffffff" />
-      <path d="M15.4 5.8 10.6 11.4h4.8z" fill="#ffffff" opacity=".75" />
-      <path d="M4 12.6h24c-.7 2.7-2.6 4.6-5.6 4.9H10.2C7.3 17.2 5.2 15.4 4 12.6z" fill="#ffffff" />
-      <path d="M14.2 17.4h4l-1 5.6h-2.2z" fill="var(--on-accent)" />
-      <path d="M12.4 24.2c0-.9 1.8-1.6 4-1.6s4 .7 4 1.6-1.8 1.6-4 1.6-4-.7-4-1.6z" fill="var(--on-accent)" />
+      <path d="M0 16.4c2.7 0 2.7-1.1 5.3-1.1s2.7 1.1 5.4 1.1 2.6-1.1 5.3-1.1 2.7 1.1 5.3 1.1 2.7-1.1 5.4-1.1 2.6 1.1 5.3 1.1V25a7 7 0 0 1-7 7H7a7 7 0 0 1-7-7z" fill="color-mix(in srgb, var(--accent) 72%, #000)" />
+      <path d="M14.8 3.2v8.6H8z" fill="#ffffff" />
+      <path d="M16.2 4.6v7.2h6.3z" fill="#ffffff" opacity=".8" />
+      <path d="M4.5 12.8h23c-1.7 2.7-4.6 4.2-8.3 4.2h-9c-3 0-4.9-1.1-5.7-2.6z" fill="#ffffff" />
+      <path d="M15.2 17h4.6l-3.6 6h-2.7z" fill="#ffffff" />
+      <path d="M9 24.1c1.7-1.2 3.7-1.8 5.9-1.8 2.5 0 4.3.8 4.3 1.8s-1.8 1.8-4.3 1.8c-2.2 0-4.2-.6-5.9-1.8z" fill="#ffffff" />
+      <path d="M6.6 16.4h1.9l-.5 3.4h-1.2z" fill="#ffffff" />
     </svg>
   );
 }
