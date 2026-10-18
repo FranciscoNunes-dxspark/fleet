@@ -157,6 +157,8 @@ function addWorkItem(p, { type, title, stateIdx, sprint, assignedTo, priority, s
     createdAt: iso(created),
     changedAt: iso(Math.max(stateChanged, NOW - between(0, stateDays) * D)),
     stateChangedAt: iso(stateChanged),
+    // Started when it left Proposed: finished items took a few days, by id so the demo stays the same.
+    activatedAt: stateCategory === 'Proposed' ? null : iso(stateCategory === 'Completed' ? stateChanged - (1 + (id % 6)) * D : stateChanged),
     closedAt: stateCategory === 'Completed' ? iso(stateChanged) : null,
     webUrl: `${ORG}/${p.name}/_workitems/edit/${id}`,
     _description: `${title}.\n\nAs a customer I want this to work reliably so that I can complete my task without contacting support.`,
@@ -655,8 +657,81 @@ function demoDeployHistory(target) {
   return history;
 }
 
+
+// Work finished over the last 90 days, for cycle time and throughput, and a
+// few sprint moves (carried over from Sprint 41, added or taken out mid-sprint)
+// for sprint scope. Made last, with their own random numbers, so the rest of
+// the demo stays as it was.
+const DONE_TITLES = [
+  'Show delivery estimate at checkout', 'Retry failed card captures', 'Cache category pages', 'Remove legacy coupon table', 'Add order notes field',
+  'Fix VAT on shipping lines', 'Rotate signing keys automatically', 'Log slow SQL queries', 'Paginate admin user list', 'Export customers as CSV',
+  'Fix logout on token expiry', 'Compress product images', 'Health probe for Redis', 'Fix race in stock reservation', 'Add locale to emails',
+  'Keyboard navigation in cart', 'Fix wrong currency symbol', 'Bulk price update endpoint', 'Alert on queue backlog', 'Fix deep link on Android',
+];
+{
+  const local = rng(4242);
+  for (const p of PROJECTS) {
+    const types = [p.story, p.story, 'Bug'];
+    for (let i = 0; i < 26; i++) {
+      const type = types[Math.floor(local() * types.length)];
+      const doneIdx = p.process[type].findIndex(([, c]) => c === 'Completed');
+      const closedDaysAgo = 1 + local() * 88;
+      // Most items take a few days; a few take weeks.
+      const cycleDays = 0.3 + local() ** 2.2 * 24;
+      const w = addWorkItem(p, {
+        type, title: DONE_TITLES[(i * 7 + p.name.length) % DONE_TITLES.length], stateIdx: doneIdx, assignedTo: DEVS[Math.floor(local() * DEVS.length)],
+        priority: 2, points: [1, 2, 3, 5, 8][Math.floor(local() * 5)], ageDays: closedDaysAgo + cycleDays + 1 + local() * 15, stateDays: closedDaysAgo,
+      });
+      w.activatedAt = iso(Date.parse(w.closedAt) - cycleDays * D);
+      w.changedAt = w.closedAt;
+      w._comments = [];
+    }
+    const { previous, current } = SPRINTS(p);
+    const start = Date.parse(current.startDate);
+    const inSprint = [...workItems.values()].filter((w) => w.projectName === p.name && w.iterationPath === current.path && w.type !== 'Task');
+    const carried = inSprint.find((w) => w.stateCategory !== 'Completed' && Date.parse(w.createdAt) < Date.parse(previous.startDate));
+    if (carried) carried._iterations = [{ path: previous.path, from: Date.parse(carried.createdAt) }, { path: current.path, from: start + H }];
+    const added = inSprint.find((w) => w !== carried && Date.parse(w.createdAt) < start - D);
+    if (added) added._iterations = [{ path: p.name, from: Date.parse(added.createdAt) }, { path: current.path, from: start + 2.5 * D }];
+    const removed = [...workItems.values()].find((w) => w.projectName === p.name && w.iterationPath === p.name && w.type === p.story && w.stateCategory === 'Proposed' && Date.parse(w.createdAt) < start - D);
+    if (removed) removed._iterations = [{ path: current.path, from: Date.parse(removed.createdAt) }, { path: p.name, from: start + 3 * D }];
+  }
+}
+
+/** queryWorkItems' conditions (the same ones the real provider turns into WIQL). */
+function matchesQuery(w, p, c) {
+  const typeOk = () => {
+    if (c.types?.length) return c.types.includes(w.type);
+    const cats = c.categories || (c.parentId ? null : ['requirement', 'bug', 'task']);
+    if (!cats) return true;
+    const cat = { Bug: 'bug', Task: 'task', Feature: 'feature', Epic: 'epic' }[w.type] || 'requirement';
+    return cats.includes(cat);
+  };
+  return w.projectName === p.name
+    && typeOk()
+    && w.stateCategory !== 'Removed'
+    && (!c.open || w.stateCategory !== 'Completed')
+    && (!c.iterationPath || w.iterationPath === c.iterationPath || w.iterationPath.startsWith(`${c.iterationPath}\\`))
+    && (!c.areaPaths?.length || c.areaPaths.some((a) => w.areaPath === a.value || (a.includeChildren && w.areaPath.startsWith(`${a.value}\\`))))
+    && (!c.assignedToMe || w.assignedTo?.id === ME.id)
+    && (!c.unassigned || !w.assignedTo)
+    && (!c.tag || w.tags.some((t) => t.toLowerCase().includes(c.tag.toLowerCase())))
+    && (!c.changedWithinDays || Date.parse(w.changedAt) >= NOW - c.changedWithinDays * D)
+    && (!c.parentId || w.parentId === Number(c.parentId))
+    && (!c.doneWithinDays || (w.stateCategory === 'Completed' && Date.parse(w.changedAt) >= Date.now() - c.doneWithinDays * D));
+}
+
+/** A work item as it was at `t` (its sprint from _iterations, open until it closed); null before it existed. */
+function asOfView(w, t) {
+  if (Date.parse(w.createdAt) > t) return null;
+  const moves = w._iterations || [{ path: w.iterationPath, from: Date.parse(w.createdAt) }];
+  const path = [...moves].reverse().find((m) => m.from <= t)?.path || moves[0].path;
+  const closed = w.closedAt && Date.parse(w.closedAt) <= t;
+  return { ...w, iterationPath: path, stateCategory: closed ? 'Completed' : w.stateCategory === 'Completed' ? 'InProgress' : w.stateCategory };
+}
+
 // ------------------------------------------------------------------ provider
-const strip = ({ _description, _acceptance, _comments, _prs, _board, _attachments, ...rest }) => ({ ...rest });
+const strip = ({ _description, _acceptance, _comments, _prs, _board, _attachments, _iterations, ...rest }) => ({ ...rest });
 const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
 const delay = (v) => new Promise((r) => setTimeout(() => r(v), 40 + Math.random() * 120));
 const notFound = (what) => Object.assign(new Error(`${what} not found`), { status: 404 });
@@ -982,29 +1057,23 @@ export function createMockProvider() {
 
     queryWorkItems(projectId, c = {}) {
       const p = projectById(projectId);
-      const typeOk = (w) => {
-        if (c.types?.length) return c.types.includes(w.type);
-        const cats = c.categories || (c.parentId ? null : ['requirement', 'bug', 'task']);
-        if (!cats) return true;
-        const cat = { Bug: 'bug', Task: 'task', Feature: 'feature', Epic: 'epic' }[w.type] || 'requirement';
-        return cats.includes(cat);
-      };
-      const list = [...workItems.values()].filter((w) => w.projectName === p.name
-        && typeOk(w)
-        && w.stateCategory !== 'Removed'
-        && (!c.open || w.stateCategory !== 'Completed')
-        && (!c.iterationPath || w.iterationPath === c.iterationPath || w.iterationPath.startsWith(`${c.iterationPath}\\`))
-        && (!c.areaPaths?.length || c.areaPaths.some((a) => w.areaPath === a.value || (a.includeChildren && w.areaPath.startsWith(`${a.value}\\`))))
-        && (!c.assignedToMe || w.assignedTo?.id === ME.id)
-        && (!c.unassigned || !w.assignedTo)
-        && (!c.tag || w.tags.some((t) => t.toLowerCase().includes(c.tag.toLowerCase())))
-        && (!c.changedWithinDays || Date.parse(w.changedAt) >= NOW - c.changedWithinDays * D)
-        && (!c.parentId || w.parentId === Number(c.parentId))
-        && (!c.doneWithinDays || (w.stateCategory === 'Completed' && Date.parse(w.changedAt) >= Date.now() - c.doneWithinDays * D)));
+      const list = [...workItems.values()].filter((w) => matchesQuery(w, p, c));
       const withBoard = (w) => (c.extraFields?.length
         ? { ...strip(w), boardFields: { 'Mock_Kanban.Column': w._board?.column ?? null, 'Mock_Kanban.Column.Done': !!w._board?.done, 'Mock_Kanban.Lane': w._board?.lane ?? null } }
         : strip(w));
       return delay(list.sort((a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt)).slice(0, c.top || 1000).map(withBoard));
+    },
+
+    // WIQL ASOF: the items that matched at `asOf`, with their sprint and state as they were then.
+    queryWorkItemIds(projectId, c = {}) {
+      const p = projectById(projectId);
+      const list = c.asOf ? [...workItems.values()].map((w) => asOfView(w, Date.parse(c.asOf))).filter(Boolean) : [...workItems.values()];
+      return delay(list.filter((w) => matchesQuery(w, p, c)).slice(0, c.top || 1000).map((w) => w.id));
+    },
+
+    listIterations(projectId) {
+      const { previous, current } = SPRINTS(projectById(projectId));
+      return delay([previous, current].map((x) => ({ ...x })));
     },
 
     getBoards(projectId) {

@@ -194,6 +194,9 @@ export function apiRouter() {
     const days = Math.min(180, Math.max(7, Number(req.query.days) || 30));
     res.json(await req.ctx.service.insights(days));
   });
+  // Work item flow: cycle time, throughput and aging work in progress; and each team's sprint scope.
+  r.get('/flow', async (req, res) => res.json(await req.ctx.service.flow(Math.min(180, Math.max(7, Number(req.query.days) || 30)))));
+  r.get('/sprints', async (req, res) => res.json(await req.ctx.service.sprints()));
   r.post('/changelog', async (req, res) => res.json(await req.ctx.service.changelog(req.body || {})));
 
   // Organizations: everyone sees the list; Admins add, rename and remove them.

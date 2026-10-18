@@ -282,12 +282,53 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         createdAt: f['System.CreatedDate'],
         changedAt: f['System.ChangedDate'],
         stateChangedAt: f['Microsoft.VSTS.Common.StateChangeDate'] || f['System.ChangedDate'],
+        activatedAt: f['Microsoft.VSTS.Common.ActivatedDate'] || null,
         closedAt: f['Microsoft.VSTS.Common.ClosedDate'] || null,
         webUrl: wiWebUrl(projectName, w.id),
         // Board column / lane fields asked for by the caller (they're per team board).
         ...(extraFields.length ? { boardFields: Object.fromEntries(extraFields.map((x) => [x, f[x] ?? null])) } : {}),
       };
     });
+  }
+
+  /** The WHERE conditions of a work item query (see queryWorkItems for what `c` takes). */
+  async function wiqlWhere(projectId, c) {
+    const stateMap = await getStateMap(projectId);
+    const where = ['[System.TeamProject] = @project'];
+
+    // Explicit types (from the team's backlog configuration, custom types included),
+    // else categories; children of a parent are whatever type they are.
+    const categories = c.types?.length ? null : c.categories || (c.parentId ? null : ['requirement', 'bug', 'task']);
+    if (c.types?.length) where.push(`[System.WorkItemType] IN (${c.types.map(q).join(', ')})`);
+    if (categories) {
+      const groups = categories.map((k) => CATEGORY_GROUPS[k]).filter(Boolean);
+      where.push(`(${groups.map((g) => `[System.WorkItemType] IN GROUP ${q(g)}`).join(' OR ')})`);
+    }
+    if (c.parentId) where.push(`[System.Parent] = ${Number(c.parentId)}`);
+
+    if (c.open) {
+      const done = [...new Set(Object.values(stateMap).flat()
+        .filter((s) => s.category === 'Completed' || s.category === 'Removed').map((s) => s.name))];
+      if (done.length) where.push(`[System.State] NOT IN (${done.map(q).join(', ')})`);
+    } else {
+      const removed = [...new Set(Object.values(stateMap).flat().filter((s) => s.category === 'Removed').map((s) => s.name))];
+      if (removed.length) where.push(`[System.State] NOT IN (${removed.map(q).join(', ')})`);
+    }
+    if (c.iterationPath) where.push(`[System.IterationPath] UNDER ${q(c.iterationPath)}`);
+    if (c.areaPaths?.length) {
+      where.push(`(${c.areaPaths.map((a) => `[System.AreaPath] ${a.includeChildren ? 'UNDER' : '='} ${q(a.value)}`).join(' OR ')})`);
+    }
+    if (c.assignedToMe) where.push('[System.AssignedTo] = @Me');
+    if (c.unassigned) where.push("[System.AssignedTo] = ''");
+    if (c.tag) where.push(`[System.Tags] CONTAINS ${q(c.tag)}`);
+    if (c.changedWithinDays) where.push(`[System.ChangedDate] >= @Today - ${Number(c.changedWithinDays)}`);
+    if (c.doneWithinDays) {
+      const done = [...new Set(Object.values(stateMap).flat().filter((s) => s.category === 'Completed').map((s) => s.name))];
+      if (done.length) where.push(`[System.State] IN (${done.map(q).join(', ')})`);
+      where.push(`[System.ChangedDate] >= @Today - ${Number(c.doneWithinDays)}`);
+    }
+
+    return where;
   }
 
   async function getWorkItems(ids, extraFields = []) {
@@ -354,6 +395,14 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       const d = await api(`${seg(projectId)}/${seg(teamId)}/_apis/work/teamsettings/iterations`, { query: { $timeframe: 'current' } });
       const it = d.value?.[0];
       return it ? { id: it.id, name: it.name, path: it.path, startDate: it.attributes?.startDate, finishDate: it.attributes?.finishDate } : null;
+    },
+
+    /** A team's sprints (all of them, dated or not), oldest first. */
+    async listIterations(projectId, teamId) {
+      const d = await api(`${seg(projectId)}/${seg(teamId)}/_apis/work/teamsettings/iterations`);
+      return (d.value || [])
+        .map((it) => ({ id: it.id, name: it.name, path: it.path, startDate: it.attributes?.startDate || null, finishDate: it.attributes?.finishDate || null }))
+        .sort((x, y) => (Date.parse(x.startDate) || 0) - (Date.parse(y.startDate) || 0));
     },
 
     async listRepos(projectId) {
@@ -661,44 +710,20 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
     },
 
     async queryWorkItems(projectId, c = {}) {
-      const stateMap = await getStateMap(projectId);
-      const where = ['[System.TeamProject] = @project'];
-
-      // Explicit types (from the team's backlog configuration, custom types included),
-      // else categories; children of a parent are whatever type they are.
-      const categories = c.types?.length ? null : c.categories || (c.parentId ? null : ['requirement', 'bug', 'task']);
-      if (c.types?.length) where.push(`[System.WorkItemType] IN (${c.types.map(q).join(', ')})`);
-      if (categories) {
-        const groups = categories.map((k) => CATEGORY_GROUPS[k]).filter(Boolean);
-        where.push(`(${groups.map((g) => `[System.WorkItemType] IN GROUP ${q(g)}`).join(' OR ')})`);
-      }
-      if (c.parentId) where.push(`[System.Parent] = ${Number(c.parentId)}`);
-
-      if (c.open) {
-        const done = [...new Set(Object.values(stateMap).flat()
-          .filter((s) => s.category === 'Completed' || s.category === 'Removed').map((s) => s.name))];
-        if (done.length) where.push(`[System.State] NOT IN (${done.map(q).join(', ')})`);
-      } else {
-        const removed = [...new Set(Object.values(stateMap).flat().filter((s) => s.category === 'Removed').map((s) => s.name))];
-        if (removed.length) where.push(`[System.State] NOT IN (${removed.map(q).join(', ')})`);
-      }
-      if (c.iterationPath) where.push(`[System.IterationPath] UNDER ${q(c.iterationPath)}`);
-      if (c.areaPaths?.length) {
-        where.push(`(${c.areaPaths.map((a) => `[System.AreaPath] ${a.includeChildren ? 'UNDER' : '='} ${q(a.value)}`).join(' OR ')})`);
-      }
-      if (c.assignedToMe) where.push('[System.AssignedTo] = @Me');
-      if (c.unassigned) where.push("[System.AssignedTo] = ''");
-      if (c.tag) where.push(`[System.Tags] CONTAINS ${q(c.tag)}`);
-      if (c.changedWithinDays) where.push(`[System.ChangedDate] >= @Today - ${Number(c.changedWithinDays)}`);
-      if (c.doneWithinDays) {
-        const done = [...new Set(Object.values(stateMap).flat().filter((s) => s.category === 'Completed').map((s) => s.name))];
-        if (done.length) where.push(`[System.State] IN (${done.map(q).join(', ')})`);
-        where.push(`[System.ChangedDate] >= @Today - ${Number(c.doneWithinDays)}`);
-      }
-
-      const wiql = `SELECT [System.Id] FROM WorkItems WHERE ${where.join(' AND ')} ORDER BY [System.ChangedDate] DESC`;
+      const wiql = `SELECT [System.Id] FROM WorkItems WHERE ${(await wiqlWhere(projectId, c)).join(' AND ')} ORDER BY [System.ChangedDate] DESC`;
       const res = await api(`${seg(projectId)}/_apis/wit/wiql`, { method: 'POST', query: { $top: c.top || 1000 }, body: { query: wiql } });
       return getWorkItems((res.workItems || []).map((w) => w.id), c.extraFields || []);
+    },
+
+    /**
+     * Ids of the work items that matched the same conditions at `asOf` (WIQL
+     * ASOF: iteration, area and state as they were then), or now without it.
+     */
+    async queryWorkItemIds(projectId, c = {}) {
+      const asOf = c.asOf ? ` ASOF '${new Date(c.asOf).toISOString()}'` : '';
+      const wiql = `SELECT [System.Id] FROM WorkItems WHERE ${(await wiqlWhere(projectId, c)).join(' AND ')}${asOf}`;
+      const res = await api(`${seg(projectId)}/_apis/wit/wiql`, { method: 'POST', query: { $top: c.top || 1000 }, body: { query: wiql } });
+      return (res.workItems || []).map((w) => w.id);
     },
 
     getWorkItems,

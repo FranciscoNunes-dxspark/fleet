@@ -449,6 +449,11 @@ tr.saving { opacity: 0.55; }
 .chart-svg .bar { fill: var(--accent); }
 .chart-svg .hit { fill: transparent; cursor: default; outline: none; }
 .chart-svg .hit:hover, .chart-svg .hit:focus { fill: var(--accent); fill-opacity: 0.08; }
+.chart-svg .ref-line { stroke: var(--muted); stroke-dasharray: 4 4; }
+.chart-svg .dot { fill: var(--accent); fill-opacity: 0.85; stroke: var(--surface); stroke-width: 1.5; cursor: pointer; outline: none; transition: r 0.1s; }
+.chart-svg .dot-warn { fill: var(--warn); }
+.chart-svg .dot-bad { fill: var(--bad); }
+.chart-svg .dot:focus-visible { stroke: var(--ink); stroke-width: 2; }
 .tooltip {
   position: absolute; transform: translate(-50%, calc(-100% - 8px)); pointer-events: none; white-space: nowrap;
   padding: 6px 10px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--line-strong);
@@ -1115,3 +1120,14 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .deploy-pr-commits > summary { cursor: pointer; width: fit-content; }
 .deploy-pr-commits > .deploy-list { margin: 8px 0 2px 14px; padding-left: 10px; border-left: 2px solid var(--line); }
 .delivery-intro { margin: 0 0 14px; max-width: 90ch; }
+
+/* ------------------------------------------------------------ work item flow */
+.sprint-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }
+.sprint-card { margin-bottom: 0; min-width: 0; }
+.sprint-card h3 { font-size: 15px; margin: 0; }
+.sprint-card .monitor-facts { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.scope-progress { position: relative; display: grid; gap: 6px; margin-bottom: 12px; }
+.scope-bar { width: 100%; }
+.scope-time { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--ink-2); border-radius: 1px; }
+.sprint-lists { display: grid; gap: 12px; }
+.sprint-list h4 { margin: 0 0 6px; display: flex; gap: 6px; align-items: center; color: var(--ink-2); }

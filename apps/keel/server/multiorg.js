@@ -14,6 +14,7 @@ import { buildInsights } from './domain/insights.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
+import { buildFlow } from './domain/flow.js';
 import { DAY } from './domain/prs.js';
 
 const SEVERITY = { high: 0, medium: 1, low: 2 };
@@ -181,6 +182,26 @@ export function createMultiService(entries) {
         blocked: all('blocked'),
         inProgress: parts.reduce((n, { value }) => n + value.inProgress, 0),
       });
+    },
+    /** Work item flow computed once over every organization's items. */
+    async flow(days) {
+      const parts = await each((s) => s.flowData(days));
+      return buildFlow({
+        finished: parts.flatMap(({ org, value }) => tagAll(org, value.finished)),
+        open: parts.flatMap(({ org, value }) => tagAll(org, value.open)),
+        days,
+      });
+    },
+    async sprints() {
+      const parts = await each((s) => s.sprints());
+      return {
+        sprints: parts.flatMap(({ org, value }) => value.sprints.map((x) => ({
+          ...x,
+          org: org.key,
+          project: tag(org, x.project),
+          ...(x.added ? { added: tagAll(org, x.added), removed: tagAll(org, x.removed), carriedOver: tagAll(org, x.carriedOver) } : {}),
+        }))),
+      };
     },
     branches: viaProject('branches'),
     compare: viaProject('compare'),

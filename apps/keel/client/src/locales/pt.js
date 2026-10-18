@@ -10,8 +10,9 @@ import totals from './pt/totals.js';
 import runs from './pt/runs.js';
 import orgs from './pt/orgs.js';
 import ship from './pt/ship.js';
+import flow from './pt/flow.js';
 
-export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship };
+export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow };
 
 // Text the server sends: its templates are the only ones tx() matches against.
 export { server as serverText };

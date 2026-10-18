@@ -18,6 +18,7 @@ import { commitRefs, mergeCommits } from './domain/commits.js';
 import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
+import { buildFlow, buildSprintScope } from './domain/flow.js';
 
 const MIN = 60_000;
 // Classic release stages that are production by their name; monitors can point at any stage or pipeline.
@@ -619,6 +620,70 @@ export function createService({
       const range = weekRange(week);
       if (range.from < Date.now() - 180 * DAY) throw Object.assign(new Error('Summaries go back 26 weeks'), { status: 400 });
       return buildSummary({ ...range, ...(await this.summaryData(range)) });
+    },
+
+    /** Raw material for work item flow: backlog items and bugs finished in the last `days` days, and open work now. */
+    async flowData(days) {
+      const [projects, open] = await Promise.all([tracked(), openItems()]);
+      const finished = await cached(`flow:done:${days}`, async () => {
+        const lists = await Promise.all(projects.map(async (p) => {
+          const { areaPaths } = await scope(p);
+          const items = await provider.queryWorkItems(p.id, { doneWithinDays: days, areaPaths, categories: ['requirement', 'bug'] });
+          return items.map((w) => ({ ...w, projectId: p.id }));
+        }));
+        return lists.flat();
+      }, 5 * MIN);
+      return { finished, open };
+    },
+
+    async flow(days) {
+      return buildFlow({ ...(await this.flowData(days)), days });
+    },
+
+    /**
+     * Each tracked team's live sprint: what it held at the end of its first
+     * day, what it holds now, and what came over unfinished from the sprint
+     * before (WIQL ASOF, so moves in and out of the sprint count).
+     */
+    async sprints() {
+      const projects = await tracked();
+      const pairs = projects.flatMap((p) => p.teams.map((team) => ({ p, team })));
+      const rows = await Promise.all(pairs.map(async ({ p, team }) => {
+        const { iteration } = await teamScope(p, team);
+        if (!iteration || iteration.status !== 'live') return null;
+        try {
+          const areaPaths = await cached(`areas:${p.id}:${team.id}`, () => provider.getTeamAreas(p.id, team.id).catch(() => null), 10 * MIN);
+          const base = { areaPaths, categories: ['requirement', 'bug'] };
+          const iterations = await cached(`iterations:${p.id}:${team.id}`, () => provider.listIterations(p.id, team.id), 30 * MIN);
+          const start = Date.parse(iteration.startDate);
+          const previous = iterations.filter((it) => Date.parse(it.finishDate) < start).pop() || null;
+          // The end of the first day: planning happens then, so changes after it are scope change.
+          const committedAt = new Date(Math.min(Date.now(), start + DAY)).toISOString();
+          const ids = (c, ttl) => cached(`flow:ids:${p.id}:${JSON.stringify(c)}`, () => provider.queryWorkItemIds(p.id, { ...base, ...c }), ttl);
+          const [startIds, prevOpenIds, items] = await Promise.all([
+            ids({ iterationPath: iteration.path, asOf: committedAt }, committedAt < new Date().toISOString() ? 60 * MIN : MIN),
+            // Open in the previous sprint at the end of its last day (and before this one began).
+            previous ? ids({ iterationPath: previous.path, open: true, asOf: new Date(Math.min(Date.parse(previous.finishDate) + DAY, start) - MIN).toISOString() }, 60 * MIN) : [],
+            cached(`flow:sprint:${p.id}:${team.id}:${iteration.path}`, () => provider.queryWorkItems(p.id, { ...base, iterationPath: iteration.path }), 2 * MIN),
+          ]);
+          const gone = startIds.filter((id) => !items.some((w) => w.id === id));
+          const removed = gone.length ? await provider.getWorkItems(gone.slice(0, 200)).catch(() => []) : [];
+          return buildSprintScope({
+            project: { id: p.id, name: p.name },
+            team,
+            iteration,
+            previous,
+            startIds,
+            prevOpenIds,
+            items,
+            removed,
+          });
+        } catch (err) {
+          console.warn(`[sprints] ${p.name} / ${team.name}: ${err.message}`);
+          return { project: { id: p.id, name: p.name }, team, iteration: { name: iteration.name, path: iteration.path }, error: err.message };
+        }
+      }));
+      return { sprints: rows.filter(Boolean) };
     },
 
     /** One commit with its whole message and changed files (commits never change, so it's kept a while). */
