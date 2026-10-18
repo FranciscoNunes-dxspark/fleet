@@ -144,6 +144,8 @@ export default function PrDetail({ target }) {
   const state = REVIEW_STATE[pr.reviewState];
   const mentionable = [...(people || []), pr.author, ...pr.reviewers, ...pr.threads.recent.map((c) => c.author)];
   const candidates = (people || []).filter((p) => p.id !== pr.author?.id && !pr.reviewers.some((r) => r.id === p.id));
+  // You aren't a reviewer until you vote or are added (myVote is null).
+  const canAddMe = pr.status === 'active' && pr.myVote === null;
 
   return (
     <div className="detail">
@@ -219,13 +221,17 @@ export default function PrDetail({ target }) {
           ))}
           {!pr.reviewers.length && <li className="text-bad small">{t('No reviewers yet.')}</li>}
         </ul>
-        {writable && candidates.length > 0 && (
+        {writable && (candidates.length > 0 || canAddMe) && (
           <form className="inline-form" onSubmit={async (e) => { e.preventDefault(); if (reviewer && await act({ type: 'addReviewer', reviewerId: reviewer }, t('Reviewer added'))) setReviewer(''); }}>
-            <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>
-              <option value="">{t('Add a reviewer…')}</option>
-              {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-            </select>
-            <button type="submit" className="btn btn-small" disabled={!reviewer || !!busy}>{t('Add')}</button>
+            {candidates.length > 0 && <>
+              <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>
+                <option value="">{t('Add a reviewer…')}</option>
+                {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
+              </select>
+              <button type="submit" className="btn btn-small" disabled={!reviewer || !!busy}>{t('Add')}</button>
+            </>}
+            {/* "me" is resolved on the server, in this pull request's organization. */}
+            {canAddMe && <button type="button" className="btn btn-small btn-ghost" disabled={!!busy} title={t('Add yourself as a reviewer')} onClick={() => act({ type: 'addReviewer', reviewerId: 'me' }, t('You were added as a reviewer'))}>{t('Add me')}</button>}
           </form>
         )}
         {writable && pr.status === 'active' && pr.files?.items?.length > 0 && (
