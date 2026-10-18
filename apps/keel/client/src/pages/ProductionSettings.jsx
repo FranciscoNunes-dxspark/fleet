@@ -167,7 +167,7 @@ export default function ProductionSettings() {
                           placeholder={learnedBranch(r.link) ? t('Automatic: {branch}', { branch: learnedBranch(r.link) }) : t('Automatic: the branch the last deploy came from')}
                           spellCheck={false}
                         />
-                        <span className="muted small">{t("The branch production deploys from. Waiting to ship compares it with what's live. Leave empty for Keel to work it out.")}</span>
+                        <span className="muted small">{t("The branch Waiting to ship compares with what's live, when Keel's guess is wrong. It doesn't change which runs count as deploys. Leave empty for Keel to work it out.")}</span>
                       </label>
                     )}
                   </fieldset>

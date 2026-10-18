@@ -39,9 +39,8 @@ export function targetKeyOf(link) {
     : `pipeline:${link.projectId}:${link.definitionId}`;
 }
 
-/** A linked pipeline's production branch: the one set in Settings, else the one it's learned to run on (see pipelines.js). */
-const linkBranch = (link, pipelines) => link.branch
-  || pipelines.find((p) => p.projectId === link.projectId && p.definition.id === link.definitionId)?.branch || null;
+/** The branch a linked pipeline's deploy runs come from: the one it's learned to run on (see pipelines.js). */
+const linkBranch = (link, pipelines) => pipelines.find((p) => p.projectId === link.projectId && p.definition.id === link.definitionId)?.branch || null;
 
 // A deploy running longer than this no longer hides an outage.
 export const DEPLOY_GRACE_MS = 60 * 60_000;

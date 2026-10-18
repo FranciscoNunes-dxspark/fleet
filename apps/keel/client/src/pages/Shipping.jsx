@@ -82,6 +82,17 @@ function ComingNext({ env }) {
   );
 }
 
+/** Why Keel doesn't know what production runs (see whyUnknown in server/service.js). */
+function unknownWhy(why) {
+  switch (why?.reason) {
+    case 'none': return t('No deploy in the last 90 days.');
+    case 'noSuccess': return t('No successful deploy in the last 90 days ({n} that failed).', { n: why.count });
+    case 'noCommit': return t("The deploys in the last 90 days don't say which commit they shipped (their artifact isn't a build of an Azure Repos Git repository), so what's waiting can't be listed.");
+    case 'otherBranch': return t('No successful run of this pipeline on {branch} in the last 90 days; the latest successful one ({label}) was on {other}.', { branch: why.branch, other: why.other || '?', label: why.label });
+    default: return t('No successful deploy with a known commit in the last 90 days.');
+  }
+}
+
 function Environment({ env }) {
   const { openDrawer, can } = useApp();
   const projectLabel = useProjectLabel();
@@ -171,9 +182,7 @@ function Environment({ env }) {
       )}
       {env.unknown && (
         <p className="muted small">
-          {env.untracked
-            ? t("The last deploy shipped a repository you don't track, so what's waiting can't be listed.")
-            : t('No successful deploy with a known commit in the last 90 days.')}
+          {env.untracked ? t("The last deploy shipped a repository you don't track, so what's waiting can't be listed.") : unknownWhy(env.why)}
         </p>
       )}
 

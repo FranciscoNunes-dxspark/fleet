@@ -288,15 +288,16 @@ export function createService({
       const same = found.get(targetKeyOf(link));
       if (same) {
         same.name = `${same.name}, ${m.name}`;
-        if (link.branch && !same.branchSet) Object.assign(same, { branch: link.branch, branchSet: true });
+        same.compareBranch ||= link.branch || null;
         continue;
       }
-      // A branch set in Settings wins; otherwise a pipeline's is learned from its runs and a release's from what it deployed.
+      // `branch` is where a pipeline's deploy runs come from (learned from its runs, see pipelines.js);
+      // `compareBranch` is the Production branch set in Settings, only for what Waiting to ship compares with.
       if (link.type === 'release') {
-        add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, branch: link.branch || null, branchSet: !!link.branch, name: m.name });
+        add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, compareBranch: link.branch || null, name: m.name });
       } else {
         const row = pipes.find((x) => x.projectId === link.projectId && x.definition.id === link.definitionId);
-        add({ key: targetKeyOf(link), type: 'pipeline', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, branch: link.branch || row?.branch || null, branchSet: !!link.branch, name: m.name });
+        add({ key: targetKeyOf(link), type: 'pipeline', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, branch: row?.branch || null, compareBranch: link.branch || null, name: m.name });
       }
     }
     for (const d of rels) {
@@ -307,6 +308,23 @@ export function createService({
       }
     }
     return [...found.values()];
+  }
+
+  /**
+   * Why an environment has no successful deploy with a known commit in 90
+   * days, for its card: no deploys at all, none succeeded, none said which
+   * commit they shipped, or (a pipeline) its successful runs were all on
+   * other branches than the one it's taken to deploy from.
+   */
+  async function whyUnknown(target, history) {
+    if (target.type === 'pipeline' && target.branch) {
+      const any = await deployHistory({ ...target, key: `${target.key}:any`, branch: null }, 90).catch(() => []);
+      const other = any.find((d) => d.status === 'succeeded' && d.commit && d.repoId);
+      if (other) return { reason: 'otherBranch', branch: target.branch, other: other.branch, label: other.label };
+    }
+    if (!history.length) return { reason: 'none' };
+    if (!history.some((d) => d.status === 'succeeded')) return { reason: 'noSuccess', count: history.length };
+    return { reason: 'noCommit' };
   }
 
   /** One environment's deploys over the last `days` days, newest first, each with the commit it shipped. */
@@ -618,14 +636,14 @@ export function createService({
           deploy: deployUnderWay(t, { releases: rels, builds, approvals: appr }, { since: last?.at }),
           lastFailed: failed ? { id: failed.id, label: failed.label, at: failed.at, status: failed.status, webUrl: failed.webUrl } : null,
         };
-        if (!last) return { ...head, unknown: true, lastDeploy: null };
+        if (!last) return { ...head, unknown: true, lastDeploy: null, why: await whyUnknown(t, history) };
         const repo = repoList.find((r) => r.id === last.repoId);
         const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };
         if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
         try {
           // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
-          const { branch, gone, missing, tip } = await branchTip(repo, t.branch || last.branch);
-          const where = { ...head, branch, branchSet: !!t.branchSet, branchGone: gone, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
+          const { branch, gone, missing, tip } = await branchTip(repo, t.compareBranch || t.branch || last.branch);
+          const where = { ...head, branch, branchSet: !!t.compareBranch, branchGone: gone, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
           if (missing) return { ...where, missingBranch: missing, waiting: 0, oldestAt: null };
           if (tip && tip.id !== last.commit) {
             // Production must run a commit the branch contains; otherwise "since" means nothing and
