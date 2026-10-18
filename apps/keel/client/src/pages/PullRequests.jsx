@@ -30,6 +30,7 @@ export default function PullRequests() {
 
   const setParam = (k, v) => {
     const next = new URLSearchParams(params);
+    next.delete('f'); // a shared link's filters were applied when it opened (views.jsx)
     if (v) next.set(k, v);
     else next.delete(k);
     setParams(next, { replace: true });
@@ -68,6 +69,7 @@ export default function PullRequests() {
     setProject(f.project || '');
     setRepo(f.repo || '');
     const next = new URLSearchParams(params);
+    next.delete('f');
     for (const k of ['author', 'reviewer']) {
       if (f[k]) next.set(k, f[k]);
       else next.delete(k);

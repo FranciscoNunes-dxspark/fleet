@@ -122,11 +122,13 @@ export default function NewPr({ preset = {} }) {
   // Reviewers to suggest: who recently worked in the folders this change touches (see server/domain/reviewers.js).
   useEffect(() => {
     setSuggested(null);
-    if (!current || !compare?.files?.items?.length) return;
+    if (!current || !compare?.files?.items?.length) return undefined;
+    let live = true; // a slower answer for an earlier branch pair must not win
     api(`/repos/${encodeURIComponent(current.projectId)}/${encodeURIComponent(current.id)}/reviewers`, {
       method: 'POST',
       body: { paths: compare.files.items.map((f) => f.path), target },
-    }).then((r) => setSuggested(r.suggestions)).catch(() => setSuggested([]));
+    }).then((r) => live && setSuggested(r.suggestions)).catch(() => live && setSuggested([]));
+    return () => { live = false; };
   }, [compare]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (reposError) return <ErrorBox error={reposError} />;

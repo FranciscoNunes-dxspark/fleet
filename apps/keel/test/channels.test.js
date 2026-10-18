@@ -31,6 +31,9 @@ test('channels: the first look is a baseline; then new or newly urgent entries o
   const still = channelEvents(red.seen, [entry('build:p1:7:101', 'pipeline', 'high'), entry('prod:m1:down,failures', 'production', 'high')], ['pipeline', 'production']);
   assert.deepEqual(still.announce, []);
   assert.deepEqual(Object.keys(still.seen), ['build:p1:7', 'prod:m1']);
+  // The same for another organization's entries ("<org>/" in front).
+  const other = channelEvents({ 'fab/build:p1:7': 'high' }, [entry('fab/build:p1:7:102', 'pipeline', 'high')], ['pipeline']);
+  assert.deepEqual(other.announce, []);
 });
 
 test('channels: posts for Teams, Slack and plain JSON, in the channel language', () => {
@@ -56,13 +59,13 @@ test('channels: posts for Teams, Slack and plain JSON, in the channel language',
     totals: { finished: 2, features: 1, bugs: 1, merged: 3, deploys: 2, failedDeploys: 0, blocked: 1 },
     features: [{ id: 1, title: 'Guest checkout', type: 'User Story', projectName: 'Shop', assignedTo: 'Ana' }],
     bugs: [{ id: 2, title: 'VAT rounding', type: 'Bug', projectName: 'Shop', assignedTo: null }],
-    deploys: [{ target: 'Shop', label: 'R-2', at: '2026-10-09T10:00:00Z', status: 'succeeded' }, { target: 'Shop', label: 'R-1', at: '2026-10-07T10:00:00Z', status: 'succeeded' }],
+    deploys: [{ target: 'Shop', label: 'R-3', at: '2026-10-10T10:00:00Z', status: 'canceled' }, { target: 'Shop', label: 'R-2', at: '2026-10-09T10:00:00Z', status: 'succeeded' }, { target: 'Shop', label: 'R-1', at: '2026-10-07T10:00:00Z', status: 'succeeded' }],
     blocked: [],
   };
   const w = summaryMessage(summary, translator('en'), { timeZone: 'Europe/Lisbon' });
   assert.equal(w.title, 'Week of 5 Oct – 11 Oct 2026');
   assert.deepEqual(w.sections.map((s) => s.heading || null), [null, 'Finished', 'Bugs fixed', 'Deployed to production']);
-  assert.match(w.sections[3].lines[0], /^Shop: 2 deploys \(latest R-2, /);
+  assert.match(w.sections[3].lines[0], /^Shop: 2 deploys \(latest R-2, /, 'a canceled run is neither a failure nor the latest deploy');
 });
 
 test('channels: the weekly summary is due once, on the weekday and after the hour, in the channel time zone', () => {

@@ -58,6 +58,8 @@ const writeAll = (all) => {
  * The saved views bar for one page. `filters`: what the page shows now;
  * `apply(filters)`: show those instead (missing keys mean "no filter").
  * A link with ?f= applies its filters once, then leaves the address clean.
+ * Pages that keep filters in the address drop `f` when they change it too,
+ * since their apply() runs with the address that still has it.
  */
 export function SavedViews({ page, filters, apply }) {
   const { toast } = useApp();

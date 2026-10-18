@@ -684,9 +684,12 @@ export function createService({
           const previous = iterations.filter((it) => Date.parse(it.finishDate) < start).pop() || null;
           // The end of the first day: planning happens then, so changes after it are scope change.
           const committedAt = new Date(Math.min(Date.now(), start + DAY)).toISOString();
-          const ids = (c, ttl) => cached(`flow:ids:${p.id}:${JSON.stringify(c)}`, () => provider.queryWorkItemIds(p.id, { ...base, ...c }), ttl);
+          // Teams can share a sprint path, so the key names the team (its area paths decide what's in it).
+          const ids = (c, ttl) => cached(`flow:ids:${p.id}:${team.id}:${JSON.stringify(c)}`, () => provider.queryWorkItemIds(p.id, { ...base, ...c }), ttl);
+          // On the first day "planned" is now: ask without ASOF (and don't keep a key per moment).
+          const firstDay = Date.now() < start + DAY;
           const [startIds, prevOpenIds, items] = await Promise.all([
-            ids({ iterationPath: iteration.path, asOf: committedAt }, committedAt < new Date().toISOString() ? 60 * MIN : MIN),
+            firstDay ? provider.queryWorkItemIds(p.id, { ...base, iterationPath: iteration.path }) : ids({ iterationPath: iteration.path, asOf: committedAt }, 60 * MIN),
             // Open in the previous sprint at the end of its last day (and before this one began).
             previous ? ids({ iterationPath: previous.path, open: true, asOf: new Date(Math.min(Date.parse(previous.finishDate) + DAY, start) - MIN).toISOString() }, 60 * MIN) : [],
             cached(`flow:sprint:${p.id}:${team.id}:${iteration.path}`, () => provider.queryWorkItems(p.id, { ...base, iterationPath: iteration.path }), 2 * MIN),

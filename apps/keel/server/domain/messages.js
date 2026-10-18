@@ -1,3 +1,5 @@
+import { FAILED } from './delivery.js';
+
 // Posts for Microsoft Teams and Slack channels: which inbox entries are worth
 // a post, and how a post is written for each kind of webhook. Pure, so the
 // rules and payloads are easy to test (the sending is in channels.js).
@@ -37,7 +39,8 @@ export function channelEvents(seen, items, events = DEFAULT_EVENTS) {
  * its latest run and a monitor's its current issues, and neither should post
  * again while it stays red (getting worse still does, through its severity).
  */
-export const identity = (key) => String(key).replace(/^(build:[^:]+:[^:]+):[^:]*$/, '$1').replace(/^(prod:[^:]+):.*$/, '$1');
+// Keys of other organizations start with "<org>/" (service.js).
+export const identity = (key) => String(key).replace(/^((?:[^/:]+\/)?build:[^:]+:[^:]+):[^:]*$/, '$1').replace(/^((?:[^/:]+\/)?prod:[^:]+):.*$/, '$1');
 
 /** A post about one inbox entry: { title, tone, sections, links }. */
 export function eventMessage(item, { t, tx }, keelUrl = null) {
@@ -85,9 +88,10 @@ export function summaryMessage(s, { t, locale }, { timeZone, keelUrl = null } = 
     sections.push({
       heading: t('Deployed to production'),
       lines: [...byTarget.entries()].map(([target, list]) => {
-        const ok = list.filter((d) => d.status === 'succeeded').length;
-        const failed = list.length - ok;
-        return `${target}: ${t(ok === 1 ? '{n} deploy' : '{n} deploys', { n: ok })}${failed ? `, ${t('{n} failed', { n: failed })}` : ''} (${t('latest {label}, {date}', { label: list[0].label, date: when(list[0].at) })})`;
+        const ok = list.filter((d) => d.status === 'succeeded');
+        const failed = list.filter((d) => FAILED.has(d.status)).length;
+        const latest = ok[0] || list[0];
+        return `${target}: ${t(ok.length === 1 ? '{n} deploy' : '{n} deploys', { n: ok.length })}${failed ? `, ${t('{n} failed', { n: failed })}` : ''} (${t('latest {label}, {date}', { label: latest.label, date: when(latest.at) })})`;
       }),
     });
   }
