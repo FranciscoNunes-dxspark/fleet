@@ -22,6 +22,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Pipelines from './pages/Pipelines.jsx';
 import Production from './pages/Production.jsx';
 import Totals from './pages/Totals.jsx';
+import Shipping from './pages/Shipping.jsx';
 import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
 import Settings from './pages/Settings.jsx';
@@ -321,7 +322,7 @@ function Shell() {
     { label: t('Code and delivery'), items: [
       { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits'] },
       { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
-      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals'] },
+      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals', '/ship'] },
     ] },
     { label: t('People'), items: [
       { to: '/team', label: t('Team'), icon: 'team' },
@@ -367,7 +368,7 @@ function Shell() {
                     <NavLink
                       to={n.to}
                       end={n.end}
-                      // Entries with tabs (Pull requests → Commits, Production → Platform totals) stay lit on every tab.
+                      // Entries with tabs (Pull requests → Commits, Production → Waiting to ship and Platform totals) stay lit on every tab.
                       className={({ isActive }) => `nav-link${isActive || n.also?.some((p) => pathname.startsWith(p)) ? ' active' : ''}`}
                       title={tip(n.label)}
                       aria-label={collapsed ? n.label : undefined}
@@ -420,6 +421,7 @@ function Shell() {
           <Route path="/epics" element={<Epics />} />
           <Route path="/pipelines" element={<Pipelines />} />
           <Route path="/production" element={<Production />} />
+          <Route path="/ship" element={<Shipping />} />
           <Route path="/totals" element={<Totals />} />
           <Route path="/totals/:id" element={<Totals />} />
           <Route path="/team" element={<Team />} />

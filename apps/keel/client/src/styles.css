@@ -797,6 +797,9 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .monitor-charts .chart { background: var(--bg); }
 .monitor-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
 .monitor-lists h3 { margin: 0 0 6px; color: var(--ink-2); }
+.ship-changes > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.ship-changes .detail-section:first-of-type { border-top: 0; margin-top: 6px; padding-top: 4px; }
+.ship-foot { margin-top: 12px; }
 .time-chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
 .time-chart .bar { fill: var(--accent); }
 .time-chart .bar-bad { fill: var(--bad); }

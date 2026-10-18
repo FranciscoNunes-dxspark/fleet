@@ -9,8 +9,9 @@ import server from './pt/server.js';
 import totals from './pt/totals.js';
 import runs from './pt/runs.js';
 import orgs from './pt/orgs.js';
+import ship from './pt/ship.js';
 
-export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs };
+export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship };
 
 // Text the server sends: its templates are the only ones tx() matches against.
 export { server as serverText };

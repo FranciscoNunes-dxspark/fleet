@@ -106,9 +106,9 @@ export function PageTabs({ label, tabs }) {
   );
 }
 
-// Pages that share one menu entry (see App.jsx): Pull requests and Commits; Production and Platform totals.
+// Pages that share one menu entry (see App.jsx): Pull requests and Commits; Production, Waiting to ship and Platform totals.
 export const CodeTabs = () => <PageTabs label={t('Code')} tabs={[{ to: '/prs', label: t('Pull requests') }, { to: '/commits', label: t('Commits') }]} />;
-export const ProductionTabs = () => <PageTabs label={t('Production')} tabs={[{ to: '/production', label: t('Monitors') }, { to: '/totals', label: t('Platform totals') }]} />;
+export const ProductionTabs = () => <PageTabs label={t('Production')} tabs={[{ to: '/production', label: t('Monitors') }, { to: '/ship', label: t('Waiting to ship') }, { to: '/totals', label: t('Platform totals') }]} />;
 
 export function Drawer({ open, onClose, children, label }) {
   const ref = useRef(null);

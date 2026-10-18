@@ -183,6 +183,8 @@ export function apiRouter() {
   r.get('/deploys/:projectId/changes', async (req, res) => res.json(await req.ctx.service.deployChanges(
     req.params.projectId, String(req.query.target || ''), String(req.query.id || ''),
   )));
+  // What's merged but not deployed yet, per production environment.
+  r.get('/deploys/pending', async (req, res) => res.json(await req.ctx.service.undeployed()));
   r.get('/delivery', async (req, res) => res.json(await req.ctx.service.delivery(Math.min(90, Math.max(7, Number(req.query.days) || 30)))));
   // One week's summary for everyone: ?week=YYYY-MM-DD (any day of the week; this week when absent).
   r.get('/summary', async (req, res) => res.json(await req.ctx.service.summary(req.query.week ? String(req.query.week) : undefined)));

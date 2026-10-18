@@ -30,18 +30,68 @@ function CommitList({ commits, onOpen }) {
 }
 
 /**
+ * A set of changes (see describeChanges in server/service.js): the work items,
+ * each pull request with its commits, and the commits pushed without one.
+ * Used for what a deploy shipped and for what's waiting to ship.
+ */
+export function ChangeSections({ changes: data, org }) {
+  const { openDrawer } = useApp();
+  const openCommit = (c) => openDrawer({ type: 'commit', projectId: c.projectId, repoId: c.repoId, id: c.id, org, projectName: c.projectName, repoName: c.repoName });
+  return (
+    <>
+      {data.workItems.length > 0 && (
+        <section className="detail-section">
+          <h3>{t('Work items')} <span className="muted small">{data.workItems.length}</span></h3>
+          <ul className="deploy-list">
+            {data.workItems.map((w) => (
+              <li key={w.id}>
+                <button type="button" className="row-link" onClick={() => openDrawer({ type: 'workitem', id: w.id, org })}>{w.title}</button>
+                <div className="sub"><TypeLabel type={w.type} /><span className="mono">#{w.id}</span><span>{w.state}</span>{w.assignedTo && <span>{w.assignedTo}</span>}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {data.pullRequests.length > 0 && (
+        <section className="detail-section">
+          <h3>{t('Pull requests')} <span className="muted small">{data.pullRequests.length}</span></h3>
+          <ul className="deploy-list">
+            {data.pullRequests.map((p) => (
+              <li key={p.id}>
+                <button type="button" className="row-link" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id, org })}>{p.title}</button>
+                <div className="sub"><span className="mono">!{p.id}</span>{p.author && <span>{p.author}</span>}{p.mergedAt && <span>{t('merged {date}', { date: dateTime(p.mergedAt) })}</span>}</div>
+                <details className="deploy-pr-commits">
+                  <summary className="small muted">{t(p.commits.length === 1 ? '{n} commit' : '{n} commits', { n: p.commits.length })}</summary>
+                  <CommitList commits={p.commits} onOpen={openCommit} />
+                </details>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {data.directCommits.length > 0 && (
+        <section className="detail-section">
+          <h3>{data.pullRequests.length ? t('Commits without a pull request') : t('Commits')} <span className="muted small">{data.directCommits.length}</span></h3>
+          <CommitList commits={data.directCommits} onOpen={openCommit} />
+        </section>
+      )}
+    </>
+  );
+}
+
+/**
  * What a production deploy shipped: the work items, pull requests and commits
  * since the environment's previous successful deploy. Opened from Production
  * (a deploy, or a "failures up since ..." warning) and from Insights.
  */
 export default function DeployDetail({ target }) {
-  const { openDrawer } = useApp();
   const { data, error, reload } = useApi(`/deploys/${enc(target.projectId)}/changes?target=${enc(target.target)}&id=${enc(target.id)}`);
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 
   const { deploy, previous } = data;
   const status = DEPLOY_STATUS[deploy.status] || { tone: 'muted', label: deploy.status };
-  const openCommit = (c) => openDrawer({ type: 'commit', projectId: c.projectId, repoId: c.repoId, id: c.id, org: target.org, projectName: c.projectName, repoName: c.repoName });
 
   return (
     <div className="detail deploy-detail">
@@ -63,44 +113,7 @@ export default function DeployDetail({ target }) {
       {data.partial && !data.unknown && <p className="callout">{t('No earlier deploy in the last 90 days to compare with, so only the deployed commit is shown.')}</p>}
       {data.redeploy && <p className="callout">{t('Same code as {label}: nothing new was shipped.', { label: previous.label })}</p>}
 
-      {data.workItems.length > 0 && (
-        <section className="detail-section">
-          <h3>{t('Work items')} <span className="muted small">{data.workItems.length}</span></h3>
-          <ul className="deploy-list">
-            {data.workItems.map((w) => (
-              <li key={w.id}>
-                <button type="button" className="row-link" onClick={() => openDrawer({ type: 'workitem', id: w.id, org: target.org })}>{w.title}</button>
-                <div className="sub"><TypeLabel type={w.type} /><span className="mono">#{w.id}</span><span>{w.state}</span>{w.assignedTo && <span>{w.assignedTo}</span>}</div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {data.pullRequests.length > 0 && (
-        <section className="detail-section">
-          <h3>{t('Pull requests')} <span className="muted small">{data.pullRequests.length}</span></h3>
-          <ul className="deploy-list">
-            {data.pullRequests.map((p) => (
-              <li key={p.id}>
-                <button type="button" className="row-link" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>{p.title}</button>
-                <div className="sub"><span className="mono">!{p.id}</span>{p.author && <span>{p.author}</span>}{p.mergedAt && <span>{t('merged {date}', { date: dateTime(p.mergedAt) })}</span>}</div>
-                <details className="deploy-pr-commits">
-                  <summary className="small muted">{t(p.commits.length === 1 ? '{n} commit' : '{n} commits', { n: p.commits.length })}</summary>
-                  <CommitList commits={p.commits} onOpen={openCommit} />
-                </details>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {data.directCommits.length > 0 && (
-        <section className="detail-section">
-          <h3>{data.pullRequests.length ? t('Commits without a pull request') : t('Commits')} <span className="muted small">{data.directCommits.length}</span></h3>
-          <CommitList commits={data.directCommits} onOpen={openCommit} />
-        </section>
-      )}
+      <ChangeSections changes={data} org={target.org} />
 
       <section className="detail-actions">
         <ExternalLink href={deploy.webUrl} />

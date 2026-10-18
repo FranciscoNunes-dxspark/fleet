@@ -159,6 +159,9 @@ export function createMultiService(entries) {
     },
     commit: viaProject('commit'),
     deployChanges: viaProject('deployChanges'),
+    async undeployed() {
+      return { targets: (await each((s) => s.undeployed())).flatMap(({ org, value }) => tagAll(org, value.targets)) };
+    },
 
     /** Delivery metrics computed once over every organization's production environments. */
     async delivery(days) {

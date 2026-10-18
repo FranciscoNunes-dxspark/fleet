@@ -310,6 +310,42 @@ export function createService({
   /** The deploy before `i` in a newest-first history that shipped code from the same repo. */
   const previousDeploy = (history, i) => history.slice(i + 1).find((d) => d.status === 'succeeded' && d.commit && d.repoId === history[i].repoId);
 
+  /**
+   * A list of commits (one repo, newest first) as people read it: the merged
+   * pull requests with the commits they brought, the commits pushed without
+   * one, the work items they mention and who wrote them.
+   */
+  async function describeChanges(repo, raw) {
+    const commits = mergeCommits([{ repo, commits: raw }]);
+    const ids = [...new Set(commits.flatMap((c) => c.workItemIds))].slice(0, 50);
+    // Each merged PR with the commits it brought; what's left was pushed without a PR.
+    const merges = commits.filter((c) => c.prId).slice(0, 30);
+    const [items, prCommitIds] = await Promise.all([
+      ids.length ? provider.getWorkItems(ids).catch(() => []) : [],
+      Promise.all(merges.map((c) => cached(`prcommits:${repo.id}:${c.prId}`, () => provider.getPullRequestCommitIds(repo.projectId, repo.id, c.prId), 24 * 60 * MIN).catch(() => []))),
+    ]);
+    const inPr = new Set([...merges.map((c) => c.id), ...prCommitIds.flat()]);
+    return {
+      commits,
+      pullRequests: merges.map((c, i) => {
+        const own = new Set(prCommitIds[i]);
+        return {
+          id: c.prId,
+          title: c.subject.replace(/^Merged PR \d+:\s*/, ''),
+          author: c.author?.name || null,
+          projectId: c.projectId,
+          repoId: c.repoId,
+          mergedAt: c.author?.date || null,
+          // The merge commit first, then the PR's own commits.
+          commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
+        };
+      }),
+      directCommits: commits.filter((c) => !inPr.has(c.id)),
+      workItems: items.map(({ id, type, title, state, stateCategory, assignedTo, webUrl }) => ({ id, type, title, state, stateCategory, assignedTo: assignedTo?.displayName || null, webUrl })),
+      authors: [...new Set(commits.map((c) => c.author?.name).filter(Boolean))],
+    };
+  }
+
   /** Pending approvals from classic releases and YAML environment checks, in one list. */
   const approvals = () => cached('builds:approvals', async () => {
     const [projects, who, builds] = await Promise.all([tracked(), me(), rawBuilds()]);
@@ -472,39 +508,55 @@ export function createService({
       const raw = !previous ? [await provider.getCommit(repo.projectId, repo.id, deploy.commit)]
         : previous.commit === deploy.commit ? []
           : await commitsBetween(repo.projectId, repo.id, previous.commit, deploy.commit);
-      const commits = mergeCommits([{ repo, commits: raw }]);
-      const ids = [...new Set(commits.flatMap((c) => c.workItemIds))].slice(0, 50);
-      // Each merged PR with the commits it brought; what's left was pushed without a PR.
-      const merges = commits.filter((c) => c.prId).slice(0, 30);
-      const [items, prCommitIds] = await Promise.all([
-        ids.length ? provider.getWorkItems(ids).catch(() => []) : [],
-        Promise.all(merges.map((c) => cached(`prcommits:${repo.id}:${c.prId}`, () => provider.getPullRequestCommitIds(repo.projectId, repo.id, c.prId), 24 * 60 * MIN).catch(() => []))),
-      ]);
-      const inPr = new Set([...merges.map((c) => c.id), ...prCommitIds.flat()]);
       return {
         ...base,
         repo: { id: repo.id, name: repo.name, projectId: repo.projectId },
         // No earlier deploy in the last 90 days: only the deployed commit itself is known.
         partial: !previous,
         redeploy: !!previous && previous.commit === deploy.commit,
-        commits,
-        pullRequests: merges.map((c, i) => {
-          const own = new Set(prCommitIds[i]);
-          return {
-            id: c.prId,
-            title: c.subject.replace(/^Merged PR \d+:\s*/, ''),
-            author: c.author?.name || null,
-            projectId: c.projectId,
-            repoId: c.repoId,
-            mergedAt: c.author?.date || null,
-            // The merge commit first, then the PR's own commits in this deploy.
-            commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
-          };
-        }),
-        directCommits: commits.filter((c) => !inPr.has(c.id)),
-        workItems: items.map(({ id, type, title, state, stateCategory, assignedTo, webUrl }) => ({ id, type, title, state, stateCategory, assignedTo: assignedTo?.displayName || null, webUrl })),
-        authors: [...new Set(commits.map((c) => c.author?.name).filter(Boolean))],
+        ...(await describeChanges(repo, raw)),
       };
+    },
+
+    /**
+     * What's waiting to ship: for each production environment, the commits on
+     * its branch (the repo's default, or the pipeline's own) since the last
+     * successful deploy, with their pull requests and work items.
+     */
+    async undeployed() {
+      const [targets, repoList] = await Promise.all([productionTargets(), repos()]);
+      const results = await Promise.all(targets.map(async (t) => {
+        const head = { key: t.key, name: t.name, projectId: t.projectId, projectName: t.projectName };
+        let history;
+        try {
+          history = await deployHistory(t, 90);
+        } catch (err) {
+          return { ...head, error: err.message };
+        }
+        const last = history.find((d) => d.status === 'succeeded' && d.commit && d.repoId);
+        if (!last) return { ...head, unknown: true, lastDeploy: null };
+        const repo = repoList.find((r) => r.id === last.repoId);
+        const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };
+        if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
+        const branch = t.branch || repo.defaultBranch;
+        try {
+          const [tip] = await cached(`commits:tip:${repo.id}:${branch}`, () => provider.listCommits(repo.projectId, repo.id, { branch, top: 1 }), 2 * MIN);
+          const raw = !tip || tip.id === last.commit ? [] : await commitsBetween(repo.projectId, repo.id, last.commit, tip.id);
+          const changes = await describeChanges(repo, raw);
+          const oldest = changes.commits.reduce((min, c) => Math.min(min, Date.parse(c.author?.date) || Infinity), Infinity);
+          return {
+            ...head,
+            branch,
+            repo: { id: repo.id, name: repo.name, projectId: repo.projectId },
+            lastDeploy,
+            ...changes,
+            oldestAt: Number.isFinite(oldest) ? new Date(oldest).toISOString() : null,
+          };
+        } catch (err) {
+          return { ...head, lastDeploy, error: err.message };
+        }
+      }));
+      return { targets: results };
     },
 
     /**
