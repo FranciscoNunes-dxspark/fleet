@@ -108,7 +108,10 @@ function Environment({ env }) {
       <header className="monitor-head">
         <div>
           <h2>{env.name}</h2>
-          <div className="small muted">{[projectLabel(env.projectName, env.org), env.repo?.name, env.branch].filter(Boolean).join(' · ')}</div>
+          <div className="small muted">
+            {[projectLabel(env.projectName, env.org), env.repo?.name, env.branch].filter(Boolean).join(' · ')}
+            {env.branchSet && env.branch && !env.branchGone && <span title={t('Set in Settings → Production monitors')}> {t('(set)')}</span>}
+          </div>
         </div>
         {chip}
       </header>
@@ -153,7 +156,11 @@ function Environment({ env }) {
         </p>
       )}
       {env.branchGone && !env.missingBranch && (
-        <p className="muted small">{t('Production was built from {gone}, which no longer exists, so this compares with {branch}.', { gone: env.branchGone, branch: env.branch })}</p>
+        <p className="muted small">
+          {env.branchSet
+            ? t("The production branch {gone} set in Settings doesn't exist, so this compares with {branch}.", { gone: env.branchGone, branch: env.branch })
+            : t('Production was built from {gone}, which no longer exists, so this compares with {branch}.', { gone: env.branchGone, branch: env.branch })}
+        </p>
       )}
       {env.diverged && (
         <p className="callout">

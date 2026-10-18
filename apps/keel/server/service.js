@@ -288,13 +288,15 @@ export function createService({
       const same = found.get(targetKeyOf(link));
       if (same) {
         same.name = `${same.name}, ${m.name}`;
+        if (link.branch && !same.branchSet) Object.assign(same, { branch: link.branch, branchSet: true });
         continue;
       }
+      // A branch set in Settings wins; otherwise a pipeline's is learned from its runs and a release's from what it deployed.
       if (link.type === 'release') {
-        add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, name: m.name });
+        add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, branch: link.branch || null, branchSet: !!link.branch, name: m.name });
       } else {
         const row = pipes.find((x) => x.projectId === link.projectId && x.definition.id === link.definitionId);
-        add({ key: targetKeyOf(link), type: 'pipeline', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, branch: row?.branch || null, name: m.name });
+        add({ key: targetKeyOf(link), type: 'pipeline', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, branch: link.branch || row?.branch || null, branchSet: !!link.branch, name: m.name });
       }
     }
     for (const d of rels) {
@@ -623,7 +625,7 @@ export function createService({
         try {
           // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
           const { branch, gone, missing, tip } = await branchTip(repo, t.branch || last.branch);
-          const where = { ...head, branch, branchGone: gone, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
+          const where = { ...head, branch, branchSet: !!t.branchSet, branchGone: gone, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
           if (missing) return { ...where, missingBranch: missing, waiting: 0, oldestAt: null };
           if (tip && tip.id !== last.commit) {
             // Production must run a commit the branch contains; otherwise "since" means nothing and

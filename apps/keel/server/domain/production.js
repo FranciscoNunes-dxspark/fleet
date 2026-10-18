@@ -22,11 +22,11 @@ export function deployMarkers(monitor, { releases = [], pipelines = [], builds =
       .filter((d) => Date.parse(d.at) >= since)
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   }
-  // Pipeline link: completed runs on the pipeline's own branch (see pipelines.js).
-  const row = pipelines.find((p) => p.projectId === link.projectId && p.definition.id === link.definitionId);
+  // Pipeline link: completed runs on its production branch.
+  const branch = linkBranch(link, pipelines);
   return builds
     .filter((b) => b.projectId === link.projectId && b.definition.id === link.definitionId && b.status === 'completed'
-      && b.reason !== 'pullRequest' && (!row?.branch || b.sourceBranch === row.branch) && Date.parse(b.finishedAt) >= since)
+      && b.reason !== 'pullRequest' && (!branch || b.sourceBranch === branch) && Date.parse(b.finishedAt) >= since)
     .map((b) => ({ id: b.id, at: b.finishedAt, label: b.buildNumber, status: b.result, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }))
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
@@ -38,6 +38,10 @@ export function targetKeyOf(link) {
     ? `release:${link.projectId}:${link.definitionId}:${link.stage || ''}`
     : `pipeline:${link.projectId}:${link.definitionId}`;
 }
+
+/** A linked pipeline's production branch: the one set in Settings, else the one it's learned to run on (see pipelines.js). */
+const linkBranch = (link, pipelines) => link.branch
+  || pipelines.find((p) => p.projectId === link.projectId && p.definition.id === link.definitionId)?.branch || null;
 
 // A deploy running longer than this no longer hides an outage.
 export const DEPLOY_GRACE_MS = 60 * 60_000;
@@ -58,10 +62,10 @@ export function runningDeploy(monitor, { releases = [], pipelines = [], builds =
       .filter(({ s }) => s?.deploying)
       .map(({ r, s }) => ({ label: r.name, startedAt: s.startedAt || s.at, by: s.requestedFor?.displayName || null, webUrl: r.webUrl }));
   } else {
-    const row = pipelines.find((p) => p.projectId === link.projectId && p.definition.id === link.definitionId);
+    const branch = linkBranch(link, pipelines);
     found = builds
       .filter((b) => b.projectId === link.projectId && b.definition.id === link.definitionId && b.status === 'inProgress'
-        && b.reason !== 'pullRequest' && (!row?.branch || b.sourceBranch === row.branch))
+        && b.reason !== 'pullRequest' && (!branch || b.sourceBranch === branch))
       .map((b) => ({ label: b.buildNumber, startedAt: b.startedAt || b.queuedAt, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }));
   }
   return found

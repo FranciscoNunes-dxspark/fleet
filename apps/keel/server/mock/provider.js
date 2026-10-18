@@ -489,6 +489,13 @@ const pipelineApprovals = [{
   instructions: 'Please validate the release before continuing', minRequired: 1, approvers: [], canDecide: true,
 }];
 
+/** A demo repo's branches: its default, develop, a few others and its pull requests' source branches. */
+function branchNames(repo) {
+  const fromPrs = [...prs.values()].filter((p) => p.repoId === repo.id).map((p) => p.sourceBranch);
+  const extra = ['feature/4107-invoice-pdf', 'bugfix/coupon-double-apply', 'chore/upgrade-node-22', 'release/2026.10'];
+  return [...new Set([repo.defaultBranch, 'develop', ...extra, ...fromPrs])];
+}
+
 function finishLater(env, status = 'succeeded', ms = 15_000) {
   setTimeout(() => Object.assign(env, { status, at: iso(Date.now()) }), ms).unref?.();
 }
@@ -955,9 +962,7 @@ export function createMockProvider() {
     listBranches(projectId, repoId) {
       const repo = ALL_REPOS.find((r) => r.id === repoId);
       if (!repo) throw notFound('Repository');
-      const fromPrs = [...prs.values()].filter((p) => p.repoId === repoId).map((p) => p.sourceBranch);
-      const extra = ['feature/4107-invoice-pdf', 'bugfix/coupon-double-apply', 'chore/upgrade-node-22', 'release/2026.10'];
-      const names = [...new Set([repo.defaultBranch, 'develop', ...extra, ...fromPrs])];
+      const names = branchNames(repo);
       return delay(names.map((name, i) => ({
         name,
         pushedAt: i < 8 ? ago((i + 1) * 5 * H) : null,
@@ -968,6 +973,10 @@ export function createMockProvider() {
     listCommits(projectId, repoId, { branch, since, path, top = 300 } = {}) {
       const repo = ALL_REPOS.find((r) => r.id === repoId);
       if (!repo) throw notFound('Repository');
+      // Like Azure DevOps, a branch the repo doesn't have is a 404 (TF401175).
+      if (branch && !branchNames(repo).includes(branch)) {
+        throw Object.assign(new Error(`TF401175: The version descriptor <Branch: ${branch} > could not be resolved to a version in the repository ${repo.name}`), { status: 404 });
+      }
       const from = since ? Date.parse(since) : 0;
       const touches = (c) => !path || path === '/' || c._files.some((f) => f.path === path || f.path.startsWith(`${path}/`));
       return delay(demoCommits(repo, branch || repo.defaultBranch).filter((c) => Date.parse(c.author.date) >= from && touches(c)).slice(0, top).map(stripCommit));
@@ -988,8 +997,8 @@ export function createMockProvider() {
       const list = repo ? demoCommits(repo) : [];
       const b = list.findIndex((c) => c.id === base);
       const t = list.findIndex((c) => c.id === target);
-      if (t < 0) throw notFound(`Commit ${target}`);
-      return delay(b < 0 ? { ahead: null, behind: 1 } : b >= t ? { ahead: b - t, behind: 0 } : { ahead: 0, behind: t - b });
+      // Other branches' demo histories are unrelated to the default branch's: nothing in common.
+      return delay(b < 0 || t < 0 ? { ahead: null, behind: 1 } : b >= t ? { ahead: b - t, behind: 0 } : { ahead: 0, behind: t - b });
     },
 
     listDeployments(target, { since }) {
