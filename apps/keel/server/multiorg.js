@@ -13,6 +13,7 @@
 import { buildInsights } from './domain/insights.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildDelivery } from './domain/delivery.js';
+import { buildChangelog } from './domain/changelog.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow } from './domain/flow.js';
 import { byFlakiness } from './domain/tests.js';
@@ -328,7 +329,13 @@ export function createMultiService(entries) {
         days,
       });
     },
-    changelog: (body) => primary.service.changelog(body),
+    /** Release notes over every organization (keys carry the organization, since PR and work item numbers repeat). */
+    async changelog(body = {}) {
+      const parts = await each((s) => s.changelogData(body));
+      const prs = parts.flatMap(({ org, value }) => value.prs.map((p) => ({ ...p, key: `${org.key}/${p.key}`, org: org.key })));
+      const workItemsByPr = new Map(parts.flatMap(({ org, value }) => value.workItemsByPr.map(([k, list]) => [`${org.key}/${k}`, tagAll(org, list)])));
+      return buildChangelog({ prs, workItemsByPr, from: body.from, to: body.to, title: body.title });
+    },
 
     async settingsView() {
       const parts = await each((s) => s.settingsView());

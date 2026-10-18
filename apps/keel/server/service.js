@@ -1163,7 +1163,13 @@ export function createService({
       return buildInsights({ closedPrs: closed, activePrs: active, pipelines: pipes, days });
     },
 
-    async changelog({ from, to, repoIds, title }) {
+    async changelog(body) {
+      const { prs, workItemsByPr } = await this.changelogData(body);
+      return buildChangelog({ prs, workItemsByPr: new Map(workItemsByPr), from: body.from, to: body.to, title: body.title });
+    },
+
+    /** Merged pull requests in a date range and the work items each delivered (for several organizations, multiorg.js). */
+    async changelogData({ from, to, repoIds }) {
       const fromMs = Date.parse(from);
       const toMs = Date.parse(to) + DAY; // inclusive end date
       if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs >= toMs) {
@@ -1177,8 +1183,7 @@ export function createService({
       const idLists = await Promise.all(prs.map((p) => cached(`prwi:${p.key}`, () => provider.getPullRequestWorkItemIds(p.projectId, p.repoId, p.id).catch(() => []), 60 * MIN)));
       const items = await provider.getWorkItems([...new Set(idLists.flat())]);
       const byId = new Map(items.map((w) => [w.id, w]));
-      const workItemsByPr = new Map(prs.map((p, i) => [p.key, idLists[i].map((id) => byId.get(id)).filter(Boolean)]));
-      return buildChangelog({ prs, workItemsByPr, from, to, title });
+      return { prs, workItemsByPr: prs.map((p, i) => [p.key, idLists[i].map((id) => byId.get(id)).filter(Boolean)]) };
     },
 
     async settingsView() {

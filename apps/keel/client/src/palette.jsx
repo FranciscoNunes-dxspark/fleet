@@ -58,6 +58,7 @@ function pages(can, authMode) {
     p('/epics', t('Epics'), ['features', 'roadmap']),
     p('/prs', t('Pull requests'), ['reviews', 'code']),
     p('/commits', t('Commits'), ['history', 'git']),
+    p('/release-notes', t('Release notes'), ['changelog', 'what shipped']),
     p('/pipelines', t('Pipelines'), ['builds', 'ci']),
     p('/pipelines?tab=releases', `${t('Pipelines')} · ${t('Releases')}`, ['deploy', 'classic']),
     p('/production', t('Production'), ['monitors', 'uptime', 'health']),

@@ -1,4 +1,5 @@
 import { useApi, useApp } from '../context.js';
+import { downloadText } from './ReleaseNotes.jsx';
 import { age, dateTime } from '../format.js';
 import { Chip, ErrorBox, ExternalLink, Loading, TypeLabel } from '../ui.jsx';
 import { t } from '../i18n.js';
@@ -81,12 +82,30 @@ export function ChangeSections({ changes: data, org }) {
   );
 }
 
+const isBug = (w) => /bug|defect|issue/i.test(w.type);
+const isTask = (w) => /task/i.test(w.type);
+
+/** A deploy's release notes in Markdown, like the Release notes page but for exactly what this deploy shipped. */
+export function deployNotes(data) {
+  const { deploy, target } = data;
+  const items = data.workItems.filter((w) => !isTask(w));
+  const lines = [`# ${target.name} · ${deploy.label}`, '', `_${dateTime(deploy.at)} · ${t(data.pullRequests.length === 1 ? '{n} pull request' : '{n} pull requests', { n: data.pullRequests.length })} · ${t(data.commits.length === 1 ? '{n} commit' : '{n} commits', { n: data.commits.length })}_`, ''];
+  const section = (title, list) => list.length && lines.push(`## ${title}`, '', ...list, '');
+  section(t('Features and improvements'), items.filter((w) => !isBug(w)).map((w) => `- ${w.title} (AB#${w.id})`));
+  section(t('Bug fixes'), items.filter(isBug).map((w) => `- ${w.title} (AB#${w.id})`));
+  section(t('Pull requests'), data.pullRequests.map((p) => `- ${p.webUrl ? `[!${p.id}](${p.webUrl})` : `!${p.id}`} ${p.title}${p.author ? ` _(${p.author})_` : ''}`));
+  section(t('Commits without a pull request'), data.directCommits.map((c) => `- ${c.webUrl ? `[${c.id.slice(0, 8)}](${c.webUrl})` : c.id.slice(0, 8)} ${c.subject}${c.author?.name ? ` _(${c.author.name})_` : ''}`));
+  if (!data.commits.length) lines.push(t('Nothing new was shipped.'), '');
+  return `${lines.join('\n').trim()}\n`;
+}
+
 /**
  * What a production deploy shipped: the work items, pull requests and commits
  * since the environment's previous successful deploy. Opened from Production
  * (a deploy, or a "failures up since ..." warning) and from Insights.
  */
 export default function DeployDetail({ target }) {
+  const { toast } = useApp();
   const { data, error, reload } = useApi(`/deploys/${enc(target.projectId)}/changes?target=${enc(target.target)}&id=${enc(target.id)}`);
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 
@@ -116,6 +135,22 @@ export default function DeployDetail({ target }) {
       <ChangeSections changes={data} org={target.org} />
 
       <section className="detail-actions">
+        {!data.unknown && (
+          <>
+            <button type="button" className="btn btn-small" onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(deployNotes(data));
+                toast(t('Release notes copied as Markdown'));
+              } catch {
+                toast(t('Copy failed. Select the text and copy it yourself.'), 'bad');
+              }
+            }}
+            >
+              {t('Copy release notes')}
+            </button>
+            <button type="button" className="btn btn-small btn-ghost" onClick={() => downloadText(`${deploy.label}-release-notes.md`.replace(/[^\w.-]+/g, '-'), deployNotes(data))}>{t('Download .md')}</button>
+          </>
+        )}
         <ExternalLink href={deploy.webUrl} />
       </section>
     </div>

@@ -15,8 +15,9 @@ import palette from './pt/palette.js';
 import channels from './pt/channels.js';
 import assist from './pt/assist.js';
 import tests from './pt/tests.js';
+import notes from './pt/notes.js';
 
-export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow, ...palette, ...channels, ...assist, ...tests };
+export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow, ...palette, ...channels, ...assist, ...tests, ...notes };
 
 // Text the server sends: its templates are the only ones tx() matches against.
 export { server as serverText };

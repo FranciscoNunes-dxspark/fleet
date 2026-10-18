@@ -23,6 +23,7 @@ import Pipelines from './pages/Pipelines.jsx';
 import Production from './pages/Production.jsx';
 import Totals from './pages/Totals.jsx';
 import Shipping from './pages/Shipping.jsx';
+import ReleaseNotes from './pages/ReleaseNotes.jsx';
 import Team from './pages/Team.jsx';
 import Insights from './pages/Insights.jsx';
 import Settings from './pages/Settings.jsx';
@@ -322,7 +323,7 @@ function Shell() {
       { to: '/epics', label: t('Epics'), icon: 'epics' },
     ] },
     { label: t('Code and delivery'), items: [
-      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits'] },
+      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits', '/release-notes'] },
       { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
       { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals', '/ship'] },
     ] },
@@ -373,7 +374,7 @@ function Shell() {
                     <NavLink
                       to={n.to}
                       end={n.end}
-                      // Entries with tabs (Pull requests → Commits, Production → Waiting to ship and Platform totals) stay lit on every tab.
+                      // Entries with tabs (Pull requests → Commits and Release notes, Production → Waiting to ship and Platform totals) stay lit on every tab.
                       className={({ isActive }) => `nav-link${isActive || n.also?.some((p) => pathname.startsWith(p)) ? ' active' : ''}`}
                       title={tip(n.label)}
                       aria-label={collapsed ? n.label : undefined}
@@ -420,6 +421,7 @@ function Shell() {
           <Route path="/summary" element={<Summary />} />
           <Route path="/prs" element={<PullRequests />} />
           <Route path="/commits" element={<Commits />} />
+          <Route path="/release-notes" element={<ReleaseNotes />} />
           <Route path="/work" element={<WorkItems />} />
           <Route path="/board" element={<Board />} />
           <Route path="/sprint" element={<Navigate to="/board?mode=sprint" replace />} />
@@ -433,7 +435,7 @@ function Shell() {
           <Route path="/insights" element={<Insights />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />
-          {/* Release notes is hidden for now (pages/ReleaseNotes.jsx is kept); old links and unknown paths go home. */}
+          {/* Unknown paths go home. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
