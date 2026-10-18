@@ -14,9 +14,10 @@
   --tc-violet: #9085e9;
   --tc-red: #e66767;
   --tc-gray: #8b9099;
-  --bg: #161718;
-  --surface: #1e1f21;
-  --surface-2: #26282a;
+  --bg: #121314;
+  --sidebar: #17181a;
+  --surface: #1e1f22;
+  --surface-2: #27292c;
   --ink: #e9eaec;
   --ink-2: #b8bbc0;
   --muted: #8b8f96;
@@ -43,6 +44,13 @@
   --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-up: 0 -10px 18px -10px rgba(0, 0, 0, 0.6);
+  /* Depth: cards rest on the page (elev-1) and rise when they can be clicked (elev-2).
+     In dark mode a faint top edge catches the light, as raised things do. */
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --elev-1: var(--edge), 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.22);
+  --elev-2: var(--edge), 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 28px rgba(0, 0, 0, 0.34);
+  --card-border: #2a2c30;
+  --header-glass: rgba(18, 19, 20, 0.9);
   --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   color-scheme: dark;
@@ -62,7 +70,8 @@
   --tc-violet: #6250d6;
   --tc-red: #e34948;
   --tc-gray: #8a8f98;
-  --bg: #f4f5f6;
+  --bg: #eef0f3;
+  --sidebar: #f8f9fa;
   --surface: #ffffff;
   --surface-2: #edeff1;
   --ink: #1a1c1f;
@@ -87,6 +96,11 @@
   --shadow-pop: 0 8px 24px rgba(16, 24, 40, 0.14);
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.12);
   --shadow-up: 0 -8px 16px -10px rgba(16, 24, 40, 0.2);
+  --edge: inset 0 0 0 0 transparent;
+  --elev-1: 0 1px 2px rgba(16, 24, 40, 0.06), 0 2px 8px rgba(16, 24, 40, 0.05);
+  --elev-2: 0 2px 4px rgba(16, 24, 40, 0.08), 0 12px 28px rgba(16, 24, 40, 0.11);
+  --card-border: #e1e4e8;
+  --header-glass: rgba(238, 240, 243, 0.92);
   color-scheme: light;
 }
 :root[data-accent='blue'] { --accent: #5b9cf5; --accent-soft: #1a2740; --accent-ink: #93bdf9; --on-accent: #0b1526; }
@@ -1195,3 +1209,104 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .saved-view-x { padding: 3px 9px 3px 5px; color: var(--muted) !important; }
 .saved-view-x:hover { color: var(--bad) !important; }
 .saved-view-form .input { width: 200px; }
+
+/* ===================================================================== depth
+   Three planes: the page (darkest), the sidebar, and cards that rest on the
+   page with a soft shadow. Things you can click rise a little on hover. */
+.sidebar { background: var(--sidebar); }
+.nav-link.active { box-shadow: inset 3px 0 var(--accent); }
+.panel, .widget, .table-wrap, .chart, .fact-row, .commit-list, .card {
+  border-color: var(--card-border);
+  box-shadow: var(--elev-1);
+}
+.card-blocked { box-shadow: inset 3px 0 var(--bad), var(--elev-1); }
+.card { transition: box-shadow 0.12s ease-out, transform 0.12s ease-out, border-color 0.12s; }
+.card:hover { box-shadow: var(--elev-2); transform: translateY(-1px); border-color: var(--line-strong); }
+.card-blocked:hover { box-shadow: inset 3px 0 var(--bad), var(--elev-2); }
+.card-moving, .card-moving:hover { transform: none; }
+.btn:not(.btn-ghost) { box-shadow: var(--shadow-sm); transition: border-color 0.12s, background 0.12s, transform 0.08s; }
+.btn:not(.btn-ghost):active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
+.table tbody tr { transition: background 0.1s; }
+/* Rows in a list that open something lift out of the list a touch. */
+.commit-row, .deploy-row { transition: background 0.1s, box-shadow 0.12s; }
+.commit-row:hover { box-shadow: inset 3px 0 var(--accent); }
+
+/* Status washes: a card's state reads from across the room, not only from its edge. */
+.monitor-up { background-image: linear-gradient(to bottom, var(--ok-soft), var(--surface) 120px); }
+.monitor-degraded { background-image: linear-gradient(to bottom, var(--warn-soft), var(--surface) 140px); }
+.monitor-down { background-image: linear-gradient(to bottom, var(--bad-soft), var(--surface) 160px); }
+.monitor-deploying { background-image: linear-gradient(to bottom, var(--info-soft), var(--surface) 120px); }
+
+/* People get their own steady colour (hue from ui.jsx); groups and "unassigned" stay neutral. */
+.avatar-hued { background: hsl(var(--av-h) 42% 25%); color: hsl(var(--av-h) 75% 84%); }
+:root[data-mode='light'] .avatar-hued { background: hsl(var(--av-h) 72% 91%); color: hsl(var(--av-h) 55% 28%); }
+
+
+/* Key figures: bigger, each with a mark in its tone. */
+.stat-row { gap: 10px 20px; }
+.stat { padding: 2px 10px 2px 11px; border-left: 3px solid var(--line-strong); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; transition: background 0.1s; }
+a.stat:hover { background: var(--surface-2); text-decoration: none; }
+.stat-value { font-size: 28px; letter-spacing: -0.02em; }
+.stat-ok { border-left-color: var(--ok); }
+.stat-warn { border-left-color: var(--warn); }
+.stat-bad { border-left-color: var(--bad); }
+.stat-accent { border-left-color: var(--accent); }
+.stat-info { border-left-color: var(--info); }
+.fact dd:nth-of-type(1) { font-size: 26px; letter-spacing: -0.02em; }
+
+/* Chart fills: bars fade towards their base, lines carry a soft area. */
+.fade-bars .fade-top { stop-color: var(--accent); stop-opacity: 1; }
+.fade-bars .fade-bottom { stop-color: var(--accent); stop-opacity: 0.5; }
+.fade-area .fade-top { stop-color: var(--accent); stop-opacity: 0.28; }
+.fade-area .fade-bottom { stop-color: var(--accent); stop-opacity: 0; }
+.chart-svg .area { stroke: none; }
+.chart-svg .grid { stroke-opacity: 0.6; }
+.barlist-bar { background: linear-gradient(90deg, var(--accent), var(--accent-ink)); }
+.text-info { color: var(--info); }
+
+/* Dashboard: the greeting and today's three numbers, on a soft accent wash. */
+.hero {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 16px 28px; align-items: center;
+  margin: 0 0 18px; padding: 20px 24px; border: 1px solid var(--card-border); border-radius: 12px;
+  background: linear-gradient(120deg, var(--accent-soft), var(--surface) 62%); box-shadow: var(--elev-1);
+}
+.hero h1 { font-size: 26px; line-height: 1.2; letter-spacing: -0.02em; }
+.hero-figures { display: flex; gap: 8px; }
+.hero-figure {
+  display: grid; gap: 2px; min-width: 104px; padding: 10px 14px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--card-border); color: var(--ink); text-decoration: none;
+  box-shadow: var(--shadow-sm); transition: box-shadow 0.12s, transform 0.12s;
+}
+.hero-figure:hover { text-decoration: none; box-shadow: var(--elev-2); transform: translateY(-1px); }
+.hero-n { font-size: 30px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.hero-label { font-size: 12.5px; color: var(--muted); }
+.hero-bad .hero-n { color: var(--bad); }
+.hero-accent .hero-n { color: var(--accent-ink); }
+.hero-bad { box-shadow: inset 0 3px var(--bad), var(--shadow-sm); }
+.hero-accent { box-shadow: inset 0 3px var(--accent), var(--shadow-sm); }
+@media (max-width: 1000px) {
+  .hero { grid-template-columns: minmax(0, 1fr) auto; }
+  .hero-figures { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 560px) {
+  .hero { padding: 16px; }
+  .hero-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .hero-figure { min-width: 0; padding: 8px 10px; }
+  .hero-n { font-size: 24px; }
+}
+.hero-bad:hover { box-shadow: inset 0 3px var(--bad), var(--elev-2); }
+.hero-accent:hover { box-shadow: inset 0 3px var(--accent), var(--elev-2); }
+
+/* The page header pins to the top while you scroll, on a frosted backdrop. */
+.page-header-marker { height: 0; }
+.page-header {
+  position: sticky; top: 0; z-index: 6;
+  margin: -14px -32px 6px; padding: 14px 32px 12px;
+  background: var(--header-glass); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
+  border-bottom: 1px solid transparent; transition: padding 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+/* Same size pinned or not (no jump); pinned, it gets a hairline and a shadow. */
+.page-header-stuck { border-bottom-color: var(--line); box-shadow: 0 8px 18px -14px rgba(0, 0, 0, 0.5); }
+@media (max-width: 860px) {
+  .page-header { margin: -10px -16px 4px; padding: 10px 16px; }
+}

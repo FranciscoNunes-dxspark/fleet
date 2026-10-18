@@ -461,4 +461,6 @@ export default {
   'Menu': 'Menu',
   'Code': 'Código',
   'Monitors': 'Monitores',
+  // Dashboard band
+  'production issues': 'problemas em produção',
 };

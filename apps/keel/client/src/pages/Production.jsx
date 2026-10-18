@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
-import { useWidth } from '../charts.jsx';
+import { Fade, useWidth } from '../charts.jsx';
 import { Chip, Empty, ErrorBox, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
 import { t, tj, tx } from '../i18n.js';
 import { deployStatus } from './DeployDetail.jsx';
@@ -207,16 +207,29 @@ function TimeChart({ title, points, markers, format, limit, bars = false }) {
   const y = (v) => pad.t + (1 - v / max) * (H - pad.t - pad.b);
 
   let path = '';
+  // The shaded area under the line: one closed shape per unbroken run of readings.
+  let area = '';
+  const fade = `area${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   if (!bars) {
+    let run = [];
+    const close = () => {
+      if (run.length > 1) area += `M${run[0][0]},${y(0).toFixed(1)}${run.map(([px, py]) => `L${px},${py}`).join('')}L${run.at(-1)[0]},${y(0).toFixed(1)}Z`;
+      run = [];
+    };
     let pen = false;
     for (const p of points) {
       if (p.value == null) {
         pen = false;
+        close();
         continue;
       }
-      path += `${pen ? 'L' : 'M'}${x(p.at).toFixed(1)},${y(p.value).toFixed(1)}`;
+      const px = x(p.at).toFixed(1);
+      const py = y(p.value).toFixed(1);
+      path += `${pen ? 'L' : 'M'}${px},${py}`;
+      run.push([px, py]);
       pen = true;
     }
+    close();
   }
   const barW = Math.max(2, ((W - pad.l - pad.r) / Math.max(points.length, 1)) - 2);
 
@@ -242,7 +255,7 @@ function TimeChart({ title, points, markers, format, limit, bars = false }) {
           {limit && <line x1={pad.l} x2={W - pad.r} y1={y(limit)} y2={y(limit)} className="limit-line" />}
           {bars
             ? points.map((p) => p.value > 0 && <rect key={p.at} x={x(p.at) - barW / 2} y={y(p.value)} width={barW} height={Math.max(1, y(0) - y(p.value))} rx="2" className={p.value >= 0.05 ? 'bar bar-bad' : 'bar'} />)
-            : <path d={path} className="line" />}
+            : <><Fade id={fade} className="fade fade-area" /><path d={area} className="area" style={{ fill: `url(#${fade})` }} /><path d={path} className="line" /></>}
           {points.filter((p) => p.failed).map((p) => <rect key={`f${p.at}`} x={x(p.at) - 1.5} y={y(0) - 8} width="3" height="8" className="fail-tick" />)}
           {markers.map((d) => (
             <g key={`${d.label}${d.at}`}>

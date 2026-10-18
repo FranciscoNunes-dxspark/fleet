@@ -19,12 +19,26 @@ export function Logo({ size = 28 }) {
   );
 }
 
+/** A steady hue (0–359) for a person, from their email or name, so they look the same everywhere. */
+export function hueOf(person) {
+  const key = String(person?.uniqueName || person?.displayName || person?.id || '').toLowerCase();
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
+}
+
 export function Avatar({ person, size = 24, vote, title }) {
   if (!person) return <span className="avatar avatar-empty" style={{ width: size, height: size }} title={t('Unassigned')}>–</span>;
   const v = vote !== undefined && vote !== null ? VOTES[vote] : null;
   const label = title || `${person.displayName}${v ? ` — ${v.label}` : ''}`;
+  const hued = !person.isContainer;
   return (
-    <span className={`avatar ${person.isContainer ? 'avatar-group' : ''} ${v ? `vote-${v.tone}` : ''}`} style={{ width: size, height: size, fontSize: size * 0.4 }} title={label} aria-label={label}>
+    <span
+      className={`avatar ${person.isContainer ? 'avatar-group' : 'avatar-hued'} ${v ? `vote-${v.tone}` : ''}`}
+      style={{ width: size, height: size, fontSize: size * 0.4, ...(hued ? { '--av-h': hueOf(person) } : {}) }}
+      title={label}
+      aria-label={label}
+    >
       {person.isContainer ? 'G' : initials(person.displayName)}
       {v?.glyph && <span className="vote-badge" aria-hidden="true">{v.glyph}</span>}
     </span>
@@ -83,15 +97,31 @@ export function Empty({ title, children }) {
   );
 }
 
+/**
+ * The page title and its actions. It stays pinned at the top as you scroll,
+ * on a frosted backdrop; once it's pinned (the marker before it has scrolled
+ * away) it gets a hairline and a shadow.
+ */
 export function PageHeader({ title, sub, children }) {
+  const marker = useRef(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    if (!marker.current || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver(([e]) => setStuck(!e.isIntersecting));
+    io.observe(marker.current);
+    return () => io.disconnect();
+  }, []);
   return (
-    <header className="page-header">
-      <div>
-        <h1>{title}</h1>
-        {sub && <p className="page-sub">{sub}</p>}
-      </div>
-      {children && <div className="page-actions">{children}</div>}
-    </header>
+    <>
+      <div ref={marker} className="page-header-marker" aria-hidden="true" />
+      <header className={`page-header${stuck ? ' page-header-stuck' : ''}`}>
+        <div>
+          <h1>{title}</h1>
+          {sub && <p className="page-sub">{sub}</p>}
+        </div>
+        {children && <div className="page-actions">{children}</div>}
+      </header>
+    </>
   );
 }
 
