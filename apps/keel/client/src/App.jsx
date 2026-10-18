@@ -326,10 +326,23 @@ function useStableHeight(ref, refreshKey) {
 
 function Shell() {
   const [collapsed, setCollapsed] = useSticky('sidebar.collapsed', false);
-  // Phones: the menu opens as a panel from the Menu button and closes when you go somewhere.
+  // Phones: a tab bar at the bottom, whose More tab opens the whole menu as a sheet; it closes when you go somewhere.
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname, search } = useLocation();
   useEffect(() => setMenuOpen(false), [pathname, search]);
+  const menuRef = useRef(null);
+  const moreRef = useRef(null);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setMenuOpen(false);
+      moreRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    menuRef.current?.focus({ preventScroll: true });
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
   const { meta, refresh, toast, refreshKey, authMode, signOut, can } = useApp();
   const mainRef = useRef(null);
   useStableHeight(mainRef, refreshKey);
@@ -378,8 +391,22 @@ function Shell() {
     ] },
   ];
 
-  // Collapsed: icons only, names on hover (desktop; phones keep the menu row).
+  // Collapsed: icons only, names on hover (desktop; phones have the tab bar instead).
   const tip = (label) => (collapsed ? label : undefined);
+  const lit = (n) => pathname === n.to || (!n.end && pathname.startsWith(`${n.to}/`)) || !!n.also?.some((p) => pathname.startsWith(p));
+
+  // The phone tab bar: the four places you check most, with shorter names, then More.
+  const items = nav.flatMap((g) => g.items);
+  const tabs = [['/', t('Home')], ['/inbox', t('Inbox')], ['/prs', t('PRs')], ['/production', t('Production')]]
+    .map(([to, short]) => ({ ...items.find((n) => n.to === to), short }));
+  // More carries the counts of what's only in the menu (approvals and failing pipelines).
+  const rest = items.filter((n) => !tabs.some((x) => x.to === n.to));
+  const moreCount = rest.reduce((sum, n) => sum + (n.count || 0), 0);
+  const moreTone = rest.some((n) => n.count > 0 && n.tone === 'bad') ? 'bad' : 'accent';
+  const moreLit = menuOpen || !tabs.some(lit);
+  const badge = (count, tone) => count > 0 && (
+    <span className={`nav-count nav-count-${tone}`} title={t(count === 1 ? '{n} needs attention' : '{n} need attention', { n: count })}>{count}</span>
+  );
 
   return (
     <div className={`shell${collapsed ? ' shell-collapsed' : ''}${menuOpen ? ' menu-open' : ''}`}>
@@ -401,47 +428,50 @@ function Shell() {
             <div className="brand-org truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>{meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\//, '')}</div>
           </div>
         </div>
-        <button type="button" className="btn btn-small menu-btn" aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
-          <Icon name={menuOpen ? 'close' : 'menu'} size={14} /> {menuOpen ? t('Close') : t('Menu')}
-          {!menuOpen && s?.high > 0 && <span className="nav-count nav-count-bad">{s.high}</span>}
-        </button>
         <button type="button" className="search-btn" onClick={() => window.dispatchEvent(new Event('keel:palette'))} title={tip(t('Search (Ctrl+K)'))} aria-label={t('Search (Ctrl+K)')}>
           <Icon name="search" /><span className="nav-text">{t('Search')}</span><kbd className="nav-text">{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>
         </button>
-        <div className="nav-groups" id="main-menu">
-          {nav.map((group, i) => (
-            <div key={group.label || i} className="nav-group">
-              {group.label && <div className="nav-group-label" id={`nav-group-${i}`}>{group.label}</div>}
-              <ul className="nav" aria-labelledby={group.label ? `nav-group-${i}` : undefined}>
-                {group.items.map((n) => (
-                  <li key={n.to}>
-                    <NavLink
-                      to={n.to}
-                      end={n.end}
-                      // Entries with tabs (Pull requests → Commits and Release notes, Production → Waiting to ship and Platform totals) stay lit on every tab.
-                      className={({ isActive }) => `nav-link${isActive || n.also?.some((p) => pathname.startsWith(p)) ? ' active' : ''}`}
-                      title={tip(n.label)}
-                      aria-label={collapsed ? n.label : undefined}
-                    >
-                      <span className="nav-label"><Icon name={n.icon} /><span className="nav-text">{n.label}</span></span>
-                      {n.count > 0 && <span className={`nav-count nav-count-${n.tone}`} title={t(n.count === 1 ? '{n} needs attention' : '{n} need attention', { n: n.count })}>{n.count}</span>}
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
+        {/* Desktop: just the sidebar's contents. Phones: the sheet More opens. */}
+        <div className="sidebar-menu" id="main-menu" ref={menuRef} tabIndex={-1} role={menuOpen ? 'dialog' : undefined} aria-modal={menuOpen || undefined} aria-label={menuOpen ? t('Menu') : undefined}>
+          <div className="sheet-head">
+            <strong>{t('Menu')}</strong>
+            <button type="button" className="drawer-close" onClick={() => setMenuOpen(false)} aria-label={t('Close')}>✕</button>
+          </div>
+          <div className="nav-groups">
+            {nav.map((group, i) => (
+              <div key={group.label || i} className="nav-group">
+                {group.label && <div className="nav-group-label" id={`nav-group-${i}`}>{group.label}</div>}
+                <ul className="nav" aria-labelledby={group.label ? `nav-group-${i}` : undefined}>
+                  {group.items.map((n) => (
+                    <li key={n.to}>
+                      <NavLink
+                        to={n.to}
+                        end={n.end}
+                        // Entries with tabs (Pull requests → Commits and Release notes, Production → Waiting to ship and Platform totals) stay lit on every tab.
+                        className={({ isActive }) => `nav-link${isActive || n.also?.some((p) => pathname.startsWith(p)) ? ' active' : ''}`}
+                        title={tip(n.label)}
+                        aria-label={collapsed ? n.label : undefined}
+                      >
+                        <span className="nav-label"><Icon name={n.icon} /><span className="nav-text">{n.label}</span></span>
+                        {badge(n.count, n.tone)}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="sidebar-foot">
+            <NavLink to="/settings" className="nav-link" title={tip(t('Settings'))} aria-label={collapsed ? t('Settings') : undefined}><span className="nav-label"><Icon name="settings" /><span className="nav-text">{t('Settings')}</span></span></NavLink>
+            <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning} title={tip(t('Refresh from Azure DevOps'))} aria-label={collapsed ? t('Refresh from Azure DevOps') : undefined}>
+              <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> <span className="nav-text">{t('Refresh from Azure DevOps')}</span>
+            </button>
+            <LiveStatus />
+            {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut} title={tip(t('Sign out'))} aria-label={collapsed ? t('Sign out') : undefined}><Icon name="signOut" size={14} /> <span className="nav-text">{t('Sign out')}</span></button>}
+            <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
+              {t('Signed in as {name}', { name: meta.account?.name || meta.me.displayName })}
+              {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
             </div>
-          ))}
-        </div>
-        <div className="sidebar-foot">
-          <NavLink to="/settings" className="nav-link" title={tip(t('Settings'))} aria-label={collapsed ? t('Settings') : undefined}><span className="nav-label"><Icon name="settings" /><span className="nav-text">{t('Settings')}</span></span></NavLink>
-          <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning} title={tip(t('Refresh from Azure DevOps'))} aria-label={collapsed ? t('Refresh from Azure DevOps') : undefined}>
-            <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> <span className="nav-text">{t('Refresh from Azure DevOps')}</span>
-          </button>
-          <LiveStatus />
-          {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut} title={tip(t('Sign out'))} aria-label={collapsed ? t('Sign out') : undefined}><Icon name="signOut" size={14} /> <span className="nav-text">{t('Sign out')}</span></button>}
-          <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
-            {t('Signed in as {name}', { name: meta.account?.name || meta.me.displayName })}
-            {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
           </div>
         </div>
       </nav>
@@ -483,6 +513,19 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      {menuOpen && <div className="menu-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
+      <nav className="tabbar" aria-label={t('Shortcuts')}>
+        {tabs.map((n) => (
+          <NavLink key={n.to} to={n.to} end={n.end} className={() => `tab${lit(n) && !menuOpen ? ' active' : ''}`} aria-label={n.label} onClick={() => setMenuOpen(false)}>
+            <span className="tab-icon"><Icon name={n.icon} />{badge(n.count, n.tone)}</span>
+            <span className="tab-label" aria-hidden="true">{n.short}</span>
+          </NavLink>
+        ))}
+        <button type="button" ref={moreRef} className={`tab${moreLit ? ' active' : ''}`} aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
+          <span className="tab-icon"><Icon name={menuOpen ? 'close' : 'menu'} />{!menuOpen && badge(moreCount, moreTone)}</span>
+          <span className="tab-label">{t('More')}</span>
+        </button>
+      </nav>
     </div>
   );
 }

@@ -25,6 +25,10 @@ export default {
   'Insights': 'Indicadores',
   'Users': 'Utilizadores',
   'Main': 'Principal',
+  // The phone tab bar
+  'Shortcuts': 'Atalhos',
+  'Home': 'Início',
+  'More': 'Mais',
   '{n} needs attention': '{n} precisa de atenção',
   '{n} need attention': '{n} precisam de atenção',
   'Settings': 'Definições',
