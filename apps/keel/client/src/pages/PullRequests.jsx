@@ -5,6 +5,7 @@ import { age, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle, useSort } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
+import { SavedViews } from '../views.jsx';
 
 export default function PullRequests() {
   const { data, error, reload } = useApi('/prs');
@@ -60,6 +61,20 @@ export default function PullRequests() {
     stale: data.prs.filter((p) => !p.isDraft && p.ageHours >= staleHours).length,
   };
   const flag = (k) => (v) => setFlags((f) => ({ ...f, [k]: v }));
+  // Saved views and shared links (views.jsx): everything the filters below set.
+  const filters = { q, project, repo, author, reviewer, flags };
+  const applyFilters = (f) => {
+    setQ(f.q || '');
+    setProject(f.project || '');
+    setRepo(f.repo || '');
+    const next = new URLSearchParams(params);
+    for (const k of ['author', 'reviewer']) {
+      if (f[k]) next.set(k, f[k]);
+      else next.delete(k);
+    }
+    setParams(next, { replace: true });
+    setFlags({ mine: false, myReview: false, conflicts: false, stale: false, hideDrafts: false, ...(f.flags || {}) });
+  };
   const authorName = data.people.find((p) => p.id === author)?.displayName || data.prs.find((p) => p.author?.id === author)?.author?.displayName;
   const reviewerName = data.people.find((p) => p.id === reviewer)?.displayName;
 
@@ -94,6 +109,7 @@ export default function PullRequests() {
         <Toggle checked={flags.hideDrafts} onChange={flag('hideDrafts')}>{t('Hide drafts')}</Toggle>
         {reviewer && <button type="button" className="toggle on" onClick={() => setParam('reviewer', '')}>{reviewerName ? t('Pending review by {name}', { name: reviewerName }) : t('Pending review by someone')} ✕</button>}
       </div>
+      <SavedViews page="prs" filters={filters} apply={applyFilters} />
 
       {!rows.length ? (
         <Empty title={t('No pull requests match.')}>{t('Clear a filter to see more.')}</Empty>

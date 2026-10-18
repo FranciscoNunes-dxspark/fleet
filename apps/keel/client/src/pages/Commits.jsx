@@ -6,6 +6,7 @@ import { dateTime } from '../format.js';
 import { CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person } from '../ui.jsx';
 import { locale, t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
+import { SavedViews } from '../views.jsx';
 
 const PERIODS = [1, 7, 14, 30, 90];
 const SHOW_MAX = 500;
@@ -90,6 +91,16 @@ export default function Commits() {
   const repos = repoList.filter((r) => r.defaultBranch && (!project || r.projectId === project));
   const people = new Set(rows.map((c) => (c.author?.email || c.author?.name || '').toLowerCase())).size;
   const activeRepos = new Set(rows.map((c) => c.repoId)).size;
+  // Saved views and shared links (views.jsx).
+  const filters = { project, repo, branch, author, q, days: days === 14 ? '' : days };
+  const applyFilters = (f) => {
+    setProject(f.project || '');
+    setRepo(f.repo || '');
+    setBranch(f.branch || '');
+    setAuthor(f.author || '');
+    setQ(f.q || '');
+    setDays(PERIODS.includes(Number(f.days)) ? Number(f.days) : 14);
+  };
   const open = (c) => openDrawer({ type: 'commit', projectId: c.projectId, repoId: c.repoId, id: c.id, org: c.org, projectName: c.projectName, repoName: c.repoName });
   const stop = (fn) => (e) => {
     e.stopPropagation();
@@ -129,6 +140,7 @@ export default function Commits() {
           {PERIODS.map((n) => <option key={n} value={n}>{n === 1 ? t('Last 24 hours') : t('Last {n} days', { n })}</option>)}
         </select>
       </div>
+      <SavedViews page="commits" filters={filters} apply={applyFilters} />
 
       {data.failed?.length > 0 && (
         <p className="small text-warn">{t("Couldn't read {names}.", { names: data.failed.map((f) => f.repoName).join(', ') })}</p>

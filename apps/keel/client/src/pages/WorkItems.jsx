@@ -7,6 +7,7 @@ import { Chip, Empty, ErrorBox, Loading, PageHeader, Th, useSort, TypeLabel } fr
 import { t } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
+import { SavedViews } from '../views.jsx';
 
 const DAY = 86_400_000;
 
@@ -69,6 +70,20 @@ export default function WorkItems() {
     setParams(next, { replace: true });
   };
 
+  // Saved views and shared links (views.jsx).
+  const filters = { view: view === 'open' ? '' : view, assignee, project, type, q };
+  const applyFilters = (f) => {
+    const next = new URLSearchParams(params);
+    for (const k of ['view', 'assignee']) {
+      if (f[k]) next.set(k, f[k]);
+      else next.delete(k);
+    }
+    setParams(next, { replace: true });
+    setProject(f.project || '');
+    setType(f.type || '');
+    setQ(f.q || '');
+  };
+
   const update = async (w, changes, msg) => {
     setSaving(w.id);
     try {
@@ -114,6 +129,7 @@ export default function WorkItems() {
           {data.people.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
         </select>
       </div>
+      <SavedViews page="work" filters={filters} apply={applyFilters} />
 
       {!rows.length ? (
         <Empty title={t('No work items match.')}>{t('Try another view or clear the filters.')}</Empty>

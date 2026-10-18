@@ -156,7 +156,7 @@ Everyone can see everything. Roles only limit what a person can change, and the 
 - **Inviting people:** **Users → Invite someone** creates a link for an email address and role. Keel doesn't send email, so copy the link and send it yourself. It works once and expires in 7 days. The person picks their name and password, then links their token.
 - **Forgotten passwords:** on **Users**, choose **Reset password** to get a new link. Using it signs that person out everywhere.
 - **Managing access:** change a role, disable an account (signs it out at once) or remove it. There's always at least one active Admin.
-- **Synced settings:** projects, teams, inbox snoozes, theme, notification choices and the dashboard layout belong to the account, so they follow you to any device.
+- **Synced settings:** projects, teams, inbox snoozes, theme, notification choices, the dashboard layout and saved views belong to the account, so they follow you to any device.
 
 ### What's stored where
 
@@ -250,6 +250,8 @@ Teammates create their own token from the "How to create a token" steps shown af
 **Language:** English or Português (Portugal), in the same place. It follows your account like the theme; the first visit uses the browser's language. Text from Azure DevOps (titles, names, states, board columns) is shown as it is there. Translations live in `client/src/locales/pt/`, keyed by the English text; text the server sends is matched by templates in `server.js` there.
 
 **Remembered choices:** the board's project and team, list filters, tabs and toggles stay as you left them when you move between pages or reload (per browser).
+
+**Saved views:** on Pull requests, Commits and Work items, **Save view** keeps the current filters under a name ("Stale in Commerce"), shown as a chip above the list. Views follow your account like the theme. **Copy link** gives an address that opens the page with those filters, to send to someone.
 
 ## How it works
 
