@@ -185,6 +185,8 @@ export default {
   'No tracked repos in this project': 'Nenhum repositório acompanhado neste projeto',
   'Local folder for {repo}': 'Pasta local de {repo}',
   'Save': 'Guardar',
+  "You're offline": 'Está offline',
+  'Keel will connect again when you are back online.': 'O Keel volta a ligar-se quando voltar a ter ligação.',
   'Request failed ({status})': 'O pedido falhou ({status})',
   'Local folder': 'Pasta local',
   'Change': 'Alterar',

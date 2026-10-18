@@ -158,6 +158,32 @@ function Console({ authMode, onSignedOut }) {
     else if (target.type === 'production') navigate('/production');
   }, [navigate]);
 
+  // A tapped push notification (public/sw.js) leads to a page, with ?open= naming the PR or work item to show.
+  const { pathname: here, search: query } = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(query);
+    const raw = params.get('open');
+    if (!raw) return;
+    params.delete('open');
+    navigate({ pathname: here, search: params.toString() ? `?${params}` : '' }, { replace: true });
+    try {
+      const target = JSON.parse(raw);
+      // Only plain values: it came from a link.
+      if (target && typeof target === 'object') openTarget(Object.fromEntries(Object.entries(target).filter(([, v]) => ['string', 'number'].includes(typeof v))));
+    } catch {
+      // Not a target: just the page.
+    }
+  }, [here, query, navigate, openTarget]);
+  // With Keel already open, the service worker asks it to go there instead of opening another window.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined;
+    const onMessage = (e) => {
+      if (e.data?.type === 'keel:open' && typeof e.data.path === 'string' && e.data.path.startsWith('/') && !e.data.path.startsWith('//')) navigate(e.data.path);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [navigate]);
+
   // Live updates: the server polls Azure DevOps and tells us when to refetch,
   // and what happened that's worth a notification.
   useEffect(() => {
@@ -216,12 +242,30 @@ function Console({ authMode, onSignedOut }) {
     }
   }, [onSignedOut]);
 
+  // Back online after starting without a connection: try again.
+  useEffect(() => {
+    const retry = () => {
+      if (!meta) loadMeta();
+    };
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [meta, loadMeta]);
+
   // What this person's role allows (the server enforces the same rules).
   const can = useCallback((perm) => !meta || (meta.permissions || []).includes(perm), [meta]);
 
   const ctx = useMemo(() => ({ meta, refreshKey, refresh: bump, openDrawer: setDrawer, openTarget, toast, live, authMode, signOut, can }), [meta, refreshKey, bump, toast, live, openTarget, authMode, signOut, can]);
 
   if (metaError && !meta) {
+    // The installed app opened with no connection: say so, and connect when it's back (below).
+    if (navigator.onLine === false) {
+      return (
+        <div className="boot">
+          <p>{t("You're offline")}</p>
+          <p className="muted">{t('Keel will connect again when you are back online.')}</p>
+        </div>
+      );
+    }
     return (
       <div className="boot">
         <ErrorBox error={metaError} onRetry={loadMeta} />
