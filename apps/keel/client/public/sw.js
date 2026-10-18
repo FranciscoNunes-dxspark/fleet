@@ -2,8 +2,8 @@
 // shows push notifications (server/push.js) when Keel isn't open.
 // Only the app itself is cached (the page and its hashed /assets files);
 // Azure DevOps data from /api never is, so nothing private is stored here.
-const CACHE = 'keel-shell-v1';
-const SHELL = ['/', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CACHE = 'keel-shell-v2';
+const SHELL = ['/', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/badge-96.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -51,7 +51,9 @@ self.addEventListener('push', (event) => {
     tag: data.tag || undefined,
     renotify: !!data.tag && !!data.urgent,
     icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    // Android draws the badge from its alpha channel only, so it must be a white glyph on
+    // transparency: an opaque icon shows up as a solid white square.
+    badge: '/icons/badge-96.png',
     data: { url: data.url || '/' },
   }));
 });
