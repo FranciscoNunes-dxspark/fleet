@@ -8,10 +8,13 @@ import '@fontsource/ibm-plex-mono/400.css';
 import './styles.css';
 import App from './App.jsx';
 import { applyTheme, watchSystemTheme } from './theme.js';
+import { registerServiceWorker } from './pwa.js';
 
 // Before the first render, so the saved theme shows without a flash.
 applyTheme();
 watchSystemTheme();
+// Installable app and push notifications (public/sw.js).
+registerServiceWorker();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

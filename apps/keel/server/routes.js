@@ -8,9 +8,10 @@ const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
 
 /**
  * API routes; `req.ctx` is the signed-in user's { service, watcher } (see index.js).
- * `channels` posts to Teams and Slack (channels.js), shared by the server.
+ * `channels` posts to Teams and Slack (channels.js), shared by the server;
+ * `push` sends notifications to people's devices (push.js).
  */
-export function apiRouter({ channels = null } = {}) {
+export function apiRouter({ channels = null, push = null } = {}) {
   const orgs = createOrgStore(); // reads data/orgs.json, shared with sign-in and other processes
   const typeColors = createTypeColorStore(); // data/type-colors.json, the same for everyone
   const r = express.Router();
@@ -174,6 +175,17 @@ export function apiRouter({ channels = null } = {}) {
   r.get('/production/totals', (req, res) => res.json(req.ctx.service.monitors().totals()));
   r.get('/production/totals/:id', (req, res) => res.json(req.ctx.service.monitors().totalsFor(req.params.id)));
   r.post('/production/totals/:id/fetch', need('monitors.manage'), (req, res) => res.status(202).json(req.ctx.service.monitors().fetchTotalsNow(req.params.id)));
+  // Push notifications on your own devices: anyone can turn them on for themselves.
+  const pushOrFail = () => {
+    if (!push) throw Object.assign(new Error('Push notifications are not available on this server'), { status: 404 });
+    return push;
+  };
+  const userId = (req) => req.ctx.user?.id || null;
+  r.get('/push', (req, res) => res.json(pushOrFail().info(userId(req))));
+  r.post('/push/subscribe', (req, res) => res.json(pushOrFail().subscribe(userId(req), req.body || {})));
+  r.post('/push/unsubscribe', (req, res) => res.json(pushOrFail().unsubscribe(userId(req), req.body || {})));
+  r.post('/push/test', async (req, res) => res.json(await pushOrFail().test(userId(req), req.body || {})));
+
   // Teams and Slack channels: Admins set them up; posts run on the server whether or not anyone is looking.
   const channelsOrFail = () => {
     if (!channels) throw Object.assign(new Error('Posting to channels is not available on this server'), { status: 404 });

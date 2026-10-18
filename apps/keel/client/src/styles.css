@@ -757,6 +757,11 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .notify-grid { display: grid; gap: 8px; margin: 10px 0 14px; }
 .notify-h { margin: 6px 0 8px; color: var(--ink-2); }
 .notify-cats { display: grid; gap: 6px; margin-bottom: 12px; }
+.push-settings { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.push-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+.push-devices { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.push-devices li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.push-install { margin: 12px 0 0; }
 
 /* ----------------------------------------------------- configured boards */
 .kanban { --cols: 4; overflow-x: auto; padding-bottom: 6px; }

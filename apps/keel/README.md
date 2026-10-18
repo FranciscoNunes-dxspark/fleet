@@ -97,6 +97,20 @@ You get a notification when:
 
 Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Keel`.
 
+### Install as an app, with push notifications
+
+Keel can be installed on a phone or computer like an app, with its own icon, opening full screen:
+- **Android, Chrome or Edge:** **Install Keel as an app** in **Settings → Notifications**, or "Install app" / "Add to Home screen" in the browser menu.
+- **iPhone and iPad (iOS 16.4 or later):** in Safari, tap **Share → Add to Home Screen**, then open Keel from the Home Screen.
+
+**Push notifications** reach that device even when Keel is closed. Turn them on per device with **Turn on push on this device** in **Settings → Notifications**. They cover the same events as the console's notifications, in the kinds you chose there. On iPhone and iPad they only work in the installed app.
+- **How often:** the server checks every two minutes, as you, for everyone with a device turned on. Each event is sent once. Tapping a notification opens the page it's about, with the pull request or work item already open.
+- **Devices:** each one is listed with a **Remove** button, and **Send a test** checks one is working. A device whose subscription has expired is removed by itself.
+- **Requirements:** push needs Keel served over https (or `localhost`).
+- **Push services:** Keel sends only to the browsers' push services (Google, Apple, Mozilla and Microsoft), so a device can't make the server call any other address. List any extra push service hosts in `PUSH_ALLOW_HOSTS`.
+- **Identifying the server:** messages are encrypted for the one device they're for (RFC 8291). The server identifies itself with a VAPID key pair made on first use. Push services may contact the address in `PUSH_SUBJECT`, which defaults to `PUBLIC_URL`.
+- **Offline:** the installed app keeps only Keel itself (the page and its files) for quick and offline starts. It never stores Azure DevOps data.
+
 ### Teams and Slack
 
 Admins can have Keel post to team channels in **Settings → Teams and Slack**, whether or not anyone has Keel open:
@@ -166,6 +180,7 @@ Everyone can see everything. Roles only limit what a person can change, and the 
 - **Browser:** only a random session cookie (HttpOnly, SameSite=Strict, and Secure/`__Host-` behind HTTPS).
 - **Sessions** last `SESSION_DAYS` (7 by default, renewed while you use it, 30 days at most). Changing your password signs out your other devices.
 - **Rate limits:** after 10 failed sign-ins from one IP, or 5 for one email address, sign-in is blocked for 15 minutes.
+- **Push notifications:** each device's push address and keys are stored encrypted in `push.json`, with the server's VAPID private key. A device is listed only for the person who turned it on there.
 
 To try accounts and roles before deploying, run on demo data with `AUTH_MODE=login` and `AZDO_MOCK=1`. Demo accounts are kept apart from real ones, and any token-shaped value links to the demo organization.
 

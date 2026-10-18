@@ -251,6 +251,17 @@ export default {
   'Weekly summary: {error}': 'Resumo semanal: {error}',
   'The channel answered HTTP {status}: {text}': 'O canal respondeu HTTP {status}: {text}',
   'The channel answered HTTP {status}': 'O canal respondeu HTTP {status}',
+  // Push notifications (push.js, webpush.js)
+  'Push notifications are not available on this server': 'As notificações push não estão disponíveis neste servidor',
+  "This browser's push service isn't one Keel sends to.": 'O serviço de push deste browser não é um para onde o Keel envie.',
+  'This push subscription has no valid keys.': 'Esta subscrição push não tem chaves válidas.',
+  'Up to {n} devices. Remove one first.': 'Até {n} dispositivos. Remova um primeiro.',
+  'Turn on push on this device first.': 'Ative primeiro as notificações push neste dispositivo.',
+  "The device didn't accept the notification. Turn push off and on again.": 'O dispositivo não aceitou a notificação. Desative e volte a ativar as notificações push.',
+  'No working Azure DevOps token in Keel for this person.': 'Esta pessoa não tem um token do Azure DevOps válido no Keel.',
+  'The push service answered HTTP {status}': 'O serviço de push respondeu HTTP {status}',
+  'Not a push service address': 'Não é um endereço de serviço de push',
+  "This device's push subscription has expired. Turn push on again on it.": 'A subscrição push deste dispositivo expirou. Volte a ativar as notificações push nele.',
   // Posts in a channel (domain/messages.js)
   'Open the site': 'Abrir o site',
   'Open in Keel': 'Abrir no Keel',

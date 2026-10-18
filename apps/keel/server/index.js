@@ -11,6 +11,7 @@ import { createMonitoring } from './monitoring.js';
 import { createOrgStore } from './orgs.js';
 import { createMultiService } from './multiorg.js';
 import { createChannels } from './channels.js';
+import { createPush } from './push.js';
 import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
 import { createMockVariant } from './mock/variant.js';
@@ -30,9 +31,11 @@ if (config.authMode === 'login') {
   const auth = createAuth({ monitoring });
   // Channel posts read Azure DevOps as the Admin who set the channel up.
   const channels = createChannels({ resolveService: (ownerId) => auth.serviceFor(ownerId) });
+  // Push notifications read Azure DevOps as the person whose device it is.
+  const push = createPush({ resolveService: (userId) => auth.serviceFor(userId) });
   app.use('/api/auth', auth.router);
   app.use('/api/admin/users', auth.adminRouter);
-  app.use('/api', auth.requireUser, apiRouter({ channels }));
+  app.use('/api', auth.requireUser, apiRouter({ channels, push }));
   auth.announceSetup();
 } else {
   // One person: the PAT in .env (or demo data), used for every organization
@@ -59,15 +62,23 @@ if (config.authMode === 'login') {
   };
   app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: orgStore.primary()?.url }));
   const channels = createChannels({ resolveService: () => localCtx().service });
+  const push = createPush({ resolveService: () => localCtx().service });
   app.use('/api', (req, res, next) => {
     req.ctx = localCtx();
     next();
-  }, apiRouter({ channels }));
+  }, apiRouter({ channels, push }));
 }
 
 const dist = path.join(config.root, 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {
-  app.use(express.static(dist, { index: false, maxAge: '1h' }));
+  app.use(express.static(dist, {
+    index: false,
+    maxAge: '1h',
+    // The service worker and manifest are checked on every visit, so an update reaches installed apps.
+    setHeaders: (res, file) => {
+      if (/[\\/](sw\.js|manifest\.webmanifest)$/.test(file)) res.setHeader('Cache-Control', 'no-cache');
+    },
+  }));
   app.get('/{*splat}', (req, res) => res.sendFile(path.join(dist, 'index.html')));
 } else {
   app.get('/', (req, res) => res.type('text').send('UI not built. Run `npm run dev` (UI on http://localhost:5173) or `npm run build` first.'));

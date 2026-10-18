@@ -3,14 +3,16 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { ErrorBox, Loading, PageHeader, Confirm } from '../ui.jsx';
 import { ACCENTS, MODES, loadTheme, saveTheme } from '../theme.js';
-import { LANGUAGES, getLanguage, setLanguage, t, tj } from '../i18n.js';
+import { LANGUAGES, getLanguage, setLanguage, t, tj, tx } from '../i18n.js';
 import ProductionSettings from './ProductionSettings.jsx';
 import TypeColorSettings from './TypeColorSettings.jsx';
 import OrgSettings from './OrgSettings.jsx';
 import ChannelSettings from './ChannelSettings.jsx';
 import { useProjectLabel } from '../orgs.js';
+import { age, dateTime } from '../format.js';
 import { folderProblem, loadFolders, saveFolder } from '../claude.js';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
+import { canPromptInstall, currentSubscription, deviceId, disablePush, enablePush, isInstalled, promptInstall, pushAvailability } from '../pwa.js';
 
 const THRESHOLDS = [
   ['myReviewHours', 'Escalate a review waiting on me after', 'hours'],
@@ -293,7 +295,7 @@ function NotificationSettings() {
   return (
     <section className="panel">
       <h2 className="section-title">{t('Notifications')} <span className="saved-note">{t('Saved automatically')}</span></h2>
-      <p className="muted small">{t('Saved in this browser right away. The console needs to be open (a background tab is fine) to notify you.')}</p>
+      <p className="muted small">{t('Saved in this browser right away. Pop-ups and desktop notifications need the console open (a background tab is fine); push notifications arrive even when it is closed.')}</p>
       <div className="notify-grid">
         <label className="check"><input type="checkbox" checked={prefs.inApp} onChange={(e) => update({ inApp: e.target.checked })} /> {t('Show a pop-up in the console')}</label>
         <div className="notify-desktop">
@@ -317,7 +319,110 @@ function NotificationSettings() {
         ))}
       </div>
       <button type="button" className="btn btn-small btn-ghost" onClick={test}>{t('Send a test notification')}</button>
+      <PushSettings />
     </section>
+  );
+}
+
+/**
+ * Push notifications on this device, even when Keel is closed (server/push.js),
+ * in the categories above; and installing Keel as an app, which iPhones need for push.
+ */
+function PushSettings() {
+  const { toast } = useApp();
+  const [info, setInfo] = useState(null);
+  const [here, setHere] = useState(undefined); // this browser's device id (as the server makes it), null when off
+  const [busy, setBusy] = useState(false);
+  const [installable, setInstallable] = useState(canPromptInstall);
+  const available = pushAvailability();
+
+  const load = () => {
+    api('/push').then(setInfo).catch(() => setInfo({ unavailable: true, devices: [] }));
+    currentSubscription().then((sub) => (sub ? deviceId(sub.endpoint) : null)).then(setHere).catch(() => setHere(null));
+  };
+  useEffect(load, []);
+  useEffect(() => {
+    const onChange = () => setInstallable(canPromptInstall());
+    window.addEventListener('keel:installable', onChange);
+    return () => window.removeEventListener('keel:installable', onChange);
+  }, []);
+
+  const run = (fn) => async () => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (err) {
+      // The browser says NotAllowedError when notifications are blocked (or in a private window).
+      toast(err.code === 'denied' || err.name === 'NotAllowedError' ? t('Notifications are blocked for Keel. Allow them in the browser or phone settings, then try again.')
+        : err.code === 'timeout' ? t("The browser's push service didn't answer. Try again in a moment.") : err.message, 'bad');
+    } finally {
+      setBusy(false);
+      load();
+    }
+  };
+  // On when this browser has a subscription Keel still knows (it may have been removed from another device).
+  const on = !!here && !!info?.devices?.some((d) => d.id === here);
+  const turnOn = run(async () => {
+    await enablePush();
+    toast(t('Push notifications are on for this device'));
+  });
+  const turnOff = run(async () => {
+    await disablePush();
+    toast(t('Push notifications are off for this device'));
+  });
+  const test = run(async () => {
+    await api('/push/test', { method: 'POST', body: { id: here, language: getLanguage() } });
+    toast(t('Test sent. It should arrive in a few seconds.'));
+  });
+  const remove = (d) => run(() => api('/push/unsubscribe', { method: 'POST', body: { id: d.id } }));
+
+  return (
+    <div className="push-settings">
+      <h3 className="small notify-h">{t('Push notifications')}</h3>
+      <p className="muted small">{t('On your phone or computer, even when Keel is closed: the same updates as above, checked every two minutes.')}</p>
+      {info?.unavailable ? (
+        <p className="small text-warn">{t("This Keel server doesn't send push notifications.")}</p>
+      ) : available === 'install' ? (
+        <p className="callout small">{t('On iPhone and iPad, push notifications work in the Keel app: tap Share, then Add to Home Screen, and open Keel from there.')}</p>
+      ) : available === 'insecure' ? (
+        <p className="small text-warn">{t('Push notifications need Keel to be opened over https.')}</p>
+      ) : available === 'no' ? (
+        <p className="muted small">{t("This browser doesn't support push notifications.")}</p>
+      ) : (
+        <div className="push-actions">
+          {on ? (
+            <>
+              <span className="chip chip-ok">{t('On for this device')}</span>
+              <button type="button" className="btn btn-small" onClick={test} disabled={busy}>{t('Send a test')}</button>
+              <button type="button" className="btn btn-small btn-ghost" onClick={turnOff} disabled={busy}>{t('Turn off on this device')}</button>
+            </>
+          ) : (
+            <button type="button" className="btn btn-small btn-primary" onClick={turnOn} disabled={busy || here === undefined}>{t('Turn on push on this device')}</button>
+          )}
+        </div>
+      )}
+      {info?.devices?.length > 0 && (
+        <ul className="push-devices">
+          {info.devices.map((d) => (
+            <li key={d.id}>
+              <div>
+                <strong>{d.label}</strong>{d.id === here && <span className="muted small"> · {t('this device')}</span>}
+                <div className="muted small">
+                  {t('Added {date}', { date: dateTime(d.createdAt) })}
+                  {d.lastSentAt ? ` · ${t('last notified {age} ago', { age: age(d.lastSentAt) })}` : ''}
+                </div>
+                {d.lastError && <div className="small text-warn">{tx(d.lastError)}</div>}
+              </div>
+              <button type="button" className="btn btn-small btn-ghost" onClick={remove(d)} disabled={busy}>{t('Remove')}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {/* Chrome, Edge and Android can install from here; iPhones were told how above. */}
+      {!isInstalled() && installable && (
+        <p className="push-install"><button type="button" className="btn btn-small" onClick={() => promptInstall()}>{t('Install Keel as an app')}</button></p>
+      )}
+    </div>
   );
 }
 
