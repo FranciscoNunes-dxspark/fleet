@@ -416,7 +416,18 @@ export function createAuth({ monitoring = null } = {}) {
     return next();
   }
 
-  return { router, adminRouter: admin, requireUser, announceSetup };
+  /** The service of an account with a linked token, for background work (channel posts); null otherwise. */
+  function serviceFor(userId) {
+    const user = userId && accounts.raw(userId);
+    if (!user || user.disabled || !accounts.hasToken(user.id)) return null;
+    try {
+      return contextFor(user).service;
+    } catch {
+      return null;
+    }
+  }
+
+  return { router, adminRouter: admin, requireUser, announceSetup, serviceFor };
 }
 
 /** Pads codes to equal length for a constant-time compare. */

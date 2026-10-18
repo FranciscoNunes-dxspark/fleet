@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { config } from './config.js';
 import { decrypt, encrypt, getKey } from './secrets.js';
-import { sharedJson } from './jsonfile.js';
+import { runnerLock, sharedJson } from './jsonfile.js';
 import {
   TOTALS_EVERY_HOURS, TOTALS_SEASONS, TOTALS_TIMEOUT_MS, asEnvelope, demoHealth, demoTotals, failingText, historyPoint,
   isDemoPlatform, platformInfo, readTotals,
@@ -189,10 +189,9 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   // shared with any other server process and kept across restarts and deploys.
   const store = sharedJson(path.join(dataDir, `monitors${suffix}.json`), () => ({ monitors: mock ? demoMonitors() : [] }));
   const history = sharedJson(path.join(dataDir, `monitor-history${suffix}.json`), () => ({})); // id -> { checks, ai, aiError }
-  const runnerLock = sharedJson(path.join(dataDir, `monitor-runner${suffix}.json`), () => ({}));
   // Platform totals per monitor: { lastAttemptAt, lastError, fetchingSince, latest, history: [{ at, seasonId, values }] }.
   const totalsStore = sharedJson(path.join(dataDir, `monitor-totals${suffix}.json`), () => ({}));
-  const instance = `${os.hostname()}:${process.pid}:${crypto.randomBytes(3).toString('hex')}`;
+  const runner = runnerLock(path.join(dataDir, `monitor-runner${suffix}.json`), RUNNER_STALE, `${os.hostname()}:${process.pid}:${crypto.randomBytes(3).toString('hex')}`);
 
   let monitors = [];
   const sync = () => {
@@ -212,12 +211,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
    * site isn't checked once per process. The runner refreshes its claim every
    * minute; another process takes over when the claim is 3 minutes old.
    */
-  function isRunner() {
-    const claim = runnerLock.get();
-    if (claim.id && claim.id !== instance && Date.now() - (claim.beat || 0) < RUNNER_STALE) return false;
-    runnerLock.save({ id: instance, beat: Date.now() });
-    return true;
-  }
+  const isRunner = () => runner.isRunner();
 
   /** Results computed first, then merged into a freshly read history file. */
   async function checkAll(list) {

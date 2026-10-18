@@ -207,7 +207,8 @@ export default function ProductionSettings() {
  * A secret typed once: shows that one is saved (never the value), replaces it
  * when you type, or is removed on save (value null) with an undo.
  */
-function KeyField({ label, has, value, onChange, placeholder }) {
+export function KeyField({ label, has, value, onChange, placeholder, texts = {}, removable = true }) {
+  const { saved = t('Saved. Type a new key to replace it'), remove = t('Remove saved key'), removing = t('The saved key will be removed when you save.') } = texts;
   return (
     <label>{label}
       <input
@@ -216,11 +217,11 @@ function KeyField({ label, has, value, onChange, placeholder }) {
         autoComplete="off"
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={has ? t('Saved. Type a new key to replace it') : placeholder}
+        placeholder={has ? saved : placeholder}
         disabled={value === null}
       />
-      {has && value !== null && <button type="button" className="link-btn small" onClick={() => onChange(null)}>{t('Remove saved key')}</button>}
-      {value === null && <span className="small text-warn">{t('The saved key will be removed when you save.')} <button type="button" className="link-btn" onClick={() => onChange(undefined)}>{t('Undo')}</button></span>}
+      {removable && has && value !== null && <button type="button" className="link-btn small" onClick={() => onChange(null)}>{remove}</button>}
+      {value === null && <span className="small text-warn">{removing} <button type="button" className="link-btn" onClick={() => onChange(undefined)}>{t('Undo')}</button></span>}
     </label>
   );
 }

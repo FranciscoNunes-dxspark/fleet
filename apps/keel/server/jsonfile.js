@@ -59,3 +59,20 @@ export function sharedJson(file, fallback) {
     },
   };
 }
+
+/**
+ * One server process at a time runs a background job (production checks,
+ * channel posts). isRunner() claims the lock file, or refreshes our claim;
+ * another process takes over once the claim is `staleMs` old.
+ */
+export function runnerLock(file, staleMs, instance = `${process.pid}:${Math.random().toString(36).slice(2)}`) {
+  const lock = sharedJson(file, () => ({}));
+  return {
+    isRunner() {
+      const claim = lock.get();
+      if (claim.id && claim.id !== instance && Date.now() - (claim.beat || 0) < staleMs) return false;
+      lock.save({ id: instance, beat: Date.now() });
+      return true;
+    },
+  };
+}

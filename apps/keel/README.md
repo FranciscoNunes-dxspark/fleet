@@ -95,6 +95,17 @@ You get a notification when:
 
 Notifications show as pop-ups in the console. Desktop notifications are optional: turn them on in **Settings → Notifications**, along with which kinds you want. The browser tab title shows the "act now" count, for example `(3) Keel`.
 
+### Teams and Slack
+
+Admins can have Keel post to team channels in **Settings → Teams and Slack**, whether or not anyone has Keel open:
+
+- **What gets posted:** for each channel, pick from production outages and regressions after a deploy, default-branch pipelines and release stages that start failing, deployment approvals waiting, blocked work items and P1 bugs with no owner, and pull requests with no reviewers or stale for twice the limit. Keel looks every 2 minutes and posts an entry when it appears or becomes urgent, once. A burst of more than 4 at a time goes out as one post.
+- **The weekly summary:** last week's summary (the same as the Weekly summary page) on the weekday and hour you choose, in the channel's time zone.
+- **Language:** English or Português, per channel.
+- **Setting up the webhook:** in Teams, open the channel's **Workflows** and pick "Post to a channel when a webhook request is received", then copy its address. Keel sends an Adaptive Card, which the older Office 365 connectors also take. In Slack, add an **Incoming Webhook** to the channel. **Other (JSON webhook)** sends `{ title, text, content, links }` for anything else, for example Mattermost or Discord. Use **Send a test** to check it.
+- **Whose view:** with sign-in, Keel reads Azure DevOps for a channel with the token of the Admin who added it, so it posts about their tracked projects and respects their snoozes. Locally it uses the server's PAT.
+- **Storage:** addresses are stored encrypted in the data folder (`channels.json`), only https addresses to public hosts are accepted (as for monitors), and Keel never follows a redirect from one. Set `PUBLIC_URL` (for example `https://keel.example.com`) to have posts link back to Keel. When several copies of Keel run, one of them posts.
+
 ## Security
 
 What the app already does:
