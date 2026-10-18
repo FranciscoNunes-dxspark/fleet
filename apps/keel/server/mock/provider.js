@@ -695,7 +695,7 @@ function demoDeployHistory(target) {
   }
   const commits = repo ? demoCommits(repo) : [];
   const history = list
-    .map((d) => ({ ...d, startedAt: iso(Date.parse(d.at) - 12 * 60_000), repoId: repo?.id || null, commit: commits.find((c) => Date.parse(c.author.date) < Date.parse(d.at) - 30 * 60_000)?.id || null }))
+    .map((d) => ({ ...d, startedAt: iso(Date.parse(d.at) - 12 * 60_000), repoId: repo?.id || null, branch: repo?.defaultBranch || null, commit: commits.find((c) => Date.parse(c.author.date) < Date.parse(d.at) - 30 * 60_000)?.id || null }))
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   deployHistories.set(key, history);
   return history;
@@ -981,6 +981,15 @@ export function createMockProvider() {
       if (end < 0) throw notFound(`Commit ${to}`);
       const start = list.findIndex((c) => c.id === from);
       return delay(list.slice(end, start < 0 ? undefined : start).slice(0, top).map(stripCommit));
+    },
+
+    aheadBehind(projectId, repoId, base, target) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      const list = repo ? demoCommits(repo) : [];
+      const b = list.findIndex((c) => c.id === base);
+      const t = list.findIndex((c) => c.id === target);
+      if (t < 0) throw notFound(`Commit ${target}`);
+      return delay(b < 0 ? { ahead: null, behind: 1 } : b >= t ? { ahead: b - t, behind: 0 } : { ahead: 0, behind: t - b });
     },
 
     listDeployments(target, { since }) {

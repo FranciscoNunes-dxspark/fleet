@@ -557,6 +557,17 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       return (d.value || []).map(normalizeCommit);
     },
 
+    /**
+     * How two commits relate: `ahead` commits only `target` has, `behind`
+     * commits only `base` has. behind > 0 means target doesn't contain base.
+     */
+    async aheadBehind(projectId, repoId, base, target) {
+      const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/diffs/commits`, {
+        query: { baseVersion: base, baseVersionType: 'commit', targetVersion: target, targetVersionType: 'commit', diffCommonCommit: true, $top: 1 },
+      });
+      return { ahead: d.aheadCount ?? null, behind: d.behindCount ?? null };
+    },
+
     /** One commit: its whole message, parents and the files it changed. */
     async getCommit(projectId, repoId, commitId) {
       const c = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/commits/${seg(commitId)}`, { query: { changeCount: 500 } });
@@ -1137,6 +1148,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
             webUrl: b._links?.web?.href || `${org}/${seg(b.project?.name)}/_build/results?buildId=${b.id}`,
             repoId: b.repository?.type === 'TfsGit' ? b.repository.id : null,
             commit: b.sourceVersion || null,
+            branch: stripRef(b.sourceBranch) || null,
           }));
       }
       const base = `${rm}/${seg(target.projectName)}/_apis/release`;
@@ -1161,6 +1173,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
           webUrl: relUrl(target.projectName, d.release?.id),
           repoId: (git ? ref.definition?.id : ref.repository?.id) || null,
           commit: (git ? ref.version?.id : ref.sourceVersion?.id) || null,
+          branch: stripRef(ref.branch?.name || ref.branch?.id) || null,
         };
       }));
     },

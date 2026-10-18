@@ -14,7 +14,7 @@ import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
-import { commitRefs, mergeCommits } from './domain/commits.js';
+import { commitRefs, landedAt, mergeCommits, waitingChanges } from './domain/commits.js';
 import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
@@ -284,6 +284,12 @@ export function createService({
     for (const m of monitoring ? monitoring.status() : []) {
       const link = m.link;
       if (!link) continue;
+      // Several monitors deployed by the same stage or pipeline are one environment, named after all of them.
+      const same = found.get(targetKeyOf(link));
+      if (same) {
+        same.name = `${same.name}, ${m.name}`;
+        continue;
+      }
       if (link.type === 'release') {
         add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, name: m.name });
       } else {
@@ -339,7 +345,7 @@ export function createService({
           projectId: c.projectId,
           repoId: c.repoId,
           webUrl: repo.webUrl ? `${repo.webUrl}/pullrequest/${c.prId}` : null,
-          mergedAt: c.author?.date || null,
+          mergedAt: landedAt(c),
           // The merge commit first, then the PR's own commits.
           commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
         };
@@ -551,6 +557,9 @@ export function createService({
      */
     async undeployed() {
       const [targets, repoList] = await Promise.all([productionTargets(), repos()]);
+      // Monitors not linked to what deploys them still show, saying so, rather than vanishing.
+      const unlinked = (monitoring ? monitoring.status() : []).filter((m) => !m.link)
+        .map((m) => ({ key: `monitor:${m.id}`, name: m.name, projectId: null, projectName: null, unlinked: true, monitorId: m.id }));
       const results = await Promise.all(targets.map(async (t) => {
         const head = { key: t.key, name: t.name, projectId: t.projectId, projectName: t.projectName };
         let history;
@@ -564,25 +573,31 @@ export function createService({
         const repo = repoList.find((r) => r.id === last.repoId);
         const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };
         if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
-        const branch = t.branch || repo.defaultBranch;
+        // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
+        const branch = t.branch || last.branch || repo.defaultBranch;
         try {
           const [tip] = await cached(`commits:tip:${repo.id}:${branch}`, () => provider.listCommits(repo.projectId, repo.id, { branch, top: 1 }), 2 * MIN);
+          const where = { ...head, branch, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy };
+          if (tip && tip.id !== last.commit) {
+            // Production must run a commit the branch contains; otherwise "since" means nothing and
+            // the list would be the branch's whole history (years of commits that are already live).
+            const rel = await cached(`aheadbehind:${repo.id}:${last.commit}:${tip.id}`, () => provider.aheadBehind(repo.projectId, repo.id, last.commit, tip.id), 24 * 60 * MIN);
+            if (rel.behind > 0) return { ...where, diverged: true, deployedBranch: last.branch || null, ahead: rel.ahead, waiting: 0, oldestAt: null };
+          }
           const raw = !tip || tip.id === last.commit ? [] : await commitsBetween(repo.projectId, repo.id, last.commit, tip.id);
           const changes = await describeChanges(repo, raw);
-          const oldest = changes.commits.reduce((min, c) => Math.min(min, Date.parse(c.author?.date) || Infinity), Infinity);
           return {
-            ...head,
-            branch,
-            repo: { id: repo.id, name: repo.name, projectId: repo.projectId },
-            lastDeploy,
+            ...where,
             ...changes,
-            oldestAt: Number.isFinite(oldest) ? new Date(oldest).toISOString() : null,
+            ...waitingChanges(changes),
+            // listCommitsBetween reads at most 300 commits.
+            truncated: raw.length >= 300,
           };
         } catch (err) {
           return { ...head, lastDeploy, error: err.message };
         }
       }));
-      return { targets: results };
+      return { targets: [...results, ...unlinked] };
     },
 
     /**

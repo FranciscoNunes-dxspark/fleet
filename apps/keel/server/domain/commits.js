@@ -12,6 +12,25 @@ export function commitRefs(message = '') {
   return { workItemIds, prId: pr ? Number(pr[1]) : null };
 }
 
+/** When a commit reached its branch: its committer date (a merge, rebase or cherry-pick), else its author date. */
+export const landedAt = (c) => c.committedAt || c.author?.date || null;
+
+/**
+ * How much is waiting to ship, counted as people count changes: each merged
+ * pull request is one change (however many commits it brought) and each
+ * commit pushed without one is one. The oldest is timed from when it reached
+ * the branch (the PR's merge), not from when its code was first written.
+ */
+export function waitingChanges({ pullRequests = [], directCommits = [] }) {
+  const landed = [...pullRequests.map((p) => p.commits?.[0]), ...directCommits]
+    .map((c) => Date.parse(c && landedAt(c)))
+    .filter(Number.isFinite);
+  return {
+    waiting: pullRequests.length + directCommits.length,
+    oldestAt: landed.length ? new Date(Math.min(...landed)).toISOString() : null,
+  };
+}
+
 /** The commits of several repos as one list, newest first, each with its repo and what it refers to. */
 export function mergeCommits(perRepo, { limit = 2000 } = {}) {
   const all = [];
