@@ -522,7 +522,7 @@ function Shell() {
           </NavLink>
         ))}
         <button type="button" ref={moreRef} className={`tab${moreLit ? ' active' : ''}`} aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
-          <span className="tab-icon"><Icon name={menuOpen ? 'close' : 'menu'} />{!menuOpen && badge(moreCount, moreTone)}</span>
+          <span className="tab-icon"><Icon name={menuOpen ? 'close' : 'more'} />{!menuOpen && badge(moreCount, moreTone)}</span>
           <span className="tab-label">{t('More')}</span>
         </button>
       </nav>
