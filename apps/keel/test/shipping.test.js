@@ -133,6 +133,36 @@ test('waiting to ship: production on a commit the branch lacks is not counted', 
   assert.equal(env.lastDeploy.label, 'Release-9');
 });
 
+test('waiting to ship: a deleted branch falls back to the default, a differently cased one is found', async () => {
+  const seen = [];
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [
+      { id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'master' },
+      { id: 'r2', name: 'api', projectId: 'p1', projectName: 'Shop', defaultBranch: 'master' },
+    ],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async (target) => [{ id: 1, label: 'R1', at: at(10), status: 'succeeded', repoId: target.definitionId === 1 ? 'r1' : 'r2', commit: 'c1', branch: 'Develop' }],
+    listBranches: async (projectId, repoId) => (repoId === 'r1' ? [{ name: 'master' }] : [{ name: 'master' }, { name: 'develop' }]),
+    listCommits: async (projectId, repoId, { branch }) => {
+      seen.push(`${repoId}:${branch}`);
+      return [commit('c1', 10, 'Head')];
+    },
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const link = (definitionId) => ({ type: 'release', projectId: 'p1', definitionId, stage: 'Production' });
+  const monitoring = { status: () => [{ id: 'a', name: 'Web', link: link(1) }, { id: 'b', name: 'Api', link: link(2) }] };
+  const { targets } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  const by = Object.fromEntries(targets.map((x) => [x.name, x]));
+  assert.deepEqual(seen.sort(), ['r1:master', 'r2:develop']);
+  assert.equal(by.Web.error, undefined);
+  assert.deepEqual([by.Web.branch, by.Web.branchGone], ['master', 'Develop']);
+  assert.deepEqual([by.Api.branch, by.Api.branchGone], ['develop', null]);
+});
+
 test('waiting to ship: every monitor shows; monitors sharing a deploy are one environment', async () => {
   const provider = {
     listProjects: async () => [{ id: 'p1', name: 'Shop' }],
