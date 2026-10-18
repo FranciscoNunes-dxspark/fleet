@@ -20,6 +20,7 @@ const fake = (org, { fail = false } = {}) => ({
     return { items: [{ key: `${org.primary ? '' : `${org.key}/`}wi:7`, severity: org.primary ? 'medium' : 'high', target: { type: 'workitem', id: 7 } }], snoozedCount: 1, summary: { myReviews: 2, approvals: 1 } };
   },
   async pipelineRuns(projectId, definitionId) { return { pipeline: null, runs: [{ projectId, definitionId }] }; },
+  async branches() { return [{ name: 'main' }, { name: 'develop' }]; },
   async decideApproval(kind, id) {
     if (org.primary) throw Object.assign(new Error('not pending here'), { status: 404 });
     return `${org.key}:${kind}:${id}`;
@@ -89,4 +90,11 @@ test('accounts: a token saved before organizations belongs to the primary one', 
   assert.equal(acc.hasToken('u1', 'other'), false);
   assert.equal(acc.get('u1').azdoName, 'Lead');
   assert.deepEqual(acc.get('u1').orgTokens, ['contoso']);
+});
+
+test('several organizations: a list answered by one organization stays a list', async () => {
+  const multi = createMultiService([{ org: A, service: fake(A) }, { org: B, service: fake(B) }]);
+  const branches = await multi.branches('other-p', 'repo');
+  assert.ok(Array.isArray(branches), 'the New pull request panel calls .some() on it');
+  assert.deepEqual(branches, [{ name: 'main', org: 'other' }, { name: 'develop', org: 'other' }]);
 });
