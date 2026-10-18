@@ -15,7 +15,7 @@ import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
 import { comingNext, commitRefs, landedAt, mergeCommits, waitingChanges } from './domain/commits.js';
-import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
+import { deployMarkers, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
@@ -320,20 +320,38 @@ export function createService({
   const previousDeploy = (history, i) => history.slice(i + 1).find((d) => d.status === 'succeeded' && d.commit && d.repoId === history[i].repoId);
 
   /**
-   * The branch to compare a deploy with: the one it was built from, as the
-   * repo spells it now, or the repo's default when that branch was deleted
-   * (`gone` names it). If the branches can't be read it's used as given.
+   * The branch to compare a deploy with, and its newest commit: the branch
+   * the deploy was built from (else the repo's default), as the repo spells
+   * it now. When Azure DevOps doesn't know it (deleted or renamed), the
+   * default branch is used and `gone` names the missing one; when the default
+   * is missing too, `missing` names it and there is nothing to compare with.
    */
-  async function liveBranch(repo, wanted) {
-    if (!wanted || wanted === repo.defaultBranch) return { branch: repo.defaultBranch, gone: null };
-    let names;
-    try {
-      names = (await cached(`branches:${repo.id}`, () => provider.listBranches(repo.projectId, repo.id), 2 * MIN)).map((b) => b.name);
-    } catch {
-      return { branch: wanted, gone: null };
+  async function branchTip(repo, wanted) {
+    const tipOf = async (b) => (await cached(`commits:tip:${repo.id}:${b}`, () => provider.listCommits(repo.projectId, repo.id, { branch: b, top: 1 }), 2 * MIN))[0] || null;
+    const unknown = (err) => {
+      if (err.status !== 404) throw err; // TF401175: the version descriptor could not be resolved
+      return undefined;
+    };
+    let names = null;
+    const branchNames = async () => (names ??= await cached(`branches:${repo.id}`, () => provider.listBranches(repo.projectId, repo.id), 2 * MIN)
+      .then((list) => list.map((b) => b.name)).catch(() => []));
+    // As the repo spells it now ("Develop" may be "develop"), if it's there at all.
+    const spelled = async (b) => (await branchNames()).find((n) => n === b) || names.find((n) => n.toLowerCase() === b.toLowerCase()) || null;
+
+    const first = wanted || repo.defaultBranch;
+    let tip = await tipOf(first).catch(unknown);
+    if (tip !== undefined) return { branch: first, gone: null, tip };
+    const respelled = await spelled(first);
+    if (respelled && respelled !== first) {
+      tip = await tipOf(respelled).catch(unknown);
+      if (tip !== undefined) return { branch: respelled, gone: null, tip };
     }
-    const found = names.find((n) => n === wanted) || names.find((n) => n.toLowerCase() === wanted.toLowerCase());
-    return found ? { branch: found, gone: null } : { branch: repo.defaultBranch, gone: wanted };
+    const fallback = first === repo.defaultBranch ? null : (await spelled(repo.defaultBranch)) || repo.defaultBranch;
+    if (fallback) {
+      tip = await tipOf(fallback).catch(unknown);
+      if (tip !== undefined) return { branch: fallback, gone: first, tip };
+    }
+    return { branch: null, gone: first === repo.defaultBranch ? null : first, missing: repo.defaultBranch, tip: null };
   }
 
   /**
@@ -574,12 +592,16 @@ export function createService({
      */
     async undeployed() {
       // Open pull requests are "coming next" on the card of the branch they go into.
-      const [targets, repoList, openPrs] = await Promise.all([productionTargets(), repos(), activePRs().catch(() => [])]);
+      const [targets, repoList, openPrs, rels, builds, appr] = await Promise.all([
+        productionTargets(), repos(), activePRs().catch(() => []),
+        // For the deploy under way (running, or waiting on an approval).
+        releases().catch(() => []), rawBuilds().catch(() => []), approvals().catch(() => []),
+      ]);
       // Monitors not linked to what deploys them still show, saying so, rather than vanishing.
       const unlinked = (monitoring ? monitoring.status() : []).filter((m) => !m.link)
         .map((m) => ({ key: `monitor:${m.id}`, name: m.name, projectId: null, projectName: null, unlinked: true, monitorId: m.id }));
       const results = await Promise.all(targets.map(async (t) => {
-        const head = { key: t.key, name: t.name, projectId: t.projectId, projectName: t.projectName };
+        let head = { key: t.key, name: t.name, projectId: t.projectId, projectName: t.projectName };
         let history;
         try {
           history = await deployHistory(t, 90);
@@ -587,24 +609,22 @@ export function createService({
           return { ...head, error: err.message };
         }
         const last = history.find((d) => d.status === 'succeeded' && d.commit && d.repoId);
+        // The newest deploy, when it didn't succeed: production is still on the one before.
+        const failed = history.find((d) => d.status !== 'succeeded' && (!last || Date.parse(d.at) > Date.parse(last.at)));
+        head = {
+          ...head,
+          deploy: deployUnderWay(t, { releases: rels, builds, approvals: appr }, { since: last?.at }),
+          lastFailed: failed ? { id: failed.id, label: failed.label, at: failed.at, status: failed.status, webUrl: failed.webUrl } : null,
+        };
         if (!last) return { ...head, unknown: true, lastDeploy: null };
         const repo = repoList.find((r) => r.id === last.repoId);
         const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };
         if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
         try {
           // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
-          let { branch, gone } = await liveBranch(repo, t.branch || last.branch);
-          const tipOf = (b) => cached(`commits:tip:${repo.id}:${b}`, () => provider.listCommits(repo.projectId, repo.id, { branch: b, top: 1 }), 2 * MIN);
-          let tip;
-          try {
-            [tip] = await tipOf(branch);
-          } catch (err) {
-            // Azure DevOps doesn't know the branch (deleted, or the branch list couldn't be read): use the default.
-            if (err.status !== 404 || branch === repo.defaultBranch) throw err;
-            [gone, branch] = [branch, repo.defaultBranch];
-            [tip] = await tipOf(branch);
-          }
+          const { branch, gone, missing, tip } = await branchTip(repo, t.branch || last.branch);
           const where = { ...head, branch, branchGone: gone, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
+          if (missing) return { ...where, missingBranch: missing, waiting: 0, oldestAt: null };
           if (tip && tip.id !== last.commit) {
             // Production must run a commit the branch contains; otherwise "since" means nothing and
             // the list would be the branch's whole history (years of commits that are already live).

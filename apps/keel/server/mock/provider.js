@@ -902,7 +902,7 @@ export function createMockProvider() {
         stages: stageSummary(d.stageDefs, d.releases),
         releases: d.releases.slice(0, 10).map((r) => ({
           id: r.id, name: r.name, createdOn: r.createdOn, createdBy: r.createdBy, webUrl: r.webUrl,
-          stages: r.envs.map((e) => ({ id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: e.name, status: e.status, at: e.at, requestedFor: e.requestedFor, deploying: e.status === 'inProgress' && !!e.deploying, startedAt: e.at })),
+          stages: r.envs.map((e) => ({ id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: e.name, status: e.status, at: e.at, requestedFor: e.requestedFor, deploying: e.status === 'inProgress' && !!e.deploying, waiting: releaseApprovals.some((a) => a._env === e), startedAt: e.at })),
         })),
       })));
     },

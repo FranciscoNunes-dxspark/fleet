@@ -1080,6 +1080,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
               definitionEnvironmentId: e.definitionEnvironmentId,
               status: e.status,
               deploying: e.status === 'inProgress' && !waiting,
+              waiting,
               startedAt: step?.queuedOn || null,
               at: step?.lastModifiedOn || step?.queuedOn || r.modifiedOn || r.createdOn,
               requestedFor: ident(step?.requestedFor || step?.requestedBy),
@@ -1111,7 +1112,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
             webUrl: relUrl(projectName, r.id),
             stages: (normalized.find((n) => n.id === r.id)?.envs || []).map((e) => ({
               id: e.id, definitionEnvironmentId: e.definitionEnvironmentId, name: (r.environments || []).find((x) => x.id === e.id)?.name, status: e.status, at: e.at, requestedFor: e.requestedFor,
-              deploying: e.deploying, startedAt: e.startedAt,
+              deploying: e.deploying, waiting: e.waiting, startedAt: e.startedAt,
             })),
           })),
         };

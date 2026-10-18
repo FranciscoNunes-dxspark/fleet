@@ -4,7 +4,7 @@ import { age, dateTime, REVIEW_STATE } from '../format.js';
 import { Chip, Empty, ErrorBox, ExternalLink, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
-import { ChangeSections } from './DeployDetail.jsx';
+import { ChangeSections, deployStatus } from './DeployDetail.jsx';
 
 const DAY = 86_400_000;
 
@@ -15,7 +15,7 @@ export const LONG_WAIT_DAYS = 7;
 export const waitTone = (oldestAt) => (!oldestAt ? 'ok' : Date.now() - Date.parse(oldestAt) > LONG_WAIT_DAYS * DAY ? 'warn' : 'info');
 
 /** Environments whose waiting can't be counted (not linked, not comparable, unreadable). */
-export const uncounted = (e) => !!(e.error || e.unknown || e.unlinked || e.diverged);
+export const uncounted = (e) => !!(e.error || e.unknown || e.unlinked || e.diverged || e.missingBranch);
 
 /** Environments with the most waiting (the oldest change first), then the up-to-date ones, then those that can't be counted. */
 export const byWaiting = (a, b) => uncounted(a) - uncounted(b)
@@ -90,16 +90,21 @@ function Environment({ env }) {
   const last = env.lastDeploy;
   const openDeploy = () => openDrawer({ type: 'deploy', projectId: env.projectId, target: env.key, id: last.id, org: env.org });
 
+  const failed = env.lastFailed;
   let chip;
   if (env.error) chip = <Chip tone="bad">{t("Couldn't read")}</Chip>;
   else if (env.unlinked) chip = <Chip tone="muted">{t('Not linked')}</Chip>;
-  else if (env.diverged) chip = <Chip tone="warn">{t("Can't compare")}</Chip>;
+  // What's happening to the next deploy says more than the count (with auto-deploy, it's usually what's waiting).
+  else if (env.deploy?.state === 'deploying') chip = <Chip tone="info">{t('Deploying now')}</Chip>;
+  else if (env.deploy?.state === 'approval') chip = <Chip tone="warn">{t('Waiting for approval')}</Chip>;
+  else if (failed) chip = <Chip tone={deployStatus(failed.status).tone}>{failed.status === 'partiallySucceeded' ? t('Last deploy partially succeeded') : t('Last deploy failed')}</Chip>;
+  else if (env.diverged || env.missingBranch) chip = <Chip tone="warn">{t("Can't compare")}</Chip>;
   else if (env.unknown) chip = <Chip tone="muted">{t('Unknown')}</Chip>;
   else if (!waiting) chip = <Chip tone="ok">{t('Up to date')}</Chip>;
   else chip = <Chip tone={waitTone(env.oldestAt)}>{t(waiting === 1 ? '{n} change waiting' : '{n} changes waiting', { n: waiting })}{env.truncated ? '+' : ''}</Chip>;
 
   return (
-    <section className={`panel monitor ship-env ${env.error ? 'monitor-down' : uncounted(env) ? '' : !waiting ? 'monitor-up' : waitTone(env.oldestAt) === 'warn' ? 'monitor-degraded' : 'monitor-deploying'}`} aria-label={env.name}>
+    <section className={`panel monitor ship-env ${env.error ? 'monitor-down' : env.deploy ? (env.deploy.state === 'approval' ? 'monitor-degraded' : 'monitor-deploying') : failed ? 'monitor-down' : uncounted(env) ? '' : !waiting ? 'monitor-up' : waitTone(env.oldestAt) === 'warn' ? 'monitor-degraded' : 'monitor-deploying'}`} aria-label={env.name}>
       <header className="monitor-head">
         <div>
           <h2>{env.name}</h2>
@@ -109,13 +114,45 @@ function Environment({ env }) {
       </header>
 
       {env.error && <p className="callout callout-bad">{tx(env.error)}</p>}
+      {env.deploy && (
+        <p className={`ship-now small ship-now-${env.deploy.state}`}>
+          <strong>{env.deploy.state === 'deploying' ? t('Deploying now') : t('Waiting for approval')}</strong>
+          {' · '}
+          {env.deploy.webUrl ? <a href={env.deploy.webUrl} target="_blank" rel="noreferrer">{env.deploy.label}</a> : env.deploy.label}
+          <span className="muted" title={dateTime(env.deploy.startedAt)}>
+            {' · '}
+            {env.deploy.state === 'deploying'
+              ? t('started {age} ago', { age: age(env.deploy.startedAt) })
+              : t('waiting {age}', { age: age(env.deploy.startedAt) })}
+            {env.deploy.by ? ` · ${env.deploy.by}` : ''}
+          </span>
+        </p>
+      )}
+      {failed && !env.deploy && (
+        <p className="ship-now small ship-now-failed">
+          <strong>{failed.status === 'partiallySucceeded' ? t('Last deploy partially succeeded') : t('Last deploy failed')}</strong>
+          {' · '}
+          <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'deploy', projectId: env.projectId, target: env.key, id: failed.id, org: env.org })} title={t('What this deploy would have shipped')}>{failed.label}</button>
+          <span className="muted" title={dateTime(failed.at)}>
+            {' · '}{t('{age} ago', { age: age(failed.at) })}
+            {last ? ` · ${t('production is still on {label}', { label: last.label })}` : ''}
+          </span>
+        </p>
+      )}
       {env.unlinked && (
         <p className="muted small">
           {t("This monitor isn't linked to the release stage or pipeline that deploys it, so Keel can't tell what's live.")}
           {can('monitors.manage') && <> <Link to="/settings#production">{t('Link it in Settings → Production monitors')}</Link></>}
         </p>
       )}
-      {env.branchGone && (
+      {env.missingBranch && (
+        <p className="callout">
+          {env.branchGone
+            ? t("Production was built from {gone}, and the repo's default branch {branch} doesn't exist either, so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.", { gone: env.branchGone, branch: env.missingBranch })
+            : t("The repo's default branch {branch} doesn't exist (renamed or deleted), so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.", { branch: env.missingBranch })}
+        </p>
+      )}
+      {env.branchGone && !env.missingBranch && (
         <p className="muted small">{t('Production was built from {gone}, which no longer exists, so this compares with {branch}.', { gone: env.branchGone, branch: env.branch })}</p>
       )}
       {env.diverged && (

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createService } from '../server/service.js';
 import { comingNext } from '../server/domain/commits.js';
+import { deployUnderWay } from '../server/domain/production.js';
 import { DEFAULT_SETTINGS } from '../server/settings.js';
 
 const H = 3_600_000;
@@ -147,6 +148,8 @@ test('waiting to ship: a deleted branch falls back to the default, a differently
     listDeployments: async (target) => [{ id: 1, label: 'R1', at: at(10), status: 'succeeded', repoId: target.definitionId === 1 ? 'r1' : 'r2', commit: 'c1', branch: 'Develop' }],
     listBranches: async (projectId, repoId) => (repoId === 'r1' ? [{ name: 'master' }] : [{ name: 'master' }, { name: 'develop' }]),
     listCommits: async (projectId, repoId, { branch }) => {
+      // Like Azure DevOps: exact names only.
+      if (!(repoId === 'r1' ? ['master'] : ['master', 'develop']).includes(branch)) throw Object.assign(new Error('TF401175'), { status: 404 });
       seen.push(`${repoId}:${branch}`);
       return [commit('c1', 10, 'Head')];
     },
@@ -183,6 +186,51 @@ test('waiting to ship: a branch Azure DevOps rejects falls back to the default',
   const { targets: [env] } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
   assert.equal(env.error, undefined);
   assert.deepEqual([env.branch, env.branchGone, env.waiting], ['master', 'Develop', 0]);
+});
+
+test('waiting to ship: a default branch that is missing says so instead of failing', async () => {
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [
+      { id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'Develop' },
+      { id: 'r2', name: 'api', projectId: 'p1', projectName: 'Shop', defaultBranch: 'Develop' },
+    ],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async (target) => [{ id: 1, label: 'R1', at: at(10), status: 'succeeded', repoId: target.definitionId === 1 ? 'r1' : 'r2', commit: 'c1', branch: target.definitionId === 1 ? 'Develop' : null }],
+    // web has no Develop at all; api has it as develop.
+    listBranches: async (projectId, repoId) => (repoId === 'r1' ? [{ name: 'main' }] : [{ name: 'develop' }]),
+    listCommits: async (projectId, repoId, { branch }) => {
+      if (!(repoId === 'r1' ? ['main'] : ['develop']).includes(branch)) throw Object.assign(new Error('TF401175'), { status: 404 });
+      return [commit('c1', 10, 'Head')];
+    },
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const link = (definitionId) => ({ type: 'release', projectId: 'p1', definitionId, stage: 'Production' });
+  const monitoring = { status: () => [{ id: 'a', name: 'Web', link: link(1) }, { id: 'b', name: 'Api', link: link(2) }] };
+  const { targets } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  const by = Object.fromEntries(targets.map((x) => [x.name, x]));
+  assert.equal(by.Web.error, undefined);
+  assert.deepEqual([by.Web.missingBranch, by.Web.branch, by.Web.waiting], ['Develop', null, 0]);
+  assert.equal(by.Api.error, undefined);
+  assert.deepEqual([by.Api.branch, by.Api.missingBranch, by.Api.branchGone], ['develop', undefined, null]);
+});
+
+test('waiting to ship: other Azure DevOps errors still show', async () => {
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'main' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async () => [{ id: 1, label: 'R1', at: at(10), status: 'succeeded', repoId: 'r1', commit: 'c1', branch: 'main' }],
+    listCommits: async () => { throw Object.assign(new Error('Access denied'), { status: 403 }); },
+  };
+  const monitoring = { status: () => [{ id: 'a', name: 'Web', link: { type: 'release', projectId: 'p1', definitionId: 1, stage: 'Production' } }] };
+  const { targets: [env] } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  assert.equal(env.error, 'Access denied');
 });
 
 test('waiting to ship: every monitor shows; monitors sharing a deploy are one environment', async () => {
@@ -223,4 +271,52 @@ test('coming next: open pull requests into the deployed branch, closest to mergi
   assert.deepEqual(comingNext(open, 'r1', 'master').map((p) => p.id), [3, 2, 4, 1]);
   assert.equal(comingNext(open, 'r1', 'master')[0].autoComplete, true);
   assert.deepEqual(comingNext(open, 'r1', 'main'), []);
+});
+
+test('deploy under way: a release stage deploying or waiting for approval, a pipeline run and its approval check', () => {
+  const stage = (over) => ({ name: 'Production', deploying: false, waiting: false, startedAt: at(0.2), ...over });
+  const releases = [{
+    projectId: 'p1', id: 1,
+    releases: [
+      { name: 'Release-9', webUrl: 'u9', stages: [stage({ name: 'QA', deploying: true }), stage({ waiting: true, startedAt: at(3) })] },
+      { name: 'Release-8', webUrl: 'u8', stages: [stage({ deploying: true, startedAt: at(30) })] },
+    ],
+  }];
+  const release = { type: 'release', projectId: 'p1', definitionId: 1, stage: 'Production' };
+  assert.deepEqual(
+    (({ state, label }) => ({ state, label }))(deployUnderWay(release, { releases }, { since: at(10) })),
+    { state: 'approval', label: 'Release-9' },
+    'the QA stage is not production; a release older than the last good deploy is not next',
+  );
+  assert.equal(deployUnderWay(release, { releases }, { since: at(1) }), null, 'waiting since before the last good deploy: superseded');
+  assert.equal(deployUnderWay({ ...release, stage: 'QA' }, { releases }).state, 'deploying');
+
+  const run = (id, over) => ({ id, projectId: 'p1', definition: { id: 5 }, status: 'inProgress', reason: 'individualCI', sourceBranch: 'master', buildNumber: `B${id}`, startedAt: at(0.1), ...over });
+  const pipeline = { type: 'pipeline', projectId: 'p1', definitionId: 5, branch: 'master' };
+  const builds = [run(1), run(2, { sourceBranch: 'feature/x', startedAt: at(0.05) }), run(3, { reason: 'pullRequest', startedAt: at(0.01) })];
+  assert.deepEqual((({ state, label }) => ({ state, label }))(deployUnderWay(pipeline, { builds })), { state: 'deploying', label: 'B1' });
+  assert.equal(deployUnderWay(pipeline, { builds, approvals: [{ kind: 'yaml', run: { id: 1 } }] }).state, 'approval');
+  assert.equal(deployUnderWay(pipeline, { builds: [run(1, { startedAt: at(2) })] }), null, 'running for over an hour: stuck, not deploying');
+  assert.equal(deployUnderWay(pipeline, { builds: [run(1, { status: 'completed' })] }), null);
+});
+
+test('waiting to ship: the newest deploy failing is shown, with what production still runs', async () => {
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'master' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async () => [
+      { id: 3, label: 'B3', at: at(1), status: 'failed', repoId: 'r1', commit: 'c3', branch: 'master' },
+      { id: 2, label: 'B2', at: at(5), status: 'succeeded', repoId: 'r1', commit: 'c2', branch: 'master' },
+      { id: 1, label: 'B1', at: at(9), status: 'failed', repoId: 'r1', commit: 'c1', branch: 'master' },
+    ],
+    listCommits: async () => [commit('c2', 6, 'Head')],
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const monitoring = { status: () => [{ id: 'a', name: 'Web', link: { type: 'pipeline', projectId: 'p1', definitionId: 5 } }] };
+  const { targets: [env] } = await createService({ provider, settings: memoryStore(), monitoring }).undeployed();
+  assert.deepEqual([env.lastFailed?.label, env.lastDeploy.label, env.deploy], ['B3', 'B2', null]);
 });
