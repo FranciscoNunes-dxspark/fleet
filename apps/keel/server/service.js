@@ -320,6 +320,23 @@ export function createService({
   const previousDeploy = (history, i) => history.slice(i + 1).find((d) => d.status === 'succeeded' && d.commit && d.repoId === history[i].repoId);
 
   /**
+   * The branch to compare a deploy with: the one it was built from, as the
+   * repo spells it now, or the repo's default when that branch was deleted
+   * (`gone` names it). If the branches can't be read it's used as given.
+   */
+  async function liveBranch(repo, wanted) {
+    if (!wanted || wanted === repo.defaultBranch) return { branch: repo.defaultBranch, gone: null };
+    let names;
+    try {
+      names = (await cached(`branches:${repo.id}`, () => provider.listBranches(repo.projectId, repo.id), 2 * MIN)).map((b) => b.name);
+    } catch {
+      return { branch: wanted, gone: null };
+    }
+    const found = names.find((n) => n === wanted) || names.find((n) => n.toLowerCase() === wanted.toLowerCase());
+    return found ? { branch: found, gone: null } : { branch: repo.defaultBranch, gone: wanted };
+  }
+
+  /**
    * A list of commits (one repo, newest first) as people read it: the merged
    * pull requests with the commits they brought, the commits pushed without
    * one, the work items they mention and who wrote them.
@@ -574,11 +591,11 @@ export function createService({
         const repo = repoList.find((r) => r.id === last.repoId);
         const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };
         if (!repo) return { ...head, unknown: true, untracked: true, lastDeploy };
-        // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
-        const branch = t.branch || last.branch || repo.defaultBranch;
         try {
+          // The branch the deployed build came from (a release or hotfix branch too), else the repo's default.
+          const { branch, gone } = await liveBranch(repo, t.branch || last.branch);
           const [tip] = await cached(`commits:tip:${repo.id}:${branch}`, () => provider.listCommits(repo.projectId, repo.id, { branch, top: 1 }), 2 * MIN);
-          const where = { ...head, branch, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
+          const where = { ...head, branch, branchGone: gone, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, branch) };
           if (tip && tip.id !== last.commit) {
             // Production must run a commit the branch contains; otherwise "since" means nothing and
             // the list would be the branch's whole history (years of commits that are already live).

@@ -28,6 +28,7 @@ export default {
   'changes waiting': 'alterações por entregar',
   'Not linked': 'Sem ligação',
   "Can't compare": 'Não comparável',
+  'Production was built from {gone}, which no longer exists, so this compares with {branch}.': 'A produção foi construída a partir de {gone}, que já não existe, por isso a comparação é feita com {branch}.',
   "This monitor isn't linked to the release stage or pipeline that deploys it, so Keel can't tell what's live.": 'Este monitor não está ligado à fase de release ou ao pipeline que faz o deploy, por isso o Keel não sabe o que está em produção.',
   'Link it in Settings → Production monitors': 'Ligue-o em Definições → Monitores de produção',
   "Production runs a build from {deployed}, which isn't on {branch}, so what's waiting can't be counted.": 'A produção corre uma build de {deployed}, que não está em {branch}, por isso não é possível contar o que está por entregar.',

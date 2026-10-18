@@ -115,6 +115,9 @@ function Environment({ env }) {
           {can('monitors.manage') && <> <Link to="/settings#production">{t('Link it in Settings → Production monitors')}</Link></>}
         </p>
       )}
+      {env.branchGone && (
+        <p className="muted small">{t('Production was built from {gone}, which no longer exists, so this compares with {branch}.', { gone: env.branchGone, branch: env.branch })}</p>
+      )}
       {env.diverged && (
         <p className="callout">
           {env.deployedBranch && env.deployedBranch !== env.branch
