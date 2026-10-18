@@ -1318,3 +1318,8 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 @media (max-width: 860px) {
   .page-header { margin: -10px -16px 4px; padding: 10px 16px; }
 }
+
+/* Waiting to ship: open pull requests into the branch, under what's already merged. */
+.ship-next { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line-strong); }
+.ship-next > summary { cursor: pointer; }
+.ship-next > .deploy-list { margin-top: 10px; }

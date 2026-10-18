@@ -31,6 +31,33 @@ export function waitingChanges({ pullRequests = [], directCommits = [] }) {
   };
 }
 
+// Closest to merging first: set to complete itself, approved, in review, needing work, drafts.
+const NEXT_RANK = { approved: 1, 'in-review': 2, 'no-reviewers': 3, 'waiting-author': 3, rejected: 3, draft: 4 };
+
+/**
+ * What's coming next to an environment: the open pull requests into the
+ * branch it deploys from, closest to merging first, then the longest open.
+ */
+export function comingNext(openPrs, repoId, branch) {
+  const rank = (p) => (p.autoComplete && p.reviewState === 'approved' ? 0 : NEXT_RANK[p.reviewState] ?? 3);
+  return openPrs
+    .filter((p) => p.repoId === repoId && p.targetBranch === branch)
+    .sort((a, b) => rank(a) - rank(b) || Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      author: p.author?.displayName || null,
+      createdAt: p.createdAt,
+      sourceBranch: p.sourceBranch,
+      reviewState: p.reviewState,
+      autoComplete: !!p.autoComplete,
+      hasConflicts: !!p.hasConflicts,
+      projectId: p.projectId,
+      repoId: p.repoId,
+      webUrl: p.webUrl || null,
+    }));
+}
+
 /** The commits of several repos as one list, newest first, each with its repo and what it refers to. */
 export function mergeCommits(perRepo, { limit = 2000 } = {}) {
   const all = [];

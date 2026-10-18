@@ -32,4 +32,9 @@ export default {
   'Link it in Settings → Production monitors': 'Ligue-o em Definições → Monitores de produção',
   "Production runs a build from {deployed}, which isn't on {branch}, so what's waiting can't be counted.": 'A produção corre uma build de {deployed}, que não está em {branch}, por isso não é possível contar o que está por entregar.',
   "Production runs a commit that isn't on {branch} (built from another branch, or the branch was rewritten), so what's waiting can't be counted.": 'A produção corre um commit que não está em {branch} (feito a partir de outro branch, ou o branch foi reescrito), por isso não é possível contar o que está por entregar.',
+  // Coming next: open pull requests into the production branch
+  'Coming next': 'A seguir',
+  '{n} open pull request into {branch}': '{n} pull request aberto para {branch}',
+  '{n} open pull requests into {branch}': '{n} pull requests abertos para {branch}',
+  'open {age}': 'aberto há {age}',
 };
