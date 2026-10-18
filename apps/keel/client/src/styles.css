@@ -1320,6 +1320,11 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 }
 
 /* Waiting to ship: open pull requests into the branch, under what's already merged. */
+.ship-now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; margin: 0 0 10px; }
+.ship-now::before { content: ''; align-self: center; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; background: var(--info); }
+.ship-now-deploying::before { animation: run-pulse 1.6s ease-in-out infinite; }
+.ship-now-approval::before { background: var(--warn); }
+.ship-now-failed::before { background: var(--bad); }
 .ship-next { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line-strong); }
 .ship-next > summary { cursor: pointer; }
 .ship-next > .deploy-list { margin-top: 10px; }

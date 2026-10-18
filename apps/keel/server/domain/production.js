@@ -69,6 +69,39 @@ export function runningDeploy(monitor, { releases = [], pipelines = [], builds =
     .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0] || null;
 }
 
+/**
+ * An environment's next deploy while it's under way: deploying now, or
+ * waiting on an approval (a release stage's pre-deployment approval or gate,
+ * a pipeline run's approval check). Only deploys started after `since` (the
+ * last successful one) count, and a deploy running longer than
+ * DEPLOY_GRACE_MS is taken as stuck, not deploying.
+ */
+export function deployUnderWay(target, { releases = [], builds = [], approvals = [] }, { since = null, now = Date.now() } = {}) {
+  let found = [];
+  if (target.type === 'release') {
+    const def = releases.find((d) => d.projectId === target.projectId && d.id === target.definitionId);
+    found = (def?.releases || [])
+      .map((r) => ({ r, s: r.stages.find((x) => !target.stage || x.name === target.stage) }))
+      .filter(({ s }) => s?.deploying || s?.waiting)
+      .map(({ r, s }) => ({ state: s.deploying ? 'deploying' : 'approval', label: r.name, startedAt: s.startedAt || s.at, by: s.requestedFor?.displayName || null, webUrl: r.webUrl }));
+  } else {
+    found = builds
+      .filter((b) => b.projectId === target.projectId && b.definition?.id === target.definitionId && b.status === 'inProgress'
+        && b.reason !== 'pullRequest' && (!target.branch || b.sourceBranch === target.branch))
+      .map((b) => ({
+        state: approvals.some((a) => a.kind === 'yaml' && a.run?.id === b.id) ? 'approval' : 'deploying',
+        label: b.buildNumber,
+        startedAt: b.startedAt || b.queuedAt,
+        by: b.requestedFor?.displayName || null,
+        webUrl: b.webUrl,
+      }));
+  }
+  return found
+    .filter((d) => d.startedAt && (!since || Date.parse(d.startedAt) > Date.parse(since))
+      && (d.state === 'approval' || now - Date.parse(d.startedAt) < DEPLOY_GRACE_MS))
+    .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0] || null;
+}
+
 /** Failure rate over the Application Insights buckets in [from, to). */
 function failRate(series, from, to) {
   const inRange = series.filter((b) => {

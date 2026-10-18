@@ -15,7 +15,7 @@ import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
 import { comingNext, commitRefs, landedAt, mergeCommits, waitingChanges } from './domain/commits.js';
-import { deployMarkers, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
+import { deployMarkers, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
@@ -592,12 +592,16 @@ export function createService({
      */
     async undeployed() {
       // Open pull requests are "coming next" on the card of the branch they go into.
-      const [targets, repoList, openPrs] = await Promise.all([productionTargets(), repos(), activePRs().catch(() => [])]);
+      const [targets, repoList, openPrs, rels, builds, appr] = await Promise.all([
+        productionTargets(), repos(), activePRs().catch(() => []),
+        // For the deploy under way (running, or waiting on an approval).
+        releases().catch(() => []), rawBuilds().catch(() => []), approvals().catch(() => []),
+      ]);
       // Monitors not linked to what deploys them still show, saying so, rather than vanishing.
       const unlinked = (monitoring ? monitoring.status() : []).filter((m) => !m.link)
         .map((m) => ({ key: `monitor:${m.id}`, name: m.name, projectId: null, projectName: null, unlinked: true, monitorId: m.id }));
       const results = await Promise.all(targets.map(async (t) => {
-        const head = { key: t.key, name: t.name, projectId: t.projectId, projectName: t.projectName };
+        let head = { key: t.key, name: t.name, projectId: t.projectId, projectName: t.projectName };
         let history;
         try {
           history = await deployHistory(t, 90);
@@ -605,6 +609,13 @@ export function createService({
           return { ...head, error: err.message };
         }
         const last = history.find((d) => d.status === 'succeeded' && d.commit && d.repoId);
+        // The newest deploy, when it didn't succeed: production is still on the one before.
+        const failed = history.find((d) => d.status !== 'succeeded' && (!last || Date.parse(d.at) > Date.parse(last.at)));
+        head = {
+          ...head,
+          deploy: deployUnderWay(t, { releases: rels, builds, approvals: appr }, { since: last?.at }),
+          lastFailed: failed ? { id: failed.id, label: failed.label, at: failed.at, status: failed.status, webUrl: failed.webUrl } : null,
+        };
         if (!last) return { ...head, unknown: true, lastDeploy: null };
         const repo = repoList.find((r) => r.id === last.repoId);
         const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };
