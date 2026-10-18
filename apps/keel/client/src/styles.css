@@ -1177,3 +1177,10 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .suggested-who { display: grid; min-width: 0; flex: 1; }
 .flaky-test { max-width: 520px; }
 .flaky-test .chips { margin: 3px 0; }
+.chart-svg .bar-wait { fill: var(--accent); fill-opacity: 0.3; }
+.chart-svg .bar.bar-bad { fill: var(--bad); }
+.legend-swatch.seg-run { background: var(--accent); }
+.legend-swatch.seg-wait { background: var(--accent); opacity: 0.3; }
+.legend-swatch.seg-fail { background: var(--bad); }
+.run-times { margin-top: 12px; background: var(--bg); }
+.trend { font-size: 11.5px; margin-left: 4px; white-space: nowrap; }

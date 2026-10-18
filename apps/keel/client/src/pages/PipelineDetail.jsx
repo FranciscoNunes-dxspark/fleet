@@ -7,6 +7,7 @@ import { t, tx } from '../i18n.js';
 import { Chip, Confirm, ErrorBox, Loading } from '../ui.jsx';
 import { useProjectLabel } from '../orgs.js';
 import { FlakyTests } from './Pipelines.jsx';
+import { RunTimesChart } from '../charts.jsx';
 
 // Pipeline details (drawer): the pipeline's latest runs, and for one run its
 // stages, jobs and steps, the failed steps' errors and last log lines, the
@@ -67,6 +68,15 @@ export default function PipelineDetail({ target }) {
   const durations = runs.filter((r) => r.status === 'completed' && r.startedAt).map((r) => seconds(r.startedAt, r.finishedAt)).sort((a, b) => a - b);
   const median = durations.length ? durations[Math.floor(durations.length / 2)] : null;
   const branch = p?.branch || runs[0]?.sourceBranch;
+  // Finished runs, oldest first, for the run times chart.
+  const timed = runs.filter((r) => r.status === 'completed' && r.startedAt && r.finishedAt && r.result !== 'canceled').reverse().map((r) => ({
+    id: r.id,
+    label: r.buildNumber,
+    branch: r.sourceBranch.replace(/^refs\/pull\/(\d+)\/merge$/, 'PR $1'),
+    failed: r.result === 'failed',
+    runMin: seconds(r.startedAt, r.finishedAt) / 60,
+    waitMin: r.queuedAt ? Math.max(0, seconds(r.queuedAt, r.startedAt) / 60) : 0,
+  }));
 
   const queue = async () => {
     try {
@@ -90,9 +100,18 @@ export default function PipelineDetail({ target }) {
 
       <dl className="facts">
         <div><dt>{t('Success rate')}</dt><dd>{p?.passRate == null ? '—' : pct(p.passRate)}</dd></div>
-        <div><dt>{t('Typical duration')}</dt><dd>{median == null ? '—' : duration(median)}</dd></div>
+        <div><dt>{t('Typical duration')}</dt><dd>{median == null ? '—' : duration(median)}<Trend trend={p?.durationTrend} /></dd></div>
+        <div><dt>{t('Typical wait for an agent')}</dt><dd>{p?.medianQueueMin == null ? '—' : duration(Math.round(p.medianQueueMin * 60))}</dd></div>
         <div><dt>{t('Last green')}</dt><dd>{p?.lastGreenAt ? t('{age} ago', { age: age(p.lastGreenAt) }) : '—'}</dd></div>
       </dl>
+
+      {timed.length >= 3 && (
+        <RunTimesChart
+          label={t('Run times, last {n} runs', { n: timed.length })}
+          runs={timed}
+          onOpen={(r) => setOpenId(r.id)}
+        />
+      )}
 
       <section className="detail-section">
         <h3>{t('Recent runs')}</h3>
@@ -267,5 +286,16 @@ function TestBar({ tests }) {
         <span className="muted"> · {t('{n} in total', { n: total })}</span>
       </p>
     </div>
+  );
+}
+
+/** "↑ 35%" when runs got at least 20% slower this week than the week before ("↓" when faster). */
+export function Trend({ trend }) {
+  if (!trend || trend.change == null || Math.abs(trend.change) < 0.2) return null;
+  const up = trend.change > 0;
+  return (
+    <span className={`trend ${up ? 'text-warn' : 'text-ok'}`} title={t('Median {recent} this week, {before} the week before', { recent: `${Math.round(trend.recentMin)}m`, before: `${Math.round(trend.beforeMin)}m` })}>
+      {up ? '↑' : '↓'} {Math.round(Math.abs(trend.change) * 100)}%
+    </span>
   );
 }

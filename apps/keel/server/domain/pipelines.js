@@ -30,6 +30,24 @@ export function homeBranch(runs, repoDefault) {
   return pick(nonPr.filter((b) => AUTOMATIC.has(b.reason))) || pick(nonPr) || repoDefault || null;
 }
 
+const minutesRun = (b) => (Date.parse(b.finishedAt) - Date.parse(b.startedAt)) / 60_000;
+
+/**
+ * Is the pipeline getting slower? The median duration of its runs in the last
+ * 7 days against the 7 days before, when both have at least 3 runs:
+ * { recentMin, beforeMin, change } (change 0.25 = 25% slower).
+ */
+export function durationTrend(runs, now = Date.now()) {
+  const week = 7 * 86_400_000;
+  const timed = runs.filter((b) => b.startedAt && b.finishedAt);
+  const recent = timed.filter((b) => Date.parse(b.finishedAt) > now - week).map(minutesRun);
+  const before = timed.filter((b) => Date.parse(b.finishedAt) <= now - week && Date.parse(b.finishedAt) > now - 2 * week).map(minutesRun);
+  if (recent.length < 3 || before.length < 3) return null;
+  const r = median(recent);
+  const b = median(before);
+  return { recentMin: r, beforeMin: b, change: b > 0 ? (r - b) / b : null };
+}
+
 /**
  * One row per pipeline definition. Health, pass rate and the run strip are
  * judged on the pipeline's home branch (PR validation runs ignored); "last
@@ -86,7 +104,10 @@ export function pipelineHealth(builds, repos, definitions = []) {
       lastGreenAt: lastGreen?.finishedAt || null,
       runCount: judged.length,
       recent: completed.slice(0, 12).map((b) => ({ id: b.id, result: b.result, finishedAt: b.finishedAt, webUrl: b.webUrl, buildNumber: b.buildNumber })),
-      medianDurationMin: median(completed.filter((b) => b.startedAt).map((b) => (Date.parse(b.finishedAt) - Date.parse(b.startedAt)) / 60_000)),
+      medianDurationMin: median(completed.filter((b) => b.startedAt).map(minutesRun)),
+      // Waiting for an agent before it started.
+      medianQueueMin: median(completed.filter((b) => b.startedAt && b.queuedAt).map((b) => Math.max(0, (Date.parse(b.startedAt) - Date.parse(b.queuedAt)) / 60_000))),
+      durationTrend: durationTrend(judged),
     });
   }
   // Pipelines with no runs in the window (or never run): listed, judged on nothing.
@@ -112,6 +133,8 @@ export function pipelineHealth(builds, repos, definitions = []) {
       runCount: 0,
       recent: [],
       medianDurationMin: null,
+      medianQueueMin: null,
+      durationTrend: null,
       paused: !!d.paused,
       webUrl: d.webUrl || null,
     });

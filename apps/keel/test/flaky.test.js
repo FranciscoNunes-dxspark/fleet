@@ -41,3 +41,11 @@ test('flaky tests: re-run on the same commit, or failing on and off; broken ones
   assert.equal(r2.analyzed.unreadable, 3);
   assert.equal(shortTestName('A.B.C.D'), 'C.D');
 });
+
+test('pipelines: getting slower, this week against the week before', async () => {
+  const { durationTrend } = await import('../server/domain/pipelines.js');
+  const at = (hAgo, min) => ({ startedAt: new Date(NOW - hAgo * H - min * 60_000).toISOString(), finishedAt: new Date(NOW - hAgo * H).toISOString() });
+  const runs = [at(10, 12), at(20, 14), at(30, 13), at(200, 8), at(220, 8), at(240, 9), at(400, 30)];
+  assert.deepEqual(durationTrend(runs, NOW), { recentMin: 13, beforeMin: 8, change: 5 / 8 });
+  assert.equal(durationTrend(runs.slice(0, 5), NOW), null, 'too few runs the week before');
+});

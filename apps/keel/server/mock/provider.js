@@ -377,8 +377,12 @@ for (const def of definitions) {
       repoId: def.repo.id,
       repoName: def.repo.name,
       requestedFor: def.nightly ? person('svc', 'Scheduler', '') : pick(DEVS),
-      queuedAt: iso(finished - 9 * 60_000),
-      startedAt: iso(finished - 8 * 60_000),
+      // Run times vary by run (without using the shared random numbers); a few pipelines got slower this week.
+      ...(() => {
+        const runMin = 5 + ((i * 7 + def.id) % 6) + (def.id % 4 === 0 && finished > NOW - 7 * D ? 5 : 0);
+        const waitMin = 0.5 + ((i * 3 + def.id) % 5) * (def.id % 5 === 1 ? 2.5 : 0.6);
+        return { queuedAt: iso(finished - (runMin + waitMin) * 60_000), startedAt: iso(finished - runMin * 60_000) };
+      })(),
       finishedAt: iso(finished),
       webUrl: `${ORG}/${p.name}/_build/results?buildId=${nextBuild - 1}`,
     });

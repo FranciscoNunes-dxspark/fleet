@@ -169,3 +169,68 @@ export function AgingChart({ items, states, p50, p85, label, onOpen, height = 24
     </figure>
   );
 }
+
+/**
+ * Run times, oldest to newest: each bar is a run, split into the time it
+ * waited for an agent (lighter) and the time it ran (the accent, or red when
+ * it failed), with a dashed line at the median run time.
+ */
+export function RunTimesChart({ runs, label, onOpen, height = 150 }) {
+  const [hover, setHover] = useState(null);
+  const [ref, measured] = useWidth();
+  const W = measured || 480;
+  const H = height;
+  const pad = { l: 36, r: 8, t: 8, b: 18 };
+  const max = niceMax(Math.max(1, ...runs.map((r) => r.waitMin + r.runMin)));
+  const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / max);
+  const bw = (W - pad.l - pad.r) / Math.max(1, runs.length);
+  const sorted = [...runs.map((r) => r.runMin)].sort((a, b) => a - b);
+  const med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
+  const fmt = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${Math.round(m % 60)}m` : m >= 1 ? `${Math.round(m)}m` : `${Math.round(m * 60)}s`);
+  return (
+    <figure className="chart run-times">
+      <figcaption className="chart-title">{label}</figcaption>
+      <div className="chart-body" ref={ref}>
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label} className="chart-svg">
+          {[0, max / 2, max].map((tick) => (
+            <g key={tick}>
+              <line x1={pad.l} x2={W - pad.r} y1={y(tick)} y2={y(tick)} className="grid" />
+              <text x={pad.l - 6} y={y(tick) + 4} className="axis" textAnchor="end">{fmt(tick)}</text>
+            </g>
+          ))}
+          {runs.map((r, i) => {
+            const x = pad.l + i * bw + bw * 0.15;
+            const w = Math.max(2, bw * 0.7);
+            return (
+              <g key={r.id}>
+                <rect x={x} y={y(r.waitMin + r.runMin)} width={w} height={Math.max(0, y(r.runMin) - y(r.waitMin + r.runMin))} className="bar bar-wait" rx="1.5" />
+                <rect x={x} y={y(r.runMin)} width={w} height={Math.max(1, y(0) - y(r.runMin))} className={`bar ${r.failed ? 'bar-bad' : ''}`} rx="1.5" />
+                <rect
+                  x={pad.l + i * bw} y={pad.t} width={bw} height={H - pad.t - pad.b} className="hit" tabIndex={0} role="button"
+                  aria-label={t('{name}: ran {run}, waited {wait}', { name: r.label, run: fmt(r.runMin), wait: fmt(r.waitMin) })}
+                  onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}
+                  onClick={() => onOpen?.(r)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onOpen?.(r)}
+                />
+              </g>
+            );
+          })}
+          {med != null && <line x1={pad.l} x2={W - pad.r} y1={y(med)} y2={y(med)} className="ref-line" />}
+          <text x={pad.l} y={H - 4} className="axis">{t('older')}</text>
+          <text x={W - pad.r} y={H - 4} className="axis" textAnchor="end">{t('newest')}</text>
+        </svg>
+        {hover !== null && runs[hover] && (
+          <div className="tooltip" style={{ left: `${((pad.l + (hover + 0.5) * bw) / W) * 100}%`, top: `${(y(runs[hover].waitMin + runs[hover].runMin) / H) * 100}%` }}>
+            <strong>{fmt(runs[hover].runMin)}</strong> {t('running')} · {fmt(runs[hover].waitMin)} {t('waiting')}
+            <div className="muted">{runs[hover].label}{runs[hover].branch ? ` · ${runs[hover].branch}` : ''}</div>
+          </div>
+        )}
+      </div>
+      <ul className="legend small">
+        <li><span className="legend-swatch seg-run" />{t('Running')}</li>
+        <li><span className="legend-swatch seg-wait" />{t('Waiting for an agent')}</li>
+        <li><span className="legend-swatch seg-fail" />{t('Failed')}</li>
+        {med != null && <li className="muted">{t('Dashed: median {time}', { time: fmt(med) })}</li>}
+      </ul>
+    </figure>
+  );
+}

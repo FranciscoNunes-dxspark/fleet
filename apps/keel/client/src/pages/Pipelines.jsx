@@ -5,6 +5,7 @@ import { useApi, useApp } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
 import { Chip, Confirm, Empty, ErrorBox, ExternalLink, Loading, PageHeader, Toggle, pinInView } from '../ui.jsx';
 import { ApprovalsPanel, ReleasesTab } from './Releases.jsx';
+import { Trend } from './PipelineDetail.jsx';
 import { t, tj } from '../i18n.js';
 
 export default function Pipelines() {
@@ -223,7 +224,7 @@ function PipelineRow({ p, showFolder, onQueue }) {
         </div>
       </td>
       <td className={`num ${p.passRate !== null && p.passRate < 0.8 ? 'text-warn strong' : ''}`}>{pct(p.passRate)}</td>
-      <td className="num muted">{p.medianDurationMin != null ? `${Math.round(p.medianDurationMin)}m` : '—'}</td>
+      <td className="num muted">{p.medianDurationMin != null ? `${Math.round(p.medianDurationMin)}m` : '—'}<Trend trend={p.durationTrend} /></td>
       <td className="row-actions">
         {canRun && <Confirm text={t('Run on {branch}?', { branch: p.branch })} onConfirm={() => onQueue(p, rowRef.current)} className="btn btn-small btn-ghost">{t('Run')}</Confirm>}
         <ExternalLink href={(run || p.lastRun)?.webUrl || p.webUrl}>{t('Open')}</ExternalLink>
