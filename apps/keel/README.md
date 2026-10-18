@@ -112,7 +112,7 @@ Admins can have Keel post to team channels in **Settings → Teams and Slack**, 
 What the app already does:
 
 - Your PAT stays on the server and never reaches the browser. The server binds to `127.0.0.1`, so other machines can't reach it.
-- **DNS-rebinding guard:** requests whose `Host` isn't `localhost` or `127.0.0.1` (or a host you list in `ALLOWED_HOSTS`) are refused, so a malicious website can't point its own domain at your machine and read this API.
+- **DNS-rebinding guard:** requests whose `Host` isn't `localhost` or `127.0.0.1` (or `PUBLIC_URL`'s host, or a host you list in `ALLOWED_HOSTS`) are refused, so a malicious website can't point its own domain at your machine and read this API.
 - Writes need the `x-keel` header and a same-site `Origin`, so other sites can't trigger votes, comments or pipeline runs from your browser.
 - A strict Content-Security-Policy, `X-Frame-Options: DENY`, no-referrer and `no-store` on API responses. PR Markdown is sanitized, and the only images loaded are those from your own organization.
 
@@ -170,7 +170,7 @@ To try accounts and roles before deploying, run on demo data with `AUTH_MODE=log
 
 ### What you need on Hostinger
 
-The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps**. PHP-only shared hosting can't run it. You also need a domain or subdomain (for example `console.yourcompany.com`) with HTTPS.
+The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps**. PHP-only shared hosting can't run it. You also need a domain or subdomain (Keel's is `keel.example.com`) with HTTPS.
 
 ### Where Keel keeps its data
 
@@ -198,11 +198,12 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
    AUTH_MODE=login
    SESSION_SECRET=<output of: openssl rand -hex 32>
    ADMIN_SETUP_CODE=<a code only you know, for creating the first admin>
-   ALLOWED_HOSTS=console.yourcompany.com
+   PUBLIC_URL=https://keel.example.com
    TRUST_PROXY=1
    HOST=127.0.0.1
    API_PORT=4280
    ```
+   `PUBLIC_URL` is the address people open. Keel serves only that host (plus `localhost`), and Teams and Slack posts link to it. If Keel is also reached by another name, such as `www.keel.example.com`, list it in `ALLOWED_HOSTS`.
 4. **Keep it running** with pm2, so it restarts on crash and after reboot:
    ```bash
    sudo npm i -g pm2 && pm2 start server/index.js --name keel && pm2 save && pm2 startup
@@ -210,7 +211,7 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
 5. **Put nginx in front.** Live updates need buffering off on `/api/events`:
    ```nginx
    server {
-     server_name console.yourcompany.com;
+     server_name keel.example.com;
      location / {
        proxy_pass http://127.0.0.1:4280;
        proxy_http_version 1.1;
@@ -231,7 +232,7 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
    ```
    Then turn on HTTPS:
    ```bash
-   sudo certbot --nginx -d console.yourcompany.com
+   sudo certbot --nginx -d keel.example.com
    ```
 6. **Back up and protect the data folder** (`data/`, or `DATA_DIR`). It holds the accounts, everyone's settings and the encrypted tokens. Keep `SESSION_SECRET` safe: without it, stored tokens can't be decrypted and everyone has to link theirs again. Anyone who has both the data folder and the secret can use the stored tokens.
 7. **Updating:**

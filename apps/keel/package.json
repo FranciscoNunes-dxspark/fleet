@@ -2,6 +2,7 @@
   "name": "keel",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://keel.example.com",
   "description": "Keel: a tech lead's console for Azure DevOps. PRs, work items, boards, pipelines and releases across projects and repos.",
   "type": "module",
   "engines": {

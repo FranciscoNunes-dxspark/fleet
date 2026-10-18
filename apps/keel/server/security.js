@@ -1,7 +1,19 @@
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/** The host of PUBLIC_URL (e.g. "keel.example.com" for https://keel.example.com), or null. */
+export function publicHost(url = process.env.PUBLIC_URL) {
+  try {
+    return url?.trim() ? new URL(url.trim()).hostname.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// The address Keel is published at (PUBLIC_URL) is allowed without repeating it in ALLOWED_HOSTS.
 const allowedHosts = new Set([
   ...LOOPBACK,
   ...(process.env.ALLOWED_HOSTS || '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean),
+  ...[publicHost()].filter(Boolean),
 ]);
 
 const hostname = (hostHeader = '') => hostHeader.toLowerCase().replace(/:\d+$/, '');
@@ -10,11 +22,11 @@ const hostname = (hostHeader = '') => hostHeader.toLowerCase().replace(/:\d+$/, 
  * DNS-rebinding guard. A malicious site can point its own domain at
  * 127.0.0.1; the browser then treats this server as same-origin with that
  * site. Checking the Host header shuts that down: only localhost (or hosts you
- * list in ALLOWED_HOSTS) are served.
+ * list in ALLOWED_HOSTS, or PUBLIC_URL's host) are served.
  */
 export function hostGuard(req, res, next) {
   if (!allowedHosts.has(hostname(req.headers.host))) {
-    return res.status(421).type('text').send('Unknown host. Add it to ALLOWED_HOSTS if you really mean to serve it.');
+    return res.status(421).type('text').send('Unknown host. Set PUBLIC_URL, or add it to ALLOWED_HOSTS, if you really mean to serve it.');
   }
   // Writes must come from a page on an allowed host (blocks cross-site form posts).
   const origin = req.headers.origin;
