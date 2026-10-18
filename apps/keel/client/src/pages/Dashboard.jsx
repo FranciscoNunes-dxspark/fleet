@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, hours, pct, REVIEW_STATE } from '../format.js';
-import { Avatar, Chip, ErrorBox, PageHeader } from '../ui.jsx';
+import { Avatar, Chip, ErrorBox } from '../ui.jsx';
 import { PREF_KEYS, pushPref } from '../prefs.js';
 import { locale, t, tj, tx } from '../i18n.js';
 import { byWaiting, uncounted, waitTone } from './Shipping.jsx';
@@ -79,11 +79,11 @@ export default function Dashboard() {
 
   return (
     <div className="page page-wide">
-      <PageHeader title={greeting} sub={meta.trackedProjects.map((p) => p.name).join(', ') || t('No projects tracked yet')}>
+      <Hero greeting={greeting} sub={meta.trackedProjects.map((p) => p.name).join(', ') || t('No projects tracked yet')}>
         <button type="button" className={`btn btn-small ${editing ? 'btn-primary' : ''}`} onClick={() => setEditing((e) => !e)}>
           {editing ? t('Done') : t('Customize')}
         </button>
-      </PageHeader>
+      </Hero>
 
       {editing && (
         <div className="panel customize">
@@ -126,6 +126,37 @@ export default function Dashboard() {
   );
 }
 
+/**
+ * The top of the Dashboard: the greeting and the three numbers that matter
+ * today (what needs you now, reviews waiting on you, production problems).
+ */
+function Hero({ greeting, sub, children }) {
+  const { data } = useApi('/attention');
+  const s = data?.summary;
+  const figures = [
+    { to: '/inbox', n: s?.high, label: t('act now'), tone: 'bad' },
+    { to: '/prs', n: s?.myReviews, label: t('reviews for you'), tone: 'accent' },
+    { to: '/production', n: s?.productionIssues, label: t('production issues'), tone: 'bad' },
+  ];
+  return (
+    <section className="hero" aria-label={greeting}>
+      <div className="hero-text">
+        <h1>{greeting}</h1>
+        <p className="page-sub">{sub}</p>
+      </div>
+      <div className="hero-figures">
+        {figures.map((f) => (
+          <Link key={f.to} to={f.to} className={`hero-figure ${f.n ? `hero-${f.tone}` : ''}`}>
+            <span className="hero-n">{f.n ?? '—'}</span>
+            <span className="hero-label">{f.label}</span>
+          </Link>
+        ))}
+      </div>
+      <div className="hero-actions">{children}</div>
+    </section>
+  );
+}
+
 function WidgetBody({ id }) {
   switch (id) {
     case 'production': return <ProductionWidget />;
@@ -153,7 +184,9 @@ function useWidgetData(path) {
 /** Big number with a label; `to` makes it a link into the filtered view. */
 function Stat({ value, label, tone, to }) {
   const body = <><span className={`stat-value ${tone ? `text-${tone}` : ''}`}>{value}</span><span className="stat-label">{label}</span></>;
-  return to ? <Link to={to} className="stat">{body}</Link> : <span className="stat">{body}</span>;
+  // The mark on its left takes the tone, so a red or amber figure stands out before you read it.
+  const className = `stat ${tone ? `stat-${tone}` : ''}`;
+  return to ? <Link to={to} className={className}>{body}</Link> : <span className={className}>{body}</span>;
 }
 
 /** The weekly summary's numbers so far, and the latest things finished. */

@@ -27,7 +27,8 @@ export function createMultiService(entries) {
   const primary = entries[0];
   const errors = new Map(); // org key -> last error message
 
-  const tag = (org, x) => (x && typeof x === 'object' ? { ...x, org: org.key } : x);
+  // A list (a repo's branches, say) tags each entry: spread into an object it would become { 0: ..., 1: ... }.
+  const tag = (org, x) => (Array.isArray(x) ? x.map((y) => tag(org, y)) : x && typeof x === 'object' ? { ...x, org: org.key } : x);
   const tagAll = (org, list) => (list || []).map((x) => tag(org, x));
   const byKey = (key) => entries.find((e) => e.org.key === key) || primary;
   // Inbox entries: the item and what it opens both carry the organization.

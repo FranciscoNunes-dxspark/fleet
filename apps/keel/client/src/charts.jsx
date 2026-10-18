@@ -1,8 +1,20 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { t } from './i18n.js';
 
 // Small single-series charts. One hue (the accent), text in ink tokens,
 // recessive gridlines, and a hover/focus tooltip on every mark.
+
+/** A vertical fade of the accent for bars and areas (stop colours are set in styles.css). */
+export function Fade({ id, className = 'fade' }) {
+  return (
+    <defs>
+      <linearGradient id={id} x1="0" y1="0" x2="0" y2="1" className={className}>
+        <stop offset="0" className="fade-top" />
+        <stop offset="1" className="fade-bottom" />
+      </linearGradient>
+    </defs>
+  );
+}
 
 export function useWidth() {
   const ref = useRef(null);
@@ -27,12 +39,14 @@ export function ColumnChart({ data, label, valueLabel, formatX = (x) => x, heigh
   const pad = { l: 32, r: 8, t: 8, b: 26 };
   const bw = (W - pad.l - pad.r) / data.length;
   const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / nice);
+  const fade = `bars${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   return (
     <figure className="chart">
       <figcaption className="chart-title">{label}</figcaption>
       <div className="chart-body" ref={ref}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label} className="chart-svg">
+          <Fade id={fade} className="fade fade-bars" />
           {ticks.map((tick) => (
             <g key={tick}>
               <line x1={pad.l} x2={W - pad.r} y1={y(tick)} y2={y(tick)} className="grid" />
@@ -46,7 +60,7 @@ export function ColumnChart({ data, label, valueLabel, formatX = (x) => x, heigh
             const h = H - pad.b - top;
             return (
               <g key={d.key}>
-                {h > 0 && <path d={roundedTop(x, top, w, h, Math.min(4, w / 2, h))} className="bar" />}
+                {h > 0 && <path d={roundedTop(x, top, w, h, Math.min(4, w / 2, h))} className="bar" style={{ fill: `url(#${fade})` }} />}
                 <rect
                   x={pad.l + i * bw} y={pad.t} width={bw} height={H - pad.t - pad.b}
                   className="hit" tabIndex={0}
