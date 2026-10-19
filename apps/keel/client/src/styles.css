@@ -505,7 +505,9 @@ tr.saving { opacity: 0.55; }
   .release-out, .sprint-progress { grid-template-columns: 1fr; }
 }
 @media (max-width: 860px) {
-  .shell { grid-template-columns: minmax(0, 1fr); }
+  /* The header keeps its own height; the page takes the rest (a short page, like one still
+     loading, used to stretch the header to fill the screen). */
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
   .sidebar { min-width: 0; }
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
   .page { padding: 18px 16px 0; }
@@ -789,6 +791,11 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 
 /* Loading states sit in the middle of the space they're holding. */
 .loading { justify-content: center; text-align: center; }
+/* A whole page or panel still loading: the loader sits in the middle of the screen (or the
+   panel), not just under the header. The panel's close button stays clickable through it. */
+.main:has(> .loading) { display: flex; flex-direction: column; }
+.main > .loading { flex: 1; }
+.drawer > .loading { position: absolute; inset: 0; pointer-events: none; }
 .boot { min-height: 100vh; margin: 0 auto; display: grid; place-content: center; }
 
 /* ------------------------------------------------------------ appearance */
