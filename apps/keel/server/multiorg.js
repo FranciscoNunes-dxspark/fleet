@@ -198,12 +198,13 @@ export function createMultiService(entries) {
       });
     },
     /** Work item flow computed once over every organization's items. */
-    async flow(days) {
+    async flow(days, type = null) {
       const parts = await each((s) => s.flowData(days));
       return buildFlow({
         finished: parts.flatMap(({ org, value }) => tagAll(org, value.finished)),
         open: parts.flatMap(({ org, value }) => tagAll(org, value.open)),
         days,
+        type,
       });
     },
     async sprints() {

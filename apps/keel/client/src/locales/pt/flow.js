@@ -2,7 +2,9 @@
 // Area "flow": Insights → Work item flow (pages/Flow.jsx, AgingChart in charts.jsx).
 export default {
   'Work item flow': 'Fluxo de work items',
-  'Backlog items and bugs (not tasks): how long they take once someone starts them, and which ones in progress are taking longer than usual.': 'Itens de backlog e bugs (não tarefas): quanto tempo demoram depois de alguém os começar e quais dos que estão em curso demoram mais do que o habitual.',
+  'Work items of every type: how long they take once someone starts them, and which ones in progress are taking longer than usual.': 'Itens de trabalho de todos os tipos: quanto tempo demoram depois de alguém os começar e quais dos que estão em curso demoram mais do que o habitual.',
+  '{type} items: how long they take once someone starts them, and which ones in progress are taking longer than usual.': 'Itens do tipo {type}: quanto tempo demoram depois de alguém os começar e quais dos que estão em curso demoram mais do que o habitual.',
+  '{type} ({finished} finished, {wip} in progress)': '{type} ({finished} concluídos, {wip} em curso)',
   '{n} a week': '{n} por semana',
   'Cycle time': 'Tempo de ciclo',
   'median, from started to finished': 'mediana, do início ao fim',

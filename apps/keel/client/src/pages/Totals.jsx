@@ -7,6 +7,7 @@ import { locale, t, tj, tx } from '../i18n.js';
 import { AREAS, KEY_FIGURES, areaLabel, figureLabel } from '../platformLabels.js';
 import { useSticky } from '../sticky.js';
 import { Chip, Empty, ErrorBox, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
+import { downloadText } from './ReleaseNotes.jsx';
 
 // Platform totals (platform/v1 /totals): what each club site holds, fetched on a schedule.
 
@@ -64,6 +65,35 @@ function SiteState({ s }) {
 }
 
 const everyLabel = (h) => t(h === 1 ? 'every hour' : 'every {n} hours', { n: h });
+
+const csvCell = (v) => (v == null ? '' : /[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+
+/**
+ * Every figure of every site, one row per site and figure: the season total,
+ * the change since the previous fetch, and the monthly counts in season order.
+ */
+function totalsCsv(sites) {
+  const withFigures = sites.filter((s) => s.latest?.totals?.length);
+  const months = seasonMonths(withFigures.flatMap((s) => s.latest.totals));
+  const rows = [[
+    t('Site'), 'URL', t('Product'), t('Site code'), t('Version'), t('Season'), t('Fetched'),
+    t('Area'), t('Figure'), t('Figure id'), t('Total'), t('Change since the previous fetch'), ...months.map(monthLong),
+  ]];
+  for (const s of withFigures) {
+    const l = s.latest;
+    for (const x of l.totals) {
+      const prev = s.previous?.values?.[x.type];
+      const byMonth = new Map((x.months || []).map((m) => [m.month, m.count]));
+      rows.push([
+        s.name, s.url, l.product, l.site, l.version, l.season?.name || (l.season?.scope === 'all' ? t('all seasons') : null), l.at,
+        x.areas.map(areaLabel).join('; '), figureLabel(x.type), x.type, x.total, prev != null ? x.total - prev : null,
+        ...months.map((m) => (x.months ? byMonth.get(m) ?? 0 : null)),
+      ]);
+    }
+  }
+  // The byte order mark lets Excel read accented names as UTF-8.
+  return `﻿${rows.map((r) => r.map(csvCell).join(',')).join('\r\n')}\r\n`;
+}
 
 export default function Totals() {
   const { id } = useParams();
@@ -123,6 +153,9 @@ function TotalsOverview() {
           ? [t(data.length === 1 ? '{n} site' : '{n} sites', { n: data.length }), seasons.length === 1 ? t('season {name}', { name: seasons[0] }) : null, t('the figures from each site\'s Platform Totals screen')].filter(Boolean).join(' · ')
           : t('What each club site holds, from the Platform Totals screen.')}
       >
+        {data.some((s) => s.latest?.totals?.length) && (
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => downloadText(`platform-totals-${new Date().toISOString().slice(0, 10)}.csv`, totalsCsv(data), 'text/csv;charset=utf-8')}>{t('Export CSV')}</button>
+        )}
         {can('monitors.manage') && enabled.length > 0 && (
           <button type="button" className="btn btn-small" onClick={fetchAll} disabled={starting || busy}>{busy ? t('Fetching…') : t('Fetch all')}</button>
         )}

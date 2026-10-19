@@ -1,6 +1,7 @@
 // How work items flow: cycle time (started to finished), throughput per week,
 // work in progress by age, and what changed in each team's sprint since it
-// started. Tasks are left out: they're steps of a backlog item, not deliveries.
+// started. Flow covers every work item type, or one type at a time; sprint
+// scope leaves tasks out: they're steps of a backlog item, not deliveries.
 import { DAY, HOUR, median, percentile } from './prs.js';
 import { weekOf } from './delivery.js';
 import { finishedAt } from './summary.js';
@@ -37,12 +38,13 @@ const item = (w) => ({
 
 /**
  * finished: work items completed recently (filtered to the last `days` days
- * here); open: open work items now. Times are in hours.
+ * here); open: open work items now; type: one work item type, or null for all.
+ * Times are in hours.
  */
-export function buildFlow({ finished = [], open = [], days, now = Date.now() }) {
+export function buildFlow({ finished = [], open = [], days, type = null, now = Date.now() }) {
   const since = now - days * DAY;
-  const done = [...new Map(finished
-    .filter((w) => w.stateCategory === 'Completed' && !isTask(w))
+  const allDone = [...new Map(finished
+    .filter((w) => w.stateCategory === 'Completed')
     .map((w) => [`${w.org || ''}:${w.id}`, w])).values()]
     .filter((w) => {
       const t = Date.parse(finishedAt(w));
@@ -55,6 +57,17 @@ export function buildFlow({ finished = [], open = [], days, now = Date.now() }) 
       const from = Number.isFinite(start) && start <= end ? start : Date.parse(w.createdAt);
       return { w, end, hours: Number.isFinite(from) ? (end - from) / HOUR : null, estimated: !(Number.isFinite(start) && start <= end) };
     });
+  const allWip = open.filter((w) => WIP.has(w.stateCategory));
+  // Every type with something finished or in progress, for the type picker.
+  const typeCounts = new Map();
+  for (const [list, k] of [[allDone.map((d) => d.w), 'finished'], [allWip, 'wip']]) {
+    for (const w of list) {
+      const c = typeCounts.get(w.type) || { type: w.type, typeColor: w.typeColor || null, finished: 0, wip: 0 };
+      c[k] += 1;
+      typeCounts.set(w.type, c);
+    }
+  }
+  const done = type ? allDone.filter((d) => d.w.type === type) : allDone;
   const cycles = done.map((d) => d.hours);
   const p50 = median(cycles);
   const p85 = percentile(cycles, 85);
@@ -71,15 +84,14 @@ export function buildFlow({ finished = [], open = [], days, now = Date.now() }) 
     count: done.filter((d) => d.hours != null && d.hours < b.max && d.hours >= (i ? BUCKETS[i - 1].max : -Infinity)).length,
   }));
 
-  const types = [...new Set(done.map((d) => d.w.type))];
-  const byType = types.map((type) => {
-    const hrs = done.filter((d) => d.w.type === type).map((d) => d.hours);
-    return { type, count: hrs.length, medianCycleHours: median(hrs), p85CycleHours: percentile(hrs, 85) };
+  const byType = [...new Set(done.map((d) => d.w.type))].map((name) => {
+    const hrs = done.filter((d) => d.w.type === name).map((d) => d.hours);
+    return { type: name, count: hrs.length, medianCycleHours: median(hrs), p85CycleHours: percentile(hrs, 85) };
   }).sort((a, b) => b.count - a.count);
 
   // Work in progress, oldest first; "age" is time since it started.
-  const aging = open
-    .filter((w) => WIP.has(w.stateCategory) && !isTask(w))
+  const aging = allWip
+    .filter((w) => !type || w.type === type)
     .map((w) => {
       const from = Date.parse(startedAt(w) || w.stateChangedAt || w.createdAt);
       const ageHours = Number.isFinite(from) ? Math.max(0, (now - from) / HOUR) : null;
@@ -97,6 +109,8 @@ export function buildFlow({ finished = [], open = [], days, now = Date.now() }) 
 
   return {
     days,
+    type,
+    types: [...typeCounts.values()].sort((a, b) => b.finished + b.wip - (a.finished + a.wip) || a.type.localeCompare(b.type)),
     totals: {
       finished: done.length,
       perWeek: done.length / (days / 7),

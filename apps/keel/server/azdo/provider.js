@@ -913,7 +913,8 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       for (const id of fields.relatedIds || []) {
         ops.push({ op: 'add', path: '/relations/-', value: { rel: 'System.LinkTypes.Related', url: `${org}/_apis/wit/workItems/${Number(id)}` } });
       }
-      const create = (body) => api(`${seg(projectName)}/_apis/wit/workitems/${encodeURIComponent(type)}`, { method: 'POST', body, contentType: 'application/json-patch+json' });
+      // The type goes after a "$" ("…/workitems/$Bug"); without it Azure DevOps answers 404.
+      const create = (body) => api(`${seg(projectName)}/_apis/wit/workitems/$${encodeURIComponent(type)}`,{ method: 'POST', body, contentType: 'application/json-patch+json' });
       const w = await create(ops).catch((err) => {
         if (!markdownOp || !markdownRefused(err)) throw err;
         return create(ops.filter((o) => o !== markdownOp).map((o) => (o.path === `/fields/${descriptionField}` ? { ...o, value: markdownToHtml(o.value) } : o)));
