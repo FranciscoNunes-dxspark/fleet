@@ -60,26 +60,22 @@ export const isManualValidation = (r) => r.type === 'Task' && (r.task?.id === MA
 /**
  * What a running run is doing now, from its timeline: the stage in progress, since when, and
  * whether it's waiting for someone (a Manual validation, or an approval or check before the
- * stage) rather than deploying. Null when no stage is in progress.
+ * stage) rather than deploying. Stages can run side by side: if any of them is deploying, the
+ * run is (the one that began last); only when all are waiting is it waiting. Null when no
+ * stage is in progress.
  */
 export function currentStage(timeline = []) {
-  const stage = timeline.filter((r) => r.type === 'Stage' && r.state === 'inProgress')
-    .sort((a, b) => Date.parse(b.startedAt || 0) - Date.parse(a.startedAt || 0))[0];
-  if (!stage) return null;
-  const under = new Set([stage.id]);
-  for (let grew = true; grew;) {
-    grew = false;
-    for (const r of timeline) {
-      if (!under.has(r.id) && under.has(r.parentId)) {
-        under.add(r.id);
-        grew = true;
-      }
-    }
-  }
-  const inStage = timeline.filter((r) => under.has(r.id) && r.id !== stage.id);
-  const waiting = !stage.startedAt || inStage.some((r) => r.state === 'inProgress'
-    && (isManualValidation(r) || r.type === 'Checkpoint' || r.type === 'Checkpoint.Approval'));
-  return { name: stage.name, startedAt: stage.startedAt || null, waiting };
+  const children = new Map();
+  for (const r of timeline) children.set(r.parentId, [...(children.get(r.parentId) || []), r]);
+  const within = (id) => (children.get(id) || []).flatMap((r) => [r, ...within(r.id)]);
+  const stages = timeline.filter((r) => r.type === 'Stage' && r.state === 'inProgress').map((stage) => ({
+    name: stage.name,
+    startedAt: stage.startedAt || null,
+    waiting: !stage.startedAt || within(stage.id).some((r) => r.state === 'inProgress'
+      && (isManualValidation(r) || r.type === 'Checkpoint' || r.type === 'Checkpoint.Approval')),
+  }));
+  const newest = (list) => [...list].sort((a, b) => (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0))[0] || null;
+  return newest(stages.filter((s) => !s.waiting)) || newest(stages);
 }
 
 /**

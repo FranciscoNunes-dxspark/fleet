@@ -84,6 +84,13 @@ export default {
     'Failures up from {before} to {after} since {deploy} ({age} ago)': 'As falhas subiram de {before} para {after} desde {deploy} (há {age})',
   }),
   'Last check failed: {error}': 'A última verificação falhou: {error}',
+  // Why a run going now isn't counted as a deploy (domain/production.js deployNote)
+  "Not linked to the release stage or pipeline that deploys it, so Keel can't tell a deploy from an outage. Link it in Settings → Production monitors.": 'Não está ligado à fase de release ou pipeline que faz o seu deploy, por isso o Keel não distingue um deploy de uma falha. Ligue-o em Definições → Monitores de produção.',
+  "{run} is running on {branch}, but this monitor takes its deploys from {deploys}, so it isn't counted as deploying. If production deploys from {branch}, set it as the Production branch in Settings → Production monitors.": '{run} está a correr em {branch}, mas este monitor recebe os deploys de {deploys}, por isso não conta como deploy. Se a produção recebe deploys de {branch}, defina-o como branch de produção em Definições → Monitores de produção.',
+  '{run} is waiting for approval at {stage}, so nothing is deploying yet.': '{run} está à espera de aprovação em {stage}, por isso ainda nada está a ser implementado.',
+  '{run} is waiting for approval, so nothing is deploying yet.': '{run} está à espera de aprovação, por isso ainda nada está a ser implementado.',
+  '{run} has been on {stage} for over an hour, so it no longer hides an outage.': '{run} está em {stage} há mais de uma hora, por isso já não esconde uma falha.',
+  '{run} has been running for over an hour, so it no longer hides an outage.': '{run} está a correr há mais de uma hora, por isso já não esconde uma falha.',
   'Slow: {seconds}s (limit {limit}s)': 'Lento: {seconds} s (limite {limit} s)',
   '{pct} of requests failing in the last hour ({failed} of {total})': '{pct} dos pedidos a falhar na última hora ({failed} de {total})',
   'no response': 'sem resposta',
