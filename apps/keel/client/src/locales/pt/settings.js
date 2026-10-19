@@ -219,6 +219,7 @@ export default {
   'failed': 'falhou',
   'partially succeeded': 'concluído parcialmente',
   'canceled': 'cancelado',
+  'declined': 'recusado',
   'No folder': 'Sem pasta',
   'Running now': 'A correr agora',
   'All pipelines': 'Todos os pipelines',
@@ -256,7 +257,9 @@ export default {
   'Partially succeeded': 'Concluído parcialmente',
   // 'Failed' is above (Production.jsx).
   'Canceled': 'Cancelado',
+  'Declined': 'Recusado',
   'Deploying': 'A fazer deploy',
+  'Just deployed': 'Deploy recente',
   'Queued': 'Em fila',
   'No runs in the last {n} days': 'Sem execuções nos últimos {n} dias',
   'paused': 'em pausa',

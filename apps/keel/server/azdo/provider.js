@@ -202,6 +202,8 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       author: ident(r.createdBy),
       createdAt: r.creationDate,
       closedAt: r.closedDate || null,
+      // Who completed or abandoned it.
+      closedBy: r.closedBy ? ident(r.closedBy) : null,
       status: r.status,
       isDraft: !!r.isDraft,
       mergeStatus: r.mergeStatus || 'notSet',
@@ -1073,12 +1075,15 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
           webUrl: relUrl(projectName, r.id),
           envs: (r.environments || []).map((e) => {
             const step = e.deploySteps?.at(-1);
+            // Azure DevOps marks a stage "rejected" both when its deployment failed and when an approver
+            // declined it; only the first is a failure.
+            const declined = e.status === 'rejected' && [...(e.preDeployApprovals || []), ...(e.postDeployApprovals || [])].some((a) => a.status === 'rejected');
             const waiting = (e.preDeployApprovals || []).some((a) => a.status === 'pending')
               || /^(pending|deferred|evaluatinggates|gatefailed)$/i.test(step?.operationStatus || '');
             return {
               id: e.id,
               definitionEnvironmentId: e.definitionEnvironmentId,
-              status: e.status,
+              status: declined ? 'declined' : e.status,
               deploying: e.status === 'inProgress' && !waiting,
               waiting,
               startedAt: step?.queuedOn || null,
@@ -1156,8 +1161,9 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       const list = await api(`${base}/deployments`, {
         query: { definitionId: target.definitionId, minStartedTime: since, queryOrder: 'descending', $top: 200 },
       }).then((d) => d.value || []).catch((err) => (err.status === 404 ? [] : Promise.reject(err)));
+      // An approval that was declined ("Rejected") deployed nothing.
       const deployments = list.filter((d) => (!target.stage || d.releaseEnvironment?.name === target.stage)
-        && ['succeeded', 'partiallySucceeded', 'failed'].includes(d.deploymentStatus));
+        && ['succeeded', 'partiallySucceeded', 'failed'].includes(d.deploymentStatus) && !/^rejected$/i.test(d.operationStatus || ''));
       return Promise.all(deployments.map(async (d) => {
         // The commit comes from the release's primary artifact (fetched once per release; releases don't change).
         const artifacts = d.release?.artifacts?.length ? d.release.artifacts : await releaseArtifacts(target.projectName, d.release?.id);

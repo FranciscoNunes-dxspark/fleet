@@ -270,6 +270,7 @@ function addPR(p, repo, { title, author, ageH, status = 'active', closedAgeH, is
     author,
     createdAt,
     closedAt: closedAgeH != null ? ago(closedAgeH * H) : null,
+    closedBy: status === 'active' ? null : author,
     status,
     isDraft,
     mergeStatus,
@@ -1094,7 +1095,7 @@ export function createMockProvider() {
     async updatePullRequest(projectId, repoId, prId, change) {
       const pr = getPR(projectId, repoId, prId);
       if (change.publish) pr.isDraft = false;
-      if (change.abandon) Object.assign(pr, { status: 'abandoned', closedAt: iso(Date.now()) });
+      if (change.abandon) Object.assign(pr, { status: 'abandoned', closedAt: iso(Date.now()), closedBy: ME });
       if (change.autoComplete !== undefined) pr.autoComplete = !!change.autoComplete;
       if (change.complete) {
         if (pr.mergeStatus === 'conflicts') throw Object.assign(new Error('The pull request has merge conflicts. Resolve them before completing.'), { status: 409 });
@@ -1103,7 +1104,7 @@ export function createMockProvider() {
         if (approvals < 2 && !opts.bypassPolicy) {
           throw Object.assign(new Error('TF401027: The policy "Minimum number of reviewers (2)" is not satisfied. Get approvals, or override policies if you have permission.'), { status: 400 });
         }
-        Object.assign(pr, { status: 'completed', closedAt: iso(Date.now()), autoComplete: false });
+        Object.assign(pr, { status: 'completed', closedAt: iso(Date.now()), closedBy: ME, autoComplete: false });
         if (opts.transitionWorkItems) {
           for (const wid of pr._workItemIds) {
             const w = workItems.get(wid);

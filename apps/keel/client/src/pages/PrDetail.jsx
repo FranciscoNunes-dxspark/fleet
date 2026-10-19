@@ -221,7 +221,7 @@ export default function PrDetail({ target }) {
           ))}
           {!pr.reviewers.length && <li className="text-bad small">{t('No reviewers yet.')}</li>}
         </ul>
-        {writable && (candidates.length > 0 || canAddMe) && (
+        {writable && pr.status === 'active' && (candidates.length > 0 || canAddMe) && (
           <form className="inline-form" onSubmit={async (e) => { e.preventDefault(); if (reviewer && await act({ type: 'addReviewer', reviewerId: reviewer }, t('Reviewer added'))) setReviewer(''); }}>
             {candidates.length > 0 && <>
               <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>

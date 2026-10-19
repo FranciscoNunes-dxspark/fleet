@@ -145,6 +145,15 @@ export function createMultiService(entries) {
         people: uniquePeople(parts.map((p) => p.value.people)),
       };
     },
+    async closedPullRequests(days) {
+      const parts = await each((s) => s.closedPullRequests(days));
+      return {
+        prs: parts.flatMap(({ org, value }) => tagAll(org, value.prs)).sort((a, b) => Date.parse(b.closedAt) - Date.parse(a.closedAt)),
+        repos: parts.flatMap(({ org, value }) => tagAll(org, value.repos)),
+        people: uniquePeople(parts.map((p) => p.value.people)),
+        days,
+      };
+    },
     async createPullRequest(body = {}) {
       const e = await ownerOf(body.projectId);
       return tag(e.org, await e.service.createPullRequest(body));

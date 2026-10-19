@@ -26,6 +26,7 @@ const RESULT = {
   partiallySucceeded: { tone: 'warn', label: 'partially succeeded' },
   failed: { tone: 'bad', label: 'failed' },
   canceled: { tone: 'muted', label: 'canceled' },
+  declined: { tone: 'muted', label: 'declined' },
   skipped: { tone: 'muted', label: 'skipped' },
   abandoned: { tone: 'muted', label: 'canceled' },
 };

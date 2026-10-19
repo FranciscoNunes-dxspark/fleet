@@ -14,6 +14,7 @@ const STATE = {
   degraded: { tone: 'warn', label: 'Degraded' },
   down: { tone: 'bad', label: 'Down' },
   deploying: { tone: 'info', label: 'Deploying' },
+  settling: { tone: 'info', label: 'Just deployed' },
   unknown: { tone: 'muted', label: 'No data yet' },
 };
 const HOUR = 3_600_000;
@@ -231,7 +232,30 @@ function TimeChart({ title, points, markers, format, limit, bars = false }) {
     }
     close();
   }
-  const barW = Math.max(2, ((W - pad.l - pad.r) / Math.max(points.length, 1)) - 2);
+  // A bar spans its own bucket (Application Insights' are 30 minutes, and leaves out empty ones), ending at "now".
+  const gaps = points.slice(1).map((p, i) => Date.parse(p.at) - Date.parse(points[i].at)).filter((g) => g > 0);
+  const bucket = gaps.length ? Math.min(...gaps) : 30 * 60_000;
+  const inPlot = (px) => Math.min(W - pad.r, Math.max(pad.l, px));
+  const barOf = (p) => {
+    const from = inPlot(x(p.at)) + 1;
+    const to = inPlot(x(new Date(Date.parse(p.at) + bucket).toISOString())) - 1;
+    return { x: from, width: Math.max(2, to - from) };
+  };
+
+  // Deploy labels: beside their line, on its left near the right edge; newest first, and one that
+  // would overlap a newer one is left out (its line stays, and hovering it names the deploy).
+  const labelW = (s) => String(s).length * 6.2;
+  const placed = [];
+  const labels = new Map();
+  for (const d of [...markers].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))) {
+    const at = x(d.at);
+    const w = labelW(d.label);
+    const right = at + 3 + w <= W - pad.r;
+    const from = right ? at + 3 : at - 3 - w;
+    if (from < pad.l || placed.some(([a, b]) => from < b + 6 && from + w > a - 6)) continue;
+    placed.push([from, from + w]);
+    labels.set(d, right ? { x: at + 3, anchor: 'start' } : { x: at - 3, anchor: 'end' });
+  }
 
   const onMove = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -254,15 +278,19 @@ function TimeChart({ title, points, markers, format, limit, bars = false }) {
           ))}
           {limit && <line x1={pad.l} x2={W - pad.r} y1={y(limit)} y2={y(limit)} className="limit-line" />}
           {bars
-            ? points.map((p) => p.value > 0 && <rect key={p.at} x={x(p.at) - barW / 2} y={y(p.value)} width={barW} height={Math.max(1, y(0) - y(p.value))} rx="2" className={p.value >= 0.05 ? 'bar bar-bad' : 'bar'} />)
+            ? points.map((p) => p.value > 0 && <rect key={p.at} {...barOf(p)} y={y(p.value)} height={Math.max(1, y(0) - y(p.value))} rx="2" className={p.value >= 0.05 ? 'bar bar-bad' : 'bar'} />)
             : <><Fade id={fade} className="fade fade-area" /><path d={area} className="area" style={{ fill: `url(#${fade})` }} /><path d={path} className="line" /></>}
           {points.filter((p) => p.failed).map((p) => <rect key={`f${p.at}`} x={x(p.at) - 1.5} y={y(0) - 8} width="3" height="8" className="fail-tick" />)}
-          {markers.map((d) => (
-            <g key={`${d.label}${d.at}`}>
-              <line x1={x(d.at)} x2={x(d.at)} y1={pad.t} y2={H - pad.b} className="deploy-line" />
-              <text x={x(d.at) + 3} y={pad.t + 8} className="deploy-label">{d.label}</text>
-            </g>
-          ))}
+          {markers.map((d) => {
+            const l = labels.get(d);
+            return (
+              <g key={`${d.label}${d.at}`}>
+                <title>{d.label}</title>
+                <line x1={x(d.at)} x2={x(d.at)} y1={pad.t} y2={H - pad.b} className="deploy-line" />
+                {l && <text x={l.x} y={pad.t + 8} textAnchor={l.anchor} className="deploy-label">{d.label}</text>}
+              </g>
+            );
+          })}
           {hover && <line x1={x(hover.at)} x2={x(hover.at)} y1={pad.t} y2={H - pad.b} className="hover-line" />}
           <text x={pad.l} y={H - 4} className="axis">{t('24h ago')}</text>
           <text x={W - pad.r} y={H - 4} className="axis" textAnchor="end">{t('now')}</text>

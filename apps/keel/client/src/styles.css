@@ -465,8 +465,10 @@ tr.saving { opacity: 0.55; }
 .run-warn { background: var(--warn); }
 
 /* ------------------------------------------------------------- insights */
-.fact-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; margin: 0 0 18px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.fact { background: var(--surface); padding: 12px 16px; }
+/* Facts wrap onto as many rows as they need, and those in a row that isn't full stretch across it,
+   so a short last row never leaves a grey gap. --fact-min is how narrow one may get. */
+.fact-row { --fact-min: 190px; display: flex; flex-wrap: wrap; gap: 1px; margin: 0 0 18px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.fact { flex: 1 1 var(--fact-min); min-width: 0; background: var(--surface); padding: 12px 16px; }
 .fact dt { font-size: 12.5px; color: var(--muted); }
 .fact dd { margin: 0; }
 .fact dd:nth-of-type(1) { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -830,14 +832,14 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .monitor-list .monitor { min-width: 0; }
 .monitor-list .monitor-charts { grid-template-columns: 1fr; }
 .monitor-list .monitor-lists { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-.monitor-list .monitor-facts { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+.monitor-list .monitor-facts { --fact-min: 110px; }
 .monitor-head > div { min-width: 0; }
 .monitor-head a { overflow-wrap: anywhere; }
 .monitor { border-left: 3px solid var(--line-strong); }
 .monitor-up { border-left-color: var(--ok); }
 .monitor-degraded { border-left-color: var(--warn); }
 .monitor-down { border-left-color: var(--bad); }
-.monitor-deploying { border-left-color: var(--info); }
+.monitor-deploying, .monitor-settling { border-left-color: var(--info); }
 .monitor-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .monitor-head h2 { font-size: 16px; }
 .monitor-issues { margin: 10px 0 0; }
@@ -866,7 +868,7 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .monitor-grid label { display: grid; gap: 4px; align-content: start; }
 .monitor-grid .input { width: 100%; }
 .monitor-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
-.monitor-facts { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.monitor-facts { --fact-min: 130px; }
 
 /* -------------------------------------------------------- account, users */
 .role-badge { margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-ink); font-size: 11px; font-weight: 600; }
@@ -1205,7 +1207,7 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .sprint-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }
 .sprint-card { margin-bottom: 0; min-width: 0; }
 .sprint-card h3 { font-size: 15px; margin: 0; }
-.sprint-card .monitor-facts { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.sprint-card .monitor-facts { --fact-min: 90px; }
 .scope-progress { position: relative; display: grid; gap: 6px; margin-bottom: 12px; }
 .scope-bar { width: 100%; }
 .scope-time { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--ink-2); border-radius: 1px; }
@@ -1303,7 +1305,7 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .monitor-up { background-image: linear-gradient(to bottom, var(--ok-soft), var(--surface) 120px); }
 .monitor-degraded { background-image: linear-gradient(to bottom, var(--warn-soft), var(--surface) 140px); }
 .monitor-down { background-image: linear-gradient(to bottom, var(--bad-soft), var(--surface) 160px); }
-.monitor-deploying { background-image: linear-gradient(to bottom, var(--info-soft), var(--surface) 120px); }
+.monitor-deploying, .monitor-settling { background-image: linear-gradient(to bottom, var(--info-soft), var(--surface) 120px); }
 
 /* People get their own steady colour (hue from ui.jsx); groups and "unassigned" stay neutral. */
 .avatar-hued { background: hsl(var(--av-h) 42% 25%); color: hsl(var(--av-h) 75% 84%); }
