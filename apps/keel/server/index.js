@@ -43,7 +43,8 @@ if (config.authMode === 'login') {
   auth.announceSetup();
 } else {
   // One person: the PAT in .env (or demo data), used for every organization
-  // (create it for "All accessible organizations" when there are several).
+  // (created for "All accessible organizations" when there are several, which Azure DevOps
+  // stops accepting on 1 December 2026; sign-in mode links a token per organization instead).
   const orgStore = createOrgStore();
   const settings = createSettingsStore(defaultSettingsFile());
   const schedules = createSchedules({ resolveService: () => localCtx().service });

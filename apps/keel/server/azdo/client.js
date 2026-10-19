@@ -53,7 +53,8 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
   }
 
   /** Low-level request. `path` is relative to the organization URL. Returns { data, headers }. */
-  function request(path, { method = 'GET', query, body, contentType = 'application/json', apiVersion } = {}) {
+  /** `empty`: a success may have no body at all (some DELETEs), which isn't a sign-in page. */
+  function request(path, { method = 'GET', query, body, contentType = 'application/json', apiVersion, empty = false } = {}) {
     const url = buildUrl(path, query, apiVersion);
     return limited(async () => {
       for (let attempt = 0; ; attempt++) {
@@ -83,6 +84,10 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
           continue;
         }
 
+        if (empty && res.ok && res.status !== 203 && !(res.headers.get('content-type') || '').includes('html')) {
+          res.body?.cancel().catch(() => {});
+          return { data: null, headers: res.headers };
+        }
         const type = res.headers.get('content-type') || '';
         // A bad/expired PAT often yields 203 + an HTML sign-in page rather than 401.
         if (res.status === 401 || res.status === 203 || (res.ok && res.status !== 204 && !type.includes('json'))) {

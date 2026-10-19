@@ -224,6 +224,12 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   r.put('/channels', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().save(req.body?.channels, req.ctx.user ? { id: req.ctx.user.id, name: req.ctx.user.name } : null)));
   r.post('/channels/test', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().test(req.body || {})));
   r.post('/channels/:id/weekly', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendWeekly(req.params.id, req.ctx.service)));
+  // Team page: hide someone from your own view, or take them out of a team in Azure DevOps.
+  r.post('/team/hidden', async (req, res) => res.json(await req.ctx.service.setHidden(req.body?.person, !!req.body?.hidden)));
+  r.post('/team/remove', need('team.manage'), async (req, res) => {
+    const { projectId, teamId, memberId } = req.body || {};
+    res.json(await req.ctx.service.removeTeamMember(String(projectId || ''), String(teamId || ''), String(memberId || '')));
+  });
   r.get('/releases', async (req, res) => res.json(await req.ctx.service.releases()));
   r.post('/releases/create', need('releases.run'), async (req, res) => {
     const { projectId, definitionId, description } = req.body || {};

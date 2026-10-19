@@ -526,11 +526,14 @@ export function createService({
     }).sort((x, y) => Date.parse(x.createdOn) - Date.parse(y.createdOn));
   }, 30 * 1000);
 
+  // The members of the teams you lead, each with the teams they're in (to take them out of one).
   const people = () => cached('people', async () => {
-    const pairs = (await tracked()).flatMap((p) => p.teams.map((t) => [p.id, t.id]));
-    const lists = await Promise.all(pairs.map(([pid, tid]) => provider.listTeamMembers(pid, tid).catch(() => [])));
+    const pairs = (await tracked()).flatMap((p) => p.teams.map((t) => ({ p, t })));
+    const lists = await Promise.all(pairs.map(async ({ p, t }) => (await provider.listTeamMembers(p.id, t.id).catch(() => []))
+      // memberId: their id in this organization (it differs between organizations).
+      .map((m) => ({ m, team: { projectId: p.id, projectName: p.name, teamId: t.id, teamName: t.name, memberId: m.id } }))));
     const byId = new Map();
-    for (const m of lists.flat()) byId.set(m.id, m);
+    for (const { m, team } of lists.flat()) byId.set(m.id, { ...m, teams: [...(byId.get(m.id)?.teams || []), team] });
     if (!byId.size) {
       // No teams configured: infer the team from who is authoring PRs and owning items.
       const [prs, items] = await Promise.all([activePRs(), openItems()]);
@@ -539,8 +542,19 @@ export function createService({
     return [...byId.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, 10 * MIN);
 
+  const hiddenList = (settings) => Object.entries(settings.hiddenPeople || {}).map(([id, h]) => ({ id, displayName: h.name, uniqueName: h.uniqueName }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  /** Hidden from the Team page by you (by id, or by sign-in name across organizations). */
+  const isHidden = (settings, person) => Object.entries(settings.hiddenPeople || {})
+    .some(([id, h]) => id === person.id || (h.uniqueName && person.uniqueName && h.uniqueName.toLowerCase() === person.uniqueName.toLowerCase()));
+  /** Who the Team page and its overload alerts are about: your teams, less those you hid. */
+  async function teamPeople() {
+    const [settings, team] = await Promise.all([store.load(), people()]);
+    return team.filter((p) => !isHidden(settings, p));
+  }
+
   async function workload() {
-    const [settings, prs, items, team, paths] = await Promise.all([store.load(), activePRs(), openItems(), people(), currentIterationPaths()]);
+    const [settings, prs, items, team, paths] = await Promise.all([store.load(), activePRs(), openItems(), teamPeople(), currentIterationPaths()]);
     return buildWorkload({ people: team, prs, items, thresholds: settings.thresholds, blockedTag: settings.blockedTag, currentIterationPaths: paths });
   }
 
@@ -1352,8 +1366,28 @@ export function createService({
     },
 
     async team() {
-      const [rows, paths] = await Promise.all([workload(), currentIterationPaths()]);
-      return { rows, currentIterationPaths: paths };
+      const [rows, paths, settings] = await Promise.all([workload(), currentIterationPaths(), store.load()]);
+      return { rows, currentIterationPaths: paths, hidden: hiddenList(settings) };
+    },
+
+    /** Hide someone from your Team page and its overload alerts, or show them again (yours only). */
+    async setHidden(person, hidden) {
+      if (!person?.id) throw Object.assign(new Error('Who?'), { status: 400 });
+      const settings = await store.load();
+      const next = { ...(settings.hiddenPeople || {}) };
+      if (hidden) next[person.id] = { name: String(person.displayName || person.name || '').slice(0, 200), uniqueName: String(person.uniqueName || '').slice(0, 200) };
+      else delete next[person.id];
+      await store.save({ hiddenPeople: next });
+      return { hidden: hiddenList(await store.load()) };
+    },
+
+    /** Take someone out of one of the teams you lead, in Azure DevOps (provider.removeTeamMember). */
+    async removeTeamMember(projectId, teamId, memberId) {
+      const p = (await tracked()).find((x) => x.id === projectId);
+      if (!p || !p.teams.some((t) => t.id === teamId)) throw Object.assign(new Error("That isn't one of the teams you lead in Keel"), { status: 400 });
+      await provider.removeTeamMember(projectId, teamId, memberId);
+      cache.invalidate('people');
+      return { ok: true };
     },
 
     /** Raw inputs of insights and workload, so several organizations can be judged together (multiorg.js). */
@@ -1362,8 +1396,8 @@ export function createService({
       return { closedPrs: closed, activePrs: active, pipelines: pipes };
     },
     async workloadData() {
-      const [settings, prs, items, team, paths] = await Promise.all([store.load(), activePRs(), openItems(), people(), currentIterationPaths()]);
-      return { people: team, prs, items, thresholds: settings.thresholds, blockedTag: settings.blockedTag, currentIterationPaths: paths };
+      const [settings, prs, items, team, paths] = await Promise.all([store.load(), activePRs(), openItems(), teamPeople(), currentIterationPaths()]);
+      return { people: team, prs, items, thresholds: settings.thresholds, blockedTag: settings.blockedTag, currentIterationPaths: paths, hidden: hiddenList(settings) };
     },
 
     async insights(days) {

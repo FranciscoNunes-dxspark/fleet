@@ -784,6 +784,8 @@ function asOfView(w, t) {
 
 // ------------------------------------------------------------------ provider
 const strip = ({ _description, _acceptance, _comments, _prs, _board, _attachments, _iterations, ...rest }) => ({ ...rest });
+// Team members taken out of a team ("projectId:teamId:memberId"), until the server restarts.
+const removedMembers = new Set();
 const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
 const delay = (v) => new Promise((r) => setTimeout(() => r(v), 40 + Math.random() * 120));
 const notFound = (what) => Object.assign(new Error(`${what} not found`), { status: 404 });
@@ -852,7 +854,9 @@ export function createMockProvider() {
     me: () => delay({ ...ME }),
     listProjects: () => delay(PROJECTS.map((p) => ({ id: p.id, name: p.name, description: `${p.name} product area`, webUrl: `${ORG}/${p.name}` }))),
     listTeams: (projectId) => delay([projectById(projectId).team]),
-    listTeamMembers: (projectId) => delay(projectId === 'p-mobile' ? [ME, ...DEVS.slice(3)] : PEOPLE.slice(0, 6)),
+    listTeamMembers: (projectId, teamId) => delay((projectId === 'p-mobile' ? [ME, ...DEVS.slice(3)] : PEOPLE.slice(0, 6))
+      .filter((m) => !removedMembers.has(`${projectId}:${teamId}:${m.id}`))),
+    removeTeamMember: (projectId, teamId, memberId) => delay(removedMembers.add(`${projectId}:${teamId}:${memberId}`) && undefined),
     getTeamAreas: (projectId) => delay([{ value: projectById(projectId).name, includeChildren: true }]),
     getCurrentIteration: (projectId) => delay(SPRINTS(projectById(projectId)).current),
     getTeamDefaultArea: (projectId) => delay(projectById(projectId).name),

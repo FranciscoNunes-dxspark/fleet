@@ -47,8 +47,8 @@ export default function OrgSettings() {
     <Section id="organizations" title={t('Organizations')}>
       <p className="muted small">
         {login
-          ? t('Keel shows every organization you have a token for, together. Link a token for each one; a token created for "All accessible organizations" works for all of them.')
-          : t('Keel shows every organization together, using AZDO_PAT for each: create it for "All accessible organizations".')}
+          ? t('Keel shows every organization you have a token for, together. Link a token for each one, created for that organization: Azure DevOps stops accepting tokens created for "All accessible organizations" on 1 December 2026.')
+          : t('Keel shows every organization together, using AZDO_PAT for each, so it must be created for "All accessible organizations", and Azure DevOps stops accepting those on 1 December 2026. To keep several organizations after that, use sign-in (AUTH_MODE=login), where each person links a token per organization.')}
       </p>
 
       <ul className="org-list">

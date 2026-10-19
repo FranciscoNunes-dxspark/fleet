@@ -195,7 +195,13 @@ button { font: inherit; color: inherit; }
 .complete-when { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
 .complete-when label.check { display: inline-flex; gap: 6px; align-items: center; }
 .complete-when input[type="datetime-local"] { width: auto; }
+.scheduled-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
 .scheduled-runs li { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.team-actions { white-space: nowrap; text-align: right; }
+.team-actions .link-btn + .link-btn { margin-left: 10px; }
+.team-remove { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.team-remove-row td { background: var(--surface-2); }
+.team-hidden { margin: -6px 0 12px; }
 .update-banner {
   position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 55;
   display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100vw - 32px);
