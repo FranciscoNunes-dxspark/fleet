@@ -63,7 +63,7 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 
 **Search (Ctrl+K, or ⌘K on a Mac)** opens a search box from anywhere: pages and their tabs, open pull requests, open work items, pipelines and repositories (each repo opens its commit history), plus New work item, New pull request and Refresh. Type a number (`#4107` or `4107`) to open any work item, closed ones too, or `!815` for a pull request. With nothing typed it shows what you opened recently (kept in this browser).
 
-Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Settings are saved to `data/settings.json`.
+Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Click a section's title to fold it away; folded sections stay folded in this browser, and a link to one (from Waiting to ship, say) opens it. Settings are saved to `data/settings.json`.
 
 ## Production monitoring
 
@@ -257,6 +257,7 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
    ```bash
    git pull && npm ci && npm run build && pm2 restart keel
    ```
+   Anyone with Keel open (in a browser or the installed app) sees **A new version of Keel is available** within 10 minutes, or as soon as they come back to the tab, and **Update** reloads into it. Each build has its own id (`build.json`), so this works for any way of deploying a new build.
 
 8. **Create your account:** open the site, enter the setup code, then invite your team from **Users**.
 

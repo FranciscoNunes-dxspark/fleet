@@ -1,6 +1,7 @@
 // Filled in by area; see ../pt.js.
 // Shell: App, shared UI, charts, labels in format/theme/notify, sign-in screens, Users, Start in Claude.
 export default {
+  'A new version of Keel is available.': 'Está disponível uma nova versão do Keel.',
   // App.jsx
   'Starting…': 'A iniciar…',
   '{n} updates in Azure DevOps': '{n} atualizações no Azure DevOps',

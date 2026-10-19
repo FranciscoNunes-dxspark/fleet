@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { Chip, Loading } from '../ui.jsx';
+import { Chip, Loading, Section } from '../ui.jsx';
 import { age } from '../format.js';
 import { LANGUAGES, getLanguage, locale, t, tx } from '../i18n.js';
 import { KeyField } from './ProductionSettings.jsx';
@@ -105,8 +105,7 @@ export default function ChannelSettings() {
   };
 
   return (
-    <section className="panel" id="channels">
-      <h2 className="section-title">{t('Teams and Slack')}</h2>
+    <Section id="channels" title={t('Teams and Slack')}>
       <p className="muted small">
         {t('Post to a channel when something needs the team: an outage, a red default branch, a deployment waiting on approval. Keel checks every 2 minutes from the server, so it works when nobody has Keel open, and it can post the weekly summary each week too.')}
         {' '}{authMode === 'login' ? t("Keel reads Azure DevOps for a channel as the Admin who added it, with their snoozes, for the projects ticked on the channel (that Admin's own projects when none are ticked).") : t('Keel reads Azure DevOps for the projects ticked on the channel (the projects chosen above when none are ticked).')}
@@ -229,6 +228,6 @@ export default function ChannelSettings() {
         {dirty && <span className="small text-warn">{t('Unsaved changes')}</span>}
         <button type="button" className="btn btn-primary btn-small" onClick={save} disabled={busy || !dirty}>{busy ? t('Saving…') : t('Save channels')}</button>
       </div>
-    </section>
+    </Section>
   );
 }

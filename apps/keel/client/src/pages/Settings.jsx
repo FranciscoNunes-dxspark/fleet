@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { ErrorBox, Loading, PageHeader, Confirm } from '../ui.jsx';
+import { ErrorBox, Loading, PageHeader, Confirm, Section } from '../ui.jsx';
 import { ACCENTS, MODES, loadTheme, saveTheme } from '../theme.js';
 import { LANGUAGES, getLanguage, setLanguage, t, tj, tx } from '../i18n.js';
 import ProductionSettings from './ProductionSettings.jsx';
@@ -114,8 +114,7 @@ export default function Settings() {
     <div className="page settings">
       <PageHeader title={t('Settings')} sub={t('Choose what the console watches and when it should raise a flag.')} />
 
-      <section className="panel">
-        <h2 className="section-title">{t('Projects and repositories')}</h2>
+      <Section id="projects" title={t('Projects and repositories')}>
         <p className="muted small">{t("Pick the teams you lead in each project. Their members appear on the Team page and each team's sprint is on the Sprint page. If the project is shared with other teams, you can limit work items to your teams' area paths.")}</p>
         <input
           type="search" className="input project-search" placeholder={t(data.projects.length === 1 ? 'Search {n} project' : 'Search {n} projects', { n: data.projects.length })}
@@ -198,10 +197,9 @@ export default function Settings() {
           })}
         </ul>
         {hiddenCount > 0 && <p className="muted small">{t(hiddenCount === 1 ? '{n} more project. Search to find them.' : '{n} more projects. Search to find them.', { n: hiddenCount })}</p>}
-      </section>
+      </Section>
 
-      <section className="panel">
-        <h2 className="section-title">{t('When to flag things')}</h2>
+      <Section id="flags" title={t('When to flag things')}>
         <div className="threshold-list">
           {THRESHOLDS.map(([k, label, unit]) => (
             <label key={k} className="threshold">
@@ -218,10 +216,9 @@ export default function Settings() {
             <span className="threshold-input"><input type="number" min={15} max={600} className="input" value={draft.refreshSeconds} onChange={(e) => setDraft((d) => ({ ...d, refreshSeconds: Number(e.target.value) }))} /> {t('seconds')}</span>
           </label>
         </div>
-      </section>
+      </Section>
 
-      <section className="panel">
-        <h2 className="section-title">{t('Auto-complete defaults')}</h2>
+      <Section id="auto-complete" title={t('Auto-complete defaults')}>
         <p className="muted small">{t('Used when you set auto-complete on a pull request from the console.')}</p>
         <div className="form-row">
           <label>{t('Merge type')}
@@ -232,7 +229,7 @@ export default function Settings() {
           <label className="check"><input type="checkbox" checked={draft.autoComplete.deleteSourceBranch} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, deleteSourceBranch: e.target.checked } }))} /> {t('Delete source branch')}</label>
           <label className="check"><input type="checkbox" checked={draft.autoComplete.transitionWorkItems} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, transitionWorkItems: e.target.checked } }))} /> {t('Complete linked work items')}</label>
         </div>
-      </section>
+      </Section>
 
 
       <OrgSettings />
@@ -293,8 +290,7 @@ function NotificationSettings() {
   };
 
   return (
-    <section className="panel">
-      <h2 className="section-title">{t('Notifications')} <span className="saved-note">{t('Saved automatically')}</span></h2>
+    <Section id="notifications" title={t('Notifications')} note={<span className="saved-note">{t('Saved automatically')}</span>}>
       <p className="muted small">{t('Saved in this browser right away. Pop-ups and desktop notifications need the console open (a background tab is fine); push notifications arrive even when it is closed.')}</p>
       <div className="notify-grid">
         <label className="check"><input type="checkbox" checked={prefs.inApp} onChange={(e) => update({ inApp: e.target.checked })} /> {t('Show a pop-up in the console')}</label>
@@ -320,7 +316,7 @@ function NotificationSettings() {
       </div>
       <button type="button" className="btn btn-small btn-ghost" onClick={test}>{t('Send a test notification')}</button>
       <PushSettings />
-    </section>
+    </Section>
   );
 }
 
@@ -435,8 +431,7 @@ function AppearanceSettings() {
     saveTheme(next);
   };
   return (
-    <section className="panel">
-      <h2 className="section-title">{t('Appearance')}</h2>
+    <Section id="appearance" title={t('Appearance')}>
       <p className="muted small">{t('Saved automatically to your account, so it follows you to other devices.')}</p>
       <div className="appearance">
         <div className="appearance-row">
@@ -479,7 +474,7 @@ function AppearanceSettings() {
           </div>
         </div>
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -508,8 +503,7 @@ function AccountSettings() {
   };
 
   return (
-    <section className="panel">
-      <h2 className="section-title">{t('Your account')}</h2>
+    <Section id="account" title={t('Your account')}>
       <dl className="facts account-facts">
         <div><dt>{t('Name')}</dt><dd>{meta.account.name}</dd></div>
         <div><dt>{t('Email')}</dt><dd>{meta.account.email}</dd></div>
@@ -558,7 +552,7 @@ function AccountSettings() {
           </div>
         </form>
       </div>
-    </section>
+    </Section>
   );
 }
 

@@ -74,9 +74,9 @@ if (fs.existsSync(path.join(dist, 'index.html'))) {
   app.use(express.static(dist, {
     index: false,
     maxAge: '1h',
-    // The service worker and manifest are checked on every visit, so an update reaches installed apps.
+    // The service worker, manifest and build id are checked on every visit, so an update reaches installed apps.
     setHeaders: (res, file) => {
-      if (/[\\/](sw\.js|manifest\.webmanifest)$/.test(file)) res.setHeader('Cache-Control', 'no-cache');
+      if (/[\\/](sw\.js|manifest\.webmanifest|build\.json)$/.test(file)) res.setHeader('Cache-Control', 'no-cache');
     },
   }));
   app.get('/{*splat}', (req, res) => res.sendFile(path.join(dist, 'index.html')));

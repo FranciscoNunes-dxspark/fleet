@@ -181,6 +181,23 @@ button { font: inherit; color: inherit; }
   padding: 9px 32px; background: var(--accent-soft); color: var(--accent-ink);
   border-bottom: 1px solid var(--line); font-size: 13px;
 }
+.fold > .section-title { display: flex; align-items: center; gap: 8px; margin-top: 0; }
+.fold.folded > .section-title { margin-bottom: 0; }
+.fold-toggle {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
+  font: inherit; color: inherit; cursor: pointer; text-align: left;
+}
+.fold-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.fold-chevron { flex: none; color: var(--muted); transform: rotate(90deg); transition: transform 0.15s; }
+.fold.folded .fold-chevron { transform: none; }
+@media (prefers-reduced-motion: reduce) { .fold-chevron { transition: none; } }
+/* Floats over the top of the page, so it's seen wherever you've scrolled to. */
+.update-banner {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 55;
+  display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100vw - 32px);
+  padding: 8px 10px 8px 16px; border: 1px solid var(--accent); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); font-size: 13px; box-shadow: var(--shadow-pop);
+}
 .page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .page-header h1 { font-size: 24px; line-height: 1.2; }
 .page-sub { margin: 4px 0 0; color: var(--ink-2); max-width: 75ch; }
