@@ -16,12 +16,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const seg = (s) => encodeURIComponent(s);
 
 /**
- * An Azure DevOps REST client for one identity (one PAT). Each signed-in user
+ * An Azure DevOps REST client for one identity (a PAT, or an Azure CLI token). Each signed-in user
  * gets their own, with its own concurrency limit: Azure DevOps throttles per
  * user, so one busy user can't slow everyone else down.
  */
-export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = config.maxConcurrency, apiVersion: defaultVersion = config.apiVersion } = {}) {
-  const authHeader = 'Basic ' + Buffer.from(':' + (pat || '')).toString('base64');
+export function createClient({ orgUrl = config.orgUrl, pat, token, maxConcurrency = config.maxConcurrency, apiVersion: defaultVersion = config.apiVersion } = {}) {
+  // `token()` gives an Entra access token instead of a PAT (an Azure CLI sign-in, see azcli.js);
+  // it is asked for on every request, so it can refresh itself when it expires.
+  const basic = 'Basic ' + Buffer.from(':' + (pat || '')).toString('base64');
+  const auth = token ? async () => `Bearer ${await token()}` : async () => basic;
 
   let active = 0;
   const waiting = [];
@@ -57,6 +60,7 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
   function request(path, { method = 'GET', query, body, contentType = 'application/json', apiVersion, empty = false } = {}) {
     const url = buildUrl(path, query, apiVersion);
     return limited(async () => {
+      const authHeader = await auth();
       for (let attempt = 0; ; attempt++) {
         let res;
         try {
@@ -152,6 +156,7 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
       throw new AzdoError('Only images from your Azure DevOps organization can be loaded', 400);
     }
     return limited(async () => {
+      const authHeader = await auth();
       let res = await fetch(url, { headers: { Authorization: authHeader, Accept: 'image/*' }, redirect: 'manual', signal: AbortSignal.timeout(30_000) });
       // Attachments can redirect to signed blob storage: follow once, without the PAT.
       if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
@@ -176,6 +181,7 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
   function download(path, { query, apiVersion } = {}) {
     const url = buildUrl(path, query, apiVersion);
     return limited(async () => {
+      const authHeader = await auth();
       let res = await fetch(url, { headers: { Authorization: authHeader }, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
       if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
         const next = new URL(res.headers.get('location'), url);
@@ -195,6 +201,7 @@ export function createClient({ orgUrl = config.orgUrl, pat, maxConcurrency = con
   function apiText(path, { query, apiVersion } = {}) {
     const url = buildUrl(path, query, apiVersion);
     return limited(async () => {
+      const authHeader = await auth();
       const res = await fetch(url, { headers: { Authorization: authHeader, Accept: 'text/plain' }, signal: AbortSignal.timeout(30_000) });
       const type = res.headers.get('content-type') || '';
       // A bad or expired PAT answers with an HTML sign-in page rather than 401.

@@ -1,5 +1,5 @@
 // Pinch, Keel's crab. One pixel drawing feeds the logo in the app, the favicon and the app icons
-// (scripts/logo.mjs), the same way Tiller's otter and Trawl's anglerfish do.
+// (scripts/logo.mjs) and the terminal app's pet (cli/), the same way Tiller's otter and Trawl's anglerfish do.
 // A crab sees all around it without turning its head, which is roughly what a console does.
 
 export const PALETTE = {
@@ -28,7 +28,17 @@ const BASE = [
   'C..C.C....C.C..C',
 ];
 
-/** The drawing as rows of palette letters. */
-export function pinchPixels() {
-  return [...BASE];
+// Each mood replaces some rows of the base drawing. The web app and the icons only use idle.
+const MOODS = {
+  idle: {},
+  look: { 1: 'CDCC.EW..EW.CCDC' }, // glancing the other way, while Azure DevOps answers
+  sleep: { 0: 'CC.C........C.CC', 1: 'CDCC.CC..CC.CCDC', 5: '.CDDDDDDDDDDDDC.' }, // eyes shut: nothing needs you
+  happy: { 5: '.CDDDEDDDDEDDDC.', 6: '.CDDDDEEEEDDDDC.' },
+  worried: { 0: 'CC.C.WE..EW.C.CC', 1: 'CDCC.WW..WW.CCDC', 5: '.CDDDDDEEDDDDDC.', 6: '.CDDDDEDDEDDDDC.' },
+};
+
+/** The drawing for a mood, as rows of palette letters. */
+export function pinchPixels(mood = 'idle') {
+  const over = MOODS[mood] ?? {};
+  return BASE.map((row, i) => over[i] ?? row);
 }

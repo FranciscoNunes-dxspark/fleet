@@ -11,8 +11,10 @@ npm run dev:mock     # demo org, no credentials: API (auto-restart) + Vite on ht
 npm run dev          # same, against the org in .env (AZDO_ORG_URL + AZDO_PAT)
 npm run build        # UI into dist/
 npm start            # API + built UI on http://127.0.0.1:4280 (start:mock for demo data)
-npm test             # node:test over test/**/*.test.js
+npm test             # node:test over test/**/*.test.js (with cli/register.js, so .jsx loads)
+npm run cli:demo     # the terminal app (cli/) on demo data; needs a real terminal
 node --test test/flow.test.js                          # one test file
+node --import ./cli/register.js --test test/cli.test.js   # a test file that loads the terminal app's .jsx
 node --test --test-name-pattern="Manual validation" test/deploying-stage.test.js   # one test
 node scripts/check-syntax.mjs client/src/pages/Board.jsx   # parse-check client files without a build; also flags t()/tx()/tj() used without importing from i18n.js
 node scripts/missing-pt.mjs client/src/pages/Totals.jsx    # list t()/tj() strings with no Portuguese translation
@@ -44,6 +46,8 @@ To try accounts and roles on demo data, set `AUTH_MODE=login` and `AZDO_MOCK=1`.
 - Production environments are the stages or pipelines that production monitors link to, plus classic stages matching `/prod|production|prd|live/`.
 
 **Client.** `App.jsx` handles routes and the app shell. `context.js` `useApi(path)` refetches whenever the app-wide `refreshKey` changes (after writes, SSE `changed`, or Refresh). `prefs.js` holds account-synced preferences (theme, language, notifications, dashboard, saved views), with a localStorage copy; the server copy wins at startup. Pages live in `client/src/pages/`. Pinch, the crab in the logo, is pixel art in `pinch.js`; the favicon, app icons and `assets/` are generated from it by `scripts/logo.mjs`, so don't hand-edit them. Shared UI is in `ui.jsx`, `charts.jsx`, `views.jsx` and `palette.jsx` (Ctrl+K search).
+
+**Terminal app** (`cli/`, started by `bin/keel.js`, built with Ink like Tiller and Trawl). `cli/service.js` builds the same service as local mode in `server/index.js` (one per organization, through `multiorg.js`, same data folder), in-process with no server. `cli.jsx` sets the environment *before* importing it, because `config.js` reads it on import: `--demo` sets `AZDO_MOCK`, and no PAT sets `AZDO_AUTH=az` (`server/azdo/azcli.js`, the Azure CLI's token). `cli/actions.js` holds every operation, called by keys and slash commands (`commands.js`) with `ctx` from `ui/App.jsx`; views check `ctx.viewHasKeys()` first. Live checks repeat the watcher's: drop the live cache prefixes, `snapshot()`, `diffSnapshots`. The server's `console.warn`s go to `/log` (`cli/log.js`), never the terminal. `text.js`, `ui/parts.jsx`, `ui/hooks.js` and the jsx loader are Trawl's, and should stay recognisably the same. Its text is English only (no `t()`). `test/cli.test.js` drives it end to end with `ink-testing-library` on demo data.
 
 ## i18n (English + European Portuguese)
 
