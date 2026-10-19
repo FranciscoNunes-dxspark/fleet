@@ -15,7 +15,6 @@ test('flow: cycle time from Activated Date, throughput per week, aging work in p
     wi(3, { activatedAt: at(20 * D), closedAt: at(10 * D) }), // 10 days
     wi(4, { activatedAt: null, createdAt: at(12 * D), closedAt: at(2 * D) }), // no Activated Date: counts from creation
     wi(5, { activatedAt: at(50 * D), closedAt: at(40 * D) }), // outside 30 days
-    wi(6, { type: 'Task', activatedAt: at(3 * D), closedAt: at(2 * D) }), // tasks don't count
     wi(1, { activatedAt: at(5 * D), closedAt: at(4 * D) }), // the same item twice
   ];
   const open = [
@@ -35,6 +34,30 @@ test('flow: cycle time from Activated Date, throughput per week, aging work in p
   assert.deepEqual(f.aging.map((a) => [a.overMedian, a.overP85]), [[true, true], [false, false], [false, false]]);
   assert.deepEqual(f.states, ['Active', 'Resolved']);
   assert.equal(f.totals.wipOverP85, 1);
+});
+
+test('flow: every type counts, and one type can be picked', () => {
+  const finished = [
+    wi(1, { activatedAt: at(5 * D), closedAt: at(4 * D) }),
+    wi(2, { type: 'Task', activatedAt: at(3 * D), closedAt: at(2 * D) }),
+    wi(3, { type: 'Task', activatedAt: at(2 * D), closedAt: at(1 * D) }),
+    wi(4, { type: 'Epic', activatedAt: at(29 * D), closedAt: at(1 * D) }),
+  ];
+  const open = [
+    wi(10, { type: 'Task', state: 'Active', stateCategory: 'InProgress', activatedAt: at(3 * D) }),
+    wi(11, { type: 'Feature', state: 'Active', stateCategory: 'InProgress', activatedAt: at(9 * D) }),
+  ];
+  const all = buildFlow({ finished, open, days: 30, now: NOW });
+  assert.equal(all.totals.finished, 4);
+  assert.equal(all.totals.wip, 2);
+  assert.deepEqual(all.byType.map((x) => [x.type, x.count]), [['Task', 2], ['User Story', 1], ['Epic', 1]]);
+  assert.deepEqual(all.types.map((x) => [x.type, x.finished, x.wip]), [['Task', 2, 1], ['Epic', 1, 0], ['Feature', 0, 1], ['User Story', 1, 0]]);
+
+  const tasks = buildFlow({ finished, open, days: 30, type: 'Task', now: NOW });
+  assert.equal(tasks.totals.finished, 2);
+  assert.equal(tasks.totals.medianCycleHours, 24);
+  assert.deepEqual(tasks.aging.map((a) => a.id), [10]);
+  assert.equal(tasks.types.length, 4); // the picker still lists every type
 });
 
 test('sprint scope: planned, added, taken out and carried over', () => {

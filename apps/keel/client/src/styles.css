@@ -931,8 +931,8 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 
 /* -------------------------------------------------------- platform totals */
 .toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 0 0 12px; }
-.totals-view { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
-.totals-view .input { min-width: 220px; }
+.totals-view, .flow-type { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.totals-view .input, .flow-type .input { min-width: 220px; }
 .nowrap { white-space: nowrap; }
 .callout-bad { background: var(--bad-soft); }
 .callout-warn { background: var(--warn-soft); }

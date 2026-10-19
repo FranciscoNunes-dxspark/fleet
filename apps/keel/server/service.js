@@ -858,22 +858,29 @@ export function createService({
       return buildSummary({ ...range, ...(await this.summaryData(range)) });
     },
 
-    /** Raw material for work item flow: backlog items and bugs finished in the last `days` days, and open work now. */
+    /** Raw material for work item flow: work items of every type finished in the last `days` days, and open work now. */
     async flowData(days) {
-      const [projects, open] = await Promise.all([tracked(), openItems()]);
-      const finished = await cached(`flow:done:${days}`, async () => {
+      const ALL = ['requirement', 'bug', 'task', 'feature', 'epic'];
+      const [projects, backlogOpen] = await Promise.all([tracked(), openItems()]);
+      const query = (key, c, ttl) => cached(key, async () => {
         const lists = await Promise.all(projects.map(async (p) => {
           const { areaPaths } = await scope(p);
-          const items = await provider.queryWorkItems(p.id, { doneWithinDays: days, areaPaths, categories: ['requirement', 'bug'] });
+          const items = await provider.queryWorkItems(p.id, { areaPaths, categories: ALL, ...c });
           return items.map((w) => ({ ...w, projectId: p.id }));
         }));
         return lists.flat();
-      }, 5 * MIN);
+      }, ttl);
+      // The shared open list holds the backlog's types; features and epics come from their own query.
+      const [finished, moreOpen] = await Promise.all([
+        query(`flow:done:all:${days}`, { doneWithinDays: days }, 5 * MIN),
+        query('flow:open:all', { open: true }),
+      ]);
+      const open = [...new Map([...backlogOpen, ...moreOpen].map((w) => [w.id, w])).values()];
       return { finished, open };
     },
 
-    async flow(days) {
-      return buildFlow({ ...(await this.flowData(days)), days });
+    async flow(days, type = null) {
+      return buildFlow({ ...(await this.flowData(days)), days, type });
     },
 
     /**

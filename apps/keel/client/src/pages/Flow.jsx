@@ -4,18 +4,21 @@ import { date, hours } from '../format.js';
 import { Chip, ErrorBox, Loading, TypeLabel } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
+import { useSticky } from '../sticky.js';
 
 const perWeek = (n) => (n == null ? '—' : n >= 10 ? Math.round(n).toString() : n.toFixed(1));
 const points = (n) => (Number.isInteger(n) ? n : n.toFixed(1));
 
 /**
- * Work item flow for the Insights page: how long backlog items and bugs take
- * from started to finished (cycle time), how many finish a week, which work in
- * progress is getting old, and how each team's sprint changed since it began.
+ * Work item flow for the Insights page: how long work items of every type (or
+ * one type) take from started to finished (cycle time), how many finish a week,
+ * which work in progress is getting old, and how each team's sprint changed
+ * since it began.
  */
 export default function Flow({ days }) {
   const { openDrawer } = useApp();
-  const { data, error, reload, loading } = useApi(`/flow?days=${days}`);
+  const [type, setType] = useSticky('flow.type', '');
+  const { data, error, reload, loading } = useApi(`/flow?days=${days}${type ? `&type=${encodeURIComponent(type)}` : ''}`);
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 
   const tot = data.totals;
@@ -27,10 +30,20 @@ export default function Flow({ days }) {
     [t('In progress now'), tot.wip, tot.wipOverP85 ? t('{n} older than the 85th percentile', { n: tot.wipOverP85 }) : t('none older than the 85th percentile')],
   ];
   const old = data.aging.filter((a) => a.overMedian).slice(0, 12);
+  // A remembered type with nothing in this period stays pickable, so the choice isn't lost silently.
+  const types = type && !data.types.some((x) => x.type === type) ? [...data.types, { type, finished: 0, wip: 0 }] : data.types;
 
   return (
     <section aria-busy={loading}>
-      <p className="muted small delivery-intro">{t('Backlog items and bugs (not tasks): how long they take once someone starts them, and which ones in progress are taking longer than usual.')}</p>
+      <div className="toolbar">
+        <label className="flow-type">{t('Type')}
+          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">{t('All types')}</option>
+            {types.map((x) => <option key={x.type} value={x.type}>{t('{type} ({finished} finished, {wip} in progress)', { type: x.type, finished: x.finished, wip: x.wip })}</option>)}
+          </select>
+        </label>
+        <span className="muted small">{type ? t('{type} items: how long they take once someone starts them, and which ones in progress are taking longer than usual.', { type }) : t('Work items of every type: how long they take once someone starts them, and which ones in progress are taking longer than usual.')}</span>
+      </div>
       <dl className="fact-row">
         {facts.map(([k, v, note]) => (
           <div key={k} className="fact">
