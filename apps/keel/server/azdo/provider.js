@@ -117,6 +117,15 @@ export function htmlToText(html) {
 
 
 /** Classic Release Management lives on its own host in Azure DevOps Services. */
+/** Where the Graph API (users, groups, memberships) lives: vssps; Azure DevOps Server has none. */
+export function graphHost(orgUrl) {
+  const u = new URL(orgUrl);
+  if (u.hostname === 'dev.azure.com') u.hostname = 'vssps.dev.azure.com';
+  else if (u.hostname.endsWith('.visualstudio.com')) u.hostname = u.hostname.replace(/\.visualstudio\.com$/, '.vssps.visualstudio.com');
+  else return null;
+  return u.toString().replace(/\/$/, '');
+}
+
 export function releaseHost(orgUrl) {
   const u = new URL(orgUrl);
   if (u.hostname === 'dev.azure.com') u.hostname = 'vsrm.dev.azure.com';
@@ -381,6 +390,29 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
     async listTeamMembers(projectId, teamId) {
       const members = await listAll(`_apis/projects/${seg(projectId)}/teams/${seg(teamId)}/members`, { query: { $top: 500 } });
       return members.map((m) => ident(m.identity)).filter((m) => m && !m.isContainer);
+    },
+
+    /**
+     * Take someone out of a team in Azure DevOps. Teams are groups, so this goes through the
+     * Graph API: it needs the token's Graph (Read & manage) scope and team or project admin rights.
+     */
+    async removeTeamMember(projectId, teamId, memberId) {
+      const graph = graphHost(org);
+      if (!graph) throw Object.assign(new Error("Azure DevOps Server can't remove team members through its API. Remove them in the team's settings in Azure DevOps."), { status: 400 });
+      const refused = (err) => {
+        if (err.status === 401 || err.status === 403 || err.code === 'token-rejected') {
+          return Object.assign(new Error('Azure DevOps refused: your token needs the Graph (Read & manage) scope, and you need to be an admin of this team or project.'), { status: 403 });
+        }
+        return err;
+      };
+      try {
+        const descriptor = async (storageKey) => (await api(`${graph}/_apis/graph/descriptors/${seg(storageKey)}`, { apiVersion: '7.1-preview.1' }))?.value;
+        const [member, team] = await Promise.all([descriptor(memberId), descriptor(teamId)]);
+        if (!member || !team) throw Object.assign(new Error("Couldn't find that person or team in Azure DevOps."), { status: 404 });
+        await api(`${graph}/_apis/graph/memberships/${seg(member)}/${seg(team)}`, { method: 'DELETE', apiVersion: '7.1-preview.1', empty: true });
+      } catch (err) {
+        throw refused(err);
+      }
     },
 
     async getTeamAreas(projectId, teamId) {

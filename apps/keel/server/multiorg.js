@@ -328,13 +328,22 @@ export function createMultiService(entries) {
       const parts = await each((s) => s.workloadData());
       const merged = {
         ...parts[0].value,
-        people: uniquePeople(parts.map((p) => p.value.people)),
+        // One person across organizations, in all of their teams (each team knows its organization).
+        people: uniquePeople(parts.map((p) => p.value.people)).map((person) => ({
+          ...person,
+          teams: parts.flatMap(({ org, value }) => value.people
+            .filter((x) => (x.uniqueName || x.id || '').toLowerCase() === (person.uniqueName || person.id || '').toLowerCase())
+            .flatMap((x) => (x.teams || []).map((tm) => ({ ...tm, org: org.key })))),
+        })),
         prs: parts.flatMap((p) => p.value.prs),
         items: parts.flatMap(({ org, value }) => tagAll(org, value.items)),
         currentIterationPaths: [...new Set(parts.flatMap((p) => p.value.currentIterationPaths))],
       };
-      return { rows: buildWorkload(merged), currentIterationPaths: merged.currentIterationPaths };
+      return { rows: buildWorkload(merged), currentIterationPaths: merged.currentIterationPaths, hidden: parts[0].value.hidden || [] };
     },
+    // Hidden people are kept in the one settings store; removing goes to the organization that owns the project.
+    setHidden: (person, hidden) => primary.service.setHidden(person, hidden),
+    removeTeamMember: viaProject('removeTeamMember'),
     async insights(days) {
       const parts = await each((s) => s.insightsData(days));
       return buildInsights({
