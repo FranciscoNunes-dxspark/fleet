@@ -82,3 +82,15 @@ test('a run declined at its approval is not failing, and not a deploy', async ()
   assert.equal(env.lastFailed.label, 'B2');
   assert.equal(env.lastDeploy.label, 'B1');
 });
+
+test('cache: an answer can be kept for a time that depends on it', async () => {
+  const { Cache } = await import('../server/cache.js');
+  const cache = new Cache();
+  let reads = 0;
+  const load = (v) => () => (reads++, v);
+  const ttl = (yes) => (yes ? 60_000 : -1); // "no" is stale at once
+  assert.equal(await cache.get('a', load(false), ttl), false);
+  assert.equal(await cache.get('a', load(true), ttl), true, 'a "no" is read again');
+  assert.equal(await cache.get('a', load(false), ttl), true, 'a "yes" is kept');
+  assert.equal(reads, 2);
+});

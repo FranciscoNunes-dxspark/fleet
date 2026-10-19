@@ -259,9 +259,10 @@ export function createService({
     return Object.fromEntries(projects.map((p, i) => [p.id, maps[i]]));
   }, 30 * MIN);
 
-  // A failed run that was only declined at an approval check (domain/pipelines.js). A finished run
-  // never changes, so each is read once a day at most; one that can't be read stays "failed".
-  const declinedRun = (projectId, id) => cached(`declined:${id}`, async () => wasDeclined(await provider.getBuildTimeline(projectId, id)), 24 * 60 * MIN).catch(() => false);
+  // A failed run that was only declined at an approval check (domain/pipelines.js). "Declined" is kept
+  // for a day; "not declined" only for 5 minutes, since right after a run ends its timeline may not
+  // have the approval's outcome yet. One that can't be read stays "failed".
+  const declinedRun = (projectId, id) => cached(`declined:${id}`, async () => wasDeclined(await provider.getBuildTimeline(projectId, id)), (yes) => (yes ? 24 * 60 : 5) * MIN).catch(() => false);
 
   /** Runs with result "declined" instead of "failed" where that's what happened: the newest `perPipeline` failed runs of each pipeline. */
   async function markDeclined(runs, perPipeline = 5) {
