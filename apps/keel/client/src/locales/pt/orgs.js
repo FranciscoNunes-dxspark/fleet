@@ -1,8 +1,8 @@
 // Several organizations: Settings → Organizations, the sidebar, and the server's messages about them.
 export default {
   'Organizations': 'Organizações',
-  'Keel shows every organization you have a token for, together. Link a token for each one; a token created for "All accessible organizations" works for all of them.': 'O Keel mostra, em conjunto, todas as organizações para as quais tem um token. Ligue um token para cada uma; um token criado para "All accessible organizations" serve para todas.',
-  'Keel shows every organization together, using AZDO_PAT for each: create it for "All accessible organizations".': 'O Keel mostra todas as organizações em conjunto, usando o AZDO_PAT para cada uma: crie-o para "All accessible organizations".',
+  'Keel shows every organization you have a token for, together. Link a token for each one, created for that organization: Azure DevOps stops accepting tokens created for "All accessible organizations" on 1 December 2026.': 'O Keel mostra juntas todas as organizações para as quais tem um token. Associe um token a cada uma, criado para essa organização: o Azure DevOps deixa de aceitar tokens criados para "All accessible organizations" a 1 de dezembro de 2026.',
+  'Keel shows every organization together, using AZDO_PAT for each, so it must be created for "All accessible organizations", and Azure DevOps stops accepting those on 1 December 2026. To keep several organizations after that, use sign-in (AUTH_MODE=login), where each person links a token per organization.': 'O Keel mostra juntas todas as organizações, usando o AZDO_PAT para cada uma, por isso tem de ser criado para "All accessible organizations", e o Azure DevOps deixa de os aceitar a 1 de dezembro de 2026. Para manter várias organizações depois disso, use o início de sessão (AUTH_MODE=login), em que cada pessoa associa um token por organização.',
   'Primary': 'Principal',
   'Connected to {org}': 'Ligado a {org}',
   'Paste a new token to replace it': 'Cole um token novo para o substituir',
