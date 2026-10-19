@@ -119,6 +119,10 @@ export function createService({
   // The Azure DevOps organization this service talks to: { key, name, url, primary }.
   // With several organizations there is one service each (see multiorg.js).
   org = null,
+  // Pull requests completed at a set time (schedules.js), shared by the server; and whose
+  // service this is (their account id; null locally), for their own schedules' outcomes.
+  schedules = null,
+  owner = null,
 } = {}) {
   // Inbox keys and snoozes of other organizations carry their key, so #4107 in
   // one never hides #4107 in another; the primary's stay as they always were.
@@ -929,7 +933,8 @@ export function createService({
 
     async pullRequests() {
       const [prs, repoList, team] = await Promise.all([activePRs(), repos(), people()]);
-      return { prs, repos: repoList, people: team };
+      const upcoming = schedules?.upcoming() || new Map();
+      return { prs: prs.map((p) => (upcoming.has(p.key) ? { ...p, completesAt: upcoming.get(p.key) } : p)), repos: repoList, people: team };
     },
 
     /** Pull requests completed or abandoned in the last `days` days (7, 30 or 90), newest first. */
@@ -942,7 +947,7 @@ export function createService({
 
     async pullRequest(projectId, repoId, id) {
       const [who, pr] = await Promise.all([me(), cached(`pr:${projectId}/${repoId}/${id}`, () => provider.getPullRequest(projectId, repoId, id), 30 * 1000)]);
-      return enrichPR(pr, who);
+      return { ...enrichPR(pr, who), schedule: schedules?.forPr(projectId, repoId, id) || null };
     },
 
     /** Merge conflicts of a pull request (fresh each time: they change as people push). */
@@ -1219,6 +1224,8 @@ export function createService({
             id: b.id, projectId: b.projectId, definition: { id: b.definition.id, name: b.definition.name }, status: b.status, result: b.result, buildNumber: b.buildNumber,
             sourceBranch: b.sourceBranch, webUrl: b.webUrl, mine: sameIdentity(b.requestedFor, who),
           })),
+        // This person's scheduled completions and their outcomes (once, from the primary organization).
+        schedules: schedules && (!org || org.primary) ? schedules.forOwner(owner) : [],
         // Anything else the pages show, so lists refresh even when nothing is notification-worthy.
         extra: [
           prs.map((p) => `${p.key}:${p.mergeStatus}:${p.isDraft}:${p.title}:${p.reviewers.map((r) => r.vote).join(',')}`).join('|'),

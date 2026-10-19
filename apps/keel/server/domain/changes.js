@@ -23,6 +23,7 @@ const CATEGORY_BY_KIND = { approval: 'approval', review: 'review', pipeline: 'pi
  *   attention: [{ key, kind, severity, title, reasons: [{ text }], target, webUrl }],
  *   myPrs: [{ key, id, title, projectId, repoId, status, reviewers: [{ id, displayName, vote, isContainer }] }],
  *   runs: [{ id, definition: { name }, status, result, buildNumber, sourceBranch, webUrl, mine }],
+ *   schedules: [{ id, prId, projectId, repoId, title, at, status, reason }],  // completions you scheduled (schedules.js)
  * }
  */
 export function diffSnapshots(prev, next) {
@@ -93,6 +94,20 @@ export function diffSnapshots(prev, next) {
       severity: ok ? 'medium' : 'high',
     });
   }
+  // A completion you scheduled ran: done, or why not.
+  const wasScheduled = new Set((prev.schedules || []).filter((s) => s.status === 'scheduled').map((s) => s.id));
+  for (const s of next.schedules || []) {
+    if (s.status === 'scheduled' || !wasScheduled.has(s.id)) continue;
+    const done = s.status === 'done';
+    out.push({
+      key: `schedule:${s.id}`,
+      category: 'myPr',
+      title: done ? `Pull request !${s.prId} completed as scheduled` : `Pull request !${s.prId} wasn't completed as scheduled`,
+      body: done ? s.title : `${s.title}: ${s.reason}`,
+      target: { type: 'pr', projectId: s.projectId, repoId: s.repoId, id: s.prId },
+      severity: done ? 'medium' : 'high',
+    });
+  }
   return out;
 }
 
@@ -102,6 +117,7 @@ export function fingerprint(snapshot) {
     snapshot.attention.map((i) => [i.key, i.severity, i.reasons.map((r) => r.text)]),
     snapshot.myPrs.map((p) => [p.key, p.reviewers.map((r) => r.vote)]),
     snapshot.runs.map((b) => [b.id, b.status, b.result]),
+    (snapshot.schedules || []).map((s) => [s.id, s.status]),
     snapshot.extra ?? null,
   ]);
 }

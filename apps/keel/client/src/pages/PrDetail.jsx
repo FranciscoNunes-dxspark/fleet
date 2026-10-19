@@ -141,6 +141,34 @@ export default function PrDetail({ target }) {
     }
   };
 
+  // Complete at a set time (server/schedules.js): Keel completes it then, as you, if it's still ready.
+  const schedule = async (opts) => {
+    setBusy('schedule');
+    try {
+      await api(`${prPath(target)}/schedule`, { method: 'POST', body: opts });
+      toast(t('Pull request !{id} will be completed {when}', { id: pr.id, when: dateTime(opts.at) }));
+      refresh();
+      return true;
+    } catch (e) {
+      toast(e.message, 'bad');
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  };
+  const cancelSchedule = async () => {
+    setBusy('unschedule');
+    try {
+      await api(`/schedules/${encodeURIComponent(pr.schedule.id)}`, { method: 'DELETE' });
+      toast(t('Scheduled completion canceled'));
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const state = REVIEW_STATE[pr.reviewState];
   const mentionable = [...(people || []), pr.author, ...pr.reviewers, ...pr.threads.recent.map((c) => c.author)];
   const candidates = (people || []).filter((p) => p.id !== pr.author?.id && !pr.reviewers.some((r) => r.id === p.id));
@@ -157,12 +185,15 @@ export default function PrDetail({ target }) {
           : <Chip tone={pr.status === 'completed' ? 'ok' : 'muted'}>{pr.status === 'completed' ? t('Completed') : t('Abandoned')}</Chip>}
         {pr.hasConflicts && <Chip tone="bad">{t('Merge conflicts')}</Chip>}
         {pr.autoComplete && <Chip tone="ok">{t('Auto-complete set')}</Chip>}
+        {pr.schedule?.status === 'scheduled' && <Chip tone="info">{t('Completes {when}', { when: dateTime(pr.schedule.at) })}</Chip>}
         {pr.labels.map((l) => <Chip key={l}>{l}</Chip>)}
       </div>
       <p className="detail-meta">
         <Avatar person={pr.author} size={20} /> {t('{name} opened {age} ago', { name: pr.author?.displayName || '', age: age(pr.createdAt) })}
         <br /><code className="branch">{pr.sourceBranch} → {pr.targetBranch}</code>
       </p>
+
+      {pr.schedule && <ScheduleNote s={pr.schedule} busy={busy === 'unschedule'} onCancel={writable ? cancelSchedule : null} />}
 
       {pr.status === 'active' && pr.mergeStatus !== 'succeeded' && (
         <MergeStatus pr={pr} target={target} writable={writable} busy={busy} onRefresh={reload} onRestart={() => act({ type: 'restartMerge' }, t('Merge restarted'))} />
@@ -289,7 +320,9 @@ export default function PrDetail({ target }) {
       </section>
 
       {completing && pr.status === 'active' && (
-        <CompleteForm pr={pr} busy={!!busy} onCancel={() => setCompleting(false)} onComplete={async (opts) => {
+        <CompleteForm pr={pr} busy={!!busy} onCancel={() => setCompleting(false)} onSchedule={async (opts) => {
+          if (await schedule(opts)) setCompleting(false);
+        }} onComplete={async (opts) => {
           if (await act({ type: 'complete', ...opts }, t('Pull request !{id} completed', { id: pr.id }))) setCompleting(false);
         }} />
       )}
@@ -321,8 +354,34 @@ const MERGE_TYPES = [
   ['rebaseMerge', 'Semi-linear merge', 'Rebases, then adds a merge commit'],
 ];
 
-/** Merge now: merge type, commit message, cleanup options, optional policy override. */
-function CompleteForm({ pr, busy, onCancel, onComplete }) {
+const MERGE_LABEL = Object.fromEntries(MERGE_TYPES.map(([v, label]) => [v, label]));
+
+/** A scheduled completion on its pull request: when, how and by whom, or how it went. */
+function ScheduleNote({ s, busy, onCancel }) {
+  if (s.status === 'scheduled') {
+    return (
+      <p className="callout small schedule-note">
+        {t('Keel will complete it {when} ({merge}), if by then it is approved, its required checks have passed and it has no conflicts.', { when: dateTime(s.at), merge: t(MERGE_LABEL[s.mergeStrategy] || s.mergeStrategy) })}
+        {s.ownerName && ` ${t('Scheduled by {name}.', { name: s.ownerName })}`}
+        {onCancel && <> <button type="button" className="link-btn" onClick={onCancel} disabled={busy}>{busy ? t('Canceling…') : t('Cancel it')}</button></>}
+      </p>
+    );
+  }
+  if (s.status === 'done') return <p className="callout small">{t('Completed as scheduled, {when}.', { when: dateTime(s.finishedAt || s.at) })}</p>;
+  return <p className="callout callout-warn small">{t("Wasn't completed as scheduled ({when}): {reason}.", { when: dateTime(s.at), reason: tx(s.reason) })}</p>;
+}
+
+/** Local date and time for a datetime-local input: today at 18:00, or the next whole hour once that's near. */
+function defaultAt(now = new Date()) {
+  const d = new Date(now);
+  if (d.getHours() < 17 || (d.getHours() === 17 && d.getMinutes() < 30)) d.setHours(18, 0, 0, 0);
+  else d.setHours(d.getHours() + 1, 0, 0, 0);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Merge now, or at a set time: merge type, commit message, cleanup options, optional policy override (now only). */
+function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule }) {
   const { meta } = useApp();
   const defaults = meta.autoComplete || {};
   const [mergeStrategy, setMergeStrategy] = useState(defaults.mergeStrategy || 'noFastForward');
@@ -331,6 +390,9 @@ function CompleteForm({ pr, busy, onCancel, onComplete }) {
   const [transitionWorkItems, setTransitionWorkItems] = useState(defaults.transitionWorkItems ?? true);
   const [bypassPolicy, setBypassPolicy] = useState(false);
   const [bypassReason, setBypassReason] = useState('');
+  const [when, setWhen] = useState('now');
+  const [at, setAt] = useState(() => defaultAt());
+  const later = when === 'at';
   const pending = pr.policies.filter((p) => p.isBlocking && p.status !== 'approved');
   const usesMessage = mergeStrategy !== 'rebase';
   const formRef = useRef(null);
@@ -344,7 +406,13 @@ function CompleteForm({ pr, busy, onCancel, onComplete }) {
   return (
     <section className="detail-section complete-form" aria-label={t('Complete pull request')} ref={formRef}>
       <h3>{t('Complete pull request')}</h3>
-      {pending.length > 0 && (
+      <div className="complete-when" role="radiogroup" aria-label={t('When')}>
+        <label className="check"><input type="radio" name="complete-when" checked={!later} onChange={() => setWhen('now')} /> {t('Now')}</label>
+        <label className="check"><input type="radio" name="complete-when" checked={later} onChange={() => setWhen('at')} /> {t('At')}</label>
+        <input className="input" type="datetime-local" value={at} onChange={(e) => { setAt(e.target.value); setWhen('at'); }} aria-label={t('Complete at')} />
+      </div>
+      {later && <p className="muted small">{t('Keel completes it then, as you, if it is approved, its required checks have passed and it has no conflicts; otherwise it tells you why not. Policies are never overridden.')}</p>}
+      {!later && pending.length > 0 && (
         <p className="callout small">
           {t(pending.length === 1 ? '{n} required check not passed: {checks}.' : '{n} required checks not passed: {checks}.', {
             n: pending.length,
@@ -365,21 +433,32 @@ function CompleteForm({ pr, busy, onCancel, onComplete }) {
       )}
       <label className="check"><input type="checkbox" checked={deleteSourceBranch} onChange={(e) => setDeleteSourceBranch(e.target.checked)} /> {tj('Delete {branch} after merging', { branch: <code className="branch">{pr.sourceBranch}</code> })}</label>
       <label className="check"><input type="checkbox" checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> {t('Complete linked work items')}{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>
-      <label className="check"><input type="checkbox" checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>
-      {bypassPolicy && (
+      {!later && <label className="check"><input type="checkbox" checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>}
+      {!later && bypassPolicy && (
         <label className="field">{t('Reason for overriding')}
           <input className="input" value={bypassReason} onChange={(e) => setBypassReason(e.target.value)} placeholder={t('e.g. Hotfix for production incident')} />
         </label>
       )}
       <div className="complete-actions">
-        <button
-          type="button"
-          className={`btn btn-small ${bypassPolicy ? 'btn-danger' : 'btn-primary'}`}
-          disabled={busy || (bypassPolicy && !bypassReason.trim())}
-          onClick={() => onComplete({ mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems, bypassPolicy, bypassReason })}
-        >
-          {busy ? t('Completing…') : bypassPolicy ? t('Override and complete merge') : t('Complete merge')}
-        </button>
+        {later ? (
+          <button
+            type="button"
+            className="btn btn-small btn-primary"
+            disabled={busy || !at}
+            onClick={() => onSchedule({ at: new Date(at).toISOString(), mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems })}
+          >
+            {busy ? t('Scheduling…') : t('Schedule completion')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`btn btn-small ${bypassPolicy ? 'btn-danger' : 'btn-primary'}`}
+            disabled={busy || (bypassPolicy && !bypassReason.trim())}
+            onClick={() => onComplete({ mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems, bypassPolicy, bypassReason })}
+          >
+            {busy ? t('Completing…') : bypassPolicy ? t('Override and complete merge') : t('Complete merge')}
+          </button>
+        )}
         <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>{t('Cancel')}</button>
       </div>
     </section>

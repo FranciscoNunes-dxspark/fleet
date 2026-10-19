@@ -11,7 +11,7 @@ const INLINE_IMAGES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
  * `channels` posts to Teams and Slack (channels.js), shared by the server;
  * `push` sends notifications to people's devices (push.js).
  */
-export function apiRouter({ channels = null, push = null } = {}) {
+export function apiRouter({ channels = null, push = null, schedules = null } = {}) {
   const orgs = createOrgStore(); // reads data/orgs.json, shared with sign-in and other processes
   const typeColors = createTypeColorStore(); // data/type-colors.json, the same for everyone
   const r = express.Router();
@@ -105,6 +105,19 @@ export function apiRouter({ channels = null, push = null } = {}) {
   r.get('/prs/:projectId/:repoId/:id/conflicts', async (req, res) => {
     const { projectId, repoId, id } = req.params;
     res.json(await req.ctx.service.pullRequestConflicts(projectId, repoId, num(id)));
+  });
+  // Complete a pull request at a set time (schedules.js), as the person scheduling it.
+  r.post('/prs/:projectId/:repoId/:id/schedule', need('prs.write'), async (req, res) => {
+    if (!schedules) throw Object.assign(new Error('Scheduling is not available on this server'), { status: 404 });
+    const { projectId, repoId, id } = req.params;
+    const { at, ...options } = req.body || {};
+    const pr = await req.ctx.service.pullRequest(projectId, repoId, num(id));
+    schedules.add({ pr, at, options, owner: req.ctx.user ? { id: req.ctx.user.id, name: req.ctx.user.name } : null });
+    res.json(await req.ctx.service.pullRequest(projectId, repoId, num(id)));
+  });
+  r.delete('/schedules/:id', need('prs.write'), (req, res) => {
+    if (!schedules) throw Object.assign(new Error('Scheduling is not available on this server'), { status: 404 });
+    res.json(schedules.cancel(req.params.id, { ownerId: req.ctx.user?.id ?? null, admin: (req.ctx.role || 'admin') === 'admin' }));
   });
   r.post('/prs/:projectId/:repoId/:id/actions', need('prs.write'), async (req, res) => {
     const { projectId, repoId, id } = req.params;
