@@ -17,6 +17,8 @@ const STATE = {
   settling: { tone: 'info', label: 'Just deployed' },
   unknown: { tone: 'muted', label: 'No data yet' },
 };
+// Problems first: outages, then degraded, then deploys under way. Ties keep their order from Settings.
+const RANK = { down: 0, degraded: 1, deploying: 2, settling: 3, up: 4, unknown: 5 };
 const HOUR = 3_600_000;
 // Deploys whose contents can be shown (DeployDetail.jsx); running or waiting ones link to Azure DevOps.
 const FINISHED = new Set(['succeeded', 'partiallySucceeded', 'failed', 'rejected']);
@@ -27,7 +29,7 @@ const ms = (v) => (v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(1)}s` :
 export default function Production() {
   const { data, error, reload } = useApi('/production');
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
-  const monitors = data.monitors;
+  const monitors = [...data.monitors].sort((a, b) => (RANK[a.state] ?? RANK.unknown) - (RANK[b.state] ?? RANK.unknown));
   const problems = monitors.filter((m) => m.state === 'down' || m.state === 'degraded').length;
 
   return (
