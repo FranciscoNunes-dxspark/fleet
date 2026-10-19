@@ -117,24 +117,33 @@ async function aiQuery(appId, apiKey, kql) {
   return t.rows.map((row) => Object.fromEntries(t.columns.map((c, i) => [c.name, row[i]])));
 }
 
+// Failures are server errors (5xx). Application Insights also marks 4xx responses as failed, but a
+// 404 is mostly bots and stale links asking for pages that don't exist: those are counted apart.
+const SERVER_ERROR = 'toint(resultCode) >= 500';
+const NOT_FOUND = 'resultCode == "404"';
+
 async function aiSnapshot(appId, apiKey) {
-  const [series, exceptions, failing] = await Promise.all([
-    aiQuery(appId, apiKey, 'requests | where timestamp > ago(24h) | summarize total=count(), failed=countif(success == false), p95=percentile(duration, 95) by bin(timestamp, 30m) | order by timestamp asc'),
+  const [series, exceptions, failing, missing] = await Promise.all([
+    aiQuery(appId, apiKey, `requests | where timestamp > ago(24h) | summarize total=count(), failed=countif(${SERVER_ERROR}), notFound=countif(${NOT_FOUND}), p95=percentile(duration, 95) by bin(timestamp, 30m) | order by timestamp asc`),
     aiQuery(appId, apiKey, 'exceptions | where timestamp > ago(1h) | summarize n=count()'),
-    aiQuery(appId, apiKey, 'requests | where timestamp > ago(1h) and success == false | summarize n=count() by name, resultCode | top 5 by n desc'),
+    aiQuery(appId, apiKey, `requests | where timestamp > ago(1h) and ${SERVER_ERROR} | summarize n=count() by name, resultCode | top 5 by n desc`),
+    aiQuery(appId, apiKey, `requests | where timestamp > ago(1h) and ${NOT_FOUND} | summarize n=count() by name | top 5 by n desc`),
   ]);
   const lastHour = series.filter((b) => Date.parse(b.timestamp) > Date.now() - HOUR);
-  const total = lastHour.reduce((s, b) => s + (b.total || 0), 0);
-  const failed = lastHour.reduce((s, b) => s + (b.failed || 0), 0);
+  const sum = (k) => lastHour.reduce((s, b) => s + (b[k] || 0), 0);
+  const total = sum('total');
+  const failed = sum('failed');
   return {
     at: new Date().toISOString(),
     total,
     failed,
     failRate: total ? failed / total : 0,
+    notFound: sum('notFound'),
     p95: lastHour.length ? Math.max(...lastHour.map((b) => b.p95 || 0)) : null,
     exceptions: exceptions[0]?.n ?? 0,
     topFailures: failing.map((f) => ({ name: f.name, code: f.resultCode, count: f.n })),
-    series: series.map((b) => ({ at: b.timestamp, total: b.total, failed: b.failed, p95: b.p95 })),
+    topNotFound: missing.map((f) => ({ name: f.name, count: f.n })),
+    series: series.map((b) => ({ at: b.timestamp, total: b.total, failed: b.failed, notFound: b.notFound || 0, p95: b.p95 })),
   };
 }
 
@@ -174,7 +183,7 @@ function demoAi(m) {
     const total = Math.round(900 + Math.sin(t / (3 * HOUR)) * 300);
     // The "errors" demo app degrades over the last few hours (after a deploy).
     const rate = m.demo === 'errors' && t > now - 4 * HOUR ? 0.07 : 0.004;
-    series.push({ at: new Date(t).toISOString(), total, failed: Math.round(total * rate), p95: m.demo === 'errors' ? 900 : 320 });
+    series.push({ at: new Date(t).toISOString(), total, failed: Math.round(total * rate), notFound: Math.round(total * 0.01), p95: m.demo === 'errors' ? 900 : 320 });
   }
   const lastHour = series.slice(-2);
   const total = lastHour.reduce((s, b) => s + b.total, 0);
@@ -183,6 +192,8 @@ function demoAi(m) {
     at: new Date().toISOString(), total, failed, failRate: total ? failed / total : 0, p95: lastHour.at(-1).p95,
     exceptions: m.demo === 'errors' ? 212 : 3,
     topFailures: m.demo === 'errors' ? [{ name: 'POST /connect/token', code: '500', count: 96 }, { name: 'GET /users/me', code: '502', count: 31 }] : [],
+    notFound: lastHour.reduce((s, b) => s + b.notFound, 0),
+    topNotFound: [{ name: 'GET /wp-login.php', count: 14 }, { name: 'GET /.env', count: 6 }, { name: 'GET admin/functions', count: 2 }],
     series,
   };
 }

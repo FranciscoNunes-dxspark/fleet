@@ -147,15 +147,15 @@ export function deployUnderWay(target, { releases = [], builds = [], approvals =
     .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0] || null;
 }
 
-/** Failure rate over the Application Insights buckets in [from, to). */
-function failRate(series, from, to) {
+/** Share of requests that were `key` (failed: 5xx, or notFound: 404) over the Application Insights buckets in [from, to). */
+function failRate(series, from, to, key = 'failed') {
   const inRange = series.filter((b) => {
     const t = Date.parse(b.at);
     return t >= from && t < to;
   });
   const total = inRange.reduce((s, b) => s + (b.total || 0), 0);
-  const failed = inRange.reduce((s, b) => s + (b.failed || 0), 0);
-  return { total, rate: total ? failed / total : 0 };
+  const count = inRange.reduce((s, b) => s + (b[key] || 0), 0);
+  return { total, count, rate: total ? count / total : 0 };
 }
 
 /**
@@ -192,7 +192,7 @@ export function evaluateMonitor(m, markers = [], now = Date.now(), running = nul
 
   const ai = m.ai;
   if (ai && ai.total >= 50 && ai.failRate >= 0.05) {
-    issues.push({ code: 'failures', severity: ai.failRate >= 0.1 ? 'high' : 'medium', text: `${pct(ai.failRate)} of requests failing in the last hour (${ai.failed} of ${ai.total})` });
+    issues.push({ code: 'failures', severity: ai.failRate >= 0.1 ? 'high' : 'medium', text: `${pct(ai.failRate)} of requests failing with server errors (5xx) in the last hour (${ai.failed} of ${ai.total})` });
   }
 
   // Did the latest deploy make things worse? Compare the 6h before it with what came after.
@@ -208,6 +208,12 @@ export function evaluateMonitor(m, markers = [], now = Date.now(), running = nul
         text: `Failures up from ${pct(before.rate)} to ${pct(after.rate)} since ${deploy.label} (${ago(now - t)} ago)`,
         deploy,
       });
+    }
+    // 404s jumping after a deploy can be a route removed by mistake: worth a look, never "degraded".
+    const nfBefore = failRate(ai.series, t - 6 * HOUR, t, 'notFound');
+    const nfAfter = failRate(ai.series, t, now + 1, 'notFound');
+    if (nfAfter.count >= 20 && nfAfter.rate >= Math.max(nfBefore.rate * 3, nfBefore.rate + 0.02)) {
+      issues.push({ code: 'not-found-up', severity: 'low', text: `404s up from ${pct(nfBefore.rate)} to ${pct(nfAfter.rate)} since ${deploy.label} (${ago(now - t)} ago)`, deploy });
     }
   }
 
