@@ -98,6 +98,8 @@ export function createMultiService(entries) {
       },
     },
 
+    withProjects: (projectIds) => createMultiService(entries.map((e) => ({ org: e.org, service: e.service.withProjects(projectIds) }))),
+
     invalidate(prefix) {
       owners = null;
       for (const e of entries) e.service.invalidate(prefix);
@@ -309,6 +311,9 @@ export function createMultiService(entries) {
     // Production monitors are shared by the server; the primary organization owns them.
     production: () => primary.service.production(),
     monitors: () => primary.service.monitors(),
+    platformTotals: () => primary.service.platformTotals(),
+    platformTotalsFor: (id) => primary.service.platformTotalsFor(id),
+    fetchAllTotals: () => primary.service.fetchAllTotals(),
 
     async team() {
       const parts = await each((s) => s.workloadData());

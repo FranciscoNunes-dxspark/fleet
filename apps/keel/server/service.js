@@ -61,6 +61,47 @@ export function suggestTitle(branch, commits = []) {
   return words ? words[0].toUpperCase() + words.slice(1) : branch;
 }
 
+/** A project's own team ("<Project> Team"), else its first, as the one to scope it to. */
+async function defaultTeams(provider, p) {
+  const teams = await provider.listTeams(p.id).catch(() => []);
+  const team = teams.find((t) => t.name === `${p.name} Team`) || teams[0];
+  return team ? [{ id: team.id, name: team.name }] : [];
+}
+
+/**
+ * Someone's settings with other projects tracked: what a Teams or Slack channel
+ * reads (thresholds and snoozes stay theirs). Projects they track keep their
+ * teams and repos; the others get every repo and their default team. Read-only.
+ */
+export function projectsStore(base, projectIds, provider) {
+  const others = new Map(); // projectId -> its settings entry, made once
+  async function other(id) {
+    if (!others.has(id)) {
+      others.set(id, (async () => {
+        const p = (await provider.listProjects()).find((x) => x.id === id);
+        // Not in this organization: another organization's service picks it up.
+        return p ? { name: p.name, tracked: true, repos: 'all', teams: await defaultTeams(provider, p), scopeToTeamArea: false } : null;
+      })().catch((err) => {
+        others.delete(id);
+        throw err;
+      }));
+    }
+    return others.get(id);
+  }
+  return {
+    file: base.file,
+    async load() {
+      const settings = await base.load();
+      const own = settings.projects || {};
+      const entries = await Promise.all(projectIds.map(async (id) => [id, own[id]?.tracked ? own[id] : await other(id)]));
+      return { ...settings, firstRun: false, projects: Object.fromEntries(entries.filter(([, v]) => v)) };
+    },
+    async save() {
+      throw Object.assign(new Error('These settings are read-only'), { status: 400 });
+    },
+  };
+}
+
 // Settings used to hold one team (teamId/teamName); read either shape.
 export const teamsOf = (cfg = {}) => (Array.isArray(cfg.teams)
   ? cfg.teams.filter((t) => t?.id)
@@ -99,11 +140,7 @@ export function createService({
         ? projects
         : projects.filter((p) => config.seedProjects.some((n) => n.toLowerCase() === p.name.toLowerCase()));
       if (!wanted.length) return;
-      const entries = await Promise.all(wanted.map(async (p) => {
-        const teams = await provider.listTeams(p.id).catch(() => []);
-        const team = teams.find((t) => t.name === `${p.name} Team`) || teams[0];
-        return [p.id, { name: p.name, tracked: true, repos: 'all', teams: team ? [{ id: team.id, name: team.name }] : [], scopeToTeamArea: false }];
-      }));
+      const entries = await Promise.all(wanted.map(async (p) => [p.id, { name: p.name, tracked: true, repos: 'all', teams: await defaultTeams(provider, p), scopeToTeamArea: false }]));
       await store.save({ projects: Object.fromEntries(entries) });
     })();
     await seeding;
@@ -259,11 +296,23 @@ export function createService({
       .map((d) => ({ ...d, key: `${d.projectId}:release:${d.id}`, health: releaseHealth(d.stages) }));
   });
 
+  /**
+   * The production monitors this person sees: those of the projects they track,
+   * and those that belong to no project in particular. The settings store is
+   * shared by every organization, so another organization's projects count too.
+   */
+  async function myMonitors() {
+    if (!monitoring) return [];
+    await ensureSeeded();
+    const { projects } = await store.load();
+    return monitoring.status().filter((m) => !m.projectId || projects?.[m.projectId]?.tracked);
+  }
+
   /** Production monitors with their deploy markers and health verdict. */
   async function production() {
     if (!monitoring) return [];
-    const [rels, pipes, builds] = await Promise.all([releases().catch(() => []), pipelines().catch(() => []), rawBuilds().catch(() => [])]);
-    return monitoring.status().map((m) => {
+    const [rels, pipes, builds, monitors] = await Promise.all([releases().catch(() => []), pipelines().catch(() => []), rawBuilds().catch(() => []), myMonitors()]);
+    return monitors.map((m) => {
       const sources = { releases: rels, pipelines: pipes, builds };
       const markers = deployMarkers(m, sources);
       const deploy = runningDeploy(m, sources);
@@ -277,11 +326,11 @@ export function createService({
    * named like production (Production, Prod, PRD, Live).
    */
   async function productionTargets() {
-    const [rels, pipes, projects] = await Promise.all([releases().catch(() => []), pipelines().catch(() => []), allProjects()]);
+    const [rels, pipes, projects, monitors] = await Promise.all([releases().catch(() => []), pipelines().catch(() => []), allProjects(), myMonitors()]);
     const projectName = (id) => projects.find((p) => p.id === id)?.name || null;
     const found = new Map();
     const add = (t) => t.key && !found.has(t.key) && found.set(t.key, t);
-    for (const m of monitoring ? monitoring.status() : []) {
+    for (const m of monitors) {
       const link = m.link;
       if (!link) continue;
       // Several monitors deployed by the same stage or pipeline are one environment, named after all of them.
@@ -459,6 +508,8 @@ export function createService({
     org,
     /** Tracked projects of this organization (for the multi-organization layer). */
     trackedProjects: () => tracked(),
+    /** The same person looking at these projects instead of their own (a channel's view, see channels.js). */
+    withProjects: (projectIds) => createService({ provider, settings: projectsStore(store, projectIds, provider), monitoring, org }),
     allProjects: () => allProjects(),
 
     async meta() {
@@ -618,7 +669,7 @@ export function createService({
         releases().catch(() => []), rawBuilds().catch(() => []), approvals().catch(() => []),
       ]);
       // Monitors not linked to what deploys them still show, saying so, rather than vanishing.
-      const unlinked = (monitoring ? monitoring.status() : []).filter((m) => !m.link)
+      const unlinked = (await myMonitors()).filter((m) => !m.link)
         .map((m) => ({ key: `monitor:${m.id}`, name: m.name, projectId: null, projectName: null, unlinked: true, monitorId: m.id }));
       const results = await Promise.all(targets.map(async (t) => {
         let head = { key: t.key, name: t.name, projectId: t.projectId, projectName: t.projectName };
@@ -1105,8 +1156,8 @@ export function createService({
 
     /** What the watcher compares between polls (see domain/changes.js). */
     async snapshot() {
-      const [att, prs, builds, who, items, rels] = await Promise.all([
-        this.attention(), activePRs(), rawBuilds(), me(), openItems(), releases().catch(() => []),
+      const [att, prs, builds, who, items, rels, monitors] = await Promise.all([
+        this.attention(), activePRs(), rawBuilds(), me(), openItems(), releases().catch(() => []), myMonitors(),
       ]);
       const dayAgo = Date.now() - DAY;
       return {
@@ -1126,7 +1177,7 @@ export function createService({
           prs.map((p) => `${p.key}:${p.mergeStatus}:${p.isDraft}:${p.title}:${p.reviewers.map((r) => r.vote).join(',')}`).join('|'),
           items.map((w) => `${w.id}:${w.rev ?? ''}:${w.changedAt}`).join('|'),
           rels.map((d) => d.stages.map((s) => `${s.latest?.releaseId}:${s.latest?.status}:${s.active?.status}`).join(',')).join('|'),
-          (monitoring ? monitoring.status() : []).map((m) => `${m.id}:${m.last?.at}:${m.ai?.at}`).join('|'),
+          monitors.map((m) => `${m.id}:${m.last?.at}:${m.ai?.at}`).join('|'),
         ].join('#'),
       };
     },
@@ -1138,6 +1189,20 @@ export function createService({
     monitors: () => {
       if (!monitoring) throw Object.assign(new Error('Production monitoring is not available on this server'), { status: 404 });
       return monitoring;
+    },
+
+    /** Platform totals of the sites this person sees (see myMonitors). */
+    async platformTotals() {
+      const ids = new Set((await myMonitors()).map((m) => m.id));
+      return this.monitors().totals().filter((x) => ids.has(x.id));
+    },
+    /** Fetch the totals of every site this person sees, now. */
+    async fetchAllTotals() {
+      return this.monitors().fetchAllTotalsNow((await myMonitors()).map((m) => m.id));
+    },
+    async platformTotalsFor(id) {
+      if (!(await myMonitors()).some((m) => m.id === id)) throw Object.assign(new Error('No such monitor.'), { status: 404 });
+      return this.monitors().totalsFor(id);
     },
 
     async releases() {

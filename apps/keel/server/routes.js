@@ -171,9 +171,10 @@ export function apiRouter({ channels = null, push = null } = {}) {
     res.json(saved);
   });
   r.post('/production/test', need('monitors.manage'), async (req, res) => res.json(await req.ctx.service.monitors().test(req.body || {})));
-  // Platform totals (platform/v1 /totals): everyone reads, admins fetch on demand.
-  r.get('/production/totals', (req, res) => res.json(req.ctx.service.monitors().totals()));
-  r.get('/production/totals/:id', (req, res) => res.json(req.ctx.service.monitors().totalsFor(req.params.id)));
+  // Platform totals (platform/v1 /totals): everyone reads the sites they see, admins fetch on demand.
+  r.get('/production/totals', async (req, res) => res.json(await req.ctx.service.platformTotals()));
+  r.get('/production/totals/:id', async (req, res) => res.json(await req.ctx.service.platformTotalsFor(req.params.id)));
+  r.post('/production/totals/fetch', need('monitors.manage'), async (req, res) => res.status(202).json(await req.ctx.service.fetchAllTotals()));
   r.post('/production/totals/:id/fetch', need('monitors.manage'), (req, res) => res.status(202).json(req.ctx.service.monitors().fetchTotalsNow(req.params.id)));
   // Push notifications on your own devices: anyone can turn them on for themselves.
   const pushOrFail = () => {

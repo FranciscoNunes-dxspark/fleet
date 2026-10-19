@@ -3,8 +3,9 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { Chip, Loading } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
+import { useProjectLabel } from '../orgs.js';
 
-const blank = () => ({ key: Math.random(), id: null, name: '', url: '', appInsightsAppId: '', apiKey: undefined, hasApiKey: false, link: null, latencyWarnMs: 2000, totalsKey: undefined, hasTotalsKey: false, totalsEvery: 24, totalsSeason: 'current' });
+const blank = () => ({ key: Math.random(), id: null, name: '', url: '', appInsightsAppId: '', apiKey: undefined, hasApiKey: false, link: null, projectId: null, latencyWarnMs: 2000, totalsKey: undefined, hasTotalsKey: false, totalsEvery: 24, totalsSeason: 'current' });
 const EVERY = [1, 6, 12, 24];
 // What counts as a change: everything but the row's local key.
 const snapshot = (rows) => JSON.stringify((rows || []).map(({ key, ...rest }) => rest));
@@ -17,6 +18,8 @@ export default function ProductionSettings() {
   const { toast, refresh, authMode, can } = useApp();
   const { data: rel } = useApi('/releases');
   const { data: pipes } = useApi('/pipelines');
+  const { data: settings } = useApi('/settings');
+  const projectLabel = useProjectLabel();
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const [tests, setTests] = useState({});
@@ -49,6 +52,12 @@ export default function ProductionSettings() {
 
   const set = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const dirty = snapshot(rows) !== baseline;
+  // Who sees a monitor: the people who track its project (everyone when it has none).
+  const projects = [...(settings?.projects || [])].sort((a, b) => a.name.localeCompare(b.name));
+  const projectName = (id) => {
+    const p = projects.find((x) => x.id === id);
+    return p ? projectLabel(p.name, p.org) : id;
+  };
 
   // "Deploys come from" options: classic release stages and build/YAML pipelines.
   const linkOptions = [
@@ -70,7 +79,7 @@ export default function ProductionSettings() {
     try {
       const saved = await api('/production/monitors', {
         method: 'PUT',
-        body: { monitors: rows.map(({ id, name, url, appInsightsAppId, apiKey, link, latencyWarnMs, totalsKey, totalsEvery, totalsSeason }) => ({ id, name, url, appInsightsAppId, apiKey, link, latencyWarnMs, totalsKey, totalsEvery, totalsSeason })) },
+        body: { monitors: rows.map(({ id, name, url, appInsightsAppId, apiKey, link, projectId, latencyWarnMs, totalsKey, totalsEvery, totalsSeason }) => ({ id, name, url, appInsightsAppId, apiKey, link, projectId, latencyWarnMs, totalsKey, totalsEvery, totalsSeason })) },
       });
       const fresh = saved.map((m) => ({ ...m, key: m.id, apiKey: undefined, totalsKey: undefined }));
       setRows(fresh);
@@ -100,7 +109,7 @@ export default function ProductionSettings() {
       <h2 className="section-title">{t('Production monitors')}</h2>
       <p className="muted small">
         {t('Keel checks each URL every minute. With an Application Insights App ID and API key (Application Insights → API Access → Create API key, "Read telemetry"), it also tracks failure rates, exceptions and slow requests. Keys are stored encrypted on the server and never shown again.')}
-        {authMode === 'login' && ` ${t('Monitors are shared by everyone who uses this Keel server.')}`}
+        {authMode === 'login' && ` ${t("Each monitor shows, in Production, the Inbox and notifications, for the people who track its project: the one that deploys it, or the one picked here. A monitor with no project shows for everyone.")}`}
       </p>
       <p className="muted small">{t("ISM sites (WebShopSite, ShopSites, MarketSite, CartSites): use the site's /health address, for example https://shopeusite.azurewebsites.net/health. Keel reads its health report, and with the site's totals key it also fetches the Platform totals. ShopSites sites have no totals yet.")}</p>
 
@@ -127,6 +136,7 @@ export default function ProductionSettings() {
                   {hasAi && <Chip>Application Insights</Chip>}
                   {hasTotals && <Chip>{t('Totals {every}', { every: t(r.totalsEvery === 1 ? 'every hour' : 'every {n} hours', { n: r.totalsEvery }) })}</Chip>}
                   {r.link && <Chip>{t('Deploys linked')}</Chip>}
+                  {authMode === 'login' && <Chip tone={r.projectId ? undefined : 'info'}>{r.projectId ? projectName(r.projectId) : t('Everyone')}</Chip>}
                 </div>
                 <div className="monitor-line-actions">
                   <button type="button" className="btn btn-small btn-ghost" onClick={() => test(r)} disabled={result?.running || (!r.url && !r.appInsightsAppId)}>{result?.running ? t('Testing…') : t('Test')}</button>
@@ -149,7 +159,7 @@ export default function ProductionSettings() {
                     <label className="wide">{t('URL to check')}<input className="input" value={r.url} onChange={(e) => set(r.key, { url: e.target.value })} placeholder="https://sports.example.com/health" inputMode="url" /></label>
                     <label>{t('Slow above (ms)')}<input className="input" type="number" min={100} max={30000} value={r.latencyWarnMs} onChange={(e) => set(r.key, { latencyWarnMs: Number(e.target.value) })} /></label>
                     <label className="wide">{t('Deploys come from')}
-                      <select className="input" value={linkValue(r.link)} onChange={(e) => { const l = linkOptions.find((o) => o.value === e.target.value)?.link; set(r.key, { link: l ? { ...l, ...(r.link?.branch ? { branch: r.link.branch } : {}) } : null }); }}>
+                      <select className="input" value={linkValue(r.link)} onChange={(e) => { const l = linkOptions.find((o) => o.value === e.target.value)?.link; set(r.key, { link: l ? { ...l, ...(r.link?.branch ? { branch: r.link.branch } : {}) } : null, projectId: l ? l.projectId : r.projectId }); }}>
                         <option value="">{t('Not linked')}</option>
                         {['Release stages', 'Pipelines'].map((g) => (
                           <optgroup key={g} label={t(g)}>
@@ -157,6 +167,17 @@ export default function ProductionSettings() {
                           </optgroup>
                         ))}
                       </select>
+                    </label>
+                    <label className="wide">{t('Project')}
+                      {r.link
+                        ? <span className="input-note">{t('{project}, which deploys it', { project: projectName(r.link.projectId) })}</span>
+                        : (
+                          <select className="input" value={r.projectId || ''} onChange={(e) => set(r.key, { projectId: e.target.value || null })}>
+                            <option value="">{t('None: everyone sees it')}</option>
+                            {projects.map((p) => <option key={p.id} value={p.id}>{projectLabel(p.name, p.org)}</option>)}
+                          </select>
+                        )}
+                      <span className="muted small">{t('People who track this project see the monitor, its alerts and its deploys.')}</span>
                     </label>
                     {r.link && (
                       <label className="wide">{t('Production branch')}

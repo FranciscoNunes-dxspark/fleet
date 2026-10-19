@@ -1,10 +1,13 @@
-// Production monitoring, shared by everyone using this Keel server:
+// Production monitoring, run once for everyone using this Keel server:
 // - a health check of each monitor's URL every minute (up/down, status, latency)
 // - Application Insights metrics every 5 minutes, when an App ID + API key is set
 //   (requests, failure rate, p95 duration, exceptions, top failing operations)
 // Monitors and their check history live in the data folder (monitors.json,
 // monitor-history.json); API keys are stored encrypted. One server process
 // runs the checks (monitor-runner.json) and every process reads the history.
+// Each monitor can belong to a project (the one that deploys it, or one picked
+// in Settings); people see the monitors of the projects they track, plus those
+// that belong to no project in particular.
 // In demo mode the data is simulated, so nothing is fetched.
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
@@ -27,6 +30,8 @@ const KEEP = 24 * HOUR;
 const RUNNER_STALE = 3 * MIN;
 const TOTALS_TICK = 5 * MIN;
 const TOTALS_HISTORY = 300; // snapshots kept per site (a year of daily fetches)
+const TOTALS_AGAIN = 10 * MIN; // a site isn't fetched on request again sooner than this
+const QUEUE_STALE = HOUR; // a site queued by "Fetch all" longer than this (the process stopped) is no longer waiting
 const AI_HOST = 'https://api.applicationinsights.io';
 
 // ------------------------------------------------------------ URL safety
@@ -140,7 +145,7 @@ function demoMonitors() {
     { id: id(), name: 'Storefront (production)', url: 'https://shop.contoso-demo.com/health', appInsightsAppId: 'demo-app-1', apiKey: null, link: { type: 'release', projectId: 'p-commerce', definitionId: 1, stage: 'Production' }, latencyWarnMs: 1500, demo: 'healthy' },
     { id: id(), name: 'Identity API (production)', url: 'https://id.contoso-demo.com/health', appInsightsAppId: 'demo-app-2', apiKey: null, link: { type: 'release', projectId: 'p-platform', definitionId: 2, stage: 'Production' }, latencyWarnMs: 800, demo: 'errors' },
     { id: id(), name: 'Storefront canary', url: 'https://canary.shop.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: { type: 'pipeline', projectId: 'p-commerce', definitionId: 100 }, latencyWarnMs: 1500, demo: 'down' },
-    { id: id(), name: 'Mobile backend (production)', url: 'https://mobile-api.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'down' },
+    { id: id(), name: 'Mobile backend (production)', url: 'https://mobile-api.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, projectId: 'p-mobile', latencyWarnMs: 1500, demo: 'down' },
     { id: id(), name: 'SC Berlin (WebShopSite)', url: 'https://shopeusite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-a', totalsEvery: 24, totalsSeason: 'current' },
     { id: id(), name: 'QA RV (WebShopSite)', url: 'https://shopqasite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-qa', totalsEvery: 6, totalsSeason: 'current' },
     { id: id(), name: 'Sydney FC (MarketSite)', url: 'https://marketussite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-c', totalsEvery: 24, totalsSeason: 'current' },
@@ -280,7 +285,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
     if (fetching.has(m.id)) return;
     fetching.add(m.id);
     totalsStore.update((all) => {
-      all[m.id] = { history: [], ...all[m.id], fetchingSince: Date.now() };
+      all[m.id] = { history: [], ...all[m.id], fetchingSince: Date.now(), queuedAt: null };
     });
     let result;
     try {
@@ -303,9 +308,12 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
     });
   }
 
+  const isFetching = (id, e, now = Date.now()) => fetching.has(id) || !!(e?.fetchingSince && now - e.fetchingSince < TOTALS_TIMEOUT_MS + MIN);
+  const isQueued = (e, now = Date.now()) => !!(e?.queuedAt && now - e.queuedAt < QUEUE_STALE);
+
   const totalsDue = (m, e, now = Date.now()) => {
     if (!hasTotals(m)) return false;
-    if (e?.fetchingSince && now - e.fetchingSince < TOTALS_TIMEOUT_MS + MIN) return false;
+    if (isFetching(m.id, e, now) || isQueued(e, now)) return false;
     if (!e?.lastAttemptAt) return true;
     const every = (m.totalsEvery || 24) * HOUR;
     // After a failure, try again within the hour rather than waiting a whole day.
@@ -360,7 +368,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   /** Monitor definitions without secrets (for Settings). */
   const publicConfig = (m) => ({
     id: m.id, name: m.name, url: m.url || '', appInsightsAppId: m.appInsightsAppId || '', hasApiKey: !!m.apiKey || !!(mock && m.demo && m.appInsightsAppId),
-    link: m.link || null, latencyWarnMs: m.latencyWarnMs || 2000,
+    link: m.link || null, projectId: m.link?.projectId || m.projectId || null, latencyWarnMs: m.latencyWarnMs || 2000,
     hasTotalsKey: !!m.totalsKey || !!(mock && isDemoPlatform(m.demo)), totalsEvery: m.totalsEvery || 24, totalsSeason: m.totalsSeason || 'current',
   });
 
@@ -368,7 +376,8 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
     id: m.id, name: m.name, url: m.url, enabled: hasTotals(m), every: m.totalsEvery || 24, season: m.totalsSeason || 'current',
     lastAttemptAt: e.lastAttemptAt ? new Date(e.lastAttemptAt).toISOString() : null,
     lastError: e.lastError || null,
-    fetching: !!(e.fetchingSince && Date.now() - e.fetchingSince < TOTALS_TIMEOUT_MS + MIN),
+    fetching: isFetching(m.id, e),
+    queued: !isFetching(m.id, e) && isQueued(e),
     nextAt: hasTotals(m) && e.lastAttemptAt ? new Date(e.lastAttemptAt + (e.lastError ? Math.min((m.totalsEvery || 24) * HOUR, HOUR) : (m.totalsEvery || 24) * HOUR)).toISOString() : null,
   });
 
@@ -416,8 +425,10 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
             ...(branch ? { branch } : {}),
           }
           : null;
+        // The project it belongs to: the one that deploys it, else the one picked; none means everyone's.
+        const projectId = link?.projectId || (typeof raw.projectId === 'string' && raw.projectId.trim() ? raw.projectId.trim().slice(0, 64) : null);
         next.push({
-          id: old?.id || crypto.randomUUID(), name, url, appInsightsAppId: appId, apiKey, link, totalsKey, totalsEvery, totalsSeason,
+          id: old?.id || crypto.randomUUID(), name, url, appInsightsAppId: appId, apiKey, link, projectId, totalsKey, totalsEvery, totalsSeason,
           latencyWarnMs: Math.min(30_000, Math.max(100, Number(raw.latencyWarnMs) || 2000)),
           ...(old?.demo ? { demo: old.demo } : {}),
         });
@@ -493,14 +504,51 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
       if (!m) throw Object.assign(new Error('No such monitor.'), { status: 404 });
       if (!hasTotals(m)) throw Object.assign(new Error('Add the site\'s totals key first.'), { status: 400 });
       const e = totalsStore.get()[id];
-      if (fetching.has(id) || (e?.fetchingSince && Date.now() - e.fetchingSince < TOTALS_TIMEOUT_MS + MIN)) {
+      if (isFetching(id, e)) {
         throw Object.assign(new Error('The totals are already being fetched.'), { status: 409 });
       }
-      if (e?.lastAttemptAt && Date.now() - e.lastAttemptAt < 10 * MIN) {
+      if (e?.lastAttemptAt && Date.now() - e.lastAttemptAt < TOTALS_AGAIN) {
         throw Object.assign(new Error('The totals were fetched less than 10 minutes ago. Each fetch keeps the club database busy, so wait a little.'), { status: 429 });
       }
       fetchTotals(m).catch((err) => console.warn(`[monitoring] totals: ${err.message}`));
       return { started: true };
+    },
+
+    /**
+     * Fetch every site's totals now (of `ids`, when given), one after another in
+     * the background like the schedule does. Sites being fetched, already
+     * queued, or fetched in the last 10 minutes are left out.
+     */
+    fetchAllTotalsNow(ids = null) {
+      const now = Date.now();
+      const sites = sync().filter((m) => hasTotals(m) && (!ids || ids.includes(m.id)));
+      if (!sites.length) throw Object.assign(new Error('No site has a totals key yet.'), { status: 400 });
+      const all = totalsStore.get();
+      const due = sites.filter((m) => {
+        const e = all[m.id];
+        return !isFetching(m.id, e, now) && !isQueued(e, now) && !(e?.lastAttemptAt && now - e.lastAttemptAt < TOTALS_AGAIN);
+      });
+      if (!due.length) {
+        throw Object.assign(new Error('Every site is being fetched or was fetched less than 10 minutes ago. Each fetch keeps the club database busy, so wait a little.'), { status: 429 });
+      }
+      totalsStore.update((store) => {
+        for (const m of due) store[m.id] = { history: [], ...store[m.id], queuedAt: now };
+      });
+      (async () => {
+        for (const { id } of due) {
+          const m = sync().find((x) => x.id === id);
+          const e = totalsStore.get()[id];
+          // Removed or changed since, or fetched meanwhile (its own Fetch now, or the schedule elsewhere): not now.
+          if (!m || !hasTotals(m) || isFetching(id, e) || (e?.lastAttemptAt && Date.now() - e.lastAttemptAt < TOTALS_AGAIN)) {
+            totalsStore.update((store) => {
+              if (store[id]) store[id].queuedAt = null;
+            });
+            continue;
+          }
+          await fetchTotals(m).catch((err) => console.warn(`[monitoring] totals: ${err.message}`));
+        }
+      })();
+      return { started: due.length, skipped: sites.length - due.length };
     },
 
     /** Current status of every monitor (no secrets). */
