@@ -18,20 +18,20 @@ export const KIND = { pr: 'PR', review: 'Review', work: 'Work', pipeline: 'Pipel
 export const REVIEW_STATE = {
   draft: { icon: '◌', color: theme.draft, label: 'draft' },
   rejected: { icon: '✗', color: theme.del, label: 'rejected' },
-  'waiting-author': { icon: '⏸', color: theme.warn, label: 'waiting on the author' },
+  'waiting-author': { icon: '‖', color: theme.warn, label: 'waiting on the author' },
   'no-reviewers': { icon: '○', color: theme.dim, label: 'no reviewers' },
   approved: { icon: '✓', color: theme.ok, label: 'approved' },
   'in-review': { icon: '●', color: theme.info, label: 'in review' },
 };
 
 /** A pull request's state; merge conflicts win, since nothing merges until they're fixed. */
-export const prState = (pr) => (pr.hasConflicts ? { icon: '⚠', color: theme.del, label: 'merge conflicts' } : REVIEW_STATE[pr.reviewState] ?? REVIEW_STATE['in-review']);
+export const prState = (pr) => (pr.hasConflicts ? { icon: '△', color: theme.del, label: 'merge conflicts' } : REVIEW_STATE[pr.reviewState] ?? REVIEW_STATE['in-review']);
 
 export const VOTES = {
   10: { icon: '✓', color: theme.ok, label: 'approved' },
   5: { icon: '✓', color: theme.ok, label: 'approved with suggestions' },
   0: { icon: '·', color: theme.dim, label: 'no vote yet' },
-  '-5': { icon: '⏸', color: theme.warn, label: 'waiting for the author' },
+  '-5': { icon: '‖', color: theme.warn, label: 'waiting for the author' },
   '-10': { icon: '✗', color: theme.del, label: 'rejected' },
 };
 

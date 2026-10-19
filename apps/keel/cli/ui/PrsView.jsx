@@ -22,6 +22,12 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
   const nav = useListNav(rows.length, innerH, { selectable: (i) => !rows[i]?.header, resetKey: `${show}:${filter}` });
   const pr = rows[nav.index]?.pr;
   const repoW = Math.min(18, Math.max(4, ...rows.filter((r) => r.pr).slice(0, 200).map((r) => r.pr.repoName.length)));
+  // Who opened it and when, as a right-hand column the same width on every row. It goes when
+  // the terminal is too narrow to leave the titles 20 columns.
+  const meta = (p) => `  ${p.isMine ? 'you' : p.author?.displayName ?? ''} · ${relTime(Date.parse(p.createdAt))}`;
+  const titleW = innerW - 2 - 2 - 6 - repoW - 1;
+  const widest = Math.min(26, Math.max(0, ...rows.slice(nav.offset, nav.offset + innerH).filter((r) => r.pr).map((r) => stringWidth(meta(r.pr)))));
+  const metaW = titleW - widest >= 20 ? widest : 0;
 
   useEffect(() => {
     ctx.select({ pr });
@@ -64,10 +70,6 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
         {rows.slice(nav.offset, nav.offset + innerH).map((r, i) => {
           if (r.header) return <Row key={`h:${r.title}`} pointer={false} width={innerW} segments={[{ text: r.title, color: theme.dim, bold: true }]} />;
           const st = prState(r.pr);
-          // The title gives way before who opened it and when, unless that leaves it too short.
-          const meta = `  ${r.pr.author?.displayName ?? ''} · ${relTime(Date.parse(r.pr.createdAt))}`;
-          const titleW = innerW - 2 - 2 - 6 - repoW - 1;
-          const showMeta = titleW - stringWidth(meta) >= 24;
           return (
             <Row
               key={prId(r.pr)}
@@ -78,8 +80,8 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
                 { text: `${st.icon} `, color: st.color },
                 { text: fit(`!${r.pr.id}`, 6), color: theme.dim },
                 { text: `${fit(r.pr.repoName, repoW)} `, color: theme.info },
-                { text: showMeta ? fit(r.pr.title, titleW - stringWidth(meta)) : r.pr.title, strong: true },
-                { text: showMeta ? meta : '', color: theme.dim },
+                { text: metaW ? fit(r.pr.title, titleW - metaW) : r.pr.title, strong: true },
+                { text: metaW ? fit(meta(r.pr), metaW, 'right') : '', color: theme.dim },
               ]}
             />
           );
