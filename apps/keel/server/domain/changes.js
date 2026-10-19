@@ -23,7 +23,7 @@ const CATEGORY_BY_KIND = { approval: 'approval', review: 'review', pipeline: 'pi
  *   attention: [{ key, kind, severity, title, reasons: [{ text }], target, webUrl }],
  *   myPrs: [{ key, id, title, projectId, repoId, status, reviewers: [{ id, displayName, vote, isContainer }] }],
  *   runs: [{ id, definition: { name }, status, result, buildNumber, sourceBranch, webUrl, mine }],
- *   schedules: [{ id, prId, projectId, repoId, title, at, status, reason }],  // completions you scheduled (schedules.js)
+ *   schedules: [{ id, kind, projectId, at, status, reason, ... }],  // what you scheduled (schedules.js): PR completions, pipeline runs
  * }
  */
 export function diffSnapshots(prev, next) {
@@ -94,11 +94,23 @@ export function diffSnapshots(prev, next) {
       severity: ok ? 'medium' : 'high',
     });
   }
-  // A completion you scheduled ran: done, or why not.
+  // Something you scheduled ran: done, or why not.
   const wasScheduled = new Set((prev.schedules || []).filter((s) => s.status === 'scheduled').map((s) => s.id));
   for (const s of next.schedules || []) {
     if (s.status === 'scheduled' || !wasScheduled.has(s.id)) continue;
     const done = s.status === 'done';
+    if (s.kind === 'run') {
+      out.push({
+        key: `schedule:${s.id}`,
+        category: 'run',
+        title: done ? `Your scheduled run of ${s.pipelineName} started` : `Your scheduled run of ${s.pipelineName} didn't start`,
+        body: done ? `On ${s.branch}` : `On ${s.branch}: ${s.reason}`,
+        target: { type: 'pipeline', key: `${s.projectId}:${s.definitionId}`, ...(s.run?.id ? { buildId: s.run.id } : {}) },
+        webUrl: s.run?.webUrl || null,
+        severity: done ? 'medium' : 'high',
+      });
+      continue;
+    }
     out.push({
       key: `schedule:${s.id}`,
       category: 'myPr',

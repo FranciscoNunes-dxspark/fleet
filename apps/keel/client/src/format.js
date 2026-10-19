@@ -24,6 +24,15 @@ export function dateTime(iso) {
   return new Date(iso).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/** Local date and time for a datetime-local input: today at 18:00, or the next whole hour once that's near. */
+export function defaultAt(now = new Date()) {
+  const d = new Date(now);
+  if (d.getHours() < 17 || (d.getHours() === 17 && d.getMinutes() < 30)) d.setHours(18, 0, 0, 0);
+  else d.setHours(d.getHours() + 1, 0, 0, 0);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** 1536 → "1.5 KB". */
 export function bytes(n) {
   if (n == null || !Number.isFinite(Number(n))) return '';

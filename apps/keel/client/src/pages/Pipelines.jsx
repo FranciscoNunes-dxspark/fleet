@@ -193,6 +193,11 @@ function PipelineRow({ p, showFolder, onQueue }) {
       <td>
         <div className="chips">
           {run && <Chip tone={queued ? 'muted' : 'info'}>{t(queued ? 'Queued' : 'Running')}</Chip>}
+          {p.scheduledRuns?.length > 0 && (
+            <Chip tone="info" title={p.scheduledRuns.map((s) => `${dateTime(s.at)} · ${s.branch}`).join('\n')}>
+              {t('Runs {when}', { when: dateTime(p.scheduledRuns[0].at) })}{p.scheduledRuns.length > 1 ? ` +${p.scheduledRuns.length - 1}` : ''}
+            </Chip>
+          )}
           <Chip tone={HEALTH[p.health].tone}>{t(HEALTH[p.health].label)}</Chip>
         </div>
         {run && (

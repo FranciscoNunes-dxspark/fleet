@@ -1,11 +1,14 @@
-// Pull requests completed at a set time ("Complete at 18:00"), shared by
-// everyone using this Keel server. Keel completes the PR then, as the person
-// who scheduled it, with the merge options they chose, and only if it's still
-// ready: active, not a draft, no conflicts, approved and with its required
-// checks passed. Otherwise it says why it didn't. Policies are never
-// overridden. Schedules live in the data folder (schedules.json); one server
-// process does the completing. Outcomes reach the person who scheduled it
-// through their live updates and push notifications (domain/changes.js).
+// Things done at a set time, shared by everyone using this Keel server, as the
+// person who scheduled them:
+// - complete a pull request ("Complete at 18:00"), with the merge options they
+//   chose, and only if it's still ready: active, not a draft, no conflicts,
+//   approved and with its required checks passed. Otherwise it says why it
+//   didn't. Policies are never overridden.
+// - run a pipeline on a branch, once ("Run at 02:00"). Recurring runs belong
+//   in the pipeline's own schedule (cron in its YAML).
+// Schedules live in the data folder (schedules.json); one server process does
+// them. Outcomes reach the person who scheduled them through their live updates
+// and push notifications (domain/changes.js).
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { config } from './config.js';
@@ -18,6 +21,9 @@ const MAX_AHEAD = 30 * DAY;
 const LATE = 60 * MIN;
 const KEEP = 7 * DAY; // outcomes are kept this long
 const STRATEGIES = ['squash', 'noFastForward', 'rebase', 'rebaseMerge'];
+// Entries from before pipeline runs could be scheduled are completions.
+const kindOf = (s) => s.kind || 'complete';
+const isCompletion = (s) => kindOf(s) === 'complete';
 const bad = (message, status = 400) => Object.assign(new Error(message), { status });
 
 export const prKey = (projectId, repoId, prId) => `${projectId}/${repoId}/${prId}`;
@@ -58,12 +64,24 @@ export function createSchedules({
   const update = (id, patch) => store.update((s) => {
     s.schedules = (s.schedules || []).map((x) => (x.id === id ? { ...x, ...patch } : x));
   });
-  const view = ({ id, projectId, repoId, prId, title, at, options, ownerId, ownerName, status, reason, finishedAt, createdAt }) => ({
-    id, projectId, repoId, prId, title, at, mergeStrategy: options.mergeStrategy, ownerId, ownerName, status, reason: reason || null, finishedAt: finishedAt || null, createdAt,
+  const view = (s) => ({
+    id: s.id, kind: kindOf(s), projectId: s.projectId, at: s.at, ownerId: s.ownerId, ownerName: s.ownerName,
+    status: s.status, reason: s.reason || null, finishedAt: s.finishedAt || null, createdAt: s.createdAt,
+    ...(isCompletion(s)
+      ? { repoId: s.repoId, prId: s.prId, title: s.title, mergeStrategy: s.options.mergeStrategy }
+      : { definitionId: s.definitionId, pipelineName: s.pipelineName, branch: s.branch, run: s.run || null }),
   });
+  const ownerOf = (owner) => ({ ownerId: owner?.id ?? null, ownerName: owner?.name ?? null });
+  const checkTime = (at, ms) => {
+    const when = Date.parse(at);
+    if (!Number.isFinite(when)) throw bad('Pick a date and time');
+    if (when < ms + MIN) throw bad('Pick a time at least a minute from now');
+    if (when > ms + MAX_AHEAD) throw bad('Pick a time within the next 30 days');
+    return new Date(when).toISOString();
+  };
 
   async function complete(s, ms) {
-    const done = (status, reason = null) => update(s.id, { status, reason, finishedAt: new Date(ms).toISOString() });
+    const done = (status, reason = null, extra = {}) => update(s.id, { status, reason, finishedAt: new Date(ms).toISOString(), ...extra });
     if (ms - Date.parse(s.at) > LATE) return done('skipped', "Keel wasn't running at the time");
     let service;
     try {
@@ -72,6 +90,14 @@ export function createSchedules({
       service = null;
     }
     if (!service) return done('failed', 'The person who scheduled it has no working Azure DevOps token in Keel');
+    if (!isCompletion(s)) {
+      try {
+        const run = await service.queueBuild(s.projectId, s.definitionId, s.branch);
+        return done('done', null, { run: { id: run?.id ?? null, webUrl: run?.webUrl || null } });
+      } catch (err) {
+        return done('failed', err.message);
+      }
+    }
     try {
       service.invalidate('pr:'); // as it is now, not a minute ago
       const pr = await service.pullRequest(s.projectId, s.repoId, s.prId);
@@ -94,7 +120,7 @@ export function createSchedules({
       store.update((s) => {
         s.schedules = (s.schedules || []).filter((x) => x.status === 'scheduled' || ms - Date.parse(x.finishedAt || x.at) < KEEP);
       });
-      // One at a time: two PRs into the same branch shouldn't race.
+      // One at a time: two PRs into the same branch shouldn't race, nor runs queue all at once.
       for (const s of all().filter((x) => x.status === 'scheduled' && Date.parse(x.at) <= ms)) await complete(s, ms);
     } finally {
       busy = false;
@@ -110,10 +136,7 @@ export function createSchedules({
      * `pr` is the pull request as its panel shows it (to check it can be completed at all).
      */
     add({ pr, at, options = {}, owner = null }, ms = Date.now()) {
-      const when = Date.parse(at);
-      if (!Number.isFinite(when)) throw bad('Pick a date and time');
-      if (when < ms + MIN) throw bad('Pick a time at least a minute from now');
-      if (when > ms + MAX_AHEAD) throw bad('Pick a time within the next 30 days');
+      const when = Date.parse(checkTime(at, ms));
       if (pr.status !== 'active') throw bad('Only an active pull request can be completed');
       if (pr.isDraft) throw bad('Publish the draft first');
       const s = {
@@ -129,22 +152,70 @@ export function createSchedules({
           transitionWorkItems: !!options.transitionWorkItems,
           ...(options.mergeCommitMessage ? { mergeCommitMessage: String(options.mergeCommitMessage).slice(0, 4000) } : {}),
         },
-        ownerId: owner?.id ?? null,
-        ownerName: owner?.name ?? null,
+        ...ownerOf(owner),
         status: 'scheduled',
         createdAt: new Date(ms).toISOString(),
       };
       const key = prKey(s.projectId, s.repoId, s.prId);
       store.update((st) => {
-        st.schedules = [...(st.schedules || []).filter((x) => !(x.status === 'scheduled' && prKey(x.projectId, x.repoId, x.prId) === key)), s];
+        st.schedules = [...(st.schedules || []).filter((x) => !(isCompletion(x) && x.status === 'scheduled' && prKey(x.projectId, x.repoId, x.prId) === key)), s];
       });
       return view(s);
     },
 
-    /** Cancel a scheduled completion: the person who scheduled it, or an Admin. */
+    /** Run a pipeline on a branch once, at `at`. `pipeline`: { projectId, definition: { id, name } }. */
+    addRun({ pipeline, branch, at, owner = null }, ms = Date.now()) {
+      const when = checkTime(at, ms);
+      const b = String(branch || '').trim().replace(/^refs\/heads\//, '');
+      if (!b) throw bad('Pick a branch');
+      if (b.length > 250 || /[\s~^:?*[\\]|\.\.|@\{|^\/|\/$/.test(b)) throw bad(`"${b}" isn't a valid branch name`);
+      const s = {
+        id: crypto.randomUUID(),
+        kind: 'run',
+        projectId: pipeline.projectId,
+        definitionId: Number(pipeline.definition.id),
+        pipelineName: String(pipeline.definition.name || '').slice(0, 200),
+        branch: b,
+        at: when,
+        ...ownerOf(owner),
+        status: 'scheduled',
+        createdAt: new Date(ms).toISOString(),
+      };
+      store.update((st) => {
+        st.schedules = [...(st.schedules || []), s];
+      });
+      return view(s);
+    },
+
+    /** A pipeline's scheduled runs, soonest first, and its runs' outcomes from the last day. */
+    forPipeline(projectId, definitionId, ms = Date.now()) {
+      return all()
+        .filter((x) => kindOf(x) === 'run' && x.projectId === projectId && x.definitionId === Number(definitionId)
+          && (x.status === 'scheduled' || ms - Date.parse(x.finishedAt || x.at) < DAY))
+        .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+        .map(view);
+    },
+
+    /** Pipeline key ("projectId:definitionId") -> its scheduled runs, soonest first. */
+    upcomingRuns() {
+      const out = new Map();
+      for (const x of all().filter((s) => kindOf(s) === 'run' && s.status === 'scheduled').sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
+        const key = `${x.projectId}:${x.definitionId}`;
+        out.set(key, [...(out.get(key) || []), view(x)]);
+      }
+      return out;
+    },
+
+    /** What a schedule is ('complete' or 'run'), or null if it's gone. */
+    kindOf: (id) => {
+      const s = all().find((x) => x.id === id);
+      return s ? kindOf(s) : null;
+    },
+
+    /** Cancel a schedule: the person who scheduled it, or an Admin. */
     cancel(id, { ownerId = null, admin = false } = {}) {
       const s = all().find((x) => x.id === id);
-      if (!s) throw bad('That scheduled completion no longer exists', 404);
+      if (!s) throw bad('That schedule no longer exists', 404);
       if (s.status !== 'scheduled') throw bad('It already ran', 409);
       if (!admin && (s.ownerId ?? null) !== (ownerId ?? null)) throw bad('Only the person who scheduled it, or an Admin, can cancel it', 403);
       store.update((st) => {
@@ -156,7 +227,7 @@ export function createSchedules({
     /** A PR's scheduled completion, else its latest outcome from the last day. */
     forPr(projectId, repoId, prId, ms = Date.now()) {
       const key = prKey(projectId, repoId, prId);
-      const mine = all().filter((x) => prKey(x.projectId, x.repoId, x.prId) === key);
+      const mine = all().filter((x) => isCompletion(x) && prKey(x.projectId, x.repoId, x.prId) === key);
       const s = mine.find((x) => x.status === 'scheduled')
         || mine.filter((x) => ms - Date.parse(x.finishedAt || x.at) < DAY).sort((a, b) => Date.parse(b.finishedAt) - Date.parse(a.finishedAt))[0];
       return s ? view(s) : null;
@@ -164,7 +235,7 @@ export function createSchedules({
 
     /** PR key -> when it's scheduled to complete. */
     upcoming() {
-      return new Map(all().filter((x) => x.status === 'scheduled').map((x) => [prKey(x.projectId, x.repoId, x.prId), x.at]));
+      return new Map(all().filter((x) => isCompletion(x) && x.status === 'scheduled').map((x) => [prKey(x.projectId, x.repoId, x.prId), x.at]));
     },
 
     /** One person's schedules and outcomes (for their live updates and notifications). */

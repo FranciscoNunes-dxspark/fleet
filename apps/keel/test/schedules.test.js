@@ -101,3 +101,67 @@ test('notifications: a scheduled completion that ran, done or not', () => {
   assert.deepEqual(notes[0].target, { type: 'pr', projectId: 'p1', repoId: 'r1', id: 7 });
   assert.deepEqual(diffSnapshots(next, next), [], 'once');
 });
+
+test('scheduled pipeline run: checked when set, started at its time as its owner, once', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-runs-'));
+  const queued = [];
+  let fail = null;
+  const service = {
+    invalidate: () => {},
+    queueBuild: async (projectId, definitionId, branch) => {
+      if (fail) throw new Error(fail);
+      queued.push([projectId, definitionId, branch]);
+      return { id: 900 + queued.length, webUrl: `https://dev.azure.com/x/_build/results?buildId=${900 + queued.length}` };
+    },
+  };
+  const owners = [];
+  const schedules = createSchedules({ dataDir: dir, mock: false, every: 3_600_000, resolveService: (ownerId) => (owners.push(ownerId), service) });
+  try {
+    const now = Date.now();
+    const at = new Date(now + 60 * MIN).toISOString();
+    const pipeline = { projectId: 'p1', definition: { id: 5, name: 'web-CI' } };
+    assert.throws(() => schedules.addRun({ pipeline, branch: '', at }, now), /Pick a branch/);
+    assert.throws(() => schedules.addRun({ pipeline, branch: 'a..b', at }, now), /valid branch name/);
+    assert.throws(() => schedules.addRun({ pipeline, branch: 'main', at: new Date(now - MIN).toISOString() }, now), /at least a minute/);
+
+    const owner = { id: 'u1', name: 'Ana' };
+    const nightly = schedules.addRun({ pipeline, branch: 'refs/heads/release/2.4', at: new Date(now + 120 * MIN).toISOString(), owner }, now);
+    const soon = schedules.addRun({ pipeline, branch: 'main', at, owner }, now);
+    assert.equal(nightly.branch, 'release/2.4');
+    assert.deepEqual(schedules.upcomingRuns().get('p1:5').map((s) => s.branch), ['main', 'release/2.4'], 'soonest first');
+    assert.equal(schedules.forPr('p1', undefined, undefined), null, 'not a PR completion');
+    assert.equal(schedules.kindOf(soon.id), 'run');
+
+    await schedules.tick(now + 61 * MIN);
+    assert.deepEqual(queued, [['p1', 5, 'main']]);
+    assert.deepEqual(owners, ['u1']);
+    const ran = schedules.forPipeline('p1', 5).find((s) => s.id === soon.id);
+    assert.deepEqual([ran.status, ran.run.id], ['done', 901]);
+    await schedules.tick(now + 62 * MIN);
+    assert.equal(queued.length, 1, 'once');
+
+    // Azure DevOps refuses (the branch is gone): failed, saying why.
+    fail = "The branch 'release/2.4' doesn't exist";
+    await schedules.tick(now + 121 * MIN);
+    const failed = schedules.forPipeline('p1', 5).find((s) => s.id === nightly.id);
+    assert.deepEqual([failed.status, failed.reason], ['failed', fail]);
+  } finally {
+    schedules.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('notifications: a scheduled run that started, or did not', () => {
+  const base = { attention: [], myPrs: [], runs: [] };
+  const s = { id: 'r1', kind: 'run', projectId: 'p1', definitionId: 5, pipelineName: 'web-CI', branch: 'main', status: 'scheduled' };
+  const notes = diffSnapshots({ ...base, schedules: [s, { ...s, id: 'r2' }] }, {
+    ...base,
+    schedules: [{ ...s, status: 'done', run: { id: 901, webUrl: 'u' } }, { ...s, id: 'r2', status: 'failed', reason: 'No such branch' }],
+  });
+  assert.deepEqual(notes.map((n) => [n.title, n.category, n.severity]), [
+    ['Your scheduled run of web-CI started', 'run', 'medium'],
+    ["Your scheduled run of web-CI didn't start", 'run', 'high'],
+  ]);
+  assert.deepEqual(notes[0].target, { type: 'pipeline', key: 'p1:5', buildId: 901 });
+  assert.equal(notes[1].body, 'On main: No such branch');
+});

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, prPath } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age, dateTime, REVIEW_STATE, VOTES } from '../format.js';
+import { age, dateTime, defaultAt, REVIEW_STATE, VOTES } from '../format.js';
 import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { Markdown } from '../markdown.jsx';
 import { t, tj, tx } from '../i18n.js';
@@ -369,15 +369,6 @@ function ScheduleNote({ s, busy, onCancel }) {
   }
   if (s.status === 'done') return <p className="callout small">{t('Completed as scheduled, {when}.', { when: dateTime(s.finishedAt || s.at) })}</p>;
   return <p className="callout callout-warn small">{t("Wasn't completed as scheduled ({when}): {reason}.", { when: dateTime(s.at), reason: tx(s.reason) })}</p>;
-}
-
-/** Local date and time for a datetime-local input: today at 18:00, or the next whole hour once that's near. */
-function defaultAt(now = new Date()) {
-  const d = new Date(now);
-  if (d.getHours() < 17 || (d.getHours() === 17 && d.getMinutes() < 30)) d.setHours(18, 0, 0, 0);
-  else d.setHours(d.getHours() + 1, 0, 0, 0);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /** Merge now, or at a set time: merge type, commit message, cleanup options, optional policy override (now only). */

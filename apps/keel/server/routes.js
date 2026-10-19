@@ -115,9 +115,23 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     schedules.add({ pr, at, options, owner: req.ctx.user ? { id: req.ctx.user.id, name: req.ctx.user.name } : null });
     res.json(await req.ctx.service.pullRequest(projectId, repoId, num(id)));
   });
-  r.delete('/schedules/:id', need('prs.write'), (req, res) => {
+  // Run a pipeline on a branch once, at a set time, as the person scheduling it.
+  r.post('/pipelines/schedule', need('pipelines.run'), async (req, res) => {
     if (!schedules) throw Object.assign(new Error('Scheduling is not available on this server'), { status: 404 });
-    res.json(schedules.cancel(req.params.id, { ownerId: req.ctx.user?.id ?? null, admin: (req.ctx.role || 'admin') === 'admin' }));
+    const { projectId, definitionId, branch, at } = req.body || {};
+    const { pipeline } = await req.ctx.service.pipelineRuns(projectId, num(definitionId));
+    if (!pipeline) throw Object.assign(new Error('That pipeline isn\'t one of your tracked pipelines'), { status: 400 });
+    schedules.addRun({ pipeline, branch, at, owner: req.ctx.user ? { id: req.ctx.user.id, name: req.ctx.user.name } : null });
+    res.json(await req.ctx.service.pipelineRuns(projectId, num(definitionId)));
+  });
+  // Cancel a schedule: what it does decides the permission (completing PRs, or running pipelines).
+  r.delete('/schedules/:id', (req, res) => {
+    if (!schedules) throw Object.assign(new Error('Scheduling is not available on this server'), { status: 404 });
+    const role = req.ctx.role || 'admin';
+    if (!can(role, schedules.kindOf(req.params.id) === 'run' ? 'pipelines.run' : 'prs.write')) {
+      return res.status(403).json({ error: 'Your role in Keel does not allow this.', code: 'forbidden' });
+    }
+    res.json(schedules.cancel(req.params.id, { ownerId: req.ctx.user?.id ?? null, admin: role === 'admin' }));
   });
   r.post('/prs/:projectId/:repoId/:id/actions', need('prs.write'), async (req, res) => {
     const { projectId, repoId, id } = req.params;

@@ -118,6 +118,12 @@ export default {
 
   // Scheduled completions (schedules.js, domain/changes.js)
   'Pull request !{id} completed as scheduled': 'Pull request !{id} concluído como agendado',
+  'Your scheduled run of {pipeline} started': 'A sua execução agendada de {pipeline} foi iniciada',
+  "Your scheduled run of {pipeline} didn't start": 'A sua execução agendada de {pipeline} não foi iniciada',
+  'On {branch}': 'Em {branch}',
+  'Pick a branch': 'Escolha um branch',
+  '"{branch}" isn\'t a valid branch name': '"{branch}" não é um nome de branch válido',
+  "That pipeline isn't one of your tracked pipelines": 'Esse pipeline não é um dos seus pipelines acompanhados',
   "Pull request !{id} wasn't completed as scheduled": 'Pull request !{id} não foi concluído como agendado',
   'It was already completed': 'Já tinha sido concluído',
   'It was abandoned': 'Foi abandonado',
@@ -135,7 +141,7 @@ export default {
   'Pick a time within the next 30 days': 'Escolha uma hora nos próximos 30 dias',
   'Only an active pull request can be completed': 'Só um pull request ativo pode ser concluído',
   'Publish the draft first': 'Publique primeiro o rascunho',
-  'That scheduled completion no longer exists': 'Essa conclusão agendada já não existe',
+  'That schedule no longer exists': 'Esse agendamento já não existe',
   'It already ran': 'Já foi executada',
   'Only the person who scheduled it, or an Admin, can cancel it': 'Só a pessoa que a agendou, ou um Admin, a pode cancelar',
   'Scheduling is not available on this server': 'O agendamento não está disponível neste servidor',

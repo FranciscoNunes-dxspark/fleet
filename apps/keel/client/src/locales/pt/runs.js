@@ -37,4 +37,17 @@ export default {
   '{n} errors': '{n} erros',
   '1 warning': '1 aviso',
   '{n} warnings': '{n} avisos',
+  // Run at a set time (PipelineDetail.jsx, Pipelines.jsx, server/schedules.js)
+  '{name} will run on {branch} {when}': '{name} vai correr em {branch} {when}',
+  'Scheduled run canceled': 'Execução agendada cancelada',
+  'Scheduled runs': 'Execuções agendadas',
+  '{when} on {branch}': '{when} em {branch}',
+  'Started {when} on {branch}': 'Iniciada {when} em {branch}',
+  'View the run': 'Ver a execução',
+  "Didn't start ({when}) on {branch}: {reason}": 'Não foi iniciada ({when}) em {branch}: {reason}',
+  'Run at…': 'Correr às…',
+  'Run at a set time': 'Correr a uma hora marcada',
+  'Keel starts one run then, as you, on the branch you pick. For runs that repeat (every night, say), use a schedule in the pipeline itself.': 'O Keel inicia uma execução nessa altura, em seu nome, no branch que escolher. Para execuções que se repetem (todas as noites, por exemplo), use um agendamento no próprio pipeline.',
+  'Schedule run': 'Agendar execução',
+  'Runs {when}': 'Corre {when}',
 };

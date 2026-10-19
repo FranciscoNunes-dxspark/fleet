@@ -1203,7 +1203,9 @@ export function createService({
     },
 
     async pipelines() {
-      return pipelines();
+      const rows = await pipelines();
+      const upcoming = schedules?.upcomingRuns() || new Map();
+      return upcoming.size ? rows.map((r) => (upcoming.has(r.key) ? { ...r, scheduledRuns: upcoming.get(r.key) } : r)) : rows;
     },
 
     /** What the watcher compares between polls (see domain/changes.js). */
@@ -1300,7 +1302,7 @@ export function createService({
         pipelines(),
         cached(`builds:runs:${projectId}:${id}`, async () => markDeclined(await provider.listDefinitionRuns(projectId, id, { top: 25 }), 25), MIN),
       ]);
-      return { pipeline: rows.find((r) => r.projectId === projectId && r.definition.id === id) || null, runs };
+      return { pipeline: rows.find((r) => r.projectId === projectId && r.definition.id === id) || null, runs, schedules: schedules?.forPipeline(projectId, id) || [] };
     },
 
     /** One run: stages, jobs and steps; the failed steps' last log lines; commits; tests; approvals it waits on. */
