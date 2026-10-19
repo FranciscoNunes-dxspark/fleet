@@ -70,6 +70,7 @@ const RESULT = { succeeded: 'ok', partiallySucceeded: 'warn', failed: 'bad', can
 const RESULT_LABEL = { succeeded: 'succeeded', failed: 'failed', partiallySucceeded: 'partially succeeded', canceled: 'canceled', declined: 'declined' };
 const resultLabel = (r) => (RESULT_LABEL[r] ? t(RESULT_LABEL[r]) : r);
 const RUNNING = '__running__';
+const SCHEDULED = '__scheduled__';
 
 // Azure DevOps folder paths look like "\TEAMA\Builds"; the root is "\".
 const folderLabel = (path) => (!path || path === '\\' ? t('No folder') : path.replace(/^\\/, '').split('\\').join(' / '));
@@ -81,7 +82,7 @@ function BuildsTab({ data }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [q, setQ] = useState('');
 
-  const rows = data.filter((p) => (!onlyProblems || p.health === 'failing' || p.health === 'unstable' || p.running.length)
+  const rows = data.filter((p) => (!onlyProblems || p.health === 'failing' || p.health === 'unstable' || p.running.length || p.scheduledRuns?.length)
     && (!q || `${p.definition.name} ${p.repoName} ${p.projectName} ${p.definition.path}`.toLowerCase().includes(q.toLowerCase())));
 
   // Running pipelines are listed first, and also stay in their own folder so a
@@ -90,6 +91,10 @@ function BuildsTab({ data }) {
   const rest = rows;
   const groups = [];
   if (running.length) groups.push({ key: RUNNING, label: t('Running or queued'), rows: running });
+  // Runs Keel will start later (Run at…, server/schedules.js), soonest first. They aren't in
+  // Azure DevOps yet, so they're not "queued": once started they move up to the group above.
+  const scheduled = rows.filter((p) => p.scheduledRuns?.length).sort((a, b) => Date.parse(a.scheduledRuns[0].at) - Date.parse(b.scheduledRuns[0].at));
+  if (scheduled.length) groups.push({ key: SCHEDULED, label: t('Scheduled'), rows: scheduled });
   if (byFolder) {
     const folders = new Map();
     for (const p of rest) {
@@ -111,6 +116,16 @@ function BuildsTab({ data }) {
     else next.add(key);
     return next;
   });
+
+  const cancelScheduled = async (s) => {
+    try {
+      await api(`/schedules/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
+      toast(t('Scheduled run canceled'));
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  };
 
   const queue = async (p, rowEl) => {
     pinInView(rowEl);
@@ -152,17 +167,19 @@ function BuildsTab({ data }) {
                 return (
                   <Fragment key={g.key}>
                     {g.label && (
-                      <tr className={`pipeline-group-row ${g.key === RUNNING ? 'pipeline-group-running' : ''}`}>
+                      <tr className={`pipeline-group-row ${g.key === RUNNING || g.key === SCHEDULED ? 'pipeline-group-running' : ''}`}>
                         <td colSpan={7}>
                           <button type="button" className="th-btn" aria-expanded={!isCollapsed} onClick={() => toggleGroup(g.key)}>
                             <span aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span> {g.label}
                             <span className="muted">{g.rows.length}</span>
-                            {problems > 0 && g.key !== RUNNING && <span className="text-bad small">{t('{n} failing', { n: problems })}</span>}
+                            {problems > 0 && g.key !== RUNNING && g.key !== SCHEDULED && <span className="text-bad small">{t('{n} failing', { n: problems })}</span>}
                           </button>
                         </td>
                       </tr>
                     )}
-                    {!isCollapsed && g.rows.map((p) => <PipelineRow key={p.key} p={p} showFolder={!byFolder || g.key === RUNNING} onQueue={queue} />)}
+                    {!isCollapsed && g.rows.map((p) => (
+                      <PipelineRow key={p.key} p={p} showFolder={!byFolder || g.key === RUNNING || g.key === SCHEDULED} onQueue={queue} scheduled={g.key === SCHEDULED} onCancelScheduled={cancelScheduled} />
+                    ))}
                   </Fragment>
                 );
               })}
@@ -174,7 +191,7 @@ function BuildsTab({ data }) {
   );
 }
 
-function PipelineRow({ p, showFolder, onQueue }) {
+function PipelineRow({ p, showFolder, onQueue, scheduled = false, onCancelScheduled }) {
   const { can, openDrawer, meta } = useApp();
   const canRun = can('pipelines.run');
   const rowRef = useRef(null);
@@ -189,6 +206,17 @@ function PipelineRow({ p, showFolder, onQueue }) {
           {showFolder && p.definition.path && p.definition.path !== '\\' && <span>{folderLabel(p.definition.path)}</span>}
           {p.branch && <code className="branch">{p.branch}</code>}
         </div>
+        {scheduled && (
+          <ul className="scheduled-list small">
+            {p.scheduledRuns.map((s) => (
+              <li key={s.id}>
+                {tj('{when} on {branch}', { when: <strong>{dateTime(s.at)}</strong>, branch: <code className="branch">{s.branch}</code> })}
+                {s.ownerName && <span className="muted"> · {t('by {name}', { name: s.ownerName })}</span>}
+                {canRun && <> · <button type="button" className="link-btn" onClick={() => onCancelScheduled(s)}>{t('Cancel it')}</button></>}
+              </li>
+            ))}
+          </ul>
+        )}
       </td>
       <td>
         <div className="chips">
