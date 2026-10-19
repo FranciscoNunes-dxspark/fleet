@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { Fragment, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, pct } from '../format.js';
@@ -8,6 +8,7 @@ import { t, tj, tx } from '../i18n.js';
 import { deployStatus } from './DeployDetail.jsx';
 import { api } from '../api.js';
 import { regressionBug } from '../regressionBug.js';
+import { PREF_KEYS, pushPref } from '../prefs.js';
 
 const STATE = {
   up: { tone: 'ok', label: 'Up' },
@@ -26,10 +27,32 @@ const FINISHED = new Set(['succeeded', 'partiallySucceeded', 'failed', 'rejected
 const BUG_WORTHY = new Set(['down', 'failures', 'deploy-regression']);
 const ms = (v) => (v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${Math.round(v)}ms`);
 
+function loadView() {
+  try {
+    return JSON.parse(localStorage.getItem(PREF_KEYS.production) || 'null')?.view === 'compact' ? 'compact' : 'detailed';
+  } catch {
+    return 'detailed';
+  }
+}
+
+function saveView(view) {
+  try {
+    localStorage.setItem(PREF_KEYS.production, JSON.stringify({ view }));
+  } catch {
+    // Storage unavailable (private mode): the choice lasts for this visit only.
+  }
+  pushPref('production', { view }); // follows your account to other devices
+}
+
 export default function Production() {
   const { data, error, reload } = useApi('/production');
+  const [view, setView] = useState(loadView);
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
   const monitors = [...data.monitors].sort((a, b) => (RANK[a.state] ?? RANK.unknown) - (RANK[b.state] ?? RANK.unknown));
+  const pick = (v) => {
+    setView(v);
+    saveView(v);
+  };
   const problems = monitors.filter((m) => m.state === 'down' || m.state === 'degraded').length;
 
   return (
@@ -44,6 +67,12 @@ export default function Production() {
           ].join(' · ')
           : t('Watch your production apps next to the deploys that change them.')}
       >
+        {monitors.length > 0 && (
+          <div className="segmented segmented-compact" role="radiogroup" aria-label={t('Monitor view')}>
+            <button type="button" role="radio" aria-checked={view === 'compact'} className={view === 'compact' ? 'on' : ''} onClick={() => pick('compact')}>{t('Compact')}</button>
+            <button type="button" role="radio" aria-checked={view === 'detailed'} className={view === 'detailed' ? 'on' : ''} onClick={() => pick('detailed')}>{t('Detailed')}</button>
+          </div>
+        )}
         <Link className="btn btn-small" to="/settings#production">{t('Manage monitors')}</Link>
       </PageHeader>
       <ProductionTabs />
@@ -56,10 +85,108 @@ export default function Production() {
         </Empty>
       )}
 
-      <div className="monitor-list">
-        {monitors.map((m) => <MonitorCard key={m.id} m={m} />)}
-      </div>
+      {monitors.length > 0 && (view === 'compact'
+        ? <CompactList monitors={monitors} />
+        : (
+          <div className="monitor-list">
+            {monitors.map((m) => <MonitorCard key={m.id} m={m} />)}
+          </div>
+        ))}
     </div>
+  );
+}
+
+/** One row per monitor, to see many at once; a row opens into its full card. */
+function CompactList({ monitors }) {
+  const [open, setOpen] = useState(() => new Set());
+  const toggle = (id) => setOpen((was) => {
+    const next = new Set(was);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+  return (
+    <div className="table-wrap">
+      <table className="table monitor-table">
+        <thead>
+          <tr>
+            <th>{t('Monitor')}</th>
+            <th>{t('State')}</th>
+            <th className="num">{t('Response')}</th>
+            <th className="num">{t('Uptime, 24h')}</th>
+            <th className="num">{t('Failing, 1h')}</th>
+            <th>{t('Response time, 24h')}</th>
+            <th>{t('Last deploy')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {monitors.map((m) => {
+            const isOpen = open.has(m.id);
+            const s = STATE[m.state] || STATE.unknown;
+            const issue = m.issues[0];
+            const deploy = m.markers[0];
+            return (
+              <Fragment key={m.id}>
+                {/* The whole row opens the card; the button is there for the keyboard (its click bubbles up). */}
+                <tr className={`clickable monitor-row monitor-row-${m.state}`} onClick={() => toggle(m.id)}>
+                  <td className="cell-title">
+                    <button type="button" className="row-link" aria-expanded={isOpen}>
+                      <span aria-hidden="true" className="muted">{isOpen ? '▾' : '▸'}</span> {m.name}
+                    </button>
+                    {issue
+                      ? <div className={`reason reason-${issue.severity} small`}>{tx(issue.text)}{m.issues.length > 1 && <span className="muted">{t('+{n} more', { n: m.issues.length - 1 })}</span>}</div>
+                      : m.url && <div className="muted small monitor-row-url">{m.url}</div>}
+                  </td>
+                  <td><Chip tone={s.tone}>{t(s.label)}</Chip></td>
+                  <td className="num">{m.url && m.last ? (m.last.ok ? ms(m.last.ms) : m.last.status || t('Failed')) : '—'}</td>
+                  <td className="num">{m.url && m.uptime24h != null ? pct(m.uptime24h) : '—'}</td>
+                  <td className={`num${m.ai?.failRate >= 0.05 ? ' text-bad' : ''}`}>{m.ai ? pct(m.ai.failRate) : '—'}</td>
+                  <td>{m.url ? <ResponseSpark history={m.history} /> : <span className="muted">—</span>}</td>
+                  <td>
+                    {deploy
+                      ? <><div className="monitor-row-deploy">{deploy.label}</div><div className="muted small">{t('{age} ago', { age: age(deploy.at) })}</div></>
+                      : <span className="muted">—</span>}
+                  </td>
+                </tr>
+                {isOpen && (
+                  <tr className="monitor-row-detail">
+                    <td colSpan={7}><MonitorCard m={m} /></td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Response time over 24h, small enough for a row; failed checks are red ticks on the baseline. */
+function ResponseSpark({ history }) {
+  if (history.length < 2) return <span className="muted">—</span>;
+  const W = 120;
+  const H = 28;
+  const t1 = Date.now();
+  const t0 = t1 - 24 * HOUR;
+  const x = (at) => 1 + ((Date.parse(at) - t0) / (t1 - t0)) * (W - 2);
+  const hi = Math.max(1, ...history.filter((h) => h.ok).map((h) => h.ms));
+  const y = (v) => H - 2 - (v / hi) * (H - 4);
+  let path = '';
+  let pen = false;
+  for (const h of history) {
+    if (!h.ok) {
+      pen = false;
+      continue;
+    }
+    path += `${pen ? 'L' : 'M'}${x(h.at).toFixed(1)},${y(h.ms).toFixed(1)}`;
+    pen = true;
+  }
+  return (
+    <svg className="spark" width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('Response time, 24h')}>
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      {history.filter((h) => !h.ok).map((h) => <rect key={h.at} x={x(h.at) - 1} y={H - 6} width="2" height="6" className="fail-tick" />)}
+    </svg>
   );
 }
 

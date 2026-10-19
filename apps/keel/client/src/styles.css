@@ -862,6 +862,19 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .monitor-charts .chart { background: var(--bg); }
 .monitor-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
 .monitor-lists h3 { margin: 0 0 6px; color: var(--ink-2); }
+/* Compact view: a row per monitor, its state as a stripe on the left like the cards. */
+.monitor-table td { vertical-align: middle; }
+.monitor-row td:first-child { box-shadow: inset 3px 0 var(--line-strong); }
+.monitor-row-up td:first-child { box-shadow: inset 3px 0 var(--ok); }
+.monitor-row-degraded td:first-child { box-shadow: inset 3px 0 var(--warn); }
+.monitor-row-down td:first-child { box-shadow: inset 3px 0 var(--bad); }
+.monitor-row-deploying td:first-child, .monitor-row-settling td:first-child { box-shadow: inset 3px 0 var(--info); }
+.monitor-row .reason { display: flex; margin-top: 2px; }
+.monitor-row-url { overflow-wrap: anywhere; }
+.monitor-row-deploy { white-space: nowrap; }
+.monitor-table .fail-tick { fill: var(--bad); }
+.monitor-table tbody tr.monitor-row-detail:hover { background: none; }
+.monitor-row-detail > td { padding: 4px 12px 14px; }
 .ship-changes > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .ship-changes .detail-section:first-of-type { border-top: 0; margin-top: 6px; padding-top: 4px; }
 .ship-foot { margin-top: 12px; }

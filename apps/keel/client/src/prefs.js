@@ -9,6 +9,7 @@ export const PREF_KEYS = {
   dashboard: 'keel.dashboard.v1',
   language: 'keel.language.v1',
   views: 'keel.views.v1',
+  production: 'keel.production.v1',
 };
 
 // Keep what this browser saved before the rename from Shipdeck.

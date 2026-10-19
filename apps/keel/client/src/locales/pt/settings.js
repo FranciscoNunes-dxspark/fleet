@@ -206,6 +206,10 @@ export default {
   '24h ago': 'há 24h',
   'now': 'agora',
   'Check failed': 'Verificação falhou',
+  'Monitor view': 'Vista dos monitores',
+  'Compact': 'Compacta',
+  'Detailed': 'Detalhada',
+  '+{n} more': 'mais {n}',
 
   // pages/Pipelines.jsx
   '{n} build and YAML pipelines judged on their main branch over {days} days': '{n} pipelines de build e YAML avaliados na branch principal nos últimos {days} dias',
