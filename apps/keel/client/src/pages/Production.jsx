@@ -120,7 +120,12 @@ function MonitorCard({ m }) {
         </>}
         {ai && <>
           <div className="fact"><dt>{t('Requests, 1h')}</dt><dd>{ai.total.toLocaleString()}</dd><dd className="muted small">p95 {ms(ai.p95)}</dd></div>
-          <div className="fact"><dt>{t('Failing, 1h')}</dt><dd className={ai.failRate >= 0.05 ? 'text-bad' : ''}>{pct(ai.failRate)}</dd><dd className="muted small">{t(ai.failed === 1 ? '{n} request' : '{n} requests', { n: ai.failed.toLocaleString() })}</dd></div>
+          <div className="fact"><dt>{t('Failing, 1h')}</dt><dd className={ai.failRate >= 0.05 ? 'text-bad' : ''}>{pct(ai.failRate)}</dd><dd className="muted small">{t(ai.failed === 1 ? '{n} server error (5xx)' : '{n} server errors (5xx)', { n: ai.failed.toLocaleString() })}</dd></div>
+          {ai.notFound != null && (
+            <div className="fact" title={t("Requests for pages that don't exist, mostly bots and old links. Not counted as failing.")}>
+              <dt>{t('Not found, 1h')}</dt><dd>{ai.notFound.toLocaleString()}</dd><dd className="muted small">{t('404, not counted as failing')}</dd>
+            </div>
+          )}
           <div className="fact"><dt>{t('Exceptions, 1h')}</dt><dd>{ai.exceptions.toLocaleString()}</dd><dd className="muted small">Application Insights</dd></div>
         </>}
       </dl>
@@ -137,7 +142,7 @@ function MonitorCard({ m }) {
         )}
         {ai?.series?.length > 1 && (
           <TimeChart
-            title={t('Failed requests, 24h')}
+            title={t('Server errors (5xx), 24h')}
             bars
             points={ai.series.map((b) => ({ at: b.at, value: b.total ? b.failed / b.total : 0, detail: t('{failed} of {total}', { failed: b.failed, total: b.total }) }))}
             markers={markers}
@@ -153,6 +158,16 @@ function MonitorCard({ m }) {
             <ul className="mini-list">
               {ai.topFailures.map((f) => (
                 <li key={`${f.name}${f.code}`}><span className="mono small">{f.name}</span><span className="muted small">{f.count} × HTTP {f.code}</span></li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {ai?.topNotFound?.length > 0 && (
+          <div>
+            <h3 className="small">{t('Most requested missing pages (404), 1h')}</h3>
+            <ul className="mini-list">
+              {ai.topNotFound.map((f) => (
+                <li key={f.name}><span className="mono small">{f.name}</span><span className="muted small">{f.count} ×</span></li>
               ))}
             </ul>
           </div>

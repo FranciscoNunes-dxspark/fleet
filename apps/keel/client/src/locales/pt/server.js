@@ -82,6 +82,7 @@ export default {
     'Deploying {deploy}, started {age} ago': 'A fazer deploy de {deploy}, iniciado há {age}',
     'Deployed {deploy} {age} ago: nothing alerts until 10 minutes after a deploy': 'Deploy de {deploy} há {age}: nada alerta até 10 minutos depois de um deploy',
     'Failures up from {before} to {after} since {deploy} ({age} ago)': 'As falhas subiram de {before} para {after} desde {deploy} (há {age})',
+    '404s up from {before} to {after} since {deploy} ({age} ago)': 'Os 404 subiram de {before} para {after} desde {deploy} (há {age})',
   }),
   'Last check failed: {error}': 'A última verificação falhou: {error}',
   // Why a run going now isn't counted as a deploy (domain/production.js deployNote)
@@ -92,7 +93,7 @@ export default {
   '{run} has been on {stage} for over an hour, so it no longer hides an outage.': '{run} está em {stage} há mais de uma hora, por isso já não esconde uma falha.',
   '{run} has been running for over an hour, so it no longer hides an outage.': '{run} está a correr há mais de uma hora, por isso já não esconde uma falha.',
   'Slow: {seconds}s (limit {limit}s)': 'Lento: {seconds} s (limite {limit} s)',
-  '{pct} of requests failing in the last hour ({failed} of {total})': '{pct} dos pedidos a falhar na última hora ({failed} de {total})',
+  '{pct} of requests failing with server errors (5xx) in the last hour ({failed} of {total})': '{pct} dos pedidos a falhar com erros do servidor (5xx) na última hora ({failed} de {total})',
   'no response': 'sem resposta',
   'No response within 10s': 'Sem resposta em 10 s',
   'fetch failed': 'o pedido falhou',

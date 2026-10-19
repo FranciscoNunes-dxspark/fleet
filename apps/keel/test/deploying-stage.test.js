@@ -73,3 +73,16 @@ test('the card says why a run going now is not counted as a deploy', async () =>
   assert.match(deployNote({ link: null, state: 'down' }, {}, now), /Not linked/);
   assert.equal(deployNote({ link: null, state: 'up' }, {}, now), null);
 });
+
+test('canceled and declined runs are not deploys on the monitor', async () => {
+  const { deployMarkers } = await import('../server/domain/production.js');
+  const link = { type: 'pipeline', projectId: 'p1', definitionId: 9, deployBranch: 'master' };
+  const run = (id, result) => ({ id, projectId: 'p1', definition: { id: 9 }, buildNumber: `R${id}`, status: 'completed', result, reason: 'manual', sourceBranch: 'master', finishedAt: ago(id * 10) });
+  const builds = [run(1, 'canceled'), run(2, 'succeeded'), run(3, 'declined'), run(4, 'failed')];
+  assert.deepEqual(deployMarkers({ link }, { builds }, now - 24 * 60 * MIN).map((d) => [d.label, d.status]), [['R2', 'succeeded'], ['R4', 'failed']]);
+
+  // Canceled a few minutes ago: no "Just deployed" quiet time, the outage alerts.
+  const down = { url: 'https://x', latencyWarnMs: 1000, ai: null, aiError: null, link, last: { ok: false, error: 'HTTP 503', at: ago(0) }, consecutiveFailures: 4, downSince: ago(4) };
+  const markers = deployMarkers({ link }, { builds: [run(0.5, 'canceled')] }, now - 24 * 60 * MIN);
+  assert.equal(evaluateMonitor(down, markers, now).state, 'down');
+});
