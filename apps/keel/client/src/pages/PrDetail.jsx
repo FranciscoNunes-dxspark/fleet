@@ -327,7 +327,7 @@ function CompleteForm({ pr, busy, onCancel, onComplete }) {
   const defaults = meta.autoComplete || {};
   const [mergeStrategy, setMergeStrategy] = useState(defaults.mergeStrategy || 'squash');
   const [message, setMessage] = useState(`Merged PR ${pr.id}: ${pr.title}`);
-  const [deleteSourceBranch, setDeleteSourceBranch] = useState(defaults.deleteSourceBranch ?? true);
+  const [deleteSourceBranch, setDeleteSourceBranch] = useState(defaults.deleteSourceBranch ?? false);
   const [transitionWorkItems, setTransitionWorkItems] = useState(defaults.transitionWorkItems ?? true);
   const [bypassPolicy, setBypassPolicy] = useState(false);
   const [bypassReason, setBypassReason] = useState('');
