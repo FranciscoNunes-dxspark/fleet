@@ -311,11 +311,16 @@ export function createService({
   /** Production monitors with their deploy markers and health verdict. */
   async function production() {
     if (!monitoring) return [];
-    const [rels, pipes, builds, monitors] = await Promise.all([releases().catch(() => []), pipelines().catch(() => []), rawBuilds().catch(() => []), myMonitors()]);
+    const [rels, pipes, builds, monitors, targets] = await Promise.all([
+      releases().catch(() => []), pipelines().catch(() => []), rawBuilds().catch(() => []), myMonitors(), productionTargets().catch(() => []),
+    ]);
     return monitors.map((m) => {
       const sources = { releases: rels, pipelines: pipes, builds };
-      const markers = deployMarkers(m, sources);
-      const deploy = runningDeploy(m, sources);
+      // A pipeline's deploys come from the branch productionTargets settled on.
+      const target = m.link?.type === 'pipeline' ? targets.find((x) => x.key === targetKeyOf(m.link)) : null;
+      const watched = target ? { ...m, link: { ...m.link, deployBranch: target.branch } } : m;
+      const markers = deployMarkers(watched, sources);
+      const deploy = runningDeploy(watched, sources);
       return { ...m, targetKey: targetKeyOf(m.link), markers, deploy, ...evaluateMonitor(m, markers, Date.now(), deploy) };
     });
   }
@@ -340,8 +345,8 @@ export function createService({
         same.compareBranch ||= link.branch || null;
         continue;
       }
-      // `branch` is where a pipeline's deploy runs come from (learned from its runs, see pipelines.js);
-      // `compareBranch` is the Production branch set in Settings, only for what Waiting to ship compares with.
+      // `branch` is where a pipeline's deploy runs come from (learned from its runs, see pipelines.js, or
+      // the Production branch below); `compareBranch` is the Production branch set in Settings.
       if (link.type === 'release') {
         add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, compareBranch: link.branch || null, name: m.name });
       } else {
@@ -356,7 +361,16 @@ export function createService({
         add({ ...link, key: targetKeyOf(link), projectName: d.projectName, name: `${d.name} · ${st.name}` });
       }
     }
-    return [...found.values()];
+    const targets = [...found.values()];
+    // A pipeline that builds Develop for testing and master for production: with master set as the
+    // Production branch, its runs on master are the deploys. Only when it has a successful one there,
+    // so a Production branch the pipeline never runs on doesn't leave it with no deploys at all.
+    await Promise.all(targets.filter((t) => t.type === 'pipeline' && t.compareBranch && t.compareBranch.toLowerCase() !== (t.branch || '').toLowerCase())
+      .map(async (t) => {
+        const runs = await deployHistory({ ...t, branch: t.compareBranch }, 90).catch(() => []);
+        if (runs.some((d) => d.status === 'succeeded')) t.branch = runs.find((d) => d.branch)?.branch || t.compareBranch;
+      }));
+    return targets;
   }
 
   /**
@@ -377,7 +391,7 @@ export function createService({
   }
 
   /** One environment's deploys over the last `days` days, newest first, each with the commit it shipped. */
-  const deployHistory = (target, days) => cached(`builds:deploys:${target.key}:${days}`, async () => {
+  const deployHistory = (target, days) => cached(`builds:deploys:${target.key}:${target.branch || ''}:${days}`, async () => {
     const since = new Date(Date.now() - days * DAY).toISOString();
     return (await provider.listDeployments(target, { since })).filter((d) => d.at).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   }, 5 * MIN);
