@@ -15,7 +15,7 @@ import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
 import { comingNext, commitRefs, landedAt, mergeCommits, waitingChanges } from './domain/commits.js';
-import { deployMarkers, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
+import { deployMarkers, deployNote, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
@@ -361,7 +361,11 @@ export function createService({
       const watched = target ? { ...m, link: { ...m.link, deployBranch: target.branch } } : m;
       const markers = deployMarkers(watched, sources);
       const deploy = runningDeploy(watched, sources);
-      return { ...m, targetKey: targetKeyOf(m.link), markers, deploy, ...evaluateMonitor(m, markers, Date.now(), deploy) };
+      const verdict = evaluateMonitor(m, markers, Date.now(), deploy);
+      // Why a run going now isn't counted as a deploy, or why none can be (domain/production.js).
+      const note = deploy ? null : deployNote({ ...watched, state: verdict.state }, sources, Date.now());
+      if (note) verdict.issues = [...verdict.issues, { code: 'deploy-not-counted', severity: 'low', text: note }];
+      return { ...m, targetKey: targetKeyOf(m.link), markers, deploy, ...verdict };
     });
   }
 

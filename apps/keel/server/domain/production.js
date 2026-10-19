@@ -81,6 +81,38 @@ export function runningDeploy(monitor, { releases = [], pipelines = [], builds =
 }
 
 /**
+ * Why nothing is taken as deploying into a monitor's environment when that may be surprising,
+ * for its card (it never alerts): its pipeline has a run going that isn't counted (on another
+ * branch than its deploys come from, waiting for someone, or on a stage for over an hour), or
+ * it's down and not linked to what deploys it at all. Null otherwise.
+ */
+export function deployNote(monitor, { pipelines = [], builds = [] }, now = Date.now()) {
+  const link = monitor.link;
+  if (!link) return monitor.state === 'down' || monitor.state === 'degraded'
+    ? "Not linked to the release stage or pipeline that deploys it, so Keel can't tell a deploy from an outage. Link it in Settings → Production monitors."
+    : null;
+  if (link.type !== 'pipeline') return null;
+  const runs = builds
+    .filter((b) => b.projectId === link.projectId && b.definition?.id === link.definitionId && b.status === 'inProgress' && b.reason !== 'pullRequest')
+    .sort((a, b) => Date.parse(b.startedAt || b.queuedAt) - Date.parse(a.startedAt || a.queuedAt));
+  if (!runs.length) return null;
+  const branch = linkBranch(link, pipelines);
+  const onBranch = runs.filter((b) => !branch || b.sourceBranch === branch);
+  if (!onBranch.length) {
+    return `${runs[0].buildNumber} is running on ${runs[0].sourceBranch}, but this monitor takes its deploys from ${branch}, so it isn't counted as deploying. If production deploys from ${runs[0].sourceBranch}, set it as the Production branch in Settings → Production monitors.`;
+  }
+  const run = onBranch[0];
+  if (onBranch.every((b) => b.stage?.waiting)) {
+    return run.stage?.name ? `${run.buildNumber} is waiting for approval at ${run.stage.name}, so nothing is deploying yet.` : `${run.buildNumber} is waiting for approval, so nothing is deploying yet.`;
+  }
+  const since = Date.parse(run.stage?.startedAt || run.startedAt || run.queuedAt);
+  if (now - since >= DEPLOY_GRACE_MS) {
+    return run.stage?.name ? `${run.buildNumber} has been on ${run.stage.name} for over an hour, so it no longer hides an outage.` : `${run.buildNumber} has been running for over an hour, so it no longer hides an outage.`;
+  }
+  return null;
+}
+
+/**
  * An environment's next deploy while it's under way: deploying now, or
  * waiting on an approval (a release stage's pre-deployment approval or gate,
  * a pipeline run's approval check). Only deploys started after `since` (the

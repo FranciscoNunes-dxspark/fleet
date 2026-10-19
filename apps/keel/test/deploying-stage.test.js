@@ -49,3 +49,27 @@ test('a release run that waited hours for its validation is still "deploying" wh
   assert.equal(deployUnderWay(target, { builds: [run('waiting')] }, { now }).state, 'approval');
   assert.equal(deployUnderWay(target, { builds: [run('deploying')] }, { now }).state, 'deploying');
 });
+
+test('stages side by side: one deploying while another waits for its approval is deploying', () => {
+  const t = [
+    { id: 'a', type: 'Stage', name: 'AzureEUROPE', state: 'inProgress', startedAt: ago(5) },
+    { id: 'aj', parentId: 'a', type: 'Job', state: 'inProgress', startedAt: ago(5) },
+    { id: 'b', type: 'Stage', name: 'AzureEUROPEWEST', state: 'inProgress', startedAt: null },
+    { id: 'bc', parentId: 'b', type: 'Checkpoint', state: 'inProgress' },
+  ];
+  assert.deepEqual(currentStage(t), { name: 'AzureEUROPE', startedAt: ago(5), waiting: false });
+});
+
+test('the card says why a run going now is not counted as a deploy', async () => {
+  const { deployNote } = await import('../server/domain/production.js');
+  const link = { type: 'pipeline', projectId: 'p1', definitionId: 9, deployBranch: 'master' };
+  const run = (extra) => ({ id: 1, projectId: 'p1', definition: { id: 9 }, buildNumber: '20261019.4', status: 'inProgress', reason: 'manual', sourceBranch: 'master', startedAt: ago(10), ...extra });
+  const note = (builds, m = { link }) => deployNote(m, { builds }, now);
+  assert.equal(note([]), null, 'nothing running');
+  assert.match(note([run({ sourceBranch: 'develop' })]), /running on develop, but this monitor takes its deploys from master/);
+  assert.match(note([run({ stage: { name: 'CHECK', startedAt: ago(10), waiting: true } })]), /waiting for approval at CHECK/);
+  assert.match(note([run({ stage: { name: 'AzureEUROPE', startedAt: ago(70), waiting: false } })]), /on AzureEUROPE for over an hour/);
+  assert.equal(note([run({ stage: { name: 'AzureEUROPE', startedAt: ago(5), waiting: false } })]), null, 'deploying: nothing to explain');
+  assert.match(deployNote({ link: null, state: 'down' }, {}, now), /Not linked/);
+  assert.equal(deployNote({ link: null, state: 'up' }, {}, now), null);
+});
