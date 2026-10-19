@@ -293,6 +293,7 @@ export function createMultiService(entries) {
     pipelineRuns: viaProject('pipelineRuns'),
     runDetails: viaProject('runDetails'),
     queueBuild: viaProject('queueBuild'),
+    cancelBuild: viaProject('cancelBuild'),
     async releases() {
       const parts = await each((s) => s.releases());
       return {

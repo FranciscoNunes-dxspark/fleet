@@ -122,6 +122,8 @@ export default {
   "Your scheduled run of {pipeline} didn't start": 'A sua execução agendada de {pipeline} não foi iniciada',
   'On {branch}': 'Em {branch}',
   'Pick a branch': 'Escolha um branch',
+  'Azure DevOps refused: you need the Stop builds permission on this pipeline.': 'O Azure DevOps recusou: precisa da permissão Stop builds neste pipeline.',
+  'That run has already finished.': 'Essa execução já terminou.',
   '"{branch}" isn\'t a valid branch name': '"{branch}" não é um nome de branch válido',
   "That pipeline isn't one of your tracked pipelines": 'Esse pipeline não é um dos seus pipelines acompanhados',
   "That isn't one of the teams you lead in Keel": 'Essa não é uma das equipas que lidera no Keel',

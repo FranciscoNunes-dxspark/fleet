@@ -180,7 +180,12 @@ export function Drawer({ open, onClose, children, label }) {
     const onKey = (e) => e.key === 'Escape' && closeRef.current();
     window.addEventListener('keydown', onKey);
     ref.current?.focus({ preventScroll: true });
-    return () => window.removeEventListener('keydown', onKey);
+    // The page behind stays put while the panel is open: one scrollbar, the panel's.
+    document.documentElement.classList.add('drawer-open');
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.documentElement.classList.remove('drawer-open');
+    };
   }, [open]);
   if (!open) return null;
   return (

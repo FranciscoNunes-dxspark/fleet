@@ -1305,6 +1305,17 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       });
     },
 
+    /** Cancel a queued or running run ("Build: Read & execute" scope, and the pipeline's Stop builds permission). */
+    async cancelBuild(projectId, buildId) {
+      try {
+        const b = await api(`${seg(projectId)}/_apis/build/builds/${Number(buildId)}`, { method: 'PATCH', body: { status: 'cancelling' } });
+        return { id: b?.id ?? Number(buildId), status: b?.status || 'cancelling' };
+      } catch (err) {
+        if (err.status === 403) throw Object.assign(new Error("Azure DevOps refused: you need the Stop builds permission on this pipeline."), { status: 403 });
+        throw err;
+      }
+    },
+
     async queueBuild(projectId, definitionId, branch) {
       const b = await api(`${seg(projectId)}/_apis/build/builds`, {
         method: 'POST',

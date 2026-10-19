@@ -68,10 +68,12 @@ export function runningDeploy(monitor, { releases = [], pipelines = [], builds =
       .map(({ r, s }) => ({ label: r.name, startedAt: s.startedAt || s.at, by: s.requestedFor?.displayName || null, webUrl: r.webUrl }));
   } else {
     const branch = linkBranch(link, pipelines);
+    // A run waiting for someone (Manual validation, an approval) isn't deploying; one that is,
+    // is timed from the stage it's on (service.js adds `stage`), not from when the run began.
     found = builds
       .filter((b) => b.projectId === link.projectId && b.definition.id === link.definitionId && b.status === 'inProgress'
-        && b.reason !== 'pullRequest' && (!branch || b.sourceBranch === branch))
-      .map((b) => ({ label: b.buildNumber, startedAt: b.startedAt || b.queuedAt, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }));
+        && b.reason !== 'pullRequest' && (!branch || b.sourceBranch === branch) && !b.stage?.waiting)
+      .map((b) => ({ label: b.buildNumber, startedAt: b.stage?.startedAt || b.startedAt || b.queuedAt, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }));
   }
   return found
     .filter((d) => d.startedAt && now - Date.parse(d.startedAt) < DEPLOY_GRACE_MS)
@@ -98,9 +100,9 @@ export function deployUnderWay(target, { releases = [], builds = [], approvals =
       .filter((b) => b.projectId === target.projectId && b.definition?.id === target.definitionId && b.status === 'inProgress'
         && b.reason !== 'pullRequest' && (!target.branch || b.sourceBranch === target.branch))
       .map((b) => ({
-        state: approvals.some((a) => a.kind === 'yaml' && a.run?.id === b.id) ? 'approval' : 'deploying',
+        state: b.stage?.waiting || approvals.some((a) => a.kind === 'yaml' && a.run?.id === b.id) ? 'approval' : 'deploying',
         label: b.buildNumber,
-        startedAt: b.startedAt || b.queuedAt,
+        startedAt: (!b.stage?.waiting && b.stage?.startedAt) || b.startedAt || b.queuedAt,
         by: b.requestedFor?.displayName || null,
         webUrl: b.webUrl,
       }));

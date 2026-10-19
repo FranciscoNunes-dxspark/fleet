@@ -50,4 +50,9 @@ export default {
   'Keel starts one run then, as you, on the branch you pick. For runs that repeat (every night, say), use a schedule in the pipeline itself.': 'O Keel inicia uma execução nessa altura, em seu nome, no branch que escolher. Para execuções que se repetem (todas as noites, por exemplo), use um agendamento no próprio pipeline.',
   'Schedule run': 'Agendar execução',
   'Runs {when}': 'Corre {when}',
+  // Cancel a queued or running run (Pipelines.jsx, PipelineDetail.jsx)
+  'Canceling {run}': 'A cancelar {run}',
+  'Cancel {run}?': 'Cancelar {run}?',
+  'Cancel run': 'Cancelar execução',
+  'canceling': 'a cancelar',
 };

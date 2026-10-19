@@ -1350,10 +1350,18 @@ export function createMockProvider() {
         requestedFor: ME, queuedAt: iso(Date.now()), startedAt: null, finishedAt: null, buildNumber: `manual.${nextBuild}`,
       };
       builds.unshift(b);
-      // Queued, then running, then done, as in Azure DevOps.
-      setTimeout(() => Object.assign(b, { status: 'inProgress', startedAt: iso(Date.now()) }), 15_000).unref?.();
-      setTimeout(() => Object.assign(b, { status: 'completed', result: 'succeeded', finishedAt: iso(Date.now()) }), 40_000).unref?.();
+      // Queued, then running, then done, as in Azure DevOps (unless it was canceled first).
+      setTimeout(() => b.status === 'notStarted' && Object.assign(b, { status: 'inProgress', startedAt: iso(Date.now()) }), 15_000).unref?.();
+      setTimeout(() => b.status === 'inProgress' && Object.assign(b, { status: 'completed', result: 'succeeded', finishedAt: iso(Date.now()) }), 40_000).unref?.();
       return delay({ id: b.id, webUrl: b.webUrl });
+    },
+
+    async cancelBuild(projectId, buildId) {
+      const b = builds.find((x) => x.id === Number(buildId));
+      if (!b) throw notFound('Run');
+      if (b.status === 'completed') throw Object.assign(new Error('That run has already finished.'), { status: 400 });
+      Object.assign(b, { status: 'completed', result: 'canceled', finishedAt: iso(Date.now()) });
+      return delay({ id: b.id, status: 'cancelling' });
     },
   };
 }
