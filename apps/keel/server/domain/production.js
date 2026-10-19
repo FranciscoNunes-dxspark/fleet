@@ -22,10 +22,12 @@ export function deployMarkers(monitor, { releases = [], pipelines = [], builds =
       .filter((d) => Date.parse(d.at) >= since)
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   }
-  // Pipeline link: completed runs on its production branch.
+  // Pipeline link: completed runs on its production branch. A canceled run, or one declined at its
+  // approval, deployed nothing: not on the charts, the deploy list, or the quiet time after a deploy.
   const branch = linkBranch(link, pipelines);
   return builds
     .filter((b) => b.projectId === link.projectId && b.definition.id === link.definitionId && b.status === 'completed'
+      && b.result !== 'canceled' && b.result !== 'declined'
       && b.reason !== 'pullRequest' && (!branch || b.sourceBranch === branch) && Date.parse(b.finishedAt) >= since)
     .map((b) => ({ id: b.id, at: b.finishedAt, label: b.buildNumber, status: b.result, by: b.requestedFor?.displayName || null, webUrl: b.webUrl }))
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
