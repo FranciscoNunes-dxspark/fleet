@@ -1234,6 +1234,8 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .channel-events { grid-template-columns: 1fr; }
 .monitor-group label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink); align-self: end; min-height: 34px; }
 .channel-events label.check { min-height: 0; align-self: auto; }
+.channel-projects { display: grid; gap: 6px; max-height: 220px; overflow-y: auto; }
+.input-note { display: flex; align-items: center; min-height: 34px; font-size: 13px; color: var(--ink); }
 
 /* Suggested reviewers (New pull request, pull request panel) */
 .suggested-reviewers { display: grid; gap: 6px; margin: 10px 0; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); }

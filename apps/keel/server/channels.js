@@ -5,8 +5,9 @@
 // - the weekly summary, on the weekday and hour the channel asks for
 // It runs whether or not anyone has Keel open. Azure DevOps is read with the
 // token of the person who set the channel up (with sign-in) or the server's
-// own (locally). Channels live in the data folder (channels.json), webhook
-// addresses encrypted; one server process does the posting.
+// own (locally), for the projects the channel picked (none picked: the ones
+// that person tracks). Channels live in the data folder (channels.json),
+// webhook addresses encrypted; one server process does the posting.
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { config } from './config.js';
@@ -19,6 +20,7 @@ import { CHANNEL_EVENTS, CHANNEL_KINDS, DEFAULT_EVENTS, burstMessage, channelEve
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 const MAX_POSTS = 4; // per channel and look; more than that goes out as one post
+const MAX_PROJECTS = 100;
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 
 /** Weekday (1 = Monday … 7 = Sunday), hour and date in a time zone. */
@@ -65,6 +67,19 @@ export function createChannels({
     s[id] = { ...(s[id] || {}), ...patch };
   });
 
+  // A channel's view: its owner's service looking at the channel's projects, kept
+  // while the owner's service lives so its caches carry over from one look to the next.
+  const views = new WeakMap(); // owner's service -> Map(projects key -> service)
+  const projectsKey = (c) => [...new Set(c.projects || [])].sort().join(',');
+  function viewFor(service, c) {
+    const key = projectsKey(c);
+    if (!key || !service.withProjects) return service;
+    if (!views.has(service)) views.set(service, new Map());
+    const byKey = views.get(service);
+    if (!byKey.has(key)) byKey.set(key, service.withProjects(key.split(',')));
+    return byKey.get(key);
+  }
+
   async function post(c, message, url = urlOf(c)) {
     await assertPublicUrl(url); // checked every time: DNS can change
     await send(url, payloadFor(c.kind, message));
@@ -109,20 +124,28 @@ export function createChannels({
           for (const c of channels) note(c.id, { lastError: 'The person who set up this channel has no working Azure DevOps token in Keel.', lastErrorAt: new Date().toISOString() });
           continue;
         }
-        let inbox = null;
-        if (channels.some((c) => c.events?.length)) {
-          try {
-            // Fresh from Azure DevOps, as the console's live updates do.
-            for (const prefix of ['prs:active', 'wi:', 'builds']) service.invalidate(prefix);
-            inbox = (await service.attention()).items;
-          } catch (err) {
-            for (const c of channels) note(c.id, { lastError: `Couldn't read Azure DevOps: ${err.message}`, lastErrorAt: new Date().toISOString() });
+        // Channels with the same projects share one read of the inbox.
+        const inboxes = new Map(); // projects key -> { items } or { error }
+        const inboxFor = async (c) => {
+          const key = projectsKey(c);
+          if (!inboxes.has(key)) {
+            const view = viewFor(service, c);
+            try {
+              // Fresh from Azure DevOps, as the console's live updates do.
+              for (const prefix of ['prs:active', 'wi:', 'builds']) view.invalidate(prefix);
+              inboxes.set(key, { items: (await view.attention()).items });
+            } catch (err) {
+              inboxes.set(key, { error: err.message });
+            }
           }
-        }
+          return inboxes.get(key);
+        };
         for (const c of channels) {
           const s = state.get()[c.id] || {};
-          if (inbox && c.events?.length) {
-            const { announce, seen } = channelEvents(s.seen || null, inbox, c.events);
+          const inbox = c.events?.length ? await inboxFor(c) : null;
+          if (inbox?.error) note(c.id, { lastError: `Couldn't read Azure DevOps: ${inbox.error}`, lastErrorAt: new Date().toISOString() });
+          if (inbox?.items) {
+            const { announce, seen } = channelEvents(s.seen || null, inbox.items, c.events);
             note(c.id, { seen });
             const tr = translator(c.language);
             if (announce.length > MAX_POSTS) await deliver(c, burstMessage(announce, tr, keelUrl));
@@ -132,7 +155,7 @@ export function createChannels({
           if (due) {
             note(c.id, { lastWeekly: due }); // once per day, even if posting fails
             try {
-              await deliver(c, await weeklyMessage(c, service, ms));
+              await deliver(c, await weeklyMessage(c, viewFor(service, c), ms));
             } catch (err) {
               note(c.id, { lastError: `Weekly summary: ${err.message}`, lastErrorAt: new Date().toISOString() });
             }
@@ -186,6 +209,9 @@ export function createChannels({
       },
       timeZone: validZone(input.timeZone) ? input.timeZone : existing?.timeZone || 'UTC',
       language: input.language === 'pt' ? 'pt' : 'en',
+      // The projects it's about; none means the ones its owner tracks.
+      projects: [...new Set((Array.isArray(input.projects) ? input.projects : existing?.projects || [])
+        .filter((id) => typeof id === 'string' && /^[\w-]{1,64}$/.test(id)))].slice(0, MAX_PROJECTS),
       // Who Keel reads Azure DevOps as for this channel: whoever set it up.
       ownerId: existing?.ownerId ?? owner?.id ?? null,
       ownerName: existing ? existing.ownerName ?? null : owner?.name ?? null,
@@ -204,9 +230,15 @@ export function createChannels({
       const next = [];
       for (const input of list) next.push(await clean(input, current.find((c) => c.id === input.id), owner));
       store.save({ channels: next });
-      // Forget the state of channels that are gone.
+      // Forget the state of channels that are gone. A channel whose projects changed
+      // starts from a fresh baseline, so it doesn't post everything already open in the new ones.
       state.update((s) => {
-        for (const id of Object.keys(s)) if (!next.some((c) => c.id === id)) delete s[id];
+        for (const id of Object.keys(s)) {
+          const c = next.find((x) => x.id === id);
+          const before = current.find((x) => x.id === id);
+          if (!c) delete s[id];
+          else if (before && projectsKey(before) !== projectsKey(c)) delete s[id].seen;
+        }
       });
       return this.list();
     },
@@ -233,7 +265,7 @@ export function createChannels({
       const c = all().find((x) => x.id === id);
       if (!c) throw Object.assign(new Error('Unknown channel'), { status: 404 });
       const service = (await Promise.resolve(resolveService(c.ownerId || null)).catch(() => null)) || fallback;
-      await post(c, await weeklyMessage(c, service));
+      await post(c, await weeklyMessage(c, viewFor(service, c)));
       note(c.id, { lastPostAt: new Date().toISOString(), lastError: null });
       return { ok: true };
     },

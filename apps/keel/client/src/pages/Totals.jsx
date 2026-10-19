@@ -56,6 +56,7 @@ function MonthPicker({ months, value, onChange }) {
 /** Status of a site's totals: fetching, error, degraded, ok, or not fetched yet. */
 function SiteState({ s }) {
   if (s.fetching) return <Chip tone="info">{t('Fetching…')}</Chip>;
+  if (s.queued) return <Chip tone="info">{t('Queued')}</Chip>;
   if (s.lastError) return <Chip tone="bad" title={tx(s.lastError)}>{t('Failed')}</Chip>;
   if (s.latest?.status === 'degraded') return <Chip tone="warn" title={(s.latest.failing || []).map((c) => tx(c.message || c.name)).join(' · ')}>{t('Incomplete')}</Chip>;
   if (!s.latest) return <Chip>{t('Not fetched yet')}</Chip>;
@@ -71,7 +72,8 @@ export default function Totals() {
 
 function TotalsOverview() {
   const { data, error, reload } = useApi('/production/totals');
-  const { can } = useApp();
+  const { can, toast, refresh } = useApp();
+  const [starting, setStarting] = useState(false);
   const navigate = useNavigate();
   // "key" = the key figures; otherwise an area's figures.
   const [view, setView] = useSticky('totals.view', 'key');
@@ -93,6 +95,25 @@ function TotalsOverview() {
   const months = seasonMonths(data.flatMap((s) => s.latest?.totals || []));
   const month = months.includes(pickedMonth) ? pickedMonth : 0;
   const before = month ? months[months.indexOf(month) - 1] || null : null;
+  const enabled = data.filter((s) => s.enabled);
+  const busy = enabled.length > 0 && enabled.every((s) => s.fetching || s.queued);
+
+  // One site after another, as the schedule does: each fetch keeps a club database busy.
+  const fetchAll = async () => {
+    setStarting(true);
+    try {
+      const { started, skipped } = await api('/production/totals/fetch', { method: 'POST' });
+      toast([
+        t(started === 1 ? 'Fetching {n} site. This can take a few minutes.' : 'Fetching {n} sites, one after another. This can take a while.', { n: started }),
+        skipped ? t('Left out {n}: fetched in the last 10 minutes, or being fetched now.', { n: skipped }) : null,
+      ].filter(Boolean).join(' '));
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
     <div className="page">
@@ -102,6 +123,9 @@ function TotalsOverview() {
           ? [t(data.length === 1 ? '{n} site' : '{n} sites', { n: data.length }), seasons.length === 1 ? t('season {name}', { name: seasons[0] }) : null, t('the figures from each site\'s Platform Totals screen')].filter(Boolean).join(' · ')
           : t('What each club site holds, from the Platform Totals screen.')}
       >
+        {can('monitors.manage') && enabled.length > 0 && (
+          <button type="button" className="btn btn-small" onClick={fetchAll} disabled={starting || busy}>{busy ? t('Fetching…') : t('Fetch all')}</button>
+        )}
         {can('monitors.manage') && <Link className="btn btn-small" to="/settings#production">{t('Manage sites')}</Link>}
       </PageHeader>
       <ProductionTabs />
@@ -226,7 +250,7 @@ function SiteTotals({ id }) {
       >
         <Link className="btn btn-small btn-ghost" to="/totals">{t('All sites')}</Link>
         {can('monitors.manage') && data.enabled && (
-          <button type="button" className="btn btn-small" onClick={fetchNow} disabled={starting || data.fetching}>{data.fetching ? t('Fetching…') : t('Fetch now')}</button>
+          <button type="button" className="btn btn-small" onClick={fetchNow} disabled={starting || data.fetching}>{data.fetching ? t('Fetching…') : data.queued ? t('Queued') : t('Fetch now')}</button>
         )}
       </PageHeader>
       <ProductionTabs />
