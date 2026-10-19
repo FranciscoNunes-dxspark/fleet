@@ -303,6 +303,26 @@ test('production verdicts: down, slow, failing, and a regression after a deploy'
   assert.equal(r.state, 'degraded');
 });
 
+test('just after a deploy, failed checks do not alert; after 10 minutes they do', async () => {
+  const { evaluateMonitor } = await import('../server/domain/production.js');
+  const now = Date.parse('2026-10-15T12:00:00Z');
+  const min = (m) => new Date(now - m * 60_000).toISOString();
+  const down = { url: 'https://x', latencyWarnMs: 1000, ai: null, aiError: null, last: { ok: false, error: 'HTTP 503', at: min(0) }, consecutiveFailures: 4, downSince: min(4) };
+
+  const quiet = evaluateMonitor(down, [{ at: min(6), label: 'Release-12' }], now);
+  assert.equal(quiet.state, 'settling');
+  assert.deepEqual(quiet.issues.map((i) => [i.code, i.severity]), [['settling', 'low']], 'nothing for the inbox or notifications');
+  assert.match(quiet.issues[0].text, /Deployed Release-12 6m ago/);
+
+  // Still down 10 minutes on: an outage, counted from when it began.
+  const late = evaluateMonitor({ ...down, downSince: min(11) }, [{ at: min(11), label: 'Release-12' }], now);
+  assert.equal(late.state, 'down');
+  assert.match(late.issues[0].text, /Down for 11m/);
+
+  // Up after the deploy: just up.
+  assert.equal(evaluateMonitor({ ...down, last: { ok: true, ms: 200, at: min(0) }, consecutiveFailures: 0 }, [{ at: min(2), label: 'Release-12' }], now).state, 'up');
+});
+
 test('deploy markers come from the linked release stage', async () => {
   const { deployMarkers } = await import('../server/domain/production.js');
   const releases = [{

@@ -80,6 +80,7 @@ export default {
   ...ages({
     'Down for {age}: {error}': 'Em baixo há {age}: {error}',
     'Deploying {deploy}, started {age} ago': 'A fazer deploy de {deploy}, iniciado há {age}',
+    'Deployed {deploy} {age} ago: nothing alerts until 10 minutes after a deploy': 'Deploy de {deploy} há {age}: nada alerta até 10 minutos depois de um deploy',
     'Failures up from {before} to {after} since {deploy} ({age} ago)': 'As falhas subiram de {before} para {after} desde {deploy} (há {age})',
   }),
   'Last check failed: {error}': 'A última verificação falhou: {error}',

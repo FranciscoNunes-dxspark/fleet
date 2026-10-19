@@ -48,6 +48,8 @@ const linkBranch = (link, pipelines) => ('deployBranch' in link ? link.deployBra
 
 // A deploy running longer than this no longer hides an outage.
 export const DEPLOY_GRACE_MS = 60 * 60_000;
+// After a deploy the app restarts and warms up: failed checks this soon after one don't alert.
+export const SETTLE_MS = 10 * 60_000;
 
 /**
  * The deploy running right now into the monitor's environment, if any: a
@@ -121,10 +123,12 @@ function failRate(series, from, to) {
 }
 
 /**
- * Health verdict for one monitor: state (up/degraded/down/deploying/unknown)
+ * Health verdict for one monitor: state (up/degraded/down/deploying/settling/unknown)
  * and the issues behind it, each with a severity for the inbox. While a deploy
  * is running (see runningDeploy) failed checks and errors are expected: the
- * state is "deploying" and nothing alerts.
+ * state is "deploying" and nothing alerts. For SETTLE_MS after one finished
+ * they still are (the app restarting): "settling", and nothing alerts either.
+ * An outage that outlasts that alerts as usual, counted from when it began.
  */
 export function evaluateMonitor(m, markers = [], now = Date.now(), running = null) {
   const issues = [];
@@ -174,12 +178,26 @@ export function evaluateMonitor(m, markers = [], now = Date.now(), running = nul
   if (m.aiError) issues.push({ code: 'ai-error', severity: 'low', text: m.aiError });
   if (m.totalsError) issues.push({ code: 'totals-error', severity: 'low', text: `Platform totals: ${m.totalsError}` });
 
+  const expected = new Set(['down', 'check-failed', 'degraded', 'slow', 'failures']);
   if (running) {
-    const expected = new Set(['down', 'check-failed', 'degraded', 'slow', 'failures']);
     return {
       state: 'deploying',
       issues: [
         { code: 'deploying', severity: 'low', text: `Deploying ${running.label}, started ${ago(now - Date.parse(running.startedAt))} ago` },
+        ...issues.filter((i) => !expected.has(i.code)),
+      ],
+    };
+  }
+
+  const settling = markers.find((d) => {
+    const since = now - Date.parse(d.at);
+    return since >= 0 && since < SETTLE_MS;
+  });
+  if (settling && issues.some((i) => expected.has(i.code))) {
+    return {
+      state: 'settling',
+      issues: [
+        { code: 'settling', severity: 'low', text: `Deployed ${settling.label} ${ago(now - Date.parse(settling.at))} ago: nothing alerts until 10 minutes after a deploy` },
         ...issues.filter((i) => !expected.has(i.code)),
       ],
     };

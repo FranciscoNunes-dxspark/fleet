@@ -837,7 +837,7 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .monitor-up { border-left-color: var(--ok); }
 .monitor-degraded { border-left-color: var(--warn); }
 .monitor-down { border-left-color: var(--bad); }
-.monitor-deploying { border-left-color: var(--info); }
+.monitor-deploying, .monitor-settling { border-left-color: var(--info); }
 .monitor-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .monitor-head h2 { font-size: 16px; }
 .monitor-issues { margin: 10px 0 0; }
@@ -1303,7 +1303,7 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .monitor-up { background-image: linear-gradient(to bottom, var(--ok-soft), var(--surface) 120px); }
 .monitor-degraded { background-image: linear-gradient(to bottom, var(--warn-soft), var(--surface) 140px); }
 .monitor-down { background-image: linear-gradient(to bottom, var(--bad-soft), var(--surface) 160px); }
-.monitor-deploying { background-image: linear-gradient(to bottom, var(--info-soft), var(--surface) 120px); }
+.monitor-deploying, .monitor-settling { background-image: linear-gradient(to bottom, var(--info-soft), var(--surface) 120px); }
 
 /* People get their own steady colour (hue from ui.jsx); groups and "unassigned" stay neutral. */
 .avatar-hued { background: hsl(var(--av-h) 42% 25%); color: hsl(var(--av-h) 75% 84%); }

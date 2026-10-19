@@ -14,6 +14,7 @@ const STATE = {
   degraded: { tone: 'warn', label: 'Degraded' },
   down: { tone: 'bad', label: 'Down' },
   deploying: { tone: 'info', label: 'Deploying' },
+  settling: { tone: 'info', label: 'Just deployed' },
   unknown: { tone: 'muted', label: 'No data yet' },
 };
 const HOUR = 3_600_000;

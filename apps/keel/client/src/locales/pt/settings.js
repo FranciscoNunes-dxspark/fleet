@@ -257,6 +257,7 @@ export default {
   // 'Failed' is above (Production.jsx).
   'Canceled': 'Cancelado',
   'Deploying': 'A fazer deploy',
+  'Just deployed': 'Deploy recente',
   'Queued': 'Em fila',
   'No runs in the last {n} days': 'Sem execuções nos últimos {n} dias',
   'paused': 'em pausa',
