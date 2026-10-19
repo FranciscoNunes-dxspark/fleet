@@ -28,7 +28,7 @@ const BASE = [
   'C..C.C....C.C..C',
 ];
 
-// Each mood replaces some rows of the base drawing. The web app and the icons only use idle.
+// Each mood replaces some rows of the base drawing. The icons only use idle.
 const MOODS = {
   idle: {},
   look: { 1: 'CDCC.EW..EW.CCDC' }, // glancing the other way, while Azure DevOps answers
@@ -41,4 +41,16 @@ const MOODS = {
 export function pinchPixels(mood = 'idle') {
   const over = MOODS[mood] ?? {};
   return BASE.map((row, i) => over[i] ?? row);
+}
+
+/**
+ * How Pinch looks in the web app: worried while Azure DevOps answers the live checks with an
+ * error, glancing about during a refresh, asleep when nothing needs you, and otherwise watching.
+ * (Losing the connection to Keel's own server is the live badge's to show, not a worry.)
+ */
+export function pinchMood({ attention, live, busy } = {}) {
+  if (live?.connected && live.ok === false && live.error) return 'worried';
+  if (busy) return 'look';
+  if (attention && !attention.items?.length) return 'sleep';
+  return 'idle';
 }

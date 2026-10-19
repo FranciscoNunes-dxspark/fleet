@@ -94,8 +94,8 @@ export default function Inbox() {
       </div>
 
       {!items.length && (
-        <Empty title={data.items.length ? t('Nothing in this filter.') : t('Inbox zero.')}>
-          {data.items.length ? t('Pick another filter above.') : t('Reviews, red pipelines, blocked items and stale PRs will show up here as they happen.')}
+        <Empty title={data.items.length ? t('Nothing in this filter.') : t('Inbox zero.')} mood={data.items.length ? undefined : 'sleep'}>
+          {data.items.length ? t('Pick another filter above.') : `${t('Nothing needs you, so Pinch is having a nap.')} ${t('Reviews, red pipelines, blocked items and stale PRs will show up here as they happen.')}`}
         </Empty>
       )}
 

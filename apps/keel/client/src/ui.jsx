@@ -1,25 +1,60 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { initials, VOTES } from './format.js';
-import { t } from './i18n.js';
+import { t, tx } from './i18n.js';
 import { useApp } from './context.js';
 import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
 import { BG, PALETTE, pinchPixels } from './pinch.js';
 
-// Pinch on the dark square, one rect per run of same-coloured pixels. Built once: the drawing never changes.
-const LOGO_RUNS = pinchPixels().flatMap((row, y) =>
-  [...row.matchAll(/([^.])\1*/g)].map((m) => ({ x: m.index + 2, y: y + 5, w: m[0].length, fill: PALETTE[m[1]] })),
-);
+// One rect per run of same-coloured pixels, for each mood. Built once each: the drawing never changes.
+const RUNS = {};
+const pinchRuns = (mood) => (RUNS[mood] ??= pinchPixels(mood).flatMap((row, y) =>
+  [...row.matchAll(/([^.])\1*/g)].map((m) => ({ x: m.index, y, w: m[0].length, fill: PALETTE[m[1]] }))));
 
-/** Keel's mark: Pinch the crab, without the Azure DevOps badge the app icons carry (same pixels as public/favicon.svg). */
-export function Logo({ size = 28 }) {
+/** Pinch's pixels at (dx, dy). "look" glances from side to side: two frames swapped by CSS, a still one with reduced motion. */
+function PinchPixels({ mood, dx = 0, dy = 0 }) {
+  const rects = (m) => pinchRuns(m).map((r) => <rect key={`${r.x},${r.y}`} x={r.x + dx} y={r.y + dy} width={r.w} height="1.02" fill={r.fill} />);
+  if (mood !== 'look') return rects(mood);
   return (
-    <svg className="brand-mark" width={size} height={size} viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+    <>
+      <g className="pinch-frame-a">{rects('look')}</g>
+      <g className="pinch-frame-b">{rects('idle')}</g>
+    </>
+  );
+}
+
+/** Keel's mark: Pinch the crab on its dark square, without the Azure DevOps badge the app icons carry (same pixels as public/favicon.svg). */
+export function Logo({ size = 28, mood = 'idle', title }) {
+  return (
+    <svg className="brand-mark" width={size} height={size} viewBox="0 0 20 20" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
+      {title && <title>{title}</title>}
       <rect width="20" height="20" rx="3.6" fill={BG} />
-      {LOGO_RUNS.map((r) => <rect key={`${r.x},${r.y}`} x={r.x} y={r.y} width={r.w} height="1.02" fill={r.fill} />)}
+      <PinchPixels mood={mood} dx={2} dy={5} />
     </svg>
   );
+}
+
+/** Pinch on its own, `width` pixels wide, for the Dashboard, empty states, loading and errors. */
+export function Pinch({ mood = 'idle', width = 64, title }) {
+  return (
+    <svg className={`pinch pinch-${mood}`} width={width} height={(width * 10) / 16} viewBox="0 0 16 10" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
+      {title && <title>{title}</title>}
+      <PinchPixels mood={mood} />
+    </svg>
+  );
+}
+
+/** What Pinch has to say about its mood (see pinchMood), for the logo's tooltip and the Dashboard. */
+export function pinchLine(mood, { attention, live } = {}) {
+  if (mood === 'worried') return t("Pinch can't reach Azure DevOps: {error}", { error: tx(live?.error || '') });
+  if (mood === 'look') return t('Pinch is checking Azure DevOps…');
+  if (mood === 'sleep') return t('Nothing needs you, so Pinch is having a nap.');
+  if (!attention) return t('Pinch is keeping an eye on Azure DevOps.');
+  const n = attention.summary?.high || 0;
+  if (n === 1) return t('One thing needs you now.');
+  if (n) return t('{n} things need you now.', { n });
+  return t('Nothing urgent right now.');
 }
 
 /** A steady hue (0–359) for a person, from their email or name, so they look the same everywhere. */
@@ -77,23 +112,27 @@ export function TypeLabel({ type, color }) {
 
 export const Chip = ({ tone = 'muted', children, title }) => <span className={`chip chip-${tone}`} title={title}>{children}</span>;
 
+/** A spinner, or a glancing Pinch when it holds a whole page (the CSS picks which). */
 export function Loading({ label = t('Loading…') }) {
-  return <div className="loading" role="status"><span className="spinner" aria-hidden="true" />{label}</div>;
+  return <div className="loading" role="status"><Pinch mood="look" width={48} /><span className="spinner" aria-hidden="true" />{label}</div>;
 }
 
 export function ErrorBox({ error, onRetry }) {
   if (!error) return null;
   return (
     <div className="error-box" role="alert">
+      <Pinch mood="worried" width={32} />
       <strong>{t("Couldn't load this view.")}</strong> {error.message}
       {onRetry && <button type="button" className="btn btn-small" onClick={onRetry}>{t('Try again')}</button>}
     </div>
   );
 }
 
-export function Empty({ title, children }) {
+/** An empty list's message; `mood` adds Pinch above it (asleep on Inbox zero). */
+export function Empty({ title, mood, children }) {
   return (
     <div className="empty">
+      {mood && <Pinch mood={mood} width={64} />}
       <p className="empty-title">{title}</p>
       {children && <div className="empty-body">{children}</div>}
     </div>

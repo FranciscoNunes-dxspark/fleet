@@ -203,4 +203,15 @@ export default {
   'Opens Claude with this item as the prompt. Nothing runs until you press Enter. If nothing opens: for the CLI, send one prompt in an interactive {cmd} session first; for Desktop, install Claude Desktop.': 'Abre o Claude com este item como prompt. Nada corre até premir Enter. Se nada abrir: para a CLI, envie primeiro um prompt numa sessão interativa do {cmd}; para o Desktop, instale o Claude Desktop.',
   'Expand menu': 'Expandir menu',
   'Collapse menu': 'Recolher menu',
+  // Pinch, the crab (ui.jsx, Dashboard, Inbox, NotFound)
+  "Pinch can't reach Azure DevOps: {error}": 'O Pinch não consegue ligar-se ao Azure DevOps: {error}',
+  'Pinch is checking Azure DevOps…': 'O Pinch está a verificar o Azure DevOps…',
+  'Nothing needs you, so Pinch is having a nap.': 'Nada precisa de si, por isso o Pinch está a fazer uma sesta.',
+  'Pinch is keeping an eye on Azure DevOps.': 'O Pinch está a vigiar o Azure DevOps.',
+  'One thing needs you now.': 'Uma coisa precisa de si agora.',
+  '{n} things need you now.': '{n} coisas precisam de si agora.',
+  'Nothing urgent right now.': 'Nada urgente neste momento.',
+  "There's no page here.": 'Não há nenhuma página aqui.',
+  'Keel has nothing at {path}. The link may be old, or the page may have moved.': 'O Keel não tem nada em {path}. A ligação pode ser antiga, ou a página pode ter mudado de sítio.',
+  'Go to the Dashboard': 'Ir para o Painel',
 };

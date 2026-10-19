@@ -149,6 +149,13 @@ button { font: inherit; color: inherit; }
 }
 .brand { display: flex; gap: 10px; align-items: center; padding: 0 8px; }
 .brand-mark { flex: none; display: block; border-radius: 7px; }
+/* Pinch, Keel's crab (pinch.js): pixel art with sharp edges, drawn at whole multiples of its 16 pixels. */
+.pinch { flex: none; display: block; shape-rendering: crispEdges; }
+.pinch-frame-b { opacity: 0; }
+.pinch-frame-a { animation: pinch-glance-a 0.9s linear infinite; }
+.pinch-frame-b { animation: pinch-glance-b 0.9s linear infinite; }
+@keyframes pinch-glance-a { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes pinch-glance-b { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
 .brand-name { font-weight: 600; }
 .brand-org { font-size: 12px; color: var(--muted); max-width: 160px; }
 .nav-groups { display: grid; gap: 14px; min-height: 0; overflow-y: auto; }
@@ -390,6 +397,10 @@ tr.saving { opacity: 0.55; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; display: inline-block; }
 .error-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px; margin: 12px 0; border-radius: var(--radius); background: var(--bad-soft); color: var(--bad); }
 .empty { padding: 44px 16px; text-align: center; background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+.empty .pinch { margin: 0 auto 14px; }
+.not-found { display: grid; justify-items: center; gap: 12px; text-align: center; padding-top: 12vh; }
+.not-found .pinch { margin-bottom: 8px; }
+.not-found p { margin: 0; max-width: 52ch; }
 .empty-title { font-weight: 600; margin: 0 0 4px; }
 .empty-body { color: var(--muted); }
 .callout { padding: 10px 14px; border-radius: var(--radius); background: var(--warn-soft); color: var(--ink); max-width: 80ch; }
@@ -811,6 +822,9 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .signin { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
 .signin-card { width: min(460px, 100%); display: grid; gap: 14px; padding: 26px 28px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .signin-card .brand { padding: 0; }
+.signin-pinch { display: grid; justify-items: center; gap: 10px; text-align: center; padding-bottom: 4px; }
+.signin-pinch .brand-name { font-size: 18px; }
+.signin-pinch .brand-org { max-width: none; }
 .signin-card h1 { font-size: 22px; margin-top: 6px; }
 .signin-lead { margin: 0; color: var(--ink-2); }
 .signin-card .field { display: grid; gap: 6px; font-size: 13px; color: var(--ink-2); }
@@ -828,6 +842,12 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
    panel), not just under the header. The panel's close button stays clickable through it. */
 .main:has(> .loading) { display: flex; flex-direction: column; }
 .main > .loading { flex: 1; }
+/* Pinch glances about where a whole page is loading (and while Keel starts); everywhere
+   else, in widgets and panels, a plain spinner keeps it quiet. */
+.loading .pinch { display: none; }
+.main > .loading, .page > .loading, .boot .loading { flex-direction: column; gap: 14px; }
+.main > .loading .pinch, .page > .loading .pinch, .boot .loading .pinch { display: block; }
+.main > .loading .spinner, .page > .loading .spinner, .boot .loading .spinner { display: none; }
 .drawer > .loading { position: absolute; inset: 0; pointer-events: none; }
 .boot { min-height: 100vh; margin: 0 auto; display: grid; place-content: center; }
 
@@ -1368,6 +1388,9 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
   background: linear-gradient(120deg, var(--accent-soft), var(--surface) 62%); box-shadow: var(--elev-1);
 }
 .hero h1 { font-size: 26px; line-height: 1.2; letter-spacing: -0.02em; }
+.hero-text { display: flex; gap: 18px; align-items: center; min-width: 0; }
+.hero-text > div { min-width: 0; }
+.hero-pinch { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
 .hero-figures { display: flex; gap: 8px; }
 .hero-figure {
   display: grid; gap: 2px; min-width: 104px; padding: 10px 14px; border-radius: var(--radius);
