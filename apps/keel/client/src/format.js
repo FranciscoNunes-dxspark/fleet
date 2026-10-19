@@ -24,6 +24,21 @@ export function dateTime(iso) {
   return new Date(iso).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/** The same with its time zone ("19 Oct, 18:00 WEST"): where it matters which clock it's on (schedules). */
+export function dateTimeZone(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+}
+
+/** This device's time zone ("Europe/Lisbon"): a date-and-time field means a time on this clock. */
+export function localZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Local date and time for a datetime-local input: today at 18:00, or the next whole hour once that's near. */
 export function defaultAt(now = new Date()) {
   const d = new Date(now);

@@ -2,7 +2,7 @@ import { Fragment, useRef, useState } from 'react';
 import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age, dateTime, pct } from '../format.js';
+import { age, dateTime, dateTimeZone, pct } from '../format.js';
 import { Chip, Confirm, Empty, ErrorBox, ExternalLink, Loading, PageHeader, Toggle, pinInView } from '../ui.jsx';
 import { ApprovalsPanel, ReleasesTab } from './Releases.jsx';
 import { Trend } from './PipelineDetail.jsx';
@@ -210,7 +210,7 @@ function PipelineRow({ p, showFolder, onQueue, scheduled = false, onCancelSchedu
           <ul className="scheduled-list small">
             {p.scheduledRuns.map((s) => (
               <li key={s.id}>
-                {tj('{when} on {branch}', { when: <strong>{dateTime(s.at)}</strong>, branch: <code className="branch">{s.branch}</code> })}
+                {tj('{when} on {branch}', { when: <strong title={dateTimeZone(s.at)}>{dateTime(s.at)}</strong>, branch: <code className="branch">{s.branch}</code> })}
                 {s.ownerName && <span className="muted"> · {t('by {name}', { name: s.ownerName })}</span>}
                 {canRun && <> · <button type="button" className="link-btn" onClick={() => onCancelScheduled(s)}>{t('Cancel it')}</button></>}
               </li>
@@ -222,7 +222,7 @@ function PipelineRow({ p, showFolder, onQueue, scheduled = false, onCancelSchedu
         <div className="chips">
           {run && <Chip tone={queued ? 'muted' : 'info'}>{t(queued ? 'Queued' : 'Running')}</Chip>}
           {p.scheduledRuns?.length > 0 && (
-            <Chip tone="info" title={p.scheduledRuns.map((s) => `${dateTime(s.at)} · ${s.branch}`).join('\n')}>
+            <Chip tone="info" title={p.scheduledRuns.map((s) => `${dateTimeZone(s.at)} · ${s.branch}`).join('\n')}>
               {t('Runs {when}', { when: dateTime(p.scheduledRuns[0].at) })}{p.scheduledRuns.length > 1 ? ` +${p.scheduledRuns.length - 1}` : ''}
             </Chip>
           )}
