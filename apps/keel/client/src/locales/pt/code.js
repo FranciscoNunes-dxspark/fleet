@@ -231,6 +231,7 @@ export default {
   'When': 'Quando',
   'At': 'Em',
   'Complete at': 'Concluir em',
+  '{zone} time': 'hora de {zone}',
   'Keel completes it then, as you, if it is approved, its required checks have passed and it has no conflicts; otherwise it tells you why not. Policies are never overridden.': 'O Keel conclui-o nessa altura, em seu nome, se estiver aprovado, as verificações obrigatórias tiverem passado e não tiver conflitos; caso contrário, diz-lhe porquê. As políticas nunca são ignoradas.',
   'Scheduling…': 'A agendar…',
   'Schedule completion': 'Agendar conclusão',

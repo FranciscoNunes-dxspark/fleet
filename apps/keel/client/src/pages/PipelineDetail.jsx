@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age, dateTime, defaultAt, pct } from '../format.js';
+import { age, dateTime, dateTimeZone, defaultAt, localZone, pct } from '../format.js';
 import { t, tj, tx } from '../i18n.js';
 import { Chip, Confirm, ErrorBox, Loading } from '../ui.jsx';
 import { useProjectLabel } from '../orgs.js';
@@ -146,7 +146,7 @@ export default function PipelineDetail({ target }) {
               <li key={s.id}>
                 {s.status === 'scheduled' ? (
                   <span>
-                    {tj('{when} on {branch}', { when: <strong>{dateTime(s.at)}</strong>, branch: <code className="branch">{s.branch}</code> })}
+                    {tj('{when} on {branch}', { when: <strong>{dateTimeZone(s.at)}</strong>, branch: <code className="branch">{s.branch}</code> })}
                     {s.ownerName && <span className="muted small"> · {t('by {name}', { name: s.ownerName })}</span>}
                   </span>
                 ) : s.status === 'done' ? (
@@ -236,7 +236,8 @@ function ScheduleRunForm({ projectId, repoId, branch: home, onCancel, onSchedule
         <datalist id="schedule-run-branches">{(branches || []).map((b) => <option key={b.name} value={b.name} />)}</datalist>
       </label>
       <label className="field">{t('When')}
-        <input className="input" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} required />
+        <input className="input" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} required aria-describedby="run-at-zone" />
+        {localZone() && <span className="muted small" id="run-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
       </label>
       <div className="complete-actions">
         <button type="submit" className="btn btn-small btn-primary" disabled={busy || !branch.trim() || !at}>{busy ? t('Scheduling…') : t('Schedule run')}</button>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSticky, useStickyParams } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
-import { age, dateTime, REVIEW_STATE } from '../format.js';
+import { age, dateTime, dateTimeZone, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle, useSort } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
@@ -264,7 +264,7 @@ export default function PullRequests() {
                       {p.needsMyReview && <Chip tone="accent">{t('Your review')}</Chip>}
                       {p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}
                       {p.autoComplete && <Chip tone="ok">{t('Auto-complete')}</Chip>}
-                      {p.completesAt && <Chip tone="info">{t('Completes {when}', { when: dateTime(p.completesAt) })}</Chip>}
+                      {p.completesAt && <Chip tone="info" title={dateTimeZone(p.completesAt)}>{t('Completes {when}', { when: dateTime(p.completesAt) })}</Chip>}
                       {p.labels.map((l) => <Chip key={l}>{l}</Chip>)}
                     </div>
                   </td>

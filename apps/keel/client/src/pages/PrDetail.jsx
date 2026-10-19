@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, prPath } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age, dateTime, defaultAt, REVIEW_STATE, VOTES } from '../format.js';
+import { age, dateTime, dateTimeZone, defaultAt, localZone, REVIEW_STATE, VOTES } from '../format.js';
 import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { Markdown } from '../markdown.jsx';
 import { t, tj, tx } from '../i18n.js';
@@ -185,7 +185,7 @@ export default function PrDetail({ target }) {
           : <Chip tone={pr.status === 'completed' ? 'ok' : 'muted'}>{pr.status === 'completed' ? t('Completed') : t('Abandoned')}</Chip>}
         {pr.hasConflicts && <Chip tone="bad">{t('Merge conflicts')}</Chip>}
         {pr.autoComplete && <Chip tone="ok">{t('Auto-complete set')}</Chip>}
-        {pr.schedule?.status === 'scheduled' && <Chip tone="info">{t('Completes {when}', { when: dateTime(pr.schedule.at) })}</Chip>}
+        {pr.schedule?.status === 'scheduled' && <Chip tone="info" title={dateTimeZone(pr.schedule.at)}>{t('Completes {when}', { when: dateTime(pr.schedule.at) })}</Chip>}
         {pr.labels.map((l) => <Chip key={l}>{l}</Chip>)}
       </div>
       <p className="detail-meta">
@@ -361,7 +361,7 @@ function ScheduleNote({ s, busy, onCancel }) {
   if (s.status === 'scheduled') {
     return (
       <p className="callout small schedule-note">
-        {t('Keel will complete it {when} ({merge}), if by then it is approved, its required checks have passed and it has no conflicts.', { when: dateTime(s.at), merge: t(MERGE_LABEL[s.mergeStrategy] || s.mergeStrategy) })}
+        {t('Keel will complete it {when} ({merge}), if by then it is approved, its required checks have passed and it has no conflicts.', { when: dateTimeZone(s.at), merge: t(MERGE_LABEL[s.mergeStrategy] || s.mergeStrategy) })}
         {s.ownerName && ` ${t('Scheduled by {name}.', { name: s.ownerName })}`}
         {onCancel && <> <button type="button" className="link-btn" onClick={onCancel} disabled={busy}>{busy ? t('Canceling…') : t('Cancel it')}</button></>}
       </p>
@@ -400,7 +400,8 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule }) {
       <div className="complete-when" role="radiogroup" aria-label={t('When')}>
         <label className="check"><input type="radio" name="complete-when" checked={!later} onChange={() => setWhen('now')} /> {t('Now')}</label>
         <label className="check"><input type="radio" name="complete-when" checked={later} onChange={() => setWhen('at')} /> {t('At')}</label>
-        <input className="input" type="datetime-local" value={at} onChange={(e) => { setAt(e.target.value); setWhen('at'); }} aria-label={t('Complete at')} />
+        <input className="input" type="datetime-local" value={at} onChange={(e) => { setAt(e.target.value); setWhen('at'); }} aria-label={t('Complete at')} aria-describedby="complete-at-zone" />
+        {localZone() && <span className="muted small" id="complete-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
       </div>
       {later && <p className="muted small">{t('Keel completes it then, as you, if it is approved, its required checks have passed and it has no conflicts; otherwise it tells you why not. Policies are never overridden.')}</p>}
       {!later && pending.length > 0 && (
