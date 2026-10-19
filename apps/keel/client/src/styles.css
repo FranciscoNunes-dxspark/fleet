@@ -192,6 +192,10 @@ button { font: inherit; color: inherit; }
 .fold.folded .fold-chevron { transform: none; }
 @media (prefers-reduced-motion: reduce) { .fold-chevron { transition: none; } }
 /* Floats over the top of the page, so it's seen wherever you've scrolled to. */
+.complete-when { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.complete-when label.check { display: inline-flex; gap: 6px; align-items: center; }
+.complete-when input[type="datetime-local"] { width: auto; }
+.scheduled-runs li { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 .update-banner {
   position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 55;
   display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100vw - 32px);

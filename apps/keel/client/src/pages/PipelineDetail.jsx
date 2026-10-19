@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age, dateTime, pct } from '../format.js';
-import { t, tx } from '../i18n.js';
+import { age, dateTime, defaultAt, pct } from '../format.js';
+import { t, tj, tx } from '../i18n.js';
 import { Chip, Confirm, ErrorBox, Loading } from '../ui.jsx';
 import { useProjectLabel } from '../orgs.js';
 import { FlakyTests } from './Pipelines.jsx';
@@ -55,6 +55,7 @@ export default function PipelineDetail({ target }) {
   const [projectId, definitionId] = [target.key.slice(0, target.key.lastIndexOf(':')), target.key.slice(target.key.lastIndexOf(':') + 1)];
   const { data, error, reload } = useApi(`/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/runs`);
   const { meta, can, toast, refresh } = useApp();
+  const [scheduling, setScheduling] = useState(false);
   const [openId, setOpenId] = useState(target.buildId || null);
   const projectLabel = useProjectLabel();
 
@@ -78,6 +79,29 @@ export default function PipelineDetail({ target }) {
     runMin: seconds(r.startedAt, r.finishedAt) / 60,
     waitMin: r.queuedAt ? Math.max(0, seconds(r.queuedAt, r.startedAt) / 60) : 0,
   }));
+
+  // Run once at a set time (server/schedules.js), as you.
+  const scheduleRun = async ({ branch: on, at }) => {
+    try {
+      await api('/pipelines/schedule', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on, at } });
+      toast(t('{name} will run on {branch} {when}', { name, branch: on, when: dateTime(at) }));
+      setScheduling(false);
+      refresh();
+      reload();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  };
+  const cancelRun = async (s) => {
+    try {
+      await api(`/schedules/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
+      toast(t('Scheduled run canceled'));
+      refresh();
+      reload();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  };
 
   const queue = async () => {
     try {
@@ -113,6 +137,34 @@ export default function PipelineDetail({ target }) {
           onOpen={(r) => setOpenId(r.id)}
         />
       )}
+
+      {data.schedules?.length > 0 && (
+        <section className="detail-section">
+          <h3>{t('Scheduled runs')}</h3>
+          <ul className="mini-list scheduled-runs">
+            {data.schedules.map((s) => (
+              <li key={s.id}>
+                {s.status === 'scheduled' ? (
+                  <span>
+                    {tj('{when} on {branch}', { when: <strong>{dateTime(s.at)}</strong>, branch: <code className="branch">{s.branch}</code> })}
+                    {s.ownerName && <span className="muted small"> · {t('by {name}', { name: s.ownerName })}</span>}
+                  </span>
+                ) : s.status === 'done' ? (
+                  <span className="muted">
+                    {tj('Started {when} on {branch}', { when: dateTime(s.finishedAt || s.at), branch: <code className="branch">{s.branch}</code> })}
+                    {s.run?.webUrl && <> · <a href={s.run.webUrl} target="_blank" rel="noreferrer noopener">{t('View the run')}</a></>}
+                  </span>
+                ) : (
+                  <span className="text-warn">{tj("Didn't start ({when}) on {branch}: {reason}", { when: dateTime(s.at), branch: <code className="branch">{s.branch}</code>, reason: tx(s.reason) })}</span>
+                )}
+                {s.status === 'scheduled' && can('pipelines.run') && <button type="button" className="link-btn small" onClick={() => cancelRun(s)}>{t('Cancel it')}</button>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {scheduling && <ScheduleRunForm projectId={projectId} repoId={p?.repoId} branch={branch} onCancel={() => setScheduling(false)} onSchedule={scheduleRun} />}
 
       <section className="detail-section">
         <h3>{t('Recent runs')}</h3>
@@ -150,9 +202,47 @@ export default function PipelineDetail({ target }) {
         {can('pipelines.run') && branch && (
           <Confirm text={t('Run on {branch}?', { branch })} onConfirm={queue} className="btn btn-small btn-primary">{t('Run')}</Confirm>
         )}
+        {can('pipelines.run') && !scheduling && <button type="button" className="btn btn-small" onClick={() => setScheduling(true)}>{t('Run at…')}</button>}
         <a className="btn btn-ghost btn-small" href={`${meta.orgUrl}/${encodeURIComponent(projectName || projectId)}/_build?definitionId=${definitionId}`} target="_blank" rel="noreferrer noopener">{t('Open in Azure DevOps')} ↗</a>
       </section>
     </div>
+  );
+}
+
+/** Run once at a set time: the branch (the pipeline's own by default) and when. */
+function ScheduleRunForm({ projectId, repoId, branch: home, onCancel, onSchedule }) {
+  const { data: branches } = useApi(repoId ? `/repos/${encodeURIComponent(projectId)}/${encodeURIComponent(repoId)}/branches` : null);
+  const [branch, setBranch] = useState(home || '');
+  const [at, setAt] = useState(() => defaultAt());
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    ref.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' });
+    ref.current?.querySelector('input')?.focus({ preventScroll: true });
+  }, []);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    await onSchedule({ branch: branch.trim(), at: new Date(at).toISOString() });
+    setBusy(false);
+  };
+  return (
+    <form className="detail-section complete-form" aria-label={t('Run at a set time')} ref={ref} onSubmit={submit}>
+      <h3>{t('Run at a set time')}</h3>
+      <p className="muted small">{t('Keel starts one run then, as you, on the branch you pick. For runs that repeat (every night, say), use a schedule in the pipeline itself.')}</p>
+      <label className="field">{t('Branch')}
+        <input className="input mono" list="schedule-run-branches" value={branch} onChange={(e) => setBranch(e.target.value)} spellCheck={false} required />
+        <datalist id="schedule-run-branches">{(branches || []).map((b) => <option key={b.name} value={b.name} />)}</datalist>
+      </label>
+      <label className="field">{t('When')}
+        <input className="input" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} required />
+      </label>
+      <div className="complete-actions">
+        <button type="submit" className="btn btn-small btn-primary" disabled={busy || !branch.trim() || !at}>{busy ? t('Scheduling…') : t('Schedule run')}</button>
+        <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>{t('Cancel')}</button>
+      </div>
+    </form>
   );
 }
 

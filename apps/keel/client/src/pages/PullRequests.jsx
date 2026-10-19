@@ -264,6 +264,7 @@ export default function PullRequests() {
                       {p.needsMyReview && <Chip tone="accent">{t('Your review')}</Chip>}
                       {p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}
                       {p.autoComplete && <Chip tone="ok">{t('Auto-complete')}</Chip>}
+                      {p.completesAt && <Chip tone="info">{t('Completes {when}', { when: dateTime(p.completesAt) })}</Chip>}
                       {p.labels.map((l) => <Chip key={l}>{l}</Chip>)}
                     </div>
                   </td>

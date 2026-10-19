@@ -371,6 +371,7 @@ export function createMultiService(entries) {
         attention: parts.flatMap(({ org, value }) => tagAttention(org, value.attention)),
         myPrs: parts.flatMap(({ org, value }) => tagAll(org, value.myPrs)),
         runs: parts.flatMap(({ org, value }) => tagAll(org, value.runs)),
+        schedules: parts.flatMap(({ value }) => value.schedules || []),
         extra: parts.map((p) => p.value.extra).join('##'),
       };
     },

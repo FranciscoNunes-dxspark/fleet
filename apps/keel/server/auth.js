@@ -69,7 +69,7 @@ function readCookie(req, name) {
 const cookieName = (secure) => (secure ? '__Host-keel_session' : 'keel_session');
 
 // -------------------------------------------------------------- the module
-export function createAuth({ monitoring = null } = {}) {
+export function createAuth({ monitoring = null, schedules = null } = {}) {
   const sessionDays = Math.max(1, Number(process.env.SESSION_DAYS) || 7);
   // Demo mode keeps its accounts apart from real ones.
   const suffix = config.mock ? '.mock' : '';
@@ -145,7 +145,7 @@ export function createAuth({ monitoring = null } = {}) {
         .filter((org) => accounts.hasToken(user.id, org.key))
         .map((org) => ({
           org,
-          service: createService({ provider: providerFor(accounts.tokenOf(user.id, org.key), org), settings, monitoring: org.primary ? monitoring : null, org }),
+          service: createService({ provider: providerFor(accounts.tokenOf(user.id, org.key), org), settings, monitoring: org.primary ? monitoring : null, org, schedules, owner: user.id }),
         }));
       const service = createMultiService(entries);
       ctx = { service, watcher: createWatcher(service), lastUsed: Date.now(), sig };

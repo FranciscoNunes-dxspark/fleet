@@ -12,6 +12,7 @@ import { createOrgStore } from './orgs.js';
 import { createMultiService } from './multiorg.js';
 import { createChannels } from './channels.js';
 import { createPush } from './push.js';
+import { createSchedules } from './schedules.js';
 import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
 import { createMockVariant } from './mock/variant.js';
@@ -28,20 +29,24 @@ const monitoring = createMonitoring();
 
 if (config.authMode === 'login') {
   // Everyone signs in with their own PAT; each request runs as that person.
-  const auth = createAuth({ monitoring });
+  // Scheduled completions run as whoever scheduled them.
+  let auth = null;
+  const schedules = createSchedules({ resolveService: (ownerId) => auth.serviceFor(ownerId) });
+  auth = createAuth({ monitoring, schedules });
   // Channel posts read Azure DevOps as the Admin who set the channel up.
   const channels = createChannels({ resolveService: (ownerId) => auth.serviceFor(ownerId) });
   // Push notifications read Azure DevOps as the person whose device it is.
   const push = createPush({ resolveService: (userId) => auth.serviceFor(userId) });
   app.use('/api/auth', auth.router);
   app.use('/api/admin/users', auth.adminRouter);
-  app.use('/api', auth.requireUser, apiRouter({ channels, push }));
+  app.use('/api', auth.requireUser, apiRouter({ channels, push, schedules }));
   auth.announceSetup();
 } else {
   // One person: the PAT in .env (or demo data), used for every organization
   // (create it for "All accessible organizations" when there are several).
   const orgStore = createOrgStore();
   const settings = createSettingsStore(defaultSettingsFile());
+  const schedules = createSchedules({ resolveService: () => localCtx().service });
   let ctx = null;
   const localCtx = () => {
     if (ctx?.sig === orgStore.signature()) return ctx;
@@ -53,6 +58,7 @@ if (config.authMode === 'login') {
         settings,
         monitoring: org.primary ? monitoring : null,
         org,
+        schedules,
       }),
     }));
     const service = createMultiService(entries);
@@ -66,7 +72,7 @@ if (config.authMode === 'login') {
   app.use('/api', (req, res, next) => {
     req.ctx = localCtx();
     next();
-  }, apiRouter({ channels, push }));
+  }, apiRouter({ channels, push, schedules }));
 }
 
 const dist = path.join(config.root, 'dist');
