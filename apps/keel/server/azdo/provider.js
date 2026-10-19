@@ -202,6 +202,8 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
       author: ident(r.createdBy),
       createdAt: r.creationDate,
       closedAt: r.closedDate || null,
+      // Who completed or abandoned it.
+      closedBy: r.closedBy ? ident(r.closedBy) : null,
       status: r.status,
       isDraft: !!r.isDraft,
       mergeStatus: r.mergeStatus || 'notSet',

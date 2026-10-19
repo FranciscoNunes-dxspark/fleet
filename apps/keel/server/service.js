@@ -907,6 +907,14 @@ export function createService({
       return { prs, repos: repoList, people: team };
     },
 
+    /** Pull requests completed or abandoned in the last `days` days (7, 30 or 90), newest first. */
+    async closedPullRequests(days) {
+      if (![7, 30, 90].includes(days)) throw Object.assign(new Error('Pick 7, 30 or 90 days'), { status: 400 });
+      const [closed, who, repoList, team] = await Promise.all([closedPRs(days), me(), repos(), people()]);
+      const prs = closed.map((pr) => enrichPR(pr, who)).sort((a, b) => Date.parse(b.closedAt) - Date.parse(a.closedAt));
+      return { prs, repos: repoList, people: team, days };
+    },
+
     async pullRequest(projectId, repoId, id) {
       const [who, pr] = await Promise.all([me(), cached(`pr:${projectId}/${repoId}/${id}`, () => provider.getPullRequest(projectId, repoId, id), 30 * 1000)]);
       return enrichPR(pr, who);
