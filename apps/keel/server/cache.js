@@ -6,6 +6,7 @@ export class Cache {
     this.entries = new Map();
   }
 
+  /** ttlMs may be a function of the loaded value, to keep some answers longer than others. */
   async get(key, loader, ttlMs = this.defaultTtlMs) {
     const hit = this.entries.get(key);
     if (hit && (hit.pending || hit.expires > Date.now())) return hit.pending ?? hit.value;
@@ -14,7 +15,7 @@ export class Cache {
     this.entries.set(key, { pending });
     try {
       const value = await pending;
-      this.entries.set(key, { value, expires: Date.now() + ttlMs });
+      this.entries.set(key, { value, expires: Date.now() + (typeof ttlMs === 'function' ? ttlMs(value) : ttlMs) });
       return value;
     } catch (err) {
       this.entries.delete(key);

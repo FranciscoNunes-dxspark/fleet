@@ -53,14 +53,27 @@ export function durationTrend(runs, now = Date.now()) {
  * judged on the pipeline's home branch (PR validation runs ignored); "last
  * run" is simply its newest completed run, whatever branch or trigger.
  */
+// The "Manual validation" task of an agentless job: someone resumes or rejects the run.
+const MANUAL_VALIDATION = '2003ad3a-104a-451a-9238-60474ab294e6';
+const isManualValidation = (r) => r.type === 'Task' && (r.task?.id === MANUAL_VALIDATION || r.task?.name === 'ManualValidation');
+
 /**
- * A run that failed only because its approval check wasn't given (someone declined it, or it
- * timed out) and nothing in it failed. Azure DevOps reports such a run as failed; it isn't one:
- * Keel calls it "declined" and leaves it out of health, pass rate, streaks and deploys.
+ * A run that failed only because it wasn't approved: an environment's approval check
+ * (Checkpoint.Approval) or a Manual validation task was declined (or timed out), and nothing
+ * else failed. Azure DevOps reports such a run as failed; it isn't one: Keel calls it
+ * "declined" and leaves it out of health, pass rate, streaks and deploys.
+ *
+ * A rejected Manual validation fails its task, and with it its job, phase and stage; those
+ * failures are the rejection, not something broken. Any other failed task or job is.
  */
 export function wasDeclined(timeline = []) {
-  const notApproved = timeline.some((r) => r.type === 'Checkpoint.Approval' && r.state === 'completed' && r.result !== 'succeeded' && r.result !== 'skipped');
-  return notApproved && !timeline.some((r) => (r.type === 'Task' || r.type === 'Job') && r.result === 'failed');
+  const rejected = timeline.filter((r) => isManualValidation(r) && r.result === 'failed');
+  const notApproved = rejected.length > 0
+    || timeline.some((r) => r.type === 'Checkpoint.Approval' && r.state === 'completed' && r.result !== 'succeeded' && r.result !== 'skipped');
+  if (!notApproved) return false;
+  const byRejection = new Set(rejected.map((r) => r.parentId)); // the jobs a rejected validation failed
+  return !timeline.some((r) => r.result === 'failed'
+    && ((r.type === 'Task' && !isManualValidation(r)) || (r.type === 'Job' && !byRejection.has(r.id))));
 }
 
 export function pipelineHealth(builds, repos, definitions = []) {

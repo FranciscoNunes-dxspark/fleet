@@ -992,6 +992,8 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } 
         warningCount: r.warningCount || 0,
         issues: (r.issues || []).slice(0, 10).map((i) => ({ type: i.type, message: String(i.message || '').slice(0, 600) })),
         logId: r.log?.id ?? null,
+        // Which task a step ran (ManualValidation, say), for telling a declined run from a failed one.
+        task: r.task ? { id: r.task.id || null, name: r.task.name || null } : null,
       }));
     },
 

@@ -21,6 +21,30 @@ test('declined: failed only because the approval was not given', () => {
   assert.equal(wasDeclined([{ ...rec('Checkpoint.Approval', null), state: 'inProgress' }]), false);
 });
 
+test('declined: a rejected Manual validation task (a real run, build 18490)', () => {
+  // As Azure DevOps reported it: the task failed, and with it its job, phase and the CHECK stage;
+  // the stages after it were skipped and the stage's own checkpoint succeeded.
+  const mv = { id: 'mv', parentId: 'job', type: 'Task', name: 'ManualValidation', state: 'completed', result: 'failed', task: { id: '2003ad3a-104a-451a-9238-60474ab294e6', name: 'ManualValidation' } };
+  const timeline = [
+    { id: 'europe-west', parentId: null, type: 'Stage', name: 'AzureEUROPEWEST', state: 'completed', result: 'skipped' },
+    { id: 'cp', parentId: 'check', type: 'Checkpoint', name: 'Checkpoint', state: 'completed', result: 'succeeded' },
+    mv,
+    { id: 'job', parentId: 'phase', type: 'Job', name: 'Wait for external validation', state: 'completed', result: 'failed' },
+    { id: 'europe-phase', parentId: 'europe', type: 'Phase', name: 'AzureEUROPE', state: 'completed', result: 'skipped' },
+    { id: 'europe', parentId: null, type: 'Stage', name: 'AzureEUROPE', state: 'completed', result: 'skipped' },
+    { id: 'phase', parentId: 'check', type: 'Phase', name: 'Wait for external validation', state: 'completed', result: 'failed' },
+    { id: 'check', parentId: null, type: 'Stage', name: 'CHECK', state: 'completed', result: 'failed' },
+    { id: 'report', parentId: 'job', type: 'Task', name: 'Report build status', state: 'completed', result: 'succeeded', task: null },
+  ];
+  assert.equal(wasDeclined(timeline), true);
+  // Resumed (approved) and something else failed later: a failure.
+  assert.equal(wasDeclined([{ ...mv, result: 'succeeded' }, rec('Task', 'failed', { id: 'deploy' })]), false);
+  // Rejected, but a build step had already failed in another job: still a failure.
+  assert.equal(wasDeclined([...timeline, rec('Task', 'failed', { id: 'build', parentId: 'build-job' }), rec('Job', 'failed', { id: 'build-job' })]), false);
+  // Recognised by the task's name too, when its id isn't there.
+  assert.equal(wasDeclined(timeline.map((r) => (r.id === 'mv' ? { ...r, task: { id: null, name: 'ManualValidation' } } : r))), true);
+});
+
 const run = (id, result, hAgo) => ({
   id, projectId: 'p1', projectName: 'Shop', definition: { id: 5, name: 'web' }, buildNumber: `B${id}`, status: 'completed', result,
   reason: 'individualCI', sourceBranch: 'main', repoId: 'r1', repoName: 'web', queuedAt: at(hAgo + 0.2), startedAt: at(hAgo + 0.1), finishedAt: at(hAgo), webUrl: `u${id}`,
@@ -81,4 +105,16 @@ test('a run declined at its approval is not failing, and not a deploy', async ()
   const { targets: [env] } = await service.undeployed();
   assert.equal(env.lastFailed.label, 'B2');
   assert.equal(env.lastDeploy.label, 'B1');
+});
+
+test('cache: an answer can be kept for a time that depends on it', async () => {
+  const { Cache } = await import('../server/cache.js');
+  const cache = new Cache();
+  let reads = 0;
+  const load = (v) => () => (reads++, v);
+  const ttl = (yes) => (yes ? 60_000 : -1); // "no" is stale at once
+  assert.equal(await cache.get('a', load(false), ttl), false);
+  assert.equal(await cache.get('a', load(true), ttl), true, 'a "no" is read again');
+  assert.equal(await cache.get('a', load(false), ttl), true, 'a "yes" is kept');
+  assert.equal(reads, 2);
 });
