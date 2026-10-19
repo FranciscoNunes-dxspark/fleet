@@ -47,3 +47,18 @@ test('Application Insights: failures are 5xx, 404s are counted apart', async (t)
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a reading taken the old way (404s counted as failures) is not shown as server errors', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-ai-old-'));
+  try {
+    const old = { checks: [], ai: { at: new Date().toISOString(), total: 653, failed: 89, failRate: 0.14, topFailures: [{ name: 'GET wp-content/plugins', code: '404', count: 2 }], series: [] }, aiError: null };
+    fs.writeFileSync(path.join(dir, 'monitors.json'), JSON.stringify({ monitors: [{ id: 'm1', name: 'CAR Jamor', url: '', appInsightsAppId: '0f1e2d3c-0000-4000-8000-000000000000', apiKey: null, link: null }] }));
+    fs.writeFileSync(path.join(dir, 'monitor-history.json'), JSON.stringify({ m1: old }));
+    const monitoring = createMonitoring({ dataDir: dir, mock: false });
+    assert.equal(monitoring.status()[0].ai, null, 'waits for the next reading');
+    fs.writeFileSync(path.join(dir, 'monitor-history.json'), JSON.stringify({ m1: { ...old, ai: { ...old.ai, format: 2, notFound: 40 } } }));
+    assert.equal(monitoring.status()[0].ai.notFound, 40);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

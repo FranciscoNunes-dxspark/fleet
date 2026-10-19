@@ -120,6 +120,9 @@ async function aiQuery(appId, apiKey, kql) {
 // Failures are server errors (5xx). Application Insights also marks 4xx responses as failed, but a
 // 404 is mostly bots and stale links asking for pages that don't exist: those are counted apart.
 const SERVER_ERROR = 'toint(resultCode) >= 500';
+// Readings are kept in the data folder between reads; one taken by an older Keel, which counted
+// every unsuccessful request (404s included), isn't shown as server errors: it waits for the next.
+const AI_FORMAT = 2;
 const NOT_FOUND = 'resultCode == "404"';
 
 async function aiSnapshot(appId, apiKey) {
@@ -134,6 +137,7 @@ async function aiSnapshot(appId, apiKey) {
   const total = sum('total');
   const failed = sum('failed');
   return {
+    format: AI_FORMAT,
     at: new Date().toISOString(),
     total,
     failed,
@@ -189,7 +193,7 @@ function demoAi(m) {
   const total = lastHour.reduce((s, b) => s + b.total, 0);
   const failed = lastHour.reduce((s, b) => s + b.failed, 0);
   return {
-    at: new Date().toISOString(), total, failed, failRate: total ? failed / total : 0, p95: lastHour.at(-1).p95,
+    format: AI_FORMAT, at: new Date().toISOString(), total, failed, failRate: total ? failed / total : 0, p95: lastHour.at(-1).p95,
     exceptions: m.demo === 'errors' ? 212 : 3,
     topFailures: m.demo === 'errors' ? [{ name: 'POST /connect/token', code: '500', count: 96 }, { name: 'GET /users/me', code: '502', count: 31 }] : [],
     notFound: lastHour.reduce((s, b) => s + b.notFound, 0),
@@ -585,7 +589,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
           // Downsampled to ~96 points for sparklines.
           history: checks.filter((_, i) => i % Math.max(1, Math.ceil(checks.length / 96)) === 0 || i === checks.length - 1)
             .map((c) => ({ at: c.at, ok: c.ok, ms: c.ms })),
-          ai: s.ai,
+          ai: s.ai?.format === AI_FORMAT ? s.ai : null,
           aiError: s.aiError,
           platform: s.platform || null,
           totalsError: hasTotals(m) ? totalsStore.get()[m.id]?.lastError || null : null,
