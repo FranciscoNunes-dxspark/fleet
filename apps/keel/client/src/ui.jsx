@@ -5,19 +5,19 @@ import { t } from './i18n.js';
 import { useApp } from './context.js';
 import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
+import { BG, PALETTE, pinchPixels } from './pinch.js';
 
-/** Keel's mark: a sailboat on the water, its keel and ballast bulb below the waterline (same drawing as public/favicon.svg). */
+// Pinch on the dark square, one rect per run of same-coloured pixels. Built once: the drawing never changes.
+const LOGO_RUNS = pinchPixels().flatMap((row, y) =>
+  [...row.matchAll(/([^.])\1*/g)].map((m) => ({ x: m.index + 2, y: y + 5, w: m[0].length, fill: PALETTE[m[1]] })),
+);
+
+/** Keel's mark: Pinch the crab, without the Azure DevOps badge the app icons carry (same pixels as public/favicon.svg). */
 export function Logo({ size = 28 }) {
   return (
-    <svg className="brand-mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <rect width="32" height="32" rx="7" fill="var(--accent)" />
-      <path d="M0 16.4c2.7 0 2.7-1.1 5.3-1.1s2.7 1.1 5.4 1.1 2.6-1.1 5.3-1.1 2.7 1.1 5.3 1.1 2.7-1.1 5.4-1.1 2.6 1.1 5.3 1.1V25a7 7 0 0 1-7 7H7a7 7 0 0 1-7-7z" fill="color-mix(in srgb, var(--accent) 72%, #000)" />
-      <path d="M14.8 3.2v8.6H8z" fill="#ffffff" />
-      <path d="M16.2 4.6v7.2h6.3z" fill="#ffffff" opacity=".8" />
-      <path d="M4.5 12.8h23c-1.7 2.7-4.6 4.2-8.3 4.2h-9c-3 0-4.9-1.1-5.7-2.6z" fill="#ffffff" />
-      <path d="M15.2 17h4.6l-3.6 6h-2.7z" fill="#ffffff" />
-      <path d="M9 24.1c1.7-1.2 3.7-1.8 5.9-1.8 2.5 0 4.3.8 4.3 1.8s-1.8 1.8-4.3 1.8c-2.2 0-4.2-.6-5.9-1.8z" fill="#ffffff" />
-      <path d="M6.6 16.4h1.9l-.5 3.4h-1.2z" fill="#ffffff" />
+    <svg className="brand-mark" width={size} height={size} viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <rect width="20" height="20" rx="3.6" fill={BG} />
+      {LOGO_RUNS.map((r) => <rect key={`${r.x},${r.y}`} x={r.x} y={r.y} width={r.w} height="1.02" fill={r.fill} />)}
     </svg>
   );
 }

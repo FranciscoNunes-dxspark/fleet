@@ -16,6 +16,7 @@ node --test test/flow.test.js                          # one test file
 node --test --test-name-pattern="Manual validation" test/deploying-stage.test.js   # one test
 node scripts/check-syntax.mjs client/src/pages/Board.jsx   # parse-check client files without a build; also flags t()/tx()/tj() used without importing from i18n.js
 node scripts/missing-pt.mjs client/src/pages/Totals.jsx    # list t()/tj() strings with no Portuguese translation
+node scripts/logo.mjs                                     # regenerate the favicon, app icons and assets/ from client/src/pinch.js
 ```
 
 To try accounts and roles on demo data, set `AUTH_MODE=login` and `AZDO_MOCK=1`. Demo accounts are kept apart from real ones (`.mock`-suffixed data files).
@@ -42,7 +43,7 @@ To try accounts and roles on demo data, set `AUTH_MODE=login` and `AZDO_MOCK=1`.
 - A declined approval (classic stage rejected, YAML approval check or Manual validation rejected or timed out) counts as **declined**, not failed. It is excluded from health, pass rate, streaks, alerts, deploys and DORA (`domain/pipelines.js` `wasDeclined`).
 - Production environments are the stages or pipelines that production monitors link to, plus classic stages matching `/prod|production|prd|live/`.
 
-**Client.** `App.jsx` handles routes and the app shell. `context.js` `useApi(path)` refetches whenever the app-wide `refreshKey` changes (after writes, SSE `changed`, or Refresh). `prefs.js` holds account-synced preferences (theme, language, notifications, dashboard, saved views), with a localStorage copy; the server copy wins at startup. Pages live in `client/src/pages/`. Shared UI is in `ui.jsx`, `charts.jsx`, `views.jsx` and `palette.jsx` (Ctrl+K search).
+**Client.** `App.jsx` handles routes and the app shell. `context.js` `useApi(path)` refetches whenever the app-wide `refreshKey` changes (after writes, SSE `changed`, or Refresh). `prefs.js` holds account-synced preferences (theme, language, notifications, dashboard, saved views), with a localStorage copy; the server copy wins at startup. Pages live in `client/src/pages/`. Pinch, the crab in the logo, is pixel art in `pinch.js`; the favicon, app icons and `assets/` are generated from it by `scripts/logo.mjs`, so don't hand-edit them. Shared UI is in `ui.jsx`, `charts.jsx`, `views.jsx` and `palette.jsx` (Ctrl+K search).
 
 ## i18n (English + European Portuguese)
 
