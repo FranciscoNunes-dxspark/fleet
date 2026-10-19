@@ -65,8 +65,9 @@ const HEALTH = {
   healthy: { tone: 'ok', label: 'Healthy' },
   unknown: { tone: 'muted', label: 'No runs' },
 };
-const RESULT = { succeeded: 'ok', partiallySucceeded: 'warn', failed: 'bad', canceled: 'muted' };
-const RESULT_LABEL = { succeeded: 'succeeded', failed: 'failed', partiallySucceeded: 'partially succeeded', canceled: 'canceled' };
+// "declined": failed in Azure DevOps only because its approval wasn't given (server/domain/pipelines.js).
+const RESULT = { succeeded: 'ok', partiallySucceeded: 'warn', failed: 'bad', canceled: 'muted', declined: 'muted' };
+const RESULT_LABEL = { succeeded: 'succeeded', failed: 'failed', partiallySucceeded: 'partially succeeded', canceled: 'canceled', declined: 'declined' };
 const resultLabel = (r) => (RESULT_LABEL[r] ? t(RESULT_LABEL[r]) : r);
 const RUNNING = '__running__';
 
@@ -206,7 +207,7 @@ function PipelineRow({ p, showFolder, onQueue }) {
       <td className="small">
         {p.lastRun ? <>
           <a href={p.lastRun.webUrl} target="_blank" rel="noreferrer noopener" title={`${resultLabel(p.lastRun.result)} · ${dateTime(p.lastRun.finishedAt)}`}>{p.lastRun.buildNumber}</a>
-          {p.lastRun.result !== 'succeeded' && <span className={`small text-${RESULT[p.lastRun.result] === 'bad' ? 'bad' : 'warn'}`}> {resultLabel(p.lastRun.result)}</span>}
+          {p.lastRun.result !== 'succeeded' && <span className={`small ${{ bad: 'text-bad', muted: 'muted' }[RESULT[p.lastRun.result]] || 'text-warn'}`}> {resultLabel(p.lastRun.result)}</span>}
           <div className="muted">
             {t('{age} ago', { age: age(p.lastRun.finishedAt) })} · {p.lastRun.requestedFor?.displayName}
             {p.lastRun.sourceBranch !== p.branch && <> · <code className="branch">{p.lastRun.sourceBranch.replace(/^refs\/pull\/(\d+)\/merge$/, 'PR $1')}</code></>}

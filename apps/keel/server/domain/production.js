@@ -17,7 +17,7 @@ export function deployMarkers(monitor, { releases = [], pipelines = [], builds =
     if (!def) return [];
     return def.releases
       .map((r) => ({ r, s: r.stages.find((x) => !link.stage || x.name === link.stage) }))
-      .filter(({ s }) => s && s.at && !['notStarted', 'undefined', 'canceled'].includes(s.status))
+      .filter(({ s }) => s && s.at && !['notStarted', 'undefined', 'canceled', 'declined'].includes(s.status))
       .map(({ r, s }) => ({ id: r.id, at: s.at, label: r.name, status: s.status, by: s.requestedFor?.displayName || null, webUrl: r.webUrl }))
       .filter((d) => Date.parse(d.at) >= since)
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));

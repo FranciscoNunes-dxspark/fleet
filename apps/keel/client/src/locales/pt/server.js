@@ -114,6 +114,7 @@ export default {
   'Your run of {pipeline} partially succeeded': 'A sua execução de {pipeline} foi parcialmente concluída',
   'Your run of {pipeline} failed': 'A sua execução de {pipeline} falhou',
   'Your run of {pipeline} was canceled': 'A sua execução de {pipeline} foi cancelada',
+  'Your run of {pipeline} was declined': 'A sua execução de {pipeline} foi recusada',
   'Your run of {pipeline} finished': 'A sua execução de {pipeline} terminou',
   '{build} on refs/{ref}': '{build} em refs/{ref}',
 

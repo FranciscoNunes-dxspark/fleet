@@ -8,7 +8,7 @@ import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
 import { DAY, HOUR, enrichPR, sameIdentity } from './domain/prs.js';
 import { releaseHealth } from './domain/releases.js';
-import { pipelineHealth } from './domain/pipelines.js';
+import { pipelineHealth, wasDeclined } from './domain/pipelines.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
@@ -259,12 +259,31 @@ export function createService({
     return Object.fromEntries(projects.map((p, i) => [p.id, maps[i]]));
   }, 30 * MIN);
 
+  // A failed run that was only declined at an approval check (domain/pipelines.js). A finished run
+  // never changes, so each is read once a day at most; one that can't be read stays "failed".
+  const declinedRun = (projectId, id) => cached(`declined:${id}`, async () => wasDeclined(await provider.getBuildTimeline(projectId, id)), 24 * 60 * MIN).catch(() => false);
+
+  /** Runs with result "declined" instead of "failed" where that's what happened: the newest `perPipeline` failed runs of each pipeline. */
+  async function markDeclined(runs, perPipeline = 5) {
+    const seen = new Map();
+    const candidates = runs
+      .filter((b) => b.status === 'completed' && b.result === 'failed' && b.reason !== 'pullRequest')
+      .sort((a, b) => Date.parse(b.finishedAt) - Date.parse(a.finishedAt))
+      .filter((b) => {
+        const k = `${b.projectId}:${b.definition?.id}`;
+        seen.set(k, (seen.get(k) || 0) + 1);
+        return seen.get(k) <= perPipeline;
+      });
+    const ids = new Set((await Promise.all(candidates.map(async (b) => ((await declinedRun(b.projectId, b.id)) ? b.id : null)))).filter(Boolean));
+    return ids.size ? runs.map((b) => (ids.has(b.id) ? { ...b, result: 'declined' } : b)) : runs;
+  }
+
   // Every build in tracked projects (any repo): also used to map release artifacts to repos.
   const rawBuilds = () => cached('builds:raw', async () => {
     const settings = await store.load();
     const days = settings.thresholds.buildLookbackDays;
     const lists = await Promise.all((await tracked()).map((p) => provider.listBuilds(p.id, { sinceDays: days })));
-    return lists.flat();
+    return markDeclined(lists.flat());
   });
 
   // Definitions change rarely; the Refresh button (or 10 minutes) picks up new ones.
@@ -393,7 +412,12 @@ export function createService({
   /** One environment's deploys over the last `days` days, newest first, each with the commit it shipped. */
   const deployHistory = (target, days) => cached(`builds:deploys:${target.key}:${target.branch || ''}:${days}`, async () => {
     const since = new Date(Date.now() - days * DAY).toISOString();
-    return (await provider.listDeployments(target, { since })).filter((d) => d.at).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    const list = (await provider.listDeployments(target, { since })).filter((d) => d.at).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    if (target.type !== 'pipeline') return list;
+    // A run declined at its approval deployed nothing: not a deploy, let alone a failed one.
+    const runs = await markDeclined(list.map((d) => ({ ...d, status: 'completed', result: d.status, projectId: target.projectId, definition: { id: target.definitionId }, finishedAt: d.at })), 20);
+    const declined = new Set(runs.filter((r) => r.result === 'declined').map((r) => r.id));
+    return list.filter((d) => !declined.has(d.id));
   }, 5 * MIN);
 
   // What one commit has over another never changes.
@@ -1266,7 +1290,7 @@ export function createService({
       const id = Number(definitionId);
       const [rows, runs] = await Promise.all([
         pipelines(),
-        cached(`builds:runs:${projectId}:${id}`, () => provider.listDefinitionRuns(projectId, id, { top: 25 }), MIN),
+        cached(`builds:runs:${projectId}:${id}`, async () => markDeclined(await provider.listDefinitionRuns(projectId, id, { top: 25 }), 25), MIN),
       ]);
       return { pipeline: rows.find((r) => r.projectId === projectId && r.definition.id === id) || null, runs };
     },

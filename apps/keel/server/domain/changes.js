@@ -13,6 +13,7 @@ const RUN_TITLE = {
   partiallySucceeded: (p) => `Your run of ${p} partially succeeded`,
   failed: (p) => `Your run of ${p} failed`,
   canceled: (p) => `Your run of ${p} was canceled`,
+  declined: (p) => `Your run of ${p} was declined`,
 };
 
 const CATEGORY_BY_KIND = { approval: 'approval', review: 'review', pipeline: 'pipeline', work: 'work', pr: 'pr', production: 'production' };
@@ -81,7 +82,7 @@ export function diffSnapshots(prev, next) {
   const wasRunning = new Set(prev.runs.filter((b) => b.status !== 'completed').map((b) => b.id));
   for (const b of next.runs) {
     if (!b.mine || b.status !== 'completed' || !wasRunning.has(b.id)) continue;
-    const ok = b.result === 'succeeded';
+    const ok = b.result === 'succeeded' || b.result === 'declined';
     out.push({
       key: `run:${b.org ? `${b.org}:` : ''}${b.id}`,
       category: 'run',

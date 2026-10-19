@@ -13,11 +13,11 @@ const HEALTH = {
   unknown: { tone: 'muted', label: 'Never deployed' },
 };
 const STAGE_TONE = {
-  succeeded: 'ok', partiallySucceeded: 'warn', rejected: 'bad', canceled: 'muted',
+  succeeded: 'ok', partiallySucceeded: 'warn', rejected: 'bad', canceled: 'muted', declined: 'muted',
   inProgress: 'info', queued: 'info', scheduled: 'info', notStarted: 'muted',
 };
 const STAGE_LABEL = {
-  succeeded: 'Succeeded', partiallySucceeded: 'Partially succeeded', rejected: 'Failed', canceled: 'Canceled',
+  succeeded: 'Succeeded', partiallySucceeded: 'Partially succeeded', rejected: 'Failed', canceled: 'Canceled', declined: 'Declined',
   inProgress: 'Deploying', queued: 'Queued', scheduled: 'Scheduled', notStarted: 'Not deployed',
 };
 // Labels are English keys, translated when shown; unknown Azure DevOps statuses pass through.

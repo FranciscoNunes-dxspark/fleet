@@ -53,6 +53,16 @@ export function durationTrend(runs, now = Date.now()) {
  * judged on the pipeline's home branch (PR validation runs ignored); "last
  * run" is simply its newest completed run, whatever branch or trigger.
  */
+/**
+ * A run that failed only because its approval check wasn't given (someone declined it, or it
+ * timed out) and nothing in it failed. Azure DevOps reports such a run as failed; it isn't one:
+ * Keel calls it "declined" and leaves it out of health, pass rate, streaks and deploys.
+ */
+export function wasDeclined(timeline = []) {
+  const notApproved = timeline.some((r) => r.type === 'Checkpoint.Approval' && r.state === 'completed' && r.result !== 'succeeded' && r.result !== 'skipped');
+  return notApproved && !timeline.some((r) => (r.type === 'Task' || r.type === 'Job') && r.result === 'failed');
+}
+
 export function pipelineHealth(builds, repos, definitions = []) {
   const repoDefault = new Map(repos.map((r) => [r.id, r.defaultBranch]));
   const byDef = new Map();
@@ -72,7 +82,8 @@ export function pipelineHealth(builds, repos, definitions = []) {
       .sort((a, b) => (a.status === 'notStarted') - (b.status === 'notStarted')
         || Date.parse(b.startedAt || b.queuedAt) - Date.parse(a.startedAt || a.queuedAt));
     const latest = completed[0] || null;
-    const judged = completed.filter((b) => b.result !== 'canceled');
+    // Canceled and declined runs (see wasDeclined) say nothing about whether the pipeline works.
+    const judged = completed.filter((b) => b.result !== 'canceled' && b.result !== 'declined');
     const passRate = judged.length ? judged.filter((b) => b.result === 'succeeded').length / judged.length : null;
 
     let failStreak = 0;
@@ -83,8 +94,8 @@ export function pipelineHealth(builds, repos, definitions = []) {
     const lastGreen = judged.find((b) => b.result === 'succeeded');
 
     let health = 'unknown';
-    if (latest?.result === 'failed') health = 'failing';
-    else if (latest?.result === 'partiallySucceeded' || (passRate !== null && passRate < 0.8)) health = 'unstable';
+    if (judged[0]?.result === 'failed') health = 'failing';
+    else if (judged[0]?.result === 'partiallySucceeded' || (passRate !== null && passRate < 0.8)) health = 'unstable';
     else if (latest) health = 'healthy';
 
     rows.push({
