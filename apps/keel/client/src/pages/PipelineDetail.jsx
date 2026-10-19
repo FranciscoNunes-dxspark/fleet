@@ -35,7 +35,8 @@ const RESULT = {
 function statusOf({ status, state, result }) {
   const s = status || state;
   if (s === 'notStarted' || s === 'pending') return { tone: 'muted', label: s === 'pending' ? 'waiting' : 'queued', live: false };
-  if (s === 'inProgress' || s === 'cancelling') return { tone: 'info', label: 'running', live: true };
+  if (s === 'cancelling') return { tone: 'muted', label: 'canceling', live: true };
+  if (s === 'inProgress') return { tone: 'info', label: 'running', live: true };
   return { ...(RESULT[result] || { tone: 'muted', label: result || 'finished' }), live: false };
 }
 
@@ -96,6 +97,18 @@ export default function PipelineDetail({ target }) {
     try {
       await api(`/schedules/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
       toast(t('Scheduled run canceled'));
+      refresh();
+      reload();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  };
+
+  // Cancel a queued or running run (not a scheduled one: that's cancelRun above).
+  const stopRun = async (r) => {
+    try {
+      await api('/pipelines/cancel', { method: 'POST', body: { projectId, buildId: r.id } });
+      toast(t('Canceling {run}', { run: r.buildNumber }));
       refresh();
       reload();
     } catch (e) {
@@ -189,6 +202,11 @@ export default function PipelineDetail({ target }) {
                     {r.startedAt && <> · {duration(seconds(r.startedAt, r.finishedAt))}</>}
                   </span>
                 </button>
+                {open && can('pipelines.run') && (r.status === 'notStarted' || r.status === 'inProgress') && (
+                  <div className="run-cancel">
+                    <Confirm text={t('Cancel {run}?', { run: r.buildNumber })} onConfirm={() => stopRun(r)} className="btn btn-small btn-ghost text-bad">{t('Cancel run')}</Confirm>
+                  </div>
+                )}
                 {open && <RunDetail projectId={projectId} run={r} />}
               </li>
             );

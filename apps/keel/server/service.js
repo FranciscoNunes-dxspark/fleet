@@ -1359,6 +1359,14 @@ export function createService({
       };
     },
 
+    /** Cancel a queued or running run in a tracked project. */
+    async cancelBuild(projectId, buildId) {
+      if (!(await tracked()).some((p) => p.id === projectId)) throw Object.assign(new Error('Unknown project'), { status: 400 });
+      const result = await provider.cancelBuild(projectId, Number(buildId));
+      cache.invalidate('builds');
+      return result;
+    },
+
     async queueBuild(projectId, definitionId, branch) {
       const result = await provider.queueBuild(projectId, Number(definitionId), branch);
       cache.invalidate('builds');

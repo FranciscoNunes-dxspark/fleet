@@ -117,6 +117,17 @@ function BuildsTab({ data }) {
     return next;
   });
 
+  // Cancel a queued or running run (Azure DevOps stops it; it shows as canceled).
+  const cancelRun = async (run) => {
+    try {
+      await api('/pipelines/cancel', { method: 'POST', body: { projectId: run.projectId, buildId: run.id } });
+      toast(t('Canceling {run}', { run: run.buildNumber }));
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+  };
+
   const cancelScheduled = async (s) => {
     try {
       await api(`/schedules/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
@@ -178,7 +189,7 @@ function BuildsTab({ data }) {
                       </tr>
                     )}
                     {!isCollapsed && g.rows.map((p) => (
-                      <PipelineRow key={p.key} p={p} showFolder={!byFolder || g.key === RUNNING || g.key === SCHEDULED} onQueue={queue} scheduled={g.key === SCHEDULED} onCancelScheduled={cancelScheduled} />
+                      <PipelineRow key={p.key} p={p} showFolder={!byFolder || g.key === RUNNING || g.key === SCHEDULED} onQueue={queue} onCancel={cancelRun} scheduled={g.key === SCHEDULED} onCancelScheduled={cancelScheduled} />
                     ))}
                   </Fragment>
                 );
@@ -191,7 +202,7 @@ function BuildsTab({ data }) {
   );
 }
 
-function PipelineRow({ p, showFolder, onQueue, scheduled = false, onCancelScheduled }) {
+function PipelineRow({ p, showFolder, onQueue, onCancel, scheduled = false, onCancelScheduled }) {
   const { can, openDrawer, meta } = useApp();
   const canRun = can('pipelines.run');
   const rowRef = useRef(null);
@@ -260,6 +271,7 @@ function PipelineRow({ p, showFolder, onQueue, scheduled = false, onCancelSchedu
       <td className={`num ${p.passRate !== null && p.passRate < 0.8 ? 'text-warn strong' : ''}`}>{pct(p.passRate)}</td>
       <td className="num muted">{p.medianDurationMin != null ? `${Math.round(p.medianDurationMin)}m` : '—'}<Trend trend={p.durationTrend} /></td>
       <td className="row-actions">
+        {canRun && run && <Confirm text={t('Cancel {run}?', { run: run.buildNumber })} onConfirm={() => onCancel(run)} className="btn btn-small btn-ghost text-bad">{t('Cancel')}</Confirm>}
         {canRun && <Confirm text={t('Run on {branch}?', { branch: p.branch })} onConfirm={() => onQueue(p, rowRef.current)} className="btn btn-small btn-ghost">{t('Run')}</Confirm>}
         <ExternalLink href={(run || p.lastRun)?.webUrl || p.webUrl}>{t('Open')}</ExternalLink>
       </td>

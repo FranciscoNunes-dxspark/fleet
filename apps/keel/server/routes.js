@@ -186,6 +186,10 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   r.get('/pipelines/:projectId/:definitionId/runs', async (req, res) => res.json(await req.ctx.service.pipelineRuns(req.params.projectId, req.params.definitionId)));
   r.get('/builds/:projectId/:buildId', async (req, res) => res.json(await req.ctx.service.runDetails(req.params.projectId, req.params.buildId)));
   r.get('/tests/flaky', async (req, res) => res.json(await req.ctx.service.flakyTests()));
+  r.post('/pipelines/cancel', need('pipelines.run'), async (req, res) => {
+    const { projectId, buildId } = req.body || {};
+    res.json(await req.ctx.service.cancelBuild(String(projectId || ''), num(buildId)));
+  });
   r.post('/pipelines/queue', need('pipelines.run'), async (req, res) => {
     const { projectId, definitionId, branch } = req.body || {};
     res.json(await req.ctx.service.queueBuild(projectId, num(definitionId), branch));
