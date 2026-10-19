@@ -363,7 +363,7 @@ test('production branch set in Settings: cleaned up and checked when saved, then
   assert.deepEqual([api.branch, api.branchSet], ['develop', false], 'not set: the branch the deploy came from');
 });
 
-test('production branch only changes what is compared: deploys stay the runs on the branch Keel learned', async () => {
+test('production branch the pipeline never deploys from: deploys stay the runs on the branch Keel learned', async () => {
   const seen = [];
   const runs = [
     { id: 2, label: 'B2', at: at(3), status: 'succeeded', repoId: 'r1', commit: 'c2', branch: 'Develop' },
@@ -387,7 +387,40 @@ test('production branch only changes what is compared: deploys stay the runs on 
   assert.equal(env.unknown, undefined, 'setting master must not hide the deploys');
   assert.equal(env.lastDeploy.label, 'B2');
   assert.deepEqual([env.branch, env.branchSet], ['master', true]);
-  assert.ok(!seen.includes('master'));
+  assert.ok(seen.includes('master'), 'master was looked at, and had no successful run');
+});
+
+test('production branch the pipeline does deploy from: its runs there are the deploys', async () => {
+  // Most automatic runs build Develop (for testing); master runs deploy to production.
+  const runs = [
+    { id: 3, label: 'B3', at: at(1), status: 'succeeded', repoId: 'r1', commit: 'd3', branch: 'Develop' },
+    { id: 2, label: 'B2', at: at(4), status: 'succeeded', repoId: 'r1', commit: 'm2', branch: 'master' },
+  ];
+  const build = (id, sourceBranch, status = 'completed') => ({ id, projectId: 'p1', repoId: 'r1', definition: { id: 5, name: 'web' }, status, result: status === 'completed' ? 'succeeded' : null, reason: 'individualCI', sourceBranch, queuedAt: at(id), startedAt: at(0.2), finishedAt: status === 'completed' ? at(id) : null });
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'master' }],
+    listReleases: async () => [],
+    listBuilds: async () => [build(1, 'Develop'), build(2, 'master'), build(3, 'Develop'), build(5, 'Develop'), build(0.1, 'Develop', 'inProgress')],
+    listDefinitions: async () => [],
+    listDeployments: async (target) => runs.filter((d) => !target.branch || d.branch === target.branch),
+    listCommits: async () => [commit('m3', 1, 'Merged PR 9: Faster search')],
+    listCommitsBetween: async () => [commit('m3', 1, 'Merged PR 9: Faster search')],
+    aheadBehind: async () => ({ ahead: 1, behind: 0 }),
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const link = { type: 'pipeline', projectId: 'p1', definitionId: 5, branch: 'master' };
+  const service = createService({ provider, settings: memoryStore(), monitoring: { status: () => [{ id: 'a', name: 'Web', link }] } });
+  const { targets: [env] } = await service.undeployed();
+  assert.equal(env.diverged, undefined, 'not "production runs a build from Develop"');
+  assert.equal(env.lastDeploy.label, 'B2');
+  assert.equal(env.waiting, 1);
+  assert.equal(env.deploy, null, 'a Develop run under way is not a production deploy');
+
+  // Deploy markers on the monitor follow the same runs.
+  const { monitors: [m] } = await service.production();
+  assert.deepEqual(m.markers.map((x) => x.id), [2]);
 });
 
 test('unknown says why: no deploys, none succeeded, no commit, or successful runs only on another branch', async () => {

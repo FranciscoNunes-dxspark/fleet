@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApp } from '../context.js';
 import { t } from '../i18n.js';
-import { Chip, Confirm, Loading } from '../ui.jsx';
+import { Chip, Confirm, Loading, Section } from '../ui.jsx';
 
 /**
  * Settings → Organizations. Everyone sees the organizations Keel connects to
@@ -44,8 +44,7 @@ export default function OrgSettings() {
   if (orgs.length < 2 && !admin) return null;
 
   return (
-    <section className="panel" id="organizations">
-      <h2 className="section-title">{t('Organizations')}</h2>
+    <Section id="organizations" title={t('Organizations')}>
       <p className="muted small">
         {login
           ? t('Keel shows every organization you have a token for, together. Link a token for each one; a token created for "All accessible organizations" works for all of them.')
@@ -119,6 +118,6 @@ export default function OrgSettings() {
           </div>
         </form>
       )}
-    </section>
+    </Section>
   );
 }

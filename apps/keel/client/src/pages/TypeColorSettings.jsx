@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { t } from '../i18n.js';
 import { PALETTE, autoTypeColor, paletteVar, typeColorKey } from '../typecolors.js';
-import { ErrorBox, Loading, TypeLabel } from '../ui.jsx';
+import { ErrorBox, Loading, Section, TypeLabel } from '../ui.jsx';
 
 /**
  * Work item type colors, the same for everyone: Admins pick each type's color
@@ -38,8 +38,7 @@ export default function TypeColorSettings() {
   };
 
   return (
-    <section className="panel" id="type-colors">
-      <h2 className="section-title">{t('Work item type colors')} {admin && <span className="saved-note">{t('Saved automatically')}</span>}</h2>
+    <Section id="type-colors" title={t('Work item type colors')} note={admin && <span className="saved-note">{t('Saved automatically')}</span>}>
       <p className="muted small">
         {admin
           ? t('Colors come from an approved palette that stays readable in light and dark mode. Automatic uses the palette color closest to the type\'s color in Azure DevOps. The same for everyone.')
@@ -90,6 +89,6 @@ export default function TypeColorSettings() {
           );
         })}
       </ul>
-    </section>
+    </Section>
   );
 }

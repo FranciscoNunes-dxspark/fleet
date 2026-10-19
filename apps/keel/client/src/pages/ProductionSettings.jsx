@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { Chip, Loading } from '../ui.jsx';
+import { Chip, Loading, Section } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 
@@ -43,10 +43,9 @@ export default function ProductionSettings() {
   if (!rows) return <section className="panel" id="production"><Loading label={t('Loading monitors…')} /></section>;
   if (!can('monitors.manage')) {
     return (
-      <section className="panel" id="production">
-        <h2 className="section-title">{t('Production monitors')}</h2>
+      <Section id="production" title={t('Production monitors')}>
         <p className="muted small">{rows.length ? t(rows.length === 1 ? '{n} monitor is set up.' : '{n} monitors are set up.', { n: rows.length }) : t('No monitors yet.')} {t('Only admins can add or change production monitors.')}</p>
-      </section>
+      </Section>
     );
   }
 
@@ -105,8 +104,7 @@ export default function ProductionSettings() {
   };
 
   return (
-    <section className="panel" id="production">
-      <h2 className="section-title">{t('Production monitors')}</h2>
+    <Section id="production" title={t('Production monitors')}>
       <p className="muted small">
         {t('Keel checks each URL every minute. With an Application Insights App ID and API key (Application Insights → API Access → Create API key, "Read telemetry"), it also tracks failure rates, exceptions and slow requests. Keys are stored encrypted on the server and never shown again.')}
         {authMode === 'login' && ` ${t("Each monitor shows, in Production, the Inbox and notifications, for the people who track its project: the one that deploys it, or the one picked here. A monitor with no project shows for everyone.")}`}
@@ -188,7 +186,7 @@ export default function ProductionSettings() {
                           placeholder={learnedBranch(r.link) ? t('Automatic: {branch}', { branch: learnedBranch(r.link) }) : t('Automatic: the branch the last deploy came from')}
                           spellCheck={false}
                         />
-                        <span className="muted small">{t("The branch Waiting to ship compares with what's live, when Keel's guess is wrong. It doesn't change which runs count as deploys. Leave empty for Keel to work it out.")}</span>
+                        <span className="muted small">{t("The branch production deploys from, when Keel's guess is wrong. For a pipeline, its runs on this branch are the production deploys (once one has succeeded there), and Waiting to ship compares with it. Leave empty for Keel to work it out.")}</span>
                       </label>
                     )}
                   </fieldset>
@@ -234,7 +232,7 @@ export default function ProductionSettings() {
         {dirty && <span className="small text-warn">{t('Unsaved changes')}</span>}
         <button type="button" className="btn btn-primary btn-small" onClick={save} disabled={busy || !dirty}>{busy ? t('Saving…') : t('Save monitors')}</button>
       </div>
-    </section>
+    </Section>
   );
 }
 

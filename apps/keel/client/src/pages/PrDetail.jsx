@@ -325,7 +325,7 @@ const MERGE_TYPES = [
 function CompleteForm({ pr, busy, onCancel, onComplete }) {
   const { meta } = useApp();
   const defaults = meta.autoComplete || {};
-  const [mergeStrategy, setMergeStrategy] = useState(defaults.mergeStrategy || 'squash');
+  const [mergeStrategy, setMergeStrategy] = useState(defaults.mergeStrategy || 'noFastForward');
   const [message, setMessage] = useState(`Merged PR ${pr.id}: ${pr.title}`);
   const [deleteSourceBranch, setDeleteSourceBranch] = useState(defaults.deleteSourceBranch ?? false);
   const [transitionWorkItems, setTransitionWorkItems] = useState(defaults.transitionWorkItems ?? true);

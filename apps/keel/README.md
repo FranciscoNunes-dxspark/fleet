@@ -63,7 +63,7 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 
 **Search (Ctrl+K, or ⌘K on a Mac)** opens a search box from anywhere: pages and their tabs, open pull requests, open work items, pipelines and repositories (each repo opens its commit history), plus New work item, New pull request and Refresh. Type a number (`#4107` or `4107`) to open any work item, closed ones too, or `!815` for a pull request. With nothing typed it shows what you opened recently (kept in this browser).
 
-Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Settings are saved to `data/settings.json`.
+Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Click a section's title to fold it away; folded sections stay folded in this browser, and a link to one (from Waiting to ship, say) opens it. Settings are saved to `data/settings.json`.
 
 ## Production monitoring
 
@@ -73,7 +73,7 @@ Set it up in **Settings → Production monitors**:
 - **Application Insights (optional):** in the Azure portal, open the app's Application Insights → **API Access**. Copy the **Application ID**, then **Create API key** with *Read telemetry*. Paste both into Keel, never into chat or tickets. The key is stored encrypted, and Settings shows only that one is saved.
 - **Deploys come from:** the classic release stage or the pipeline that deploys this app. This adds deploy markers and regression detection.
 - **Project:** who sees the monitor. A monitor linked to what deploys it belongs to that project; otherwise pick one. Only people who track the project see the monitor, its Inbox entries and notifications, its Waiting to ship card, its deploys in Delivery to production and its Platform totals. A monitor with no project shows for everyone, as all monitors did before.
-- **Production branch** (optional): the branch Waiting to ship compares with what's live, when Keel's guess is wrong. It doesn't change which runs count as deploys (a pipeline's are its runs on the branch its automatic runs use). Leave it empty and Keel works it out (see Waiting to ship).
+- **Production branch** (optional): the branch production deploys from, when Keel's guess is wrong. Waiting to ship compares with it, and for a pipeline its runs on this branch are the production deploys (for a pipeline that builds Develop for testing and master for production, set master). Until the pipeline has a successful run on it, its deploys stay the runs on the branch its automatic runs use, so a branch it never deploys from doesn't leave it with none. Leave it empty and Keel works it out (see Waiting to ship).
 
 Use **Test** to check a URL and key before saving. Monitors are kept by the Keel server, each shown to the people who track its project, and only Admins can change them. The last 24 hours of checks are kept in the data folder (`monitor-history.json`), so charts are the same for everyone and survive restarts and deploys. When the host runs several copies of Keel, one of them runs the checks; another takes over within 3 minutes if it stops. Azure Monitor alert rules aren't included: reading them needs a Microsoft Entra identity (a service principal) rather than an API key.
 
@@ -257,6 +257,7 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
    ```bash
    git pull && npm ci && npm run build && pm2 restart keel
    ```
+   Anyone with Keel open (in a browser or the installed app) sees **A new version of Keel is available** within 10 minutes, or as soon as they come back to the tab, and **Update** reloads into it. Each build has its own id (`build.json`), so this works for any way of deploying a new build.
 
 8. **Create your account:** open the site, enter the setup code, then invite your team from **Users**.
 

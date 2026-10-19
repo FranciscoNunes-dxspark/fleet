@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { initials, VOTES } from './format.js';
 import { t } from './i18n.js';
 import { useApp } from './context.js';
 import { paletteVar, typeColorKey } from './typecolors.js';
+import { useSticky } from './sticky.js';
 
 /** Keel's mark: a sailboat on the water, its keel and ballast bulb below the waterline (same drawing as public/favicon.svg). */
 export function Logo({ size = 28 }) {
@@ -128,6 +129,32 @@ export function PageHeader({ title, sub, children }) {
 }
 
 /** Tabs that are pages of their own (each with its own address), shown under the page title. */
+/**
+ * A Settings section that folds away: its title opens and closes it, remembered
+ * per browser. A link to it (#id, say from Waiting to ship) always opens it.
+ * Folded content stays mounted, so unsaved edits in it aren't lost.
+ */
+export function Section({ id, title, note, children }) {
+  const [folded, setFolded] = useSticky(`settings.folded.${id}`, false);
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash === `#${id}`) setFolded(false);
+  }, [hash, id, setFolded]);
+  const open = !folded;
+  return (
+    <section className={`panel fold${open ? '' : ' folded'}`} id={id}>
+      <h2 className="section-title">
+        <button type="button" className="fold-toggle" aria-expanded={open} aria-controls={`${id}-body`} onClick={() => setFolded(open)}>
+          <svg className="fold-chevron" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          {title}
+        </button>
+        {note}
+      </h2>
+      <div id={`${id}-body`} hidden={!open}>{children}</div>
+    </section>
+  );
+}
+
 export function PageTabs({ label, tabs }) {
   return (
     <nav className="segmented page-tabs" aria-label={label}>

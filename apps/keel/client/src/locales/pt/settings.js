@@ -148,7 +148,7 @@ export default {
   'Production branch': 'Branch de produção',
   'Automatic: {branch}': 'Automático: {branch}',
   'Automatic: the branch the last deploy came from': 'Automático: o branch de onde veio o último deploy',
-  "The branch Waiting to ship compares with what's live, when Keel's guess is wrong. It doesn't change which runs count as deploys. Leave empty for Keel to work it out.": 'O branch que Por entregar compara com o que está em produção, quando o Keel se engana. Não muda que execuções contam como deploys. Deixe vazio para o Keel o descobrir.',
+  "The branch production deploys from, when Keel's guess is wrong. For a pipeline, its runs on this branch are the production deploys (once one has succeeded there), and Waiting to ship compares with it. Leave empty for Keel to work it out.": 'O branch de onde a produção recebe os deploys, quando o Keel se engana. Num pipeline, as execuções neste branch são os deploys para produção (assim que uma tiver sucesso aqui), e Por entregar compara com ele. Deixe vazio para o Keel o descobrir.',
   'Not linked': 'Sem ligação',
   'Release stages': 'Stages de release',
   'Pipelines': 'Pipelines',

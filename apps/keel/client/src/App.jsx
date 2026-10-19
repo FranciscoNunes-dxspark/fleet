@@ -35,6 +35,7 @@ import Users from './pages/Users.jsx';
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
 import { applyTheme } from './theme.js';
 import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
+import { updateNow, useNewVersion } from './version.js';
 
 /**
  * Auth gate. In login mode (hosted), shows sign-in until there's a session,
@@ -344,6 +345,7 @@ function Shell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
   const { meta, refresh, toast, refreshKey, authMode, signOut, can } = useApp();
+  const newVersion = useNewVersion();
   const mainRef = useRef(null);
   useStableHeight(mainRef, refreshKey);
   const { data: attention } = useApi('/attention');
@@ -477,6 +479,12 @@ function Shell() {
       </nav>
 
       <main className="main" ref={mainRef}>
+        {newVersion && (
+          <div className="update-banner" role="status">
+            <span>{t('A new version of Keel is available.')}</span>
+            <button type="button" className="btn btn-small btn-primary" onClick={updateNow}>{t('Update')}</button>
+          </div>
+        )}
         {meta.mock && (
           <div className="demo-banner">
             {tj("You're looking at demo data ({reason}). Add {orgUrl} and {pat} to {env} and restart to connect your organization.", {
