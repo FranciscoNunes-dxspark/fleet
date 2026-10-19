@@ -1,0 +1,58 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Keel is a tech lead's console for Azure DevOps: an Express API (`server/`) plus a React 19 + Vite UI (`client/`), plain JavaScript ESM, Node >= 20.12. No TypeScript, no linter, no bundler for the server. The README is the user-facing spec for every feature. When behaviour changes, update the matching README row or section too.
+
+## Commands
+
+```bash
+npm run dev:mock     # demo org, no credentials: API (auto-restart) + Vite on http://localhost:5173
+npm run dev          # same, against the org in .env (AZDO_ORG_URL + AZDO_PAT)
+npm run build        # UI into dist/
+npm start            # API + built UI on http://127.0.0.1:4280 (start:mock for demo data)
+npm test             # node:test over test/**/*.test.js
+node --test test/flow.test.js                          # one test file
+node --test --test-name-pattern="Manual validation" test/deploying-stage.test.js   # one test
+node scripts/check-syntax.mjs client/src/pages/Board.jsx   # parse-check client files without a build; also flags t()/tx()/tj() used without importing from i18n.js
+node scripts/missing-pt.mjs client/src/pages/Totals.jsx    # list t()/tj() strings with no Portuguese translation
+```
+
+To try accounts and roles on demo data, set `AUTH_MODE=login` and `AZDO_MOCK=1`. Demo accounts are kept apart from real ones (`.mock`-suffixed data files).
+
+## Architecture
+
+**Request path.** `server/index.js` builds one of two contexts and puts it on `req.ctx` (`{ service, watcher, role, user }`) before `routes.js`:
+- **Local mode** (default): one person, using the `.env` PAT for every organization, with role `admin`.
+- **Login mode** (`AUTH_MODE=login`): `auth.js` holds the accounts. Each user links their own encrypted PAT per organization, and `auth.serviceFor(userId)` builds that user's service. Background jobs (`schedules.js`, `channels.js`, `push.js`) take a `resolveService(ownerId)` callback, so they act in Azure DevOps as the person who set them up.
+
+**Layers** (server):
+- `routes.js`: HTTP only. Every non-GET needs the `x-keel: 1` header (the CSRF guard; `client/src/api.js` sends it). Role checks go through `need('<perm>')`, with permissions defined in `accounts.js` `PERMISSIONS`.
+- `multiorg.js`: `createMultiService(entries)` wraps one service per organization behind the same interface. Lists are concatenated and tagged with `org`. Project-addressed calls go to the org that owns the project. Work item ids are only unique per org, so calls by id take an org key. A failing secondary org is dropped; a failing primary fails the request. **Any new service method must also be added here**, or it breaks once there is more than one org.
+- `service.js`: composes provider, `cache.js` (60s TTL, invalidated by key prefix on writes), and settings. Everything is scoped to the *tracked* projects, teams and repos.
+- `azdo/provider.js` (real REST, through `azdo/client.js`: PAT auth, retries, paging, concurrency cap) and `mock/provider.js` (in-memory demo org, mutable until restart) **share one interface**. A new provider method needs both. `mock/variant.js` derives a second demo org ("fabrikam-demo") with deliberately colliding work item and build numbers, to exercise multi-org code.
+- `domain/`: pure functions (PR signals, inbox rules, pipeline health, DORA delivery, flow, production regressions, etc.). Most tests target these directly with hand-built fixtures, so put logic here when it can be tested without a provider.
+- `watcher.js`: polls only while a browser holds `/api/events` (SSE) open, diffs snapshots (`domain/changes.js`), and emits `changed` / `notify` / `status`.
+- `monitoring.js` + `platform.js`: production URL and App Insights checks, shared server-wide. `platform.js` handles the ISM sites' `platform/v1` `/health` + `/totals` envelope.
+
+**Persistence.** JSON files in the data folder (`config.js` `dataDirFor`: `DATA_DIR`, else `keel-data` next to Hostinger's `hbuilds/`, else `data/`). Use `jsonfile.js` `sharedJson` for anything several processes share: the host may run more than one copy, so it re-reads the file when it changes on disk. Background jobs (monitors, channels, push) elect a single runner across copies. Secrets (PATs, App Insights keys, webhooks, push keys) are encrypted with `secrets.js`, keyed from `SESSION_SECRET`.
+
+**Domain rules that recur everywhere:**
+- Process-agnostic: "done" and similar states come from Azure DevOps *state categories* and category groups (`Microsoft.RequirementCategory`), never from state or type names.
+- A declined approval (classic stage rejected, YAML approval check or Manual validation rejected or timed out) counts as **declined**, not failed. It is excluded from health, pass rate, streaks, alerts, deploys and DORA (`domain/pipelines.js` `wasDeclined`).
+- Production environments are the stages or pipelines that production monitors link to, plus classic stages matching `/prod|production|prd|live/`.
+
+**Client.** `App.jsx` handles routes and the app shell. `context.js` `useApi(path)` refetches whenever the app-wide `refreshKey` changes (after writes, SSE `changed`, or Refresh). `prefs.js` holds account-synced preferences (theme, language, notifications, dashboard, saved views), with a localStorage copy; the server copy wins at startup. Pages live in `client/src/pages/`. Shared UI is in `ui.jsx`, `charts.jsx`, `views.jsx` and `palette.jsx` (Ctrl+K search).
+
+## i18n (English + European Portuguese)
+
+- English source text is the key: `t('Save changes')`, `t('{n} items', { n })`, `tj(...)` when React elements go in placeholders, and `tx(text)` for strings the server sent (exact match first, then `{placeholder}` templates).
+- Portuguese lives in `client/src/locales/pt/<area>.js`, merged in `locales/pt.js` (later files win on duplicates). Server-sent sentences go in `locales/pt/server.js`; only those are used as `tx()` templates.
+- The server reuses the same dictionaries via `server/i18n.js` for Teams and Slack posts.
+- Every new or changed UI string needs its pt-PT entry. Check with `scripts/missing-pt.mjs`.
+
+## Conventions
+
+- Comments explain *why* and read as plain sentences. JSDoc one-liners sit on exported helpers. Match the surrounding density.
+- Commit subjects are short, plain-language descriptions of the user-visible change (e.g. "Cancel a queued or running pipeline run"), one commit per change.
+- `.gitattributes` forces LF line endings (the server runs on Linux).
