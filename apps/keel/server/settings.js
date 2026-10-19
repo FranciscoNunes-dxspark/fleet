@@ -15,7 +15,7 @@ export const DEFAULT_SETTINGS = {
     maxPendingReviewsPerPerson: 5,
   },
   blockedTag: 'Blocked',
-  autoComplete: { mergeStrategy: 'squash', deleteSourceBranch: true, transitionWorkItems: true },
+  autoComplete: { mergeStrategy: 'squash', deleteSourceBranch: false, transitionWorkItems: true },
   refreshSeconds: 30,
   // attention key -> ISO date until which it is hidden
   snoozed: {},
