@@ -55,7 +55,32 @@ export function durationTrend(runs, now = Date.now()) {
  */
 // The "Manual validation" task of an agentless job: someone resumes or rejects the run.
 const MANUAL_VALIDATION = '2003ad3a-104a-451a-9238-60474ab294e6';
-const isManualValidation = (r) => r.type === 'Task' && (r.task?.id === MANUAL_VALIDATION || r.task?.name === 'ManualValidation');
+export const isManualValidation = (r) => r.type === 'Task' && (r.task?.id === MANUAL_VALIDATION || r.task?.name === 'ManualValidation');
+
+/**
+ * What a running run is doing now, from its timeline: the stage in progress, since when, and
+ * whether it's waiting for someone (a Manual validation, or an approval or check before the
+ * stage) rather than deploying. Null when no stage is in progress.
+ */
+export function currentStage(timeline = []) {
+  const stage = timeline.filter((r) => r.type === 'Stage' && r.state === 'inProgress')
+    .sort((a, b) => Date.parse(b.startedAt || 0) - Date.parse(a.startedAt || 0))[0];
+  if (!stage) return null;
+  const under = new Set([stage.id]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const r of timeline) {
+      if (!under.has(r.id) && under.has(r.parentId)) {
+        under.add(r.id);
+        grew = true;
+      }
+    }
+  }
+  const inStage = timeline.filter((r) => under.has(r.id) && r.id !== stage.id);
+  const waiting = !stage.startedAt || inStage.some((r) => r.state === 'inProgress'
+    && (isManualValidation(r) || r.type === 'Checkpoint' || r.type === 'Checkpoint.Approval'));
+  return { name: stage.name, startedAt: stage.startedAt || null, waiting };
+}
 
 /**
  * A run that failed only because it wasn't approved: an environment's approval check

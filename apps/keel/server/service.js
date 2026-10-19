@@ -8,7 +8,7 @@ import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
 import { DAY, HOUR, enrichPR, sameIdentity } from './domain/prs.js';
 import { releaseHealth } from './domain/releases.js';
-import { pipelineHealth, wasDeclined } from './domain/pipelines.js';
+import { currentStage, pipelineHealth, wasDeclined } from './domain/pipelines.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
@@ -332,12 +332,28 @@ export function createService({
     return monitoring.status().filter((m) => !m.projectId || projects?.[m.projectId]?.tracked);
   }
 
+  /**
+   * Running runs of these pipelines (production targets), with the stage each is on now
+   * (domain/pipelines.js currentStage): is it deploying, and since when, or waiting for someone.
+   * Timelines are read again with each live update, like a run's panel does.
+   */
+  async function withStages(builds, keys) {
+    if (!keys.size) return builds;
+    return Promise.all(builds.map(async (b) => {
+      if (b.status !== 'inProgress' || b.reason === 'pullRequest' || !keys.has(`${b.projectId}:${b.definition?.id}`)) return b;
+      const timeline = await cached(`builds:timeline:${b.id}`, () => provider.getBuildTimeline(b.projectId, b.id), 15 * 1000).catch(() => null);
+      return timeline ? { ...b, stage: currentStage(timeline) } : b;
+    }));
+  }
+  const pipelineKeys = (links) => new Set(links.filter((l) => l?.type === 'pipeline').map((l) => `${l.projectId}:${l.definitionId}`));
+
   /** Production monitors with their deploy markers and health verdict. */
   async function production() {
     if (!monitoring) return [];
-    const [rels, pipes, builds, monitors, targets] = await Promise.all([
+    const [rels, pipes, raw, monitors, targets] = await Promise.all([
       releases().catch(() => []), pipelines().catch(() => []), rawBuilds().catch(() => []), myMonitors(), productionTargets().catch(() => []),
     ]);
+    const builds = await withStages(raw, pipelineKeys(monitors.map((m) => m.link)));
     return monitors.map((m) => {
       const sources = { releases: rels, pipelines: pipes, builds };
       // A pipeline's deploys come from the branch productionTargets settled on.
@@ -720,11 +736,12 @@ export function createService({
      */
     async undeployed() {
       // Open pull requests are "coming next" on the card of the branch they go into.
-      const [targets, repoList, openPrs, rels, builds, appr] = await Promise.all([
+      const [targets, repoList, openPrs, rels, raw, appr] = await Promise.all([
         productionTargets(), repos(), activePRs().catch(() => []),
         // For the deploy under way (running, or waiting on an approval).
         releases().catch(() => []), rawBuilds().catch(() => []), approvals().catch(() => []),
       ]);
+      const builds = await withStages(raw, pipelineKeys(targets.map((t) => ({ type: t.type, projectId: t.projectId, definitionId: t.definitionId }))));
       // Monitors not linked to what deploys them still show, saying so, rather than vanishing.
       const unlinked = (await myMonitors()).filter((m) => !m.link)
         .map((m) => ({ key: `monitor:${m.id}`, name: m.name, projectId: null, projectName: null, unlinked: true, monitorId: m.id }));
