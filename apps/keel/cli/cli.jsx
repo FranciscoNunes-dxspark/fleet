@@ -4,6 +4,12 @@ import { ROOT } from '../server/root.js';
 const args = process.argv.slice(2);
 const ENV_FILE = path.join(ROOT, '.env');
 
+if (args.includes('-v') || args.includes('--version')) {
+  const { VERSION } = await import('./open.js');
+  console.log(`keel ${VERSION}`);
+  process.exit(0);
+}
+
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`keel [--demo]
 
@@ -51,10 +57,31 @@ const { default: React } = await import('react');
 const { render } = await import('ink');
 const { App } = await import('./ui/App.jsx');
 
+// Only the downloaded executables look for updates and install them (update.js): a checkout updates
+// with git pull, and its package.json version is behind the releases. KEEL_CHECK_UPDATES=0 turns the
+// check off; KEEL_AUTO_UPDATE=0 only says a release is out. The last answer is kept in the data folder.
+const { COMPILED } = await import('./open.js');
+const off = (name) => /^(0|false|no|off)$/i.test(process.env[name] || '');
+let checkUpdate;
+let installUpdate;
+if (COMPILED && !off('KEEL_CHECK_UPDATES')) {
+  const update = await import('./update.js');
+  const { config } = await import('../server/config.js');
+  const last = update.lastCheckStore(path.join(config.dataDir, 'update-check.json'));
+  checkUpdate = async () => {
+    const result = await update.checkForUpdate(await last.load());
+    await last.save(result.checked).catch(() => {});
+    return result;
+  };
+  if (!off('KEEL_AUTO_UPDATE')) installUpdate = update.installUpdate;
+  // What an earlier update moved aside; quietly, and it doesn't hold up the start.
+  update.removeOldExecutables();
+}
+
 // Draw on the alternate screen, like a full-screen app, and give the terminal back untouched on exit.
 process.stdout.write('\x1b[?1049h\x1b[H');
 process.on('exit', () => process.stdout.write('\x1b[?1049l'));
 
-const app = render(React.createElement(App, { keel }), { exitOnCtrlC: false, patchConsole: false });
+const app = render(React.createElement(App, { keel, checkUpdate, installUpdate }), { exitOnCtrlC: false, patchConsole: false });
 await app.waitUntilExit();
 process.exit(0);

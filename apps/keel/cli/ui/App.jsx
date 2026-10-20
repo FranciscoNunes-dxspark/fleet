@@ -6,7 +6,7 @@ import { findCommand, suggestionsFor } from '../commands.js';
 import { pipelineDetail, prFullText } from '../format.js';
 import { HELP } from '../help.js';
 import { logText } from '../log.js';
-import { openUrl as openInBrowser } from '../open.js';
+import { VERSION, openUrl as openInBrowser } from '../open.js';
 import { FACES, moodFor } from '../pinch.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '../text.js';
@@ -90,8 +90,9 @@ function activityRows(entries) {
 /**
  * `keel` is `{ service, orgs, signIn }` from cli/service.js (the tests build it the same way, on
  * demo data). `openUrl` opens links (the browser by default); `poll` turns live checks off when false.
+ * `checkUpdate` and `installUpdate` (cli/update.js) are only passed to the downloaded executable.
  */
-export function App({ keel, openUrl = openInBrowser, poll = true }) {
+export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate }) {
   const { service, orgs, signIn } = keel;
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
@@ -110,6 +111,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true }) {
   const [show, setShow] = useState('all');
   const [jump, setJump] = useState(null);
   const [welcome, setWelcome] = useState(true);
+  // A newer release: { latest, url, state: 'out' | 'installing' | 'installed' }.
+  const [update, setUpdate] = useState(null);
   // Pinch looks happy (or worried) for a few seconds after a result; re-render when that wears off.
   const [, setMoodTick] = useState(0);
   useEffect(() => {
@@ -386,6 +389,34 @@ export function App({ keel, openUrl = openInBrowser, poll = true }) {
         setPollError(firstLine(e.message));
         note(`Couldn't read Azure DevOps: ${firstLine(e.message)}`, 'error');
       }
+      // After the first load, so it doesn't slow it down. Tests leave these out (or pass stubs), so
+      // they stay offline and never replace anything.
+      if (live && checkUpdate) {
+        checkUpdate().then(
+          ({ checked, newer }) => {
+            if (!live || !newer) return;
+            const outNote = (why = '') => note(`Keel ${checked.latest} is out (you have ${VERSION})${why}.\nDownload it from ${checked.url}`);
+            if (!installUpdate) {
+              setUpdate({ ...checked, state: 'out' });
+              return outNote();
+            }
+            // In the background, without the spinner: nothing waits on it, and it only counts from the next start.
+            setUpdate({ ...checked, state: 'installing' });
+            return installUpdate(checked.latest).then(
+              () => {
+                setUpdate({ ...checked, state: 'installed' });
+                note(`Keel ${checked.latest} is installed. It starts the next time you open Keel.`);
+              },
+              (e) => {
+                setUpdate({ ...checked, state: 'out' });
+                outNote(`, but it couldn't be installed: ${firstLine(e.message)}`);
+              },
+            );
+          },
+          // Offline, or no way to ask: try again next time.
+          () => {},
+        );
+      }
     })();
     return () => {
       live = false;
@@ -531,7 +562,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true }) {
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} attention={data.attention} pollError={pollError} width={W} /> : null}
+      {showWelcome ? <Welcome mood={mood} attention={data.attention} pollError={pollError} update={update} width={W} /> : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}

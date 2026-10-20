@@ -51,6 +51,8 @@ To try accounts and roles on demo data, set `AUTH_MODE=login` and `AZDO_MOCK=1`.
 
 **Terminal app** (`cli/`, started by `bin/keel.js`, built with Ink like Tiller and Trawl). `cli/service.js` builds the same service as local mode in `server/index.js` (one per organization, through `multiorg.js`, same data folder), in-process with no server. `cli.jsx` sets the environment *before* importing it, because `config.js` reads it on import: `--demo` sets `AZDO_MOCK`, and no PAT sets `AZDO_AUTH=az` (`server/azdo/azcli.js`, the Azure CLI's token). `cli/actions.js` holds every operation, called by keys and slash commands (`commands.js`) with `ctx` from `ui/App.jsx`; views check `ctx.viewHasKeys()` first. Live checks repeat the watcher's: drop the live cache prefixes, `snapshot()`, `diffSnapshots`. The server's `console.warn`s go to `/log` (`cli/log.js`), never the terminal. `text.js`, `ui/parts.jsx`, `ui/hooks.js` and the jsx loader are Trawl's, and should stay recognisably the same. Its text is English only (no `t()`). `test/cli.test.js` drives it end to end with `ink-testing-library` on demo data.
 
+**Terminal app updates.** The downloaded executable (`COMPILED` in `cli/open.js`) updates itself with `cli/update.js`, Tiller's updater with Keel's names: cli.jsx passes `checkUpdate`/`installUpdate` to the App only then, so tests pass stubs and never go online.
+
 ## i18n (English + European Portuguese)
 
 - English source text is the key: `t('Save changes')`, `t('{n} items', { n })`, `tj(...)` when React elements go in placeholders, and `tx(text)` for strings the server sent (exact match first, then `{placeholder}` templates).
