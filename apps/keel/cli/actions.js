@@ -172,3 +172,48 @@ export function showPr(ctx, text) {
   if (!pr) return ctx.note(`No active pull request !${text.replace(/^!/, '')} in your tracked repos.`, 'error');
   ctx.showPr(pr, pr.org);
 }
+
+// ---- Settings (ui/SettingsView.jsx; rows and patches in settings.js)
+
+/** Saves a change to Keel's settings (shared with the web app), then reads everything again. */
+export async function saveSettings(ctx, title, patch, done) {
+  await ctx.task(title, async () => {
+    await ctx.service.saveSettings(patch);
+    await ctx.reloadAll();
+    return [done];
+  }, { label: 'Saving' });
+}
+
+/** How the downloaded app treats new versions, saved in this computer's .env; it counts from the next start. */
+export async function setUpdateMode(ctx, mode) {
+  const { updateLines, UPDATE_LABEL } = await import('./settings.js');
+  await ctx.task(`Updates: ${UPDATE_LABEL[mode].toLowerCase()}`, async () => {
+    ctx.saveEnv(updateLines(mode));
+    return [`Saved in ${ctx.envFile}. It counts from the next time you open Keel.`];
+  }, { label: 'Saving' });
+}
+
+/** /addorg <address>: another Azure DevOps organization, or a GitHub owner (github.com, or --github). */
+export async function addOrg(ctx, text = '') {
+  const github = /(^|\s)--github(\s|$)/.test(text);
+  const url = text.replace(/(^|\s)--github(\s|$)/, ' ').trim();
+  if (!url) return ctx.prefill('/addorg ');
+  const { createOrgStore } = await import('../server/orgs.js');
+  await ctx.task(`Add ${url}`, async () => {
+    const org = createOrgStore().add({ url, kind: github ? 'github' : undefined });
+    const how = org.kind === 'github' ? 'It signs in with GITHUB_TOKEN, or else your GitHub CLI sign-in (gh auth login).' : 'It signs in the same way as your other organization.';
+    return [`${org.name} added. Open Keel again to see it, then track its projects here. ${how}`];
+  }, { label: 'Adding' });
+}
+
+/** Takes an added organization out of Keel (asks first). The primary one comes from .env. */
+export async function removeOrg(ctx, org) {
+  if (org.primary) return ctx.note(`${org.name} is the organization in ${ctx.envFile}; change it there.`, 'error');
+  const ok = await ctx.confirm({ title: `Remove ${org.name} from Keel?`, detail: 'Its projects stop showing, here and in the web app. You can add it back with /addorg.', danger: true, options: [{ label: 'Yes, remove it', value: true }, { label: 'No', value: false }] });
+  if (!ok) return;
+  const { createOrgStore } = await import('../server/orgs.js');
+  await ctx.task(`Remove ${org.name}`, async () => {
+    createOrgStore().remove(org.key);
+    return ['Removed. It disappears the next time you open Keel.'];
+  }, { label: 'Removing' });
+}
