@@ -181,8 +181,10 @@ export default function PrDetail({ target }) {
   const state = REVIEW_STATE[pr.reviewState];
   const mentionable = [...(people || []), pr.author, ...pr.reviewers, ...pr.threads.recent.map((c) => c.author)];
   const candidates = (people || []).filter((p) => p.id !== pr.author?.id && !pr.reviewers.some((r) => r.id === p.id));
+  // GitHub refuses reviews and review requests from a pull request's author, so those buttons go.
+  const ownGithub = github && pr.isMine;
   // You aren't a reviewer until you vote or are added (myVote is null).
-  const canAddMe = pr.status === 'active' && pr.myVote === null;
+  const canAddMe = pr.status === 'active' && pr.myVote === null && !ownGithub;
 
   return (
     <div className="detail">
@@ -218,7 +220,7 @@ export default function PrDetail({ target }) {
                 : t('This is your pull request. Azure DevOps records your vote, but branch policies usually don\'t count it toward the required approvals unless "Allow requestors to approve their own changes" is on.')}
             </p>
           )}
-          <div className="vote-row">
+          {!ownGithub && <div className="vote-row">
             {(github ? GITHUB_VOTE_BUTTONS : VOTE_BUTTONS).map((b) => (
               <button
                 key={b.vote}
@@ -231,7 +233,7 @@ export default function PrDetail({ target }) {
                 {busy === `vote${b.vote}` ? '…' : b.label}
               </button>
             ))}
-          </div>
+          </div>}
         </section>
       )}
 
