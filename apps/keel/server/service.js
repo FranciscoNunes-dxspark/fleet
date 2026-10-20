@@ -560,7 +560,7 @@ export function createService({
   }, 30 * 1000);
 
   // The members of the teams you lead, each with the teams they're in (to take them out of one).
-  const people = () => cached('people', async () => {
+  const teamMembers = () => cached('people', async () => {
     const pairs = (await tracked()).flatMap((p) => p.teams.map((t) => ({ p, t })));
     const lists = await Promise.all(pairs.map(async ({ p, t }) => (await provider.listTeamMembers(p.id, t.id).catch(() => []))
       // memberId: their id in this organization (it differs between organizations).
@@ -574,6 +574,24 @@ export function createService({
     }
     return [...byId.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, 10 * MIN);
+
+  // Someone just taken out of a team: Azure DevOps can go on listing them for a while, and another server
+  // process may still hold the old list, so the removal is kept in the settings (which every process rereads)
+  // and left out for an hour. Still listed after that, Azure DevOps really has them in the team.
+  const REMOVED_FOR = HOUR;
+  const removedKey = (team) => `${team.projectId}:${team.teamId}:${team.memberId}`;
+  const recentRemovals = (settings) => Object.fromEntries(Object.entries(settings.removedMembers || {})
+    .filter(([, at]) => Date.now() - Date.parse(at) < REMOVED_FOR));
+  async function people() {
+    const [settings, list] = await Promise.all([store.load(), teamMembers()]);
+    const removed = recentRemovals(settings);
+    if (!Object.keys(removed).length) return list;
+    return list.flatMap((p) => {
+      if (!p.teams) return [p];
+      const teams = p.teams.filter((tm) => !removed[removedKey(tm)]);
+      return teams.length ? [{ ...p, teams }] : [];
+    });
+  }
 
   const hiddenList = (settings) => Object.entries(settings.hiddenPeople || {}).map(([id, h]) => ({ id, displayName: h.name, uniqueName: h.uniqueName }))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -1435,6 +1453,8 @@ export function createService({
       const p = (await tracked()).find((x) => x.id === projectId);
       if (!p || !p.teams.some((t) => t.id === teamId)) throw Object.assign(new Error("That isn't one of the teams you lead in Keel"), { status: 400 });
       await provider.removeTeamMember(projectId, teamId, memberId);
+      const settings = await store.load();
+      await store.save({ removedMembers: { ...recentRemovals(settings), [removedKey({ projectId, teamId, memberId })]: new Date().toISOString() } });
       cache.invalidate('people');
       return { ok: true };
     },
