@@ -118,6 +118,8 @@
 html, body, #root { height: 100%; }
 /* Room for the page's scrollbar even when it's hidden (a panel open), so nothing shifts sideways. */
 html { scrollbar-gutter: stable; }
+/* Keel lays itself out for phones, so pinch and double-tap zoom are off (the viewport meta in index.html; Safari ignores it, hence main.jsx). */
+html { touch-action: pan-x pan-y; }
 html.drawer-open { overflow: hidden; }
 body {
   margin: 0;

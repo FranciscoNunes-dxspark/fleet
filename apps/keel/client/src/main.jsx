@@ -13,6 +13,8 @@ import { registerServiceWorker } from './pwa.js';
 // Before the first render, so the saved theme shows without a flash.
 applyTheme();
 watchSystemTheme();
+// Safari ignores user-scalable=no, so pinch zoom is stopped here too.
+for (const type of ['gesturestart', 'gesturechange']) document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
 // Installable app and push notifications (public/sw.js).
 registerServiceWorker();
 
