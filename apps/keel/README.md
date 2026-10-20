@@ -99,6 +99,14 @@ It reads the same `.env` and data folder as the web app, so tracked projects, sn
 
 Everywhere: **o** opens the selection in Azure DevOps, **/** opens the command prompt, `/find` filters the list, **r** asks Azure DevOps again now, and **?** lists every key. While it's open it checks Azure DevOps every "refresh every" seconds from Settings, as the web app does, and says what changed (votes on your pull requests, your runs finishing, new things in the Inbox) in its activity lines. Warnings from Azure DevOps calls are under `/log`.
 
+**Settings.** **,** (or `/settings`) opens them over the current tab, and esc closes them. They're the web app's settings, in the same data folder, so a change shows in both:
+- **Projects:** **space** tracks a project or stops tracking it, and **↵** opens a tracked one's repos, where **space** takes one in or out. Projects tracked when you opened Settings stay at the top while it's open, and `/find` narrows the list.
+- **Pull requests:** the merge type, deleting the source branch, and completing linked work items, used by **c** and auto-complete. **-** and **+** set how often Keel checks for changes.
+- **Organizations:** **x** removes an added one (asks first). `/addorg <address>` adds another Azure DevOps organization or a GitHub owner (`--github` for a GitHub Enterprise Server); it shows the next time you open Keel.
+- **This computer:** the settings file and how you're signed in. In the downloaded executable, **space** on Updates goes round install by itself, only tell, and don't check (`KEEL_AUTO_UPDATE` and `KEEL_CHECK_UPDATES` in that `.env`).
+
+Teams and area paths are still picked in the web app.
+
 Not in the terminal yet: work items, boards, releases, production monitoring and insights (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
 
 ## Production monitoring

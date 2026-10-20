@@ -6,7 +6,10 @@ import { findCommand, suggestionsFor } from '../commands.js';
 import { pipelineDetail, prFullText } from '../format.js';
 import { HELP } from '../help.js';
 import { logText } from '../log.js';
-import { VERSION, openUrl as openInBrowser } from '../open.js';
+import path from 'node:path';
+import { COMPILED, VERSION, openUrl as openInBrowser } from '../open.js';
+import { saveEnvSettings } from '../setup.js';
+import { ROOT } from '../../server/root.js';
 import { FACES, moodFor } from '../pinch.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '../text.js';
@@ -15,6 +18,7 @@ import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from './
 import { InboxView } from './InboxView.jsx';
 import { PipelinesView, pipelineId } from './PipelinesView.jsx';
 import { PrsView, prId } from './PrsView.jsx';
+import { SettingsView } from './SettingsView.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pinch.jsx';
 
@@ -29,6 +33,7 @@ const HINTS = {
   prs: 'a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter',
   pipelines: 'n run · c cancel the run · ↵ all runs · o browser',
 };
+const SETTINGS_HINT = "space change · ↵ a project's repos · /find a project · esc close";
 
 // As the web server's watcher (server/watcher.js): what a poll drops so it really asks Azure DevOps.
 const LIVE_PREFIXES = ['prs:active', 'pr:', 'wi:', 'builds'];
@@ -91,8 +96,9 @@ function activityRows(entries) {
  * `keel` is `{ service, orgs, signIn }` from cli/service.js (the tests build it the same way, on
  * demo data). `openUrl` opens links (the browser by default); `poll` turns live checks off when false.
  * `checkUpdate` and `installUpdate` (cli/update.js) are only passed to the downloaded executable.
+ * `envFile` is the .env this Keel reads, where Settings saves this computer's choices.
  */
-export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate }) {
+export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate, envFile = path.join(ROOT, '.env') }) {
   const { service, orgs, signIn } = keel;
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
@@ -107,7 +113,10 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const [confirmReq, setConfirmReq] = useState(null);
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '' });
+  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', settings: '' });
+  // What Settings shows about this computer; `envTick` moves when its .env changes.
+  const [envTick, setEnvTick] = useState(0);
+  const local = React.useMemo(() => ({ envFile, signIn, compiled: COMPILED, env: { ...process.env } }), [envFile, signIn, envTick]);
   const [show, setShow] = useState('all');
   const [jump, setJump] = useState(null);
   const [welcome, setWelcome] = useState(true);
@@ -189,6 +198,11 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
 
   // After a change of ours: read again (the service already dropped what the change touched).
   const reload = () => load();
+  // After a settings change: also who you are and what's tracked (the header counts projects).
+  const reloadAll = async () => {
+    setMeta(await service.meta());
+    await load();
+  };
 
   // A live check, as the web server's watcher does: ask Azure DevOps again, tell what changed.
   const check = async () => {
@@ -268,6 +282,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     const d = dataRef.current;
     if (v === 'prs') return { pr: sel.pr, webUrl: sel.pr?.webUrl };
     if (v === 'pipelines') return { pipeline: sel.pipeline, webUrl: sel.pipeline?.lastRun?.webUrl ?? sel.pipeline?.latest?.webUrl };
+    if (overlayRef.current?.settings) return { setting: sel.setting, webUrl: sel.setting?.org?.url ?? sel.setting?.project?.webUrl };
     const item = sel.item;
     const t = item?.target ?? {};
     const sameOrg = (x) => !item.org || !x.org || x.org === item.org;
@@ -297,7 +312,16 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     note,
     prefill,
     reload,
+    reloadAll,
     refresh,
+    envFile,
+    saveEnv: (lines) => {
+      saveEnvSettings(envFile, lines);
+      setEnvTick((n) => n + 1);
+    },
+    // Settings opens over the current tab, as an overlay; esc closes it.
+    showSettings: () => setOverlay({ settings: true }),
+    settingsHasKeys: () => focusRef.current === 'view' && !!overlayRef.current?.settings && !confirmRef.current,
     current,
     openUrl,
     quit,
@@ -322,7 +346,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     },
     jumped: () => setJump(null),
     find: (text) => {
-      const v = viewRef.current;
+      const v = overlayRef.current?.settings ? 'settings' : viewRef.current;
       setFilters((f) => ({ ...f, [v]: text.trim() }));
     },
     showGroup: (group) => {
@@ -496,6 +520,14 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     if (text) edit(value.slice(0, cursor) + text + value.slice(cursor), cursor + text.length);
   };
 
+  // Over Settings: esc closes it (or stops waiting), the prompt and o still work; the rest is the overlay's.
+  const settingsKeys = (input, key) => {
+    if (key.escape) return busyRef.current ? busyRef.current.abort() : setOverlay(null);
+    if (key.ctrl || key.meta) return;
+    if (input[0] === '/' || input[0] === ':') return prefill(`/${input.slice(1).replace(/[\x00-\x1f\x7f]/g, '')}`);
+    if (input === 'o') return a.open(ctx);
+  };
+
   // Keys that work in every view.
   const globalKeys = (input, key) => {
     if (key.escape) {
@@ -512,6 +544,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     if (input === '?') return ctx.showHelp();
     if (input === 'q') return quit();
     if (input === 'o') return a.open(ctx);
+    if (input === ',') return ctx.showSettings();
     const n = Number(input);
     if (n >= 1 && n <= VIEWS.length) return setView(VIEWS[n - 1].id);
     if (key.tab) {
@@ -526,7 +559,9 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   useInput((input, key) => {
     if (focusRef.current === 'prompt' && !confirmRef.current) return promptKeys(input, key);
     if (key.ctrl && input === 'c') return quit();
-    if (confirmRef.current || overlayRef.current) return;
+    if (confirmRef.current) return;
+    if (overlayRef.current?.settings) return settingsKeys(input, key);
+    if (overlayRef.current) return;
     globalKeys(input, key);
   });
 
@@ -542,7 +577,9 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const viewActive = focus === 'view' && !overlay && !confirmReq;
 
   let main;
-  if (overlay) {
+  if (overlay?.settings) {
+    main = <SettingsView version={data.version} orgs={orgs} local={local} filter={filters.settings} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
+  } else if (overlay) {
     main = <TextViewer {...overlay} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
   } else if (view === 'prs') {
     main = <PrsView failed={Boolean(pollError)} prs={data.prs} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
@@ -552,7 +589,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     main = <InboxView failed={Boolean(pollError)} attention={data.attention} filter={filters.inbox} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
+  const left = focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.settings ? SETTINGS_HINT : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
   const right = focus === 'prompt' ? '' : '  / commands · ? help';
 
   return (
