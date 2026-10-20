@@ -19,6 +19,7 @@
     "start:mock": "node server/index.js --mock",
     "cli": "node bin/keel.js",
     "cli:demo": "node bin/keel.js --demo",
+    "build:cli": "npx --yes bun@1.4.2 scripts/build-cli.js",
     "test": "node --import ./cli/register.js --test \"test/**/*.test.js\""
   },
   "dependencies": {

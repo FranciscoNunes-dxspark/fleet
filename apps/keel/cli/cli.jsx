@@ -1,18 +1,18 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from '../server/root.js';
 
 const args = process.argv.slice(2);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ENV_FILE = path.join(ROOT, '.env');
 
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`keel [--demo]
 
 Keel in the terminal: the Inbox, pull requests and pipelines of the Azure DevOps
-organization in Keel's .env, with the same tracked projects and settings as the web app.
+organization in ${ENV_FILE}, with the same tracked projects and settings as the web app.
 
   --demo   the demo organization, no credentials needed
 
-Signs in with AZDO_PAT from .env, or else with the Azure CLI (az login).
+Signs in with AZDO_PAT from that file, or else with the Azure CLI (az login).
 Inside: press ? for shortcuts, / for commands.`);
   process.exit(0);
 }
@@ -20,14 +20,14 @@ Inside: press ? for shortcuts, / for commands.`);
 // The server's config reads the environment once, on import, so settle it first: .env, then
 // demo data or, with no PAT, the Azure CLI's sign-in (AZDO_AUTH=az).
 try {
-  process.loadEnvFile(path.join(ROOT, '.env'));
+  process.loadEnvFile(ENV_FILE);
 } catch {
   // No .env file: the real environment only.
 }
 const demo = args.includes('--demo') || args.includes('--mock');
 if (demo) process.env.AZDO_MOCK = '1';
 else if (!process.env.AZDO_ORG_URL?.trim() && !/^(1|true|yes)$/i.test(process.env.AZDO_MOCK || '')) {
-  console.error('No Azure DevOps organization: set AZDO_ORG_URL in .env (see .env.example), or try keel --demo.');
+  console.error(`No Azure DevOps organization: set AZDO_ORG_URL=https://dev.azure.com/<org> in ${ENV_FILE}, or try keel --demo.`);
   process.exit(1);
 } else if (!process.env.AZDO_PAT?.trim()) process.env.AZDO_AUTH ||= 'az';
 
