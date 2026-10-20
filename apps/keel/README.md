@@ -75,6 +75,11 @@ Thresholds, the blocked tag, auto-complete defaults and the refresh interval are
 It reads the same `.env` and data folder as the web app, so tracked projects, snoozes and settings are shared. It runs in local mode only, not with sign-in (`AUTH_MODE=login`).
 
 **Signing in.** With `AZDO_PAT` in `.env`, it uses that token. Without one, it uses your Azure CLI sign-in (`az login`), so no token is stored anywhere; your account needs access to the organization. `AZDO_AUTH=az` in `.env` does the same for the web server in local mode. GitHub owners added in Settings use `GITHUB_TOKEN`, or else your GitHub CLI sign-in (`gh auth login`); **o** opens their pull requests and runs on GitHub.
+**Without a checkout.** Download the executable for your platform from [Releases](https://github.com/FranciscoNunes-dxspark/keel/releases): `keel-windows-x64.exe`, `keel-linux-x64` / `-arm64`, `keel-macos-arm64` / `-x64`. It's a single file with nothing else to install. Rename it to `keel` (`keel.exe`) and put it in a folder on your PATH. `SHA256SUMS.txt` lists each file's checksum. It keeps its `.env` and data folder in `.keel` in your home folder (`~/.keel/.env`, `~/.keel/data`), not beside the web app's; `keel --help` shows the path. The builds aren't code-signed, so Windows SmartScreen may ask before the first run ("More info" → "Run anyway"), and on macOS you may need `xattr -d com.apple.quarantine keel-macos-arm64` once.
+
+**Releases.** `npm run build:cli` makes the executable for this machine in `release/` (`npm run build:cli -- --all` for every platform), with [Bun](https://bun.sh)'s `--compile`, fetched by npx. They're released automatically: a push to main that changes `cli/`, `server/`, `bin/` or the packages runs the Release workflow (`.github/workflows/release-cli.yml`), which runs the tests, builds every platform and publishes a GitHub Release with the files, creating the tag. The version is the latest release with the patch number raised (v0.1.0 → v0.1.1), or `package.json`'s when that's higher, which is how to move to a new minor or major version. Nothing is committed back. "Run workflow" on the Actions tab releases by hand.
+
+**Signing in.** With `AZDO_PAT` in `.env`, it uses that token. Without one, it uses your Azure CLI sign-in (`az login`), so no token is stored anywhere; your account needs access to the organization. `AZDO_AUTH=az` in `.env` does the same for the web server in local mode.
 
 | Tab | For |
 |---|---|
@@ -347,4 +352,5 @@ test/            node:test tests for the domain logic and the terminal app
 | `npm run build` | Build the UI into `dist/` |
 | `npm start` / `npm run start:mock` | Serve the API and built UI on :4280 |
 | `npm run cli` / `npm run cli:demo` | Keel in the terminal (needs a real terminal) |
+| `npm run build:cli` | The terminal app as a standalone executable in `release/` (`-- --all` for every platform) |
 | `npm test` | Domain logic and terminal app tests |
