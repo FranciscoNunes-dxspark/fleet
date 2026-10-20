@@ -135,7 +135,8 @@ function jobsOf(r) {
   return [{ id: r.id * 10 + 1, name: 'test', status: r.status === 'completed' ? 'completed' : 'in_progress', conclusion: r.conclusion, started_at: iso(start), completed_at: done ? iso(r.created + r.minutes * 60_000) : null, steps: steps(failAt) }];
 }
 
-function createDemoApi(owner) {
+/** The fake GitHub API alone, for tests that hand it to the real provider. */
+export function createDemoApi(owner) {
   const db = demoData(owner);
   const repoOf = (name) => db.repos.find((r) => r.name === name) || (() => { throw notFound(`repo ${name}`); })();
   const prOf = (repo, n) => db.prs.find((p) => p.repo === repo && p.number === Number(n)) || (() => { throw notFound(`pull request ${n}`); })();
