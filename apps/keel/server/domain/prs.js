@@ -3,9 +3,17 @@
 export const HOUR = 3_600_000;
 export const DAY = 24 * HOUR;
 
+/**
+ * A person's email, lowercased, or '': GitHub people carry one when GitHub shares it, and an
+ * Azure DevOps sign-in name usually is one (not on Azure DevOps Server, where it's DOMAIN\user).
+ */
+export const emailOf = (p) => String(p?.email || (/@/.test(p?.uniqueName || '') ? p.uniqueName : '')).toLowerCase();
+
+// The email lets a GitHub login and an Azure DevOps account be the same person.
 export const sameIdentity = (a, b) => !!a && !!b && (
   (a.id && b.id && a.id === b.id)
   || (a.uniqueName && b.uniqueName && a.uniqueName.toLowerCase() === b.uniqueName.toLowerCase())
+  || (!!emailOf(a) && emailOf(a) === emailOf(b))
 );
 
 export function median(values) {

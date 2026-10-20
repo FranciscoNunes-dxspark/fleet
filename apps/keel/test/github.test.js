@@ -20,6 +20,7 @@ const { createMultiService } = await import('../server/multiorg.js');
 const { createSettingsStore } = await import('../server/settings.js');
 const { createMockProvider } = await import('../server/mock/provider.js');
 const { createMockGithub } = await import('../server/mock/github.js');
+const { createGithubProvider } = await import('../server/github/provider.js');
 
 after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
 
@@ -103,6 +104,46 @@ test('log tails lose GitHub timestamps and colours', () => {
   assert.equal(logTail('2026-10-01T10:00:00.1234567Z \u001b[31mfail\u001b[0m', 5), 'fail');
 });
 
+test('emails: verified-domain ones when GitHub gives them, else public ones; an unknown login only loses its own', async () => {
+  const org = { key: 'gh-acme', url: 'https://github.com/acme', kind: 'github' };
+  const asked = [];
+  const client = {
+    bases: { web: 'https://github.com' },
+    api: async () => ({ type: 'Organization' }),
+    async graphql(query, v, { partial } = {}) {
+      if (/search\(/.test(query)) {
+        const who = (login) => ({ __typename: login === 'renovate' ? 'Bot' : 'User', login, name: login.toUpperCase() });
+        return { search: { pageInfo: { hasNextPage: false }, nodes: [
+          { number: 1, title: 'A', state: 'OPEN', repository: { name: 'web' }, author: who('ana'), reviewRequests: { nodes: [{ requestedReviewer: who('rui') }] } },
+          { number: 2, title: 'B', state: 'OPEN', repository: { name: 'web' }, author: who('gone') },
+          { number: 3, title: 'C', state: 'OPEN', repository: { name: 'web' }, author: who('renovate') },
+        ] } };
+      }
+      assert.ok(partial);
+      const verified = /organizationVerifiedDomainEmails/.test(query);
+      asked.push(verified ? 'verified' : 'public');
+      const logins = Object.entries(v).filter(([k]) => /^l\d/.test(k));
+      // Verified-domain emails refused (no verified domain, or not allowed to see them).
+      if (verified && !refuseVerified) return { data: Object.fromEntries(logins.map(([k, l]) => [`u${k.slice(1)}`, l === 'gone' ? null : { email: '', organizationVerifiedDomainEmails: [`${l}@acme.com`] }])), errors: [{ type: 'NOT_FOUND', path: ['u2'] }] };
+      if (verified) return { data: {}, errors: [{ type: 'FORBIDDEN', path: ['u0', 'organizationVerifiedDomainEmails'] }] };
+      return { data: Object.fromEntries(logins.map(([k, l]) => [`u${k.slice(1)}`, l === 'ana' ? { email: 'Ana@Home.example' } : l === 'gone' ? null : { email: '' }])), errors: [] };
+    },
+  };
+  let refuseVerified = false;
+  const byId = (prs) => Object.fromEntries(prs.flatMap((p) => [p.author, ...p.reviewers]).map((x) => [x.id, x.email || null]));
+  const prs = await createGithubProvider({ org, client }).listPullRequests('gh-acme');
+  assert.deepEqual(byId(prs), { ana: 'ana@acme.com', rui: 'rui@acme.com', gone: null, renovate: null });
+  assert.equal(prs[2].author.isBot, true, 'apps are bots, and nobody asks for their email');
+  assert.deepEqual(asked, ['verified']);
+
+  refuseVerified = true;
+  asked.length = 0;
+  const provider = createGithubProvider({ org, client });
+  assert.deepEqual(byId(await provider.listPullRequests('gh-acme')), { ana: 'ana@home.example', rui: null, gone: null, renovate: null });
+  await provider.listPullRequests('gh-acme');
+  assert.deepEqual(asked, ['verified', 'public'], 'refused once, then public emails only, kept for an hour');
+});
+
 test('GitHub merge commits name their pull request; #123 is not a work item there', () => {
   assert.deepEqual(commitRefs('Merge pull request #39 from acme/dark-mode\n\nDark mode', { github: true }), { workItemIds: [], prId: 39 });
   assert.deepEqual(commitRefs('Retry flaky upload (#36)\n\n* fix #12', { github: true }), { workItemIds: [], prId: 36 });
@@ -135,6 +176,20 @@ test('demo GitHub: pull requests in each review state, archived repos left out',
   const mine = (await ghPrs()).find((p) => p.id === 41);
   assert.equal(mine.needsMyReview, true);
   assert.equal((await ghPrs()).find((p) => p.id === 85).hasConflicts, true);
+});
+
+test('demo GitHub: the Team page has one row per person, with their GitHub pull requests counted by email', async () => {
+  const { rows } = await service.team();
+  const names = rows.map((r) => r.person.displayName);
+  assert.deepEqual(names, [...new Set(names)], 'nobody twice');
+  assert.ok(!names.some((n) => /bot/.test(n)), 'with Azure DevOps teams, GitHub adds no one of its own');
+  const prs = (await service.pullRequests()).prs.filter((p) => p.status === 'active');
+  // Priya by her verified-domain email, Sofia by her public one.
+  for (const name of ['Priya Shah', 'Sofia Alvarez']) {
+    const theirs = prs.filter((p) => p.author.displayName === name);
+    assert.ok(theirs.some((p) => p.org === P));
+    assert.equal(rows.find((r) => r.person.displayName === name).prsAuthored, theirs.length, name);
+  }
 });
 
 test('demo GitHub: workflows are pipelines, with failing, declined and waiting runs', async () => {
@@ -192,7 +247,8 @@ test('a token without read:org still lists pull requests, without requested team
   const { GithubError } = await import('../server/github/client.js');
   const api = createDemoApi('octo-demo');
   const asked = [];
-  const graphql = (query, v) => {
+  const graphql = (query, v, opts) => {
+    if (!/search\(/.test(query)) return api.graphql(query, v, opts); // people's emails, not a PR search
     asked.push(/on Team/.test(query));
     if (/on Team/.test(query)) throw new GithubError('GitHub: The \'slug\' field requires one of the following scopes: [\'read:org\']', 400, [{ type: 'INSUFFICIENT_SCOPES' }]);
     return api.graphql(query, v);

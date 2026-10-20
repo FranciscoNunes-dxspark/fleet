@@ -7,7 +7,18 @@ export function person(u) {
   if (!u) return null;
   if (u.slug) return { id: `team:${u.slug}`, displayName: u.name || u.slug, uniqueName: `team:${u.slug}`, imageUrl: null, isContainer: true };
   const login = u.login || '';
-  return { id: login, displayName: u.name || login, uniqueName: login, imageUrl: u.avatarUrl || u.avatar_url || null, isContainer: false };
+  const who = { id: login, displayName: u.name || login, uniqueName: login, imageUrl: u.avatarUrl || u.avatar_url || null, isContainer: false };
+  // Apps such as Dependabot: GraphQL says Bot, REST says so in the type and the "[bot]" login.
+  return u.__typename === 'Bot' || u.type === 'Bot' || /\[bot\]$/.test(login) ? { ...who, isBot: true } : who;
+}
+
+/**
+ * The people of a normalized pull request with their email (from `emails`, login to email),
+ * so they're recognised as the same person in Azure DevOps (sameIdentity in domain/prs.js).
+ */
+export function withEmails(pr, emails) {
+  const add = (p) => (p && emails.get(p.id) ? { ...p, email: emails.get(p.id) } : p);
+  return { ...pr, author: add(pr.author), closedBy: add(pr.closedBy), reviewers: pr.reviewers.map(add) };
 }
 
 // Review states as Azure DevOps votes: approved is 10, changes requested waits for the author (-5).

@@ -17,7 +17,7 @@ import { buildChangelog } from './domain/changelog.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow } from './domain/flow.js';
 import { byFlakiness } from './domain/tests.js';
-import { DAY } from './domain/prs.js';
+import { DAY, emailOf } from './domain/prs.js';
 
 const SEVERITY = { high: 0, medium: 1, low: 2 };
 const HEALTH = { failing: 0, unstable: 1, healthy: 2, unknown: 3 };
@@ -71,10 +71,13 @@ export function createMultiService(entries) {
     return tag(e.org, await e.service[method](projectId, ...args));
   };
 
-  const uniquePeople = (lists) => {
+  const personKey = (p) => (p.uniqueName || p.id || '').toLowerCase();
+  // The Team page goes by email first, so someone's GitHub login and Azure DevOps account are one person.
+  const teamKey = (p) => emailOf(p) || personKey(p);
+  const uniquePeople = (lists, key = personKey) => {
     const seen = new Map();
     for (const p of lists.flat()) {
-      const k = (p.uniqueName || p.id || '').toLowerCase();
+      const k = key(p);
       if (k && !seen.has(k)) seen.set(k, p);
     }
     return [...seen.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -328,13 +331,17 @@ export function createMultiService(entries) {
 
     async team() {
       const parts = await each((s) => s.workloadData());
+      // An organization with no teams (a GitHub owner, say) guesses its people from who authors PRs and owns
+      // items. Once any organization has a team, the teams say who's on the page, and the others only add to their numbers.
+      const fromTeams = parts.some((p) => p.value.people.some((x) => x.teams?.length));
+      const lists = parts.map((p) => (fromTeams ? p.value.people.filter((x) => x.teams?.length) : p.value.people));
       const merged = {
         ...parts[0].value,
         // One person across organizations, in all of their teams (each team knows its organization).
-        people: uniquePeople(parts.map((p) => p.value.people)).map((person) => ({
+        people: uniquePeople(lists, teamKey).map((person) => ({
           ...person,
           teams: parts.flatMap(({ org, value }) => value.people
-            .filter((x) => (x.uniqueName || x.id || '').toLowerCase() === (person.uniqueName || person.id || '').toLowerCase())
+            .filter((x) => teamKey(x) === teamKey(person))
             .flatMap((x) => (x.teams || []).map((tm) => ({ ...tm, org: org.key })))),
         })),
         prs: parts.flatMap((p) => p.value.prs),
