@@ -19,8 +19,10 @@ export const DEFAULT_SETTINGS = {
   refreshSeconds: 30,
   // attention key -> ISO date until which it is hidden
   snoozed: {},
-  // person id -> { name, uniqueName }: left off the Team page and its overload alerts
+  // person id -> { name, uniqueName, email }: left off the Team page and its overload alerts
   hiddenPeople: {},
+  // "projectId:teamId:memberId" -> ISO date: just taken out of that team (service.js people())
+  removedMembers: {},
 };
 
 function merge(base, patch) {
@@ -62,12 +64,13 @@ export function createSettingsStore(file) {
 
   async function save(patch) {
     const base = await load();
-    // projects, snoozed and hiddenPeople are replaced wholesale so deselections stick.
+    // projects, snoozed, hiddenPeople and removedMembers are replaced wholesale so deselections stick.
     const next = merge(base, patch);
     if (patch.projects) next.projects = patch.projects;
     if (patch.snoozed) next.snoozed = patch.snoozed;
     if (patch.prefs) next.prefs = patch.prefs;
     if (patch.hiddenPeople) next.hiddenPeople = patch.hiddenPeople;
+    if (patch.removedMembers) next.removedMembers = patch.removedMembers;
     delete next.firstRun;
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify(next, null, 2));

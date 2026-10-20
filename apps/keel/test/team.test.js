@@ -90,3 +90,40 @@ test('team page: hide someone (yours only), and take someone out of a team you l
   const after = (await service.team()).rows.find((r) => r.person.id === 'rui').person;
   assert.deepEqual(after.teams.map((x) => x.teamName), ['Web'], 'the page shows the change at once');
 });
+
+test('someone just removed stays off the team while Azure DevOps (or another server process) still lists them', async () => {
+  const members = { t1: [person('ana', 'Ana'), person('rui', 'Rui')] };
+  const provider = {
+    me: async () => person('me', 'Me'),
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [],
+    listPullRequests: async () => [],
+    queryWorkItems: async () => [],
+    getWorkItems: async () => [],
+    getWorkItemTypeStates: async () => ({}),
+    listWorkItemTypes: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listReleases: async () => [],
+    listReleaseApprovals: async () => [],
+    listPendingChecks: async () => [],
+    getCurrentIteration: async () => null,
+    getBoards: async () => [],
+    listTeamMembers: async (projectId, teamId) => members[teamId], // the removal doesn't show here yet
+    removeTeamMember: async () => {},
+  };
+  let settings = { ...structuredClone(DEFAULT_SETTINGS), projects: { p1: { name: 'Shop', tracked: true, repos: 'all', teams: [{ id: 't1', name: 'Web' }] } } };
+  const store = { load: async () => settings, save: async (patch) => (settings = { ...settings, ...patch }) };
+  const here = createService({ provider, settings: store });
+  const there = createService({ provider, settings: store }); // another process, same settings file
+  const ids = async (service) => (await service.team()).rows.map((r) => r.person.id).sort();
+  assert.deepEqual(await ids(there), ['ana', 'rui']); // its list is cached now
+
+  await here.removeTeamMember('p1', 't1', 'rui');
+  assert.deepEqual(await ids(here), ['ana']);
+  assert.deepEqual(await ids(there), ['ana']);
+
+  // An hour on, Azure DevOps listing them still means they're in the team.
+  settings = { ...settings, removedMembers: { 'p1:t1:rui': new Date(Date.now() - 2 * 3_600_000).toISOString() } };
+  assert.deepEqual(await ids(there), ['ana', 'rui']);
+});
