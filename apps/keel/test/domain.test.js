@@ -370,6 +370,8 @@ test('monitors refuse private and internal addresses', async () => {
   await assert.rejects(assertPublicUrl('https://user:pass@example.com'), /credentials/);
   const ok = await assertPublicUrl('https://8.8.8.8/');
   assert.equal(ok.hostname, '8.8.8.8');
+  // An IPv6 address is checked as an address, not looked up in DNS (which fails for "[...]" on Linux).
+  assert.equal((await assertPublicUrl('https://[2606:4700:4700::1111]/')).hostname, '[2606:4700:4700::1111]');
 });
 
 test('accounts: passwords, invites, roles and the last-admin rule', async () => {

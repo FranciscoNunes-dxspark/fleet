@@ -65,7 +65,9 @@ export async function assertPublicUrl(raw) {
   if (!/^https?:$/.test(url.protocol)) throw Object.assign(new Error('Only http and https URLs can be monitored'), { status: 400 });
   if (url.username || url.password) throw Object.assign(new Error("Don't put credentials in the URL"), { status: 400 });
   if (/^(1|true)$/i.test(process.env.MONITOR_ALLOW_PRIVATE || '')) return url;
-  const addrs = net.isIP(url.hostname) ? [{ address: url.hostname }] : await dns.lookup(url.hostname, { all: true }).catch(() => []);
+  // An IPv6 address keeps its brackets in the URL ("[::1]"); only Windows resolves it as written.
+  const host = url.hostname.replace(/^\[(.*)\]$/, '$1');
+  const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true }).catch(() => []);
   if (!addrs.length) throw Object.assign(new Error(`Couldn't resolve ${url.hostname}`), { status: 400 });
   if (addrs.some((a) => isPrivateAddress(a.address))) {
     throw Object.assign(new Error(`${url.hostname} is a private or internal address. Set MONITOR_ALLOW_PRIVATE=1 on the server to allow it.`), { status: 400 });
