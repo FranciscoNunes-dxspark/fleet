@@ -18,8 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { config } from './config.js';
-import { createAzdoProvider } from './azdo/provider.js';
-import { createMockProvider } from './mock/provider.js';
+import { providerFor } from './providers.js';
 import { createService } from './service.js';
 import { createSettingsStore, userSettingsFile } from './settings.js';
 import { createWatcher } from './watcher.js';
@@ -27,7 +26,6 @@ import { ROLE_LABELS, can, createAccounts } from './accounts.js';
 import { sharedJson } from './jsonfile.js';
 import { createOrgStore } from './orgs.js';
 import { createMultiService } from './multiorg.js';
-import { createMockVariant } from './mock/variant.js';
 
 const DAY = 86_400_000;
 const MAX_SESSION_MS = 30 * DAY;
@@ -79,9 +77,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
   const accounts = createAccounts(path.join(config.dataDir, `users${suffix}.json`), { primaryOrg: primaryOrg().key });
   const orgUrl = primaryOrg().url;
   // Demo mode: any token-shaped value "connects"; other demo organizations are the demo data renamed.
-  const providerFor = (pat, org = primaryOrg()) => (config.mock
-    ? (org.primary ? createMockProvider() : createMockVariant())
-    : createAzdoProvider({ orgUrl: org.url, pat }));
+  const providerOf = (pat, org = primaryOrg()) => providerFor(org, { personal: pat });
   const ipLimiter = createLimiter();
   const emailLimiter = createLimiter({ max: 5 });
   const contexts = new Map(); // accountId -> { service, watcher, lastUsed }
@@ -145,7 +141,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
         .filter((org) => accounts.hasToken(user.id, org.key))
         .map((org) => ({
           org,
-          service: createService({ provider: providerFor(accounts.tokenOf(user.id, org.key), org), settings, monitoring: org.primary ? monitoring : null, org, schedules, owner: user.id }),
+          service: createService({ provider: providerOf(accounts.tokenOf(user.id, org.key), org), settings, monitoring: org.primary ? monitoring : null, org, schedules, owner: user.id }),
         }));
       const service = createMultiService(entries);
       ctx = { service, watcher: createWatcher(service), lastUsed: Date.now(), sig };
@@ -330,14 +326,19 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
     const org = req.body?.org ? orgStore.get(String(req.body.org)) : primaryOrg();
     if (!org) throw Object.assign(new Error('No such organization.'), { status: 404 });
     const pat = String(req.body?.pat || '').trim();
-    if (!/^[A-Za-z0-9]{40,120}$/.test(pat)) throw Object.assign(new Error("That doesn't look like a personal access token. Paste the token itself (letters and numbers only)."), { status: 400 });
+    const github = org.kind === 'github';
+    // GitHub tokens have a prefix and underscores (ghp_..., github_pat_...); Azure DevOps' are letters and numbers.
+    if (github ? !/^[A-Za-z0-9_]{36,255}$/.test(pat) : !/^[A-Za-z0-9]{40,120}$/.test(pat)) {
+      throw Object.assign(new Error(github ? "That doesn't look like a GitHub token. Paste the token itself (it starts with ghp_ or github_pat_)." : "That doesn't look like a personal access token. Paste the token itself (letters and numbers only)."), { status: 400 });
+    }
     let me;
     try {
-      me = await providerFor(pat, org).me();
+      me = await providerOf(pat, org).me();
     } catch (err) {
+      const where = org.url.replace(/^https?:\/\//, '');
       throw Object.assign(new Error(err.code === 'token-rejected'
-        ? `Azure DevOps didn't accept that token for ${org.url.replace(/^https?:\/\//, '')}. Check it hasn't expired and that it was created for this organization.`
-        : `Couldn't reach Azure DevOps to check the token: ${err.message}`), { status: err.code === 'token-rejected' ? 400 : 502 });
+        ? github ? `GitHub didn't accept that token for ${where}. Check it hasn't expired and that it can read this owner's repositories.` : `Azure DevOps didn't accept that token for ${where}. Check it hasn't expired and that it was created for this organization.`
+        : github ? `Couldn't reach GitHub to check the token: ${err.message}` : `Couldn't reach Azure DevOps to check the token: ${err.message}`), { status: err.code === 'token-rejected' ? 400 : 502 });
     }
     accounts.setToken(req.account.id, pat, me, org.key);
     dropContext(req.account.id);

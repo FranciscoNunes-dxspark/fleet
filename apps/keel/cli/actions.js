@@ -61,7 +61,7 @@ export async function vote(ctx, pr = ctx.current().pr, value) {
 
 export async function complete(ctx, pr = ctx.current().pr) {
   if (!pr) return ctx.note('Pick a pull request first.', 'error');
-  if (pr.isDraft) return ctx.note(`${prName(pr)} is a draft: publish it in Azure DevOps first.`, 'error');
+  if (pr.isDraft) return ctx.note(`${prName(pr)} is a draft: publish it first.`, 'error');
   if (pr.hasConflicts) return ctx.note(`${prName(pr)} has merge conflicts: fix them before completing it.`, 'error');
   const ac = ctx.meta?.autoComplete ?? {};
   const how = [
@@ -161,7 +161,7 @@ export function follow(ctx, item = ctx.current().item) {
   const t = item.target ?? {};
   if (t.type === 'pr' && ctx.showPr(t, item.org)) return;
   if (t.type === 'pipeline' && ctx.showPipeline(t.key, item.org)) return;
-  if (item.kind === 'approval') return ctx.note('a approves it, x rejects it, o opens it in Azure DevOps.');
+  if (item.kind === 'approval') return ctx.note('a approves it, x rejects it, o opens it in the browser.');
   open(ctx, item.webUrl);
 }
 

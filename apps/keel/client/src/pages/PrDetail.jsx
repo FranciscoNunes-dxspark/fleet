@@ -5,7 +5,7 @@ import { age, dateTime, dateTimeZone, defaultAt, localZone, REVIEW_STATE, VOTES 
 import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { Markdown } from '../markdown.jsx';
 import { t, tj, tx } from '../i18n.js';
-import { useProjectLabel } from '../orgs.js';
+import { useOrgKind, useProjectLabel } from '../orgs.js';
 import MergeStatus from './MergeStatus.jsx';
 import { SuggestedReviewers } from './NewPr.jsx';
 
@@ -47,40 +47,42 @@ function fileTree(items) {
 
 // Where a file's diff opens in Azure DevOps: a PR's Files tab by default (commits pass their own).
 const prFileHref = (webUrl, path) => `${webUrl}?_a=files&path=${encodeURIComponent(path)}`;
+// GitHub: the pull request's Files changed tab.
+export const githubPrFileHref = (webUrl) => `${webUrl}/files`;
 
-function FileRow({ f, webUrl, fileHref = prFileHref }) {
+function FileRow({ f, webUrl, fileHref = prFileHref, github = false }) {
   const kind = FILE_KIND[f.kind] || FILE_KIND.edited;
   return (
     <li className="file-row">
       <span className={`file-kind chip chip-${kind.tone}`} title={kind.label} aria-label={kind.label}>{kind.letter}</span>
-      <a className="file-name" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={t('Open the diff for {path} in Azure DevOps', { path: f.path })}>{f.name}</a>
+      <a className="file-name" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={github ? t('Open the diff for {path} on GitHub', { path: f.path }) : t('Open the diff for {path} in Azure DevOps', { path: f.path })}>{f.name}</a>
       {f.originalPath && <span className="muted small file-from" title={f.originalPath}>{t('from {name}', { name: f.originalPath.split('/').pop() })}</span>}
     </li>
   );
 }
 
-function Folder({ node, webUrl, depth, fileHref }) {
+function Folder({ node, webUrl, depth, fileHref, github }) {
   return (
     <li>
       <details open={depth < 3 || node.count <= 8}>
         <summary className="folder-row"><span className="folder-name">{node.name}/</span><span className="muted small">{node.count}</span></summary>
-        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} />
+        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} github={github} />
       </details>
     </li>
   );
 }
 
-function FolderBody({ node, webUrl, depth, fileHref }) {
+function FolderBody({ node, webUrl, depth, fileHref, github }) {
   return (
     <ul className="file-tree">
-      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} />)}
-      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} />)}
+      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} github={github} />)}
+      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} github={github} />)}
     </ul>
   );
 }
 
 /** Changed files as a folder tree; also used by the commit panel (CommitDetail.jsx). */
-export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.') }) {
+export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.'), github = false }) {
   const counts = Object.entries(FILE_KIND)
     .map(([k, v]) => [v.count, files.items.filter((f) => f.kind === k).length])
     .filter(([, n]) => n)
@@ -91,8 +93,8 @@ export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file chang
       <h3>{t('Files changed')} <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span></h3>
       {files.error && <p className="text-bad small">{t("Couldn't load the file list: {error}", { error: tx(files.error) })}</p>}
       {!files.error && !files.items.length && <p className="muted small">{empty}</p>}
-      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} />
-      {files.truncated && <p className="muted small">{t('Azure DevOps returned the first 2,000 files only.')}</p>}
+      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} github={github} />
+      {files.truncated && <p className="muted small">{github ? t('GitHub returned the first 3,000 files only.') : t('Azure DevOps returned the first 2,000 files only.')}</p>}
     </section>
   );
 }
@@ -103,6 +105,11 @@ const VOTE_BUTTONS = [
   { vote: -5, get label() { return t('Wait for author'); }, tone: 'warn' },
   { vote: -10, get label() { return t('Reject'); }, tone: 'bad' },
   { vote: 0, get label() { return t('Reset vote'); }, tone: 'none' },
+];
+// A GitHub review approves or requests changes; it can't be taken back from Keel.
+const GITHUB_VOTE_BUTTONS = [
+  { vote: 10, get label() { return t('Approve'); }, tone: 'ok' },
+  { vote: -5, get label() { return t('Request changes'); }, tone: 'warn' },
 ];
 
 const POLICY = {
@@ -116,6 +123,7 @@ const POLICY = {
 export default function PrDetail({ target }) {
   const { data: pr, error, reload } = useApi(prPath(target));
   const projectLabel = useProjectLabel();
+  const orgKind = useOrgKind();
   const { data: people } = useApi('/people');
   const { refresh, toast, openDrawer, can } = useApp();
   const writable = can('prs.write');
@@ -169,6 +177,7 @@ export default function PrDetail({ target }) {
     }
   };
 
+  const github = orgKind(pr.org) === 'github';
   const state = REVIEW_STATE[pr.reviewState];
   const mentionable = [...(people || []), pr.author, ...pr.reviewers, ...pr.threads.recent.map((c) => c.author)];
   const candidates = (people || []).filter((p) => p.id !== pr.author?.id && !pr.reviewers.some((r) => r.id === p.id));
@@ -184,7 +193,7 @@ export default function PrDetail({ target }) {
           ? <Chip tone={state.tone}>{state.label}</Chip>
           : <Chip tone={pr.status === 'completed' ? 'ok' : 'muted'}>{pr.status === 'completed' ? t('Completed') : t('Abandoned')}</Chip>}
         {pr.hasConflicts && <Chip tone="bad">{t('Merge conflicts')}</Chip>}
-        {pr.autoComplete && <Chip tone="ok">{t('Auto-complete set')}</Chip>}
+        {pr.autoComplete && <Chip tone="ok">{github ? t('Auto-merge on') : t('Auto-complete set')}</Chip>}
         {pr.schedule?.status === 'scheduled' && <Chip tone="info" title={dateTimeZone(pr.schedule.at)}>{t('Completes {when}', { when: dateTime(pr.schedule.at) })}</Chip>}
         {pr.labels.map((l) => <Chip key={l}>{l}</Chip>)}
       </div>
@@ -196,7 +205,7 @@ export default function PrDetail({ target }) {
       {pr.schedule && <ScheduleNote s={pr.schedule} busy={busy === 'unschedule'} onCancel={writable ? cancelSchedule : null} />}
 
       {pr.status === 'active' && pr.mergeStatus !== 'succeeded' && (
-        <MergeStatus pr={pr} target={target} writable={writable} busy={busy} onRefresh={reload} onRestart={() => act({ type: 'restartMerge' }, t('Merge restarted'))} />
+        <MergeStatus pr={pr} target={target} writable={writable} busy={busy} github={github} onRefresh={reload} onRestart={() => act({ type: 'restartMerge' }, t('Merge restarted'))} />
       )}
 
       {writable && pr.status === 'active' && (
@@ -204,11 +213,13 @@ export default function PrDetail({ target }) {
           <h3>{t('Your vote')} {pr.myVote !== null && <span className="muted small">{t('currently: {vote}', { vote: VOTES[pr.myVote].label })}</span>}</h3>
           {pr.isMine && (
             <p className="muted small vote-note">
-              {t('This is your pull request. Azure DevOps records your vote, but branch policies usually don\'t count it toward the required approvals unless "Allow requestors to approve their own changes" is on.')}
+              {github
+                ? t('This is your pull request. GitHub doesn\'t let you review your own.')
+                : t('This is your pull request. Azure DevOps records your vote, but branch policies usually don\'t count it toward the required approvals unless "Allow requestors to approve their own changes" is on.')}
             </p>
           )}
           <div className="vote-row">
-            {VOTE_BUTTONS.map((b) => (
+            {(github ? GITHUB_VOTE_BUTTONS : VOTE_BUTTONS).map((b) => (
               <button
                 key={b.vote}
                 type="button"
@@ -236,7 +247,7 @@ export default function PrDetail({ target }) {
               </li>
             ))}
           </ul>
-        ) : <p className="muted small">{t('No branch policies apply to this target branch.')}</p>}
+        ) : <p className="muted small">{github ? t('No checks have run on the latest commit.') : t('No branch policies apply to this target branch.')}</p>}
       </section>
 
       <section className="detail-section">
@@ -293,7 +304,7 @@ export default function PrDetail({ target }) {
         </section>
       )}
 
-      {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} />}
+      {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} github={github} fileHref={github ? githubPrFileHref : undefined} />}
 
       <section className="detail-section">
         <h3>{t('Discussion')} <span className="muted small">{t(pr.threads.total === 1 ? '{open} open of {total} thread' : '{open} open of {total} threads', { open: pr.threads.active, total: pr.threads.total })}</span></h3>
@@ -320,7 +331,7 @@ export default function PrDetail({ target }) {
       </section>
 
       {completing && pr.status === 'active' && (
-        <CompleteForm pr={pr} busy={!!busy} onCancel={() => setCompleting(false)} onSchedule={async (opts) => {
+        <CompleteForm pr={pr} github={github} busy={!!busy} onCancel={() => setCompleting(false)} onSchedule={async (opts) => {
           if (await schedule(opts)) setCompleting(false);
         }} onComplete={async (opts) => {
           if (await act({ type: 'complete', ...opts }, t('Pull request !{id} completed', { id: pr.id }))) setCompleting(false);
@@ -333,14 +344,20 @@ export default function PrDetail({ target }) {
         {writable && pr.status === 'active' && !pr.isDraft && !completing && (
           <button type="button" className="btn btn-small btn-primary" disabled={!!busy || pr.hasConflicts} title={pr.hasConflicts ? t('Resolve the merge conflicts first') : undefined} onClick={() => setCompleting(true)}>{t('Complete…')}</button>
         )}
-        {writable && pr.status === 'active' && !pr.isDraft && (pr.autoComplete
-          ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-complete cancelled'))}>{t('Cancel auto-complete')}</button>
-          : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</button>)}
-        {writable && pr.status === 'active' && pr.mergeStatus === 'succeeded' && (
+        {writable && pr.status === 'active' && !pr.isDraft && (github
+          ? pr.autoComplete
+            ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-merge turned off'))}>{t('Turn off auto-merge')}</button>
+            : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-merge on'))}>{t('Turn on auto-merge')}</button>
+          : pr.autoComplete
+            ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-complete cancelled'))}>{t('Cancel auto-complete')}</button>
+            : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</button>)}
+        {writable && !github && pr.status === 'active' && pr.mergeStatus === 'succeeded' && (
           <button type="button" className="btn btn-small btn-ghost" disabled={!!busy} title={t('Restart merge checks again without a push, for example after the target branch changed.')} onClick={() => act({ type: 'restartMerge' }, t('Merge restarted'))}>{t('Restart merge')}</button>
         )}
-        {writable && pr.status === 'active' && <Confirm text={t('Abandon this pull request?')} onConfirm={() => act({ type: 'abandon' }, t('Pull request abandoned'))} className="btn btn-small btn-ghost text-bad">{t('Abandon')}</Confirm>}
-        <ExternalLink href={pr.webUrl}>{t('Open in Azure DevOps')}</ExternalLink>
+        {writable && pr.status === 'active' && (github
+          ? <Confirm text={t('Close this pull request without merging?')} onConfirm={() => act({ type: 'abandon' }, t('Pull request closed'))} className="btn btn-small btn-ghost text-bad">{t('Close')}</Confirm>
+          : <Confirm text={t('Abandon this pull request?')} onConfirm={() => act({ type: 'abandon' }, t('Pull request abandoned'))} className="btn btn-small btn-ghost text-bad">{t('Abandon')}</Confirm>)}
+        <ExternalLink href={pr.webUrl} />
       </section>
     </div>
   );
@@ -354,7 +371,14 @@ const MERGE_TYPES = [
   ['rebaseMerge', 'Semi-linear merge', 'Rebases, then adds a merge commit'],
 ];
 
-const MERGE_LABEL = Object.fromEntries(MERGE_TYPES.map(([v, label]) => [v, label]));
+// GitHub's three: squash, a merge commit, or rebase (no semi-linear merge).
+const GITHUB_MERGE_TYPES = [
+  ['squash', 'Squash and merge', 'One commit on the target with all the changes'],
+  ['noFastForward', 'Create a merge commit', 'Keeps every commit plus a merge commit'],
+  ['rebase', 'Rebase and merge', 'Replays the commits on the target, no merge commit'],
+];
+
+const MERGE_LABEL = Object.fromEntries([...MERGE_TYPES, ...GITHUB_MERGE_TYPES].map(([v, label]) => [v, label]));
 
 /** A scheduled completion on its pull request: when, how and by whom, or how it went. */
 function ScheduleNote({ s, busy, onCancel }) {
@@ -372,11 +396,13 @@ function ScheduleNote({ s, busy, onCancel }) {
 }
 
 /** Merge now, or at a set time: merge type, commit message, cleanup options, optional policy override (now only). */
-function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule }) {
+function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = false }) {
   const { meta } = useApp();
   const defaults = meta.autoComplete || {};
-  const [mergeStrategy, setMergeStrategy] = useState(defaults.mergeStrategy || 'noFastForward');
-  const [message, setMessage] = useState(`Merged PR ${pr.id}: ${pr.title}`);
+  const types = github ? GITHUB_MERGE_TYPES : MERGE_TYPES;
+  const [mergeStrategy, setMergeStrategy] = useState(types.some(([v]) => v === defaults.mergeStrategy) ? defaults.mergeStrategy : types[0][0]);
+  // GitHub's own default title when squashing: "Title (#12)".
+  const [message, setMessage] = useState(github ? `${pr.title} (#${pr.id})` : `Merged PR ${pr.id}: ${pr.title}`);
   const [deleteSourceBranch, setDeleteSourceBranch] = useState(defaults.deleteSourceBranch ?? false);
   const [transitionWorkItems, setTransitionWorkItems] = useState(defaults.transitionWorkItems ?? true);
   const [bypassPolicy, setBypassPolicy] = useState(false);
@@ -410,12 +436,12 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule }) {
             n: pending.length,
             checks: pending.map((p) => t(p.status === 'rejected' ? '{name} (failed)' : '{name} (pending)', { name: p.name })).join(', '),
           })}
-          {' '}{t('Azure DevOps will refuse to complete it unless you override policies, or you can set auto-complete instead.')}
+          {' '}{github ? t('GitHub will refuse to merge it until they pass. You can turn on auto-merge instead.') : t('Azure DevOps will refuse to complete it unless you override policies, or you can set auto-complete instead.')}
         </p>
       )}
       <label className="field">{t('Merge type')}
         <select className="input" value={mergeStrategy} onChange={(e) => setMergeStrategy(e.target.value)}>
-          {MERGE_TYPES.map(([v, label, hint]) => <option key={v} value={v}>{t(label)}: {t(hint)}</option>)}
+          {types.map(([v, label, hint]) => <option key={v} value={v}>{t(label)}: {t(hint)}</option>)}
         </select>
       </label>
       {usesMessage && (
@@ -424,8 +450,8 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule }) {
         </label>
       )}
       <label className="check"><input type="checkbox" checked={deleteSourceBranch} onChange={(e) => setDeleteSourceBranch(e.target.checked)} /> {tj('Delete {branch} after merging', { branch: <code className="branch">{pr.sourceBranch}</code> })}</label>
-      <label className="check"><input type="checkbox" checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> {t('Complete linked work items')}{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>
-      {!later && <label className="check"><input type="checkbox" checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>}
+      {!github && <label className="check"><input type="checkbox" checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> {t('Complete linked work items')}{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>}
+      {!later && !github && <label className="check"><input type="checkbox" checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>}
       {!later && bypassPolicy && (
         <label className="field">{t('Reason for overriding')}
           <input className="input" value={bypassReason} onChange={(e) => setBypassReason(e.target.value)} placeholder={t('e.g. Hotfix for production incident')} />

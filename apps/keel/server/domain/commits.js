@@ -4,9 +4,16 @@
 /**
  * Work items a commit mentions (#123, AB#123) and the pull request that made
  * it, when it's the merge commit Azure DevOps writes ("Merged PR 123: ...").
+ * In a GitHub repo, #123 is an issue or pull request rather than a work item,
+ * and the merge commit is "Merge pull request #123 from ..." or, squashed,
+ * "Title (#123)".
  */
-export function commitRefs(message = '') {
+export function commitRefs(message = '', { github = false } = {}) {
   const text = String(message);
+  if (github) {
+    const pr = text.match(/^Merge pull request #(\d+) from /) || text.split('\n')[0].match(/\(#(\d+)\)\s*$/);
+    return { workItemIds: [], prId: pr ? Number(pr[1]) : null };
+  }
   const workItemIds = [...new Set([...text.matchAll(/(?:AB)?#(\d{2,7})\b/g)].map((m) => Number(m[1])))].slice(0, 20);
   const pr = text.match(/^Merged PR (\d+):/);
   return { workItemIds, prId: pr ? Number(pr[1]) : null };
@@ -59,13 +66,13 @@ export function comingNext(openPrs, repoId, branch) {
 }
 
 /** The commits of several repos as one list, newest first, each with its repo and what it refers to. */
-export function mergeCommits(perRepo, { limit = 2000 } = {}) {
+export function mergeCommits(perRepo, { limit = 2000, github = false } = {}) {
   const all = [];
   for (const { repo, commits } of perRepo) {
     for (const c of commits || []) {
       all.push({
         ...c,
-        ...commitRefs(c.message),
+        ...commitRefs(c.message, { github }),
         subject: String(c.message || '').split('\n')[0].trim(),
         repoId: repo.id,
         repoName: repo.name,

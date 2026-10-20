@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { initials, VOTES } from './format.js';
 import { t, tx } from './i18n.js';
 import { useApp } from './context.js';
+import { useSourceName } from './orgs.js';
 import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
 import { BG, PALETTE, pinchPixels } from './pinch.js';
@@ -238,8 +239,10 @@ export function Drawer({ open, onClose, children, label }) {
   );
 }
 
-export function ExternalLink({ href, children = t('Open in Azure DevOps'), className = 'btn btn-ghost btn-small' }) {
+export function ExternalLink({ href, children, className = 'btn btn-ghost btn-small' }) {
+  const sourceName = useSourceName();
   if (!href) return null;
+  children ??= sourceName(href) === 'GitHub' ? t('Open in GitHub') : t('Open in Azure DevOps');
   return <a className={className} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
 }
 

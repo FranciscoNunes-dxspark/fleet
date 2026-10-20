@@ -61,6 +61,12 @@ export function suggestTitle(branch, commits = []) {
   return words ? words[0].toUpperCase() + words.slice(1) : branch;
 }
 
+// A GitHub merge commit's pull request title: the squashed subject without "(#123)", or what a
+// merge commit ("Merge pull request #123 from owner/branch") carries on its next line.
+const prTitle = (c) => (/^Merge pull request #\d+ from /.test(c.subject)
+  ? String(c.message || '').split('\n').slice(1).join(' ').trim() || c.subject
+  : c.subject.replace(/\s*\(#\d+\)\s*$/, ''));
+
 /** A project's own team ("<Project> Team"), else its first, as the one to scope it to. */
 async function defaultTeams(provider, p) {
   const teams = await provider.listTeams(p.id).catch(() => []);
@@ -127,6 +133,8 @@ export function createService({
   // Inbox keys and snoozes of other organizations carry their key, so #4107 in
   // one never hides #4107 in another; the primary's stay as they always were.
   const keyPrefix = org && !org.primary ? `${org.key}/` : '';
+  // A GitHub owner (github/provider.js): its commits and pull request links read differently.
+  const github = provider.kind === 'github';
   const cache = new Cache(MIN);
   const cached = (key, fn, ttl) => cache.get(key, fn, ttl);
 
@@ -191,6 +199,10 @@ export function createService({
     };
   }
 
+  // The projects with work items, sprints and boards: none on a GitHub owner, so its pages
+  // (Board, Epics, new work items) don't offer it.
+  const workProjects = async () => (github ? [] : tracked());
+
   async function currentIterationPaths() {
     const scopes = await Promise.all((await tracked()).map(scope));
     return [...new Set(scopes.flatMap((s) => s.iterations).filter((it) => it.status === 'live').map((it) => it.path))];
@@ -236,7 +248,7 @@ export function createService({
     .sort((a, b) => ((TYPE_ORDER.indexOf(a) + 1 || 99) - (TYPE_ORDER.indexOf(b) + 1 || 99)) || a.localeCompare(b));
 
   const openItems = () => cached('wi:open', async () => {
-    const lists = await Promise.all((await tracked()).map(async (p) => {
+    const lists = await Promise.all((await workProjects()).map(async (p) => {
       const [{ areaPaths }, types] = await Promise.all([scope(p), workTypes(p)]);
       const items = await provider.queryWorkItems(p.id, { open: true, areaPaths, ...(types ? { types } : {}) });
       return items.map((w) => ({ ...w, projectId: p.id }));
@@ -258,7 +270,7 @@ export function createService({
   }
 
   const stateMaps = () => cached('states', async () => {
-    const projects = await tracked();
+    const projects = await workProjects();
     const maps = await Promise.all(projects.map((p) => provider.getStateMap(p.id).catch(() => ({}))));
     return Object.fromEntries(projects.map((p, i) => [p.id, maps[i]]));
   }, 30 * MIN);
@@ -287,13 +299,14 @@ export function createService({
   const rawBuilds = () => cached('builds:raw', async () => {
     const settings = await store.load();
     const days = settings.thresholds.buildLookbackDays;
-    const lists = await Promise.all((await tracked()).map((p) => provider.listBuilds(p.id, { sinceDays: days })));
+    // repoIds: a GitHub owner only asks about the tracked repos (Azure DevOps lists a whole project at once).
+    const lists = await Promise.all((await tracked()).map((p) => provider.listBuilds(p.id, { sinceDays: days, repoIds: Array.isArray(p.repos) ? p.repos : undefined })));
     return markDeclined(lists.flat());
   });
 
   // Definitions change rarely; the Refresh button (or 10 minutes) picks up new ones.
   const definitions = () => cached('defs', async () => {
-    const lists = await Promise.all((await tracked()).map((p) => provider.listDefinitions(p.id).catch(() => [])));
+    const lists = await Promise.all((await tracked()).map((p) => provider.listDefinitions(p.id, { repoIds: Array.isArray(p.repos) ? p.repos : undefined }).catch(() => [])));
     return lists.flat();
   }, 10 * MIN);
 
@@ -492,7 +505,7 @@ export function createService({
    * one, the work items they mention and who wrote them.
    */
   async function describeChanges(repo, raw) {
-    const commits = mergeCommits([{ repo, commits: raw }]);
+    const commits = mergeCommits([{ repo, commits: raw }], { github });
     const ids = [...new Set(commits.flatMap((c) => c.workItemIds))].slice(0, 50);
     // Each merged PR with the commits it brought; what's left was pushed without a PR.
     const merges = commits.filter((c) => c.prId).slice(0, 30);
@@ -507,11 +520,11 @@ export function createService({
         const own = new Set(prCommitIds[i]);
         return {
           id: c.prId,
-          title: c.subject.replace(/^Merged PR \d+:\s*/, ''),
+          title: github ? prTitle(c) : c.subject.replace(/^Merged PR \d+:\s*/, ''),
           author: c.author?.name || null,
           projectId: c.projectId,
           repoId: c.repoId,
-          webUrl: repo.webUrl ? `${repo.webUrl}/pullrequest/${c.prId}` : null,
+          webUrl: repo.webUrl ? `${repo.webUrl}/${github ? 'pull' : 'pullrequest'}/${c.prId}` : null,
           mergedAt: landedAt(c),
           // The merge commit first, then the PR's own commits.
           commits: [c, ...commits.filter((x) => own.has(x.id) && x.id !== c.id)],
@@ -701,7 +714,7 @@ export function createService({
           return { repo, commits: [] };
         }
       }));
-      return { commits: mergeCommits(perRepo), days, branch: ref, failed };
+      return { commits: mergeCommits(perRepo, { github }), days, branch: ref, failed };
     },
 
     /**
@@ -861,7 +874,7 @@ export function createService({
     /** Raw material for work item flow: work items of every type finished in the last `days` days, and open work now. */
     async flowData(days) {
       const ALL = ['requirement', 'bug', 'task', 'feature', 'epic'];
-      const [projects, backlogOpen] = await Promise.all([tracked(), openItems()]);
+      const [projects, backlogOpen] = await Promise.all([workProjects(), openItems()]);
       const query = (key, c, ttl) => cached(key, async () => {
         const lists = await Promise.all(projects.map(async (p) => {
           const { areaPaths } = await scope(p);
@@ -889,7 +902,7 @@ export function createService({
      * before (WIQL ASOF, so moves in and out of the sprint count).
      */
     async sprints() {
-      const projects = await tracked();
+      const projects = await workProjects();
       const pairs = projects.flatMap((p) => p.teams.map((team) => ({ p, team })));
       const rows = await Promise.all(pairs.map(async ({ p, team }) => {
         const { iteration } = await teamScope(p, team);
@@ -936,7 +949,7 @@ export function createService({
     async commit(projectId, repoId, commitId) {
       await assertTrackedRepo(repoId);
       const c = await cached(`commit:${repoId}:${commitId}`, () => provider.getCommit(projectId, repoId, commitId), 60 * MIN);
-      return { ...c, ...commitRefs(c.message) };
+      return { ...c, ...commitRefs(c.message, { github }) };
     },
 
     async createPullRequest(input) {
@@ -1076,7 +1089,7 @@ export function createService({
 
     /** Work item types in the tracked projects: [{ name, color (Azure DevOps), projects }]. */
     async workItemTypes() {
-      const projects = await tracked();
+      const projects = await workProjects();
       const byName = new Map();
       for (const p of projects) {
         const types = await provider.getWorkItemTypes(p.id).catch(() => []);
@@ -1092,7 +1105,7 @@ export function createService({
 
     /** What the new work item form can offer: per tracked project, its types and teams (default area, current sprint). */
     async newWorkItemOptions() {
-      const projects = await tracked();
+      const projects = await workProjects();
       return Promise.all(projects.map(async (p) => {
         const [stateMap, teams] = await Promise.all([
           provider.getStateMap(p.id).catch(() => ({})),
@@ -1168,7 +1181,7 @@ export function createService({
      * "sprint": just the team's current iteration.
      */
     async board({ projectId, teamId, boardId, mode = 'open', doneDays = 14 } = {}) {
-      const projects = await tracked();
+      const projects = await workProjects();
       const options = projects.flatMap((p) => p.teams.map((t) => ({ projectId: p.id, projectName: p.name, teamId: t.id, teamName: t.name })));
       const pick = options.find((o) => o.projectId === projectId && (!teamId || o.teamId === teamId)) || options[0];
       if (!pick) return { project: null, options };
@@ -1235,7 +1248,7 @@ export function createService({
     },
 
     async epics({ includeClosed = false } = {}) {
-      const [projects, settings] = await Promise.all([tracked(), store.load()]);
+      const [projects, settings] = await Promise.all([workProjects(), store.load()]);
       const perProject = await Promise.all(projects.map(async (p) => {
         const { areaPaths } = await scope(p);
         const h = await cached(`wi:epics:${p.id}:${includeClosed}`, () => provider.getHierarchy(p.id, { includeClosed, areaPaths }), 5 * MIN);

@@ -7,7 +7,8 @@ import { Chip, Confirm, Loading, Section } from '../ui.jsx';
 /**
  * Settings → Organizations. Everyone sees the organizations Keel connects to
  * and, when signing in, links their own token for each; Admins add and remove
- * them. The primary one comes from AZDO_ORG_URL.
+ * them: other Azure DevOps organizations, or GitHub owners (an organization or
+ * user, for their pull requests and Actions). The primary one comes from AZDO_ORG_URL.
  */
 export default function OrgSettings() {
   const { authMode, can, toast, refresh } = useApp();
@@ -15,7 +16,7 @@ export default function OrgSettings() {
   const admin = can('users.manage');
   const [orgs, setOrgs] = useState(null);
   const [tokens, setTokens] = useState({});
-  const [adding, setAdding] = useState({ url: '', name: '' });
+  const [adding, setAdding] = useState({ url: '', name: '', kind: 'azdo' });
   const [busy, setBusy] = useState(null);
 
   const load = () => api(login ? '/auth/orgs' : '/orgs').then(setOrgs).catch((e) => toast(e.message, 'bad'));
@@ -49,6 +50,10 @@ export default function OrgSettings() {
         {login
           ? t('Keel shows every organization you have a token for, together. Link a token for each one, created for that organization: Azure DevOps stops accepting tokens created for "All accessible organizations" on 1 December 2026.')
           : t('Keel shows every organization together, using AZDO_PAT for each, so it must be created for "All accessible organizations", and Azure DevOps stops accepting those on 1 December 2026. To keep several organizations after that, use sign-in (AUTH_MODE=login), where each person links a token per organization.')}
+        {' '}
+        {login
+          ? t('For a GitHub owner, link a GitHub token that can read its repositories and run its workflows.')
+          : t('GitHub owners use GITHUB_TOKEN, or else your GitHub CLI sign-in (gh auth login).')}
       </p>
 
       <ul className="org-list">
@@ -58,6 +63,7 @@ export default function OrgSettings() {
               <span className="strong">{o.name}</span>
               <a className="small muted" href={o.url} target="_blank" rel="noreferrer noopener">{o.url.replace(/^https?:\/\//, '')}</a>
               {o.primary && <Chip>{t('Primary')}</Chip>}
+              {o.kind === 'github' && <Chip>GitHub</Chip>}
               {login && (o.connected ? <Chip tone="ok">{t('Connected as {name}', { name: o.azdoName || '…' })}</Chip> : <Chip tone="warn">{t('Not connected')}</Chip>)}
             </div>
 
@@ -78,7 +84,7 @@ export default function OrgSettings() {
                   spellCheck={false}
                   value={tokens[o.key] || ''}
                   onChange={(e) => setTokens((x) => ({ ...x, [o.key]: e.target.value }))}
-                  placeholder={o.connected ? t('Paste a new token to replace it') : t('Paste your token for this organization')}
+                  placeholder={o.connected ? t('Paste a new token to replace it') : o.kind === 'github' ? t('Paste your GitHub token (repo and workflow scopes)') : t('Paste your token for this organization')}
                   aria-label={t('Personal access token for {org}', { org: o.name })}
                 />
                 <button type="submit" className="btn btn-small" disabled={!tokens[o.key]?.trim() || busy === `token:${o.key}`}>{busy === `token:${o.key}` ? t('Checking…') : o.connected ? t('Replace token') : t('Connect')}</button>
@@ -107,12 +113,19 @@ export default function OrgSettings() {
           className="org-add"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (await run('add', () => api('/orgs', { method: 'POST', body: adding }), t('Organization added. Link a token for it, then pick its projects below.'))) setAdding({ url: '', name: '' });
+            const added = adding.kind === 'github' ? t('GitHub owner added. Track it and pick its repositories below.') : t('Organization added. Link a token for it, then pick its projects below.');
+            if (await run('add', () => api('/orgs', { method: 'POST', body: adding }), added)) setAdding({ url: '', name: '', kind: adding.kind });
           }}
         >
           <h3 className="small">{t('Add an organization')}</h3>
           <div className="org-add-row">
-            <label>{t('Address')}<input className="input" value={adding.url} onChange={(e) => setAdding({ ...adding, url: e.target.value })} placeholder="https://dev.azure.com/other-org" inputMode="url" required /></label>
+            <label>{t('Kind')}
+              <select className="input" value={adding.kind} onChange={(e) => setAdding({ ...adding, kind: e.target.value })}>
+                <option value="azdo">Azure DevOps</option>
+                <option value="github">GitHub</option>
+              </select>
+            </label>
+            <label>{t('Address')}<input className="input" value={adding.url} onChange={(e) => setAdding({ ...adding, url: e.target.value })} placeholder={adding.kind === 'github' ? 'https://github.com/your-org' : 'https://dev.azure.com/other-org'} inputMode="url" required /></label>
             <label><span>{t('Name')} <span className="muted small">{t('(optional)')}</span></span><input className="input" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} placeholder={t('As your team calls it')} /></label>
             <button type="submit" className="btn btn-small btn-primary" disabled={!adding.url.trim() || busy === 'add'}>{busy === 'add' ? t('Adding…') : t('Add organization')}</button>
           </div>

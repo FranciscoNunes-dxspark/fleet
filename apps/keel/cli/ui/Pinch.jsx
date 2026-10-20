@@ -39,7 +39,7 @@ export function Welcome({ mood, attention, pollError, width }) {
         </Text>
         <Text> </Text>
         <Text color={theme.dim} wrap="truncate">
-          {fit('/ commands · o open in Azure DevOps · ? shortcuts · esc to put this away', textW).trimEnd()}
+          {fit('/ commands · o open in the browser · ? shortcuts · esc to put this away', textW).trimEnd()}
         </Text>
       </Box>
     </Box>

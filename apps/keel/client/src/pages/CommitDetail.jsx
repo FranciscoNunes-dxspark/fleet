@@ -6,8 +6,8 @@ import { useProjectLabel } from '../orgs.js';
 import { ChangedFiles } from './PrDetail.jsx';
 
 const enc = encodeURIComponent;
-// A file's change within this commit, in Azure DevOps.
-const commitFileHref = (webUrl, path) => `${webUrl}?path=${enc(path)}&_a=compare`;
+// A file's change within this commit, in Azure DevOps; GitHub shows the whole commit.
+const commitFileHref = (webUrl, path) => (/\/commit\/[0-9a-f]{7,40}$/i.test(webUrl) ? webUrl : `${webUrl}?path=${enc(path)}&_a=compare`);
 
 /** One commit: the whole message, who and when, what it links to and the files it changed. */
 export default function CommitDetail({ target }) {

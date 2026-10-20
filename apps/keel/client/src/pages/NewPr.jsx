@@ -7,7 +7,7 @@ import { Avatar, Chip, ErrorBox, Loading } from '../ui.jsx';
 import { Icon } from '../icons.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import { t, tj } from '../i18n.js';
-import { wiPath } from '../orgs.js';
+import { useOrgKind, wiPath } from '../orgs.js';
 
 const MAX_DESCRIPTION = 4000;
 const repoKey = (r) => `${r.projectId}|${r.id}`;
@@ -65,6 +65,9 @@ export default function NewPr({ preset = {} }) {
 
   const repoList = useMemo(() => [...(repos || [])].sort((a, b) => a.projectName.localeCompare(b.projectName) || a.name.localeCompare(b.name)), [repos]);
   const current = repoList.find((r) => repoKey(r) === repo);
+  // A GitHub repo: no work items to link, and auto-merge rather than auto-complete.
+  const orgKind = useOrgKind();
+  const github = orgKind(current?.org) === 'github';
 
   // Default repo: the preset one, else the first tracked repo.
   useEffect(() => {
@@ -166,7 +169,7 @@ export default function NewPr({ preset = {} }) {
           isDraft,
           autoComplete: autoComplete && !isDraft,
           reviewers: reviewers.map(({ id, isRequired }) => ({ id, isRequired })),
-          workItemIds: workItems.map((w) => w.id),
+          workItemIds: github ? [] : workItems.map((w) => w.id),
         },
       });
       toast(t('Created pull request !{id}', { id: pr.id }));
@@ -290,7 +293,7 @@ export default function NewPr({ preset = {} }) {
         </div>
       </section>
 
-      <section className="detail-section">
+      {!github && <section className="detail-section">
         <h3>{t('Work items')}</h3>
         <ul className="link-list">
           {workItems.map((w) => (
@@ -307,7 +310,7 @@ export default function NewPr({ preset = {} }) {
           <input className="input" inputMode="numeric" placeholder={t('Work item ID')} value={wiInput} onChange={(e) => setWiInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addWorkItem(e)} aria-label={t('Work item ID to link')} />
           <button type="button" className="btn btn-small" onClick={addWorkItem} disabled={!wiInput.trim()}>{t('Link')}</button>
         </div>
-      </section>
+      </section>}
 
       <section className="detail-section">
         <h3>{t('Reviewers')} <span className="muted small">{t('branch policies may add more automatically')}</span></h3>
@@ -338,7 +341,7 @@ export default function NewPr({ preset = {} }) {
 
       <section className="detail-section">
         <label className="check"><input type="checkbox" checked={isDraft} onChange={(e) => setIsDraft(e.target.checked)} /> {t('Create as draft')} <span className="muted small">{t("(reviewers aren't notified until you publish)")}</span></label>
-        <label className="check"><input type="checkbox" checked={autoComplete && !isDraft} disabled={isDraft} onChange={(e) => setAutoComplete(e.target.checked)} /> {t('Set auto-complete')} <span className="muted small">{t('(completes when policies pass, using your Settings defaults)')}</span></label>
+        <label className="check"><input type="checkbox" checked={autoComplete && !isDraft} disabled={isDraft} onChange={(e) => setAutoComplete(e.target.checked)} /> {github ? <>{t('Turn on auto-merge')} <span className="muted small">{t('(merges when its required checks and reviews pass, using your Settings defaults)')}</span></> : <>{t('Set auto-complete')} <span className="muted small">{t('(completes when policies pass, using your Settings defaults)')}</span></>}</label>
       </section>
 
       <ErrorBox error={submitError} />

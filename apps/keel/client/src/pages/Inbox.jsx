@@ -6,6 +6,7 @@ import { useApi, useApp } from '../context.js';
 import { age } from '../format.js';
 import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, typeSlug, useTypeColor } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
+import { useSourceName } from '../orgs.js';
 
 // Labels are getters so they follow the current language.
 const KINDS = [
@@ -34,6 +35,7 @@ export default function Inbox() {
   const { data, error, loading, reload } = useApi('/attention');
   const { openDrawer, refresh, toast } = useApp();
   const typeColor = useTypeColor();
+  const sourceName = useSourceName();
   const navigate = useNavigate();
   const [kind, setKind] = useSticky('inbox.kind', 'all');
 
@@ -118,7 +120,7 @@ export default function Inbox() {
                   <div className="strip-side">
                     {item.at && <span className="strip-age" title={new Date(item.at).toLocaleString()}>{age(item.at)}</span>}
                     <div className="strip-actions">
-                      <ExternalLink href={item.webUrl}>Azure DevOps</ExternalLink>
+                      <ExternalLink href={item.webUrl}>{sourceName(item.webUrl)}</ExternalLink>
                       <SnoozeMenu onPick={(d) => snooze(item, d)} />
                     </div>
                   </div>

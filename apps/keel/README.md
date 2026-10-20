@@ -74,7 +74,7 @@ Thresholds, the blocked tag, auto-complete defaults and the refresh interval are
 
 It reads the same `.env` and data folder as the web app, so tracked projects, snoozes and settings are shared. It runs in local mode only, not with sign-in (`AUTH_MODE=login`).
 
-**Signing in.** With `AZDO_PAT` in `.env`, it uses that token. Without one, it uses your Azure CLI sign-in (`az login`), so no token is stored anywhere; your account needs access to the organization. `AZDO_AUTH=az` in `.env` does the same for the web server in local mode.
+**Signing in.** With `AZDO_PAT` in `.env`, it uses that token. Without one, it uses your Azure CLI sign-in (`az login`), so no token is stored anywhere; your account needs access to the organization. `AZDO_AUTH=az` in `.env` does the same for the web server in local mode. GitHub owners added in Settings use `GITHUB_TOKEN`, or else your GitHub CLI sign-in (`gh auth login`); **o** opens their pull requests and runs on GitHub.
 
 | Tab | For |
 |---|---|
@@ -167,7 +167,7 @@ Sharing it with your team needs more than the steps above. Every viewer should a
 
 ## Several organizations
 
-Keel can show more than one Azure DevOps organization together. The one in `AZDO_ORG_URL` is the **primary**; Admins add others in **Settings → Organizations** (stored in the data folder, `orgs.json`).
+Keel can show more than one Azure DevOps organization together, and GitHub owners next to them (see [GitHub](#github)). The one in `AZDO_ORG_URL` is the **primary**; Admins add others in **Settings → Organizations** (stored in the data folder, `orgs.json`).
 
 - **Tokens:** with sign-in, each person links a token per organization in Settings → Organizations (the primary's stays under Your account). Create each token for its own organization: Azure DevOps stops accepting tokens created for "All accessible organizations" on 1 December 2026. Someone without a token for an organization simply doesn't see it. Tokens saved before there were several organizations belong to the primary one; nobody has to link theirs again. Locally, `AZDO_PAT` is used for every organization, so it has to be created for "All accessible organizations", and that stops working on 1 December 2026: to keep several organizations after that, use sign-in (`AUTH_MODE=login`).
 - **Everything together:** Inbox, Dashboard, Pull requests, Work items, Board, Epics, Pipelines, Releases, Team and Insights merge every organization. With more than one, project names show their organization ("Org · Project") in filters, the Board picker and the detail panels. Team counts a person once across organizations (matched by email); Insights are computed over all of them.
@@ -175,6 +175,16 @@ Keel can show more than one Azure DevOps organization together. The one in `AZDO
 - **Projects** of every organization are picked in Settings → Projects and repositories.
 - **If an organization fails** (an expired token, an outage), it's left out and the others still show; the primary failing works as before.
 - **Production monitors** stay shared by the server; deploy markers on their charts come from the primary organization's pipelines and releases.
+
+### GitHub
+
+Keel can also follow **GitHub** repositories next to your Azure DevOps projects: their **pull requests** and **GitHub Actions**. Issues and GitHub Projects aren't included. An Admin adds a GitHub owner (an organization or a user) in Settings → Organizations: pick **GitHub** as the kind and give its address, `https://github.com/your-org` (a GitHub Enterprise Server's address works too). The owner shows as one project in Settings → Projects and repositories, with its repositories to pick from. The primary organization is still the Azure DevOps one.
+
+- **Tokens:** locally (and in the terminal app), Keel uses `GITHUB_TOKEN` from `.env`, or else your GitHub CLI sign-in (`gh auth login`), so no token needs storing. With sign-in, each person links their own GitHub token for the owner in Settings → Organizations. It needs the `repo` and `workflow` scopes (classic), or fine-grained Contents, Pull requests, Actions, Checks and Deployments (read and write).
+- **Pull requests:** in the Inbox, Pull requests, Dashboard and Insights like any other. Reviews count as votes: an approval is Approved, a change request is Waiting for author, and anyone asked to review who hasn't answered is waiting on. Checks and required reviews show as the PR's checks, blocking when branch protection requires them. From Keel you can approve or request changes, comment, add reviewers, publish a draft, turn auto-merge on or off, merge (squash, merge commit or rebase, optionally deleting the branch) and close. GitHub has no "approve with suggestions", "reset vote" or semi-linear merge, and Keel can't override branch protection there.
+- **Actions:** each workflow is a pipeline, grouped by repository, with its health, runs, jobs and steps, and the end of a failed step's log. **Run** starts a workflow that has a `workflow_dispatch` trigger. A deployment waiting on an environment's reviewers shows under Approvals and in the Inbox; rejecting it makes the run **declined**, not failed, as in Azure DevOps.
+- **Not from GitHub:** work items, boards, sprints, epics, team pages, classic releases and test results. Those pages simply have nothing from it. With "All repos", Keel only asks about runs in repos pushed to within the build lookback (two weeks by default), so an owner with hundreds of repos stays within GitHub's rate limit; picking repos in Settings asks about exactly those.
+- **Search lag:** pull requests come from GitHub's search, which can take a minute to list a brand-new one.
 
 ## Hosting it for your team (Hostinger or any server)
 
@@ -305,7 +315,9 @@ server/
   routes.js      HTTP layer; writes require the x-keel header
   service.js     Scopes everything to tracked projects/repos, caching
   azdo/          REST client (PAT or Azure CLI auth, retries on 429/5xx, paging, concurrency limit) + provider
-  mock/          Demo provider with the same interface as azdo/provider.js
+  github/        A GitHub owner as an organization: REST + GraphQL client (token or gh CLI), provider, mapping
+  providers.js   Each organization's provider, by its kind
+  mock/          Demo providers with the same interface (Azure DevOps, and a fake GitHub API for github/)
   domain/        Pure logic: PR signals, inbox rules, workload, pipeline health, insights, release notes, commits,
                  delivery (DORA) and the weekly summary
 cli/             The terminal app (Ink): the same service as the server, in-process; bin/keel.js starts it
@@ -323,6 +335,7 @@ test/            node:test tests for the domain logic and the terminal app
 - Group reviewers (for example "[Project]\Team") are shown, but a PR only counts as "waiting on your review" when you are a direct reviewer.
 - Work item queries return up to 1,000 open items per project.
 - All read views have been checked against a real Azure DevOps Services org. Write actions (vote, comment, reviewers, auto-complete, abandon, work item updates, re-running pipelines) have only been exercised on demo data so far. Error messages from Azure DevOps are passed through to the UI.
+- GitHub sources have only been exercised on demo data so far, reads and writes alike. GitHub's error messages are passed through to the UI.
 - Azure DevOps reports a team's last iteration as "current" even when it ended long ago or has no dates. The Sprint page shows it with a warning, and the inbox and team pages ignore sprint membership until a dated iteration covers today.
 - A work item counts as blocked if it has the blocked tag, a state with the same name (default `Blocked`), or the CMMI Blocked field set.
 
