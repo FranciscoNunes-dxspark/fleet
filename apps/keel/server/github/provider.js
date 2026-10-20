@@ -24,26 +24,28 @@ const mergeMethod = (strategy) => {
 };
 
 const WHO = 'login avatarUrl ... on User { name }';
-const PR_FIELDS = `
+// Requested teams' names need the read:org scope; without it the provider asks again leaving them out.
+const TEAM = '... on Team { slug name }';
+const prFields = (teams) => `
   number title url state isDraft mergeable createdAt closedAt headRefName baseRefName
   repository { name }
   author { ${WHO} }
   mergedBy { ${WHO} }
   labels(first: 20) { nodes { name } }
   autoMergeRequest { enabledAt mergeMethod enabledBy { ${WHO} } }
-  reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login name avatarUrl } ... on Team { slug name } } } }
+  reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login name avatarUrl } ${teams ? TEAM : ''} } } }
   latestOpinionatedReviews(first: 20) { nodes { state author { ${WHO} } } }
 `;
-const SEARCH = `query($q: String!, $after: String) {
+const SEARCH = (teams) => `query($q: String!, $after: String) {
   search(query: $q, type: ISSUE, first: 50, after: $after) {
     pageInfo { hasNextPage endCursor }
-    nodes { ... on PullRequest { ${PR_FIELDS} } }
+    nodes { ... on PullRequest { ${prFields(teams)} } }
   }
 }`;
-const DETAIL = `query($owner: String!, $name: String!, $n: Int!) {
+const DETAIL = (teams) => `query($owner: String!, $name: String!, $n: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $n) {
-      ${PR_FIELDS}
+      ${prFields(teams)}
       id body headRefOid reviewDecision
       commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 50) { nodes {
         __typename
@@ -141,11 +143,23 @@ export function createGithubProvider({ org, token, client } = {}) {
     return all.filter((r) => Date.parse(r.pushed_at) >= since);
   };
 
+  // A token with repo but not read:org can't see requested teams: drop them for the rest of this provider's life.
+  let teams = true;
+  async function prQuery(build, variables) {
+    try {
+      return await graphql(build(teams), variables);
+    } catch (e) {
+      if (!teams || !e.detail?.some?.((x) => x.type === 'INSUFFICIENT_SCOPES')) throw e;
+      teams = false;
+      return graphql(build(teams), variables);
+    }
+  }
+
   async function searchPRs(q) {
     const out = [];
     let after = null;
     do {
-      const d = await graphql(SEARCH, { q, after });
+      const d = await prQuery(SEARCH, { q, after });
       out.push(...d.search.nodes.filter((n) => n?.number));
       after = d.search.pageInfo.hasNextPage ? d.search.pageInfo.endCursor : null;
     } while (after && out.length < 1000);
@@ -191,7 +205,7 @@ export function createGithubProvider({ org, token, client } = {}) {
 
     async getPullRequest(_projectId, repoId, prId) {
       const [d, files] = await Promise.all([
-        graphql(DETAIL, { owner, name: repoId, n: Number(prId) }),
+        prQuery(DETAIL, { owner, name: repoId, n: Number(prId) }),
         listAll(`${repoPath(repoId)}/pulls/${Number(prId)}/files`, { max: 3000 })
           .then((list) => ({ iteration: null, total: list.length, truncated: list.length >= 3000, items: list.map(fileOf).sort((a, b) => a.path.localeCompare(b.path)) }))
           .catch((e) => ({ error: e.message, total: 0, truncated: false, items: [] })),
