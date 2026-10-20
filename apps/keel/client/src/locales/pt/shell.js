@@ -84,6 +84,7 @@ export default {
   'Violet': 'Violeta',
   'Teal': 'Azul-petróleo',
   'Magenta': 'Magenta',
+  'Coral': 'Coral',
 
   // notify.js (CATEGORIES)
   'Production down, degraded, or worse after a deploy': 'Produção em baixo, degradada ou pior após um deploy',
