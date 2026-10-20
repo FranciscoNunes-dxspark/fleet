@@ -20,6 +20,7 @@ export const ACCENTS = [
   { id: 'violet', get label() { return t('Violet'); }, swatch: '#a78bfa' },
   { id: 'teal', get label() { return t('Teal'); }, swatch: '#2ec4c4' },
   { id: 'magenta', get label() { return t('Magenta'); }, swatch: '#d96bd0' },
+  { id: 'coral', get label() { return t('Coral'); }, swatch: '#f5826b' },
 ];
 
 const DEFAULT = { mode: 'dark', accent: 'green' };

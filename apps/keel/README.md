@@ -99,6 +99,14 @@ It reads the same `.env` and data folder as the web app, so tracked projects, sn
 
 Everywhere: **o** opens the selection in Azure DevOps, **/** opens the command prompt, `/find` filters the list, **r** asks Azure DevOps again now, and **?** lists every key. While it's open it checks Azure DevOps every "refresh every" seconds from Settings, as the web app does, and says what changed (votes on your pull requests, your runs finishing, new things in the Inbox) in its activity lines. Warnings from Azure DevOps calls are under `/log`.
 
+**Settings.** **,** (or `/settings`) opens them over the current tab, and esc closes them. They're the web app's settings, in the same data folder, so a change shows in both:
+- **Projects:** **space** tracks a project or stops tracking it, and **↵** opens a tracked one's repos, where **space** takes one in or out. Projects tracked when you opened Settings stay at the top while it's open, and `/find` narrows the list.
+- **Pull requests:** the merge type, deleting the source branch, and completing linked work items, used by **c** and auto-complete. **-** and **+** set how often Keel checks for changes.
+- **Organizations:** **x** removes an added one (asks first). `/addorg <address>` adds another Azure DevOps organization or a GitHub owner (`--github` for a GitHub Enterprise Server); it shows the next time you open Keel.
+- **This computer:** the settings file and how you're signed in. In the downloaded executable, **space** on Updates goes round install by itself, only tell, and don't check (`KEEL_AUTO_UPDATE` and `KEEL_CHECK_UPDATES` in that `.env`).
+
+Teams and area paths are still picked in the web app.
+
 Not in the terminal yet: work items, boards, releases, production monitoring and insights (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
 
 ## Production monitoring
@@ -195,7 +203,7 @@ Keel can show more than one Azure DevOps organization together, and GitHub owner
 
 Keel can also follow **GitHub** repositories next to your Azure DevOps projects: their **pull requests** and **GitHub Actions**. Issues and GitHub Projects aren't included. An Admin adds a GitHub owner (an organization or a user) in Settings → Organizations: pick **GitHub** as the kind and give its address, `https://github.com/your-org` (a GitHub Enterprise Server's address works too). The owner shows as one project in Settings → Projects and repositories, with its repositories to pick from. The primary organization is still the Azure DevOps one.
 
-- **Tokens:** locally (and in the terminal app), Keel uses `GITHUB_TOKEN` from `.env`, or else your GitHub CLI sign-in (`gh auth login`), so no token needs storing. With sign-in, each person links their own GitHub token for the owner in Settings → Organizations. It needs the `repo` and `workflow` scopes (classic), or fine-grained Contents, Pull requests, Actions, Checks and Deployments (read and write).
+- **Tokens:** locally (and in the terminal app), Keel uses `GITHUB_TOKEN` from `.env`, or else your GitHub CLI sign-in (`gh auth login`), so no token needs storing. With sign-in, each person links their own GitHub token for the owner in Settings → Organizations. It needs the `repo` and `workflow` scopes (classic), or fine-grained Contents, Pull requests, Actions, Checks and Deployments (read and write). Add `read:org` (classic) or the organization's Members (read) to also see teams asked to review; without it Keel leaves them out.
 - **Pull requests:** in the Inbox, Pull requests, Dashboard and Insights like any other. Reviews count as votes: an approval is Approved, a change request is Waiting for author, and anyone asked to review who hasn't answered is waiting on. Checks and required reviews show as the PR's checks, blocking when branch protection requires them. From Keel you can approve or request changes, comment, add reviewers, publish a draft, turn auto-merge on or off, merge (squash, merge commit or rebase, optionally deleting the branch) and close. GitHub has no "approve with suggestions", "reset vote" or semi-linear merge, and Keel can't override branch protection there.
 - **Actions:** each workflow is a pipeline, grouped by repository, with its health, runs, jobs and steps, and the end of a failed step's log. **Run** starts a workflow that has a `workflow_dispatch` trigger. A deployment waiting on an environment's reviewers shows under Approvals and in the Inbox; rejecting it makes the run **declined**, not failed, as in Azure DevOps.
 - **People:** a GitHub login is matched to the same person in Azure DevOps by email, so their pull requests and reviews count on their Team page row. Keel uses the person's email in the organization's verified domains when GitHub gives it (the organization needs a verified domain; GitHub may only show it to organization members), and otherwise their public profile email. For someone with neither, their GitHub pull requests don't count on their row.
@@ -312,7 +320,7 @@ Teammates create their own token from the "How to create a token" steps shown af
 
 ## Appearance
 
-**Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal or Magenta). The choice is saved in your browser, and with sign-in it also follows your account to other devices.
+**Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal, Magenta or Coral). The choice is saved in your browser, and with sign-in it also follows your account to other devices.
 
 **Pinch,** the crab in Keel's logo, shows how things are. In the sidebar corner and next to the Dashboard greeting it watches; it looks worried while Azure DevOps answers Keel's live checks with an error, glances about during a refresh, and naps when your Inbox is empty (hover over the logo for what it means). It also glances about while a whole page loads, sits worried by error messages, and appears on the sign-in screen and on a "There's no page here" page for an address Keel doesn't have (which used to open the Dashboard instead). With reduced motion turned on in your system, it keeps still.
 

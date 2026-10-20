@@ -48,6 +48,15 @@ export function withSettings(text, lines) {
   return `${out}${gap}# Saved by keel on first run.\n${added.join('\n')}\n`;
 }
 
+/** Sets these KEY=value lines in the .env file (made if missing) and in `env`. */
+export function saveEnvSettings(envFile, lines, env = process.env) {
+  fs.mkdirSync(path.dirname(envFile), { recursive: true });
+  const before = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : '';
+  // Only you should read it when it holds a token.
+  fs.writeFileSync(envFile, withSettings(before, lines), { mode: 0o600 });
+  for (const line of lines) env[line.slice(0, line.indexOf('='))] = line.slice(line.indexOf('=') + 1);
+}
+
 /** Reads a line without echoing it (a token), showing • for each character typed. */
 function askHidden(input, output, question) {
   output.write(question);
@@ -141,11 +150,7 @@ export async function firstRunSetup({ envFile, env = process.env, input = proces
     close();
   }
 
-  fs.mkdirSync(path.dirname(envFile), { recursive: true });
-  const before = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : '';
-  // Only you should read it when it holds a token.
-  fs.writeFileSync(envFile, withSettings(before, lines), { mode: 0o600 });
-  for (const line of lines) env[line.slice(0, line.indexOf('='))] = line.slice(line.indexOf('=') + 1);
+  saveEnvSettings(envFile, lines, env);
   output.write(`\n${coral('●')} Saved. ${dim(signIn === 'az' ? 'Keel signs in with az: run az login first if you haven’t.' : 'Starting Keel…')}\n`);
   return 'saved';
 }

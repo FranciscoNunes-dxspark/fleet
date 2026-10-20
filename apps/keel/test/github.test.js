@@ -240,3 +240,21 @@ test('demo GitHub: work item pages simply have nothing from it', async () => {
   assert.ok(!(await service.workItems()).items.some((w) => w.org === P));
   assert.ok(!(await service.epics()).projects.some((p) => p.org === P));
 });
+
+test('a token without read:org still lists pull requests, without requested teams', async () => {
+  const { createDemoApi } = await import('../server/mock/github.js');
+  const { createGithubProvider } = await import('../server/github/provider.js');
+  const { GithubError } = await import('../server/github/client.js');
+  const api = createDemoApi('octo-demo');
+  const asked = [];
+  const graphql = (query, v, opts) => {
+    if (!/search\(/.test(query)) return api.graphql(query, v, opts); // people's emails, not a PR search
+    asked.push(/on Team/.test(query));
+    if (/on Team/.test(query)) throw new GithubError('GitHub: The \'slug\' field requires one of the following scopes: [\'read:org\']', 400, [{ type: 'INSUFFICIENT_SCOPES' }]);
+    return api.graphql(query, v);
+  };
+  const provider = createGithubProvider({ org: { key: 'gh-octo-demo', url: 'https://github.com/octo-demo', kind: 'github' }, client: { ...api, graphql } });
+  assert.ok((await provider.listPullRequests()).length > 0);
+  await provider.listPullRequests();
+  assert.deepEqual(asked, [true, false, false]); // asks once with teams, then never again
+});
