@@ -17,6 +17,10 @@ const PRIYA = user('priya-s', 'Priya Shah');
 const MARCUS = user('marcus-c', 'Marcus Chen');
 const SOFIA = user('sofia-a', 'Sofia Alvarez');
 const BOT = { login: 'dependabot[bot]', avatarUrl: null };
+// Emails as GitHub shares them, matching the demo Azure DevOps organization's people: work emails
+// in the organization's verified domain, and Sofia's on her public profile.
+const VERIFIED = { 'lead-dev': 'lead@contoso-demo.com', 'priya-s': 'priya@contoso-demo.com', 'marcus-c': 'marcus@contoso-demo.com' };
+const PUBLIC = { 'sofia-a': 'sofia@contoso-demo.com' };
 
 const later = (ms, fn) => setTimeout(fn, ms).unref?.();
 const notFound = (what) => Object.assign(new Error(`GitHub: ${what} not found`), { status: 404 });
@@ -354,7 +358,23 @@ function createDemoApi(owner) {
   });
   const byNodeId = (id) => db.prs.find((p) => `PR_${p.repo}_${p.number}` === id) || (() => { throw notFound(id); })();
 
-  async function graphql(query, v = {}) {
+  async function graphql(query, v = {}, { partial = false } = {}) {
+    // People's emails, asked for by login as u0, u1...: a login nobody has is NOT_FOUND.
+    if (/user\(login:/.test(query) && partial) {
+      const verified = /organizationVerifiedDomainEmails/.test(query);
+      const data = {};
+      const errors = [];
+      for (const [k, login] of Object.entries(v).filter(([k]) => /^l\d+$/.test(k))) {
+        const u = `u${k.slice(1)}`;
+        if (![ME, PRIYA, MARCUS, SOFIA].some((x) => x.login === login)) {
+          data[u] = null;
+          errors.push({ type: 'NOT_FOUND', path: [u], message: `Could not resolve to a User with the login of '${login}'.` });
+        } else {
+          data[u] = { email: PUBLIC[login] || '', ...(verified ? { organizationVerifiedDomainEmails: VERIFIED[login] ? [VERIFIED[login]] : [] } : {}) };
+        }
+      }
+      return { data, errors };
+    }
     if (/search\(/.test(query)) {
       const open = /is:open/.test(v.q);
       const since = /closed:>=(\S+)/.exec(v.q)?.[1];

@@ -162,9 +162,13 @@ export function createClient({ host = 'github.com', token, maxConcurrency = 6 } 
     return out.slice(0, max);
   }
 
-  /** A GraphQL query or mutation; GitHub's errors become thrown errors (NOT_FOUND as a 404). */
-  async function graphql(query, variables = {}) {
+  /**
+   * A GraphQL query or mutation; GitHub's errors become thrown errors (NOT_FOUND as a 404).
+   * With `partial`, GitHub's answer comes back as { data, errors } instead: what it could answer, and why not the rest.
+   */
+  async function graphql(query, variables = {}, { partial = false } = {}) {
     const { data } = await request(bases.graphql, { method: 'POST', body: { query, variables } });
+    if (partial) return { data: data?.data || {}, errors: data?.errors || [] };
     if (data?.errors?.length) {
       const e = data.errors[0];
       throw new GithubError(`GitHub: ${e.message}`, e.type === 'NOT_FOUND' ? 404 : e.type === 'FORBIDDEN' ? 403 : 400, data.errors);

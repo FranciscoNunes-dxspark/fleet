@@ -4,7 +4,7 @@
 // work items, boards, sprints or classic releases here, so those answer empty.
 import { createClient, seg } from './client.js';
 import {
-  person, normalizePR, policiesOf, threadsOf, fileOf, normalizeCommit, normalizeRun, normalizeWorkflow, timelineOf, logTail, approvalsOf,
+  person, normalizePR, withEmails, policiesOf, threadsOf, fileOf, normalizeCommit, normalizeRun, normalizeWorkflow, timelineOf, logTail, approvalsOf,
 } from './normalize.js';
 
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -23,7 +23,7 @@ const mergeMethod = (strategy) => {
   return MERGE_METHOD[strategy];
 };
 
-const WHO = 'login avatarUrl ... on User { name }';
+const WHO = '__typename login avatarUrl ... on User { name }';
 const PR_FIELDS = `
   number title url state isDraft mergeable createdAt closedAt headRefName baseRefName
   repository { name }
@@ -110,6 +110,49 @@ export function createGithubProvider({ org, token, client } = {}) {
   }
   const repoByName = async (name) => (await rawRepos()).find((r) => r.name === name) || null;
 
+  // People's emails (login to email, '' when GitHub has none), kept for an hour, so a GitHub login
+  // and an Azure DevOps account can be the same person: the address in the organization's verified
+  // domains when GitHub gives it, else the public profile email. Verified-domain emails need the
+  // organization to have verified a domain; when GitHub refuses them, ask for public emails only.
+  const emails = new Map();
+  let emailsAt = 0;
+  let verifiedOk = true;
+  async function emailsFor(logins) {
+    if (Date.now() - emailsAt > 3_600_000) {
+      emails.clear();
+      emailsAt = Date.now();
+      verifiedOk = true;
+    }
+    const missing = [...new Set(logins)].filter((l) => l && l !== 'ghost' && !emails.has(l));
+    if (!missing.length) return emails;
+    const isOrg = (await ownerType()) === 'Organization';
+    const ask = (batch, verified) => graphql(
+      `query(${verified ? '$org: String!, ' : ''}${batch.map((_, j) => `$l${j}: String!`).join(', ')}) { ${batch
+        .map((_, j) => `u${j}: user(login: $l${j}) { email${verified ? ' organizationVerifiedDomainEmails(login: $org)' : ''} }`).join(' ')} }`,
+      { ...(verified ? { org: owner } : {}), ...Object.fromEntries(batch.map((l, j) => [`l${j}`, l])) },
+      { partial: true },
+    );
+    for (let i = 0; i < missing.length; i += 50) {
+      const batch = missing.slice(i, i + 50);
+      try {
+        // A login GitHub no longer knows (NOT_FOUND) only leaves its own answer empty; any other refusal is the verified emails'.
+        let answer = isOrg && verifiedOk ? await ask(batch, true) : null;
+        if (answer?.errors.some((e) => e.type !== 'NOT_FOUND')) {
+          verifiedOk = false;
+          answer = null;
+        }
+        answer ??= await ask(batch, false);
+        batch.forEach((l, j) => {
+          const u = answer.data[`u${j}`];
+          emails.set(l, String(u?.organizationVerifiedDomainEmails?.[0] || u?.email || '').toLowerCase());
+        });
+      } catch (e) {
+        console.warn(`[github] ${owner}: no emails for people (${e.message})`);
+      }
+    }
+    return emails;
+  }
+
   // Workflow and run ids are unique across GitHub, but the API addresses them under their repo:
   // remember each one's repo as it's listed, and look for an unknown one in the recently pushed repos.
   const repoOfWorkflow = new Map();
@@ -149,7 +192,10 @@ export function createGithubProvider({ org, token, client } = {}) {
       out.push(...d.search.nodes.filter((n) => n?.number));
       after = d.search.pageInfo.hasNextPage ? d.search.pageInfo.endCursor : null;
     } while (after && out.length < 1000);
-    return out.map((n) => normalizePR(n, where));
+    const prs = out.map((n) => normalizePR(n, where));
+    const people = prs.flatMap((p) => [p.author, p.closedBy, ...p.reviewers]).filter((p) => p && !p.isContainer && !p.isBot);
+    const known = await emailsFor(people.map((p) => p.id));
+    return prs.map((p) => withEmails(p, known));
   }
 
   async function prNodeId(repo, n) {

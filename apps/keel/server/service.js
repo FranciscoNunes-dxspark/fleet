@@ -6,7 +6,7 @@ import { Cache } from './cache.js';
 import { createSettingsStore, defaultSettingsFile, pruneSnoozed } from './settings.js';
 import { createAzdoProvider } from './azdo/provider.js';
 import { createMockProvider } from './mock/provider.js';
-import { DAY, HOUR, enrichPR, sameIdentity } from './domain/prs.js';
+import { DAY, HOUR, enrichPR, sameIdentity, emailOf } from './domain/prs.js';
 import { releaseHealth } from './domain/releases.js';
 import { currentStage, pipelineHealth, wasDeclined } from './domain/pipelines.js';
 import { buildWorkload } from './domain/workload.js';
@@ -570,16 +570,16 @@ export function createService({
     if (!byId.size) {
       // No teams configured: infer the team from who is authoring PRs and owning items.
       const [prs, items] = await Promise.all([activePRs(), openItems()]);
-      for (const x of [...prs.map((p) => p.author), ...items.map((w) => w.assignedTo)]) if (x && !x.isContainer) byId.set(x.id, x);
+      for (const x of [...prs.map((p) => p.author), ...items.map((w) => w.assignedTo)]) if (x && !x.isContainer && !x.isBot) byId.set(x.id, x);
     }
     return [...byId.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, 10 * MIN);
 
   const hiddenList = (settings) => Object.entries(settings.hiddenPeople || {}).map(([id, h]) => ({ id, displayName: h.name, uniqueName: h.uniqueName }))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  /** Hidden from the Team page by you (by id, or by sign-in name across organizations). */
+  /** Hidden from the Team page by you (by id, or by sign-in name or email across organizations). */
   const isHidden = (settings, person) => Object.entries(settings.hiddenPeople || {})
-    .some(([id, h]) => id === person.id || (h.uniqueName && person.uniqueName && h.uniqueName.toLowerCase() === person.uniqueName.toLowerCase()));
+    .some(([id, h]) => sameIdentity({ id, uniqueName: h.uniqueName, email: h.email }, person));
   /** Who the Team page and its overload alerts are about: your teams, less those you hid. */
   async function teamPeople() {
     const [settings, team] = await Promise.all([store.load(), people()]);
@@ -1424,7 +1424,7 @@ export function createService({
       if (!person?.id) throw Object.assign(new Error('Who?'), { status: 400 });
       const settings = await store.load();
       const next = { ...(settings.hiddenPeople || {}) };
-      if (hidden) next[person.id] = { name: String(person.displayName || person.name || '').slice(0, 200), uniqueName: String(person.uniqueName || '').slice(0, 200) };
+      if (hidden) next[person.id] = { name: String(person.displayName || person.name || '').slice(0, 200), uniqueName: String(person.uniqueName || '').slice(0, 200), email: emailOf(person).slice(0, 200) };
       else delete next[person.id];
       await store.save({ hiddenPeople: next });
       return { hidden: hiddenList(await store.load()) };
