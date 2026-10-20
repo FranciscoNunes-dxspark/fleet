@@ -11,3 +11,6 @@ export function openUrl(url) {
 /** Keel's version: baked into the standalone executables by scripts/build-cli.js, else from package.json. */
 export const VERSION =
   process.env.KEEL_VERSION ?? JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+
+/** Whether this is a downloaded executable (scripts/build-cli.js), which updates itself, rather than a checkout. */
+export const COMPILED = process.env.KEEL_VERSION !== undefined;
