@@ -135,9 +135,9 @@ export function releaseHost(orgUrl) {
 }
 
 /** A provider acting as the owner of `pat` (one per signed-in user). */
-export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat } = {}) {
+export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, token } = {}) {
   const org = orgUrl;
-  const { api, apiText, download, listAll, listSkip, fetchOrgImage } = createClient({ orgUrl, pat });
+  const { api, apiText, download, listAll, listSkip, fetchOrgImage } = createClient({ orgUrl, pat, token });
   const toBuild = (b) => ({
     id: b.id,
     projectId: b.project?.id,

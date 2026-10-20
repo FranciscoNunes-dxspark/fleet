@@ -38,19 +38,13 @@ export function loadTheme() {
 
 const systemDark = () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
 
-/** Applies a theme to the page (and the browser-tab icon); returns the resolved mode. */
+/** Applies a theme to the page; returns the resolved mode. */
 export function applyTheme(theme = loadTheme()) {
   const mode = theme.mode === 'system' ? (systemDark() ? 'dark' : 'light') : theme.mode;
   const root = document.documentElement;
   root.dataset.mode = mode;
   root.dataset.accent = theme.accent;
   root.style.colorScheme = mode;
-  // Tint the favicon with the accent so pinned tabs match.
-  const accent = getComputedStyle(root).getPropertyValue('--accent').trim() || '#3ec486';
-  const onAccent = getComputedStyle(root).getPropertyValue('--on-accent').trim() || '#0c1a13';
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='${accent}'/><path d='M16.6 3.8 23.8 11.4h-7.2z' fill='#ffffff'/><path d='M15.4 5.8 10.6 11.4h4.8z' fill='#ffffff' opacity='.75'/><path d='M4 12.6h24c-.7 2.7-2.6 4.6-5.6 4.9H10.2C7.3 17.2 5.2 15.4 4 12.6z' fill='#ffffff'/><path d='M14.2 17.4h4l-1 5.6h-2.2z' fill='${onAccent}'/><path d='M12.4 24.2c0-.9 1.8-1.6 4-1.6s4 .7 4 1.6-1.8 1.6-4 1.6-4-.7-4-1.6z' fill='${onAccent}'/></svg>`;
-  const link = document.querySelector('link[rel="icon"]');
-  if (link) link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
   return mode;
 }
 

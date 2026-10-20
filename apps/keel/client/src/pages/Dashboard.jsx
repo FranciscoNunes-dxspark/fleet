@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, hours, pct, REVIEW_STATE } from '../format.js';
-import { Avatar, Chip, ErrorBox } from '../ui.jsx';
+import { Avatar, Chip, ErrorBox, Pinch, pinchLine } from '../ui.jsx';
 import { PREF_KEYS, pushPref } from '../prefs.js';
 import { locale, t, tj, tx } from '../i18n.js';
 import { byWaiting, uncounted, waitTone } from './Shipping.jsx';
+import { pinchMood } from '../pinch.js';
 
 // WIDGETS title / linkText stay English here; they are translated with t() at render
 // so they follow the current language.
@@ -127,12 +128,14 @@ export default function Dashboard() {
 }
 
 /**
- * The top of the Dashboard: the greeting and the three numbers that matter
+ * The top of the Dashboard: Pinch, the greeting and the three numbers that matter
  * today (what needs you now, reviews waiting on you, production problems).
  */
 function Hero({ greeting, sub, children }) {
   const { data } = useApi('/attention');
+  const { live } = useApp();
   const s = data?.summary;
+  const mood = pinchMood({ attention: data, live });
   const figures = [
     { to: '/inbox', n: s?.high, label: t('act now'), tone: 'bad' },
     { to: '/prs', n: s?.myReviews, label: t('reviews for you'), tone: 'accent' },
@@ -141,8 +144,12 @@ function Hero({ greeting, sub, children }) {
   return (
     <section className="hero" aria-label={greeting}>
       <div className="hero-text">
-        <h1>{greeting}</h1>
-        <p className="page-sub">{sub}</p>
+        <Pinch mood={mood} width={64} />
+        <div>
+          <h1>{greeting}</h1>
+          <p className="page-sub">{sub}</p>
+          <p className="hero-pinch">{pinchLine(mood, { attention: data, live })}</p>
+        </div>
       </div>
       <div className="hero-figures">
         {figures.map((f) => (

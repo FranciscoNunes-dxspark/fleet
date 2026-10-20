@@ -2,7 +2,7 @@
 // shows push notifications (server/push.js) when Keel isn't open.
 // Only the app itself is cached (the page and its hashed /assets files);
 // Azure DevOps data from /api never is, so nothing private is stored here.
-const CACHE = 'keel-shell-v3';
+const CACHE = 'keel-shell-v4';
 const SHELL = ['/', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/badge-96.png'];
 
 self.addEventListener('install', (event) => {

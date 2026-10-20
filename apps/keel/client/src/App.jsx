@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api.js';
 import { AppContext, useApi, useApp } from './context.js';
-import { Drawer, ErrorBox, Loading, Logo } from './ui.jsx';
+import { Drawer, ErrorBox, Loading, Logo, pinchLine } from './ui.jsx';
+import { pinchMood } from './pinch.js';
 import { loadPrefs, showDesktop } from './notify.js';
 import Inbox from './pages/Inbox.jsx';
 import PullRequests from './pages/PullRequests.jsx';
@@ -19,6 +20,7 @@ import NewPr from './pages/NewPr.jsx';
 import Board from './pages/Board.jsx';
 import Epics from './pages/Epics.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import NotFound from './pages/NotFound.jsx';
 import Pipelines from './pages/Pipelines.jsx';
 import Production from './pages/Production.jsx';
 import Totals from './pages/Totals.jsx';
@@ -344,13 +346,15 @@ function Shell() {
     menuRef.current?.focus({ preventScroll: true });
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
-  const { meta, refresh, toast, refreshKey, authMode, signOut, can } = useApp();
+  const { meta, refresh, toast, refreshKey, authMode, signOut, can, live } = useApp();
   const newVersion = useNewVersion();
   const mainRef = useRef(null);
   useStableHeight(mainRef, refreshKey);
   const { data: attention } = useApi('/attention');
   const [spinning, setSpinning] = useState(false);
   const s = attention?.summary;
+  // Pinch in the corner reacts to what Keel sees, and says why on hover.
+  const mood = pinchMood({ attention, live, busy: spinning });
 
   // Browser tab title carries the "act now" count, so it shows on a background tab.
   useEffect(() => {
@@ -414,7 +418,7 @@ function Shell() {
     <div className={`shell${collapsed ? ' shell-collapsed' : ''}${menuOpen ? ' menu-open' : ''}`}>
       <nav className="sidebar" aria-label={t('Main')}>
         <div className="brand">
-          <Logo />
+          <Logo mood={mood} title={pinchLine(mood, { attention, live })} />
           <button
             type="button"
             className="sidebar-toggle"
@@ -518,7 +522,7 @@ function Shell() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />
           {/* Unknown paths go home. */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
       {menuOpen && <div className="menu-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />}

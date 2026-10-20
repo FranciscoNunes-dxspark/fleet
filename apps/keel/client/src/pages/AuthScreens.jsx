@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { Loading, Logo } from '../ui.jsx';
+import { Loading, Pinch } from '../ui.jsx';
 import { t, tj } from '../i18n.js';
 
 // Scope names and access levels as Azure DevOps shows them on its token page (kept in English).
@@ -19,8 +19,8 @@ function Card({ orgUrl, title, children, onSubmit }) {
   return (
     <div className="signin">
       <form className="signin-card" onSubmit={onSubmit}>
-        <div className="brand">
-          <Logo size={32} />
+        <div className="signin-pinch">
+          <Pinch width={96} />
           <div>
             <div className="brand-name">Keel</div>
             <div className="brand-org">{org}</div>

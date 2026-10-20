@@ -1,0 +1,552 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Box, useApp, useInput } from 'ink';
+import { diffSnapshots } from '../../server/domain/changes.js';
+import * as a from '../actions.js';
+import { findCommand, suggestionsFor } from '../commands.js';
+import { pipelineDetail, prFullText } from '../format.js';
+import { HELP } from '../help.js';
+import { logText } from '../log.js';
+import { openUrl as openInBrowser } from '../open.js';
+import { FACES, moodFor } from '../pinch.js';
+import { BULLET, theme } from '../theme.js';
+import { fitSegments, stringWidth } from '../text.js';
+import { useTerminalSize } from './hooks.js';
+import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from './parts.jsx';
+import { InboxView } from './InboxView.jsx';
+import { PipelinesView, pipelineId } from './PipelinesView.jsx';
+import { PrsView, prId } from './PrsView.jsx';
+import { TextViewer } from './TextViewer.jsx';
+import { WELCOME_HEIGHT, Welcome } from './Pinch.jsx';
+
+const VIEWS = [
+  { id: 'inbox', label: 'Inbox' },
+  { id: 'prs', label: 'Pull requests' },
+  { id: 'pipelines', label: 'Pipelines' },
+];
+
+const HINTS = {
+  inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
+  prs: 'a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter',
+  pipelines: 'n run · c cancel the run · ↵ all runs · o browser',
+};
+
+// As the web server's watcher (server/watcher.js): what a poll drops so it really asks Azure DevOps.
+const LIVE_PREFIXES = ['prs:active', 'pr:', 'wi:', 'builds'];
+const MIN_POLL = 15;
+const MAX_POLL = 600;
+
+const firstLine = (s) => String(s ?? '').split('\n')[0];
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const segmentsText = (line) => (typeof line === 'string' ? line : line.map((s) => s.text).join(''));
+
+function Header({ meta, orgs, signIn, attention, pollError, width, mood }) {
+  const segs = [
+    { text: `${FACES[mood]} `, color: mood === 'worried' ? theme.warn : theme.accent, bold: true },
+    { text: 'Keel', bold: true },
+    { text: '  │  ', color: theme.border },
+  ];
+  const primary = orgs[0];
+  segs.push({ text: primary?.name ?? 'Azure DevOps', bold: true });
+  if (orgs.length > 1) segs.push({ text: ` +${orgs.length - 1}`, color: theme.dim });
+  if (meta) segs.push({ text: `  ${plural(meta.trackedProjects.length, 'project')}`, color: theme.dim });
+  if (signIn === 'demo') segs.push({ text: '  ' }, { text: ' DEMO ', bg: theme.warn, color: theme.ink, bold: true });
+  else segs.push({ text: signIn === 'az' ? '  az login' : '  PAT', color: theme.dim });
+  const high = attention?.summary?.high;
+  if (high) segs.push({ text: '  ' }, { text: ` ${high} act now `, bg: theme.del, color: theme.ink, bold: true });
+  if (pollError) segs.push({ text: "  can't reach Azure DevOps", color: theme.del });
+  return <Row pointer={false} width={width} segments={fitSegments(segs, width)} />;
+}
+
+function Tabs({ view, data, width }) {
+  const counts = {
+    inbox: data.attention?.items.length,
+    prs: data.prs?.filter((p) => p.needsMyReview).length || null,
+    pipelines: data.pipelines?.filter((p) => p.health === 'failing').length || null,
+  };
+  const segs = [];
+  VIEWS.forEach((v, i) => {
+    const on = v.id === view;
+    const n = counts[v.id];
+    segs.push({ text: ` ${i + 1} ${v.label}${n ? ` ${n}` : ''} `, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
+  });
+  return <Row pointer={false} width={width} segments={segs} />;
+}
+
+// The last two results, Claude Code style: "● Approve !817 …" then "  ⎿  Approved."
+function activityRows(entries) {
+  const out = [];
+  for (const e of entries.slice(-2)) {
+    const color = { error: theme.del, ok: theme.accent, running: theme.dim, info: theme.info }[e.status];
+    out.push([{ text: `${BULLET} `, color }, { text: e.title, bold: e.status !== 'info' }]);
+    const max = e.status === 'error' ? 3 : 2;
+    e.lines.slice(0, max).forEach((l, i) =>
+      out.push([{ text: i === 0 ? '  ⎿  ' : '     ', color: theme.dim }, { text: l, color: e.status === 'error' ? theme.del : theme.dim }]),
+    );
+    if (e.lines.length > max) out.push([{ text: '     ' }, { text: `… +${e.lines.length - max} lines (/last to see all)`, color: theme.dim }]);
+  }
+  return out.slice(-6);
+}
+
+/**
+ * `keel` is `{ service, orgs, signIn }` from cli/service.js (the tests build it the same way, on
+ * demo data). `openUrl` opens links (the browser by default); `poll` turns live checks off when false.
+ */
+export function App({ keel, openUrl = openInBrowser, poll = true }) {
+  const { service, orgs, signIn } = keel;
+  const { exit } = useApp();
+  const { columns, rows } = useTerminalSize();
+  const [meta, setMetaState] = useState(null);
+  const [data, setDataState] = useState({ attention: null, prs: null, pipelines: null, version: 0 });
+  const [pollError, setPollError] = useState(null);
+  const [view, setViewState] = useState('inbox');
+  const [focus, setFocusState] = useState('view');
+  const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
+  const [sugIndex, setSugIndex] = useState(0);
+  const [overlay, setOverlayState] = useState(null);
+  const [confirmReq, setConfirmReq] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '' });
+  const [show, setShow] = useState('all');
+  const [jump, setJump] = useState(null);
+  const [welcome, setWelcome] = useState(true);
+  // Pinch looks happy (or worried) for a few seconds after a result; re-render when that wears off.
+  const [, setMoodTick] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setMoodTick((n) => n + 1), 8100);
+    return () => clearTimeout(t);
+  }, [entries]);
+
+  // Async actions read the latest state through refs, not through stale closures.
+  const metaRef = useRef(null);
+  const dataRef = useRef(data);
+  const viewRef = useRef('inbox');
+  const busyRef = useRef(null);
+  const promptRef = useRef(prompt);
+  const confirmRef = useRef(null);
+  const focusRef = useRef('view');
+  const overlayRef = useRef(null);
+  const selection = useRef({});
+  const nextId = useRef(1);
+  const history = useRef([]);
+  const historyPos = useRef(-1);
+  const lastOutput = useRef(null);
+  const loading = useRef(null);
+  const prevSnapshot = useRef(null);
+
+  const setMeta = (m) => {
+    metaRef.current = m;
+    setMetaState(m);
+  };
+  const setData = (patch) => {
+    dataRef.current = { ...dataRef.current, ...patch, version: dataRef.current.version + 1 };
+    setDataState(dataRef.current);
+  };
+  const setView = (v) => {
+    viewRef.current = v;
+    setViewState(v);
+  };
+  const setFocus = (f) => {
+    focusRef.current = f;
+    setFocusState(f);
+  };
+  const setOverlay = (next) => {
+    overlayRef.current = typeof next === 'function' ? next(overlayRef.current) : next;
+    setOverlayState(overlayRef.current);
+  };
+  const setPrompt = (value, cursor = value.length) => {
+    promptRef.current = { value, cursor };
+    setPromptState(promptRef.current);
+  };
+
+  const addEntry = (e) => {
+    const id = nextId.current++;
+    setEntries((list) => [...list.slice(-19), { id, lines: [], at: Date.now(), ...e }]);
+    return id;
+  };
+  const updateEntry = (id, patch) => setEntries((list) => list.map((e) => (e.id === id ? { ...e, at: Date.now(), ...patch } : e)));
+
+  const note = (text, status = 'info') => {
+    const [title, ...lines] = String(text).split('\n');
+    addEntry({ title, status, lines });
+  };
+
+  // Everything the three tabs show, read together. Several callers at once share one read.
+  const load = () => {
+    loading.current ??= Promise.all([service.attention(), service.pullRequests(), service.pipelines()])
+      .then(([attention, prs, pipelines]) => {
+        setData({ attention, prs: prs.prs, pipelines });
+        setPollError(null);
+      })
+      .finally(() => {
+        loading.current = null;
+      });
+    return loading.current;
+  };
+
+  // After a change of ours: read again (the service already dropped what the change touched).
+  const reload = () => load();
+
+  // A live check, as the web server's watcher does: ask Azure DevOps again, tell what changed.
+  const check = async () => {
+    for (const prefix of LIVE_PREFIXES) service.invalidate(prefix);
+    const snap = await service.snapshot();
+    const notes = diffSnapshots(prevSnapshot.current, snap);
+    prevSnapshot.current = snap;
+    await load();
+    for (const n of notes.slice(0, 5)) addEntry({ title: n.title, status: 'info', lines: n.body ? [n.body] : [] });
+    if (notes.length > 5) note(`… and ${notes.length - 5} more changes in Azure DevOps.`);
+  };
+
+  // One thing at a time, with the spinner, esc to stop waiting, and a line in the activity log.
+  // `start(signal)` resolves with the lines to show under the title.
+  const task = async (title, start, { label = 'Working', quiet = false } = {}) => {
+    if (busyRef.current) {
+      note(`Wait for "${busyRef.current.label}" to finish (esc stops waiting).`, 'error');
+      return { ok: false, error: new Error('busy') };
+    }
+    const controller = new AbortController();
+    const b = { label, started: Date.now(), abort: () => controller.abort() };
+    busyRef.current = b;
+    setBusy(b);
+    const id = quiet ? null : addEntry({ title, status: 'running' });
+    if (!quiet) setWelcome(false);
+    // Esc stops waiting; Azure DevOps may still finish what was asked, and the next check shows it.
+    const stopped = new Promise((_, reject) => controller.signal.addEventListener('abort', () => reject(Object.assign(new Error('Stopped waiting'), { cancelled: true }))));
+    try {
+      const lines = await Promise.race([start(controller.signal), stopped]);
+      lastOutput.current = { title, text: lines.join('\n') || 'Done' };
+      if (id) updateEntry(id, { status: 'ok', lines: lines.length ? lines : ['Done'] });
+      return { ok: true };
+    } catch (error) {
+      const lines = error.cancelled ? ['Stopped waiting. Azure DevOps may still finish it: r checks again.'] : String(error.message).split('\n');
+      lastOutput.current = { title, text: lines.join('\n') };
+      if (id) updateEntry(id, { status: 'error', lines });
+      else addEntry({ title, status: 'error', lines });
+      return { ok: false, error };
+    } finally {
+      busyRef.current = null;
+      setBusy(null);
+    }
+  };
+
+  const refresh = () =>
+    task('Check Azure DevOps', async () => {
+      await check();
+      const att = dataRef.current.attention;
+      return [`${plural(att.items.length, 'item')} in the Inbox · ${plural(dataRef.current.prs.length, 'pull request')} · ${plural(dataRef.current.pipelines.length, 'pipeline')}`];
+    }, { label: 'Asking Azure DevOps' });
+
+  const confirm = (req) =>
+    new Promise((done) => {
+      const full = { options: [{ label: 'Yes', value: true }, { label: 'No', value: false }], ...req, id: nextId.current++, done };
+      confirmRef.current = full;
+      setConfirmReq(full);
+    });
+  const onConfirm = (value) => {
+    const req = confirmRef.current;
+    confirmRef.current = null;
+    setConfirmReq(null);
+    req?.done(value);
+  };
+
+  const prefill = (text, cursor = text.length) => {
+    setPrompt(text, cursor);
+    setSugIndex(0);
+    historyPos.current = -1;
+    setFocus('prompt');
+  };
+
+  // What slash commands act on: the selection in the current tab. A pull request or pipeline
+  // picked in the Inbox counts as that pull request or pipeline.
+  const current = () => {
+    const sel = selection.current;
+    const v = viewRef.current;
+    const d = dataRef.current;
+    if (v === 'prs') return { pr: sel.pr, webUrl: sel.pr?.webUrl };
+    if (v === 'pipelines') return { pipeline: sel.pipeline, webUrl: sel.pipeline?.lastRun?.webUrl ?? sel.pipeline?.latest?.webUrl };
+    const item = sel.item;
+    const t = item?.target ?? {};
+    const sameOrg = (x) => !item.org || !x.org || x.org === item.org;
+    const pr = t.type === 'pr' ? d.prs?.find((p) => p.projectId === t.projectId && p.repoId === t.repoId && p.id === t.id && sameOrg(p)) : undefined;
+    const pipeline = t.type === 'pipeline' ? d.pipelines?.find((p) => p.key === t.key && sameOrg(p)) : undefined;
+    return { item, pr, pipeline, webUrl: item?.webUrl };
+  };
+
+  const quit = () => exit();
+
+  const ctxRef = useRef(null);
+  if (!ctxRef.current) {
+    ctxRef.current = {
+      get meta() {
+        return metaRef.current;
+      },
+      get data() {
+        return dataRef.current;
+      },
+    };
+  }
+  const ctx = ctxRef.current;
+  Object.assign(ctx, {
+    service,
+    task,
+    confirm,
+    note,
+    prefill,
+    reload,
+    refresh,
+    current,
+    openUrl,
+    quit,
+    select: (patch) => Object.assign(selection.current, patch),
+    // ↵ on an Inbox item: its pull request or pipeline in its own tab, when it's in the list.
+    showPr: (target, org) => {
+      const pr = dataRef.current.prs?.find((p) => p.projectId === target.projectId && p.repoId === target.repoId && p.id === target.id && (!org || !p.org || p.org === org));
+      if (!pr) return false;
+      setFilters((f) => ({ ...f, prs: '' }));
+      setShow('all');
+      setJump({ view: 'prs', key: prId(pr) });
+      setView('prs');
+      return true;
+    },
+    showPipeline: (key, org) => {
+      const row = dataRef.current.pipelines?.find((p) => p.key === key && (!org || !p.org || p.org === org));
+      if (!row) return false;
+      setFilters((f) => ({ ...f, pipelines: '' }));
+      setJump({ view: 'pipelines', key: pipelineId(row) });
+      setView('pipelines');
+      return true;
+    },
+    jumped: () => setJump(null),
+    find: (text) => {
+      const v = viewRef.current;
+      setFilters((f) => ({ ...f, [v]: text.trim() }));
+    },
+    showGroup: (group) => {
+      if (!['all', 'review', 'mine'].includes(group)) return note('Show all, review or mine.', 'error');
+      setShow(group);
+      setView('prs');
+    },
+    viewHasKeys: () => focusRef.current === 'view' && !overlayRef.current && !confirmRef.current,
+    showText: (title, text) => setOverlay({ title, text }),
+    showPrFull: async (pr) => {
+      setOverlay({ title: `!${pr.id} ${pr.title}`, loading: true });
+      try {
+        const full = await service.pullRequest(pr.projectId, pr.repoId, pr.id);
+        setOverlay((o) => (o?.title === `!${pr.id} ${pr.title}` ? { title: o.title, text: prFullText(full) } : o));
+      } catch (e) {
+        setOverlay(null);
+        note(`Couldn't read !${pr.id}: ${firstLine(e.message)}`, 'error');
+      }
+    },
+    showPipelineRuns: async (row) => {
+      setOverlay({ title: row.definition.name, loading: true });
+      try {
+        const { runs } = await service.pipelineRuns(row.projectId, row.definition.id);
+        setOverlay((o) => (o?.title === row.definition.name ? { title: o.title, text: pipelineDetail(row, runs).map(segmentsText).join('\n') } : o));
+      } catch (e) {
+        setOverlay(null);
+        note(`Couldn't read the runs of ${row.definition.name}: ${firstLine(e.message)}`, 'error');
+      }
+    },
+    showHelp: () => setOverlay({ title: 'Keyboard shortcuts', text: HELP }),
+    showLog: () => setOverlay({ title: 'Log', text: logText() }),
+    showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('Nothing has run yet.')),
+  });
+
+  const submit = async (raw) => {
+    const text = raw.trim();
+    setPrompt('');
+    setFocus('view');
+    if (!text) return;
+    history.current = [text, ...history.current.filter((h) => h !== text)].slice(0, 100);
+    try {
+      const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
+      const cmd = findCommand(name);
+      if (!cmd) return note(`Unknown command: /${name}. Type / to see them all.`, 'error');
+      await cmd.run(ctx, rest.trim());
+    } catch (e) {
+      note(firstLine(e.message), 'error');
+    }
+  };
+
+  // First look: who you are and your tracked projects, then everything the tabs show, and the
+  // baseline the live checks compare against (the first one announces nothing, as in the browser).
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const m = await service.meta();
+        if (!live) return;
+        setMeta(m);
+        await load();
+        prevSnapshot.current = await service.snapshot();
+      } catch (e) {
+        if (!live) return;
+        setPollError(firstLine(e.message));
+        note(`Couldn't read Azure DevOps: ${firstLine(e.message)}`, 'error');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Live checks, every "refresh every" seconds from Keel's settings (as the web app's), only
+  // between other things: never while an action runs.
+  useEffect(() => {
+    if (!poll) return;
+    let timer = null;
+    let live = true;
+    const next = async () => {
+      const seconds = Math.min(MAX_POLL, Math.max(MIN_POLL, Number((await service.settingsStore.load()).refreshSeconds) || 60));
+      if (live) timer = setTimeout(tick, seconds * 1000);
+    };
+    const tick = async () => {
+      if (!busyRef.current) {
+        try {
+          await check();
+        } catch (e) {
+          setPollError(firstLine(e.message));
+        }
+      }
+      if (live) next();
+    };
+    next();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const lists = { prs: data.prs };
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, lists) : [];
+  const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
+
+  // Line editing in the prompt.
+  const promptKeys = (input, key) => {
+    const { value, cursor } = promptRef.current;
+    const items = suggestionsFor(value, { prs: dataRef.current.prs });
+    const pick = items[Math.min(sugIndex, items.length - 1)];
+    const edit = (v, c) => {
+      setPrompt(v, c);
+      setSugIndex(0);
+    };
+    if (key.ctrl && input === 'c') return value ? edit('', 0) : quit();
+    if (key.escape) return setFocus('view');
+    if (key.return) {
+      if (pick && value.trim() !== pick.insert.trim()) return pick.run ? submit(pick.insert) : edit(pick.insert);
+      return submit(value);
+    }
+    if (key.tab) return pick ? edit(pick.insert) : undefined;
+    if (key.upArrow || key.downArrow) {
+      if (items.length) return setSugIndex((s) => (s + (key.upArrow ? items.length - 1 : 1)) % items.length);
+      const pos = Math.max(-1, Math.min(history.current.length - 1, historyPos.current + (key.upArrow ? 1 : -1)));
+      historyPos.current = pos;
+      return setPrompt(pos < 0 ? '' : history.current[pos]);
+    }
+    if (key.leftArrow) return setPrompt(value, Math.max(0, cursor - 1));
+    if (key.rightArrow) return setPrompt(value, Math.min(value.length, cursor + 1));
+    // Most terminals send DEL for backspace, which Ink reports as `delete`.
+    if (key.backspace || key.delete) {
+      if (!value) return setFocus('view');
+      if (cursor > 0) edit(value.slice(0, cursor - 1) + value.slice(cursor), cursor - 1);
+      return;
+    }
+    if (key.ctrl && input === 'a') return setPrompt(value, 0);
+    if (key.ctrl && input === 'e') return setPrompt(value, value.length);
+    if (key.ctrl && input === 'u') return edit(value.slice(cursor), 0);
+    if (key.ctrl && input === 'w') {
+      const start = value.slice(0, cursor).replace(/\S+\s*$/, '').length;
+      return edit(value.slice(0, start) + value.slice(cursor), start);
+    }
+    if (key.ctrl || key.meta || !input) return;
+    const text = input.replace(/[\r\n]+/g, ' ').replace(/[\x00-\x1f\x7f]/g, '');
+    if (text) edit(value.slice(0, cursor) + text + value.slice(cursor), cursor + text.length);
+  };
+
+  // Keys that work in every view.
+  const globalKeys = (input, key) => {
+    if (key.escape) {
+      if (busyRef.current) busyRef.current.abort();
+      else {
+        setEntries([]);
+        setWelcome(false);
+      }
+      return;
+    }
+    if (key.ctrl || key.meta) return;
+    // A pasted "/approve" arrives in one piece: it starts the prompt with all of it.
+    if (input[0] === '/' || input[0] === ':') return prefill(`/${input.slice(1).replace(/[\x00-\x1f\x7f]/g, '')}`);
+    if (input === '?') return ctx.showHelp();
+    if (input === 'q') return quit();
+    if (input === 'o') return a.open(ctx);
+    const n = Number(input);
+    if (n >= 1 && n <= VIEWS.length) return setView(VIEWS[n - 1].id);
+    if (key.tab) {
+      const i = VIEWS.findIndex((v) => v.id === viewRef.current);
+      return setView(VIEWS[(i + (key.shift ? VIEWS.length - 1 : 1)) % VIEWS.length].id);
+    }
+    if (input === 'r') return refresh();
+  };
+
+  // One dispatcher reading focus from refs, which change the instant focus moves. Handlers that
+  // switch on with the next render would let fast typing (or a paste) after "/" leak into the view.
+  useInput((input, key) => {
+    if (focusRef.current === 'prompt' && !confirmRef.current) return promptKeys(input, key);
+    if (key.ctrl && input === 'c') return quit();
+    if (confirmRef.current || overlayRef.current) return;
+    globalKeys(input, key);
+  });
+
+  // Layout: everything is sized to the terminal, one row short of it so Ink never clears the screen.
+  const W = columns;
+  const H = Math.max(12, rows - 1);
+  const act = activityRows(entries);
+  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const mood = moodFor({ attention: data.attention, busy, lastEntry: entries.at(-1), pollError });
+  // The welcome box only appears when the terminal has room for it next to a useful view.
+  const showWelcome = welcome && H >= 28;
+  const mainH = Math.max(6, H - 2 - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  const viewActive = focus === 'view' && !overlay && !confirmReq;
+
+  let main;
+  if (overlay) {
+    main = <TextViewer {...overlay} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
+  } else if (view === 'prs') {
+    main = <PrsView failed={Boolean(pollError)} prs={data.prs} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'pipelines') {
+    main = <PipelinesView failed={Boolean(pollError)} pipelines={data.pipelines} version={data.version} filter={filters.pipelines} jump={jump?.view === 'pipelines' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else {
+    main = <InboxView failed={Boolean(pollError)} attention={data.attention} filter={filters.inbox} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  }
+
+  const left = focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
+  const right = focus === 'prompt' ? '' : '  / commands · ? help';
+
+  return (
+    <Box flexDirection="column" width={W} height={H}>
+      <Header meta={meta} orgs={orgs} signIn={signIn} attention={data.attention} pollError={pollError} width={W} mood={mood} />
+      <Tabs view={view} data={data} width={W} />
+      <Box height={mainH} width={W}>
+        {main}
+      </Box>
+      {showWelcome ? <Welcome mood={mood} attention={data.attention} pollError={pollError} width={W} /> : null}
+      {act.map((segs, i) => (
+        <Row key={i} pointer={false} width={W} segments={segs} />
+      ))}
+      {busy ? <Spinner label={busy.label} started={busy.started} width={W} /> : null}
+      {confirmReq ? (
+        <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
+      ) : (
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands (try /approve or /run), ? for shortcuts" />
+      )}
+      {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
+      <Row
+        pointer={false}
+        width={W}
+        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
+      />
+    </Box>
+  );
+}

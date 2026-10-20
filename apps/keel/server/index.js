@@ -14,6 +14,7 @@ import { createChannels } from './channels.js';
 import { createPush } from './push.js';
 import { createSchedules } from './schedules.js';
 import { createAzdoProvider } from './azdo/provider.js';
+import { azureDevOpsToken } from './azdo/azcli.js';
 import { createMockProvider } from './mock/provider.js';
 import { createMockVariant } from './mock/variant.js';
 import { createSettingsStore, defaultSettingsFile } from './settings.js';
@@ -48,6 +49,8 @@ if (config.authMode === 'login') {
   const orgStore = createOrgStore();
   const settings = createSettingsStore(defaultSettingsFile());
   const schedules = createSchedules({ resolveService: () => localCtx().service });
+  // AZDO_AUTH=az without a PAT: your Azure CLI sign-in, shared by every organization.
+  const azToken = config.azAuth && !config.pat ? azureDevOpsToken() : undefined;
   let ctx = null;
   const localCtx = () => {
     if (ctx?.sig === orgStore.signature()) return ctx;
@@ -55,7 +58,7 @@ if (config.authMode === 'login') {
     const entries = orgStore.all().map((org) => ({
       org,
       service: createService({
-        provider: config.mock ? (org.primary ? createMockProvider() : createMockVariant()) : createAzdoProvider({ orgUrl: org.url, pat: config.pat }),
+        provider: config.mock ? (org.primary ? createMockProvider() : createMockVariant()) : createAzdoProvider({ orgUrl: org.url, pat: config.pat, token: azToken }),
         settings,
         monitoring: org.primary ? monitoring : null,
         org,

@@ -24,6 +24,8 @@ export function dataDirFor(root, env = process.env) {
 
 const orgUrl = (process.env.AZDO_ORG_URL || '').trim().replace(/\/+$/, '');
 const pat = (process.env.AZDO_PAT || '').trim();
+// Local mode (the server or the terminal app, cli/) can use your Azure CLI sign-in instead of a PAT: AZDO_AUTH=az.
+const azAuth = /^az$/i.test((process.env.AZDO_AUTH || '').trim());
 const mockRequested = process.argv.includes('--mock') || /^(1|true|yes)$/i.test(process.env.AZDO_MOCK || '');
 // local: one user, PAT from .env. login: each person signs in with their own PAT.
 // Sign-in also works on demo data, to try accounts and roles before deploying.
@@ -41,8 +43,9 @@ export const config = {
   authMode,
   // Behind a reverse proxy (Hostinger, nginx...): set TRUST_PROXY=1 so HTTPS and client IPs are seen correctly.
   trustProxy: process.env.TRUST_PROXY || null,
-  mock: mockRequested || !orgUrl || (authMode === 'local' && !pat),
-  mockReason: mockRequested ? 'requested' : !orgUrl ? 'AZDO_ORG_URL not set' : (authMode === 'local' && !pat) ? 'AZDO_PAT not set' : null,
+  azAuth,
+  mock: mockRequested || !orgUrl || (authMode === 'local' && !pat && !azAuth),
+  mockReason: mockRequested ? 'requested' : !orgUrl ? 'AZDO_ORG_URL not set' : (authMode === 'local' && !pat && !azAuth) ? 'AZDO_PAT not set' : null,
   dataDir: dataDirFor(ROOT),
   seedProjects: (process.env.AZDO_PROJECTS || '').split(',').map((s) => s.trim()).filter(Boolean),
 };

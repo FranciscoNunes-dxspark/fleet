@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/pinch.svg" width="128" alt="Pinch, the Keel crab"></p>
+
 # Keel
 
 A tech lead's console for Azure DevOps
@@ -65,6 +67,24 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 **Search (Ctrl+K, or ⌘K on a Mac)** opens a search box from anywhere: pages and their tabs, open pull requests, open work items, pipelines and repositories (each repo opens its commit history), plus New work item, New pull request and Refresh. Type a number (`#4107` or `4107`) to open any work item, closed ones too, or `!815` for a pull request. With nothing typed it shows what you opened recently (kept in this browser).
 
 Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Click a section's title to fold it away; folded sections stay folded in this browser, and a link to one (from Waiting to ship, say) opens it. Settings are saved to `data/settings.json`.
+
+## In the terminal
+
+`npm run cli` opens Keel in the terminal (or run `npm link` once, then `keel` from any folder). It works like Tiller and Trawl: titled panels, a prompt with slash commands, and Pinch the crab keeping an eye on things. `npm run cli:demo` (`keel --demo`) opens the demo organization, no credentials needed.
+
+It reads the same `.env` and data folder as the web app, so tracked projects, snoozes and settings are shared. It runs in local mode only, not with sign-in (`AUTH_MODE=login`).
+
+**Signing in.** With `AZDO_PAT` in `.env`, it uses that token. Without one, it uses your Azure CLI sign-in (`az login`), so no token is stored anywhere; your account needs access to the organization. `AZDO_AUTH=az` in `.env` does the same for the web server in local mode.
+
+| Tab | For |
+|---|---|
+| **Inbox** | The same list as the web app's Inbox, most urgent first. **↵** opens a pull request or pipeline in its own tab, and anything else in the browser. **s** snoozes for a day (`/snooze 2d`, `/snooze 1w`; `/unsnooze` brings them all back). On a deployment waiting on you, **a** approves it and **x** rejects it (both ask first). |
+| **Pull requests** | Active pull requests in your tracked repos: waiting on your review, then yours, then everyone else's (**f** or `/show` narrows it). **a** approves, **A** approves with suggestions, **w** waits for the author, **x** rejects (asks first), **0** clears your vote. **c** completes it with the merge options from Settings (asks first, and says so when it isn't approved yet). **m** turns auto-complete on or off. **↵** shows it in full: description, policies, reviewers, work items, files and recent comments. `/comment <text>` comments. `/pr 817` jumps to one. |
+| **Pipelines** | Failing pipelines first, then unstable, healthy and idle, with the selected one's latest runs. **n** runs it on its own branch (`/run <branch>` for another), **c** cancels the run that's queued or running (asks first). |
+
+Everywhere: **o** opens the selection in Azure DevOps, **/** opens the command prompt, `/find` filters the list, **r** asks Azure DevOps again now, and **?** lists every key. While it's open it checks Azure DevOps every "refresh every" seconds from Settings, as the web app does, and says what changed (votes on your pull requests, your runs finishing, new things in the Inbox) in its activity lines. Warnings from Azure DevOps calls are under `/log`.
+
+Not in the terminal yet: work items, boards, releases, production monitoring and insights (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
 
 ## Production monitoring
 
@@ -266,7 +286,9 @@ Teammates create their own token from the "How to create a token" steps shown af
 
 ## Appearance
 
-**Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal or Magenta). The browser-tab icon follows the accent. The choice is saved in your browser, and with sign-in it also follows your account to other devices.
+**Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal or Magenta). The choice is saved in your browser, and with sign-in it also follows your account to other devices.
+
+**Pinch,** the crab in Keel's logo, shows how things are. In the sidebar corner and next to the Dashboard greeting it watches; it looks worried while Azure DevOps answers Keel's live checks with an error, glances about during a refresh, and naps when your Inbox is empty (hover over the logo for what it means). It also glances about while a whole page loads, sits worried by error messages, and appears on the sign-in screen and on a "There's no page here" page for an address Keel doesn't have (which used to open the Dashboard instead). With reduced motion turned on in your system, it keeps still.
 
 **Language:** English or Português (Portugal), in the same place. It follows your account like the theme; the first visit uses the browser's language. Text from Azure DevOps (titles, names, states, board columns) is shown as it is there. Translations live in `client/src/locales/pt/`, keyed by the English text; text the server sends is matched by templates in `server.js` there.
 
@@ -282,11 +304,12 @@ server/
   index.js       Express: /api + built UI from dist/
   routes.js      HTTP layer; writes require the x-keel header
   service.js     Scopes everything to tracked projects/repos, caching
-  azdo/          REST client (PAT auth, retries on 429/5xx, paging, concurrency limit) + provider
+  azdo/          REST client (PAT or Azure CLI auth, retries on 429/5xx, paging, concurrency limit) + provider
   mock/          Demo provider with the same interface as azdo/provider.js
   domain/        Pure logic: PR signals, inbox rules, workload, pipeline health, insights, release notes, commits,
                  delivery (DORA) and the weekly summary
-test/            node:test tests for the domain logic
+cli/             The terminal app (Ink): the same service as the server, in-process; bin/keel.js starts it
+test/            node:test tests for the domain logic and the terminal app
 ```
 
 - **Process-agnostic.** "Done" is decided by Azure DevOps *state categories*, not state names, so Agile, Scrum, Basic, CMMI and custom processes all work. Work item queries use category groups (`Microsoft.RequirementCategory` and so on), not hard-coded type names.
@@ -310,4 +333,5 @@ test/            node:test tests for the domain logic
 | `npm run dev` / `npm run dev:mock` | API with auto-restart + Vite dev server on :5173 |
 | `npm run build` | Build the UI into `dist/` |
 | `npm start` / `npm run start:mock` | Serve the API and built UI on :4280 |
-| `npm test` | Domain logic tests |
+| `npm run cli` / `npm run cli:demo` | Keel in the terminal (needs a real terminal) |
+| `npm test` | Domain logic and terminal app tests |
