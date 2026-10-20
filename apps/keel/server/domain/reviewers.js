@@ -39,7 +39,7 @@ export function suggestReviewers({ histories = [], people = [], load = [], exclu
     const share = h.files / totalFiles;
     const perPerson = new Map();
     for (const c of h.commits || []) {
-      if (/^Merged PR \d+:/.test(c.message || '')) continue; // the merge, not the work
+      if (/^(Merged PR \d+:|Merge pull request #\d+ from )/.test(c.message || '')) continue; // the merge, not the work
       const who = byEmail.get(String(c.author?.email || '').toLowerCase()) || byName.get(String(c.author?.name || '').toLowerCase());
       if (!who || skip.has(who.id)) continue;
       const at = Date.parse(c.author?.date);

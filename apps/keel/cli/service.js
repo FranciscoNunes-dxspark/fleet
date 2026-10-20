@@ -7,10 +7,8 @@ import { createService } from '../server/service.js';
 import { createMultiService } from '../server/multiorg.js';
 import { createOrgStore } from '../server/orgs.js';
 import { createSettingsStore, defaultSettingsFile } from '../server/settings.js';
-import { createAzdoProvider } from '../server/azdo/provider.js';
+import { providerFor } from '../server/providers.js';
 import { azureDevOpsToken } from '../server/azdo/azcli.js';
-import { createMockProvider } from '../server/mock/provider.js';
-import { createMockVariant } from '../server/mock/variant.js';
 
 /**
  * `{ service, orgs, signIn }`: signIn is 'demo', 'pat' (AZDO_PAT) or 'az' (the Azure CLI's sign-in).
@@ -28,7 +26,7 @@ export function openKeel() {
   const entries = orgs.map((org) => ({
     org,
     service: createService({
-      provider: config.mock ? (org.primary ? createMockProvider() : createMockVariant()) : createAzdoProvider({ orgUrl: org.url, pat: config.pat, token }),
+      provider: providerFor(org, { azToken: token }),
       settings,
       org,
     }),

@@ -13,10 +13,8 @@ import { createMultiService } from './multiorg.js';
 import { createChannels } from './channels.js';
 import { createPush } from './push.js';
 import { createSchedules } from './schedules.js';
-import { createAzdoProvider } from './azdo/provider.js';
+import { providerFor } from './providers.js';
 import { azureDevOpsToken } from './azdo/azcli.js';
-import { createMockProvider } from './mock/provider.js';
-import { createMockVariant } from './mock/variant.js';
 import { createSettingsStore, defaultSettingsFile } from './settings.js';
 
 const app = express();
@@ -58,7 +56,7 @@ if (config.authMode === 'login') {
     const entries = orgStore.all().map((org) => ({
       org,
       service: createService({
-        provider: config.mock ? (org.primary ? createMockProvider() : createMockVariant()) : createAzdoProvider({ orgUrl: org.url, pat: config.pat, token: azToken }),
+        provider: providerFor(org, { azToken }),
         settings,
         monitoring: org.primary ? monitoring : null,
         org,

@@ -55,4 +55,6 @@ export default {
   'Cancel {run}?': 'Cancelar {run}?',
   'Cancel run': 'Cancelar execução',
   'canceling': 'a cancelar',
+
+  'Open this run on GitHub': 'Abrir esta execução no GitHub',
 };

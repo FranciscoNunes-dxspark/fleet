@@ -4,8 +4,8 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, pct } from '../format.js';
 import { t, tj, tx } from '../i18n.js';
-import { Chip, Confirm, ErrorBox, Loading } from '../ui.jsx';
-import { useProjectLabel } from '../orgs.js';
+import { Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
+import { useProjectLabel, useSourceName } from '../orgs.js';
 import { FlakyTests } from './Pipelines.jsx';
 import { RunTimesChart } from '../charts.jsx';
 
@@ -221,7 +221,8 @@ export default function PipelineDetail({ target }) {
           <Confirm text={t('Run on {branch}?', { branch })} onConfirm={queue} className="btn btn-small btn-primary">{t('Run')}</Confirm>
         )}
         {can('pipelines.run') && !scheduling && <button type="button" className="btn btn-small" onClick={() => setScheduling(true)}>{t('Run at…')}</button>}
-        <a className="btn btn-ghost btn-small" href={`${meta.orgUrl}/${encodeURIComponent(projectName || projectId)}/_build?definitionId=${definitionId}`} target="_blank" rel="noreferrer noopener">{t('Open in Azure DevOps')} ↗</a>
+        {/* The pipeline's own page, in whichever organization it belongs to. */}
+        <ExternalLink href={p?.webUrl || `${meta.orgUrl}/${encodeURIComponent(projectName || projectId)}/_build?definitionId=${definitionId}`} />
       </section>
     </div>
   );
@@ -283,6 +284,7 @@ function useTree(records) {
 
 function RunDetail({ projectId, run }) {
   const { data, error, reload } = useApi(`/builds/${encodeURIComponent(projectId)}/${run.id}`);
+  const sourceName = useSourceName();
   const live = run.status !== 'completed' || (data?.timeline || []).some((r) => r.state === 'inProgress');
   // A running run refreshes every 10 seconds while it's open.
   useEffect(() => {
@@ -333,7 +335,7 @@ function RunDetail({ projectId, run }) {
         </div>
       )}
 
-      <p className="small"><a href={run.webUrl} target="_blank" rel="noreferrer noopener">{t('Open this run in Azure DevOps')} ↗</a></p>
+      <p className="small"><a href={run.webUrl} target="_blank" rel="noreferrer noopener">{sourceName(run.webUrl) === 'GitHub' ? t('Open this run on GitHub') : t('Open this run in Azure DevOps')} ↗</a></p>
     </div>
   );
 }

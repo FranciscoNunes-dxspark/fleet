@@ -26,10 +26,11 @@ const CONFLICT_LABEL = {
  * The pull request's merge when it isn't clean: the conflicting files, how to
  * fix them locally, and Restart merge. Shown for active PRs only.
  */
-export default function MergeStatus({ pr, target, writable, busy, onRestart, onRefresh }) {
+export default function MergeStatus({ pr, target, writable, busy, onRestart, onRefresh, github = false }) {
   const { toast } = useApp();
   const conflicted = pr.mergeStatus === 'conflicts';
-  const { data, error, reload } = useApi(conflicted ? `${prPath(target)}/conflicts` : null);
+  // GitHub doesn't list the conflicting files, and checks the merge again by itself after a push.
+  const { data, error, reload } = useApi(conflicted && !github ? `${prPath(target)}/conflicts` : null);
 
   // A queued merge finishes in seconds: look again until it's done.
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function MergeStatus({ pr, target, writable, busy, onRestart, onR
     }
   };
 
-  const restart = writable && (
+  const restart = writable && !github && (
     <button type="button" className="btn btn-small" disabled={!!busy || pr.mergeStatus === 'queued'} onClick={onRestart}>
       {busy === 'restartMerge' ? t('Restarting…') : t('Restart merge')}
     </button>
@@ -69,15 +70,18 @@ export default function MergeStatus({ pr, target, writable, busy, onRestart, onR
         {conflicted && data && <span className="muted small">{t(data.conflicts.length === 1 ? '{n} file' : '{n} files', { n: data.conflicts.length })}</span>}
       </h3>
 
-      {pr.mergeStatus === 'queued' && <p className="small muted"><span className="spinner" aria-hidden="true" /> {t('Azure DevOps is merging {source} into {target} to look for conflicts.', { source: pr.sourceBranch, target: pr.targetBranch })}</p>}
+      {pr.mergeStatus === 'queued' && <p className="small muted"><span className="spinner" aria-hidden="true" /> {github
+        ? t('GitHub is checking whether {source} merges cleanly into {target}.', { source: pr.sourceBranch, target: pr.targetBranch })
+        : t('Azure DevOps is merging {source} into {target} to look for conflicts.', { source: pr.sourceBranch, target: pr.targetBranch })}</p>}
       {pr.mergeStatus === 'failure' && <p className="small text-bad">{pr.mergeFailureMessage ? t('The merge failed: {reason}', { reason: tx(pr.mergeFailureMessage) }) : t('The merge failed.')}</p>}
       {pr.mergeStatus === 'rejectedByPolicy' && <p className="small text-warn">{t('A branch policy rejected the merge.')}</p>}
       {pr.mergeStatus === 'notSet' && <p className="small muted">{t('Azure DevOps hasn’t run the merge yet.')}</p>}
 
       {conflicted && (
         <>
+          {github && <p className="small muted">{t('GitHub doesn’t list the conflicting files here. Open the pull request there to see them.')}</p>}
           {error && <ErrorBox error={error} onRetry={reload} />}
-          {!data && !error && <Loading />}
+          {!github && !data && !error && <Loading />}
           {data && (data.conflicts.length ? (
             <ul className="conflict-list">
               {data.conflicts.map((c) => (
@@ -98,10 +102,12 @@ export default function MergeStatus({ pr, target, writable, busy, onRestart, onR
         </>
       )}
 
-      <div className="merge-actions">
-        {restart}
-        <span className="small muted">{t('Restart merge checks again without a push, for example after the target branch changed.')}</span>
-      </div>
+      {restart && (
+        <div className="merge-actions">
+          {restart}
+          <span className="small muted">{t('Restart merge checks again without a push, for example after the target branch changed.')}</span>
+        </div>
+      )}
     </section>
   );
 }

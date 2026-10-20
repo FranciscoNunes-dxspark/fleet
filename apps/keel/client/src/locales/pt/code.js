@@ -495,4 +495,24 @@ export default {
   // New pull request: swap branches
   'Swap: merge {target} into {source}': 'Trocar: fazer merge de {target} para {source}',
   'Swap source and target branches': 'Trocar os branches de origem e de destino',
+
+  // GitHub pull requests (pages/PrDetail.jsx, MergeStatus.jsx, NewPr.jsx)
+  'Open the diff for {path} on GitHub': 'Abrir as diferenças de {path} no GitHub',
+  'GitHub returned the first 3,000 files only.': 'O GitHub devolveu apenas os primeiros 3000 ficheiros.',
+  'Request changes': 'Pedir alterações',
+  'Auto-merge on': 'Merge automático ativo',
+  "This is your pull request. GitHub doesn't let you review your own.": 'Este pull request é seu. O GitHub não deixa rever os seus próprios.',
+  'No checks have run on the latest commit.': 'Nenhuma verificação correu no último commit.',
+  'Auto-merge turned off': 'Merge automático desligado',
+  'Turn off auto-merge': 'Desligar o merge automático',
+  'Turn on auto-merge': 'Ligar o merge automático',
+  'Close this pull request without merging?': 'Fechar este pull request sem fazer merge?',
+  'Pull request closed': 'Pull request fechado',
+  'GitHub will refuse to merge it until they pass. You can turn on auto-merge instead.': 'O GitHub vai recusar o merge até passarem. Em alternativa, pode ligar o merge automático.',
+  'GitHub is checking whether {source} merges cleanly into {target}.': 'O GitHub está a verificar se {source} faz merge sem conflitos em {target}.',
+  'GitHub doesn’t list the conflicting files here. Open the pull request there to see them.': 'O GitHub não lista aqui os ficheiros em conflito. Abra lá o pull request para os ver.',
+  '(merges when its required checks and reviews pass, using your Settings defaults)': '(faz merge quando as verificações e revisões obrigatórias passarem, com as predefinições das Definições)',
+  'Squash and merge': 'Squash e merge',
+  'Create a merge commit': 'Criar um commit de merge',
+  'Rebase and merge': 'Rebase e merge',
 };

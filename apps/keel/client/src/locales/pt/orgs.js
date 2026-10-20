@@ -30,4 +30,13 @@ export default {
   'The primary organization comes from AZDO_ORG_URL.': 'A organização principal vem de AZDO_ORG_URL.',
   "The primary organization comes from AZDO_ORG_URL and can't be removed.": 'A organização principal vem de AZDO_ORG_URL e não pode ser removida.',
   'No such organization.': 'Essa organização não existe.',
+
+  // GitHub owners
+  'For a GitHub owner, link a GitHub token that can read its repositories and run its workflows.': 'Para um owner do GitHub, ligue um token do GitHub que consiga ler os repositórios dele e executar os workflows.',
+  'GitHub owners use GITHUB_TOKEN, or else your GitHub CLI sign-in (gh auth login).': 'Os owners do GitHub usam GITHUB_TOKEN ou, na falta dele, a sua sessão da GitHub CLI (gh auth login).',
+  'Paste your GitHub token (repo and workflow scopes)': 'Cole o seu token do GitHub (permissões repo e workflow)',
+  'GitHub owner added. Track it and pick its repositories below.': 'Owner do GitHub adicionado. Acompanhe-o e escolha os repositórios abaixo.',
+  'Kind': 'Tipo',
+  'Enter the GitHub address, like https://github.com/your-org': 'Indique o endereço do GitHub, por exemplo https://github.com/a-sua-org',
+  'Add the organization or user: https://github.com/your-org': 'Acrescente a organização ou o utilizador: https://github.com/a-sua-org',
 };

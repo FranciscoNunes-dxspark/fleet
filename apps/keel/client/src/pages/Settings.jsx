@@ -8,7 +8,7 @@ import ProductionSettings from './ProductionSettings.jsx';
 import TypeColorSettings from './TypeColorSettings.jsx';
 import OrgSettings from './OrgSettings.jsx';
 import ChannelSettings from './ChannelSettings.jsx';
-import { useProjectLabel } from '../orgs.js';
+import { useOrgKind, useProjectLabel } from '../orgs.js';
 import { age, dateTime } from '../format.js';
 import { folderProblem, loadFolders, saveFolder } from '../claude.js';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
@@ -37,6 +37,7 @@ const teamsOf = (cfg = {}) => (Array.isArray(cfg.teams) ? cfg.teams : cfg.teamId
 export default function Settings() {
   const { data, error, reload } = useApi('/settings');
   const projectLabel = useProjectLabel();
+  const orgKind = useOrgKind();
   const { refresh, toast } = useApp();
   const [draft, setDraft] = useState(null);
   const [options, setOptions] = useState({});
@@ -82,9 +83,9 @@ export default function Settings() {
   const hiddenCount = data.projects.length - shownProjects.length - (needle ? pinned.filter((p) => !p.name.toLowerCase().includes(needle)).length : 0);
 
   /** "1 team · all repos (4) · team areas only", from the draft and what Azure DevOps listed. */
-  const projectSummary = (cfg, opt) => {
+  const projectSummary = (cfg, opt, github = false) => {
     const teams = teamsOf(cfg).length;
-    const parts = [teams ? t(teams === 1 ? '1 team' : '{n} teams', { n: teams }) : t('No team')];
+    const parts = github ? [] : [teams ? t(teams === 1 ? '1 team' : '{n} teams', { n: teams }) : t('No team')];
     const total = opt && opt !== 'loading' && !opt.error ? opt.repos.length : null;
     if (Array.isArray(cfg.repos)) parts.push(total != null ? t('{n} of {total} repos', { n: cfg.repos.length, total }) : t(cfg.repos.length === 1 ? '1 repo' : '{n} repos', { n: cfg.repos.length }));
     else parts.push(total != null ? t('All repos ({n})', { n: total }) : t('All repos'));
@@ -131,7 +132,7 @@ export default function Settings() {
                     <input type="checkbox" checked={!!cfg.tracked} onChange={(e) => { setProject(p.id, { tracked: e.target.checked }); toggleProject(p.id, e.target.checked); }} /> {projectLabel(p.name, p.org)}
                   </label>
                   {cfg.tracked
-                    ? <span className="small muted project-summary">{projectSummary(cfg, opt)}</span>
+                    ? <span className="small muted project-summary">{projectSummary(cfg, opt, orgKind(p.org) === 'github')}</span>
                     : p.description && <span className="small muted project-summary">{p.description}</span>}
                   {cfg.tracked && (
                     <button type="button" className="btn btn-small" aria-expanded={openProjects.has(p.id)} onClick={() => toggleProject(p.id)}>
@@ -142,7 +143,8 @@ export default function Settings() {
                 {cfg.tracked && openProjects.has(p.id) && (
                   opt === 'loading' || !opt ? <Loading label={t('Loading teams and repos…')} /> : opt.error ? <p className="text-bad small">{opt.error}</p> : (
                     <div className="project-config">
-                      <fieldset className="repo-pick">
+                      {/* A GitHub owner has no teams or area paths: just its repositories. */}
+                      {orgKind(p.org) !== 'github' && <fieldset className="repo-pick">
                         <legend>{t('Teams')} <span className="muted small">{teamsOf(cfg).length ? t(teamsOf(cfg).length === 1 ? '1 team selected' : '{n} teams selected', { n: teamsOf(cfg).length }) : t('none: no sprint or team members')}</span></legend>
                         <div className="repo-group">
                           {opt.teams.map((team) => {
@@ -164,7 +166,7 @@ export default function Settings() {
                           })}
                         </div>
                         <label className="check"><input type="checkbox" disabled={!teamsOf(cfg).length} checked={!!cfg.scopeToTeamArea} onChange={(e) => setProject(p.id, { scopeToTeamArea: e.target.checked })} /> {t("Only work items in these teams' area paths")}</label>
-                      </fieldset>
+                      </fieldset>}
                       <div className="repo-pick">
                         <div className="repo-group">
                           <label className="check"><input type="radio" name={`repos-${p.id}`} checked={cfg.repos === 'all' || !Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: 'all' })} /> {t('All repos ({n})', { n: opt.repos.length })}</label>

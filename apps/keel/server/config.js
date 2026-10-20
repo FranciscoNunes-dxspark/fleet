@@ -46,6 +46,8 @@ export const config = {
   azAuth,
   mock: mockRequested || !orgUrl || (authMode === 'local' && !pat && !azAuth),
   mockReason: mockRequested ? 'requested' : !orgUrl ? 'AZDO_ORG_URL not set' : (authMode === 'local' && !pat && !azAuth) ? 'AZDO_PAT not set' : null,
+  // GitHub sources (orgs.js) in local mode and the terminal app; without it, the GitHub CLI's sign-in.
+  githubToken: (process.env.GITHUB_TOKEN || '').trim(),
   dataDir: dataDirFor(ROOT),
   seedProjects: (process.env.AZDO_PROJECTS || '').split(',').map((s) => s.trim()).filter(Boolean),
 };

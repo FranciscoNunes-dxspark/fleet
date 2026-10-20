@@ -1,4 +1,4 @@
-// Several Azure DevOps organizations: lists carry an `org` key on each entry.
+// Several organizations (Azure DevOps, or GitHub owners): lists carry an `org` key on each entry.
 // Work item numbers are only unique within an organization, so calls by
 // number say which one (the server uses the primary when it isn't given).
 import { useApp } from './context.js';
@@ -24,4 +24,21 @@ export function useOrgName() {
 export function useProjectLabel() {
   const orgName = useOrgName();
   return (projectName, org) => (orgName(org) ? `${orgName(org)} · ${projectName}` : projectName);
+}
+
+/** (key) → the organization's kind: 'github' for a GitHub owner, else 'azdo'. */
+export function useOrgKind() {
+  const { meta } = useApp();
+  const orgs = meta?.orgs || [];
+  return (key) => orgs.find((o) => o.key === key)?.kind || 'azdo';
+}
+
+/** (url) → where a link opens: "GitHub" for a GitHub owner's address, else "Azure DevOps". */
+export function useSourceName() {
+  const { meta } = useApp();
+  const github = (meta?.orgs || []).filter((o) => o.kind === 'github').map((o) => o.url.toLowerCase());
+  return (url) => {
+    const u = String(url || '').toLowerCase();
+    return github.some((g) => u.startsWith(`${g}/`)) || u.startsWith('https://github.com/') ? 'GitHub' : 'Azure DevOps';
+  };
 }
