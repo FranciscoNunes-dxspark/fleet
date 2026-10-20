@@ -19,6 +19,7 @@ organization in ${ENV_FILE}, with the same tracked projects and settings as the 
   --demo   the demo organization, no credentials needed
 
 Signs in with AZDO_PAT from that file, or else with the Azure CLI (az login).
+With no organization set, it asks for one on start and saves it there.
 Inside: press ? for shortcuts, / for commands.`);
   process.exit(0);
 }
@@ -30,14 +31,27 @@ try {
 } catch {
   // No .env file: the real environment only.
 }
+const interactive = process.stdin.isTTY && process.stdout.isTTY;
 const demo = args.includes('--demo') || args.includes('--mock');
 if (demo) process.env.AZDO_MOCK = '1';
 else if (!process.env.AZDO_ORG_URL?.trim() && !/^(1|true|yes)$/i.test(process.env.AZDO_MOCK || '')) {
-  console.error(`No Azure DevOps organization: set AZDO_ORG_URL=https://dev.azure.com/<org> in ${ENV_FILE}, or try keel --demo.`);
-  process.exit(1);
-} else if (!process.env.AZDO_PAT?.trim()) process.env.AZDO_AUTH ||= 'az';
+  if (!interactive) {
+    console.error(`No Azure DevOps organization: set AZDO_ORG_URL=https://dev.azure.com/<org> in ${ENV_FILE}, or try keel --demo.`);
+    process.exit(1);
+  }
+  // First run: ask, and save the answers for next time (setup.js). Left empty, it's the demo.
+  const { firstRunSetup } = await import('./setup.js');
+  try {
+    if ((await firstRunSetup({ envFile: ENV_FILE })) === 'demo') process.env.AZDO_MOCK = '1';
+  } catch (e) {
+    if (e.cancelled) process.exit(130);
+    console.error(`Couldn't save the settings: ${e.message}`);
+    process.exit(1);
+  }
+}
+if (!/^(1|true|yes)$/i.test(process.env.AZDO_MOCK || '') && !process.env.AZDO_PAT?.trim()) process.env.AZDO_AUTH ||= 'az';
 
-if (!process.stdin.isTTY || !process.stdout.isTTY) {
+if (!interactive) {
   console.error('keel needs an interactive terminal.');
   process.exit(1);
 }
