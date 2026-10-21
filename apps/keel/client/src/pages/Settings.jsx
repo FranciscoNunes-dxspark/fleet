@@ -238,6 +238,8 @@ export default function Settings() {
 
       <AccountSettings />
 
+      <TerminalAppSettings />
+
       <ProductionSettings />
 
       <ChannelSettings />
@@ -476,6 +478,61 @@ function AppearanceSettings() {
           </div>
         </div>
       </div>
+    </Section>
+  );
+}
+
+// The terminal app's executables (scripts/build-cli.js), from the newest release. Android builds are
+// released with --latest=false (release-android.yml), so releases/latest is always the terminal app's.
+const RELEASES = 'https://github.com/FranciscoNunes-dxspark/keel/releases';
+const BUILDS = [
+  { file: 'keel-windows-x64.exe', label: 'Windows' },
+  { file: 'keel-macos-arm64', label: 'macOS (Apple silicon)' },
+  { file: 'keel-macos-x64', label: 'macOS (Intel)' },
+  { file: 'keel-linux-x64', label: 'Linux (x64)' },
+  { file: 'keel-linux-arm64', label: 'Linux (arm64)' },
+];
+
+/** The build for this computer, as far as the browser tells: a Mac is taken as Apple silicon, a phone gets none. */
+function buildForThisComputer() {
+  const p = `${navigator.userAgentData?.platform || ''} ${navigator.platform || ''} ${navigator.userAgent || ''}`;
+  if (/android|iphone|ipad/i.test(p)) return null;
+  if (/windows|win32|win64/i.test(p)) return BUILDS[0];
+  if (/mac/i.test(p)) return BUILDS[1];
+  if (/linux/i.test(p)) return /aarch64|arm64/i.test(p) ? BUILDS[4] : BUILDS[3];
+  return null;
+}
+
+/** Download links for the terminal app, this computer's first, and how to start it. */
+function TerminalAppSettings() {
+  const { authMode } = useApp();
+  const mine = buildForThisComputer();
+  const href = (b) => `${RELEASES}/latest/download/${b.file}`;
+  const others = BUILDS.filter((b) => b !== mine);
+  return (
+    <Section id="terminal-app" title={t('Terminal app')}>
+      <p className="muted small">{t('Keel in the terminal: the Inbox, pull requests, pipelines, work items and production, from the keyboard. One file with nothing else to install, and it keeps itself up to date.')}</p>
+      <div className="terminal-download">
+        {mine && <a className="btn btn-small btn-primary" href={href(mine)}>{t('Download for {platform}', { platform: t(mine.label) })}</a>}
+        <span className="small">
+          <span className="muted">{mine ? t('Also for') : t('Download for')} </span>
+          {others.map((b, i) => (
+            <span key={b.file}>
+              {i > 0 && <span className="muted"> · </span>}
+              <a href={href(b)}>{t(b.label)}</a>
+            </span>
+          ))}
+          <span className="muted"> · </span>
+          <a href={RELEASES} target="_blank" rel="noreferrer noopener">{t('All releases')}</a>
+        </span>
+      </div>
+      <p className="muted small">
+        {tj('Rename it to {name} ({exe} on Windows) and put it in a folder on your PATH, then run {command}.', {
+          name: <code>keel</code>,
+          exe: <code>keel.exe</code>,
+          command: <code>{authMode === 'login' ? `keel login ${location.host}` : 'keel'}</code>,
+        })}
+      </p>
     </Section>
   );
 }

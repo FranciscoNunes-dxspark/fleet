@@ -1475,6 +1475,9 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 .ship-next > summary { cursor: pointer; }
 .ship-next > .deploy-list { margin-top: 10px; }
 
+/* Settings → Terminal app: the download for this computer, then the others. */
+.terminal-download { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 10px 0; }
+
 /* The terminal app on a page (/cli): xterm.js fills what the header leaves. */
 .web-terminal { height: calc(100dvh - 11rem); min-height: 22rem; padding: 8px; background: #121212; border: 1px solid var(--border); border-radius: 8px; }
 .web-terminal .xterm { height: 100%; }

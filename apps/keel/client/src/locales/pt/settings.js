@@ -386,4 +386,12 @@ export default {
   'Sign-in refused': 'Início de sessão recusado',
   'Go back to your terminal: Keel starts there in a moment. You can sign it out at any time in Settings → Your account.': 'Volte ao seu terminal: o Keel arranca lá dentro de momentos. Pode terminar essa sessão quando quiser em Definições → A sua conta.',
   "That terminal isn't signed in. If you didn't start it, you don't need to do anything else.": 'Esse terminal não tem sessão iniciada. Se não foi o próprio a pedi-lo, não precisa de fazer mais nada.',
+
+  'Terminal app': 'App de terminal',
+  'Keel in the terminal: the Inbox, pull requests, pipelines, work items and production, from the keyboard. One file with nothing else to install, and it keeps itself up to date.': 'O Keel no terminal: a Caixa de entrada, pull requests, pipelines, itens de trabalho e produção, a partir do teclado. Um só ficheiro, sem mais nada para instalar, e que se mantém atualizado sozinho.',
+  'Download for {platform}': 'Transferir para {platform}',
+  'Also for': 'Também para',
+  'Download for': 'Transferir para',
+  'All releases': 'Todas as versões',
+  'Rename it to {name} ({exe} on Windows) and put it in a folder on your PATH, then run {command}.': 'Mude-lhe o nome para {name} ({exe} no Windows) e coloque-o numa pasta do seu PATH; depois execute {command}.',
 };
