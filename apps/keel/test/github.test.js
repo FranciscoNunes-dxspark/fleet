@@ -199,8 +199,10 @@ test('demo GitHub: workflows are pipelines, with failing, declined and waiting r
   assert.equal(health['web-app/Deploy'], 'healthy'); // the declined run doesn't count
   assert.equal(health['infra/Dependabot Updates'], undefined);
   const deploy = pipes.find((p) => p.definition.name === 'Deploy');
-  const { runs } = await service.pipelineRuns(P, deploy.definition.id);
+  const { pipeline, runs } = await service.pipelineRuns(P, deploy.definition.id);
   assert.deepEqual(runs.slice(0, 2).map((r) => r.result), [null, 'declined']);
+  // Its own page is the workflow on GitHub, run or not, so the link doesn't fall back to Azure DevOps.
+  assert.equal(pipeline.webUrl, 'https://github.com/octo-demo/web-app/actions/workflows/deploy.yml');
   const [approval] = (await service.approvals()).filter((a) => a.org === P);
   assert.equal(approval.stage, 'production');
   assert.equal(approval.forMe, true);
