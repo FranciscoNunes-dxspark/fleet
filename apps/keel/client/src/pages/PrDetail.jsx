@@ -183,6 +183,9 @@ export default function PrDetail({ target }) {
   const candidates = (people || []).filter((p) => p.id !== pr.author?.id && !pr.reviewers.some((r) => r.id === p.id));
   // GitHub refuses reviews and review requests from a pull request's author, so those buttons go.
   const ownGithub = github && pr.isMine;
+  // Held while its checks (tests, builds) run or after they fail: why Complete waits, or nothing.
+  const held = pr.flow.waiting?.kind === 'checks' ? t('Its checks are still running: wait for them to pass, or turn on auto-merge')
+    : pr.flow.waiting?.kind === 'checks-failed' ? t('Its checks failed: fix them first') : null;
   // You aren't a reviewer until you vote or are added (myVote is null).
   const canAddMe = pr.status === 'active' && pr.myVote === null && !ownGithub;
 
@@ -353,9 +356,9 @@ export default function PrDetail({ target }) {
         {writable && pr.status === 'active' && !pr.isDraft && !completing && (
           <button
             type="button"
-            className={`btn btn-small ${pr.flow.step === 'complete' ? 'btn-primary' : ''}`}
-            disabled={!!busy || pr.hasConflicts}
-            title={pr.hasConflicts ? t('Resolve the merge conflicts first') : pr.flow.step === 'approval' ? t('Not approved yet: branch policies may refuse it') : undefined}
+            className={`btn btn-small ${pr.flow.step === 'complete' && !held ? 'btn-primary' : ''}`}
+            disabled={!!busy || pr.hasConflicts || !!held}
+            title={pr.hasConflicts ? t('Resolve the merge conflicts first') : held || (pr.flow.step === 'approval' ? t('Not approved yet: branch policies may refuse it') : undefined)}
             onClick={() => setCompleting(true)}
           >
             {t('Complete…')}
@@ -431,6 +434,8 @@ function waitingText(flow, github) {
   const approved = flow.approval === 'not-required' ? t('This branch needs no review.') : t('Approved.');
   if (w?.kind === 'conflicts') return `${approved} ${t('Fix the merge conflicts to complete it.')}`;
   if (w?.kind === 'policies') return `${approved} ${t('Waiting on {names}.', { names })}`;
+  if (w?.kind === 'checks') return `${approved} ${t("Its checks are still running: it's held until they pass. Auto-merge merges it then.")}`;
+  if (w?.kind === 'checks-failed') return `${approved} ${t('Its checks failed: fix them before merging it.')}`;
   if (w?.kind === 'auto') return `${approved} ${t('It completes by itself once its checks pass.')}`;
   return `${approved} ${t('Ready to complete.')}`;
 }
@@ -443,7 +448,7 @@ function FlowSteps({ flow, github }) {
     { id: 'complete', label: github ? t('Merge') : t('Complete') },
   ];
   const at = steps.findIndex((s) => s.id === flow.step);
-  const blocked = ['rejected', 'waiting-author', 'conflicts'].includes(flow.waiting?.kind);
+  const blocked = ['rejected', 'waiting-author', 'conflicts', 'checks-failed'].includes(flow.waiting?.kind);
   // A GitHub branch that asks for no review skips approval.
   const skipped = (s) => s.id === 'approval' && flow.approval === 'not-required';
   return (

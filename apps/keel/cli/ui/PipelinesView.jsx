@@ -48,6 +48,7 @@ export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, w
     if (key.return) ctx.showPipelineRuns(row);
     else if (input === 'n') a.runPipeline(ctx, row);
     else if (input === 'c') a.cancelRun(ctx, row);
+    else if (input === 'l') a.showRun(ctx, row);
   };
   useInput(keys, { isActive: active });
   // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).
@@ -89,7 +90,7 @@ export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, w
         })}
       </Panel>
       {split ? (
-        <Panel title={row ? row.definition.name : 'Pipeline'} hint={row ? 'n run · c cancel · ↵ all runs' : ''} width={sideW} height={height}>
+        <Panel title={row ? row.definition.name : 'Pipeline'} hint={row ? 'n run · l logs · ↵ all runs' : ''} width={sideW} height={height}>
           <Lines width={sideW - 2} height={innerH} lines={row ? pipelineDetail(row, mine ? runs.value : null, { error: mine ? runs.error?.message : null }) : []} />
         </Panel>
       ) : null}

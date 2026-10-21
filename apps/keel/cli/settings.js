@@ -24,6 +24,20 @@ export const updateLines = (mode) => [`KEEL_CHECK_UPDATES=${mode === 'off' ? 0 :
 /** The next of `list` after `value`, round. */
 export const cycle = (list, value) => list[(list.indexOf(value) + 1) % list.length];
 
+// The web app's "When to flag things", in its order: [key, what it does, unit, most it goes to].
+export const THRESHOLDS = [
+  ['myReviewHours', 'Escalate a review waiting on me after', 'hours', 168],
+  ['prNoReviewHours', 'Flag a PR with no approvals after', 'hours', 336],
+  ['stalePrDays', 'Call a PR stale after', 'days', 90],
+  ['itemStuckDays', 'Flag an in-progress item with no updates after', 'days', 90],
+  ['buildLookbackDays', 'Judge pipeline health over the last', 'days', 90],
+  ['maxInProgressPerPerson', 'Flag a person with more items in progress than', 'items', 50],
+  ['maxPendingReviewsPerPerson', 'Flag a person owing more reviews than', 'reviews', 50],
+];
+
+/** A threshold one step up or down: one at a time, from 1 to its most. */
+export const stepThreshold = (value, dir, max) => Math.min(max, Math.max(1, (Number(value) || 1) + dir));
+
 /** The check interval one step up or down, within what the settings allow (15 to 600 seconds). */
 export const stepRefresh = (seconds, dir) => Math.min(600, Math.max(15, (Math.round((Number(seconds) || 60) / REFRESH_STEP) + dir) * REFRESH_STEP));
 
@@ -62,7 +76,13 @@ export function repoSummary(cfg, total) {
  */
 export function settingsRows({ view, orgs = [], options = {}, open = new Set(), filter = '', local = {}, pinned = null }) {
   const rows = [];
-  const header = (label) => rows.push({ kind: 'header', label });
+  // Each header starts a section (settingsSections); every row after it belongs to that section.
+  let section = null;
+  const header = (id, short, label) => {
+    section = id;
+    rows.push({ kind: 'header', section, short, label });
+  };
+  const add = (row) => rows.push({ section, ...row });
   if (!view) return rows;
   const { settings, projects } = view;
   const several = orgs.length > 1;
@@ -75,42 +95,51 @@ export function settingsRows({ view, orgs = [], options = {}, open = new Set(), 
     .filter((p) => !q || label(p).toLowerCase().includes(q))
     .sort((a, b) => first(b) - first(a) || label(a).localeCompare(label(b)));
 
-  header(`Projects and repositories · ${projects.filter(tracked).length} tracked`);
-  if (!shown.length) rows.push({ kind: 'note', text: q ? `No project matches "${filter}". /find with nothing clears it.` : 'No projects to track.' });
+  header('projects', 'Projects', `Projects and repositories · ${projects.filter(tracked).length} tracked`);
+  if (!shown.length) add({ kind: 'note', text: q ? `No project matches "${filter}". /find with nothing clears it.` : 'No projects to track.' });
   for (const p of shown) {
     const cfg = settings.projects?.[p.id];
     const opt = options[p.id];
     const repos = opt && opt !== 'loading' && !opt.error ? opt.repos : null;
     const isOpen = tracked(p) && open.has(p.id);
-    rows.push({ kind: 'project', project: p, label: label(p), tracked: tracked(p), open: isOpen, summary: tracked(p) ? repoSummary(cfg, repos?.length) : p.description || '' });
+    add({ kind: 'project', project: p, label: label(p), tracked: tracked(p), open: isOpen, summary: tracked(p) ? repoSummary(cfg, repos?.length) : p.description || '' });
     if (!isOpen) continue;
-    if (opt === 'loading' || !opt) rows.push({ kind: 'note', text: '    Reading its repositories…' });
-    else if (opt.error) rows.push({ kind: 'note', text: `    Couldn't read its repositories: ${opt.error}`, error: true });
+    if (opt === 'loading' || !opt) add({ kind: 'note', text: '    Reading its repositories…' });
+    else if (opt.error) add({ kind: 'note', text: `    Couldn't read its repositories: ${opt.error}`, error: true });
     else {
       const all = !Array.isArray(cfg?.repos);
-      rows.push({ kind: 'allRepos', project: p, on: all, count: repos.length });
-      for (const r of repos) rows.push({ kind: 'repo', project: p, repo: r, on: all || cfg.repos.includes(r.id), allRepoIds: repos.map((x) => x.id) });
+      add({ kind: 'allRepos', project: p, on: all, count: repos.length });
+      for (const r of repos) add({ kind: 'repo', project: p, repo: r, on: all || cfg.repos.includes(r.id), allRepoIds: repos.map((x) => x.id) });
     }
   }
 
-  header('Pull requests and checks');
+  header('flags', 'When to flag things', 'When to flag things');
+  for (const [key, label, unit, max] of THRESHOLDS) add({ kind: 'threshold', key, label, unit, max, value: settings.thresholds?.[key] ?? 1 });
+  add({ kind: 'info', label: 'Blocked tag', text: `${settings.blockedTag || 'Blocked'} (a work item with this tag or state is blocked; set on the web)` });
+  add({ kind: 'refresh', seconds: settings.refreshSeconds || 60 });
+
+  header('prs', 'Merging', 'Merging pull requests');
   const ac = settings.autoComplete || {};
-  rows.push({ kind: 'merge', value: ac.mergeStrategy || 'squash' });
-  rows.push({ kind: 'deleteBranch', on: !!ac.deleteSourceBranch });
-  rows.push({ kind: 'transitionWorkItems', on: !!ac.transitionWorkItems });
-  rows.push({ kind: 'refresh', seconds: settings.refreshSeconds || 60 });
+  add({ kind: 'merge', value: ac.mergeStrategy || 'squash' });
+  add({ kind: 'deleteBranch', on: !!ac.deleteSourceBranch });
+  add({ kind: 'transitionWorkItems', on: !!ac.transitionWorkItems });
 
-  header('Organizations');
-  for (const o of orgs) rows.push({ kind: 'org', org: o });
-  rows.push({ kind: 'addOrg' });
+  header('orgs', 'Organizations', `Organizations · ${orgs.length}`);
+  for (const o of orgs) add({ kind: 'org', org: o });
+  add({ kind: 'addOrg' });
 
-  header('This computer');
-  rows.push({ kind: 'info', label: 'Settings file', text: local.envFile || '' });
-  rows.push({ kind: 'info', label: 'Signed in with', text: signInText(local) });
-  rows.push({ kind: 'mouse', on: mouseOn(local.env), available: !!local.mouseAvailable, why: local.mouseAvailable ? '' : "this terminal can't report it (on Windows it needs Node 22.17 or later, or the downloaded app)" });
-  if (local.compiled) rows.push({ kind: 'updates', mode: updateMode(local.env) });
-  else rows.push({ kind: 'info', label: 'Updates', text: 'from a checkout: git pull' });
+  header('computer', 'This computer', 'This computer');
+  add({ kind: 'info', label: 'Settings file', text: local.envFile || '' });
+  add({ kind: 'info', label: 'Signed in with', text: signInText(local) });
+  add({ kind: 'mouse', on: mouseOn(local.env), available: !!local.mouseAvailable, why: local.mouseAvailable ? '' : "this terminal can't report it (on Windows it needs Node 22.17 or later, or the downloaded app)" });
+  if (local.compiled) add({ kind: 'updates', mode: updateMode(local.env) });
+  else add({ kind: 'info', label: 'Updates', text: 'from a checkout: git pull' });
   return rows;
+}
+
+/** The rows by section, as Settings shows them: `{ id, short, label, rows }`, each without its header. */
+export function settingsSections(rows) {
+  return rows.filter((r) => r.kind === 'header').map((h) => ({ id: h.section, short: h.short, label: h.label, rows: rows.filter((r) => r.section === h.section && r.kind !== 'header') }));
 }
 
 /** How this computer's Keel signs in, for the "Signed in with" row. */

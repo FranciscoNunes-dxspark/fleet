@@ -69,3 +69,22 @@ test("GitHub: a can't approve your own pull request, and a branch that needs no 
   await until(app, (f) => f.includes('– Approval (not required)') && f.includes('This branch needs no review.'), 'approval skipped');
   app.unmount();
 });
+
+test('GitHub: a pull request is held while its checks run: the pane says so, and c waits for them', async () => {
+  const keel = openKeel();
+  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  await until(app, (f) => f.includes('Dark mode toggle in settings'), 'the Inbox');
+  for (const ch of '/pr 87') {
+    app.stdin.write(ch);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  app.stdin.write('\r');
+  await until(app, (f) => f.includes('!87 ') && f.includes('Its checks are still running'), 'the held pull request');
+  // In the list and the pane too, in place of "approved".
+  assert.match(app.lastFrame(), /❯ ◔ !87/);
+  assert.match(app.lastFrame(), /◔ checks running/);
+  app.stdin.write('c');
+  await until(app, (f) => f.includes("!87 Rate limit the search endpoint's checks are still running"), 'c waiting for them');
+  assert.ok((await keel.service.pullRequests()).prs.some((p) => p.id === 87 && p.status === 'active'));
+  app.unmount();
+});

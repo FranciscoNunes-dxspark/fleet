@@ -178,6 +178,17 @@ test('demo GitHub: pull requests in each review state, archived repos left out',
   assert.equal((await ghPrs()).find((p) => p.id === 85).hasConflicts, true);
 });
 
+test("demo GitHub: an approved pull request whose tests are still running is held, and the Inbox doesn't ask to merge it", async () => {
+  const held = (await ghPrs()).find((p) => p.id === 87);
+  assert.equal(held.checks, 'running');
+  assert.deepEqual(held.flow, { step: 'complete', waiting: { kind: 'checks' } });
+  assert.equal(held.readyToMerge, false);
+  assert.equal((await ghPrs()).find((p) => p.id === 85).checks, 'failed');
+  assert.equal((await ghPrs()).find((p) => p.id === 41).checks, 'passed');
+  const item = (await service.attention()).items.find((i) => i.org === P && i.target?.type === 'pr' && i.target.id === 87);
+  assert.ok(!item?.reasons.some((r) => r.code === 'ready'));
+});
+
 test('demo GitHub: the Team page has one row per person, with their GitHub pull requests counted by email', async () => {
   const { rows } = await service.team();
   const names = rows.map((r) => r.person.displayName);
@@ -199,8 +210,10 @@ test('demo GitHub: workflows are pipelines, with failing, declined and waiting r
   assert.equal(health['web-app/Deploy'], 'healthy'); // the declined run doesn't count
   assert.equal(health['infra/Dependabot Updates'], undefined);
   const deploy = pipes.find((p) => p.definition.name === 'Deploy');
-  const { runs } = await service.pipelineRuns(P, deploy.definition.id);
+  const { pipeline, runs } = await service.pipelineRuns(P, deploy.definition.id);
   assert.deepEqual(runs.slice(0, 2).map((r) => r.result), [null, 'declined']);
+  // Its own page is the workflow on GitHub, run or not, so the link doesn't fall back to Azure DevOps.
+  assert.equal(pipeline.webUrl, 'https://github.com/octo-demo/web-app/actions/workflows/deploy.yml');
   const [approval] = (await service.approvals()).filter((a) => a.org === P);
   assert.equal(approval.stage, 'production');
   assert.equal(approval.forMe, true);
