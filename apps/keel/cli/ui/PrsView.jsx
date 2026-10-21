@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
-import { branch, prDetail, prRows, prState } from '../format.js';
+import { branch, isGithubPr, prDetail, prRows, prState } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -12,6 +12,8 @@ const SHOW_LABEL = { all: '', review: 'waiting on your review', mine: 'yours' };
 const NEXT_SHOW = { all: 'review', review: 'mine', mine: 'all' };
 // The pane's hint leads with the key for the step the pull request is at (publish, approve, complete).
 const STEP_HINT = { publish: 'p publish · ↵ more', approval: 'a approve · w wait · ↵ more', complete: 'c complete · m auto · ↵ more' };
+// Your own GitHub pull request waits on someone else's review there.
+const stepHint = (pr) => (pr.flow?.step === 'approval' && isGithubPr(pr) && pr.isMine ? 'o ask on GitHub · m auto-merge · ↵ more' : STEP_HINT[pr.flow?.step] ?? '↵ more');
 
 /** Active pull requests in the tracked repos: waiting on your review, then yours, then everyone else's. */
 export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, active }) {
@@ -95,7 +97,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
         })}
       </Panel>
       {split ? (
-        <Panel title={pr ? `!${pr.id} ${branch(pr.sourceBranch)}` : 'Pull request'} hint={pr ? STEP_HINT[pr.flow?.step] ?? '↵ more' : ''} width={sideW} height={height}>
+        <Panel title={pr ? `!${pr.id} ${branch(pr.sourceBranch)}` : 'Pull request'} hint={pr ? stepHint(pr) : ''} width={sideW} height={height}>
           <Lines width={sideW - 2} height={innerH} lines={pr ? prDetail(pr) : []} />
         </Panel>
       ) : null}

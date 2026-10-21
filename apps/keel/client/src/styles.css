@@ -757,6 +757,8 @@ a.stat:hover .stat-label { color: var(--accent-ink); }
 .pr-flow-step.current { color: var(--ink); font-weight: 600; }
 .pr-flow-step.current .pr-flow-dot { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .pr-flow-step.blocked { color: var(--ink); font-weight: 600; }
+.pr-flow-step.skipped { text-decoration: line-through; opacity: 0.7; }
+.pr-flow-step.skipped .pr-flow-dot { border-style: dashed; }
 .pr-flow-step.blocked .pr-flow-dot { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
 .complete-form { border: 1px solid var(--accent); border-radius: var(--radius); padding: 14px 16px; background: var(--bg); }
 .complete-form .field { display: grid; gap: 4px; margin-bottom: 10px; font-size: 13px; color: var(--ink-2); }

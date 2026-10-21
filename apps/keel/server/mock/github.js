@@ -52,7 +52,7 @@ function demoData(owner) {
     headSha: nextSha(), labels: o.labels || [], autoMerge: null, requests: o.requests || [], reviews: o.reviews || [],
     body: o.body || `${title}.\n\n- [x] Tests\n- [ ] Docs`, comments: o.comments || [], threads: o.threads || [],
     checks: o.checks || [{ name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS', isRequired: true }],
-    reviewDecision: o.reviewDecision ?? 'REVIEW_REQUIRED',
+    reviewDecision: 'reviewDecision' in o ? o.reviewDecision : 'REVIEW_REQUIRED', // null: the branch asks for no review
     files: o.files || [{ filename: 'src/index.js', status: 'modified' }, { filename: `src/${number}.js`, status: 'added' }],
     ...o.extra,
   });
