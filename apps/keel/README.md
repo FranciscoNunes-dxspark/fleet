@@ -126,7 +126,7 @@ Teams and area paths are still picked in the web app.
 
 Not in the terminal yet: epics, new pull requests, release notes and the dashboard (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
 
-**In the browser (a test build).** `/cli` on the web app runs the same terminal app on the page, in [xterm.js](https://xtermjs.org): Ink and the app are bundled for the browser (`client/src/cli/`, with stand-ins for what they import from Node), and reach the server's `/api` with the page's own sign-in, as `keel login` does, live updates included. Keys, the mouse and copying work as in a terminal; **q** goes back to the Dashboard. Settings for this computer (the `.env` ones) aren't kept there. The page loads its own bundle, so the rest of the web app doesn't carry it.
+**In the browser (a test build).** **Below deck**, at the bottom of the web app's menu (not on touch screens), opens `/cli`: the same terminal app filling the whole window, without the menu, in [xterm.js](https://xtermjs.org): Ink and the app are bundled for the browser (`client/src/cli/`, with stand-ins for what they import from Node), and reach the server's `/api` with the page's own sign-in, as `keel login` does, live updates included. Keys, the mouse and copying work as in a terminal; **q** goes back to the Dashboard. Settings for this computer (the `.env` ones) aren't kept there. The page loads its own bundle, so the rest of the web app doesn't carry it.
 
 ## Production monitoring
 

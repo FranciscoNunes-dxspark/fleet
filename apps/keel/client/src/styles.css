@@ -1478,6 +1478,10 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 /* Settings → Terminal app: the download for this computer, then the others. */
 .terminal-download { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 10px 0; }
 
-/* The terminal app on a page (/cli): xterm.js fills what the header leaves. */
-.web-terminal { height: calc(100dvh - 11rem); min-height: 22rem; padding: 8px; background: #121212; border: 1px solid var(--border); border-radius: 8px; }
-.web-terminal .xterm { height: 100%; }
+/* The terminal app on a page (/cli): the whole window, in the terminal's own dark whatever the theme. */
+.web-terminal-page { position: fixed; inset: 0; padding: 6px 8px; background: #121212; color: #e4e4e4; box-sizing: border-box; }
+.web-terminal, .web-terminal .xterm { height: 100%; }
+/* It keeps no scrollback (the app draws full screens), so there's nothing for xterm's scrollbar to scroll. */
+.web-terminal .xterm-viewport { overflow-y: hidden !important; }
+/* Its link in the menu: not on touch screens, which have no keys for it. */
+@media (pointer: coarse) { .nav-terminal { display: none; } }

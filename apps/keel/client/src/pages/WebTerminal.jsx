@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '@xterm/xterm/css/xterm.css';
-import { PageHeader } from '../ui.jsx';
 import { t } from '../i18n.js';
 
 // The terminal app's own palette (cli/theme.js), whatever the web app's theme: it is drawn for a dark terminal.
@@ -27,9 +26,9 @@ export default function WebTerminal() {
     };
   }, []);
 
+  // The whole window, without the menu (App.jsx): ? for shortcuts, / for commands, q to leave.
   return (
-    <div className="page web-terminal-page">
-      <PageHeader title={t('Terminal app')} sub={t('Keel in the terminal, on this page: ? for shortcuts, / for commands, q to leave.')} />
+    <div className="web-terminal-page" role="application" aria-label={t('Terminal app')}>
       {failed ? <p className="text-bad">{t("The terminal app couldn't start: {reason}", { reason: failed })}</p> : <div className="web-terminal" ref={box} />}
     </div>
   );
