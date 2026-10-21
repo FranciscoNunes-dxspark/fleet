@@ -7,7 +7,7 @@
 // BUBBLEWRAP_KEYSTORE_PASSWORD and BUBBLEWRAP_KEY_PASSWORD. The host must already be serving Keel:
 // Bubblewrap downloads the icons from it. Output: release/keel-android.apk (to install directly)
 // and release/keel-android.aab (for Google Play).
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
@@ -66,7 +66,21 @@ const project = path.join(out, 'android');
 rmSync(project, { recursive: true, force: true });
 mkdirSync(project, { recursive: true });
 const config = path.join(out, 'android-bubblewrap.json');
-writeFileSync(config, JSON.stringify({ jdkPath: jdk, androidSdkPath: sdk }, null, 2));
+// Bubblewrap only accepts an SDK with the old tools/ or bin/ folder at its top; current SDKs (Android
+// Studio's, GitHub's runners') keep them in cmdline-tools/latest/bin. Rather than change the real SDK,
+// hand Bubblewrap a folder of links to it with that bin/ added.
+let bubblewrapSdk = sdk;
+if (!existsSync(path.join(sdk, 'tools')) && !existsSync(path.join(sdk, 'bin'))) {
+  bubblewrapSdk = path.join(out, 'android-sdk');
+  rmSync(bubblewrapSdk, { recursive: true, force: true });
+  mkdirSync(bubblewrapSdk, { recursive: true });
+  const link = (target, name) => symlinkSync(target, path.join(bubblewrapSdk, name), process.platform === 'win32' ? 'junction' : undefined);
+  for (const entry of readdirSync(sdk)) link(path.join(sdk, entry), entry);
+  const cmdlineBin = path.join(sdk, 'cmdline-tools', 'latest', 'bin');
+  if (!existsSync(cmdlineBin)) fail('The Android SDK has no command-line tools: install them (cmdline-tools;latest) with Android Studio\'s SDK Manager.');
+  link(cmdlineBin, 'bin');
+}
+writeFileSync(config, JSON.stringify({ jdkPath: jdk, androidSdkPath: bubblewrapSdk }, null, 2));
 
 const webManifest = JSON.parse(readFileSync(path.join(root, 'client/public/manifest.webmanifest'), 'utf8'));
 const manifest = twaManifest({
