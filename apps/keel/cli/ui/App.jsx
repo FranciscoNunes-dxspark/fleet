@@ -259,8 +259,12 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     });
   const onConfirm = (value) => {
     const req = confirmRef.current;
-    confirmRef.current = null;
     setConfirmReq(null);
+    // The key that answered goes on to the tabs' handlers too: until it has, the question still
+    // counts as open, so a "1" picking the first choice doesn't also switch to the Inbox.
+    setTimeout(() => {
+      if (confirmRef.current === req) confirmRef.current = null;
+    }, 0);
     req?.done(value);
   };
 

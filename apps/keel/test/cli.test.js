@@ -115,6 +115,8 @@ test('/run asks first, then queues a run of the selected pipeline', async () => 
   await until(() => /Run .+ on .+\?/.test(frame()), 'the question');
   app.stdin.write('1');
   await until(() => frame().includes('Queued run'), 'the queued run');
+  // The "1" that answered doesn't also switch to the Inbox.
+  assert.match(frame(), /╭─ Pipelines/);
   app.unmount();
 });
 
