@@ -145,11 +145,13 @@ function activityRows(entries) {
  * `keel` is `{ service, orgs, signIn, live, orgAdmin }` from cli/service.js (the tests build it the
  * same way, on demo data), or from cli/remote.js when signed in to a Keel server (with `server`
  * and `logout` too). `openUrl` opens links (the browser by default); `poll` turns live checks off when false.
- * `checkUpdate` and `installUpdate` (cli/update.js) are only passed to the downloaded executable.
+ * `checkUpdate` and `installUpdate` (cli/update.js) are only passed to the downloaded executable, and
+ * only when its .env lets it check (and install) by itself; `updater` ({ check, install }) is passed to
+ * it always, for /update.
  * `envFile` is the .env this Keel reads, where Settings saves this computer's choices. `mouse` is
  * mouse.js's terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
  */
-export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate, envFile = path.join(ROOT, '.env'), mouse }) {
+export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate, updater, envFile = path.join(ROOT, '.env'), mouse }) {
   const { service, orgs, signIn, live } = keel;
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
@@ -499,6 +501,29 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     showHelp: () => setOverlay({ help: true, start: sectionFor(HELP_SECTIONS, view) }),
     showLog: () => setOverlay({ title: 'Log', text: logText() }),
     showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('Nothing has run yet.')),
+    // /update: asks GitHub for the latest release now, whatever the daily check last said, and installs it.
+    updateNow: () => {
+      if (!updater) {
+        return note(process.platform === 'browser'
+          ? `This is the web app's terminal (Keel ${VERSION}): it's as new as the web app.`
+          : `This Keel (${VERSION}) runs from a checkout: git pull updates it.`);
+      }
+      if (update?.state === 'installing') return note(`Keel ${update.latest} is being installed already.`);
+      if (update?.state === 'installed') return note(`Keel ${update.latest} is installed. It starts the next time you open Keel.`);
+      return task('Look for a new version of Keel', async () => {
+        const { checked, newer } = await updater.check();
+        if (!newer) return [`Keel ${VERSION} is the latest version.`];
+        setUpdate({ ...checked, state: 'installing' });
+        try {
+          await updater.install(checked.latest);
+        } catch (e) {
+          setUpdate({ ...checked, state: 'out' });
+          throw new Error(`Keel ${checked.latest} is out, but it couldn't be installed: ${firstLine(e.message)}\nDownload it from ${checked.url}`);
+        }
+        setUpdate({ ...checked, state: 'installed' });
+        return [`Keel ${checked.latest} is installed. It starts the next time you open Keel.`];
+      }, { label: 'Updating Keel' });
+    },
   });
 
   const submit = async (raw) => {
