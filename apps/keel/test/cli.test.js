@@ -160,11 +160,16 @@ test('/find filters the list, and o opens the selection in the browser', async (
   app.unmount();
 });
 
-test('? shows the shortcuts, esc closes them', async () => {
+test('? shows the shortcuts, on the section for the view on screen; / searches them; esc closes them', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
   app.stdin.write('?');
-  await until(() => frame().includes('Keyboard shortcuts'), 'the help');
+  await until(() => frame().includes('Keyboard shortcuts') && frame().includes('❯ Inbox') && frame().includes('Snooze for a day'), 'the help, on Inbox');
+  app.stdin.write('/');
+  for (const ch of 'priority') app.stdin.write(ch);
+  await until(() => frame().includes('Matches for “priority”') && frame().includes('Set its priority'), 'the matches');
+  app.stdin.write(KEYS.esc);
+  await until(() => !frame().includes('Matches for'), 'the search cleared');
   app.stdin.write(KEYS.esc);
   await until(() => !frame().includes('Keyboard shortcuts'), 'the help to close');
   app.unmount();

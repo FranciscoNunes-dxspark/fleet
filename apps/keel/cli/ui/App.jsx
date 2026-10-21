@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import * as a from '../actions.js';
-import { findCommand, suggestionsFor } from '../commands.js';
+import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { WI_VIEW_IDS, monitorFullText, pipelineDetail, prFullText, wiFullText } from '../format.js';
 import { HELP } from '../help.js';
+import { commandsSection, sectionFor } from '../help-layout.js';
 import { logText } from '../log.js';
 import path from 'node:path';
 import { COMPILED, VERSION, openUrl as openInBrowser } from '../open.js';
@@ -20,6 +21,7 @@ import { PipelinesView, pipelineId } from './PipelinesView.jsx';
 import { PrsView, prId } from './PrsView.jsx';
 import { ProductionView } from './ProductionView.jsx';
 import { SettingsView } from './SettingsView.jsx';
+import { HelpView } from './HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { WorkItemsView, wiId } from './WorkItemsView.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pinch.jsx';
@@ -31,6 +33,9 @@ const VIEWS = [
   { id: 'workitems', label: 'Work items' },
   { id: 'production', label: 'Production' },
 ];
+
+// What ? shows: help.js's sections, then the slash commands.
+const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 
 const HINTS = {
   inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
@@ -453,7 +458,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
         note(`Couldn't read the runs of ${row.definition.name}: ${firstLine(e.message)}`, 'error');
       }
     },
-    showHelp: () => setOverlay({ title: 'Keyboard shortcuts', text: HELP }),
+    // On the section for the view on screen.
+    showHelp: () => setOverlay({ help: true, start: sectionFor(HELP_SECTIONS, view) }),
     showLog: () => setOverlay({ title: 'Log', text: logText() }),
     showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('Nothing has run yet.')),
   });
@@ -730,6 +736,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   let main;
   if (overlay?.settings) {
     main = <SettingsView version={data.version} orgs={orgs} local={local} filter={filters.settings} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
+  } else if (overlay?.help) {
+    main = <HelpView sections={HELP_SECTIONS} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
   } else if (overlay) {
     main = <TextViewer {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
   } else if (view === 'prs') {
@@ -744,7 +752,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     main = <InboxView failed={Boolean(pollError)} attention={data.attention} filter={filters.inbox} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash ? flash.text : focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.settings ? SETTINGS_HINT : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
+  const left = flash ? flash.text : focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.settings ? SETTINGS_HINT : overlay?.help ? 'j/k section · space scroll · / search · esc close' : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
   const right = focus === 'prompt' ? '' : '  / commands · ? help';
 
   return (
