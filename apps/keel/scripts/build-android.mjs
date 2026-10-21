@@ -93,8 +93,11 @@ const manifest = twaManifest({
 });
 writeFileSync(path.join(project, 'twa-manifest.json'), JSON.stringify(manifest, null, 2));
 
-// Run from the project folder: Bubblewrap names its outputs relative to it.
-const bubblewrap = (...args) => run('npx', ['--yes', BUBBLEWRAP, ...args, `--config=${config}`], { cwd: project });
+// Run from the project folder: Bubblewrap names its outputs relative to it. Bubblewrap hands Gradle
+// ANDROID_HOME from its config, and Gradle refuses to build when the older ANDROID_SDK_ROOT (set on
+// GitHub's runners) names another folder, so leave that one out.
+const { ANDROID_SDK_ROOT, ...env } = process.env;
+const bubblewrap = (...args) => run('npx', ['--yes', BUBBLEWRAP, ...args, `--config=${config}`], { cwd: project, env });
 bubblewrap('update', '--skipVersionUpgrade');
 bubblewrap('build', '--skipPwaValidation');
 
