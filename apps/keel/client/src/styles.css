@@ -1489,12 +1489,11 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 @media (pointer: coarse) { .nav-terminal { display: none; } }
 /* Below deck looks a little broken, on purpose: its cursor blinks, and every few seconds the icon
    glitches (jumps a pixel or two and splits into red and cyan, like a screen with a bad cable).
-   Hovering sets it off at once. Not for those who ask for less motion. */
-@media (prefers-reduced-motion: no-preference) {
-  .nav-terminal .icon-cursor { animation: cursor-blink 1.1s steps(1, end) infinite; }
-  .nav-terminal .icon { animation: glitch 4.2s steps(1, end) infinite; }
-  .nav-terminal:hover .icon, .nav-terminal:focus-visible .icon { animation: glitch-now 0.45s steps(1, end) infinite; }
-}
+   Hovering sets it off at once. Always, even where the system asks for less motion: !important
+   wins over the reduced-motion rule that stops every other animation. */
+.nav-terminal .icon-cursor { animation: cursor-blink 1.1s steps(1, end) infinite !important; }
+.nav-terminal .icon { animation: glitch 4.2s steps(1, end) infinite !important; }
+.nav-terminal:hover .icon, .nav-terminal:focus-visible .icon { animation: glitch-now 0.45s steps(1, end) infinite !important; }
 @keyframes cursor-blink { 50% { opacity: 0; } }
 @keyframes glitch {
   0%, 88%, 100% { transform: none; filter: none; }
