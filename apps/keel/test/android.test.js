@@ -33,6 +33,7 @@ test('the Android app takes its name, colours, icons and shortcuts from the web 
   assert.equal(m.iconUrl, 'https://keel.example.com/icons/icon-512.png');
   assert.equal(m.maskableIconUrl, 'https://keel.example.com/icons/maskable-512.png');
   assert.equal(m.enableNotifications, true);
+  assert.equal(m.minSdkVersion, 24, 'androidbrowserhelper needs Android 7.0 or later');
   assert.deepEqual([m.appVersionCode, m.appVersion], [7, '7']);
   assert.deepEqual(m.signingKey, { path: '/k/keel.keystore', alias: 'keel' });
   assert.deepEqual(m.shortcuts.map((s) => s.url), ['https://keel.example.com/inbox', 'https://keel.example.com/production', 'https://keel.example.com/prs']);

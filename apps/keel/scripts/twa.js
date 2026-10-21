@@ -39,7 +39,8 @@ export function twaManifest({ host, packageId, versionCode, versionName, webMani
     isChromeOSOnly: false,
     isMetaQuest: false,
     fullScopeUrl: url(webManifest.scope || '/'),
-    minSdkVersion: 21,
+    // Android 7.0: the oldest androidbrowserhelper (the library Bubblewrap's app runs on) accepts.
+    minSdkVersion: 24,
     orientation: 'default',
     fingerprints: [],
     additionalTrustedOrigins: [],
