@@ -93,6 +93,26 @@ const manifest = twaManifest({
 });
 writeFileSync(path.join(project, 'twa-manifest.json'), JSON.stringify(manifest, null, 2));
 
+// Bubblewrap downloads the icons from the live site, and when that fails it says only "ERROR".
+// Fetch them first, so a site that's down, mid-deploy or refusing this machine says so.
+const iconUrls = [...new Set([manifest.iconUrl, manifest.maskableIconUrl, manifest.monochromeIconUrl, ...manifest.shortcuts.map((s) => s.chosenIconUrl)])];
+for (const url of iconUrls) {
+  let problem = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      const type = res.headers.get('content-type') || '';
+      problem = res.ok && type.startsWith('image/') ? null : `answered ${res.status} ${type || 'with no content type'}${res.ok ? '' : `: ${(await res.text()).slice(0, 200).replace(/\s+/g, ' ')}`}`;
+    } catch (e) {
+      problem = `couldn't be reached: ${e.cause?.message || e.message}`;
+    }
+    if (!problem) break;
+    console.warn(`${url} ${problem} (try ${attempt} of 3)`);
+    await new Promise((r) => setTimeout(r, 5000 * attempt));
+  }
+  if (problem) fail(`Bubblewrap downloads the app's icons from ${opts.host}, and ${url} ${problem}. Check that the site is up (and not mid-deploy), then run this again.`);
+}
+
 // Run from the project folder: Bubblewrap names its outputs relative to it. Bubblewrap hands Gradle
 // ANDROID_HOME from its config, and Gradle refuses to build when the older ANDROID_SDK_ROOT (set on
 // GitHub's runners) names another folder, so leave that one out.
