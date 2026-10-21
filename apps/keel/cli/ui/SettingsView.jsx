@@ -5,7 +5,7 @@ import {
   MERGE_LABEL, MERGE_STRATEGIES, UPDATE_LABEL, UPDATE_MODES, cycle, selectable, settingsRows, stepRefresh, withAllRepos, withRepo, withTracked,
 } from '../settings.js';
 import { theme } from '../theme.js';
-import { useListNav } from './hooks.js';
+import { useListNav, useMouse } from './hooks.js';
 import { Panel, Row } from './parts.jsx';
 
 const box = (on) => ({ text: on ? '[x] ' : '[ ] ', color: on ? theme.accent : theme.dim });
@@ -21,6 +21,7 @@ const HINTS = {
   org: (r) => (r.org.primary ? 'the primary one' : 'x remove'),
   addOrg: () => '↵ /addorg <address>',
   updates: () => 'space next choice',
+  mouse: (r) => (r.available ? 'space on or off' : ''),
   info: () => '',
 };
 
@@ -96,6 +97,8 @@ export function SettingsView({ version, orgs, local, filter, ctx, width, height,
         return save(`${r.on ? "Don't complete" : 'Complete'} linked work items when merging`, { autoComplete: { ...ac, transitionWorkItems: !r.on } }, 'Used by c (complete) and auto-complete.');
       case 'updates':
         return a.setUpdateMode(ctx, cycle(UPDATE_MODES, r.mode));
+      case 'mouse':
+        return r.available ? a.setMouse(ctx, !r.on) : ctx.note(r.why);
       case 'addOrg':
         return ctx.prefill('/addorg ');
       case 'refresh':
@@ -108,24 +111,27 @@ export function SettingsView({ version, orgs, local, filter, ctx, width, height,
     }
   };
 
-  useInput(
-    (input, key) => {
-      if (!ctx.settingsHasKeys()) return;
-      if (nav.handle(input, key) || !row || !settings) return;
-      if (key.return && row.kind === 'project') {
-        if (!row.tracked) return ctx.note(`Space tracks ${row.label} first; then ↵ picks its repos.`);
-        return toggleOpen(row.project);
-      }
-      if (input === ' ' || key.return) return toggle(row);
-      if (row.kind === 'refresh' && (input === '-' || input === '+' || input === '=' || key.leftArrow || key.rightArrow)) {
-        const seconds = stepRefresh(row.seconds, input === '-' || key.leftArrow ? -1 : 1);
-        if (seconds !== row.seconds) save(`Check every ${seconds} seconds`, { refreshSeconds: seconds }, 'Here and in the web app, while either is open.');
-        return;
-      }
-      if (row.kind === 'org' && input === 'x') a.removeOrg(ctx, row.org);
-    },
-    { isActive: active },
-  );
+  const keys = (input, key) => {
+    if (!ctx.settingsHasKeys()) return;
+    if (nav.handle(input, key) || !row || !settings) return;
+    if (key.return && row.kind === 'project') {
+      if (!row.tracked) return ctx.note(`Space tracks ${row.label} first; then ↵ picks its repos.`);
+      return toggleOpen(row.project);
+    }
+    if (input === ' ' || key.return) return toggle(row);
+    if (row.kind === 'refresh' && (input === '-' || input === '+' || input === '=' || key.leftArrow || key.rightArrow)) {
+      const seconds = stepRefresh(row.seconds, input === '-' || key.leftArrow ? -1 : 1);
+      if (seconds !== row.seconds) save(`Check every ${seconds} seconds`, { refreshSeconds: seconds }, 'Here and in the web app, while either is open.');
+      return;
+    }
+    if (row.kind === 'org' && input === 'x') a.removeOrg(ctx, row.org);
+  };
+  useInput(keys, { isActive: active });
+  // A click picks a row and a double-click is ↵ (a project's repos, or the change a row makes); the wheel scrolls.
+  useMouse(ctx, (e) => {
+    if (e.wheel) return nav.scrollBy(e.wheel * 3);
+    if (nav.pick(e.y - 1) && e.double) keys('', { return: true });
+  });
 
   const segmentsOf = (r) => {
     switch (r.kind) {
@@ -153,6 +159,10 @@ export function SettingsView({ version, orgs, local, filter, ctx, width, height,
         return [{ text: '+ Add an organization or GitHub owner', color: theme.accent }];
       case 'updates':
         return [{ text: 'Updates             ', color: theme.dim }, { text: UPDATE_LABEL[r.mode], strong: true }];
+      case 'mouse':
+        return r.available
+          ? [box(r.on), { text: 'Mouse: click, double-click, scroll, drag to copy' }, { text: r.on ? '' : "  off: the terminal's own selection", color: theme.dim }]
+          : [{ text: 'Mouse               ', color: theme.dim }, { text: r.why, color: theme.dim }];
       case 'info':
         return [{ text: `${r.label.padEnd(20)}`, color: theme.dim }, { text: r.text }];
       default:

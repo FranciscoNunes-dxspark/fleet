@@ -15,6 +15,9 @@ export function updateMode(env = process.env) {
   return off('KEEL_CHECK_UPDATES') ? 'off' : off('KEEL_AUTO_UPDATE') ? 'tell' : 'install';
 }
 
+/** Whether the mouse is on: it is unless KEEL_MOUSE turns it off. */
+export const mouseOn = (env = process.env) => !/^(0|false|no|off)$/i.test(env.KEEL_MOUSE || '');
+
 /** The .env lines for an update mode (both keys, so an earlier choice never lingers). */
 export const updateLines = (mode) => [`KEEL_CHECK_UPDATES=${mode === 'off' ? 0 : 1}`, `KEEL_AUTO_UPDATE=${mode === 'install' ? 1 : 0}`];
 
@@ -104,6 +107,7 @@ export function settingsRows({ view, orgs = [], options = {}, open = new Set(), 
   header('This computer');
   rows.push({ kind: 'info', label: 'Settings file', text: local.envFile || '' });
   rows.push({ kind: 'info', label: 'Signed in with', text: signInText(local) });
+  rows.push({ kind: 'mouse', on: mouseOn(local.env), available: !!local.mouseAvailable, why: local.mouseAvailable ? '' : "this terminal can't report it (on Windows it needs Node 22.17 or later, or the downloaded app)" });
   if (local.compiled) rows.push({ kind: 'updates', mode: updateMode(local.env) });
   else rows.push({ kind: 'info', label: 'Updates', text: 'from a checkout: git pull' });
   return rows;

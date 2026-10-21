@@ -4,7 +4,7 @@ import * as a from '../actions.js';
 import { branch, prDetail, prRows, prState } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '../text.js';
-import { useListNav } from './hooks.js';
+import { useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
 export const prId = (pr) => `${pr.org ?? ''}/${pr.key}`;
@@ -41,22 +41,26 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
     ctx.jumped();
   }, [jump, rows]);
 
-  useInput(
-    (input, key) => {
-      if (!ctx.viewHasKeys()) return;
-      if (input === 'f') return ctx.showGroup(NEXT_SHOW[show]);
-      if (nav.handle(input, key) || !pr) return;
-      if (key.return) ctx.showPrFull(pr);
-      else if (input === 'a') a.vote(ctx, pr, 10);
-      else if (input === 'A') a.vote(ctx, pr, 5);
-      else if (input === 'w') a.vote(ctx, pr, -5);
-      else if (input === 'x') a.vote(ctx, pr, -10);
-      else if (input === '0') a.vote(ctx, pr, 0);
-      else if (input === 'c') a.complete(ctx, pr);
-      else if (input === 'm') a.autoComplete(ctx, pr);
-    },
-    { isActive: active },
-  );
+  const keys = (input, key) => {
+    if (!ctx.viewHasKeys()) return;
+    if (input === 'f') return ctx.showGroup(NEXT_SHOW[show]);
+    if (nav.handle(input, key) || !pr) return;
+    if (key.return) ctx.showPrFull(pr);
+    else if (input === 'a') a.vote(ctx, pr, 10);
+    else if (input === 'A') a.vote(ctx, pr, 5);
+    else if (input === 'w') a.vote(ctx, pr, -5);
+    else if (input === 'x') a.vote(ctx, pr, -10);
+    else if (input === '0') a.vote(ctx, pr, 0);
+    else if (input === 'c') a.complete(ctx, pr);
+    else if (input === 'm') a.autoComplete(ctx, pr);
+  };
+  useInput(keys, { isActive: active });
+  // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).
+  useMouse(ctx, (e) => {
+    if (e.x >= listW) return;
+    if (e.wheel) return nav.scrollBy(e.wheel * 3);
+    if (nav.pick(e.y - 1) && e.double) keys('', { return: true });
+  });
 
   const shown = rows.filter((r) => r.pr).length;
   const hint = prs ? [String(shown), SHOW_LABEL[show], filter ? `matching "${filter}"` : '', 'f to filter'].filter(Boolean).join(' · ') : '';

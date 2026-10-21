@@ -3,7 +3,7 @@ import { Box, useInput } from 'ink';
 import { monitorBrief, monitorDetail, monitorRows, monitorState } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, stringWidth } from '../text.js';
-import { useAsync, useListNav } from './hooks.js';
+import { useAsync, useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
 /**
@@ -29,14 +29,18 @@ export function ProductionView({ failed, production, version, filter, ctx, width
     ctx.select({ monitor: m, monitorTarget: target(m) });
   }, [m, waiting.value]);
 
-  useInput(
-    (input, key) => {
-      if (!ctx.viewHasKeys()) return;
-      if (nav.handle(input, key) || !m) return;
-      if (key.return) ctx.showMonitorFull(m, target(m));
-    },
-    { isActive: active },
-  );
+  const keys = (input, key) => {
+    if (!ctx.viewHasKeys()) return;
+    if (nav.handle(input, key) || !m) return;
+    if (key.return) ctx.showMonitorFull(m, target(m));
+  };
+  useInput(keys, { isActive: active });
+  // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).
+  useMouse(ctx, (e) => {
+    if (e.x >= listW) return;
+    if (e.wheel) return nav.scrollBy(e.wheel * 3);
+    if (nav.pick(e.y - 1) && e.double) keys('', { return: true });
+  });
 
   const problems = rows.filter((r) => r.state === 'down' || r.state === 'degraded').length;
   const hint = production ? [String(rows.length), problems ? `${problems} need you` : '', filter ? `matching "${filter}"` : ''].filter(Boolean).join(' · ') : '';

@@ -12,6 +12,7 @@ import { ROOT } from '../../server/root.js';
 import { FACES, moodFor } from '../pinch.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '../text.js';
+import { mouseOn } from '../settings.js';
 import { useTerminalSize } from './hooks.js';
 import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from './parts.jsx';
 import { InboxView } from './InboxView.jsx';
@@ -63,7 +64,8 @@ function Header({ meta, orgs, signIn, server, attention, pollError, width, mood 
   return <Row pointer={false} width={width} segments={fitSegments(segs, width)} />;
 }
 
-function Tabs({ view, data, width }) {
+/** Each tab's label and the columns it covers in the tab row (where a click lands), with its count. */
+function tabLabels(data) {
   const counts = {
     inbox: data.attention?.items.length,
     prs: data.prs?.filter((p) => p.needsMyReview).length || null,
@@ -72,14 +74,31 @@ function Tabs({ view, data, width }) {
     workitems: data.workItems?.items.filter((w) => data.workItems.me && w.assignedTo?.id === data.workItems.me.id).length || null,
     production: data.production?.monitors.filter((m) => m.state === 'down' || m.state === 'degraded').length || null,
   };
-  const segs = [];
-  VIEWS.forEach((v, i) => {
-    const on = v.id === view;
+  let x = 0;
+  return VIEWS.map((v, i) => {
     const n = counts[v.id];
-    segs.push({ text: ` ${i + 1} ${v.label}${n ? ` ${n}` : ''} `, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
+    const label = ` ${i + 1} ${v.label}${n ? ` ${n}` : ''} `;
+    const from = x;
+    x += stringWidth(label) + 1;
+    return { id: v.id, label, from, to: from + stringWidth(label) };
   });
+}
+
+function Tabs({ view, data, width }) {
+  const segs = [];
+  for (const t of tabLabels(data)) {
+    const on = t.id === view;
+    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
+  }
   return <Row pointer={false} width={width} segments={segs} />;
 }
+
+const DOUBLE_CLICK_MS = 400;
+// What a mouse selection copied: "3 lines", "12 characters".
+const copiedText = (text) => {
+  const n = text.split('\n').length;
+  return n > 1 ? `${n} lines` : plural(text.length, 'character');
+};
 
 // The last two results, Claude Code style: "● Approve !817 …" then "  ⎿  Approved."
 function activityRows(entries) {
@@ -101,9 +120,10 @@ function activityRows(entries) {
  * same way, on demo data), or from cli/remote.js when signed in to a Keel server (with `server`
  * and `logout` too). `openUrl` opens links (the browser by default); `poll` turns live checks off when false.
  * `checkUpdate` and `installUpdate` (cli/update.js) are only passed to the downloaded executable.
- * `envFile` is the .env this Keel reads, where Settings saves this computer's choices.
+ * `envFile` is the .env this Keel reads, where Settings saves this computer's choices. `mouse` is
+ * mouse.js's terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
  */
-export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate, envFile = path.join(ROOT, '.env') }) {
+export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate, envFile = path.join(ROOT, '.env'), mouse }) {
   const { service, orgs, signIn, live } = keel;
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
@@ -121,7 +141,14 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', settings: '' });
   // What Settings shows about this computer; `envTick` moves when its .env changes.
   const [envTick, setEnvTick] = useState(0);
-  const local = React.useMemo(() => ({ envFile, signIn, server: keel.server, account: keel.account, compiled: COMPILED, env: { ...process.env } }), [envFile, signIn, envTick]);
+  const local = React.useMemo(() => ({ envFile, signIn, server: keel.server, account: keel.account, compiled: COMPILED, mouseAvailable: Boolean(mouse), env: { ...process.env } }), [envFile, signIn, envTick]);
+  // A word in the bottom line for a moment ("Copied 3 lines"), where it moves nothing on screen.
+  const [flash, setFlash] = useState(null);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 3000);
+    return () => clearTimeout(t);
+  }, [flash]);
   const [show, setShow] = useState('all');
   // The work item view, as the web app's (format.js wiViews).
   const [wiShow, setWiShow] = useState('all');
@@ -311,6 +338,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const ctxRef = useRef(null);
   if (!ctxRef.current) {
     ctxRef.current = {
+      // What useMouse registers: the component on screen takes the main area's clicks and wheel.
+      mouseHandlers: [],
       get meta() {
         return metaRef.current;
       },
@@ -621,6 +650,65 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     globalKeys(input, key);
   });
 
+  // The terminal reports the mouse unless this computer's Settings turned it off (KEEL_MOUSE=0).
+  useEffect(() => {
+    mouse?.enable(mouseOn(local.env));
+  }, [local]);
+
+  // Where things were drawn, for matching clicks against (set as the layout below is worked out).
+  const layout = useRef(null);
+  const lastPress = useRef(null);
+  // The component under a point of the main area (`y` counted from its top), and that `y` in it.
+  const mouseTarget = (y) => {
+    const target = ctx.mouseHandlers.findLast((h) => h.top <= y);
+    return target && { target, y: y - target.top };
+  };
+  const onMouse = (e) => {
+    if (e.type === 'copy') return setFlash({ text: `Copied ${copiedText(e.text)}` });
+    if (e.button === 'left' && !e.release && !e.drag) {
+      const prev = lastPress.current;
+      const now = Date.now();
+      const count = prev && prev.x === e.x && prev.y === e.y && now - prev.at < DOUBLE_CLICK_MS ? prev.count + 1 : 1;
+      e.double = count === 2;
+      lastPress.current = count < 2 ? { x: e.x, y: e.y, at: now, count } : null;
+    } else if (e.button !== 'wheel') return;
+    // A question's options take keys only.
+    if (confirmRef.current || !layout.current) return;
+    const { mainTop, mainH, promptTop, sugCount, tabs } = layout.current;
+    if (e.y === mainTop - 1 && !e.wheel) {
+      const tab = tabs.find((t) => e.x >= t.from && e.x < t.to);
+      if (!tab) return;
+      // Whatever is open over the tab closes: a click on a tab should never do nothing.
+      if (overlayRef.current) setOverlay(null);
+      if (focusRef.current === 'prompt') setFocus('view');
+      return setView(tab.id);
+    }
+    if (e.y >= mainTop && e.y < mainTop + mainH) {
+      // Like esc, a click on the view leaves the prompt's text for later.
+      if (!e.wheel && focusRef.current === 'prompt') setFocus('view');
+      const hit = mouseTarget(e.y - mainTop);
+      return hit?.target.handle({ ...e, y: hit.y });
+    }
+    if (e.wheel) return;
+    if (e.y >= promptTop && e.y < promptTop + 3) {
+      // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
+      const { value, cursor } = promptRef.current;
+      const inner = columns - 6;
+      const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      return setFocus('prompt');
+    }
+    const sug = e.y - promptTop - 3;
+    if (sug >= 0 && sug < sugCount) {
+      setSugIndex(sug);
+      // As ↵ would, on the suggestion under the pointer.
+      if (e.double) promptKeys('', { return: true });
+    }
+  };
+  const mouseRef = useRef(onMouse);
+  mouseRef.current = onMouse;
+  useEffect(() => mouse?.subscribe((e) => mouseRef.current(e)), [mouse]);
+
   // Layout: everything is sized to the terminal, one row short of it so Ink never clears the screen.
   const W = columns;
   const H = Math.max(12, rows - 1);
@@ -631,12 +719,19 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const showWelcome = welcome && H >= 28;
   const mainH = Math.max(6, H - 2 - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
+  layout.current = {
+    mainTop: 2,
+    mainH,
+    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + act.length + (busy ? 1 : 0),
+    sugCount: suggestions.length,
+    tabs: tabLabels(data),
+  };
 
   let main;
   if (overlay?.settings) {
     main = <SettingsView version={data.version} orgs={orgs} local={local} filter={filters.settings} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay) {
-    main = <TextViewer {...overlay} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
+    main = <TextViewer {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
   } else if (view === 'prs') {
     main = <PrsView failed={Boolean(pollError)} prs={data.prs} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'workitems') {
@@ -649,7 +744,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     main = <InboxView failed={Boolean(pollError)} attention={data.attention} filter={filters.inbox} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.settings ? SETTINGS_HINT : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
+  const left = flash ? flash.text : focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.settings ? SETTINGS_HINT : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
   const right = focus === 'prompt' ? '' : '  / commands · ? help';
 
   return (

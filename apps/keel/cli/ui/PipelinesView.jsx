@@ -4,7 +4,7 @@ import * as a from '../actions.js';
 import { HEALTH, branch, pipelineDetail, runState } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '../text.js';
-import { useAsync, useListNav } from './hooks.js';
+import { useAsync, useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
 export const pipelineId = (row) => `${row.org ?? ''}/${row.key}`;
@@ -42,16 +42,20 @@ export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, w
     ctx.jumped();
   }, [jump, rows]);
 
-  useInput(
-    (input, key) => {
-      if (!ctx.viewHasKeys()) return;
-      if (nav.handle(input, key) || !row) return;
-      if (key.return) ctx.showPipelineRuns(row);
-      else if (input === 'n') a.runPipeline(ctx, row);
-      else if (input === 'c') a.cancelRun(ctx, row);
-    },
-    { isActive: active },
-  );
+  const keys = (input, key) => {
+    if (!ctx.viewHasKeys()) return;
+    if (nav.handle(input, key) || !row) return;
+    if (key.return) ctx.showPipelineRuns(row);
+    else if (input === 'n') a.runPipeline(ctx, row);
+    else if (input === 'c') a.cancelRun(ctx, row);
+  };
+  useInput(keys, { isActive: active });
+  // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).
+  useMouse(ctx, (e) => {
+    if (e.x >= listW) return;
+    if (e.wheel) return nav.scrollBy(e.wheel * 3);
+    if (nav.pick(e.y - 1) && e.double) keys('', { return: true });
+  });
 
   const failing = (pipelines ?? []).filter((r) => r.health === 'failing').length;
   const hint = pipelines ? [`${rows.length}`, failing ? `${failing} failing` : '', filter ? `matching "${filter}"` : ''].filter(Boolean).join(' · ') : '';

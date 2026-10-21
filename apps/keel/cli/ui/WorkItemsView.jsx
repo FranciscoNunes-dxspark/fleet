@@ -4,7 +4,7 @@ import * as a from '../actions.js';
 import { WI_VIEW_IDS, isBlocked, wiDetail, wiRows, wiState, wiViews } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '../text.js';
-import { useListNav } from './hooks.js';
+import { useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
 export const wiId = (w) => `${w.org ?? ''}/${w.id}`;
@@ -48,18 +48,22 @@ export function WorkItemsView({ failed, workItems, meta, show, filter, jump, ctx
     ctx.jumped();
   }, [jump, rows]);
 
-  useInput(
-    (input, key) => {
-      if (!ctx.viewHasKeys()) return;
-      if (input === 'f') return ctx.showView('workitems', WI_VIEW_IDS[(WI_VIEW_IDS.indexOf(show) + 1) % WI_VIEW_IDS.length]);
-      if (nav.handle(input, key) || !w) return;
-      if (key.return) ctx.showWorkItemFull(w);
-      else if (input === 's') a.setState(ctx, w);
-      else if (input === 'i') a.assign(ctx, w, 'me');
-      else if (input === 'b') a.toggleBlocked(ctx, w);
-    },
-    { isActive: active },
-  );
+  const keys = (input, key) => {
+    if (!ctx.viewHasKeys()) return;
+    if (input === 'f') return ctx.showView('workitems', WI_VIEW_IDS[(WI_VIEW_IDS.indexOf(show) + 1) % WI_VIEW_IDS.length]);
+    if (nav.handle(input, key) || !w) return;
+    if (key.return) ctx.showWorkItemFull(w);
+    else if (input === 's') a.setState(ctx, w);
+    else if (input === 'i') a.assign(ctx, w, 'me');
+    else if (input === 'b') a.toggleBlocked(ctx, w);
+  };
+  useInput(keys, { isActive: active });
+  // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).
+  useMouse(ctx, (e) => {
+    if (e.x >= listW) return;
+    if (e.wheel) return nav.scrollBy(e.wheel * 3);
+    if (nav.pick(e.y - 1) && e.double) keys('', { return: true });
+  });
 
   const view = views.find((v) => v.id === show) ?? views[0];
   const hint = workItems ? [String(rows.length), view.label, filter ? `matching "${filter}"` : '', 'f next view'].filter(Boolean).join(' · ') : '';

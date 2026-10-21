@@ -154,6 +154,11 @@ if (COMPILED && !off('KEEL_CHECK_UPDATES')) {
 process.stdout.write('\x1b[?1049h\x1b[H');
 process.on('exit', () => process.stdout.write('\x1b[?1049l'));
 
-const app = render(React.createElement(App, { keel, checkUpdate, installUpdate }), { exitOnCtrlC: false, patchConsole: false });
+// Clicks, the wheel and drag-to-copy, where the terminal can report them (mouse.js); App turns reporting
+// on unless this computer's Settings turned it off. Set up before rendering, so mouse reports never
+// reach Ink as keys, and Ink draws through the mouse's stdout, which keeps the frames to select text from.
+const { terminalMouse } = await import('./mouse.js');
+const mouse = await terminalMouse(process.stdin, process.stdout);
+const app = render(React.createElement(App, { keel, checkUpdate, installUpdate, mouse }), { exitOnCtrlC: false, patchConsole: false, stdout: mouse?.stdout ?? process.stdout });
 await app.waitUntilExit();
 process.exit(0);

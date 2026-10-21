@@ -69,5 +69,10 @@ Weekly summary (/summary; /summary last, /summary -3, /summary 2026-10-06 for ea
   What got finished, merged and deployed that week, and what's blocked now: the web app's
   Weekly summary, as the text its "Copy as text" gives, ready to paste into an email or chat
 
+Mouse (where the terminal reports it; Settings turns it off)
+  click            A tab, a row, the prompt or a suggestion     double-click   As ↵
+  wheel            Scroll the list or the viewer under the pointer
+  drag             Select text on screen; it's copied when you let go
+
 Viewer (a pull request, a work item, the weekly summary, the last output, the log, this help)
   j k  space  g G  Scroll         esc / q     Close`;

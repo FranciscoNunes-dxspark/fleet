@@ -4,7 +4,7 @@ import * as a from '../actions.js';
 import { KIND, SEVERITY, inboxDetail } from '../format.js';
 import { theme } from '../theme.js';
 import { fit } from '../text.js';
-import { useListNav } from './hooks.js';
+import { useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
 const matches = (item, text) => {
@@ -27,19 +27,23 @@ export function InboxView({ failed, attention, filter, ctx, width, height, activ
     ctx.select({ item });
   }, [item]);
 
-  useInput(
-    (input, key) => {
-      if (!ctx.viewHasKeys()) return;
-      if (nav.handle(input, key) || !item) return;
-      if (key.return) a.follow(ctx, item);
-      else if (input === 's') a.snooze(ctx, item);
-      else if (input === 'a' || input === 'x') {
-        if (item.kind === 'approval') a.decide(ctx, item, input === 'a' ? 'approved' : 'rejected');
-        else if (item.target?.type === 'pr') ctx.note('↵ opens the pull request in its tab, where a approves it.');
-      }
-    },
-    { isActive: active },
-  );
+  const keys = (input, key) => {
+    if (!ctx.viewHasKeys()) return;
+    if (nav.handle(input, key) || !item) return;
+    if (key.return) a.follow(ctx, item);
+    else if (input === 's') a.snooze(ctx, item);
+    else if (input === 'a' || input === 'x') {
+      if (item.kind === 'approval') a.decide(ctx, item, input === 'a' ? 'approved' : 'rejected');
+      else if (item.target?.type === 'pr') ctx.note('↵ opens the pull request in its tab, where a approves it.');
+    }
+  };
+  useInput(keys, { isActive: active });
+  // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).
+  useMouse(ctx, (e) => {
+    if (e.x >= listW) return;
+    if (e.wheel) return nav.scrollBy(e.wheel * 3);
+    if (nav.pick(e.y - 1) && e.double) keys('', { return: true });
+  });
 
   const snoozed = attention?.snoozedCount ? ` · ${attention.snoozedCount} snoozed` : '';
   const hint = attention ? `${items.length}${filter ? ` matching "${filter}"` : ''}${snoozed}` : '';

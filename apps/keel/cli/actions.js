@@ -198,6 +198,14 @@ export async function setUpdateMode(ctx, mode) {
   }, { label: 'Saving' });
 }
 
+/** The mouse on or off on this computer (KEEL_MOUSE in its .env), at once. */
+export async function setMouse(ctx, on) {
+  await ctx.task(`Mouse ${on ? 'on' : 'off'}`, async () => {
+    ctx.saveEnv([`KEEL_MOUSE=${on ? 1 : 0}`]);
+    return [on ? 'Click, double-click, scroll, and drag to copy.' : "Off: the terminal selects and copies by itself again. Saved in this computer's .env."];
+  }, { label: 'Saving' });
+}
+
 /** /addorg <address>: another Azure DevOps organization, or a GitHub owner (github.com, or --github). */
 export async function addOrg(ctx, text = '') {
   const github = /(^|\s)--github(\s|$)/.test(text);
