@@ -22,7 +22,7 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
   const [mode, setMode] = useState('open');
   const data = useAsync(`board:${pick.projectId ?? ''}:${pick.teamId ?? ''}:${pick.boardId ?? ''}:${mode}:${version}`, () => ctx.service.board({ ...pick, mode }), 50);
   const d = data.value;
-  const columns = useMemo(() => boardColumns(d), [d]);
+  const columns = useMemo(() => (d?.project ? boardColumns(d) : []), [d]);
   const cards = useMemo(() => boardCards(d, columns, filter), [d, columns, filter]);
   const [col, setCol] = useState(0);
   const [at, setAt] = useState({});
@@ -84,7 +84,8 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
     setAt({});
   };
   const chooseBoard = async () => {
-    if (!(d?.boards?.length > 1)) return ctx.note(`${d?.project?.teamName ?? 'This team'} has one board.`);
+    if (!d?.project) return;
+    if (!(d.boards?.length > 1)) return ctx.note(`${d.project.teamName} has one board.`);
     const b = await ctx.confirm({
       title: `Which of ${d.project.teamName}'s boards?`,
       options: [...d.boards.map((x) => ({ label: `${x.name} (${x.types.join(', ')})`, value: x })), { label: 'Leave it', value: null }],
@@ -100,6 +101,7 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
     if (input === 't') return chooseTeam();
     if (input === 'v') return chooseBoard();
     if (input === 'f') return setMode((m) => (m === 'open' ? 'sprint' : 'open'));
+    if (!columns.length) return;
     if (key.leftArrow || input === 'h') return setCol(Math.max(0, c - 1));
     if (key.rightArrow || input === 'l') return setCol(Math.min(columns.length - 1, c + 1));
     if (key.downArrow || input === 'j') return setIndex(index + 1);
@@ -151,6 +153,8 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
   let head;
   if (data.error && !d) head = [{ text: `Couldn't read the board: ${String(data.error.message).split('\n')[0]}`, color: theme.del }];
   else if (!d) head = [{ text: 'Reading the board…', color: theme.dim }];
+  // No tracked project has a team with a board (only GitHub owners are tracked, say: they have none).
+  else if (!d.project) head = [{ text: 'No boards here: none of your tracked projects has a team. Track an Azure DevOps project in Settings (,).', color: theme.dim }];
   else {
     const it = d.iteration;
     const ends = it?.finishDate ? Date.parse(it.finishDate) - Date.now() : null;
