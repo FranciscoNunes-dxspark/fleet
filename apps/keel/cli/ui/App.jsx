@@ -11,6 +11,7 @@ import { COMPILED, VERSION, openUrl as openInBrowser } from '../open.js';
 import { saveEnvSettings } from '../setup.js';
 import { ROOT } from '../../server/root.js';
 import { FACES, moodFor } from '../pinch.js';
+import { releaseFullText } from '../releases.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '../text.js';
 import { mouseOn } from '../settings.js';
@@ -20,18 +21,25 @@ import { InboxView } from './InboxView.jsx';
 import { PipelinesView, pipelineId } from './PipelinesView.jsx';
 import { PrsView, prId } from './PrsView.jsx';
 import { ProductionView } from './ProductionView.jsx';
+import { ReleasesView } from './ReleasesView.jsx';
+import { BoardView } from './BoardView.jsx';
+import { TeamView } from './TeamView.jsx';
 import { SettingsView } from './SettingsView.jsx';
 import { HelpView } from './HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { WorkItemsView, wiId } from './WorkItemsView.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pinch.jsx';
 
+// `short` is what a tab says when the row of tabs doesn't fit the terminal (the widest go short first).
 const VIEWS = [
   { id: 'inbox', label: 'Inbox' },
-  { id: 'prs', label: 'Pull requests' },
+  { id: 'prs', label: 'Pull requests', short: 'PRs' },
   { id: 'pipelines', label: 'Pipelines' },
-  { id: 'workitems', label: 'Work items' },
-  { id: 'production', label: 'Production' },
+  { id: 'workitems', label: 'Work items', short: 'Work' },
+  { id: 'production', label: 'Production', short: 'Prod' },
+  { id: 'releases', label: 'Releases' },
+  { id: 'board', label: 'Board' },
+  { id: 'team', label: 'Team' },
 ];
 
 // What ? shows: help.js's sections, then the slash commands.
@@ -40,11 +48,14 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const HINTS = {
   inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
   prs: 'p publish · a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter',
-  pipelines: 'n run · c cancel the run · ↵ all runs · o browser',
+  pipelines: 'n run · c cancel the run · l the run in full, with logs · ↵ all runs · o browser',
   workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
   production: '↵ everything, and all that is waiting to ship · o open the site',
+  releases: 'n new release · d deploy to a stage · a/x approve or reject · ↵ everything · o browser',
+  board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',
+  team: '↵ their work items · p their pull requests · /find a name',
 };
-const SETTINGS_HINT = "space change · ↵ a project's repos · /find a project · esc close";
+const SETTINGS_HINT = "tab next section · space change · - + a number · ↵ a project's repos · /find a project · esc close";
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -69,8 +80,11 @@ function Header({ meta, orgs, signIn, server, attention, pollError, width, mood 
   return <Row pointer={false} width={width} segments={fitSegments(segs, width)} />;
 }
 
-/** Each tab's label and the columns it covers in the tab row (where a click lands), with its count. */
-function tabLabels(data) {
+/**
+ * Each tab's label and the columns it covers in the tab row (where a click lands), with its count.
+ * When they don't all fit `width`, the widest labels give way to their short ones until they do.
+ */
+function tabLabels(data, width = Infinity) {
   const counts = {
     inbox: data.attention?.items.length,
     prs: data.prs?.filter((p) => p.needsMyReview).length || null,
@@ -79,10 +93,17 @@ function tabLabels(data) {
     workitems: data.workItems?.items.filter((w) => data.workItems.me && w.assignedTo?.id === data.workItems.me.id).length || null,
     production: data.production?.monitors.filter((m) => m.state === 'down' || m.state === 'degraded').length || null,
   };
+  const names = VIEWS.map((v) => v.label);
+  const labelOf = (i) => ` ${i + 1} ${names[i]}${counts[VIEWS[i].id] ? ` ${counts[VIEWS[i].id]}` : ''} `;
+  const total = () => names.reduce((sum, _, i) => sum + stringWidth(labelOf(i)) + 1, 0);
+  const widest = VIEWS.map((v, i) => i).filter((i) => VIEWS[i].short).sort((p, q) => VIEWS[q].label.length - VIEWS[p].label.length);
+  for (const i of widest) {
+    if (total() <= width) break;
+    names[i] = VIEWS[i].short;
+  }
   let x = 0;
   return VIEWS.map((v, i) => {
-    const n = counts[v.id];
-    const label = ` ${i + 1} ${v.label}${n ? ` ${n}` : ''} `;
+    const label = labelOf(i);
     const from = x;
     x += stringWidth(label) + 1;
     return { id: v.id, label, from, to: from + stringWidth(label) };
@@ -91,7 +112,7 @@ function tabLabels(data) {
 
 function Tabs({ view, data, width }) {
   const segs = [];
-  for (const t of tabLabels(data)) {
+  for (const t of tabLabels(data, width)) {
     const on = t.id === view;
     segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
   }
@@ -143,7 +164,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const [confirmReq, setConfirmReq] = useState(null);
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', settings: '' });
+  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', releases: '', board: '', team: '', settings: '' });
   // What Settings shows about this computer; `envTick` moves when its .env changes.
   const [envTick, setEnvTick] = useState(0);
   const local = React.useMemo(() => ({ envFile, signIn, server: keel.server, account: keel.account, compiled: COMPILED, mouseAvailable: Boolean(mouse), env: { ...process.env } }), [envFile, signIn, envTick]);
@@ -329,6 +350,10 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     if (v === 'pipelines') return { pipeline: sel.pipeline, webUrl: sel.pipeline?.lastRun?.webUrl ?? sel.pipeline?.latest?.webUrl };
     if (v === 'workitems') return { workItem: sel.workItem, webUrl: sel.workItem?.webUrl };
     if (v === 'production') return { monitor: sel.monitor, webUrl: sel.monitor?.url?.replace(/\/health\/?$/i, '') || undefined };
+    if (v === 'releases') return { release: sel.release, releaseApprovals: sel.releaseApprovals, webUrl: sel.release?.webUrl };
+    // A card is a work item: /state, /assign, /comment and the rest act on it.
+    if (v === 'board') return { workItem: sel.workItem, webUrl: sel.workItem?.webUrl };
+    if (v === 'team') return { person: sel.person };
     const item = sel.item;
     const t = item?.target ?? {};
     const sameOrg = (x) => !item.org || !x.org || x.org === item.org;
@@ -407,6 +432,17 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
       return true;
     },
     showTab: (id) => setView(id),
+    // ↵ and p in Team: everything open of theirs, in the Work items or Pull requests tab.
+    showWorkItemsOf: (person) => {
+      setFilters((f) => ({ ...f, workitems: person.displayName }));
+      setWiShow('all');
+      setView('workitems');
+    },
+    showPrsOf: (person) => {
+      setFilters((f) => ({ ...f, prs: person.displayName }));
+      setShow('all');
+      setView('prs');
+    },
     jumped: () => setJump(null),
     find: (text) => {
       const v = overlayRef.current?.settings ? 'settings' : viewRef.current;
@@ -448,6 +484,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
       }
     },
     showMonitorFull: (m, target) => setOverlay({ title: m.name, text: monitorFullText(m, target) }),
+    showReleaseFull: (d, approvals) => setOverlay({ title: d.name, text: releaseFullText(d, approvals) }),
     showPipelineRuns: async (row) => {
       setOverlay({ title: row.definition.name, loading: true });
       try {
@@ -730,7 +767,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     mainH,
     promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(data),
+    tabs: tabLabels(data, W),
   };
 
   let main;
@@ -746,6 +783,12 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     main = <WorkItemsView failed={Boolean(pollError)} workItems={data.workItems} meta={meta} show={wiShow} filter={filters.workitems} jump={jump?.view === 'workitems' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'production') {
     main = <ProductionView failed={Boolean(pollError)} production={data.production} version={data.version} filter={filters.production} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'team') {
+    main = <TeamView version={data.version} workItems={data.workItems} prs={data.prs} filter={filters.team} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'board') {
+    main = <BoardView version={data.version} filter={filters.board} meta={meta} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'releases') {
+    main = <ReleasesView version={data.version} filter={filters.releases} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'pipelines') {
     main = <PipelinesView failed={Boolean(pollError)} pipelines={data.pipelines} version={data.version} filter={filters.pipelines} jump={jump?.view === 'pipelines' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {

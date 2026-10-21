@@ -35,6 +35,7 @@ const prFields = (teams) => `
   autoMergeRequest { enabledAt mergeMethod enabledBy { ${WHO} } }
   reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login name avatarUrl } ${teams ? TEAM : ''} } } }
   latestOpinionatedReviews(first: 20) { nodes { state author { ${WHO} } } }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 `;
 const SEARCH = (teams) => `query($q: String!, $after: String) {
   search(query: $q, type: ISSUE, first: 50, after: $after) {

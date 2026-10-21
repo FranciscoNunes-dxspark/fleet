@@ -61,6 +61,19 @@ test('a pull request goes publish, approval, complete; each step says what it wa
   assert.equal(flow({ status: 'abandoned' }).step, 'closed');
 });
 
+test("on GitHub a pull request is held while its checks run, and after they fail; it isn't ready to merge then", () => {
+  const enriched = (over) => enrichPR(pr({ reviewers: [rv(dev, 10)], ...over }), me, NOW);
+  assert.deepEqual(enriched({ checks: 'running' }).flow, { step: 'complete', waiting: { kind: 'checks' } });
+  assert.deepEqual(enriched({ checks: 'failed' }).flow, { step: 'complete', waiting: { kind: 'checks-failed' } });
+  // Auto-merge set: it merges itself once they pass, which says more than "held".
+  assert.deepEqual(enriched({ checks: 'running', autoComplete: true }).flow, { step: 'complete', waiting: { kind: 'auto' } });
+  assert.deepEqual(enriched({ checks: 'passed' }).flow, { step: 'complete', waiting: null });
+  assert.equal(enriched({ checks: 'running' }).readyToMerge, false);
+  assert.equal(enriched({ checks: 'failed' }).readyToMerge, false);
+  assert.equal(enriched({ checks: 'passed' }).readyToMerge, true);
+  assert.equal(enriched({}).readyToMerge, true);
+});
+
 test("on GitHub: a branch that needs no review skips approval, and your own pull request waits on someone else's", () => {
   const flow = (over, who = me) => enrichPR(pr(over), who, NOW).flow;
   // No review required: straight to merging, unless someone asked for changes.

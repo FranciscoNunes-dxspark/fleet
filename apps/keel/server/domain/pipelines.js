@@ -99,6 +99,8 @@ export function wasDeclined(timeline = []) {
 
 export function pipelineHealth(builds, repos, definitions = []) {
   const repoDefault = new Map(repos.map((r) => [r.id, r.defaultBranch]));
+  // The pipeline's own page (Azure DevOps or GitHub) comes from its definition, not its runs.
+  const pageOf = new Map(definitions.map((d) => [`${d.projectId}:${d.id}`, d.webUrl || null]));
   const byDef = new Map();
   for (const b of builds) {
     const key = `${b.projectId}:${b.definition.id}`;
@@ -153,6 +155,7 @@ export function pipelineHealth(builds, repos, definitions = []) {
       // Waiting for an agent before it started.
       medianQueueMin: median(completed.filter((b) => b.startedAt && b.queuedAt).map((b) => Math.max(0, (Date.parse(b.startedAt) - Date.parse(b.queuedAt)) / 60_000))),
       durationTrend: durationTrend(judged),
+      webUrl: pageOf.get(`${first.projectId}:${first.definition.id}`) || null,
     });
   }
   // Pipelines with no runs in the window (or never run): listed, judged on nothing.

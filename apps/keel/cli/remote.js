@@ -140,6 +140,7 @@ export function remoteService({ call }) {
     prAction: (projectId, repoId, id, body) => call(`${pr(projectId, repoId, id)}/actions`, { method: 'POST', body }),
     pipelines: () => call('/pipelines'),
     pipelineRuns: (projectId, definitionId) => call(`/pipelines/${e(projectId)}/${e(definitionId)}/runs`),
+    runDetails: (projectId, buildId) => call(`/builds/${e(projectId)}/${e(buildId)}`),
     queueBuild: (projectId, definitionId, branch) => call('/pipelines/queue', { method: 'POST', body: { projectId, definitionId, branch } }),
     cancelBuild: (projectId, buildId) => call('/pipelines/cancel', { method: 'POST', body: { projectId, buildId } }),
     workItems: () => call('/workitems'),
@@ -151,6 +152,23 @@ export function remoteService({ call }) {
     production: () => call('/production'),
     undeployed: () => call('/deploys/pending'),
     approvals: () => call('/approvals'),
+    releases: () => call('/releases'),
+    team: () => call('/team'),
+    insights: (days) => call(`/insights?days=${days}`),
+    delivery: (days) => call(`/delivery?days=${days}`),
+    flakyTests: () => call('/tests/flaky'),
+    closedPullRequests: (days) => call(`/prs/closed?days=${days}`),
+    commits: ({ repoId, branch, days } = {}) => {
+      const q = new URLSearchParams(Object.entries({ repo: repoId, branch, days }).filter(([, v]) => v));
+      return call(`/commits${q.size ? `?${q}` : ''}`);
+    },
+    platformTotals: () => call('/production/totals'),
+    board: ({ projectId, teamId, boardId, mode } = {}) => {
+      const q = new URLSearchParams(Object.entries({ project: projectId, team: teamId, board: boardId, mode }).filter(([, v]) => v));
+      return call(`/board${q.size ? `?${q}` : ''}`);
+    },
+    createRelease: (projectId, definitionId, description) => call('/releases/create', { method: 'POST', body: { projectId, definitionId, description } }),
+    deployReleaseStage: (projectId, releaseId, environmentId, comment) => call('/releases/deploy', { method: 'POST', body: { projectId, releaseId, environmentId, comment } }),
     decideApproval: (kind, id, body, org) => call(`/approvals/${e(kind)}/${e(id)}${org ? `?org=${e(org)}` : ''}`, { method: 'POST', body }),
     settingsView: () => call('/settings'),
     projectOptions: (projectId) => call(`/settings/projects/${e(projectId)}`),
