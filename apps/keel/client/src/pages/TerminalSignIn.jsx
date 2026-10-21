@@ -95,7 +95,7 @@ export default function TerminalSignIn() {
   }
 
   return (
-    <div className="page terminal-signin">
+    <div className="signin terminal-signin">
       <div className="signin-card">
         <div className="signin-pinch">
           <Pinch width={72} mood={done === 'allowed' ? 'happy' : 'idle'} />
