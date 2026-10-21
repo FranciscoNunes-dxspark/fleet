@@ -61,6 +61,19 @@ test('a pull request goes publish, approval, complete; each step says what it wa
   assert.equal(flow({ status: 'abandoned' }).step, 'closed');
 });
 
+test("on GitHub: a branch that needs no review skips approval, and your own pull request waits on someone else's", () => {
+  const flow = (over, who = me) => enrichPR(pr(over), who, NOW).flow;
+  // No review required: straight to merging, unless someone asked for changes.
+  assert.deepEqual(flow({ reviewRequired: false }), { step: 'complete', approval: 'not-required', waiting: null });
+  assert.deepEqual(flow({ reviewRequired: false, reviewers: [rv(dev, -5)] }), { step: 'approval', waiting: { kind: 'waiting-author', names: ['Dev'] } });
+  // Required, and yours: GitHub won't take your approval.
+  assert.deepEqual(flow({ reviewRequired: true, author: me }), { step: 'approval', own: true, waiting: { kind: 'no-reviewers' } });
+  assert.deepEqual(flow({ reviewRequired: true, author: me, reviewers: [rv(dev, 0)] }), { step: 'approval', own: true, waiting: { kind: 'approval' } });
+  assert.equal(flow({ reviewRequired: true, reviewers: [rv(dev, 0)] }).own, undefined, "someone else's: no note");
+  // Azure DevOps pull requests carry no reviewRequired, and never skip approval.
+  assert.equal(flow({}).step, 'approval');
+});
+
 test('attention escalates my review after the threshold and flags missing reviewers', () => {
   const settings = structuredClone(DEFAULT_SETTINGS);
   const prs = [

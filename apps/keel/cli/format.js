@@ -85,22 +85,28 @@ export function prRows(prs, { show = 'all', filter = '' } = {}) {
   return rows;
 }
 
+/** A GitHub pull request: the only kind that says whether its branch requires a review. */
+export const isGithubPr = (pr) => pr?.reviewRequired !== undefined;
+
 /** What a pull request's current step waits on (server/domain/prs.js prFlow), in a sentence. */
-export function flowWaiting(flow) {
+export function flowWaiting(flow, github = false) {
   const w = flow?.waiting;
   const names = (w?.names ?? []).join(', ');
   if (!flow || flow.step === 'publish') return "A draft: p publishes it when it's ready for review.";
   if (flow.step === 'approval') {
-    if (w?.kind === 'no-reviewers') return 'No reviewers yet: add some on the web, or m sets auto-complete.';
     if (w?.kind === 'rejected') return `Rejected by ${names}.`;
     if (w?.kind === 'waiting-author') return `${names} ${w.names.length > 1 ? 'are' : 'is'} waiting for the author.`;
+    // GitHub doesn't take the author's own approval, and its reviewers are asked for on GitHub.
+    if (flow.own) return "Waiting for someone else's review: GitHub doesn't let you approve your own. Ask for one on GitHub (o).";
+    if (w?.kind === 'no-reviewers') return github ? 'No reviewers yet: request them on GitHub (o).' : 'No reviewers yet: add some on the web, or m sets auto-complete.';
     if (w?.kind === 'required') return `Waiting on ${names} (required).`;
     return 'Waiting for an approval.';
   }
-  if (w?.kind === 'conflicts') return 'Approved. Fix the merge conflicts to complete it.';
-  if (w?.kind === 'policies') return `Approved. Waiting on ${names}.`;
-  if (w?.kind === 'auto') return 'Approved. It completes by itself once its checks pass.';
-  return 'Approved and ready: c completes it.';
+  const approved = flow.approval === 'not-required' ? 'This branch needs no review.' : 'Approved.';
+  if (w?.kind === 'conflicts') return `${approved} Fix the merge conflicts to complete it.`;
+  if (w?.kind === 'policies') return `${approved} Waiting on ${names}.`;
+  if (w?.kind === 'auto') return `${approved} It completes by itself once its checks pass.`;
+  return `${approved} Ready: c completes it.`;
 }
 
 const FLOW_STEPS = [['publish', 'Publish'], ['approval', 'Approval'], ['complete', 'Complete']];
@@ -109,8 +115,10 @@ const FLOW_STEPS = [['publish', 'Publish'], ['approval', 'Approval'], ['complete
 export function flowSegments(flow) {
   const at = FLOW_STEPS.findIndex(([id]) => id === flow?.step);
   const blocked = ['rejected', 'waiting-author', 'conflicts'].includes(flow?.waiting?.kind);
-  return FLOW_STEPS.flatMap(([, label], i) => {
-    const seg = i < at ? { text: `✓ ${label}`, color: theme.ok } : i === at ? { text: `● ${label}`, color: blocked ? theme.del : theme.accent, bold: true } : { text: `○ ${label}`, color: theme.dim };
+  return FLOW_STEPS.flatMap(([id, label], i) => {
+    // A GitHub branch that asks for no review skips approval.
+    const skipped = id === 'approval' && flow?.approval === 'not-required';
+    const seg = skipped ? { text: `– ${label} (not required)`, color: theme.dim } : i < at ? { text: `✓ ${label}`, color: theme.ok } : i === at ? { text: `● ${label}`, color: blocked ? theme.del : theme.accent, bold: true } : { text: `○ ${label}`, color: theme.dim };
     return i ? [{ text: ' → ', color: theme.dim }, seg] : [seg];
   });
 }
@@ -127,7 +135,7 @@ export function prDetail(pr, now = Date.now()) {
     [{ text: `${st.icon} ${st.label}`, color: st.color, bold: true }, ...(pr.autoComplete ? [{ text: ' · auto-complete on', color: theme.ok }] : []), ...(pr.completesAt ? [{ text: ` · completes ${new Date(pr.completesAt).toLocaleString()}`, color: theme.info }] : [])],
   ];
   if (pr.labels?.length) lines.push([{ text: pr.labels.map((l) => `#${l}`).join(' '), color: theme.draft }]);
-  if (pr.flow && pr.status === 'active') lines.push('', flowSegments(pr.flow), [{ text: flowWaiting(pr.flow), color: theme.dim }]);
+  if (pr.flow && pr.status === 'active') lines.push('', flowSegments(pr.flow), [{ text: flowWaiting(pr.flow, isGithubPr(pr)), color: theme.dim }]);
   lines.push('', [{ text: 'Reviewers', bold: true }]);
   if (!pr.reviewers.length) lines.push([{ text: '  none yet', color: theme.dim }]);
   for (const r of pr.reviewers) {
@@ -209,7 +217,7 @@ export function prFullText(pr, now = Date.now()) {
     pr.title,
     `!${pr.id} · ${pr.projectName} / ${pr.repoName} · ${branch(pr.sourceBranch)} → ${branch(pr.targetBranch)}`,
     `${pr.author?.displayName ?? 'Someone'} opened it ${ago(pr.createdAt, now)} ago · ${prState(pr).label}${pr.autoComplete ? ' · auto-complete on' : ''}`,
-    ...(pr.flow && pr.status === 'active' ? [`${flowSegments(pr.flow).map((s) => s.text).join('')}  ${flowWaiting(pr.flow)}`] : []),
+    ...(pr.flow && pr.status === 'active' ? [`${flowSegments(pr.flow).map((s) => s.text).join('')}  ${flowWaiting(pr.flow, isGithubPr(pr))}`] : []),
     '',
     ...(pr.description?.trim() ? pr.description.trim().split('\n') : ['(No description.)']),
   ];

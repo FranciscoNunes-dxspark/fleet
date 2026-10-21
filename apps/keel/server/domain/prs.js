@@ -58,7 +58,7 @@ export function enrichPR(pr, me, now = Date.now()) {
     hasConflicts: pr.mergeStatus === 'conflicts',
     reviewState,
     readyToMerge: reviewState === 'approved' && pr.mergeStatus !== 'conflicts',
-    flow: prFlow(pr, reviewState),
+    flow: prFlow(pr, reviewState, isMine),
   };
 }
 
@@ -72,24 +72,31 @@ const POLICY_OK = new Set(['approved', 'notApplicable']);
  *             haven't approved) or 'approval' (nobody has yet);
  *   complete: 'conflicts', 'policies' (blocking ones not passed yet; only known on the full pull
  *             request), or 'auto' (auto-complete is set: it completes itself once they pass).
+ * On GitHub, a branch that asks for no approving review (`reviewRequired` false) skips approval
+ * (`approval: 'not-required'`) unless someone asked for changes; and `own` says GitHub won't take
+ * the author's own approval, so their pull request waits on someone else's.
  */
-export function prFlow(pr, reviewState) {
+export function prFlow(pr, reviewState, isMine = false) {
   if (pr.status === 'completed') return { step: 'done', waiting: null };
   if (pr.status && pr.status !== 'active') return { step: 'closed', waiting: null };
   if (pr.isDraft) return { step: 'publish', waiting: null };
   const names = (list) => list.map((r) => r.displayName);
-  if (reviewState !== 'approved') {
-    if (reviewState === 'no-reviewers') return { step: 'approval', waiting: { kind: 'no-reviewers' } };
-    if (reviewState === 'rejected') return { step: 'approval', waiting: { kind: 'rejected', names: names(pr.reviewers.filter((r) => r.vote === -10)) } };
-    if (reviewState === 'waiting-author') return { step: 'approval', waiting: { kind: 'waiting-author', names: names(pr.reviewers.filter((r) => r.vote === -5)) } };
+  const github = pr.reviewRequired !== undefined;
+  const skip = github && !pr.reviewRequired && !['rejected', 'waiting-author'].includes(reviewState);
+  if (reviewState !== 'approved' && !skip) {
+    const own = github && isMine ? { own: true } : {};
+    if (reviewState === 'no-reviewers') return { step: 'approval', ...own, waiting: { kind: 'no-reviewers' } };
+    if (reviewState === 'rejected') return { step: 'approval', ...own, waiting: { kind: 'rejected', names: names(pr.reviewers.filter((r) => r.vote === -10)) } };
+    if (reviewState === 'waiting-author') return { step: 'approval', ...own, waiting: { kind: 'waiting-author', names: names(pr.reviewers.filter((r) => r.vote === -5)) } };
     const required = pr.reviewers.filter((r) => r.isRequired && r.vote < 5);
-    return { step: 'approval', waiting: required.length ? { kind: 'required', names: names(required) } : { kind: 'approval' } };
+    return { step: 'approval', ...own, waiting: required.length ? { kind: 'required', names: names(required) } : { kind: 'approval' } };
   }
-  if (pr.mergeStatus === 'conflicts') return { step: 'complete', waiting: { kind: 'conflicts' } };
+  const done = skip && reviewState !== 'approved' ? { approval: 'not-required' } : {};
+  if (pr.mergeStatus === 'conflicts') return { step: 'complete', ...done, waiting: { kind: 'conflicts' } };
   const blocking = (pr.policies ?? []).filter((p) => p.isBlocking && !POLICY_OK.has(p.status));
-  if (blocking.length) return { step: 'complete', waiting: { kind: 'policies', names: blocking.map((p) => p.name) } };
-  if (pr.autoComplete) return { step: 'complete', waiting: { kind: 'auto' } };
-  return { step: 'complete', waiting: null };
+  if (blocking.length) return { step: 'complete', ...done, waiting: { kind: 'policies', names: blocking.map((p) => p.name) } };
+  if (pr.autoComplete) return { step: 'complete', ...done, waiting: { kind: 'auto' } };
+  return { step: 'complete', ...done, waiting: null };
 }
 
 export function voteLabel(vote) {

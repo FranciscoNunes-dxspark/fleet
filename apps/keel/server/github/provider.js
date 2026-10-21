@@ -27,7 +27,7 @@ const WHO = '__typename login avatarUrl ... on User { name }';
 // Requested teams' names need the read:org scope; without it the provider asks again leaving them out.
 const TEAM = '... on Team { slug name }';
 const prFields = (teams) => `
-  number title url state isDraft mergeable createdAt closedAt headRefName baseRefName
+  number title url state isDraft mergeable createdAt closedAt headRefName baseRefName reviewDecision
   repository { name }
   author { ${WHO} }
   mergedBy { ${WHO} }
@@ -46,7 +46,7 @@ const DETAIL = (teams) => `query($owner: String!, $name: String!, $n: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $n) {
       ${prFields(teams)}
-      id body headRefOid reviewDecision
+      id body headRefOid
       commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 50) { nodes {
         __typename
         ... on CheckRun { name status conclusion isRequired(pullRequestNumber: $n) }

@@ -265,7 +265,9 @@ export default function PrDetail({ target }) {
           ))}
           {!pr.reviewers.length && <li className="text-bad small">{t('No reviewers yet.')}</li>}
         </ul>
-        {writable && pr.status === 'active' && (candidates.length > 0 || canAddMe) && (
+        {/* GitHub only takes its own users as reviewers, and Keel's people are Azure DevOps': ask there. */}
+        {github && pr.status === 'active' && <p className="muted small">{t('Request reviewers on GitHub.')} <a href={pr.webUrl} target="_blank" rel="noreferrer noopener">{t('Open it on GitHub')}</a></p>}
+        {writable && !github && pr.status === 'active' && (candidates.length > 0 || canAddMe) && (
           <form className="inline-form" onSubmit={async (e) => { e.preventDefault(); if (reviewer && await act({ type: 'addReviewer', reviewerId: reviewer }, t('Reviewer added'))) setReviewer(''); }}>
             {candidates.length > 0 && <>
               <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>
@@ -278,7 +280,7 @@ export default function PrDetail({ target }) {
             {canAddMe && <button type="button" className="btn btn-small btn-ghost" disabled={!!busy} title={t('Add yourself as a reviewer')} onClick={() => act({ type: 'addReviewer', reviewerId: 'me' }, t('You were added as a reviewer'))}>{t('Add me')}</button>}
           </form>
         )}
-        {writable && pr.status === 'active' && pr.files?.items?.length > 0 && (
+        {writable && !github && pr.status === 'active' && pr.files?.items?.length > 0 && (
           <PrSuggestions pr={pr} busy={!!busy} onAdd={(p) => act({ type: 'addReviewer', reviewerId: p.id }, t('Reviewer added'))} />
         )}
       </section>
@@ -412,22 +414,25 @@ function ScheduleNote({ s, busy, onCancel }) {
 
 /** Merge now, or at a set time: merge type, commit message, cleanup options, optional policy override (now only). */
 /** What the current step waits on (server/domain/prs.js prFlow), in a sentence. */
-function waitingText(flow) {
+function waitingText(flow, github) {
   const w = flow.waiting;
   const names = (w?.names || []).join(', ');
   const many = (w?.names || []).length > 1;
   if (flow.step === 'publish') return t("A draft: publish it when it's ready for review.");
   if (flow.step === 'approval') {
-    if (w?.kind === 'no-reviewers') return t('No reviewers yet: add some, or set auto-complete.');
     if (w?.kind === 'rejected') return t('Rejected by {names}.', { names });
     if (w?.kind === 'waiting-author') return t(many ? '{names} are waiting for the author.' : '{names} is waiting for the author.', { names });
+    // GitHub doesn't take the author's own approval.
+    if (flow.own) return t("Waiting for someone else's review: GitHub doesn't let you approve your own pull request. Ask for one on GitHub.");
+    if (w?.kind === 'no-reviewers') return github ? t('No reviewers yet: request them on GitHub.') : t('No reviewers yet: add some, or set auto-complete.');
     if (w?.kind === 'required') return t('Waiting on {names} (required).', { names });
     return t('Waiting for an approval.');
   }
-  if (w?.kind === 'conflicts') return t('Approved. Fix the merge conflicts to complete it.');
-  if (w?.kind === 'policies') return t('Approved. Waiting on {names}.', { names });
-  if (w?.kind === 'auto') return t('Approved. It completes by itself once its checks pass.');
-  return t('Approved and ready to complete.');
+  const approved = flow.approval === 'not-required' ? t('This branch needs no review.') : t('Approved.');
+  if (w?.kind === 'conflicts') return `${approved} ${t('Fix the merge conflicts to complete it.')}`;
+  if (w?.kind === 'policies') return `${approved} ${t('Waiting on {names}.', { names })}`;
+  if (w?.kind === 'auto') return `${approved} ${t('It completes by itself once its checks pass.')}`;
+  return `${approved} ${t('Ready to complete.')}`;
 }
 
 /** Publish → Approval → Complete, with the step the pull request is at and what it waits on. */
@@ -439,20 +444,22 @@ function FlowSteps({ flow, github }) {
   ];
   const at = steps.findIndex((s) => s.id === flow.step);
   const blocked = ['rejected', 'waiting-author', 'conflicts'].includes(flow.waiting?.kind);
+  // A GitHub branch that asks for no review skips approval.
+  const skipped = (s) => s.id === 'approval' && flow.approval === 'not-required';
   return (
     <div className="pr-flow">
       <ol className="pr-flow-steps" aria-label={t('Pull request steps')}>
         {steps.map((s, i) => {
-          const state = i < at ? 'done' : i === at ? (blocked ? 'blocked' : 'current') : 'todo';
+          const state = skipped(s) ? 'skipped' : i < at ? 'done' : i === at ? (blocked ? 'blocked' : 'current') : 'todo';
           return (
-            <li key={s.id} className={`pr-flow-step ${state}`} aria-current={i === at ? 'step' : undefined}>
-              <span className="pr-flow-dot" aria-hidden="true">{state === 'done' ? '✓' : i + 1}</span>
+            <li key={s.id} className={`pr-flow-step ${state}`} aria-current={i === at ? 'step' : undefined} title={state === 'skipped' ? t('Not required on this branch') : undefined}>
+              <span className="pr-flow-dot" aria-hidden="true">{state === 'done' ? '✓' : state === 'skipped' ? '–' : i + 1}</span>
               {s.label}
             </li>
           );
         })}
       </ol>
-      <span className={`small ${blocked ? 'text-bad' : 'muted'}`}>{waitingText(flow)}</span>
+      <span className={`small ${blocked ? 'text-bad' : 'muted'}`}>{waitingText(flow, github)}</span>
     </div>
   );
 }

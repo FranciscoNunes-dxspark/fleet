@@ -44,3 +44,28 @@ test('a GitHub owner\'s pull requests and workflows are in the terminal app, and
   assert.match(opened[0], /^https:\/\/github\.com\/octo-demo\//);
   app.unmount();
 });
+
+test("GitHub: a can't approve your own pull request, and a branch that needs no review skips approval", async () => {
+  const keel = openKeel();
+  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  const type = async (text) => {
+    for (const ch of text) {
+      app.stdin.write(ch);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+  await until(app, (f) => f.includes('Dark mode toggle in settings'), 'the Inbox');
+  const { prs } = await keel.service.pullRequests();
+  const own = prs.find((p) => p.isMine && p.reviewRequired !== undefined);
+  await type(`/pr ${own.id}`);
+  app.stdin.write('\r');
+  await until(app, (f) => f.includes(`!${own.id} `) && f.includes('● Complete'), 'your own pull request');
+  app.stdin.write('a');
+  await until(app, (f) => f.includes("GitHub doesn't let you review your own pull request.") && f.includes('there: o opens it'), 'the refusal');
+
+  const noReview = prs.find((p) => p.reviewRequired === false && !p.isDraft);
+  await type(`/pr ${noReview.id}`);
+  app.stdin.write('\r');
+  await until(app, (f) => f.includes('– Approval (not required)') && f.includes('This branch needs no review.'), 'approval skipped');
+  app.unmount();
+});

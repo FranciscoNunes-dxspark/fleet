@@ -72,6 +72,8 @@ export function normalizePR(n, { projectId, projectName }) {
     reviewers: reviewersOf(n),
     labels: (n.labels?.nodes || []).map((l) => l.name),
     autoComplete: !!n.autoMergeRequest,
+    // Whether the branch asks for an approving review (GitHub's reviewDecision is null when it doesn't).
+    reviewRequired: n.reviewDecision != null,
     webUrl: n.url,
   };
 }

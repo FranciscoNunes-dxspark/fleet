@@ -1,6 +1,6 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
-import { branch, summaryText, summaryWeek } from './format.js';
+import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const prName = (pr) => `!${pr.id} ${short(pr.title)}`;
@@ -48,6 +48,8 @@ const VOTE_TITLE = { 10: 'Approve', 5: 'Approve with suggestions', 0: 'Reset you
 
 export async function vote(ctx, pr = ctx.current().pr, value) {
   if (!pr) return ctx.note('Pick a pull request first.', 'error');
+  // GitHub turns down a review from the pull request's author.
+  if (isGithubPr(pr) && pr.isMine) return ctx.note(`GitHub doesn't let you review your own pull request.\nAsk someone to review !${pr.id} there: o opens it.`, 'error');
   if (value === -10) {
     const ok = await ctx.confirm({ title: `Reject ${prName(pr)}?`, detail: 'It stays blocked until you change your vote.', danger: true, options: [{ label: 'Yes, reject it', value: true }, { label: 'No', value: false }] });
     if (!ok) return;
