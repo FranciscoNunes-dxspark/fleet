@@ -29,7 +29,9 @@ const noDevtools = {
 for (const target of targets) {
   if (!TARGETS[target]) throw new Error(`Unknown target ${target}. Known: ${Object.keys(TARGETS).join(', ')}`);
   const outfile = `release/${TARGETS[target]}`;
-  const windows = target.includes('windows') ? { title: 'Keel' } : undefined;
+  // Pinch as the .exe's icon (scripts/logo.mjs draws it). Bun can only write it when building on Windows,
+  // so the release builds that target there.
+  const windows = target.includes('windows') ? { title: 'Keel', ...(process.platform === 'win32' ? { icon: 'assets/pinch.ico' } : {}) } : undefined;
   const result = await Bun.build({
     entrypoints: ['cli/cli.jsx'],
     // Bun would otherwise load a .env and bunfig.toml from whatever folder it's run in; Keel reads ~/.keel/.env itself.

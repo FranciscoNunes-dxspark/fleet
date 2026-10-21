@@ -3,6 +3,7 @@
 // Trawl badge theirs with Git and SQL:
 //   assets/pinch.svg, pinch.png               the README and social preview
 //   assets/pinch-transparent.svg, .png        just the crab and badge, for light pages and slides
+//   assets/pinch.ico                           the terminal app's Windows executable
 //   client/public/favicon.svg                 the browser tab and desktop notifications
 //   client/public/icons/icon-192/512.png      the installed app
 //   client/public/icons/apple-touch-icon.png  iOS Home Screen (opaque, iOS rounds the corners)
@@ -134,6 +135,57 @@ function png(rows) {
   ]);
 }
 
+// An uncompressed 32-bit icon image: BITMAPINFOHEADER, BGRA rows bottom-up, then the 1-bit
+// transparency mask older readers use. Every program that reads .ico files reads these.
+function dib(rows) {
+  const w = rows[0].length / 4;
+  const h = rows.length;
+  const maskRow = Math.ceil(w / 32) * 4;
+  const head = Buffer.alloc(40);
+  head.writeUInt32LE(40, 0);
+  head.writeInt32LE(w, 4);
+  head.writeInt32LE(h * 2, 8); // colour rows plus mask rows
+  head.writeUInt16LE(1, 12);
+  head.writeUInt16LE(32, 14);
+  head.writeUInt32LE(w * h * 4 + maskRow * h, 20);
+  const pixels = Buffer.alloc(w * h * 4);
+  const mask = Buffer.alloc(maskRow * h);
+  for (let y = 0; y < h; y++) {
+    const src = rows[h - 1 - y];
+    for (let x = 0; x < w; x++) {
+      const [r, g, b, a] = src.slice(x * 4, x * 4 + 4);
+      pixels.set([b, g, r, a], (y * w + x) * 4);
+      if (a === 0) mask[y * maskRow + (x >> 3)] |= 0x80 >> (x & 7);
+    }
+  }
+  return Buffer.concat([head, pixels, mask]);
+}
+
+/**
+ * An .ico with one image per size, Pinch on the dark square (as Trawl's has Glim): the Windows
+ * executable's icon. Bitmaps up to 128 px and a PNG at 256, the usual layout: some readers can't
+ * decode small PNGs.
+ */
+function ico(sizes) {
+  const images = sizes.map((s) => (s >= 256 ? png(canvas(s)) : dib(canvas(s))));
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(images.length, 4);
+  let offset = 6 + 16 * images.length;
+  const entries = images.map((img, i) => {
+    const e = Buffer.alloc(16);
+    e[0] = sizes[i] >= 256 ? 0 : sizes[i];
+    e[1] = sizes[i] >= 256 ? 0 : sizes[i];
+    e.writeUInt16LE(1, 4);
+    e.writeUInt16LE(32, 6);
+    e.writeUInt32LE(img.length, 8);
+    e.writeUInt32LE(offset, 12);
+    offset += img.length;
+    return e;
+  });
+  return Buffer.concat([header, ...entries, ...images]);
+}
+
 /** The logo as SVG: on its dark rounded square, or with `background: false` just the crab, cropped. */
 function svg({ background = true } = {}) {
   const cells = background ? SQUARE : CROPPED;
@@ -152,6 +204,8 @@ ${background ? `<rect width="40" height="40" rx="7.2" fill="${BG}"/>\n` : ''}${r
 
 out('assets/pinch.svg', svg());
 out('assets/pinch.png', png(canvas(512)));
+// 40 across is Pinch's square: 40, 80, 120 and 240 keep its pixels whole; the rest are the sizes Windows asks for.
+out('assets/pinch.ico', ico([16, 24, 32, 40, 48, 64, 80, 128, 256]));
 out('assets/pinch-transparent.svg', svg({ background: false }));
 out('assets/pinch-transparent.png', png(paint(CROPPED, 16)));
 out('client/public/favicon.svg', svg());
@@ -160,4 +214,4 @@ out('client/public/icons/icon-512.png', png(canvas(512)));
 out('client/public/icons/apple-touch-icon.png', png(paint(APPLE, 4, hex(BG))));
 out('client/public/icons/maskable-512.png', png(paint(MASKABLE, 8, hex(BG))));
 out('client/public/icons/badge-96.png', png(paint(BADGE, 4)));
-console.log('assets/pinch.svg, pinch.png, pinch-transparent.svg, pinch-transparent.png; client/public/favicon.svg, icons/*.png');
+console.log('assets/pinch.svg, pinch.png, pinch.ico, pinch-transparent.svg, pinch-transparent.png; client/public/favicon.svg, icons/*.png');
