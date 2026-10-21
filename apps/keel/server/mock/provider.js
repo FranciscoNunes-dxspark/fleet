@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { stageSummary } from '../domain/releases.js';
 import { demoFile } from './files.js';
 
@@ -106,6 +107,8 @@ const TASK_TITLES = ['Write integration tests', 'Update API contract', 'Code rev
 
 const workItems = new Map();
 let nextWi = 4100;
+// Files attached in the demo, by attachment id, so they download as uploaded until a restart.
+const uploads = new Map();
 
 /** Some items carry files: bugs a screenshot and a log, a few others a spreadsheet. By id, so the demo stays the same. */
 function demoAttachments(id, type, created) {
@@ -1267,7 +1270,22 @@ export function createMockProvider() {
       return delay(w._attachments.map(({ by, ...a }) => a));
     },
 
+    async uploadAttachment(projectName, id, name, content) {
+      const w = workItems.get(Number(id));
+      if (!w) throw notFound(`Work item ${id}`);
+      const file = { id: randomUUID(), name, size: content.length, comment: '', addedAt: iso(Date.now()), by: ME };
+      uploads.set(file.id, Buffer.from(content));
+      w._attachments.push(file);
+      w.changedAt = iso(Date.now());
+      w.rev++;
+      return delay({ id: file.id, name, size: file.size });
+    },
+
     async downloadAttachment(attachmentId, name) {
+      if (uploads.has(attachmentId)) {
+        const body = uploads.get(attachmentId);
+        return delay({ type: 'application/octet-stream', length: body.length, stream: new Blob([body]).stream() });
+      }
       const seed = Math.floor(Number(String(attachmentId).slice(-12)) / 10);
       const body = demoFile(name, seed);
       return delay({ type: 'application/octet-stream', length: body.length, stream: new Blob([body]).stream() });

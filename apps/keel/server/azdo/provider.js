@@ -927,6 +927,22 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       return attachmentsOf(raw.relations);
     },
 
+    /**
+     * Uploads a file and attaches it to the work item: two calls, since Azure DevOps
+     * stores the file first and the work item then links to it.
+     */
+    async uploadAttachment(projectName, id, name, content) {
+      const file = await api(`${seg(projectName)}/_apis/wit/attachments`, {
+        method: 'POST', query: { fileName: name }, body: content, contentType: 'application/octet-stream', timeout: 300_000,
+      });
+      await api(`_apis/wit/workitems/${id}`, {
+        method: 'PATCH',
+        body: [{ op: 'add', path: '/relations/-', value: { rel: 'AttachedFile', url: file.url } }],
+        contentType: 'application/json-patch+json',
+      });
+      return { id: file.id, name, size: content.length };
+    },
+
     /** An attachment's bytes as a stream: { type, length, stream }. */
     downloadAttachment(attachmentId, name) {
       return download(`_apis/wit/attachments/${encodeURIComponent(attachmentId)}`, { query: { fileName: name, download: true } });

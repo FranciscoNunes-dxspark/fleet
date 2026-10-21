@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, bytes, date, dateTime, isBlocked, shortIteration } from '../format.js';
@@ -7,7 +7,7 @@ import { t } from '../i18n.js';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import ClaudeStart from './ClaudeStart.jsx';
 import { Markdown, MarkdownInput } from '../markdown.jsx';
-import { attachmentUrl, wiActionsPath, wiPath } from '../orgs.js';
+import { attachUploadPath, attachmentUrl, wiActionsPath, wiPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
 
 // What "Add child" creates by default under each type (the form lets you change it).
@@ -144,7 +144,7 @@ export default function WorkItemDetail({ id, org }) {
         </section>
       )}
 
-      {w.attachments?.length > 0 && <Attachments w={w} org={w.org || org} />}
+      {(editable || w.attachments?.length > 0) && <Attachments w={w} org={w.org || org} editable={editable} />}
 
       <section className="detail-section">
         <h3>{t('Comments')}</h3>
@@ -180,11 +180,75 @@ export default function WorkItemDetail({ id, org }) {
 
 const IMAGE = /.(png|jpe?g|gif|webp|bmp)$/i;
 
-/** Files on the work item: pictures as thumbnails that open full size, everything as a download. */
-function Attachments({ w, org }) {
+// The most Azure DevOps takes in one upload.
+const MAX_UPLOAD = 60 * 1024 * 1024;
+
+/** A pasted screenshot arrives as "image.png": name it by when it was pasted instead. */
+function pastedName(file) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  return `screenshot-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`;
+}
+
+/**
+ * Files on the work item: pictures as thumbnails that open full size, everything as a download.
+ * With write access, files can be added by picking, dropping them on the section, or pasting a
+ * screenshot anywhere in the panel outside a text box.
+ */
+function Attachments({ w, org, editable }) {
+  const { refresh, toast } = useApp();
+  const [uploading, setUploading] = useState(null);
+  const [over, setOver] = useState(false);
+  const picker = useRef(null);
   const images = w.attachments.filter((a) => IMAGE.test(a.name));
+
+  const add = async (files) => {
+    if (!files.length || uploading) return;
+    const tooBig = files.find((f) => f.size > MAX_UPLOAD);
+    if (tooBig) return toast(t('{name} is over 60 MB, the most Azure DevOps takes', { name: tooBig.name }), 'bad');
+    let done = 0;
+    try {
+      for (const f of files) {
+        setUploading(f.name);
+        await api(attachUploadPath(w.id, f.name, org), { method: 'POST', body: f });
+        done++;
+      }
+      toast(done === 1 ? t('Attached {name}', { name: files[0].name }) : t('{n} files attached', { n: done }));
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setUploading(null);
+      if (done) refresh();
+    }
+  };
+  // Kept current so the paste listener below always sees the latest state.
+  const addRef = useRef(add);
+  addRef.current = add;
+
+  useEffect(() => {
+    if (!editable) return undefined;
+    const onPaste = (e) => {
+      const target = e.target;
+      if (target !== document.body && !target.closest?.('.detail')) return;
+      if (target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      const files = [...(e.clipboardData?.files || [])];
+      if (!files.length) return;
+      e.preventDefault();
+      addRef.current(files.map((f) => (f.type.startsWith('image/') && /^image\.\w+$/i.test(f.name) ? new File([f], pastedName(f), { type: f.type }) : f)));
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [editable]);
+
+  const dropProps = editable ? {
+    onDragOver: (e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setOver(true); } },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false); },
+    onDrop: (e) => { e.preventDefault(); setOver(false); add([...e.dataTransfer.files]); },
+  } : {};
+
   return (
-    <section className="detail-section">
+    <section className={`detail-section${over ? ' attach-drop' : ''}`} {...dropProps}>
       <h3>{t('Attachments')} <span className="muted small">{w.attachments.length}</span></h3>
       {images.length > 0 && (
         <div className="attach-thumbs">
@@ -195,15 +259,26 @@ function Attachments({ w, org }) {
           ))}
         </div>
       )}
-      <ul className="attach-list">
-        {w.attachments.map((a) => (
-          <li key={a.id}>
-            <a href={attachmentUrl(w.id, a, org)} download={a.name} className="mono small">{a.name}</a>
-            <span className="muted small">{[bytes(a.size), a.addedAt && date(a.addedAt)].filter(Boolean).join(' · ')}</span>
-            {a.comment && <span className="muted small attach-comment">{a.comment}</span>}
-          </li>
-        ))}
-      </ul>
+      {w.attachments.length > 0 && (
+        <ul className="attach-list">
+          {w.attachments.map((a) => (
+            <li key={a.id}>
+              <a href={attachmentUrl(w.id, a, org)} download={a.name} className="mono small">{a.name}</a>
+              <span className="muted small">{[bytes(a.size), a.addedAt && date(a.addedAt)].filter(Boolean).join(' · ')}</span>
+              {a.comment && <span className="muted small attach-comment">{a.comment}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {editable && (
+        <div className="attach-add">
+          <input ref={picker} type="file" multiple hidden onChange={(e) => { add([...e.target.files]); e.target.value = ''; }} />
+          <button type="button" className="btn btn-small" disabled={!!uploading} onClick={() => picker.current?.click()}>
+            {uploading ? t('Attaching {name}…', { name: uploading }) : t('Add files')}
+          </button>
+          <span className="muted small">{t('or drop them here, or paste a screenshot')}</span>
+        </div>
+      )}
     </section>
   );
 }

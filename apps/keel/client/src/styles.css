@@ -455,6 +455,9 @@ tr.saving { opacity: 0.55; }
 .attach-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .attach-list a { overflow-wrap: anywhere; }
 .attach-comment { flex-basis: 100%; }
+.attach-add { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.attach-list + .attach-add { margin-top: 10px; }
+.attach-drop { outline: 2px dashed var(--accent); outline-offset: 4px; background: var(--accent-soft); border-radius: var(--radius-sm); }
 .comment-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
 .comment-form { display: grid; gap: 8px; justify-items: start; margin-top: 12px; }
 .md-input { display: grid; gap: 6px; width: 100%; }
