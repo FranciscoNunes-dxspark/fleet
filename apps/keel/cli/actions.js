@@ -1,6 +1,6 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
-import { branch } from './format.js';
+import { branch, summaryText, summaryWeek } from './format.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const prName = (pr) => `!${pr.id} ${short(pr.title)}`;
@@ -240,6 +240,19 @@ export async function logout(ctx) {
     return ['Signed out.'];
   }, { label: 'Signing out' });
   if (done.ok) ctx.quit();
+}
+
+/** /summary [last|-N|YYYY-MM-DD]: one week's summary, as the web app's, in the viewer. */
+export async function showSummary(ctx, text = '') {
+  const week = summaryWeek(text);
+  if (week == null) return ctx.note('Which week? /summary for this one, /summary last, /summary -3 (up to 26 back), or a date: /summary 2026-10-06.', 'error');
+  await ctx.task(`Weekly summary${week ? ` for the week of ${week}` : ''}`, async () => {
+    const s = await ctx.service.summary(week || undefined);
+    const body = summaryText(s);
+    const title = body.split('\n')[0];
+    ctx.showText(title, body);
+    return [title];
+  }, { label: 'Reading the week', quiet: true });
 }
 
 // ---- Work items (ui/WorkItemsView.jsx)

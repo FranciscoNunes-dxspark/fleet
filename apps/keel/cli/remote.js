@@ -147,6 +147,7 @@ export function remoteService({ call }) {
     workItemAction: (id, action, org) => call(`/workitems/${id}/actions${org ? `?org=${e(org)}` : ''}`, { method: 'POST', body: action }),
     newWorkItemOptions: () => call('/workitems/new/options'),
     createWorkItem: (body) => call('/workitems', { method: 'POST', body }),
+    summary: (week) => call(`/summary${week ? `?week=${e(week)}` : ''}`),
     production: () => call('/production'),
     undeployed: () => call('/deploys/pending'),
     approvals: () => call('/approvals'),

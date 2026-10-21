@@ -128,6 +128,7 @@ test('signed in through the browser, the app shows the Inbox as you, votes throu
   // And production: the monitors (none on this test server) and what's waiting to ship.
   assert.deepEqual((await keel.service.production()).monitors, []);
   assert.ok(Array.isArray((await keel.service.undeployed()).targets));
+  assert.equal((await keel.service.summary('2026-10-06')).week, '2026-10-05', 'the Monday of that week');
 
   // Live updates come from the server's event stream.
   const statuses = [];

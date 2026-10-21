@@ -312,6 +312,63 @@ export function wiFullText(w, now = Date.now()) {
   return out.join('\n');
 }
 
+// ---- The weekly summary (the web app's Weekly summary, and its "Copy as text")
+
+const weekDay = (iso, year = false) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC', ...(year ? { year: 'numeric' } : {}) });
+
+/** One week's summary (service.summary) as plain text: for the viewer, and to paste into an email or chat. */
+export function summaryText(s) {
+  const tot = s.totals;
+  const lines = [
+    `Week of ${weekDay(s.from)} – ${weekDay(s.to, true)}${s.current ? ' (this week, so far)' : ''}`,
+    '',
+    `• ${plural(tot.finished, 'item')} finished (${tot.features} features and stories, ${plural(tot.bugs, 'bug')} fixed)`,
+    `• ${plural(tot.merged, 'pull request')} merged`,
+    `• ${plural(tot.deploys, 'deploy')} to production${tot.failedDeploys ? ` (${tot.failedDeploys} failed)` : ''}`,
+    `• ${plural(tot.blocked, 'item')} blocked right now · ${tot.inProgress} in progress`,
+  ];
+  const list = (heading, items) => {
+    if (!items?.length) return;
+    lines.push('', heading);
+    for (const w of items) lines.push(`- ${w.title} (${w.projectName}, ${w.type} #${w.id}${w.assignedTo ? `, ${w.assignedTo}` : ''})`);
+  };
+  list('Finished', s.features);
+  list('Bugs fixed', s.bugs);
+  if (s.mergedByRepo?.length) {
+    lines.push('', 'Merged, by repository');
+    for (const r of s.mergedByRepo) lines.push(`- ${r.repoName} (${r.projectName}): ${plural(r.count, 'pull request')}`);
+  }
+  if (s.deploys?.length) {
+    lines.push('', 'Deployed to production');
+    const groups = new Map();
+    for (const d of s.deploys) {
+      const key = `${d.org ?? ''}:${d.target}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(d);
+    }
+    for (const list of groups.values()) {
+      const ok = list.filter((d) => d.status === 'succeeded').length;
+      const failed = list.length - ok;
+      lines.push(`- ${list[0].target}: ${plural(ok, 'deploy')}${failed ? `, ${failed} failed` : ''} (latest ${list[0].label}, ${weekDay(list[0].at)})`);
+    }
+  }
+  list('Blocked right now', s.blocked);
+  return lines.join('\n');
+}
+
+/**
+ * Which week `/summary` means, as a day in it: nothing for this week, "last" (or -1) for the one
+ * before, -N for N weeks back (up to 26, as the web app goes), or a date (YYYY-MM-DD). Null otherwise.
+ */
+export function summaryWeek(text, now = Date.now()) {
+  const s = String(text ?? '').trim().toLowerCase();
+  if (!s || s === 'this') return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s))) return s;
+  const back = s === 'last' ? 1 : /^-\d{1,2}$/.test(s) ? -Number(s) : null;
+  if (back == null || back > 26) return null;
+  return new Date(now - back * 7 * 86_400_000).toISOString().slice(0, 10);
+}
+
 // ---- Production (the web app's Production page and Waiting to ship)
 
 export const MONITOR_STATE = {

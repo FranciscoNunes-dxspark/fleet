@@ -31,6 +31,7 @@ export const COMMANDS = [
   { name: 'open', desc: 'Open the selection in the browser', run: (ctx) => a.open(ctx) },
   { name: 'find', args: '[text]', desc: 'Filter the list by title, repo, branch or person (empty clears it)', run: (ctx, s) => ctx.find(s) },
   { name: 'show', args: '[view]', desc: 'Pull requests: all, review or mine. Work items: all, sprint, bugs, blocked, stuck, unassigned or mine', complete: 'show', run: (ctx, s) => ctx.showGroup(s || 'all') },
+  { name: 'summary', args: '[last|-N|date]', desc: "One week's summary: finished, merged, deployed, blocked (this week by default)", run: (ctx, s) => a.showSummary(ctx, s) },
   { name: 'settings', desc: 'Projects and repos to follow, merge defaults, organizations, updates', run: (ctx) => ctx.showSettings() },
   { name: 'addorg', args: '<address> [--github]', desc: 'Add an Azure DevOps organization or a GitHub owner', run: (ctx, s) => a.addOrg(ctx, s) },
   { name: 'logout', desc: 'Sign this terminal out of your Keel server', run: (ctx) => a.logout(ctx) },

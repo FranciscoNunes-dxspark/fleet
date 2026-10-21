@@ -63,7 +63,11 @@ Slash commands
   /approve  /suggest  /wait  /reject  /reset  /complete  /autocomplete  /comment <text>  /pr <id>
   /state [state]  /take  /assign <person>  /unassign  /blocked  /priority <1-4>  /new <type> <title>  /wi <id>
   /snooze [2d|1w]  /unsnooze  /deploy [comment]  /stop [comment]  /run [branch]  /cancel
-  /open  /find [text]  /show [view]  /refresh  /last  /log  /logout  /help  /quit
+  /summary [last|-N|date]  /open  /find [text]  /show [view]  /refresh  /last  /log  /logout  /help  /quit
 
-Viewer (a pull request, the last output, the log, this help)
+Weekly summary (/summary; /summary last, /summary -3, /summary 2026-10-06 for earlier weeks)
+  What got finished, merged and deployed that week, and what's blocked now: the web app's
+  Weekly summary, as the text its "Copy as text" gives, ready to paste into an email or chat
+
+Viewer (a pull request, a work item, the weekly summary, the last output, the log, this help)
   j k  space  g G  Scroll         esc / q     Close`;
