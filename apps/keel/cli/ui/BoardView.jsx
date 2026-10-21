@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { boardCards, boardColumns, cardLines, columnTitle } from '../board.js';
+import { fieldsMatch, shownFilter, splitFilter } from '../filters.js';
 import { theme } from '../theme.js';
 import { relTime } from '../text.js';
 import { useAsync, useMouse } from './hooks.js';
@@ -23,7 +24,12 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
   const data = useAsync(`board:${pick.projectId ?? ''}:${pick.teamId ?? ''}:${pick.boardId ?? ''}:${mode}:${version}`, () => ctx.service.board({ ...pick, mode }), 50);
   const d = data.value;
   const columns = useMemo(() => (d?.project ? boardColumns(d) : []), [d]);
-  const cards = useMemo(() => boardCards(d, columns, filter), [d, columns, filter]);
+  // The filter's fields (who:, type:, tag:, state:) narrow the cards, and its words search them.
+  const me = ctx.data.workItems?.me;
+  const cards = useMemo(() => {
+    const { fields, text } = splitFilter(filter, 'board');
+    return boardCards(d, columns, text, (w) => fieldsMatch('board', w, fields, (x) => !!me && x.assignedTo?.id === me.id));
+  }, [d, columns, filter, me]);
   const [col, setCol] = useState(0);
   const [at, setAt] = useState({});
   const offsets = useRef({});
@@ -46,7 +52,7 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
   }, [cards]);
 
   useEffect(() => {
-    ctx.select({ workItem: w, board: d, boardColumn: columns[c] });
+    ctx.select({ workItem: w, board: d, boardColumn: columns[c], filterSource: { tab: 'board', items: (d?.items ?? []).filter((x) => !(d.taskTypes ?? []).includes(x.type)) } });
   }, [w, d, c]);
 
   const setIndex = (i) => setAt((m) => ({ ...m, [columns[c].key]: Math.max(0, Math.min(i, list.length - 1)) }));
@@ -99,6 +105,7 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
     if (input === 't') return chooseTeam();
+    if (input === 'F') return a.pickFilter(ctx);
     if (input === 'v') return chooseBoard();
     if (input === 'f') return setMode((m) => (m === 'open' ? 'sprint' : 'open'));
     if (!columns.length) return;
@@ -162,10 +169,10 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
       { text: d.project.teamName, bold: true },
       { text: ` · ${d.board?.name ?? 'by state'} · ${mode === 'sprint' ? `${it?.name ?? 'the sprint'}` : `open work, and done in the last ${d.doneDays} days`}`, color: theme.dim },
       { text: it && mode === 'sprint' && ends > 0 ? ` · ends in ${relTime(Date.now() - ends)}` : '', color: theme.dim },
-      { text: filter ? ` · matching "${filter}"` : '', color: theme.dim },
+      { text: filter ? ` · matching ${shownFilter(filter)}` : '', color: theme.dim },
       { text: start > 0 ? `  ◂ ${start} more` : '', color: theme.accent },
       { text: start + shown < columns.length ? `  ${columns.length - start - shown} more ▸` : '', color: theme.accent },
-      { text: '   t team · v board · f sprint or open', color: theme.dim },
+      { text: '   t team · v board · F filter · f sprint or open', color: theme.dim },
     ];
   }
 

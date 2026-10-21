@@ -167,6 +167,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
   const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', releases: '', board: '', team: '', settings: '' });
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
   // What Settings shows about this computer; `envTick` moves when its .env changes.
   const [envTick, setEnvTick] = useState(0);
   const local = React.useMemo(() => ({ envFile, signIn, server: keel.server, account: keel.account, compiled: COMPILED, mouseAvailable: Boolean(mouse), env: { ...process.env } }), [envFile, signIn, envTick]);
@@ -449,6 +451,13 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     find: (text) => {
       const v = overlayRef.current?.settings ? 'settings' : viewRef.current;
       setFilters((f) => ({ ...f, [v]: text.trim() }));
+    },
+    // F and /filter (actions.js pickFilter): this tab's filter text, and the list it narrows, which
+    // each view hands over as { tab, items } (the tab's id, so another tab's leftover list never counts).
+    currentFilter: () => filtersRef.current[overlayRef.current?.settings ? 'settings' : viewRef.current] ?? '',
+    filterSource: () => {
+      const src = selection.current.filterSource;
+      return src && src.tab === viewRef.current && !overlayRef.current ? src : null;
     },
     // /show and f: which pull requests (all, review, mine), or which work item view, by the tab you're on.
     showView: (tab, value) => {

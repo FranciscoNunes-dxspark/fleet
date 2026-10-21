@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { KIND, SEVERITY, inboxDetail } from '../format.js';
+import { shownFilter } from '../filters.js';
 import { theme } from '../theme.js';
 import { fit } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -46,10 +47,10 @@ export function InboxView({ failed, attention, filter, ctx, width, height, activ
   });
 
   const snoozed = attention?.snoozedCount ? ` · ${attention.snoozedCount} snoozed` : '';
-  const hint = attention ? `${items.length}${filter ? ` matching "${filter}"` : ''}${snoozed}` : '';
+  const hint = attention ? `${items.length}${filter ? ` matching ${shownFilter(filter)}` : ''}${snoozed}` : '';
   let empty = null;
   if (!attention) empty = failed ? "  Couldn't read Azure DevOps (the reason is below). r tries again." : '  Reading Azure DevOps…';
-  else if (!items.length) empty = filter ? `  Nothing matches "${filter}". /find with nothing clears it.` : '  Nothing needs you right now.';
+  else if (!items.length) empty = filter ? `  Nothing matches ${shownFilter(filter)}. /find with nothing clears it.` : '  Nothing needs you right now.';
   return (
     <Box width={width} height={height}>
       <Panel title="Inbox" hint={hint} width={listW} height={height} focused={active}>

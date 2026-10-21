@@ -63,8 +63,11 @@ const matches = (w, text) => {
   return !q || `${w.id} ${w.title} ${(w.tags ?? []).join(' ')} ${w.assignedTo?.displayName ?? ''} ${w.type}`.toLowerCase().includes(q);
 };
 
-/** Each column's cards in backlog order, with the tasks under each card counted (done/total). */
-export function boardCards(data, columns, filter = '') {
+/**
+ * Each column's cards in backlog order, with the tasks under each card counted (done/total).
+ * `filter` searches their text; `keep` narrows them further (filters.js fields: who, type, tag).
+ */
+export function boardCards(data, columns, filter = '', keep = () => true) {
   const items = data?.items ?? [];
   const tasks = new Map();
   for (const t of items.filter((w) => (data.taskTypes ?? []).includes(w.type) && w.parentId)) {
@@ -73,7 +76,7 @@ export function boardCards(data, columns, filter = '') {
     if (t.stateCategory === 'Completed') n.done += 1;
     tasks.set(t.parentId, n);
   }
-  return columns.map((c) => items.filter((w) => c.holds(w) && matches(w, filter)).sort(order).map((w) => ({ ...w, tasks: tasks.get(w.id) ?? null })));
+  return columns.map((c) => items.filter((w) => c.holds(w) && matches(w, filter) && keep(w)).sort(order).map((w) => ({ ...w, tasks: tasks.get(w.id) ?? null })));
 }
 
 /** "Active 3/4": a column's title, with its WIP limit (counting only Doing in a split column) and whether it's over. */

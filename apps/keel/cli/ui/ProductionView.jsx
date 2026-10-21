@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Box, useInput } from 'ink';
 import { monitorBrief, monitorDetail, monitorRows, monitorState } from '../format.js';
+import { shownFilter } from '../filters.js';
 import { theme } from '../theme.js';
 import { fit, stringWidth } from '../text.js';
 import { useAsync, useListNav, useMouse } from './hooks.js';
@@ -43,11 +44,11 @@ export function ProductionView({ failed, production, version, filter, ctx, width
   });
 
   const problems = rows.filter((r) => r.state === 'down' || r.state === 'degraded').length;
-  const hint = production ? [String(rows.length), problems ? `${problems} need you` : '', filter ? `matching "${filter}"` : ''].filter(Boolean).join(' · ') : '';
+  const hint = production ? [String(rows.length), problems ? `${problems} need you` : '', filter ? `matching ${shownFilter(filter)}` : ''].filter(Boolean).join(' · ') : '';
   let empty = null;
   if (!production) empty = failed ? "  Couldn't read Azure DevOps (the reason is below). r tries again." : '  Reading Azure DevOps…';
   else if (!production.enabled) empty = '  Production monitoring is off on this Keel.';
-  else if (!rows.length) empty = filter ? `  Nothing matches "${filter}". /find with nothing clears it.` : '  No production monitors yet. Add them in the web app: Settings → Production monitors.';
+  else if (!rows.length) empty = filter ? `  Nothing matches ${shownFilter(filter)}. /find with nothing clears it.` : '  No production monitors yet. Add them in the web app: Settings → Production monitors.';
   return (
     <Box width={width} height={height}>
       <Panel title="Production" hint={hint} width={listW} height={height} focused={active}>

@@ -4,6 +4,7 @@ import * as a from '../actions.js';
 import { WI_VIEW_IDS, isBlocked, wiDetail, wiRows, wiState, wiViews } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '../text.js';
+import { applyFilter, shownFilter } from '../filters.js';
 import { useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
@@ -11,7 +12,13 @@ export const wiId = (w) => `${w.org ?? ''}/${w.id}`;
 
 /** Open work items in the tracked projects, by the web app's views: yours first, then the sprint, bugs, blocked and the rest. */
 export function WorkItemsView({ failed, workItems, meta, show, filter, jump, ctx, width, height, active }) {
-  const rows = useMemo(() => wiRows(workItems, meta, { view: show, filter }), [workItems, meta, show, filter]);
+  // The filter's fields (who:, type:, tag:, state:, project:) narrow the items; its words search them.
+  const rows = useMemo(() => {
+    if (!workItems) return [];
+    const isMe = (w) => !!workItems.me && w.assignedTo?.id === workItems.me.id;
+    const { items, text } = applyFilter('workitems', workItems.items, filter, isMe);
+    return wiRows({ ...workItems, items }, meta, { view: show, filter: text });
+  }, [workItems, meta, show, filter]);
   const views = useMemo(() => wiViews(workItems, meta), [workItems, meta]);
   const split = width >= 100;
   const listW = split ? Math.floor(width * 0.58) : width;
@@ -37,7 +44,7 @@ export function WorkItemsView({ failed, workItems, meta, show, filter, jump, ctx
 
   useEffect(() => {
     kept.current = w ? wiId(w) : null;
-    ctx.select({ workItem: w });
+    ctx.select({ workItem: w, filterSource: { tab: 'workitems', items: workItems?.items ?? [] } });
   }, [w]);
 
   // Another tab asked for a work item (↵ on it in the Inbox, /wi 4107): put the cursor on it.
@@ -51,6 +58,7 @@ export function WorkItemsView({ failed, workItems, meta, show, filter, jump, ctx
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
     if (input === 'f') return ctx.showView('workitems', WI_VIEW_IDS[(WI_VIEW_IDS.indexOf(show) + 1) % WI_VIEW_IDS.length]);
+    if (input === 'F') return a.pickFilter(ctx);
     if (nav.handle(input, key) || !w) return;
     if (key.return) ctx.showWorkItemFull(w);
     else if (input === 's') a.setState(ctx, w);
@@ -66,10 +74,10 @@ export function WorkItemsView({ failed, workItems, meta, show, filter, jump, ctx
   });
 
   const view = views.find((v) => v.id === show) ?? views[0];
-  const hint = workItems ? [String(rows.length), view.label, filter ? `matching "${filter}"` : '', 'f next view'].filter(Boolean).join(' · ') : '';
+  const hint = workItems ? [String(rows.length), view.label, filter ? `matching ${shownFilter(filter)}` : '', 'f next view'].filter(Boolean).join(' · ') : '';
   let empty = null;
   if (!workItems) empty = failed ? "  Couldn't read Azure DevOps (the reason is below). r tries again." : '  Reading Azure DevOps…';
-  else if (!rows.length) empty = filter ? `  Nothing matches "${filter}". /find with nothing clears it.` : `  None: ${view.label}. f shows the next view (/show all for every open item).`;
+  else if (!rows.length) empty = filter ? `  Nothing matches ${shownFilter(filter)}. /find with nothing clears it.` : `  None: ${view.label}. f shows the next view (/show all for every open item).`;
   return (
     <Box width={width} height={height}>
       <Panel title="Work items" hint={hint} width={listW} height={height} focused={active}>

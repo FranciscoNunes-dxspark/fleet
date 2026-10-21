@@ -3,6 +3,8 @@ import { Box, useInput } from 'ink';
 import { teamBrief, teamDetail, teamRows } from '../team.js';
 import { theme } from '../theme.js';
 import { fit } from '../text.js';
+import * as a from '../actions.js';
+import { applyFilter, shownFilter } from '../filters.js';
 import { useAsync, useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
@@ -13,7 +15,11 @@ import { Lines, Panel, Row } from './parts.jsx';
  */
 export function TeamView({ version, workItems, prs, filter, ctx, width, height, active }) {
   const data = useAsync(`team:${version}`, () => ctx.service.team(), 50);
-  const rows = useMemo(() => teamRows(data.value, filter), [data.value, filter]);
+  // The filter's fields (team:) narrow them; its words search them.
+  const rows = useMemo(() => {
+    const { items, text } = applyFilter('team', data.value?.rows ?? [], filter);
+    return teamRows(data.value && { ...data.value, rows: items }, text);
+  }, [data.value, filter]);
   const split = width >= 100;
   const listW = split ? Math.floor(width * 0.5) : width;
   const sideW = width - listW;
@@ -24,11 +30,12 @@ export function TeamView({ version, workItems, prs, filter, ctx, width, height, 
   const nameW = Math.min(22, Math.max(8, ...rows.map((x) => x.person.displayName.length)));
 
   useEffect(() => {
-    ctx.select({ person: r?.person });
+    ctx.select({ person: r?.person, filterSource: { tab: 'team', items: data.value?.rows ?? [] } });
   }, [r]);
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
+    if (input === 'F') return a.pickFilter(ctx);
     if (nav.handle(input, key) || !r) return;
     if (key.return) ctx.showWorkItemsOf(r.person);
     else if (input === 'p') ctx.showPrsOf(r.person);
@@ -41,11 +48,11 @@ export function TeamView({ version, workItems, prs, filter, ctx, width, height, 
   });
 
   const flagged = rows.filter((x) => x.flags?.length).length;
-  const hint = data.value ? [String(rows.length), flagged ? `${flagged} with too much on` : '', filter ? `matching "${filter}"` : ''].filter(Boolean).join(' · ') : '';
+  const hint = data.value ? [String(rows.length), flagged ? `${flagged} with too much on` : '', filter ? `matching ${shownFilter(filter)}` : ''].filter(Boolean).join(' · ') : '';
   let empty = null;
   if (data.error && !data.value) empty = `  Couldn't read the team: ${String(data.error.message).split('\n')[0]}`;
   else if (!data.value) empty = '  Reading Azure DevOps…';
-  else if (!rows.length) empty = filter ? `  Nobody matches "${filter}". /find with nothing clears it.` : "  Nobody in your tracked projects' teams yet.";
+  else if (!rows.length) empty = filter ? `  Nobody matches ${shownFilter(filter)}. /find with nothing clears it.` : "  Nobody in your tracked projects' teams yet.";
   return (
     <Box width={width} height={height}>
       <Panel title="Team" hint={hint} width={listW} height={height} focused={active}>
