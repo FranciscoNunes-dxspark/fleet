@@ -1487,3 +1487,26 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 .web-terminal .xterm-viewport { overflow-y: hidden !important; }
 /* Its link in the menu: not on touch screens, which have no keys for it. */
 @media (pointer: coarse) { .nav-terminal { display: none; } }
+/* Below deck looks a little broken, on purpose: its cursor blinks, and every few seconds the icon
+   glitches (jumps a pixel or two and splits into red and cyan, like a screen with a bad cable).
+   Hovering sets it off at once. Not for those who ask for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .nav-terminal .icon-cursor { animation: cursor-blink 1.1s steps(1, end) infinite; }
+  .nav-terminal .icon { animation: glitch 4.2s steps(1, end) infinite; }
+  .nav-terminal:hover .icon, .nav-terminal:focus-visible .icon { animation: glitch-now 0.45s steps(1, end) infinite; }
+}
+@keyframes cursor-blink { 50% { opacity: 0; } }
+@keyframes glitch {
+  0%, 88%, 100% { transform: none; filter: none; }
+  89% { transform: translate(-1.5px, 0.5px) skewX(-8deg); filter: drop-shadow(1.5px 0 0 #ff3b6b) drop-shadow(-1.5px 0 0 #2ee6d6); }
+  91% { transform: translate(1.5px, -0.5px); filter: drop-shadow(-1px 0 0 #ff3b6b) drop-shadow(1px 0 0 #2ee6d6); opacity: 0.6; }
+  93% { transform: translate(-0.5px, 1px) skewX(6deg); filter: drop-shadow(1px 0 0 #2ee6d6); opacity: 1; }
+  95% { transform: translate(1px, 0); filter: none; clip-path: inset(30% 0 35% 0); }
+  97% { transform: none; clip-path: none; }
+}
+@keyframes glitch-now {
+  0%, 100% { transform: none; filter: none; }
+  20% { transform: translate(-1.5px, 0.5px) skewX(-8deg); filter: drop-shadow(1.5px 0 0 #ff3b6b) drop-shadow(-1.5px 0 0 #2ee6d6); }
+  45% { transform: translate(1.5px, -0.5px); filter: drop-shadow(-1px 0 0 #ff3b6b) drop-shadow(1px 0 0 #2ee6d6); opacity: 0.6; }
+  70% { transform: translate(0, 1px); clip-path: inset(30% 0 35% 0); opacity: 1; }
+}
