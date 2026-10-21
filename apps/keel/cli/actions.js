@@ -1,6 +1,10 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
 import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
+import { approvalsFor, deployChoices, stageStatus } from './releases.js';
+import { runText } from './runs.js';
+import { doneChanges } from './board.js';
+import { closedText, commitsText, flakyText, insightsText, totalsText } from './reports.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const prName = (pr) => `!${pr.id} ${short(pr.title)}`;
@@ -403,4 +407,193 @@ export async function newWorkItem(ctx, text = '') {
 export function showWorkItem(ctx, text) {
   const id = Number(String(text).replace(/^#/, ''));
   if (!Number.isInteger(id) || !ctx.showWorkItem(id)) return ctx.note(`No open work item #${String(text).replace(/^#/, '')} in your tracked projects. o on the Inbox or the web app finds closed ones.`, 'error');
+}
+
+// ---- Releases (ui/ReleasesView.jsx; how they read in releases.js)
+
+/** n, /release: a new release of the pipeline from its artifacts' latest versions (asks first). */
+export async function createRelease(ctx, def = ctx.current().release, text = '') {
+  if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  const ok = await ctx.confirm({
+    title: `Create a release of ${def.name}?`,
+    detail: 'From the latest version of each artifact. Stages set to deploy automatically start by themselves.',
+    options: [{ label: 'Yes, create it', value: true }, { label: 'No', value: false }],
+  });
+  if (!ok) return;
+  await ctx.task(`Create a release of ${def.name}`, async () => {
+    const r = await ctx.service.createRelease(def.projectId, def.id, text.trim() || undefined);
+    await ctx.reload();
+    return [`${r?.name ?? 'A release'} created. d deploys it to a stage.`];
+  }, { label: 'Creating' });
+}
+
+/**
+ * d, /stage [name]: deploys (or redeploys) a recent release to a stage, both picked from lists.
+ * Approvals and gates on the stage still apply, as on the web.
+ */
+export async function deployStage(ctx, def = ctx.current().release, name = '') {
+  if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  if (!def.releases.length) return ctx.note(`${def.name} has no releases yet: n creates one.`, 'error');
+  const stages = [...def.stages].sort((x, y) => x.rank - y.rank);
+  let stage = name.trim() ? stages.find((s) => s.name.toLowerCase() === name.trim().toLowerCase()) : null;
+  if (name.trim() && !stage) return ctx.note(`${def.name} has no stage "${name.trim()}". It has ${stages.map((s) => s.name).join(', ')}.`, 'error');
+  if (!stage) {
+    stage = await ctx.confirm({
+      title: `Deploy ${def.name} to which stage?`,
+      options: [...stages.map((s) => ({ label: `${s.name} · ${s.latest ? `${s.latest.releaseName} ${stageStatus(s.latest.status).label}` : 'never deployed'}`, value: s })), { label: 'Leave it', value: null }],
+    });
+    if (!stage) return;
+  }
+  const choices = deployChoices(def, stage);
+  if (!choices.length) return ctx.note(`None of ${def.name}'s recent releases include ${stage.name}.`, 'error');
+  const pick = await ctx.confirm({
+    title: `Deploy which release to ${stage.name}?`,
+    detail: 'Approvals and gates on that stage still apply.',
+    danger: /prod|production|prd|live/i.test(stage.name),
+    options: [...choices.map((c) => ({ label: c.label, value: c })), { label: 'Leave it', value: null }],
+  });
+  if (!pick) return;
+  const verb = def.releases.find((r) => r.id === pick.release.id)?.stages.find((s) => s.id === pick.environmentId)?.status === 'succeeded' ? 'Redeploy' : 'Deploy';
+  await ctx.task(`${verb} ${pick.release.name} to ${stage.name}`, async () => {
+    await ctx.service.deployReleaseStage(def.projectId, pick.release.id, pick.environmentId);
+    await ctx.reload();
+    return [`${pick.release.name} is deploying to ${stage.name}. Its approvals, if any, show up here and in the Inbox.`];
+  }, { label: 'Deploying' });
+}
+
+/** a / x in Releases, /deploy and /stop there: approve or reject what a stage of the pipeline waits on. */
+export async function decideRelease(ctx, def = ctx.current().release, status, text = '') {
+  if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  const pending = approvalsFor(def, ctx.current().releaseApprovals);
+  if (!pending.length) return ctx.note(`Nothing in ${def.name} waits for an approval.`);
+  let a = pending[0];
+  if (pending.length > 1) {
+    a = await ctx.confirm({ title: `Which deployment of ${def.name}?`, options: [...pending.map((p) => ({ label: `${p.run?.name ?? 'A release'} to ${p.stage}`, value: p })), { label: 'Leave it', value: null }] });
+    if (!a) return;
+  }
+  if (!a.canDecide) return ctx.note(`Azure DevOps doesn't let you decide on ${a.run?.name ?? 'it'} to ${a.stage}: ${(a.approvers ?? []).map((p) => p.displayName).join(', ') || 'someone else'} does.`, 'error');
+  const approve = status === 'approved';
+  const what = `${a.run?.name ?? 'the release'} to ${a.stage}`;
+  const ok = await ctx.confirm({
+    title: `${approve ? 'Approve' : 'Reject'} ${what}?`,
+    detail: a.instructions || undefined,
+    danger: !approve,
+    options: [{ label: approve ? 'Yes, approve it' : 'Yes, reject it', value: true }, { label: 'No', value: false }],
+  });
+  if (!ok) return;
+  await ctx.task(`${approve ? 'Approve' : 'Reject'} ${what}`, async () => {
+    await ctx.service.decideApproval(a.kind, a.id, { status, comment: text.trim() || undefined }, a.org);
+    await ctx.reload();
+    return [approve ? 'Approved: the deployment carries on.' : 'Rejected: the deployment stops there.'];
+  }, { label: approve ? 'Approving' : 'Rejecting' });
+}
+
+// ---- A pipeline run in full (runs.js)
+
+/**
+ * l in Pipelines, /logs [run]: a run in the viewer, the one running or else the latest, or the
+ * recent one named by its number. Its stages and steps, the failed steps' logs, tests and commits.
+ */
+export async function showRun(ctx, row = ctx.current().pipeline, text = '') {
+  if (!row) return ctx.note('Pick a pipeline first.', 'error');
+  const want = text.trim();
+  await ctx.task(`Run of ${row.definition.name}${want ? ` ${want}` : ''}`, async () => {
+    let run = row.running?.[0] ?? row.lastRun ?? row.latest;
+    if (want) {
+      const { runs } = await ctx.service.pipelineRuns(row.projectId, row.definition.id);
+      run = runs.find((r) => r.buildNumber === want || String(r.id) === want);
+      if (!run) throw new Error(`${row.definition.name} has no recent run ${want}. Its latest: ${runs.slice(0, 5).map((r) => r.buildNumber).join(', ') || 'none'}.`);
+    }
+    if (!run) throw new Error(`${row.definition.name} hasn't run yet: n runs it.`);
+    const details = await ctx.service.runDetails(row.projectId, run.id);
+    const { title, text: body } = runText(row, run, details);
+    ctx.showText(title, body);
+    return [title];
+  }, { label: 'Reading the run', quiet: true });
+}
+
+// ---- The board (ui/BoardView.jsx; columns and cards in board.js)
+
+/** < and > on the board, m to pick: a card to another column (its board column and the state that maps to it). */
+export async function moveCard(ctx, w, column) {
+  if (!w || !column) return;
+  if (!column.accepts(w)) return ctx.note(`${wiName(w)} can't go in "${column.label}" on this board.`, 'error');
+  const changes = column.changesFor(w);
+  await ctx.task(`${w.type} ${w.id} → ${column.label}`, async () => {
+    await ctx.service.workItemAction(w.id, { type: 'update', changes }, w.org);
+    await ctx.reload();
+    return [`${short(w.title)} is in ${column.label}${changes.state ? `, ${changes.state}` : ''}.`];
+  }, { label: 'Moving' });
+}
+
+/** space on a card in a split column: Done in that column, or back to Doing. */
+export async function toggleCardDone(ctx, data, w, column) {
+  if (!w || !column?.split) return ctx.note(`${column?.label ?? 'This column'} isn't split into Doing and Done.`);
+  const done = !w.board?.done;
+  await ctx.task(`${w.type} ${w.id}: ${done ? 'done' : 'doing'} in ${column.label}`, async () => {
+    await ctx.service.workItemAction(w.id, { type: 'update', changes: doneChanges(data, w) }, w.org);
+    await ctx.reload();
+    return [done ? `Done in ${column.label}: ready for the next column.` : `Back to Doing in ${column.label}.`];
+  }, { label: 'Saving' });
+}
+
+// ---- Reports in the viewer (reports.js)
+
+/** Reads a report and shows it in the viewer; its first line is the title. */
+async function report(ctx, title, label, read) {
+  await ctx.task(title, async () => {
+    const body = await read();
+    ctx.showText(title, body);
+    return [body.split('\n')[0]];
+  }, { label, quiet: true });
+}
+
+/** A number of days from `text` within [min, max], `fallback` when empty; null when it isn't one. */
+export function parseDaysArg(text, fallback, min, max) {
+  const t = String(text ?? '').trim().replace(/d(ays?)?$/i, '');
+  if (!t) return fallback;
+  const n = Number(t);
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+}
+
+/** /insights [days]: pull request flow, and delivery to production (the four DORA measures). */
+export async function showInsights(ctx, text = '') {
+  const days = parseDaysArg(text, 30, 7, 180);
+  if (days == null) return ctx.note('Over how many days? /insights 30 (7 to 180).', 'error');
+  await report(ctx, `Insights, the last ${days} days`, 'Reading the numbers', async () => {
+    const [ins, del] = await Promise.all([ctx.service.insights(days), ctx.service.delivery(Math.min(90, days))]);
+    return insightsText(ins, del);
+  });
+}
+
+/** /flaky: tests that fail now and then and pass again without a fix. */
+export async function showFlaky(ctx) {
+  await report(ctx, 'Flaky tests', 'Reading the test results', async () => flakyText(await ctx.service.flakyTests()));
+}
+
+/** /closed [7|30|90]: pull requests completed or abandoned lately. */
+export async function showClosed(ctx, text = '') {
+  const days = parseDaysArg(text, 7, 1, 90);
+  if (days == null) return ctx.note('Over how many days? /closed 7, /closed 30 or /closed 90.', 'error');
+  await report(ctx, `Pull requests closed in the last ${days} days`, 'Reading closed pull requests', async () => closedText(await ctx.service.closedPullRequests(days)));
+}
+
+/** /commits [repo] [days]: the default branch's commits, every tracked repo or those whose name has `repo` in it. */
+export async function showCommits(ctx, text = '') {
+  const words = String(text ?? '').trim().split(/\s+/).filter(Boolean);
+  const daysWord = words.length && /^\d+d?$/i.test(words.at(-1)) ? words.pop() : '';
+  const days = parseDaysArg(daysWord, 7, 1, 90);
+  if (days == null) return ctx.note('Over how many days? /commits 14, or /commits <repo> 14 (1 to 90).', 'error');
+  const repo = words.join(' ').toLowerCase();
+  await report(ctx, `Commits${repo ? ` in ${repo}` : ''}, the last ${days} days`, 'Reading commits', async () => {
+    const c = await ctx.service.commits({ days });
+    const commits = repo ? c.commits.filter((x) => x.repoName.toLowerCase().includes(repo)) : c.commits;
+    if (repo && !commits.length) throw new Error(`No commits in the last ${days} days in a tracked repo called "${repo}".`);
+    return commitsText({ ...c, commits });
+  });
+}
+
+/** /totals: each ISM site's platform totals. */
+export async function showTotals(ctx) {
+  await report(ctx, 'Platform totals', 'Reading platform totals', async () => totalsText(await ctx.service.platformTotals()));
 }

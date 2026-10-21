@@ -6,7 +6,7 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-5 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production (shift+tab goes back)'],
+      ['1-8 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production, Releases, Board, Team (shift+tab goes back)'],
       [',', 'Settings, over the current tab (esc closes it; /settings too)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['o', 'Open the selection in the browser (Azure DevOps or GitHub)'],
@@ -60,6 +60,7 @@ export const HELP = [
     rows: [
       ['n', 'Run it on its branch (/run <branch> for another)'],
       ['c', 'Cancel the run that\'s queued or running (asks first)'],
+      ['l', 'The run in full: stages, jobs and steps, each failed step\'s errors and the end of its log, tests, the commits it built (/logs <number> for an older run)'],
       ['↵', 'Latest runs, full height'],
     ],
   },
@@ -90,15 +91,65 @@ export const HELP = [
     ],
   },
   {
+    title: 'Releases',
+    about: 'classic release pipelines, as the web app\'s Releases tab: deploying or waiting for approval first, then failing',
+    views: ['releases'],
+    rows: [
+      ['n', 'Create a release from the latest artifacts (asks first; /release <description> too)'],
+      ['d', 'Deploy or redeploy a recent release to a stage: pick the stage, then the release (/stage <name> too). Approvals and gates still apply'],
+      ['a  x', 'Approve or reject what a stage waits on (asks first; /deploy and /stop with a comment)'],
+      ['↵', 'Everything: every stage and every recent release'],
+    ],
+  },
+  {
+    title: 'Board',
+    about: 'a team\'s real board, as the web app\'s: its columns, WIP limits and split Doing/Done; open work and what finished lately, or the sprint',
+    views: ['board'],
+    rows: [
+      ['h l / ← →', 'Column (more than fit scroll in)'],
+      ['j k / ↑ ↓', 'Card'],
+      ['> <  (L H)', 'Move the card to the next or previous column that takes it: its column and the state that column maps to'],
+      ['m', 'Move it to a column picked from a list'],
+      ['space', 'In a split column: Done there, or back to Doing'],
+      ['↵', 'The card\'s work item in full'],
+      ['s  i  b', 'State, take it, blocked (as in Work items; /assign, /priority and /comment too)'],
+      ['t', 'Another team\'s board'],
+      ['v', 'Another of the team\'s boards (Stories, Features, Epics…)'],
+      ['f', 'The current sprint, or all open work'],
+    ],
+  },
+  {
+    title: 'Team',
+    about: 'who carries what, as the web app\'s Team page: people with too much on first',
+    views: ['team'],
+    rows: [
+      ['↵', 'Their open work items, in Work items'],
+      ['p', 'Their pull requests, in Pull requests'],
+      ['/find <name>', 'Someone, or a team'],
+    ],
+  },
+  {
     title: 'Settings',
     about: ', or /settings; the same settings as the web app\'s, in the same data folder',
     rows: [
+      ['tab  shift+tab', 'The next or previous section: Projects, When to flag things, Merging, Organizations, This computer (h l too, or a click on one)'],
       ['space', 'Track a project or not; a repo in or out; the next choice; on or off'],
       ['↵', 'A tracked project\'s repos (open or close)'],
-      ['- +', 'How often Keel checks for changes'],
+      ['- +', 'A threshold one step down or up (when to escalate a review, call a PR stale, flag someone with too much on…), or how often Keel checks for changes'],
       ['x', 'Remove an added organization (asks first)'],
       ['esc', 'Close Settings'],
       ['/addorg <address> [--github]', 'Another Azure DevOps organization, or a GitHub owner'],
+    ],
+  },
+  {
+    title: 'Reports',
+    about: 'the web app\'s Insights, Flaky tests, closed pull requests, Commits and Platform totals, in the viewer',
+    rows: [
+      ['/insights [days]', 'Pull request flow (merged, how long they take, by repo, author and reviewer) and delivery to production: deploys, lead time, change failure rate and time to restore, by environment. 30 days by default, up to 180'],
+      ['/flaky', 'Tests that fail now and then on a pipeline\'s own branch and pass again without a fix, failing now first'],
+      ['/closed [days]', 'Pull requests completed or abandoned in the last 7 days (or 30, 90), with who closed them, how long they were open and the votes'],
+      ['/commits [repo] [days]', 'Commits on each tracked repo\'s default branch, by day, with their pull request and work items; a repo name narrows it'],
+      ['/totals', 'Each ISM site\'s platform totals: the key figures, then each area, with the change since the fetch before'],
     ],
   },
   {
