@@ -1,6 +1,7 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
 import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
+import { fieldValues, filterFields, splitFilter, withField } from './filters.js';
 import { approvalsFor, deployChoices, stageStatus } from './releases.js';
 import { runText } from './runs.js';
 import { doneChanges } from './board.js';
@@ -596,4 +597,43 @@ export async function showCommits(ctx, text = '') {
 /** /totals: each ISM site's platform totals. */
 export async function showTotals(ctx) {
   await report(ctx, 'Platform totals', 'Reading platform totals', async () => totalsText(await ctx.service.platformTotals()));
+}
+
+// ---- Filters by field (filters.js)
+
+/**
+ * F, /filter: narrows the list on screen by a field (who has it, its type, tag, project…), picked
+ * from the values in it with how many have each, as the web app's dropdowns do. It goes into the
+ * tab's /find text, so /find with nothing clears it.
+ */
+export async function pickFilter(ctx) {
+  const src = ctx.filterSource();
+  const fields = src ? filterFields(src.tab) : [];
+  if (!fields.length) return ctx.note('This list has nothing to filter by: /find <text> searches it.');
+  const current = ctx.currentFilter();
+  const now = Object.fromEntries(splitFilter(current, src.tab).fields.map((f) => [f.key, f.value]));
+  const key = await ctx.confirm({
+    title: 'Filter by',
+    detail: current ? `Now: ${current}` : undefined,
+    options: [
+      ...fields.map(([k, f]) => ({ label: `${f.label}${now[k] ? `: ${now[k]}` : ''}`, value: k })),
+      ...(current ? [{ label: 'Clear the filter', value: '*' }] : []),
+      { label: 'Leave it', value: null },
+    ],
+  });
+  if (!key) return;
+  if (key === '*') return ctx.find('');
+  const f = fields.find(([k]) => k === key)[1];
+  const values = fieldValues(src.tab, key, src.items).slice(0, 9);
+  const picked = await ctx.confirm({
+    title: f.label,
+    options: [
+      { label: f.people ? 'Anyone' : 'Any', value: '' },
+      ...(f.people ? [{ label: 'Me', value: 'me' }, { label: 'Nobody', value: 'none' }] : []),
+      ...values.map((v) => ({ label: `${v.value} (${v.count})`, value: v.value })),
+      { label: 'Leave it', value: null },
+    ],
+  });
+  if (picked == null) return;
+  ctx.find(withField(current, src.tab, key, picked || null));
 }

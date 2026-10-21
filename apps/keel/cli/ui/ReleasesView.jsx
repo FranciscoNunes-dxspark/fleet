@@ -4,6 +4,7 @@ import * as a from '../actions.js';
 import { approvalsFor, releaseDetail, releaseHealth, releaseRows, stageStrip } from '../releases.js';
 import { theme } from '../theme.js';
 import { fit } from '../text.js';
+import { applyFilter, shownFilter } from '../filters.js';
 import { useAsync, useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
@@ -16,7 +17,11 @@ export const releaseId = (d) => `${d.org ?? ''}/${d.key}`;
  */
 export function ReleasesView({ version, filter, ctx, width, height, active }) {
   const data = useAsync(`releases:${version}`, () => ctx.service.releases(), 50);
-  const rows = useMemo(() => releaseRows(data.value, filter), [data.value, filter]);
+  // The filter's fields (project:) narrow them; its words search them.
+  const rows = useMemo(() => {
+    const { items, text } = applyFilter('releases', data.value?.definitions ?? [], filter);
+    return releaseRows(data.value && { ...data.value, definitions: items }, text);
+  }, [data.value, filter]);
   const split = width >= 100;
   const listW = split ? Math.floor(width * 0.5) : width;
   const sideW = width - listW;
@@ -28,11 +33,12 @@ export function ReleasesView({ version, filter, ctx, width, height, active }) {
   const nameW = Math.min(28, Math.max(8, ...rows.map((r) => r.name.length)));
 
   useEffect(() => {
-    ctx.select({ release: d, releaseApprovals: approvals });
+    ctx.select({ release: d, releaseApprovals: approvals, filterSource: { tab: 'releases', items: data.value?.definitions ?? [] } });
   }, [d, data.value]);
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
+    if (input === 'F') return a.pickFilter(ctx);
     if (nav.handle(input, key) || !d) return;
     if (key.return) ctx.showReleaseFull(d, approvals);
     else if (input === 'n') a.createRelease(ctx, d);
@@ -48,11 +54,11 @@ export function ReleasesView({ version, filter, ctx, width, height, active }) {
   });
 
   const waiting = rows.filter((r) => approvalsFor(r, approvals).length).length;
-  const hint = data.value ? [String(rows.length), waiting ? `${waiting} waiting for approval` : '', filter ? `matching "${filter}"` : ''].filter(Boolean).join(' · ') : '';
+  const hint = data.value ? [String(rows.length), waiting ? `${waiting} waiting for approval` : '', filter ? `matching ${shownFilter(filter)}` : ''].filter(Boolean).join(' · ') : '';
   let empty = null;
   if (data.error && !data.value) empty = `  Couldn't read the release pipelines: ${String(data.error.message).split('\n')[0]}`;
   else if (!data.value) empty = '  Reading Azure DevOps…';
-  else if (!rows.length) empty = filter ? `  Nothing matches "${filter}". /find with nothing clears it.` : '  No classic release pipelines in your tracked projects (Pipelines → Releases in Azure DevOps).';
+  else if (!rows.length) empty = filter ? `  Nothing matches ${shownFilter(filter)}. /find with nothing clears it.` : '  No classic release pipelines in your tracked projects (Pipelines → Releases in Azure DevOps).';
   return (
     <Box width={width} height={height}>
       <Panel title="Releases" hint={hint} width={listW} height={height} focused={active}>

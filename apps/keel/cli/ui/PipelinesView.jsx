@@ -4,6 +4,7 @@ import * as a from '../actions.js';
 import { HEALTH, branch, pipelineDetail, runState } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '../text.js';
+import { applyFilter, shownFilter } from '../filters.js';
 import { useAsync, useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
@@ -16,7 +17,11 @@ const matches = (row, text) => {
 
 /** Pipeline health in the tracked projects: failing first, then unstable, healthy and idle. */
 export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, width, height, active }) {
-  const rows = useMemo(() => (pipelines ?? []).filter((r) => matches(r, filter)), [pipelines, filter]);
+  // The filter's fields (project:, repo:) narrow them; its words search them.
+  const rows = useMemo(() => {
+    const { items, text } = applyFilter('pipelines', pipelines ?? [], filter);
+    return items.filter((r) => matches(r, text));
+  }, [pipelines, filter]);
   const split = width >= 100;
   const listW = split ? Math.floor(width * 0.55) : width;
   const sideW = width - listW;
@@ -32,7 +37,7 @@ export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, w
   const mine = row && runs.key?.startsWith(`${pipelineId(row)}:`);
 
   useEffect(() => {
-    ctx.select({ pipeline: row });
+    ctx.select({ pipeline: row, filterSource: { tab: 'pipelines', items: pipelines ?? [] } });
   }, [row]);
 
   useEffect(() => {
@@ -44,6 +49,7 @@ export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, w
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
+    if (input === 'F') return a.pickFilter(ctx);
     if (nav.handle(input, key) || !row) return;
     if (key.return) ctx.showPipelineRuns(row);
     else if (input === 'n') a.runPipeline(ctx, row);
@@ -59,10 +65,10 @@ export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, w
   });
 
   const failing = (pipelines ?? []).filter((r) => r.health === 'failing').length;
-  const hint = pipelines ? [`${rows.length}`, failing ? `${failing} failing` : '', filter ? `matching "${filter}"` : ''].filter(Boolean).join(' · ') : '';
+  const hint = pipelines ? [`${rows.length}`, failing ? `${failing} failing` : '', filter ? `matching ${shownFilter(filter)}` : ''].filter(Boolean).join(' · ') : '';
   let empty = null;
   if (!pipelines) empty = failed ? "  Couldn't read Azure DevOps (the reason is below). r tries again." : '  Reading Azure DevOps…';
-  else if (!rows.length) empty = filter ? `  Nothing matches "${filter}". /find with nothing clears it.` : '  No pipelines in your tracked projects.';
+  else if (!rows.length) empty = filter ? `  Nothing matches ${shownFilter(filter)}. /find with nothing clears it.` : '  No pipelines in your tracked projects.';
   return (
     <Box width={width} height={height}>
       <Panel title="Pipelines" hint={hint} width={listW} height={height} focused={active}>

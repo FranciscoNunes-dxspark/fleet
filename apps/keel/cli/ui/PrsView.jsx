@@ -4,6 +4,7 @@ import * as a from '../actions.js';
 import { branch, isGithubPr, prDetail, prRows, prState } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '../text.js';
+import { applyFilter, shownFilter } from '../filters.js';
 import { useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
@@ -22,7 +23,11 @@ const stepHint = (pr) => {
 
 /** Active pull requests in the tracked repos: waiting on your review, then yours, then everyone else's. */
 export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, active }) {
-  const rows = useMemo(() => prRows(prs ?? [], { show, filter }), [prs, show, filter]);
+  // The filter's fields (who: the author, project:, repo:) narrow them; its words search them.
+  const rows = useMemo(() => {
+    const { items, text } = applyFilter('prs', prs ?? [], filter, (p) => p.isMine);
+    return prRows(items, { show, filter: text });
+  }, [prs, show, filter]);
   const split = width >= 100;
   const listW = split ? Math.floor(width * 0.58) : width;
   const sideW = width - listW;
@@ -39,7 +44,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
   const metaW = titleW - widest >= 20 ? widest : 0;
 
   useEffect(() => {
-    ctx.select({ pr });
+    ctx.select({ pr, filterSource: { tab: 'prs', items: prs ?? [] } });
   }, [pr]);
 
   // Another tab asked for a pull request (↵ on it in the Inbox, /pr 817): put the cursor on it.
@@ -53,6 +58,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
     if (input === 'f') return ctx.showGroup(NEXT_SHOW[show]);
+    if (input === 'F') return a.pickFilter(ctx);
     if (nav.handle(input, key) || !pr) return;
     if (key.return) ctx.showPrFull(pr);
     else if (input === 'a') a.vote(ctx, pr, 10);
@@ -73,7 +79,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
   });
 
   const shown = rows.filter((r) => r.pr).length;
-  const hint = prs ? [String(shown), SHOW_LABEL[show], filter ? `matching "${filter}"` : '', 'f to filter'].filter(Boolean).join(' · ') : '';
+  const hint = prs ? [String(shown), SHOW_LABEL[show], filter ? `matching ${shownFilter(filter)}` : '', 'f to filter'].filter(Boolean).join(' · ') : '';
   let empty = null;
   if (!prs) empty = failed ? "  Couldn't read Azure DevOps (the reason is below). r tries again." : '  Reading Azure DevOps…';
   else if (!rows.length) empty = filter || show !== 'all' ? '  None match. f or /show all shows them all; /find with nothing clears the filter.' : '  No active pull requests in your tracked repos.';

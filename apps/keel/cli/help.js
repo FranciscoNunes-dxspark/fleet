@@ -22,7 +22,8 @@ export const HELP = [
       ['j k / ↑ ↓', 'Move'],
       ['g G', 'Top, bottom'],
       ['ctrl+d ctrl+u', 'Page down, up'],
-      ['/find <text>', 'Filter (empty clears it)'],
+      ['/find <text>', 'Filter (empty clears it). Fields too, with plain words: who:tom (who:me, who:none), type:bug, tag:, state:, project:, repo:, team:'],
+      ['F', 'Filter by a field, picked from the values in the list with how many have each, as the web app\'s dropdowns (/filter too)'],
     ],
   },
   {
