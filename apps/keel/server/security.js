@@ -51,14 +51,16 @@ export function securityHeaders(req, res, next) {
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-    // Inline style attributes are used by React components; scripts are bundle-only.
+    // Inline style attributes are used by React components; scripts are bundle-only. WebAssembly may be
+    // compiled (not eval'd JavaScript): the terminal app's page (/cli) lays out with Ink's Yoga, which
+    // reads its module from a data: URL in the bundle.
     'Content-Security-Policy': [
       "default-src 'self'",
-      "script-src 'self'",
+      "script-src 'self' 'wasm-unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
-      "connect-src 'self'",
+      "connect-src 'self' data:",
       "object-src 'none'",
       "base-uri 'none'",
       "form-action 'self'",

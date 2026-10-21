@@ -218,4 +218,8 @@ export default {
   'Go to the Dashboard': 'Ir para o Painel',
 
   'Open in GitHub': 'Abrir no GitHub',
+
+  'Terminal app': 'App de terminal',
+  'Keel in the terminal, on this page: ? for shortcuts, / for commands, q to leave.': 'O Keel no terminal, nesta página: ? para os atalhos, / para os comandos, q para sair.',
+  "The terminal app couldn't start: {reason}": 'Não foi possível iniciar a app de terminal: {reason}',
 };

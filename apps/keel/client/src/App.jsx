@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api.js';
 import { AppContext, useApi, useApp } from './context.js';
@@ -35,6 +35,8 @@ import { useSticky } from './sticky.js';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
 import TerminalSignIn from './pages/TerminalSignIn.jsx';
+// Ink and xterm.js load only when the page opens.
+const WebTerminal = lazy(() => import('./pages/WebTerminal.jsx'));
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
 import { applyTheme } from './theme.js';
 import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
@@ -523,6 +525,7 @@ function Shell() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />
           <Route path="/terminal" element={<TerminalSignIn />} />
+          <Route path="/cli" element={<Suspense fallback={<Loading />}><WebTerminal /></Suspense>} />
           {/* Unknown paths go home. */}
           <Route path="*" element={<NotFound />} />
         </Routes>
