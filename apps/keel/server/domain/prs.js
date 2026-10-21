@@ -58,7 +58,38 @@ export function enrichPR(pr, me, now = Date.now()) {
     hasConflicts: pr.mergeStatus === 'conflicts',
     reviewState,
     readyToMerge: reviewState === 'approved' && pr.mergeStatus !== 'conflicts',
+    flow: prFlow(pr, reviewState),
   };
+}
+
+const POLICY_OK = new Set(['approved', 'notApplicable']);
+
+/**
+ * Where a pull request is on its way: publish (a draft), approval (published, not approved yet),
+ * complete (approved), then done (completed) or closed (abandoned). `waiting` says what the current
+ * step waits on, as data each UI words itself: { kind, names? } with kind
+ *   approval: 'no-reviewers', 'rejected', 'waiting-author', 'required' (required reviewers who
+ *             haven't approved) or 'approval' (nobody has yet);
+ *   complete: 'conflicts', 'policies' (blocking ones not passed yet; only known on the full pull
+ *             request), or 'auto' (auto-complete is set: it completes itself once they pass).
+ */
+export function prFlow(pr, reviewState) {
+  if (pr.status === 'completed') return { step: 'done', waiting: null };
+  if (pr.status && pr.status !== 'active') return { step: 'closed', waiting: null };
+  if (pr.isDraft) return { step: 'publish', waiting: null };
+  const names = (list) => list.map((r) => r.displayName);
+  if (reviewState !== 'approved') {
+    if (reviewState === 'no-reviewers') return { step: 'approval', waiting: { kind: 'no-reviewers' } };
+    if (reviewState === 'rejected') return { step: 'approval', waiting: { kind: 'rejected', names: names(pr.reviewers.filter((r) => r.vote === -10)) } };
+    if (reviewState === 'waiting-author') return { step: 'approval', waiting: { kind: 'waiting-author', names: names(pr.reviewers.filter((r) => r.vote === -5)) } };
+    const required = pr.reviewers.filter((r) => r.isRequired && r.vote < 5);
+    return { step: 'approval', waiting: required.length ? { kind: 'required', names: names(required) } : { kind: 'approval' } };
+  }
+  if (pr.mergeStatus === 'conflicts') return { step: 'complete', waiting: { kind: 'conflicts' } };
+  const blocking = (pr.policies ?? []).filter((p) => p.isBlocking && !POLICY_OK.has(p.status));
+  if (blocking.length) return { step: 'complete', waiting: { kind: 'policies', names: blocking.map((p) => p.name) } };
+  if (pr.autoComplete) return { step: 'complete', waiting: { kind: 'auto' } };
+  return { step: 'complete', waiting: null };
 }
 
 export function voteLabel(vote) {

@@ -17,10 +17,11 @@ Inbox (what needs you, most urgent first; the same rules as the web app's Inbox)
   s                Snooze for a day (/snooze 2d, /snooze 1w; /unsnooze brings them all back)
   a  x             On an approval: approve or reject the deployment (asks first)
 
-Pull requests (waiting on your review, then yours, then everyone else's)
+Pull requests (waiting on your review, then yours, then everyone else's; each goes
+publish → approval → complete, and the pane says which step it's at and what it waits on)
   a                Approve         A           Approve with suggestions
   w                Wait for the author         x           Reject (asks first)
-  0                Clear your vote
+  0                Clear your vote             p           Publish a draft
   c                Complete (asks first; merge settings from Keel's Settings)
   m                Auto-complete on or off
   ↵                The full pull request       /comment <text>   Comment
@@ -60,7 +61,7 @@ Prompt
   ctrl+u ctrl+w    Clear the line · Delete a word
 
 Slash commands
-  /approve  /suggest  /wait  /reject  /reset  /complete  /autocomplete  /comment <text>  /pr <id>
+  /publish  /approve  /suggest  /wait  /reject  /reset  /complete  /autocomplete  /comment <text>  /pr <id>
   /state [state]  /take  /assign <person>  /unassign  /blocked  /priority <1-4>  /new <type> <title>  /wi <id>
   /snooze [2d|1w]  /unsnooze  /deploy [comment]  /stop [comment]  /run [branch]  /cancel
   /summary [last|-N|date]  /open  /find [text]  /show [view]  /refresh  /last  /log  /logout  /help  /quit

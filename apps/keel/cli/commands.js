@@ -10,6 +10,7 @@ export const COMMANDS = [
   { name: 'wait', desc: 'Wait for the author', run: (ctx) => a.vote(ctx, undefined, -5) },
   { name: 'reject', desc: 'Reject the pull request (asks first)', run: (ctx) => a.vote(ctx, undefined, -10) },
   { name: 'reset', desc: 'Clear your vote', run: (ctx) => a.vote(ctx, undefined, 0) },
+  { name: 'publish', desc: 'Publish the draft pull request for review', run: (ctx) => a.publish(ctx) },
   { name: 'complete', desc: 'Complete (merge) the pull request (asks first)', run: (ctx) => a.complete(ctx) },
   { name: 'autocomplete', desc: 'Turn auto-complete on or off', run: (ctx) => a.autoComplete(ctx) },
   { name: 'comment', args: '<text>', desc: 'Comment on the pull request or work item', run: (ctx, s) => a.comment(ctx, undefined, s) },

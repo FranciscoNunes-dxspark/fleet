@@ -34,7 +34,7 @@ const VIEWS = [
 
 const HINTS = {
   inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
-  prs: 'a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter',
+  prs: 'p publish · a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter',
   pipelines: 'n run · c cancel the run · ↵ all runs · o browser',
   workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
   production: '↵ everything, and all that is waiting to ship · o open the site',

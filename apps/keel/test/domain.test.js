@@ -43,6 +43,24 @@ test('enrichPR: rejection and drafts', () => {
   assert.equal(draft.needsMyReview, false);
 });
 
+test('a pull request goes publish, approval, complete; each step says what it waits on', () => {
+  const flow = (over) => enrichPR(pr(over), me, NOW).flow;
+  assert.deepEqual(flow({ isDraft: true, reviewers: [rv(dev, 0)] }), { step: 'publish', waiting: null });
+  assert.deepEqual(flow({}), { step: 'approval', waiting: { kind: 'no-reviewers' } });
+  assert.deepEqual(flow({ reviewers: [rv(dev, 0)] }), { step: 'approval', waiting: { kind: 'approval' } });
+  assert.deepEqual(flow({ reviewers: [rv(me, 10), rv(dev, 0, true)] }), { step: 'approval', waiting: { kind: 'required', names: ['Dev'] } });
+  assert.deepEqual(flow({ reviewers: [rv(me, 10), rv(dev, -5)] }), { step: 'approval', waiting: { kind: 'waiting-author', names: ['Dev'] } });
+  assert.deepEqual(flow({ reviewers: [rv(dev, -10)] }), { step: 'approval', waiting: { kind: 'rejected', names: ['Dev'] } });
+  // Approved: on to completing, which conflicts, blocking policies and auto-complete speak to.
+  assert.deepEqual(flow({ reviewers: [rv(dev, 10)] }), { step: 'complete', waiting: null });
+  assert.deepEqual(flow({ reviewers: [rv(dev, 10)], mergeStatus: 'conflicts' }), { step: 'complete', waiting: { kind: 'conflicts' } });
+  const policies = [{ name: 'Build', status: 'running', isBlocking: true }, { name: 'Lint', status: 'rejected', isBlocking: false }];
+  assert.deepEqual(flow({ reviewers: [rv(dev, 10)], policies }), { step: 'complete', waiting: { kind: 'policies', names: ['Build'] } });
+  assert.deepEqual(flow({ reviewers: [rv(dev, 10)], autoComplete: true }), { step: 'complete', waiting: { kind: 'auto' } });
+  assert.equal(flow({ status: 'completed' }).step, 'done');
+  assert.equal(flow({ status: 'abandoned' }).step, 'closed');
+});
+
 test('attention escalates my review after the threshold and flags missing reviewers', () => {
   const settings = structuredClone(DEFAULT_SETTINGS);
   const prs = [
