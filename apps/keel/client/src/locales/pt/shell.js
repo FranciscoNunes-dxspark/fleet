@@ -220,6 +220,7 @@ export default {
   'Open in GitHub': 'Abrir no GitHub',
 
   'Terminal app': 'App de terminal',
-  'Keel in the terminal, on this page: ? for shortcuts, / for commands, q to leave.': 'O Keel no terminal, nesta página: ? para os atalhos, / para os comandos, q para sair.',
+  'Below deck': 'Sob o convés',
+  'Below deck: Keel in the terminal, here in the browser': 'Sob o convés: o Keel no terminal, aqui no navegador',
   "The terminal app couldn't start: {reason}": 'Não foi possível iniciar a app de terminal: {reason}',
 };

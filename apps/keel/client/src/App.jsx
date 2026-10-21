@@ -289,6 +289,14 @@ function Console({ authMode, onSignedOut }) {
       </AppContext.Provider>
     );
   }
+  // The terminal app in the browser: the whole window, as a terminal is, without the menu (q goes back to the Dashboard).
+  if (here === '/cli') {
+    return (
+      <AppContext.Provider value={ctx}>
+        <Suspense fallback={<div className="boot"><Loading /></div>}><WebTerminal /></Suspense>
+      </AppContext.Provider>
+    );
+  }
 
   return (
     <AppContext.Provider value={ctx}>
@@ -480,6 +488,8 @@ function Shell() {
             ))}
           </div>
           <div className="sidebar-foot">
+            {/* The terminal app in the browser, on a page of its own (no menu); not on touch screens, which have no keys for it. */}
+            <NavLink to="/cli" className="nav-link nav-terminal" title={t('Below deck: Keel in the terminal, here in the browser')} aria-label={collapsed ? t('Below deck') : undefined}><span className="nav-label"><Icon name="terminal" /><span className="nav-text">{t('Below deck')}</span></span></NavLink>
             <NavLink to="/settings" className="nav-link" title={tip(t('Settings'))} aria-label={collapsed ? t('Settings') : undefined}><span className="nav-label"><Icon name="settings" /><span className="nav-text">{t('Settings')}</span></span></NavLink>
             <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning} title={tip(t('Refresh from Azure DevOps'))} aria-label={collapsed ? t('Refresh from Azure DevOps') : undefined}>
               <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> <span className="nav-text">{t('Refresh from Azure DevOps')}</span>
@@ -533,7 +543,6 @@ function Shell() {
           <Route path="/insights" element={<Insights />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />
-          <Route path="/cli" element={<Suspense fallback={<Loading />}><WebTerminal /></Suspense>} />
           {/* Unknown paths go home. */}
           <Route path="*" element={<NotFound />} />
         </Routes>
