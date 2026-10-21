@@ -24,6 +24,7 @@ export const COMMANDS = [
   { name: 'show', args: '[all|review|mine]', desc: 'Pull requests: everything, waiting on your review, or yours', complete: 'show', run: (ctx, s) => ctx.showGroup(s || 'all') },
   { name: 'settings', desc: 'Projects and repos to follow, merge defaults, organizations, updates', run: (ctx) => ctx.showSettings() },
   { name: 'addorg', args: '<address> [--github]', desc: 'Add an Azure DevOps organization or a GitHub owner', run: (ctx, s) => a.addOrg(ctx, s) },
+  { name: 'logout', desc: 'Sign this terminal out of your Keel server', run: (ctx) => a.logout(ctx) },
   { name: 'refresh', desc: 'Ask Azure DevOps again now', run: (ctx) => ctx.refresh() },
   { name: 'last', desc: 'Show the full output of the last action', run: (ctx) => ctx.showLast() },
   { name: 'log', desc: 'Warnings from Azure DevOps calls', run: (ctx) => ctx.showLog() },

@@ -554,7 +554,49 @@ function AccountSettings() {
           </div>
         </form>
       </div>
+      <TerminalSignIns />
     </Section>
+  );
+}
+
+/** Terminals signed in with `keel login` (server/terminals.js), each of which can be signed out here. */
+function TerminalSignIns() {
+  const { toast } = useApp();
+  const [list, setList] = useState(null);
+  const load = () => api('/auth/terminals').then(setList, () => setList([]));
+  useEffect(() => {
+    load();
+  }, []);
+  if (!list) return null;
+  return (
+    <div className="terminals">
+      <h3 className="small">{t('Terminals signed in')}</h3>
+      <p className="muted small">{tj('Keel in the terminal signs in with {command}, through this browser. A terminal unused for 90 days, or after a new password, is signed out by itself.', { command: <code>keel login</code> })}</p>
+      {list.length === 0 && <p className="muted small">{t('None.')}</p>}
+      {list.map((x) => (
+        <div key={x.id} className="terminal-row small">
+          <div>
+            <strong>{x.name}</strong>
+            <div className="muted">{t('Signed in {when} · last used {used}', { when: dateTime(x.createdAt), used: dateTime(x.lastUsedAt) })}</div>
+          </div>
+          <Confirm
+            text={t('Sign out {name}? It needs keel login again.', { name: x.name })}
+            onConfirm={async () => {
+              try {
+                await api(`/auth/terminals/${encodeURIComponent(x.id)}`, { method: 'DELETE' });
+                toast(t('{name} is signed out', { name: x.name }));
+              } catch (e) {
+                toast(e.message, 'bad');
+              }
+              load();
+            }}
+            className="btn btn-small btn-ghost text-bad"
+          >
+            {t('Sign out')}
+          </Confirm>
+        </div>
+      ))}
+    </div>
   );
 }
 

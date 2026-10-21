@@ -255,6 +255,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     await req.ctx.service.deployReleaseStage(projectId, num(releaseId), num(environmentId), comment);
     res.json({ ok: true });
   });
+  // Deployments waiting on an approval (the terminal app decides Inbox approvals from this list).
+  r.get('/approvals', async (req, res) => res.json(await req.ctx.service.approvals()));
   r.post('/approvals/:kind/:id', need('approvals.decide'), async (req, res) => {
     if (!['release', 'yaml'].includes(req.params.kind)) return res.status(400).json({ error: 'Unknown approval kind' });
     await req.ctx.service.decideApproval(req.params.kind, req.params.id, req.body || {}, req.query.org ? String(req.query.org) : undefined);

@@ -34,6 +34,7 @@ import { CommandPalette } from './palette.jsx';
 import { useSticky } from './sticky.js';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
+import TerminalSignIn from './pages/TerminalSignIn.jsx';
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
 import { applyTheme } from './theme.js';
 import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
@@ -521,6 +522,7 @@ function Shell() {
           <Route path="/insights" element={<Insights />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/terminal" element={<TerminalSignIn />} />
           {/* Unknown paths go home. */}
           <Route path="*" element={<NotFound />} />
         </Routes>

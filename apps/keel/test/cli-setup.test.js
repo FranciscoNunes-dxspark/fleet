@@ -48,7 +48,7 @@ async function answer(lines, envFile) {
 
 test('first run with the Azure CLI: the organization and AZDO_AUTH=az are saved, no token', async () => {
   const envFile = path.join(dir, 'az', '.env'); // the folder doesn't exist yet, as ~/.keel on a first run
-  const { result, env, shown } = await answer(['nope nope', 'contoso', ''], envFile);
+  const { result, env, shown } = await answer(['2', 'nope nope', 'contoso', ''], envFile);
   assert.equal(result, 'saved');
   assert.deepEqual(env, { AZDO_ORG_URL: 'https://dev.azure.com/contoso', AZDO_AUTH: 'az' });
   assert.match(shown, /doesn't look like an organization address/);
@@ -57,7 +57,7 @@ test('first run with the Azure CLI: the organization and AZDO_AUTH=az are saved,
 
 test('first run with a token: it is saved for the next start', async () => {
   const envFile = path.join(dir, 'pat.env');
-  const { env } = await answer(['https://dev.azure.com/contoso', '2', 'abc123token'], envFile);
+  const { env } = await answer(['2', 'https://dev.azure.com/contoso', '2', 'abc123token'], envFile);
   assert.equal(env.AZDO_PAT, 'abc123token');
   // What the next start reads, as process.loadEnvFile does.
   assert.equal(parseEnv(fs.readFileSync(envFile, 'utf8')).AZDO_PAT, 'abc123token');
@@ -68,7 +68,7 @@ test('in a terminal the token is typed unseen: dots, backspace works, and it nev
   const input = Object.assign(new PassThrough(), { isTTY: true, isRaw: false, setRawMode(on) { this.isRaw = on; return this; } });
   const output = Object.assign(new PassThrough(), { isTTY: true, columns: 120, rows: 40 });
   let shown = '';
-  const keys = ['contoso\r', '2\r', 'secretX\u007f\r'];
+  const keys = ['2\r', 'contoso\r', '2\r', 'secretX\u007f\r'];
   output.on('data', (d) => {
     shown += d;
     if (String(d).includes('› ') && keys.length) setImmediate(() => input.write(keys.shift()));
@@ -81,9 +81,20 @@ test('in a terminal the token is typed unseen: dots, backspace works, and it nev
   assert.equal(input.isRaw, false);
 });
 
-test('first run left empty: the demo, and nothing saved', async () => {
+test("first run with your team's Keel: its address is saved, and signing in comes next", async () => {
+  const envFile = path.join(dir, 'keel.env');
+  const { result, env, shown } = await answer(['', 'not a keel', 'keel.example.com/inbox'], envFile);
+  assert.equal(result, 'keel');
+  assert.deepEqual(env, { KEEL_SERVER: 'https://keel.example.com' });
+  assert.match(shown, /doesn't look like a Keel address/);
+  assert.equal(parseEnv(fs.readFileSync(envFile, 'utf8')).KEEL_SERVER, 'https://keel.example.com');
+  // Left empty, it's keel.example.com.
+  assert.deepEqual((await answer(['1', ''], path.join(dir, 'keel-default.env'))).env, { KEEL_SERVER: 'https://keel.example.com' });
+});
+
+test('first run choosing the demo: nothing saved', async () => {
   const envFile = path.join(dir, 'demo.env');
-  const { result, env } = await answer([''], envFile);
+  const { result, env } = await answer(['3'], envFile);
   assert.equal(result, 'demo');
   assert.deepEqual(env, {});
   assert.equal(fs.existsSync(envFile), false);

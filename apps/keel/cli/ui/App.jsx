@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
-import { diffSnapshots } from '../../server/domain/changes.js';
 import * as a from '../actions.js';
 import { findCommand, suggestionsFor } from '../commands.js';
 import { pipelineDetail, prFullText } from '../format.js';
@@ -35,16 +34,11 @@ const HINTS = {
 };
 const SETTINGS_HINT = "space change · ↵ a project's repos · /find a project · esc close";
 
-// As the web server's watcher (server/watcher.js): what a poll drops so it really asks Azure DevOps.
-const LIVE_PREFIXES = ['prs:active', 'pr:', 'wi:', 'builds'];
-const MIN_POLL = 15;
-const MAX_POLL = 600;
-
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const segmentsText = (line) => (typeof line === 'string' ? line : line.map((s) => s.text).join(''));
 
-function Header({ meta, orgs, signIn, attention, pollError, width, mood }) {
+function Header({ meta, orgs, signIn, server, attention, pollError, width, mood }) {
   const segs = [
     { text: `${FACES[mood]} `, color: mood === 'worried' ? theme.warn : theme.accent, bold: true },
     { text: 'Keel', bold: true },
@@ -55,6 +49,7 @@ function Header({ meta, orgs, signIn, attention, pollError, width, mood }) {
   if (orgs.length > 1) segs.push({ text: ` +${orgs.length - 1}`, color: theme.dim });
   if (meta) segs.push({ text: `  ${plural(meta.trackedProjects.length, 'project')}`, color: theme.dim });
   if (signIn === 'demo') segs.push({ text: '  ' }, { text: ' DEMO ', bg: theme.warn, color: theme.ink, bold: true });
+  else if (signIn === 'keel') segs.push({ text: `  ${meta?.account?.name ?? 'signed in'} · ${server.replace(/^https?:\/\//, '')}`, color: theme.dim });
   else segs.push({ text: signIn === 'az' ? '  az login' : '  PAT', color: theme.dim });
   const high = attention?.summary?.high;
   if (high) segs.push({ text: '  ' }, { text: ` ${high} act now `, bg: theme.del, color: theme.ink, bold: true });
@@ -93,13 +88,14 @@ function activityRows(entries) {
 }
 
 /**
- * `keel` is `{ service, orgs, signIn }` from cli/service.js (the tests build it the same way, on
- * demo data). `openUrl` opens links (the browser by default); `poll` turns live checks off when false.
+ * `keel` is `{ service, orgs, signIn, live, orgAdmin }` from cli/service.js (the tests build it the
+ * same way, on demo data), or from cli/remote.js when signed in to a Keel server (with `server`
+ * and `logout` too). `openUrl` opens links (the browser by default); `poll` turns live checks off when false.
  * `checkUpdate` and `installUpdate` (cli/update.js) are only passed to the downloaded executable.
  * `envFile` is the .env this Keel reads, where Settings saves this computer's choices.
  */
 export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate, envFile = path.join(ROOT, '.env') }) {
-  const { service, orgs, signIn } = keel;
+  const { service, orgs, signIn, live } = keel;
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [meta, setMetaState] = useState(null);
@@ -116,7 +112,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', settings: '' });
   // What Settings shows about this computer; `envTick` moves when its .env changes.
   const [envTick, setEnvTick] = useState(0);
-  const local = React.useMemo(() => ({ envFile, signIn, compiled: COMPILED, env: { ...process.env } }), [envFile, signIn, envTick]);
+  const local = React.useMemo(() => ({ envFile, signIn, server: keel.server, account: keel.account, compiled: COMPILED, env: { ...process.env } }), [envFile, signIn, envTick]);
   const [show, setShow] = useState('all');
   const [jump, setJump] = useState(null);
   const [welcome, setWelcome] = useState(true);
@@ -144,7 +140,6 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const historyPos = useRef(-1);
   const lastOutput = useRef(null);
   const loading = useRef(null);
-  const prevSnapshot = useRef(null);
 
   const setMeta = (m) => {
     metaRef.current = m;
@@ -204,15 +199,17 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     await load();
   };
 
-  // A live check, as the web server's watcher does: ask Azure DevOps again, tell what changed.
-  const check = async () => {
-    for (const prefix of LIVE_PREFIXES) service.invalidate(prefix);
-    const snap = await service.snapshot();
-    const notes = diffSnapshots(prevSnapshot.current, snap);
-    prevSnapshot.current = snap;
-    await load();
+  const showNotes = (notes) => {
     for (const n of notes.slice(0, 5)) addEntry({ title: n.title, status: 'info', lines: n.body ? [n.body] : [] });
     if (notes.length > 5) note(`… and ${notes.length - 5} more changes in Azure DevOps.`);
+  };
+
+  // A live check, as the web server's watcher does: ask Azure DevOps again, tell what changed.
+  // (Through a Keel server, it asks the server to look now, and what changed arrives on its stream.)
+  const check = async () => {
+    const notes = await live.check();
+    await load();
+    showNotes(notes);
   };
 
   // One thing at a time, with the spinner, esc to stop waiting, and a line in the activity log.
@@ -315,6 +312,9 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     reloadAll,
     refresh,
     envFile,
+    orgAdmin: keel.orgAdmin,
+    server: keel.server,
+    logout: keel.logout,
     saveEnv: (lines) => {
       saveEnvSettings(envFile, lines);
       setEnvTick((n) => n + 1);
@@ -400,25 +400,25 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   // First look: who you are and your tracked projects, then everything the tabs show, and the
   // baseline the live checks compare against (the first one announces nothing, as in the browser).
   useEffect(() => {
-    let live = true;
+    let on = true;
     (async () => {
       try {
         const m = await service.meta();
-        if (!live) return;
+        if (!on) return;
         setMeta(m);
         await load();
-        prevSnapshot.current = await service.snapshot();
+        await live.baseline();
       } catch (e) {
-        if (!live) return;
+        if (!on) return;
         setPollError(firstLine(e.message));
         note(`Couldn't read Azure DevOps: ${firstLine(e.message)}`, 'error');
       }
       // After the first load, so it doesn't slow it down. Tests leave these out (or pass stubs), so
       // they stay offline and never replace anything.
-      if (live && checkUpdate) {
+      if (on && checkUpdate) {
         checkUpdate().then(
           ({ checked, newer }) => {
-            if (!live || !newer) return;
+            if (!on || !newer) return;
             const outNote = (why = '') => note(`Keel ${checked.latest} is out (you have ${VERSION})${why}.\nDownload it from ${checked.url}`);
             if (!installUpdate) {
               setUpdate({ ...checked, state: 'out' });
@@ -443,19 +443,27 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
       }
     })();
     return () => {
-      live = false;
+      on = false;
     };
   }, []);
 
   // Live checks, every "refresh every" seconds from Keel's settings (as the web app's), only
-  // between other things: never while an action runs.
+  // between other things: never while an action runs. Through a Keel server, the server checks
+  // and its event stream says when something changed.
   useEffect(() => {
     if (!poll) return;
+    if (live.stream) {
+      return live.stream({
+        changed: () => load().catch((e) => setPollError(firstLine(e.message))),
+        notify: showNotes,
+        status: (s) => setPollError(s.ok ? null : firstLine(s.error)),
+      });
+    }
     let timer = null;
-    let live = true;
+    let on = true;
     const next = async () => {
-      const seconds = Math.min(MAX_POLL, Math.max(MIN_POLL, Number((await service.settingsStore.load()).refreshSeconds) || 60));
-      if (live) timer = setTimeout(tick, seconds * 1000);
+      const seconds = await live.interval();
+      if (on) timer = setTimeout(tick, seconds * 1000);
     };
     const tick = async () => {
       if (!busyRef.current) {
@@ -465,11 +473,11 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
           setPollError(firstLine(e.message));
         }
       }
-      if (live) next();
+      if (on) next();
     };
     next();
     return () => {
-      live = false;
+      on = false;
       clearTimeout(timer);
     };
   }, []);
@@ -594,7 +602,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header meta={meta} orgs={orgs} signIn={signIn} attention={data.attention} pollError={pollError} width={W} mood={mood} />
+      <Header meta={meta} orgs={orgs} signIn={signIn} server={keel.server ?? ''} attention={data.attention} pollError={pollError} width={W} mood={mood} />
       <Tabs view={view} data={data} width={W} />
       <Box height={mainH} width={W}>
         {main}

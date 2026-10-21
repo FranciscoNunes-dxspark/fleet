@@ -1,10 +1,12 @@
-// First run: no Azure DevOps organization set yet. Before the app starts, ask which one and how
-// to sign in, and save the answers in the .env file Keel reads (the checkout's, or ~/.keel/.env
+// First run: nothing to connect to yet. Before the app starts, ask whether it's your team's Keel
+// (signed in through the browser, remote.js) or Azure DevOps directly (which organization, and how
+// to sign in), and save the answers in the .env file Keel reads (the checkout's, or ~/.keel/.env
 // for the standalone executable), so the next start goes straight in. Plain prompts, not Ink:
 // the server's config reads the environment on import, so this has to happen first.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
+import { DEFAULT_SERVER, serverUrlFrom } from './remote.js';
 
 const bold = (s) => `\x1b[1m${s}\x1b[22m`;
 const dim = (s) => `\x1b[2m${s}\x1b[22m`;
@@ -95,8 +97,9 @@ function askHidden(input, output, question) {
 }
 
 /**
- * Asks for the organization and sign-in, saves them to `envFile` and puts them in `env`.
- * Returns 'saved', or 'demo' when the organization is left empty (the demo, nothing saved).
+ * Asks what to connect to and saves the answers to `envFile` and `env`. Returns 'keel' (your
+ * team's Keel: KEEL_SERVER is saved, and signing in comes next), 'saved' (an Azure DevOps
+ * organization and how to sign in to it), or 'demo' (nothing saved).
  */
 export async function firstRunSetup({ envFile, env = process.env, input = process.stdin, output = process.stdout } = {}) {
   output.write(`\n${coral(bold('Keel'))} ${bold("isn't set up yet.")}\n`);
@@ -115,13 +118,31 @@ export async function firstRunSetup({ envFile, env = process.env, input = proces
   const lines = [];
   let signIn;
   try {
+    output.write(`${bold('Connect to')}\n  1  your team's Keel ${dim('(sign in with your Keel account, in the browser)')}\n  2  Azure DevOps directly ${dim('(your Azure CLI sign-in, or a personal access token)')}\n  3  the demo ${dim('(no sign-in)')}\n`);
+    let to;
+    for (;;) {
+      to = (await rl.question(`› ${dim('[1]')} `)).trim() || '1';
+      if (['1', '2', '3'].includes(to)) break;
+    }
+    if (to === '3') return 'demo';
+    if (to === '1') {
+      let server;
+      for (;;) {
+        const answer = await rl.question(`\n${bold('Keel address')} ${dim(`(empty for ${DEFAULT_SERVER.replace(/^https:\/\//, '')})`)}\n› `);
+        server = serverUrlFrom(answer.trim() || DEFAULT_SERVER);
+        if (server) break;
+        output.write(dim("That doesn't look like a Keel address (https://keel.example.com). Try again.\n"));
+      }
+      close();
+      saveEnvSettings(envFile, [`KEEL_SERVER=${server}`], env);
+      return 'keel';
+    }
     let orgUrl;
     for (;;) {
-      const answer = await rl.question(`${bold('Azure DevOps organization')} ${dim('(https://dev.azure.com/your-org, or its name; empty for the demo)')}\n› `);
-      if (!answer.trim()) return 'demo';
+      const answer = await rl.question(`\n${bold('Azure DevOps organization')} ${dim('(https://dev.azure.com/your-org, or its name)')}\n› `);
       orgUrl = orgUrlFrom(answer);
       if (orgUrl) break;
-      output.write(dim("That doesn't look like an organization address. Try again, or press Enter for the demo.\n"));
+      output.write(dim("That doesn't look like an organization address. Try again.\n"));
     }
     lines.push(`AZDO_ORG_URL=${orgUrl}`);
     output.write(`\n${bold('Sign in with')}\n  1  your Azure CLI sign-in ${dim('(az login; no token stored)')}\n  2  a personal access token ${dim('(saved in that file)')}\n`);

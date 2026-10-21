@@ -340,4 +340,7 @@ export default {
   "Couldn't reach GitHub to check the token: {error}": 'Não foi possível contactar o GitHub para verificar o token: {error}',
   'The GitHub CLI (gh) is not installed or not on the PATH. Get it from https://cli.github.com, or set GITHUB_TOKEN.': 'A GitHub CLI (gh) não está instalada ou não está no PATH. Obtenha-a em https://cli.github.com, ou defina GITHUB_TOKEN.',
   'Images from GitHub open on GitHub': 'As imagens do GitHub abrem no GitHub',
+  // server/terminals.js and auth.js: signing in the terminal app
+  "That code isn't one Keel is waiting for. Check it against your terminal, or run keel login again: codes last 10 minutes.": 'Esse código não é um dos que o Keel está à espera. Compare-o com o do seu terminal, ou volte a correr keel login: os códigos duram 10 minutos.',
+  'No such terminal sign-in.': 'Essa sessão de terminal não existe.',
 };

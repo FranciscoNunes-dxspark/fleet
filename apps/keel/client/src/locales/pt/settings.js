@@ -362,4 +362,28 @@ export default {
   'Yellow': 'Amarelo',
   'Red': 'Vermelho',
   'Gray': 'Cinzento',
+
+  // Settings → Your account → Terminals signed in
+  'Terminals signed in': 'Terminais com sessão iniciada',
+  'Keel in the terminal signs in with {command}, through this browser. A terminal unused for 90 days, or after a new password, is signed out by itself.': 'O Keel no terminal inicia sessão com {command}, através deste browser. Um terminal sem uso há 90 dias, ou depois de uma nova palavra-passe, termina a sessão sozinho.',
+  'None.': 'Nenhum.',
+  'Signed in {when} · last used {used}': 'Sessão iniciada a {when} · último uso a {used}',
+  'Sign out {name}? It needs keel login again.': 'Terminar a sessão de {name}? Vai precisar de keel login outra vez.',
+  '{name} is signed out': 'A sessão de {name} terminou',
+
+  // pages/TerminalSignIn.jsx
+  'Sign in to Keel in the terminal': 'Iniciar sessão no Keel no terminal',
+  'Type the code {command} shows in your terminal.': 'Escreva o código que o {command} mostra no seu terminal.',
+  'Continue': 'Continuar',
+  'Allow this terminal?': 'Permitir este terminal?',
+  'Terminal': 'Terminal',
+  'Asked at': 'Pedido a',
+  'Keel in that terminal will act as {name}, with your role and your Azure DevOps connection: it reads what you can read, and votes, comments, completes pull requests, runs pipelines and approves deployments under your name.': 'O Keel nesse terminal vai agir como {name}, com o seu perfil e a sua ligação ao Azure DevOps: lê o que pode ler, e vota, comenta, conclui pull requests, corre pipelines e aprova deployments em seu nome.',
+  'Allow': 'Permitir',
+  "Don't allow": 'Não permitir',
+  "Only allow it if you started keel login yourself, just now, and the code matches your terminal's.": 'Só permita se foi o próprio a correr keel login, agora mesmo, e o código for igual ao do seu terminal.',
+  'Your terminal is signed in': 'O seu terminal tem sessão iniciada',
+  'Sign-in refused': 'Início de sessão recusado',
+  'Go back to your terminal: Keel starts there in a moment. You can sign it out at any time in Settings → Your account.': 'Volte ao seu terminal: o Keel arranca lá dentro de momentos. Pode terminar essa sessão quando quiser em Definições → A sua conta.',
+  "That terminal isn't signed in. If you didn't start it, you don't need to do anything else.": 'Esse terminal não tem sessão iniciada. Se não foi o próprio a pedi-lo, não precisa de fazer mais nada.',
 };

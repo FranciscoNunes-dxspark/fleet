@@ -848,6 +848,9 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .signin-help ol { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); }
 .signin-help ul { margin: 4px 0 0; padding-left: 18px; }
 .signin-foot { margin: 0; }
+.terminal-signin { display: grid; justify-items: center; padding-top: 6vh; }
+.terminal-signin-form { display: grid; gap: 14px; }
+.terminal-signin .field .input { letter-spacing: 0.12em; font-size: 18px; text-transform: uppercase; }
 .signout-btn { justify-content: flex-start; gap: 8px; }
 
 /* Loading states sit in the middle of the space they're holding. */
@@ -940,6 +943,10 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .account-form p { margin: 0; }
 .account-form .input { width: 100%; }
 .account-actions { display: flex; gap: 8px; align-items: center; }
+.terminals { margin-top: 18px; display: grid; gap: 8px; }
+.terminals h3 { margin: 0; color: var(--ink); }
+.terminals p { margin: 0; }
+.terminal-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); }
 .invite-form .form-row label { min-width: 200px; }
 .link-panel { display: grid; gap: 8px; border-color: var(--accent); }
 .link-row { display: flex; gap: 8px; align-items: center; }

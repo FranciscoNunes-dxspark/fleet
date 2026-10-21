@@ -13,6 +13,8 @@
 //   SESSION_DAYS and end after 30 days regardless.
 // - Each person gets their own service (cache, settings, live updates), created
 //   on first use and dropped after an hour idle.
+// - The terminal app signs in through the browser (`keel login`, terminals.js) and
+//   then sends its own token as a bearer token; it reaches /api, never these pages.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,6 +28,7 @@ import { ROLE_LABELS, can, createAccounts } from './accounts.js';
 import { sharedJson } from './jsonfile.js';
 import { createOrgStore } from './orgs.js';
 import { createMultiService } from './multiorg.js';
+import { createTerminals } from './terminals.js';
 
 const DAY = 86_400_000;
 const MAX_SESSION_MS = 30 * DAY;
@@ -72,6 +75,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
   // Demo mode keeps its accounts apart from real ones.
   const suffix = config.mock ? '.mock' : '';
   const sessionsFile = path.join(config.dataDir, `sessions${suffix}.json`);
+  const terminals = createTerminals(path.join(config.dataDir, `terminals${suffix}.json`));
   const orgStore = createOrgStore();
   const primaryOrg = () => orgStore.primary();
   const accounts = createAccounts(path.join(config.dataDir, `users${suffix}.json`), { primaryOrg: primaryOrg().key });
@@ -80,6 +84,8 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
   const providerOf = (pat, org = primaryOrg()) => providerFor(org, { personal: pat });
   const ipLimiter = createLimiter();
   const emailLimiter = createLimiter({ max: 5 });
+  // Terminal logins started per IP: each is a pending code until it's used or expires.
+  const loginLimiter = createLimiter({ max: 20 });
   const contexts = new Map(); // accountId -> { service, watcher, lastUsed }
 
   // First run: no admin yet. The setup code proves you can read the server log.
@@ -188,8 +194,25 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
   }, 10 * 60_000);
   sweep.unref?.();
 
-  /** The signed-in account for this request, or null. */
-  function current(req) {
+  /** The terminal app's bearer token on this request, or null. */
+  const bearerOf = (req) => {
+    const m = String(req.headers.authorization || '').match(/^Bearer\s+(\S+)$/i);
+    return m ? m[1] : null;
+  };
+
+  /**
+   * The signed-in account for this request, or null. `terminal` also accepts the terminal app's
+   * bearer token (only where it may act: /api, its own status and sign-out).
+   */
+  function current(req, { terminal = false } = {}) {
+    const bearer = terminal ? bearerOf(req) : null;
+    if (bearer) {
+      const tok = terminals.verify(bearer);
+      const user = tok && accounts.raw(tok.userId);
+      if (!user || user.disabled) return null;
+      accounts.touch(user.id);
+      return { user, terminal: tok, token: bearer };
+    }
     const sid = readCookie(req, cookieName(true)) || readCookie(req, cookieName(false));
     if (!sid) return null;
     const hash = hashId(sid);
@@ -237,7 +260,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
   router.use(express.json({ limit: '16kb' }), appHeader);
 
   router.get('/status', (req, res) => {
-    const cur = current(req);
+    const cur = current(req, { terminal: true });
     res.json({
       mode: 'login',
       orgUrl,
@@ -278,7 +301,11 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
   }));
 
   router.post('/logout', (req, res) => {
-    const cur = current(req);
+    const cur = current(req, { terminal: true });
+    if (cur?.terminal) {
+      terminals.revokeToken(cur.token);
+      return res.json({ ok: true });
+    }
     if (cur) endSessions((_, h) => h === cur.hash);
     clearCookies(res);
     res.json({ ok: true });
@@ -300,6 +327,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
     try {
       const user = await accounts.acceptLink(req.params.token, req.body || {});
       endSessions((s) => s.userId === user.id); // a reset signs out other devices
+      terminals.revokeAll(user.id);
       startSession(req, res, user);
       res.json({ user: accounts.publicUser(user), needsToken: !accounts.hasToken(user.id) });
     } catch (err) {
@@ -356,8 +384,52 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
     await accounts.changePassword(req.account.id, String(req.body?.current || ''), String(req.body?.next || ''));
     // Other devices are signed out; this one stays signed in.
     endSessions((s, h) => s.userId === req.account.id && h !== req.sessionHash);
+    terminals.revokeAll(req.account.id);
     res.json({ ok: true });
   }));
+
+  // ---------------------------------------- the terminal app's sign-in
+  // `keel login` starts one and asks how it went; the browser shows it and allows it (terminals.js).
+  router.post('/device', (req, res) => send(res, () => {
+    const wait = loginLimiter.blockedFor(req.ip);
+    if (wait) {
+      res.set('Retry-After', String(wait));
+      return res.status(429).json({ error: `Too many sign-ins started. Try again in ${Math.ceil(wait / 60)} minutes.` });
+    }
+    loginLimiter.fail(req.ip);
+    const login = terminals.start({ name: req.body?.name, ip: req.ip });
+    return res.json({ ...login, verifyUrl: `${req.protocol}://${req.get('host')}/terminal` });
+  }));
+  router.post('/device/token', (req, res) => send(res, () => {
+    const result = terminals.poll(String(req.body?.deviceCode || ''));
+    if (result.status !== 'approved') return res.json({ status: result.status });
+    const user = accounts.raw(result.userId);
+    return res.json({ status: 'approved', token: result.token, user: accounts.publicUser(user), needsToken: !accounts.hasToken(user.id) });
+  }));
+  router.get('/device/:code', signedIn, (req, res) => send(res, () => {
+    if (throttle(req, res)) return;
+    try {
+      res.json(terminals.peek(req.params.code));
+    } catch (err) {
+      failed(req);
+      throw err;
+    }
+  }));
+  router.post('/device/:code', signedIn, (req, res) => send(res, () => {
+    if (throttle(req, res)) return;
+    try {
+      terminals.decide(req.params.code, req.account.id, req.body?.allow === true);
+    } catch (err) {
+      failed(req);
+      throw err;
+    }
+    res.json({ ok: true });
+  }));
+  router.get('/terminals', signedIn, (req, res) => res.json(terminals.list(req.account.id)));
+  router.delete('/terminals/:id', signedIn, (req, res) => {
+    if (!terminals.revoke(req.account.id, String(req.params.id))) return res.status(404).json({ error: 'No such terminal sign-in.' });
+    return res.json({ ok: true });
+  });
 
   // ------------------------------------------------------- /api/admin/users
   const admin = express.Router();
@@ -376,6 +448,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
     const user = accounts.update(req.params.id, req.body || {}, req.account.id);
     if (user.status === 'disabled') {
       endSessions((s) => s.userId === user.id);
+      terminals.revokeAll(user.id);
       dropContext(user.id);
     }
     res.json({ user });
@@ -387,6 +460,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
   admin.delete('/:id', (req, res) => send(res, () => {
     accounts.remove(req.params.id, req.account.id);
     endSessions((s) => s.userId === req.params.id);
+    terminals.revokeAll(req.params.id);
     dropContext(req.params.id);
     try {
       fs.rmSync(userSettingsFile(req.params.id), { force: true });
@@ -399,7 +473,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
   // ------------------------------------------- every other /api route
   /** Attach the signed-in person's context (needs a linked token) or refuse. */
   function requireUser(req, res, next) {
-    const cur = current(req);
+    const cur = current(req, { terminal: true });
     if (!cur) return res.status(401).json({ error: 'Sign in to continue.', code: 'signin-required' });
     if (!accounts.hasToken(cur.user.id)) return res.status(409).json({ error: 'Connect your Azure DevOps account to continue.', code: 'token-required' });
     try {

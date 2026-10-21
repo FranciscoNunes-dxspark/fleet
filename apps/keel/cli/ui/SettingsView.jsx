@@ -18,7 +18,7 @@ const HINTS = {
   deleteBranch: () => 'space on or off',
   transitionWorkItems: () => 'space on or off',
   refresh: () => '- / + every 15 seconds',
-  org: (r) => (r.org.primary ? 'from your settings file' : 'x remove'),
+  org: (r) => (r.org.primary ? 'the primary one' : 'x remove'),
   addOrg: () => '↵ /addorg <address>',
   updates: () => 'space next choice',
   info: () => '',
@@ -101,7 +101,8 @@ export function SettingsView({ version, orgs, local, filter, ctx, width, height,
       case 'refresh':
         return ctx.note('- and + change how often Keel checks.');
       case 'org':
-        return r.org.primary ? ctx.note(`${r.org.name} comes from ${local.envFile}.`) : ctx.note('x removes it from Keel.');
+        if (!r.org.primary) return ctx.note('x removes it from Keel.');
+        return ctx.note(ctx.server ? `${r.org.name} is the primary organization of Keel at ${ctx.server}.` : `${r.org.name} comes from ${local.envFile}.`);
       default:
         return undefined;
     }

@@ -198,9 +198,10 @@ export async function addOrg(ctx, text = '') {
   const github = /(^|\s)--github(\s|$)/.test(text);
   const url = text.replace(/(^|\s)--github(\s|$)/, ' ').trim();
   if (!url) return ctx.prefill('/addorg ');
-  const { createOrgStore } = await import('../server/orgs.js');
   await ctx.task(`Add ${url}`, async () => {
-    const org = createOrgStore().add({ url, kind: github ? 'github' : undefined });
+    const org = await ctx.orgAdmin.add({ url, kind: github ? 'github' : undefined });
+    // Through a Keel server, everyone links their own token for it on the web.
+    if (ctx.server) return [`${org.name} added to Keel at ${ctx.server}, for everyone. Each person links their token for it there, under Settings → Organizations; then open Keel again.`];
     const how = org.kind === 'github' ? 'It signs in with GITHUB_TOKEN, or else your GitHub CLI sign-in (gh auth login).' : 'It signs in the same way as your other organization.';
     return [`${org.name} added. Open Keel again to see it, then track its projects here. ${how}`];
   }, { label: 'Adding' });
@@ -208,12 +209,30 @@ export async function addOrg(ctx, text = '') {
 
 /** Takes an added organization out of Keel (asks first). The primary one comes from .env. */
 export async function removeOrg(ctx, org) {
-  if (org.primary) return ctx.note(`${org.name} is the organization in ${ctx.envFile}; change it there.`, 'error');
-  const ok = await ctx.confirm({ title: `Remove ${org.name} from Keel?`, detail: 'Its projects stop showing, here and in the web app. You can add it back with /addorg.', danger: true, options: [{ label: 'Yes, remove it', value: true }, { label: 'No', value: false }] });
+  if (org.primary) return ctx.note(ctx.server ? `${org.name} is the primary organization of Keel at ${ctx.server}; it can't be removed.` : `${org.name} is the organization in ${ctx.envFile}; change it there.`, 'error');
+  const detail = ctx.server ? 'Its projects stop showing for everyone using Keel there. You can add it back with /addorg.' : 'Its projects stop showing, here and in the web app. You can add it back with /addorg.';
+  const ok = await ctx.confirm({ title: `Remove ${org.name} from Keel?`, detail, danger: true, options: [{ label: 'Yes, remove it', value: true }, { label: 'No', value: false }] });
   if (!ok) return;
-  const { createOrgStore } = await import('../server/orgs.js');
   await ctx.task(`Remove ${org.name}`, async () => {
-    createOrgStore().remove(org.key);
+    await ctx.orgAdmin.remove(org.key);
     return ['Removed. It disappears the next time you open Keel.'];
   }, { label: 'Removing' });
+}
+
+// ---- Signing in to a Keel server (remote.js)
+
+/** /logout: signs this terminal out of the Keel server (asks first), forgets its token, and quits. */
+export async function logout(ctx) {
+  if (!ctx.server) return ctx.note('This Keel works on its own, not signed in to a Keel server: there is nothing to sign out of.', 'error');
+  const ok = await ctx.confirm({ title: `Sign this terminal out of Keel at ${ctx.server}?`, detail: 'Keel closes. Next time, keel login signs in again.', options: [{ label: 'Yes, sign out', value: true }, { label: 'No', value: false }] });
+  if (!ok) return;
+  const done = await ctx.task('Sign out', async () => {
+    // Already signed out on the web: still forget it here.
+    await ctx.logout().catch((e) => {
+      if (e.code !== 'signin-required' && e.status !== 401) throw e;
+    });
+    ctx.saveEnv(['KEEL_SERVER=', 'KEEL_TOKEN=']);
+    return ['Signed out.'];
+  }, { label: 'Signing out' });
+  if (done.ok) ctx.quit();
 }

@@ -103,10 +103,16 @@ export function settingsRows({ view, orgs = [], options = {}, open = new Set(), 
 
   header('This computer');
   rows.push({ kind: 'info', label: 'Settings file', text: local.envFile || '' });
-  rows.push({ kind: 'info', label: 'Signed in with', text: local.signIn === 'demo' ? 'the demo organization (no sign-in)' : local.signIn === 'pat' ? 'a personal access token (AZDO_PAT)' : 'your Azure CLI sign-in (az login)' });
+  rows.push({ kind: 'info', label: 'Signed in with', text: signInText(local) });
   if (local.compiled) rows.push({ kind: 'updates', mode: updateMode(local.env) });
   else rows.push({ kind: 'info', label: 'Updates', text: 'from a checkout: git pull' });
   return rows;
+}
+
+/** How this computer's Keel signs in, for the "Signed in with" row. */
+function signInText(local) {
+  if (local.signIn === 'keel') return `your Keel account${local.account?.email ? ` (${local.account.email})` : ''} at ${local.server} · /logout signs out`;
+  return local.signIn === 'demo' ? 'the demo organization (no sign-in)' : local.signIn === 'pat' ? 'a personal access token (AZDO_PAT)' : 'your Azure CLI sign-in (az login)';
 }
 
 /** Whether a row can be selected (headers, notes and plain information can't). */

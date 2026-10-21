@@ -47,7 +47,7 @@ Prompt
 Slash commands
   /approve  /suggest  /wait  /reject  /reset  /complete  /autocomplete  /comment <text>  /pr <id>
   /snooze [2d|1w]  /unsnooze  /deploy [comment]  /stop [comment]  /run [branch]  /cancel
-  /open  /find [text]  /show [all|review|mine]  /refresh  /last  /log  /help  /quit
+  /open  /find [text]  /show [all|review|mine]  /refresh  /last  /log  /logout  /help  /quit
 
 Viewer (a pull request, the last output, the log, this help)
   j k  space  g G  Scroll         esc / q     Close`;
