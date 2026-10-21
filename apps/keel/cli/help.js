@@ -141,6 +141,17 @@ export const HELP = [
     ],
   },
   {
+    title: 'Reports',
+    about: 'the web app\'s Insights, Flaky tests, closed pull requests, Commits and Platform totals, in the viewer',
+    rows: [
+      ['/insights [days]', 'Pull request flow (merged, how long they take, by repo, author and reviewer) and delivery to production: deploys, lead time, change failure rate and time to restore, by environment. 30 days by default, up to 180'],
+      ['/flaky', 'Tests that fail now and then on a pipeline\'s own branch and pass again without a fix, failing now first'],
+      ['/closed [days]', 'Pull requests completed or abandoned in the last 7 days (or 30, 90), with who closed them, how long they were open and the votes'],
+      ['/commits [repo] [days]', 'Commits on each tracked repo\'s default branch, by day, with their pull request and work items; a repo name narrows it'],
+      ['/totals', 'Each ISM site\'s platform totals: the key figures, then each area, with the change since the fetch before'],
+    ],
+  },
+  {
     title: 'Weekly summary',
     about: '/summary; /summary last, /summary -3, /summary 2026-10-06 for earlier weeks',
     rows: ['What got finished, merged and deployed that week, and what\'s blocked now: the web app\'s Weekly summary, as the text its "Copy as text" gives, ready to paste into an email or chat.'],

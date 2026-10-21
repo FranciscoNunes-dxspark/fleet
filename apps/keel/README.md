@@ -104,6 +104,13 @@ It works in one of two ways: through your team's Keel, signed in with your Keel 
 
 `/summary` shows this week's summary, the web app's **Weekly summary** as the text its **Copy as text** gives (items finished, pull requests merged by repo, deploys to production per environment, and what's blocked now), ready to paste into an email or chat. `/summary last`, `/summary -3` (up to 26 weeks back) or `/summary 2026-10-06` show earlier weeks.
 
+More of the web app's pages, as reports in the viewer:
+- `/insights [days]`: the Insights page and **Delivery to production**. Pull requests merged and abandoned, how long they take from open to merged (half within, 85% within), how long what's open has waited, merges each week, and the same by repo, author and reviewer; then deploys a week, lead time, change failure rate and time to restore with their DORA bands, by environment. 30 days by default, up to 180 (delivery up to 90).
+- `/flaky`: the **Flaky tests** tab: tests that fail now and then on a pipeline's own branch and pass again without a fix, failing now first, with how often, the last failure and its error.
+- `/closed [days]`: pull requests completed or abandoned in the last 7 days (or any number up to 90), newest first, with who closed them, how long they were open and the reviewers' votes.
+- `/commits [repo] [days]`: the **Commits** tab: each tracked repo's default branch, newest first and by day, with the pull request and work items each one mentions. A repo name (or part of one) narrows it; 7 days by default, up to 90.
+- `/totals`: **Platform totals**: each ISM site's key figures first, then every area's, with the change since the fetch before.
+
 Everywhere: **o** opens the selection in Azure DevOps, **/** opens the command prompt, `/find` filters the list, **r** asks Azure DevOps again now, and **?** lists every key: the sections down the left, opening on the one for the tab you're in, **j**/**k** to pick another, and **/** to search them all (the slash commands too). While it's open it checks Azure DevOps every "refresh every" seconds from Settings, as the web app does, and says what changed (votes on your pull requests, your runs finishing, new things in the Inbox) in its activity lines. Warnings from Azure DevOps calls are under `/log`.
 
 **Settings.** **,** (or `/settings`) opens them over the current tab, and esc closes them. They're the web app's settings, in the same data folder, so a change shows in both:
@@ -116,7 +123,7 @@ Everywhere: **o** opens the selection in Azure DevOps, **/** opens the command p
 
 Teams and area paths are still picked in the web app.
 
-Not in the terminal yet: platform totals and insights (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
+Not in the terminal yet: epics, new pull requests, release notes and the dashboard (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
 
 ## Production monitoring
 

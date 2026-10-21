@@ -4,6 +4,7 @@ import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
 import { approvalsFor, deployChoices, stageStatus } from './releases.js';
 import { runText } from './runs.js';
 import { doneChanges } from './board.js';
+import { closedText, commitsText, flakyText, insightsText, totalsText } from './reports.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const prName = (pr) => `!${pr.id} ${short(pr.title)}`;
@@ -531,4 +532,65 @@ export async function toggleCardDone(ctx, data, w, column) {
     await ctx.reload();
     return [done ? `Done in ${column.label}: ready for the next column.` : `Back to Doing in ${column.label}.`];
   }, { label: 'Saving' });
+}
+
+// ---- Reports in the viewer (reports.js)
+
+/** Reads a report and shows it in the viewer; its first line is the title. */
+async function report(ctx, title, label, read) {
+  await ctx.task(title, async () => {
+    const body = await read();
+    ctx.showText(title, body);
+    return [body.split('\n')[0]];
+  }, { label, quiet: true });
+}
+
+/** A number of days from `text` within [min, max], `fallback` when empty; null when it isn't one. */
+export function parseDaysArg(text, fallback, min, max) {
+  const t = String(text ?? '').trim().replace(/d(ays?)?$/i, '');
+  if (!t) return fallback;
+  const n = Number(t);
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+}
+
+/** /insights [days]: pull request flow, and delivery to production (the four DORA measures). */
+export async function showInsights(ctx, text = '') {
+  const days = parseDaysArg(text, 30, 7, 180);
+  if (days == null) return ctx.note('Over how many days? /insights 30 (7 to 180).', 'error');
+  await report(ctx, `Insights, the last ${days} days`, 'Reading the numbers', async () => {
+    const [ins, del] = await Promise.all([ctx.service.insights(days), ctx.service.delivery(Math.min(90, days))]);
+    return insightsText(ins, del);
+  });
+}
+
+/** /flaky: tests that fail now and then and pass again without a fix. */
+export async function showFlaky(ctx) {
+  await report(ctx, 'Flaky tests', 'Reading the test results', async () => flakyText(await ctx.service.flakyTests()));
+}
+
+/** /closed [7|30|90]: pull requests completed or abandoned lately. */
+export async function showClosed(ctx, text = '') {
+  const days = parseDaysArg(text, 7, 1, 90);
+  if (days == null) return ctx.note('Over how many days? /closed 7, /closed 30 or /closed 90.', 'error');
+  await report(ctx, `Pull requests closed in the last ${days} days`, 'Reading closed pull requests', async () => closedText(await ctx.service.closedPullRequests(days)));
+}
+
+/** /commits [repo] [days]: the default branch's commits, every tracked repo or those whose name has `repo` in it. */
+export async function showCommits(ctx, text = '') {
+  const words = String(text ?? '').trim().split(/\s+/).filter(Boolean);
+  const daysWord = words.length && /^\d+d?$/i.test(words.at(-1)) ? words.pop() : '';
+  const days = parseDaysArg(daysWord, 7, 1, 90);
+  if (days == null) return ctx.note('Over how many days? /commits 14, or /commits <repo> 14 (1 to 90).', 'error');
+  const repo = words.join(' ').toLowerCase();
+  await report(ctx, `Commits${repo ? ` in ${repo}` : ''}, the last ${days} days`, 'Reading commits', async () => {
+    const c = await ctx.service.commits({ days });
+    const commits = repo ? c.commits.filter((x) => x.repoName.toLowerCase().includes(repo)) : c.commits;
+    if (repo && !commits.length) throw new Error(`No commits in the last ${days} days in a tracked repo called "${repo}".`);
+    return commitsText({ ...c, commits });
+  });
+}
+
+/** /totals: each ISM site's platform totals. */
+export async function showTotals(ctx) {
+  await report(ctx, 'Platform totals', 'Reading platform totals', async () => totalsText(await ctx.service.platformTotals()));
 }

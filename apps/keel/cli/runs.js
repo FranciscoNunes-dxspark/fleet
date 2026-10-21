@@ -4,7 +4,11 @@
 import { branch, runState } from './format.js';
 import { relTime } from './text.js';
 
-const ago = (iso, now) => (iso ? `${relTime(Date.parse(iso), now)} ago` : '');
+const ago = (iso, now) => {
+  if (!iso) return '';
+  const r = relTime(Date.parse(iso), now);
+  return r === 'now' ? 'just now' : `${r} ago`;
+};
 const RESULT = { succeeded: '✓', succeededWithIssues: '◐', partiallySucceeded: '◐', failed: '✗', canceled: '⊘', skipped: '⊘', abandoned: '⊘' };
 // How many lines of a failed step's log to show: its end is where the error is.
 const LOG_LINES = 40;

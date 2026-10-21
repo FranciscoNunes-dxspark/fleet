@@ -154,6 +154,15 @@ export function remoteService({ call }) {
     approvals: () => call('/approvals'),
     releases: () => call('/releases'),
     team: () => call('/team'),
+    insights: (days) => call(`/insights?days=${days}`),
+    delivery: (days) => call(`/delivery?days=${days}`),
+    flakyTests: () => call('/tests/flaky'),
+    closedPullRequests: (days) => call(`/prs/closed?days=${days}`),
+    commits: ({ repoId, branch, days } = {}) => {
+      const q = new URLSearchParams(Object.entries({ repo: repoId, branch, days }).filter(([, v]) => v));
+      return call(`/commits${q.size ? `?${q}` : ''}`);
+    },
+    platformTotals: () => call('/production/totals'),
     board: ({ projectId, teamId, boardId, mode } = {}) => {
       const q = new URLSearchParams(Object.entries({ project: projectId, team: teamId, board: boardId, mode }).filter(([, v]) => v));
       return call(`/board${q.size ? `?${q}` : ''}`);
