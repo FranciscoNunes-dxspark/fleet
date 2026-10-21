@@ -20,6 +20,7 @@
     "cli": "node bin/keel.js",
     "cli:demo": "node bin/keel.js --demo",
     "build:cli": "npx --yes bun@1.4.2 scripts/build-cli.js",
+    "build:android": "node scripts/build-android.mjs",
     "test": "node --import ./cli/register.js --test \"test/**/*.test.js\""
   },
   "dependencies": {

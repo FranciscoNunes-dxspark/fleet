@@ -49,5 +49,8 @@ export const config = {
   // GitHub sources (orgs.js) in local mode and the terminal app; without it, the GitHub CLI's sign-in.
   githubToken: (process.env.GITHUB_TOKEN || '').trim(),
   dataDir: dataDirFor(ROOT),
+  // The Android app (scripts/build-android.mjs): its package and signing certificate(s), for /.well-known/assetlinks.json.
+  androidPackage: (process.env.ANDROID_PACKAGE || '').trim() || 'com.example.keel',
+  androidCertSha256: (process.env.ANDROID_CERT_SHA256 || '').trim(),
   seedProjects: (process.env.AZDO_PROJECTS || '').split(',').map((s) => s.trim()).filter(Boolean),
 };
