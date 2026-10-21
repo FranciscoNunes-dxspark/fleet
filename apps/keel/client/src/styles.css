@@ -108,11 +108,15 @@
 :root[data-accent='teal'] { --accent: #2ec4c4; --accent-soft: #123131; --accent-ink: #72dede; --on-accent: #041a1a; }
 :root[data-accent='magenta'] { --accent: #d96bd0; --accent-soft: #351d33; --accent-ink: #eaa1e4; --on-accent: #22061f; }
 :root[data-accent='coral'] { --accent: #f5826b; --accent-soft: #3a211c; --accent-ink: #f9b2a3; --on-accent: #2a0d07; }
+/* Sand: Pinch's pale shell rim, toned down, for a quieter accent that still sits with the logo.
+   Leans pink rather than yellow so it stays apart from the warning amber. */
+:root[data-accent='sand'] { --accent: #dbab96; --accent-soft: #30231f; --accent-ink: #ecc9b9; --on-accent: #2b150e; }
 :root[data-mode='light'][data-accent='blue'] { --accent: #2563eb; --accent-soft: #e3ecfd; --accent-ink: #1d4fbf; --on-accent: #ffffff; }
 :root[data-mode='light'][data-accent='violet'] { --accent: #7445d6; --accent-soft: #efe8fc; --accent-ink: #5d33b8; --on-accent: #ffffff; }
 :root[data-mode='light'][data-accent='teal'] { --accent: #0e8789; --accent-soft: #dcf2f2; --accent-ink: #0a6c6e; --on-accent: #ffffff; }
 :root[data-mode='light'][data-accent='magenta'] { --accent: #ad2f9c; --accent-soft: #f9e6f6; --accent-ink: #8f2381; --on-accent: #ffffff; }
 :root[data-mode='light'][data-accent='coral'] { --accent: #c4472f; --accent-soft: #fce9e4; --accent-ink: #a33a24; --on-accent: #ffffff; }
+:root[data-mode='light'][data-accent='sand'] { --accent: #8b5240; --accent-soft: #f6ebe6; --accent-ink: #74402f; --on-accent: #ffffff; }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
