@@ -279,6 +279,15 @@ function Console({ authMode, onSignedOut }) {
   }
   if (!meta) return <div className="boot"><Loading label={t('Connecting to Azure DevOps…')} /></div>;
 
+  // Where `keel login` sends you: just the question, like the sign-in screen, with nothing to wander off to.
+  if (here === '/terminal') {
+    return (
+      <AppContext.Provider value={ctx}>
+        <TerminalSignIn />
+      </AppContext.Provider>
+    );
+  }
+
   return (
     <AppContext.Provider value={ctx}>
       <Shell />
@@ -522,7 +531,6 @@ function Shell() {
           <Route path="/insights" element={<Insights />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />
-          <Route path="/terminal" element={<TerminalSignIn />} />
           {/* Unknown paths go home. */}
           <Route path="*" element={<NotFound />} />
         </Routes>
