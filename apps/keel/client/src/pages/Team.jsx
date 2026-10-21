@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { hours } from '../format.js';
 import { useProjectLabel } from '../orgs.js';
-import { Avatar, Confirm, Empty, ErrorBox, Loading, PageHeader, Th, useSort } from '../ui.jsx';
+import { Avatar, Confirm, Empty, ErrorBox, Loading, PageHeader, TeamTabs, Th, useSort } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 
 /**
@@ -82,6 +82,7 @@ export default function Team() {
     return (
       <div className="page page-wide">
         <PageHeader title={t('Team')} />
+        <TeamTabs />
         {hiddenNote}
         <Empty title={t('No team members found.')}>{t('Pick a team for your projects in Settings.')}</Empty>
       </div>
@@ -94,6 +95,7 @@ export default function Team() {
   return (
     <div className="page page-wide">
       <PageHeader title={t('Team')} sub={t('Load across tracked projects. Flags trigger above {inProgress} items in progress or {reviews} pending reviews.', { inProgress: th.maxInProgressPerPerson, reviews: th.maxPendingReviewsPerPerson })} />
+      <TeamTabs />
       {hiddenNote}
       {byTeam(data.rows).map((g) => (
         <section key={g.key}>

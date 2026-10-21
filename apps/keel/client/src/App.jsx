@@ -403,9 +403,9 @@ function Shell() {
       { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals', '/ship'] },
     ] },
     { label: t('People'), items: [
-      { to: '/team', label: t('Team'), icon: 'team' },
+      // Users is a tab of Team, for Admins of a Keel with accounts (ui.jsx TeamTabs).
+      { to: '/team', label: t('Team'), icon: 'team', also: ['/users'] },
       { to: '/insights', label: t('Insights'), icon: 'insights' },
-      ...(authMode === 'login' && can('users.manage') ? [{ to: '/users', label: t('Users'), icon: 'users' }] : []),
     ] },
   ];
 

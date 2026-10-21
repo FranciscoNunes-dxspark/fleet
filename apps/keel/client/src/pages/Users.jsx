@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, date } from '../format.js';
-import { Avatar, Chip, Confirm, Empty, ErrorBox, Loading, PageHeader } from '../ui.jsx';
+import { Avatar, Chip, Confirm, Empty, ErrorBox, Loading, PageHeader, TeamTabs } from '../ui.jsx';
 import { t } from '../i18n.js';
 
 // Role names stay as they are in every language; hints and status labels are getters so they follow it.
@@ -68,6 +68,7 @@ export default function Users() {
   return (
     <div className="page">
       <PageHeader title={t('Users')} sub={t('Invite people, choose what they can do, and manage access. Everyone signs in with their own password and links their own Azure DevOps token.')} />
+      <TeamTabs />
 
       <form className="panel invite-form" onSubmit={invite}>
         <h2 className="section-title">{t('Invite someone')}</h2>

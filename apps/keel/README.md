@@ -254,6 +254,7 @@ With `AUTH_MODE=login`, Keel has its own accounts. Each person signs in with an 
 Everyone can see everything. Roles only limit what a person can change, and the server enforces them, not just the screens. Azure DevOps permissions still apply on top: a PM can't approve a deployment that Azure DevOps doesn't let them approve.
 
 - **First admin:** on first start the sign-in page asks for a setup code. Set `ADMIN_SETUP_CODE` in `.env`, or use the one the server prints in its log (`pm2 logs keel`). A printed code stays the same across restarts until the first admin exists (it is kept in `setup-code.txt` in the data folder). The first account becomes Admin.
+- **Where:** **Users** is a tab of **Team** in the menu, for Admins only.
 - **Inviting people:** **Users → Invite someone** creates a link for an email address and role. Keel doesn't send email, so copy the link and send it yourself. It works once and expires in 7 days. The person picks their name and password, then links their token.
 - **Forgotten passwords:** on **Users**, choose **Reset password** to get a new link. Using it signs that person out everywhere.
 - **Managing access:** change a role, disable an account (signs it out at once) or remove it. There's always at least one active Admin.
