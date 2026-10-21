@@ -21,6 +21,7 @@ export const ACCENTS = [
   { id: 'teal', get label() { return t('Teal'); }, swatch: '#2ec4c4' },
   { id: 'magenta', get label() { return t('Magenta'); }, swatch: '#d96bd0' },
   { id: 'coral', get label() { return t('Coral'); }, swatch: '#f5826b' },
+  { id: 'sand', get label() { return t('Sand'); }, swatch: '#dbab96' },
 ];
 
 const DEFAULT = { mode: 'dark', accent: 'green' };
