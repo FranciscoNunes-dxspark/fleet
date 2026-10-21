@@ -106,10 +106,14 @@ test('the wheel scrolls a list and the viewer, leaving the cursor where it was',
   await until(() => rowOf('PR       Implement refund endpoint').includes('❯'), 'the cursor back in view');
 
   lastApp.stdin.write('?');
-  await until(() => frame().includes('Keyboard shortcuts'), 'the help');
-  const top = at('Anywhere');
-  mouse.wheel(top.x, top.y, 1);
-  await until(() => !frame().includes('Anywhere'), 'the help to scroll');
+  await until(() => frame().includes('Keyboard shortcuts') && frame().includes('❯ Inbox'), 'the help');
+  // Over the sections the wheel moves through them, and a click picks one.
+  const list = at('Anywhere');
+  mouse.wheel(list.x, list.y, 1);
+  await until(() => frame().includes('❯ Pull requests'), 'the next section');
+  const mouseRow = at('Mouse');
+  mouse.click(mouseRow.x, mouseRow.y);
+  await until(() => frame().includes('❯ Mouse') && frame().includes('Select text on screen'), 'the Mouse section');
   lastApp.unmount();
 });
 
