@@ -3,6 +3,7 @@
 import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
 import { approvalsFor, deployChoices, stageStatus } from './releases.js';
 import { runText } from './runs.js';
+import { doneChanges } from './board.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const prName = (pr) => `!${pr.id} ${short(pr.title)}`;
@@ -505,4 +506,29 @@ export async function showRun(ctx, row = ctx.current().pipeline, text = '') {
     ctx.showText(title, body);
     return [title];
   }, { label: 'Reading the run', quiet: true });
+}
+
+// ---- The board (ui/BoardView.jsx; columns and cards in board.js)
+
+/** < and > on the board, m to pick: a card to another column (its board column and the state that maps to it). */
+export async function moveCard(ctx, w, column) {
+  if (!w || !column) return;
+  if (!column.accepts(w)) return ctx.note(`${wiName(w)} can't go in "${column.label}" on this board.`, 'error');
+  const changes = column.changesFor(w);
+  await ctx.task(`${w.type} ${w.id} → ${column.label}`, async () => {
+    await ctx.service.workItemAction(w.id, { type: 'update', changes }, w.org);
+    await ctx.reload();
+    return [`${short(w.title)} is in ${column.label}${changes.state ? `, ${changes.state}` : ''}.`];
+  }, { label: 'Moving' });
+}
+
+/** space on a card in a split column: Done in that column, or back to Doing. */
+export async function toggleCardDone(ctx, data, w, column) {
+  if (!w || !column?.split) return ctx.note(`${column?.label ?? 'This column'} isn't split into Doing and Done.`);
+  const done = !w.board?.done;
+  await ctx.task(`${w.type} ${w.id}: ${done ? 'done' : 'doing'} in ${column.label}`, async () => {
+    await ctx.service.workItemAction(w.id, { type: 'update', changes: doneChanges(data, w) }, w.org);
+    await ctx.reload();
+    return [done ? `Done in ${column.label}: ready for the next column.` : `Back to Doing in ${column.label}.`];
+  }, { label: 'Saving' });
 }

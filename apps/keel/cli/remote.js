@@ -153,6 +153,10 @@ export function remoteService({ call }) {
     undeployed: () => call('/deploys/pending'),
     approvals: () => call('/approvals'),
     releases: () => call('/releases'),
+    board: ({ projectId, teamId, boardId, mode } = {}) => {
+      const q = new URLSearchParams(Object.entries({ project: projectId, team: teamId, board: boardId, mode }).filter(([, v]) => v));
+      return call(`/board${q.size ? `?${q}` : ''}`);
+    },
     createRelease: (projectId, definitionId, description) => call('/releases/create', { method: 'POST', body: { projectId, definitionId, description } }),
     deployReleaseStage: (projectId, releaseId, environmentId, comment) => call('/releases/deploy', { method: 'POST', body: { projectId, releaseId, environmentId, comment } }),
     decideApproval: (kind, id, body, org) => call(`/approvals/${e(kind)}/${e(id)}${org ? `?org=${e(org)}` : ''}`, { method: 'POST', body }),

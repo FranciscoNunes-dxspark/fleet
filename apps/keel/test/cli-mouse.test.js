@@ -74,7 +74,8 @@ test('a click on a tab opens it; a click on a row picks it, a double-click opens
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
   assert.deepEqual(mouse.enabled, [true], 'the mouse is on unless Settings turned it off');
 
-  const tab = at('2 Pull requests');
+  // The tab's label goes short when the row of tabs doesn't fit.
+  const tab = at(frame().includes('2 Pull requests') ? '2 Pull requests' : '2 PRs');
   mouse.click(tab.x + 2, tab.y);
   await until(() => frame().includes('Waiting on your review'), 'the Pull requests tab');
 

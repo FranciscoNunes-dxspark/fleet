@@ -6,7 +6,7 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-6 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production, Releases (shift+tab goes back)'],
+      ['1-7 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production, Releases, Board (shift+tab goes back)'],
       [',', 'Settings, over the current tab (esc closes it; /settings too)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['o', 'Open the selection in the browser (Azure DevOps or GitHub)'],
@@ -99,6 +99,23 @@ export const HELP = [
       ['d', 'Deploy or redeploy a recent release to a stage: pick the stage, then the release (/stage <name> too). Approvals and gates still apply'],
       ['a  x', 'Approve or reject what a stage waits on (asks first; /deploy and /stop with a comment)'],
       ['↵', 'Everything: every stage and every recent release'],
+    ],
+  },
+  {
+    title: 'Board',
+    about: 'a team\'s real board, as the web app\'s: its columns, WIP limits and split Doing/Done; open work and what finished lately, or the sprint',
+    views: ['board'],
+    rows: [
+      ['h l / ← →', 'Column (more than fit scroll in)'],
+      ['j k / ↑ ↓', 'Card'],
+      ['> <  (L H)', 'Move the card to the next or previous column that takes it: its column and the state that column maps to'],
+      ['m', 'Move it to a column picked from a list'],
+      ['space', 'In a split column: Done there, or back to Doing'],
+      ['↵', 'The card\'s work item in full'],
+      ['s  i  b', 'State, take it, blocked (as in Work items; /assign, /priority and /comment too)'],
+      ['t', 'Another team\'s board'],
+      ['v', 'Another of the team\'s boards (Stories, Features, Epics…)'],
+      ['f', 'The current sprint, or all open work'],
     ],
   },
   {

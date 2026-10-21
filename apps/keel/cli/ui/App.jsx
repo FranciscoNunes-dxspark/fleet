@@ -22,6 +22,7 @@ import { PipelinesView, pipelineId } from './PipelinesView.jsx';
 import { PrsView, prId } from './PrsView.jsx';
 import { ProductionView } from './ProductionView.jsx';
 import { ReleasesView } from './ReleasesView.jsx';
+import { BoardView } from './BoardView.jsx';
 import { SettingsView } from './SettingsView.jsx';
 import { HelpView } from './HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
@@ -36,6 +37,7 @@ const VIEWS = [
   { id: 'workitems', label: 'Work items', short: 'Work' },
   { id: 'production', label: 'Production', short: 'Prod' },
   { id: 'releases', label: 'Releases' },
+  { id: 'board', label: 'Board' },
 ];
 
 // What ? shows: help.js's sections, then the slash commands.
@@ -48,6 +50,7 @@ const HINTS = {
   workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
   production: '↵ everything, and all that is waiting to ship · o open the site',
   releases: 'n new release · d deploy to a stage · a/x approve or reject · ↵ everything · o browser',
+  board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',
 };
 const SETTINGS_HINT = "space change · ↵ a project's repos · /find a project · esc close";
 
@@ -158,7 +161,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const [confirmReq, setConfirmReq] = useState(null);
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', releases: '', settings: '' });
+  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', releases: '', board: '', settings: '' });
   // What Settings shows about this computer; `envTick` moves when its .env changes.
   const [envTick, setEnvTick] = useState(0);
   const local = React.useMemo(() => ({ envFile, signIn, server: keel.server, account: keel.account, compiled: COMPILED, mouseAvailable: Boolean(mouse), env: { ...process.env } }), [envFile, signIn, envTick]);
@@ -345,6 +348,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     if (v === 'workitems') return { workItem: sel.workItem, webUrl: sel.workItem?.webUrl };
     if (v === 'production') return { monitor: sel.monitor, webUrl: sel.monitor?.url?.replace(/\/health\/?$/i, '') || undefined };
     if (v === 'releases') return { release: sel.release, releaseApprovals: sel.releaseApprovals, webUrl: sel.release?.webUrl };
+    // A card is a work item: /state, /assign, /comment and the rest act on it.
+    if (v === 'board') return { workItem: sel.workItem, webUrl: sel.workItem?.webUrl };
     const item = sel.item;
     const t = item?.target ?? {};
     const sameOrg = (x) => !item.org || !x.org || x.org === item.org;
@@ -763,6 +768,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     main = <WorkItemsView failed={Boolean(pollError)} workItems={data.workItems} meta={meta} show={wiShow} filter={filters.workitems} jump={jump?.view === 'workitems' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'production') {
     main = <ProductionView failed={Boolean(pollError)} production={data.production} version={data.version} filter={filters.production} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'board') {
+    main = <BoardView version={data.version} filter={filters.board} meta={meta} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'releases') {
     main = <ReleasesView version={data.version} filter={filters.releases} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'pipelines') {
