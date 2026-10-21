@@ -25,8 +25,11 @@ export const COMMANDS = [
   { name: 'wi', args: '<id>', desc: 'Go to a work item by number', complete: 'workitems', run: (ctx, s) => (s ? a.showWorkItem(ctx, s) : ctx.prefill('/wi ')) },
   { name: 'snooze', args: '[2d|1w]', desc: 'Hide the Inbox item for a while (a day by default)', run: (ctx, s) => a.snooze(ctx, undefined, s) },
   { name: 'unsnooze', desc: 'Bring back everything you snoozed', run: (ctx) => a.unsnoozeAll(ctx) },
-  { name: 'deploy', args: '[comment]', desc: 'Approve the deployment the Inbox item waits on', run: (ctx, s) => a.decide(ctx, undefined, 'approved', s) },
-  { name: 'stop', args: '[comment]', desc: 'Reject the deployment the Inbox item waits on', run: (ctx, s) => a.decide(ctx, undefined, 'rejected', s) },
+  // In Releases, these decide on what the selected release pipeline waits on.
+  { name: 'deploy', args: '[comment]', desc: 'Approve the deployment the Inbox item (or release pipeline) waits on', run: (ctx, s) => (ctx.current().release ? a.decideRelease(ctx, undefined, 'approved', s) : a.decide(ctx, undefined, 'approved', s)) },
+  { name: 'stop', args: '[comment]', desc: 'Reject the deployment the Inbox item (or release pipeline) waits on', run: (ctx, s) => (ctx.current().release ? a.decideRelease(ctx, undefined, 'rejected', s) : a.decide(ctx, undefined, 'rejected', s)) },
+  { name: 'release', args: '[description]', desc: 'Create a release of the release pipeline from its latest artifacts', run: (ctx, s) => a.createRelease(ctx, undefined, s) },
+  { name: 'stage', args: '[stage]', desc: 'Deploy a recent release to a stage (lists to pick from)', run: (ctx, s) => a.deployStage(ctx, undefined, s) },
   { name: 'run', args: '[branch]', desc: 'Run the pipeline (its own branch by default)', run: (ctx, s) => a.runPipeline(ctx, undefined, s) },
   { name: 'cancel', desc: 'Cancel the pipeline run that is queued or running', run: (ctx) => a.cancelRun(ctx) },
   { name: 'open', desc: 'Open the selection in the browser', run: (ctx) => a.open(ctx) },

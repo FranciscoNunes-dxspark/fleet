@@ -6,7 +6,7 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-5 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production (shift+tab goes back)'],
+      ['1-6 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production, Releases (shift+tab goes back)'],
       [',', 'Settings, over the current tab (esc closes it; /settings too)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['o', 'Open the selection in the browser (Azure DevOps or GitHub)'],
@@ -87,6 +87,17 @@ export const HELP = [
     rows: [
       ['↵', 'Everything about it: issues, what fails most, deploys, and all that\'s waiting to ship to its environment (pull requests, commits, work items, coming next)'],
       ['o', 'Open the site'],
+    ],
+  },
+  {
+    title: 'Releases',
+    about: 'classic release pipelines, as the web app\'s Releases tab: deploying or waiting for approval first, then failing',
+    views: ['releases'],
+    rows: [
+      ['n', 'Create a release from the latest artifacts (asks first; /release <description> too)'],
+      ['d', 'Deploy or redeploy a recent release to a stage: pick the stage, then the release (/stage <name> too). Approvals and gates still apply'],
+      ['a  x', 'Approve or reject what a stage waits on (asks first; /deploy and /stop with a comment)'],
+      ['↵', 'Everything: every stage and every recent release'],
     ],
   },
   {

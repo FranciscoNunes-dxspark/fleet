@@ -1,6 +1,7 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
 import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
+import { approvalsFor, deployChoices, stageStatus } from './releases.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const prName = (pr) => `!${pr.id} ${short(pr.title)}`;
@@ -400,4 +401,83 @@ export async function newWorkItem(ctx, text = '') {
 export function showWorkItem(ctx, text) {
   const id = Number(String(text).replace(/^#/, ''));
   if (!Number.isInteger(id) || !ctx.showWorkItem(id)) return ctx.note(`No open work item #${String(text).replace(/^#/, '')} in your tracked projects. o on the Inbox or the web app finds closed ones.`, 'error');
+}
+
+// ---- Releases (ui/ReleasesView.jsx; how they read in releases.js)
+
+/** n, /release: a new release of the pipeline from its artifacts' latest versions (asks first). */
+export async function createRelease(ctx, def = ctx.current().release, text = '') {
+  if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  const ok = await ctx.confirm({
+    title: `Create a release of ${def.name}?`,
+    detail: 'From the latest version of each artifact. Stages set to deploy automatically start by themselves.',
+    options: [{ label: 'Yes, create it', value: true }, { label: 'No', value: false }],
+  });
+  if (!ok) return;
+  await ctx.task(`Create a release of ${def.name}`, async () => {
+    const r = await ctx.service.createRelease(def.projectId, def.id, text.trim() || undefined);
+    await ctx.reload();
+    return [`${r?.name ?? 'A release'} created. d deploys it to a stage.`];
+  }, { label: 'Creating' });
+}
+
+/**
+ * d, /stage [name]: deploys (or redeploys) a recent release to a stage, both picked from lists.
+ * Approvals and gates on the stage still apply, as on the web.
+ */
+export async function deployStage(ctx, def = ctx.current().release, name = '') {
+  if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  if (!def.releases.length) return ctx.note(`${def.name} has no releases yet: n creates one.`, 'error');
+  const stages = [...def.stages].sort((x, y) => x.rank - y.rank);
+  let stage = name.trim() ? stages.find((s) => s.name.toLowerCase() === name.trim().toLowerCase()) : null;
+  if (name.trim() && !stage) return ctx.note(`${def.name} has no stage "${name.trim()}". It has ${stages.map((s) => s.name).join(', ')}.`, 'error');
+  if (!stage) {
+    stage = await ctx.confirm({
+      title: `Deploy ${def.name} to which stage?`,
+      options: [...stages.map((s) => ({ label: `${s.name} · ${s.latest ? `${s.latest.releaseName} ${stageStatus(s.latest.status).label}` : 'never deployed'}`, value: s })), { label: 'Leave it', value: null }],
+    });
+    if (!stage) return;
+  }
+  const choices = deployChoices(def, stage);
+  if (!choices.length) return ctx.note(`None of ${def.name}'s recent releases include ${stage.name}.`, 'error');
+  const pick = await ctx.confirm({
+    title: `Deploy which release to ${stage.name}?`,
+    detail: 'Approvals and gates on that stage still apply.',
+    danger: /prod|production|prd|live/i.test(stage.name),
+    options: [...choices.map((c) => ({ label: c.label, value: c })), { label: 'Leave it', value: null }],
+  });
+  if (!pick) return;
+  const verb = def.releases.find((r) => r.id === pick.release.id)?.stages.find((s) => s.id === pick.environmentId)?.status === 'succeeded' ? 'Redeploy' : 'Deploy';
+  await ctx.task(`${verb} ${pick.release.name} to ${stage.name}`, async () => {
+    await ctx.service.deployReleaseStage(def.projectId, pick.release.id, pick.environmentId);
+    await ctx.reload();
+    return [`${pick.release.name} is deploying to ${stage.name}. Its approvals, if any, show up here and in the Inbox.`];
+  }, { label: 'Deploying' });
+}
+
+/** a / x in Releases, /deploy and /stop there: approve or reject what a stage of the pipeline waits on. */
+export async function decideRelease(ctx, def = ctx.current().release, status, text = '') {
+  if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  const pending = approvalsFor(def, ctx.current().releaseApprovals);
+  if (!pending.length) return ctx.note(`Nothing in ${def.name} waits for an approval.`);
+  let a = pending[0];
+  if (pending.length > 1) {
+    a = await ctx.confirm({ title: `Which deployment of ${def.name}?`, options: [...pending.map((p) => ({ label: `${p.run?.name ?? 'A release'} to ${p.stage}`, value: p })), { label: 'Leave it', value: null }] });
+    if (!a) return;
+  }
+  if (!a.canDecide) return ctx.note(`Azure DevOps doesn't let you decide on ${a.run?.name ?? 'it'} to ${a.stage}: ${(a.approvers ?? []).map((p) => p.displayName).join(', ') || 'someone else'} does.`, 'error');
+  const approve = status === 'approved';
+  const what = `${a.run?.name ?? 'the release'} to ${a.stage}`;
+  const ok = await ctx.confirm({
+    title: `${approve ? 'Approve' : 'Reject'} ${what}?`,
+    detail: a.instructions || undefined,
+    danger: !approve,
+    options: [{ label: approve ? 'Yes, approve it' : 'Yes, reject it', value: true }, { label: 'No', value: false }],
+  });
+  if (!ok) return;
+  await ctx.task(`${approve ? 'Approve' : 'Reject'} ${what}`, async () => {
+    await ctx.service.decideApproval(a.kind, a.id, { status, comment: text.trim() || undefined }, a.org);
+    await ctx.reload();
+    return [approve ? 'Approved: the deployment carries on.' : 'Rejected: the deployment stops there.'];
+  }, { label: approve ? 'Approving' : 'Rejecting' });
 }
