@@ -132,9 +132,10 @@ export const HELP = [
     title: 'Settings',
     about: ', or /settings; the same settings as the web app\'s, in the same data folder',
     rows: [
+      ['tab  shift+tab', 'The next or previous section: Projects, When to flag things, Merging, Organizations, This computer (h l too, or a click on one)'],
       ['space', 'Track a project or not; a repo in or out; the next choice; on or off'],
       ['↵', 'A tracked project\'s repos (open or close)'],
-      ['- +', 'How often Keel checks for changes'],
+      ['- +', 'A threshold one step down or up (when to escalate a review, call a PR stale, flag someone with too much on…), or how often Keel checks for changes'],
       ['x', 'Remove an added organization (asks first)'],
       ['esc', 'Close Settings'],
       ['/addorg <address> [--github]', 'Another Azure DevOps organization, or a GitHub owner'],

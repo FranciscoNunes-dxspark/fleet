@@ -55,7 +55,7 @@ const HINTS = {
   board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',
   team: '↵ their work items · p their pull requests · /find a name',
 };
-const SETTINGS_HINT = "space change · ↵ a project's repos · /find a project · esc close";
+const SETTINGS_HINT = "tab next section · space change · - + a number · ↵ a project's repos · /find a project · esc close";
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;

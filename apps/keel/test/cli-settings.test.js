@@ -58,6 +58,50 @@ test('rows: tracked projects first, an opened project\'s repos under it, the upd
   assert.equal(s.settingsRows({ view, filter: 'alp' }).filter((r) => r.kind === 'project').length, 1);
 });
 
+test("sections: projects, when to flag things (the web app's thresholds), merging, organizations, this computer", () => {
+  const view = {
+    settings: { projects: { a: { tracked: true } }, thresholds: { myReviewHours: 8, stalePrDays: 5 }, blockedTag: 'Stuck', autoComplete: {}, refreshSeconds: 60 },
+    projects: [{ id: 'a', name: 'Alpha' }],
+  };
+  const sections = s.settingsSections(s.settingsRows({ view, orgs: [{ key: 'x', name: 'x', url: 'https://dev.azure.com/x', primary: true }], local: { env: {} } }));
+  assert.deepEqual(sections.map((x) => [x.id, x.short, x.label]), [
+    ['projects', 'Projects', 'Projects and repositories · 1 tracked'],
+    ['flags', 'When to flag things', 'When to flag things'],
+    ['prs', 'Merging', 'Merging pull requests'],
+    ['orgs', 'Organizations', 'Organizations · 1'],
+    ['computer', 'This computer', 'This computer'],
+  ]);
+  const flags = sections[1].rows;
+  assert.deepEqual(flags.filter((r) => r.kind === 'threshold').map((r) => [r.key, r.value]).slice(0, 3), [['myReviewHours', 8], ['prNoReviewHours', 1], ['stalePrDays', 5]]);
+  assert.match(flags.find((r) => r.label === 'Blocked tag').text, /^Stuck/);
+  assert.ok(flags.some((r) => r.kind === 'refresh'));
+  assert.ok(sections.every((x) => x.rows.every((r) => r.section === x.id && r.kind !== 'header')));
+  assert.deepEqual([s.stepThreshold(8, 1, 168), s.stepThreshold(1, -1, 168), s.stepThreshold(168, 1, 168)], [9, 1, 168]);
+});
+
+test('tab goes to the next section; + raises a threshold, saved with the web app\'s settings', async () => {
+  const keel = openKeel();
+  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {}, envFile: join(dataDir, '.env') }));
+  try {
+    await until(app, (f) => f.includes('Implement refund endpoint'), 'the Inbox');
+    app.stdin.write(',');
+    await until(app, (f) => f.includes('Projects and repositories'), 'Settings');
+    const before = (await keel.service.settingsView()).settings.thresholds.myReviewHours;
+    app.stdin.write('\t');
+    await until(app, (f) => f.includes('╭─ When to flag things') && f.includes(`Escalate a review waiting on me after ${before} hours`), 'the thresholds');
+    app.stdin.write('+');
+    await until(app, (f) => f.includes(`after ${before + 1} hours`), 'one hour more');
+    assert.equal((await keel.service.settingsView()).settings.thresholds.myReviewHours, before + 1);
+    // Round to the last section, and on to the first again.
+    app.stdin.write('h');
+    await until(app, (f) => f.includes('╭─ Projects and repositories'), 'back to the projects');
+    app.stdin.write('h');
+    await until(app, (f) => f.includes('Settings file'), 'this computer');
+  } finally {
+    app.unmount();
+  }
+});
+
 async function until(app, check, what, ms = 10000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
