@@ -96,6 +96,7 @@ It works in one of two ways: through your team's Keel, signed in with your Keel 
 | **Inbox** | The same list as the web app's Inbox, most urgent first. **↵** opens a pull request or pipeline in its own tab, and anything else in the browser. **s** snoozes for a day (`/snooze 2d`, `/snooze 1w`; `/unsnooze` brings them all back). On a deployment waiting on you, **a** approves it and **x** rejects it (both ask first). |
 | **Pull requests** | Active pull requests in your tracked repos: waiting on your review, then yours, then everyone else's (**f** or `/show` narrows it). **a** approves, **A** approves with suggestions, **w** waits for the author, **x** rejects (asks first), **0** clears your vote. **c** completes it with the merge options from Settings (asks first, and says so when it isn't approved yet). **m** turns auto-complete on or off. **↵** shows it in full: description, policies, reviewers, work items, files and recent comments. `/comment <text>` comments. `/pr 817` jumps to one. |
 | **Pipelines** | Failing pipelines first, then unstable, healthy and idle, with the selected one's latest runs. **n** runs it on its own branch (`/run <branch>` for another), **c** cancels the run that's queued or running (asks first). |
+| **Work items** | Open work items in your tracked projects, with the web app's views: all open, current sprint, bugs, blocked, no update in N days, unassigned and yours (**f** goes round them, `/show <view>` picks one). In progress first, then resolved, then new, by priority. **s** moves one to another state of its type (picked from a list, or `/state <name>`), **i** takes it, `/assign <person>` (`me`, `nobody`) and `/unassign` change who has it, **b** tags it blocked or takes the tag off, `/priority 1`–`4` sets its priority, and `/comment <text>` comments. **↵** shows it in full: description, acceptance criteria, parent and children, pull requests, attachments and comments. `/new <type> <title>` creates one in the selected work item's project, for its first team, in the current sprint or the backlog (it asks which). `/wi 4107` jumps to one, and **↵** on a work item in the Inbox opens it here. |
 
 Everywhere: **o** opens the selection in Azure DevOps, **/** opens the command prompt, `/find` filters the list, **r** asks Azure DevOps again now, and **?** lists every key. While it's open it checks Azure DevOps every "refresh every" seconds from Settings, as the web app does, and says what changed (votes on your pull requests, your runs finishing, new things in the Inbox) in its activity lines. Warnings from Azure DevOps calls are under `/log`.
 
@@ -107,7 +108,7 @@ Everywhere: **o** opens the selection in Azure DevOps, **/** opens the command p
 
 Teams and area paths are still picked in the web app.
 
-Not in the terminal yet: work items, boards, releases, production monitoring and insights (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
+Not in the terminal yet: boards, releases, production monitoring and insights (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
 
 ## Production monitoring
 

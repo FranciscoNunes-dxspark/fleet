@@ -205,3 +205,109 @@ export function prFullText(pr, now = Date.now()) {
   }
   return out.join('\n');
 }
+
+// ---- Work items
+
+/** A work item's state, by its state category (never its name: processes differ). */
+export const WI_STATE = {
+  Proposed: { icon: '○', color: theme.dim },
+  InProgress: { icon: '●', color: theme.info },
+  Resolved: { icon: '◐', color: theme.warn },
+  Completed: { icon: '✓', color: theme.ok },
+  Removed: { icon: '⊘', color: theme.dim },
+};
+export const wiState = (w) => WI_STATE[w.stateCategory] ?? WI_STATE.Proposed;
+
+/** Blocked, as the web app and the Inbox say it: the CMMI flag, a tag, or a state named like the tag. */
+export function isBlocked(w, blockedTag) {
+  const name = String(blockedTag || '').toLowerCase();
+  return !!w.blocked || (!!name && (w.state?.toLowerCase() === name || (w.tags ?? []).some((t) => t.toLowerCase() === name)));
+}
+
+const DAY = 86_400_000;
+const CATEGORY_ORDER = ['InProgress', 'Resolved', 'Proposed'];
+
+/**
+ * The web app's work item views, in its order: [{ id, label, test }]. `data` is service.workItems(),
+ * `meta` service.meta() (the blocked tag and the "no update in N days" threshold).
+ */
+export function wiViews(data, meta, now = Date.now()) {
+  const sprint = data?.currentIterationPaths ?? [];
+  const stuckDays = meta?.thresholds?.itemStuckDays ?? 5;
+  return [
+    { id: 'all', label: 'all open', test: () => true },
+    { id: 'sprint', label: 'current sprint', test: (w) => sprint.some((p) => w.iterationPath === p || w.iterationPath?.startsWith(`${p}\\`)) },
+    { id: 'bugs', label: 'bugs', test: (w) => w.type === 'Bug' },
+    { id: 'blocked', label: 'blocked', test: (w) => isBlocked(w, meta?.blockedTag) },
+    { id: 'stuck', label: `no update in ${stuckDays}d`, test: (w) => w.stateCategory === 'InProgress' && now - Date.parse(w.changedAt) >= stuckDays * DAY },
+    { id: 'unassigned', label: 'unassigned', test: (w) => !w.assignedTo },
+    { id: 'mine', label: 'mine', test: (w) => !!data?.me && w.assignedTo?.id === data.me.id },
+  ];
+}
+export const WI_VIEW_IDS = ['all', 'sprint', 'bugs', 'blocked', 'stuck', 'unassigned', 'mine'];
+
+/** Does a work item match the typed filter (id, title, type, state, tag, person or project)? */
+export function wiMatches(w, text) {
+  const q = text.trim().toLowerCase().replace(/^#/, '');
+  if (!q) return true;
+  return [String(w.id), w.title, w.type, w.state, w.projectName, w.assignedTo?.displayName, ...(w.tags ?? [])].some((s) => String(s ?? '').toLowerCase().includes(q));
+}
+
+/** The list for a view: in progress first, then resolved, then new; by priority within each, then newest change. */
+export function wiRows(data, meta, { view = 'all', filter = '' } = {}, now = Date.now()) {
+  const v = wiViews(data, meta, now).find((x) => x.id === view) ?? wiViews(data, meta, now)[0];
+  const cat = (w) => (CATEGORY_ORDER.indexOf(w.stateCategory) + 4) % 4;
+  return (data?.items ?? [])
+    .filter((w) => v.test(w) && wiMatches(w, filter))
+    .sort((a, b) => cat(a) - cat(b) || (a.priority ?? 9) - (b.priority ?? 9) || Date.parse(b.changedAt) - Date.parse(a.changedAt));
+}
+
+/** The detail pane of a work item from the list, as lines of segments. */
+export function wiDetail(w, meta, now = Date.now()) {
+  const st = wiState(w);
+  const lines = [
+    [{ text: w.title, bold: true }],
+    [{ text: `${w.type} ${w.id} · ${w.projectName}`, color: w.typeColor || theme.dim }],
+    '',
+    [{ text: `${st.icon} ${w.state}`, color: st.color, bold: true }, ...(isBlocked(w, meta?.blockedTag) ? [{ text: '  blocked', color: theme.del, bold: true }] : [])],
+    [{ text: `Assigned to `, color: theme.dim }, { text: w.assignedTo?.displayName ?? 'nobody', color: w.assignedTo ? undefined : theme.warn }],
+  ];
+  const facts = [
+    w.priority != null ? `priority ${w.priority}` : null,
+    w.storyPoints != null ? `${w.storyPoints} points` : null,
+    w.remainingWork != null ? `${w.remainingWork}h left` : null,
+  ].filter(Boolean);
+  if (facts.length) lines.push([{ text: facts.join(' · '), color: theme.dim }]);
+  if (w.iterationPath) lines.push([{ text: w.iterationPath.split('\\').pop(), color: theme.dim }]);
+  const tags = (w.tags ?? []).filter((t) => t.toLowerCase() !== String(meta?.blockedTag || '').toLowerCase());
+  if (tags.length) lines.push([{ text: tags.map((t) => `#${t}`).join(' '), color: theme.draft }]);
+  lines.push('', [{ text: `Changed ${ago(w.changedAt, now)} ago${w.stateChangedAt ? ` · in ${w.state} for ${ago(w.stateChangedAt, now)}` : ''}`, color: theme.dim }]);
+  return lines;
+}
+
+/** A work item in full (service.workItem), as plain text for the viewer. */
+export function wiFullText(w, now = Date.now()) {
+  const out = [
+    w.title,
+    `${w.type} ${w.id} · ${w.projectName} · ${w.state} · ${w.assignedTo?.displayName ?? 'unassigned'}${w.priority != null ? ` · priority ${w.priority}` : ''}`,
+    `${w.iterationPath ?? ''}${w.tags?.length ? ` · ${w.tags.map((t) => `#${t}`).join(' ')}` : ''}`,
+    '',
+    ...(w.description?.trim() ? w.description.trim().split('\n') : ['(No description.)']),
+  ];
+  if (w.acceptanceCriteria?.trim()) out.push('', 'Acceptance criteria', ...w.acceptanceCriteria.trim().split('\n').map((l) => `  ${l}`));
+  if (w.parent) out.push('', 'Parent', `  ${w.parent.type} ${w.parent.id}  ${w.parent.title}  (${w.parent.state})`);
+  if (w.children?.length) {
+    out.push('', `Children (${w.children.length})`);
+    for (const c of w.children) out.push(`  ${c.type} ${c.id}  ${c.title}  (${c.state}${c.assignedTo ? ` · ${c.assignedTo.displayName}` : ''})`);
+  }
+  if (w.pullRequests?.length) out.push('', 'Pull requests', ...w.pullRequests.map((p) => `  !${p.id}${p.title ? `  ${p.title}` : ''}${p.status ? `  (${p.status})` : ''}`));
+  if (w.attachments?.length) out.push('', 'Attachments', ...w.attachments.map((f) => `  ${f.name}`));
+  if (w.comments?.length) {
+    out.push('', `Comments (${w.comments.length})`);
+    for (const c of w.comments) {
+      out.push(`  ${c.author?.displayName ?? 'Someone'}, ${ago(c.createdAt, now)} ago`);
+      out.push(...String(c.text ?? '').trim().split('\n').slice(0, 8).map((l) => `    ${l}`), '');
+    }
+  }
+  return out.join('\n');
+}

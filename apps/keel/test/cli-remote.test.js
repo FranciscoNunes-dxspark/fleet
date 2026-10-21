@@ -119,6 +119,13 @@ test('signed in through the browser, the app shows the Inbox as you, votes throu
   await until(() => frame().includes('Approved.'), 'the vote', frame);
   app.unmount();
 
+  // Work items too, by number and organization.
+  const { items } = await keel.service.workItems();
+  const w = items.find((x) => x.priority !== 1);
+  await keel.service.workItemAction(w.id, { type: 'update', changes: { priority: 1 } }, w.org);
+  assert.equal((await keel.service.workItem(w.id, w.org)).priority, 1);
+  assert.ok((await keel.service.newWorkItemOptions()).length);
+
   // Live updates come from the server's event stream.
   const statuses = [];
   const stop = keel.live.stream({ changed: () => {}, notify: () => {}, status: (s) => statuses.push(s) });

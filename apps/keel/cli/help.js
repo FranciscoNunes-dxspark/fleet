@@ -1,5 +1,5 @@
 export const HELP = `Anywhere
-  1-3 / tab        Inbox, Pull requests, Pipelines (shift+tab goes back)
+  1-4 / tab        Inbox, Pull requests, Pipelines, Work items (shift+tab goes back)
   ,                Settings, over the current tab (esc closes it; /settings too)
   / or :           Command prompt (slash commands, with completion)
   o                Open the selection in the browser (Azure DevOps or GitHub)
@@ -13,7 +13,7 @@ Lists
   ctrl+d ctrl+u    Page down, up   /find <text>   Filter (empty clears it)
 
 Inbox (what needs you, most urgent first; the same rules as the web app's Inbox)
-  ↵                A pull request or pipeline opens in its tab; anything else in the browser
+  ↵                A pull request, work item or pipeline opens in its tab; anything else in the browser
   s                Snooze for a day (/snooze 2d, /snooze 1w; /unsnooze brings them all back)
   a  x             On an approval: approve or reject the deployment (asks first)
 
@@ -31,6 +31,16 @@ Pipelines (failing first, then unstable, healthy and idle)
   c                Cancel the run that's queued or running (asks first)
   ↵                Latest runs, full height
 
+Work items (open ones in your tracked projects: in progress, then resolved, then new)
+  s                Move it to another state (a list to pick from; /state <name> too)
+  i                Take it (assign it to you)     /assign <person>  /unassign
+  b                Blocked tag on or off          /priority <1-4>
+  ↵                The full work item: description, children, pull requests, comments
+  f                Next view: all open, current sprint, bugs, blocked, no update in N days,
+                   unassigned, mine (/show <view>)
+  /comment <text>  Comment              /new <type> <title>   Create one (asks: sprint or backlog)
+  /wi <id>         Go to a work item by number
+
 Settings (, or /settings; the same settings as the web app's, in the same data folder)
   space            Track a project or not; a repo in or out; the next choice; on or off
   ↵                A tracked project's repos (open or close)
@@ -46,8 +56,9 @@ Prompt
 
 Slash commands
   /approve  /suggest  /wait  /reject  /reset  /complete  /autocomplete  /comment <text>  /pr <id>
+  /state [state]  /take  /assign <person>  /unassign  /blocked  /priority <1-4>  /new <type> <title>  /wi <id>
   /snooze [2d|1w]  /unsnooze  /deploy [comment]  /stop [comment]  /run [branch]  /cancel
-  /open  /find [text]  /show [all|review|mine]  /refresh  /last  /log  /logout  /help  /quit
+  /open  /find [text]  /show [view]  /refresh  /last  /log  /logout  /help  /quit
 
 Viewer (a pull request, the last output, the log, this help)
   j k  space  g G  Scroll         esc / q     Close`;

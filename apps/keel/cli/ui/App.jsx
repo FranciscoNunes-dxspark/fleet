@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import * as a from '../actions.js';
 import { findCommand, suggestionsFor } from '../commands.js';
-import { pipelineDetail, prFullText } from '../format.js';
+import { WI_VIEW_IDS, pipelineDetail, prFullText, wiFullText } from '../format.js';
 import { HELP } from '../help.js';
 import { logText } from '../log.js';
 import path from 'node:path';
@@ -19,18 +19,21 @@ import { PipelinesView, pipelineId } from './PipelinesView.jsx';
 import { PrsView, prId } from './PrsView.jsx';
 import { SettingsView } from './SettingsView.jsx';
 import { TextViewer } from './TextViewer.jsx';
+import { WorkItemsView, wiId } from './WorkItemsView.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pinch.jsx';
 
 const VIEWS = [
   { id: 'inbox', label: 'Inbox' },
   { id: 'prs', label: 'Pull requests' },
   { id: 'pipelines', label: 'Pipelines' },
+  { id: 'workitems', label: 'Work items' },
 ];
 
 const HINTS = {
   inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
   prs: 'a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter',
   pipelines: 'n run · c cancel the run · ↵ all runs · o browser',
+  workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
 };
 const SETTINGS_HINT = "space change · ↵ a project's repos · /find a project · esc close";
 
@@ -62,6 +65,8 @@ function Tabs({ view, data, width }) {
     inbox: data.attention?.items.length,
     prs: data.prs?.filter((p) => p.needsMyReview).length || null,
     pipelines: data.pipelines?.filter((p) => p.health === 'failing').length || null,
+    // Yours, as the Inbox counts what needs you.
+    workitems: data.workItems?.items.filter((w) => data.workItems.me && w.assignedTo?.id === data.workItems.me.id).length || null,
   };
   const segs = [];
   VIEWS.forEach((v, i) => {
@@ -99,7 +104,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [meta, setMetaState] = useState(null);
-  const [data, setDataState] = useState({ attention: null, prs: null, pipelines: null, version: 0 });
+  const [data, setDataState] = useState({ attention: null, prs: null, pipelines: null, workItems: null, version: 0 });
   const [pollError, setPollError] = useState(null);
   const [view, setViewState] = useState('inbox');
   const [focus, setFocusState] = useState('view');
@@ -109,11 +114,13 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const [confirmReq, setConfirmReq] = useState(null);
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', settings: '' });
+  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', settings: '' });
   // What Settings shows about this computer; `envTick` moves when its .env changes.
   const [envTick, setEnvTick] = useState(0);
   const local = React.useMemo(() => ({ envFile, signIn, server: keel.server, account: keel.account, compiled: COMPILED, env: { ...process.env } }), [envFile, signIn, envTick]);
   const [show, setShow] = useState('all');
+  // The work item view, as the web app's (format.js wiViews).
+  const [wiShow, setWiShow] = useState('all');
   const [jump, setJump] = useState(null);
   const [welcome, setWelcome] = useState(true);
   // A newer release: { latest, url, state: 'out' | 'installing' | 'installed' }.
@@ -178,11 +185,11 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     addEntry({ title, status, lines });
   };
 
-  // Everything the three tabs show, read together. Several callers at once share one read.
+  // Everything the tabs show, read together. Several callers at once share one read.
   const load = () => {
-    loading.current ??= Promise.all([service.attention(), service.pullRequests(), service.pipelines()])
-      .then(([attention, prs, pipelines]) => {
-        setData({ attention, prs: prs.prs, pipelines });
+    loading.current ??= Promise.all([service.attention(), service.pullRequests(), service.pipelines(), service.workItems()])
+      .then(([attention, prs, pipelines, workItems]) => {
+        setData({ attention, prs: prs.prs, pipelines, workItems });
         setPollError(null);
       })
       .finally(() => {
@@ -275,21 +282,23 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     setFocus('prompt');
   };
 
-  // What slash commands act on: the selection in the current tab. A pull request or pipeline
-  // picked in the Inbox counts as that pull request or pipeline.
+  // What slash commands act on: the selection in the current tab. A pull request, work item or
+  // pipeline picked in the Inbox counts as that pull request, work item or pipeline.
   const current = () => {
     const sel = selection.current;
     const v = viewRef.current;
     const d = dataRef.current;
+    if (overlayRef.current?.settings) return { setting: sel.setting, webUrl: sel.setting?.org?.url ?? sel.setting?.project?.webUrl };
     if (v === 'prs') return { pr: sel.pr, webUrl: sel.pr?.webUrl };
     if (v === 'pipelines') return { pipeline: sel.pipeline, webUrl: sel.pipeline?.lastRun?.webUrl ?? sel.pipeline?.latest?.webUrl };
-    if (overlayRef.current?.settings) return { setting: sel.setting, webUrl: sel.setting?.org?.url ?? sel.setting?.project?.webUrl };
+    if (v === 'workitems') return { workItem: sel.workItem, webUrl: sel.workItem?.webUrl };
     const item = sel.item;
     const t = item?.target ?? {};
     const sameOrg = (x) => !item.org || !x.org || x.org === item.org;
     const pr = t.type === 'pr' ? d.prs?.find((p) => p.projectId === t.projectId && p.repoId === t.repoId && p.id === t.id && sameOrg(p)) : undefined;
     const pipeline = t.type === 'pipeline' ? d.pipelines?.find((p) => p.key === t.key && sameOrg(p)) : undefined;
-    return { item, pr, pipeline, webUrl: item?.webUrl };
+    const workItem = t.type === 'workitem' ? d.workItems?.items.find((w) => w.id === t.id && sameOrg(w)) : undefined;
+    return { item, pr, pipeline, workItem, webUrl: item?.webUrl };
   };
 
   const quit = () => exit();
@@ -348,16 +357,33 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
       setView('pipelines');
       return true;
     },
+    // Open work items only: the list is what Keel reads (closed ones open in the browser).
+    showWorkItem: (id, org) => {
+      const w = dataRef.current.workItems?.items.find((x) => x.id === Number(id) && (!org || !x.org || x.org === org));
+      if (!w) return false;
+      setFilters((f) => ({ ...f, workitems: '' }));
+      setWiShow('all');
+      setJump({ view: 'workitems', key: wiId(w) });
+      setView('workitems');
+      return true;
+    },
     jumped: () => setJump(null),
     find: (text) => {
       const v = overlayRef.current?.settings ? 'settings' : viewRef.current;
       setFilters((f) => ({ ...f, [v]: text.trim() }));
     },
-    showGroup: (group) => {
-      if (!['all', 'review', 'mine'].includes(group)) return note('Show all, review or mine.', 'error');
-      setShow(group);
-      setView('prs');
+    // /show and f: which pull requests (all, review, mine), or which work item view, by the tab you're on.
+    showView: (tab, value) => {
+      if (tab === 'workitems') {
+        if (!WI_VIEW_IDS.includes(value)) return note(`Show ${WI_VIEW_IDS.join(', ')}.`, 'error');
+        setWiShow(value);
+      } else {
+        if (!['all', 'review', 'mine'].includes(value)) return note('Show all, review or mine.', 'error');
+        setShow(value);
+      }
+      setView(tab);
     },
+    showGroup: (value) => ctx.showView(viewRef.current === 'workitems' ? 'workitems' : 'prs', value),
     viewHasKeys: () => focusRef.current === 'view' && !overlayRef.current && !confirmRef.current,
     showText: (title, text) => setOverlay({ title, text }),
     showPrFull: async (pr) => {
@@ -368,6 +394,17 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
       } catch (e) {
         setOverlay(null);
         note(`Couldn't read !${pr.id}: ${firstLine(e.message)}`, 'error');
+      }
+    },
+    showWorkItemFull: async (w) => {
+      const title = `${w.type} ${w.id} ${w.title}`;
+      setOverlay({ title, loading: true });
+      try {
+        const full = await service.workItem(w.id, w.org);
+        setOverlay((o) => (o?.title === title ? { title, text: wiFullText(full) } : o));
+      } catch (e) {
+        setOverlay(null);
+        note(`Couldn't read ${w.type} ${w.id}: ${firstLine(e.message)}`, 'error');
       }
     },
     showPipelineRuns: async (row) => {
@@ -486,14 +523,14 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     };
   }, []);
 
-  const lists = { prs: data.prs };
+  const lists = { prs: data.prs, workItems: data.workItems, view };
   const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, lists) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { prs: dataRef.current.prs });
+    const items = suggestionsFor(value, { prs: dataRef.current.prs, workItems: dataRef.current.workItems, view: viewRef.current });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -595,6 +632,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     main = <TextViewer {...overlay} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
   } else if (view === 'prs') {
     main = <PrsView failed={Boolean(pollError)} prs={data.prs} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'workitems') {
+    main = <WorkItemsView failed={Boolean(pollError)} workItems={data.workItems} meta={meta} show={wiShow} filter={filters.workitems} jump={jump?.view === 'workitems' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'pipelines') {
     main = <PipelinesView failed={Boolean(pollError)} pipelines={data.pipelines} version={data.version} filter={filters.pipelines} jump={jump?.view === 'pipelines' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {

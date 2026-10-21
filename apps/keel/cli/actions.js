@@ -93,9 +93,12 @@ export async function autoComplete(ctx, pr = ctx.current().pr) {
   }, { label: 'Saving' });
 }
 
+/** /comment: on the selected pull request, or work item. */
 export async function comment(ctx, pr = ctx.current().pr, text = '') {
-  if (!pr) return ctx.note('Pick a pull request first.', 'error');
+  const w = !pr && ctx.current().workItem;
+  if (!pr && !w) return ctx.note('Pick a pull request or work item first.', 'error');
   if (!text.trim()) return ctx.prefill('/comment ');
+  if (w) return commentWorkItem(ctx, w, text);
   await ctx.task(`Comment on ${prName(pr)}`, async () => {
     await ctx.service.prAction(pr.projectId, pr.repoId, pr.id, { type: 'comment', content: text.trim() });
     return [short(text.trim(), 120)];
@@ -155,12 +158,13 @@ export async function decide(ctx, item = ctx.current().item, status, text = '') 
   }, { label: approve ? 'Approving' : 'Rejecting' });
 }
 
-/** ↵ in the Inbox: a pull request or pipeline opens in its tab, anything else in the browser. */
+/** ↵ in the Inbox: a pull request, work item or pipeline opens in its tab, anything else in the browser. */
 export function follow(ctx, item = ctx.current().item) {
   if (!item) return;
   const t = item.target ?? {};
   if (t.type === 'pr' && ctx.showPr(t, item.org)) return;
   if (t.type === 'pipeline' && ctx.showPipeline(t.key, item.org)) return;
+  if (t.type === 'workitem' && ctx.showWorkItem(t.id, item.org)) return;
   if (item.kind === 'approval') return ctx.note('a approves it, x rejects it, o opens it in the browser.');
   open(ctx, item.webUrl);
 }
@@ -235,4 +239,130 @@ export async function logout(ctx) {
     return ['Signed out.'];
   }, { label: 'Signing out' });
   if (done.ok) ctx.quit();
+}
+
+// ---- Work items (ui/WorkItemsView.jsx)
+
+const wiName = (w) => `${w.type} ${w.id} "${short(w.title, 50)}"`;
+
+/** Saves `changes` to a work item (as the web app's inline edits do), then reads everything again. */
+async function updateWorkItem(ctx, w, title, changes, done, label = 'Saving') {
+  await ctx.task(title, async () => {
+    await ctx.service.workItemAction(w.id, { type: 'update', changes }, w.org);
+    await ctx.reload();
+    return [done];
+  }, { label });
+}
+
+/** s: moves a work item to another of its type's states, picked from a list (or `name`, typed). */
+export async function setState(ctx, w = ctx.current().workItem, name = '') {
+  if (!w) return ctx.note('Pick a work item first.', 'error');
+  let states;
+  try {
+    states = (await ctx.service.workItem(w.id, w.org)).allowedStates.filter((s) => s.category !== 'Removed' || name);
+  } catch (e) {
+    return ctx.note(`Couldn't read ${w.type} ${w.id}: ${e.message.split('\n')[0]}`, 'error');
+  }
+  let state = name.trim() ? states.find((s) => s.name.toLowerCase() === name.trim().toLowerCase())?.name : null;
+  if (name.trim() && !state) return ctx.note(`${w.type} has no state "${name.trim()}". It has ${states.map((s) => s.name).join(', ')}.`, 'error');
+  if (!state) {
+    state = await ctx.confirm({
+      title: `Move ${wiName(w)} to`,
+      detail: `It's ${w.state} now.`,
+      options: [...states.filter((s) => s.name !== w.state).map((s) => ({ label: s.name, value: s.name })), { label: 'Leave it', value: null }],
+    });
+    if (!state) return;
+  }
+  await updateWorkItem(ctx, w, `${w.type} ${w.id} → ${state}`, { state }, `${short(w.title)} is ${state} now.`, 'Moving');
+}
+
+/** i, /take, /assign <person>, /unassign: who a work item is assigned to. `who` is 'me', 'nobody' or part of a name. */
+export async function assign(ctx, w = ctx.current().workItem, who = '') {
+  if (!w) return ctx.note('Pick a work item first.', 'error');
+  const q = who.trim().toLowerCase();
+  if (!q) return ctx.prefill('/assign ');
+  const { me, people = [] } = ctx.data.workItems ?? {};
+  let person = null;
+  if (q === 'me') person = me;
+  else if (q !== 'nobody') {
+    const found = people.filter((p) => !p.isContainer && [p.displayName, p.uniqueName].some((s) => String(s ?? '').toLowerCase().includes(q)));
+    if (found.length !== 1) return ctx.note(found.length ? `"${who.trim()}" could be ${found.slice(0, 4).map((p) => p.displayName).join(', ')}. Type more of the name.` : `Nobody called "${who.trim()}" works in your tracked projects.`, 'error');
+    [person] = found;
+  }
+  if (!person && q === 'me') return ctx.note("Keel doesn't know who you are in Azure DevOps yet: r reads it again.", 'error');
+  if ((person?.id ?? null) === (w.assignedTo?.id ?? null)) return ctx.note(`${wiName(w)} is already ${person ? `assigned to ${person.displayName}` : 'unassigned'}.`);
+  await updateWorkItem(
+    ctx,
+    w,
+    person ? `Assign ${w.type} ${w.id} to ${q === 'me' ? 'you' : person.displayName}` : `Unassign ${w.type} ${w.id}`,
+    { assignedTo: person ? person.uniqueName : '' },
+    person ? `${short(w.title)} is ${q === 'me' ? 'yours' : `${person.displayName}'s`} now.` : `${short(w.title)} is unassigned.`,
+  );
+}
+
+/** b: the blocked tag on or off (Keel's Settings name the tag, as in the web app). */
+export async function toggleBlocked(ctx, w = ctx.current().workItem) {
+  if (!w) return ctx.note('Pick a work item first.', 'error');
+  const tag = ctx.meta?.blockedTag || 'Blocked';
+  const has = (w.tags ?? []).some((t) => t.toLowerCase() === tag.toLowerCase());
+  if (!has && w.state?.toLowerCase() === tag.toLowerCase()) return ctx.note(`${wiName(w)} is in the ${w.state} state: s moves it out.`);
+  const tags = has ? w.tags.filter((t) => t.toLowerCase() !== tag.toLowerCase()) : [...(w.tags ?? []), tag];
+  await updateWorkItem(ctx, w, `${has ? 'Unblock' : 'Block'} ${w.type} ${w.id}`, { tags }, has ? `The ${tag} tag is off.` : `Tagged ${tag}: it shows as blocked here, on the web and in the Inbox.`);
+}
+
+/** /priority 1-4. */
+export async function setPriority(ctx, w = ctx.current().workItem, text = '') {
+  if (!w) return ctx.note('Pick a work item first.', 'error');
+  const n = Number(text.trim());
+  if (![1, 2, 3, 4].includes(n)) return ctx.note('Priority is 1 (most urgent) to 4: /priority 2.', 'error');
+  await updateWorkItem(ctx, w, `${w.type} ${w.id}: priority ${n}`, { priority: n }, `Priority ${n}.`);
+}
+
+/** /comment on a work item. */
+export async function commentWorkItem(ctx, w, text) {
+  await ctx.task(`Comment on ${w.type} ${w.id}`, async () => {
+    await ctx.service.workItemAction(w.id, { type: 'comment', text: text.trim() }, w.org);
+    return [short(text.trim(), 120)];
+  }, { label: 'Commenting' });
+}
+
+/**
+ * /new <type> <title>: a work item in the selected one's project (or the only tracked one), for
+ * its first team, in the current sprint or the backlog (asks which).
+ */
+export async function newWorkItem(ctx, text = '') {
+  const [, typed = '', title = ''] = text.trim().match(/^(\S+)\s*([\s\S]*)$/) ?? [];
+  if (!typed) return ctx.prefill('/new ');
+  let options;
+  try {
+    options = await ctx.service.newWorkItemOptions();
+  } catch (e) {
+    return ctx.note(`Couldn't read your projects' work item types: ${e.message.split('\n')[0]}`, 'error');
+  }
+  const sel = ctx.current().workItem;
+  const project = options.find((p) => sel && p.id === sel.projectId && (!sel.org || !p.org || p.org === sel.org)) ?? (options.length === 1 ? options[0] : null);
+  if (!project) return ctx.note(options.length ? 'Pick a work item in the project it belongs to first (Work items tab), then /new.' : 'No tracked project has work items.', 'error');
+  const type = project.types.find((t) => t.toLowerCase() === typed.toLowerCase()) ?? project.types.find((t) => t.toLowerCase().startsWith(typed.toLowerCase()));
+  if (!type) return ctx.note(`${project.name} has no work item type "${typed}". It has ${project.types.join(', ')}.`, 'error');
+  if (!title.trim()) return ctx.prefill(`/new ${type} `);
+  const team = project.teams[0];
+  const sprint = team?.iteration?.name;
+  const where = await ctx.confirm({
+    title: `Create ${type} "${short(title.trim())}" in ${project.name}${team ? ` (${team.name})` : ''}?`,
+    options: [...(sprint ? [{ label: `Yes, in ${sprint}`, value: 'sprint' }] : []), { label: 'Yes, in the backlog', value: 'backlog' }, { label: 'No', value: null }],
+  });
+  if (!where) return;
+  await ctx.task(`Create ${type} "${short(title.trim())}"`, async () => {
+    const created = await ctx.service.createWorkItem({ projectId: project.id, type, title: title.trim(), teamId: team?.id, iteration: where });
+    await ctx.reload();
+    const id = created?.id ?? created;
+    if (id) ctx.showWorkItem(id, project.org);
+    return [`${type} ${id ?? ''} created${where === 'sprint' ? ` in ${sprint}` : ' in the backlog'}.`];
+  }, { label: 'Creating' });
+}
+
+/** /wi 4107: jumps to that work item. */
+export function showWorkItem(ctx, text) {
+  const id = Number(String(text).replace(/^#/, ''));
+  if (!Number.isInteger(id) || !ctx.showWorkItem(id)) return ctx.note(`No open work item #${String(text).replace(/^#/, '')} in your tracked projects. o on the Inbox or the web app finds closed ones.`, 'error');
 }
