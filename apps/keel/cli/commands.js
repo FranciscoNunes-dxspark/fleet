@@ -31,6 +31,7 @@ export const COMMANDS = [
   { name: 'release', args: '[description]', desc: 'Create a release of the release pipeline from its latest artifacts', run: (ctx, s) => a.createRelease(ctx, undefined, s) },
   { name: 'stage', args: '[stage]', desc: 'Deploy a recent release to a stage (lists to pick from)', run: (ctx, s) => a.deployStage(ctx, undefined, s) },
   { name: 'run', args: '[branch]', desc: 'Run the pipeline (its own branch by default)', run: (ctx, s) => a.runPipeline(ctx, undefined, s) },
+  { name: 'logs', args: '[run]', desc: "The pipeline run in full: stages, steps, the failed steps' logs, tests, commits (the latest, or a run by its number)", run: (ctx, s) => a.showRun(ctx, undefined, s) },
   { name: 'cancel', desc: 'Cancel the pipeline run that is queued or running', run: (ctx) => a.cancelRun(ctx) },
   { name: 'open', desc: 'Open the selection in the browser', run: (ctx) => a.open(ctx) },
   { name: 'find', args: '[text]', desc: 'Filter the list by title, repo, branch or person (empty clears it)', run: (ctx, s) => ctx.find(s) },

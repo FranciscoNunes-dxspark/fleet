@@ -2,6 +2,7 @@
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
 import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
 import { approvalsFor, deployChoices, stageStatus } from './releases.js';
+import { runText } from './runs.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const prName = (pr) => `!${pr.id} ${short(pr.title)}`;
@@ -480,4 +481,28 @@ export async function decideRelease(ctx, def = ctx.current().release, status, te
     await ctx.reload();
     return [approve ? 'Approved: the deployment carries on.' : 'Rejected: the deployment stops there.'];
   }, { label: approve ? 'Approving' : 'Rejecting' });
+}
+
+// ---- A pipeline run in full (runs.js)
+
+/**
+ * l in Pipelines, /logs [run]: a run in the viewer, the one running or else the latest, or the
+ * recent one named by its number. Its stages and steps, the failed steps' logs, tests and commits.
+ */
+export async function showRun(ctx, row = ctx.current().pipeline, text = '') {
+  if (!row) return ctx.note('Pick a pipeline first.', 'error');
+  const want = text.trim();
+  await ctx.task(`Run of ${row.definition.name}${want ? ` ${want}` : ''}`, async () => {
+    let run = row.running?.[0] ?? row.lastRun ?? row.latest;
+    if (want) {
+      const { runs } = await ctx.service.pipelineRuns(row.projectId, row.definition.id);
+      run = runs.find((r) => r.buildNumber === want || String(r.id) === want);
+      if (!run) throw new Error(`${row.definition.name} has no recent run ${want}. Its latest: ${runs.slice(0, 5).map((r) => r.buildNumber).join(', ') || 'none'}.`);
+    }
+    if (!run) throw new Error(`${row.definition.name} hasn't run yet: n runs it.`);
+    const details = await ctx.service.runDetails(row.projectId, run.id);
+    const { title, text: body } = runText(row, run, details);
+    ctx.showText(title, body);
+    return [title];
+  }, { label: 'Reading the run', quiet: true });
 }

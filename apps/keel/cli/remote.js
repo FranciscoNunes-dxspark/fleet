@@ -140,6 +140,7 @@ export function remoteService({ call }) {
     prAction: (projectId, repoId, id, body) => call(`${pr(projectId, repoId, id)}/actions`, { method: 'POST', body }),
     pipelines: () => call('/pipelines'),
     pipelineRuns: (projectId, definitionId) => call(`/pipelines/${e(projectId)}/${e(definitionId)}/runs`),
+    runDetails: (projectId, buildId) => call(`/builds/${e(projectId)}/${e(buildId)}`),
     queueBuild: (projectId, definitionId, branch) => call('/pipelines/queue', { method: 'POST', body: { projectId, definitionId, branch } }),
     cancelBuild: (projectId, buildId) => call('/pipelines/cancel', { method: 'POST', body: { projectId, buildId } }),
     workItems: () => call('/workitems'),
