@@ -65,6 +65,9 @@ export async function complete(ctx, pr = ctx.current().pr) {
   if (!pr) return ctx.note('Pick a pull request first.', 'error');
   if (pr.isDraft) return ctx.note(`${prName(pr)} is a draft: p publishes it first, then it needs approving.`, 'error');
   if (pr.hasConflicts) return ctx.note(`${prName(pr)} has merge conflicts: fix them before completing it.`, 'error');
+  // Held while its checks (tests, builds) run, and after they fail, as the web app holds it.
+  if (pr.flow?.waiting?.kind === 'checks') return ctx.note(`${prName(pr)}'s checks are still running: complete it once they pass, or m to merge it by itself then.`, 'error');
+  if (pr.flow?.waiting?.kind === 'checks-failed') return ctx.note(`${prName(pr)}'s checks failed: fix them before completing it. o shows them on GitHub.`, 'error');
   const ac = ctx.meta?.autoComplete ?? {};
   const how = [
     pr.reviewState === 'approved' ? null : 'Not approved yet, so branch policies may refuse it',

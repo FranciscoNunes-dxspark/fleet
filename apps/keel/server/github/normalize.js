@@ -45,6 +45,8 @@ export function reviewersOf(pr) {
 
 const STATUS = { OPEN: 'active', MERGED: 'completed', CLOSED: 'abandoned' };
 const MERGEABLE = { MERGEABLE: 'succeeded', CONFLICTING: 'conflicts', UNKNOWN: 'queued' };
+// GitHub's StatusCheckRollupState: EXPECTED is a required status that hasn't reported yet.
+const ROLLUP = { SUCCESS: 'passed', PENDING: 'running', EXPECTED: 'running', FAILURE: 'failed', ERROR: 'failed' };
 
 /** A pull request from GraphQL (the PR_FIELDS fragment in provider.js). */
 export function normalizePR(n, { projectId, projectName }) {
@@ -74,6 +76,9 @@ export function normalizePR(n, { projectId, projectName }) {
     autoComplete: !!n.autoMergeRequest,
     // Whether the branch asks for an approving review (GitHub's reviewDecision is null when it doesn't).
     reviewRequired: n.reviewDecision != null,
+    // Its checks on the latest commit, all together (tests, builds, commit statuses): a pull request
+    // waits while they run (domain/prs.js prFlow). Null when it has none.
+    checks: ROLLUP[n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state] ?? null,
     webUrl: n.url,
   };
 }

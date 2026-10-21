@@ -178,6 +178,17 @@ test('demo GitHub: pull requests in each review state, archived repos left out',
   assert.equal((await ghPrs()).find((p) => p.id === 85).hasConflicts, true);
 });
 
+test("demo GitHub: an approved pull request whose tests are still running is held, and the Inbox doesn't ask to merge it", async () => {
+  const held = (await ghPrs()).find((p) => p.id === 87);
+  assert.equal(held.checks, 'running');
+  assert.deepEqual(held.flow, { step: 'complete', waiting: { kind: 'checks' } });
+  assert.equal(held.readyToMerge, false);
+  assert.equal((await ghPrs()).find((p) => p.id === 85).checks, 'failed');
+  assert.equal((await ghPrs()).find((p) => p.id === 41).checks, 'passed');
+  const item = (await service.attention()).items.find((i) => i.org === P && i.target?.type === 'pr' && i.target.id === 87);
+  assert.ok(!item?.reasons.some((r) => r.code === 'ready'));
+});
+
 test('demo GitHub: the Team page has one row per person, with their GitHub pull requests counted by email', async () => {
   const { rows } = await service.team();
   const names = rows.map((r) => r.person.displayName);
