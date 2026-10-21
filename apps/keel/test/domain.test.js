@@ -332,7 +332,8 @@ test('deploy markers come from the linked release stage', async () => {
       { name: 'R2', webUrl: 'u2', stages: [{ name: 'QA', status: 'succeeded', at: ago(30) }, { name: 'Prod', status: 'succeeded', at: ago(26) }] },
     ],
   }];
-  const m = deployMarkers({ link: { type: 'release', projectId: 'p', definitionId: 7, stage: 'Prod' } }, { releases }, Date.now() - 7 * 24 * H);
+  // The week before the test's own now (the real clock would let R2 age out of it).
+  const m = deployMarkers({ link: { type: 'release', projectId: 'p', definitionId: 7, stage: 'Prod' } }, { releases }, NOW - 7 * 24 * H);
   assert.deepEqual(m.map((d) => d.label), ['R2']);
 });
 
