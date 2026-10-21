@@ -515,4 +515,23 @@ export default {
   'Squash and merge': 'Squash e merge',
   'Create a merge commit': 'Criar um commit de merge',
   'Rebase and merge': 'Rebase e merge',
+
+  // pages/PrDetail.jsx: Publish → Approval → Complete
+  'Pull request steps': 'Passos do pull request',
+  'Publish': 'Publicar',
+  'Approval': 'Aprovação',
+  'Complete': 'Concluir',
+  'Ready for review': 'Pronto para revisão',
+  'Not approved yet: branch policies may refuse it': 'Ainda não aprovado: as políticas do branch podem recusá-lo',
+  "A draft: publish it when it's ready for review.": 'Um rascunho: publique-o quando estiver pronto para revisão.',
+  'No reviewers yet: add some, or set auto-complete.': 'Ainda sem revisores: adicione alguns, ou ative o auto-complete.',
+  'Rejected by {names}.': 'Rejeitado por {names}.',
+  '{names} is waiting for the author.': '{names} está à espera do autor.',
+  '{names} are waiting for the author.': '{names} estão à espera do autor.',
+  'Waiting on {names} (required).': 'À espera de {names} (obrigatório).',
+  'Waiting for an approval.': 'À espera de uma aprovação.',
+  'Approved. Fix the merge conflicts to complete it.': 'Aprovado. Resolva os conflitos de merge para o concluir.',
+  'Approved. Waiting on {names}.': 'Aprovado. À espera de {names}.',
+  'Approved. It completes by itself once its checks pass.': 'Aprovado. Conclui-se sozinho quando as verificações passarem.',
+  'Approved and ready to complete.': 'Aprovado e pronto a concluir.',
 };

@@ -61,7 +61,7 @@ export async function vote(ctx, pr = ctx.current().pr, value) {
 
 export async function complete(ctx, pr = ctx.current().pr) {
   if (!pr) return ctx.note('Pick a pull request first.', 'error');
-  if (pr.isDraft) return ctx.note(`${prName(pr)} is a draft: publish it first.`, 'error');
+  if (pr.isDraft) return ctx.note(`${prName(pr)} is a draft: p publishes it first, then it needs approving.`, 'error');
   if (pr.hasConflicts) return ctx.note(`${prName(pr)} has merge conflicts: fix them before completing it.`, 'error');
   const ac = ctx.meta?.autoComplete ?? {};
   const how = [
@@ -81,6 +81,17 @@ export async function complete(ctx, pr = ctx.current().pr) {
     await ctx.reload();
     return [`Completed into ${branch(pr.targetBranch)}.`];
   }, { label: 'Completing' });
+}
+
+/** p, /publish: a draft goes up for review. */
+export async function publish(ctx, pr = ctx.current().pr) {
+  if (!pr) return ctx.note('Pick a pull request first.', 'error');
+  if (!pr.isDraft) return ctx.note(`${prName(pr)} isn't a draft: it's already up for review.`);
+  await ctx.task(`Publish ${prName(pr)}`, async () => {
+    await ctx.service.prAction(pr.projectId, pr.repoId, pr.id, { type: 'publish' });
+    await ctx.reload();
+    return ['Published: its reviewers are asked to review it now.'];
+  }, { label: 'Publishing' });
 }
 
 export async function autoComplete(ctx, pr = ctx.current().pr) {

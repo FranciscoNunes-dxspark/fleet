@@ -747,6 +747,17 @@ a.stat:hover .stat-label { color: var(--accent-ink); }
   background: var(--surface); border-top: 1px solid var(--line);
   box-shadow: var(--shadow-up);
 }
+/* Publish → Approval → Complete, over the pull request's buttons. */
+.pr-flow { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.pr-flow-steps { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.pr-flow-step { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.pr-flow-step + .pr-flow-step::before { content: ''; width: 18px; height: 1px; background: var(--line); }
+.pr-flow-dot { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); font-size: 11px; font-weight: 600; }
+.pr-flow-step.done .pr-flow-dot { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+.pr-flow-step.current { color: var(--ink); font-weight: 600; }
+.pr-flow-step.current .pr-flow-dot { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.pr-flow-step.blocked { color: var(--ink); font-weight: 600; }
+.pr-flow-step.blocked .pr-flow-dot { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
 .complete-form { border: 1px solid var(--accent); border-radius: var(--radius); padding: 14px 16px; background: var(--bg); }
 .complete-form .field { display: grid; gap: 4px; margin-bottom: 10px; font-size: 13px; color: var(--ink-2); }
 .complete-form .field .input { width: 100%; }

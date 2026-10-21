@@ -341,10 +341,23 @@ export default function PrDetail({ target }) {
       )}
 
       <section className="detail-actions sticky-actions">
+        {pr.status === 'active' && <FlowSteps flow={pr.flow} github={github} />}
         {pr.status !== 'active' && <span className="small muted">{pr.status === 'completed' ? t('This pull request is completed.') : pr.status === 'abandoned' ? t('This pull request is abandoned.') : t('This pull request is {status}.', { status: pr.status })}</span>}
-        {writable && pr.status === 'active' && pr.isDraft && <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'publish' }, t('Published'))}>{t('Publish draft')}</button>}
+        {/* The current step's button leads (publish, then approve, then complete); later ones wait their turn. */}
+        {writable && pr.status === 'active' && pr.isDraft && <button type="button" className="btn btn-small btn-primary" disabled={!!busy} onClick={() => act({ type: 'publish' }, t('Published'))}>{github ? t('Ready for review') : t('Publish draft')}</button>}
+        {writable && pr.flow.step === 'approval' && !ownGithub && !pr.isMine && !(pr.myVote >= 5) && (
+          <button type="button" className="btn btn-small btn-primary" disabled={!!busy} onClick={() => act({ type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{busy === 'vote10' ? '…' : t('Approve')}</button>
+        )}
         {writable && pr.status === 'active' && !pr.isDraft && !completing && (
-          <button type="button" className="btn btn-small btn-primary" disabled={!!busy || pr.hasConflicts} title={pr.hasConflicts ? t('Resolve the merge conflicts first') : undefined} onClick={() => setCompleting(true)}>{t('Complete…')}</button>
+          <button
+            type="button"
+            className={`btn btn-small ${pr.flow.step === 'complete' ? 'btn-primary' : ''}`}
+            disabled={!!busy || pr.hasConflicts}
+            title={pr.hasConflicts ? t('Resolve the merge conflicts first') : pr.flow.step === 'approval' ? t('Not approved yet: branch policies may refuse it') : undefined}
+            onClick={() => setCompleting(true)}
+          >
+            {t('Complete…')}
+          </button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && (github
           ? pr.autoComplete
@@ -398,6 +411,52 @@ function ScheduleNote({ s, busy, onCancel }) {
 }
 
 /** Merge now, or at a set time: merge type, commit message, cleanup options, optional policy override (now only). */
+/** What the current step waits on (server/domain/prs.js prFlow), in a sentence. */
+function waitingText(flow) {
+  const w = flow.waiting;
+  const names = (w?.names || []).join(', ');
+  const many = (w?.names || []).length > 1;
+  if (flow.step === 'publish') return t("A draft: publish it when it's ready for review.");
+  if (flow.step === 'approval') {
+    if (w?.kind === 'no-reviewers') return t('No reviewers yet: add some, or set auto-complete.');
+    if (w?.kind === 'rejected') return t('Rejected by {names}.', { names });
+    if (w?.kind === 'waiting-author') return t(many ? '{names} are waiting for the author.' : '{names} is waiting for the author.', { names });
+    if (w?.kind === 'required') return t('Waiting on {names} (required).', { names });
+    return t('Waiting for an approval.');
+  }
+  if (w?.kind === 'conflicts') return t('Approved. Fix the merge conflicts to complete it.');
+  if (w?.kind === 'policies') return t('Approved. Waiting on {names}.', { names });
+  if (w?.kind === 'auto') return t('Approved. It completes by itself once its checks pass.');
+  return t('Approved and ready to complete.');
+}
+
+/** Publish → Approval → Complete, with the step the pull request is at and what it waits on. */
+function FlowSteps({ flow, github }) {
+  const steps = [
+    { id: 'publish', label: github ? t('Ready for review') : t('Publish') },
+    { id: 'approval', label: t('Approval') },
+    { id: 'complete', label: github ? t('Merge') : t('Complete') },
+  ];
+  const at = steps.findIndex((s) => s.id === flow.step);
+  const blocked = ['rejected', 'waiting-author', 'conflicts'].includes(flow.waiting?.kind);
+  return (
+    <div className="pr-flow">
+      <ol className="pr-flow-steps" aria-label={t('Pull request steps')}>
+        {steps.map((s, i) => {
+          const state = i < at ? 'done' : i === at ? (blocked ? 'blocked' : 'current') : 'todo';
+          return (
+            <li key={s.id} className={`pr-flow-step ${state}`} aria-current={i === at ? 'step' : undefined}>
+              <span className="pr-flow-dot" aria-hidden="true">{state === 'done' ? '✓' : i + 1}</span>
+              {s.label}
+            </li>
+          );
+        })}
+      </ol>
+      <span className={`small ${blocked ? 'text-bad' : 'muted'}`}>{waitingText(flow)}</span>
+    </div>
+  );
+}
+
 function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = false }) {
   const { meta } = useApp();
   const defaults = meta.autoComplete || {};
