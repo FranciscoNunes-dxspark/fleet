@@ -16,6 +16,7 @@ import { createSchedules } from './schedules.js';
 import { providerFor } from './providers.js';
 import { azureDevOpsToken } from './azdo/azcli.js';
 import { createSettingsStore, defaultSettingsFile } from './settings.js';
+import { assetLinks } from './android.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -76,6 +77,14 @@ if (config.authMode === 'login') {
     next();
   }, apiRouter({ channels, push, schedules }));
 }
+
+// Lets the Android app open Keel without Chrome's address bar (server/android.js).
+// Not a file in dist/: express.static leaves dot-folders alone, and the certificate comes from .env.
+const androidLinks = assetLinks({ packageId: config.androidPackage, fingerprints: config.androidCertSha256 });
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  if (!androidLinks) return res.status(404).json({ error: 'ANDROID_CERT_SHA256 is not set' });
+  res.set('Cache-Control', 'no-cache').json(androidLinks);
+});
 
 const dist = path.join(config.root, 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {

@@ -14,6 +14,7 @@ npm start            # API + built UI on http://127.0.0.1:4280 (start:mock for d
 npm test             # node:test over test/**/*.test.js (with cli/register.js, so .jsx loads)
 npm run cli:demo     # the terminal app (cli/) on demo data; needs a real terminal
 npm run build:cli    # the terminal app as a standalone executable in release/ (Bun); pushes to main release it (.github/workflows/release-cli.yml)
+npm run build:android -- --keystore keel.keystore   # the Android app (a Trusted Web Activity of keel.example.com, Bubblewrap) in release/; needs JDK 17 + Android SDK; .github/workflows/release-android.yml runs it by hand
 node --test test/flow.test.js                          # one test file
 node --import ./cli/register.js --test test/cli.test.js   # a test file that loads the terminal app's .jsx
 node --test --test-name-pattern="Manual validation" test/deploying-stage.test.js   # one test

@@ -1,0 +1,56 @@
+# Builds Keel's Android app (scripts/build-android.mjs) and publishes it as a release of its own,
+# tagged android-v<run number>, which is also its version code. "Run workflow" on the Actions tab
+# builds it by hand: the app holds no code of Keel's, so it only needs a new build when the host,
+# name or icon change. Needs the repository secrets ANDROID_KEYSTORE_BASE64 (base64 of the
+# keystore file), ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_PASSWORD; the key's alias is "keel".
+name: Release the Android app
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: Host serving Keel, that the app opens
+        default: keel.example.com
+      package:
+        description: Android package name
+        default: com.example.keel
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Bubblewrap needs JDK 17; the runner already has the Android SDK in ANDROID_HOME.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Keystore
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/keel.keystore"
+      - name: Build
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          HOST: ${{ inputs.host }}
+          PACKAGE: ${{ inputs.package }}
+        run: >-
+          node scripts/build-android.mjs --host "$HOST" --package "$PACKAGE"
+          --version-code "${{ github.run_number }}" --keystore "$RUNNER_TEMP/keel.keystore"
+      # Not marked latest, so the terminal app's updater keeps finding its own releases.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: android-v${{ github.run_number }}
+          HOST: ${{ inputs.host }}
+        run: >-
+          gh release create "$TAG" release/keel-android.apk release/keel-android.aab --target "$GITHUB_SHA"
+          --title "Keel for Android ${{ github.run_number }}" --latest=false
+          --notes "Opens https://$HOST as an app. Install keel-android.apk directly, or upload keel-android.aab to Google Play."

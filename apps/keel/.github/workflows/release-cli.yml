@@ -43,7 +43,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          latest="$(gh release list --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName // "v0.0.0"')"
+          # Only the terminal app's own tags (v1.2.3): the Android app's releases are tagged android-v….
+          latest="$(gh release list --limit 50 --exclude-drafts --exclude-pre-releases --json tagName --jq '[.[].tagName | select(startswith("v"))][0] // "v0.0.0"')"
           version="$(node -e '
             const [latest, pkg] = process.argv.slice(1).map((v) => v.replace(/^v/, "").split(".").map(Number));
             const newer = pkg[0] - latest[0] || pkg[1] - latest[1] || pkg[2] - latest[2];
