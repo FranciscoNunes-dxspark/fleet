@@ -125,6 +125,9 @@ test('signed in through the browser, the app shows the Inbox as you, votes throu
   await keel.service.workItemAction(w.id, { type: 'update', changes: { priority: 1 } }, w.org);
   assert.equal((await keel.service.workItem(w.id, w.org)).priority, 1);
   assert.ok((await keel.service.newWorkItemOptions()).length);
+  // And production: the monitors (none on this test server) and what's waiting to ship.
+  assert.deepEqual((await keel.service.production()).monitors, []);
+  assert.ok(Array.isArray((await keel.service.undeployed()).targets));
 
   // Live updates come from the server's event stream.
   const statuses = [];

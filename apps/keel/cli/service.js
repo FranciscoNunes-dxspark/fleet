@@ -12,6 +12,7 @@ import { providerFor } from '../server/providers.js';
 import { azureDevOpsToken } from '../server/azdo/azcli.js';
 import { diffSnapshots } from '../server/domain/changes.js';
 import { MAX_INTERVAL, MIN_INTERVAL } from '../server/watcher.js';
+import { createMonitoring } from '../server/monitoring.js';
 
 // As the web server's watcher (server/watcher.js): what a check drops so it really asks Azure DevOps.
 const LIVE_PREFIXES = ['prs:active', 'pr:', 'wi:', 'builds'];
@@ -50,12 +51,16 @@ export function openKeel() {
   const token = signIn === 'az' ? azureDevOpsToken() : undefined;
   const orgStore = createOrgStore();
   const settings = createSettingsStore(defaultSettingsFile());
+  // Production monitors, as the web server has them: the checks' history is shared through the
+  // data folder, and one process at a time runs them (this one too, while it's open).
+  const monitoring = createMonitoring();
   const orgs = orgStore.all();
   const entries = orgs.map((org) => ({
     org,
     service: createService({
       provider: providerFor(org, { azToken: token }),
       settings,
+      monitoring: org.primary ? monitoring : null,
       org,
     }),
   }));

@@ -15,8 +15,8 @@ if (args.includes('-h') || args.includes('--help')) {
 keel login [address]
 keel logout
 
-Keel in the terminal: the Inbox, pull requests, pipelines and work items, with the
-same tracked projects and settings as the web app.
+Keel in the terminal: the Inbox, pull requests, pipelines, work items and production,
+with the same tracked projects and settings as the web app.
 
   login    sign in with your account on your team's Keel (keel.example.com unless you name
            another), in the browser. Keel then works through it, as you.

@@ -158,13 +158,14 @@ export async function decide(ctx, item = ctx.current().item, status, text = '') 
   }, { label: approve ? 'Approving' : 'Rejecting' });
 }
 
-/** ↵ in the Inbox: a pull request, work item or pipeline opens in its tab, anything else in the browser. */
+/** ↵ in the Inbox: a pull request, work item, pipeline or production monitor opens in its tab, anything else in the browser. */
 export function follow(ctx, item = ctx.current().item) {
   if (!item) return;
   const t = item.target ?? {};
   if (t.type === 'pr' && ctx.showPr(t, item.org)) return;
   if (t.type === 'pipeline' && ctx.showPipeline(t.key, item.org)) return;
   if (t.type === 'workitem' && ctx.showWorkItem(t.id, item.org)) return;
+  if (t.type === 'production') return ctx.showTab('production');
   if (item.kind === 'approval') return ctx.note('a approves it, x rejects it, o opens it in the browser.');
   open(ctx, item.webUrl);
 }

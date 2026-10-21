@@ -1,5 +1,5 @@
 export const HELP = `Anywhere
-  1-4 / tab        Inbox, Pull requests, Pipelines, Work items (shift+tab goes back)
+  1-5 / tab        Inbox, Pull requests, Pipelines, Work items, Production (shift+tab goes back)
   ,                Settings, over the current tab (esc closes it; /settings too)
   / or :           Command prompt (slash commands, with completion)
   o                Open the selection in the browser (Azure DevOps or GitHub)
@@ -13,7 +13,7 @@ Lists
   ctrl+d ctrl+u    Page down, up   /find <text>   Filter (empty clears it)
 
 Inbox (what needs you, most urgent first; the same rules as the web app's Inbox)
-  ↵                A pull request, work item or pipeline opens in its tab; anything else in the browser
+  ↵                A pull request, work item, pipeline or monitor opens in its tab; anything else in the browser
   s                Snooze for a day (/snooze 2d, /snooze 1w; /unsnooze brings them all back)
   a  x             On an approval: approve or reject the deployment (asks first)
 
@@ -40,6 +40,11 @@ Work items (open ones in your tracked projects: in progress, then resolved, then
                    unassigned, mine (/show <view>)
   /comment <text>  Comment              /new <type> <title>   Create one (asks: sprint or backlog)
   /wi <id>         Go to a work item by number
+
+Production (monitors that need you first: down, degraded, deploying; then the rest)
+  ↵                Everything about it: issues, what fails most, deploys, and all that's waiting
+                   to ship to its environment (pull requests, commits, work items, coming next)
+  o                Open the site
 
 Settings (, or /settings; the same settings as the web app's, in the same data folder)
   space            Track a project or not; a repo in or out; the next choice; on or off

@@ -311,3 +311,109 @@ export function wiFullText(w, now = Date.now()) {
   }
   return out.join('\n');
 }
+
+// ---- Production (the web app's Production page and Waiting to ship)
+
+export const MONITOR_STATE = {
+  down: { icon: '✗', color: theme.del, label: 'down' },
+  degraded: { icon: '◐', color: theme.warn, label: 'degraded' },
+  deploying: { icon: '●', color: theme.info, label: 'deploying' },
+  settling: { icon: '●', color: theme.info, label: 'just deployed' },
+  up: { icon: '✓', color: theme.ok, label: 'up' },
+  unknown: { icon: '?', color: theme.dim, label: 'no data yet' },
+};
+export const monitorState = (m) => MONITOR_STATE[m.state] ?? MONITOR_STATE.unknown;
+const RANK = { down: 0, degraded: 1, deploying: 2, settling: 3, up: 4, unknown: 5 };
+
+/** Monitors that need you first (down, degraded, deploying), the rest in their order from Settings. */
+export const monitorRows = (monitors, filter = '') => {
+  const q = filter.trim().toLowerCase();
+  return (monitors ?? [])
+    .map((m, i) => ({ m, i }))
+    .filter(({ m }) => !q || [m.name, m.url, m.state].some((s) => String(s ?? '').toLowerCase().includes(q)))
+    .sort((a, b) => (RANK[a.m.state] ?? 5) - (RANK[b.m.state] ?? 5) || a.i - b.i)
+    .map(({ m }) => m);
+};
+
+const pct = (x) => (x == null ? '—' : x < 0.01 && x > 0 ? `${(x * 100).toFixed(1)}%` : `${Math.round(x * 100)}%`);
+const ms = (n) => (n == null ? '—' : n >= 1000 ? `${(n / 1000).toFixed(1)}s` : `${Math.round(n)}ms`);
+
+/** A list row's short version: the response time, and the failure rate (or the uptime, without Application Insights). */
+export function monitorBrief(m) {
+  const second = m.ai ? `${pct(m.ai.failRate)} failing` : m.uptime24h != null ? `${pct(m.uptime24h)} up` : null;
+  return [m.last ? ms(m.last.ms) : null, second].filter(Boolean).join(' · ');
+}
+
+/** "200ms · 100% up · 0.4% failing": a monitor's numbers on one line. */
+export function monitorNumbers(m) {
+  return [
+    m.last ? ms(m.last.ms) : null,
+    m.uptime24h != null ? `${pct(m.uptime24h)} up` : null,
+    m.ai ? `${pct(m.ai.failRate)} failing` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+const DEPLOY_STATE = { running: 'Deploying now', approval: 'Waiting for approval', queued: 'Queued' };
+
+/** What a production environment has waiting (service.undeployed's target), as lines. */
+function waitingLines(t, now) {
+  if (!t) return [];
+  const lines = ['', [{ text: 'Waiting to ship', bold: true }]];
+  if (t.deploy) lines.push([{ text: `  ● ${DEPLOY_STATE[t.deploy.state] ?? 'Deploying'}: ${t.deploy.label}${t.deploy.startedAt ? `, since ${ago(t.deploy.startedAt, now)} ago` : ''}`, color: theme.info }]);
+  if (t.lastFailed) lines.push([{ text: `  ✗ Last deploy failed (${t.lastFailed.label ?? ''}); production is still on ${t.lastDeploy?.label ?? 'an earlier one'}`, color: theme.del }]);
+  if (!t.waiting) lines.push([{ text: `  Nothing: ${t.branch ?? 'its branch'} is all deployed${t.lastDeploy ? ` (${t.lastDeploy.label}, ${ago(t.lastDeploy.at, now)} ago)` : ''}.`, color: theme.ok }]);
+  else {
+    const old = t.oldestAt && now - Date.parse(t.oldestAt) > 7 * 86_400_000;
+    lines.push([{ text: `  ${plural(t.waiting, 'change')} on ${t.branch ?? 'its branch'}`, bold: true }, { text: t.oldestAt ? `  oldest merged ${ago(t.oldestAt, now)} ago` : '', color: old ? theme.warn : theme.dim }]);
+    for (const p of (t.pullRequests ?? []).slice(0, 5)) lines.push([{ text: `  !${p.id} `, color: theme.dim }, { text: p.title }]);
+    for (const c of (t.directCommits ?? []).slice(0, Math.max(0, 5 - (t.pullRequests?.length ?? 0)))) lines.push([{ text: `  ${c.id.slice(0, 7)} `, color: theme.dim }, { text: c.subject ?? c.message }]);
+    const more = t.waiting - Math.min(5, t.waiting);
+    if (more > 0) lines.push([{ text: `  … ${more} more (↵ lists them all)`, color: theme.dim }]);
+  }
+  if (t.upcoming?.length) lines.push([{ text: `  Coming next: ${plural(t.upcoming.length, 'open pull request')}`, color: theme.dim }]);
+  return lines;
+}
+
+/** The detail pane of a monitor, as lines of segments; `target` is what's waiting to ship to its environment. */
+export function monitorDetail(m, target, now = Date.now()) {
+  const st = monitorState(m);
+  const lines = [
+    [{ text: m.name, bold: true }],
+    [{ text: m.url || 'No URL to check', color: theme.dim }],
+    '',
+    [{ text: `${st.icon} ${st.label}`, color: st.color, bold: true }, { text: `  ${monitorNumbers(m)}`, color: theme.dim }],
+  ];
+  for (const i of m.issues ?? []) lines.push([{ text: '  • ', color: (SEVERITY[i.severity] ?? SEVERITY.low).color }, { text: i.text }]);
+  if (m.ai) lines.push([{ text: `p95 ${ms(m.ai.p95)} · ${m.ai.exceptions} exceptions · ${m.ai.total} requests in the last hour`, color: theme.dim }]);
+  if (m.markers?.length) {
+    lines.push('', [{ text: 'Deploys', bold: true }]);
+    for (const d of m.markers.slice(0, 3)) {
+      const s = runState({ status: d.status === 'inProgress' ? 'inProgress' : 'completed', result: d.status });
+      lines.push([{ text: `  ${s.icon} `, color: s.color }, { text: d.label }, { text: `  ${ago(d.at, now)} ago${d.by ? ` · ${d.by}` : ''}`, color: theme.dim }]);
+    }
+  }
+  if (!m.targetKey) return [...lines, '', [{ text: "It isn't linked to the release stage or pipeline that deploys it, so Keel can't say what's waiting to ship (link it in the web app: Settings → Production monitors).", color: theme.dim }]];
+  if (target === undefined) return [...lines, '', [{ text: 'Waiting to ship', bold: true }], [{ text: '  Reading…', color: theme.dim }]];
+  return [...lines, ...waitingLines(target, now)];
+}
+
+/** A monitor in full, with everything waiting to ship to its environment, as plain text for the viewer. */
+export function monitorFullText(m, target, now = Date.now()) {
+  const out = [m.name, m.url || '', '', `${monitorState(m).label}  ${monitorNumbers(m)}`];
+  for (const i of m.issues ?? []) out.push(`  • ${i.text}`);
+  if (m.ai?.topFailures?.length) out.push('', 'Failing most (last hour)', ...m.ai.topFailures.map((f) => `  ${f.count}× ${f.name}${f.code ? ` (${f.code})` : ''}`));
+  if (m.ai?.topNotFound?.length) out.push('', 'Missing pages asked for (404s, not counted as failures)', ...m.ai.topNotFound.map((f) => `  ${f.count}× ${f.name}`));
+  if (m.markers?.length) out.push('', 'Deploys', ...m.markers.map((d) => `  ${d.label}  ${d.status} · ${ago(d.at, now)} ago${d.by ? ` · ${d.by}` : ''}`));
+  if (target) {
+    out.push('', `Waiting to ship to ${target.name} (${target.branch ?? 'its branch'})`);
+    if (target.deploy) out.push(`  ${DEPLOY_STATE[target.deploy.state] ?? 'Deploying'}: ${target.deploy.label}`);
+    if (!target.waiting) out.push('  Nothing: all deployed.');
+    for (const p of target.pullRequests ?? []) {
+      out.push(`  !${p.id} ${p.title}${p.author ? ` · ${p.author}` : ''}${p.mergedAt ? ` · merged ${ago(p.mergedAt, now)} ago` : ''}`);
+    }
+    for (const c of target.directCommits ?? []) out.push(`  ${c.id.slice(0, 7)} ${c.subject ?? c.message}${c.author?.name ? ` · ${c.author.name}` : ''} (pushed without a pull request)`);
+    if (target.workItems?.length) out.push('', 'Work items it delivers', ...target.workItems.map((w) => `  ${w.type} ${w.id}  ${w.title}  (${w.state})`));
+    if (target.upcoming?.length) out.push('', 'Coming next (open pull requests into that branch)', ...target.upcoming.map((p) => `  !${p.id} ${p.title} · ${p.author} · ${(REVIEW_STATE[p.reviewState] ?? REVIEW_STATE['in-review']).label}${p.hasConflicts ? ' · conflicts' : ''}`));
+  }
+  return out.join('\n');
+}
