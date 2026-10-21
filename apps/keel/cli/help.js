@@ -6,7 +6,7 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-7 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production, Releases, Board (shift+tab goes back)'],
+      ['1-8 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production, Releases, Board, Team (shift+tab goes back)'],
       [',', 'Settings, over the current tab (esc closes it; /settings too)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['o', 'Open the selection in the browser (Azure DevOps or GitHub)'],
@@ -116,6 +116,16 @@ export const HELP = [
       ['t', 'Another team\'s board'],
       ['v', 'Another of the team\'s boards (Stories, Features, Epics…)'],
       ['f', 'The current sprint, or all open work'],
+    ],
+  },
+  {
+    title: 'Team',
+    about: 'who carries what, as the web app\'s Team page: people with too much on first',
+    views: ['team'],
+    rows: [
+      ['↵', 'Their open work items, in Work items'],
+      ['p', 'Their pull requests, in Pull requests'],
+      ['/find <name>', 'Someone, or a team'],
     ],
   },
   {

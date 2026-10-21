@@ -153,6 +153,7 @@ export function remoteService({ call }) {
     undeployed: () => call('/deploys/pending'),
     approvals: () => call('/approvals'),
     releases: () => call('/releases'),
+    team: () => call('/team'),
     board: ({ projectId, teamId, boardId, mode } = {}) => {
       const q = new URLSearchParams(Object.entries({ project: projectId, team: teamId, board: boardId, mode }).filter(([, v]) => v));
       return call(`/board${q.size ? `?${q}` : ''}`);

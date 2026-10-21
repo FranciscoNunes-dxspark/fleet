@@ -23,6 +23,7 @@ import { PrsView, prId } from './PrsView.jsx';
 import { ProductionView } from './ProductionView.jsx';
 import { ReleasesView } from './ReleasesView.jsx';
 import { BoardView } from './BoardView.jsx';
+import { TeamView } from './TeamView.jsx';
 import { SettingsView } from './SettingsView.jsx';
 import { HelpView } from './HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
@@ -38,6 +39,7 @@ const VIEWS = [
   { id: 'production', label: 'Production', short: 'Prod' },
   { id: 'releases', label: 'Releases' },
   { id: 'board', label: 'Board' },
+  { id: 'team', label: 'Team' },
 ];
 
 // What ? shows: help.js's sections, then the slash commands.
@@ -51,6 +53,7 @@ const HINTS = {
   production: '↵ everything, and all that is waiting to ship · o open the site',
   releases: 'n new release · d deploy to a stage · a/x approve or reject · ↵ everything · o browser',
   board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',
+  team: '↵ their work items · p their pull requests · /find a name',
 };
 const SETTINGS_HINT = "space change · ↵ a project's repos · /find a project · esc close";
 
@@ -161,7 +164,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
   const [confirmReq, setConfirmReq] = useState(null);
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', releases: '', board: '', settings: '' });
+  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', releases: '', board: '', team: '', settings: '' });
   // What Settings shows about this computer; `envTick` moves when its .env changes.
   const [envTick, setEnvTick] = useState(0);
   const local = React.useMemo(() => ({ envFile, signIn, server: keel.server, account: keel.account, compiled: COMPILED, mouseAvailable: Boolean(mouse), env: { ...process.env } }), [envFile, signIn, envTick]);
@@ -350,6 +353,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     if (v === 'releases') return { release: sel.release, releaseApprovals: sel.releaseApprovals, webUrl: sel.release?.webUrl };
     // A card is a work item: /state, /assign, /comment and the rest act on it.
     if (v === 'board') return { workItem: sel.workItem, webUrl: sel.workItem?.webUrl };
+    if (v === 'team') return { person: sel.person };
     const item = sel.item;
     const t = item?.target ?? {};
     const sameOrg = (x) => !item.org || !x.org || x.org === item.org;
@@ -428,6 +432,17 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
       return true;
     },
     showTab: (id) => setView(id),
+    // ↵ and p in Team: everything open of theirs, in the Work items or Pull requests tab.
+    showWorkItemsOf: (person) => {
+      setFilters((f) => ({ ...f, workitems: person.displayName }));
+      setWiShow('all');
+      setView('workitems');
+    },
+    showPrsOf: (person) => {
+      setFilters((f) => ({ ...f, prs: person.displayName }));
+      setShow('all');
+      setView('prs');
+    },
     jumped: () => setJump(null),
     find: (text) => {
       const v = overlayRef.current?.settings ? 'settings' : viewRef.current;
@@ -768,6 +783,8 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     main = <WorkItemsView failed={Boolean(pollError)} workItems={data.workItems} meta={meta} show={wiShow} filter={filters.workitems} jump={jump?.view === 'workitems' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'production') {
     main = <ProductionView failed={Boolean(pollError)} production={data.production} version={data.version} filter={filters.production} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'team') {
+    main = <TeamView version={data.version} workItems={data.workItems} prs={data.prs} filter={filters.team} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'board') {
     main = <BoardView version={data.version} filter={filters.board} meta={meta} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'releases') {
