@@ -6,6 +6,8 @@ import { useApp } from './context.js';
 const q = (org) => (org ? `?org=${encodeURIComponent(org)}` : '');
 export const wiPath = (id, org) => `/workitems/${id}${q(org)}`;
 export const wiActionsPath = (id, org) => `/workitems/${id}/actions${q(org)}`;
+/** Where a file is uploaded to attach it to a work item. */
+export const attachUploadPath = (id, name, org) => `/workitems/${id}/attachments?${new URLSearchParams({ name, ...(org ? { org } : {}) })}`;
 /** Download link for a work item attachment; inline shows an image in the browser. */
 export const attachmentUrl = (id, a, org, inline = false) => {
   const params = new URLSearchParams({ ...(org ? { org } : {}), ...(inline ? { inline: '1' } : {}) }).toString();

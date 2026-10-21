@@ -164,6 +164,17 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     body.on('error', () => res.destroy());
     body.pipe(res);
   });
+  // The file is the raw request body and its name is in ?name=, so no multipart parsing.
+  // 60 MB is the most Azure DevOps takes in one upload.
+  const fileBody = express.raw({ type: () => true, limit: '60mb' });
+  const readFile = (req, res, next) => fileBody(req, res, (err) => next(err?.type === 'entity.too.large'
+    ? Object.assign(new Error("Files over 60 MB can't be attached"), { status: 413 })
+    : err));
+  r.post('/workitems/:id/attachments', need('workitems.write'), readFile, async (req, res) => {
+    const id = num(req.params.id);
+    await req.ctx.service.addWorkItemAttachment(id, { name: req.query.name, content: Buffer.isBuffer(req.body) ? req.body : null }, orgOf(req));
+    res.status(201).json(await req.ctx.service.workItem(id, orgOf(req)));
+  });
   r.post('/workitems/:id/actions', need('workitems.write'), async (req, res) => {
     const id = num(req.params.id);
     await req.ctx.service.workItemAction(id, req.body || {}, orgOf(req));

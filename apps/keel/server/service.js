@@ -1105,6 +1105,19 @@ export function createService({
       return { name: file.name, length: length ?? file.size, stream };
     },
 
+    /** Attaches a file ({ name, content: Buffer }) to a work item. */
+    async addWorkItemAttachment(id, { name, content }) {
+      // Only the file's own name: browsers may send a path, and Azure DevOps shows it as is.
+      const fileName = String(name || '').split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 255);
+      if (!fileName) throw Object.assign(new Error('The file needs a name'), { status: 400 });
+      if (!content?.length) throw Object.assign(new Error('The file is empty'), { status: 400 });
+      const [item] = await provider.getWorkItems([Number(id)]);
+      if (!item) throw Object.assign(new Error(`Work item ${id} not found`), { status: 404 });
+      const added = await provider.uploadAttachment(item.projectName, Number(id), fileName, content);
+      cache.invalidate('wi:');
+      return added;
+    },
+
     /** Work item types in the tracked projects: [{ name, color (Azure DevOps), projects }]. */
     async workItemTypes() {
       const projects = await workProjects();

@@ -1,14 +1,16 @@
 import { t, tx } from './i18n.js';
 
+/** A File or Blob body is sent as is (an upload); anything else as JSON. */
 export async function api(path, { method = 'GET', body } = {}) {
+  const raw = body instanceof Blob;
   const res = await fetch(`/api${path}`, {
     method,
     credentials: 'same-origin',
     headers: {
       'x-keel': '1',
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(body !== undefined ? { 'Content-Type': raw ? 'application/octet-stream' : 'application/json' } : {}),
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined || raw ? body : JSON.stringify(body),
   });
   const data = await res.json().catch(() => null);
   if (!res.ok) {

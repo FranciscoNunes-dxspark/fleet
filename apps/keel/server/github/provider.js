@@ -571,6 +571,7 @@ export function createGithubProvider({ org, token, client } = {}) {
       return [];
     },
     downloadAttachment: noWorkItems,
+    uploadAttachment: noWorkItems,
     commentWorkItem: noWorkItems,
     async listReleases() {
       return [];

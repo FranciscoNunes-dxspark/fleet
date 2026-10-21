@@ -56,8 +56,8 @@ export function createClient({ orgUrl = config.orgUrl, pat, token, maxConcurrenc
   }
 
   /** Low-level request. `path` is relative to the organization URL. Returns { data, headers }. */
-  /** `empty`: a success may have no body at all (some DELETEs), which isn't a sign-in page. */
-  function request(path, { method = 'GET', query, body, contentType = 'application/json', apiVersion, empty = false } = {}) {
+  /** `empty`: a success may have no body at all (some DELETEs), which isn't a sign-in page. A Buffer body is sent as is (an upload). */
+  function request(path, { method = 'GET', query, body, contentType = 'application/json', apiVersion, empty = false, timeout = 30_000 } = {}) {
     const url = buildUrl(path, query, apiVersion);
     return limited(async () => {
       const authHeader = await auth();
@@ -71,8 +71,8 @@ export function createClient({ orgUrl = config.orgUrl, pat, token, maxConcurrenc
               Accept: 'application/json',
               ...(body !== undefined ? { 'Content-Type': contentType } : {}),
             },
-            body: body !== undefined ? JSON.stringify(body) : undefined,
-            signal: AbortSignal.timeout(30_000),
+            body: body === undefined || Buffer.isBuffer(body) ? body : JSON.stringify(body),
+            signal: AbortSignal.timeout(timeout),
           });
         } catch (err) {
           if (attempt < 2) {

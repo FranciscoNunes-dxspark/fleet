@@ -266,6 +266,7 @@ export function createMultiService(entries) {
       return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
     },
     workItemAttachment: (id, attachmentId, orgKey) => byKey(orgKey).service.workItemAttachment(id, attachmentId),
+    addWorkItemAttachment: (id, file, orgKey) => byKey(orgKey).service.addWorkItemAttachment(id, file),
 
     async board(opts = {}) {
       const tracked = await each((s) => s.trackedProjects());
