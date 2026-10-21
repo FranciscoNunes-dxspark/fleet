@@ -21,7 +21,8 @@
     "cli:demo": "node bin/keel.js --demo",
     "build:cli": "npx --yes bun@1.4.2 scripts/build-cli.js",
     "build:android": "node scripts/build-android.mjs",
-    "test": "node --import ./cli/register.js --test \"test/**/*.test.js\""
+    "test": "node --import ./cli/register.js --test \"test/**/*.test.js\"",
+    "postinstall": "patch-package || exit 0"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",
@@ -41,6 +42,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "concurrently": "^10.0.6",
     "ink-testing-library": "^4.0.0",
+    "patch-package": "^8.0.1",
     "vite": "^8.3.4"
   }
 }
