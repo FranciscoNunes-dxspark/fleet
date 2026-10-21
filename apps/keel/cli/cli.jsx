@@ -136,16 +136,22 @@ const { COMPILED } = await import('./open.js');
 const off = (name) => /^(0|false|no|off)$/i.test(process.env[name] || '');
 let checkUpdate;
 let installUpdate;
-if (COMPILED && !off('KEEL_CHECK_UPDATES')) {
+// /update asks GitHub now and installs, whatever those two say: it's asked for.
+let updater;
+if (COMPILED) {
   const update = await import('./update.js');
   const { config } = await import('../server/config.js');
   const last = update.lastCheckStore(path.join(config.dataDir, 'update-check.json'));
-  checkUpdate = async () => {
-    const result = await update.checkForUpdate(await last.load());
+  const check = async (since) => {
+    const result = await update.checkForUpdate(since);
     await last.save(result.checked).catch(() => {});
     return result;
   };
-  if (!off('KEEL_AUTO_UPDATE')) installUpdate = update.installUpdate;
+  updater = { check: () => check(null), install: update.installUpdate };
+  if (!off('KEEL_CHECK_UPDATES')) {
+    checkUpdate = async () => check(await last.load());
+    if (!off('KEEL_AUTO_UPDATE')) installUpdate = update.installUpdate;
+  }
   // What an earlier update moved aside; quietly, and it doesn't hold up the start.
   update.removeOldExecutables();
 }
@@ -159,6 +165,6 @@ process.on('exit', () => process.stdout.write('\x1b[?1049l'));
 // reach Ink as keys, and Ink draws through the mouse's stdout, which keeps the frames to select text from.
 const { terminalMouse } = await import('./mouse.js');
 const mouse = await terminalMouse(process.stdin, process.stdout);
-const app = render(React.createElement(App, { keel, checkUpdate, installUpdate, mouse }), { exitOnCtrlC: false, patchConsole: false, stdout: mouse?.stdout ?? process.stdout });
+const app = render(React.createElement(App, { keel, checkUpdate, installUpdate, updater, mouse }), { exitOnCtrlC: false, patchConsole: false, stdout: mouse?.stdout ?? process.stdout });
 await app.waitUntilExit();
 process.exit(0);
