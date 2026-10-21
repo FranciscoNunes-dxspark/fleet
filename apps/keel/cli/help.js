@@ -37,9 +37,10 @@ export const HELP = [
   },
   {
     title: 'Pull requests',
-    about: 'waiting on your review, then yours, then everyone else\'s',
+    about: 'waiting on your review, then yours, then everyone else\'s; each goes publish → approval → complete, and the pane says which step it\'s at and what it waits on',
     views: ['prs'],
     rows: [
+      ['p', 'Publish a draft'],
       ['a', 'Approve'],
       ['A', 'Approve with suggestions'],
       ['w', 'Wait for the author'],

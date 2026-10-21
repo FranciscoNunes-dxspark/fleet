@@ -10,6 +10,8 @@ import { Lines, Panel, Row } from './parts.jsx';
 export const prId = (pr) => `${pr.org ?? ''}/${pr.key}`;
 const SHOW_LABEL = { all: '', review: 'waiting on your review', mine: 'yours' };
 const NEXT_SHOW = { all: 'review', review: 'mine', mine: 'all' };
+// The pane's hint leads with the key for the step the pull request is at (publish, approve, complete).
+const STEP_HINT = { publish: 'p publish · ↵ more', approval: 'a approve · w wait · ↵ more', complete: 'c complete · m auto · ↵ more' };
 
 /** Active pull requests in the tracked repos: waiting on your review, then yours, then everyone else's. */
 export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, active }) {
@@ -53,6 +55,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
     else if (input === '0') a.vote(ctx, pr, 0);
     else if (input === 'c') a.complete(ctx, pr);
     else if (input === 'm') a.autoComplete(ctx, pr);
+    else if (input === 'p') a.publish(ctx, pr);
   };
   useInput(keys, { isActive: active });
   // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).
@@ -92,7 +95,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
         })}
       </Panel>
       {split ? (
-        <Panel title={pr ? `!${pr.id} ${branch(pr.sourceBranch)}` : 'Pull request'} hint={pr ? 'a approve · w wait · c complete · ↵ more' : ''} width={sideW} height={height}>
+        <Panel title={pr ? `!${pr.id} ${branch(pr.sourceBranch)}` : 'Pull request'} hint={pr ? STEP_HINT[pr.flow?.step] ?? '↵ more' : ''} width={sideW} height={height}>
           <Lines width={sideW - 2} height={innerH} lines={pr ? prDetail(pr) : []} />
         </Panel>
       ) : null}

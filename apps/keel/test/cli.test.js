@@ -96,6 +96,22 @@ test('rejecting asks first, and No leaves the vote alone', async () => {
   app.unmount();
 });
 
+test('a pull request shows its step (publish → approval → complete), and p publishes a draft', async () => {
+  const app = start();
+  await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
+  app.stdin.write('2');
+  await until(() => frame().includes('Waiting on your review') && /● Approval|● Complete/.test(frame()), 'the steps in the pane');
+  const { prs } = await keel.service.pullRequests();
+  const draft = prs.find((p) => p.isDraft);
+  await type(app.stdin, `/pr ${draft.id}`);
+  app.stdin.write(KEYS.enter);
+  await until(() => frame().includes('● Publish') && frame().includes('p publish'), 'the draft at its first step');
+  app.stdin.write('p');
+  await until(() => frame().includes('Published: its reviewers are asked'), 'the publish');
+  assert.equal((await keel.service.pullRequest(draft.projectId, draft.repoId, draft.id)).flow.step, 'approval');
+  app.unmount();
+});
+
 test('the Pipelines tab lists failing pipelines first, with their latest runs', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
