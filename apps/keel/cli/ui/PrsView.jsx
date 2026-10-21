@@ -12,8 +12,13 @@ const SHOW_LABEL = { all: '', review: 'waiting on your review', mine: 'yours' };
 const NEXT_SHOW = { all: 'review', review: 'mine', mine: 'all' };
 // The pane's hint leads with the key for the step the pull request is at (publish, approve, complete).
 const STEP_HINT = { publish: 'p publish · ↵ more', approval: 'a approve · w wait · ↵ more', complete: 'c complete · m auto · ↵ more' };
-// Your own GitHub pull request waits on someone else's review there.
-const stepHint = (pr) => (pr.flow?.step === 'approval' && isGithubPr(pr) && pr.isMine ? 'o ask on GitHub · m auto-merge · ↵ more' : STEP_HINT[pr.flow?.step] ?? '↵ more');
+// Your own GitHub pull request waits on someone else's review there; one held while its checks run merges itself with m.
+const stepHint = (pr) => {
+  if (pr.flow?.step === 'approval' && isGithubPr(pr) && pr.isMine) return 'o ask on GitHub · m auto-merge · ↵ more';
+  if (pr.flow?.waiting?.kind === 'checks') return 'checks running · m auto-merge · ↵ more';
+  if (pr.flow?.waiting?.kind === 'checks-failed') return 'checks failed · o on GitHub · ↵ more';
+  return STEP_HINT[pr.flow?.step] ?? '↵ more';
+};
 
 /** Active pull requests in the tracked repos: waiting on your review, then yours, then everyone else's. */
 export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, active }) {

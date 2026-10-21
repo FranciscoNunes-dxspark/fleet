@@ -57,7 +57,8 @@ export function enrichPR(pr, me, now = Date.now()) {
     humanReviewerCount: people.length,
     hasConflicts: pr.mergeStatus === 'conflicts',
     reviewState,
-    readyToMerge: reviewState === 'approved' && pr.mergeStatus !== 'conflicts',
+    // Not while its checks (GitHub's) are running or have failed: it isn't ready until they pass.
+    readyToMerge: reviewState === 'approved' && pr.mergeStatus !== 'conflicts' && !['running', 'failed'].includes(pr.checks),
     flow: prFlow(pr, reviewState, isMine),
   };
 }
@@ -71,7 +72,9 @@ const POLICY_OK = new Set(['approved', 'notApplicable']);
  *   approval: 'no-reviewers', 'rejected', 'waiting-author', 'required' (required reviewers who
  *             haven't approved) or 'approval' (nobody has yet);
  *   complete: 'conflicts', 'policies' (blocking ones not passed yet; only known on the full pull
- *             request), or 'auto' (auto-complete is set: it completes itself once they pass).
+ *             request), 'checks' (on GitHub: its checks, such as tests, are still running, so it's
+ *             held until they pass), 'checks-failed' (they failed), or 'auto' (auto-complete is set:
+ *             it completes itself once they pass, so running checks read as that).
  * On GitHub, a branch that asks for no approving review (`reviewRequired` false) skips approval
  * (`approval: 'not-required'`) unless someone asked for changes; and `own` says GitHub won't take
  * the author's own approval, so their pull request waits on someone else's.
@@ -95,7 +98,9 @@ export function prFlow(pr, reviewState, isMine = false) {
   if (pr.mergeStatus === 'conflicts') return { step: 'complete', ...done, waiting: { kind: 'conflicts' } };
   const blocking = (pr.policies ?? []).filter((p) => p.isBlocking && !POLICY_OK.has(p.status));
   if (blocking.length) return { step: 'complete', ...done, waiting: { kind: 'policies', names: blocking.map((p) => p.name) } };
+  if (pr.checks === 'failed') return { step: 'complete', ...done, waiting: { kind: 'checks-failed' } };
   if (pr.autoComplete) return { step: 'complete', ...done, waiting: { kind: 'auto' } };
+  if (pr.checks === 'running') return { step: 'complete', ...done, waiting: { kind: 'checks' } };
   return { step: 'complete', ...done, waiting: null };
 }
 

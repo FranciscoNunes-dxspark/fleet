@@ -24,8 +24,16 @@ export const REVIEW_STATE = {
   'in-review': { icon: '●', color: theme.info, label: 'in review' },
 };
 
-/** A pull request's state; merge conflicts win, since nothing merges until they're fixed. */
-export const prState = (pr) => (pr.hasConflicts ? { icon: '△', color: theme.del, label: 'merge conflicts' } : REVIEW_STATE[pr.reviewState] ?? REVIEW_STATE['in-review']);
+/**
+ * A pull request's state; merge conflicts win, since nothing merges until they're fixed, and then
+ * GitHub checks it's held on (running, or failed) once it's past approval.
+ */
+export const prState = (pr) => {
+  if (pr.hasConflicts) return { icon: '△', color: theme.del, label: 'merge conflicts' };
+  if (pr.flow?.waiting?.kind === 'checks') return { icon: '◔', color: theme.warn, label: 'checks running' };
+  if (pr.flow?.waiting?.kind === 'checks-failed') return { icon: '✗', color: theme.del, label: 'checks failed' };
+  return REVIEW_STATE[pr.reviewState] ?? REVIEW_STATE['in-review'];
+};
 
 export const VOTES = {
   10: { icon: '✓', color: theme.ok, label: 'approved' },
@@ -105,6 +113,8 @@ export function flowWaiting(flow, github = false) {
   const approved = flow.approval === 'not-required' ? 'This branch needs no review.' : 'Approved.';
   if (w?.kind === 'conflicts') return `${approved} Fix the merge conflicts to complete it.`;
   if (w?.kind === 'policies') return `${approved} Waiting on ${names}.`;
+  if (w?.kind === 'checks') return `${approved} Its checks are still running: it's held until they pass (m merges it by itself then).`;
+  if (w?.kind === 'checks-failed') return `${approved} Its checks failed: fix them before completing it (o shows them on GitHub).`;
   if (w?.kind === 'auto') return `${approved} It completes by itself once its checks pass.`;
   return `${approved} Ready: c completes it.`;
 }
@@ -114,7 +124,7 @@ const FLOW_STEPS = [['publish', 'Publish'], ['approval', 'Approval'], ['complete
 /** "✓ Publish → ● Approval → ○ Complete": where a pull request is on its way, as segments. */
 export function flowSegments(flow) {
   const at = FLOW_STEPS.findIndex(([id]) => id === flow?.step);
-  const blocked = ['rejected', 'waiting-author', 'conflicts'].includes(flow?.waiting?.kind);
+  const blocked = ['rejected', 'waiting-author', 'conflicts', 'checks-failed'].includes(flow?.waiting?.kind);
   return FLOW_STEPS.flatMap(([id, label], i) => {
     // A GitHub branch that asks for no review skips approval.
     const skipped = id === 'approval' && flow?.approval === 'not-required';

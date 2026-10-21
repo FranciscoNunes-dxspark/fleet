@@ -58,7 +58,11 @@ function demoData(owner) {
   });
   const prs = [
     pr('web-app', 41, 'Dark mode toggle in settings', PRIYA, { ageH: 30, requests: [ME], labels: ['ui'] }),
-    pr('api', 87, 'Rate limit the search endpoint', ME, { ageH: 20, reviews: [{ author: MARCUS, state: 'APPROVED' }], reviewDecision: 'APPROVED' }),
+    // Approved, with its tests still running: it waits for them before it can be merged.
+    pr('api', 87, 'Rate limit the search endpoint', ME, {
+      ageH: 20, reviews: [{ author: MARCUS, state: 'APPROVED' }], reviewDecision: 'APPROVED',
+      checks: [{ name: 'build', status: 'COMPLETED', conclusion: 'SUCCESS', isRequired: true }, { name: 'test', status: 'IN_PROGRESS', conclusion: null, isRequired: false }],
+    }),
     pr('api', 85, 'Drop Node 18 support', SOFIA, {
       ageH: 70, reviews: [{ author: MARCUS, state: 'CHANGES_REQUESTED' }], reviewDecision: 'CHANGES_REQUESTED', extra: { mergeable: 'CONFLICTING' },
       threads: [{ id: 'T1', isResolved: false, path: 'package.json', comments: [{ author: MARCUS, body: 'CI images still use 18.', createdAt: ago(40 * H) }] }],
@@ -344,6 +348,8 @@ export function createDemoApi(owner) {
   }
 
   // GraphQL: pull requests as the PR_FIELDS fragment and detail query ask for them.
+  // All the checks together, as GitHub sums them up: running while any is, else failed if any failed.
+  const rollupOf = (checks) => (!checks.length ? null : checks.some((c) => c.status !== 'COMPLETED') ? 'PENDING' : checks.some((c) => ['FAILURE', 'TIMED_OUT', 'CANCELLED'].includes(c.conclusion)) ? 'FAILURE' : 'SUCCESS');
   const who = (u) => (u ? { login: u.login, name: u.name, avatarUrl: null } : null);
   const node = (p) => ({
     number: p.number, title: p.title, url: `${WEB}/${owner}/${p.repo}/pull/${p.number}`, state: p.state, isDraft: p.isDraft, mergeable: p.mergeable,
@@ -353,7 +359,7 @@ export function createDemoApi(owner) {
     reviewRequests: { nodes: p.requests.map((u) => ({ requestedReviewer: u.slug ? { slug: u.slug, name: u.name } : who(u) })) },
     latestOpinionatedReviews: { nodes: p.reviews.map((r) => ({ state: r.state, author: who(r.author) })) },
     id: `PR_${p.repo}_${p.number}`, body: p.body, headRefOid: p.headSha, reviewDecision: p.reviewDecision,
-    commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: p.checks.map((c) => ({ __typename: 'CheckRun', ...c })) } } } }] },
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: rollupOf(p.checks), contexts: { nodes: p.checks.map((c) => ({ __typename: 'CheckRun', ...c })) } } } }] },
     reviewThreads: { totalCount: p.threads.length, nodes: p.threads.map((t) => ({ ...t, comments: { nodes: t.comments.map((c) => ({ ...c, author: who(c.author) })) } })) },
     comments: { totalCount: p.comments.length, nodes: p.comments.map((c) => ({ ...c, author: who(c.author) })) },
   });

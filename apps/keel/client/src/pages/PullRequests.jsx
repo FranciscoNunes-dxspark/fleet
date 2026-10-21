@@ -263,6 +263,9 @@ export default function PullRequests() {
                       <Chip tone={REVIEW_STATE[p.reviewState].tone}>{REVIEW_STATE[p.reviewState].label}</Chip>
                       {p.needsMyReview && <Chip tone="accent">{t('Your review')}</Chip>}
                       {p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}
+                      {/* On GitHub: held while its checks run, or after they fail (domain/prs.js prFlow). */}
+                      {p.checks === 'running' && <Chip tone="warn">{t('Checks running')}</Chip>}
+                      {p.checks === 'failed' && <Chip tone="bad">{t('Checks failed')}</Chip>}
                       {p.autoComplete && <Chip tone="ok">{t('Auto-complete')}</Chip>}
                       {p.completesAt && <Chip tone="info" title={dateTimeZone(p.completesAt)}>{t('Completes {when}', { when: dateTime(p.completesAt) })}</Chip>}
                       {p.labels.map((l) => <Chip key={l}>{l}</Chip>)}
