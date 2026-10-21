@@ -206,9 +206,10 @@ export function PageTabs({ label, tabs }) {
 }
 
 // Pages that share one menu entry (see App.jsx): Pull requests, Commits and Release notes; Production, Waiting to ship and
-// Platform totals; Team and Users.
+// Platform totals; Work items and Epics; Team and Users.
 export const CodeTabs = () => <PageTabs label={t('Code')} tabs={[{ to: '/prs', label: t('Pull requests') }, { to: '/commits', label: t('Commits') }, { to: '/release-notes', label: t('Release notes') }]} />;
 export const ProductionTabs = () => <PageTabs label={t('Production')} tabs={[{ to: '/production', label: t('Monitors') }, { to: '/ship', label: t('Waiting to ship') }, { to: '/totals', label: t('Platform totals') }]} />;
+export const WorkTabs = () => <PageTabs label={t('Work items')} tabs={[{ to: '/work', label: t('Work items') }, { to: '/epics', label: t('Epics') }]} />;
 /** Team, and Users for Admins of a Keel with accounts; nothing to switch to otherwise. */
 export function TeamTabs() {
   const { authMode, can } = useApp();

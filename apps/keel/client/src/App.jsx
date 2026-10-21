@@ -393,9 +393,9 @@ function Shell() {
       { to: '/summary', label: t('Weekly summary'), icon: 'summary' },
     ] },
     { label: t('Work'), items: [
-      { to: '/work', label: t('Work items'), icon: 'workItems' },
+      // Epics is a tab of Work items (ui.jsx WorkTabs).
+      { to: '/work', label: t('Work items'), icon: 'workItems', also: ['/epics'] },
       { to: '/board', label: t('Board'), icon: 'board' },
-      { to: '/epics', label: t('Epics'), icon: 'epics' },
     ] },
     { label: t('Code and delivery'), items: [
       { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits', '/release-notes'] },
