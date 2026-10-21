@@ -401,9 +401,9 @@ function Shell() {
       { to: '/summary', label: t('Weekly summary'), icon: 'summary' },
     ] },
     { label: t('Work'), items: [
-      { to: '/work', label: t('Work items'), icon: 'workItems' },
+      // Epics is a tab of Work items (ui.jsx WorkTabs).
+      { to: '/work', label: t('Work items'), icon: 'workItems', also: ['/epics'] },
       { to: '/board', label: t('Board'), icon: 'board' },
-      { to: '/epics', label: t('Epics'), icon: 'epics' },
     ] },
     { label: t('Code and delivery'), items: [
       { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits', '/release-notes'] },
@@ -411,9 +411,9 @@ function Shell() {
       { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals', '/ship'] },
     ] },
     { label: t('People'), items: [
-      { to: '/team', label: t('Team'), icon: 'team' },
+      // Users is a tab of Team, for Admins of a Keel with accounts (ui.jsx TeamTabs).
+      { to: '/team', label: t('Team'), icon: 'team', also: ['/users'] },
       { to: '/insights', label: t('Insights'), icon: 'insights' },
-      ...(authMode === 'login' && can('users.manage') ? [{ to: '/users', label: t('Users'), icon: 'users' }] : []),
     ] },
   ];
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSticky } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { isBlocked } from '../format.js';
-import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle, TypeLabel } from '../ui.jsx';
+import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle, TypeLabel, WorkTabs } from '../ui.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import { t } from '../i18n.js';
 
@@ -122,6 +122,7 @@ export default function Epics() {
       >
         {loading && <span className="spinner" aria-label={t('Refreshing')} />}
       </PageHeader>
+      <WorkTabs />
       <div className="filters">
         <input type="search" className="input" placeholder={t('Search epics, features, items or ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search epics')} />
         <Toggle checked={includeClosed} onChange={setIncludeClosed}>{t('Include closed epics')}</Toggle>

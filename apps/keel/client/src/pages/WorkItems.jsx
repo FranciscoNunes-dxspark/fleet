@@ -3,7 +3,7 @@ import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, isBlocked, shortIteration } from '../format.js';
-import { Chip, Empty, ErrorBox, Loading, PageHeader, Th, useSort, TypeLabel } from '../ui.jsx';
+import { Chip, Empty, ErrorBox, Loading, PageHeader, Th, useSort, TypeLabel, WorkTabs } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
@@ -107,6 +107,7 @@ export default function WorkItems() {
       <PageHeader title={t('Work items')} sub={t(data.items.length === 1 ? '{n} open item across tracked projects' : '{n} open items across tracked projects', { n: data.items.length })}>
         {editable && <button type="button" className="btn btn-small btn-primary" onClick={() => openDrawer({ type: 'newworkitem' })}>{t('New work item')}</button>}
       </PageHeader>
+      <WorkTabs />
 
       <div className="segmented" role="tablist" aria-label={t('Work item views')}>
         {VIEWS.map((v) => (
