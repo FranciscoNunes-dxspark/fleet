@@ -127,6 +127,82 @@ export function buildFlow({ finished = [], open = [], days, type = null, now = D
     byType,
     aging,
     states,
+    estimates: estimateVsActual(done),
+  };
+}
+
+// A working day, for estimate against actual: 9:00 to 17:00, Monday to Friday, in the server's time zone.
+const DAY_START = 9;
+const DAY_END = 17;
+// Within a quarter of the estimate either way counts as on estimate.
+const MARGIN = 0.25;
+
+/** Working hours (see DAY_START, DAY_END) between two times in milliseconds. */
+export function workingHours(from, to) {
+  let total = 0;
+  const day = new Date(from);
+  day.setHours(0, 0, 0, 0);
+  for (; day.getTime() < to; day.setDate(day.getDate() + 1)) {
+    if (day.getDay() === 0 || day.getDay() === 6) continue;
+    const open = new Date(day).setHours(DAY_START);
+    const close = new Date(day).setHours(DAY_END);
+    total += Math.max(0, Math.min(close, to) - Math.max(open, from));
+  }
+  return total / HOUR;
+}
+
+/**
+ * Story points read as hours, against the working hours each finished item
+ * took from its Activated Date. Items without points or without an Activated
+ * Date are counted, not compared.
+ */
+function estimateVsActual(done) {
+  const compared = [];
+  let unestimated = 0;
+  let noStart = 0;
+  for (const { w, end, estimated } of done) {
+    const est = Number(w.storyPoints);
+    if (!(est > 0)) unestimated += 1;
+    else if (estimated) noStart += 1;
+    else {
+      const actual = workingHours(Date.parse(startedAt(w)), end);
+      compared.push({ w, est, actual, ratio: actual / est });
+    }
+  }
+  const verdict = (c) => (c.ratio > 1 + MARGIN ? 'over' : c.ratio < 1 - MARGIN ? 'under' : 'on');
+  const total = (list, k) => list.reduce((n, c) => n + c[k], 0);
+  const group = (key) => {
+    const groups = new Map();
+    for (const c of compared) {
+      const k = key(c);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(c);
+    }
+    return [...groups].map(([k, list]) => {
+      const est = total(list, 'est');
+      const actual = total(list, 'actual');
+      return { key: k, count: list.length, estimateHours: est, actualHours: actual, ratio: actual / est, medianActualHours: median(list.map((c) => c.actual)) };
+    });
+  };
+  const est = total(compared, 'est');
+  const actual = total(compared, 'actual');
+  return {
+    compared: compared.length,
+    unestimated,
+    noStart,
+    estimateHours: est,
+    actualHours: actual,
+    ratio: est ? actual / est : null,
+    medianRatio: median(compared.map((c) => c.ratio)),
+    over: compared.filter((c) => verdict(c) === 'over').length,
+    on: compared.filter((c) => verdict(c) === 'on').length,
+    under: compared.filter((c) => verdict(c) === 'under').length,
+    bySize: group((c) => c.est).sort((a, b) => a.key - b.key),
+    byPerson: group((c) => c.w.assignedTo?.displayName || null).sort((a, b) => b.count - a.count || b.ratio - a.ratio),
+    // The furthest over their estimate first, in hours.
+    items: compared
+      .map((c) => ({ ...item(c.w), estimateHours: c.est, actualHours: c.actual, ratio: c.ratio, verdict: verdict(c), finishedAt: new Date(Date.parse(finishedAt(c.w))).toISOString() }))
+      .sort((a, b) => (b.actualHours - b.estimateHours) - (a.actualHours - a.estimateHours)),
   };
 }
 
