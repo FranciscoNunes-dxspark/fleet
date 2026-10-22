@@ -89,6 +89,7 @@ export const HELP = [
     rows: [
       ['↵', 'Everything about it: issues, what fails most, deploys, and all that\'s waiting to ship to its environment (pull requests, commits, work items, coming next)'],
       ['o', 'Open the site'],
+      ['S', 'Sonar, the Azure console, on the app behind it, at its problems: in a new tab in Windows Terminal, else the command is copied to run'],
     ],
   },
   {

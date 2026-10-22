@@ -1,5 +1,6 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
+import { sonarArgs } from './sonar.js';
 import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
 import { fieldValues, filterFields, splitFilter, withField } from './filters.js';
 import { approvalsFor, deployChoices, stageStatus } from './releases.js';
@@ -18,6 +19,18 @@ export function open(ctx, url = ctx.current().webUrl) {
   if (!url) return ctx.note('Nothing to open here.');
   ctx.openUrl(url);
   ctx.note(`Opened in your browser: ${url}`);
+}
+
+/** S on a production monitor: Sonar, Keel's sibling Azure console, on the app behind it, at its problems. */
+export async function sonar(ctx, m = ctx.current().monitor) {
+  if (!m?.url) return ctx.note('Pick a production monitor first: Sonar opens on the app behind its address.', 'error');
+  try {
+    const r = await ctx.openSonar(sonarArgs(m));
+    if (r.how === 'tab') ctx.note(`Opened Sonar on ${m.name} in a new tab`);
+    else ctx.note(`Copied ${r.command}\nRun it in another terminal to open Sonar on ${m.name}. Sonar: https://github.com/FranciscoNunes-dxspark/sonar`);
+  } catch (e) {
+    ctx.note(`Couldn't open Sonar: ${e.message}`, 'error');
+  }
 }
 
 /** "2", "2d", "1w" or nothing (a day) → days; null when it isn't one of those. */

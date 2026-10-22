@@ -79,3 +79,38 @@ test('the Production tab lists the monitors with what is waiting to ship; ↵ sh
   assert.match(opened[0], /^https:\/\/[^/]+contoso-demo\.com$/, 'the site, not its health check');
   lastApp.unmount();
 });
+
+test('S opens Sonar on the monitor: its address, its Application Insights, at its problems', async () => {
+  const sonarCalls = [];
+  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {}, openSonar: async (args) => (sonarCalls.push(args), { how: 'copied', command: `sonar ${args.join(' ')}` }) }));
+  await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
+  lastApp.stdin.write('5');
+  await until(() => frame().includes('Storefront (production)'), 'the monitors');
+  lastApp.stdin.write('S');
+  await until(() => frame().includes('Run it in another terminal'), 'the command copied');
+  assert.equal(sonarCalls.length, 1);
+  assert.equal(sonarCalls[0][0], '--url');
+  assert.match(sonarCalls[0][1], /^https:\/\/.+contoso-demo\.com\/health$/);
+  assert.equal(sonarCalls[0].at(-1), '--problems');
+  lastApp.unmount();
+});
+
+test('Sonar in a new Windows Terminal tab where there is one, else the command copied', async () => {
+  const { openSonar, sonarArgs, sonarCommand } = await import('../cli/sonar.js');
+  const args = sonarArgs({ url: 'https://shop.example/health', appInsightsAppId: 'abc-1' });
+  assert.deepEqual(args, ['--url', 'https://shop.example/health', '--insights', 'abc-1', '--problems']);
+  assert.deepEqual(sonarArgs({ url: 'https://x/' }), ['--url', 'https://x/', '--problems']);
+  assert.equal(sonarCommand(['--kql', 'requests | take 5']), 'sonar --kql "requests | take 5"');
+  const spawned = [];
+  const spawnImpl = (cmd, a) => {
+    spawned.push([cmd, ...a]);
+    const listeners = {};
+    queueMicrotask(() => listeners.spawn?.());
+    return { on: (e, f) => ((listeners[e] = f), undefined), unref() {} };
+  };
+  assert.deepEqual(await openSonar(args, { env: { WT_SESSION: '1' }, spawnImpl, copy: async () => assert.fail('no copy in a tab') }), { how: 'tab' });
+  assert.deepEqual(spawned[0].slice(0, 5), ['wt', '-w', '0', 'new-tab', 'sonar']);
+  const copied = [];
+  assert.deepEqual(await openSonar(args, { env: {}, copy: async (t) => copied.push(t) }), { how: 'copied', command: 'sonar --url https://shop.example/health --insights abc-1 --problems' });
+  assert.deepEqual(copied, ['sonar --url https://shop.example/health --insights abc-1 --problems']);
+});
