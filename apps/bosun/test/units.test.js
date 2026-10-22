@@ -13,19 +13,21 @@ import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
-  assert.equal(findCommand('show').name, 'show');
-  assert.equal(findCommand('sh').name, 'show');
-  assert.equal(findCommand('s'), null, 'show and settings both start with s');
+  assert.equal(findCommand('restart').name, 'restart');
+  assert.equal(findCommand('res').name, 'restart');
+  assert.equal(findCommand('s'), null, 'stop, start and settings all start with s');
   assert.deepEqual(suggestionsFor('/se', {}).map((s) => s.label), ['/settings']);
-  const data = { items: [{ name: 'bowline' }, { name: 'reef knot' }] };
-  assert.deepEqual(suggestionsFor('/show re', { data }).map((s) => s.insert), ['/show reef knot']);
+  const data = { procs: [{ name: 'api' }, { name: 'web' }], profiles: { mock: {} } };
+  assert.deepEqual(suggestionsFor('/restart w', { data }).map((s) => s.insert), ['/restart web']);
+  assert.deepEqual(suggestionsFor('/restart a', { data }).map((s) => s.insert), ['/restart api', '/restart all']);
+  assert.deepEqual(suggestionsFor('/profile m', { data }).map((s) => s.insert), ['/profile mock']);
   assert.deepEqual(suggestionsFor('plain text', { data }), []);
   for (const c of COMMANDS) assert.ok(c.desc && typeof c.run === 'function', `/${c.name} has a description and runs`);
 });
 
 test('help: every section lays out, and the commands are a section of their own', () => {
   for (const section of [...HELP, commandsSection(COMMANDS)]) assert.ok(sectionLines(section, 60).length > 0, section.title);
-  assert.ok(commandsSection(COMMANDS).rows.some((r) => String(r[0]).includes('/show')));
+  assert.ok(commandsSection(COMMANDS).rows.some((r) => String(r[0]).includes('/restart')));
 });
 
 test('settings: the rows and their values', () => {

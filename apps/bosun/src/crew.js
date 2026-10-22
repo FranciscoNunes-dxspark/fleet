@@ -1,0 +1,135 @@
+// What Bosun runs: the crew, from bosun.json in the project, or worked out from package.json's dev
+// script (a `concurrently` line is split into its commands). Pure apart from reading those files.
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+export const FILE = 'bosun.json';
+
+/** The words of a shell line, quotes taken off: `a "b c" 'd'` → ['a', 'b c', 'd']. */
+export function words(line) {
+  const out = [];
+  const re = /"((?:\\.|[^"\\])*)"|'([^']*)'|(\S+)/g;
+  for (const m of String(line).matchAll(re)) out.push(m[1] != null ? m[1].replace(/\\(.)/g, '$1') : (m[2] ?? m[3]));
+  return out;
+}
+
+/**
+ * The commands in a `concurrently` line, each with its name (from -n/--names, else 1, 2…), or null
+ * when the line isn't one: `concurrently -k -n api,web "node server" "vite"`.
+ */
+export function splitConcurrently(line) {
+  const w = words(line);
+  const at = w.findIndex((x) => /(^|\/)concurrently$/.test(x));
+  if (at < 0) return null;
+  const commands = [];
+  let names = [];
+  for (let i = at + 1; i < w.length; i++) {
+    const x = w[i];
+    if (x === '-n' || x === '--names') names = (w[++i] ?? '').split(',');
+    else if (/^--names=/.test(x)) names = x.slice(8).split(',');
+    else if (/^-(c|p|s|t|r|--prefix-colors|--prefix|--success|--timestamp-format|--restart-tries)$/.test(x)) i++;
+    else if (x.startsWith('-')) continue;
+    else commands.push(x);
+  }
+  if (!commands.length) return null;
+  return commands.map((run, i) => ({ name: names[i]?.trim() || String(i + 1), run }));
+}
+
+const NAME = /^[\w.-]+$/;
+
+/**
+ * bosun.json's crew checked: { procs: [{ name, run, cwd, port, health, env, after }], profiles, problems }.
+ * What's wrong with an entry is said in `problems` and the entry is left out.
+ */
+export function readSpec(spec) {
+  const problems = [];
+  const procs = [];
+  for (const [name, p] of Object.entries(spec?.procs ?? {})) {
+    const proc = typeof p === 'string' ? { run: p } : p;
+    if (!NAME.test(name)) problems.push(`"${name}": a name is letters, digits, dots, dashes and underscores`);
+    else if (!proc?.run || typeof proc.run !== 'string') problems.push(`"${name}": it needs "run", the command to start it`);
+    else if (proc.port != null && !(Number.isInteger(proc.port) && proc.port > 0 && proc.port < 65536)) problems.push(`"${name}": "port" is a number from 1 to 65535`);
+    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, after: proc.after ?? null });
+  }
+  for (const p of procs) {
+    if (p.after && !procs.some((q) => q.name === p.after)) {
+      problems.push(`"${p.name}": it starts after "${p.after}", which isn't one of them`);
+      p.after = null;
+    }
+  }
+  const profiles = spec?.profiles && typeof spec.profiles === 'object' ? spec.profiles : {};
+  return { procs, profiles, problems };
+}
+
+/**
+ * The crew of the project in `dir`: { dir, file (bosun.json, or null), from, procs, profiles, problems }.
+ * Without bosun.json, package.json's dev script: split when it's a concurrently line, else run whole.
+ */
+export function loadCrew(dir) {
+  const file = join(dir, FILE);
+  if (existsSync(file)) {
+    let spec;
+    try {
+      spec = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (e) {
+      throw new Error(`${FILE} isn't valid JSON: ${e.message}`);
+    }
+    return { dir, file, from: FILE, ...readSpec(spec) };
+  }
+  let pkg = null;
+  try {
+    pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+  } catch {
+    // No package.json either: said below.
+  }
+  const dev = pkg?.scripts?.dev ?? pkg?.scripts?.start;
+  if (!dev) return { dir, file: null, from: null, procs: [], profiles: {}, problems: [] };
+  const script = pkg.scripts.dev ? 'dev' : 'start';
+  const split = splitConcurrently(dev);
+  const procs = (split ?? [{ name: script, run: `npm run ${script}` }]).map((p) => ({ cwd: '.', port: null, health: null, env: {}, after: null, ...p }));
+  // Other scripts that run the same with a twist (dev:mock) become profiles, when they split the same way.
+  const profiles = {};
+  for (const [name, line] of Object.entries(pkg.scripts)) {
+    if (!name.startsWith(`${script}:`)) continue;
+    const other = splitConcurrently(line);
+    if (other && split && other.length === split.length) profiles[name.slice(script.length + 1)] = Object.fromEntries(other.map((p, i) => [split[i].name, { run: p.run }]));
+  }
+  return { dir, file: null, from: `package.json's ${script} script`, procs, profiles, problems: [] };
+}
+
+/** The crew with profile `name` applied: a profile's entry changes `run`, adds `args` to it, or merges `env`. */
+export function withProfile(procs, profiles, name) {
+  const profile = name ? profiles[name] : null;
+  if (!profile) return procs;
+  return procs.map((p) => {
+    const change = profile[p.name];
+    if (!change) return p;
+    return { ...p, run: `${change.run ?? p.run}${change.args ? ` ${change.args}` : ''}`, env: { ...p.env, ...change.env } };
+  });
+}
+
+/** bosun.json for a crew, to start one from what was worked out (/init). */
+export function specFor(crew) {
+  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, after: p.after ?? undefined }).filter(([, v]) => v !== undefined))]));
+  return { procs, ...(Object.keys(crew.profiles).length ? { profiles: crew.profiles } : {}) };
+}
+
+/** Writes bosun.json in `dir` unless there's one already; returns whether it did. */
+export function writeSpec(dir, spec) {
+  const file = join(dir, FILE);
+  if (existsSync(file)) return false;
+  writeFileSync(file, `${JSON.stringify(spec, null, 2)}\n`);
+  return true;
+}
+
+// ANSI colour and cursor codes, which a log pane can't draw (and would throw its widths off).
+const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
+
+/** `text` without its terminal escape codes. */
+export const stripAnsi = (text) => String(text).replace(ANSI, '');
+
+/** Whether a log line reads as trouble: an error, an exception, a port already taken. */
+export const isTrouble = (line) => /\b(EADDRINUSE|ECONNREFUSED|Unhandled|Uncaught|[A-Z]\w*Error|Exception|FATAL|panic)\b|^\s*Error\b|\berror:/i.test(line) && !/\b0 errors?\b|no errors?/i.test(line);
+
+/** The port in an "address already in use" line, if it is one. */
+export const portInUse = (line) => Number(/EADDRINUSE[^\d]*(?:[\d.:]*:)?(\d{2,5})/.exec(line)?.[1] ?? /address already in use[^\d]*(\d{2,5})/i.exec(line)?.[1]) || null;
