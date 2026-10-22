@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo.svg" width="120" alt="Ping, the Sonar dolphin"></p>
+<p align="center"><img src="assets/logo.svg" width="120" alt="Ping, the Sonar bat"></p>
 
 # Sonar
 

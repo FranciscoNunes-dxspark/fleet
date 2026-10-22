@@ -1,44 +1,45 @@
-// Ping, Sonar's dolphin. One pixel drawing feeds the terminal pet, the SVG logo and the app icon.
-// Dolphins find their way by sound in water they can't see through, which is what Sonar is for.
+// Ping, Sonar's bat. One pixel drawing feeds the terminal pet, the SVG logo and the app icon. Bats
+// find their way in the dark by sound, which is what Sonar is for.
 
 /** Who the pet is; the welcome box, the mood lines and the logo's title all say it from here. */
-export const PET = { name: 'Ping', kind: 'dolphin' };
+export const PET = { name: 'Ping', kind: 'bat' };
 
 // The accent's family, as Trawl's Glim, Splice's Twig and Keel's Pinch are coloured from theirs: the
-// accent for the outline, a darker and a paler shade, a near-black with its tint, and one contrasting colour.
+// accent for the outline, a dark body, the wings a shade lighter, a near-black mouth, and one
+// contrasting colour for the eyes.
 export const PALETTE = {
   G: '#5fd7d7', // outline, the accent
-  D: '#347676', // back
-  L: '#bfefef', // belly
-  E: '#0b1a1a', // eye
-  W: '#ffffff', // eye shine
-  T: '#ffb35f', // the ping, the one warm colour
+  D: '#2b4256', // body
+  M: '#406680', // wings
+  E: '#0b1418', // mouth
+  W: '#ffffff', // fangs
+  Y: '#ffd75f', // eyes, the one bright colour
 };
 
-// 16 × 10 pixels; '.' is transparent. A dolphin facing right, its dorsal fin up top and its beak at
-// the right edge; the corner above the beak is room for the sonar's ping.
+// 16 × 10 pixels; '.' is transparent. Face on, wings spread: ears up, two bright eyes, a mouth with
+// its fangs, the wings' scalloped edges below.
 const BASE = [
-  '......GG........',
-  '.....GDDG.......',
-  '...GGDDDDGGG....',
-  '..GDDDDDDDDDGG..',
-  '.GDDDDDDDDEWDDG.',
-  'GDDDDDDDDDEEDDDG',
-  'GDLLLLLLLLLLLLGG',
-  '.GLLLLLLLLLLGG..',
-  '..GGLLLLLGGG....',
-  '....GGGGG.......',
+  '....G......G....',
+  '...GDG....GDG...',
+  'G..GDDGGGGDDG..G',
+  'GG.GDYDDDDYDG.GG',
+  'GMGGDDDDDDDDGGMG',
+  'GMMGDDDDDDDDGMMG',
+  'GMMMGDDEEDDGMMMG',
+  '.GMMMGWDDWGMMMG.',
+  '..GMG.GDDG.GMG..',
+  '...G...GG...G...',
 ];
 
 // Each mood replaces some rows of the base drawing.
 const MOODS = {
   idle: {},
-  look: { 4: '.GDDDDDDDDWEDDG.' }, // glancing the other way, for the busy animation
-  sleep: { 4: '.GDDDDDDDDDDDDG.', 5: 'GDDDDDDDDDEEDDDG' },
-  happy: { 4: '.GDDDDDDDDEDDDG.', 5: 'GDDDDDDDDEDEDDDG' },
-  worried: { 4: '.GDDDDDDDDWWDDG.' },
-  // Pinging: rings going out from its head.
-  wave: { 0: '......GG.....T..', 1: '.....GDDG....T.T', 2: '...GGDDDDGGG..T.' },
+  look: { 3: 'GG.GDDYDDDDYG.GG' }, // glancing the other way, for the busy animation
+  sleep: { 3: 'GG.GDEDDDDEDG.GG', 6: 'GMMMGDDDDDDGMMMG', 7: '.GMMMGDDDDGMMMG.' },
+  happy: { 3: 'GG.GDYDDDDYDG.GG', 6: 'GMMMGDEDDEDGMMMG', 7: '.GMMMGDEEDGMMMG.' },
+  worried: { 3: 'GG.GDWDDDDWDG.GG', 6: 'GMMMGDDEEDDGMMMG', 7: '.GMMMGDEEDGMMMG.' },
+  // Calling out: mouth open, the call going out.
+  wave: { 6: 'GMMMGDEEEEDGMMMG', 7: '.GMMMGWEEWGMMMG.' },
 };
 
 /** The drawing for a mood, as rows of palette letters. */
@@ -69,14 +70,14 @@ export function petRows(mood = 'idle') {
   return rows;
 }
 
-/** A one-line face for the header. */
+/** A one-line bat for the header. */
 export const FACES = {
-  idle: '(•ᴗ•)',
-  look: '(•ᴗ•)',
-  sleep: '(–ᴗ–)',
-  happy: '(^ᴗ^)',
-  worried: '(◉ᴗ◉)',
-  wave: '(•ᴗ•))',
+  idle: '/•v•\\',
+  look: '/•v•\\',
+  sleep: '/-v-\\',
+  happy: '/^v^\\',
+  worried: '/◉v◉\\',
+  wave: '/•o•\\',
 };
 
 /** How the pet feels right now: about the last result, and whether something is running. */
