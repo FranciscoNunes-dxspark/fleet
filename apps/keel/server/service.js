@@ -666,8 +666,10 @@ export function createService({
 
     repos: () => repos(),
 
-    async branches(projectId, repoId) {
+    /** A repo's branches; fresh skips the cache (the Refresh button on the new pull request page). */
+    async branches(projectId, repoId, { fresh = false } = {}) {
       await assertTrackedRepo(repoId);
+      if (fresh) cache.invalidate(`branches:${repoId}`);
       const list = await cached(`branches:${repoId}`, () => provider.listBranches(projectId, repoId), 2 * MIN);
       // Recently pushed first (newest on top), then the rest alphabetically.
       return [...list].sort((a, b) => (b.pushedAt ? Date.parse(b.pushedAt) : 0) - (a.pushedAt ? Date.parse(a.pushedAt) : 0) || a.name.localeCompare(b.name));

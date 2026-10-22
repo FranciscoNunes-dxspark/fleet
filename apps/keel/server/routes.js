@@ -75,7 +75,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   r.get('/prs/closed', async (req, res) => res.json(await req.ctx.service.closedPullRequests(Number(req.query.days) || 30)));
   r.post('/prs', need('prs.write'), async (req, res) => res.status(201).json(await req.ctx.service.createPullRequest(req.body || {})));
   r.get('/repos', async (req, res) => res.json(await req.ctx.service.repos()));
-  r.get('/repos/:projectId/:repoId/branches', async (req, res) => res.json(await req.ctx.service.branches(req.params.projectId, req.params.repoId)));
+  r.get('/repos/:projectId/:repoId/branches', async (req, res) => res.json(await req.ctx.service.branches(req.params.projectId, req.params.repoId, { fresh: req.query.fresh === '1' })));
   r.get('/repos/:projectId/:repoId/compare', async (req, res) => res.json(await req.ctx.service.compare(
     req.params.projectId, req.params.repoId, String(req.query.source || ''), String(req.query.target || ''),
   )));

@@ -723,6 +723,14 @@ const DONE_TITLES = [
   'Fix logout on token expiry', 'Compress product images', 'Health probe for Redis', 'Fix race in stock reservation', 'Add locale to emails',
   'Keyboard navigation in cart', 'Fix wrong currency symbol', 'Bulk price update endpoint', 'Alert on queue backlog', 'Fix deep link on Android',
 ];
+// Teams that estimate in hours: a finished item's points are roughly the working
+// hours it took (about 5.7 a calendar day), which comes to 0.6 to 1.5 times the estimate.
+const HOUR_SIZES = [1, 2, 3, 5, 8, 13, 20, 40];
+const hoursEstimate = (cycleDays, r) => {
+  const guess = (cycleDays * 5.7) / (0.6 + r * 0.9);
+  return HOUR_SIZES.reduce((best, n) => (Math.abs(n - guess) < Math.abs(best - guess) ? n : best));
+};
+
 {
   const local = rng(4242);
   for (const p of PROJECTS) {
@@ -735,7 +743,7 @@ const DONE_TITLES = [
       const cycleDays = 0.3 + local() ** 2.2 * 24;
       const w = addWorkItem(p, {
         type, title: DONE_TITLES[(i * 7 + p.name.length) % DONE_TITLES.length], stateIdx: doneIdx, assignedTo: DEVS[Math.floor(local() * DEVS.length)],
-        priority: 2, points: [1, 2, 3, 5, 8][Math.floor(local() * 5)], ageDays: closedDaysAgo + cycleDays + 1 + local() * 15, stateDays: closedDaysAgo,
+        priority: 2, points: hoursEstimate(cycleDays, local()), ageDays: closedDaysAgo + cycleDays + 1 + local() * 15, stateDays: closedDaysAgo,
       });
       w.activatedAt = iso(Date.parse(w.closedAt) - cycleDays * D);
       w.changedAt = w.closedAt;

@@ -2,12 +2,16 @@ import { AgingChart, BarList, ColumnChart } from '../charts.jsx';
 import { useApi, useApp } from '../context.js';
 import { date, hours } from '../format.js';
 import { Chip, ErrorBox, Loading, TypeLabel } from '../ui.jsx';
-import { t, tx } from '../i18n.js';
+import { locale, t, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { useSticky } from '../sticky.js';
 
 const perWeek = (n) => (n == null ? '—' : n >= 10 ? Math.round(n).toString() : n.toFixed(1));
 const points = (n) => (Number.isInteger(n) ? n : n.toFixed(1));
+// Working hours stay in hours (8 of them aren't a day), with one decimal under 10.
+const workHours = (h) => (h == null ? '—' : h > 0 && h < 1 ? `${Math.max(1, Math.round(h * 60))}m` : `${h.toLocaleString(locale(), { maximumFractionDigits: h < 10 ? 1 : 0 })}h`);
+const times = (r) => (r == null ? '—' : `${r.toLocaleString(locale(), { maximumFractionDigits: 1 })}×`);
+const RATIO_TONE = { over: 'text-bad strong', on: '', under: 'text-warn' };
 
 /**
  * Work item flow for the Insights page: how long work items of every type (or
@@ -105,8 +109,77 @@ export default function Flow({ days }) {
         </table>
       </div>
 
+      <Estimates e={data.estimates} onOpen={open} />
+
       <Sprints />
     </section>
+  );
+}
+
+/**
+ * Story points read as hours against the working hours finished items took,
+ * for teams that estimate in hours: overall, by estimate size, by person, and
+ * the items furthest over.
+ */
+function Estimates({ e, onOpen }) {
+  const missing = [
+    e.unestimated && t(e.unestimated === 1 ? '{n} finished item has no story points.' : '{n} finished items have no story points.', { n: e.unestimated }),
+    e.noStart && t(e.noStart === 1 ? "{n} has no Activated Date, so there's no start to measure from." : "{n} have no Activated Date, so there's no start to measure from.", { n: e.noStart }),
+  ].filter(Boolean).join(' ');
+  const over = e.items.filter((i) => i.verdict === 'over').slice(0, 12);
+  return (
+    <>
+      <h2 className="section-title">{t('Estimate against actual')}</h2>
+      <p className="muted small delivery-intro">{t('Story points read as hours, against the working hours each finished item took from its Activated Date to done (Monday to Friday, 9:00 to 17:00). Within a quarter of the estimate either way counts as on estimate.')}</p>
+      {!e.compared ? <p className="muted small">{t('No finished item in this period has both story points and an Activated Date.')} {missing}</p> : (
+        <>
+          <dl className="fact-row">
+            <div className="fact"><dt>{t('Compared')}</dt><dd>{e.compared}</dd><dd className="muted small">{t('finished items with an estimate')}</dd></div>
+            <div className="fact"><dt>{t('Estimated')}</dt><dd>{workHours(e.estimateHours)}</dd><dd className="muted small">{t('story points, as hours')}</dd></div>
+            <div className="fact"><dt>{t('Actual')}</dt><dd>{workHours(e.actualHours)}</dd><dd className="muted small">{t('working hours, started to done')}</dd></div>
+            <div className="fact">
+              <dt>{t('Actual against estimate')}</dt>
+              <dd className={e.ratio > 1.25 ? 'text-bad' : e.ratio < 0.75 ? 'text-warn' : ''}>{times(e.ratio)}</dd>
+              <dd className="muted small">{t('{over} over, {on} on, {under} under estimate', { over: e.over, on: e.on, under: e.under })}</dd>
+            </div>
+          </dl>
+          {missing && <p className="callout">{missing}</p>}
+          <div className="chart-grid">
+            <BarList
+              label={t('By estimate')}
+              valueLabel={t('items')}
+              data={e.bySize.map((r) => ({ key: r.key, label: t('{time} estimate', { time: workHours(r.key) }), value: r.count, note: t('median {time} actual', { time: workHours(r.medianActualHours) }) }))}
+            />
+            <BarList
+              label={t('By person')}
+              valueLabel={t('items')}
+              data={e.byPerson.map((r) => ({ key: r.key || '', label: r.key || t('Unassigned'), value: r.count, note: t('{ratio} the estimate', { ratio: times(r.ratio) }) }))}
+            />
+          </div>
+          <h3 className="section-title">{t('Furthest over estimate')}</h3>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>{t('Work item')}</th><th>{t('Assigned to')}</th><th className="num">{t('Estimate')}</th><th className="num">{t('Actual')}</th><th className="num">{t('Against estimate')}</th></tr></thead>
+              <tbody>
+                {over.map((w) => (
+                  <tr key={`${w.org || ''}:${w.id}`}>
+                    <td>
+                      <button type="button" className="link-btn strong" onClick={() => onOpen(w)}>{w.title}</button>
+                      <div className="sub small muted"><TypeLabel type={w.type} color={w.typeColor} /> #{w.id} · {w.projectName} · {t('done {date}', { date: date(w.finishedAt) })}</div>
+                    </td>
+                    <td>{w.assignedTo || <span className="muted">{t('Unassigned')}</span>}</td>
+                    <td className="num">{workHours(w.estimateHours)}</td>
+                    <td className="num">{workHours(w.actualHours)}</td>
+                    <td className={`num ${RATIO_TONE[w.verdict]}`}>{times(w.ratio)}</td>
+                  </tr>
+                ))}
+                {!over.length && <tr><td colSpan={5} className="muted">{t('Nothing finished in this period took longer than its estimate.')}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFlow, buildSprintScope } from '../server/domain/flow.js';
+import { buildFlow, buildSprintScope, workingHours } from '../server/domain/flow.js';
 
 const H = 3_600_000;
 const D = 24 * H;
@@ -86,4 +86,39 @@ test('sprint scope: planned, added, taken out and carried over', () => {
   assert.deepEqual(s.removed.map((w) => w.id), [4]);
   assert.deepEqual(s.carriedOver.map((w) => w.id), [2, 4]);
   assert.deepEqual([s.iteration.day, s.iteration.days], [7, 14]);
+});
+
+// Local times, so the working day (9:00 to 17:00, Monday to Friday) lines up in any time zone.
+const local = (day, hour, min = 0) => new Date(2026, 9, day, hour, min).getTime(); // October 2026: the 12th is a Monday
+
+test('working hours: 9:00 to 17:00 on weekdays', () => {
+  assert.equal(workingHours(local(12, 9), local(12, 17)), 8);
+  assert.equal(workingHours(local(12, 15), local(13, 11)), 4); // 2h on Monday, 2h on Tuesday
+  assert.equal(workingHours(local(12, 7), local(12, 8)), 0); // before the day starts
+  assert.equal(workingHours(local(16, 16), local(19, 10)), 2); // Friday 1h, the weekend nothing, Monday 1h
+  assert.equal(workingHours(local(12, 10), local(12, 10, 30)), 0.5);
+});
+
+test('flow: story points as hours against working hours taken', () => {
+  const NOW_LOCAL = local(17, 12);
+  const at2 = (day, hour) => new Date(local(day, hour)).toISOString();
+  const person = (displayName) => ({ displayName });
+  const finished = [
+    wi(1, { storyPoints: 8, activatedAt: at2(12, 9), closedAt: at2(13, 17), assignedTo: person('Ana') }), // 16h: over
+    wi(2, { storyPoints: 4, activatedAt: at2(14, 9), closedAt: at2(14, 13), assignedTo: person('Ana') }), // 4h: on
+    wi(3, { storyPoints: 8, activatedAt: at2(15, 9), closedAt: at2(15, 11), assignedTo: person('Rui') }), // 2h: under
+    wi(4, { storyPoints: null, activatedAt: at2(15, 9), closedAt: at2(15, 11) }), // no estimate
+    wi(5, { storyPoints: 2, activatedAt: null, createdAt: at2(12, 9), closedAt: at2(15, 11) }), // no Activated Date
+  ];
+  const e = buildFlow({ finished, open: [], days: 30, now: NOW_LOCAL }).estimates;
+  assert.equal(e.compared, 3);
+  assert.equal(e.unestimated, 1);
+  assert.equal(e.noStart, 1);
+  assert.equal(e.estimateHours, 20);
+  assert.equal(e.actualHours, 22);
+  assert.equal(e.ratio, 22 / 20);
+  assert.deepEqual([e.over, e.on, e.under], [1, 1, 1]);
+  assert.deepEqual(e.bySize.map((s) => [s.key, s.count, s.medianActualHours]), [[4, 1, 4], [8, 2, 9]]);
+  assert.deepEqual(e.byPerson.map((p) => [p.key, p.count, p.estimateHours, p.actualHours]), [['Ana', 2, 12, 20], ['Rui', 1, 8, 2]]);
+  assert.deepEqual(e.items.map((i) => [i.id, i.verdict]), [[1, 'over'], [2, 'on'], [3, 'under']]);
 });
