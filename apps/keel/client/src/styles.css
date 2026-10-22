@@ -717,7 +717,7 @@ a.stat:hover .stat-label { color: var(--accent-ink); }
 .field-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .form-grid-wide { grid-template-columns: 1fr; margin-bottom: 10px; }
 .form-grid-wide .input { width: 100%; }
-.branch-pick { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: end; }
+.branch-pick { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 10px; align-items: end; }
 .branch-pick label { display: grid; gap: 4px; min-width: 0; }
 .branch-pick .input { width: 100%; min-width: 0; font-size: 12.5px; }
 .branch-swap {
@@ -727,6 +727,7 @@ a.stat:hover .stat-label { color: var(--accent-ink); }
 }
 .branch-swap:hover:not(:disabled) { color: var(--accent-ink); border-color: var(--accent); }
 .branch-swap:disabled { opacity: 0.45; cursor: default; }
+.branch-refresh .spin { display: grid; }
 .compare-summary { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; color: var(--ink-2); }
 .commit-list { margin-top: 8px; }
 .commit-list summary { cursor: pointer; color: var(--ink-2); }
@@ -737,7 +738,8 @@ a.stat:hover .stat-label { color: var(--accent-ink); }
   .branch-pick { grid-template-columns: 1fr; }
   /* Stacked on phones: the swap sits between the two pickers, turned to point up and down. */
   .branch-swap { justify-self: center; margin: 0; }
-  .branch-swap .icon { transform: rotate(90deg); }
+  .branch-swap:not(.branch-refresh) .icon { transform: rotate(90deg); }
+  .branch-refresh { justify-self: end; }
 }
 .vote-note { margin: -4px 0 10px; max-width: 70ch; }
 

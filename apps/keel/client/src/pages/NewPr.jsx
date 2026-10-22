@@ -61,13 +61,17 @@ export default function NewPr({ preset = {} }) {
   const [autoComplete, setAutoComplete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshed, setRefreshed] = useState(0); // bumped by Refresh, to compare again with what was just pushed
   const compareSeq = useRef(0);
+  const currentId = useRef(null);
 
   const repoList = useMemo(() => [...(repos || [])].sort((a, b) => a.projectName.localeCompare(b.projectName) || a.name.localeCompare(b.name)), [repos]);
   const current = repoList.find((r) => repoKey(r) === repo);
   // A GitHub repo: no work items to link, and auto-merge rather than auto-complete.
   const orgKind = useOrgKind();
   const github = orgKind(current?.org) === 'github';
+  currentId.current = current?.id;
 
   // Default repo: the preset one, else the first tracked repo.
   useEffect(() => {
@@ -89,20 +93,38 @@ export default function NewPr({ preset = {} }) {
     if (!current) return;
     setBranches(null);
     setCompare(null);
-    api(`/repos/${encodeURIComponent(current.projectId)}/${encodeURIComponent(current.id)}/branches`)
-      .then((list) => {
-        setBranches(list);
-        const tgt = current.defaultBranch && list.some((b) => b.name === current.defaultBranch) ? current.defaultBranch : list[0]?.name || '';
-        setTarget(tgt);
-        // Source: a branch named after the preset work item, else the most recent push that isn't the target.
-        const byItem = preset.workItemId && list.find((b) => b.name.includes(String(preset.workItemId)));
-        setSource((byItem || list.find((b) => b.name !== tgt && b.pushedAt) || list.find((b) => b.name !== tgt))?.name || '');
-      })
-      .catch((e) => {
-        setBranches([]);
-        setCompareError(e);
-      });
+    loadBranches(false).catch((e) => {
+      setBranches([]);
+      setCompareError(e);
+    });
   }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // keep: on a refresh, the branches already picked stay picked while they still exist.
+  const loadBranches = async (fresh, keep = {}) => {
+    const repoId = current.id;
+    const list = await api(`/repos/${encodeURIComponent(current.projectId)}/${encodeURIComponent(repoId)}/branches${fresh ? '?fresh=1' : ''}`);
+    if (repoId !== currentId.current) return; // the repo changed while this was loading
+    const has = (name) => name && list.some((b) => b.name === name);
+    setBranches(list);
+    const tgt = has(keep.target) ? keep.target : has(current.defaultBranch) ? current.defaultBranch : list[0]?.name || '';
+    setTarget(tgt);
+    if (has(keep.source)) return setSource(keep.source);
+    // Source: a branch named after the preset work item, else the most recent push that isn't the target.
+    const byItem = preset.workItemId && list.find((b) => b.name.includes(String(preset.workItemId)));
+    setSource((byItem || list.find((b) => b.name !== tgt && b.pushedAt) || list.find((b) => b.name !== tgt))?.name || '');
+  };
+
+  const refreshBranches = async () => {
+    setRefreshing(true);
+    try {
+      await loadBranches(true, { source, target });
+      setRefreshed((n) => n + 1);
+    } catch (e) {
+      toast(t("Couldn't refresh the branches: {error}", { error: e.message }), 'bad');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Compare whenever the branch pair changes.
   useEffect(() => {
@@ -121,7 +143,7 @@ export default function NewPr({ preset = {} }) {
       })
       .catch((e) => mine === compareSeq.current && setCompareError(e))
       .finally(() => mine === compareSeq.current && setComparing(false));
-  }, [current?.id, source, target]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [current?.id, source, target, refreshed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reviewers to suggest: who recently worked in the folders this change touches (see server/domain/reviewers.js).
   useEffect(() => {
@@ -241,6 +263,16 @@ export default function NewPr({ preset = {} }) {
                 {branchOptions(source)}
               </select>
             </label>
+            <button
+              type="button"
+              className="branch-swap branch-refresh"
+              onClick={refreshBranches}
+              disabled={refreshing}
+              title={t('Refresh branches: pick up branches pushed since this page opened')}
+              aria-label={t('Refresh branches')}
+            >
+              <span className={refreshing ? 'spin' : ''}><Icon name="refresh" size={16} /></span>
+            </button>
           </div>
         )}
         {comparing && <Loading label={t('Comparing branches…')} />}

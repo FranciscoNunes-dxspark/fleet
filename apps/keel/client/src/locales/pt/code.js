@@ -547,4 +547,7 @@ export default {
   'No reviewers yet: request them on GitHub.': 'Ainda sem revisores: peça-os no GitHub.',
   'Request reviewers on GitHub.': 'Peça revisores no GitHub.',
   'Open it on GitHub': 'Abrir no GitHub',
+  "Couldn't refresh the branches: {error}": 'Não foi possível atualizar os branches: {error}',
+  'Refresh branches: pick up branches pushed since this page opened': 'Atualizar branches: mostrar os branches enviados desde que esta página abriu',
+  'Refresh branches': 'Atualizar branches',
 };
