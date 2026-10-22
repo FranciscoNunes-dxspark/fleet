@@ -1,5 +1,5 @@
 // What the end-to-end tests share: rendering App with a temporary home, waiting for frames, typing.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import React from 'react';
@@ -17,9 +17,42 @@ export function tempHome() {
   return () => rmSync(dir, { recursive: true, force: true });
 }
 
-/** Renders App with `props` (a config of its own unless given), remembered for until's message. */
+/** A crew that's never started (nothing runs): for the tests about the UI, not the processes. */
+export const quietCrew = (names = ['api', 'web', 'worker']) => async () => ({
+  dir: '.',
+  file: null,
+  from: 'a test',
+  procs: names.map((name, i) => ({ name, run: `node ${name}.js`, cwd: '.', port: i === 0 ? 4999 : null, health: null, env: {}, after: null })),
+  profiles: {},
+  problems: [],
+});
+
+/** A project folder with this bosun.json (and any other files, by name); returns its path. */
+export function project(spec, files = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'bosun-project-'));
+  writeFileSync(join(dir, 'bosun.json'), JSON.stringify(spec));
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+  return dir;
+}
+
+/**
+ * Renders App with `props` (a config of its own unless given), remembered for until's message. Unless
+ * given a folder or a crew, it's a quiet one that starts nothing, and Claude, the browser and the
+ * port lookups are stubs.
+ */
 export function start(props = {}) {
-  lastApp = render(React.createElement(App, { config: { history: [] }, ...props }));
+  const quiet = !props.dir && !props.load;
+  lastApp = render(
+    React.createElement(App, {
+      config: { history: [] },
+      ...(quiet ? { load: quietCrew(), autostart: false } : {}),
+      askClaude: async () => 'Claude is not here in the tests.',
+      openUrl: () => {},
+      pidsOnPort: () => [],
+      killPids: () => {},
+      ...props,
+    }),
+  );
   return lastApp;
 }
 

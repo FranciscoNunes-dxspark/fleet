@@ -3,7 +3,16 @@ import * as a from './actions.js';
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
-  { name: 'show', args: '<item>', desc: 'Show an item', complete: 'items', run: (ctx, s) => a.showItem(ctx, s) },
+  { name: 'restart', args: '[name|all]', desc: 'Restart a process, or all of them', complete: 'procs', run: (ctx, s) => a.restart(ctx, s || 'all') },
+  { name: 'stop', args: '<name|all>', desc: 'Stop a process and what it started', complete: 'procs', run: (ctx, s) => a.stop(ctx, s) },
+  { name: 'start', args: '[name|all]', desc: 'Start a process, or all that aren\'t running', complete: 'procs', run: (ctx, s) => a.start(ctx, s) },
+  { name: 'log', args: '<name>', desc: 'Everything a process has said', complete: 'procs', run: (ctx, s) => a.showLog(ctx, s) },
+  { name: 'why', args: '<name>', desc: 'Ask Claude why a process failed, from its log', complete: 'procs', run: (ctx, s) => a.why(ctx, s) },
+  { name: 'open', args: '<name>', desc: 'Open a process\'s port in the browser', complete: 'procs', run: (ctx, s) => a.openProc(ctx, s) },
+  { name: 'free', args: '<port>', desc: 'Stop whatever holds a port on this machine (asks first)', run: (ctx, s) => a.free(ctx, s) },
+  { name: 'profile', args: '[name|none]', desc: 'Run the crew with a profile from bosun.json', complete: 'profiles', run: (ctx, s) => a.profiles(ctx, s) },
+  { name: 'reload', desc: 'Read bosun.json again (what changed restarts)', run: (ctx) => ctx.reload() },
+  { name: 'init', desc: 'Write a bosun.json from what Bosun worked out', run: (ctx) => a.init(ctx) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
   { name: 'settings', desc: 'Accent colour, mouse, updates, history', run: (ctx) => a.settings(ctx) },
@@ -24,7 +33,8 @@ export function findCommand(name, user = []) {
 }
 
 function completions(kind, data) {
-  if (kind === 'items') return (data?.items ?? []).map((it) => it.name);
+  if (kind === 'procs') return [...(data?.procs ?? []).map((p) => p.name), 'all'];
+  if (kind === 'profiles') return [...Object.keys(data?.profiles ?? {}), 'none'];
   return [];
 }
 

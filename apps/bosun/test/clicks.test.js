@@ -39,17 +39,17 @@ test('clicks pick rows and tabs, a double-click does what ↵ does, and a copy i
   const app = start({ mouse });
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('bowline'), 'the items');
+    await until(() => frame().includes('worker'), 'the crew');
     assert.deepEqual(mouse.enabled, [true]);
 
-    let p = at(frame(), 'halyard');
+    let p = at(frame(), 'worker');
     mouse.click(p.x, p.y);
-    await until(() => /❯ halyard/.test(frame()), 'the cursor on the clicked row');
+    await until(() => /❯ ● worker/.test(frame()), 'the cursor on the clicked row');
     assert.doesNotMatch(frame(), /esc close/);
 
     mouse.click(p.x, p.y);
     mouse.click(p.x, p.y);
-    await until(() => /halyard.*esc close/.test(frame()), 'the item from a double-click');
+    await until(() => /worker · node worker\.js.*esc close/.test(frame()), 'its whole log from a double-click');
 
     p = at(frame(), '2 Log');
     mouse.click(p.x, p.y);

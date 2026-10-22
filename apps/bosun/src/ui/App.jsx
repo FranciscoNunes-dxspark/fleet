@@ -5,7 +5,9 @@ import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '../help-layout.js';
-import { loadItems } from '../source.js';
+import { loadCrew, withProfile } from '../crew.js';
+import { Supervisor, killPids, pidsOnPort } from '../supervisor.js';
+import { ask } from '../claude-cli.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '../text.js';
 import { VERSION } from '../version.js';
@@ -16,7 +18,7 @@ import { paletteItems } from '../palette.js';
 import { Palette } from './Palette.jsx';
 import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from './parts.jsx';
 import { HelpView } from './HelpView.jsx';
-import { ItemsView } from './ItemsView.jsx';
+import { CrewView } from './CrewView.jsx';
 import { LogView } from './LogView.jsx';
 import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
@@ -24,7 +26,7 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 
 const VIEWS = [
-  { id: 'items', label: 'Items' },
+  { id: 'crew', label: 'Crew' },
   { id: 'log', label: 'Log' },
 ];
 
@@ -38,7 +40,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  items: '↵ show · y copy its name',
+  crew: 'r restart · s stop/start · R all · a all logs · w why · o open · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
@@ -49,7 +51,14 @@ function Header({ data, width, loading, mood }) {
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Bosun', bold: true },
   ];
-  if (data) segs.push({ text: '  │  ', color: theme.border }, { text: `${data.items.length} items`, color: theme.dim });
+  if (data) {
+    const up = data.procs.filter((p) => p.child).length;
+    const crashed = data.procs.filter((p) => p.status === 'crashed').length;
+    segs.push({ text: '  │  ', color: theme.border }, { text: `${up}/${data.procs.length} running`, color: theme.dim });
+    if (crashed) segs.push({ text: `  ${crashed} crashed`, color: theme.del, bold: true });
+    if (data.from) segs.push({ text: `  │  ${data.from}`, color: theme.dim });
+    if (data.profile) segs.push({ text: `  │  profile ${data.profile}`, color: theme.accent });
+  }
   else if (loading) segs.push({ text: '  loading…', color: theme.dim });
   return <Row pointer={false} width={width} segments={segs} />;
 }
@@ -93,17 +102,19 @@ function activityRows(entries) {
 
 const DOUBLE_CLICK_MS = 400;
 
-// `load` reads the data (source.js's loadItems; tests pass their own). `mouse` is mouse.js's
+// `dir` is the project; `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
+// `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
+// `pidsOnPort` and `killPids` reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, load = loadItems, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('items');
+  const [view, setView] = useState('crew');
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
   const [sugIndex, setSugIndex] = useState(0);
@@ -210,17 +221,70 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
     addEntry({ title, status, lines });
   };
 
-  const reload = async () => {
+  // The supervisor runs the crew; it changes in place, so a change only asks for a redraw, a few a second at most.
+  const supRef = useRef(null);
+  const crewRef = useRef(null);
+  const profileRef = useRef(initialProfile);
+  const [, setTick] = useState(0);
+  const redrawSoon = useRef(null);
+  const changed = () => {
+    if (redrawSoon.current) return;
+    redrawSoon.current = setTimeout(() => {
+      redrawSoon.current = null;
+      if (supRef.current) publish();
+    }, 80);
+  };
+  const publish = () => {
+    dataRef.current = { ...crewRef.current, profile: profileRef.current, procs: supRef.current.list() };
+    setData(dataRef.current);
+    setTick((n) => n + 1);
+  };
+  // The crew again (bosun.json changed, /reload, another profile): new processes start, ones gone stop,
+  // and with `restartChanged` the ones whose command changed restart.
+  const reload = async ({ restartChanged = false } = {}) => {
     try {
-      const items = await load();
-      dataRef.current = { items };
-      setData(dataRef.current);
+      const crew = await load(dir);
+      crewRef.current = crew;
+      if (profileRef.current && !crew.profiles[profileRef.current]) profileRef.current = null;
+      const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
+      const first = !supRef.current;
+      const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
+      if (first) supRef.current = new Supervisor(procs, { dir, onChange: changed });
+      else supRef.current.setCrew(procs);
+      publish();
+      if (crew.problems.length) note([`Some of ${crew.from} was left out:`, ...crew.problems].join('\n'), 'error');
+      if (!crew.procs.length && first) note(`Nothing to run here: no ${'bosun.json'}, and no dev or start script in package.json. /init writes a bosun.json to fill in.`);
+      const sup = supRef.current;
+      if (first) {
+        if (autostart) sup.startAll();
+        return;
+      }
+      for (const p of sup.list()) {
+        const had = before.get(p.name);
+        if (!had) {
+          if (autostart) sup.start(p.name);
+        } else if (restartChanged && p.child && (had.run !== p.spec.run || JSON.stringify(had.env) !== JSON.stringify(p.spec.env))) sup.restart(p.name);
+      }
     } catch (e) {
-      note(`Couldn't load: ${firstLine(e.message)}`, 'error');
+      note(`Couldn't read the crew: ${firstLine(e.message)}`, 'error');
     } finally {
       setLoading(false);
     }
   };
+  const setProfile = (name) => {
+    profileRef.current = name;
+    note(name ? `Profile ${name}` : 'No profile');
+    return reload({ restartChanged: true });
+  };
+  // Ports and health pages, every two seconds; and every process stopped when Bosun closes.
+  useEffect(() => {
+    const t = setInterval(() => supRef.current?.checkPorts(), 2000);
+    return () => {
+      clearInterval(t);
+      clearTimeout(redrawSoon.current);
+      supRef.current?.dispose();
+    };
+  }, []);
 
   // One command at a time, with the spinner, esc to cancel, and a line in the activity log.
   // `start(signal)` resolves with { stdout, stderr }.
@@ -277,7 +341,7 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
   };
 
   const ctxRef = useRef(null);
-  if (!ctxRef.current) ctxRef.current = { get data() { return dataRef.current; }, get config() { return configRef.current; }, mouseHandlers: [] };
+  if (!ctxRef.current) ctxRef.current = { get data() { return dataRef.current; }, get config() { return configRef.current; }, get crew() { return supRef.current; }, mouseHandlers: [] };
   const ctx = ctxRef.current;
   Object.assign(ctx, {
     task,
@@ -289,8 +353,14 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
     // A view that takes keys the app would otherwise use (a search being typed) sets this to say so.
     claimsKey: null,
     prefill,
-    reload,
+    reload: () => reload({ restartChanged: true }),
     setView,
+    dir,
+    setProfile,
+    askClaude,
+    pidsOnPort: portPids,
+    killPids: stopPids,
+    openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // Whether this terminal can report the mouse at all (/settings says so).
     mouseAvailable: Boolean(mouse),
     // /update: asks for the latest release now, whatever the daily check last said, and installs it.
@@ -332,7 +402,6 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
     viewHasKeys: () => focusRef.current === 'view' && !overlayRef.current && !confirmRef.current && answerKey.current !== keySeq.current,
     overlayHasKeys: () => focusRef.current === 'view' && !confirmRef.current && answerKey.current !== keySeq.current,
     quit: () => exit(),
-    refresh: () => reload(),
     showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
     // A list to pick from: { title, hint, items | load, onPick, keys, empty } (see Picker.jsx).
     // `replace`: swaps the picker on screen for this one (the same list, redrawn after a change), keeping
@@ -571,7 +640,6 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
       const i = VIEWS.findIndex((v) => v.id === view);
       return setView(VIEWS[(i + (key.shift ? VIEWS.length - 1 : 1)) % VIEWS.length].id);
     }
-    if (input === 'r') return ctx.refresh();
   };
 
   // One dispatcher reading focus from refs, which change the instant focus moves. Handlers that
@@ -708,11 +776,11 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
   } else if (!data) {
     main = (
       <Panel title={VIEWS.find((v) => v.id === view).label} width={W} height={mainH}>
-        <Text color={theme.dim}>{loading ? '  Loading…' : "  Nothing loaded. r tries again."}</Text>
+        <Text color={theme.dim}>{loading ? '  Reading the crew…' : '  Nothing read. /reload tries again.'}</Text>
       </Panel>
     );
   } else {
-    main = <ItemsView data={data} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <CrewView procs={data.procs} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash

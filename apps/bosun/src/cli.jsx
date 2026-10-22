@@ -7,6 +7,10 @@ import { App } from './ui/App.jsx';
 import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js';
 import { copyToClipboard } from './clipboard.js';
 import { terminalMouse } from './mouse.js';
+import { killEverything } from './supervisor.js';
+import { existsSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { spawn } from 'node:child_process';
 
 const args = process.argv.slice(2);
 
@@ -16,9 +20,16 @@ if (args.includes('-v') || args.includes('--version')) {
 }
 
 if (args.includes('-h') || args.includes('--help')) {
-  console.log(`bosun
+  console.log(`bosun [folder] [--profile <name>] [--no-start]
 
 Runs a project's processes for you in the terminal, each with its own log, port and health.
+It reads them from bosun.json in the folder (the current one unless given), else from
+package.json's dev script, split into its commands when it's a concurrently line.
+
+  --profile    start with this profile from bosun.json
+  --no-start   open without starting anything (R starts them all)
+
+Quitting stops every process it started, and what those started.
 
 Inside: press ? for shortcuts, / for commands, ! to run a shell command.`);
   process.exit(0);
@@ -28,6 +39,26 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
   console.error('bosun needs an interactive terminal.');
   process.exit(1);
 }
+
+const value = (flag) => {
+  const i = args.indexOf(flag);
+  return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : undefined;
+};
+const folder = args.find((x, i) => !x.startsWith('-') && args[i - 1] !== '--profile');
+const dir = resolve(folder ?? '.');
+if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+  console.error(`bosun: ${dir} isn't a folder.`);
+  process.exit(1);
+}
+// However Bosun ends (q, a crash, the terminal closing), what it started doesn't outlive it.
+process.on('exit', killEverything);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));
+
+// o: the browser, through what the OS opens addresses with.
+const openUrl = (url) => {
+  const [cmd, cmdArgs] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]];
+  spawn(cmd, cmdArgs, { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref();
+};
 
 const config = loadConfig();
 setAccent(config.accent);
@@ -50,7 +81,7 @@ const mouse = await terminalMouse(process.stdin, process.stdout);
 // y copies: to the system clipboard, or through the terminal (OSC 52) over SSH or when that fails.
 const copy = (text) => copyToClipboard(text);
 const app = render(
-  <App config={config} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} dir={dir} profile={value('--profile') ?? null} autostart={!args.includes('--no-start')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdout: mouse?.stdout ?? process.stdout },
 );

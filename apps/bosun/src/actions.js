@@ -3,7 +3,9 @@
 import { configFile } from './config.js';
 import { run } from './run.js';
 import { settingRows, settingSegments } from './settings.js';
-import { DEFAULT_ACCENT, isColour, setAccent } from './theme.js';
+import { DEFAULT_ACCENT, isColour, setAccent, theme } from './theme.js';
+import { clip } from './claude-cli.js';
+import { FILE, specFor, writeSpec } from './crew.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -17,11 +19,128 @@ export function raw(ctx, command) {
   return ctx.task(text, (signal) => run(text, { signal }), { label: 'Running' });
 }
 
-/** An item in the viewer: ↵ in Items, or /show <name>. */
-export function showItem(ctx, name) {
-  const it = typeof name === 'string' ? ctx.data?.items.find((x) => x.name.toLowerCase() === name.trim().toLowerCase()) : name;
-  if (!it) return ctx.note(name ? `There's no item called ${name}.` : 'Name an item: /show <item>', 'error');
-  ctx.showText(it.name, `${it.kind}\n\n${it.detail}`);
+/** A process by name (or an unambiguous start of one), saying so when there's none. */
+function proc(ctx, name) {
+  const crew = ctx.crew;
+  const n = String(name ?? '').trim().toLowerCase();
+  if (!crew) return null;
+  const all = crew.list();
+  const p = all.find((x) => x.name.toLowerCase() === n) ?? (n ? all.filter((x) => x.name.toLowerCase().startsWith(n)) : []).find((_, i, list) => list.length === 1);
+  if (!p) ctx.note(n ? `There's no process called ${name}.` : 'Name a process.', 'error');
+  return p ?? null;
+}
+
+/** r, R and /restart: one process, or `all`. */
+export async function restart(ctx, name) {
+  if (String(name).trim() === 'all' || !String(name).trim()) {
+    if (!ctx.crew) return;
+    ctx.note('Restarting every process');
+    await ctx.crew.stopAll();
+    return ctx.crew.startAll();
+  }
+  const p = proc(ctx, name);
+  if (!p) return false;
+  await ctx.crew.restart(p.name);
+}
+
+/** /stop: one process, or `all`. */
+export async function stop(ctx, name) {
+  if (String(name).trim() === 'all') return ctx.crew?.stopAll();
+  const p = proc(ctx, name);
+  if (!p) return false;
+  await ctx.crew.stop(p.name);
+}
+
+/** /start: one process, or `all` (each after the one it waits for). */
+export function start(ctx, name) {
+  if (String(name).trim() === 'all' || !String(name).trim()) return ctx.crew?.startAll();
+  const p = proc(ctx, name);
+  if (!p) return false;
+  ctx.crew.start(p.name);
+}
+
+/** s: stops it when it's running, starts it when it isn't. */
+export function toggle(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  return p.child ? ctx.crew.stop(p.name) : ctx.crew.start(p.name);
+}
+
+/** ↵: everything a process has said, in the viewer. */
+export function showLog(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  ctx.showText(`${p.name} · ${p.spec.run}`, p.lines.map((l) => l.text).join('\n') || '(nothing yet)', { bottom: true });
+}
+
+/** f and /free: stops whatever holds `port` on this machine, after asking. */
+export async function free(ctx, port) {
+  const n = Number(String(port ?? '').trim().replace(/^:/, ''));
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return ctx.note('Name a port: /free 3000', 'error');
+  const pids = ctx.pidsOnPort(n);
+  if (!pids.length) return ctx.note(`Nothing is listening on port ${n} (or this machine won't say what is).`);
+  const ok = await ctx.confirm({ title: `Stop ${pids.length === 1 ? `process ${pids[0]}` : `processes ${pids.join(', ')}`}, which ${pids.length === 1 ? 'holds' : 'hold'} port ${n}?`, danger: true, options: YES_NO('Yes, stop it') });
+  if (!ok) return false;
+  ctx.killPids(pids);
+  ctx.note(`Stopped what held port ${n}.`, 'ok');
+}
+
+/** o and /open: the process's port in the browser. */
+export function openProc(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  if (!p.port) return ctx.note(`${p.name} has no port: give it one in bosun.json ("port": 3000).`, 'error');
+  ctx.openUrl(`http://localhost:${p.port}`);
+}
+
+/** The question for w and /why: what the process is and what it said last. */
+export function whyPrompt(p) {
+  return [
+    `"${p.name}" is one of the processes of the project in the current folder, started with: ${p.spec.run}`,
+    p.status === 'crashed' ? `It stopped with exit code ${p.code}.` : `It is ${p.status}.`,
+    'Its output is on stdin, the newest last. Say in a few sentences why it failed or what is wrong, and what to do about it. Read the project\'s files if that helps. Plain text, no headings.',
+  ].join(' ');
+}
+
+/** w and /why: asks Claude why a process failed, from its log and the project's files. */
+export async function why(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  if (!p.lines.length) return ctx.note(`${p.name} hasn't said anything yet.`);
+  const log = clip(p.lines.slice(-400).map((l) => l.text).join('\n'), 60_000);
+  const r = await ctx.task(`Asking Claude about ${p.name}`, async (signal) => ({ stdout: await ctx.askClaude(whyPrompt(p), { input: log, cwd: ctx.dir, signal, tools: ['Read', 'Grep', 'Glob'] }) }), { label: 'Claude is reading the log' });
+  if (r.ok) ctx.showText(`Why ${p.name}`, r.out);
+  return r;
+}
+
+/** p and /profile: the profiles in bosun.json (or package.json's dev:* scripts), or none. */
+export function profiles(ctx, name) {
+  const names = Object.keys(ctx.data?.profiles ?? {});
+  if (name?.trim()) {
+    const n = name.trim();
+    if (n !== 'none' && !names.includes(n)) return ctx.note(`There's no profile called ${n}${names.length ? ` (there's ${names.join(', ')})` : ''}.`, 'error');
+    return ctx.setProfile(n === 'none' ? null : n);
+  }
+  if (!names.length) return ctx.note('There are no profiles: add "profiles" to bosun.json.');
+  ctx.showPicker({
+    title: 'Profiles',
+    hint: 'the processes that change restart',
+    items: [{ name: null, label: 'none' }, ...names.map((n) => ({ name: n, label: n }))].map((it) => ({ ...it, segments: [{ text: it.label, strong: it.name === (ctx.data?.profile ?? null) }, { text: it.name === (ctx.data?.profile ?? null) ? '  (on)' : '', color: theme.dim }] })),
+    onPick: (it) => {
+      ctx.closeOverlay();
+      ctx.setProfile(it.name);
+    },
+  });
+}
+
+/** /init: bosun.json from what Bosun worked out, to change from there. */
+export function init(ctx) {
+  const crew = ctx.data;
+  if (crew?.file) return ctx.note(`There's a ${FILE} here already.`);
+  const spec = crew?.procs.length ? specFor(crew) : { procs: { web: { run: 'npm run dev', port: 3000 } } };
+  writeSpec(ctx.dir, spec);
+  ctx.note(`Wrote ${FILE}: give each process its "port" (and "health", a page that says it's well), then /reload.`, 'ok');
+  return ctx.reload();
 }
 
 /** /accent: a new accent colour, or `default` for the one Bosun comes with. */

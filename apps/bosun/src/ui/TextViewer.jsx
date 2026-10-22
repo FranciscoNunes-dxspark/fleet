@@ -8,16 +8,17 @@ import { Panel, Row } from './parts.jsx';
 /**
  * Text over the view (ctx.showText): a command's output, an item. `lines` (rows of
  * segments) draws it in colour instead of `text`, which y still copies. Scrolls; esc or q closes it.
+ * `bottom` starts it at the end, as for a log.
  */
-export function TextViewer({ title, text, lines: given, loading, ctx, width, height, active, onClose }) {
+export function TextViewer({ title, text, lines: given, loading, bottom = false, ctx, width, height, active, onClose }) {
   const innerW = width - 4;
   const innerH = height - 2;
   const lines = loading
     ? [[{ text: 'Loading…', color: theme.dim }]]
     : (given ?? String(text ?? '').split('\n').flatMap((l) => (l ? wrap(l, innerW) : [''])).map((l) => [{ text: l }]));
-  const [top, setTopState] = useState(0);
-  const topRef = useRef(0);
   const max = Math.max(0, lines.length - innerH);
+  const [top, setTopState] = useState(bottom ? max : 0);
+  const topRef = useRef(bottom ? max : 0);
   const setTop = (n) => {
     topRef.current = Math.max(0, Math.min(max, n));
     setTopState(topRef.current);

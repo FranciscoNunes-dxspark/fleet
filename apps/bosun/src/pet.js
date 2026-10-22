@@ -16,28 +16,29 @@ export const PALETTE = {
   T: '#ffb35f', // cheeks, the one warm colour
 };
 
-// 16 × 10 pixels; '.' is transparent. The body is columns 0–13; 14–15 are room for a waving fin.
+// 16 × 10 pixels; '.' is transparent. A parrot facing right: the beak is the warm colour, the belly
+// the pale one; columns 14–15 are room for a wing raised to wave.
 const BASE = [
-  '....GGGGGG......',
-  '..GGDDDDDDGG....',
-  '.GDDDDDDDDDDG...',
-  'GDDEWDDDDEWDDG..',
-  'GDDEEDDDDEEDDG..',
-  'GDTDDDLLDDDTDG..',
-  'GDDDDLLLLDDDDG..',
-  '.GDDDDLLDDDDG...',
-  '..GGDDDDDDGG....',
-  '....GGGGGG......',
+  '..GG.GGGG.......',
+  '.GDDGDDDDGG.....',
+  '.GDDDDDWEDGGG...',
+  'GDDDDDDEEDGTTG..',
+  'GDDDDDDDDDGTTTG.',
+  'GDDLLLDDDDGGTG..',
+  'GDLLLLLDDDG.G...',
+  '.GDLLLDDDG......',
+  '..GDDDDGG.......',
+  '..GTGGTG........',
 ];
 
 // Each mood replaces some rows of the base drawing.
 const MOODS = {
   idle: {},
-  look: { 3: 'GDDWEDDDDWEDDG..' }, // glancing the other way, for the busy animation
-  sleep: { 3: 'GDDDDDDDDDDDDG..', 4: 'GDDEEDDDDEEDDG..' },
-  happy: { 3: 'GDDEDDDDDDEDDG..', 4: 'GDEDEDDDDEDEDG..' },
-  worried: { 3: 'GDDWWDDDDWWDDG..', 4: 'GDDEEDDDDEEDDG..' },
-  wave: { 2: '.GDDDDDDDDDDG.GG', 3: 'GDDEWDDDDEWDDGDG', 4: 'GDDEEDDDDEEDDGG.' },
+  look: { 2: '.GDDDDDEWDGGG...' }, // glancing the other way, for the busy animation
+  sleep: { 2: '.GDDDDDDDDGGG...', 3: 'GDDDDDDEEDGTTG..' },
+  happy: { 2: '.GDDDDDEDDGGG...', 3: 'GDDDDDEDEDGTTG..' },
+  worried: { 2: '.GDDDDDWWDGGG...', 3: 'GDDDDDDEEDGTTG..' },
+  wave: { 5: 'GDDLLLDDDDGGTGGG', 6: 'GDLLLLLDDDGGGDG.', 7: '.GDLLLDDDGDDG...' },
 };
 
 /** The drawing for a mood, as rows of palette letters. */
@@ -84,13 +85,19 @@ export function moodFor({ data, busy, lastEntry, now = Date.now() }) {
   if (busy) return 'look';
   if (lastEntry?.status === 'ok' && now - lastEntry.at < 4000) return 'happy';
   if (!data) return 'idle';
+  if (data.procs.some((p) => p.status === 'crashed')) return 'worried';
+  if (!data.procs.some((p) => p.child)) return 'sleep';
   return 'wave';
 }
 
 /** A sentence for the welcome box. */
 export function moodLine(mood, data) {
   if (!data) return `${PET.name} is getting things ready.`;
+  const crashed = data.procs.filter((p) => p.status === 'crashed').map((p) => p.name);
+  if (crashed.length) return `${crashed.join(', ')} crashed: w asks Claude why.`;
   if (mood === 'worried') return 'Something went wrong: the line below says what.';
-  const n = data.items.length;
-  return `${n} item${n === 1 ? '' : 's'} to look at.`;
+  const n = data.procs.length;
+  if (!n) return 'Nothing to run here yet: /init writes a bosun.json.';
+  const up = data.procs.filter((p) => p.child).length;
+  return up ? `${up} of ${n} running. r restarts one, R all of them.` : `None of the ${n} running: R starts them.`;
 }

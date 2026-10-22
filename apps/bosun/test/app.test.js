@@ -1,57 +1,120 @@
-// Drives the real UI against the placeholder source: keys in, frames out.
+// Drives the real UI with a real crew of small node scripts: keys in, frames out.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
-import { KEYS, start, tempHome, type, until } from './helpers.js';
+import { KEYS, project, quietCrew, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
 before(() => (cleanup = tempHome()));
 after(() => cleanup());
 
-test('the items, the viewer, tabs, help and the prompt', async () => {
-  const copied = [];
-  const app = start({ copy: (t) => copied.push(t) });
+const freePort = () =>
+  new Promise((done) => {
+    const s = createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => done(port));
+    });
+  });
+
+const SERVER = `require('http').createServer((q, s) => s.end('ok')).listen(+process.env.PORT, '127.0.0.1', () => console.log('listening on ' + process.env.PORT));`;
+const TICKER = `let n = 0; setInterval(() => console.log('tick ' + ++n), 100);`;
+const CRASH = `console.log('connecting'); setTimeout(() => { console.error('Error: the queue is not there'); process.exit(2); }, 150);`;
+
+test('the crew starts, shows each log, restarts, stops, crashes, asks Claude why, and stops it all on quit', async () => {
+  const port = await freePort();
+  const dir = project(
+    { procs: { api: { run: 'node server.js', port, env: { PORT: String(port) } }, ticker: 'node ticker.js', queue: 'node crash.js' }, profiles: { slow: { ticker: { env: { SLOW: '1' } } } } },
+    { 'server.js': SERVER, 'ticker.js': TICKER, 'crash.js': CRASH },
+  );
+  const asked = [];
+  const opened = [];
+  const askClaude = async (prompt, { input, cwd }) => {
+    asked.push({ prompt, input, cwd });
+    return 'The queue service is not running: start it first.';
+  };
+  const app = start({ dir, askClaude, openUrl: (u) => opened.push(u) });
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('bowline'), 'the items');
-    assert.match(frame(), /❯ anchor/);
-    assert.match(frame(), /Holds the boat in place/, 'the one under the cursor shows beside the list');
+    await until(() => frame().includes(`listening on ${port}`), 'the api up, its log beside the list');
+    assert.match(frame(), /❯ ● api\s+running/);
+    await until(() => /queue\s+crashed/.test(frame()) && frame().includes('1 crashed'), 'the crash, in the list and the header');
+    await until(() => frame().includes(`:${port} ✓`), 'the port answering');
 
     app.stdin.write('j');
-    await until(() => /❯ bowline/.test(frame()), 'the cursor on the second item');
-    app.stdin.write('y');
-    await until(() => frame().includes('Copied bowline'), 'the copy said in the bottom line');
-    assert.deepEqual(copied, ['bowline']);
+    await until(() => /tick \d+/.test(frame()), 'the ticker\'s log');
+    app.stdin.write('a');
+    await until(() => frame().includes('╭─ All') && /ticker\s+tick/.test(frame()), 'every log at once');
+    app.stdin.write('a');
+    await until(() => !frame().includes('╭─ All'), 'back to the one');
 
-    app.stdin.write(KEYS.enter);
-    await until(() => /bowline.*esc close/.test(frame()), 'the item in the viewer');
-    app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('esc close'), 'the viewer closed');
+    app.stdin.write('s');
+    await until(() => /ticker\s+stopped/.test(frame()), 'the ticker stopped');
+    app.stdin.write('s');
+    await until(() => /ticker\s+running/.test(frame()), 'and started again');
 
-    app.stdin.write('?');
-    await until(() => frame().includes('Show the item'), 'help, on the Items section');
+    app.stdin.write('j');
+    await until(() => /❯ ● queue/.test(frame()), 'on the crashed one');
+    app.stdin.write('w');
+    await until(() => frame().includes('The queue service is not running'), 'Claude\'s answer in the viewer');
+    assert.match(asked[0].input, /the queue is not there/);
+    assert.match(asked[0].prompt, /exit code 2/);
+    assert.equal(asked[0].cwd, dir);
     app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('Show the item'), 'help closed');
+    await until(() => !frame().includes('esc close'), 'the answer closed');
+
+    app.stdin.write('k');
+    app.stdin.write('k');
+    await until(() => /❯ ● api/.test(frame()), 'back on the api');
+    app.stdin.write('o');
+    await until(() => opened.length === 1, 'the browser asked for');
+    assert.deepEqual(opened, [`http://localhost:${port}`]);
+    app.stdin.write('r');
+    await until(() => (frame().match(/listening on/g) ?? []).length >= 2, 'the api restarted');
 
     app.stdin.write('/');
-    await type(app.stdin, 'sho');
-    await until(() => frame().includes('/show <item>'), 'the command suggested');
-    await type(app.stdin, 'w cl');
-    await until(() => frame().includes('clove hitch'), 'the item suggested');
+    await type(app.stdin, 'profile slow');
     app.stdin.write(KEYS.enter);
-    await until(() => /clove hitch.*esc close/.test(frame()), '/show from its suggestion');
-    app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('esc close'), 'the viewer closed again');
+    await until(() => frame().includes('profile slow'), 'the profile in the header');
+
+    app.stdin.write('q');
+    // Quitting unmounts App, which stops everything: the port is let go.
+    await until(async () => true, 'quit');
+  } finally {
+    app.unmount();
+  }
+  const { portOpen } = await import('../src/supervisor.js');
+  const end = Date.now() + 5000;
+  while ((await portOpen(port)) && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+  assert.equal(await portOpen(port), false, 'nothing left listening after Bosun closed');
+});
+
+test('/free asks, then stops what holds the port; /init writes bosun.json from package.json', async () => {
+  const dir = project({});
+  const { rmSync } = await import('node:fs');
+  rmSync(`${dir}/bosun.json`);
+  writeFileSync(`${dir}/package.json`, JSON.stringify({ scripts: { dev: 'concurrently -n api,web "node -e 1" "node -e 2"' } }));
+  const killed = [];
+  const app = start({ dir, autostart: false, pidsOnPort: (p) => (p === 3000 ? [4242] : []), killPids: (pids) => killed.push(...pids) });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes("package.json's dev script") && /web\s+stopped/.test(frame()), 'the crew from package.json');
+    app.stdin.write('/');
+    await type(app.stdin, 'free 3000');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('Stop process 4242, which holds port 3000?'), 'the question');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('Stopped what held port 3000'), 'done');
+    assert.deepEqual(killed, [4242]);
 
     app.stdin.write('/');
-    await type(app.stdin, 'nope');
+    await type(app.stdin, 'init');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('Unknown command: /nope'), 'an unknown command said so');
-
-    app.stdin.write('2');
-    await until(() => frame().includes('╭─ Log '), 'the Log view');
-    assert.match(frame(), /❯ \S Unknown command: \/nope/, 'on the newest entry');
+    await until(() => frame().includes('Wrote bosun.json'), 'written');
+    const spec = JSON.parse(readFileSync(`${dir}/bosun.json`, 'utf8'));
+    assert.deepEqual(Object.keys(spec.procs), ['api', 'web']);
+    await until(() => frame().includes('│  bosun.json'), 'read from it now');
   } finally {
     app.unmount();
   }
@@ -61,7 +124,7 @@ test('! runs a shell command, with its output in the activity lines, and esc can
   const app = start();
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('bowline'), 'the items');
+    await until(() => frame().includes('worker'), 'the crew');
     app.stdin.write('!');
     await type(app.stdin, 'node -e "console.log(6*7)"');
     app.stdin.write(KEYS.enter);
@@ -87,7 +150,7 @@ test('settings: a toggle saves, the accent changes through its command', async (
   const app = start();
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('bowline'), 'the items');
+    await until(() => frame().includes('worker'), 'the crew');
     app.stdin.write(',');
     await until(() => frame().includes('Accent colour'), 'the settings');
     app.stdin.write('j');
@@ -111,18 +174,21 @@ test('settings: a toggle saves, the accent changes through its command', async (
   }
 });
 
-test('a source that fails says so, and r tries again', async () => {
+test('a crew that can\'t be read says so, and /reload tries again', async () => {
   let calls = 0;
+  const quiet = quietCrew(['only']);
   const load = async () => {
-    if (++calls === 1) throw new Error('the server is asleep');
-    return [{ name: 'only one', kind: 'test', detail: 'here' }];
+    if (++calls === 1) throw new Error('bosun.json isn\'t valid JSON');
+    return quiet();
   };
-  const app = start({ load });
+  const app = start({ load, autostart: false });
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes("Couldn't load: the server is asleep"), 'the error');
-    app.stdin.write('r');
-    await until(() => frame().includes('only one'), 'the second load');
+    await until(() => frame().includes("Couldn't read the crew: bosun.json isn't valid JSON"), 'the error');
+    app.stdin.write('/');
+    await type(app.stdin, 'reload');
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ ● only/.test(frame()), 'the second read');
   } finally {
     app.unmount();
   }
