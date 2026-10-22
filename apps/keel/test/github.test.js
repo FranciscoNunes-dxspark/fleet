@@ -11,7 +11,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-github-'));
 process.env.AZDO_MOCK = '1';
 process.env.DATA_DIR = dataDir;
 
-const { reviewersOf, policiesOf, normalizeRun, timelineOf, logTail, approvalsOf } = await import('../server/github/normalize.js');
+const { reviewersOf, policiesOf, normalizeRun, timelineOf, logTail, approvalsOf, releasesOf } = await import('../server/github/normalize.js');
 const { wasDeclined, currentStage } = await import('../server/domain/pipelines.js');
 const { commitRefs } = await import('../server/domain/commits.js');
 const { orgKeyOf, normalizeOrgUrl, kindOf } = await import('../server/orgs.js');
@@ -144,6 +144,20 @@ test('emails: verified-domain ones when GitHub gives them, else public ones; an 
   assert.deepEqual(asked, ['verified', 'public'], 'refused once, then public emails only, kept for an hour');
 });
 
+test('releases: the newest published one that is not a pre-release is the latest, files still uploading are left out', () => {
+  const rel = (id, o = {}) => ({ id, tag_name: `v${id}`, name: '', html_url: `https://github.com/acme/app/releases/tag/v${id}`, published_at: '2026-10-01T00:00:00Z', author: { login: 'ann' }, assets: [], ...o });
+  const list = releasesOf([
+    rel(4, { draft: true, published_at: null, created_at: '2026-10-03T00:00:00Z' }),
+    rel(3, { prerelease: true }),
+    rel(2, { name: 'Two', assets: [{ id: 1, name: 'app.zip', size: 2048, download_count: 7, browser_download_url: 'https://x/app.zip', state: 'uploaded' }, { id: 2, name: 'app.tar.gz', state: 'open' }] }),
+    rel(1),
+  ]);
+  assert.deepEqual(list.map((r) => r.latest), [false, false, true, false]);
+  assert.equal(list[0].publishedAt, '2026-10-03T00:00:00Z');
+  assert.equal(list[3].name, 'v1');
+  assert.deepEqual(list[2].assets, [{ id: 1, name: 'app.zip', size: 2048, downloads: 7, contentType: null, url: 'https://x/app.zip' }]);
+});
+
 test('GitHub merge commits name their pull request; #123 is not a work item there', () => {
   assert.deepEqual(commitRefs('Merge pull request #39 from acme/dark-mode\n\nDark mode', { github: true }), { workItemIds: [], prId: 39 });
   assert.deepEqual(commitRefs('Retry flaky upload (#36)\n\n* fix #12', { github: true }), { workItemIds: [], prId: 36 });
@@ -252,6 +266,18 @@ test('demo GitHub: rejecting a deployment declines the run; a workflow without a
 test('demo GitHub: work item pages simply have nothing from it', async () => {
   assert.ok(!(await service.workItems()).items.some((w) => w.org === P));
   assert.ok(!(await service.epics()).projects.some((p) => p.org === P));
+});
+
+test('demo GitHub: releases of the tracked repos with their files, repos without any left out', async () => {
+  const repos = (await service.repoReleases()).filter((r) => r.org === P);
+  assert.deepEqual(repos.map((r) => r.repoName).sort(), ['api', 'web-app']);
+  const api = repos.find((r) => r.repoName === 'api');
+  assert.equal(api.webUrl, 'https://github.com/octo-demo/api/releases');
+  assert.deepEqual(api.releases.map((x) => [x.tag, x.prerelease, x.latest]), [['v2.5.0-rc.1', true, false], ['v2.4.0', false, true], ['v2.3.1', false, false], ['v2.3.0', false, false]]);
+  const [linux] = api.releases[1].assets;
+  assert.equal(linux.url, 'https://github.com/octo-demo/api/releases/download/v2.4.0/api-2.4.0-linux-x64.tar.gz');
+  assert.equal(linux.downloads, 342);
+  assert.deepEqual(repos.find((r) => r.repoName === 'web-app').releases[0].assets, []);
 });
 
 test('a token without read:org still lists pull requests, without requested teams', async () => {

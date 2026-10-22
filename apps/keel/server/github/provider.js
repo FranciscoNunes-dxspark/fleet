@@ -4,7 +4,7 @@
 // work items, boards, sprints or classic releases here, so those answer empty.
 import { createClient, seg } from './client.js';
 import {
-  person, normalizePR, withEmails, policiesOf, threadsOf, fileOf, normalizeCommit, normalizeRun, normalizeWorkflow, timelineOf, logTail, approvalsOf,
+  person, normalizePR, withEmails, policiesOf, threadsOf, fileOf, normalizeCommit, normalizeRun, normalizeWorkflow, timelineOf, logTail, approvalsOf, releasesOf,
 } from './normalize.js';
 
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -425,6 +425,16 @@ export function createGithubProvider({ org, token, client } = {}) {
             repoOfWorkflow.set(w.id, r.name);
             return normalizeWorkflow(w, r, where);
           });
+      }));
+      return lists.flat();
+    },
+
+    /** Each repo's recent releases with their files, newest first; repos without releases are left out. */
+    async listRepoReleases(_projectId, { repoIds, perRepo = 5 } = {}) {
+      const repos = await reposFor(repoIds, 90);
+      const lists = await Promise.all(repos.map(async (r) => {
+        const list = await api(`${repoPath(r.name)}/releases`, { query: { per_page: perRepo } }).catch((e) => (e.status === 404 ? [] : Promise.reject(e)));
+        return list?.length ? [{ repoId: r.name, repoName: r.name, projectId, projectName, webUrl: `${r.html_url}/releases`, releases: releasesOf(list) }] : [];
       }));
       return lists.flat();
     },

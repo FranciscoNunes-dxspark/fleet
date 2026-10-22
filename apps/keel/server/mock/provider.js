@@ -930,6 +930,9 @@ export function createMockProvider() {
       })));
     },
 
+    // Release files are GitHub's (github/provider.js); Azure DevOps keeps builds' artifacts elsewhere.
+    listRepoReleases: () => delay([]),
+
     listReleaseApprovals: (projectId) => delay(releaseApprovals
       .filter((a) => a.projectId === projectById(projectId).id)
       .map(({ _release, _env, ...a }) => ({ ...a }))),

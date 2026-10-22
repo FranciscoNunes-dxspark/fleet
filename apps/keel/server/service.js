@@ -333,6 +333,15 @@ export function createService({
       .map((d) => ({ ...d, key: `${d.projectId}:release:${d.id}`, health: releaseHealth(d.stages) }));
   });
 
+  /** GitHub releases of the tracked repos, with their files (Azure DevOps answers none). */
+  const repoReleases = () => cached('builds:repo-releases', async () => {
+    const lists = await Promise.all((await tracked()).map((p) => provider.listRepoReleases(p.id, { repoIds: Array.isArray(p.repos) ? p.repos : undefined }).catch((err) => {
+      console.warn(`[releases] ${p.name}: ${err.message}`);
+      return [];
+    })));
+    return inTrackedRepos(lists.flat());
+  }, 5 * MIN);
+
   /**
    * The production monitors this person sees: those of the projects they track,
    * and those that belong to no project in particular. The settings store is
@@ -1352,6 +1361,10 @@ export function createService({
     async releases() {
       const [defs, appr] = await Promise.all([releases(), approvals()]);
       return { definitions: defs, approvals: appr };
+    },
+
+    async repoReleases() {
+      return repoReleases();
     },
 
     async approvals() {

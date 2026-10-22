@@ -306,6 +306,9 @@ export function createMultiService(entries) {
         approvals: parts.flatMap(({ org, value }) => tagAll(org, value.approvals)),
       };
     },
+    async repoReleases() {
+      return (await each((s) => s.repoReleases())).flatMap(({ org, value }) => tagAll(org, value));
+    },
     createRelease: viaProject('createRelease'),
     deployReleaseStage: viaProject('deployReleaseStage'),
     async decideApproval(kind, id, body, orgKey) {

@@ -246,6 +246,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     res.json(await req.ctx.service.removeTeamMember(String(projectId || ''), String(teamId || ''), String(memberId || '')));
   });
   r.get('/releases', async (req, res) => res.json(await req.ctx.service.releases()));
+  r.get('/repo-releases', async (req, res) => res.json(await req.ctx.service.repoReleases()));
   r.post('/releases/create', need('releases.run'), async (req, res) => {
     const { projectId, definitionId, description } = req.body || {};
     res.json(await req.ctx.service.createRelease(projectId, num(definitionId), description));

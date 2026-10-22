@@ -112,7 +112,28 @@ function demoData(owner) {
   for (let h = 200; h > 0; h -= 50) run(workflows[3], h, 'success', { minutes: 12 });
   for (let h = 100; h > 0; h -= 30) run(workflows[4], h, 'success', { minutes: 2 });
 
-  return { owner, repos, history, prs, workflows, runs, nextSha, nextRun: () => ++runId };
+  // Releases, newest first: the api's with built binaries (a release candidate above the latest),
+  // the web app's with none attached, and none on infra.
+  let assetId = 0;
+  const asset = (name, mb, downloads) => ({ id: ++assetId, name, size: Math.round(mb * 1_048_576), download_count: downloads, state: 'uploaded', content_type: 'application/octet-stream' });
+  const binaries = (version, downloads) => [
+    asset(`api-${version}-linux-x64.tar.gz`, 18.4, downloads), asset(`api-${version}-windows-x64.zip`, 19.1, Math.round(downloads / 2)),
+    asset(`api-${version}-macos-arm64.tar.gz`, 17.6, Math.round(downloads / 3)), asset('SHA256SUMS', 0.001, Math.round(downloads / 10)),
+  ];
+  const release = (repoName, id, tag, daysAgo, author, o = {}) => ({
+    repo: repoName, id, tag_name: tag, name: o.name ?? tag, draft: !!o.draft, prerelease: !!o.prerelease,
+    created_at: ago(daysAgo * D), published_at: o.draft ? null : ago(daysAgo * D), author,
+    html_url: `${WEB}/${owner}/${repoName}/releases/tag/${tag}`, assets: o.assets || [],
+  });
+  const releases = [
+    release('api', 9004, 'v2.5.0-rc.1', 0.5, ME, { prerelease: true, assets: binaries('2.5.0-rc.1', 12) }),
+    release('api', 9003, 'v2.4.0', 6, MARCUS, { name: 'v2.4.0: search rate limits', assets: binaries('2.4.0', 342) }),
+    release('api', 9002, 'v2.3.1', 20, MARCUS, { assets: binaries('2.3.1', 1210) }),
+    release('api', 9001, 'v2.3.0', 34, SOFIA, { assets: binaries('2.3.0', 980) }),
+    release('web-app', 8001, 'v1.8.0', 3, PRIYA, { name: 'Dark mode' }),
+  ];
+
+  return { owner, repos, history, prs, workflows, runs, releases, nextSha, nextRun: () => ++runId };
 }
 
 const STEP_NAMES = ['Set up job', 'Checkout', 'Install dependencies', 'Test', 'Complete job'];
@@ -255,6 +276,8 @@ export function createDemoApi(owner) {
       return { ...restCommit(r, h[i]), parents: h[i + 1] ? [{ sha: h[i + 1].sha }] : [], files: [{ filename: 'src/index.js', status: 'modified' }] };
     }],
     ['GET', /^repos\/[^/]+\/([^/]+)\/compare\/([^.]+)\.\.\.(.+)$/, ([, r, base, head]) => compare(r, decodeURIComponent(base), decodeURIComponent(head))],
+    ['GET', /^repos\/[^/]+\/([^/]+)\/releases$/, ([, r], { query }) => db.releases.filter((x) => x.repo === repoOf(r).name).slice(0, Number(query.per_page) || 30)
+      .map(({ repo, assets, ...x }) => ({ ...x, assets: assets.map((a) => ({ ...a, browser_download_url: `${WEB}/${owner}/${repo}/releases/download/${x.tag_name}/${a.name}` })) }))],
     ['GET', /^repos\/[^/]+\/([^/]+)\/actions\/runs$/, ([, r], { query }) => ({ workflow_runs: runsWhere((x) => x.workflow.repo === r, query) })],
     ['GET', /^repos\/[^/]+\/([^/]+)\/actions\/workflows$/, ([, r]) => ({
       workflows: db.workflows.filter((w) => w.repo === r).map((w) => ({ id: w.id, name: w.name, path: w.path, state: 'active', html_url: `${WEB}/${owner}/${r}/actions/workflows/${w.path.split('/').pop()}` })),

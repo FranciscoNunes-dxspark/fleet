@@ -11,6 +11,7 @@ import { t, tj } from '../i18n.js';
 export default function Pipelines() {
   const builds = useApi('/pipelines');
   const rel = useApi('/releases');
+  const gh = useApi('/repo-releases');
   const { meta } = useApp();
   const [params, setParams] = useStickyParams('pipelines', ['tab']);
   const tab = ['releases', 'tests'].includes(params.get('tab')) ? params.get('tab') : 'builds';
@@ -22,6 +23,7 @@ export default function Pipelines() {
   const runningCount = allRuns.length - queuedCount;
   const defs = rel.data?.definitions || [];
   const approvals = rel.data?.approvals || [];
+  const ghRepos = gh.data || [];
 
   return (
     <div className="page page-wide">
@@ -45,7 +47,7 @@ export default function Pipelines() {
           {t('Builds & YAML')}<span className="seg-count">{data?.length ?? '…'}</span>
         </button>
         <button type="button" role="tab" aria-selected={tab === 'releases'} className={tab === 'releases' ? 'on' : ''} onClick={() => setParams({ tab: 'releases' }, { replace: true })}>
-          {t('Releases')}<span className="seg-count">{rel.data ? defs.length : '…'}</span>
+          {t('Releases')}<span className="seg-count">{rel.data ? defs.length + ghRepos.length : '…'}</span>
         </button>
         <button type="button" role="tab" aria-selected={tab === 'tests'} className={tab === 'tests' ? 'on' : ''} onClick={() => setParams({ tab: 'tests' }, { replace: true })}>
           {t('Flaky tests')}
@@ -54,7 +56,7 @@ export default function Pipelines() {
 
       {tab === 'builds' && (data ? <BuildsTab data={data} /> : builds.error ? <ErrorBox error={builds.error} onRetry={builds.reload} /> : <Loading />)}
       {tab === 'tests' && <FlakyTests />}
-      {tab === 'releases' && (rel.data ? <ReleasesTab defs={defs} /> : rel.error ? <ErrorBox error={rel.error} onRetry={rel.reload} /> : <Loading label={t('Loading release pipelines…')} />)}
+      {tab === 'releases' && (rel.data ? <ReleasesTab defs={defs} github={ghRepos} /> : rel.error ? <ErrorBox error={rel.error} onRetry={rel.reload} /> : <Loading label={t('Loading release pipelines…')} />)}
     </div>
   );
 }

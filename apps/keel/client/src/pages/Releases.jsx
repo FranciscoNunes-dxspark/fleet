@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { api } from '../api.js';
 import { useApp } from '../context.js';
-import { age, dateTime } from '../format.js';
+import { age, bytes, dateTime } from '../format.js';
 import { Chip, Confirm, Empty } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { approvalPath } from '../orgs.js';
@@ -111,20 +111,24 @@ function StageChip({ stage }) {
   );
 }
 
-export function ReleasesTab({ defs }) {
+export function ReleasesTab({ defs, github = [] }) {
   const { refresh, toast, can } = useApp();
   const canRun = can('releases.run');
   const [q, setQ] = useState('');
   const [deploying, setDeploying] = useState(null);
 
-  if (!defs.length) {
+  if (!defs.length && !github.length) {
     return (
       <Empty title={t('No classic release pipelines in your tracked projects.')}>
         {t("Release pipelines (Pipelines → Releases in Azure DevOps) show up here with each stage's latest deployment.")}
       </Empty>
     );
   }
-  const rows = defs.filter((d) => !q || `${d.name} ${d.projectName} ${d.path} ${d.stages.map((s) => s.name).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
+  const needle = q.toLowerCase();
+  const rows = defs.filter((d) => !q || `${d.name} ${d.projectName} ${d.path} ${d.stages.map((s) => s.name).join(' ')}`.toLowerCase().includes(needle));
+  const repos = github
+    .map((r) => ({ ...r, releases: r.releases.filter((x) => !q || `${r.repoName} ${x.tag} ${x.name} ${x.assets.map((a) => a.name).join(' ')}`.toLowerCase().includes(needle)) }))
+    .filter((r) => r.releases.length);
   const folders = new Map();
   for (const d of rows) {
     const key = `${d.projectName}|${d.path}`;
@@ -145,9 +149,9 @@ export function ReleasesTab({ defs }) {
   return (
     <>
       <div className="filters">
-        <input type="search" className="input" placeholder={t('Search release pipeline or stage')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search release pipelines')} />
+        <input type="search" className="input" placeholder={github.length ? t('Search releases, stages, repos or files') : t('Search release pipeline or stage')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search release pipelines')} />
       </div>
-      <div className="table-wrap">
+      {defs.length > 0 && <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -202,8 +206,90 @@ export function ReleasesTab({ defs }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
+      {repos.length > 0 && <GithubReleases repos={repos} />}
     </>
+  );
+}
+
+/**
+ * GitHub releases of the tracked repos, each with the files built for it. A repo shows its latest
+ * release and anything newer (pre-releases, drafts); older ones are a click away.
+ */
+function GithubReleases({ repos }) {
+  const [open, setOpen] = useState({});
+  return (
+    <section aria-label={t('GitHub releases')}>
+      <h2 className="section-title">{t('GitHub releases')}</h2>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>{t('Release')}</th>
+              <th>{t('Files')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {repos.map((r) => {
+              const key = `${r.org || ''}:${r.repoId}`;
+              const latest = r.releases.findIndex((x) => x.latest);
+              const first = latest < 0 ? 1 : latest + 1;
+              const shown = open[key] ? r.releases : r.releases.slice(0, first);
+              return (
+                <Fragment key={key}>
+                  <tr className="pipeline-group-row">
+                    <td colSpan={2}>
+                      <a href={r.webUrl} target="_blank" rel="noreferrer noopener">{r.repoName}</a>
+                      <span className="muted">{r.projectName}</span>
+                    </td>
+                  </tr>
+                  {shown.map((x) => <GithubReleaseRow key={x.id} release={x} />)}
+                  {r.releases.length > first && (
+                    <tr>
+                      <td colSpan={2}>
+                        <button type="button" className="btn btn-small btn-ghost" aria-expanded={!!open[key]} onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))}>
+                          {open[key] ? t('Show fewer') : t(r.releases.length - first === 1 ? '{n} older release' : '{n} older releases', { n: r.releases.length - first })}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function GithubReleaseRow({ release: x }) {
+  return (
+    <tr>
+      <td className="cell-title">
+        <a className="strong" href={x.webUrl} target="_blank" rel="noreferrer noopener">{x.name}</a>
+        {x.latest && <> <Chip tone="ok">{t('Latest')}</Chip></>}
+        {x.prerelease && <> <Chip tone="warn">{t('Pre-release')}</Chip></>}
+        {x.draft && <> <Chip tone="muted">{t('Draft')}</Chip></>}
+        <div className="sub">
+          {x.name !== x.tag && <span>{x.tag}</span>}
+          {x.publishedAt && <span title={dateTime(x.publishedAt)}>{t('{age} ago', { age: age(x.publishedAt) })}</span>}
+          {x.author && <span>{x.author.displayName}</span>}
+        </div>
+      </td>
+      <td>
+        {x.assets.length ? (
+          <ul className="release-files">
+            {x.assets.map((a) => (
+              <li key={a.id}>
+                <a href={a.url} target="_blank" rel="noreferrer noopener">{a.name}</a>
+                <span className="muted small">{[bytes(a.size), t(a.downloads === 1 ? '{n} download' : '{n} downloads', { n: a.downloads })].filter(Boolean).join(' · ')}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <span className="muted small">{t('No files attached')}</span>}
+      </td>
+    </tr>
   );
 }
 

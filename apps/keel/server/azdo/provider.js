@@ -1236,6 +1236,11 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       }));
     },
 
+    // Release files are GitHub's (github/provider.js); Azure DevOps keeps builds' artifacts elsewhere.
+    async listRepoReleases() {
+      return [];
+    },
+
     async listReleaseApprovals(projectId, projectName) {
       const d = await api(`${rm}/${seg(projectName)}/_apis/release/approvals`, { query: { statusFilter: 'pending', $top: 200 } })
         .catch((err) => (err.status === 404 ? { value: [] } : Promise.reject(err)));

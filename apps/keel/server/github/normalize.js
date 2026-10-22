@@ -270,3 +270,26 @@ export function approvalsOf(build, pending = []) {
     canDecide: !!p.current_user_can_approve,
   }));
 }
+
+/**
+ * A repo's releases (REST, newest first) with their uploaded files. GitHub's source code
+ * archives aren't assets, so they aren't listed. The latest is the newest published release
+ * that isn't a pre-release, as GitHub marks it unless told otherwise.
+ */
+export function releasesOf(list = []) {
+  const latest = list.find((r) => !r.draft && !r.prerelease);
+  return list.map((r) => ({
+    id: r.id,
+    tag: r.tag_name,
+    name: r.name || r.tag_name,
+    draft: !!r.draft,
+    prerelease: !!r.prerelease,
+    latest: r === latest,
+    publishedAt: r.published_at || r.created_at || null,
+    author: person(r.author),
+    webUrl: r.html_url,
+    assets: (r.assets || []).filter((a) => a.state !== 'open').map((a) => ({
+      id: a.id, name: a.name, size: a.size ?? null, downloads: a.download_count ?? 0, contentType: a.content_type || null, url: a.browser_download_url,
+    })),
+  }));
+}
