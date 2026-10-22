@@ -37,6 +37,8 @@ export function siteFrom(s, parent = null) {
     host: p.defaultHostName ?? null,
     // Its custom domains too, so an address (a monitor's, say) finds the app behind it.
     hostNames: p.hostNames ?? (p.defaultHostName ? [p.defaultHostName] : []),
+    // Its Kudu site, where the log stream comes from.
+    scmHost: p.enabledHostNames?.find((h) => /\.scm\./i.test(h)) ?? p.defaultHostName?.replace(/^([^.]+)\./, '$1.scm.') ?? null,
     modified: p.lastModifiedTimeUtc ?? null,
     plan: p.serverFarmId?.split('/').pop() ?? null,
     runtime: p.siteConfig?.linuxFxVersion || p.siteConfig?.windowsFxVersion || null,
@@ -121,8 +123,32 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const body = await call(INSIGHTS, `${INSIGHTS}/v1/apps/${component.appId}/query`, { method: 'POST', body: { query: kql, timespan }, signal, what: `Querying ${component.name}` });
       return tableFrom(body);
     },
+    /**
+     * Streams the app's or slot's log (Kudu's /api/logstream), calling `onLine` with each line, until
+     * `signal` aborts or the stream ends. Kudu takes the same Azure CLI token as ARM.
+     */
+    async logStream(target, { signal, onLine }) {
+      if (!target.scmHost) throw new Error(`${label(target)} has no Kudu site to stream its log from`);
+      const res = await fetch(`https://${target.scmHost}/api/logstream`, { signal, headers: { Authorization: `Bearer ${await token(`${ARM}/`)}` } });
+      if (!res.ok) throw new Error(azureError(res.status, null, `Streaming ${label(target)}'s log`));
+      await readLines(res.body, onLine);
+    },
     portalUrl: (target) => `https://portal.azure.com/#resource${target.id}`,
   };
+}
+
+/** Reads a byte stream as lines, calling `onLine` with each (without its line ending); a last partial line too. */
+export async function readLines(body, onLine) {
+  const decoder = new TextDecoder();
+  let rest = '';
+  for await (const chunk of body) {
+    rest += decoder.decode(chunk, { stream: true });
+    const lines = rest.split(/\r?\n/);
+    rest = lines.pop();
+    for (const l of lines) onLine(l);
+  }
+  rest += decoder.decode();
+  if (rest) onLine(rest);
 }
 
 /** "contoso-web" or "contoso-web/staging". */

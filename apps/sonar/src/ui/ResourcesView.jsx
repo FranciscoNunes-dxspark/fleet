@@ -44,6 +44,7 @@ export function ResourcesView({ data, ctx, width, height, active, filter, focusI
     if (input === 'W') return a.swap(ctx, sel);
     if (input === 'l') return ctx.logsFor(sel);
     if (input === 'p') return ctx.problemsFor(sel);
+    if (input === 'L') return ctx.liveFor(sel);
     if (input === 'o') return a.openInPortal(ctx, sel);
     if (input === 'b') return a.browse(ctx, sel);
     if (input === 'y') return sel.host ? ctx.copy(sel.host) : undefined;
@@ -70,7 +71,7 @@ export function ResourcesView({ data, ctx, width, height, active, filter, focusI
         [{ text: 'insights  ', color: theme.dim }, settings == null ? { text: '…', color: theme.dim } : settings.error ? { text: "can't read its settings", color: theme.del } : { text: component?.name ?? 'none linked', color: component ? undefined : theme.dim }],
         [{ text: 'settings  ', color: theme.dim }, { text: settings && !settings.error ? `${Object.keys(settings).length} (↵ shows them)` : '' }],
         [],
-        [{ text: 'R restart · S stop/start · W swap · l logs · p problems · o portal · b browse', color: theme.dim }],
+        [{ text: 'R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse', color: theme.dim }],
       ]
     : [];
 

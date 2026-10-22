@@ -206,6 +206,25 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       const since = new Date(now - hours * HOUR).toISOString();
       return demoQuery(kql, state.telemetry.filter((i) => i.component === component.appId && i.timestamp >= since));
     },
+    // A made-up log: a line every `every` ms, as an app's would come, until the stream is stopped.
+    async logStream(target, { signal, onLine, every = 300 }) {
+      const s = site(target);
+      const rand = seeded(s.name.length);
+      const paths = ['/api/orders', '/api/cart', '/checkout', '/api/users/me', '/'];
+      onLine(`${new Date(now).toISOString()}  Connected! Streaming the log of ${s.name}${s.slot ? `/${s.slot}` : ''}`);
+      let n = 0;
+      await new Promise((resolve) => {
+        const t = setInterval(() => {
+          const at = new Date(Date.now()).toISOString();
+          const path = paths[Math.floor(rand() * paths.length)];
+          const r = rand();
+          onLine(r < 0.08 ? `${at} [ERR] Unhandled exception on GET ${path}: The operation has timed out talking to the payments provider` : r < 0.2 ? `${at} [WRN] Slow request GET ${path} took ${Math.round(1000 + rand() * 3000)} ms` : `${at} [INF] GET ${path} ${200} in ${Math.round(5 + rand() * 200)} ms`);
+          n++;
+        }, every);
+        signal?.addEventListener('abort', () => (clearInterval(t), resolve()), { once: true });
+      });
+      return n;
+    },
     portalUrl: (target) => `https://portal.azure.com/#resource${target.id}`,
   };
 }

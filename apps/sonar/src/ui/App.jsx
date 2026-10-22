@@ -19,6 +19,7 @@ import { paletteItems } from '../palette.js';
 import { Palette } from './Palette.jsx';
 import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from './parts.jsx';
 import { HelpView } from './HelpView.jsx';
+import { LiveView } from './LiveView.jsx';
 import { LogsView } from './LogsView.jsx';
 import { ProblemsView } from './ProblemsView.jsx';
 import { ResourcesView } from './ResourcesView.jsx';
@@ -32,6 +33,7 @@ const VIEWS = [
   { id: 'resources', label: 'Resources' },
   { id: 'logs', label: 'Logs' },
   { id: 'problems', label: 'Problems' },
+  { id: 'live', label: 'Live' },
   { id: 'log', label: 'Log' },
 ];
 
@@ -45,9 +47,10 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · o portal · b browse',
+  resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse',
   logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
   problems: '↵ the latest occurrence · l its exceptions in Logs · y copy the message · c which insights',
+  live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
   log: '↵ all its output · y copy it',
 };
 
@@ -133,6 +136,11 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const [filter, setFilter] = useState('');
   // The app Resources starts on (sonar --app or --url), once it's been found.
   const [focusId, setFocusId] = useState(null);
+  // Live: the app whose log streams (L, or the one picked in Resources), its lines, how it's going.
+  const [liveTarget, setLiveTarget] = useState(null);
+  const [live, setLive] = useState({ lines: [], status: 'idle', error: null, paused: false });
+  const livePaused = useRef(false);
+  const [liveTick, setLiveTick] = useState(0);
   const selectedRef = useRef(null);
   const settingsCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
@@ -391,6 +399,18 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       setView('logs');
       a.runQuery(ctx, kql ?? starterQuery(target?.name ?? scopeRef.current.target?.name));
     },
+    liveFor: (target) => {
+      setLiveTarget(target);
+      setView('live');
+    },
+    live: {
+      pause: () => {
+        livePaused.current = !livePaused.current;
+        setLive((l) => ({ ...l, paused: livePaused.current }));
+      },
+      clear: () => setLive((l) => ({ ...l, lines: [] })),
+      reconnect: () => setLiveTick((n) => n + 1),
+    },
     problemsFor: (target) => {
       setScope({ target, component: null, all: false });
       setView('problems');
@@ -575,6 +595,32 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     pendingKey.current = null;
     sendKey(k);
   });
+
+  // The log streams while Live is on screen, and stops when you leave it or pick another app. Lines
+  // come in bursts, so they're gathered and drawn a few times a second, the last 2000 kept.
+  const streamTarget = view === 'live' ? (liveTarget ?? selectedRef.current) : null;
+  useEffect(() => {
+    if (!streamTarget) return;
+    const controller = new AbortController();
+    let pending = [];
+    setLive((l) => ({ ...l, status: 'connecting', error: null }));
+    const flush = setInterval(() => {
+      if (!pending.length) return;
+      const add = pending;
+      pending = [];
+      setLive((l) => ({ ...l, status: 'streaming', lines: [...l.lines, ...add].slice(-2000) }));
+    }, 150);
+    provider
+      .logStream(streamTarget, { signal: controller.signal, onLine: (line) => !livePaused.current && pending.push(line) })
+      .then(
+        () => !controller.signal.aborted && setLive((l) => ({ ...l, status: 'ended' })),
+        (e) => !controller.signal.aborted && setLive((l) => ({ ...l, status: 'error', error: firstLine(e.message) })),
+      );
+    return () => {
+      controller.abort();
+      clearInterval(flush);
+    };
+  }, [streamTarget?.id, liveTick]);
 
   // Problems are looked for when the view shows, and again when what it looks at or the span changes.
   const [problemsTick, setProblemsTick] = useState(0);
@@ -868,6 +914,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     );
   } else if (view === 'logs') {
     main = <LogsView query={query} result={result} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'live') {
+    main = <LiveView live={{ ...live, target: streamTarget }} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'problems') {
     main = <ProblemsView problems={problems} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {

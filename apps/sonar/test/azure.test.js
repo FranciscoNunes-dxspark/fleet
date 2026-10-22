@@ -2,7 +2,7 @@
 // its Application Insights, production, settings, sparklines, completion, the tree, the demo's answers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAzure, kindOf, label, siteFrom } from '../src/azure/arm.js';
+import { createAzure, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
@@ -169,4 +169,27 @@ test('an address to its app, by default host or custom domain; a request row for
   assert.equal(targetForUrl([web], {}, 'https://other.example.com/'), null);
   assert.equal(hailRequest({ name: 'POST /api/orders', url: 'https://x/api/orders', resultCode: '500' }), '### POST /api/orders (answered 500)\nPOST https://x/api/orders\n');
   assert.equal(hailRequest({ message: 'a trace' }), null);
+});
+
+test('the log stream: lines across chunks, from the Kudu site with the ARM token', async () => {
+  const got = [];
+  const enc = new TextEncoder();
+  async function* body() {
+    yield enc.encode('first li');
+    yield enc.encode('ne\r\nsecond\nthi');
+    yield enc.encode('rd');
+  }
+  await readLines(body(), (l) => got.push(l));
+  assert.deepEqual(got, ['first line', 'second', 'third']);
+  const asked = [];
+  const azure = createAzure({
+    token: async (r) => `t-${r}`,
+    fetch: async (url, init) => (asked.push([url, init.headers.Authorization]), { ok: true, status: 200, body: body() }),
+  });
+  const web = siteFrom({ ...site('web', 'rg'), properties: { ...site('web', 'rg').properties, enabledHostNames: ['web.azurewebsites.net', 'web.scm.azurewebsites.net'] } });
+  const lines = [];
+  await azure.logStream(web, { onLine: (l) => lines.push(l) });
+  assert.deepEqual(asked, [['https://web.scm.azurewebsites.net/api/logstream', 'Bearer t-https://management.azure.com/']]);
+  assert.equal(lines.length, 3);
+  assert.equal(siteFrom(site('shop', 'rg')).scmHost, 'shop.scm.azurewebsites.net', 'worked out when ARM lists no Kudu host');
 });
