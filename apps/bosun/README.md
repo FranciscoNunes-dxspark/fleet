@@ -173,3 +173,7 @@ Trawl.
 | Check for new versions | Once a day, in the downloaded builds |
 | Install them by itself | Off only says a new version is out |
 | Prompt history | Clear it |
+
+## License
+
+MIT, see [LICENSE](LICENSE).
