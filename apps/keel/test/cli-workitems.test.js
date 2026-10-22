@@ -14,7 +14,7 @@ const React = (await import('react')).default;
 const { render } = await import('ink-testing-library');
 const { openKeel } = await import('../cli/service.js');
 const { App } = await import('../cli/ui/App.jsx');
-const { isBlocked, wiRows, wiViews } = await import('../cli/format.js');
+const { isBlocked, readable, wiFullText, wiRows, wiViews } = await import('../cli/format.js');
 
 const KEYS = { enter: '\r', esc: '\x1b' };
 
@@ -77,6 +77,18 @@ test('views and order: the web app\'s views, in progress first, then by priority
   assert.ok(isBlocked({ blocked: true, tags: [] }, 'Blocked'));
   assert.ok(isBlocked({ state: 'blocked', tags: [] }, 'Blocked'));
   assert.ok(!isBlocked({ state: 'Active', tags: ['later'] }, 'Blocked'));
+});
+
+test('images in descriptions and comments read as [image: name], not their address', () => {
+  const pasted = '![==image_0==.png](https://dev.azure.com/acme/e711a5b8/_apis/wit/attachments/fb0c804b?fileName===image_0==.png)';
+  assert.equal(readable(`Before:\n${pasted}\nAfter`), 'Before:\n[image: image_0.png]\nAfter');
+  assert.equal(readable('![](https://x/a.png "Title") and ![chart (v2)](https://x/b_(1).png)'), '[image] and [image: chart (v2)]');
+  assert.equal(readable('<img width="600" alt="Screenshot 2026" src="https://github.com/user-attachments/assets/1">'), '[image: Screenshot 2026]');
+  assert.equal(readable('A [link](https://x) stays'), 'A [link](https://x) stays');
+  const text = wiFullText(item({ description: `See ${pasted}`, comments: [{ author: { displayName: 'Ann' }, text: pasted, createdAt: '2026-10-20T00:00:00Z' }] }), Date.parse('2026-10-21T00:00:00Z'));
+  assert.match(text, /See \[image: image_0\.png\]/);
+  assert.match(text, /Ann, 1d ago\n {4}\[image: image_0\.png\]/);
+  assert.doesNotMatch(text, /_apis\/wit\/attachments/);
 });
 
 test('the Work items tab lists open items; f goes round the views; ↵ shows one in full', async () => {

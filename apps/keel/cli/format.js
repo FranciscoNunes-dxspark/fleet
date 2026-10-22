@@ -7,6 +7,23 @@ export const branch = (ref) => String(ref ?? '').replace(/^refs\/heads\//, '');
 const ago = (iso, now) => (iso ? relTime(Date.parse(iso), now) : '');
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+const imageNote = (alt) => {
+  // Azure DevOps names pasted screenshots "==image_0==.png".
+  const name = String(alt ?? '').replace(/=/g, '').trim();
+  return name ? `[image: ${name}]` : '[image]';
+};
+
+/**
+ * Markdown as it reads in the terminal: an image, which the terminal can't show, as "[image: name]"
+ * instead of its address (a pasted screenshot is ![==image_0==.png](https://dev.azure.com/…)), and
+ * an <img> tag (GitHub descriptions have them) the same way.
+ */
+export function readable(text) {
+  return String(text ?? '')
+    .replace(/!\[([^\]]*)\]\((?:[^()\s]|\([^()\s]*\))+(?:\s+"[^"]*")?\)/g, (_, alt) => imageNote(alt))
+    .replace(/<img\b[^>]*>/gi, (tag) => imageNote(/\balt\s*=\s*"([^"]*)"/i.exec(tag)?.[1]));
+}
+
 export const SEVERITY = {
   high: { icon: '●', color: theme.del, label: 'act now' },
   medium: { icon: '●', color: theme.warn, label: 'soon' },
@@ -229,7 +246,7 @@ export function prFullText(pr, now = Date.now()) {
     `${pr.author?.displayName ?? 'Someone'} opened it ${ago(pr.createdAt, now)} ago · ${prState(pr).label}${pr.autoComplete ? ' · auto-complete on' : ''}`,
     ...(pr.flow && pr.status === 'active' ? [`${flowSegments(pr.flow).map((s) => s.text).join('')}  ${flowWaiting(pr.flow, isGithubPr(pr))}`] : []),
     '',
-    ...(pr.description?.trim() ? pr.description.trim().split('\n') : ['(No description.)']),
+    ...(pr.description?.trim() ? readable(pr.description.trim()).split('\n') : ['(No description.)']),
   ];
   if (pr.policies?.length) {
     out.push('', 'Policies');
@@ -250,7 +267,7 @@ export function prFullText(pr, now = Date.now()) {
     out.push('', `Comments (${pr.threads.active} of ${pr.threads.total} threads active)`);
     for (const c of pr.threads.recent) {
       out.push(`  ${c.author?.displayName ?? 'Someone'}, ${ago(c.publishedAt, now)} ago${c.filePath ? ` on ${c.filePath}` : ''}${c.status === 'active' ? ' · active' : ''}`);
-      out.push(...String(c.content).trim().split('\n').slice(0, 6).map((l) => `    ${l}`), '');
+      out.push(...readable(String(c.content).trim()).split('\n').slice(0, 6).map((l) => `    ${l}`), '');
     }
   }
   return out.join('\n');
@@ -342,9 +359,9 @@ export function wiFullText(w, now = Date.now()) {
     `${w.type} ${w.id} · ${w.projectName} · ${w.state} · ${w.assignedTo?.displayName ?? 'unassigned'}${w.priority != null ? ` · priority ${w.priority}` : ''}`,
     `${w.iterationPath ?? ''}${w.tags?.length ? ` · ${w.tags.map((t) => `#${t}`).join(' ')}` : ''}`,
     '',
-    ...(w.description?.trim() ? w.description.trim().split('\n') : ['(No description.)']),
+    ...(w.description?.trim() ? readable(w.description.trim()).split('\n') : ['(No description.)']),
   ];
-  if (w.acceptanceCriteria?.trim()) out.push('', 'Acceptance criteria', ...w.acceptanceCriteria.trim().split('\n').map((l) => `  ${l}`));
+  if (w.acceptanceCriteria?.trim()) out.push('', 'Acceptance criteria', ...readable(w.acceptanceCriteria.trim()).split('\n').map((l) => `  ${l}`));
   if (w.parent) out.push('', 'Parent', `  ${w.parent.type} ${w.parent.id}  ${w.parent.title}  (${w.parent.state})`);
   if (w.children?.length) {
     out.push('', `Children (${w.children.length})`);
@@ -356,7 +373,7 @@ export function wiFullText(w, now = Date.now()) {
     out.push('', `Comments (${w.comments.length})`);
     for (const c of w.comments) {
       out.push(`  ${c.author?.displayName ?? 'Someone'}, ${ago(c.createdAt, now)} ago`);
-      out.push(...String(c.text ?? '').trim().split('\n').slice(0, 8).map((l) => `    ${l}`), '');
+      out.push(...readable(String(c.text ?? '').trim()).split('\n').slice(0, 8).map((l) => `    ${l}`), '');
     }
   }
   return out.join('\n');
