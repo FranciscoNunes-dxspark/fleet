@@ -66,15 +66,29 @@ function grid(w, h, ox, oy, bx, by) {
   );
 }
 
-// The dark square: 40 half-pixels across, the 32 × 20 crab centred with a margin.
-const SQUARE = grid(40, 40, 4, 10, 23, 23);
-// iOS: 45 across, so 180 px keeps the pixels whole (4 each), with the same layout and margin.
-const APPLE = grid(45, 45, 6, 12, 25, 25);
+// The crab and its badge as one drawing, laid out as in all the family's logos: the badge's
+// bottom-right corner PAD half-pixels right of and below the crab's, so the badges sit alike.
+const BW = ADO[0].length;
+const BH = ADO.length;
+const PAD = 4;
+const GW = px2[0].length + PAD;
+const GH = px2.length + PAD;
+/** The crab and badge centred on a size × size square; wider than the square, the badge keeps to its edge. */
+function square(size) {
+  const ox = Math.max(0, Math.floor((size - GW) / 2));
+  const oy = Math.max(0, Math.floor((size - GH) / 2));
+  return grid(size, size, ox, oy, Math.min(ox + GW, size) - BW, Math.min(oy + GH, size) - BH);
+}
+
+// The dark square: 40 half-pixels across.
+const SQUARE = square(40);
+// iOS: 45 across, so 180 px keeps the pixels whole (4 each), with the same layout.
+const APPLE = square(45);
 // Android's maskable icon may be cropped to a circle of 80% of its width: 64 across leaves the
 // badge's far corner just inside it, at 8 px a cell in 512.
-const MASKABLE = grid(64, 64, 16, 22, 35, 35);
+const MASKABLE = square(64);
 // The crab cropped to the drawing, with room right and below for the badge to sit on.
-const CROPPED = grid(px2[0].length + 4, px2.length + 4, 0, 0, px2[0].length - 11, px2.length - 11);
+const CROPPED = grid(GW, GH, 0, 0, GW - BW, GH - BH);
 // The notification badge: just the crab, undoubled, 4 px a pixel in 96, centred.
 const BADGE = Array.from({ length: 24 }, (_, y) => Array.from({ length: 24 }, (_, x) => (px[y - 7]?.[x - 4] ?? '.') === '.' ? '.' : 'S').join(''));
 
