@@ -6,6 +6,8 @@ import { settingRows, settingSegments } from './settings.js';
 import { DEFAULT_ACCENT, isColour, setAccent, theme } from './theme.js';
 import { clip } from './claude-cli.js';
 import { FILE, specFor, writeSpec } from './crew.js';
+import { choices, resolveFolder, samePath } from './projects.js';
+import { basename } from 'node:path';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -131,6 +133,36 @@ export function profiles(ctx, name) {
       ctx.setProfile(it.name);
     },
   });
+}
+
+/**
+ * /move: Bosun on another project, `folder` being a path or a project beside this one; without one,
+ * a list of the projects run lately and the folders beside this one. This one's processes stop
+ * first, after asking when any are running.
+ */
+export async function move(ctx, folder) {
+  if (!folder?.trim()) {
+    const items = choices(ctx.dir, ctx.config.projects);
+    if (!items.length) return ctx.note('There are no other folders beside this one: /move <path>.');
+    return ctx.showPicker({
+      title: 'Move to',
+      hint: 'the projects you ran lately first',
+      items: items.map((it) => ({ ...it, segments: [{ text: it.name, strong: it.crew }, { text: it.crew ? '' : '  (nothing to run)', color: theme.dim }] })),
+      onPick: (it) => {
+        ctx.closeOverlay();
+        move(ctx, it.path);
+      },
+    });
+  }
+  const target = resolveFolder(ctx.dir, folder);
+  if (!target) return ctx.note(`There's no folder ${folder.trim()} here or beside ${basename(ctx.dir)}.`, 'error');
+  if (samePath(target, ctx.dir)) return ctx.note(`Bosun is in ${basename(target)} already.`);
+  const running = (ctx.crew?.list() ?? []).filter((p) => p.child).length;
+  if (running) {
+    const ok = await ctx.confirm({ title: `Stop ${running === 1 ? 'the running process' : `the ${running} running processes`} and move to ${basename(target)}?`, danger: true, options: YES_NO('Yes, move') });
+    if (!ok) return false;
+  }
+  return ctx.moveTo(target);
 }
 
 /** /init: bosun.json from what Bosun worked out, to change from there. */

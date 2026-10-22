@@ -17,6 +17,10 @@ bosun                 # the project in this folder
 bosun ../shop --profile mock
 ```
 
+Opened somewhere with nothing to run (a launcher's folder, your home), it opens the project you ran
+last instead. `/move` takes it to another project: it stops this one's processes (asking first when
+any are running) and starts the other's. The header and the window's title say which project it's in.
+
 ## Install
 
 Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/bosun/releases/latest)
@@ -148,6 +152,7 @@ Trawl.
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
 | `/profile [name\|none]` | Run the crew with a profile |
 | `/reload` | Read `bosun.json` again: new processes start, changed ones restart |
+| `/move [folder]` | Run another project instead: a path, or a folder beside this one (completed as you type); without one, a list of the projects run lately and the folders beside this one. This one's processes stop first |
 | `/init` | Write a `bosun.json` from what Bosun worked out |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |

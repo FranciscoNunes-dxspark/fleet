@@ -8,8 +8,8 @@ import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js
 import { copyToClipboard } from './clipboard.js';
 import { terminalMouse } from './mouse.js';
 import { killEverything } from './supervisor.js';
+import { startFolder } from './projects.js';
 import { existsSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 
 const args = process.argv.slice(2);
@@ -24,7 +24,8 @@ if (args.includes('-h') || args.includes('--help')) {
 
 Runs a project's processes for you in the terminal, each with its own log, port and health.
 It reads them from bosun.json in the folder (the current one unless given), else from
-package.json's dev script, split into its commands when it's a concurrently line.
+package.json's dev script, split into its commands when it's a concurrently line. Started
+where there's neither, it opens the project you ran last; /move goes to another.
 
   --profile    start with this profile from bosun.json
   --no-start   open without starting anything (R starts them all)
@@ -44,8 +45,9 @@ const value = (flag) => {
   const i = args.indexOf(flag);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : undefined;
 };
+const config = loadConfig();
 const folder = args.find((x, i) => !x.startsWith('-') && args[i - 1] !== '--profile');
-const dir = resolve(folder ?? '.');
+const dir = startFolder(folder, process.cwd(), config.projects);
 if (!existsSync(dir) || !statSync(dir).isDirectory()) {
   console.error(`bosun: ${dir} isn't a folder.`);
   process.exit(1);
@@ -60,7 +62,6 @@ const openUrl = (url) => {
   spawn(cmd, cmdArgs, { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref();
 };
 
-const config = loadConfig();
 setAccent(config.accent);
 
 // Draw on the alternate screen, like a full-screen app, and give the terminal back untouched on exit.

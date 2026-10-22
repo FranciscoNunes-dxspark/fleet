@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { basename } from 'node:path';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
@@ -6,6 +7,7 @@ import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '../help-layout.js';
 import { loadCrew, withProfile } from '../crew.js';
+import { remember } from '../projects.js';
 import { Supervisor, killPids, pidsOnPort } from '../supervisor.js';
 import { ask } from '../claude-cli.js';
 import { BULLET, theme } from '../theme.js';
@@ -51,6 +53,7 @@ function Header({ data, width, loading, mood }) {
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Bosun', bold: true },
   ];
+  if (data?.dir) segs.push({ text: '  │  ', color: theme.border }, { text: basename(data.dir), bold: true });
   if (data) {
     const up = data.procs.filter((p) => p.child).length;
     const crashed = data.procs.filter((p) => p.status === 'crashed').length;
@@ -102,7 +105,7 @@ function activityRows(entries) {
 
 const DOUBLE_CLICK_MS = 400;
 
-// `dir` is the project; `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
+// `dir` is the project to start in (/move changes it); `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
 // `pidsOnPort` and `killPids` reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
@@ -224,6 +227,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // The supervisor runs the crew; it changes in place, so a change only asks for a redraw, a few a second at most.
   const supRef = useRef(null);
   const crewRef = useRef(null);
+  // The project: where Bosun started, until /move takes it to another.
+  const dirRef = useRef(dir);
   const profileRef = useRef(initialProfile);
   const [, setTick] = useState(0);
   const redrawSoon = useRef(null);
@@ -235,7 +240,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     }, 80);
   };
   const publish = () => {
-    dataRef.current = { ...crewRef.current, profile: profileRef.current, procs: supRef.current.list() };
+    dataRef.current = { ...crewRef.current, dir: dirRef.current, profile: profileRef.current, procs: supRef.current.list() };
     setData(dataRef.current);
     setTick((n) => n + 1);
   };
@@ -243,15 +248,17 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // and with `restartChanged` the ones whose command changed restart.
   const reload = async ({ restartChanged = false } = {}) => {
     try {
-      const crew = await load(dir);
+      const crew = await load(dirRef.current);
       crewRef.current = crew;
       if (profileRef.current && !crew.profiles[profileRef.current]) profileRef.current = null;
       const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
       const first = !supRef.current;
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
-      if (first) supRef.current = new Supervisor(procs, { dir, onChange: changed });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed });
       else supRef.current.setCrew(procs);
       publish();
+      // A project with something to run is remembered, for /move and for starting where there's nothing.
+      if (crew.procs.length) setConfig((c) => ({ ...c, projects: remember(c.projects, dirRef.current) }));
       if (crew.problems.length) note([`Some of ${crew.from} was left out:`, ...crew.problems].join('\n'), 'error');
       if (!crew.procs.length && first) note(`Nothing to run here: no ${'bosun.json'}, and no dev or start script in package.json. /init writes a bosun.json to fill in.`);
       const sup = supRef.current;
@@ -275,6 +282,24 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     profileRef.current = name;
     note(name ? `Profile ${name}` : 'No profile');
     return reload({ restartChanged: true });
+  };
+  // /move: the crew of the project in `next` instead, read and started as on opening. This one's
+  // processes stop first, and what they started (actions.js asks before, when any are running).
+  const moveTo = async (next) => {
+    const sup = supRef.current;
+    if (sup) {
+      await sup.stopAll();
+      sup.dispose();
+    }
+    supRef.current = null;
+    crewRef.current = null;
+    dataRef.current = null;
+    profileRef.current = null;
+    setData(null);
+    setLoading(true);
+    dirRef.current = next;
+    note(`Moved to ${next}`);
+    await reload();
   };
   // Ports and health pages, every two seconds; and every process stopped when Bosun closes.
   useEffect(() => {
@@ -341,7 +366,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   };
 
   const ctxRef = useRef(null);
-  if (!ctxRef.current) ctxRef.current = { get data() { return dataRef.current; }, get config() { return configRef.current; }, get crew() { return supRef.current; }, mouseHandlers: [] };
+  if (!ctxRef.current) ctxRef.current = { get data() { return dataRef.current; }, get config() { return configRef.current; }, get crew() { return supRef.current; }, get dir() { return dirRef.current; }, mouseHandlers: [] };
   const ctx = ctxRef.current;
   Object.assign(ctx, {
     task,
@@ -355,8 +380,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     prefill,
     reload: () => reload({ restartChanged: true }),
     setView,
-    dir,
     setProfile,
+    moveTo,
     askClaude,
     pidsOnPort: portPids,
     killPids: stopPids,
@@ -568,7 +593,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   }, []);
 
   // cli.jsx passes the terminal's title setter; tests pass a stub or nothing.
-  const title = `${VIEWS.find((v) => v.id === view).label} — Bosun`;
+  const title = `${VIEWS.find((v) => v.id === view).label} · ${basename(data?.dir ?? dirRef.current)} — Bosun`;
   useEffect(() => {
     setTitle?.(title);
   }, [title]);

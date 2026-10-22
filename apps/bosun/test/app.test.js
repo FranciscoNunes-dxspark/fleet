@@ -174,6 +174,41 @@ test('settings: a toggle saves, the accent changes through its command', async (
   }
 });
 
+test('/move asks, stops this project\'s crew, and runs the other\'s; it\'s remembered', async () => {
+  const port = await freePort();
+  const shop = project({ procs: { api: { run: 'node server.js', port, env: { PORT: String(port) } } } }, { 'server.js': SERVER });
+  const blog = project({ procs: { feed: 'node ticker.js' } }, { 'ticker.js': TICKER });
+  const { basename } = await import('node:path');
+  const app = start({ dir: shop });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes(`listening on ${port}`), 'the shop\'s api up');
+    assert.ok(frame().includes(basename(shop)), 'the project in the header');
+
+    app.stdin.write('/');
+    await type(app.stdin, `move ${basename(blog)}`);
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes(`Stop the running process and move to ${basename(blog)}?`), 'the question');
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ ● feed\s+running/.test(frame()) && /tick \d+/.test(frame()), 'the blog\'s crew running');
+    assert.ok(frame().includes(basename(blog)) && !frame().includes(' api '), 'the other project, and nothing of the first');
+
+    const { portOpen } = await import('../src/supervisor.js');
+    const end = Date.now() + 5000;
+    while ((await portOpen(port)) && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(await portOpen(port), false, 'the first project\'s api stopped');
+    const saved = JSON.parse(readFileSync(join(process.env.BOSUN_HOME, 'config.json'), 'utf8'));
+    assert.deepEqual(saved.projects.slice(0, 2), [blog, shop], 'both remembered, the newest first');
+
+    app.stdin.write('/');
+    await type(app.stdin, `move ${basename(blog)}`);
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes(`Bosun is in ${basename(blog)} already`), 'nowhere to go');
+  } finally {
+    app.unmount();
+  }
+});
+
 test('a crew that can\'t be read says so, and /reload tries again', async () => {
   let calls = 0;
   const quiet = quietCrew(['only']);
