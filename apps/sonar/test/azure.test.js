@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import { createAzure, kindOf, label, siteFrom } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
-import { TIMESPANS, cellText, completeQuery, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
+import { TIMESPANS, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
 import { loadSubscription } from '../src/load.js';
-import { mapLimited, resourceRows, targetsByLabel } from '../src/tree.js';
+import { mapLimited, resourceRows, targetForUrl, targetsByLabel } from '../src/tree.js';
 
 /** A fetch that answers from `routes` (method + path → body, or [status, body]) and records the calls. */
 function fakeFetch(routes) {
@@ -159,4 +159,14 @@ test('the demo: a subscription to read, the queries Sonar sends answered, change
   await azure.swap(staging);
   assert.equal((await azure.settings(d.apps[0])).APP_VERSION, '2.15.0-rc.1');
   assert.equal((await azure.settings(d.apps[0])).ASPNETCORE_ENVIRONMENT, 'Production', 'sticky settings stay with their slot');
+});
+
+test('an address to its app, by default host or custom domain; a request row for Hail', () => {
+  const web = { id: 'w', name: 'web', host: 'web.azurewebsites.net', hostNames: ['web.azurewebsites.net', 'shop.example.com'] };
+  const staging = { id: 'w/s', name: 'web', slot: 'staging', host: 'web-staging.azurewebsites.net' };
+  assert.equal(targetForUrl([web], { w: [staging] }, 'https://SHOP.example.com/health?x=1'), web);
+  assert.equal(targetForUrl([web], { w: [staging] }, 'https://web-staging.azurewebsites.net/'), staging);
+  assert.equal(targetForUrl([web], {}, 'https://other.example.com/'), null);
+  assert.equal(hailRequest({ name: 'POST /api/orders', url: 'https://x/api/orders', resultCode: '500' }), '### POST /api/orders (answered 500)\nPOST https://x/api/orders\n');
+  assert.equal(hailRequest({ message: 'a trace' }), null);
 });

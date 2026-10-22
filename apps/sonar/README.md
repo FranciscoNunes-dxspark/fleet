@@ -26,6 +26,19 @@ sonar --demo    # a made-up subscription, to try it without one
 
 From a checkout (Node 22 or later): `npm install`, then `npm start` (or `npm start -- --demo`).
 
+### Starting somewhere
+
+```bash
+sonar --url https://shop.contoso.com/health --problems     # the app behind an address, its problems
+sonar --app contoso-api --logs                             # an app's latest requests
+sonar --sub "Contoso Production" --app contoso-web/staging --logs --kql "exceptions | take 20"
+sonar --insights <AppId> --problems                        # everything in one Application Insights
+```
+
+`--url` finds the app that serves an address, by its own host name or one of its custom domains.
+Keel's terminal app opens Sonar this way from a production monitor (`S` in its Production view):
+in a new tab when it runs in Windows Terminal, or by copying the command to run.
+
 ## The views
 
 | | |
@@ -83,6 +96,7 @@ usually hides.
 | `↵` | Run the query, or show the row under the cursor whole |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `Y` | Copy the row as JSON · every row, tab-separated |
+| `H` | Copy a request row as a request for [Hail](https://github.com/FranciscoNunes-dxspark/hail), to paste into a `.http` file and send again |
 | `c` | Which Application Insights to look in |
 
 | In Problems | |

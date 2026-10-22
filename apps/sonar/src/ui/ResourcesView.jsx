@@ -12,11 +12,13 @@ import { Lines, Panel, Row } from './parts.jsx';
 export const stateColour = (state) => (state === 'Running' ? theme.add : state === 'Stopped' ? theme.del : theme.warn);
 
 /** The subscription's apps by resource group, slots under each, and beside them the one under the cursor. */
-export function ResourcesView({ data, ctx, width, height, active, filter }) {
+export function ResourcesView({ data, ctx, width, height, active, filter, focusId }) {
   const rows = resourceRows(data.apps, data.slots, filter);
   const innerH = height - 2;
   const listW = Math.max(34, Math.floor(width * 0.42));
-  const nav = useListNav(rows.length, innerH, { selectable: (i) => rows[i]?.kind !== 'group', resetKey: `${data.subscription.id}|${filter}`, start: 1 });
+  // On the app the command line named (focusId), else the first.
+  const focusAt = focusId ? rows.findIndex((r) => r.target?.id === focusId) : -1;
+  const nav = useListNav(rows.length, innerH, { selectable: (i) => rows[i]?.kind !== 'group', resetKey: `${data.subscription.id}|${filter}|${focusId}`, start: focusAt > 0 ? focusAt : 1 });
   const sel = rows[nav.index]?.target ?? null;
   ctx.selectTarget(sel);
   // The settings say which Application Insights it reports to; read when the cursor stops on it.

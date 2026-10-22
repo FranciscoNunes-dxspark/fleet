@@ -4,7 +4,7 @@ import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
 import { TIMESPANS, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
-import { targetsByLabel } from '../tree.js';
+import { targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
@@ -46,7 +46,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
   resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · o portal · b browse',
-  logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · c which insights',
+  logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
   problems: '↵ the latest occurrence · l its exceptions in Logs · y copy the message · c which insights',
   log: '↵ all its output · y copy it',
 };
@@ -105,11 +105,12 @@ function activityRows(entries) {
 const DOUBLE_CLICK_MS = 400;
 
 // `provider` is Azure (azure/arm.js's createAzure) or the demo (demo.js), the same interface; `load` reads
-// a subscription through it (load.js). `mouse` is mouse.js's
+// a subscription through it (load.js). `open` is where to start, from the command line (a sibling such as
+// Keel opens Sonar this way): { sub, app, url, insights, view: 'logs' | 'problems', kql }. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, provider, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -130,6 +131,8 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     setScopeState(s);
   };
   const [filter, setFilter] = useState('');
+  // The app Resources starts on (sonar --app or --url), once it's been found.
+  const [focusId, setFocusId] = useState(null);
   const selectedRef = useRef(null);
   const settingsCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
@@ -251,6 +254,31 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * Where the command line said to start: an app (by label, or the address it serves), an Application
+   * Insights (by its AppId or name), and Logs or Problems about them. What can't be found is said.
+   */
+  const arrive = async ({ app, url, insights, view, kql }) => {
+    const d = dataRef.current;
+    if (!d) return;
+    let target = null;
+    if (app) {
+      const all = targetsByLabel(d.apps, d.slots);
+      target = all[app] ?? Object.values(all).find((t) => label(t).toLowerCase() === app.toLowerCase()) ?? null;
+      if (!target) note(`There's no app called ${app} in ${d.subscription.name}. /sub picks another subscription.`, 'error');
+    }
+    if (url && !target) {
+      target = targetForUrl(d.apps, d.slots, url);
+      if (!target) note(`No app in ${d.subscription.name} serves ${url}: its address is neither an app's own nor one of its custom domains.`, 'error');
+    }
+    const component = insights ? (d.components.find((c) => c.appId === insights || c.name.toLowerCase() === insights.toLowerCase()) ?? null) : null;
+    if (insights && !component) note(`There's no Application Insights ${insights} in ${d.subscription.name}.`, 'error');
+    if (target) setFocusId(target.id);
+    if (target || component) setScope({ target, component, all: !target });
+    if (view === 'problems') setView('problems');
+    else if (view === 'logs') await a.runQuery(ctx, kql ?? starterQuery(target?.name));
   };
 
   /** An app's or slot's settings, read once and kept until something changes them. */
@@ -585,7 +613,8 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
       lastOutput.current = { title: 'Your commands and keys', text };
     }
     (async () => {
-      await reload();
+      await reload(open?.sub);
+      if (open) await arrive(open);
       // After the first load, so it doesn't slow it down.
       if (checkUpdate && configRef.current.checkForUpdates !== false) {
         checkUpdate(configRef.current.lastUpdateCheck).then(
@@ -842,7 +871,7 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
   } else if (view === 'problems') {
     main = <ProblemsView problems={problems} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <ResourcesView data={data} filter={filter} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ResourcesView data={data} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash

@@ -19,11 +19,20 @@ if (args.includes('-v') || args.includes('--version')) {
 }
 
 if (args.includes('-h') || args.includes('--help')) {
-  console.log(`sonar [--demo]
+  console.log(`sonar [--demo] [--sub <name|id>] [--app <app[/slot]> | --url <address>] [--insights <appId|name>] [--logs [--kql <query>] | --problems]
 
 An Azure console for the terminal: App Service and Functions, their logs and their
 problems. It signs in through the Azure CLI (az login) and starts on the subscription
 az has selected; --demo shows a made-up one instead.
+
+  --sub        start on this subscription
+  --app        start on this app (or app/slot)
+  --url        start on the app that serves this address (its own, or a custom domain)
+  --insights   look in this Application Insights (its AppId or name)
+  --logs       open Logs about it (its latest requests, or --kql's query)
+  --problems   open Problems about it
+
+Keel's terminal app opens Sonar this way from a production monitor (S).
 
 Inside: press ? for shortcuts, / for commands, t to change the time span.`);
   process.exit(0);
@@ -55,9 +64,15 @@ const mouse = await terminalMouse(process.stdin, process.stdout);
 // y copies: to the system clipboard, or through the terminal (OSC 52) over SSH or when that fails.
 const copy = (text) => copyToClipboard(text);
 const demo = args.includes('--demo');
+const value = (flag) => {
+  const i = args.indexOf(flag);
+  return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : undefined;
+};
+const open = { sub: value('--sub'), app: value('--app'), url: value('--url'), insights: value('--insights'), kql: value('--kql'), view: args.includes('--problems') ? 'problems' : args.includes('--logs') || args.includes('--kql') ? 'logs' : undefined };
+const opening = Object.values(open).some(Boolean) ? open : undefined;
 const provider = demo ? demoAzure() : { ...createAzure({ token }), currentSubscription };
 const app = render(
-  <App config={config} provider={provider} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} provider={provider} open={opening} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdout: mouse?.stdout ?? process.stdout },
 );

@@ -106,6 +106,16 @@ export function settingsDiff(a, b) {
   return out;
 }
 
+/**
+ * A request row (from requests, with its url) as a request in a .http file, for Hail: its name as
+ * the title, the method from the name ("GET /api/cart"), else GET. Null for a row without a url.
+ */
+export function hailRequest(row) {
+  if (!row?.url) return null;
+  const method = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s/i.exec(row.name ?? '')?.[1]?.toUpperCase() ?? 'GET';
+  return `### ${row.name ?? row.url}${row.resultCode ? ` (answered ${row.resultCode})` : ''}\n${method} ${row.url}\n`;
+}
+
 /** A value as one line for a grid cell: objects as JSON, times shortened, nothing as empty. */
 export function cellText(value, type) {
   if (value == null) return '';

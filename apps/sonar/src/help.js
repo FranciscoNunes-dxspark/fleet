@@ -51,6 +51,7 @@ export const HELP = [
       ['↵', 'Run the query, or show the row under the cursor whole'],
       ['h l / ← →', 'Across the columns'],
       ['y  Y', 'Copy the row (JSON) · every row (tab-separated)'],
+      ['H', 'Copy a request row as a request for Hail, to paste into a .http file and send again'],
       ['c', 'Which Application Insights to look in (the selected app\'s own by default)'],
     ],
   },

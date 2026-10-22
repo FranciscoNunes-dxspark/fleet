@@ -35,6 +35,8 @@ export function siteFrom(s, parent = null) {
     location: s.location,
     state: p.state ?? 'Unknown',
     host: p.defaultHostName ?? null,
+    // Its custom domains too, so an address (a monitor's, say) finds the app behind it.
+    hostNames: p.hostNames ?? (p.defaultHostName ? [p.defaultHostName] : []),
     modified: p.lastModifiedTimeUtc ?? null,
     plan: p.serverFarmId?.split('/').pop() ?? null,
     runtime: p.siteConfig?.linuxFxVersion || p.siteConfig?.windowsFxVersion || null,

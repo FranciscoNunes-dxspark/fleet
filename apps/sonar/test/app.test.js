@@ -128,3 +128,33 @@ test('logs: an app\'s requests, a query typed with completion, a row whole; prob
     app.unmount();
   }
 });
+
+test('opened from the command line: an address finds its app, Problems about it; an app by name in Logs, a row as a Hail request', async () => {
+  const copied = [];
+  let app = start({ open: { url: 'https://shop.contoso.com/health', view: 'problems' } });
+  let frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('╭─ Problems') && frame().includes('contoso-prod-ai · contoso-web') && /\d+ problems/.test(frame()), 'the problems of the app behind the address');
+    app.stdin.write('1');
+    await until(() => /❯ ● contoso-web/.test(frame()), 'Resources on that app');
+  } finally {
+    app.unmount();
+  }
+  app = start({ open: { sub: 'Contoso Production', app: 'contoso-api', view: 'logs' }, copy: (t) => copied.push(t) });
+  frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('╭─ Logs') && frame().includes('contoso-prod-ai · contoso-api') && frame().includes('50 rows'), "the app's requests");
+    app.stdin.write('H');
+    await until(() => frame().includes('Copied it as a Hail request'), 'the copy');
+    assert.match(copied.at(-1), /^### GET \/\S* \(answered \d+\)\nGET https:\/\/contoso-api\.azurewebsites\.net\/\S*\n$/);
+  } finally {
+    app.unmount();
+  }
+  app = start({ open: { app: 'no-such-app', url: 'https://nowhere.example.com/' } });
+  frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes("There's no app called no-such-app") && frame().includes('No app in Contoso Production serves'), 'both said');
+  } finally {
+    app.unmount();
+  }
+});
