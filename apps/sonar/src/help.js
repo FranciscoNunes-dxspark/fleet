@@ -8,6 +8,7 @@ export const HELP = [
     rows: [
       ['1-4 / tab', 'Resources, Logs, Problems, Log (shift+tab goes back)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
+      ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
       ['t', 'The time span Logs and Problems look at: 1h, 24h, 7d, 30d'],
       ['r', 'Read the subscription again'],
       ['!', 'Run a shell command, e.g.  !az account show'],
@@ -69,6 +70,16 @@ export const HELP = [
     about: 'what has run, newest at the bottom',
     views: ['log'],
     rows: [['↵', 'All of its output']],
+  },
+  {
+    title: 'Your own commands and keys',
+    about: 'in the settings file (config.json), read when Sonar starts; what\'s wrong with them is said in the log then',
+    rows: [
+      ['"commands"', '{ "prod": "/sub Contoso Production", "errors": "/kql exceptions | order by timestamp desc | take 50" }: a line as typed at the prompt, or a list run in order, stopping at the first that fails (or that you answer no); { "run": …, "desc": … } gives it a description. They show in the / menu, the palette and Slash commands below'],
+      ['$1 $2  $*', 'What\'s typed after it: a word each ("quoted words" are one), or all of it; a command with no $ gets it at the end of its line'],
+      ['"keys"', '{ "global": { "ctrl+e": "/kql exceptions | take 50" }, "resources": { "x": "R" } }: a key to another key (the view does what that one does) or to a command line, anywhere or in one view (resources, logs, problems, log). They work while a view has the keys, never while typing; Your keys (above Slash commands) lists them'],
+      ['key names', 'a character (x, X, +), ctrl+s, alt+x, shift+tab, F1-F12, enter, esc, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown'],
+    ],
   },
   {
     title: 'Viewer',

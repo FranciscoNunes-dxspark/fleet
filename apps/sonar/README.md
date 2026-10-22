@@ -96,6 +96,32 @@ In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d`
 mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll with the wheel, and
 drag to select text, which is copied when you let go.
 
+### The command palette
+
+`ctrl+p` opens a list of everything you can do from where you are: the keys of the view you're in,
+your own keys and commands, and every slash command. Type to narrow it (the words can come in any
+order and needn't be whole), `↑`/`↓` pick, `↵` runs the one picked, `esc` closes it. A key runs as if
+you'd pressed it in the view; a command that needs something typed after it goes into the prompt for
+you to finish.
+
+### Your own commands and keys
+
+Commands of your own go in the settings file (`~/.sonar/config.json`), under `"commands"`, and keys
+under `"keys"`, for every view (`"global"`) or for one (resources, logs, problems, log):
+
+```json
+{
+  "commands": { "prod": "/sub Contoso Production", "errors": "/kql exceptions | order by timestamp desc | take 50" },
+  "keys": { "global": { "ctrl+e": "/kql exceptions | take 50" }, "resources": { "x": "R" } }
+}
+```
+
+A command is a line as you'd type it at the prompt, or a list of them run in order, stopping at the
+first that fails or asks a question you answer no to. `$1`, `$2`… are the words typed after it, `$*`
+all of them. A key maps to another key (the view does what that one does) or to a command line. What
+can't be used is said in the activity lines when Sonar starts. These work as they do in Splice
+and Trawl.
+
 ## Commands
 
 | Command | What it does |
