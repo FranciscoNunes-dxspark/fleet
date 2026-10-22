@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { Box, useInput } from 'ink';
+import * as a from '../actions.js';
 import { monitorBrief, monitorDetail, monitorRows, monitorState } from '../format.js';
 import { shownFilter } from '../filters.js';
 import { theme } from '../theme.js';
@@ -34,6 +35,7 @@ export function ProductionView({ failed, production, version, filter, ctx, width
     if (!ctx.viewHasKeys()) return;
     if (nav.handle(input, key) || !m) return;
     if (key.return) ctx.showMonitorFull(m, target(m));
+    else if (input === 'S') a.sonar(ctx, m);
   };
   useInput(keys, { isActive: active });
   // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).

@@ -8,6 +8,7 @@ import { commandsSection, sectionFor } from '../help-layout.js';
 import { logText } from '../log.js';
 import path from 'node:path';
 import { COMPILED, VERSION, openUrl as openInBrowser } from '../open.js';
+import { openSonar as openSonarApp } from '../sonar.js';
 import { saveEnvSettings } from '../setup.js';
 import { ROOT } from '../../server/root.js';
 import { FACES, moodFor } from '../pinch.js';
@@ -144,14 +145,15 @@ function activityRows(entries) {
 /**
  * `keel` is `{ service, orgs, signIn, live, orgAdmin }` from cli/service.js (the tests build it the
  * same way, on demo data), or from cli/remote.js when signed in to a Keel server (with `server`
- * and `logout` too). `openUrl` opens links (the browser by default); `poll` turns live checks off when false.
+ * and `logout` too). `openUrl` opens links (the browser by default); `openSonar` opens Sonar on a production
+ * monitor (sonar.js's; tests pass a recorder); `poll` turns live checks off when false.
  * `checkUpdate` and `installUpdate` (cli/update.js) are only passed to the downloaded executable, and
  * only when its .env lets it check (and install) by itself; `updater` ({ check, install }) is passed to
  * it always, for /update.
  * `envFile` is the .env this Keel reads, where Settings saves this computer's choices. `mouse` is
  * mouse.js's terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
  */
-export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, installUpdate, updater, envFile = path.join(ROOT, '.env'), mouse }) {
+export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, poll = true, checkUpdate, installUpdate, updater, envFile = path.join(ROOT, '.env'), mouse }) {
   const { service, orgs, signIn, live } = keel;
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
@@ -405,6 +407,7 @@ export function App({ keel, openUrl = openInBrowser, poll = true, checkUpdate, i
     settingsHasKeys: () => focusRef.current === 'view' && !!overlayRef.current?.settings && !confirmRef.current,
     current,
     openUrl,
+    openSonar,
     quit,
     select: (patch) => Object.assign(selection.current, patch),
     // ↵ on an Inbox item: its pull request or pipeline in its own tab, when it's in the list.
