@@ -13,19 +13,18 @@ import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
-  assert.equal(findCommand('show').name, 'show');
-  assert.equal(findCommand('sh').name, 'show');
-  assert.equal(findCommand('s'), null, 'show and settings both start with s');
-  assert.deepEqual(suggestionsFor('/se', {}).map((s) => s.label), ['/settings']);
-  const data = { items: [{ name: 'bowline' }, { name: 'reef knot' }] };
-  assert.deepEqual(suggestionsFor('/show re', { data }).map((s) => s.insert), ['/show reef knot']);
-  assert.deepEqual(suggestionsFor('plain text', { data }), []);
+  assert.equal(findCommand('kql').name, 'kql');
+  assert.equal(findCommand('sw').name, 'swap');
+  assert.equal(findCommand('s'), null);
+  const data = { subscriptions: [{ name: 'Contoso Dev' }, { name: 'Contoso Production' }], components: [{ name: 'ai' }] };
+  assert.deepEqual(suggestionsFor('/sub contoso p', { data }).map((s) => s.insert), ['/sub Contoso Production']);
+  assert.deepEqual(suggestionsFor('/restart web/', { data, targets: { web: {}, 'web/staging': {} } }).map((s) => s.insert), ['/restart web/staging']);
   for (const c of COMMANDS) assert.ok(c.desc && typeof c.run === 'function', `/${c.name} has a description and runs`);
 });
 
 test('help: every section lays out, and the commands are a section of their own', () => {
   for (const section of [...HELP, commandsSection(COMMANDS)]) assert.ok(sectionLines(section, 60).length > 0, section.title);
-  assert.ok(commandsSection(COMMANDS).rows.some((r) => String(r[0]).includes('/show')));
+  assert.ok(commandsSection(COMMANDS).rows.some((r) => String(r[0]).includes('/kql')));
 });
 
 test('settings: the rows and their values', () => {

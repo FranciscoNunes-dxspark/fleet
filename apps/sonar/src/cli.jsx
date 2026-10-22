@@ -4,6 +4,9 @@ import { COMPILED, VERSION } from './version.js';
 import { loadConfig } from './config.js';
 import { setAccent } from './theme.js';
 import { App } from './ui/App.jsx';
+import { createAzure } from './azure/arm.js';
+import { currentSubscription, token } from './azure/az.js';
+import { demoAzure } from './demo.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js';
 import { copyToClipboard } from './clipboard.js';
 import { terminalMouse } from './mouse.js';
@@ -16,11 +19,13 @@ if (args.includes('-v') || args.includes('--version')) {
 }
 
 if (args.includes('-h') || args.includes('--help')) {
-  console.log(`sonar
+  console.log(`sonar [--demo]
 
-An Azure console for the terminal: App Service and Functions, their logs and their problems.
+An Azure console for the terminal: App Service and Functions, their logs and their
+problems. It signs in through the Azure CLI (az login) and starts on the subscription
+az has selected; --demo shows a made-up one instead.
 
-Inside: press ? for shortcuts, / for commands, ! to run a shell command.`);
+Inside: press ? for shortcuts, / for commands, t to change the time span.`);
   process.exit(0);
 }
 
@@ -49,8 +54,10 @@ if (COMPILED) removeOldExecutables();
 const mouse = await terminalMouse(process.stdin, process.stdout);
 // y copies: to the system clipboard, or through the terminal (OSC 52) over SSH or when that fails.
 const copy = (text) => copyToClipboard(text);
+const demo = args.includes('--demo');
+const provider = demo ? demoAzure() : { ...createAzure({ token }), currentSubscription };
 const app = render(
-  <App config={config} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} provider={provider} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdout: mouse?.stdout ?? process.stdout },
 );

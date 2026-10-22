@@ -1,128 +1,129 @@
-// Drives the real UI against the placeholder source: keys in, frames out.
+// Drives the real UI over the demo Azure: keys in, frames out, the demo's state checked.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
 before(() => (cleanup = tempHome()));
 after(() => cleanup());
 
-test('the items, the viewer, tabs, help and the prompt', async () => {
+const settingsOf = (app, name) => app.provider.state.sites.find((s) => `${s.name}${s.slot ? `/${s.slot}` : ''}` === name).settings;
+
+test('resources: the tree, an app beside it, its settings with secrets hidden, slots compared', async () => {
   const copied = [];
   const app = start({ copy: (t) => copied.push(t) });
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('bowline'), 'the items');
-    assert.match(frame(), /❯ anchor/);
-    assert.match(frame(), /Holds the boat in place/, 'the one under the cursor shows beside the list');
-
-    app.stdin.write('j');
-    await until(() => /❯ bowline/.test(frame()), 'the cursor on the second item');
-    app.stdin.write('y');
-    await until(() => frame().includes('Copied bowline'), 'the copy said in the bottom line');
-    assert.deepEqual(copied, ['bowline']);
+    await until(() => frame().includes('contoso-orders') && frame().includes('insights  contoso-prod-ai'), 'the apps, and the first one beside them');
+    assert.match(frame(), /DEMO/);
+    assert.match(frame(), /❯ ● contoso-web/);
+    assert.match(frame(), /production: changes ask you to type its name/);
 
     app.stdin.write(KEYS.enter);
-    await until(() => /bowline.*esc close/.test(frame()), 'the item in the viewer');
+    await until(() => frame().includes('Settings of contoso-web'), 'the settings');
+    assert.match(frame(), /Db__ConnectionString\s+••••••/);
+    assert.doesNotMatch(frame(), /demo-Pa55w0rd/);
+    for (let i = 0; i < 3; i++) {
+      app.stdin.write('j');
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    await until(() => /❯ Db__ConnectionString/.test(frame()), 'the cursor on the secret');
+    app.stdin.write('v');
+    await until(() => frame().includes('Server=tcp:contoso-prod'), 'the secret shown on asking');
+    app.stdin.write('d');
+    await until(() => frame().includes('contoso-web → contoso-web/staging: 3 settings differ'), 'the slots compared');
+    assert.match(frame(), /APP_VERSION/);
+    assert.match(frame(), /\+ contoso-web\/staging: 2\.15\.0-rc\.1/);
     app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('esc close'), 'the viewer closed');
+    await until(() => frame().includes('Settings of contoso-web'), 'back to the settings');
 
-    app.stdin.write('?');
-    await until(() => frame().includes('Show the item'), 'help, on the Items section');
-    app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('Show the item'), 'help closed');
-
-    app.stdin.write('/');
-    await type(app.stdin, 'sho');
-    await until(() => frame().includes('/show <item>'), 'the command suggested');
-    await type(app.stdin, 'w cl');
-    await until(() => frame().includes('clove hitch'), 'the item suggested');
+    // Editing one: production asks for the app's name.
+    app.stdin.write('g');
+    await until(() => /❯ APP_VERSION/.test(frame()), 'the cursor on APP_VERSION');
+    app.stdin.write('e');
+    await until(() => frame().includes('APP_VERSION on contoso-web'), 'its value to edit');
+    for (let i = 0; i < 6; i++) app.stdin.write(KEYS.backspace);
+    await type(app.stdin, '3.0.0');
     app.stdin.write(KEYS.enter);
-    await until(() => /clove hitch.*esc close/.test(frame()), '/show from its suggestion');
-    app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('esc close'), 'the viewer closed again');
-
-    app.stdin.write('/');
-    await type(app.stdin, 'nope');
+    await until(() => frame().includes('Type contoso-web to go ahead'), 'the name asked for');
+    await type(app.stdin, 'contoso-web');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('Unknown command: /nope'), 'an unknown command said so');
-
-    app.stdin.write('2');
-    await until(() => frame().includes('╭─ Log '), 'the Log view');
-    assert.match(frame(), /❯ \S Unknown command: \/nope/, 'on the newest entry');
+    await until(() => frame().includes('Saved; the app restarts'), 'saved');
+    assert.equal(settingsOf(app, 'contoso-web').APP_VERSION, '3.0.0');
   } finally {
     app.unmount();
   }
 });
 
-test('! runs a shell command, with its output in the activity lines, and esc cancels a slow one', async () => {
+test('changes: restart asks for production\'s name and refuses a wrong one, a swap moves the settings, a dev app stops after a yes', async () => {
   const app = start();
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('bowline'), 'the items');
-    app.stdin.write('!');
-    await type(app.stdin, 'node -e "console.log(6*7)"');
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    app.stdin.write('R');
+    await until(() => frame().includes('Restart contoso-web? Type contoso-web to go ahead'), 'the name asked for');
+    await type(app.stdin, 'contoso-api');
     app.stdin.write(KEYS.enter);
-    await until(() => /⎿\s+42/.test(frame()), 'the output');
+    await until(() => frame().includes("That isn't contoso-web, so nothing was changed"), 'a wrong name refused');
 
-    app.stdin.write('!');
-    await type(app.stdin, 'node -e "setTimeout(() => {}, 20000)"');
+    app.stdin.write('j');
+    await until(() => /❯\s+└ ● staging/.test(frame()), 'the staging slot');
+    app.stdin.write('W');
+    await until(() => frame().includes('Swap contoso-web/staging into production? Type contoso-web'), 'the swap asked about');
+    assert.match(frame(), /3 settings differ/);
+    await type(app.stdin, 'contoso-web');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('esc to cancel'), 'the spinner');
-    app.stdin.write(KEYS.esc);
-    await until(() => frame().includes('Cancelled'), 'the command cancelled');
+    await until(() => frame().includes('Swapping contoso-web/staging into production'), 'swapped');
+    assert.equal(settingsOf(app, 'contoso-web').APP_VERSION, '2.15.0-rc.1');
+    assert.equal(settingsOf(app, 'contoso-web/staging').APP_VERSION, '2.14.0');
 
-    // Both are in the prompt's history, newest first.
-    const saved = JSON.parse(readFileSync(join(process.env.SONAR_HOME, 'config.json'), 'utf8'));
-    assert.equal(saved.history.length, 2);
-    assert.match(saved.history[0], /setTimeout/);
+    app.stdin.write('/');
+    await type(app.stdin, 'sub Contoso Dev');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('contoso-web-dev') && frame().includes('Contoso Dev'), 'the other subscription');
+    app.stdin.write('S');
+    await until(() => frame().includes('Stop contoso-web-dev?') && frame().includes('Yes, stop it'), 'a plain question for dev');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('contoso-web-dev stopped') && frame().includes('Stopped'), 'stopped');
   } finally {
     app.unmount();
   }
 });
 
-test('settings: a toggle saves, the accent changes through its command', async () => {
+test('logs: an app\'s requests, a query typed with completion, a row whole; problems and an operation; the span', async () => {
   const app = start();
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('bowline'), 'the items');
-    app.stdin.write(',');
-    await until(() => frame().includes('Accent colour'), 'the settings');
-    app.stdin.write('j');
-    await until(() => /❯ Mouse\s+on/.test(frame()), 'the cursor on Mouse');
-    app.stdin.write(KEYS.enter);
-    await until(() => /❯ Mouse\s+off/.test(frame()), 'the mouse off');
-    const saved = () => JSON.parse(readFileSync(join(process.env.SONAR_HOME, 'config.json'), 'utf8'));
-    assert.equal(saved().mouse, false);
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    app.stdin.write('l');
+    await until(() => frame().includes('╭─ Logs') && frame().includes('50 rows'), "the app's latest requests");
+    assert.match(frame(), /contoso-prod-ai · contoso-web/);
+    assert.match(frame(), /timestamp\s+│ name/);
 
-    app.stdin.write('k');
-    await until(() => /❯ Accent colour/.test(frame()), 'the cursor on the accent');
+    app.stdin.write('e');
+    await until(() => frame().includes('tab') || frame().includes('> requests'), 'editing');
+    app.stdin.write('\x15'); // ctrl+u clears it
+    await type(app.stdin, 'exc');
+    await until(() => frame().includes('exceptions') && frame().includes('tab completes'), 'a table suggested');
+    app.stdin.write(KEYS.tab);
+    await type(app.stdin, ' | take 3');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('/accent #5fd7d7'), 'the prompt filled in');
-    for (let i = 0; i < 7; i++) app.stdin.write(KEYS.backspace);
-    await type(app.stdin, '#ff8800');
+    await until(() => frame().includes('3 rows'), 'three exceptions');
+    assert.match(frame(), /problemId/);
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('#ff8800'), 'the new accent in the list');
-    assert.equal(saved().accent, '#ff8800');
-  } finally {
-    app.unmount();
-  }
-});
+    await until(() => frame().includes('Row 1 of 3') && frame().includes('"outerMessage"'), 'the row whole');
+    app.stdin.write(KEYS.esc);
+    await until(() => frame().includes('3 rows'), 'back');
 
-test('a source that fails says so, and r tries again', async () => {
-  let calls = 0;
-  const load = async () => {
-    if (++calls === 1) throw new Error('the server is asleep');
-    return [{ name: 'only one', kind: 'test', detail: 'here' }];
-  };
-  const app = start({ load });
-  const frame = () => app.lastFrame() ?? '';
-  try {
-    await until(() => frame().includes("Couldn't load: the server is asleep"), 'the error');
-    app.stdin.write('r');
-    await until(() => frame().includes('only one'), 'the second load');
+    app.stdin.write('3');
+    await until(() => frame().includes('TimeoutException') && /\d+ problems/.test(frame()), 'the problems');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('the latest occurrence') && /operation op-/.test(frame()) && /\d\d:\d\d:\d\d\s+exception/.test(frame()), 'the operation');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('esc close'), 'closed');
+
+    app.stdin.write('t');
+    await until(() => frame().includes('last 7d'), 'the span changed');
   } finally {
     app.unmount();
   }

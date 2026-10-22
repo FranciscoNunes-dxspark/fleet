@@ -2,49 +2,114 @@
 
 # Sonar
 
-An Azure console for the terminal: App Service and Functions, their logs and their problems.
+An Azure console for the terminal: your App Service and Function apps, their slots and settings, their
+logs and their problems, in one keyboard-driven window. When Keel says production is red, Sonar is
+where you find out why.
 
-A keyboard-driven terminal app, a sibling of Splice and Trawl: the same prompt, help window, mouse,
-settings and self-updating builds.
-
-> Started from [slipway](https://github.com/FranciscoNunes-dxspark/slipway). The Items view and its data
-> (`src/source.js`) are placeholders, there to be replaced by what Sonar is really for.
+A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/splice),
+[Trawl](https://github.com/FranciscoNunes-dxspark/trawl) and [Hail](https://github.com/FranciscoNunes-dxspark/hail):
+the same prompt, help window, mouse, settings and self-updating builds.
 
 ## Install
 
 Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/sonar/releases/latest)
-and put it on your PATH. It checks for a new version once a day and installs it by itself; the new
-version starts the next time you open Sonar.
+and put it on your PATH. It checks for a new version once a day and installs it by itself.
 
-From a checkout (Node 22 or later):
+Sonar signs in through the [Azure CLI](https://aka.ms/azure-cli): run `az login` once, and it uses that
+sign-in's tokens. It never sees a password and keeps no secret. It starts on the subscription `az`
+has selected (`az account set`), and remembers the one you pick.
 
 ```bash
-npm install
-npm start
+sonar           # your Azure
+sonar --demo    # a made-up subscription, to try it without one
 ```
+
+From a checkout (Node 22 or later): `npm install`, then `npm start` (or `npm start -- --demo`).
+
+## The views
+
+| | |
+| --- | --- |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state. Beside them, the one under the cursor: address, plan, runtime, when it last changed, and which Application Insights it reports to |
+| **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
+| **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
+| **Log** | Everything that has run, with its output |
+
+Logs and Problems look at the app picked in Resources (by its role name), in the Application Insights
+its settings point at. `c` picks another Application Insights, or all the apps in one. `t` changes
+the time span: the last hour, 24 hours, 7 days or 30 days.
+
+## Changing things
+
+Restart (`R`), stop or start (`S`), swap a slot into production (`W`), and editing settings all ask
+first. For production, Sonar asks you to type the app's name, as the portal does for deletes:
+production being an app or resource group named with prod, production, prd or live. Every swap asks
+for the name, since it changes what production serves, and says how many settings differ between
+the two slots before you go ahead.
+
+Settings (`↵` or `a` on an app or slot) hide the values that look secret (keys, passwords, connection
+strings) until `v` shows one (`V` all). `e` edits one, `n` adds one, `x` removes one; each change
+says what it changes before saving, and Azure restarts the app to take it. `d` compares the settings
+with another slot of the same app, which is where the difference between staging and production
+usually hides.
 
 ## Keys
 
 | Key | What it does |
 | --- | --- |
-| `1` `2` / `tab` | Items, Log (`shift+tab` goes back) |
+| `1` `2` `3` `4` / `tab` | Resources, Logs, Problems, Log (`shift+tab` goes back) |
+| `t` | The time span: 1h, 24h, 7d, 30d |
+| `r` | Read the subscription again |
 | `/` or `:` | The command prompt, with completion |
-| `!` | Run a shell command, e.g. `!node --version` |
-| `r` | Refresh |
-| `esc` | Cancel the running command, or clear the activity lines |
+| `!` | Run a shell command, e.g. `!az account show` |
+| `esc` | Cancel what's running, or clear the activity lines |
 | `,` | Settings |
 | `?` | Every key and command |
 | `q` / `ctrl+c` | Quit |
 
-In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page, `y`
-copies, `↵` opens. The mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll
-with the wheel, and drag to select text, which is copied when you let go.
+| In Resources | |
+| --- | --- |
+| `↵` / `a` | Its settings: `v` shows a hidden value (`V` all), `e` edits, `n` adds, `x` removes, `d` compares with another slot, `y` copies |
+| `R` | Restart it |
+| `S` | Stop it, or start it if it's stopped |
+| `W` | Swap a slot into production (on an app, pick the slot) |
+| `l` `p` | Its logs · its problems |
+| `o` `b` | Open it in the Azure portal · open its site |
+| `y` | Copy its address |
+
+| In Logs | |
+| --- | --- |
+| `e` / `i` | Edit the query: `tab` completes, `↑` `↓` go through the queries run before, `↵` runs it, `esc` stops editing |
+| `↵` | Run the query, or show the row under the cursor whole |
+| `h` `l` / `←` `→` | Across the columns |
+| `y` `Y` | Copy the row as JSON · every row, tab-separated |
+| `c` | Which Application Insights to look in |
+
+| In Problems | |
+| --- | --- |
+| `↵` | Its latest occurrence, end to end |
+| `l` | Its exceptions in Logs |
+| `y` | Copy the message |
+| `c` | Which Application Insights to look in |
+
+In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
+mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll with the wheel, and
+drag to select text, which is copied when you let go.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `/show <item>` | Show an item |
+| `/kql <query>` | Run a query in Logs |
+| `/sub [name]` | Another subscription (a list to pick from if none is named) |
+| `/insights [name]` | The Application Insights that Logs and Problems look in |
+| `/find [text]` | Show only the apps whose name or resource group has the text in it |
+| `/appsettings [app]` | An app's or slot's settings |
+| `/compare [app]` | How a slot's settings differ from another slot's |
+| `/restart [app]` | Restart an app or slot |
+| `/stop [app]` `/start [app]` | Stop or start one |
+| `/swap [app/slot]` | Swap a slot into production |
+| `/portal [app]` | Open one in the Azure portal |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
 | `/settings` | Accent colour, mouse, updates, history |
@@ -53,14 +118,23 @@ with the wheel, and drag to select text, which is copied when you let go.
 | `/help` | Keys and commands |
 | `/quit` | Exit |
 
+Apps are named as in the list: `contoso-web`, or `contoso-web/staging` for a slot. With no name,
+the one under the cursor in Resources.
+
 ## Settings
 
-`,` or `/settings`. They're kept in `~/.sonar/config.json` (`SONAR_HOME` moves it).
+`,` or `/settings`. They're kept in `~/.sonar/config.json` (`SONAR_HOME` moves it), with the
+subscription last open, the time span, and the queries run lately.
 
 | Setting | |
 | --- | --- |
-| Accent colour | The colour of the cursor, borders and the pet |
+| Accent colour | The colour of the cursor, borders and Ping |
 | Mouse | Off leaves selecting text to the terminal |
 | Check for new versions | Once a day, in the downloaded builds |
 | Install them by itself | Off only says a new version is out |
 | Prompt history | Clear it |
+
+## Not yet
+
+Live log streaming, other kinds of resource (SQL, Storage, Container Apps), and Log Analytics
+workspaces queried directly.

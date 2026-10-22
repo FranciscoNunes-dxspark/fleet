@@ -34,26 +34,21 @@ const at = (frame, text) => {
   return { x: lines[y].indexOf(text), y };
 };
 
-test('clicks pick rows and tabs, a double-click does what ↵ does, and a copy is said', async () => {
+test('clicks pick rows and tabs, and a copy is said', async () => {
   const mouse = fakeMouse();
   const app = start({ mouse });
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('bowline'), 'the items');
+    await until(() => frame().includes('contoso-orders'), 'the apps');
     assert.deepEqual(mouse.enabled, [true]);
 
-    let p = at(frame(), 'halyard');
+    let p = at(frame(), 'contoso-api');
     mouse.click(p.x, p.y);
-    await until(() => /❯ halyard/.test(frame()), 'the cursor on the clicked row');
-    assert.doesNotMatch(frame(), /esc close/);
+    await until(() => /❯ ● contoso-api/.test(frame()) && frame().includes('╭─ contoso-api'), 'the cursor on the clicked app, and it beside the list');
 
+    p = at(frame(), '4 Log');
     mouse.click(p.x, p.y);
-    mouse.click(p.x, p.y);
-    await until(() => /halyard.*esc close/.test(frame()), 'the item from a double-click');
-
-    p = at(frame(), '2 Log');
-    mouse.click(p.x, p.y);
-    await until(() => frame().includes('Nothing has run yet') && !frame().includes('esc close'), 'the Log tab, with the viewer closed');
+    await until(() => frame().includes('Nothing has run yet'), 'the Log tab');
 
     mouse.copy('two\nlines');
     await until(() => frame().includes('Copied 2 lines'), 'the copy said');

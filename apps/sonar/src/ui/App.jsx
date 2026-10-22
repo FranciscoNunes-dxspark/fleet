@@ -1,18 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
+import { label } from '../azure/arm.js';
+import { TIMESPANS, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
+import { loadSubscription } from '../load.js';
+import { targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '../help-layout.js';
-import { loadItems } from '../source.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '../text.js';
 import { VERSION } from '../version.js';
 import { useTerminalSize } from './hooks.js';
 import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from './parts.jsx';
 import { HelpView } from './HelpView.jsx';
-import { ItemsView } from './ItemsView.jsx';
+import { LogsView } from './LogsView.jsx';
+import { ProblemsView } from './ProblemsView.jsx';
+import { ResourcesView } from './ResourcesView.jsx';
 import { LogView } from './LogView.jsx';
 import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
@@ -20,7 +25,9 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 
 const VIEWS = [
-  { id: 'items', label: 'Items' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'logs', label: 'Logs' },
+  { id: 'problems', label: 'Problems' },
   { id: 'log', label: 'Log' },
 ];
 
@@ -28,19 +35,23 @@ const VIEWS = [
 const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 
 const HINTS = {
-  items: '↵ show · y copy its name',
+  resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · o portal · b browse',
+  logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · c which insights',
+  problems: '↵ the latest occurrence · l its exceptions in Logs · y copy the message · c which insights',
   log: '↵ all its output · y copy it',
 };
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, width, loading, mood }) {
+function Header({ data, span, demo, width, loading, mood }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Sonar', bold: true },
   ];
-  if (data) segs.push({ text: '  │  ', color: theme.border }, { text: `${data.items.length} items`, color: theme.dim });
+  if (demo) segs.push({ text: '  ' }, { text: ' DEMO ', bg: theme.info, color: theme.ink, bold: true });
+  if (data) segs.push({ text: '  │  ', color: theme.border }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps`, color: theme.dim });
   else if (loading) segs.push({ text: '  loading…', color: theme.dim });
+  segs.push({ text: '  │  last ', color: theme.dim }, { text: span.label, color: theme.warn, bold: true });
   return <Row pointer={false} width={width} segments={segs} />;
 }
 
@@ -83,17 +94,35 @@ function activityRows(entries) {
 
 const DOUBLE_CLICK_MS = 400;
 
-// `load` reads the data (source.js's loadItems; tests pass their own). `mouse` is mouse.js's
+// `provider` is Azure (azure/arm.js's createAzure) or the demo (demo.js), the same interface; `load` reads
+// a subscription through it (load.js). `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, load = loadItems, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, provider, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('items');
+  const [view, setView] = useState('resources');
+  const [spanIndex, setSpanIndex] = useState(initialConfig.timespan ?? 1);
+  const spanRef = useRef(spanIndex);
+  // Logs: the query in the box and what the last run found. Problems: what was found, for which scope.
+  const [query, setQuery] = useState('');
+  const [result, setResult] = useState(null);
+  const [problems, setProblems] = useState(null);
+  // What Logs and Problems look at: an app (l, p) or, with `all`, everything in the chosen component.
+  const [scopeState, setScopeState] = useState({ target: null, component: null, all: false });
+  const scopeRef = useRef(scopeState);
+  const setScope = (s) => {
+    scopeRef.current = s;
+    setScopeState(s);
+  };
+  const [filter, setFilter] = useState('');
+  const selectedRef = useRef(null);
+  const settingsCache = useRef(new Map());
+  const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
   const [sugIndex, setSugIndex] = useState(0);
@@ -179,16 +208,42 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
     addEntry({ title, status, lines });
   };
 
-  const reload = async () => {
+  const reload = async (subId = dataRef.current?.subscription.id ?? configRef.current.subscription) => {
+    setLoading(true);
+    settingsCache.current = new Map();
     try {
-      const items = await load();
-      dataRef.current = { items };
-      setData(dataRef.current);
+      const d = await load(provider, subId);
+      dataRef.current = d;
+      setData(d);
     } catch (e) {
-      note(`Couldn't load: ${firstLine(e.message)}`, 'error');
+      note(`Couldn't read the subscription: ${firstLine(e.message)}`, 'error');
     } finally {
       setLoading(false);
     }
+  };
+
+  /** An app's or slot's settings, read once and kept until something changes them. */
+  const settingsOf = (target) => {
+    const cache = settingsCache.current;
+    if (!cache.has(target.id)) {
+      const p = provider.settings(target);
+      p.catch(() => cache.delete(target.id));
+      cache.set(target.id, p);
+    }
+    return cache.get(target.id);
+  };
+
+  /** What Logs and Problems ask: the component (chosen, or the app's own) and the app's role name. */
+  const resolveScope = async () => {
+    const d = dataRef.current;
+    if (!d) return { component: null, role: null, why: 'No subscription read yet.' };
+    const s = scopeRef.current;
+    const target = s.all ? null : (s.target ?? selectedRef.current);
+    let component = s.component;
+    if (!component && target) component = componentFor(await settingsOf(target).catch(() => ({})), d.components);
+    if (!component && d.components.length === 1) component = d.components[0];
+    const why = target ? `${label(target)} reports to no Application Insights that Sonar can see: c picks one` : 'c picks an Application Insights to look in';
+    return { component, role: target?.name ?? null, why: component ? '' : why };
   };
 
   // One command at a time, with the spinner, esc to cancel, and a line in the activity log.
@@ -249,6 +304,37 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
   const ctx = ctxRef.current;
   Object.assign(ctx, {
     task,
+    provider,
+    openSubscription: async (id) => {
+      setScope({ target: null, component: null, all: false });
+      setResult(null);
+      setProblems(null);
+      setFilter('');
+      await reload(id);
+      if (dataRef.current) setConfig((c) => ({ ...c, subscription: dataRef.current.subscription.id }));
+    },
+    selectTarget: (t) => (selectedRef.current = t),
+    selectedTarget: () => selectedRef.current,
+    targets: () => (dataRef.current ? targetsByLabel(dataRef.current.apps, dataRef.current.slots) : {}),
+    settingsOf,
+    forgetSettings: (target) => settingsCache.current.delete(target.id),
+    scope: resolveScope,
+    timespan: () => TIMESPANS[spanRef.current],
+    setQuery,
+    setResult,
+    setFilter,
+    setComponent: (component) => setScope({ target: null, component, all: Boolean(component) }),
+    chooseComponent: () => a.chooseComponent(ctx),
+    // l on an app: Logs about it, with its latest requests to start from (or `kql`, from Problems).
+    logsFor: (target, kql) => {
+      if (target) setScope({ target, component: null, all: false });
+      setView('logs');
+      a.runQuery(ctx, kql ?? starterQuery(target?.name ?? scopeRef.current.target?.name));
+    },
+    problemsFor: (target) => {
+      setScope({ target, component: null, all: false });
+      setView('problems');
+    },
     note,
     confirm,
     // A masked field in the confirm's place: resolves { value } (or null on esc). askText shows what's typed.
@@ -300,7 +386,10 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
     viewHasKeys: () => focusRef.current === 'view' && !overlayRef.current && !confirmRef.current && answerKey.current !== keySeq.current,
     overlayHasKeys: () => focusRef.current === 'view' && !confirmRef.current && answerKey.current !== keySeq.current,
     quit: () => exit(),
-    refresh: () => reload(),
+    refresh: () => {
+      reload();
+      setProblemsTick((n) => n + 1);
+    },
     showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
     // A list to pick from: { title, hint, items | load, onPick, keys, empty } (see Picker.jsx).
     // `replace`: swaps the picker on screen for this one (the same list, redrawn after a change), keeping
@@ -342,6 +431,36 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
     }
   };
 
+  // Problems are looked for when the view shows, and again when what it looks at or the span changes.
+  const [problemsTick, setProblemsTick] = useState(0);
+  const scopeKey = `${scopeState.target?.id ?? ''}|${scopeState.component?.id ?? ''}|${scopeState.all}|${view === 'problems' ? selectedRef.current?.id : ''}`;
+  useEffect(() => {
+    if (view !== 'problems' && view !== 'logs') return;
+    let live = true;
+    resolveScope().then((r) => live && setResolved(r));
+    return () => {
+      live = false;
+    };
+  }, [view, scopeKey, data]);
+  useEffect(() => {
+    if (view !== 'problems' || !data) return;
+    const controller = new AbortController();
+    const span = TIMESPANS[spanIndex];
+    (async () => {
+      const scope = await resolveScope();
+      if (!scope.component) return setProblems({ rows: [], error: scope.why, span });
+      setProblems((p) => ({ ...(p ?? {}), loading: true, span }));
+      try {
+        const opts = { timespan: span.iso, signal: controller.signal };
+        const [list, trend] = await Promise.all([provider.query(scope.component, problemsQuery(scope.role), opts), provider.query(scope.component, trendQuery(scope.role, span), opts)]);
+        if (!controller.signal.aborted) setProblems({ rows: records(list), spark: sparklines(records(trend)), span });
+      } catch (e) {
+        if (!controller.signal.aborted) setProblems({ rows: [], error: firstLine(e.message), span });
+      }
+    })();
+    return () => controller.abort();
+  }, [view, scopeKey, spanIndex, problemsTick, data]);
+
   useEffect(() => {
     (async () => {
       await reload();
@@ -377,18 +496,18 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
   }, []);
 
   // cli.jsx passes the terminal's title setter; tests pass a stub or nothing.
-  const title = `${VIEWS.find((v) => v.id === view).label} — Sonar`;
+  const title = data ? `${data.subscription.name} — Sonar` : 'Sonar';
   useEffect(() => {
     setTitle?.(title);
   }, [title]);
 
-  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data }) : [];
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data, targets: ctx.targets() }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { data: dataRef.current });
+    const items = suggestionsFor(value, { data: dataRef.current, targets: ctx.targets() });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -450,6 +569,13 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
       return setView(VIEWS[(i + (key.shift ? VIEWS.length - 1 : 1)) % VIEWS.length].id);
     }
     if (input === 'r') return ctx.refresh();
+    if (input === 't') {
+      const next = (spanRef.current + 1) % TIMESPANS.length;
+      spanRef.current = next;
+      setSpanIndex(next);
+      setConfig((c) => ({ ...c, timespan: next }));
+      return note(`Looking at the last ${TIMESPANS[next].label}`);
+    }
   };
 
   // One dispatcher reading focus from refs, which change the instant focus moves. Handlers that
@@ -577,11 +703,15 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
   } else if (!data) {
     main = (
       <Panel title={VIEWS.find((v) => v.id === view).label} width={W} height={mainH}>
-        <Text color={theme.dim}>{loading ? '  Loading…' : "  Nothing loaded. r tries again."}</Text>
+        <Text color={theme.dim}>{loading ? '  Reading the subscription…' : "  Nothing read: the line below says why. r tries again."}</Text>
       </Panel>
     );
+  } else if (view === 'logs') {
+    main = <LogsView query={query} result={result} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'problems') {
+    main = <ProblemsView problems={problems} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <ItemsView data={data} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ResourcesView data={data} filter={filter} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash
@@ -595,11 +725,11 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
           : overlay
             ? 'j/k scroll · space page · y copy · esc close'
             : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+  const right = focus === 'prompt' ? '' : '  t span · / commands · , settings · ? help';
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} width={W} loading={loading} mood={mood} />
+      <Header data={data} span={TIMESPANS[spanIndex]} demo={provider?.kind === 'demo'} width={W} loading={loading} mood={mood} />
       <Tabs view={view} entries={entries} width={W} />
       <Box height={mainH} width={W}>
         {main}
@@ -616,7 +746,7 @@ export function App({ config: initialConfig, load = loadItems, checkUpdate, inst
           <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
         )
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="/ for commands (/kql, /sub, /find) · t time span · ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
       <Row

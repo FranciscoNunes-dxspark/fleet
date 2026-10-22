@@ -3,7 +3,17 @@ import * as a from './actions.js';
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
-  { name: 'show', args: '<item>', desc: 'Show an item', complete: 'items', run: (ctx, s) => a.showItem(ctx, s) },
+  { name: 'kql', args: '<query>', desc: 'Run a query in Logs, against the Application Insights in scope', run: (ctx, s) => a.runQuery(ctx, s) },
+  { name: 'sub', args: '[name]', desc: 'Another subscription (a list to pick from if none is named)', complete: 'subscriptions', run: (ctx, s) => a.chooseSubscription(ctx, s) },
+  { name: 'insights', args: '[name]', desc: 'The Application Insights that Logs and Problems look in', complete: 'components', run: (ctx, s) => a.chooseComponent(ctx, s) },
+  { name: 'find', args: '[text]', desc: 'Show only the apps whose name or resource group has the text in it (none: all of them)', run: (ctx, s) => (ctx.setFilter(s.trim()), ctx.setView('resources')) },
+  { name: 'appsettings', args: '[app]', desc: "An app's or slot's settings, to see, edit or compare", complete: 'targets', run: (ctx, s) => a.showSettings(ctx, s) },
+  { name: 'compare', args: '[app]', desc: "How a slot's settings differ from another slot's of the same app", complete: 'targets', run: (ctx, s) => a.compareSettings(ctx, s) },
+  { name: 'restart', args: '[app]', desc: 'Restart an app or slot (asks first; production asks for its name)', complete: 'targets', run: (ctx, s) => a.restart(ctx, s) },
+  { name: 'stop', args: '[app]', desc: 'Stop an app or slot (asks first)', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'stop') },
+  { name: 'start', args: '[app]', desc: 'Start a stopped app or slot', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'start') },
+  { name: 'swap', args: '[app/slot]', desc: 'Swap a slot into production (asks for the app\'s name)', complete: 'targets', run: (ctx, s) => a.swap(ctx, s) },
+  { name: 'portal', args: '[app]', desc: 'Open an app or slot in the Azure portal', complete: 'targets', run: (ctx, s) => a.openInPortal(ctx, a.targetNamed(ctx, s)) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
   { name: 'settings', desc: 'Accent colour, mouse, updates, history', run: (ctx) => a.settings(ctx) },
@@ -22,8 +32,10 @@ export function findCommand(name) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, data) {
-  if (kind === 'items') return (data?.items ?? []).map((it) => it.name);
+function completions(kind, data, targets) {
+  if (kind === 'subscriptions') return (data?.subscriptions ?? []).map((s) => s.name);
+  if (kind === 'components') return (data?.components ?? []).map((c) => c.name);
+  if (kind === 'targets') return Object.keys(targets ?? {});
   return [];
 }
 
@@ -39,7 +51,7 @@ function ranked(names, query) {
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away.
  */
-export function suggestionsFor(value, { data } = {}) {
+export function suggestionsFor(value, { data, targets } = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   if (space < 0) {
@@ -53,7 +65,7 @@ export function suggestionsFor(value, { data } = {}) {
   const cmd = findCommand(value.slice(1, space));
   const rest = value.slice(space + 1);
   if (!cmd?.complete) return [];
-  const names = ranked(completions(cmd.complete, data), rest);
+  const names = ranked(completions(cmd.complete, data, targets), rest);
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
 }

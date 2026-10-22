@@ -1,9 +1,11 @@
-// What the end-to-end tests share: rendering App with a temporary home, waiting for frames, typing.
+// What the end-to-end tests share: rendering App over the demo Azure with a temporary home, waiting
+// for frames, typing.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
+import { demoAzure } from '../src/demo.js';
 import { App } from '../src/ui/App.jsx';
 
 export const KEYS = { down: '\x1b[B', up: '\x1b[A', enter: '\r', esc: '\x1b', backspace: '\x7f', tab: '\t' };
@@ -17,9 +19,11 @@ export function tempHome() {
   return () => rmSync(dir, { recursive: true, force: true });
 }
 
-/** Renders App with `props` (a config of its own unless given), remembered for until's message. */
+/** Renders App over a fresh demo Azure (or `props.provider`), remembered for until's message. */
 export function start(props = {}) {
-  lastApp = render(React.createElement(App, { config: { history: [] }, ...props }));
+  const provider = props.provider ?? demoAzure();
+  lastApp = render(React.createElement(App, { config: { history: [] }, provider, ...props }));
+  lastApp.provider = provider;
   return lastApp;
 }
 
