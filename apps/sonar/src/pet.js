@@ -5,41 +5,42 @@
 export const PET = { name: 'Ping', kind: 'bat' };
 
 // The accent's family, as Trawl's Glim, Splice's Twig and Keel's Pinch are coloured from theirs: the
-// accent for the outline, a dark body, the wings a shade lighter, a near-black mouth, and one
-// contrasting colour for the eyes.
+// accent for the outline, a dark body, the wings a shade lighter, pale inner ears, and one warm colour
+// for the cheeks.
 export const PALETTE = {
-  G: '#5fd7d7', // outline, the accent
-  D: '#2b4256', // body
-  M: '#406680', // wings
-  E: '#0b1418', // mouth
-  W: '#ffffff', // fangs
-  Y: '#ffd75f', // eyes, the one bright colour
+  G: '#b48cff', // outline, the accent lavender
+  D: '#4a3570', // body
+  M: '#6b4fa0', // wings
+  P: '#e0d0ff', // inner ears
+  E: '#120c1c', // eyes, mouth
+  W: '#ffffff', // eye shine, teeth
+  K: '#ff9ec7', // cheeks, the one warm colour
 };
 
-// 16 × 10 pixels; '.' is transparent. Face on, wings spread: ears up, two bright eyes, a mouth with
-// its fangs, the wings' scalloped edges below.
+// 16 × 10 pixels; '.' is transparent. Face on and round: big ears, eyes with a shine, pink cheeks, a
+// small open mouth, short wings either side and two little feet.
 const BASE = [
-  '....G......G....',
-  '...GDG....GDG...',
-  'G..GDDGGGGDDG..G',
-  'GG.GDYDDDDYDG.GG',
-  'GMGGDDDDDDDDGGMG',
-  'GMMGDDDDDDDDGMMG',
-  'GMMMGDDEEDDGMMMG',
-  '.GMMMGWDDWGMMMG.',
-  '..GMG.GDDG.GMG..',
-  '...G...GG...G...',
+  '...GG......GG...',
+  '..GPDG....GDPG..',
+  '..GPDDGGGGDDPG..',
+  '.GDDDDDDDDDDDDG.',
+  'GMGDDWEDDWEDDGMG',
+  'GMMDKDDDDDDKDMMG',
+  'GMMGDDDEEDDDGMMG',
+  '.GMGDDDWWDDDGMG.',
+  '..G.GDDDDDDG.G..',
+  '.....GG..GG.....',
 ];
 
 // Each mood replaces some rows of the base drawing.
 const MOODS = {
   idle: {},
-  look: { 3: 'GG.GDDYDDDDYG.GG' }, // glancing the other way, for the busy animation
-  sleep: { 3: 'GG.GDEDDDDEDG.GG', 6: 'GMMMGDDDDDDGMMMG', 7: '.GMMMGDDDDGMMMG.' },
-  happy: { 3: 'GG.GDYDDDDYDG.GG', 6: 'GMMMGDEDDEDGMMMG', 7: '.GMMMGDEEDGMMMG.' },
-  worried: { 3: 'GG.GDWDDDDWDG.GG', 6: 'GMMMGDDEEDDGMMMG', 7: '.GMMMGDEEDGMMMG.' },
-  // Calling out: mouth open, the call going out.
-  wave: { 6: 'GMMMGDEEEEDGMMMG', 7: '.GMMMGWEEWGMMMG.' },
+  look: { 4: 'GMGDDEWDDEWDDGMG' }, // glancing the other way, for the busy animation
+  sleep: { 4: 'GMGDDEEDDEEDDGMG', 6: 'GMMGDDDDDDDDGMMG', 7: '.GMGDDDDDDDDGMG.' },
+  happy: { 6: 'GMMGDDEDDEDDGMMG', 7: '.GMGDDDEEDDDGMG.' },
+  worried: { 4: 'GMGDDWWDDWWDDGMG', 6: 'GMMGDDDEEDDDGMMG', 7: '.GMGDDDDDDDDGMG.' },
+  // Calling out, mouth wide: the ping going out.
+  wave: { 6: 'GMMGDDEEEEDDGMMG', 7: '.GMGDDEWWEDDGMG.' },
 };
 
 /** The drawing for a mood, as rows of palette letters. */

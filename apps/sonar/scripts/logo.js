@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { PALETTE, PET, petPixels } from '../src/pet.js';
 
-const BG = '#101820';
+const BG = '#14111c';
 // Trim the empty columns kept for the waving paw, so the face sits in the middle.
 const full = petPixels('idle');
 const used = [...full[0]].map((_, x) => full.some((row) => row[x] !== '.'));
