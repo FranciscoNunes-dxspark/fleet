@@ -26,6 +26,19 @@ sonar --demo    # a made-up subscription, to try it without one
 
 From a checkout (Node 22 or later): `npm install`, then `npm start` (or `npm start -- --demo`).
 
+### Starting somewhere
+
+```bash
+sonar --url https://shop.contoso.com/health --problems     # the app behind an address, its problems
+sonar --app contoso-api --logs                             # an app's latest requests
+sonar --sub "Contoso Production" --app contoso-web/staging --logs --kql "exceptions | take 20"
+sonar --insights <AppId> --problems                        # everything in one Application Insights
+```
+
+`--url` finds the app that serves an address, by its own host name or one of its custom domains.
+Keel's terminal app opens Sonar this way from a production monitor (`S` in its Production view):
+in a new tab when it runs in Windows Terminal, or by copying the command to run.
+
 ## The views
 
 | | |
@@ -33,6 +46,7 @@ From a checkout (Node 22 or later): `npm install`, then `npm start` (or `npm sta
 | **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state. Beside them, the one under the cursor: address, plan, runtime, when it last changed, and which Application Insights it reports to |
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
+| **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
 | **Log** | Everything that has run, with its output |
 
 Logs and Problems look at the app picked in Resources (by its role name), in the Application Insights
@@ -57,7 +71,7 @@ usually hides.
 
 | Key | What it does |
 | --- | --- |
-| `1` `2` `3` `4` / `tab` | Resources, Logs, Problems, Log (`shift+tab` goes back) |
+| `1`–`5` / `tab` | Resources, Logs, Problems, Live, Log (`shift+tab` goes back) |
 | `t` | The time span: 1h, 24h, 7d, 30d |
 | `r` | Read the subscription again |
 | `/` or `:` | The command prompt, with completion |
@@ -74,6 +88,7 @@ usually hides.
 | `S` | Stop it, or start it if it's stopped |
 | `W` | Swap a slot into production (on an app, pick the slot) |
 | `l` `p` | Its logs · its problems |
+| `L` | Its log as it's written, in Live |
 | `o` `b` | Open it in the Azure portal · open its site |
 | `y` | Copy its address |
 
@@ -83,7 +98,15 @@ usually hides.
 | `↵` | Run the query, or show the row under the cursor whole |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `Y` | Copy the row as JSON · every row, tab-separated |
+| `H` | Copy a request row as a request for [Hail](https://github.com/FranciscoNunes-dxspark/hail), to paste into a `.http` file and send again |
 | `c` | Which Application Insights to look in |
+
+| In Live | |
+| --- | --- |
+| `j` `k` `g` `G` | Scroll back · `G` follows the end again |
+| `p` | Pause, or go on |
+| `c` `R` | Clear · Reconnect |
+| `y` | Copy what's there |
 
 | In Problems | |
 | --- | --- |
@@ -95,6 +118,32 @@ usually hides.
 In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
 mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll with the wheel, and
 drag to select text, which is copied when you let go.
+
+### The command palette
+
+`ctrl+p` opens a list of everything you can do from where you are: the keys of the view you're in,
+your own keys and commands, and every slash command. Type to narrow it (the words can come in any
+order and needn't be whole), `↑`/`↓` pick, `↵` runs the one picked, `esc` closes it. A key runs as if
+you'd pressed it in the view; a command that needs something typed after it goes into the prompt for
+you to finish.
+
+### Your own commands and keys
+
+Commands of your own go in the settings file (`~/.sonar/config.json`), under `"commands"`, and keys
+under `"keys"`, for every view (`"global"`) or for one (resources, logs, problems, live, log):
+
+```json
+{
+  "commands": { "prod": "/sub Contoso Production", "errors": "/kql exceptions | order by timestamp desc | take 50" },
+  "keys": { "global": { "ctrl+e": "/kql exceptions | take 50" }, "resources": { "x": "R" } }
+}
+```
+
+A command is a line as you'd type it at the prompt, or a list of them run in order, stopping at the
+first that fails or asks a question you answer no to. `$1`, `$2`… are the words typed after it, `$*`
+all of them. A key maps to another key (the view does what that one does) or to a command line. What
+can't be used is said in the activity lines when Sonar starts. These work as they do in Splice
+and Trawl.
 
 ## Commands
 

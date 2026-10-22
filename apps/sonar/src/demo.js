@@ -15,7 +15,7 @@ const conn = (key) => `InstrumentationKey=${key};IngestionEndpoint=https://weste
 
 function initialState(now) {
   const apps = [
-    { sub: 'sub-prod', name: 'contoso-web', kind: 'app', resourceGroup: 'contoso-prod', runtime: 'NODE|22-lts', key: 'k-prod', slots: ['staging'] },
+    { sub: 'sub-prod', name: 'contoso-web', kind: 'app', resourceGroup: 'contoso-prod', runtime: 'NODE|22-lts', key: 'k-prod', slots: ['staging'], domain: 'shop.contoso.com' },
     { sub: 'sub-prod', name: 'contoso-api', kind: 'app', resourceGroup: 'contoso-prod', runtime: 'DOTNETCORE|8.0', key: 'k-prod', slots: ['staging'] },
     { sub: 'sub-prod', name: 'contoso-orders', kind: 'function', resourceGroup: 'contoso-prod', runtime: 'DOTNET-ISOLATED|8.0', key: 'k-prod', slots: [] },
     { sub: 'sub-dev', name: 'contoso-web-dev', kind: 'app', resourceGroup: 'contoso-dev', runtime: 'NODE|22-lts', key: 'k-dev', slots: [] },
@@ -31,10 +31,11 @@ function initialState(now) {
       Db__ConnectionString: `Server=tcp:${a.resourceGroup}.database.windows.net;Database=contoso;Password=demo-Pa55w0rd;`,
       FeatureFlags__NewCheckout: 'false',
     };
-    const site = { id, sub: a.sub, name: a.name, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host: `${a.name}.azurewebsites.net`, modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
+    const host = `${a.name}.azurewebsites.net`;
+    const site = { id, sub: a.sub, name: a.name, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host, hostNames: a.domain ? [host, a.domain] : [host], modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
     sites.push(site);
     for (const slot of a.slots) {
-      sites.push({ ...site, id: `${id}/slots/${slot}`, slot, host: `${a.name}-${slot}.azurewebsites.net`, settings: { ...base, APP_VERSION: '2.15.0-rc.1', FeatureFlags__NewCheckout: 'true', ASPNETCORE_ENVIRONMENT: 'Staging' } });
+      sites.push({ ...site, id: `${id}/slots/${slot}`, slot, host: `${a.name}-${slot}.azurewebsites.net`, hostNames: [`${a.name}-${slot}.azurewebsites.net`], settings: { ...base, APP_VERSION: '2.15.0-rc.1', FeatureFlags__NewCheckout: 'true', ASPNETCORE_ENVIRONMENT: 'Staging' } });
     }
   }
   const components = [
@@ -204,6 +205,25 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       const hours = { PT1H: 1, P1D: 24, P7D: 168, P30D: 720 }[timespan] ?? 24;
       const since = new Date(now - hours * HOUR).toISOString();
       return demoQuery(kql, state.telemetry.filter((i) => i.component === component.appId && i.timestamp >= since));
+    },
+    // A made-up log: a line every `every` ms, as an app's would come, until the stream is stopped.
+    async logStream(target, { signal, onLine, every = 300 }) {
+      const s = site(target);
+      const rand = seeded(s.name.length);
+      const paths = ['/api/orders', '/api/cart', '/checkout', '/api/users/me', '/'];
+      onLine(`${new Date(now).toISOString()}  Connected! Streaming the log of ${s.name}${s.slot ? `/${s.slot}` : ''}`);
+      let n = 0;
+      await new Promise((resolve) => {
+        const t = setInterval(() => {
+          const at = new Date(Date.now()).toISOString();
+          const path = paths[Math.floor(rand() * paths.length)];
+          const r = rand();
+          onLine(r < 0.08 ? `${at} [ERR] Unhandled exception on GET ${path}: The operation has timed out talking to the payments provider` : r < 0.2 ? `${at} [WRN] Slow request GET ${path} took ${Math.round(1000 + rand() * 3000)} ms` : `${at} [INF] GET ${path} ${200} in ${Math.round(5 + rand() * 200)} ms`);
+          n++;
+        }, every);
+        signal?.addEventListener('abort', () => (clearInterval(t), resolve()), { once: true });
+      });
+      return n;
     },
     portalUrl: (target) => `https://portal.azure.com/#resource${target.id}`,
   };

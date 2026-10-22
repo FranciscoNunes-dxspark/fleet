@@ -33,6 +33,18 @@ export function targetsByLabel(apps, slots = {}) {
   return out;
 }
 
+/** The app or slot that serves `url` (a monitor's, say), by its default host or a custom domain; null if none. */
+export function targetForUrl(apps, slots = {}, url) {
+  let host;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    host = String(url ?? '').toLowerCase();
+  }
+  const all = apps.flatMap((a) => [a, ...(slots[a.id] ?? [])]);
+  return all.find((t) => (t.hostNames ?? [t.host]).some((h) => h?.toLowerCase() === host)) ?? null;
+}
+
 /** Runs `fn` over `items` at most `limit` at a time, resolving with the results in order. */
 export async function mapLimited(items, limit, fn) {
   const out = new Array(items.length);

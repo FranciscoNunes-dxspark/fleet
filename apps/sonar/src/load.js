@@ -10,7 +10,8 @@ export async function loadSubscription(provider, subId, { signal } = {}) {
   const subscriptions = await provider.subscriptions({ signal });
   if (!subscriptions.length) throw new Error('This sign-in has no subscriptions it can see.');
   const wanted = subId ?? (await provider.currentSubscription?.().catch(() => null))?.id;
-  const subscription = subscriptions.find((s) => s.id === wanted) ?? subscriptions[0];
+  // By id, or by name (sonar --sub "Contoso Production").
+  const subscription = subscriptions.find((s) => s.id === wanted || s.name.toLowerCase() === String(wanted ?? '').toLowerCase()) ?? subscriptions[0];
   const [apps, components] = await Promise.all([provider.apps(subscription.id, { signal }), provider.components(subscription.id, { signal }).catch(() => [])]);
   const lists = await mapLimited(apps, 6, (app) => provider.slots(app, { signal }).catch(() => []));
   const slots = Object.fromEntries(apps.map((a, i) => [a.id, lists[i]]));

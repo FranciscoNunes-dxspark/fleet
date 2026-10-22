@@ -12,11 +12,13 @@ import { Lines, Panel, Row } from './parts.jsx';
 export const stateColour = (state) => (state === 'Running' ? theme.add : state === 'Stopped' ? theme.del : theme.warn);
 
 /** The subscription's apps by resource group, slots under each, and beside them the one under the cursor. */
-export function ResourcesView({ data, ctx, width, height, active, filter }) {
+export function ResourcesView({ data, ctx, width, height, active, filter, focusId }) {
   const rows = resourceRows(data.apps, data.slots, filter);
   const innerH = height - 2;
   const listW = Math.max(34, Math.floor(width * 0.42));
-  const nav = useListNav(rows.length, innerH, { selectable: (i) => rows[i]?.kind !== 'group', resetKey: `${data.subscription.id}|${filter}`, start: 1 });
+  // On the app the command line named (focusId), else the first.
+  const focusAt = focusId ? rows.findIndex((r) => r.target?.id === focusId) : -1;
+  const nav = useListNav(rows.length, innerH, { selectable: (i) => rows[i]?.kind !== 'group', resetKey: `${data.subscription.id}|${filter}|${focusId}`, start: focusAt > 0 ? focusAt : 1 });
   const sel = rows[nav.index]?.target ?? null;
   ctx.selectTarget(sel);
   // The settings say which Application Insights it reports to; read when the cursor stops on it.
@@ -42,6 +44,7 @@ export function ResourcesView({ data, ctx, width, height, active, filter }) {
     if (input === 'W') return a.swap(ctx, sel);
     if (input === 'l') return ctx.logsFor(sel);
     if (input === 'p') return ctx.problemsFor(sel);
+    if (input === 'L') return ctx.liveFor(sel);
     if (input === 'o') return a.openInPortal(ctx, sel);
     if (input === 'b') return a.browse(ctx, sel);
     if (input === 'y') return sel.host ? ctx.copy(sel.host) : undefined;
@@ -68,7 +71,7 @@ export function ResourcesView({ data, ctx, width, height, active, filter }) {
         [{ text: 'insights  ', color: theme.dim }, settings == null ? { text: '…', color: theme.dim } : settings.error ? { text: "can't read its settings", color: theme.del } : { text: component?.name ?? 'none linked', color: component ? undefined : theme.dim }],
         [{ text: 'settings  ', color: theme.dim }, { text: settings && !settings.error ? `${Object.keys(settings).length} (↵ shows them)` : '' }],
         [],
-        [{ text: 'R restart · S stop/start · W swap · l logs · p problems · o portal · b browse', color: theme.dim }],
+        [{ text: 'R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse', color: theme.dim }],
       ]
     : [];
 

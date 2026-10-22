@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
 import { TIMESPANS, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
-import { targetsByLabel } from '../tree.js';
+import { targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
@@ -12,9 +12,14 @@ import { commandsSection, sectionFor } from '../help-layout.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '../text.js';
 import { VERSION } from '../version.js';
-import { useTerminalSize } from './hooks.js';
+import { useKeyTranslation, useTerminalSize } from './hooks.js';
+import { keymapSection, parseKeymap, translateKey } from '../keymap.js';
+import { expandLines, userCommands } from '../usercommands.js';
+import { paletteItems } from '../palette.js';
+import { Palette } from './Palette.jsx';
 import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from './parts.jsx';
 import { HelpView } from './HelpView.jsx';
+import { LiveView } from './LiveView.jsx';
 import { LogsView } from './LogsView.jsx';
 import { ProblemsView } from './ProblemsView.jsx';
 import { ResourcesView } from './ResourcesView.jsx';
@@ -28,16 +33,24 @@ const VIEWS = [
   { id: 'resources', label: 'Resources' },
   { id: 'logs', label: 'Logs' },
   { id: 'problems', label: 'Problems' },
+  { id: 'live', label: 'Live' },
   { id: 'log', label: 'Log' },
 ];
 
-// What ? shows: help.js's sections, then the slash commands.
-const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
+const VIEW_LABELS = Object.fromEntries(VIEWS.map((v) => [v.id, v.label]));
+
+// What ? shows: help.js's sections, the keys you mapped, then the slash commands, yours with them.
+const helpSections = (user, keymap) => [...HELP, ...[keymapSection(keymap, VIEW_LABELS)].filter(Boolean), commandsSection([...COMMANDS, ...user])];
+
+// ctrl+p, as the terminal sends it: the command palette.
+const CTRL_P = '\x10';
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · o portal · b browse',
-  logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · c which insights',
+  resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse',
+  logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
   problems: '↵ the latest occurrence · l its exceptions in Logs · y copy the message · c which insights',
+  live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
   log: '↵ all its output · y copy it',
 };
 
@@ -95,11 +108,12 @@ function activityRows(entries) {
 const DOUBLE_CLICK_MS = 400;
 
 // `provider` is Azure (azure/arm.js's createAzure) or the demo (demo.js), the same interface; `load` reads
-// a subscription through it (load.js). `mouse` is mouse.js's
+// a subscription through it (load.js). `open` is where to start, from the command line (a sibling such as
+// Keel opens Sonar this way): { sub, app, url, insights, view: 'logs' | 'problems', kql }. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, provider, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -120,6 +134,13 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     setScopeState(s);
   };
   const [filter, setFilter] = useState('');
+  // The app Resources starts on (sonar --app or --url), once it's been found.
+  const [focusId, setFocusId] = useState(null);
+  // Live: the app whose log streams (L, or the one picked in Resources), its lines, how it's going.
+  const [liveTarget, setLiveTarget] = useState(null);
+  const [live, setLive] = useState({ lines: [], status: 'idle', error: null, paused: false });
+  const livePaused = useRef(false);
+  const [liveTick, setLiveTick] = useState(0);
   const selectedRef = useRef(null);
   const settingsCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
@@ -145,6 +166,23 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     const t = setTimeout(() => setFlash(null), 3000);
     return () => clearTimeout(t);
   }, [flash]);
+
+  // Errors said and questions answered no, counted so a line of your own command knows it failed.
+  const errorCount = useRef(0);
+  const declines = useRef(0);
+  // Your own commands and keys (the config's "commands" and "keys"), and what was wrong with them.
+  const custom = useMemo(() => {
+    const mine = userCommands(config.commands, COMMANDS.map((c) => c.name));
+    const commands = mine.commands.map((c) => ({ ...c, run: (_, rest) => ctx.runUserCommand(c, rest) }));
+    const keymap = parseKeymap(config.keys, VIEWS.map((v) => v.id));
+    return { commands, keymap, sections: helpSections(commands, keymap), problems: [...mine.problems.map((p) => `commands: ${p}`), ...keymap.problems.map((p) => `keys: ${p}`)] };
+  }, [config.commands, config.keys]);
+  const customRef = useRef(custom);
+  customRef.current = custom;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  // A key picked in the palette, sent to the view once it's back on screen (the effect below).
+  const pendingKey = useRef(null);
 
   // Async actions read the latest state through refs, not through stale closures.
   const dataRef = useRef(null);
@@ -197,11 +235,15 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
   };
 
   const addEntry = (e) => {
+    if (e.status === 'error') errorCount.current++;
     const id = nextId.current++;
     setEntries((list) => [...list.slice(-99), { id, lines: [], at: Date.now(), ...e }]);
     return id;
   };
-  const updateEntry = (id, patch) => setEntries((list) => list.map((e) => (e.id === id ? { ...e, at: Date.now(), ...patch } : e)));
+  const updateEntry = (id, patch) => {
+    if (patch.status === 'error') errorCount.current++;
+    setEntries((list) => list.map((e) => (e.id === id ? { ...e, at: Date.now(), ...patch } : e)));
+  };
 
   const note = (text, status = 'info') => {
     const [title, ...lines] = String(text).split('\n');
@@ -220,6 +262,31 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * Where the command line said to start: an app (by label, or the address it serves), an Application
+   * Insights (by its AppId or name), and Logs or Problems about them. What can't be found is said.
+   */
+  const arrive = async ({ app, url, insights, view, kql }) => {
+    const d = dataRef.current;
+    if (!d) return;
+    let target = null;
+    if (app) {
+      const all = targetsByLabel(d.apps, d.slots);
+      target = all[app] ?? Object.values(all).find((t) => label(t).toLowerCase() === app.toLowerCase()) ?? null;
+      if (!target) note(`There's no app called ${app} in ${d.subscription.name}. /sub picks another subscription.`, 'error');
+    }
+    if (url && !target) {
+      target = targetForUrl(d.apps, d.slots, url);
+      if (!target) note(`No app in ${d.subscription.name} serves ${url}: its address is neither an app's own nor one of its custom domains.`, 'error');
+    }
+    const component = insights ? (d.components.find((c) => c.appId === insights || c.name.toLowerCase() === insights.toLowerCase()) ?? null) : null;
+    if (insights && !component) note(`There's no Application Insights ${insights} in ${d.subscription.name}.`, 'error');
+    if (target) setFocusId(target.id);
+    if (target || component) setScope({ target, component, all: !target });
+    if (view === 'problems') setView('problems');
+    else if (view === 'logs') await a.runQuery(ctx, kql ?? starterQuery(target?.name));
   };
 
   /** An app's or slot's settings, read once and kept until something changes them. */
@@ -286,6 +353,7 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     const req = confirmRef.current;
     confirmRef.current = null;
     answerKey.current = keySeq.current;
+    if (value === false || value == null) declines.current++;
     setConfirmReq(null);
     req?.done(value);
   };
@@ -330,6 +398,18 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
       if (target) setScope({ target, component: null, all: false });
       setView('logs');
       a.runQuery(ctx, kql ?? starterQuery(target?.name ?? scopeRef.current.target?.name));
+    },
+    liveFor: (target) => {
+      setLiveTarget(target);
+      setView('live');
+    },
+    live: {
+      pause: () => {
+        livePaused.current = !livePaused.current;
+        setLive((l) => ({ ...l, paused: livePaused.current }));
+      },
+      clear: () => setLive((l) => ({ ...l, lines: [] })),
+      reconnect: () => setLiveTick((n) => n + 1),
     },
     problemsFor: (target) => {
       setScope({ target, component: null, all: false });
@@ -409,9 +489,60 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
       closing?.onClosed?.();
     },
     // On the section for the view on screen.
-    showHelp: () => setOverlay({ kind: 'help', start: sectionFor(HELP_SECTIONS, view) }),
+    showHelp: () => setOverlay({ kind: 'help', start: sectionFor(customRef.current.sections, view) }),
+    // Your own command `cmd` (usercommands.js) with what was typed after it, and any line as typed at
+    // the prompt; both resolve false when it failed.
+    runUserCommand: (cmd, rest) => runUserCommand(cmd, rest),
+    runLine: (text) => runLine(text),
+    openPalette: () => openPalette(),
     showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('No command has run yet.')),
   });
+
+  // One line as typed at the prompt: a shell command after !, else a slash command. Resolves false
+  // when it failed: it threw, said an error, or a question it asked was answered no (so your own
+  // commands stop there).
+  const runLine = async (text) => {
+    const [errors, declined] = [errorCount.current, declines.current];
+    try {
+      let r;
+      if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
+      else {
+        const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
+        const cmd = findCommand(name, customRef.current.commands);
+        if (!cmd) {
+          note(`Unknown command: /${name}. Type / to see them all.`, 'error');
+          return false;
+        }
+        r = await cmd.run(ctx, rest.trim());
+      }
+      return r !== false && r?.ok !== false && errorCount.current === errors && declines.current === declined;
+    } catch (e) {
+      note(firstLine(e.message), 'error');
+      return false;
+    }
+  };
+
+  // One of your own commands: its lines in order, with what was typed after it filled in, stopping at
+  // the first that fails. Commands of yours may run each other, but not round in a circle.
+  const userDepth = useRef(0);
+  const runUserCommand = async (cmd, rest) => {
+    if (userDepth.current >= 5) {
+      note(`/${cmd.name}: your commands run each other round in a circle, so it stopped.`, 'error');
+      return false;
+    }
+    const lines = expandLines(cmd, rest);
+    userDepth.current++;
+    try {
+      for (const [i, line] of lines.entries()) {
+        if (await runLine(line)) continue;
+        if (i < lines.length - 1) note(`/${cmd.name} stopped at ${line}: the ${plural(lines.length - i - 1, 'line')} after it didn't run.`, 'error');
+        return false;
+      }
+      return true;
+    } finally {
+      userDepth.current--;
+    }
+  };
 
   const submit = async (raw) => {
     const text = raw.trim();
@@ -420,16 +551,76 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     if (!text) return;
     const history = [text, ...(configRef.current.history ?? []).filter((h) => h !== text)].slice(0, 100);
     setConfig((c) => ({ ...c, history }));
-    try {
-      if (text.startsWith('!')) return await a.raw(ctx, text.slice(1));
-      const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
-      const cmd = findCommand(name);
-      if (!cmd) return note(`Unknown command: /${name}. Type / to see them all.`, 'error');
-      await cmd.run(ctx, rest.trim());
-    } catch (e) {
-      note(firstLine(e.message), 'error');
-    }
+    await runLine(text);
   };
+
+  // ctrl+p: the palette, over the view, starting from what's typed in the prompt when it's open there.
+  const openPalette = () => {
+    const typed = focusRef.current === 'prompt' ? promptRef.current.value.trim() : '';
+    if (focusRef.current === 'prompt') setFocus('view');
+    setOverlay({ kind: 'palette', query: typed.startsWith('!') ? '' : typed.replace(/^\//, '') });
+  };
+  // What's picked in it: a key goes to the view, a command runs, or waits in the prompt for what it
+  // takes. After every handler has had the ↵ that picked it, so it isn't also the prompt's.
+  const runPicked = (it) =>
+    queueMicrotask(() => {
+      ctx.closeOverlay();
+      if (it.key) pendingKey.current = it.key.seq;
+      else if (it.ask) prefill(`${it.command} `);
+      else runLine(it.command);
+    });
+
+  // Your keys, where they come in: while a view has the keys (never while typing, in a confirm or
+  // over an overlay), a key you mapped becomes the key it stands for, for the view and App alike, or
+  // runs its command line. Then ctrl+p opens the palette, from a view or the prompt.
+  const sendKey = useKeyTranslation((input) => {
+    let out = input;
+    if (focusRef.current === 'view' && !overlayRef.current && !confirmRef.current && !ctx.claimsKey?.(input, {})) {
+      const b = translateKey(customRef.current.keymap, viewRef.current, input);
+      if (b?.command) {
+        queueMicrotask(() => runLine(b.command));
+        return null;
+      }
+      if (b?.key) out = b.key.seq;
+    }
+    if (out === CTRL_P && !overlayRef.current && !confirmRef.current && (focusRef.current === 'view' || focusRef.current === 'prompt')) {
+      openPalette();
+      return null;
+    }
+    return out;
+  });
+  useEffect(() => {
+    if (pendingKey.current == null || overlayRef.current) return;
+    const k = pendingKey.current;
+    pendingKey.current = null;
+    sendKey(k);
+  });
+
+  // The log streams while Live is on screen, and stops when you leave it or pick another app. Lines
+  // come in bursts, so they're gathered and drawn a few times a second, the last 2000 kept.
+  const streamTarget = view === 'live' ? (liveTarget ?? selectedRef.current) : null;
+  useEffect(() => {
+    if (!streamTarget) return;
+    const controller = new AbortController();
+    let pending = [];
+    setLive((l) => ({ ...l, status: 'connecting', error: null }));
+    const flush = setInterval(() => {
+      if (!pending.length) return;
+      const add = pending;
+      pending = [];
+      setLive((l) => ({ ...l, status: 'streaming', lines: [...l.lines, ...add].slice(-2000) }));
+    }, 150);
+    provider
+      .logStream(streamTarget, { signal: controller.signal, onLine: (line) => !livePaused.current && pending.push(line) })
+      .then(
+        () => !controller.signal.aborted && setLive((l) => ({ ...l, status: 'ended' })),
+        (e) => !controller.signal.aborted && setLive((l) => ({ ...l, status: 'error', error: firstLine(e.message) })),
+      );
+    return () => {
+      controller.abort();
+      clearInterval(flush);
+    };
+  }, [streamTarget?.id, liveTick]);
 
   // Problems are looked for when the view shows, and again when what it looks at or the span changes.
   const [problemsTick, setProblemsTick] = useState(0);
@@ -462,8 +653,14 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
   }, [view, scopeKey, spanIndex, problemsTick, data]);
 
   useEffect(() => {
+    if (custom.problems.length) {
+      const text = ['Some of your commands or keys in the config were left out:', ...custom.problems].join('\n');
+      note(text, 'error');
+      lastOutput.current = { title: 'Your commands and keys', text };
+    }
     (async () => {
-      await reload();
+      await reload(open?.sub);
+      if (open) await arrive(open);
       // After the first load, so it doesn't slow it down.
       if (checkUpdate && configRef.current.checkForUpdates !== false) {
         checkUpdate(configRef.current.lastUpdateCheck).then(
@@ -501,13 +698,13 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     setTitle?.(title);
   }, [title]);
 
-  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data, targets: ctx.targets() }) : [];
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets() }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { data: dataRef.current, targets: ctx.targets() });
+    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets() });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -691,9 +888,18 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     tabs: tabLabels(entries),
   };
 
+  // The palette's list: this view's keys, yours, then the commands.
+  const paletteList = useMemo(
+    () => paletteItems({ commands: COMMANDS, user: custom.commands, sections: HELP.filter((s) => s.title === 'Anywhere' || s.views?.includes(view)), keymap: custom.keymap, view, skip: ['ctrl+p'] }),
+    [custom, view],
+  );
+
   let main;
-  if (overlay?.kind === 'help') {
-    main = <HelpView sections={HELP_SECTIONS} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+  if (overlay?.kind === 'palette') {
+    // Closed once every handler has had the esc, or App's would also take it (and clear the log).
+    main = <Palette items={paletteList} query={overlay.query} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onPick={runPicked} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
+  } else if (overlay?.kind === 'help') {
+    main = <HelpView sections={custom.sections} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
   } else if (overlay?.kind === 'picker') {
     main = <Picker key={overlay.id} picker={overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay) {
@@ -708,10 +914,12 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
     );
   } else if (view === 'logs') {
     main = <LogsView query={query} result={result} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'live') {
+    main = <LiveView live={{ ...live, target: streamTarget }} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'problems') {
     main = <ProblemsView problems={problems} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <ResourcesView data={data} filter={filter} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ResourcesView data={data} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash
@@ -720,6 +928,8 @@ export function App({ config: initialConfig, provider, load = loadSubscription, 
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
+        : overlay?.kind === 'palette'
+        ? 'type to filter · ↑↓ pick · ↵ run it (a key in the view; a command that takes more goes into the prompt) · esc close'
         : overlay?.kind === 'picker'
           ? 'j/k move · ↵ change · esc close'
           : overlay

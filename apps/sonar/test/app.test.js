@@ -1,6 +1,7 @@
 // Drives the real UI over the demo Azure: keys in, frames out, the demo's state checked.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { demoAzure } from '../src/demo.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
@@ -124,6 +125,60 @@ test('logs: an app\'s requests, a query typed with completion, a row whole; prob
 
     app.stdin.write('t');
     await until(() => frame().includes('last 7d'), 'the span changed');
+  } finally {
+    app.unmount();
+  }
+});
+
+test('opened from the command line: an address finds its app, Problems about it; an app by name in Logs, a row as a Hail request', async () => {
+  const copied = [];
+  let app = start({ open: { url: 'https://shop.contoso.com/health', view: 'problems' } });
+  let frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('╭─ Problems') && frame().includes('contoso-prod-ai · contoso-web') && /\d+ problems/.test(frame()), 'the problems of the app behind the address');
+    app.stdin.write('1');
+    await until(() => /❯ ● contoso-web/.test(frame()), 'Resources on that app');
+  } finally {
+    app.unmount();
+  }
+  app = start({ open: { sub: 'Contoso Production', app: 'contoso-api', view: 'logs' }, copy: (t) => copied.push(t) });
+  frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('╭─ Logs') && frame().includes('contoso-prod-ai · contoso-api') && frame().includes('50 rows'), "the app's requests");
+    app.stdin.write('H');
+    await until(() => frame().includes('Copied it as a Hail request'), 'the copy');
+    assert.match(copied.at(-1), /^### GET \/\S* \(answered \d+\)\nGET https:\/\/contoso-api\.azurewebsites\.net\/\S*\n$/);
+  } finally {
+    app.unmount();
+  }
+  app = start({ open: { app: 'no-such-app', url: 'https://nowhere.example.com/' } });
+  frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes("There's no app called no-such-app") && frame().includes('No app in Contoso Production serves'), 'both said');
+  } finally {
+    app.unmount();
+  }
+});
+
+test("live: an app's log as it's written, paused, and stopped once you leave", async () => {
+  const provider = demoAzure();
+  let lines = 0;
+  const stream = provider.logStream;
+  provider.logStream = (t, opts) => stream(t, { ...opts, every: 40, onLine: (l) => (lines++, opts.onLine(l)) });
+  const app = start({ provider });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    app.stdin.write('L');
+    await until(() => frame().includes('Live: contoso-web') && frame().includes('Streaming the log of contoso-web') && /\[(INF|WRN|ERR)\]/.test(frame()), 'the log streaming');
+    assert.match(frame(), / live · p pause/);
+    app.stdin.write('p');
+    await until(() => frame().includes('paused (p goes on)'), 'paused');
+    app.stdin.write('1');
+    await until(() => frame().includes('╭─ Contoso Production'), 'Resources again');
+    const after = lines;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(lines, after, 'the stream stopped when Live went off screen');
   } finally {
     app.unmount();
   }
