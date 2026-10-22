@@ -5,40 +5,43 @@
 /** Who the pet is; the welcome box, the mood lines and the logo's title all say it from here. */
 export const PET = { name: 'Squawk', kind: 'parrot' };
 
-// The accent's family, as Trawl's Glim, Splice's Twig and Keel's Pinch are coloured from theirs: the
-// accent for the outline, a darker and a paler shade, a near-black with its tint, and one contrasting colour.
+// The accent for the outline, as the siblings' pets have, and a scarlet macaw's own colours inside it:
+// a parrot needs its white face, its blue and yellow wing and its two-tone beak to read as one.
 export const PALETTE = {
   G: '#ff6b6b', // outline, the accent
-  D: '#8c3b3b', // body
-  L: '#ffc4c4', // belly
-  E: '#1f0d0d', // eyes
-  W: '#ffffff', // eye shine
-  T: '#ffb35f', // cheeks, the one warm colour
+  D: '#c0392b', // the red feathers
+  E: '#1f0d0d', // eye
+  W: '#ffffff', // the bare white face
+  T: '#ffb35f', // the yellow band on the wing
+  U: '#5fafd7', // the blue wing and tail feathers
+  B: '#f2e6d0', // the beak's hooked top
+  K: '#3a2a22', // its dark lower half, and the feet
+  P: '#8a5a3c', // the branch
 };
 
-// 16 × 10 pixels; '.' is transparent. A parrot facing right: the beak is the warm colour, the belly
-// the pale one; columns 14–15 are room for a wing raised to wave.
+// 16 × 10 pixels; '.' is transparent. A scarlet macaw on a branch, facing right: the bare white face,
+// a hooked beak, and the long tail sweeping down to the left.
 const BASE = [
-  '..GG.GGGG.......',
-  '.GDDGDDDDGG.....',
-  '.GDDDDDWEDGGG...',
-  'GDDDDDDEEDGTTG..',
-  'GDDDDDDDDDGTTTG.',
-  'GDDLLLDDDDGGTG..',
-  'GDLLLLLDDDG.G...',
-  '.GDLLLDDDG......',
-  '..GDDDDGG.......',
-  '..GTGGTG........',
+  '........GGGG....',
+  '.......GDDDDGG..',
+  '......GDWWWGBBG.',
+  '......GDWEWBBBBG',
+  '......GDWWWKKBBG',
+  '.....GDDDDGKK.BG',
+  '....GDTTDDG...G.',
+  '...GDTUUDDG.....',
+  '..GDTUUDGPKPKPPP',
+  '.GUUGG..........',
 ];
 
 // Each mood replaces some rows of the base drawing.
 const MOODS = {
   idle: {},
-  look: { 2: '.GDDDDDEWDGGG...' }, // glancing the other way, for the busy animation
-  sleep: { 2: '.GDDDDDDDDGGG...', 3: 'GDDDDDDEEDGTTG..' },
-  happy: { 2: '.GDDDDDEDDGGG...', 3: 'GDDDDDEDEDGTTG..' },
-  worried: { 2: '.GDDDDDWWDGGG...', 3: 'GDDDDDDEEDGTTG..' },
-  wave: { 5: 'GDDLLLDDDDGGTGGG', 6: 'GDLLLLLDDDGGGDG.', 7: '.GDLLLDDDGDDG...' },
+  look: { 3: '......GDEWWBBBBG' }, // glancing back, for the busy animation
+  sleep: { 3: '......GDEEEBBBBG' },
+  happy: { 3: '......GDEWEBBBBG', 4: '......GDWWWK.BBG' },
+  worried: { 2: '......GDWEWGBBG.' },
+  wave: { 5: '..GUGDDDDDGKK.BG', 6: '..GUTGTDDG...G..', 7: '...GDTUUDDG.....' },
 };
 
 /** The drawing for a mood, as rows of palette letters. */
