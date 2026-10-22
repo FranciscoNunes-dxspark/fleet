@@ -1,4 +1,6 @@
+import { basename } from 'node:path';
 import * as a from './actions.js';
+import { siblings } from './projects.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -12,6 +14,7 @@ export const COMMANDS = [
   { name: 'free', args: '<port>', desc: 'Stop whatever holds a port on this machine (asks first)', run: (ctx, s) => a.free(ctx, s) },
   { name: 'profile', args: '[name|none]', desc: 'Run the crew with a profile from bosun.json', complete: 'profiles', run: (ctx, s) => a.profiles(ctx, s) },
   { name: 'reload', desc: 'Read bosun.json again (what changed restarts)', run: (ctx) => ctx.reload() },
+  { name: 'move', args: '[folder]', desc: 'Run another project instead (this one\'s processes stop)', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },
   { name: 'init', desc: 'Write a bosun.json from what Bosun worked out', run: (ctx) => a.init(ctx) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
@@ -35,6 +38,8 @@ export function findCommand(name, user = []) {
 function completions(kind, data) {
   if (kind === 'procs') return [...(data?.procs ?? []).map((p) => p.name), 'all'];
   if (kind === 'profiles') return [...Object.keys(data?.profiles ?? {}), 'none'];
+  // The projects beside this one, by name, as /move takes them.
+  if (kind === 'folders') return data?.dir ? siblings(data.dir).map((d) => basename(d)).filter((n) => n !== basename(data.dir)) : [];
   return [];
 }
 

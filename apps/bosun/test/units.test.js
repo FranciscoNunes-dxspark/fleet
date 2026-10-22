@@ -1,8 +1,11 @@
 // The pure parts: commands and their completion, the help window's sections, the settings list,
-// the pet's drawing, and the updater's sums.
+// the pet's drawing, the updater's sums, and which project Bosun runs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { KEEP, choices, remember, resolveFolder, startFolder } from '../src/projects.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../src/commands.js';
 import { HELP } from '../src/help.js';
 import { commandsSection, sectionLines } from '../src/help-layout.js';
@@ -23,6 +26,45 @@ test('commands: exact names, unambiguous prefixes, and completion of their argum
   assert.deepEqual(suggestionsFor('/profile m', { data }).map((s) => s.insert), ['/profile mock']);
   assert.deepEqual(suggestionsFor('plain text', { data }), []);
   for (const c of COMMANDS) assert.ok(c.desc && typeof c.run === 'function', `/${c.name} has a description and runs`);
+});
+
+test('projects: where Bosun starts, where /move goes, and the ones it remembers', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bosun-projects-'));
+  try {
+    const shop = join(root, 'shop');
+    const blog = join(root, 'blog');
+    const empty = join(root, 'empty');
+    for (const d of [shop, blog, empty, join(shop, 'api')]) mkdirSync(d, { recursive: true });
+    writeFileSync(join(shop, 'bosun.json'), '{}');
+    writeFileSync(join(blog, 'package.json'), '{}');
+
+    // Given a folder, that one; in a project, that one; where there's nothing, the last project still there.
+    assert.equal(startFolder('blog', root, [shop]), blog);
+    assert.equal(startFolder(undefined, shop, [blog]), shop);
+    assert.equal(startFolder(undefined, root, [join(root, 'gone'), empty, blog]), blog, 'the first remembered one with a crew');
+    assert.equal(startFolder(undefined, root, []), root, 'nowhere better: here, to say there is nothing');
+
+    // A project beside this one, a folder inside it, a path; nothing for one that isn't there.
+    assert.equal(resolveFolder(shop, 'blog'), blog);
+    assert.equal(resolveFolder(shop, 'api'), join(shop, 'api'));
+    assert.equal(resolveFolder(shop, blog), blog);
+    assert.equal(resolveFolder(shop, '"blog"'), blog, 'a quoted name, as a path with spaces is typed');
+    assert.equal(resolveFolder(shop, 'nope'), null);
+    assert.equal(resolveFolder(shop, ' '), null);
+
+    // The recent ones first, then the rest beside it, never the one it's in; which have something to run.
+    const offered = choices(shop, [blog, shop]);
+    assert.deepEqual(offered.map((c) => c.name), ['blog', 'empty']);
+    assert.deepEqual(offered.map((c) => [c.crew, c.recent]), [[true, true], [false, false]]);
+
+    // Newest first, once each, as many as it keeps.
+    assert.deepEqual(remember([blog, shop], shop), [shop, blog]);
+    const many = Array.from({ length: KEEP + 3 }, (_, i) => join(root, `p${i}`));
+    assert.equal(remember(many, shop).length, KEEP);
+    assert.equal(remember(many, shop)[0], shop);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('help: every section lays out, and the commands are a section of their own', () => {
