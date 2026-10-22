@@ -88,3 +88,26 @@ test('GitHub: a pull request is held while its checks run: the pane says so, and
   assert.ok((await keel.service.pullRequests()).prs.some((p) => p.id === 87 && p.status === 'active'));
   app.unmount();
 });
+
+test('GitHub releases are below the release pipelines; D downloads a file of one in the browser, n says they are made on GitHub', async () => {
+  const opened = [];
+  const app = render(React.createElement(App, { keel: openKeel(), poll: false, openUrl: (u) => opened.push(u) }));
+  await until(app, (f) => f.includes('Dark mode toggle in settings'), 'the Inbox');
+  app.stdin.write('6');
+  await until(app, (f) => /↓ api\s+v2\.4\.0 · 4 files · 6d ago\s+v2\.5\.0/.test(f), 'the api repo with its latest release, and the newer pre-release');
+  // The repo released most lately first, so web-app is last.
+  app.stdin.write('G');
+  await until(app, (f) => /❯ ↓ web-app/.test(f), 'web-app selected');
+  app.stdin.write('k');
+  await until(app, (f) => /❯ ↓ api/.test(f) && f.includes('api-2.5.0-rc.1-linux-x64.tar.gz'), 'api with its files beside it');
+  app.stdin.write('n');
+  await until(app, (f) => f.includes('api is a GitHub repo: its releases are made on GitHub'), 'n refused');
+  app.stdin.write('D');
+  await until(app, (f) => f.includes('Download from which release of api?'), 'the releases');
+  app.stdin.write('2');
+  await until(app, (f) => f.includes('Download which file of v2.4.0?'), 'the files');
+  app.stdin.write('1');
+  await until(app, () => opened.length > 0, 'the download opened');
+  assert.equal(opened[0], 'https://github.com/octo-demo/api/releases/download/v2.4.0/api-2.4.0-linux-x64.tar.gz');
+  app.unmount();
+});

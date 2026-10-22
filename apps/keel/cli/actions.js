@@ -3,7 +3,7 @@
 import { sonarArgs } from './sonar.js';
 import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
 import { fieldValues, filterFields, splitFilter, withField } from './filters.js';
-import { approvalsFor, deployChoices, stageStatus } from './releases.js';
+import { approvalsFor, deployChoices, downloadChoices, isGithubRelease, stageStatus } from './releases.js';
 import { runText } from './runs.js';
 import { doneChanges } from './board.js';
 import { closedText, commitsText, flakyText, insightsText, totalsText } from './reports.js';
@@ -425,9 +425,17 @@ export function showWorkItem(ctx, text) {
 
 // ---- Releases (ui/ReleasesView.jsx; how they read in releases.js)
 
+/** GitHub releases are made on GitHub: the release pipelines' actions don't apply to a repo's row. */
+const onGithub = (ctx, def) => {
+  if (!isGithubRelease(def)) return false;
+  ctx.note(`${def.name} is a GitHub repo: its releases are made on GitHub. D downloads a file, o opens its releases.`, 'error');
+  return true;
+};
+
 /** n, /release: a new release of the pipeline from its artifacts' latest versions (asks first). */
 export async function createRelease(ctx, def = ctx.current().release, text = '') {
   if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  if (onGithub(ctx, def)) return;
   const ok = await ctx.confirm({
     title: `Create a release of ${def.name}?`,
     detail: 'From the latest version of each artifact. Stages set to deploy automatically start by themselves.',
@@ -447,6 +455,7 @@ export async function createRelease(ctx, def = ctx.current().release, text = '')
  */
 export async function deployStage(ctx, def = ctx.current().release, name = '') {
   if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  if (onGithub(ctx, def)) return;
   if (!def.releases.length) return ctx.note(`${def.name} has no releases yet: n creates one.`, 'error');
   const stages = [...def.stages].sort((x, y) => x.rank - y.rank);
   let stage = name.trim() ? stages.find((s) => s.name.toLowerCase() === name.trim().toLowerCase()) : null;
@@ -475,9 +484,30 @@ export async function deployStage(ctx, def = ctx.current().release, name = '') {
   }, { label: 'Deploying' });
 }
 
+/** g in Releases, on a GitHub repo: picks a release, then one of its files, and downloads it in the browser. */
+export async function downloadReleaseFile(ctx, repo = ctx.current().release) {
+  if (!isGithubRelease(repo)) return ctx.note('Pick a GitHub repo first (Releases tab, below the release pipelines): D downloads a file from its releases.', 'error');
+  const choices = downloadChoices(repo);
+  if (!choices.length) return ctx.note(`${repo.name}'s releases have no files attached. o opens them on GitHub.`);
+  const release = choices.length === 1 ? choices[0] : await ctx.confirm({
+    title: `Download from which release of ${repo.name}?`,
+    options: [...choices.map((c) => ({ label: c.label, value: c })), { label: 'Leave it', value: null }],
+  });
+  if (!release) return;
+  const file = await ctx.confirm({
+    title: `Download which file of ${release.release.tag}?`,
+    detail: 'It downloads in your browser, which has to be signed in to GitHub for a private repo.',
+    options: [...release.files.map((f) => ({ label: f.label, value: f })), { label: 'Leave it', value: null }],
+  });
+  if (!file) return;
+  ctx.openUrl(file.asset.url);
+  ctx.note(`Downloading ${file.asset.name} in your browser: ${file.asset.url}`);
+}
+
 /** a / x in Releases, /deploy and /stop there: approve or reject what a stage of the pipeline waits on. */
 export async function decideRelease(ctx, def = ctx.current().release, status, text = '') {
   if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
+  if (onGithub(ctx, def)) return;
   const pending = approvalsFor(def, ctx.current().releaseApprovals);
   if (!pending.length) return ctx.note(`Nothing in ${def.name} waits for an approval.`);
   let a = pending[0];

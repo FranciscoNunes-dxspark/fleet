@@ -94,13 +94,14 @@ export const HELP = [
   },
   {
     title: 'Releases',
-    about: 'classic release pipelines, as the web app\'s Releases tab: deploying or waiting for approval first, then failing',
+    about: 'classic release pipelines, as the web app\'s Releases tab: deploying or waiting for approval first, then failing; below them, the GitHub releases of tracked repos',
     views: ['releases'],
     rows: [
       ['n', 'Create a release from the latest artifacts (asks first; /release <description> too)'],
       ['d', 'Deploy or redeploy a recent release to a stage: pick the stage, then the release (/stage <name> too). Approvals and gates still apply'],
       ['a  x', 'Approve or reject what a stage waits on (asks first; /deploy and /stop with a comment)'],
-      ['↵', 'Everything: every stage and every recent release'],
+      ['D', 'On a GitHub repo: download a file from one of its releases, picked from two lists (it downloads in your browser)'],
+      ['↵', 'Everything: every stage and every recent release; on a GitHub repo, its releases with each file\'s download link'],
     ],
   },
   {

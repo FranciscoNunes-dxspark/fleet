@@ -14,7 +14,7 @@ const React = (await import('react')).default;
 const { render } = await import('ink-testing-library');
 const { openKeel } = await import('../cli/service.js');
 const { App } = await import('../cli/ui/App.jsx');
-const { approvalsFor, deployChoices, releaseDetail, releaseRows, stageStrip } = await import('../cli/releases.js');
+const { approvalsFor, deployChoices, downloadChoices, githubDetail, githubFullText, githubRows, githubStrip, releaseDetail, releaseRows, stageStrip } = await import('../cli/releases.js');
 
 let keel;
 before(() => {
@@ -79,6 +79,47 @@ test('a stage can get any recent release that includes it, newest first', () => 
   assert.deepEqual(choices.map((c) => [c.release.name, c.environmentId]), [['Release-2', 903], ['Release-1', 901]]);
   assert.match(choices[0].label, /Release-2 · waiting for approval there/);
   assert.match(choices[1].label, /Release-1 · succeeded there/);
+});
+
+const asset = (name, size, downloads) => ({ id: name, name, size, downloads, url: `https://github.com/acme/app/releases/download/${name}` });
+const ghRelease = (tag, over = {}) => ({ id: tag, tag, name: tag, draft: false, prerelease: false, latest: false, publishedAt: '2026-10-20T12:00:00Z', author: { displayName: 'Ann' }, webUrl: `https://github.com/acme/app/releases/tag/${tag}`, assets: [], ...over });
+const ghRepo = (over = {}) => ({
+  repoId: 'app', repoName: 'app', projectId: 'gh-acme', projectName: 'acme', webUrl: 'https://github.com/acme/app/releases',
+  releases: [
+    ghRelease('v2.0.0-rc.1', { prerelease: true, publishedAt: '2026-10-21T10:00:00Z', assets: [asset('app-rc.zip', 2048, 1)] }),
+    ghRelease('v1.9.0', { name: 'Faster search', latest: true, assets: [asset('app-linux.tar.gz', 18 * 1048576, 342), asset('SHA256SUMS', 300, 9)] }),
+    ghRelease('v1.8.0'),
+  ],
+  ...over,
+});
+
+test('GitHub repos with releases are rows, the one released most lately first; search finds a tag or file', () => {
+  const now = Date.parse('2026-10-21T12:00:00Z');
+  const old = ghRepo({ repoId: 'old', repoName: 'old', releases: [ghRelease('v0.1.0', { latest: true, publishedAt: '2026-01-01T00:00:00Z' })] });
+  const none = ghRepo({ repoId: 'none', repoName: 'none', releases: [] });
+  assert.deepEqual(githubRows([old, ghRepo(), none]).map((r) => [r.name, r.kind]), [['app', 'github'], ['old', 'github']]);
+  assert.deepEqual(githubRows([old, ghRepo()], 'linux').map((r) => r.name), ['app']);
+  assert.deepEqual(githubRows([old, ghRepo()], 'v0.1').map((r) => r.name), ['old']);
+  assert.equal(text([githubStrip(ghRepo(), now)]), 'v1.9.0 · 2 files · 1d ago  v2.0.0-rc.1 pre-release');
+});
+
+test("the pane lists a repo's releases with their files; the viewer adds each file's link", () => {
+  const now = Date.parse('2026-10-21T12:00:00Z');
+  const shown = text(githubDetail(ghRepo(), { now }));
+  assert.match(shown, /Faster search \(v1\.9\.0\)  latest · 1d ago · Ann/);
+  assert.match(shown, /app-linux\.tar\.gz  18 MB · 342 downloads/);
+  assert.match(shown, /SHA256SUMS  300 B · 9 downloads/);
+  assert.match(shown, /v1\.8\.0 · 1d ago · Ann\n  No files attached/);
+  const full = githubFullText(ghRepo(), now);
+  assert.match(full, /https:\/\/github\.com\/acme\/app\/releases\/download\/app-linux\.tar\.gz/);
+  assert.match(full, /https:\/\/github\.com\/acme\/app\/releases$/);
+});
+
+test('D picks from the releases with files, then their files', () => {
+  const now = Date.parse('2026-10-21T12:00:00Z');
+  const choices = downloadChoices(ghRepo(), now);
+  assert.deepEqual(choices.map((c) => c.label), ['v2.0.0-rc.1 · pre-release · 1 file · 2h ago', 'v1.9.0 · latest · 2 files · 1d ago']);
+  assert.deepEqual(choices[1].files.map((f) => f.label), ['app-linux.tar.gz · 18 MB · 342 downloads', 'SHA256SUMS · 300 B · 9 downloads']);
 });
 
 test('the Releases tab lists the release pipelines; d deploys a release to a stage, a approves what one waits on', async () => {

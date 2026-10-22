@@ -12,7 +12,7 @@ import { openSonar as openSonarApp } from '../sonar.js';
 import { saveEnvSettings } from '../setup.js';
 import { ROOT } from '../../server/root.js';
 import { FACES, moodFor } from '../pinch.js';
-import { releaseFullText } from '../releases.js';
+import { githubFullText, isGithubRelease, releaseFullText } from '../releases.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '../text.js';
 import { mouseOn } from '../settings.js';
@@ -52,7 +52,7 @@ const HINTS = {
   pipelines: 'n run · c cancel the run · l the run in full, with logs · ↵ all runs · o browser',
   workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
   production: '↵ everything, and all that is waiting to ship · o open the site',
-  releases: 'n new release · d deploy to a stage · a/x approve or reject · ↵ everything · o browser',
+  releases: 'n new release · d deploy to a stage · a/x approve or reject · D download a GitHub release file · ↵ everything · o browser',
   board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',
   team: '↵ their work items · p their pull requests · /find a name',
 };
@@ -498,7 +498,7 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
       }
     },
     showMonitorFull: (m, target) => setOverlay({ title: m.name, text: monitorFullText(m, target) }),
-    showReleaseFull: (d, approvals) => setOverlay({ title: d.name, text: releaseFullText(d, approvals) }),
+    showReleaseFull: (d, approvals) => setOverlay({ title: d.name, text: isGithubRelease(d) ? githubFullText(d) : releaseFullText(d, approvals) }),
     showPipelineRuns: async (row) => {
       setOverlay({ title: row.definition.name, loading: true });
       try {

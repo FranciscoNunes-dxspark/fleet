@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
-import { approvalsFor, releaseDetail, releaseHealth, releaseRows, stageStrip } from '../releases.js';
+import { approvalsFor, githubDetail, githubRows, githubStrip, isGithubRelease, releaseDetail, releaseHealth, releaseRows, stageStrip } from '../releases.js';
 import { theme } from '../theme.js';
 import { fit } from '../text.js';
 import { applyFilter, shownFilter } from '../filters.js';
@@ -12,16 +12,19 @@ export const releaseId = (d) => `${d.org ?? ''}/${d.key}`;
 
 /**
  * Classic release pipelines, as the web app's Releases tab: each stage's latest deployment, what's
- * deploying or waiting for approval, and the recent releases. Read when the tab opens, and again
- * with each load (the version moves on each check and after each action).
+ * deploying or waiting for approval, and the recent releases. Below them, the tracked GitHub repos'
+ * releases with their files. Read when the tab opens, and again with each load (the version moves
+ * on each check and after each action).
  */
 export function ReleasesView({ version, filter, ctx, width, height, active }) {
   const data = useAsync(`releases:${version}`, () => ctx.service.releases(), 50);
+  const github = useAsync(`repo-releases:${version}`, () => ctx.service.repoReleases(), 50);
   // The filter's fields (project:) narrow them; its words search them.
   const rows = useMemo(() => {
     const { items, text } = applyFilter('releases', data.value?.definitions ?? [], filter);
-    return releaseRows(data.value && { ...data.value, definitions: items }, text);
-  }, [data.value, filter]);
+    const repos = applyFilter('releases', github.value ?? [], filter);
+    return [...releaseRows(data.value && { ...data.value, definitions: items }, text), ...githubRows(repos.items, repos.text)];
+  }, [data.value, github.value, filter]);
   const split = width >= 100;
   const listW = split ? Math.floor(width * 0.5) : width;
   const sideW = width - listW;
@@ -33,14 +36,15 @@ export function ReleasesView({ version, filter, ctx, width, height, active }) {
   const nameW = Math.min(28, Math.max(8, ...rows.map((r) => r.name.length)));
 
   useEffect(() => {
-    ctx.select({ release: d, releaseApprovals: approvals, filterSource: { tab: 'releases', items: data.value?.definitions ?? [] } });
-  }, [d, data.value]);
+    ctx.select({ release: d, releaseApprovals: approvals, filterSource: { tab: 'releases', items: [...(data.value?.definitions ?? []), ...(github.value ?? [])] } });
+  }, [d, data.value, github.value]);
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
     if (input === 'F') return a.pickFilter(ctx);
     if (nav.handle(input, key) || !d) return;
     if (key.return) ctx.showReleaseFull(d, approvals);
+    else if (input === 'D') a.downloadReleaseFile(ctx, d);
     else if (input === 'n') a.createRelease(ctx, d);
     else if (input === 'd') a.deployStage(ctx, d);
     else if (input === 'a') a.decideRelease(ctx, d, 'approved');
@@ -58,7 +62,7 @@ export function ReleasesView({ version, filter, ctx, width, height, active }) {
   let empty = null;
   if (data.error && !data.value) empty = `  Couldn't read the release pipelines: ${String(data.error.message).split('\n')[0]}`;
   else if (!data.value) empty = '  Reading Azure DevOps…';
-  else if (!rows.length) empty = filter ? `  Nothing matches ${shownFilter(filter)}. /find with nothing clears it.` : '  No classic release pipelines in your tracked projects (Pipelines → Releases in Azure DevOps).';
+  else if (!rows.length) empty = filter ? `  Nothing matches ${shownFilter(filter)}. /find with nothing clears it.` : '  No classic release pipelines (Pipelines → Releases in Azure DevOps) or GitHub releases in your tracked projects.';
   return (
     <Box width={width} height={height}>
       <Panel title="Releases" hint={hint} width={listW} height={height} focused={active}>
@@ -72,7 +76,11 @@ export function ReleasesView({ version, filter, ctx, width, height, active }) {
               width={innerW}
               selected={nav.offset + i === nav.index}
               focused={active}
-              segments={[
+              segments={isGithubRelease(r) ? [
+                { text: '↓ ', color: theme.accent },
+                { text: `${fit(r.name, nameW)}  `, strong: true },
+                ...githubStrip(r),
+              ] : [
                 { text: `${asks ? '‖' : h.icon} `, color: asks ? theme.warn : h.color },
                 { text: `${fit(r.name, nameW)}  `, strong: true },
                 ...stageStrip(r),
@@ -82,8 +90,8 @@ export function ReleasesView({ version, filter, ctx, width, height, active }) {
         })}
       </Panel>
       {split ? (
-        <Panel title={d ? d.name : 'Release pipeline'} hint={d ? 'n release · d deploy · ↵ all' : ''} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={d ? releaseDetail(d, approvals) : []} />
+        <Panel title={d ? d.name : 'Release pipeline'} hint={!d ? '' : isGithubRelease(d) ? 'D download · ↵ all · o GitHub' : 'n release · d deploy · ↵ all'} width={sideW} height={height}>
+          <Lines width={sideW - 2} height={innerH} lines={!d ? [] : isGithubRelease(d) ? githubDetail(d) : releaseDetail(d, approvals)} />
         </Panel>
       ) : null}
     </Box>
