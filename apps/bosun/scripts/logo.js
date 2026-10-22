@@ -1,6 +1,6 @@
 // Draws the pet into assets/: logo.svg (README, GitHub), logo.png (social preview), logo.ico
 // (the Windows executable's icon), and logo-transparent.svg/.png/.ico (just the pet, no background),
-// all from the pixels in src/pet.js.
+// all from the pixels in src/pet.js, each with a pixel-art "RUN" badge in the bottom-right corner.
 //   node scripts/logo.js
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
@@ -16,26 +16,63 @@ const px = full.map((row) => row.slice(first, last + 1));
 
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), 255];
 
-const COLOURS = PALETTE;
+// The badge: "RUN" in white on green, a rounded tag, as Trawl's "SQL" and Hail's "POST"; green, the
+// parrot's red turned round the colour wheel, so it stands apart from the feathers. It's drawn at
+// twice the pet's resolution, the coarsest the letters still read at.
+const BADGE = [
+  '.bbbbbbbbbbbbb.',
+  'bbbbbbbbbbbbbbb',
+  'bbttbbtbtbttbbb',
+  'bbtbtbtbtbtbtbb',
+  'bbttbbtbtbtbtbb',
+  'bbtbtbtbtbtbtbb',
+  'bbtbtbtttbtbtbb',
+  'bbbbbbbbbbbbbbb',
+  '.bbbbbbbbbbbbb.',
+];
+// Letters of their own, so the badge's colours never change the parrot's.
+const COLOURS = { ...PALETTE, b: '#2e9e5b', t: '#ffffff' };
 
-// The pet at twice its resolution, every pixel doubled, so it can sit centred on an even grid.
+// The pet at the badge's resolution: every pixel doubled.
 const px2 = px.flatMap((row) => {
   const wide = [...row].map((c) => c + c).join('');
   return [wide, wide];
 });
 
-/** The pet at (ox, oy) on a w × h grid of half-pixels: rows of palette letters, '.' for nothing. */
-function grid(w, h, ox, oy) {
-  return Array.from({ length: h }, (_, y) => Array.from({ length: w }, (_, x) => px2[y - oy]?.[x - ox] ?? '.').join(''));
+/**
+ * The pet at (ox, oy) on a w × h grid of half-pixels, with the badge's top-left corner at (bx, by),
+ * cut out of the pet by a one-cell gap. Rows of palette letters, '.' for nothing.
+ */
+function grid(w, h, ox, oy, bx, by) {
+  const badge = (x, y) => BADGE[y - by]?.[x - bx] ?? '.';
+  return Array.from({ length: h }, (_, y) =>
+    Array.from({ length: w }, (_, x) => {
+      if (badge(x, y) !== '.') return badge(x, y);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (badge(x + dx, y + dy) !== '.') return '.';
+      return px2[y - oy]?.[x - ox] ?? '.';
+    }).join(''),
+  );
 }
 
-// The dark square: 40 half-pixels across, the pet centred with a margin.
-const centre = (size, n) => Math.floor((size - n) / 2);
-const SQUARE = grid(40, 40, centre(40, px2[0].length), centre(40, px2.length));
+// The pet and its badge as one drawing, laid out as in all the family's logos: the badge's
+// bottom-right corner PAD half-pixels right of and below the pet's, so the badges sit alike.
+const BW = BADGE[0].length;
+const BH = BADGE.length;
+const PAD = 4;
+const GW = px2[0].length + PAD;
+const GH = px2.length + PAD;
+/** The pet and badge centred on a size × size square; wider than the square, the badge keeps to its edge. */
+function square(size) {
+  const ox = Math.max(0, Math.floor((size - GW) / 2));
+  const oy = Math.max(0, Math.floor((size - GH) / 2));
+  return grid(size, size, ox, oy, Math.min(ox + GW, size) - BW, Math.min(oy + GH, size) - BH);
+}
+// The dark square: 40 half-pixels across.
+const SQUARE = square(40);
 // The transparent icon: 32 across, so the usual icon sizes (16, 32, 48 … 256) keep the pet's pixels whole.
-const ICON = grid(32, 32, centre(32, px2[0].length), centre(32, px2.length));
-// The pet cropped to the drawing.
-const CROPPED = grid(px2[0].length, px2.length, 0, 0);
+const ICON = square(32);
+// The pet cropped to the drawing, with room right and below for the badge to sit on.
+const CROPPED = grid(GW, GH, 0, 0, GW - BW, GH - BH);
 
 /** A grid drawn at `scale` image pixels per cell, as RGBA rows; `inside(x, y)` limits it to a shape. */
 function paint(cells, scale, bg = [0, 0, 0, 0], inside = () => true) {
