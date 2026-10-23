@@ -100,6 +100,20 @@ test('the rows: uptime, ports, the merged log, and the question for Claude', () 
   assert.deepEqual(portSegments({ port: null }), []);
   const merged = mergedLines([{ name: 'a', lines: [{ at: 1, text: 'one' }, { at: 3, text: 'three' }] }, { name: 'b', lines: [{ at: 2, text: 'two' }] }], 2);
   assert.deepEqual(merged.map((l) => `${l.name}:${l.text}`), ['b:two', 'a:three']);
+  // The newest lines, as sorting every log's tail by time would give them: ties and short logs too.
+  const sorted = (procs, last) => procs.flatMap((q) => q.lines.slice(-last).map((l) => ({ ...l, name: q.name }))).sort((x, y) => x.at - y.at).slice(-last);
+  let seed = 7;
+  const rnd = (n) => ((seed = (seed * 48271) % 2147483647) % n);
+  for (let round = 0; round < 50; round++) {
+    const procs = Array.from({ length: 1 + rnd(5) }, (_, k) => {
+      let at = rnd(20);
+      return { name: `p${k}`, lines: Array.from({ length: rnd(40) }, (_, i) => ({ at: (at += rnd(3)), text: `${k}.${i}` })) };
+    });
+    // Now and then a clock that went back.
+    if (round % 10 === 9 && procs[0].lines.length > 2) procs[0].lines[1].at = -5;
+    const last = 1 + rnd(60);
+    assert.deepEqual(mergedLines(procs, last), sorted(procs, last));
+  }
   assert.match(whyPrompt({ name: 'api', spec: { run: 'node api' }, status: 'crashed', code: 1 }), /exit code 1/);
 });
 

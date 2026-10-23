@@ -52,9 +52,32 @@ export function testsSegments(p) {
 
 /** The lines of every process, in the order they came, each with its name in front: the `a` log. */
 export function mergedLines(procs, last) {
-  const tails = procs.flatMap((p) => p.lines.slice(-last).map((l) => ({ ...l, name: p.name })));
-  return tails.sort((x, y) => x.at - y.at).slice(-last);
+  // Each log is in time order already (unless the clock went back), so the newest `last` are taken
+  // from the logs' ends, newest first, rather than sorting them all on every frame. A tie goes to the
+  // later process, as the stable sort below would order it.
+  const tails = procs.map((p) => (p.lines.length > last ? p.lines.slice(-last) : p.lines));
+  if (!tails.every(inOrder)) return slowMerge(procs, tails, last);
+  const at = tails.map((t) => t.length - 1);
+  const out = [];
+  while (out.length < last) {
+    let pick = -1;
+    for (let k = tails.length - 1; k >= 0; k--) if (at[k] >= 0 && (pick < 0 || tails[k][at[k]].at > tails[pick][at[pick]].at)) pick = k;
+    if (pick < 0) break;
+    out.push({ ...tails[pick][at[pick]--], name: procs[pick].name });
+  }
+  return out.reverse();
 }
+
+const inOrder = (lines) => {
+  for (let i = 1; i < lines.length; i++) if (lines[i].at < lines[i - 1].at) return false;
+  return true;
+};
+
+const slowMerge = (procs, tails, last) =>
+  tails
+    .flatMap((t, k) => t.map((l) => ({ ...l, name: procs[k].name })))
+    .sort((x, y) => x.at - y.at)
+    .slice(-last);
 
 /** The crew: each process with its state, port and uptime, and beside it the log of the one under the cursor (or all of them). */
 export function CrewView({ procs, ctx, width, height, active }) {
