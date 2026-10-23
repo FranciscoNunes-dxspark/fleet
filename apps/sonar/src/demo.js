@@ -68,7 +68,7 @@ function initialState(now) {
       FeatureFlags__NewCheckout: 'false',
     };
     const host = `${a.name}.azurewebsites.net`;
-    const site = { id, sub: a.sub, name: a.name, connectionStrings: CONNECTION_STRINGS[a.name] ?? {}, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host, hostNames: a.domain ? [host, a.domain] : [host], modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
+    const site = { id, sub: a.sub, name: a.name, connectionStrings: CONNECTION_STRINGS[a.name] ?? {}, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host, hostNames: a.domain ? [host, a.domain] : [host], modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, planId: `/subscriptions/${a.sub}/resourceGroups/${a.resourceGroup}/providers/Microsoft.Web/serverfarms/${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
     sites.push(site);
     for (const slot of a.slots) {
       sites.push({ ...site, connectionStrings: {}, id: `${id}/slots/${slot}`, slot, host: `${a.name}-${slot}.azurewebsites.net`, hostNames: [`${a.name}-${slot}.azurewebsites.net`], settings: { ...base, APP_VERSION: '2.15.0-rc.1', FeatureFlags__NewCheckout: 'true', ASPNETCORE_ENVIRONMENT: 'Staging' } });
@@ -446,6 +446,22 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
         series('Http5xx', 'Count', () => (rand() < 0.25 ? Math.round(busy * rand() * 12) : 0)),
         series('HttpResponseTime', 'Seconds', () => busy * (0.08 + rand() * 0.3)),
       ];
+    },
+    // This month's cost: the plans carry most of it, the apps a little (their storage, say), and the
+    // databases, container app and storage accounts their own. The dev subscription can't be read.
+    async costs(sub, { signal } = {}) {
+      await wait(signal);
+      if (sub === 'sub-dev') throw new Error("Reading the costs: you don't have access (Cost Management reader)");
+      const byId = {};
+      const add = (id, cost) => (byId[id.toLowerCase()] = (byId[id.toLowerCase()] ?? 0) + cost);
+      for (const s of state.sites.filter((x) => x.sub === sub && !x.slot)) {
+        add(s.id, s.kind === 'function' ? 3.12 : 0.41);
+        add(s.planId, s.kind === 'function' ? 0 : 61.2);
+      }
+      for (const x of state.sqlServers.filter((y) => y.sub === sub)) for (const d of x.databases.filter((y) => y.name !== 'master')) add(d.id, d.tier === 'Basic' ? 3.65 : 87.5);
+      for (const c of state.containers.filter((y) => y.sub === sub)) add(c.id, 18.04);
+      for (const a of state.storage.filter((y) => y.sub === sub)) add(a.id, 4.9);
+      return { currency: 'EUR', byId };
     },
     portalUrl: (target) => `https://portal.azure.com/#resource${target.id}`,
   };

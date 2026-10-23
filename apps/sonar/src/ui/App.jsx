@@ -4,6 +4,7 @@ import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
 import { TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
+import { costDay } from '../cost.js';
 import { targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
@@ -166,6 +167,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const settingsCache = useRef(new Map());
   const metricsCache = useRef(new Map());
   const firewallCache = useRef(new Map());
+  // This month's costs per subscription, read once a day (r doesn't read them again).
+  const costCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
@@ -349,6 +352,14 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     return cache.get(server.id);
   };
 
+  /** The subscription's costs this month by resource, kept for the day; null when they can't be read (no permission, say nothing). */
+  const costsOf = (subId) => {
+    const key = `${subId}|${costDay()}`;
+    const cache = costCache.current;
+    if (!cache.has(key)) cache.set(key, provider.costs ? provider.costs(subId).catch(() => null) : Promise.resolve(null));
+    return cache.get(key);
+  };
+
   /** What Logs and Problems ask: the component (chosen, or the app's own) and the app's role name. */
   const resolveScope = async () => {
     const d = dataRef.current;
@@ -452,6 +463,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     settingsOf,
     metricsOf,
     firewallOf,
+    costsOf,
     forgetFirewall: (server) => firewallCache.current.delete(server.id),
     forgetSettings: (target) => settingsCache.current.delete(target.id),
     scope: resolveScope,

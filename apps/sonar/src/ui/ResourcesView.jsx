@@ -4,9 +4,10 @@ import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
 import { componentFor, isProduction } from '../insights.js';
 import { metricRows } from '../metrics.js';
+import { costOf, groupCost, money } from '../cost.js';
 import { resourceRows } from '../tree.js';
 import { theme } from '../theme.js';
-import { fit, relTime } from '../text.js';
+import { fit, relTime, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
 import { Lines, Panel, Row } from './parts.jsx';
 
@@ -67,6 +68,23 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
       stop();
     };
   }, [sel?.id, span?.iso]);
+
+  // This month's costs, once a day; nothing is said of them when they can't be read.
+  const [costs, setCosts] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setCosts(null);
+    ctx.costsOf(data.subscription.id).then((c) => live && setCosts(c));
+    return () => {
+      live = false;
+    };
+  }, [data.subscription.id]);
+  const costLine = (t, plan) => {
+    const own = costOf(costs, t.id);
+    const planCost = plan ? costOf(costs, plan) : null;
+    if (own == null && planCost == null) return [];
+    return [[{ text: 'cost      ', color: theme.dim }, { text: own != null ? `${money(own, costs.currency)} this month` : '' }, { text: planCost != null ? `${own != null ? ' · ' : ''}its plan ${money(planCost, costs.currency)}` : '', color: theme.dim }]];
+  };
 
   // A SQL server's firewall rules (a database's server's), again once the cursor has settled.
   const [rules, setRules] = useState(null);
@@ -149,6 +167,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
       field('changed', sel.modified ? `${relTime(Date.parse(sel.modified))} ago` : null),
       [{ text: 'insights  ', color: theme.dim }, settings == null ? { text: '…', color: theme.dim } : settings.error ? { text: "can't read its settings", color: theme.del } : { text: component?.name ?? 'none linked', color: component ? undefined : theme.dim }],
       [{ text: 'settings  ', color: theme.dim }, { text: settings && !settings.error ? `${Object.keys(settings).length} (↵ shows them)` : '' }],
+      ...(sel.slot ? [] : costLine(sel, sel.planId)),
       [],
       [{ text: `the last ${span?.label ?? ''}`, color: theme.dim, bold: true }, { text: metrics ? '' : '  reading its metrics…', color: theme.dim }],
       ...(metrics?.error
@@ -172,6 +191,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
       field('revision', sel.latestRevision ? `${sel.latestRevision}${sel.readyRevision && sel.readyRevision !== sel.latestRevision ? ` (ready: ${sel.readyRevision})` : ''}` : null),
       field('image', sel.image),
       field('environ.', sel.environmentId?.split('/').pop()),
+      ...costLine(sel),
       [],
       [{ text: KEY_HINTS.container, color: theme.dim }],
     ];
@@ -186,6 +206,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
       field('kind', sel.kind),
       field('sku', sel.sku),
       field('tier', sel.tier),
+      ...costLine(sel),
       [],
       [{ text: KEY_HINTS.storage, color: theme.dim }],
     ];
@@ -198,7 +219,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
       field('address', server.fqdn),
       field('group', server.resourceGroup),
       field('where', server.location ?? ''),
-      ...(db ? [field('sku', [db.sku, db.tier].filter(Boolean).join(' · '))] : [field('version', server.version), field('databases', String(server.databases?.length ?? 0))]),
+      ...(db ? [field('sku', [db.sku, db.tier].filter(Boolean).join(' · ')), ...costLine(db)] : [field('version', server.version), field('databases', String(server.databases?.length ?? 0))]),
       [{ text: 'entra     ', color: theme.dim }, server.admin ? { text: `${server.admin.login}${server.admin.type ? ` (${server.admin.type.toLowerCase()})` : ''}${server.admin.only ? ', Entra sign-in only' : ''}` } : { text: 'no Entra admin set: only SQL logins', color: theme.warn }],
       ...firewallLines(),
       [],
@@ -211,7 +232,11 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
       <Panel title={data.subscription.name} hint={filter ? `"${filter}" · ${rows.filter((r) => r.kind !== 'group' && r.kind !== 'slot' && r.kind !== 'sqldb').length}` : `${data.apps.length} apps`} width={listW} height={height} focused={active}>
         {rows.length === 0 ? <Row pointer={false} width={listW - 2} segments={[{ text: filter ? '  Nothing matches.' : '  Nothing here. /sub picks another subscription.', color: theme.dim }]} /> : null}
         {rows.slice(nav.offset, nav.offset + innerH).map((r, i) => {
-          if (r.kind === 'group') return <Row key={`g-${r.text}`} pointer={false} width={listW - 2} segments={[{ text: r.text, color: theme.dim, bold: true }]} />;
+          if (r.kind === 'group') {
+            const cost = groupCost(costs, data.subscription.id, r.text);
+            const said = cost != null ? money(cost, costs.currency) : '';
+            return <Row key={`g-${r.text}`} pointer={false} width={listW - 2} segments={[{ text: fit(r.text, Math.max(8, listW - 3 - stringWidth(said))), color: theme.dim, bold: true }, { text: said ? ` ${said}` : '', color: theme.dim }]} />;
+          }
           const t = r.target;
           const under = r.kind === 'slot' || r.kind === 'sqldb';
           const name = r.kind === 'slot' ? t.slot : t.name;

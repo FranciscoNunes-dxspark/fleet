@@ -48,6 +48,8 @@ export function siteFrom(s, parent = null) {
     scmHost: p.enabledHostNames?.find((h) => /\.scm\./i.test(h)) ?? p.defaultHostName?.replace(/^([^.]+)\./, '$1.scm.') ?? null,
     modified: p.lastModifiedTimeUtc ?? null,
     plan: p.serverFarmId?.split('/').pop() ?? null,
+    // Its App Service plan, which is where an app's cost mostly shows.
+    planId: p.serverFarmId ?? null,
     runtime: p.siteConfig?.linuxFxVersion || p.siteConfig?.windowsFxVersion || null,
   };
 }
@@ -177,6 +179,23 @@ export function sqlDatabaseFrom(d, server) {
 export function componentFrom(c) {
   const p = c.properties ?? {};
   return { id: c.id, name: c.name, appId: p.AppId, key: p.InstrumentationKey, resourceGroup: /\/resourceGroups\/([^/]+)/i.exec(c.id)?.[1] ?? '' };
+}
+
+/**
+ * Cost Management's answer (MonthToDate ActualCost grouped by ResourceId) as { currency, byId }, the
+ * ids lower-cased (Cost Management writes them so), each with the sum of its rows.
+ */
+export function costsFrom(body, into = { currency: null, byId: {} }) {
+  const p = body?.properties ?? {};
+  const at = (name) => (p.columns ?? []).findIndex((c) => String(c.name).toLowerCase() === name);
+  const [cost, id, currency] = [at('cost') >= 0 ? at('cost') : at('pretaxcost'), at('resourceid'), at('currency')];
+  for (const r of p.rows ?? []) {
+    const k = String(r[id] ?? '').toLowerCase();
+    if (!k) continue;
+    into.byId[k] = (into.byId[k] ?? 0) + Number(r[cost] ?? 0);
+    into.currency ??= currency >= 0 ? r[currency] : null;
+  }
+  return into;
 }
 
 /** A query's first table as { columns: [{ name, type }], rows: [[...]] }. */
@@ -339,6 +358,18 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     /** Azure Monitor's metrics for an app or slot over `span` (insights.js TIMESPANS): metrics.js's series. */
     async metrics(target, { span, signal } = {}) {
       return seriesFrom(await arm(metricsPath(target, span), { signal, what: `Reading ${label(target)}'s metrics` }));
+    },
+    /** The subscription's cost this month so far, by resource: costsFrom's { currency, byId }. */
+    async costs(sub, { signal } = {}) {
+      const body = { type: 'ActualCost', timeframe: 'MonthToDate', dataset: { granularity: 'None', aggregation: { totalCost: { name: 'Cost', function: 'Sum' } }, grouping: [{ type: 'Dimension', name: 'ResourceId' }] } };
+      const out = { currency: null, byId: {} };
+      // Its pages come from nextLink, asked the same way.
+      for (let url = `/subscriptions/${sub}/providers/Microsoft.CostManagement/query?api-version=2023-03-01`; url; ) {
+        const page = await arm(url, { method: 'POST', body, signal, what: 'Reading the costs' });
+        costsFrom(page, out);
+        url = page?.properties?.nextLink ?? null;
+      }
+      return out;
     },
     portalUrl: (target) => `https://portal.azure.com/#resource${target.id}`,
   };

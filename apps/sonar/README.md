@@ -44,12 +44,16 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state, and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state, and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
 | **Alerts** | The subscription's metric and log alerts still firing that began in the time span (Azure Monitor's Alerts Management), most severe first: severity, the rule, what it's about, when it fired. Under them, the availability tests of the Application Insights in scope: how many ran from how many places, how many failed and when last. `↵` shows an alert whole, or a test's results in Logs |
 | **Log** | Everything that has run, with its output |
+
+Costs come from Cost Management (month to date, actual cost, by resource), read once a day while
+Sonar runs. Without permission to read them (Cost Management Reader, or Reader on the subscription),
+Sonar says nothing of costs.
 
 Logs and Problems look at the app picked in Resources (by its role name), in the Application Insights
 its settings point at. `c` picks another Application Insights, or all the apps in one. `t` changes

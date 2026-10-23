@@ -29,7 +29,7 @@ export const HELP = [
   },
   {
     title: 'Resources',
-    about: "the subscription's web and function apps (ƒ) by resource group, their slots under them, and its container apps, SQL servers (databases under them) and storage accounts; beside them the one under the cursor, with its metrics over the time span (CPU, memory, 5xx, response time)",
+    about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them) and storage accounts; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
     views: ['resources'],
     rows: [
       ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies'],
