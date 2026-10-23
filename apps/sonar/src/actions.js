@@ -8,7 +8,7 @@ import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
 import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
-import { cellText, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, sqlDependenciesQuery } from './insights.js';
+import { cellText, compareQueries, compareWindows, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, sqlDependenciesQuery, windowsAround } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { repoRoot, shareLine, takeLine } from './family.js';
 import { copiedNote } from './kin.js';
@@ -764,6 +764,76 @@ export async function saveIncident(ctx, file) {
   } catch (e) {
     ctx.note(`Couldn't write ${full}: ${e.message}`, 'error');
   }
+}
+
+/**
+ * K in Problems and /compare-window [deploy|<ISO time>]: two equal windows either side of a point (the
+ * latest deployment of the app in scope, else the middle of the span; or the time given), and what
+ * changed across it: exception types new, gone or at least twice as frequent, dependencies' p95
+ * duration, operations failing (5xx) more often.
+ */
+export async function compareWindow(ctx, arg = '', { now = Date.now() } = {}) {
+  const a = String(arg ?? '').trim();
+  const scope = await ctx.scope();
+  if (!scope.component) return ctx.note(scope.why, 'error');
+  let point;
+  let what;
+  if (a && a.toLowerCase() !== 'deploy') {
+    point = Date.parse(a);
+    if (!(point < now)) return ctx.note(`${a} isn't a time in the past: give one like 2026-10-20T14:00Z, or deploy.`, 'error');
+    what = cellText(new Date(point).toISOString(), 'datetime');
+  } else {
+    const target = scope.role ? appOfRole(ctx, scope.role) : null;
+    const list = target ? await ctx.provider.deployments(target).catch(() => []) : [];
+    const latest = list.filter((d) => d.status === 'succeeded' && Date.parse(d.start ?? '') < now).sort((x, y) => Date.parse(y.start) - Date.parse(x.start))[0];
+    if (latest) {
+      point = Date.parse(latest.end ?? latest.start);
+      what = `the deployment ${relTime(Date.parse(latest.start), now)} ago (${latest.message.split('\n')[0]})`;
+    } else if (a) return ctx.note(scope.role ? `${scope.role} has no deployment to compare around.` : "Pick an app first (p in Resources): a deployment is one app's.", 'error');
+    else {
+      point = now - (ctx.timespan().hours * 3600_000) / 2;
+      what = `the middle of the last ${ctx.timespan().label}`;
+    }
+  }
+  const w = windowsAround(point, now);
+  const queries = compareQueries(scope.role, w);
+  let found;
+  const r = await ctx.task(
+    `${scope.component.name}${scope.role ? ` · ${scope.role}` : ''}: before and after ${what}`,
+    async (signal) => {
+      const ask = (q) => ctx.provider.query(scope.component, q, { timespan: w.timespan, signal }).then(records);
+      const [exceptions, dependencies, requests] = await Promise.all([ask(queries.exceptions), ask(queries.dependencies), ask(queries.requests)]);
+      found = compareWindows({ exceptions, dependencies, requests });
+      const n = found.fresh.length + found.gone.length + found.rising.length + found.deps.length + found.ops.length;
+      return { stdout: n ? `${n} change${n === 1 ? '' : 's'} across it` : 'Nothing changed much across it' };
+    },
+    { label: 'Comparing' },
+  );
+  if (!r.ok) return r;
+  // Rounded rather than cut short: a window just under three days is "3d".
+  const h = w.len / 3600_000;
+  const len = h < 1.5 ? `${Math.round(w.len / 60_000)}m` : h < 36 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`;
+  const { lines, text } = comparisonLines(found, { what, len });
+  ctx.showText(`Before and after ${what}`, text, { lines });
+  return r;
+}
+
+/** /compare-window's answer as the viewer's lines and as text (what y copies). */
+export function comparisonLines(c, { what, len }) {
+  const dim = (t) => ({ text: t, color: theme.dim });
+  const lines = [[dim(`The ${len} before it, against the ${len} after`)]];
+  const section = (title, rows, row) => {
+    lines.push([], [{ text: title, bold: true, color: theme.accent }]);
+    if (!rows.length) lines.push([dim('  none')]);
+    for (const x of rows) lines.push(row(x));
+  };
+  const pct = (x) => `${Math.round(x * 1000) / 10}%`;
+  section('New exception types', c.fresh, (t) => [{ text: `  ${t.after}× `, color: theme.del, bold: true }, { text: `${t.type}  `, bold: true }, dim(t.message)]);
+  section('Gone', c.gone, (t) => [{ text: `  ${t.before}× before  `, color: theme.add }, { text: t.type }]);
+  section('At least twice as frequent', c.rising, (t) => [{ text: `  ${t.before} → ${t.after}  `, color: theme.warn, bold: true }, { text: t.type }]);
+  section("Dependencies' p95 duration", c.deps, (d) => [{ text: `  ${Math.round(d.before)} → ${Math.round(d.after)} ms  `, color: d.change > 0 ? theme.del : theme.add, bold: true }, dim(`${d.change > 0 ? '+' : ''}${Math.round(d.change * 100)}%  `), { text: d.target }]);
+  section('Operations failing more often (5xx)', c.ops, (o) => [{ text: `  ${pct(o.before)} → ${pct(o.after)}  `, color: theme.del, bold: true }, { text: o.name }]);
+  return { lines, text: lines.map((l) => l.map((s) => s.text).join('')).join('\n') };
 }
 
 /** ↵ on an alert: everything Alerts Management says about it. */

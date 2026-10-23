@@ -1,6 +1,6 @@
 import React from 'react';
 import { useInput } from 'ink';
-import { incident, showOperation, why } from '../actions.js';
+import { compareWindow, incident, showOperation, why } from '../actions.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -18,6 +18,7 @@ export function ProblemsView({ problems, scope, ctx, width, height, active }) {
     if (!ctx.viewHasKeys()) return;
     if (nav.handle(input, key)) return;
     if (input === 'c') return ctx.chooseComponent();
+    if (input === 'K') return compareWindow(ctx);
     if (!sel) return;
     if (key.return) return showOperation(ctx, sel);
     if (input === 'w') return why(ctx, sel);

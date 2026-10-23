@@ -144,7 +144,7 @@ const COLUMNS = {
   dependency: ['timestamp', 'name', 'target', 'type', 'resultCode', 'success', 'duration', 'operation_Id', 'cloud_RoleName'],
   availability: ['timestamp', 'name', 'location', 'success', 'duration', 'message'],
 };
-const TYPES = { details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
+const TYPES = { p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
 const table = (names, rows) => ({ columns: names.map((name) => ({ name, type: TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
 
 /** The demo's answer to `kql` over `items` (one component's, within the time span). */
@@ -154,6 +154,8 @@ export function demoQuery(kql, items) {
   const mine = role ? items.filter((i) => i.cloud_RoleName === role) : items;
   const op = /operation_Id == '([^']*)'/.exec(q)?.[1];
   const exceptions = mine.filter((i) => i.itemType === 'exception');
+  const windowed = /^(\w+)\b.*where timestamp between \(datetime\(([^)]+)\) \.\. datetime\(([^)]+)\)\) \| extend window = iff\(timestamp < datetime\(([^)]+)\).*\| summarize .* by (\w+), window$/.exec(q);
+  if (windowed) return windowedAnswer(windowed, mine);
   const problem = /problemId == '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1');
   if (/^exceptions\b.*take 1 \| project .*details/.test(q)) {
     const latest = exceptions.filter((e) => e.problemId === problem).at(-1);
@@ -222,6 +224,27 @@ export function demoQuery(kql, items) {
   const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 1000);
   const rows = mine.filter((i) => i.itemType === kind).reverse().slice(0, take);
   return table(COLUMNS[kind], rows);
+}
+
+// /compare-window's queries: the table's rows between two times, summarised by a key and which side of the point they fell.
+function windowedAnswer([, name, from, to, point, key], mine) {
+  const kind = TABLES[name];
+  const groups = new Map();
+  for (const i of mine.filter((x) => x.itemType === kind && x.timestamp >= from && x.timestamp <= to)) {
+    const window = i.timestamp < point ? 'before' : 'after';
+    const k = `${i[key]}\n${window}`;
+    const g = groups.get(k) ?? { [key]: i[key], window, n: 0, failed: 0, message: i.outerMessage, durations: [] };
+    g.n++;
+    if (Number(i.resultCode) >= 500) g.failed++;
+    g.durations.push(i.duration);
+    groups.set(k, g);
+  }
+  const rows = [...groups.values()].map((g) => {
+    const d = g.durations.sort((a, b) => a - b);
+    return { ...g, p95: d[Math.max(0, Math.ceil(d.length * 0.95) - 1)] };
+  });
+  const columns = { exceptions: ['type', 'window', 'n', 'message'], dependencies: ['target', 'window', 'p95', 'n'], requests: ['name', 'window', 'n', 'failed'] }[name];
+  return table(columns, rows);
 }
 
 /** The demo's Log Analytics workspace: the container app's console log, the newest first. */
@@ -316,7 +339,8 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       await wait(signal);
       const hours = { PT1H: 1, P1D: 24, P7D: 168, P30D: 720 }[timespan] ?? 24;
       if (component.workspaceId) return workspaceQuery(kql, now, hours);
-      const since = new Date(now - hours * HOUR).toISOString();
+      // A span, or an interval between two times (start/end), as /compare-window asks.
+      const since = String(timespan).includes('/') ? String(timespan).split('/')[0] : new Date(now - hours * HOUR).toISOString();
       return demoQuery(kql, state.telemetry.filter((i) => i.component === component.appId && i.timestamp >= since));
     },
     // A made-up log: a line every `every` ms, as an app's would come, until the stream is stopped.

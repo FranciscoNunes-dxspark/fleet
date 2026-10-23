@@ -98,6 +98,15 @@ files in its stack in the 14 days before it was first seen. Outside a checkout t
 | `s` | Save the write-up (or the incident itself, before there's one) to a Markdown file; `/incident save <file>` does it too |
 | `y` | Copy the incident as Markdown |
 
+### Before and after
+
+`K` in Problems (or `/compare-window`) takes two equal windows either side of a point and says what
+changed across it: exception types that are new, gone, or at least twice as frequent; dependencies
+whose 95th percentile duration moved by a tenth or more; operations whose rate of 5xx answers rose.
+The point is the latest successful deployment of the app in scope, or without one the middle of the
+time span; `/compare-window 2026-10-20T14:00Z` puts it at a time of yours, and `/compare-window deploy`
+insists on the deployment. Each window is as long as the time since the point, up to seven days.
+
 ## Keys
 
 | Key | What it does |
@@ -167,6 +176,7 @@ A storage account takes `o` (the portal) and `y` (copy its blob address).
 | `↵` | Its latest occurrence, end to end |
 | `w` | Ask Claude why it happens |
 | `I` | The incident: the problem told whole (below) |
+| `K` | Before and after: what changed across the app's latest deployment (below) |
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
 | `c` | Which Application Insights to look in |
@@ -241,6 +251,7 @@ and Trawl.
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
 | `/portal [app]` | Open one in the Azure portal |
+| `/compare-window [deploy\|<time>]` | What changed across the latest deployment of the app in scope, or a time: exceptions, dependencies, failing operations |
 | `/incident [problem]` | A problem as an incident (the one under the cursor in Problems if none is named); `/incident save <file>` writes its write-up |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |

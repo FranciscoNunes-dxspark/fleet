@@ -59,6 +59,63 @@ export const sqlDependenciesQuery = (problemId) =>
 export const requestTraceQuery = (id) =>
   `union requests, dependencies, exceptions, traces | where operation_Id == ${quote(id)} or id == ${quote(id)} | project timestamp, itemType, name = coalesce(name, type, message), detail = coalesce(tostring(resultCode), outerMessage, message, target), duration, success, cloud_RoleName | order by timestamp asc`;
 
+const at = (iso) => `datetime(${new Date(iso).toISOString()})`;
+
+/**
+ * The window around `point` (an ISO time) as a query's lines: the rows between `from` and `to`, each
+ * marked before or after `point` in a `window` column. The three queries /compare-window sends.
+ */
+const windowed = (table, role, { from, point, to }) => `${table}${roleFilter(role)} | where timestamp between (${at(from)} .. ${at(to)}) | extend window = iff(timestamp < ${at(point)}, 'before', 'after')`;
+export const compareQueries = (role, w) => ({
+  exceptions: `${windowed('exceptions', role, w)} | summarize n = count(), message = take_any(outerMessage) by type, window`,
+  dependencies: `${windowed('dependencies', role, w)} | summarize p95 = percentile(duration, 95), n = count() by target, window`,
+  requests: `${windowed('requests', role, w)} | summarize n = count(), failed = countif(toint(resultCode) >= 500) by name, window`,
+});
+
+/**
+ * Two equal windows either side of `point` (ms), as long as there's time after it (at most `max` ms),
+ * and never before `earliest`: { from, point, to } as ISO times, and the query API's timespan for them.
+ */
+export function windowsAround(point, now, { max = 7 * 24 * 3600_000 } = {}) {
+  const len = Math.max(60_000, Math.min(max, now - point));
+  const from = new Date(point - len).toISOString();
+  const to = new Date(Math.min(now, point + len)).toISOString();
+  return { from, point: new Date(point).toISOString(), to, len, timespan: `${from}/${to}` };
+}
+
+/**
+ * What changed across the point, from the three queries' records: exception types that are new, gone, or
+ * at least twice as frequent (by rate, the windows being equal); dependencies whose p95 duration moved;
+ * operations whose 5xx rate rose.
+ */
+export function compareWindows({ exceptions = [], dependencies = [], requests = [] }) {
+  const pair = (rows, key) => {
+    const m = new Map();
+    for (const r of rows) {
+      const k = String(r[key] ?? '');
+      const e = m.get(k) ?? { key: k };
+      e[r.window] = r;
+      m.set(k, e);
+    }
+    return [...m.values()];
+  };
+  const types = pair(exceptions, 'type').map((e) => ({ type: e.key, before: Number(e.before?.n ?? 0), after: Number(e.after?.n ?? 0), message: e.after?.message ?? e.before?.message ?? '' }));
+  const fresh = types.filter((t) => !t.before && t.after).sort((a, b) => b.after - a.after);
+  const gone = types.filter((t) => t.before && !t.after).sort((a, b) => b.before - a.before);
+  const rising = types.filter((t) => t.before && t.after >= 2 * t.before).sort((a, b) => b.after / b.before - a.after / a.before);
+  const deps = pair(dependencies, 'target')
+    .filter((e) => e.before && e.after)
+    .map((e) => ({ target: e.key, before: Number(e.before.p95), after: Number(e.after.p95), change: Number(e.before.p95) ? Number(e.after.p95) / Number(e.before.p95) - 1 : 0 }))
+    .filter((d) => Math.abs(d.change) >= 0.1)
+    .sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+  const rate = (r) => (r && Number(r.n) ? Number(r.failed) / Number(r.n) : 0);
+  const ops = pair(requests, 'name')
+    .map((e) => ({ name: e.key, before: rate(e.before), after: rate(e.after), failed: Number(e.after?.failed ?? 0) }))
+    .filter((o) => o.after > o.before && o.failed > 0)
+    .sort((a, b) => b.after - b.before - (a.after - a.before));
+  return { fresh, gone, rising, deps, ops };
+}
+
 /** The availability tests' results over the span, by test: how many ran, how many failed, when they last did. */
 export const availabilityQuery = () =>
   'availabilityResults | summarize total = count(), failed = countif(success == false), last = max(timestamp), lastFailure = maxif(timestamp, success == false), locations = dcount(location), message = take_anyif(message, success == false) by name | order by failed desc, name asc';
