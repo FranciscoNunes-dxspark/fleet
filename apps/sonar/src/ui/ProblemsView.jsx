@@ -1,6 +1,6 @@
 import React from 'react';
 import { useInput } from 'ink';
-import { compareWindow, incident, showOperation, why } from '../actions.js';
+import { compareWindow, exceptionForSplice, incident, showOperation, why } from '../actions.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -25,6 +25,7 @@ export function ProblemsView({ problems, scope, ctx, width, height, active }) {
     if (input === 'I') return incident(ctx, sel);
     if (input === 'l') return ctx.logsFor(null, `exceptions | where problemId == '${sel.problemId.replace(/'/g, "\\'")}' | order by timestamp desc | take 50`);
     if (input === 'y') return ctx.copy(sel.message ?? sel.problemId, 'the message');
+    if (input === 'Y') return exceptionForSplice(ctx, sel);
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {

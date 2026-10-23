@@ -900,6 +900,29 @@ export function watches(ctx, { replace = false, index } = {}) {
   );
 }
 
+/** Y in Problems: the problem's latest exception, with its stack and request, as a /take for Splice's prompt. */
+export async function exceptionForSplice(ctx, problem) {
+  const scope = await ctx.scope();
+  if (!scope.component) return ctx.note(scope.why, 'error');
+  try {
+    const opts = { timespan: ctx.timespan().iso };
+    const [latest, rows] = await Promise.all([
+      ctx.provider.query(scope.component, latestExceptionQuery(problem.problemId), opts).then((t) => records(t)[0] ?? null),
+      ctx.provider.query(scope.component, operationQuery(problem.operation), opts).then(records, () => []),
+    ]);
+    copyFor(ctx, 'splice', takeLine('exception', exceptionContext(problem, latest, requestOf(rows))));
+  } catch (e) {
+    ctx.note(`Couldn't read the exception: ${firstLine(e.message)}`, 'error');
+  }
+}
+
+/** H in Logs: a request row as a /take for Hail's prompt, to send it again there. */
+export function requestForHail(ctx, row) {
+  const request = requestContext(row);
+  if (!request) return ctx.note('Only a row with a url (from requests) is a request Hail can send.', 'error');
+  copyFor(ctx, 'hail', takeLine('request', request));
+}
+
 /** ↵ on an alert: everything Alerts Management says about it. */
 export function showAlert(ctx, alert) {
   const rows = [

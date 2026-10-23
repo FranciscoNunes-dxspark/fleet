@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useInput } from 'ink';
-import { runQuery, saveQuery } from '../actions.js';
+import { requestForHail, runQuery, saveQuery } from '../actions.js';
 import { cellText, completeQuery, hailRequest, records } from '../insights.js';
 import { theme } from '../theme.js';
 import { clean, fit } from '../text.js';
@@ -80,8 +80,9 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
     if (!row) return key.return ? runQuery(ctx, query) : undefined;
     if (key.return) return ctx.showText(`Row ${nav.index + 1} of ${table.rows.length}`, JSON.stringify(row, null, 2));
     if (input === 'y') return ctx.copy(JSON.stringify(row, null, 2), 'the row');
-    // A request, to send again in Hail (paste it into a .http file).
-    if (input === 'H') return hailRequest(row) ? ctx.copy(hailRequest(row), 'it as a Hail request') : ctx.note('Only a row with a url (from requests) can be a Hail request.', 'error');
+    // A request, to send again in Hail: a /take for its prompt, or (F) the text of a .http file's request.
+    if (input === 'H') return requestForHail(ctx, row);
+    if (input === 'F') return hailRequest(row) ? ctx.copy(hailRequest(row), 'it as a .http request') : ctx.note('Only a row with a url (from requests) can be a .http request.', 'error');
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {

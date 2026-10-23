@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { demoAzure } from '../src/demo.js';
+import { contextIn } from '../src/family.js';
 import { LIGHT, applyTheme, theme } from '../src/theme.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
@@ -137,7 +138,7 @@ test('logs: an app\'s requests, a query typed with completion, a row whole; prob
   }
 });
 
-test('opened from the command line: an address finds its app, Problems about it; an app by name in Logs, a row as a Hail request', async () => {
+test('opened from the command line: an address finds its app, Problems about it; an app by name in Logs, a row for Hail and as .http text', async () => {
   const copied = [];
   let app = start({ open: { url: 'https://shop.contoso.com/health', view: 'problems' } });
   let frame = () => app.lastFrame() ?? '';
@@ -153,7 +154,14 @@ test('opened from the command line: an address finds its app, Problems about it;
   try {
     await until(() => frame().includes('╭─ Logs') && frame().includes('contoso-prod-ai · contoso-api') && frame().includes('50 rows'), "the app's requests");
     app.stdin.write('H');
-    await until(() => frame().includes('Copied it as a Hail request'), 'the copy');
+    await until(() => frame().includes("Copied for Hail: paste it into Hail's prompt"), 'the request for Hail');
+    const { kind, data } = contextIn(copied.at(-1));
+    assert.equal(kind, 'request');
+    assert.equal(data.method, 'GET');
+    assert.match(data.url, /^https:\/\/contoso-api\.azurewebsites\.net\//);
+    assert.match(frame(), /request GET https:\/\/contoso-api/);
+    app.stdin.write('F');
+    await until(() => frame().includes('Copied it as a .http request'), 'the .http text');
     assert.match(copied.at(-1), /^### GET \/\S* \(answered \d+\)\nGET https:\/\/contoso-api\.azurewebsites\.net\/\S*\n$/);
   } finally {
     app.unmount();
@@ -253,13 +261,14 @@ test('a long job ends with a notification, a quick one and a cancelled one say n
   }
 });
 
-test('problems: w asks Claude why, with the latest occurrence on stdin and read-only tools, and /why names one', async () => {
+test('problems: w asks Claude why, with the latest occurrence on stdin and read-only tools, and /why names one; Y copies it for Splice', async () => {
   const asked = [];
   const askClaude = async (prompt, opts) => {
     asked.push({ prompt, ...opts });
     return 'The payments provider is slow: raise the HttpClient timeout in PaymentsClient.';
   };
-  const app = start({ askClaude });
+  const copied = [];
+  const app = start({ askClaude, copy: (t) => copied.push(t) });
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('contoso-orders'), 'the apps');
@@ -285,6 +294,17 @@ test('problems: w asks Claude why, with the latest occurrence on stdin and read-
     app.stdin.write(KEYS.enter);
     await until(() => asked.length === 2 && frame().includes('Why System.TimeoutException'), 'the named one asked about');
     assert.match(asked[1].input, /timed out talking to the payments provider/);
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('╭─ Why '), 'closed again');
+
+    app.stdin.write('Y');
+    await until(() => frame().includes("Copied for Splice: paste it into Splice's prompt"), 'the exception for Splice');
+    const { kind: k, data: ex } = contextIn(copied.at(-1));
+    assert.equal(k, 'exception');
+    assert.equal(ex.app, 'contoso-web');
+    assert.ok(ex.frames.length && ex.frames.every((f) => f.file.startsWith('/home/runner/work/contoso/contoso/') && f.line > 0), JSON.stringify(ex.frames));
+    assert.match(ex.request.url, /^https:\/\/contoso-web\.azurewebsites\.net\//);
+    assert.match(ex.operationId, /^op-contoso-web-/);
   } finally {
     app.unmount();
   }

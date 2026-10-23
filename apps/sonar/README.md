@@ -175,7 +175,8 @@ A storage account takes `o` (the portal) and `y` (copy its blob address).
 | `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `Y` | Copy the row as JSON · every row, tab-separated |
-| `H` | Copy a request row as a request for [Hail](https://github.com/FranciscoNunes-dxspark/hail), to paste into a `.http` file and send again |
+| `H` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/hail)'s prompt, to send it again there |
+| `F` | Copy a request row as the text of a request in a `.http` file |
 | `c` | Which Application Insights to look in |
 
 | In Live | |
@@ -200,6 +201,7 @@ A storage account takes `o` (the portal) and `y` (copy its blob address).
 | `K` | Before and after: what changed across the app's latest deployment (below) |
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
+| `Y` | Copy its latest exception, with its stack and the request it failed, for Splice's prompt |
 | `c` | Which Application Insights to look in |
 
 In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
