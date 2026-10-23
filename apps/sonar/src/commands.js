@@ -25,6 +25,7 @@ export const COMMANDS = [
   { name: 'compare-window', args: '[deploy | <time>]', desc: 'Two equal windows before and after the latest deployment (or a time, or the middle of the span): exceptions new, gone or twice as frequent, dependencies slower, operations failing more', run: (ctx, s) => a.compareWindow(ctx, s) },
   { name: 'watch', args: '<name> <threshold> <kql>', desc: 'Pin a query whose first value is a number, run every few minutes against the Application Insights in scope; going over the threshold notifies', run: (ctx, s) => a.watch(ctx, s) },
   { name: 'watches', desc: 'Your watches and what they said last: ↵ runs one in Logs, x removes it', run: (ctx) => a.watches(ctx) },
+  { name: 'take', args: '<context>', desc: "What another app copied for Sonar: a commit's deployments, problems like an exception, a log line's request", run: (ctx, s) => a.take(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
   { name: 'settings', desc: 'Theme, accent colour, mouse, updates, notifications, watches, history', run: (ctx) => a.settings(ctx) },

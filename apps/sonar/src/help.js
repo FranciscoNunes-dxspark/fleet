@@ -81,6 +81,7 @@ export const HELP = [
       ['l', 'Its exceptions in Logs'],
       ['y', 'Copy the message'],
       ['Y', 'Copy its latest exception, with its stack and request, for Splice\'s prompt (/take exception)'],
+      ['x', 'Show them all again, after /take showed only those like an exception'],
       ['c', 'Which Application Insights to look in'],
     ],
   },
@@ -121,6 +122,16 @@ export const HELP = [
       ['$1 $2  $*', 'What\'s typed after it: a word each ("quoted words" are one), or all of it; a command with no $ gets it at the end of its line'],
       ['"keys"', '{ "global": { "ctrl+e": "/kql exceptions | take 50" }, "resources": { "x": "R" } }: a key to another key (the view does what that one does) or to a command line, anywhere or in one view (resources, logs, problems, live, alerts, log). They work while a view has the keys, never while typing; Your keys (above Slash commands) lists them'],
       ['key names', 'a character (x, X, +), ctrl+s, alt+x, shift+tab, F1-F12, enter, esc, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown'],
+    ],
+  },
+  {
+    title: 'From the other apps',
+    about: "what Splice, Trawl, Bosun and Hail copy for Sonar's prompt: /take family:v1:…, or the family:v1:… part alone",
+    rows: [
+      ['commit', 'The deployments, across the subscription\'s apps and slots, that shipped it; ↵ shows one\'s log'],
+      ['exception', 'Problems, showing only those like it (x shows all)'],
+      ['log line', 'With a request or operation id: everything that request did, in Logs'],
+      'Anything else is for another app, and Sonar says which.',
     ],
   },
   {

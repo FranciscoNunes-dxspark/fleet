@@ -421,7 +421,7 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       const s = site(target);
       const day = 24 * HOUR;
       const list = [
-        { name: 'd3', status: 'succeeded', author: 'Ana Silva', deployer: 'GitHub Actions', ago: 3 * day, message: 'Release 2.14.0: the new checkout behind a flag', active: true },
+        { name: 'd3', status: 'succeeded', author: 'Ana Silva', deployer: 'GitHub Actions', ago: 3 * day, message: 'Release 2.14.0: the new checkout behind a flag\n\nCommit 9b1c7e2d4f60a8c3e1f2b7d9a5c4e3f2a1b0c9d8', active: true },
         { name: 'd2', status: s.sub === 'sub-prod' && !s.slot ? 'failed' : 'succeeded', author: 'Rui Costa', deployer: 'GitHub Actions', ago: 5 * day, message: 'Release 2.13.1: payments retries' },
         { name: 'd1', status: 'succeeded', author: 'Ana Silva', deployer: 'ZipDeploy', ago: 12 * day, message: 'Release 2.13.0' },
       ];

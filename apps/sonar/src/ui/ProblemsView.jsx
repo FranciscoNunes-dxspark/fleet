@@ -6,11 +6,19 @@ import { fit, relTime } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
 import { Panel, Row } from './parts.jsx';
 
+/** Whether a problem is like an exception taken from a sibling: the same type (or its last part), or the same message. */
+export function problemLike(p, { type, message }) {
+  const short = (t) => String(t ?? '').split('.').pop().toLowerCase();
+  if (type && (p.type.toLowerCase() === type.toLowerCase() || short(p.type) === short(type))) return true;
+  return Boolean(message && p.message && (p.message.includes(message) || message.includes(p.message)));
+}
+
 /** The exceptions in scope grouped by problem, most frequent first, with how they went over the span. */
-export function ProblemsView({ problems, scope, ctx, width, height, active }) {
-  const list = problems?.rows ?? [];
+export function ProblemsView({ problems, filter, scope, ctx, width, height, active }) {
+  const all = problems?.rows ?? [];
+  const list = filter ? all.filter((p) => problemLike(p, filter)) : all;
   const innerH = height - 2;
-  const nav = useListNav(list.length, innerH, { resetKey: problems });
+  const nav = useListNav(list.length, innerH, { resetKey: filter ? `like|${filter.type}|${filter.message}|${problems?.span?.label}` : problems });
   const sel = list[nav.index];
   ctx.selectProblem(sel ?? null);
 
@@ -19,6 +27,7 @@ export function ProblemsView({ problems, scope, ctx, width, height, active }) {
     if (nav.handle(input, key)) return;
     if (input === 'c') return ctx.chooseComponent();
     if (input === 'K') return compareWindow(ctx);
+    if (input === 'x' && filter) return ctx.setProblemFilter(null);
     if (!sel) return;
     if (key.return) return showOperation(ctx, sel);
     if (input === 'w') return why(ctx, sel);
@@ -34,8 +43,9 @@ export function ProblemsView({ problems, scope, ctx, width, height, active }) {
   });
 
   const where = scope.component ? `${scope.component.name}${scope.role ? ` · ${scope.role}` : ''}` : scope.why;
-  const status = problems?.loading ? 'looking…' : problems?.error ? 'failed' : `${list.length} problem${list.length === 1 ? '' : 's'} · ${problems?.span?.label ?? ''}`;
-  const message = problems?.error ?? (problems?.loading && !list.length ? 'Looking for exceptions…' : !list.length && problems ? 'No exceptions in this span. t changes it.' : null);
+  const like = filter ? `only ${fit(filter.type ? filter.type.split('.').pop() : `"${filter.message}"`, 30).trimEnd()} (x all) · ` : '';
+  const status = problems?.loading ? 'looking…' : problems?.error ? 'failed' : `${like}${list.length} problem${list.length === 1 ? '' : 's'} · ${problems?.span?.label ?? ''}`;
+  const message = problems?.error ?? (problems?.loading && !list.length ? 'Looking for exceptions…' : !list.length && problems ? (filter && all.length ? `None like ${filter.type ?? filter.message} in this span: x shows all ${all.length}, t changes the span.` : 'No exceptions in this span. t changes it.') : null);
   return (
     <Panel title="Problems" hint={`${where} · ${status}`} width={width} height={height} focused={active}>
       {message ? <Row pointer={false} width={width - 2} segments={[{ text: `  ${message}`, color: problems?.error ? theme.del : theme.dim }]} /> : null}

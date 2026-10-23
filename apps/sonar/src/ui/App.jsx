@@ -33,6 +33,7 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { worthNotifying } from '../notify.js';
 import { ask } from '../claude-cli.js';
+import { decodeContext } from '../family.js';
 
 const VIEWS = [
   { id: 'resources', label: 'Resources' },
@@ -55,7 +56,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const HINTS = {
   resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
   logs: 'e edit the query · ↵ run it / show a row · s save it · h l columns · y copy the row · Y all · H for Hail · F as .http · c which insights',
-  problems: '↵ the latest occurrence · I incident · K before/after · w ask Claude why · l its exceptions in Logs · y copy the message · Y for Splice · c which insights',
+  problems: '↵ the latest occurrence · I incident · K before/after · w ask Claude why · l in Logs · y copy · Y for Splice · c which insights',
   alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
   log: '↵ all its output · y copy it',
@@ -143,6 +144,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const resultRef = useRef(null);
   resultRef.current = result;
   const [problems, setProblems] = useState(null);
+  // Problems shows only those like an exception taken from a sibling (/take exception) until x.
+  const [problemFilter, setProblemFilter] = useState(null);
   const [alerts, setAlerts] = useState(null);
   // What Logs and Problems look at: an app (l, p) or, with `all`, everything in the chosen component.
   const [scopeState, setScopeState] = useState({ target: null, component: null, all: false });
@@ -477,6 +480,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     selectedResource: () => selectedRef.current,
     // The problem under the cursor in Problems, and the list there (for /why to name one).
     selectProblem: (p) => (selectedProblem.current = p),
+    setProblemFilter,
     selectedProblem: () => selectedProblem.current,
     problems: () => problemsRef.current?.rows ?? [],
     problemSpark: (id) => problemsRef.current?.spark?.[id] ?? '',
@@ -621,6 +625,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     try {
       let r;
       if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
+      // A context a sibling copied, typed or pasted on its own: /take's.
+      else if (decodeContext(text)) r = await a.take(ctx, text);
       else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
         const cmd = findCommand(name, customRef.current.commands);
@@ -1067,7 +1073,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   } else if (view === 'alerts') {
     main = <AlertsView alerts={alerts} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'problems') {
-    main = <ProblemsView problems={problems} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ProblemsView problems={problems} filter={problemFilter} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
     main = <ResourcesView data={data} span={TIMESPANS[spanIndex]} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }

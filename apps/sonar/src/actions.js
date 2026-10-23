@@ -8,10 +8,10 @@ import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
 import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
-import { cellText, compareQueries, compareWindows, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, sqlDependenciesQuery, windowsAround } from './insights.js';
+import { cellText, compareQueries, compareWindows, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
-import { repoRoot, shareLine, takeLine } from './family.js';
-import { copiedNote } from './kin.js';
+import { contextIn, describeContext, repoRoot, shareLine, takeLine } from './family.js';
+import { APP_NAMES, copiedNote } from './kin.js';
 import { parseWatch, watchEvery } from './watches.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
@@ -921,6 +921,87 @@ export function requestForHail(ctx, row) {
   const request = requestContext(row);
   if (!request) return ctx.note('Only a row with a url (from requests) is a request Hail can send.', 'error');
   copyFor(ctx, 'hail', takeLine('request', request));
+}
+
+// What each kind of context is for, when it isn't Sonar's to take.
+const TAKEN_BY = { request: 'hail', rows: 'trawl', query: 'trawl', file: 'splice' };
+
+/**
+ * /take <context> (or a family:v1:… line on its own at the prompt): what a sibling copied for Sonar.
+ * A commit finds the deployments that shipped it, an exception the problems like it, a log line the
+ * request it belongs to; anything else is said to be for the app that takes it.
+ */
+export async function take(ctx, text) {
+  const c = contextIn(text);
+  if (!c) return ctx.note("That isn't a line one of the other apps copied: /take takes the family:v1:… that Splice, Trawl, Bosun or Hail copies for Sonar.", 'error');
+  if (c.kind === 'commit') return deploymentsOfCommit(ctx, c.data);
+  if (c.kind === 'exception') return problemsLike(ctx, c.data);
+  if (c.kind === 'logline') return requestOfLogLine(ctx, c.data);
+  const app = APP_NAMES[TAKEN_BY[c.kind]];
+  return ctx.note(app ? `That's ${describeContext(c)}, for ${app}: paste it into ${app}'s prompt instead.` : `Sonar has nothing to do with ${describeContext(c)}.`, 'error');
+}
+
+/** Whether a deployment is of commit `hash`: in its id, name or message, whole or as its first seven characters. */
+export function deploymentHasCommit(d, hash) {
+  const h = String(hash ?? '').trim().toLowerCase();
+  if (h.length < 4) return false;
+  const hay = [d.id, d.name, d.message].map((x) => String(x ?? '').toLowerCase()).join('\n');
+  return hay.includes(h) || (h.length > 7 && hay.includes(h.slice(0, 7))) || hay.split(/[^0-9a-f]+/).some((w) => w.length >= 7 && h.startsWith(w));
+}
+
+/** /take commit: the deployments of the subscription's apps and slots that shipped it, read now. */
+async function deploymentsOfCommit(ctx, { hash, subject }) {
+  if (!hash) return ctx.note('That commit has no hash to look for.', 'error');
+  const short = String(hash).slice(0, 10);
+  const targets = Object.values(ctx.targets());
+  let found = [];
+  const r = await ctx.task(
+    `Deployments of ${short}${subject ? ` (${subject})` : ''} in ${ctx.data.subscription.name}`,
+    async (signal) => {
+      const lists = await mapLimited(targets, 6, (t) => ctx.provider.deployments(t, { signal }).then((l) => l.map((d) => ({ t, d })), () => []));
+      found = lists.flat().filter((x) => deploymentHasCommit(x.d, hash)).sort((a, b) => String(b.d.start ?? '').localeCompare(String(a.d.start ?? '')));
+      return { stdout: found.length ? `${found.length} deployment${found.length === 1 ? '' : 's'} of it, in ${new Set(found.map((x) => label(x.t))).size} of ${targets.length} apps and slots` : `None of the ${targets.length} apps and slots has a deployment of it` };
+    },
+    { label: 'Reading the deployments' },
+  );
+  if (!r.ok || !found.length) return r;
+  const w = Math.min(30, Math.max(...found.map((x) => label(x.t).length)));
+  ctx.showPicker({
+    title: `Deployments of ${short}`,
+    hint: '↵ its log',
+    items: found.map(({ t, d }) => ({
+      t,
+      d,
+      segments: [
+        { text: `${BULLET} `, color: DEPLOY_COLOUR[d.status] ?? theme.warn },
+        { text: `${fit(label(t), w)}  `, strong: true },
+        { text: fit(d.status, 10), color: DEPLOY_COLOUR[d.status] ?? theme.warn },
+        { text: fit(d.start ? `${relTime(Date.parse(d.start))} ago` : '', 9), color: theme.dim },
+        { text: fit(d.author || '—', 16) },
+        { text: d.active ? 'active  ' : '', color: theme.accent, bold: true },
+        { text: d.message.split('\n')[0], color: theme.dim },
+      ],
+    })),
+    onPick: (it) => deploymentLog(ctx, it.t, it.d),
+  });
+  return r;
+}
+
+/** /take exception: Problems, showing only the problems of that type (or with that message); about its app when it's one here. */
+function problemsLike(ctx, data) {
+  if (!data.type && !data.message) return ctx.note('That exception has neither a type nor a message to look for.', 'error');
+  const app = data.app ? targetNamed(ctx, data.app) : null;
+  ctx.setProblemFilter({ type: data.type ?? null, message: data.message ?? null });
+  if (app) ctx.problemsFor(app);
+  else ctx.setView('problems');
+  ctx.note(`Problems like ${describeContext({ kind: 'exception', data })}${app ? ` in ${label(app)}` : ''}; x in Problems shows them all again.`);
+}
+
+/** /take logline: everything the request it belongs to did, in Logs, by its request or operation id. */
+function requestOfLogLine(ctx, data) {
+  const id = data.requestId ?? data.operationId;
+  if (!id) return ctx.note(`That log line (${describeContext({ kind: 'logline', data })}) carries no request or operation id to look for in Application Insights.`, 'error');
+  return ctx.logsFor(null, requestTraceQuery(String(id)));
 }
 
 /** ↵ on an alert: everything Alerts Management says about it. */

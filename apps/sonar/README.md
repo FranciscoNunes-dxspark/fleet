@@ -128,6 +128,19 @@ staying over says nothing more, and it says so again only after it has been back
 lists them with what each said last: `↵` runs one in Logs, `x` removes it, `y` copies its query. They're
 kept in `config.json` under `"watches"`.
 
+### From the other apps
+
+Splice, Trawl, Bosun and Hail copy things for Sonar as a line for its prompt, `/take family:v1:…`
+(the `family:v1:…` part alone, pasted or typed at the prompt, does the same):
+
+| What | What Sonar does with it |
+| --- | --- |
+| A commit (from Splice) | Reads the deployments of every app and slot in the subscription and lists those that shipped it, by its hash in their id or message; `↵` shows one's log |
+| An exception | Problems, showing only those of its type (or with its message), about its app when it's one in the subscription; `x` there shows them all again |
+| A log line with a request or operation id (from Bosun) | Everything that request did, in Logs: its request, dependencies, exceptions and traces, in order |
+
+Anything else (a request, rows, a query, a file) is for another app, and Sonar says which.
+
 ## Keys
 
 | Key | What it does |
@@ -202,6 +215,7 @@ A storage account takes `o` (the portal) and `y` (copy its blob address).
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
 | `Y` | Copy its latest exception, with its stack and the request it failed, for Splice's prompt |
+| `x` | Show them all again, after `/take` showed only those like an exception |
 | `c` | Which Application Insights to look in |
 
 In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
@@ -277,6 +291,7 @@ and Trawl.
 | `/compare-window [deploy\|<time>]` | What changed across the latest deployment of the app in scope, or a time: exceptions, dependencies, failing operations |
 | `/watch <name> <threshold> <kql>` | Pin a query whose first value is a number; going over the threshold says so (above) |
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |
+| `/take <context>` | What another app copied for Sonar (above) |
 | `/incident [problem]` | A problem as an incident (the one under the cursor in Problems if none is named); `/incident save <file>` writes its write-up |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |
