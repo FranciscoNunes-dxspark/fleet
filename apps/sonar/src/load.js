@@ -5,8 +5,8 @@ import { mapLimited } from './tree.js';
 /**
  * Everything the views show for subscription `subId` (the provider's current one if none is given):
  * { subscription, subscriptions, apps, slots: { appId: [slot] }, components, containers, storage,
- * sqlServers: [{ ...server, databases, admin }] }. Slots are read for
- * every app, a few at a time; an app whose slots can't be read just shows none.
+ * sqlServers: [{ ...server, databases }] }. Slots are read for every app, a few at a time; an app
+ * whose slots can't be read just shows none.
  */
 export async function loadSubscription(provider, subId, { signal } = {}) {
   const subscriptions = await provider.subscriptions({ signal });
@@ -26,11 +26,9 @@ export async function loadSubscription(provider, subId, { signal } = {}) {
   // The slots and the servers' details at the same time: neither waits on the other.
   const [lists, sqlServers] = await Promise.all([
     mapLimited(apps, 6, (app) => provider.slots(app, { signal }).catch(() => [])),
-    // Each server's databases and Entra admin (the listing doesn't always carry the admin).
-    mapLimited(servers, 6, async (s) => {
-      const [databases, admin] = await Promise.all([provider.sqlDatabases(s, { signal }).catch(() => []), s.admin ? s.admin : provider.sqlAdmin(s, { signal }).catch(() => null)]);
-      return { ...s, databases, admin };
-    }),
+    // Each server's databases. Its Entra admin is read when the cursor stops on it (App's adminOf),
+    // unless the listing carried it.
+    mapLimited(servers, 6, async (s) => ({ ...s, databases: await provider.sqlDatabases(s, { signal }).catch(() => []) })),
   ]);
   const slots = Object.fromEntries(apps.map((a, i) => [a.id, lists[i]]));
   return { subscription, subscriptions, apps, slots, components, containers, storage, sqlServers };

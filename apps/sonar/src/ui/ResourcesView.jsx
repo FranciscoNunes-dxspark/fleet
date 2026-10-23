@@ -100,6 +100,20 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
     };
   }, [server?.id, rulesTick]);
 
+  // Its Entra admin, which the listing doesn't carry.
+  const [admin, setAdmin] = useState(null);
+  useEffect(() => {
+    if (!server) return;
+    let live = true;
+    setAdmin(server.admin ? { value: server.admin } : null);
+    if (server.admin) return;
+    const stop = delayed(() => ctx.adminOf(server).then((v) => live && setAdmin({ value: v })), 80);
+    return () => {
+      live = false;
+      stop();
+    };
+  }, [server?.id]);
+
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
     if (nav.handle(input, key)) return;
@@ -220,7 +234,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
       field('group', server.resourceGroup),
       field('where', server.location ?? ''),
       ...(db ? [field('sku', [db.sku, db.tier].filter(Boolean).join(' · ')), ...costLine(db)] : [field('version', server.version), field('databases', String(server.databases?.length ?? 0))]),
-      [{ text: 'entra     ', color: theme.dim }, server.admin ? { text: `${server.admin.login}${server.admin.type ? ` (${server.admin.type.toLowerCase()})` : ''}${server.admin.only ? ', Entra sign-in only' : ''}` } : { text: 'no Entra admin set: only SQL logins', color: theme.warn }],
+      [{ text: 'entra     ', color: theme.dim }, !admin ? { text: '…', color: theme.dim } : admin.value ? { text: `${admin.value.login}${admin.value.type ? ` (${admin.value.type.toLowerCase()})` : ''}${admin.value.only ? ', Entra sign-in only' : ''}` } : { text: 'no Entra admin set: only SQL logins', color: theme.warn }],
       ...firewallLines(),
       [],
       [{ text: KEY_HINTS[sel.type], color: theme.dim }],

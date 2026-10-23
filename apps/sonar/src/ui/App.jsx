@@ -173,6 +173,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const settingsCache = useRef(new Map());
   const metricsCache = useRef(new Map());
   const firewallCache = useRef(new Map());
+  const adminCache = useRef(new Map());
   // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
   const watchStates = useRef(new Map());
   // This month's costs per subscription, read once a day (r doesn't read them again).
@@ -292,6 +293,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     settingsCache.current = new Map();
     metricsCache.current = new Map();
     firewallCache.current = new Map();
+    adminCache.current = new Map();
     try {
       const d = await load(provider, subId);
       dataRef.current = d;
@@ -360,6 +362,14 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       p.catch(() => cache.delete(server.id));
       cache.set(server.id, p);
     }
+    return cache.get(server.id);
+  };
+
+  /** A SQL server's Entra admin (null when none is set, or it can't be read), the listing's when it carried one; kept until r. */
+  const adminOf = (server) => {
+    if (server.admin) return Promise.resolve(server.admin);
+    const cache = adminCache.current;
+    if (!cache.has(server.id)) cache.set(server.id, provider.sqlAdmin ? provider.sqlAdmin(server).catch(() => null) : Promise.resolve(null));
     return cache.get(server.id);
   };
 
@@ -498,6 +508,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     settingsOf,
     metricsOf,
     firewallOf,
+    adminOf,
     costsOf,
     checkWatches,
     watchState: (name) => watchStates.current.get(name) ?? null,

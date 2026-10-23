@@ -346,6 +346,7 @@ test('the tree with the other kinds: under their resource groups, databases unde
     'contoso-qa', 'sqlserver:contoso-sql-qa', 'sqldb:contoso-sql-qa/contoso-qa',
   ]);
   assert.deepEqual(resourceRows(d.apps, d.slots, 'reporting', d).map((r) => r.text ?? label(r.target)), ['contoso-prod', 'contoso-sql-prod', 'contoso-sql-prod/contoso-reporting']);
-  assert.equal(d.sqlServers[0].admin.login, 'SQL Admins', 'the admin read for each server');
+  assert.equal(d.sqlServers[0].admin, null, 'the admin is read when the cursor stops on a server, not with the subscription');
+  assert.equal((await demoAzure().sqlAdmin(d.sqlServers[0])).login, 'SQL Admins');
   assert.deepEqual(Object.keys(sqlByLabel(d.sqlServers)), ['contoso-sql-prod', 'contoso-sql-prod/contoso', 'contoso-sql-prod/contoso-reporting', 'contoso-sql-qa', 'contoso-sql-qa/contoso-qa']);
 });
