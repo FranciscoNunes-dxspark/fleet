@@ -23,12 +23,15 @@ export async function loadSubscription(provider, subId, { signal } = {}) {
     other('storageAccounts'),
     other('sqlServers'),
   ]);
-  const lists = await mapLimited(apps, 6, (app) => provider.slots(app, { signal }).catch(() => []));
+  // The slots and the servers' details at the same time: neither waits on the other.
+  const [lists, sqlServers] = await Promise.all([
+    mapLimited(apps, 6, (app) => provider.slots(app, { signal }).catch(() => [])),
+    // Each server's databases and Entra admin (the listing doesn't always carry the admin).
+    mapLimited(servers, 6, async (s) => {
+      const [databases, admin] = await Promise.all([provider.sqlDatabases(s, { signal }).catch(() => []), s.admin ? s.admin : provider.sqlAdmin(s, { signal }).catch(() => null)]);
+      return { ...s, databases, admin };
+    }),
+  ]);
   const slots = Object.fromEntries(apps.map((a, i) => [a.id, lists[i]]));
-  // Each server's databases and Entra admin (the listing doesn't always carry the admin).
-  const sqlServers = await mapLimited(servers, 6, async (s) => {
-    const [databases, admin] = await Promise.all([provider.sqlDatabases(s, { signal }).catch(() => []), s.admin ? s.admin : provider.sqlAdmin(s, { signal }).catch(() => null)]);
-    return { ...s, databases, admin };
-  });
   return { subscription, subscriptions, apps, slots, components, containers, storage, sqlServers };
 }
