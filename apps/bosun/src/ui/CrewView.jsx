@@ -20,6 +20,24 @@ export function uptime(ms, now = Date.now()) {
   return `${Math.floor(s / 3600)}h`;
 }
 
+/**
+ * How long until a row's clock changes what it says (an uptime's 42s to 43s, 5m to 6m; a restart's
+ * countdown), or null when none is counting: the list redraws then rather than every second.
+ */
+export function nextTick(procs, now = Date.now()) {
+  let soonest = null;
+  const at = (t) => (soonest = soonest == null ? t : Math.min(soonest, t));
+  for (const p of procs) {
+    if (p.restartAt) at((((p.restartAt - now) % 1000) + 1000) % 1000 || 1000);
+    else if (p.child && p.startedAt) {
+      const up = Math.max(0, now - p.startedAt);
+      const unit = up < 60_000 ? 1000 : up < 3_600_000 ? 60_000 : 3_600_000;
+      at(unit - (up % unit));
+    }
+  }
+  return soonest;
+}
+
 /** A process's port as its row shows it: :3000 ✓ (answers, health page fine), :3000 ✗, :3000 … (not yet). */
 export function portSegments(p) {
   if (!p.port) return [];
@@ -103,14 +121,15 @@ export function CrewView({ procs, ctx, width, height, active }) {
     setSearchState(next);
   };
   const [troubleOnly, setTroubleOnly] = useState(false);
-  // Uptimes and restart countdowns count by the second.
+  // Uptimes and restart countdowns: drawn again when one says something new (each second under a
+  // minute, each minute under an hour), not every second.
   const [, setSecond] = useState(0);
-  const ticking = procs.some((p) => p.child || p.restartAt);
   useEffect(() => {
-    if (!ticking) return;
-    const t = setInterval(() => setSecond((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, [ticking]);
+    const wait = nextTick(procs);
+    if (wait == null) return;
+    const t = setTimeout(() => setSecond((n) => n + 1), wait + 1);
+    return () => clearTimeout(t);
+  });
 
   // Whose log is on screen (true: all of them), so App redraws for new lines there and nowhere else.
   ctx.logShown = merged ? true : (sel?.name ?? null);

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { composeProcs, hostPort, isTrouble, loadCrew, parseProcfile, procfileProcs, readEnvFiles, portInUse, readSpec, specFor, splitConcurrently, stripAnsi, withProfile, words, writeSpec } from '../src/crew.js';
 import { RESTART_TIMES, Supervisor, afterExit, pidsOnPort, portOpen, seconds } from '../src/supervisor.js';
-import { afterStatus, mergedLines, statusSegment, portSegments, uptime } from '../src/ui/CrewView.jsx';
+import { afterStatus, mergedLines, nextTick, statusSegment, portSegments, uptime } from '../src/ui/CrewView.jsx';
 import { whyPrompt } from '../src/actions.js';
 import { project } from './helpers.js';
 
@@ -114,6 +114,21 @@ test('the rows: uptime, ports, the merged log, and the question for Claude', () 
     const last = 1 + rnd(60);
     assert.deepEqual(mergedLines(procs, last), sorted(procs, last));
   }
+  // The clocks are drawn again just as what they say changes, and checked against what they say.
+  const now = 1_000_000;
+  for (const [startedAt, wait] of [[now - 42_300, 700], [now - 59_999, 1], [now - 300_000, 60_000], [now - 330_500, 29_500], [now - 2 * 3_600_000 - 10, 3_600_000 - 10]]) {
+    assert.equal(nextTick([{ child: {}, startedAt }], now), wait, `${now - startedAt} up`);
+    assert.equal(uptime(startedAt, now + wait - 1), uptime(startedAt, now), 'nothing changes before then');
+    assert.notEqual(uptime(startedAt, now + wait), uptime(startedAt, now), 'and it changes then');
+  }
+  for (const [left, wait] of [[4000, 1000], [3500, 500], [999, 999]]) {
+    const p = { restartAt: now + left };
+    assert.equal(nextTick([p], now), wait);
+    assert.equal(statusSegment(p, now + wait - 1).text, statusSegment(p, now).text);
+    if (left > 1000) assert.notEqual(statusSegment(p, now + wait).text, statusSegment(p, now).text);
+  }
+  assert.equal(nextTick([{ child: {}, startedAt: now - 5_000 }, { restartAt: now + 3_200 }], now), 200);
+  assert.equal(nextTick([{ child: null, status: 'stopped' }], now), null);
   assert.match(whyPrompt({ name: 'api', spec: { run: 'node api' }, status: 'crashed', code: 1 }), /exit code 1/);
 });
 
