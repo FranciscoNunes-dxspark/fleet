@@ -28,6 +28,7 @@ import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
+import { worthNotifying } from '../notify.js';
 
 const VIEWS = [
   { id: 'resources', label: 'Resources' },
@@ -113,7 +114,9 @@ const DOUBLE_CLICK_MS = 400;
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+// `notify(title, body)` says a long job has finished (cli.jsx rings the terminal's bell and raises a
+// desktop notification); tests pass a recorder or nothing.
+export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -326,15 +329,19 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     setBusy(b);
     const id = addEntry({ title, status: 'running' });
     setWelcome(false);
+    // A long job that ends says so, for when you've looked away (Settings' "Notify when done").
+    const tell = (line) => notify && worthNotifying(Date.now() - b.started, configRef.current) && notify(`Sonar: ${title}`, line ?? '');
     try {
       const { stdout = '', stderr = '' } = await start(controller.signal);
       const out = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
       lastOutput.current = { title, text: out || '(no output)' };
       updateEntry(id, { status: 'ok', lines: out ? out.split('\n') : ['Done'] });
+      tell(out ? out.split('\n')[0] : 'Done');
       return { ok: true, out };
     } catch (error) {
       lastOutput.current = { title, text: error.message };
       updateEntry(id, { status: 'error', lines: error.cancelled ? ['Cancelled'] : error.message.split('\n') });
+      if (!error.cancelled) tell(firstLine(error.message));
       return { ok: false, error };
     } finally {
       busyRef.current = null;

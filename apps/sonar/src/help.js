@@ -13,7 +13,7 @@ export const HELP = [
       ['r', 'Read the subscription again'],
       ['!', 'Run a shell command, e.g.  !az account show'],
       ['esc', 'Cancel what is running, or clear the activity lines'],
-      [',', 'Settings (/settings): theme (dark, light, or auto from the terminal), accent colour, mouse, updates, history'],
+      [',', 'Settings (/settings): theme (dark, light, or auto from the terminal), accent colour, mouse, updates, notifying when a job takes over 10 s (a bell and a desktop notification), history'],
       ['?', 'This help'],
       ['q / ctrl+c', 'Quit'],
       ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go'],

@@ -207,3 +207,44 @@ test('settings: the theme goes dark, light, auto, and the screen takes it at onc
     applyTheme({ theme: 'dark' }, {});
   }
 });
+
+test('a long job ends with a notification, a quick one and a cancelled one say nothing, and Settings turns it off', async () => {
+  const told = [];
+  const app = start({ config: { history: [], notifyAfter: 0.4 }, notify: (title, body) => told.push([title, body]) });
+  const frame = () => app.lastFrame() ?? '';
+  const command = async (line) => {
+    app.stdin.write('/');
+    await type(app.stdin, line);
+    app.stdin.write(KEYS.enter);
+  };
+  try {
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    await command('run echo quick');
+    await until(() => frame().includes('quick') && !frame().includes('esc to cancel'), 'a quick job');
+    await command('run node -e "setTimeout(() => console.log(42), 700)"');
+    await until(() => told.length === 1, 'the notification');
+    assert.match(told[0][0], /^Sonar: node -e/);
+    assert.equal(told[0][1], '42');
+    await command('run node -e "setTimeout(() => {}, 5000)"');
+    await until(() => frame().includes('esc to cancel'), 'a slow job');
+    await new Promise((r) => setTimeout(r, 600));
+    app.stdin.write(KEYS.esc);
+    await until(() => frame().includes('Cancelled'), 'cancelled');
+    assert.equal(told.length, 1, 'a cancelled job says nothing');
+
+    app.stdin.write(',');
+    await until(() => frame().includes('Notify when done'), 'Settings');
+    for (let i = 0; i < 5; i++) app.stdin.write('j');
+    await until(() => /❯ Notify when done\s+on/.test(frame()), 'the notify row');
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ Notify when done\s+off/.test(frame()), 'turned off');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('Notify when done'), 'Settings closed');
+    await command('run node -e "setTimeout(() => {}, 700)"');
+    await until(() => frame().includes('esc to cancel'), 'another slow job');
+    await until(() => !frame().includes('esc to cancel'), 'its end');
+    assert.equal(told.length, 1);
+  } finally {
+    app.unmount();
+  }
+});

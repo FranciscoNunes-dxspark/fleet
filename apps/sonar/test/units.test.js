@@ -12,6 +12,7 @@ import { DARK, DEFAULT_ACCENT, LIGHT, LIGHT_ACCENT, applyTheme, backgroundFrom, 
 import { nextTheme } from '../src/settings.js';
 import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
+import { notification, worthNotifying } from '../src/notify.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
   assert.equal(findCommand('kql').name, 'kql');
@@ -94,4 +95,16 @@ test('run: output, a failure with the program\'s own words, and cancelling', asy
   const slow = run('node -e "setTimeout(() => {}, 20000)"', { signal: controller.signal });
   setTimeout(() => controller.abort(), 100);
   await assert.rejects(slow, (e) => e.cancelled);
+});
+
+test('notifications: a bell, then OSC 9, or OSC 777 in VTE terminals, only past the threshold and when on', () => {
+  assert.equal(notification('Sonar: Restart web', 'web is restarting', {}), '\x07\x1b]9;Sonar: Restart web: web is restarting\x07');
+  assert.equal(notification('a;b', 'c\x07d', { VTE_VERSION: '7600' }), '\x07\x1b]777;notify;a,b;c d\x1b\\');
+  assert.equal(worthNotifying(9_000, {}), false);
+  assert.equal(worthNotifying(10_000, {}), true);
+  assert.equal(worthNotifying(600, { notifyAfter: 0.5 }), true);
+  assert.equal(worthNotifying(60_000, { notify: false }), false);
+  const row = settingRows({ notifyAfter: 30 }).find((r) => r.id === 'notify');
+  assert.deepEqual([row.value, row.action], ['on', 'toggle']);
+  assert.match(row.note, /over 30 s/);
 });

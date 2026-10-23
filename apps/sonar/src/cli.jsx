@@ -10,6 +10,7 @@ import { demoAzure } from './demo.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js';
 import { copyToClipboard } from './clipboard.js';
 import { terminalMouse } from './mouse.js';
+import { notification } from './notify.js';
 
 const args = process.argv.slice(2);
 
@@ -72,7 +73,7 @@ const open = { sub: value('--sub'), app: value('--app'), url: value('--url'), in
 const opening = Object.values(open).some(Boolean) ? open : undefined;
 const provider = demo ? demoAzure() : { ...createAzure({ token }), currentSubscription };
 const app = render(
-  <App config={config} provider={provider} open={opening} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} provider={provider} open={opening} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} notify={(title, body) => process.stdout.write(notification(title, body))} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdout: mouse?.stdout ?? process.stdout },
 );
