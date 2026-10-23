@@ -386,7 +386,8 @@ test('alerts: what fires in the subscription, an alert whole, and an availabilit
 });
 
 test('logs: s saves the query under a name, /queries runs it again or forgets it, /export writes the grid', async () => {
-  const app = start();
+  const copied = [];
+  const app = start({ copy: (t) => copied.push(t) });
   const frame = () => app.lastFrame() ?? '';
   const command = async (line) => {
     app.stdin.write('/');
@@ -425,6 +426,13 @@ test('logs: s saves the query under a name, /queries runs it again or forgets it
     await until(() => frame().includes('4 rows') && frame().includes('> exceptions | take 4'), 'run again');
     await command('kql requests | take 2');
     await until(() => frame().includes('2 rows'), 'another query again');
+    // y copies the row under the cursor whole, by its column names.
+    app.stdin.write('j');
+    await new Promise((r) => setTimeout(r, 50));
+    app.stdin.write('y');
+    await until(() => copied.length === 1, 'the row copied');
+    const requests = await app.provider.query(app.provider.state.components[0], 'requests | take 2');
+    assert.deepEqual(JSON.parse(copied[0]), Object.fromEntries(requests.columns.map((c, i) => [c.name, requests.rows[1][i]])));
     await command('queries four');
     await until(() => frame().includes('4 rows'), 'by name');
     await command('queries');
