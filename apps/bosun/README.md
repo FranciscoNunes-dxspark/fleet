@@ -205,6 +205,34 @@ order and needn't be whole), `↑`/`↓` pick, `↵` runs the one picked, `esc` 
 you'd pressed it in the view; a command that needs something typed after it goes into the prompt for
 you to finish.
 
+### The family
+
+Bosun's siblings ([Splice](https://github.com/FranciscoNunes-dxspark/splice) for git,
+[Trawl](https://github.com/FranciscoNunes-dxspark/trawl) for SQL, [Sonar](https://github.com/FranciscoNunes-dxspark/sonar)
+for Azure, [Hail](https://github.com/FranciscoNunes-dxspark/hail) for HTTP) never start each other.
+What one hands another is a command line, copied for you to paste into the other's prompt and run
+there; it never holds a password or a token.
+
+- `/family` lists what this project offers them: the checkout for Splice (`/open <repo>`), each `.http`
+  file for Hail (`/open <file>`), and each database the project's `appsettings*.json` or `.env` names
+  for Trawl (`/azure-sql <server> [database]` for Azure SQL signed in with Entra, else
+  `/add <name> <server> [database] [--kind …] [--user …]`; Trawl asks for the password itself). `↵`
+  copies one.
+- `t` in Crew copies the process's latest trouble line as `/take family:v1:logline:…`, with the
+  request id it names (`x-request-id`, `requestId`, `request_id`, `traceparent`'s trace id,
+  `operation_Id`), for Sonar or Hail to find that request. Anything that looks like a password or token
+  in the line is blanked.
+- `/take <line>` takes what a sibling copied (the `family:v1:…` part alone works too): a log line or an
+  exception is looked for in the crew's logs, by its request id and then its text, and the lines that
+  say it open in the viewer. Anything else is another app's, and Bosun says whose.
+- Pasting a `/command` or a `family:v1:` line while a view has the keys opens the prompt with it, to
+  run with `↵`.
+- The mascots tell each other how they feel: Squawk is worried when a process crashes or its checks
+  fail, sad when one gives up, busy while a command runs, happy when the crew is up. When a sibling's
+  is worried, sad or happy (within the last 15 minutes), Squawk says so once in a line above the
+  activity lines; `esc` puts it away. The Family moods setting turns both off. They're kept in
+  `~/.family` (`FAMILY_HOME` moves it).
+
 ### Your own commands and keys
 
 Commands of your own go in the settings file (`~/.bosun/config.json`), under `"commands"`, and keys
@@ -248,9 +276,11 @@ Trawl.
 | `/move [folder]` | Run another project instead: a path, or a folder beside this one (completed as you type); without one, a list of the projects run lately and the folders beside this one. This one's processes stop first |
 | `/replay` | Play back a recorded run of this project's crew (see Replay) |
 | `/init` | Write a `bosun.json` from what Bosun worked out (a Procfile, a compose file, package.json) |
+| `/take <family:v1:…>` | Take what a sibling app copied: a log line or exception is looked for in the crew's logs |
+| `/family` | What this project offers Splice, Hail and Trawl, as lines to paste into them; `↵` copies one |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
-| `/settings` | Theme, accent colour, mouse, notifications, recording, updates, history |
+| `/settings` | Theme, accent colour, mouse, notifications, recording, family moods, updates, history |
 | `/accent <#rrggbb>` | Change the accent colour (`default` puts it back) |
 | `/update` | Look for a new version now and install it |
 | `/help` | Keys and commands |
@@ -267,6 +297,7 @@ Trawl.
 | Mouse | Off leaves selecting text to the terminal |
 | Notify | On (the default), Bosun rings the terminal's bell and raises a desktop notification when a process crashes (once, not again each time it's restarted; never when you stop it), when one gives up restarting, and when a command (`!`, `w`) that took longer than 10 seconds ends. It's OSC 9, which Windows Terminal, iTerm2, WezTerm and kitty show, or OSC 777 in GNOME Terminal and other VTE terminals. A command you cancel says nothing. `"notifyAfter": 30` in the settings file changes the seconds |
 | Record sessions | On (the default), each run's output and states are recorded for `/replay`; off records nothing. Either counts from the next start |
+| Family moods | On (the default), Squawk writes how it feels for the sibling apps and says when theirs are worried, sad or happy; off does neither |
 | Check for new versions | Once a day, in the downloaded builds |
 | Install them by itself | Off only says a new version is out |
 | Prompt history | Clear it |

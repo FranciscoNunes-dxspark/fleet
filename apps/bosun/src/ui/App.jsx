@@ -27,7 +27,8 @@ import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
-import { decodeContext } from '../family.js';
+import { decodeContext, readMoods, writeMood } from '../family.js';
+import { familyMood, reactionTo } from '../moods.js';
 import { Recorder, sessionsDir } from '../recorder.js';
 import { listeningPorts } from '../ports.js';
 import { hailTest, testOutcome } from '../hailcheck.js';
@@ -135,7 +136,7 @@ const DOUBLE_CLICK_MS = 400;
 // recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -164,6 +165,24 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     const t = setTimeout(() => setFlash(null), 3000);
     return () => clearTimeout(t);
   }, [flash]);
+
+  // A sibling's mood Squawk reacts to (family.js's readMoods, every `moodEvery` ms): one line until esc.
+  const [reaction, setReaction] = useState(null);
+  const reactionRef = useRef(null);
+  reactionRef.current = reaction;
+  const seenMoods = useRef(new Set());
+  useEffect(() => {
+    if (config.familyMoods === false) return setReaction(null);
+    const look = () => {
+      const r = reactionTo(readMoods('bosun'), seenMoods.current);
+      if (!r) return;
+      seenMoods.current.add(r.key);
+      setReaction(r);
+    };
+    look();
+    const t = setInterval(look, moodEvery);
+    return () => clearInterval(t);
+  }, [config.familyMoods]);
 
   // Errors said and questions answered no, counted so a line of your own command knows it failed.
   const errorCount = useRef(0);
@@ -555,6 +574,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     try {
       let r;
       if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
+      // A sibling's context pasted alone is /take's.
+      else if (decodeContext(text)) r = await a.take(ctx, text);
       else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
         const cmd = findCommand(name, customRef.current.commands);
@@ -740,6 +761,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const globalKeys = (input, key) => {
     if (key.escape) {
       if (busyRef.current) busyRef.current.abort();
+      else if (reactionRef.current) setReaction(null);
       else {
         setEntries((list) => list.map((e) => ({ ...e, shown: false })));
         setWelcome(false);
@@ -863,14 +885,20 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
+  // How Squawk feels, for the siblings (family.js's writeMood), whenever that changes.
+  const told = familyMood({ mood, data, lastEntry: entries.at(-1), busy });
+  useEffect(() => {
+    if (config.familyMoods !== false) writeMood('bosun', told);
+  }, [told.mood, told.reason, config.familyMoods]);
   // The welcome box only appears when the terminal has room for it next to a useful view.
   const showWelcome = welcome && H >= 28;
-  const mainH = Math.max(6, H - 2 - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  const reacting = reaction ? 1 : 0;
+  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
     mainTop: 2,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + act.length + (busy ? 1 : 0),
+    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
     tabs: tabLabels(entries),
   };
@@ -930,6 +958,17 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
         {main}
       </Box>
       {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
+      {reaction ? (
+        <Row
+          pointer={false}
+          width={W}
+          segments={[
+            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
+            { text: reaction.text },
+            { text: '  esc', color: theme.dim },
+          ]}
+        />
+      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}

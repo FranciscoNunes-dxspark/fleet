@@ -7,12 +7,12 @@ import { applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.j
 import { clip } from './claude-cli.js';
 import { FILE, specFor, words, writeSpec } from './crew.js';
 import { choices, resolveFolder, samePath } from './projects.js';
-import { basename, resolve } from 'node:path';
+import { basename, relative, resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { listSessions } from './recorder.js';
 import { markCrew } from './ports.js';
 import { troubleContext } from './share.js';
-import { describeContext, takeLine } from './family.js';
+import { contextIn, describeContext, projectAt, shareLine, takeLine } from './family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
 
@@ -121,6 +121,66 @@ export function shareTrouble(ctx, name) {
   const line = takeLine('logline', data);
   ctx.copy(line, 'the trouble line');
   ctx.note(`Copied for Sonar or Hail: paste it into Sonar's or Hail's prompt\n${describeContext({ kind: 'logline', data })}${data.requestId ? `\nrequest ${data.requestId}` : ''}`, 'ok');
+}
+
+// Which sibling takes each kind of context Bosun doesn't.
+const TAKER = { request: 'Hail', rows: 'Trawl', query: 'Trawl', commit: 'Splice', file: 'Splice' };
+
+/**
+ * /take: a context from a sibling (`family:v1:…`, with /take or alone). A log line or an exception is
+ * looked for in the crew's logs (by its request id, else its text) and the lines that say it are shown;
+ * other kinds are another app's, which is said.
+ */
+export function take(ctx, rest) {
+  const c = contextIn(rest);
+  if (!c) return ctx.note('That isn\'t a line from a sibling app: /take family:v1:…, as Splice, Trawl, Sonar or Hail copy it.', 'error');
+  const what = describeContext(c);
+  if (!['logline', 'exception'].includes(c.kind)) return ctx.note(`That's for ${TAKER[c.kind] ?? 'another app'}: paste it into ${TAKER[c.kind] ?? 'its'}'s prompt (${what}).`, 'error');
+  const needles = [c.data.requestId, c.data.operationId, c.kind === 'logline' ? c.data.text : c.data.message].filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim());
+  const procs = ctx.crew?.list() ?? [];
+  for (const needle of needles) {
+    const found = procs.flatMap((p) => p.lines.filter((l) => l.text.includes(needle)).map((l) => ({ p, l })));
+    if (!found.length) continue;
+    found.sort((x, y) => x.l.at - y.l.at);
+    const width = Math.max(...found.map((f) => f.p.name.length));
+    ctx.note(`${found.length} line${found.length === 1 ? '' : 's'} of the crew's logs say ${needle.length > 40 ? `${needle.slice(0, 40)}…` : needle}`, 'ok');
+    return ctx.showText(`From ${what}`, found.map(({ p, l }) => `${new Date(l.at).toLocaleTimeString()}  ${p.name.padEnd(width)}  ${l.text}`).join('\n'), { bottom: true, log: true });
+  }
+  ctx.note(`Nothing in the crew's logs says that (${what}).`);
+}
+
+/** The Trawl line for a database the project names: /azure-sql for Azure SQL signed in with Entra, else /add (never a password). */
+export function trawlLine(project, db) {
+  if (/\.database\.windows\.net$/i.test(db.server) && !db.user) return shareLine('azure-sql', [db.server, ...(db.database ? [db.database] : [])]);
+  const port = db.port && db.port !== { sqlserver: 1433, postgres: 5432, mysql: 3306 }[db.kind] ? db.port : null;
+  const server = port ? (db.kind === 'sqlserver' ? `${db.server},${port}` : `${db.server}:${port}`) : db.server;
+  const name = `${project}-${db.database ?? db.name}`.toLowerCase().replace(/[^\w.-]+/g, '-');
+  return shareLine('add', [name, server, ...(db.database ? [db.database] : []), ...(db.kind !== 'sqlserver' ? ['--kind', db.kind] : []), ...(db.user ? ['--user', db.user] : [])]);
+}
+
+/** What this project offers the siblings: [{ app, line, what }]. */
+export function familyOffers(found) {
+  const project = basename(found.dir);
+  return [
+    ...(found.repo ? [{ app: 'Splice', line: shareLine('open', [found.repo]), what: 'this checkout' }] : []),
+    ...found.httpFiles.map((f) => ({ app: 'Hail', line: shareLine('open', [f]), what: relative(found.dir, f) })),
+    ...found.databases.map((d) => ({ app: 'Trawl', line: trawlLine(project, d), what: `${d.name} (${d.source})` })),
+  ];
+}
+
+/** /family: a picker of what this project offers the siblings; ↵ copies the line to paste into that app. */
+export function family(ctx) {
+  const offers = familyOffers(projectAt(ctx.dir));
+  if (!offers.length) return ctx.note('Nothing here for the siblings: no git checkout, .http files or databases in the settings.');
+  ctx.showPicker({
+    title: 'For the family',
+    hint: '↵ copies the line to paste into that app',
+    items: offers.map((o) => ({ ...o, segments: [{ text: o.app.padEnd(8), color: theme.accent, bold: true }, { text: o.what.padEnd(28) }, { text: `  ${o.line}`, color: theme.dim }] })),
+    onPick: (o) => {
+      ctx.copy(o.line, `the line for ${o.app}`);
+      ctx.note(`Copied for ${o.app}: paste it into ${o.app}'s prompt\n${o.line}`, 'ok');
+    },
+  });
 }
 
 /** f and /free: stops whatever holds `port` on this machine, after asking. */

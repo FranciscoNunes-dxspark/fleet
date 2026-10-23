@@ -51,6 +51,13 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       note: isOn(config.record) ? 'every run\'s logs and states, for /replay (from the next start)' : 'record nothing (from the next start)',
       action: 'toggle',
     },
+    {
+      id: 'familyMoods',
+      label: 'Family moods',
+      value: isOn(config.familyMoods) ? 'on' : 'off',
+      note: isOn(config.familyMoods) ? 'Squawk tells the siblings how it feels, and says when theirs are worried, sad or happy' : 'keep to itself',
+      action: 'toggle',
+    },
     { id: 'checkForUpdates', label: 'Check for new versions', value: checks ? 'on' : 'off', note: 'once a day, in the downloaded Bosun', action: 'toggle' },
     {
       id: 'autoUpdate',
