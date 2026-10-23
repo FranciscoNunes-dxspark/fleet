@@ -5,7 +5,6 @@
 // touches Azure DevOps or the data folder directly.
 import os from 'node:os';
 
-export const DEFAULT_SERVER = 'https://keel.example.com';
 const LOOPBACK = ['localhost', '127.0.0.1', '[::1]'];
 
 /**
@@ -27,6 +26,9 @@ export function serverUrlFrom(text) {
   if (u.protocol === 'http:' && !LOOPBACK.includes(u.hostname)) return null;
   return u.origin;
 }
+
+/** The address `keel login` and the first-run setup offer when none is given: KEEL_DEFAULT_SERVER, if set. */
+export const DEFAULT_SERVER = serverUrlFrom(process.env.KEEL_DEFAULT_SERVER);
 
 /** How this terminal is named where you allow it, and later in Settings: "ana on LAPTOP-7 (Windows)". */
 export function terminalName() {

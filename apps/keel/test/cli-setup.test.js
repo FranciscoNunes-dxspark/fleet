@@ -88,8 +88,10 @@ test("first run with your team's Keel: its address is saved, and signing in come
   assert.deepEqual(env, { KEEL_SERVER: 'https://keel.example.com' });
   assert.match(shown, /doesn't look like a Keel address/);
   assert.equal(parseEnv(fs.readFileSync(envFile, 'utf8')).KEEL_SERVER, 'https://keel.example.com');
-  // Left empty, it's keel.example.com.
-  assert.deepEqual((await answer(['1', ''], path.join(dir, 'keel-default.env'))).env, { KEEL_SERVER: 'https://keel.example.com' });
+  // Left empty, it asks again (there is no default unless KEEL_DEFAULT_SERVER is set).
+  const again = await answer(['1', '', 'keel.example.com'], path.join(dir, 'keel-default.env'));
+  assert.deepEqual(again.env, { KEEL_SERVER: 'https://keel.example.com' });
+  assert.match(again.shown, /doesn't look like a Keel address/);
 });
 
 test('first run choosing the demo: nothing saved', async () => {

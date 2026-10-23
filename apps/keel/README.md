@@ -275,7 +275,7 @@ To try accounts and roles before deploying, run on demo data with `AUTH_MODE=log
 
 ### What you need on Hostinger
 
-The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps**. PHP-only shared hosting can't run it. You also need a domain or subdomain (Keel's is `keel.example.com`) with HTTPS.
+The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps**. PHP-only shared hosting can't run it. You also need a domain or subdomain with HTTPS.
 
 ### Where Keel keeps its data
 

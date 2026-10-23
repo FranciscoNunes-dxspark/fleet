@@ -77,7 +77,7 @@ if (args[0] === 'logout') {
 
 if (args[0] === 'login') {
   const server = remote.serverUrlFrom(args[1] || process.env.KEEL_SERVER || remote.DEFAULT_SERVER);
-  if (!server) fail(`That isn't a Keel address: ${args[1]}. Try keel login https://keel.example.com.`);
+  if (!server) fail(args[1] ? `That isn't a Keel address: ${args[1]}. Try keel login https://keel.example.com.` : "Name your team's Keel: keel login https://keel.example.com.");
   await signIn(server);
 }
 

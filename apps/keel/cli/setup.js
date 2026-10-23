@@ -128,7 +128,7 @@ export async function firstRunSetup({ envFile, env = process.env, input = proces
     if (to === '1') {
       let server;
       for (;;) {
-        const answer = await rl.question(`\n${bold('Keel address')} ${dim(`(empty for ${DEFAULT_SERVER.replace(/^https:\/\//, '')})`)}\n› `);
+        const answer = await rl.question(`\n${bold('Keel address')} ${dim(DEFAULT_SERVER ? `(empty for ${DEFAULT_SERVER.replace(/^https:\/\//, '')})` : '(https://keel.example.com)')}\n› `);
         server = serverUrlFrom(answer.trim() || DEFAULT_SERVER);
         if (server) break;
         output.write(dim("That doesn't look like a Keel address (https://keel.example.com). Try again.\n"));
