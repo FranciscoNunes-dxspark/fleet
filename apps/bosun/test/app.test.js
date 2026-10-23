@@ -90,6 +90,30 @@ test('the crew starts, shows each log, restarts, stops, crashes, asks Claude why
   assert.equal(await portOpen(port), false, 'nothing left listening after Bosun closed');
 });
 
+test('new lines redraw only when their log is on screen, and a log shown again is up to date', async () => {
+  const dir = project({ procs: { quiet: `node -e "console.log('hello'); setInterval(() => {}, 1e6)"`, ticker: 'node ticker.js' } }, { 'ticker.js': TICKER });
+  const app = start({ dir });
+  const frame = () => app.lastFrame() ?? '';
+  const tick = () => Number(/tick (\d+)/.exec(frame())?.[1] ?? 0);
+  try {
+    await until(() => frame().includes('hello') && /ticker\s+running/.test(frame()), 'the quiet one\'s log');
+    const before = app.frames.length;
+    await new Promise((r) => setTimeout(r, 700));
+    // The ticker said seven lines meanwhile; at most the uptimes' second went by on screen.
+    assert.ok(app.frames.length - before <= 1, `${app.frames.length - before} frames for a log not on screen`);
+    app.stdin.write('j');
+    await until(() => tick() >= 7, 'the ticker\'s log, as it is now');
+    const now = tick();
+    await until(() => tick() >= now + 3, 'its new lines as they come');
+    app.stdin.write('a');
+    await until(() => frame().includes('╭─ All') && /ticker\s+tick/.test(frame()), 'every log at once');
+    const merged = tick();
+    await until(() => tick() >= merged + 3, 'new lines in the All pane');
+  } finally {
+    app.unmount();
+  }
+});
+
 test('/free asks, then stops what holds the port; /init writes bosun.json from package.json', async () => {
   const dir = project({});
   const { rmSync } = await import('node:fs');

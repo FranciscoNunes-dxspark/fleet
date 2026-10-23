@@ -74,7 +74,7 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * port, portOpen, health, restartAt, gaveUp }. `status` is stopped, starting, running, crashed (exited
  * with an error), exited (by itself, cleanly) or stopping. `restartAt` is when one that `restart`s
  * starts again, `gaveUp` that it ended too quickly too often to. `onChange` is called after anything
- * changes; `onEvent` hears { type: 'exit', p, plan } when one ended by itself (not stopped), and
+ * changes (with the process, when only its log did); `onEvent` hears { type: 'exit', p, plan } when one ended by itself (not stopped), and
  * { type: 'ready', p } the first time in a start that its port answers (and its health page is well). One with
  * `watch` is restarted when a file it names changes, `debounce` ms after the last change, from its
  * first start until it's stopped.
@@ -86,9 +86,11 @@ export class Supervisor {
     this.watchImpl = watchImpl;
     // A recorder.js Recorder: every line and every change of state goes to it, for /replay.
     this.recorder = recorder;
-    this.onChange = () => {
+    // Called with the process when all that changed is its log (lines said, its status and trouble
+    // as they were), so App needn't redraw for a log that isn't on screen.
+    this.onChange = (linesOf) => {
       this.recordStates();
-      onChange();
+      onChange(linesOf);
     };
     this.onEvent = onEvent;
     this.spawnImpl = spawnImpl;
@@ -221,10 +223,11 @@ export class Supervisor {
       buffered[which] += d;
       const cut = buffered[which].lastIndexOf('\n');
       if (cut < 0) return;
+      const { status, trouble } = p;
       this.push(p, buffered[which].slice(0, cut), err);
       buffered[which] = buffered[which].slice(cut + 1);
       if (p.status === 'starting') p.status = 'running';
-      this.onChange();
+      this.onChange(p.status === status && p.trouble === trouble ? p : undefined);
     };
     child.stdout?.setEncoding('utf8').on('data', take('out', false));
     child.stderr?.setEncoding('utf8').on('data', take('err', true));

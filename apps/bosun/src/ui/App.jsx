@@ -263,7 +263,10 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const profileRef = useRef(initialProfile);
   const [, setTick] = useState(0);
   const redrawSoon = useRef(null);
-  const changed = () => {
+  const changed = (linesOf) => {
+    // New lines in a log that isn't on screen (CrewView says which is, in `logShown`) change nothing drawn.
+    const shown = ctxRef.current?.logShown;
+    if (linesOf && shown !== true && shown !== linesOf.name) return;
     if (redrawSoon.current) return;
     redrawSoon.current = setTimeout(() => {
       redrawSoon.current = null;

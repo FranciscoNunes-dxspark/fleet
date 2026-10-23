@@ -112,6 +112,8 @@ export function CrewView({ procs, ctx, width, height, active }) {
     return () => clearInterval(t);
   }, [ticking]);
 
+  // Whose log is on screen (true: all of them), so App redraws for new lines there and nowhere else.
+  ctx.logShown = merged ? true : (sel?.name ?? null);
   // The pane's lines: the one's or all of them, only the troubled ones with `e`.
   const all = merged ? mergedLines(procs, KEEP_LINES) : (sel?.lines ?? []);
   const list = troubleOnly ? all.filter((l) => isTrouble(l.text)) : all;
@@ -159,7 +161,13 @@ export function CrewView({ procs, ctx, width, height, active }) {
     if (input === 'N') return goTo(s.at - 1);
   };
   // Typing a search, ctrl+f, and n N esc while one is up, are this view's, not the app's.
-  useEffect(() => () => void (ctx.claimsKey = null), []);
+  useEffect(
+    () => () => {
+      ctx.claimsKey = null;
+      ctx.logShown = null;
+    },
+    [],
+  );
   ctx.claimsKey = active ? (input, key) => searchRef.current.typing || (key.ctrl && input === 'f') || (Boolean(searchRef.current.query) && (key.escape || input === 'n' || input === 'N')) : null;
 
   const keys = (input, key) => {
