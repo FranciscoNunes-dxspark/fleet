@@ -74,7 +74,7 @@ function Header({ data, span, demo, width, loading, mood }) {
     { text: 'Sonar', bold: true },
   ];
   if (demo) segs.push({ text: '  ' }, { text: ' DEMO ', bg: theme.info, color: theme.ink, bold: true });
-  if (data) segs.push({ text: '  │  ', color: theme.border }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps`, color: theme.dim });
+  if (data) segs.push({ text: '  │  ', color: theme.border }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps${loading ? ' · reading…' : ''}`, color: theme.dim });
   else if (loading) segs.push({ text: '  loading…', color: theme.dim });
   segs.push({ text: '  │  last ', color: theme.dim }, { text: span.label, color: theme.warn, bold: true });
   return <Row pointer={false} width={width} segments={segs} />;
@@ -288,14 +288,26 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     addEntry({ title, status, lines });
   };
 
+  const loads = useRef(0);
   const reload = async (subId = dataRef.current?.subscription.id ?? configRef.current.subscription) => {
     setLoading(true);
     settingsCache.current = new Map();
     metricsCache.current = new Map();
     firewallCache.current = new Map();
     adminCache.current = new Map();
+    // A subscription not on screen yet shows as soon as its apps are known, slots and databases
+    // filling in as they come; reading the one on screen again keeps it until the new one is whole.
+    const n = ++loads.current;
+    const fresh = !dataRef.current || (subId != null && dataRef.current.subscription.id !== subId);
+    const onProgress = fresh
+      ? (d) => {
+          if (n !== loads.current) return;
+          dataRef.current = d;
+          setData(d);
+        }
+      : undefined;
     try {
-      const d = await load(provider, subId);
+      const d = await load(provider, subId, { onProgress });
       dataRef.current = d;
       setData(d);
     } catch (e) {

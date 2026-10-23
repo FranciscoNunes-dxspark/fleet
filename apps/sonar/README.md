@@ -18,7 +18,9 @@ and put it on your PATH. It checks for a new version once a day and installs it 
 
 Sonar signs in through the [Azure CLI](https://aka.ms/azure-cli): run `az login` once, and it uses that
 sign-in's tokens. It never sees a password and keeps no secret. It starts on the subscription `az`
-has selected (`az account set`), and remembers the one you pick.
+has selected (`az account set`), and remembers the one you pick. A big subscription shows as soon as
+its apps are listed; their slots and the SQL servers' databases fill in while the top line says
+`reading…`.
 
 ```bash
 sonar           # your Azure

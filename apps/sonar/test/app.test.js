@@ -14,6 +14,27 @@ after(() => cleanup());
 
 const settingsOf = (app, name) => app.provider.state.sites.find((s) => `${s.name}${s.slot ? `/${s.slot}` : ''}` === name).settings;
 
+test('resources: the apps show before their slots are read, and the cursor stays on its app as they come in', async () => {
+  const provider = demoAzure();
+  let open;
+  const gate = new Promise((r) => (open = r));
+  const slots = provider.slots;
+  provider.slots = async (...args) => (await gate, slots(...args));
+  const app = start({ provider });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('contoso-orders') && frame().includes('reading…'), 'the apps while the slots are read');
+    assert.doesNotMatch(frame(), /└ ● staging/);
+    app.stdin.write('j');
+    await until(() => /❯ ● contoso-api/.test(frame()), 'the cursor on the second app');
+    open();
+    await until(() => /└ ● staging/.test(frame()) && !frame().includes('reading…'), 'the slots in');
+    assert.match(frame(), /❯ ● contoso-api/);
+  } finally {
+    app.unmount();
+  }
+});
+
 test('resources: the tree, an app beside it, its settings with secrets hidden, slots compared', async () => {
   const copied = [];
   const app = start({ copy: (t) => copied.push(t) });

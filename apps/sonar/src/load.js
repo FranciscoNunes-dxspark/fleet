@@ -7,9 +7,9 @@ import { mapLimited } from './tree.js';
  * { subscription, subscriptions, apps, slots: { appId: [slot] }, components, containers, storage,
  * sqlServers: [{ ...server, databases }] }. Slots are read a few apps at a time, only for the apps
  * Resource Graph says have some (every app when it can't say); an app whose slots can't be read
- * just shows none.
+ * just shows none. `onProgress(data)`, when given, sees it as it fills in, from its apps on.
  */
-export async function loadSubscription(provider, subId, { signal } = {}) {
+export async function loadSubscription(provider, subId, { signal, onProgress, every = 250 } = {}) {
   const subscriptions = await provider.subscriptions({ signal });
   if (!subscriptions.length) throw new Error('This sign-in has no subscriptions it can see.');
   const wanted = subId ?? (await provider.currentSubscription?.().catch(() => null))?.id;
@@ -30,10 +30,22 @@ export async function loadSubscription(provider, subId, { signal } = {}) {
   // there are more of gets the room. A server's Entra admin is read when the cursor stops on it
   // (App's adminOf), unless the listing carried it.
   const slotted = apps.filter((a) => !withSlots || withSlots.has(a.id.toLowerCase()));
-  const jobs = [...slotted.map((app) => () => provider.slots(app, { signal }).catch(() => [])), ...servers.map((s) => () => provider.sqlDatabases(s, { signal }).catch(() => []))];
-  const answers = await mapLimited(jobs, 12, (job) => job());
   const slots = Object.fromEntries(apps.map((a) => [a.id, []]));
-  slotted.forEach((a, i) => (slots[a.id] = answers[i]));
-  const sqlServers = servers.map((s, i) => ({ ...s, databases: answers[slotted.length + i] }));
-  return { subscription, subscriptions, apps, slots, components, containers, storage, sqlServers };
+  const databases = servers.map(() => []);
+  const now = () => ({ subscription, subscriptions, apps, slots: { ...slots }, components, containers, storage, sqlServers: servers.map((s, i) => ({ ...s, databases: databases[i] })) });
+  // `onProgress` sees the subscription as it fills in: its apps first, then their slots and the
+  // databases as they come, at most every `every` ms.
+  let said = Date.now();
+  const tell = () => {
+    if (!onProgress || Date.now() - said < every) return;
+    said = Date.now();
+    onProgress(now());
+  };
+  onProgress?.(now());
+  const jobs = [
+    ...slotted.map((app) => async () => (slots[app.id] = await provider.slots(app, { signal }).catch(() => []))),
+    ...servers.map((s, i) => async () => (databases[i] = await provider.sqlDatabases(s, { signal }).catch(() => []))),
+  ];
+  await mapLimited(jobs, 12, async (job) => (await job(), tell()));
+  return now();
 }
