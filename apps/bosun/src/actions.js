@@ -2,8 +2,8 @@
 // (built in ui/App.jsx). Questions before anything destructive belong here too (ctx.confirm).
 import { configFile } from './config.js';
 import { run } from './run.js';
-import { settingRows, settingSegments } from './settings.js';
-import { DEFAULT_ACCENT, isColour, setAccent, theme } from './theme.js';
+import { nextTheme, settingRows, settingSegments } from './settings.js';
+import { applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
 import { clip } from './claude-cli.js';
 import { FILE, specFor, words, writeSpec } from './crew.js';
 import { choices, resolveFolder, samePath } from './projects.js';
@@ -214,7 +214,7 @@ export function accent(ctx, value) {
     const { accent: _, ...rest } = c;
     return v === 'default' ? rest : { ...c, accent: v };
   });
-  setAccent(v === 'default' ? DEFAULT_ACCENT : v);
+  setAccent(v === 'default' ? null : v);
   redrawSettings(ctx);
 }
 
@@ -243,7 +243,12 @@ async function changeSetting(ctx, row) {
     ctx.setConfig((c) => ({ ...c, [row.id]: c[row.id] === false }));
     return redrawSettings(ctx);
   }
-  if (row.action === 'accent') return ctx.prefill(`/accent ${ctx.config.accent ?? DEFAULT_ACCENT}`);
+  if (row.action === 'accent') return ctx.prefill(`/accent ${ctx.config.accent ?? defaultAccent()}`);
+  if (row.action === 'theme') {
+    ctx.setConfig((c) => ({ ...c, theme: nextTheme(c) }));
+    applyTheme(ctx.config);
+    return redrawSettings(ctx);
+  }
   if (row.action === 'clear') {
     const ok = await ctx.confirm({ title: `Clear the prompt history (${row.value})?`, options: YES_NO('Yes, clear it') });
     if (!ok) return;

@@ -11,7 +11,8 @@ import { HELP } from '../src/help.js';
 import { commandsSection, sectionLines } from '../src/help-layout.js';
 import { FACES, PALETTE, petPixels, petRows } from '../src/pet.js';
 import { settingRows } from '../src/settings.js';
-import { DEFAULT_ACCENT } from '../src/theme.js';
+import { DARK, DEFAULT_ACCENT, LIGHT, LIGHT_ACCENT, applyTheme, backgroundFrom, theme, themeMode } from '../src/theme.js';
+import { nextTheme } from '../src/settings.js';
 import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 import { expand, parseDotenv } from '../src/dotenv.js';
@@ -221,4 +222,26 @@ test('yaml: the subset a compose file needs', () => {
   assert.equal(doc.other, undefined, 'only the first document');
   assert.deepEqual([scalar('~'), scalar('true'), scalar("'it''s'"), scalar('[a, "b, c"]')], [null, true, "it's", ['a', 'b, c']]);
   assert.equal(parseYaml(''), null);
+});
+
+test('theme: dark, light, auto from COLORFGBG, and the accent over it', () => {
+  assert.deepEqual(Object.keys(LIGHT).sort(), Object.keys(DARK).sort(), 'every colour in both');
+  assert.equal(backgroundFrom('15;0'), 'dark');
+  assert.equal(backgroundFrom('0;default;15'), 'light');
+  assert.equal(backgroundFrom(''), null);
+  assert.equal(themeMode('auto', { COLORFGBG: '0;7' }), 'light');
+  assert.equal(themeMode(undefined, {}), 'dark');
+  assert.equal(themeMode('dark', { COLORFGBG: '0;15' }), 'dark');
+  try {
+    assert.equal(applyTheme({ theme: 'light' }, {}), 'light');
+    assert.equal(theme.accent, LIGHT_ACCENT);
+    applyTheme({ theme: 'light', accent: '#123456' }, {});
+    assert.equal(theme.accent, '#123456', 'yours, as it is');
+    assert.equal(theme.del, LIGHT.del);
+    assert.deepEqual([{}, { theme: 'dark' }, { theme: 'light' }].map(nextTheme), ['dark', 'light', 'auto']);
+    assert.match(settingRows({ theme: 'light' }).find((r) => r.id === 'theme').value, /light/);
+  } finally {
+    applyTheme({}, {});
+  }
+  assert.equal(theme.accent, DEFAULT_ACCENT);
 });

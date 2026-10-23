@@ -203,7 +203,7 @@ Trawl.
 | `/init` | Write a `bosun.json` from what Bosun worked out (a Procfile, a compose file, package.json) |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
-| `/settings` | Accent colour, mouse, updates, history |
+| `/settings` | Theme, accent colour, mouse, updates, history |
 | `/accent <#rrggbb>` | Change the accent colour (`default` puts it back) |
 | `/update` | Look for a new version now and install it |
 | `/help` | Keys and commands |
@@ -215,6 +215,7 @@ Trawl.
 
 | Setting | |
 | --- | --- |
+| Theme | `↵` goes through `dark`, `light` and `auto`, and repaints straight away. `auto`, the default, reads the `COLORFGBG` variable some terminals set (Konsole, rxvt, iTerm2 with its option on) to tell a light background from a dark one, and is dark where it isn't set. The light palette has darker colours, pale backgrounds behind search matches, and a darker coral as the default accent; an accent of your own is used as it is |
 | Accent colour | The colour of the cursor, borders and the pet |
 | Mouse | Off leaves selecting text to the terminal |
 | Check for new versions | Once a day, in the downloaded builds |

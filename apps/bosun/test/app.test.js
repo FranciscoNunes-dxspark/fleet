@@ -153,6 +153,18 @@ test('settings: a toggle saves, the accent changes through its command', async (
     await until(() => frame().includes('worker'), 'the crew');
     app.stdin.write(',');
     await until(() => frame().includes('Accent colour'), 'the settings');
+    assert.match(frame(), /❯ Theme\s+auto \(dark here\)\s+↵ dark next/);
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ Theme\s+dark\s+↵ light next/.test(frame()), 'dark');
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ Theme\s+light/.test(frame()) && /Accent colour\s+■ #d75f5f \(default\)/.test(frame()), 'light, with its own accent');
+    const { theme } = await import('../src/theme.js');
+    assert.equal(theme.mode, 'light');
+    assert.equal(theme.ink, '#ffffff');
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ Theme\s+auto/.test(frame()), 'back to auto');
+    assert.equal(theme.mode, 'dark');
+    app.stdin.write('j');
     app.stdin.write('j');
     await until(() => /❯ Mouse\s+on/.test(frame()), 'the cursor on Mouse');
     app.stdin.write(KEYS.enter);
@@ -162,6 +174,7 @@ test('settings: a toggle saves, the accent changes through its command', async (
 
     app.stdin.write('k');
     await until(() => /❯ Accent colour/.test(frame()), 'the cursor on the accent');
+    assert.equal(saved().theme, 'auto');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('/accent #ff6b6b'), 'the prompt filled in');
     for (let i = 0; i < 7; i++) app.stdin.write(KEYS.backspace);
