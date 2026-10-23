@@ -73,7 +73,7 @@ test('the crew starts, shows each log, restarts, stops, crashes, asks Claude why
     app.stdin.write('r');
     await until(() => (frame().match(/listening on/g) ?? []).length >= 2, 'the api restarted');
 
-    app.stdin.write('/');
+    app.stdin.write(':');
     await type(app.stdin, 'profile slow');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('profile slow'), 'the profile in the header');
@@ -100,7 +100,7 @@ test('/free asks, then stops what holds the port; /init writes bosun.json from p
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes("package.json's dev script") && /web\s+stopped/.test(frame()), 'the crew from package.json');
-    app.stdin.write('/');
+    app.stdin.write(':');
     await type(app.stdin, 'free 3000');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Stop process 4242, which holds port 3000?'), 'the question');
@@ -108,7 +108,7 @@ test('/free asks, then stops what holds the port; /init writes bosun.json from p
     await until(() => frame().includes('Stopped what held port 3000'), 'done');
     assert.deepEqual(killed, [4242]);
 
-    app.stdin.write('/');
+    app.stdin.write(':');
     await type(app.stdin, 'init');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Wrote bosun.json'), 'written');
@@ -185,7 +185,7 @@ test('/move asks, stops this project\'s crew, and runs the other\'s; it\'s remem
     await until(() => frame().includes(`listening on ${port}`), 'the shop\'s api up');
     assert.ok(frame().includes(basename(shop)), 'the project in the header');
 
-    app.stdin.write('/');
+    app.stdin.write(':');
     await type(app.stdin, `move ${basename(blog)}`);
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes(`Stop the running process and move to ${basename(blog)}?`), 'the question');
@@ -200,7 +200,7 @@ test('/move asks, stops this project\'s crew, and runs the other\'s; it\'s remem
     const saved = JSON.parse(readFileSync(join(process.env.BOSUN_HOME, 'config.json'), 'utf8'));
     assert.deepEqual(saved.projects.slice(0, 2), [blog, shop], 'both remembered, the newest first');
 
-    app.stdin.write('/');
+    app.stdin.write(':');
     await type(app.stdin, `move ${basename(blog)}`);
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes(`Bosun is in ${basename(blog)} already`), 'nowhere to go');
@@ -259,6 +259,56 @@ test('a changed env file restarts the process that reads it on /reload', async (
     await type(app.stdin, 'reload');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('greeting again'), 'restarted with the new one');
+  } finally {
+    app.unmount();
+  }
+});
+
+test('/ searches the log pane and the viewer, n N go between matches, esc clears; e shows only trouble', async () => {
+  const dir = project({ procs: { talker: 'node talk.js' } }, {
+    'talk.js': `for (let i = 1; i <= 5; i++) console.log('line ' + i + (i % 2 ? ' apple' : ' pear')); console.error('Error: the pear is bad'); setInterval(() => {}, 1000);`,
+  });
+  const app = start({ dir });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('Error: the pear is bad'), 'the log');
+    app.stdin.write('/');
+    await type(app.stdin, 'pear');
+    await until(() => frame().includes('/pear▏ 3/3'), 'three matches, on the newest');
+    assert.doesNotMatch(frame(), /> \/pear/, 'not typed into the prompt');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('/pear 3/3'), 'done typing');
+    app.stdin.write('N');
+    await until(() => frame().includes('/pear 2/3'), 'an older one');
+    app.stdin.write('n');
+    app.stdin.write('n');
+    await until(() => frame().includes('/pear 1/3'), 'round to the oldest');
+    app.stdin.write('/');
+    await type(app.stdin, 'plum');
+    await until(() => frame().includes('/plum▏ no match'), 'nothing found');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('/plum'), 'cleared');
+
+    app.stdin.write('e');
+    await until(() => frame().includes('trouble only') && !frame().includes('line 1 apple'), 'only the trouble');
+    assert.match(frame(), /Error: the pear is bad/);
+    app.stdin.write('e');
+    await until(() => frame().includes('line 1 apple'), 'everything again');
+
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('talker · node talk.js'), 'the viewer');
+    app.stdin.write('/');
+    await type(app.stdin, 'apple');
+    await until(() => frame().includes('/apple▏ 3/3'), 'the viewer searched');
+    app.stdin.write(KEYS.enter);
+    app.stdin.write('e');
+    await until(() => frame().includes('trouble only') && !frame().includes('line 3 apple'), 'the viewer\'s trouble');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('/apple') && frame().includes('talker · node talk.js'), 'esc clears the search first');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('esc close'), 'then closes');
+    app.stdin.write(':');
+    await until(() => frame().includes('enter run'), ': opens the prompt in the Crew view');
   } finally {
     app.unmount();
   }

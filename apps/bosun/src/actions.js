@@ -73,7 +73,7 @@ export function toggle(ctx, name) {
 export function showLog(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
-  ctx.showText(`${p.name} · ${p.spec.run}`, p.lines.map((l) => l.text).join('\n') || '(nothing yet)', { bottom: true });
+  ctx.showText(`${p.name} · ${p.spec.run}`, p.lines.map((l) => l.text).join('\n') || '(nothing yet)', { bottom: true, log: true });
 }
 
 /** f and /free: stops whatever holds `port` on this machine, after asking. */

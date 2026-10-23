@@ -30,7 +30,7 @@ test('ctrl+p filters every command and runs the one picked; your commands and ke
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('Accent colour'), 'closed');
 
-    app.stdin.write('/');
+    app.stdin.write(':');
     await type(app.stdin, 'both');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Accent colour'), 'the settings, from your command');

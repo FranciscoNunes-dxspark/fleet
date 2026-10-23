@@ -15,6 +15,7 @@ import { DEFAULT_ACCENT } from '../src/theme.js';
 import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 import { expand, parseDotenv } from '../src/dotenv.js';
+import { markRanges, matcher } from '../src/search.js';
 import { globRegex, watchMatcher, watchRoots } from '../src/watch.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
@@ -166,4 +167,16 @@ test('watch: globs, the folders to watch, and which changes restart', () => {
   const no = ['lib/a.ts', 'src/a.test.js', 'src/generated/x.js', 'src/node_modules/x.js', '.git/HEAD', 'other/x.js', 'sub/package.json'];
   for (const f of yes) assert.ok(wanted(f), f);
   for (const f of no) assert.ok(!wanted(f), f);
+});
+
+test('search: smart case, and the matches picked out of the segments', () => {
+  assert.deepEqual(matcher('ab')('xAbyab'), [[1, 3], [4, 6]]);
+  assert.deepEqual(matcher('Ab')('xAbyab'), [[1, 3]]);
+  assert.equal(matcher(''), null);
+  assert.deepEqual(markRanges([{ text: 'hello ' }, { text: 'world', color: 'x' }], [[4, 8]], { bg: 'm' }), [
+    { text: 'hell' },
+    { text: 'o ', bg: 'm' },
+    { text: 'wo', color: 'x', bg: 'm' },
+    { text: 'rld', color: 'x' },
+  ]);
 });

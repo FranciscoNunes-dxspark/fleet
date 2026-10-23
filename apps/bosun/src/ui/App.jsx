@@ -42,7 +42,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · R all · a all logs · w why · o open · ↵ whole log',
+  crew: 'r restart · s stop/start · R all · a all logs · / search the log · e trouble · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
@@ -831,7 +831,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
           : overlay
             ? 'j/k scroll · space page · y copy · esc close'
             : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+  // In the Crew view / searches the log, so : is the prompt's key there.
+  const promptKey = view === 'crew' && !overlay ? ':' : '/';
+  const right = focus === 'prompt' ? '' : `  ${promptKey} commands · ! shell · , settings · ? help`;
 
   return (
     <Box flexDirection="column" width={W} height={H}>
@@ -852,7 +854,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
           <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
         )
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder={`Press ${promptKey} for commands, ! to run a shell command, ? for shortcuts`} />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
       <Row

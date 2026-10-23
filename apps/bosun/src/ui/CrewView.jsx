@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { isTrouble } from '../crew.js';
-import { seconds } from '../supervisor.js';
+import { KEEP_LINES, seconds } from '../supervisor.js';
+import { markRanges, matcher } from '../search.js';
 import { theme } from '../theme.js';
 import { fit, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -64,6 +65,14 @@ export function CrewView({ procs, ctx, width, height, active }) {
     if (back) setBack(0);
   }
   const nameW = Math.min(16, Math.max(6, ...procs.map((p) => stringWidth(p.name))));
+  // The log pane's search (/ then n N, esc clears it) and `e`, only the lines that read as trouble.
+  const [search, setSearchState] = useState({ query: '', typing: false, at: 0 });
+  const searchRef = useRef(search);
+  const setSearch = (next) => {
+    searchRef.current = next;
+    setSearchState(next);
+  };
+  const [troubleOnly, setTroubleOnly] = useState(false);
   // Uptimes and restart countdowns count by the second.
   const [, setSecond] = useState(0);
   const ticking = procs.some((p) => p.child || p.restartAt);
@@ -73,9 +82,64 @@ export function CrewView({ procs, ctx, width, height, active }) {
     return () => clearInterval(t);
   }, [ticking]);
 
+  // The pane's lines: the one's or all of them, only the troubled ones with `e`.
+  const all = merged ? mergedLines(procs, KEEP_LINES) : (sel?.lines ?? []);
+  const list = troubleOnly ? all.filter((l) => isTrouble(l.text)) : all;
+  const listRef = useRef(list);
+  listRef.current = list;
+  const hitsIn = (lines, query) => {
+    const find = matcher(query);
+    return find ? lines.flatMap((l, i) => (find(l.text).length ? [i] : [])) : [];
+  };
+
+  /** Scrolls to match `n` (round from either end), a third of the way down the pane. */
+  const goTo = (n, query = searchRef.current.query) => {
+    const lines = listRef.current;
+    const hits = hitsIn(lines, query);
+    if (!hits.length) return setSearch({ ...searchRef.current, query, at: 0 });
+    const at = ((n % hits.length) + hits.length) % hits.length;
+    setSearch({ ...searchRef.current, query, at });
+    const top = hits[at] - Math.floor(innerH / 3);
+    setBack(Math.max(0, Math.min(lines.length - innerH, lines.length - innerH - top)));
+  };
+  const cleared = { query: '', typing: false, at: 0 };
+  // Typed, the search starts from the newest match, as a log is read from the bottom; n goes newer, N older.
+  const searchKeys = (input, key) => {
+    const s = searchRef.current;
+    if (s.typing) {
+      if (key.escape) return setSearch(cleared);
+      if (key.return) return setSearch({ ...s, typing: false });
+      if (key.backspace || key.delete) {
+        if (!s.query) return setSearch(cleared);
+        const q = s.query.slice(0, -1);
+        setSearch({ ...s, query: q });
+        return goTo(-1, q);
+      }
+      if (key.ctrl || key.meta || !input) return;
+      const q = s.query + input.replace(/[\x00-\x1f\x7f]/g, '');
+      setSearch({ ...s, query: q });
+      return goTo(-1, q);
+    }
+    if (input === '/') return setSearch({ query: '', typing: true, at: 0 });
+    if (key.escape) {
+      setSearch(cleared);
+      return setBack(0);
+    }
+    if (input === 'n') return goTo(s.at + 1);
+    if (input === 'N') return goTo(s.at - 1);
+  };
+  // Typing a search, and / n N esc while one is up, are this view's, not the app's.
+  useEffect(() => () => void (ctx.claimsKey = null), []);
+  ctx.claimsKey = active ? (input, key) => searchRef.current.typing || input === '/' || (Boolean(searchRef.current.query) && (key.escape || input === 'n' || input === 'N')) : null;
+
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
+    if (ctx.claimsKey?.(input, key)) return searchKeys(input, key);
     if (nav.handle(input, key)) return setBack(0);
+    if (input === 'e') {
+      setBack(0);
+      return setTroubleOnly((t) => !t);
+    }
     if (input === 'R') return a.restart(ctx, 'all');
     if (input === 'a') {
       setBack(0);
@@ -107,11 +171,15 @@ export function CrewView({ procs, ctx, width, height, active }) {
   const colour = STATUS_COLOUR();
   const now = Date.now();
   const lineW = logW - 3;
-  const shown = merged ? mergedLines(procs, innerH + back) : (sel?.lines ?? []).slice(-(innerH + back));
-  const visible = shown.slice(0, Math.max(0, shown.length - back)).slice(-innerH);
+  const from = Math.max(0, list.length - back - innerH);
+  const visible = list.slice(from, Math.max(0, list.length - back));
   const tagW = merged ? nameW + 1 : 0;
   const logTitle = merged ? 'All' : (sel?.name ?? '');
-  const logHint = [back ? `${back} up · wheel down follows` : '', !merged && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
+  const find = matcher(search.query);
+  const hits = find ? hitsIn(list, search.query) : [];
+  const here = hits[Math.min(search.at, hits.length - 1)];
+  const where = search.query || search.typing ? `/${search.query}${search.typing ? '▏' : ''} ${hits.length ? `${Math.min(search.at, hits.length - 1) + 1}/${hits.length}` : 'no match'}` : '';
+  const logHint = [where, troubleOnly ? 'trouble only · e all' : '', back ? `${back} up · wheel down follows` : '', !merged && !troubleOnly && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
 
   return (
     <>
@@ -135,18 +203,22 @@ export function CrewView({ procs, ctx, width, height, active }) {
         ))}
       </Panel>
       <Panel title={logTitle} hint={logHint} width={logW} height={height}>
-        {visible.map((l, i) => (
-          <Row
-            key={i}
-            pointer={false}
-            width={logW - 2}
-            segments={[
-              { text: ' ' },
-              ...(merged ? [{ text: fit(l.name, nameW) + ' ', color: theme.accent }] : []),
-              { text: fit(l.text, lineW - tagW), color: l.text.startsWith('── ') ? theme.dim : isTrouble(l.text) ? theme.del : undefined },
-            ]}
-          />
-        ))}
+        {visible.map((l, i) => {
+          const text = fit(l.text, lineW - tagW);
+          const line = [{ text, color: l.text.startsWith('── ') ? theme.dim : isTrouble(l.text) ? theme.del : undefined }];
+          return (
+            <Row
+              key={i}
+              pointer={false}
+              width={logW - 2}
+              segments={[
+                { text: ' ' },
+                ...(merged ? [{ text: fit(l.name, nameW) + ' ', color: theme.accent }] : []),
+                ...(find ? markRanges(line, find(text), { bg: from + i === here ? theme.matchHere : theme.match, color: theme.ink }) : line),
+              ]}
+            />
+          );
+        })}
       </Panel>
     </>
   );

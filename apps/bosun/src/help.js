@@ -7,7 +7,7 @@ export const HELP = [
     title: 'Anywhere',
     rows: [
       ['1-2 / tab', 'Crew, Log (shift+tab goes back)'],
-      ['/ or :', 'Command prompt (slash commands, with completion)'],
+      [': or /', 'Command prompt (slash commands, with completion); in Crew / searches the log, so it\'s : there'],
       ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
       ['!', 'Run a shell command, e.g.  !node --version'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
@@ -35,6 +35,10 @@ export const HELP = [
       ['R', 'Restart them all (each after the one it waits for)'],
       ['s', 'Stop it, or start it; while it waits to restart ("restart" in bosun.json), it won\'t'],
       ['a', 'Every process\'s log at once, or back to the one'],
+      ['/', 'Search its log: matches light up as you type, ↵ stops typing'],
+      ['n N', 'The next match, the one before (from the newest)'],
+      ['esc', 'Clear the search'],
+      ['e', 'Only the lines that read as trouble, or all of them again'],
       ['↵', 'Its whole log in the viewer'],
       ['w', 'Ask Claude why it failed: its log, and the project\'s files it reads'],
       ['o', 'Open its port in the browser'],
@@ -66,6 +70,8 @@ export const HELP = [
     about: 'output, a whole log, Claude\'s answer',
     rows: [
       ['j k  space  g G', 'Scroll'],
+      ['/  n N', 'Search, the next match, the one before (esc clears it)'],
+      ['e', 'In a process\'s log: only the lines that read as trouble'],
       ['esc / q', 'Close'],
     ],
   },
