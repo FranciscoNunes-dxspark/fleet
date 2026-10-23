@@ -129,13 +129,15 @@ export function commitsText(c, now = Date.now()) {
   return out.join('\n');
 }
 
-// The figures the web app's overview shows first, with its names for them; the rest read as words.
-const KEY_FIGURES = { players: 'Players', usersAll: 'All users', uniqueWebUsers: 'Unique web users', uniqueAppUsers: 'Unique app users', webLogins: 'Web logins', appLogins: 'App logins' };
-export const figureLabel = (type) => KEY_FIGURES[type] ?? type.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().replace(/^./, (ch) => ch.toUpperCase());
+// Names for the figures come from the server's catalogue (data/platform-labels.json); the rest read as words.
+const humanize = (id) => id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().replace(/^./, (ch) => ch.toUpperCase());
+export const figureLabel = (type, catalogue) => catalogue?.types?.[type] ?? catalogue?.areas?.[type] ?? humanize(type);
 
-/** /totals: each ISM site's platform totals (the /totals envelope), the key figures first, with the change since the fetch before. */
-export function totalsText(sites, now = Date.now()) {
-  if (!sites?.length) return 'No sites report platform totals yet. Production monitors on ISM sites get them (Settings → Production monitors, on the web).';
+/** /totals: each site's platform totals (the /totals envelope), the key figures first, with the change since the fetch before. */
+export function totalsText(sites, now = Date.now(), catalogue = null) {
+  const KEY_FIGURES = catalogue?.keyFigures ?? [];
+  const label = (type) => figureLabel(type, catalogue);
+  if (!sites?.length) return 'No sites report platform totals yet. Production monitors with a totals key get them (Settings → Production monitors, on the web).';
   const out = [];
   for (const s of sites) {
     const l = s.latest;
@@ -143,7 +145,7 @@ export function totalsText(sites, now = Date.now()) {
     const where = l ? [l.product, l.site, l.version && `v${l.version}`, l.season?.name && `season ${l.season.name}`].filter(Boolean).join(' · ') : '';
     out.push(`  ${where}${where ? ' · ' : ''}${l ? `fetched ${ago(l.at, now)}` : 'not fetched yet'}${s.nextAt && Date.parse(s.nextAt) > now ? ` · the next in ${relTime(now - (Date.parse(s.nextAt) - now), now)}` : ''}`);
     if (s.lastError) out.push(`  ✗ The last fetch failed: ${s.lastError}`);
-    if (l?.failing?.length) out.push(`  ✗ Couldn't count: ${l.failing.map((f) => (typeof f === 'string' ? figureLabel(f) : `${figureLabel(String(f.type ?? f.name ?? '?'))}${f.error ? ` (${f.error})` : ''}`)).join(', ')}`);
+    if (l?.failing?.length) out.push(`  ✗ Couldn't count: ${l.failing.map((f) => (typeof f === 'string' ? label(f) : `${label(String(f.type ?? f.name ?? '?'))}${f.error ? ` (${f.error})` : ''}`)).join(', ')}`);
     if (!l?.totals?.length) {
       out.push('');
       continue;
@@ -152,18 +154,18 @@ export function totalsText(sites, now = Date.now()) {
     const fig = (t) => {
       const was = before?.[t.type];
       const change = was != null && t.total !== was ? ` (${t.total > was ? '+' : ''}${t.total - was})` : '';
-      return `${figureLabel(t.type)} ${t.total.toLocaleString('en-GB')}${change}`;
+      return `${label(t.type)} ${t.total.toLocaleString('en-GB')}${change}`;
     };
-    const key = Object.keys(KEY_FIGURES).map((k) => l.totals.find((t) => t.type === k)).filter(Boolean);
+    const key = KEY_FIGURES.map((k) => l.totals.find((t) => t.type === k)).filter(Boolean);
     if (key.length) out.push(`  ${key.map(fig).join(' · ')}`);
-    const rest = l.totals.filter((t) => !KEY_FIGURES[t.type]);
+    const rest = l.totals.filter((t) => !KEY_FIGURES.includes(t.type));
     const areas = new Map();
     for (const t of rest) {
       const a = t.areas?.[0] ?? 'other';
       if (!areas.has(a)) areas.set(a, []);
       areas.get(a).push(t);
     }
-    for (const [a, list] of areas) out.push(`  ${figureLabel(a)}: ${list.map(fig).join(' · ')}`);
+    for (const [a, list] of areas) out.push(`  ${label(a)}: ${list.map(fig).join(' · ')}`);
     out.push('');
   }
   return out.join('\n').trimEnd();

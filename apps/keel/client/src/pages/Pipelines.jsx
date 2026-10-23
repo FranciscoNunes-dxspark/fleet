@@ -74,7 +74,7 @@ const resultLabel = (r) => (RESULT_LABEL[r] ? t(RESULT_LABEL[r]) : r);
 const RUNNING = '__running__';
 const SCHEDULED = '__scheduled__';
 
-// Azure DevOps folder paths look like "\TEAMA\Builds"; the root is "\".
+// Azure DevOps folder paths look like "\Team A\Builds"; the root is "\".
 const folderLabel = (path) => (!path || path === '\\' ? t('No folder') : path.replace(/^\\/, '').split('\\').join(' / '));
 
 function BuildsTab({ data }) {

@@ -152,7 +152,7 @@ export const HELP = [
       ['/flaky', 'Tests that fail now and then on a pipeline\'s own branch and pass again without a fix, failing now first'],
       ['/closed [days]', 'Pull requests completed or abandoned in the last 7 days (or 30, 90), with who closed them, how long they were open and the votes'],
       ['/commits [repo] [days]', 'Commits on each tracked repo\'s default branch, by day, with their pull request and work items; a repo name narrows it'],
-      ['/totals', 'Each ISM site\'s platform totals: the key figures, then each area, with the change since the fetch before'],
+      ['/totals', 'Each site\'s platform totals: the key figures, then each area, with the change since the fetch before'],
     ],
   },
   {

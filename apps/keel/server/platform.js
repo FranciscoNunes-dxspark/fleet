@@ -1,10 +1,14 @@
-// The ISM product sites' platform endpoints (schema "platform/v1"):
-// GET /health (no auth) and GET /totals (X-Totals-Key). Both answer the same
-// envelope: { schema, kind, product, site, version, status, generatedAt,
-// durationMs, checks: [{ name, status, durationMs, message }], data }.
-// See docs/monitoring/platform-endpoints.md in the product repositories.
+// Sites that publish platform endpoints (schema "platform/v1" by default; set
+// KEEL_PLATFORM_SCHEMA for a site that names its own): GET /health (no auth)
+// and GET /totals (X-Totals-Key). Both answer the same envelope: { schema,
+// kind, product, site, version, status, generatedAt, durationMs,
+// checks: [{ name, status, durationMs, message }], data }.
+// The names and order of the figures come from data/platform-labels.json.
 
-export const SCHEMA = 'platform/v1';
+import fs from 'node:fs';
+import path from 'node:path';
+
+export const SCHEMA = process.env.KEEL_PLATFORM_SCHEMA?.trim() || 'platform/v1';
 export const TOTALS_TIMEOUT_MS = 300_000; // the stored procedure can take up to 5 minutes
 export const TOTALS_EVERY_HOURS = [1, 6, 12, 24];
 export const TOTALS_SEASONS = ['current', 'all'];
@@ -91,29 +95,24 @@ export const historyPoint = (snap) => ({
 
 // ------------------------------------------------------------ demo data
 const DEMO_SITES = {
-  'platform-a': { product: 'WebShopSite', site: 'shopeusite', scale: 1.4 },
-  'platform-qa': { product: 'WebShopSite', site: 'shopqasite', scale: 0.35 },
-  'platform-c': { product: 'MarketSite', site: 'marketussite', scale: 1.1 },
+  'platform-a': { product: 'Storefront', site: 'shop-eu', scale: 1.4 },
+  'platform-b': { product: 'Storefront', site: 'shop-qa', scale: 0.35 },
+  'platform-c': { product: 'Marketplace', site: 'market-us', scale: 1.1 },
 };
 export const isDemoPlatform = (demo) => !!DEMO_SITES[demo];
 
 const DEMO_TYPES = [
-  [1, 'players', ['administration'], 520, true], [2, 'usersAll', ['administration'], 1210, false], [3, 'users', ['administration'], 640, false],
-  [4, 'usersPlayers', ['administration'], 570, false], [9, 'teams', ['administration'], 18, false], [13, 'workSessions', ['training'], 2400, true],
-  [15, 'scoutingReports', ['scouting'], 860, true], [16, 'playersWithScoutingReport', ['scouting'], 410, false], [19, 'trainingUnities', ['training'], 3100, true],
-  [22, 'gameFiles', ['academic'], 380, true], [23, 'gameReports', ['academic'], 360, true], [29, 'performanceReports', ['performance'], 290, true],
-  [31, 'workContracts', ['legalAndAgents'], 95, false], [33, 'agents', ['legalAndAgents'], 64, false], [37, 'injuries', ['medical'], 140, true],
-  [38, 'treatmentSessions', ['medical'], 920, true], [40, 'nutritionalPlans', ['nutrition'], 180, true], [42, 'weighings', ['nutrition'], 1500, true],
-  [46, 'lunch', ['meals'], 9400, true], [48, 'dinner', ['meals'], 7600, true], [52, 'selfPerceptionQuestionnaires', ['psychologic'], 230, true],
-  [53, 'bedrooms', ['facility'], 42, false], [58, 'products', ['equipments'], 310, false], [61, 'vehicles', ['administrative'], 12, false],
-  [63, 'webLogins', ['administration'], 5400, true], [64, 'appLogins', ['administration'], 8800, true], [66, 'uniqueWebUsers', ['administration'], 260, false],
-  [67, 'uniqueAppUsers', ['administration'], 470, false],
+  [1, 'customers', ['accounts'], 520, true], [2, 'usersAll', ['accounts'], 1210, false], [3, 'staffUsers', ['accounts'], 640, false],
+  [4, 'orders', ['sales'], 2400, true], [5, 'invoices', ['sales'], 2300, true], [6, 'refunds', ['sales'], 140, true],
+  [7, 'products', ['catalogue'], 310, false], [8, 'categories', ['catalogue'], 24, false], [9, 'reviews', ['catalogue'], 860, true],
+  [10, 'shipments', ['logistics'], 2100, true], [11, 'warehouses', ['logistics'], 6, false],
+  [12, 'webLogins', ['accounts'], 5400, true], [13, 'appLogins', ['accounts'], 8800, true],
 ];
 
-/** A demo /health envelope (the QA site's database is slow now and then). */
+/** A demo /health envelope (the second site's database is slow now and then). */
 export function demoHealth(demo, at = Date.now()) {
   const s = DEMO_SITES[demo];
-  const down = demo === 'platform-qa' && Math.floor(at / (7 * 60_000)) % 5 === 0;
+  const down = demo === 'platform-b' && Math.floor(at / (7 * 60_000)) % 5 === 0;
   return {
     schema: SCHEMA, kind: 'health', product: s.product, site: s.site, version: '1.0.0.0', status: down ? 'down' : 'ok',
     generatedAt: new Date(at).toISOString(), durationMs: down ? 3004 : 18,
@@ -158,4 +157,23 @@ export function demoTotals(demo, at = Date.now()) {
     ],
     data: { season: { scope: 'season', id: `demo-season-2026-${demo}`, name: '2026/2027' }, totals },
   };
+}
+
+// ------------------------------------------------------------ labels
+const EMPTY_CATALOGUE = { types: {}, areas: {}, areaOrder: [], keyFigures: [] };
+const strings = (o) => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).filter(([, v]) => typeof v === 'string'));
+
+/**
+ * The names and order of the figures, from <data>/platform-labels.json:
+ * { types: { id: "Label" }, areas: { id: "Label" }, areaOrder: [id], keyFigures: [id] }.
+ * Missing or unreadable, figures read as words made from their ids.
+ */
+export function readCatalogue(dataDir) {
+  try {
+    const c = JSON.parse(fs.readFileSync(path.join(dataDir, 'platform-labels.json'), 'utf8'));
+    const list = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string') : []);
+    return { types: strings(c.types), areas: strings(c.areas), areaOrder: list(c.areaOrder), keyFigures: list(c.keyFigures) };
+  } catch {
+    return EMPTY_CATALOGUE;
+  }
 }

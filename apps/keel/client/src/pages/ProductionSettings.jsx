@@ -109,7 +109,7 @@ export default function ProductionSettings() {
         {t('Keel checks each URL every minute. With an Application Insights App ID and API key (Application Insights → API Access → Create API key, "Read telemetry"), it also tracks failure rates, exceptions and slow requests. Keys are stored encrypted on the server and never shown again.')}
         {authMode === 'login' && ` ${t("Each monitor shows, in Production, the Inbox and notifications, for the people who track its project: the one that deploys it, or the one picked here. A monitor with no project shows for everyone.")}`}
       </p>
-      <p className="muted small">{t("ISM sites (WebShopSite, ShopSites, MarketSite, CartSites): use the site's /health address, for example https://shopeusite.azurewebsites.net/health. Keel reads its health report, and with the site's totals key it also fetches the Platform totals. ShopSites sites have no totals yet.")}</p>
+      <p className="muted small">{t("Sites with platform endpoints: use the site's /health address, for example https://shop.example.com/health. Keel reads its health report, and with the site's totals key it also fetches the Platform totals.")}</p>
 
       <ul className="monitor-rows">
         {rows.map((r) => {

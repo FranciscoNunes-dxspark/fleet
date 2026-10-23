@@ -4,12 +4,12 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime } from '../format.js';
 import { locale, t, tj, tx } from '../i18n.js';
-import { AREAS, KEY_FIGURES, areaLabel, figureLabel } from '../platformLabels.js';
+import { areaLabel, figureLabel, keyFigures, orderedAreas, setCatalogue } from '../platformLabels.js';
 import { useSticky } from '../sticky.js';
 import { Chip, Empty, ErrorBox, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
 import { downloadText } from './ReleaseNotes.jsx';
 
-// Platform totals (platform/v1 /totals): what each club site holds, fetched on a schedule.
+// Platform totals (a site's /totals): what each site holds, fetched on a schedule.
 
 const num = (n) => (n == null ? '—' : n.toLocaleString(locale()));
 const signed = (d) => `${d > 0 ? '+' : d < 0 ? '−' : '±'}${Math.abs(d).toLocaleString(locale())}`;
@@ -97,6 +97,9 @@ function totalsCsv(sites) {
 
 export default function Totals() {
   const { id } = useParams();
+  const { data: catalogue, error, reload } = useApi('/production/totals/labels');
+  if (!catalogue) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
+  setCatalogue(catalogue);
   return id ? <SiteTotals id={id} /> : <TotalsOverview />;
 }
 
@@ -117,9 +120,9 @@ function TotalsOverview() {
 
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 
-  const areas = AREAS.filter((a) => types.some((x) => x.areas.includes(a)));
+  const areas = orderedAreas(types);
   const columns = view === 'key'
-    ? KEY_FIGURES.filter((k) => types.some((x) => x.type === k))
+    ? keyFigures().filter((k) => types.some((x) => x.type === k))
     : types.filter((x) => x.areas.includes(view)).map((x) => x.type);
   const seasons = [...new Set(data.map((s) => s.latest?.season?.name).filter(Boolean))];
   const months = seasonMonths(data.flatMap((s) => s.latest?.totals || []));
@@ -128,7 +131,7 @@ function TotalsOverview() {
   const enabled = data.filter((s) => s.enabled);
   const busy = enabled.length > 0 && enabled.every((s) => s.fetching || s.queued);
 
-  // One site after another, as the schedule does: each fetch keeps a club database busy.
+  // One site after another, as the schedule does: each fetch keeps a site database busy.
   const fetchAll = async () => {
     setStarting(true);
     try {
@@ -151,7 +154,7 @@ function TotalsOverview() {
         title={t('Platform totals')}
         sub={data.length
           ? [t(data.length === 1 ? '{n} site' : '{n} sites', { n: data.length }), seasons.length === 1 ? t('season {name}', { name: seasons[0] }) : null, t('the figures from each site\'s Platform Totals screen')].filter(Boolean).join(' · ')
-          : t('What each club site holds, from the Platform Totals screen.')}
+          : t('What each site holds, from the Platform Totals screen.')}
       >
         {data.some((s) => s.latest?.totals?.length) && (
           <button type="button" className="btn btn-small btn-ghost" onClick={() => downloadText(`platform-totals-${new Date().toISOString().slice(0, 10)}.csv`, totalsCsv(data), 'text/csv;charset=utf-8')}>{t('Export CSV')}</button>
@@ -165,7 +168,7 @@ function TotalsOverview() {
 
       {!data.length && (
         <Empty title={t('No sites with platform totals yet.')}>
-          {tj('In {link}, add the site\'s URL and its totals key (the X-Totals-Key the site was given). Keel fetches the figures on a schedule, at most every hour, because each fetch keeps the club database busy.', {
+          {tj('In {link}, add the site\'s URL and its totals key (the X-Totals-Key the site was given). Keel fetches the figures on a schedule, at most every hour, because each fetch keeps the site database busy.', {
             link: <Link to="/settings#production">{t('Settings → Production monitors')}</Link>,
           })}
         </Empty>
@@ -266,12 +269,11 @@ function SiteTotals({ id }) {
   // Figures grouped by the screen's sections; a figure listed in no area goes under "Other".
   const groups = [];
   if (latest) {
-    for (const a of AREAS) {
+    for (const a of orderedAreas(latest.totals)) {
       const list = latest.totals.filter((x) => x.areas.includes(a));
       if (list.length) groups.push({ key: a, label: areaLabel(a), list });
     }
-    const known = new Set(AREAS);
-    const other = latest.totals.filter((x) => !x.areas.some((a) => known.has(a)));
+    const other = latest.totals.filter((x) => !x.areas.length);
     if (other.length) groups.push({ key: 'other', label: t('Other'), list: other });
   }
 

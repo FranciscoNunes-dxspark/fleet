@@ -214,7 +214,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     res.json(saved);
   });
   r.post('/production/test', need('monitors.manage'), async (req, res) => res.json(await req.ctx.service.monitors().test(req.body || {})));
-  // Platform totals (platform/v1 /totals): everyone reads the sites they see, admins fetch on demand.
+  // Platform totals (a site's /totals): everyone reads the sites they see, admins fetch on demand.
+  r.get('/production/totals/labels', (req, res) => res.json(req.ctx.service.monitors().labels()));
   r.get('/production/totals', async (req, res) => res.json(await req.ctx.service.platformTotals()));
   r.get('/production/totals/:id', async (req, res) => res.json(await req.ctx.service.platformTotalsFor(req.params.id)));
   r.post('/production/totals/fetch', need('monitors.manage'), async (req, res) => res.status(202).json(await req.ctx.service.fetchAllTotals()));

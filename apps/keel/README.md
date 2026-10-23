@@ -109,7 +109,7 @@ More of the web app's pages, as reports in the viewer:
 - `/flaky`: the **Flaky tests** tab: tests that fail now and then on a pipeline's own branch and pass again without a fix, failing now first, with how often, the last failure and its error.
 - `/closed [days]`: pull requests completed or abandoned in the last 7 days (or any number up to 90), newest first, with who closed them, how long they were open and the reviewers' votes.
 - `/commits [repo] [days]`: the **Commits** tab: each tracked repo's default branch, newest first and by day, with the pull request and work items each one mentions. A repo name (or part of one) narrows it; 7 days by default, up to 90.
-- `/totals`: **Platform totals**: each ISM site's key figures first, then every area's, with the change since the fetch before.
+- `/totals`: **Platform totals**: each site's key figures first, then every area's, with the change since the fetch before.
 
 Everywhere: **o** opens the selection in Azure DevOps, **/** opens the command prompt, `/find` filters the list (by its text, and by field: `who:tom`, `who:me` or `who:none` for unassigned, `type:bug`, `tag:`, `state:`, `project:`, `repo:`, `team:`, whichever the tab has), **F** builds that filter from the values in the list on screen, with how many have each, as the web app's dropdowns do (on the Board: who has the cards, their type, tag or state), **r** asks Azure DevOps again now, and **?** lists every key: the sections down the left, opening on the one for the tab you're in, **j**/**k** to pick another, and **/** to search them all (the slash commands too). While it's open it checks Azure DevOps every "refresh every" seconds from Settings, as the web app does, and says what changed (votes on your pull requests, your runs finishing, new things in the Inbox) in its activity lines. Warnings from Azure DevOps calls are under `/log`.
 
@@ -140,12 +140,12 @@ Set it up in **Settings → Production monitors**:
 
 Use **Test** to check a URL and key before saving. Monitors are kept by the Keel server, each shown to the people who track its project, and only Admins can change them. The last 24 hours of checks are kept in the data folder (`monitor-history.json`), so charts are the same for everyone and survive restarts and deploys. When the host runs several copies of Keel, one of them runs the checks; another takes over within 3 minutes if it stops. Azure Monitor alert rules aren't included: reading them needs a Microsoft Entra identity (a service principal) rather than an API key.
 
-### ISM sites: health and platform totals
+### Sites with platform endpoints: health and platform totals
 
-The ISM product sites (WebShopSite, ShopSites, MarketSite, CartSites) answer the `platform/v1` contract (`docs/monitoring/platform-endpoints.md` in each product repository): `GET /health` and `GET /totals`.
+Sites can answer the `platform/v1` contract: `GET /health` and `GET /totals`, both with the same JSON envelope (`schema`, `kind`, `product`, `site`, `version`, `status`, `checks`, `data`). A site that names its schema differently needs `KEEL_PLATFORM_SCHEMA` set to that name. The names and order of the figures come from an optional `data/platform-labels.json` (`{ "types": { "id": "Label" }, "areas": { "id": "Label" }, "areaOrder": [], "keyFigures": [] }`); without it, figures read as words made from their ids.
 
-- **Health:** use the site's `/health` address as the URL to check, e.g. `https://shopeusite.azurewebsites.net/health`. Keel reads the envelope: its `down` (database unreachable) counts at once, `degraded` is flagged with the failing check's message, and product, site and version show on the monitor. An answer that isn't the envelope (restarting, an App Service error page) only counts as down after 3 polls in a row, as the contract asks.
-- **Platform totals:** add the site's totals key (its `X-Totals-Key`, from `Set-PlatformTotalsKeys.ps1`) to the monitor. It's stored encrypted like the Application Insights key. Keel fetches `/totals` every 1, 6, 12 or 24 hours (24 by default) for the current season or all seasons, one site at a time, with a 5-minute timeout. It never follows redirects with the key. Admins can fetch one site now from its page, or every site they see with **Fetch all** on the Platform totals page: one after another (the ones waiting show as Queued), leaving out any site fetched in the last 10 minutes, since each fetch keeps the club database busy.
+- **Health:** use the site's `/health` address as the URL to check, e.g. `https://shop.example.com/health`. Keel reads the envelope: its `down` (database unreachable) counts at once, `degraded` is flagged with the failing check's message, and product, site and version show on the monitor. An answer that isn't the envelope (restarting, an App Service error page) only counts as down after 3 polls in a row, as the contract asks.
+- **Platform totals:** add the site's totals key (its `X-Totals-Key`) to the monitor. It's stored encrypted like the Application Insights key. Keel fetches `/totals` every 1, 6, 12 or 24 hours (24 by default) for the current season or all seasons, one site at a time, with a 5-minute timeout. It never follows redirects with the key. Admins can fetch one site now from its page, or every site they see with **Fetch all** on the Platform totals page: one after another (the ones waiting show as Queued), leaving out any site fetched in the last 10 minutes, since each fetch keeps the club database busy.
 - **The Platform totals page** compares sites on key figures or one area at a time, with the change since the previous fetch. Each site's page shows every figure by area, its trend this season and its monthly counts. **Export CSV** downloads every figure of every site, one row per site and figure, with the season total, the change since the previous fetch and the count for each month. The latest figures and up to 300 snapshots per site are kept in the data folder (`monitor-totals.json`). A 404 from `/totals` on a site whose health answers means the key is wrong or missing; the page says so.
 
 ## Live updates and notifications
@@ -299,7 +299,7 @@ Also set `SESSION_SECRET` in the host's environment variables. Without it, the e
    ```
 3. **Create `.env`.** Leave out `AZDO_PAT`, because nobody's token lives in config:
    ```ini
-   AZDO_ORG_URL=https://dev.azure.com/contoso
+   AZDO_ORG_URL=https://dev.azure.com/your-org
    AUTH_MODE=login
    SESSION_SECRET=<output of: openssl rand -hex 32>
    ADMIN_SETUP_CODE=<a code only you know, for creating the first admin>

@@ -63,7 +63,7 @@ function pages(can, authMode) {
     p('/pipelines?tab=releases', `${t('Pipelines')} · ${t('Releases')}`, ['deploy', 'classic']),
     p('/production', t('Production'), ['monitors', 'uptime', 'health']),
     p('/ship', t('Waiting to ship'), ['undeployed', 'pending', 'not deployed']),
-    p('/totals', t('Platform totals'), ['ism']),
+    p('/totals', t('Platform totals'), ['platform']),
     p('/team', t('Team'), ['people', 'load']),
     p('/insights', `${t('Insights')} · ${t('Delivery to production')}`, ['dora', 'metrics']),
     p('/insights?tab=review', `${t('Insights')} · ${t('Code review and merging')}`, ['metrics']),

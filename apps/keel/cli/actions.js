@@ -637,9 +637,9 @@ export async function showCommits(ctx, text = '') {
   });
 }
 
-/** /totals: each ISM site's platform totals. */
+/** /totals: each site's platform totals. */
 export async function showTotals(ctx) {
-  await report(ctx, 'Platform totals', 'Reading platform totals', async () => totalsText(await ctx.service.platformTotals()));
+  await report(ctx, 'Platform totals', 'Reading platform totals', async () => totalsText(await ctx.service.platformTotals(), Date.now(), ctx.service.monitors().labels()));
 }
 
 // ---- Filters by field (filters.js)

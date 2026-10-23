@@ -4,7 +4,7 @@ import { asEnvelope, historyPoint, platformInfo, readTotals } from '../server/pl
 import { evaluateMonitor } from '../server/domain/production.js';
 
 const env = (over = {}) => ({
-  schema: 'platform/v1', kind: 'totals', product: 'WebShopSite', site: 'shopeusite', version: '1.0.0.0', status: 'ok',
+  schema: 'platform/v1', kind: 'totals', product: 'Storefront', site: 'shopeu', version: '1.0.0.0', status: 'ok',
   generatedAt: '2026-10-16T09:45:03.118Z', durationMs: 4120,
   checks: [{ name: 'platformTotals', status: 'ok', durationMs: 3870, message: null }],
   data: {
@@ -23,7 +23,7 @@ test('platform envelope: only platform/v1 with a known status counts', () => {
   assert.equal(asEnvelope({ status: 'ok' }), null);
   assert.equal(asEnvelope('<html>Service Unavailable</html>'), null);
   const info = platformInfo({ ...env(), kind: 'health', status: 'down', checks: [{ name: 'database', status: 'down', message: 'The database did not answer in time.' }] });
-  assert.deepEqual([info.status, info.product, info.site, info.failing[0].message], ['down', 'WebShopSite', 'shopeusite', 'The database did not answer in time.']);
+  assert.deepEqual([info.status, info.product, info.site, info.failing[0].message], ['down', 'Storefront', 'shopeu', 'The database did not answer in time.']);
 });
 
 test('platform totals: figures, months, season; degraded keeps the rest', () => {
@@ -51,8 +51,8 @@ test('platform totals: 404 means the key, 503 and 400 carry the check message, n
 test('platform health verdicts: envelope down at once, no envelope after 3 polls, degraded flagged', () => {
   const now = Date.parse('2026-10-16T10:00:00Z');
   const at = new Date(now - 60_000).toISOString();
-  const platform = { product: 'WebShopSite', site: 'shopeusite', version: '1.0.0.0' };
-  const base = { url: 'https://shopeusite.azurewebsites.net/health', latencyWarnMs: 2000, platform };
+  const platform = { product: 'Storefront', site: 'shopeu', version: '1.0.0.0' };
+  const base = { url: 'https://shop-eu.example.com/health', latencyWarnMs: 2000, platform };
 
   const dbDown = evaluateMonitor({ ...base, consecutiveFailures: 1, last: { at, ok: false, status: 503, ms: 3000, error: 'The database did not answer in time.', platform: { status: 'down' } } }, [], now);
   assert.equal(dbDown.state, 'down');

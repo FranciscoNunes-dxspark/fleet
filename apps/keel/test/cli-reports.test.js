@@ -95,18 +95,20 @@ test('/flaky, /closed and /commits', () => {
 test('/totals: the key figures first, with the change since the fetch before, then each area', () => {
   const sites = [{
     name: 'Berlin',
-    latest: { at: '2026-10-21T11:00:00Z', product: 'WebShopSite', site: 'berlin', version: '1.0', season: { id: 's1', name: '2026/2027' }, failing: [{ type: 'injuries', error: 'timeout' }], totals: [
+    latest: { at: '2026-10-21T11:00:00Z', product: 'Storefront', site: 'berlin', version: '1.0', season: { id: 's1', name: '2026/2027' }, failing: [{ type: 'injuries', error: 'timeout' }], totals: [
       { type: 'usersAll', areas: ['administration'], total: 1629 },
       { type: 'players', areas: ['administration'], total: 898 },
       { type: 'workSessions', areas: ['training'], total: 4146 },
     ] },
     previous: { seasonId: 's1', values: { players: 890, usersAll: 1629, workSessions: 4100 } },
   }];
-  const text = totalsText(sites, now);
-  assert.match(text, /^Berlin\n {2}WebShopSite · berlin · v1\.0 · season 2026\/2027 · fetched 1h ago/);
+  const catalogue = { types: { players: 'Players', usersAll: 'All users', workSessions: 'Work sessions' }, areas: { training: 'Training' }, keyFigures: ['players', 'usersAll'] };
+  const text = totalsText(sites, now, catalogue);
+  assert.match(text, /^Berlin\n {2}Storefront · berlin · v1\.0 · season 2026\/2027 · fetched 1h ago/);
   assert.match(text, /✗ Couldn't count: Injuries \(timeout\)/);
   assert.match(text, /\n {2}Players 898 \(\+8\) · All users 1,629\n {2}Administration: \n?|\n {2}Training: Work sessions 4,146 \(\+46\)/);
-  assert.equal(figureLabel('selfPerceptionQuestionnaires'), 'Self perception questionnaires');
+  assert.equal(figureLabel('newFigureType'), 'New figure type');
+  assert.equal(figureLabel('newFigureType', { types: { newFigureType: 'A new figure' } }), 'A new figure');
   assert.match(totalsText([]), /No sites report platform totals yet/);
 });
 

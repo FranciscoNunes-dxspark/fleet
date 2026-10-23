@@ -171,7 +171,7 @@ export function evaluateMonitor(m, markers = [], now = Date.now(), running = nul
   const last = m.last;
 
   if (m.url && last) {
-    // ISM sites answer an "platform/v1" envelope (see server/platform.js). Its "down" is the
+    // Sites with platform endpoints answer a "platform/v1" envelope (see server/platform.js). Its "down" is the
     // site's own verdict, so it counts at once; no envelope at all (restarting, error page) only
     // counts after 3 polls in a row, as the platform contract asks.
     const envelope = last.platform?.status || null;
@@ -247,7 +247,7 @@ export function evaluateMonitor(m, markers = [], now = Date.now(), running = nul
 
   let state = 'unknown';
   if (issues.some((i) => i.code === 'down')) state = 'down';
-  // A failed poll that isn't an outage yet (an ISM site restarting) still shows as degraded, without alerting.
+  // A failed poll that isn't an outage yet (a site restarting) still shows as degraded, without alerting.
   else if (issues.some((i) => i.severity !== 'low') || (last && !last.ok)) state = 'degraded';
   else if (last?.ok || ai) state = 'up';
   return { state, issues };

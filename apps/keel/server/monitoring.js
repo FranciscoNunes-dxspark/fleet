@@ -19,7 +19,7 @@ import { decrypt, encrypt, getKey } from './secrets.js';
 import { runnerLock, sharedJson } from './jsonfile.js';
 import {
   TOTALS_EVERY_HOURS, TOTALS_SEASONS, TOTALS_TIMEOUT_MS, asEnvelope, demoHealth, demoTotals, failingText, historyPoint,
-  isDemoPlatform, platformInfo, readTotals,
+  isDemoPlatform, platformInfo, readCatalogue, readTotals,
 } from './platform.js';
 
 const MIN = 60_000;
@@ -86,7 +86,7 @@ async function httpCheck(m) {
       headers: { 'User-Agent': 'Keel-Monitor/1.0', Accept: '*/*' },
       signal: AbortSignal.timeout(10_000),
     });
-    // ISM sites answer an "platform/v1" envelope; anything else is judged on the HTTP status alone.
+    // Sites with platform endpoints answer a "platform/v1" envelope; anything else is judged on the HTTP status alone.
     let platform = null;
     if (/json/i.test(res.headers.get('content-type') || '')) {
       const env = asEnvelope(await res.json().catch(() => null));
@@ -161,9 +161,9 @@ function demoMonitors() {
     { id: id(), name: 'Identity API (production)', url: 'https://id.contoso-demo.com/health', appInsightsAppId: 'demo-app-2', apiKey: null, link: { type: 'release', projectId: 'p-platform', definitionId: 2, stage: 'Production' }, latencyWarnMs: 800, demo: 'errors' },
     { id: id(), name: 'Storefront canary', url: 'https://canary.shop.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: { type: 'pipeline', projectId: 'p-commerce', definitionId: 100 }, latencyWarnMs: 1500, demo: 'down' },
     { id: id(), name: 'Mobile backend (production)', url: 'https://mobile-api.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, projectId: 'p-mobile', latencyWarnMs: 1500, demo: 'down' },
-    { id: id(), name: 'SC Berlin (WebShopSite)', url: 'https://shopeusite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-a', totalsEvery: 24, totalsSeason: 'current' },
-    { id: id(), name: 'QA RV (WebShopSite)', url: 'https://shopqasite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-qa', totalsEvery: 6, totalsSeason: 'current' },
-    { id: id(), name: 'Sydney FC (MarketSite)', url: 'https://marketussite.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-c', totalsEvery: 24, totalsSeason: 'current' },
+    { id: id(), name: 'Shop EU (Storefront)', url: 'https://shop-eu.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-a', totalsEvery: 24, totalsSeason: 'current' },
+    { id: id(), name: 'Shop QA (Storefront)', url: 'https://shop-qa.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-b', totalsEvery: 6, totalsSeason: 'current' },
+    { id: id(), name: 'Market US (Marketplace)', url: 'https://market-us.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, latencyWarnMs: 1500, demo: 'platform-c', totalsEvery: 24, totalsSeason: 'current' },
   ];
 }
 
@@ -359,7 +359,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
     try {
       const list = sync();
       if (mock) demoBackfill(list);
-      // One site at a time: each request can keep a club's database busy for minutes.
+      // One site at a time: each request can keep a site's database busy for minutes.
       for (const m of list) {
         if (totalsDue(m, totalsStore.get()[m.id])) await fetchTotals(m);
       }
@@ -490,6 +490,10 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
     },
 
     /** Platform totals for every site that has them: the latest figures and the previous fetch, for deltas. */
+    /** The names and order of the figures (data/platform-labels.json). */
+    labels() {
+      return readCatalogue(dataDir);
+    },
     totals() {
       const all = totalsStore.get();
       return sync().filter((m) => hasTotals(m) || all[m.id]?.latest).map((m) => {
@@ -525,7 +529,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         throw Object.assign(new Error('The totals are already being fetched.'), { status: 409 });
       }
       if (e?.lastAttemptAt && Date.now() - e.lastAttemptAt < TOTALS_AGAIN) {
-        throw Object.assign(new Error('The totals were fetched less than 10 minutes ago. Each fetch keeps the club database busy, so wait a little.'), { status: 429 });
+        throw Object.assign(new Error('The totals were fetched less than 10 minutes ago. Each fetch keeps the site database busy, so wait a little.'), { status: 429 });
       }
       fetchTotals(m).catch((err) => console.warn(`[monitoring] totals: ${err.message}`));
       return { started: true };
@@ -546,7 +550,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         return !isFetching(m.id, e, now) && !isQueued(e, now) && !(e?.lastAttemptAt && now - e.lastAttemptAt < TOTALS_AGAIN);
       });
       if (!due.length) {
-        throw Object.assign(new Error('Every site is being fetched or was fetched less than 10 minutes ago. Each fetch keeps the club database busy, so wait a little.'), { status: 429 });
+        throw Object.assign(new Error('Every site is being fetched or was fetched less than 10 minutes ago. Each fetch keeps the site database busy, so wait a little.'), { status: 429 });
       }
       totalsStore.update((store) => {
         for (const m of due) store[m.id] = { history: [], ...store[m.id], queuedAt: now };
