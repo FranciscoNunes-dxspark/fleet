@@ -26,13 +26,14 @@ export async function loadSubscription(provider, subId, { signal } = {}) {
     other('storageAccounts'),
     other('sqlServers'),
   ]);
-  // The slots and the servers' details at the same time: neither waits on the other.
-  const [lists, sqlServers] = await Promise.all([
-    mapLimited(apps, 6, (app) => (withSlots && !withSlots.has(app.id.toLowerCase()) ? [] : provider.slots(app, { signal }).catch(() => []))),
-    // Each server's databases. Its Entra admin is read when the cursor stops on it (App's adminOf),
-    // unless the listing carried it.
-    mapLimited(servers, 6, async (s) => ({ ...s, databases: await provider.sqlDatabases(s, { signal }).catch(() => []) })),
-  ]);
-  const slots = Object.fromEntries(apps.map((a, i) => [a.id, lists[i]]));
+  // The apps' slots and the servers' databases, twelve calls at a time between them, so whichever
+  // there are more of gets the room. A server's Entra admin is read when the cursor stops on it
+  // (App's adminOf), unless the listing carried it.
+  const slotted = apps.filter((a) => !withSlots || withSlots.has(a.id.toLowerCase()));
+  const jobs = [...slotted.map((app) => () => provider.slots(app, { signal }).catch(() => [])), ...servers.map((s) => () => provider.sqlDatabases(s, { signal }).catch(() => []))];
+  const answers = await mapLimited(jobs, 12, (job) => job());
+  const slots = Object.fromEntries(apps.map((a) => [a.id, []]));
+  slotted.forEach((a, i) => (slots[a.id] = answers[i]));
+  const sqlServers = servers.map((s, i) => ({ ...s, databases: answers[slotted.length + i] }));
   return { subscription, subscriptions, apps, slots, components, containers, storage, sqlServers };
 }
