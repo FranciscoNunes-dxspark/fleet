@@ -203,6 +203,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const prefillKey = useRef(-1);
   // The key that answered the last confirmation: it's that one's, and no other handler's.
   const answerKey = useRef(-1);
+  // The key a view took through claimsKey: Ink calls the handlers in no fixed order, so a view's may run
+  // first and drop its claim (esc clearing a search), and this one mustn't then take the key too.
+  const claimedKey = useRef(-1);
   const { internal_eventEmitter: inputEvents } = useStdin();
   useEffect(() => {
     if (!inputEvents) return;
@@ -472,6 +475,10 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     askText: async (req) => (await confirm({ ...req, secret: true, plain: true, options: [] }))?.value ?? null,
     // A view that takes keys the app would otherwise use (a search being typed) sets this to say so.
     claimsKey: null,
+    // Said by a view as it handles a key it claims, so the dispatcher leaves that key alone.
+    claimed: () => {
+      claimedKey.current = keySeq.current;
+    },
     prefill,
     reload: () => reload({ restartChanged: true }),
     setView,
@@ -784,7 +791,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     if (focusRef.current === 'prompt' && !confirmRef.current) return prefillKey.current === keySeq.current ? undefined : promptKeys(input, key);
     if (key.ctrl && input === 'c') return exit();
     if (confirmRef.current || overlayRef.current || answerKey.current === keySeq.current) return;
-    if (ctx.claimsKey?.(input, key)) return;
+    if (claimedKey.current === keySeq.current || ctx.claimsKey?.(input, key)) return;
     globalKeys(input, key);
   });
 

@@ -191,7 +191,10 @@ export function CrewView({ procs, ctx, width, height, active }) {
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
-    if (ctx.claimsKey?.(input, key)) return searchKeys(input, key);
+    if (ctx.claimsKey?.(input, key)) {
+      ctx.claimed?.();
+      return searchKeys(input, key);
+    }
     if (nav.handle(input, key)) return setBack(0);
     if (input === 'e') {
       setBack(0);

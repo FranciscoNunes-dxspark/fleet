@@ -351,6 +351,35 @@ test('ctrl+f searches the log pane and the viewer, n N go between matches, esc c
   }
 });
 
+test('esc that clears a search is the search\'s alone, whichever handler Ink calls first', async () => {
+  const dir = project({ procs: { talker: 'node talk.js' } }, {
+    'talk.js': `console.log('a pear'); setInterval(() => {}, 1000);`,
+  });
+  const app = start({ dir });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('a pear'), 'the log');
+    app.stdin.write('!');
+    await type(app.stdin, 'node -e "console.log(4000+2)"');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('4002'), 'an activity line');
+    // The uptimes and the port checks redraw App and the view in turn, which changes the order Ink
+    // calls their key handlers in; esc at different moments meets both orders.
+    for (const wait of [0, 700, 1300, 2100, 2600]) {
+      app.stdin.write('\x06');
+      await type(app.stdin, 'pear');
+      app.stdin.write(KEYS.enter);
+      await until(() => frame().includes('find pear 1/1'), 'a search');
+      await new Promise((r) => setTimeout(r, wait));
+      app.stdin.write(KEYS.esc);
+      await until(() => !frame().includes('find pear'), 'the search cleared');
+      assert.match(frame(), /4002/, `the activity lines stay (after ${wait} ms)`);
+    }
+  } finally {
+    app.unmount();
+  }
+});
+
 test('c clears a log, l and /save-log write it to a file, asking before writing over one', async () => {
   const dir = project({ procs: { talker: 'node talk.js' } }, { 'talk.js': `console.log('first words'); process.stdin.resume(); setTimeout(() => console.log('later words'), 1500); setInterval(() => {}, 1000);` });
   const app = start({ dir });
