@@ -1,6 +1,7 @@
 // Every user-facing operation, written once: keys and slash commands both call these with `ctx`
 // (built in ui/App.jsx). Questions before anything destructive belong here too (ctx.confirm).
 import { label } from './azure/arm.js';
+import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, isProduction, looksSecret, operationQuery, records, settingsDiff } from './insights.js';
 import { openUrl } from './open.js';
@@ -246,6 +247,13 @@ export async function runQuery(ctx, kql) {
   if (done.ok) ctx.setConfig((c) => ({ ...c, queries: [q, ...(c.queries ?? []).filter((x) => x !== q)].slice(0, 50) }));
 }
 
+/** A problem's latest occurrence: every row of that operation, in order (the end-to-end transaction). */
+async function occurrence(ctx, component, problem) {
+  return records(await ctx.provider.query(component, operationQuery(problem.operation), { timespan: ctx.timespan().iso }));
+}
+
+const occurrenceSummary = (problem) => `${problem.count} times, ${problem.users} user${problem.users === 1 ? '' : 's'}, in ${problem.role} · operation ${problem.operation}`;
+
 /** ↵ on a problem: its latest occurrence, everything in that operation, in order. */
 export async function showOperation(ctx, problem) {
   const scope = await ctx.scope();
@@ -255,13 +263,12 @@ export async function showOperation(ctx, problem) {
   ctx.showText(`${problem.type}: the latest occurrence`, '', { loading: true, token });
   const still = () => ctx.overlay()?.token === token;
   try {
-    const t = await ctx.provider.query(scope.component, operationQuery(problem.operation), { timespan: ctx.timespan().iso });
+    const rows = await occurrence(ctx, scope.component, problem);
     if (!still()) return;
-    const rows = records(t);
     const colour = { request: theme.info, dependency: theme.dim, exception: theme.del, trace: undefined };
     const lines = [
       [{ text: problem.message ?? '', bold: true }],
-      [{ text: `${problem.count} times, ${problem.users} user${problem.users === 1 ? '' : 's'}, in ${problem.role} · operation ${problem.operation}`, color: theme.dim }],
+      [{ text: occurrenceSummary(problem), color: theme.dim }],
       [],
       ...rows.map((r) => [
         { text: `${cellText(r.timestamp, 'datetime').slice(11)}  `, color: theme.dim },
@@ -271,11 +278,57 @@ export async function showOperation(ctx, problem) {
         { text: r.duration != null ? `  ${Math.round(r.duration)} ms` : '', color: theme.dim },
       ]),
     ];
-    ctx.showText(`${problem.type}: the latest occurrence`, rows.map((r) => `${r.timestamp} ${r.itemType} ${r.name ?? ''} ${r.detail ?? ''}`).join('\n'), { lines });
+    ctx.showText(`${problem.type}: the latest occurrence`, occurrenceText(problem, rows), { lines });
   } catch (e) {
     if (still()) ctx.closeOverlay();
     ctx.note(e.message, 'error');
   }
+}
+
+/** The occurrence as plain text: what y copies, and what w sends Claude. */
+export function occurrenceText(problem, rows) {
+  return [
+    `${problem.type}: ${problem.message ?? ''}`,
+    occurrenceSummary(problem),
+    '',
+    ...rows.map((r) => [cellText(r.timestamp, 'datetime'), String(r.itemType).padEnd(11), r.name ?? '', r.detail ?? '', r.success === false ? '(failed)' : '', r.duration != null ? `${Math.round(r.duration)} ms` : ''].filter(Boolean).join('  ')),
+  ].join('\n');
+}
+
+/** The question for w and /why: what the problem is; its latest occurrence goes on stdin. */
+export function whyPrompt(problem) {
+  return [
+    `"${problem.type}" is an exception in the Azure app "${problem.role}", seen ${problem.count} times lately (Application Insights problem "${problem.problemId}").`,
+    "Its latest occurrence, end to end (the request, its dependencies, the exception and the traces, in order), is on stdin.",
+    "Say in a few sentences what most likely went wrong and what to do about it. If the current folder holds the app's source, read the code involved to be specific. Plain text, no headings.",
+  ].join(' ');
+}
+
+/** A problem by its id or type (or part of either), among those Problems shows; else the one under the cursor there. */
+export function problemNamed(ctx, name) {
+  const n = name?.trim().toLowerCase();
+  if (!n) return ctx.selectedProblem();
+  const list = ctx.problems();
+  return list.find((p) => p.problemId.toLowerCase() === n) ?? list.find((p) => p.problemId.toLowerCase().includes(n) || p.type.toLowerCase().includes(n)) ?? null;
+}
+
+/** w on a problem and /why: Claude reads its latest occurrence (and the code, when Sonar runs in the app's checkout) and says why. */
+export async function why(ctx, which) {
+  const problem = typeof which === 'object' && which ? which : problemNamed(ctx, which);
+  if (!problem) return ctx.note(which?.trim() ? `No problem like ${which.trim()} in Problems.` : 'Pick a problem in Problems first (3), or name one.', 'error');
+  const scope = await ctx.scope();
+  if (!scope.component) return ctx.note(scope.why, 'error');
+  const r = await ctx.task(
+    `Asking Claude about ${problem.type}`,
+    async (signal) => {
+      const rows = await occurrence(ctx, scope.component, problem);
+      const input = clip(occurrenceText(problem, rows), 60_000);
+      return { stdout: await ctx.askClaude(whyPrompt(problem), { input, cwd: process.cwd(), signal, tools: ['Read', 'Grep', 'Glob'] }) };
+    },
+    { label: 'Claude is reading it' },
+  );
+  if (r.ok) ctx.showText(`Why ${problem.type}`, r.out);
+  return r;
 }
 
 /** /accent: a new accent colour, or `default` for the one Sonar comes with. */

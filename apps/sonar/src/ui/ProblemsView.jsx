@@ -1,6 +1,6 @@
 import React from 'react';
 import { useInput } from 'ink';
-import { showOperation } from '../actions.js';
+import { showOperation, why } from '../actions.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -12,6 +12,7 @@ export function ProblemsView({ problems, scope, ctx, width, height, active }) {
   const innerH = height - 2;
   const nav = useListNav(list.length, innerH, { resetKey: problems });
   const sel = list[nav.index];
+  ctx.selectProblem(sel ?? null);
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
@@ -19,6 +20,7 @@ export function ProblemsView({ problems, scope, ctx, width, height, active }) {
     if (input === 'c') return ctx.chooseComponent();
     if (!sel) return;
     if (key.return) return showOperation(ctx, sel);
+    if (input === 'w') return why(ctx, sel);
     if (input === 'l') return ctx.logsFor(null, `exceptions | where problemId == '${sel.problemId.replace(/'/g, "\\'")}' | order by timestamp desc | take 50`);
     if (input === 'y') return ctx.copy(sel.message ?? sel.problemId, 'the message');
   };

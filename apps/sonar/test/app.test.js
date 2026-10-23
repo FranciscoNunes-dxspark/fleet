@@ -248,3 +248,40 @@ test('a long job ends with a notification, a quick one and a cancelled one say n
     app.unmount();
   }
 });
+
+test('problems: w asks Claude why, with the latest occurrence on stdin and read-only tools, and /why names one', async () => {
+  const asked = [];
+  const askClaude = async (prompt, opts) => {
+    asked.push({ prompt, ...opts });
+    return 'The payments provider is slow: raise the HttpClient timeout in PaymentsClient.';
+  };
+  const app = start({ askClaude });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    app.stdin.write('3');
+    await until(() => frame().includes('TimeoutException') && /\d+ problems/.test(frame()), 'the problems');
+    app.stdin.write('w');
+    await until(() => frame().includes('╭─ Why ') && frame().includes('raise the HttpClient timeout'), "Claude's answer in the viewer");
+    const [q] = asked;
+    const kind = /^"([^"]+)" is an exception in the Azure app "contoso-web"/.exec(q.prompt)?.[1];
+    assert.ok(kind, q.prompt);
+    assert.ok(frame().includes(`Why ${kind}`));
+    assert.deepEqual(q.tools, ['Read', 'Grep', 'Glob']);
+    assert.equal(q.cwd, process.cwd());
+    assert.match(q.input, /request\s+GET \//);
+    assert.ok(q.input.includes(`exception    ${kind}`), q.input);
+    assert.match(q.input, /dependency\s+POST \/charges/);
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('╭─ Why '), 'closed');
+
+    app.stdin.write('/');
+    await type(app.stdin, 'why Timeout');
+    await until(() => frame().includes('System.TimeoutException at'), 'completion offers the problem');
+    app.stdin.write(KEYS.enter);
+    await until(() => asked.length === 2 && frame().includes('Why System.TimeoutException'), 'the named one asked about');
+    assert.match(asked[1].input, /timed out talking to the payments provider/);
+  } finally {
+    app.unmount();
+  }
+});

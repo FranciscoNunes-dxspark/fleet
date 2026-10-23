@@ -22,7 +22,9 @@ export function tempHome() {
 /** Renders App over a fresh demo Azure (or `props.provider`), remembered for until's message. */
 export function start(props = {}) {
   const provider = props.provider ?? demoAzure();
-  lastApp = render(React.createElement(App, { config: { history: [] }, provider, ...props }));
+  // Nothing reaches Claude from the tests.
+  const askClaude = async () => 'Claude is not here in the tests.';
+  lastApp = render(React.createElement(App, { config: { history: [] }, provider, askClaude, ...props }));
   lastApp.provider = provider;
   return lastApp;
 }

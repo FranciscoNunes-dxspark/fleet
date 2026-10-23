@@ -62,6 +62,7 @@ export const HELP = [
     views: ['problems'],
     rows: [
       ['↵', 'The latest occurrence: everything in that operation, in order (requests, dependencies, exceptions, traces)'],
+      ['w', 'Ask Claude why it happens: it reads the latest occurrence, and the code when Sonar was started in the app\'s folder'],
       ['l', 'Its exceptions in Logs'],
       ['y', 'Copy the message'],
       ['c', 'Which Application Insights to look in'],

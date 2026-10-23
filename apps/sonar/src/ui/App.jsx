@@ -29,6 +29,7 @@ import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { worthNotifying } from '../notify.js';
+import { ask } from '../claude-cli.js';
 
 const VIEWS = [
   { id: 'resources', label: 'Resources' },
@@ -50,7 +51,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const HINTS = {
   resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse',
   logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
-  problems: '↵ the latest occurrence · l its exceptions in Logs · y copy the message · c which insights',
+  problems: '↵ the latest occurrence · w ask Claude why · l its exceptions in Logs · y copy the message · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
   log: '↵ all its output · y copy it',
 };
@@ -115,8 +116,9 @@ const DOUBLE_CLICK_MS = 400;
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
 // `notify(title, body)` says a long job has finished (cli.jsx rings the terminal's bell and raises a
-// desktop notification); tests pass a recorder or nothing.
-export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify }) {
+// desktop notification); tests pass a recorder or nothing. `askClaude` is claude-cli.js's ask (w in
+// Problems); tests stub it.
+export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify, askClaude = ask }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -145,6 +147,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const livePaused = useRef(false);
   const [liveTick, setLiveTick] = useState(0);
   const selectedRef = useRef(null);
+  const selectedProblem = useRef(null);
+  const problemsRef = useRef(null);
+  problemsRef.current = problems;
   const settingsCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
   const [focus, setFocusState] = useState('view');
@@ -389,6 +394,11 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       if (dataRef.current) setConfig((c) => ({ ...c, subscription: dataRef.current.subscription.id }));
     },
     selectTarget: (t) => (selectedRef.current = t),
+    // The problem under the cursor in Problems, and the list there (for /why to name one).
+    selectProblem: (p) => (selectedProblem.current = p),
+    selectedProblem: () => selectedProblem.current,
+    problems: () => problemsRef.current?.rows ?? [],
+    askClaude,
     selectedTarget: () => selectedRef.current,
     targets: () => (dataRef.current ? targetsByLabel(dataRef.current.apps, dataRef.current.slots) : {}),
     settingsOf,
@@ -705,13 +715,13 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     setTitle?.(title);
   }, [title]);
 
-  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets() }) : [];
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets(), problems: ctx.problems() }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets() });
+    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets(), problems: ctx.problems() });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);

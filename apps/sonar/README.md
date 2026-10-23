@@ -67,6 +67,14 @@ says what it changes before saving, and Azure restarts the app to take it. `d` c
 with another slot of the same app, which is where the difference between staging and production
 usually hides.
 
+### Asking Claude
+
+`w` on a problem (or `/why`) sends its latest occurrence, end to end, to
+[Claude Code](https://claude.com/claude-code) (`claude -p`, signed in as you already are), which says
+what most likely went wrong and what to do about it, in the viewer. Claude may read files (Read,
+Grep and Glob, nothing else) in the folder Sonar was started in: start Sonar in the app's checkout and
+it reads the code the exception went through.
+
 ## Keys
 
 | Key | What it does |
@@ -111,6 +119,7 @@ usually hides.
 | In Problems | |
 | --- | --- |
 | `↵` | Its latest occurrence, end to end |
+| `w` | Ask Claude why it happens |
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
 | `c` | Which Application Insights to look in |
@@ -159,6 +168,7 @@ and Trawl.
 | `/stop [app]` `/start [app]` | Stop or start one |
 | `/swap [app/slot]` | Swap a slot into production |
 | `/portal [app]` | Open one in the Azure portal |
+| `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
 | `/settings` | Theme, accent colour, mouse, updates, notifications, history |

@@ -14,6 +14,7 @@ export const COMMANDS = [
   { name: 'start', args: '[app]', desc: 'Start a stopped app or slot', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'start') },
   { name: 'swap', args: '[app/slot]', desc: 'Swap a slot into production (asks for the app\'s name)', complete: 'targets', run: (ctx, s) => a.swap(ctx, s) },
   { name: 'portal', args: '[app]', desc: 'Open an app or slot in the Azure portal', complete: 'targets', run: (ctx, s) => a.openInPortal(ctx, a.targetNamed(ctx, s)) },
+  { name: 'why', args: '[problem]', desc: "Ask Claude why a problem happens, from its latest occurrence (and the code, when Sonar runs in the app's folder)", complete: 'problems', run: (ctx, s) => a.why(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
   { name: 'settings', desc: 'Theme, accent colour, mouse, updates, notifications, history', run: (ctx) => a.settings(ctx) },
@@ -33,7 +34,8 @@ export function findCommand(name, user = []) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, data, targets) {
+function completions(kind, data, targets, problems) {
+  if (kind === 'problems') return (problems ?? []).map((p) => p.problemId);
   if (kind === 'subscriptions') return (data?.subscriptions ?? []).map((s) => s.name);
   if (kind === 'components') return (data?.components ?? []).map((c) => c.name);
   if (kind === 'targets') return Object.keys(targets ?? {});
@@ -52,7 +54,7 @@ function ranked(names, query) {
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away.
  */
-export function suggestionsFor(value, { data, targets, user = [] } = {}) {
+export function suggestionsFor(value, { data, targets, problems, user = [] } = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   const all = [...COMMANDS, ...user];
@@ -67,7 +69,7 @@ export function suggestionsFor(value, { data, targets, user = [] } = {}) {
   const cmd = findCommand(value.slice(1, space), user);
   const rest = value.slice(space + 1);
   if (!cmd?.complete) return [];
-  const names = ranked(completions(cmd.complete, data, targets), rest);
+  const names = ranked(completions(cmd.complete, data, targets, problems), rest);
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
 }
