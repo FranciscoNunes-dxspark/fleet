@@ -112,6 +112,21 @@ test('slots: Resource Graph says which apps have any, across its pages, and only
   assert.deepEqual([...(await demo.appsWithSlots('sub-prod'))].sort(), dd.apps.filter((a) => dd.slots[a.id].length).map((a) => a.id.toLowerCase()).sort());
 });
 
+test('loading: the subscription az has selected is asked for while the list is read, and a name or id given wins', async () => {
+  const order = [];
+  const provider = {
+    subscriptions: async () => (order.push('list'), await new Promise((r) => setTimeout(r, 10)), order.push('listed'), [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }]),
+    currentSubscription: async () => (order.push('current'), { id: 'b', name: 'B' }),
+    apps: async () => [],
+    components: async () => [],
+  };
+  assert.equal((await loadSubscription(provider)).subscription.id, 'b');
+  assert.ok(order.indexOf('current') < order.indexOf('listed'), order.join(' '));
+  order.length = 0;
+  assert.equal((await loadSubscription(provider, 'A')).subscription.id, 'a');
+  assert.ok(!order.includes('current'), 'not asked when one is named');
+});
+
 test('a throttled call (429) is tried again after Retry-After, up to three times', async () => {
   let n = 0;
   const fetch = async () => {

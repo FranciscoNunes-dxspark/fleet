@@ -10,9 +10,11 @@ import { mapLimited } from './tree.js';
  * just shows none. `onProgress(data)`, when given, sees it as it fills in, from its apps on.
  */
 export async function loadSubscription(provider, subId, { signal, onProgress, every = 250 } = {}) {
+  // The one az has selected is asked for while the list is read, not after it.
+  const current = subId == null && provider.currentSubscription ? provider.currentSubscription().catch(() => null) : null;
   const subscriptions = await provider.subscriptions({ signal });
   if (!subscriptions.length) throw new Error('This sign-in has no subscriptions it can see.');
-  const wanted = subId ?? (await provider.currentSubscription?.().catch(() => null))?.id;
+  const wanted = subId ?? (await current)?.id;
   // By id, or by name (sonar --sub "Contoso Production").
   const subscription = subscriptions.find((s) => s.id === wanted || s.name.toLowerCase() === String(wanted ?? '').toLowerCase()) ?? subscriptions[0];
   // The other kinds are a bonus: a subscription without them (or without access to them) shows none.
