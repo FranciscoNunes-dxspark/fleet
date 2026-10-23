@@ -1,5 +1,5 @@
 # Builds Keel's Android app (scripts/build-android.mjs) and publishes it as a release of its own,
-# tagged android-v<run number>, which is also its version code. "Run workflow" on the Actions tab
+# tagged android-v<run number + 100>, which is also its version code. "Run workflow" on the Actions tab
 # builds it by hand: the app holds no code of Keel's, so it only needs a new build when the host,
 # name or icon change. Needs the repository secrets ANDROID_KEYSTORE_BASE64 (base64 of the
 # keystore file), ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_PASSWORD; the key's alias is "keel".
@@ -43,14 +43,16 @@ jobs:
           PACKAGE: ${{ inputs.package }}
         run: >-
           node scripts/build-android.mjs --host "$HOST" --package "$PACKAGE"
-          --version-code "${{ github.run_number }}" --keystore "$RUNNER_TEMP/keel.keystore"
+          --version-code "$((${{ github.run_number }} + 100))" --keystore "$RUNNER_TEMP/keel.keystore"
       # Not marked latest, so the terminal app's updater keeps finding its own releases.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: android-v${{ github.run_number }}
+          CODE: ${{ github.run_number }}
           HOST: ${{ inputs.host }}
-        run: >-
-          gh release create "$TAG" release/keel-android.apk release/keel-android.aab --target "$GITHUB_SHA"
-          --title "Keel for Android ${{ github.run_number }}" --latest=false
+        run: |
+          # The version code is the run number plus 100, so it stays above the releases made before this repo was recreated (up to android-v9).
+          TAG="android-v$((CODE + 100))"
+          gh release create "$TAG" release/keel-android.apk release/keel-android.aab --target "$GITHUB_SHA" \
+          --title "Keel for Android $((CODE + 100))" --latest=false \
           --notes "Opens https://$HOST as an app. Install keel-android.apk directly, or upload keel-android.aab to Google Play."
