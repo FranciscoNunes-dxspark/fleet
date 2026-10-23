@@ -26,6 +26,7 @@ import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
+import { exitNews, worthNotifying } from '../notify.js';
 
 const VIEWS = [
   { id: 'crew', label: 'Crew' },
@@ -112,10 +113,11 @@ const DOUBLE_CLICK_MS = 400;
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
 // `pidsOnPort` and `killPids` reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
-// `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
+// `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
+// recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, restartTimes, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, restartTimes, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -248,9 +250,13 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     setData(dataRef.current);
     setTick((n) => n + 1);
   };
-  // A process that ended by itself: said when it gave up restarting.
+  // A process that ended by itself: said when it gave up restarting, and a crash or giving up raises
+  // a notification (unless the setting is off). A stop never comes here.
   const crewEvent = (e) => {
-    if (e.type === 'exit' && e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
+    if (e.type !== 'exit') return;
+    if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
+    const news = exitNews(e.p, e.plan);
+    if (news && notify && configRef.current.notify !== false) notify(news.title, news.body);
   };
   const crewEventRef = useRef(crewEvent);
   crewEventRef.current = crewEvent;
@@ -334,15 +340,19 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     setBusy(b);
     const id = addEntry({ title, status: 'running' });
     setWelcome(false);
+    // A long one that ends (not cancelled) says so, for when you've looked away.
+    const tell = (said, body) => notify && worthNotifying(Date.now() - b.started, configRef.current) && notify(`Bosun: ${title}${said}`, body);
     try {
       const { stdout = '', stderr = '' } = await start(controller.signal);
       const out = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
       lastOutput.current = { title, text: out || '(no output)' };
       updateEntry(id, { status: 'ok', lines: out ? out.split('\n') : ['Done'] });
+      tell('', out.split('\n').at(-1) || 'Done');
       return { ok: true, out };
     } catch (error) {
       lastOutput.current = { title, text: error.message };
       updateEntry(id, { status: 'error', lines: error.cancelled ? ['Cancelled'] : error.message.split('\n') });
+      if (!error.cancelled) tell(' failed', firstLine(error.message));
       return { ok: false, error };
     } finally {
       busyRef.current = null;

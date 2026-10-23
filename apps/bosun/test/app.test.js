@@ -380,3 +380,38 @@ test('a Procfile runs each process on its PORT, and /init writes it out as bosun
     app.unmount();
   }
 });
+
+test('a crash, giving up and a long command notify; a stop doesn\'t, and the setting turns it off', async () => {
+  const dir = project({ procs: { idle: 'node -e "setInterval(() => {}, 1000)"', broken: { run: 'node -e "console.error(\'Error: nope\'); process.exit(3)"', restart: 'on-failure' } } });
+  const told = [];
+  const app = start({ dir, config: { history: [], notifyAfter: 0 }, notify: (title, body) => told.push(`${title} | ${body}`), restartTimes: { first: 300, max: 300, stable: 60_000, quick: 60_000, giveUpAfter: 2 } });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => /broken\s+crashed\s+gave up/.test(frame()) && /idle\s+running/.test(frame()), 'the broken one given up on');
+    assert.deepEqual(told, ['Bosun: broken crashed | Error: nope Restarting it.', 'Bosun: broken gave up | It ended 2 times in a row just after starting.']);
+    app.stdin.write('s');
+    await until(() => /idle\s+stopped/.test(frame()), 'idle stopped');
+    app.stdin.write('!');
+    await type(app.stdin, 'node -e "console.log(42)"');
+    app.stdin.write(KEYS.enter);
+    await until(() => told.length === 3, 'the command\'s end told');
+    assert.equal(told[2], 'Bosun: node -e "console.log(42)" | 42');
+
+    app.stdin.write(',');
+    await until(() => /Notify\s+on/.test(frame()), 'the settings');
+    for (let i = 0; i < 3; i++) app.stdin.write('j');
+    await until(() => /❯ Notify\s+on/.test(frame()), 'on Notify');
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ Notify\s+off/.test(frame()), 'off');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('Accent colour'), 'the settings closed');
+    app.stdin.write('!');
+    await type(app.stdin, 'node -e "process.exit(1)"');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('exit'), 'the failed command');
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(told.length, 3, 'nothing said with the setting off');
+  } finally {
+    app.unmount();
+  }
+});

@@ -2,6 +2,7 @@
 // without the UI; actions.js shows it in a picker and makes the changes.
 import { THEMES, defaultAccent, theme } from './theme.js';
 import { fit } from './text.js';
+import { notifySeconds } from './notify.js';
 
 const isOn = (value) => value !== false;
 const count = (n, one, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : 'none');
@@ -34,6 +35,13 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       label: 'Mouse',
       value: isOn(config.mouse) ? 'on' : 'off',
       note: !mouse ? "this terminal can't report it" : isOn(config.mouse) ? 'off leaves selecting to the terminal' : 'click, scroll, drag to copy',
+      action: 'toggle',
+    },
+    {
+      id: 'notify',
+      label: 'Notify',
+      value: isOn(config.notify) ? 'on' : 'off',
+      note: isOn(config.notify) ? `a bell and a notification when a process crashes or gives up, and after a ${notifySeconds(config)} s command` : 'say nothing',
       action: 'toggle',
     },
     { id: 'checkForUpdates', label: 'Check for new versions', value: checks ? 'on' : 'off', note: 'once a day, in the downloaded Bosun', action: 'toggle' },

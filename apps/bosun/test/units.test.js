@@ -13,6 +13,7 @@ import { FACES, PALETTE, petPixels, petRows } from '../src/pet.js';
 import { settingRows } from '../src/settings.js';
 import { DARK, DEFAULT_ACCENT, LIGHT, LIGHT_ACCENT, applyTheme, backgroundFrom, theme, themeMode } from '../src/theme.js';
 import { nextTheme } from '../src/settings.js';
+import { exitNews, notification, worthNotifying } from '../src/notify.js';
 import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 import { expand, parseDotenv } from '../src/dotenv.js';
@@ -244,4 +245,21 @@ test('theme: dark, light, auto from COLORFGBG, and the accent over it', () => {
     applyTheme({}, {});
   }
   assert.equal(theme.accent, DEFAULT_ACCENT);
+});
+
+test('notify: the bytes for each kind of terminal, when a run is worth it, and what an exit says', () => {
+  assert.equal(notification('Bosun: api crashed', 'It exited with 1.', {}), '\x07\x1b]9;Bosun: api crashed: It exited with 1.\x07');
+  assert.equal(notification('a;b', 'c\x1bd', { VTE_VERSION: '7000' }), '\x07\x1b]777;notify;a,b;c d\x1b\\');
+  assert.ok(worthNotifying(10_000, {}));
+  assert.ok(!worthNotifying(9_000, {}));
+  assert.ok(worthNotifying(0, { notifyAfter: 0 }));
+  assert.ok(!worthNotifying(60_000, { notify: false }));
+
+  const p = { name: 'api', code: 1, trouble: 'Error: no database' };
+  assert.deepEqual(exitNews(p, { restart: false }), { title: 'Bosun: api crashed', body: 'Error: no database' });
+  assert.equal(exitNews(p, { restart: true, attempt: 1 }).body, 'Error: no database Restarting it.');
+  assert.equal(exitNews(p, { restart: true, attempt: 2 }), null, 'once, not each time it\'s restarted');
+  assert.equal(exitNews({ ...p, code: 0 }, { restart: true, attempt: 1 }), null, 'a clean exit');
+  assert.deepEqual(exitNews(p, { gaveUp: true, quick: 5 }), { title: 'Bosun: api gave up', body: 'It ended 5 times in a row just after starting.' });
+  assert.equal(settingRows({ notify: false }).find((r) => r.id === 'notify').value, 'off');
 });

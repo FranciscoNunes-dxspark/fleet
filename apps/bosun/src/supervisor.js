@@ -153,7 +153,8 @@ export class Supervisor {
       const line = stripAnsi(raw).replace(/\r/g, '');
       if (!line.trim()) continue;
       p.lines.push({ at: Date.now(), text: line, err });
-      if (isTrouble(line) && !p.trouble) p.trouble = line.trim();
+      // Bosun's own lines (── the command, ── stopped) are never the process's trouble.
+      if (!p.trouble && !line.startsWith('── ') && isTrouble(line)) p.trouble = line.trim();
     }
     if (p.lines.length > KEEP_LINES) p.lines.splice(0, p.lines.length - KEEP_LINES);
   }

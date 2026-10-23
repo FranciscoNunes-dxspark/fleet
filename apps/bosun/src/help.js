@@ -11,7 +11,7 @@ export const HELP = [
       ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
       ['!', 'Run a shell command, e.g.  !node --version'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
-      [',', 'Settings (/settings): theme, accent colour, mouse, updates, history'],
+      [',', 'Settings (/settings): theme, accent colour, mouse, notifications, updates, history'],
       ['?', 'This help'],
       ['q / ctrl+c', 'Quit, stopping every process Bosun started (and what they started)'],
       ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go'],

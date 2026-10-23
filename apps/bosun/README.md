@@ -203,7 +203,7 @@ Trawl.
 | `/init` | Write a `bosun.json` from what Bosun worked out (a Procfile, a compose file, package.json) |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
-| `/settings` | Theme, accent colour, mouse, updates, history |
+| `/settings` | Theme, accent colour, mouse, notifications, updates, history |
 | `/accent <#rrggbb>` | Change the accent colour (`default` puts it back) |
 | `/update` | Look for a new version now and install it |
 | `/help` | Keys and commands |
@@ -218,6 +218,7 @@ Trawl.
 | Theme | `↵` goes through `dark`, `light` and `auto`, and repaints straight away. `auto`, the default, reads the `COLORFGBG` variable some terminals set (Konsole, rxvt, iTerm2 with its option on) to tell a light background from a dark one, and is dark where it isn't set. The light palette has darker colours, pale backgrounds behind search matches, and a darker coral as the default accent; an accent of your own is used as it is |
 | Accent colour | The colour of the cursor, borders and the pet |
 | Mouse | Off leaves selecting text to the terminal |
+| Notify | On (the default), Bosun rings the terminal's bell and raises a desktop notification when a process crashes (once, not again each time it's restarted; never when you stop it), when one gives up restarting, and when a command (`!`, `w`) that took longer than 10 seconds ends. It's OSC 9, which Windows Terminal, iTerm2, WezTerm and kitty show, or OSC 777 in GNOME Terminal and other VTE terminals. A command you cancel says nothing. `"notifyAfter": 30` in the settings file changes the seconds |
 | Check for new versions | Once a day, in the downloaded builds |
 | Install them by itself | Off only says a new version is out |
 | Prompt history | Clear it |

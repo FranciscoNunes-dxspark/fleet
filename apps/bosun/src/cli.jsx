@@ -8,6 +8,7 @@ import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js
 import { copyToClipboard } from './clipboard.js';
 import { terminalMouse } from './mouse.js';
 import { killEverything } from './supervisor.js';
+import { notification } from './notify.js';
 import { startFolder } from './projects.js';
 import { existsSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -84,7 +85,7 @@ const mouse = await terminalMouse(process.stdin, process.stdout);
 // y copies: to the system clipboard, or through the terminal (OSC 52) over SSH or when that fails.
 const copy = (text) => copyToClipboard(text);
 const app = render(
-  <App config={config} dir={dir} profile={value('--profile') ?? null} autostart={!args.includes('--no-start')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} dir={dir} profile={value('--profile') ?? null} autostart={!args.includes('--no-start')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} notify={(title, body) => process.stdout.write(notification(title, body))} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdout: mouse?.stdout ?? process.stdout },
 );
