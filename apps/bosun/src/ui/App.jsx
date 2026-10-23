@@ -27,7 +27,7 @@ import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
-import { decodeContext, readMoods, writeMood } from '../family.js';
+import { decodeContext, pastedLine, readMoods, writeMood } from '../family.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { Recorder, sessionsDir } from '../recorder.js';
 import { listeningPorts } from '../ports.js';
@@ -55,18 +55,6 @@ const HINTS = {
 };
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
-
-/**
- * What a paste into a view puts in the prompt: input of more than one character at once that starts
- * with / or is a family context, without its paste brackets and trailing newline; else null.
- */
-export function pastedLine(input) {
-  if (!input || input.length < 2) return null;
-  const text = input.replace(/\x1b\[20[01]~/g, '').replace(/[\r\n]+$/, '');
-  if (text.length < 2 || /[\r\n]/.test(text)) return null;
-  if (text.startsWith('/') || decodeContext(text)) return text.trim();
-  return null;
-}
 
 // Whether a process runs differently now (its command or its settings), so /reload restarts it.
 const changedSpec = (had, now) => had.run !== now.run || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
@@ -769,7 +757,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       return;
     }
     // A paste of a command line (or a sibling's family:v1: context) opens the prompt with it, to run with ↵.
-    const pasted = pastedLine(input);
+    // (A terminal ends a pasted line with \r, which the family's rule takes as a \n.)
+    const pasted = pastedLine(input.replace(/\r$/, '\n'));
     if (pasted) return prefill(pasted);
     if (input === '/' || input === ':') return prefill('/');
     if (input === '!') return prefill('!');

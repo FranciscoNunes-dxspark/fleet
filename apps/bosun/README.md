@@ -216,7 +216,7 @@ there; it never holds a password or a token.
 - `/family` lists what this project offers them: the checkout for Splice (`/open <repo>`), each `.http`
   file for Hail (`/open <file>`), and each database the project's `appsettings*.json` or `.env` names
   for Trawl (`/azure-sql <server> [database]` for Azure SQL signed in with Entra, else
-  `/add <name> <server> [database] [--kind …] [--user …]`; Trawl asks for the password itself). `↵`
+  `/add <name> <server> [database] [--kind …] [--user …] [--trust-cert]`; Trawl asks for the password itself). `↵`
   copies one.
 - `t` in Crew copies the process's latest trouble line as `/take family:v1:logline:…`, with the
   request id it names (`x-request-id`, `requestId`, `request_id`, `traceparent`'s trace id,

@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { KEEP, choices, remember, resolveFolder, startFolder } from '../src/projects.js';
+import { KEEP, choices, pathArg, remember, resolveFolder, startFolder } from '../src/projects.js';
+import { quoteArg } from '../src/family.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../src/commands.js';
 import { HELP } from '../src/help.js';
 import { commandsSection, sectionLines } from '../src/help-layout.js';
@@ -55,6 +56,9 @@ test('projects: where Bosun starts, where /move goes, and the ones it remembers'
     assert.equal(resolveFolder(shop, 'api'), join(shop, 'api'));
     assert.equal(resolveFolder(shop, blog), blog);
     assert.equal(resolveFolder(shop, '"blog"'), blog, 'a quoted name, as a path with spaces is typed');
+    assert.equal(resolveFolder(shop, quoteArg(blog)), blog, 'a path as a sibling\'s /move line quotes it');
+    assert.equal(pathArg(quoteArg('C:\\work\\my shop')), 'C:\\work\\my shop', 'a Windows path, its backslashes escaped');
+    assert.equal(pathArg('"C:\\work\\shop"'), 'C:\\work\\shop', 'one typed in quotes keeps them');
     assert.equal(resolveFolder(shop, 'nope'), null);
     assert.equal(resolveFolder(shop, ' '), null);
 

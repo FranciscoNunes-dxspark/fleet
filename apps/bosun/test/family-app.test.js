@@ -5,22 +5,12 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { encodeContext, takeLine, writeMood, familyDir } from '../src/family.js';
 import { familyMood, reactionTo } from '../src/moods.js';
-import { familyOffers, trawlLine } from '../src/actions.js';
-import { pastedLine } from '../src/ui/App.jsx';
+import { familyOffers, trawlName } from '../src/actions.js';
 import { KEYS, project, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
 before(() => (cleanup = tempHome()));
 after(() => cleanup());
-
-test('a paste: a command line or a context, without its newline; anything else is keys', () => {
-  const ctx = encodeContext('logline', { process: 'api', text: 'x' });
-  assert.equal(pastedLine('/restart api\r'), '/restart api');
-  assert.equal(pastedLine(`\x1b[200~${ctx}\n\x1b[201~`), ctx);
-  assert.equal(pastedLine('/'), null);
-  assert.equal(pastedLine('rr'), null);
-  assert.equal(pastedLine('/a\n/b'), null);
-});
 
 test('Squawk\'s mood for the family, and what it says about the siblings\'', () => {
   const procs = [{ name: 'api', status: 'running', child: {} }, { name: 'web', status: 'crashed' }];
@@ -50,14 +40,14 @@ test('what a project offers the siblings: Splice its checkout, Hail its .http fi
   };
   const offers = familyOffers(found);
   assert.deepEqual(offers.map((o) => [o.app, o.line]), [
-    ['Splice', '/open /w/shop'],
-    ['Hail', '/open /w/shop/api/orders.http'],
-    ['Trawl', '/azure-sql shop.database.windows.net Shop'],
-    ['Trawl', '/add shop-shop-dev localhost,14330 "Shop Dev" --user sa'],
-    ['Trawl', '/add shop-shop db.local shop --kind postgres --user me'],
+    ['splice', '/open /w/shop'],
+    ['hail', '/open /w/shop/api/orders.http'],
+    ['trawl', '/azure-sql shop.database.windows.net Shop'],
+    ['trawl', '/add shop-shop-dev localhost,14330 "Shop Dev" --user sa'],
+    ['trawl', '/add shop-shop db.local:5432 shop --kind postgres --user me'],
   ]);
   assert.ok(offers.every((o) => !/Secret1|\bp\b(?!ostgres)/.test(o.line.replace('/open', ''))));
-  assert.equal(trawlLine('x', { name: 'M', kind: 'mysql', server: 'h', port: 3307, user: 'u' }), '/add x-m h:3307 --kind mysql --user u');
+  assert.equal(trawlName('x', { name: 'M', kind: 'mysql', server: 'h', port: 3307, user: 'u' }), 'x-m');
 });
 
 test('/take finds a sibling\'s log line in the crew\'s logs; other kinds are another app\'s; a pasted context opens the prompt', async () => {
@@ -75,7 +65,7 @@ test('/take finds a sibling\'s log line in the crew\'s logs; other kinds are ano
     app.stdin.write(encodeContext('commit', { hash: 'abc1234' }));
     await until(() => frame().includes('enter run'), 'a bare context in the prompt');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes("That's for Splice: paste it into Splice's prompt"), 'another app\'s');
+    await until(() => frame().includes("That's commit abc1234, for Splice or Sonar: paste it into one's prompt instead."), 'another app\'s');
   } finally {
     app.unmount();
     rmSync(dir, { recursive: true, force: true });
