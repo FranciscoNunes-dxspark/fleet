@@ -20,7 +20,7 @@ import { run } from '../src/run.js';
 import { expand, parseDotenv } from '../src/dotenv.js';
 import { markRanges, matcher } from '../src/search.js';
 import { parseYaml, scalar } from '../src/yaml.js';
-import { globRegex, watchMatcher, watchRoots } from '../src/watch.js';
+import { globRegex, skipsFolder, watchMatcher, watchRoots } from '../src/watch.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
   assert.equal(findCommand('restart').name, 'restart');
@@ -174,6 +174,15 @@ test('watch: globs, the folders to watch, and which changes restart', () => {
   const no = ['lib/a.ts', 'src/a.test.js', 'src/generated/x.js', 'src/node_modules/x.js', '.git/HEAD', 'other/x.js', 'sub/package.json'];
   for (const f of yes) assert.ok(wanted(f), f);
   for (const f of no) assert.ok(!wanted(f), f);
+  // The folders left unwatched: only ones where nothing inside could restart it.
+  const ignore = ['*.test.js', 'src/generated', 'cache', 'src/*.gen'];
+  const skip = skipsFolder(ignore);
+  const skipped = ['node_modules', 'a/node_modules/b', '.git', 'src/generated', 'src/generated/x', 'cache', 'lib/cache/deep', 'x.test.js'];
+  const kept = ['src', 'src/gen', 'src/a.gen', 'src/generated2', 'lib', 'caches'];
+  for (const f of skipped) assert.ok(skip(f), f);
+  for (const f of kept) assert.ok(!skip(f), f);
+  const any = watchMatcher(['**/*'], ignore);
+  for (const f of skipped) assert.ok(!any(`${f}/x.js`) && !any(`${f}/y/z.js`), f);
 });
 
 test('search: smart case, and the matches picked out of the segments', () => {

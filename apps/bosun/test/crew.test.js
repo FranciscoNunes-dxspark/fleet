@@ -308,6 +308,31 @@ test('watch: a change to a watched file restarts the process, an ignored one doe
   }
 });
 
+test('watch: a folder at a time, leaving out node_modules and what "ignore" takes whole, and following folders made and removed', async () => {
+  const { mkdirSync, rmSync } = await import('node:fs');
+  const { watchTree } = await import('../src/treewatch.js');
+  const { skipsFolder } = await import('../src/watch.js');
+  const dir = project({});
+  for (const d of ['src/deep', 'node_modules/pkg/lib', '.git/objects', 'dist/x']) mkdirSync(join(dir, d), { recursive: true });
+  const heard = [];
+  const w = watchTree(dir, { skip: skipsFolder(['dist']), onChange: (f) => heard.push(f) });
+  try {
+    assert.deepEqual(w.folders(), ['.', 'src', 'src/deep']);
+    writeFileSync(join(dir, 'src', 'deep', 'a.js'), '1');
+    await until(() => heard.includes('src/deep/a.js'), 'a change two folders down');
+    mkdirSync(join(dir, 'src', 'new'));
+    await until(() => w.folders().includes('src/new'), 'a new folder watched');
+    writeFileSync(join(dir, 'src', 'new', 'b.js'), '1');
+    await until(() => heard.includes('src/new/b.js'), 'a change in it');
+    rmSync(join(dir, 'src', 'new'), { recursive: true });
+    await until(() => !w.folders().includes('src/new'), 'a removed folder forgotten');
+  } finally {
+    w.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(w.folders(), []);
+});
+
 test('Procfile and compose: read when there\'s no bosun.json, in that order, and /init writes them out', async () => {
   const { rmSync } = await import('node:fs');
   assert.deepEqual(parseProcfile('# web\nweb: node server.js -p $PORT\n\nworker:node worker.js\nnot a line\n'), [

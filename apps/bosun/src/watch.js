@@ -78,3 +78,23 @@ export function watchMatcher(patterns, ignore = []) {
     return patterns.some((p) => matches(p, path)) && !skip.some((s) => s(path));
   };
 }
+
+/**
+ * Whether nothing in the folder at `path` (from the process's folder) can restart it, so it needn't be
+ * watched: node_modules, .git, a name "ignore" has (anywhere along the path, as watchMatcher reads
+ * it), or a plain path "ignore" has. An ignore glob with a / in it may take some of a folder and not
+ * the rest, so it never leaves one out.
+ */
+export function skipsFolder(ignore = []) {
+  const rules = [...ALWAYS_IGNORED, ...ignore].map(tidy).flatMap((p) => {
+    if (!p.includes('/')) {
+      const re = globRegex(p);
+      return [(path) => p === '.' || path.split('/').some((name) => re.test(name))];
+    }
+    return GLOB.test(p) ? [] : [(path) => path === p || path.startsWith(`${p}/`)];
+  });
+  return (path) => {
+    const at = tidy(path);
+    return rules.some((r) => r(at));
+  };
+}

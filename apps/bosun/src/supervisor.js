@@ -6,7 +6,8 @@ import { statSync, watch as fsWatch } from 'node:fs';
 import { connect } from 'node:net';
 import { resolve } from 'node:path';
 import { isTrouble, portInUse, stripAnsi } from './crew.js';
-import { tidy, watchMatcher, watchRoots } from './watch.js';
+import { skipsFolder, tidy, watchMatcher, watchRoots } from './watch.js';
+import { walksTree, watchTree } from './treewatch.js';
 import { crewOf, stateOf } from './recorder.js';
 
 export const KEEP_LINES = 3000;
@@ -80,10 +81,13 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, recorder = null } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null } = {}) {
     this.dir = dir;
     this.debounce = debounce;
     this.watchImpl = watchImpl;
+    // A folder and everything in it watched a folder at a time (treewatch.js), where Node's recursive
+    // watch would watch every file: Linux.
+    this.treeWatch = treeWatch;
     // A recorder.js Recorder: every line and every change of state goes to it, for /replay.
     this.recorder = recorder;
     // Called with the process when all that changed is its log (lines said, its status and trouble
@@ -289,6 +293,7 @@ export class Supervisor {
     if (!patterns.length || this.closed) return;
     const cwd = resolve(this.dir, p.spec.cwd ?? '.');
     const wanted = watchMatcher(patterns, p.spec.ignore ?? []);
+    const skip = skipsFolder(p.spec.ignore ?? []);
     p.watchers = [];
     p.changes = new Set();
     for (const { root, deep } of watchRoots(patterns)) {
@@ -301,10 +306,15 @@ export class Supervisor {
         continue;
       }
       try {
-        const w = this.watchImpl(at, { recursive: deep && !isFile }, (_, name) => {
-          const file = isFile ? root : name ? tidy(`${root === '.' ? '' : `${root}/`}${tidy(name)}`) : null;
+        const prefix = root === '.' ? '' : `${root}/`;
+        const heard = (name) => {
+          const file = isFile ? root : name ? tidy(`${prefix}${tidy(name)}`) : null;
           if (file && wanted(file)) this.changed(p, file);
-        });
+        };
+        const w =
+          deep && !isFile && this.treeWatch
+            ? watchTree(at, { skip: (rel) => skip(`${prefix}${rel}`), onChange: heard, watch: (path, listener) => this.watchImpl(path, {}, listener) })
+            : this.watchImpl(at, { recursive: deep && !isFile }, (_, name) => heard(name));
         w.on?.('error', () => {});
         p.watchers.push(w);
       } catch (e) {
