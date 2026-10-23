@@ -13,7 +13,7 @@ export const HELP = [
       ['r', 'Read the subscription again'],
       ['!', 'Run a shell command, e.g.  !az account show'],
       ['esc', 'Cancel what is running, or clear the activity lines'],
-      [',', 'Settings (/settings): theme (dark, light, or auto from the terminal), accent colour, mouse, updates, notifying when a job takes over 10 s (a bell and a desktop notification), history'],
+      [',', 'Settings (/settings): theme (dark, light, or auto from the terminal), accent colour, mouse, updates, notifying when a job takes over 10 s (a bell and a desktop notification), how often watches run, family moods, history'],
       ['?', 'This help'],
       ['q / ctrl+c', 'Quit'],
       ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go'],
@@ -125,13 +125,16 @@ export const HELP = [
     ],
   },
   {
-    title: 'From the other apps',
+    title: 'The other apps',
     about: "what Splice, Trawl, Bosun and Hail copy for Sonar's prompt: /take family:v1:…, or the family:v1:… part alone",
     rows: [
       ['commit', 'The deployments, across the subscription\'s apps and slots, that shipped it; ↵ shows one\'s log'],
       ['exception', 'Problems, showing only those like it (x shows all)'],
       ['log line', 'With a request or operation id: everything that request did, in Logs'],
       'Anything else is for another app, and Sonar says which.',
+      ['paste', 'A command (/…) or a family:v1:… line pasted while a view has the keys goes into the prompt, to run with ↵'],
+      ['/family', 'What this folder is to the other apps (its checkout, processes, .http files, databases): ↵ copies a line for one\'s prompt'],
+      ['moods', 'Ping tells the others how it feels, and says once when one of them has been worried, sad or happy lately (esc puts it away); Family moods in the settings turns it off'],
     ],
   },
   {

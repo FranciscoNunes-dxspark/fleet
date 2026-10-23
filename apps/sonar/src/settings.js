@@ -59,6 +59,13 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       const n = (config.watches ?? []).length;
       return { id: 'watchEvery', label: 'Run watches every', value: `${every} min`, current: every, steps: WATCH_STEPS, note: `${next} min next · ${count(n, 'watch', 'watches')} (/watches)`, action: 'cycle' };
     })(),
+    {
+      id: 'familyMoods',
+      label: 'Family moods',
+      value: isOn(config.familyMoods) ? 'on' : 'off',
+      note: isOn(config.familyMoods) ? "Ping tells Splice, Trawl, Bosun and Hail how it feels, and says how they do" : 'neither told nor heard',
+      action: 'toggle',
+    },
     { id: 'history', label: 'Prompt history', value: count(history.length, 'entry', 'entries'), note: history.length ? 'clear it' : '', action: history.length ? 'clear' : 'none' },
     { id: 'file', label: 'Settings file', value: file, note: '', action: 'none' },
   ];

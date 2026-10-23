@@ -33,7 +33,8 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { worthNotifying } from '../notify.js';
 import { ask } from '../claude-cli.js';
-import { decodeContext } from '../family.js';
+import { decodeContext, readMoods, writeMood } from '../family.js';
+import { APP_NAMES, familyMood, moodKey, pastedLine, reactionLine, reactionTo } from '../kin.js';
 
 const VIEWS = [
   { id: 'resources', label: 'Resources' },
@@ -129,7 +130,8 @@ const DOUBLE_CLICK_MS = 400;
 // Problems); tests stub it.
 // `cwd` is the folder Sonar started in: where Claude reads code, the checkout an incident's commits come
 // from, and where files are written; tests pass their own.
-export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify, askClaude = ask, cwd = process.cwd() }) {
+// `familyEvery` is how often the siblings' moods are read (ms); tests make it short.
+export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify, askClaude = ask, cwd = process.cwd(), familyEvery = 30_000 }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -191,6 +193,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     const t = setTimeout(() => setMoodTick((n) => n + 1), 8100);
     return () => clearTimeout(t);
   }, [entries]);
+  // A sibling's mood, said once by Ping in a line of its own until esc ({ app, mood, reason, at }).
+  const [reaction, setReaction] = useState(null);
+  const seenMoods = useRef(new Set());
   // A word in the bottom line for a moment ("Copied 3 lines"), where it moves nothing on screen.
   const [flash, setFlash] = useState(null);
   useEffect(() => {
@@ -752,6 +757,32 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     return () => clearInterval(t);
   }, [watchCount, watchMs]);
 
+  // Ping's mood goes to the family whenever it changes, and the siblings' are read every 30 s: a worried,
+  // sad or happy one from the last 15 minutes is said once. The Family moods setting turns both off.
+  const familyOn = config.familyMoods !== false;
+  const said = familyMood(moodFor({ data, busy, lastEntry: entries.at(-1) }), { busy, lastEntry: entries.at(-1), data });
+  useEffect(() => {
+    if (familyOn) writeMood('sonar', said);
+  }, [said.mood, said.reason, familyOn]);
+  useEffect(() => {
+    if (!familyOn) return setReaction(null);
+    const look = () => {
+      const m = reactionTo(readMoods('sonar'), seenMoods.current);
+      if (!m) return;
+      seenMoods.current.add(moodKey(m));
+      setReaction(m);
+    };
+    look();
+    const t = setInterval(look, familyEvery);
+    return () => clearInterval(t);
+  }, [familyOn, familyEvery]);
+  // A word that's been there two minutes has been seen.
+  useEffect(() => {
+    if (!reaction) return;
+    const t = setTimeout(() => setReaction(null), 120_000);
+    return () => clearTimeout(t);
+  }, [reaction]);
+
   // Problems are looked for when the view shows, and again when what it looks at or the span changes.
   const [problemsTick, setProblemsTick] = useState(0);
   const scopeKey = `${scopeState.target?.id ?? ''}|${scopeState.component?.id ?? ''}|${scopeState.all}|${view === 'problems' ? selectedRef.current?.id : ''}`;
@@ -905,6 +936,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       else {
         setEntries((list) => list.map((e) => ({ ...e, shown: false })));
         setWelcome(false);
+        setReaction(null);
       }
       return;
     }
@@ -938,6 +970,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     if (key.ctrl && input === 'c') return exit();
     if (confirmRef.current || overlayRef.current || answerKey.current === keySeq.current) return;
     if (ctx.claimsKey?.(input, key)) return;
+    // A command or a sibling's context pasted while a view has the keys goes into the prompt, to run with ↵.
+    const pasted = pastedLine(input);
+    if (pasted) return prefill(pasted);
     globalKeys(input, key);
   });
 
@@ -1030,14 +1065,15 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
+  const reactionRows = reaction ? 1 : 0;
   // The welcome box only appears when the terminal has room for it next to a useful view.
   const showWelcome = welcome && H >= 28;
-  const mainH = Math.max(6, H - 2 - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  const mainH = Math.max(6, H - 2 - reactionRows - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
     mainTop: 2,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + act.length + (busy ? 1 : 0),
+    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reactionRows + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
     tabs: tabLabels(entries),
   };
@@ -1101,6 +1137,17 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
         {main}
       </Box>
       {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
+      {reaction ? (
+        <Row
+          pointer={false}
+          width={W}
+          segments={[
+            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
+            { text: reactionLine(reaction), color: reaction.mood === 'happy' ? theme.add : theme.warn },
+            { text: `  (${APP_NAMES[reaction.app] ?? reaction.app} · esc)`, color: theme.dim },
+          ]}
+        />
+      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}

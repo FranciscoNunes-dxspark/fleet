@@ -141,6 +141,22 @@ Splice, Trawl, Bosun and Hail copy things for Sonar as a line for its prompt, `/
 
 Anything else (a request, rows, a query, a file) is for another app, and Sonar says which.
 
+Whatever Sonar copies for another app works the same way: a line for that app's prompt, said in the
+activity lines as "Copied for Splice: paste it into Splice's prompt" with what it holds. Nothing secret
+is ever in one. A command (`/…`) or a `family:v1:…` line pasted while a view has the keys goes into
+the prompt rather than being taken as keys, to run with `↵`.
+
+`/family` lists what the folder Sonar was started in is to the others: its git checkout (Splice's
+`/open`), its processes when Bosun has something to run there (`/move`), each `.http` file (Hail's
+`/open`), and each database its `appsettings*.json` or `.env` files name (Trawl's `/azure-sql` for an
+Azure SQL server, else `/add`, with the login but never the password). `↵` copies one.
+
+Ping tells the others how it feels (worried after something went wrong, busy, pleased, or just
+watching) and why, in a small file in `~/.family` (`FAMILY_HOME` moves it), and reads theirs every
+30 seconds: when Twig, Glim, Squawk or Hoot has been worried, sad or happy in the last 15 minutes, Ping
+says so once, in a line above the activity lines ("Twig says: PR #12 merged"), until `esc`. **Family
+moods** in the settings turns both off.
+
 ## Keys
 
 | Key | What it does |
@@ -292,11 +308,12 @@ and Trawl.
 | `/watch <name> <threshold> <kql>` | Pin a query whose first value is a number; going over the threshold says so (above) |
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |
 | `/take <context>` | What another app copied for Sonar (above) |
+| `/family` | What this folder is to the other apps: a line for each one's prompt, `↵` copies it |
 | `/incident [problem]` | A problem as an incident (the one under the cursor in Problems if none is named); `/incident save <file>` writes its write-up |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
-| `/settings` | Theme, accent colour, mouse, updates, notifications, watches, history |
+| `/settings` | Theme, accent colour, mouse, updates, notifications, watches, family moods, history |
 | `/accent <#rrggbb>` | Change the accent colour (`default` puts it back) |
 | `/update` | Look for a new version now and install it |
 | `/help` | Keys and commands |
@@ -320,6 +337,7 @@ and your watches (`"watches"`).
 | Install them by itself | Off only says a new version is out |
 | Notify when done | When a job with the spinner takes over 10 seconds, ring the terminal's bell and ask it for a desktop notification |
 | Run watches every | 1, 5 (the default), 15, 30 or 60 minutes |
+| Family moods | Off neither tells the other apps how Ping feels nor says how theirs do |
 | Prompt history | Clear it |
 
 When a job (a query, a restart, anything with the spinner) takes longer than 10 seconds, Sonar rings

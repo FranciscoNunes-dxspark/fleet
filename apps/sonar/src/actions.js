@@ -10,8 +10,8 @@ import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, compareQueries, compareWindows, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
-import { contextIn, describeContext, repoRoot, shareLine, takeLine } from './family.js';
-import { APP_NAMES, copiedNote } from './kin.js';
+import { contextIn, describeContext, projectAt, repoRoot, shareLine, takeLine } from './family.js';
+import { APP_NAMES, copiedNote, familyChoices } from './kin.js';
 import { parseWatch, watchEvery } from './watches.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
@@ -1002,6 +1002,19 @@ function requestOfLogLine(ctx, data) {
   const id = data.requestId ?? data.operationId;
   if (!id) return ctx.note(`That log line (${describeContext({ kind: 'logline', data })}) carries no request or operation id to look for in Application Insights.`, 'error');
   return ctx.logsFor(null, requestTraceQuery(String(id)));
+}
+
+/** /family: what the folder Sonar started in offers the other apps, each a line for one's prompt; ↵ copies it. */
+export function family(ctx) {
+  const project = projectAt(ctx.cwd());
+  const choices = familyChoices(project);
+  if (!choices.length) return ctx.note(`${project.dir} is nothing the other apps open: no git checkout, nothing for Bosun to run, no .http files, no databases in appsettings*.json or .env.`);
+  ctx.showPicker({
+    title: `What ${project.dir} is to the other apps`,
+    hint: "↵ copy it for that app's prompt",
+    items: choices.map((c) => ({ c, segments: [{ text: `${APP_NAMES[c.app].padEnd(7)}`, color: theme.accent, bold: true }, { text: `${c.line}  `, strong: true }, { text: c.what, color: theme.dim }] })),
+    onPick: (it) => copyFor(ctx, it.c.app, it.c.line),
+  });
 }
 
 /** ↵ on an alert: everything Alerts Management says about it. */
