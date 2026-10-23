@@ -8,7 +8,9 @@ import { clip } from './claude-cli.js';
 import { FILE, specFor, words, writeSpec } from './crew.js';
 import { choices, resolveFolder, samePath } from './projects.js';
 import { basename, resolve } from 'node:path';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { listSessions } from './recorder.js';
+import { clock, parseSession } from './replay.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -195,6 +197,40 @@ export async function move(ctx, folder) {
   }
   return ctx.moveTo(target);
 }
+
+/** /replay: the sessions recorded for this project, newest first; ↵ plays one back. */
+export function replay(ctx) {
+  ctx.crew?.recorder?.flush();
+  const sessions = listSessions(ctx.dir);
+  if (!sessions.length) return ctx.note(ctx.config.record === false ? 'Recording is off in the settings, and nothing was recorded before.' : 'Nothing recorded for this project yet: a session is recorded once a process says something.');
+  const live = ctx.crew?.recorder?.file;
+  ctx.showPicker({
+    title: `Sessions of ${basename(ctx.dir)}`,
+    hint: '↵ replays it',
+    items: sessions.map((s) => ({
+      ...s,
+      segments: [
+        { text: new Date(s.start).toLocaleString(), strong: true },
+        { text: `  ${s.ended ? clock(s.ended - s.start) : ''}`, color: theme.dim },
+        { text: `  ${size(s.bytes)}`, color: theme.dim },
+        { text: s.file === live ? '  (this one, so far)' : '', color: theme.accent },
+      ],
+    })),
+    onPick: (it) => {
+      let text;
+      try {
+        text = readFileSync(it.file, 'utf8');
+      } catch (e) {
+        return ctx.note(`Couldn't read that session: ${e.message}`, 'error');
+      }
+      const session = parseSession(text);
+      if (!session.events.length) return ctx.note('That session has nothing in it.');
+      ctx.showReplay(session, new Date(it.start).toLocaleString());
+    },
+  });
+}
+
+const size = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 /** /init: bosun.json from what Bosun worked out, to change from there. */
 export function init(ctx) {

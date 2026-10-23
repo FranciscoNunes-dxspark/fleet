@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 // Read per call so tests can point BOSUN_HOME somewhere temporary.
-const configDir = () => process.env.BOSUN_HOME || join(homedir(), '.bosun');
+export const configDir = () => process.env.BOSUN_HOME || join(homedir(), '.bosun');
 
 /** Where the settings are kept, to show in /settings. */
 export const configFile = () => join(configDir(), 'config.json');

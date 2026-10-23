@@ -44,6 +44,13 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       note: isOn(config.notify) ? `a bell and a notification when a process crashes or gives up, and after a ${notifySeconds(config)} s command` : 'say nothing',
       action: 'toggle',
     },
+    {
+      id: 'record',
+      label: 'Record sessions',
+      value: isOn(config.record) ? 'on' : 'off',
+      note: isOn(config.record) ? 'every run\'s logs and states, for /replay (from the next start)' : 'record nothing (from the next start)',
+      action: 'toggle',
+    },
     { id: 'checkForUpdates', label: 'Check for new versions', value: checks ? 'on' : 'off', note: 'once a day, in the downloaded Bosun', action: 'toggle' },
     {
       id: 'autoUpdate',

@@ -28,6 +28,8 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
 import { decodeContext } from '../family.js';
+import { Recorder, sessionsDir } from '../recorder.js';
+import { ReplayView } from './ReplayView.jsx';
 
 const VIEWS = [
   { id: 'crew', label: 'Crew' },
@@ -283,7 +285,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
       const first = !supRef.current;
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes });
+      // Each run of a project's crew is recorded for /replay, unless the setting is off.
+      const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs }) : null;
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
@@ -461,6 +465,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     overlayHasKeys: () => focusRef.current === 'view' && !confirmRef.current && answerKey.current !== keySeq.current,
     quit: () => exit(),
     showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
+    // /replay: a recorded session (replay.js's parseSession) played back over the view.
+    showReplay: (session, title) => setOverlay({ kind: 'replay', session, title }),
     // A list to pick from: { title, hint, items | load, onPick, keys, empty } (see Picker.jsx).
     // `replace`: swaps the picker on screen for this one (the same list, redrawn after a change), keeping
     // where it goes back to, instead of opening on top of it.
@@ -828,6 +834,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     main = <Palette items={paletteList} query={overlay.query} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onPick={runPicked} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay?.kind === 'help') {
     main = <HelpView sections={custom.sections} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+  } else if (overlay?.kind === 'replay') {
+    main = <ReplayView session={overlay.session} title={overlay.title} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
   } else if (overlay?.kind === 'picker') {
     main = <Picker key={overlay.id} picker={overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay) {
@@ -852,6 +860,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
         ? 'j/k section · space scroll · / search · esc close'
         : overlay?.kind === 'palette'
         ? 'type to filter · ↑↓ pick · ↵ run it (a key in the view; a command that takes more goes into the prompt) · esc close'
+        : overlay?.kind === 'replay'
+        ? '←→ a second (shift: ten) · [ ] the crash or trouble before, after · space play · + - speed · a all logs · esc close'
         : overlay?.kind === 'picker'
           ? 'j/k move · ↵ change · esc close'
           : overlay

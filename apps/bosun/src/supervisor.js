@@ -7,6 +7,7 @@ import { connect } from 'node:net';
 import { resolve } from 'node:path';
 import { isTrouble, portInUse, stripAnsi } from './crew.js';
 import { tidy, watchMatcher, watchRoots } from './watch.js';
+import { crewOf, stateOf } from './recorder.js';
 
 export const KEEP_LINES = 3000;
 const WIN = process.platform === 'win32';
@@ -78,11 +79,16 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, recorder = null } = {}) {
     this.dir = dir;
     this.debounce = debounce;
     this.watchImpl = watchImpl;
-    this.onChange = onChange;
+    // A recorder.js Recorder: every line and every change of state goes to it, for /replay.
+    this.recorder = recorder;
+    this.onChange = () => {
+      this.recordStates();
+      onChange();
+    };
     this.onEvent = onEvent;
     this.spawnImpl = spawnImpl;
     this.env = env;
@@ -96,6 +102,19 @@ export class Supervisor {
   dispose() {
     this.killAllNow();
     LIVE.delete(this);
+  }
+
+  /** Tells the recorder about each process whose state changed since it last heard. */
+  recordStates() {
+    if (!this.recorder) return;
+    for (const p of this.procs.values()) {
+      const state = stateOf(p);
+      const key = JSON.stringify(state);
+      if (key === p.recorded) continue;
+      // A process's first state (stopped, as the crew was read) is the session header's.
+      if (p.recorded !== undefined || p.status !== 'stopped') this.recorder.state(p.name, state);
+      p.recorded = key;
+    }
   }
 
   /** Forgets a restart `p` is waiting for; returns whether there was one. */
@@ -136,7 +155,10 @@ export class Supervisor {
       this.unwatch(had);
       if (had.child) this.stop(name);
     }
+    const crewChanged = JSON.stringify(crewOf([...this.procs.values()])) !== JSON.stringify(crewOf([...next.values()]));
     this.procs = next;
+    if (crewChanged && this.started) this.recorder?.procs([...next.values()]);
+    this.started = true;
     this.onChange();
   }
 
@@ -152,7 +174,9 @@ export class Supervisor {
     for (const raw of String(text).split(/\r?\n/)) {
       const line = stripAnsi(raw).replace(/\r/g, '');
       if (!line.trim()) continue;
-      p.lines.push({ at: Date.now(), text: line, err });
+      const entry = { at: Date.now(), text: line, err };
+      p.lines.push(entry);
+      this.recorder?.line(p.name, entry);
       // Bosun's own lines (── the command, ── stopped) are never the process's trouble.
       if (!p.trouble && !line.startsWith('── ') && isTrouble(line)) p.trouble = line.trim();
     }
@@ -387,6 +411,7 @@ export class Supervisor {
   /** Stops everything at once, without waiting: for when Bosun itself is exiting. Nothing restarts after. */
   killAllNow() {
     this.closed = true;
+    this.recorder?.close();
     for (const p of this.procs.values()) {
       this.clearRestart(p);
       this.unwatch(p);
