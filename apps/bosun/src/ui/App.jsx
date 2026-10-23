@@ -270,7 +270,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       // A project with something to run is remembered, for /move and for starting where there's nothing.
       if (crew.procs.length) setConfig((c) => ({ ...c, projects: remember(c.projects, dirRef.current) }));
       if (crew.problems.length) note([`Some of ${crew.from} was left out:`, ...crew.problems].join('\n'), 'error');
-      if (!crew.procs.length && first) note(`Nothing to run here: no ${'bosun.json'}, and no dev or start script in package.json. /init writes a bosun.json to fill in.`);
+      if (!crew.procs.length && first) note('Nothing to run here: no bosun.json, Procfile or compose file, and no dev or start script in package.json. /init writes a bosun.json to fill in.');
       const sup = supRef.current;
       if (first) {
         if (autostart) sup.startAll();

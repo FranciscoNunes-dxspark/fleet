@@ -16,6 +16,7 @@ import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 import { expand, parseDotenv } from '../src/dotenv.js';
 import { markRanges, matcher } from '../src/search.js';
+import { parseYaml, scalar } from '../src/yaml.js';
 import { globRegex, watchMatcher, watchRoots } from '../src/watch.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
@@ -179,4 +180,45 @@ test('search: smart case, and the matches picked out of the segments', () => {
     { text: 'wo', color: 'x', bg: 'm' },
     { text: 'rld', color: 'x' },
   ]);
+});
+
+test('yaml: the subset a compose file needs', () => {
+  const doc = parseYaml([
+    '# a compose file',
+    'services:',
+    '  db:',
+    '    image: "postgres:16"   # its image',
+    '    ports:',
+    '      - "5432:5432"',
+    '  api:',
+    '    ports:',
+    '    - 127.0.0.1:4000:4000/tcp',
+    '    - 9229',
+    '    depends_on: [db]',
+    '    command: >',
+    '      node server.js',
+    '      --verbose',
+    '  web:',
+    '    ports:',
+    '      - target: 80',
+    '        published: 8080',
+    '    depends_on:',
+    '      api:',
+    '        condition: service_started',
+    "      db: {condition: 'service_healthy'}",
+    'volumes:',
+    '  data: {}',
+    '---',
+    'other: document',
+  ].join('\n'));
+  assert.deepEqual(doc.services.db, { image: 'postgres:16', ports: ['5432:5432'] });
+  assert.deepEqual(doc.services.api.ports, ['127.0.0.1:4000:4000/tcp', 9229]);
+  assert.deepEqual(doc.services.api.depends_on, ['db']);
+  assert.equal(doc.services.api.command, 'node server.js --verbose\n');
+  assert.deepEqual(doc.services.web.ports, [{ target: 80, published: 8080 }]);
+  assert.deepEqual(doc.services.web.depends_on, { api: { condition: 'service_started' }, db: { condition: 'service_healthy' } });
+  assert.deepEqual(doc.volumes, { data: {} });
+  assert.equal(doc.other, undefined, 'only the first document');
+  assert.deepEqual([scalar('~'), scalar('true'), scalar("'it''s'"), scalar('[a, "b, c"]')], [null, true, "it's", ['a', 'b, c']]);
+  assert.equal(parseYaml(''), null);
 });

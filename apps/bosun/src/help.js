@@ -28,7 +28,7 @@ export const HELP = [
   },
   {
     title: 'Crew',
-    about: 'the processes, from bosun.json or package.json\'s dev script; beside them the log of the one under the cursor',
+    about: 'the processes, from bosun.json, a Procfile, a compose file or package.json\'s dev script; beside them the log of the one under the cursor',
     views: ['crew'],
     rows: [
       ['r', 'Restart it'],

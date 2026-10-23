@@ -340,3 +340,30 @@ test('c clears a log, l and /save-log write it to a file, asking before writing 
     app.unmount();
   }
 });
+
+test('a Procfile runs each process on its PORT, and /init writes it out as bosun.json', async () => {
+  const port = await freePort();
+  const dir = project({}, {
+    Procfile: 'web: node server.js $PORT\nworker: node -e "console.log(\'worker port \' + process.env.PORT); setInterval(() => {}, 1000)"\n',
+    '.env': `PORT=${port}`,
+    'server.js': SERVER,
+  });
+  const { rmSync } = await import('node:fs');
+  rmSync(join(dir, 'bosun.json'));
+  const app = start({ dir });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('│  Procfile') && frame().includes(`:${port} ✓`), 'the web process answering on the PORT it was given');
+    app.stdin.write('j');
+    await until(() => frame().includes(`worker port ${port + 100}`), 'the next one on the PORT after');
+    app.stdin.write(':');
+    await type(app.stdin, 'init');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('│  bosun.json'), 'read from bosun.json now');
+    const spec = JSON.parse(readFileSync(join(dir, 'bosun.json'), 'utf8'));
+    assert.equal(spec.envFile, '.env');
+    assert.equal(spec.procs.web.port, port);
+  } finally {
+    app.unmount();
+  }
+});

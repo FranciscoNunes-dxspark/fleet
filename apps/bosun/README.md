@@ -88,12 +88,23 @@ A profile changes some processes: `run` replaces the command, `args` adds to it,
 `restart` replaces that.
 `p` or `/profile` picks one (`--profile` starts with it), and the processes it changes restart.
 
-Without a `bosun.json`, Bosun runs package.json's `dev` script (else `start`), and reads no `.env`
-of its own accord: `npm run` doesn't, and the tools it runs (Vite, Next.js) read theirs, in their own
-order. When that's a
-`concurrently` line, each of its commands is a process of its own, named as `-n` names them, and other
-`dev:` scripts split the same way become profiles. `/init` writes that out as a `bosun.json`, to add
-ports and health pages to.
+Without a `bosun.json`, Bosun works out what to run from the first of these it finds:
+
+1. A **`Procfile`**: each `name: command` line is a process, as foreman and honcho run them. Each gets
+   `PORT`: 5000 for the first, 5100 for the next, and so on (from `PORT` in `.env` or the terminal's
+   instead, when either sets it), and one whose command says `$PORT` has that port watched. The
+   project's `.env` is read too, as foreman reads it.
+2. A **compose file** (`compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml`):
+   each service is a process, `docker compose up --no-deps <service>`, on the first port it publishes,
+   started after the first service in its `depends_on`. Stopping one stops its container. Compose
+   reads its own `.env`, so Bosun doesn't.
+3. **package.json**'s `dev` script (else `start`). When that's a `concurrently` line, each of its
+   commands is a process of its own, named as `-n` names them, and other `dev:` scripts split the same
+   way become profiles. No `.env` is read of Bosun's own accord: `npm run` doesn't, and the tools it
+   runs (Vite, Next.js) read theirs, in their own order.
+
+`/init` writes what was worked out as a `bosun.json`, to add ports, health pages, `watch` and
+`restart` to; from then on that's what Bosun reads.
 
 `--no-start` opens without starting anything (`R` starts them all).
 
@@ -189,7 +200,7 @@ Trawl.
 | `/profile [name\|none]` | Run the crew with a profile |
 | `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |
 | `/move [folder]` | Run another project instead: a path, or a folder beside this one (completed as you type); without one, a list of the projects run lately and the folders beside this one. This one's processes stop first |
-| `/init` | Write a `bosun.json` from what Bosun worked out |
+| `/init` | Write a `bosun.json` from what Bosun worked out (a Procfile, a compose file, package.json) |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
 | `/settings` | Accent colour, mouse, updates, history |

@@ -2,6 +2,7 @@
 // from looking at folders.
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { COMPOSE_FILES } from './crew.js';
 
 /** How many projects the config remembers, newest first. */
 export const KEEP = 8;
@@ -14,8 +15,8 @@ const isFolder = (path) => {
   }
 };
 
-/** Whether `dir` has something Bosun can run: a bosun.json, or a package.json (whose dev script it reads). */
-export const hasCrew = (dir) => existsSync(join(dir, 'bosun.json')) || existsSync(join(dir, 'package.json'));
+/** Whether `dir` has something Bosun can run: a bosun.json, a Procfile, a compose file or a package.json (whose dev script it reads). */
+export const hasCrew = (dir) => ['bosun.json', 'Procfile', ...COMPOSE_FILES, 'package.json'].some((f) => existsSync(join(dir, f)));
 
 /** Paths compared as the OS does: without case on Windows. */
 export const samePath = (a, b, win = process.platform === 'win32') => (win ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b));

@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isTrouble, loadCrew, readEnvFiles, portInUse, readSpec, specFor, splitConcurrently, stripAnsi, withProfile, words, writeSpec } from '../src/crew.js';
+import { composeProcs, hostPort, isTrouble, loadCrew, parseProcfile, procfileProcs, readEnvFiles, portInUse, readSpec, specFor, splitConcurrently, stripAnsi, withProfile, words, writeSpec } from '../src/crew.js';
 import { RESTART_TIMES, Supervisor, afterExit, pidsOnPort, portOpen, seconds } from '../src/supervisor.js';
 import { afterStatus, mergedLines, statusSegment, portSegments, uptime } from '../src/ui/CrewView.jsx';
 import { whyPrompt } from '../src/actions.js';
@@ -292,4 +292,40 @@ test('watch: a change to a watched file restarts the process, an ignored one doe
   } finally {
     sup.dispose();
   }
+});
+
+test('Procfile and compose: read when there\'s no bosun.json, in that order, and /init writes them out', async () => {
+  const { rmSync } = await import('node:fs');
+  assert.deepEqual(parseProcfile('# web\nweb: node server.js -p $PORT\n\nworker:node worker.js\nnot a line\n'), [
+    { name: 'web', run: 'node server.js -p $PORT' },
+    { name: 'worker', run: 'node worker.js' },
+  ]);
+  assert.deepEqual(procfileProcs([{ name: 'web', run: 'web --port %PORT%' }, { name: 'w', run: 'w' }], 6000).map((p) => [p.port, p.env.PORT]), [[6000, '6000'], [null, '6100']]);
+  assert.deepEqual(['8080:80', '127.0.0.1:5432:5432/tcp', '3000', 3000, { published: '9000', target: 90 }, null].map(hostPort), [8080, 5432, null, null, 9000, null]);
+  assert.deepEqual(composeProcs({ services: { web: { ports: ['8080:80'], depends_on: ['api', 'cache'] }, api: { depends_on: { db: {} } }, db: {} } }).map((p) => [p.name, p.run, p.port, p.after]), [
+    ['web', 'docker compose up --no-deps web', 8080, 'api'],
+    ['api', 'docker compose up --no-deps api', null, 'db'],
+    ['db', 'docker compose up --no-deps db', null, null],
+  ]);
+
+  const dir = project({ procs: { from: 'bosun.json' } }, {
+    Procfile: 'web: node server.js $PORT\nworker: node worker.js\n',
+    '.env': 'PORT=7000\nSECRET=shh',
+    'compose.yaml': 'services:\n  db:\n    ports: ["5433:5432"]\n',
+    'package.json': JSON.stringify({ scripts: { dev: 'vite' } }),
+  });
+  assert.equal(loadCrew(dir).from, 'bosun.json');
+  rmSync(join(dir, 'bosun.json'));
+  const crew = loadCrew(dir, { env: {} });
+  assert.equal(crew.from, 'Procfile');
+  assert.deepEqual(crew.procs.map((p) => [p.name, p.port, p.env.PORT, p.fileEnv.SECRET]), [['web', 7000, '7000', 'shh'], ['worker', null, '7100', 'shh']]);
+  const spec = specFor(crew);
+  assert.equal(spec.envFile, '.env');
+  assert.deepEqual(spec.procs.web, { run: 'node server.js $PORT', port: 7000, env: { PORT: '7000' } });
+  rmSync(join(dir, 'Procfile'));
+  const compose = loadCrew(dir);
+  assert.equal(compose.from, 'compose.yaml');
+  assert.deepEqual(compose.procs.map((p) => [p.name, p.port, p.fileEnv]), [['db', 5433, undefined]]);
+  rmSync(join(dir, 'compose.yaml'));
+  assert.equal(loadCrew(dir).from, "package.json's dev script");
 });

@@ -23,8 +23,9 @@ if (args.includes('-h') || args.includes('--help')) {
   console.log(`bosun [folder] [--profile <name>] [--no-start]
 
 Runs a project's processes for you in the terminal, each with its own log, port and health.
-It reads them from bosun.json in the folder (the current one unless given), else from
-package.json's dev script, split into its commands when it's a concurrently line. Started
+It reads them from bosun.json in the folder (the current one unless given), else from a
+Procfile, else from a compose file (a process per service), else from package.json's dev
+script, split into its commands when it's a concurrently line. Started
 where there's neither, it opens the project you ran last; /move goes to another.
 
   --profile    start with this profile from bosun.json
