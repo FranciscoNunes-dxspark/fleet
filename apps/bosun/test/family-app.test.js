@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { encodeContext, takeLine, writeMood, familyDir } from '../src/family.js';
+import { encodeContext, shareLine, takeLine, writeMood, familyDir } from '../src/family.js';
 import { familyMood, reactionTo } from '../src/moods.js';
 import { familyOffers, trawlName } from '../src/actions.js';
 import { KEYS, project, start, tempHome, type, until } from './helpers.js';
@@ -85,7 +85,8 @@ test('/family lists what the project offers and ↵ copies it', async () => {
     assert.doesNotMatch(frame(), /hunter2/);
     app.stdin.write(KEYS.enter);
     await until(() => copied.length === 1 && frame().includes("Copied for Hail: paste it into Hail's prompt"), 'copied');
-    assert.equal(copied[0], `/open ${join(dir, 'orders.http')}`.replace(/^\/open (.*\s.*)$/, '/open "$1"'));
+    // Quoted when it has to be: a space, or Windows' backslashes.
+    assert.equal(copied[0], shareLine('open', [join(dir, 'orders.http')]));
   } finally {
     app.unmount();
     rmSync(dir, { recursive: true, force: true });

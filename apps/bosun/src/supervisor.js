@@ -10,6 +10,16 @@ import { skipsFolder, tidy, watchMatcher, watchRoots } from './watch.js';
 import { walksTree, watchTree } from './treewatch.js';
 import { crewOf, stateOf } from './recorder.js';
 
+// A folder that's still there: Windows reports one whose files changed as changed itself, and the files
+// it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
+function isFolder(path) {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export const KEEP_LINES = 3000;
 const WIN = process.platform === 'win32';
 // Every supervisor with processes, so cli.jsx can stop them all when Bosun exits, however it does.
@@ -309,7 +319,7 @@ export class Supervisor {
         const prefix = root === '.' ? '' : `${root}/`;
         const heard = (name) => {
           const file = isFile ? root : name ? tidy(`${prefix}${tidy(name)}`) : null;
-          if (file && wanted(file)) this.changed(p, file);
+          if (file && wanted(file) && !isFolder(resolve(cwd, file))) this.changed(p, file);
         };
         const w =
           deep && !isFile && this.treeWatch

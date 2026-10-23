@@ -323,6 +323,31 @@ test('watch: a change to a watched file restarts the process, an ignored one doe
   }
 });
 
+test("watch: a folder whose files changed isn't a change of its own, as Windows' recursive watch reports it", async () => {
+  const dir = project({}, { 'idle.js': 'console.log("up"); setInterval(() => {}, 1000);' });
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(dir, 'src', 'deep'), { recursive: true });
+  let listener = null;
+  const watchImpl = (path, opts, l) => ((listener = l), { close() {}, on() {} });
+  const sup = new Supervisor(readSpec({ procs: { api: { run: 'node idle.js', watch: ['src'] } } }).procs, { dir, debounce: 50, watchImpl, treeWatch: false });
+  const api = sup.get('api');
+  const ups = () => api.lines.filter((l) => l.text === 'up').length;
+  try {
+    sup.start('api');
+    await until(() => ups() === 1, 'started');
+    writeFileSync(join(dir, 'src', 'deep', 'a.js'), '1');
+    for (const name of ['deep', join('deep', 'a.js'), 'deep']) listener('change', name);
+    await until(() => ups() === 2, 'restarted after the change');
+    assert.deepEqual(api.lines.filter((l) => l.text.startsWith('── changed')).map((l) => l.text), ['── changed: src/deep/a.js']);
+    // A folder that's gone is a change.
+    listener('rename', 'gone');
+    await until(() => ups() === 3, 'restarted after the folder went');
+    assert.equal(api.lines.filter((l) => l.text.startsWith('── changed')).at(-1).text, '── changed: src/gone');
+  } finally {
+    sup.dispose();
+  }
+});
+
 test('watch: a folder at a time, leaving out node_modules and what "ignore" takes whole, and following folders made and removed', async () => {
   const { mkdirSync, rmSync } = await import('node:fs');
   const { watchTree } = await import('../src/treewatch.js');
