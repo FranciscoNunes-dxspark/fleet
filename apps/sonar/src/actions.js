@@ -8,7 +8,10 @@ import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
 import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
-import { cellText, isProduction, looksSecret, operationQuery, records, settingsDiff } from './insights.js';
+import { cellText, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, sqlDependenciesQuery } from './insights.js';
+import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
+import { repoRoot, shareLine, takeLine } from './family.js';
+import { copiedNote } from './kin.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
@@ -362,9 +365,14 @@ export async function openInTrawl(ctx, which) {
   }, { label: 'Looking through the apps' });
   if (!found.ok) return found;
   const line = trawlCommand({ server, database, login, subscription: ctx.data.subscription.id, prod: isProduction(server) });
-  ctx.copy(line, 'a command for Trawl');
-  ctx.note(`Copied a command for Trawl: paste it into Trawl's prompt\n${line}`, 'ok');
+  copyFor(ctx, 'trawl', line);
   return true;
+}
+
+/** A line for a sibling's prompt to the clipboard, and the log saying where to paste it. */
+export function copyFor(ctx, app, line) {
+  ctx.copy(line, `a line for ${app[0].toUpperCase()}${app.slice(1)}`);
+  ctx.note(copiedNote(app, line), 'ok');
 }
 
 /** o: the app or slot in the Azure portal. b: its site. */
@@ -574,12 +582,188 @@ export async function why(ctx, which) {
     async (signal) => {
       const rows = await occurrence(ctx, scope.component, problem);
       const input = clip(occurrenceText(problem, rows), 60_000);
-      return { stdout: await ctx.askClaude(whyPrompt(problem), { input, cwd: process.cwd(), signal, tools: ['Read', 'Grep', 'Glob'] }) };
+      return { stdout: await ctx.askClaude(whyPrompt(problem), { input, cwd: ctx.cwd(), signal, tools: ['Read', 'Grep', 'Glob'] }) };
     },
     { label: 'Claude is reading it' },
   );
   if (r.ok) ctx.showText(`Why ${problem.type}`, r.out);
   return r;
+}
+
+/** The web app (main slot) a problem's role name is, for its deployments. */
+const appOfRole = (ctx, role) => (ctx.data?.apps ?? []).find((a) => a.name === role) ?? null;
+
+/** Lines of the files in the checkout (git ls-files), or [] when it can't be read. */
+async function checkoutFiles(root) {
+  const { stdout } = await run('git ls-files', { cwd: root });
+  return stdout.split(/\r?\n/).filter(Boolean);
+}
+
+/**
+ * Everything about a problem for the incident view: its latest exception (and so its stack), its latest
+ * occurrence, the SQL that failed in its operations, the app's deployments before it was first seen, and
+ * when Sonar runs in a checkout, the commits that touched the files in its stack before then.
+ */
+export async function gatherIncident(ctx, component, problem) {
+  const opts = { timespan: ctx.timespan().iso };
+  const ask = (q) => ctx.provider.query(component, q, opts).then(records);
+  const target = appOfRole(ctx, problem.role);
+  const [latest, rows, sql, deploys] = await Promise.all([
+    ask(latestExceptionQuery(problem.problemId)).then((r) => r[0] ?? null),
+    ask(operationQuery(problem.operation)),
+    ask(sqlDependenciesQuery(problem.problemId)).catch(() => []),
+    target ? ctx.provider.deployments(target).then((list) => deploymentsBefore(list, problem.first), (e) => ({ error: firstLine(e.message) })) : Promise.resolve({ within: [], latest: null, error: `no app called ${problem.role} in this subscription` }),
+  ]);
+  const frames = framesOf(latest?.details);
+  const repo = repoRoot(ctx.cwd());
+  let files = [];
+  let commits = [];
+  if (repo) {
+    try {
+      files = framesInCheckout(frames, await checkoutFiles(repo));
+      if (files.length) commits = parseGitLog((await run(gitLogCommand(files.map((f) => f.path), problem.first), { cwd: repo })).stdout);
+    } catch (e) {
+      commits = { error: firstLine(e.message) };
+    }
+  }
+  return { problem, spark: ctx.problemSpark(problem.problemId), span: ctx.timespan(), latest, rows, sql, deploys, frames, request: requestOf(rows), repo, files, commits };
+}
+
+const DOT = (colour) => ({ text: `${BULLET} `, color: colour });
+
+/** The incident as the viewer draws it. */
+function incidentLines(inc) {
+  const p = inc.problem;
+  const dim = (text) => ({ text, color: theme.dim });
+  const head = (text) => [[], [{ text, bold: true, color: theme.accent }]];
+  const time = (iso) => (iso ? cellText(iso, 'datetime') : '—');
+  const lines = [
+    [{ text: p.type, bold: true }],
+    [{ text: p.message ?? '', color: theme.del }],
+    [],
+    [dim('app       '), { text: p.role ?? '—', color: theme.info }],
+    [dim('first     '), { text: time(p.first) }, dim(`  (${relTime(Date.parse(p.first))} ago)`)],
+    [dim('last      '), { text: time(p.last) }, dim(`  (${relTime(Date.parse(p.last))} ago)`)],
+    [dim('count     '), { text: `${p.count}`, bold: true, color: theme.del }, dim(` in the last ${inc.span.label} · ${p.users} user${p.users === 1 ? '' : 's'}  `), { text: inc.spark ?? '', color: theme.warn }],
+    ...head('Deployments in the 24 h before first seen'),
+  ];
+  if (inc.deploys.error) lines.push([dim(`  can't say: ${inc.deploys.error}`)]);
+  else if (inc.deploys.within.length) for (const d of inc.deploys.within) lines.push([DOT(DEPLOY_COLOUR[d.status] ?? theme.warn), { text: `${time(d.start)}  `, color: theme.dim }, { text: `${d.author || 'someone'}  `, bold: true }, dim(`${d.deployer}  `), { text: d.message.split('\n')[0] }]);
+  else lines.push([dim(`  none${inc.deploys.latest ? `; the latest before it was ${relTime(Date.parse(inc.deploys.latest.start))} earlier: ${inc.deploys.latest.message.split('\n')[0]}` : ''}`)]);
+  lines.push(...head('The latest occurrence'));
+  const colour = { request: theme.info, dependency: theme.dim, exception: theme.del, trace: undefined };
+  if (!inc.rows.length) lines.push([dim('  not found in this span')]);
+  for (const r of inc.rows) lines.push([dim(`${cellText(r.timestamp, 'datetime').slice(11)}  `), { text: String(r.itemType).padEnd(11), color: colour[r.itemType] }, { text: `${r.name ?? ''}  `, bold: r.itemType === 'exception' }, { text: `${r.detail ?? ''}`, color: r.success === false ? theme.del : theme.dim }, dim(r.duration != null ? `  ${Math.round(r.duration)} ms` : '')]);
+  if (inc.frames.length) {
+    lines.push(...head('Stack'));
+    for (const f of inc.frames) lines.push([{ text: `  ${f.method ?? '?'}  ` }, dim(`${f.file}${f.line ? `:${f.line}` : ''}`)]);
+  }
+  lines.push(...head('Failing SQL'));
+  if (!inc.sql.length) lines.push([dim('  none')]);
+  for (const s of inc.sql) lines.push([{ text: `  ${s.count}× `, color: theme.del, bold: true }, { text: `${s.target}  `, color: theme.info }, dim(s.resultCode ? `error ${s.resultCode}  ` : ''), { text: String(s.data ?? '').replace(/\s+/g, ' ') }]);
+  if (inc.repo) {
+    lines.push(...head('Commits to its files in the 14 days before first seen'));
+    if (inc.commits.error) lines.push([{ text: `  can't say: ${inc.commits.error}`, color: theme.del }]);
+    else if (!inc.files.length) lines.push([dim(`  none of its frames is a file in ${inc.repo}`)]);
+    else if (!inc.commits.length) lines.push([dim(`  none touched ${inc.files.map((f) => f.path).join(', ')}`)]);
+    for (const c of Array.isArray(inc.commits) ? inc.commits : []) lines.push([{ text: `  ${c.hash.slice(0, 10)}  `, color: theme.warn }, dim(`${time(c.at).slice(0, 16)}  `), { text: `${c.author}  `, bold: true }, { text: c.subject }]);
+  }
+  return lines;
+}
+
+/** I on a problem and /incident [problem]; /incident save <file> writes the last one's write-up. */
+export async function incident(ctx, which) {
+  if (typeof which === 'string' && /^save(\s|$)/i.test(which.trim())) return saveIncident(ctx, which.trim().slice(4).trim());
+  const problem = typeof which === 'object' && which ? which : problemNamed(ctx, which);
+  if (!problem) return ctx.note(which?.trim() ? `No problem like ${which.trim()} in Problems.` : 'Pick a problem in Problems first (3), or name one.', 'error');
+  const scope = await ctx.scope();
+  if (!scope.component) return ctx.note(scope.why, 'error');
+  const title = `Incident: ${problem.type}`;
+  const token = {};
+  ctx.showText(title, '', { loading: true, token });
+  const still = () => ctx.overlay()?.token === token;
+  try {
+    const inc = await gatherIncident(ctx, scope.component, problem);
+    inc.markdown = incidentMarkdown(inc);
+    ctx.setIncident(inc);
+    if (!still()) return;
+    ctx.showText(title, inc.markdown, {
+      lines: incidentLines(inc),
+      token,
+      hint: 'Y exception → Splice · T SQL → Trawl · H request → Hail · w write-up · s save',
+      keys: incidentKeys(ctx, inc),
+    });
+  } catch (e) {
+    if (still()) ctx.closeOverlay();
+    ctx.note(e.message, 'error');
+  }
+}
+
+/** The incident view's keys: what goes to the siblings, Claude's write-up, saving. */
+function incidentKeys(ctx, inc) {
+  return {
+    Y: () => copyFor(ctx, 'splice', takeLine('exception', exceptionContext(inc.problem, inc.latest, inc.request))),
+    H: () => (inc.request ? copyFor(ctx, 'hail', takeLine('request', requestContext(inc.request))) : ctx.note('Its latest occurrence has no request with an address to send again.', 'error')),
+    T: () => sqlForTrawl(ctx, inc),
+    w: () => writeup(ctx, inc),
+    s: () => saveIncident(ctx),
+  };
+}
+
+/** T in an incident: its failing SQL, each to copy as a query for Trawl (↵) or its server's /azure-sql line (a). */
+function sqlForTrawl(ctx, inc) {
+  if (!inc.sql.length) return ctx.note("No SQL failed in this problem's operations.", 'error');
+  ctx.showPicker({
+    title: `The SQL that failed with ${inc.problem.type}`,
+    back: ctx.overlay(),
+    hint: '↵ copy it as a query for Trawl · a its server\'s /azure-sql line',
+    items: inc.sql.map((s) => ({ s, segments: [{ text: `${s.count}× `, color: theme.del, bold: true }, { text: `${s.target}  `, color: theme.info }, { text: String(s.data ?? '(no command text)').replace(/\s+/g, ' ') }] })),
+    onPick: (it) => {
+      const { server, database } = sqlTarget(it.s.target);
+      copyFor(ctx, 'trawl', takeLine('query', { sql: it.s.data ?? '', ...(server ? { server } : {}), ...(database ? { database } : {}) }));
+    },
+    keys: {
+      a: (it) => {
+        const { server, database } = sqlTarget(it.s.target);
+        if (!server) return ctx.note(`${it.s.target} names no server.`, 'error');
+        // A server in this subscription goes through T's checks (the firewall, the login an app uses).
+        const known = (ctx.data?.sqlServers ?? []).find((x) => x.fqdn?.toLowerCase() === server.toLowerCase() || x.name.toLowerCase() === server.toLowerCase());
+        const db = known && database ? (known.databases ?? []).find((d) => d.name.toLowerCase() === database.toLowerCase()) : null;
+        if (known) return openInTrawl(ctx, db ?? known);
+        copyFor(ctx, 'trawl', shareLine('azure-sql', [server, ...(database ? [database] : [])]));
+      },
+    },
+  });
+}
+
+/** w in an incident: Claude's draft write-up, in Markdown, in the viewer (s saves it). */
+async function writeup(ctx, inc) {
+  const back = ctx.overlay();
+  const r = await ctx.task(
+    `Asking Claude for a write-up of ${inc.problem.type}`,
+    async (signal) => ({ stdout: await ctx.askClaude(writeupPrompt(inc.problem), { input: clip(inc.markdown, 60_000), cwd: ctx.cwd(), signal, tools: ['Read', 'Grep', 'Glob'] }) }),
+    { label: 'Claude is writing it up' },
+  );
+  if (!r.ok) return r;
+  inc.writeup = r.out;
+  ctx.showText(`Write-up: ${inc.problem.type}`, r.out, { back, hint: 's save it', keys: { s: () => saveIncident(ctx) } });
+  return r;
+}
+
+/** s in an incident and /incident save <file>: Claude's write-up when there is one, else the incident, to a Markdown file. */
+export async function saveIncident(ctx, file) {
+  const inc = ctx.incident();
+  if (!inc) return ctx.note('Open an incident first: I on a problem, or /incident.', 'error');
+  let name = String(file ?? '').trim().replace(/^"(.*)"$/, '$1');
+  if (!name) name = (await ctx.askText({ title: inc.writeup ? "Save Claude's write-up as" : 'Save the incident as', detail: 'A Markdown file, in the folder Sonar started in unless you give a path.', value: incidentFile(inc.problem) }))?.trim();
+  if (!name) return;
+  const full = resolve(ctx.cwd(), name);
+  try {
+    await writeFile(full, `${(inc.writeup ?? inc.markdown).trimEnd()}\n`, 'utf8');
+    ctx.note(`Wrote ${inc.writeup ? "Claude's write-up" : 'the incident'} to ${full}`, 'ok');
+  } catch (e) {
+    ctx.note(`Couldn't write ${full}: ${e.message}`, 'error');
+  }
 }
 
 /** ↵ on an alert: everything Alerts Management says about it. */

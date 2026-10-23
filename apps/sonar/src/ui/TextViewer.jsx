@@ -8,8 +8,9 @@ import { Panel, Row } from './parts.jsx';
 /**
  * Text over the view (ctx.showText): a command's output, an item. `lines` (rows of
  * segments) draws it in colour instead of `text`, which y still copies. Scrolls; esc or q closes it.
+ * `keys` maps other keys to what they do there (the incident's), and `hint` says them.
  */
-export function TextViewer({ title, text, lines: given, loading, ctx, width, height, active, onClose }) {
+export function TextViewer({ title, text, lines: given, loading, hint, keys: own, ctx, width, height, active, onClose }) {
   const innerW = width - 4;
   const innerH = height - 2;
   const lines = loading
@@ -26,6 +27,7 @@ export function TextViewer({ title, text, lines: given, loading, ctx, width, hei
   const keys = (input, key) => {
     if (!ctx.overlayHasKeys()) return;
     if (key.escape || input === 'q') return onClose();
+    if (!loading && own?.[input]) return own[input]();
     if (input === 'j' || key.downArrow) return setTop(topRef.current + 1);
     if (input === 'k' || key.upArrow) return setTop(topRef.current - 1);
     if (input === ' ' || key.pageDown || (key.ctrl && input === 'd')) return setTop(topRef.current + innerH - 1);
@@ -42,7 +44,7 @@ export function TextViewer({ title, text, lines: given, loading, ctx, width, hei
   const shown = Math.min(top, max);
   const pos = lines.length > innerH ? `${shown + 1}-${Math.min(lines.length, shown + innerH)}/${lines.length} · ` : '';
   return (
-    <Panel title={title} hint={`${pos}esc close`} width={width} height={height} focused={active}>
+    <Panel title={title} hint={`${pos}${hint && !loading ? `${hint} · ` : ''}esc close`} width={width} height={height} focused={active}>
       {lines.slice(shown, shown + innerH).map((l, i) => (
         <Row key={i} pointer={false} width={width - 2} segments={[{ text: ' ' }, ...l]} />
       ))}

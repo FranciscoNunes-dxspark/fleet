@@ -91,11 +91,16 @@ function initialState(now) {
 function telemetry(now, sites) {
   const rand = seeded(42);
   const items = [];
+  // Each with the stack App Insights parses (`details`), as a build on GitHub's runners would leave it.
+  const built = (path) => `/home/runner/work/contoso/contoso/${path}`;
   const PROBLEMS = [
-    { type: 'System.TimeoutException', message: 'The operation has timed out talking to the payments provider', method: 'PaymentsClient.ChargeAsync', weight: 6 },
-    { type: 'Microsoft.Data.SqlClient.SqlException', message: 'Transaction (Process ID 61) was deadlocked on lock resources', method: 'OrderRepository.SaveAsync', weight: 3 },
-    { type: 'TypeError', message: "Cannot read properties of undefined (reading 'items')", method: 'CartView.render', weight: 2 },
+    { type: 'System.TimeoutException', message: 'The operation has timed out talking to the payments provider', method: 'PaymentsClient.ChargeAsync', weight: 6, stack: [['Contoso.Api.Payments.PaymentsClient.ChargeAsync', 'src/Contoso.Api/Payments/PaymentsClient.cs', 58], ['Contoso.Api.Orders.OrderService.PlaceAsync', 'src/Contoso.Api/Orders/OrderService.cs', 31]] },
+    { type: 'Microsoft.Data.SqlClient.SqlException', message: 'Transaction (Process ID 61) was deadlocked on lock resources', method: 'OrderRepository.SaveAsync', weight: 3, stack: [['Contoso.Api.Orders.OrderRepository.SaveAsync', 'src/Contoso.Api/Orders/OrderRepository.cs', 42], ['Contoso.Api.Orders.OrderService.PlaceAsync', 'src/Contoso.Api/Orders/OrderService.cs', 35]] },
+    { type: 'TypeError', message: "Cannot read properties of undefined (reading 'items')", method: 'CartView.render', weight: 2, stack: [['CartView.render', 'web/src/views/CartView.js', 17]] },
   ];
+  const details = (p) => [{ id: '0', outerId: '0', type: p.type, message: p.message, parsedStack: p.stack.map(([method, file, line], level) => ({ level, method, assembly: p.type === 'TypeError' ? '' : 'Contoso.Api', fileName: built(file), line })) }];
+  // The latest deployment (demo deployments' d3) brought the new cart: TypeError only happens after it.
+  const deployed = now - 3 * 24 * HOUR;
   const roles = sites.filter((s) => !s.slot).map((s) => s.name);
   let op = 0;
   for (const role of roles) {
@@ -110,9 +115,12 @@ function telemetry(now, sites) {
       items.push({ itemType: 'trace', component, timestamp: new Date(at + 2).toISOString(), message: `Handling ${path}`, severityLevel: 1, operation_Id, operation_Name: `GET ${path}`, cloud_RoleName: role });
       if (fails) {
         let pick = rand() * 11;
-        const p = PROBLEMS.find((x) => (pick -= x.weight) < 0) ?? PROBLEMS[0];
-        items.push({ itemType: 'dependency', component, timestamp: new Date(at + 5).toISOString(), name: 'POST /charges', target: 'payments.example.com', type: 'HTTP', resultCode: '504', success: false, duration: 30000, operation_Id, cloud_RoleName: role });
-        items.push({ itemType: 'exception', component, timestamp: new Date(at + 30000).toISOString(), problemId: `${p.type} at ${p.method}`, type: p.type, outerMessage: p.message, innermostMessage: p.message, method: p.method, severityLevel: 3, operation_Id, operation_Name: `GET ${path}`, cloud_RoleName: role, user_Id: `u${Math.floor(rand() * 30)}` });
+        let p = PROBLEMS.find((x) => (pick -= x.weight) < 0) ?? PROBLEMS[0];
+        if (p.type === 'TypeError' && at < deployed) p = PROBLEMS[0];
+        // A deadlock fails on the database, the others waiting on the payments provider.
+        if (p.type.endsWith('SqlException')) items.push({ itemType: 'dependency', component, timestamp: new Date(at + 5).toISOString(), name: 'contoso-sql-prod.database.windows.net | contoso', target: 'contoso-sql-prod.database.windows.net | contoso', type: 'SQL', data: 'UPDATE Orders SET Status = @status, UpdatedAt = SYSUTCDATETIME() WHERE Id = @id', resultCode: '1205', success: false, duration: 4200, operation_Id, cloud_RoleName: role });
+        else items.push({ itemType: 'dependency', component, timestamp: new Date(at + 5).toISOString(), name: 'POST /charges', target: 'payments.example.com', type: 'HTTP', resultCode: '504', success: false, duration: 30000, operation_Id, cloud_RoleName: role });
+        items.push({ itemType: 'exception', component, timestamp: new Date(at + 30000).toISOString(), problemId: `${p.type} at ${p.method}`, type: p.type, outerMessage: p.message, innermostMessage: p.message, method: p.method, details: details(p), severityLevel: 3, operation_Id, operation_Name: `GET ${path}`, cloud_RoleName: role, user_Id: `u${Math.floor(rand() * 30)}` });
       }
     }
   }
@@ -136,7 +144,7 @@ const COLUMNS = {
   dependency: ['timestamp', 'name', 'target', 'type', 'resultCode', 'success', 'duration', 'operation_Id', 'cloud_RoleName'],
   availability: ['timestamp', 'name', 'location', 'success', 'duration', 'message'],
 };
-const TYPES = { timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
+const TYPES = { details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
 const table = (names, rows) => ({ columns: names.map((name) => ({ name, type: TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
 
 /** The demo's answer to `kql` over `items` (one component's, within the time span). */
@@ -145,13 +153,30 @@ export function demoQuery(kql, items) {
   const role = /cloud_RoleName == '([^']*)'/.exec(q)?.[1];
   const mine = role ? items.filter((i) => i.cloud_RoleName === role) : items;
   const op = /operation_Id == '([^']*)'/.exec(q)?.[1];
+  const exceptions = mine.filter((i) => i.itemType === 'exception');
+  const problem = /problemId == '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1');
+  if (/^exceptions\b.*take 1 \| project .*details/.test(q)) {
+    const latest = exceptions.filter((e) => e.problemId === problem).at(-1);
+    return table(['timestamp', 'type', 'outerMessage', 'method', 'details', 'operation_Id', 'cloud_RoleName'], latest ? [latest] : []);
+  }
+  if (/^let ops = exceptions\b.*dependencies\b.*summarize/.test(q)) {
+    const ops = new Set(exceptions.filter((e) => e.problemId === problem).map((e) => e.operation_Id));
+    const groups = new Map();
+    for (const d of mine.filter((i) => i.itemType === 'dependency' && ops.has(i.operation_Id) && /sql/i.test(i.type) && !i.success)) {
+      const k = `${d.target}\n${d.data}`;
+      const g = groups.get(k) ?? { target: d.target, data: d.data, count: 0, last: d.timestamp, resultCode: d.resultCode };
+      g.count++;
+      if (d.timestamp > g.last) g.last = d.timestamp;
+      groups.set(k, g);
+    }
+    return table(['target', 'data', 'count', 'last', 'resultCode'], [...groups.values()].sort((a, b) => b.count - a.count));
+  }
   if (op) {
     const rows = mine
       .filter((i) => i.operation_Id === op)
-      .map((i) => ({ ...i, name: i.name ?? i.type ?? i.message, detail: i.resultCode ?? i.outerMessage ?? i.message ?? i.target }));
-    return table(['timestamp', 'itemType', 'name', 'detail', 'duration', 'success', 'cloud_RoleName'], rows);
+      .map((i) => ({ ...i, name: i.name ?? i.type ?? i.message, detail: i.resultCode ?? i.outerMessage ?? i.message ?? i.target, kind: i.type }));
+    return table(['timestamp', 'itemType', 'name', 'detail', 'duration', 'success', 'cloud_RoleName', 'url', 'target', 'data', 'kind'], rows);
   }
-  const exceptions = mine.filter((i) => i.itemType === 'exception');
   if (/^exceptions\b.*summarize.*by problemId, bucket = bin\(timestamp, (\w+)\)/.test(q)) {
     const size = { '5m': 5 * 60 * 1000, '1h': HOUR, '1d': 24 * HOUR }[/bin\(timestamp, (\w+)\)/.exec(q)[1]];
     const counts = new Map();

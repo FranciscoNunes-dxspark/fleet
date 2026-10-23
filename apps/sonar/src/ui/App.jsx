@@ -53,7 +53,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const HINTS = {
   resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
   logs: 'e edit the query · ↵ run it / show a row · s save it · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
-  problems: '↵ the latest occurrence · w ask Claude why · l its exceptions in Logs · y copy the message · c which insights',
+  problems: '↵ the latest occurrence · I incident · w ask Claude why · l its exceptions in Logs · y copy the message · c which insights',
   alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
   log: '↵ all its output · y copy it',
@@ -124,7 +124,9 @@ const DOUBLE_CLICK_MS = 400;
 // `notify(title, body)` says a long job has finished (cli.jsx rings the terminal's bell and raises a
 // desktop notification); tests pass a recorder or nothing. `askClaude` is claude-cli.js's ask (w in
 // Problems); tests stub it.
-export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify, askClaude = ask }) {
+// `cwd` is the folder Sonar started in: where Claude reads code, the checkout an incident's commits come
+// from, and where files are written; tests pass their own.
+export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify, askClaude = ask, cwd = process.cwd() }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -159,6 +161,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const selectedProblem = useRef(null);
   const problemsRef = useRef(null);
   problemsRef.current = problems;
+  // The incident shown last (I in Problems), for /incident save.
+  const incidentRef = useRef(null);
   const settingsCache = useRef(new Map());
   const metricsCache = useRef(new Map());
   const firewallCache = useRef(new Map());
@@ -438,6 +442,10 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     selectProblem: (p) => (selectedProblem.current = p),
     selectedProblem: () => selectedProblem.current,
     problems: () => problemsRef.current?.rows ?? [],
+    problemSpark: (id) => problemsRef.current?.spark?.[id] ?? '',
+    setIncident: (inc) => (incidentRef.current = inc),
+    incident: () => incidentRef.current,
+    cwd: () => cwd,
     askClaude,
     selectedTarget: () => webTarget(selectedRef.current),
     targets: () => (dataRef.current ? targetsByLabel(dataRef.current.apps, dataRef.current.slots) : {}),
@@ -1025,7 +1033,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
         : overlay?.kind === 'picker'
           ? 'j/k move · ↵ change · esc close'
           : overlay
-            ? 'j/k scroll · space page · y copy · esc close'
+            ? `${overlay.hint && !overlay.loading ? `${overlay.hint} · ` : ''}j/k scroll · space page · y copy · esc close`
             : HINTS[view];
   const right = focus === 'prompt' ? '' : '  t span · / commands · , settings · ? help';
 

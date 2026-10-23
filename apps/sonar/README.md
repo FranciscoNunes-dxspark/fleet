@@ -80,6 +80,24 @@ what most likely went wrong and what to do about it, in the viewer. Claude may r
 Grep and Glob, nothing else) in the folder Sonar was started in: start Sonar in the app's checkout and
 it reads the code the exception went through.
 
+### Incidents
+
+`I` on a problem (or `/incident`) tells it whole, in the viewer: when it was first and last seen, how
+often and to how many users, with its sparkline; the app's deployments in the 24 hours before it was
+first seen (or the latest before that); its latest occurrence end to end; the stack it went through;
+the SQL calls that failed in its operations (the server and database, and the command when Application
+Insights kept it); and when Sonar was started in the app's git checkout, the commits that touched the
+files in its stack in the 14 days before it was first seen. Outside a checkout that part is left out.
+
+| In an incident | |
+| --- | --- |
+| `Y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/splice)'s prompt |
+| `T` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's `/azure-sql` line (through `T`'s checks when the server is in the subscription) |
+| `H` | Copy the failing request for Hail's prompt |
+| `w` | Ask Claude for a draft write-up in Markdown: summary, impact, timeline, likely cause, next steps (it may read the code, as `w` in Problems does) |
+| `s` | Save the write-up (or the incident itself, before there's one) to a Markdown file; `/incident save <file>` does it too |
+| `y` | Copy the incident as Markdown |
+
 ## Keys
 
 | Key | What it does |
@@ -148,6 +166,7 @@ A storage account takes `o` (the portal) and `y` (copy its blob address).
 | --- | --- |
 | `↵` | Its latest occurrence, end to end |
 | `w` | Ask Claude why it happens |
+| `I` | The incident: the problem told whole (below) |
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
 | `c` | Which Application Insights to look in |
@@ -222,6 +241,7 @@ and Trawl.
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
 | `/portal [app]` | Open one in the Azure portal |
+| `/incident [problem]` | A problem as an incident (the one under the cursor in Problems if none is named); `/incident save <file>` writes its write-up |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |

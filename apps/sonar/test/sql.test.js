@@ -37,7 +37,7 @@ test("T on a production database: the firewall rule asked for by name, then a co
     await until(() => frame().includes("Let 198.51.100.7 through contoso-sql-prod's firewall? Type contoso-sql-prod to go ahead") && frame().includes('No rule lets this machine in'), 'the rule asked for, by name for production');
     await type(app.stdin, 'contoso-sql-prod');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes("Copied a command for Trawl: paste it into Trawl's prompt"), 'the command copied');
+    await until(() => frame().includes("Copied for Trawl: paste it into Trawl's prompt"), 'the command copied');
     assert.ok(rules(app, 'contoso-sql-prod').some((r) => r.name === 'sonar-198-51-100-7' && r.start === '198.51.100.7'), 'the rule added');
     const line = '/azure-sql contoso-sql-prod.database.windows.net contoso --name contoso-sql-prod-contoso --user contoso_app --password-from contoso-prod/contoso-api --subscription sub-prod --prod';
     assert.equal(copied.at(-1), line);

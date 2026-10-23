@@ -21,6 +21,7 @@ export const COMMANDS = [
   { name: 'firewall', args: '[server]', desc: "Let this machine's address through a SQL server's firewall (asks first)", complete: 'sqlservers', run: (ctx, s) => a.firewall(ctx, s) },
   { name: 'portal', args: '[app]', desc: 'Open an app or slot (or whatever is under the cursor in Resources) in the Azure portal', complete: 'targets', run: (ctx, s) => a.openInPortal(ctx, s.trim() ? a.targetNamed(ctx, s) : ctx.selectedResource()) },
   { name: 'why', args: '[problem]', desc: "Ask Claude why a problem happens, from its latest occurrence (and the code, when Sonar runs in the app's folder)", complete: 'problems', run: (ctx, s) => a.why(ctx, s) },
+  { name: 'incident', args: '[problem | save <file>]', desc: 'A problem as an incident: when, how often, the deployments before it, its latest occurrence, failing SQL, commits to its files; save writes the write-up', complete: 'problems', run: (ctx, s) => a.incident(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
   { name: 'settings', desc: 'Theme, accent colour, mouse, updates, notifications, history', run: (ctx) => a.settings(ctx) },

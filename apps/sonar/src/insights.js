@@ -44,8 +44,20 @@ export function trendQuery(role, timespan) {
 
 /** Everything that happened in one operation, in order: the end-to-end transaction. */
 export function operationQuery(operationId) {
-  return `union requests, dependencies, exceptions, traces | where operation_Id == ${quote(operationId)} | project timestamp, itemType, name = coalesce(name, type, message), detail = coalesce(tostring(resultCode), outerMessage, message, target), duration, success, cloud_RoleName | order by timestamp asc`;
+  return `union requests, dependencies, exceptions, traces | where operation_Id == ${quote(operationId)} | project timestamp, itemType, name = coalesce(name, type, message), detail = coalesce(tostring(resultCode), outerMessage, message, target), duration, success, cloud_RoleName, url, target, data, kind = type | order by timestamp asc`;
 }
+
+/** A problem's latest exception whole: its message, method and `details` (the parsed stack). */
+export const latestExceptionQuery = (problemId) =>
+  `exceptions | where problemId == ${quote(problemId)} | order by timestamp desc | take 1 | project timestamp, type, outerMessage, method, details, operation_Id, cloud_RoleName`;
+
+/** The SQL calls that failed in the operations a problem happened in: by target (server | database) and command. */
+export const sqlDependenciesQuery = (problemId) =>
+  `let ops = exceptions | where problemId == ${quote(problemId)} | distinct operation_Id; dependencies | where operation_Id in (ops) and type in~ ('SQL', 'Azure SQL') and success == false | summarize count = count(), last = max(timestamp), resultCode = take_any(resultCode) by target, data | order by count desc | take 10`;
+
+/** Everything one request (by its id or its operation's) took part in, in order: /take logline. */
+export const requestTraceQuery = (id) =>
+  `union requests, dependencies, exceptions, traces | where operation_Id == ${quote(id)} or id == ${quote(id)} | project timestamp, itemType, name = coalesce(name, type, message), detail = coalesce(tostring(resultCode), outerMessage, message, target), duration, success, cloud_RoleName | order by timestamp asc`;
 
 /** The availability tests' results over the span, by test: how many ran, how many failed, when they last did. */
 export const availabilityQuery = () =>

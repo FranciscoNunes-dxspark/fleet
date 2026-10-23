@@ -275,7 +275,7 @@ test('problems: w asks Claude why, with the latest occurrence on stdin and read-
     assert.equal(q.cwd, process.cwd());
     assert.match(q.input, /request\s+GET \//);
     assert.ok(q.input.includes(`exception    ${kind}`), q.input);
-    assert.match(q.input, /dependency\s+POST \/charges/);
+    assert.match(q.input, /dependency\s+(POST \/charges|contoso-sql-prod\.database\.windows\.net \| contoso)/);
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('╭─ Why '), 'closed');
 

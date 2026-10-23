@@ -75,6 +75,7 @@ export const HELP = [
     rows: [
       ['↵', 'The latest occurrence: everything in that operation, in order (requests, dependencies, exceptions, traces)'],
       ['w', 'Ask Claude why it happens: it reads the latest occurrence, and the code when Sonar was started in the app\'s folder'],
+      ['I', 'The incident: first and last seen, count, the deployments in the 24 h before it, its latest occurrence, its stack, failing SQL, and commits to its files in the 14 days before (when Sonar was started in the app\'s checkout)'],
       ['l', 'Its exceptions in Logs'],
       ['y', 'Copy the message'],
       ['c', 'Which Application Insights to look in'],
@@ -117,6 +118,17 @@ export const HELP = [
       ['$1 $2  $*', 'What\'s typed after it: a word each ("quoted words" are one), or all of it; a command with no $ gets it at the end of its line'],
       ['"keys"', '{ "global": { "ctrl+e": "/kql exceptions | take 50" }, "resources": { "x": "R" } }: a key to another key (the view does what that one does) or to a command line, anywhere or in one view (resources, logs, problems, live, alerts, log). They work while a view has the keys, never while typing; Your keys (above Slash commands) lists them'],
       ['key names', 'a character (x, X, +), ctrl+s, alt+x, shift+tab, F1-F12, enter, esc, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown'],
+    ],
+  },
+  {
+    title: 'Incident',
+    about: 'a problem told whole (I in Problems, /incident)',
+    rows: [
+      ['Y', 'Copy the exception, with its stack, for Splice\'s prompt'],
+      ['T', 'Its failing SQL: ↵ copies one as a query for Trawl\'s prompt, a its server\'s /azure-sql line'],
+      ['H', 'Copy the failing request for Hail\'s prompt'],
+      ['w', 'Ask Claude for a draft write-up in Markdown (summary, impact, timeline, likely cause, next steps)'],
+      ['s', 'Save the write-up (or the incident, before one) to a Markdown file; /incident save <file> too'],
     ],
   },
   {
