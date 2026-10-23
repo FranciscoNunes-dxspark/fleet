@@ -84,6 +84,25 @@ test('az: a token kept until near its end, and sign-in trouble said plainly', as
   await assert.rejects(token('https://r2/', { runner: refused }), /not signed in, or its sign-in ran out: run az login/);
 });
 
+test('az: calls that ask for a token at once share one az run, and a failed one is asked again', async () => {
+  let runs = 0;
+  const slow = async () => {
+    runs++;
+    await new Promise((r) => setTimeout(r, 20));
+    return { stdout: JSON.stringify({ token: `slow${runs}`, expires: String(Math.floor(Date.now() / 1000) + 3600) }) };
+  };
+  assert.deepEqual(await Promise.all([1, 2, 3, 4, 5].map(() => token('https://r3/', { runner: slow }))), ['slow1', 'slow1', 'slow1', 'slow1', 'slow1']);
+  assert.equal(runs, 1);
+  let tries = 0;
+  const flaky = async () => {
+    if (++tries === 1) throw new Error('network');
+    return { stdout: JSON.stringify({ token: 'ok', expires: String(Math.floor(Date.now() / 1000) + 3600) }) };
+  };
+  await assert.rejects(Promise.all([token('https://r4/', { runner: flaky }), token('https://r4/', { runner: flaky })]), /network/);
+  assert.equal(tries, 1, 'both waited on the one run');
+  assert.equal(await token('https://r4/', { runner: flaky }), 'ok');
+});
+
 test('linking an app to its Application Insights, production, secrets, settings compared', () => {
   const components = [{ name: 'ai', key: 'ABC-1' }, { name: 'other', key: 'x' }];
   assert.equal(componentFor({ APPLICATIONINSIGHTS_CONNECTION_STRING: 'InstrumentationKey=abc-1;IngestionEndpoint=https://x/' }, components).name, 'ai');
