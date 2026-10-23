@@ -51,6 +51,7 @@ export function start(props = {}) {
       pidsOnPort: () => [],
       killPids: () => {},
       listPorts: () => [],
+      runHail: async () => ({ missing: true }),
       ...props,
     }),
   );

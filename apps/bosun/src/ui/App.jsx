@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
@@ -30,6 +30,7 @@ import { exitNews, worthNotifying } from '../notify.js';
 import { decodeContext } from '../family.js';
 import { Recorder, sessionsDir } from '../recorder.js';
 import { listeningPorts } from '../ports.js';
+import { hailTest, testOutcome } from '../hailcheck.js';
 import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
 import { ReplayView } from './ReplayView.jsx';
 
@@ -128,13 +129,13 @@ const DOUBLE_CLICK_MS = 400;
 
 // `dir` is the project to start in (/move changes it); `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
-// `pidsOnPort`, `killPids`, `listPorts` and `gatherFacts` (preflight.js) reach outside, so tests pass stubs. `mouse` is mouse.js's
+// `pidsOnPort`, `killPids`, `listPorts`, `gatherFacts` (preflight.js) and `runHail` (hailcheck.js) reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
 // recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, restartTimes, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -270,10 +271,37 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // A process that ended by itself: said when it gave up restarting, and a crash or giving up raises
   // a notification (unless the setting is off). A stop never comes here.
   const crewEvent = (e) => {
+    if (e.type === 'ready') return e.p.spec.test && runTests(e.p);
     if (e.type !== 'exit') return;
     if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
     const news = exitNews(e.p, e.plan);
     if (news && notify && configRef.current.notify !== false) notify(news.title, news.body);
+  };
+  // A process's Hail checks ("test" in bosun.json), once its port answers: hail test through
+  // `runHail` (hailcheck.js's; tests pass a stub), the outcome beside it and the report in its log.
+  const hailMissing = useRef(false);
+  const runTests = async (p) => {
+    const sup = supRef.current;
+    const started = p.startedAt;
+    const { file, env } = p.spec.test;
+    p.tests = { state: 'running' };
+    sup.push(p, `── hail test ${file}${env ? ` --env ${env}` : ''}`);
+    sup.onChange();
+    const r = await runHail(p.spec.test, { cwd: resolve(dirRef.current, p.spec.cwd ?? '.') });
+    // Restarted (or Bosun moved on) meanwhile: the next start runs its own.
+    if (supRef.current !== sup || p.startedAt !== started) return;
+    if (r.missing) {
+      p.tests = null;
+      sup.push(p, "── hail isn't installed, so its tests didn't run");
+      if (!hailMissing.current) note(`${p.name}'s "test" runs Hail's checks, but hail isn't on the PATH: install it from its releases (github.com/FranciscoNunes-dxspark/hail).`, 'error');
+      hailMissing.current = true;
+    } else {
+      const outcome = testOutcome(r);
+      p.tests = { state: outcome.state, failed: outcome.failed };
+      if (outcome.text) sup.push(p, outcome.text);
+      sup.push(p, outcome.state === 'ok' ? '── tests passed' : outcome.state === 'failed' ? `── ${plural(outcome.failed, 'test')} failed` : "── hail couldn't run the tests", outcome.state !== 'ok');
+    }
+    sup.onChange();
   };
   const crewEventRef = useRef(crewEvent);
   crewEventRef.current = crewEvent;

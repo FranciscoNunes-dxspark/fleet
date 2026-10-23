@@ -6,7 +6,7 @@ import { theme } from '../theme.js';
 import { fit, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
 import { Panel, Row } from './parts.jsx';
-import { afterStatus, mergedLines, portSegments, statusSegment } from './CrewView.jsx';
+import { afterStatus, mergedLines, portSegments, statusSegment, testsSegments } from './CrewView.jsx';
 
 const STATUS_COLOUR = () => ({ running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del, exited: theme.dim, stopped: theme.dim });
 const STEP = 1000;
@@ -127,6 +127,7 @@ export function ReplayView({ session, title, ctx, width, height, active, onClose
                 { text: '● ', color: colour[p.status] },
                 { text: fit(p.name, nameW), strong: true },
                 statusSegment(p, t),
+                ...testsSegments(p),
                 ...portSegments(p),
                 afterStatus(p, t),
                 ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),

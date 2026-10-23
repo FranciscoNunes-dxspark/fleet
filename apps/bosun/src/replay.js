@@ -70,7 +70,8 @@ export class Replayer {
       const text = String(e.text ?? '');
       p.lines.push({ at: e.t, text, err: Boolean(e.err) });
       if (p.lines.length > this.keep * 1.5) p.lines.splice(0, p.lines.length - this.keep);
-      if (text.startsWith('── ') && /^── (?!exited|stopped|restarting|gave up|changed|not restarting|can't watch)/.test(text)) p.trouble = null;
+      // A start says its command first (`── node api.js`), and forgets the trouble before.
+      if (text === `── ${p.spec?.run}`) p.trouble = null;
       if (!p.trouble && !text.startsWith('── ') && isTrouble(text)) p.trouble = text.trim();
     } else if (e.type === 'state') {
       const { t: _t, type: _type, p: _p, failed, tests, ...rest } = e;

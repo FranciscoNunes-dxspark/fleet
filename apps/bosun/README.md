@@ -63,6 +63,7 @@ npm start
 | `watch` | Files that restart it when they change: paths or globs from its `cwd`, e.g. `["src", "lib/**/*.js"]` |
 | `ignore` | Changes to these don't (`"*.test.js"`, `"src/generated"`) |
 | `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
+| `test` | Hail's checks for it: an `.http` file (`"api.http"`), or `{ "file": "api.http", "env": "dev" }`, from its `cwd`. Needs `port` |
 
 `"envFile"` at the top level (from the project's folder) is read for every process, before each one's
 own. The files are in the usual dotenv format: `NAME=value` lines, `#` comments, `export ` in front,
@@ -83,6 +84,11 @@ while it keeps failing, back to 1 second once it has stayed up 30 seconds. The l
 `restarting in 4s` meanwhile, and `s` stops it waiting. One that ends within 10 seconds of starting
 5 times in a row is given up on (`gave up` in the list; `s` or `r` starts it again). One you stop is
 never restarted.
+
+A process with `test` has its requests checked by [Hail](https://github.com/FranciscoNunes-dxspark/hail)
+once its port answers (and its health page is well, when it has one): Bosun runs `hail test <file>
+[--env <env>]`, shows `✓ tests` or `✗ 2 failed` beside it in the list, and puts Hail's report in its
+log. They run again after each restart. Hail must be on your PATH; Bosun says once when it isn't.
 
 A profile changes some processes: `run` replaces the command, `args` adds to it, `env` adds settings,
 `restart` replaces that.

@@ -74,7 +74,8 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * port, portOpen, health, restartAt, gaveUp }. `status` is stopped, starting, running, crashed (exited
  * with an error), exited (by itself, cleanly) or stopping. `restartAt` is when one that `restart`s
  * starts again, `gaveUp` that it ended too quickly too often to. `onChange` is called after anything
- * changes; `onEvent` hears { type: 'exit', p, plan } when one ended by itself (not stopped). One with
+ * changes; `onEvent` hears { type: 'exit', p, plan } when one ended by itself (not stopped), and
+ * { type: 'ready', p } the first time in a start that its port answers (and its health page is well). One with
  * `watch` is restarted when a file it names changes, `debounce` ms after the last change, from its
  * first start until it's stopped.
  */
@@ -199,6 +200,7 @@ export class Supervisor {
     p.status = 'starting';
     p.code = null;
     p.trouble = null;
+    p.tests = null;
     p.startedAt = Date.now();
     p.endedAt = null;
     this.push(p, `── ${run}`, false);
@@ -438,6 +440,12 @@ export class Supervisor {
         if (open !== p.portOpen || health !== p.health) changed = true;
         p.portOpen = open;
         p.health = health;
+        // Ready (its port answers, its health page is well): once a start, for its "test".
+        const well = open && (!p.spec.health || (health >= 200 && health < 400));
+        if (well && p.child && p.readyFor !== p.startedAt) {
+          p.readyFor = p.startedAt;
+          this.onEvent({ type: 'ready', p });
+        }
       }),
     );
     if (changed) this.onChange();

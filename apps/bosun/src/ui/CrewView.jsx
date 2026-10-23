@@ -7,6 +7,7 @@ import { markRanges, matcher } from '../search.js';
 import { theme } from '../theme.js';
 import { fit, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
+import { testsLabel } from '../hailcheck.js';
 import { Panel, Row } from './parts.jsx';
 
 const STATUS_COLOUR = () => ({ running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del, exited: theme.dim, stopped: theme.dim });
@@ -41,6 +42,12 @@ export function afterStatus(p, now = Date.now()) {
   if (p.child && p.startedAt) return { text: ` ${uptime(p.startedAt, now)}`, color: theme.dim };
   if (p.code != null && p.status === 'crashed') return { text: ` code ${p.code}`, color: theme.dim };
   return { text: '' };
+}
+
+/** Its Hail checks' outcome, beside it: ✓ tests, ✗ 2 failed, … tests. */
+export function testsSegments(p) {
+  const l = testsLabel(p.tests);
+  return l ? [{ text: l.text, color: theme[l.tone] }] : [];
 }
 
 /** The lines of every process, in the order they came, each with its name in front: the `a` log. */
@@ -199,6 +206,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
               { text: '● ', color: colour[p.status] },
               { text: fit(p.name, nameW), strong: true },
               statusSegment(p, now),
+              ...testsSegments(p),
               ...portSegments(p),
               afterStatus(p, now),
               ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),

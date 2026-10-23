@@ -48,7 +48,7 @@ export const HELP = [
       ['p', 'Profiles: the crew with another command or settings'],
       ['y', 'Copy its command'],
       ['wheel', 'Over the log, scroll it back; to the bottom follows it again'],
-      'In the list: ● green running · yellow starting or stopping · red crashed · grey stopped. :3000 ✓ answers (and its health page is fine), … not yet, ✗ its health page fails. ! its log has said something wrong. restarting in 4s: it ended and its "restart" starts it again (1s, 2s, 4s… up to 30s); gave up: it ended within 10s of starting 5 times in a row.',
+      'In the list: ● green running · yellow starting or stopping · red crashed · grey stopped. ✓ tests / ✗ 2 failed: its Hail checks ("test" in bosun.json). :3000 ✓ answers (and its health page is fine), … not yet, ✗ its health page fails. ! its log has said something wrong. restarting in 4s: it ended and its "restart" starts it again (1s, 2s, 4s… up to 30s); gave up: it ended within 10s of starting 5 times in a row.',
     ],
   },
   {
