@@ -108,6 +108,21 @@ Without a `bosun.json`, Bosun works out what to run from the first of these it f
 
 `--no-start` opens without starting anything (`R` starts them all).
 
+### Pre-flight
+
+Before the crew starts, Bosun checks what it needs and says what's wrong in the activity lines (and
+the Log view), a line each: `✓` fine, `✗` a problem and what to do about it. It never stops them
+starting. `/preflight` runs the checks again any time and shows them in the viewer.
+
+| Check | |
+| --- | --- |
+| Node | The Node on your PATH against `.nvmrc`, `.node-version` or package.json's `engines.node` (the first there) |
+| Docker | `docker info` answers, when the crew has compose services |
+| Ports | Each process's port is free (a running one's is its own, and isn't checked) |
+| `.env` keys | Every key of a `.env.example` is in the env file beside it that the crew reads (the project's `.env` when none is named) |
+| Databases | Each database the project's `appsettings*.json` connection strings or `.env` `DATABASE_URL`-style lines name answers on its port (1433, 5432 or 3306 unless given), within 2 seconds |
+| `node_modules` | It's there, and newer than the lock file (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`) |
+
 ## Keys
 
 | Key | What it does |
@@ -219,6 +234,7 @@ Trawl.
 | `/why <name>` | Ask Claude why a process failed |
 | `/open <name>` | Open a process's port in the browser |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
+| `/preflight` | Check what the crew needs (Node version, Docker, free ports, `.env` keys, databases, `node_modules`), as a checklist |
 | `/ports` | Every TCP port listening on this machine, with the process holding it (pid and name); the crew's are marked. `f` frees one (asks first), `o` or `↵` opens it in the browser |
 | `/profile [name\|none]` | Run the crew with a profile |
 | `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |

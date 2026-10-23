@@ -30,6 +30,7 @@ import { exitNews, worthNotifying } from '../notify.js';
 import { decodeContext } from '../family.js';
 import { Recorder, sessionsDir } from '../recorder.js';
 import { listeningPorts } from '../ports.js';
+import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
 import { ReplayView } from './ReplayView.jsx';
 
 const VIEWS = [
@@ -127,13 +128,13 @@ const DOUBLE_CLICK_MS = 400;
 
 // `dir` is the project to start in (/move changes it); `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
-// `pidsOnPort`, `killPids` and `listPorts` reach outside, so tests pass stubs. `mouse` is mouse.js's
+// `pidsOnPort`, `killPids`, `listPorts` and `gatherFacts` (preflight.js) reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
 // recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, restartTimes, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, restartTimes, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -297,7 +298,17 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       if (!crew.procs.length && first) note('Nothing to run here: no bosun.json, Procfile or compose file, and no dev or start script in package.json. /init writes a bosun.json to fill in.');
       const sup = supRef.current;
       if (first) {
-        if (autostart) sup.startAll();
+        if (!autostart) return;
+        // Pre-flight: the ports before anything starts (the crew would hold them after), the rest
+        // alongside the start. What's wrong is said; nothing waits on it.
+        const checked = { ...crew, procs };
+        const before = await gather(dirRef.current, checked, { part: 'ports' }).catch(() => ({}));
+        if (supRef.current !== sup) return;
+        sup.startAll();
+        gather(dirRef.current, checked, { part: 'rest' }).then(
+          (rest) => supRef.current === sup && preflightReport({ ...before, ...rest }),
+          () => {},
+        );
         return;
       }
       for (const p of sup.list()) {
@@ -311,6 +322,14 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     } finally {
       setLoading(false);
     }
+  };
+  // The pre-flight checklist in the log: the summary, then a line a check (✓, or ✗ with what to do).
+  const preflightReport = (facts) => {
+    const checks = runChecks(facts);
+    const text = [summary(checks), ...checks.map(checkLine)].join('\n');
+    lastOutput.current = { title: 'Pre-flight', text };
+    if (checks.length) note(text);
+    return checks;
   };
   const setProfile = (name) => {
     profileRef.current = name;
@@ -424,6 +443,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     pidsOnPort: portPids,
     // /ports: what's listening on this machine (ports.js; tests pass a stub).
     listPorts: async () => listPorts(),
+    // /preflight: the facts the checks read (preflight.js; tests pass their own gatherFacts), and the report.
+    gatherFacts: () => gather(dirRef.current, { ...crewRef.current, procs: withProfile(crewRef.current?.procs ?? [], crewRef.current?.profiles ?? {}, profileRef.current) }, { running: (supRef.current?.list() ?? []).filter((p) => p.child).map((p) => p.name) }),
+    preflightReport: (facts) => preflightReport(facts),
     killPids: stopPids,
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // Whether this terminal can report the mouse at all (/settings says so).

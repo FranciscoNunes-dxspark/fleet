@@ -11,6 +11,7 @@ import { basename, resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { listSessions } from './recorder.js';
 import { markCrew } from './ports.js';
+import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
 
 const YES_NO = (yes) => [
@@ -156,6 +157,28 @@ export function ports(ctx, { replace = false } = {}) {
     },
     { replace },
   );
+}
+
+/** /preflight: the checks run before the crew starts, again now, as a checklist in the viewer. */
+export async function preflight(ctx) {
+  if (!ctx.data) return ctx.note('Nothing read yet.');
+  let checks = null;
+  const r = await ctx.task(
+    'Pre-flight',
+    async () => {
+      checks = runChecks(await ctx.gatherFacts());
+      return { stdout: summary(checks) };
+    },
+    { label: 'Checking' },
+  );
+  if (!r.ok) return r;
+  const lines = checks.length
+    ? checks.flatMap((c) => [
+        [{ text: c.ok ? '✓ ' : '✗ ', color: c.ok ? theme.add : theme.del, bold: true }, { text: c.title }],
+        ...(c.ok ? [] : [[{ text: `  ${c.hint}`, color: theme.dim }]]),
+      ])
+    : [[{ text: 'Nothing to check: no ports, .env.example, databases, Node version or node_modules here.', color: theme.dim }]];
+  ctx.showText('Pre-flight', checks.map(checkLine).join('\n'), { lines });
 }
 
 /** o and /open: the process's port in the browser. */
