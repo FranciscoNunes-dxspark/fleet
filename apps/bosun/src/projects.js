@@ -73,14 +73,5 @@ export function remember(recent = [], dir) {
   return [dir, ...recent.filter((d) => !samePath(d, dir))].slice(0, KEEP);
 }
 
-/**
- * A path given as a command's one argument: as typed, or in quotes. A sibling app's line (family.js
- * quoteArg) quotes a path with a space or a \ in it and escapes each \ and " inside; a path typed in
- * quotes by hand (C:\Users\me) keeps its backslashes.
- */
-export function pathArg(text) {
-  const s = String(text ?? '').trim();
-  const m = /^"((?:[^"\\]|\\.)*)"$/.exec(s);
-  if (!m) return s;
-  return /^(?:[^\\]|\\[\\"])*$/.test(m[1]) ? m[1].replace(/\\(.)/g, '$1') : m[1];
-}
+import { pathArg } from './family.js';
+export { pathArg };

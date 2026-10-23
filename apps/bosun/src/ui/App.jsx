@@ -758,7 +758,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     }
     // A paste of a command line (or a sibling's family:v1: context) opens the prompt with it, to run with ↵.
     // (A terminal ends a pasted line with \r, which the family's rule takes as a \n.)
-    const pasted = pastedLine(input.replace(/\r$/, '\n'));
+    const pasted = pastedLine(input);
     if (pasted) return prefill(pasted);
     if (input === '/' || input === ':') return prefill('/');
     if (input === '!') return prefill('!');
