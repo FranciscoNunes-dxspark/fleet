@@ -65,7 +65,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
     if (back) setBack(0);
   }
   const nameW = Math.min(16, Math.max(6, ...procs.map((p) => stringWidth(p.name))));
-  // The log pane's search (/ then n N, esc clears it) and `e`, only the lines that read as trouble.
+  // The log pane's search (ctrl+f then n N, esc clears it) and `e`, only the lines that read as trouble.
   const [search, setSearchState] = useState({ query: '', typing: false, at: 0 });
   const searchRef = useRef(search);
   const setSearch = (next) => {
@@ -120,7 +120,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
       setSearch({ ...s, query: q });
       return goTo(-1, q);
     }
-    if (input === '/') return setSearch({ query: '', typing: true, at: 0 });
+    if (key.ctrl && input === 'f') return setSearch({ query: '', typing: true, at: 0 });
     if (key.escape) {
       setSearch(cleared);
       return setBack(0);
@@ -128,9 +128,9 @@ export function CrewView({ procs, ctx, width, height, active }) {
     if (input === 'n') return goTo(s.at + 1);
     if (input === 'N') return goTo(s.at - 1);
   };
-  // Typing a search, and / n N esc while one is up, are this view's, not the app's.
+  // Typing a search, ctrl+f, and n N esc while one is up, are this view's, not the app's.
   useEffect(() => () => void (ctx.claimsKey = null), []);
-  ctx.claimsKey = active ? (input, key) => searchRef.current.typing || input === '/' || (Boolean(searchRef.current.query) && (key.escape || input === 'n' || input === 'N')) : null;
+  ctx.claimsKey = active ? (input, key) => searchRef.current.typing || (key.ctrl && input === 'f') || (Boolean(searchRef.current.query) && (key.escape || input === 'n' || input === 'N')) : null;
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
@@ -182,7 +182,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
   const find = matcher(search.query);
   const hits = find ? hitsIn(list, search.query) : [];
   const here = hits[Math.min(search.at, hits.length - 1)];
-  const where = search.query || search.typing ? `/${search.query}${search.typing ? '▏' : ''} ${hits.length ? `${Math.min(search.at, hits.length - 1) + 1}/${hits.length}` : 'no match'}` : '';
+  const where = search.query || search.typing ? `find ${search.query}${search.typing ? '▏' : ''} ${hits.length ? `${Math.min(search.at, hits.length - 1) + 1}/${hits.length}` : 'no match'}` : '';
   const logHint = [where, troubleOnly ? 'trouble only · e all' : '', back ? `${back} up · wheel down follows` : '', !merged && !troubleOnly && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
 
   return (

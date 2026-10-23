@@ -27,6 +27,7 @@ import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
+import { decodeContext } from '../family.js';
 
 const VIEWS = [
   { id: 'crew', label: 'Crew' },
@@ -43,11 +44,23 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · R all · a all logs · / search the log · e trouble · w why · ↵ whole log',
+  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · e trouble · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
+
+/**
+ * What a paste into a view puts in the prompt: input of more than one character at once that starts
+ * with / or is a family context, without its paste brackets and trailing newline; else null.
+ */
+export function pastedLine(input) {
+  if (!input || input.length < 2) return null;
+  const text = input.replace(/\x1b\[20[01]~/g, '').replace(/[\r\n]+$/, '');
+  if (text.length < 2 || /[\r\n]/.test(text)) return null;
+  if (text.startsWith('/') || decodeContext(text)) return text.trim();
+  return null;
+}
 
 // Whether a process runs differently now (its command or its settings), so /reload restarts it.
 const changedSpec = (had, now) => had.run !== now.run || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
@@ -674,6 +687,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       }
       return;
     }
+    // A paste of a command line (or a sibling's family:v1: context) opens the prompt with it, to run with ↵.
+    const pasted = pastedLine(input);
+    if (pasted) return prefill(pasted);
     if (input === '/' || input === ':') return prefill('/');
     if (input === '!') return prefill('!');
     if (input === '?') return ctx.showHelp();
@@ -841,9 +857,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
           : overlay
             ? 'j/k scroll · space page · y copy · esc close'
             : HINTS[view];
-  // In the Crew view / searches the log, so : is the prompt's key there.
-  const promptKey = view === 'crew' && !overlay ? ':' : '/';
-  const right = focus === 'prompt' ? '' : `  ${promptKey} commands · ! shell · , settings · ? help`;
+  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
 
   return (
     <Box flexDirection="column" width={W} height={H}>
@@ -864,7 +878,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
           <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
         )
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder={`Press ${promptKey} for commands, ! to run a shell command, ? for shortcuts`} />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
       <Row

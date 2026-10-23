@@ -52,7 +52,7 @@ export function Welcome({ mood, data, width, update }) {
           <Text> </Text>
         )}
         <Text color={theme.dim} wrap="truncate">
-          {fit(': commands · ! a shell command · ? shortcuts · esc to put this away', textW).trimEnd()}
+          {fit('/ commands · ! a shell command · ? shortcuts · esc to put this away', textW).trimEnd()}
         </Text>
       </Box>
     </Box>

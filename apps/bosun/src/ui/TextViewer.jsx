@@ -10,7 +10,7 @@ import { Panel, Row } from './parts.jsx';
 /**
  * Text over the view (ctx.showText): a command's output, an item. `lines` (rows of
  * segments) draws it in colour instead of `text`, which y still copies. Scrolls; esc or q closes it.
- * `bottom` starts it at the end, as for a log. / searches it (n N go from match to match, esc clears
+ * `bottom` starts it at the end, as for a log. / (or ctrl+f) searches it (n N go from match to match, esc clears
  * the search); for a `log`, e shows only the lines that read as trouble.
  */
 export function TextViewer({ title, text, lines: given, loading, bottom = false, log = false, ctx, width, height, active, onClose }) {
@@ -66,7 +66,7 @@ export function TextViewer({ title, text, lines: given, loading, bottom = false,
       if (key.ctrl || key.meta || !input) return;
       return goTo(first, s.query + input.replace(/[\x00-\x1f\x7f]/g, ''));
     }
-    if (input === '/') return setSearch({ query: '', typing: true, at: 0 });
+    if (input === '/' || (key.ctrl && input === 'f')) return setSearch({ query: '', typing: true, at: 0 });
     if (s.query && key.escape) return setSearch(cleared);
     if (s.query && input === 'n') return goTo(s.at + 1);
     if (s.query && input === 'N') return goTo(s.at - 1);

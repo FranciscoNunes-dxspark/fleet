@@ -277,7 +277,7 @@ test('a changed env file restarts the process that reads it on /reload', async (
   }
 });
 
-test('/ searches the log pane and the viewer, n N go between matches, esc clears; e shows only trouble', async () => {
+test('ctrl+f searches the log pane and the viewer, n N go between matches, esc clears; e shows only trouble', async () => {
   const dir = project({ procs: { talker: 'node talk.js' } }, {
     'talk.js': `for (let i = 1; i <= 5; i++) console.log('line ' + i + (i % 2 ? ' apple' : ' pear')); console.error('Error: the pear is bad'); setInterval(() => {}, 1000);`,
   });
@@ -285,22 +285,22 @@ test('/ searches the log pane and the viewer, n N go between matches, esc clears
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('Error: the pear is bad'), 'the log');
-    app.stdin.write('/');
+    app.stdin.write('\x06');
     await type(app.stdin, 'pear');
-    await until(() => frame().includes('/pear▏ 3/3'), 'three matches, on the newest');
+    await until(() => frame().includes('find pear▏ 3/3'), 'three matches, on the newest');
     assert.doesNotMatch(frame(), /> \/pear/, 'not typed into the prompt');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('/pear 3/3'), 'done typing');
+    await until(() => frame().includes('find pear 3/3'), 'done typing');
     app.stdin.write('N');
-    await until(() => frame().includes('/pear 2/3'), 'an older one');
+    await until(() => frame().includes('find pear 2/3'), 'an older one');
     app.stdin.write('n');
     app.stdin.write('n');
-    await until(() => frame().includes('/pear 1/3'), 'round to the oldest');
-    app.stdin.write('/');
+    await until(() => frame().includes('find pear 1/3'), 'round to the oldest');
+    app.stdin.write('\x06');
     await type(app.stdin, 'plum');
-    await until(() => frame().includes('/plum▏ no match'), 'nothing found');
+    await until(() => frame().includes('find plum▏ no match'), 'nothing found');
     app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('/plum'), 'cleared');
+    await until(() => !frame().includes('find plum'), 'cleared');
 
     app.stdin.write('e');
     await until(() => frame().includes('trouble only') && !frame().includes('line 1 apple'), 'only the trouble');
@@ -320,8 +320,8 @@ test('/ searches the log pane and the viewer, n N go between matches, esc clears
     await until(() => !frame().includes('/apple') && frame().includes('talker · node talk.js'), 'esc clears the search first');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('esc close'), 'then closes');
-    app.stdin.write(':');
-    await until(() => frame().includes('enter run'), ': opens the prompt in the Crew view');
+    app.stdin.write('/');
+    await until(() => frame().includes('enter run'), '/ opens the prompt in the Crew view');
   } finally {
     app.unmount();
   }
@@ -411,6 +411,24 @@ test('a crash, giving up and a long command notify; a stop doesn\'t, and the set
     await until(() => frame().includes('exit'), 'the failed command');
     await new Promise((r) => setTimeout(r, 200));
     assert.equal(told.length, 3, 'nothing said with the setting off');
+  } finally {
+    app.unmount();
+  }
+});
+
+test('a pasted command line opens the prompt with it, not run; a single / opens it empty', async () => {
+  const app = start();
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => /❯ ● api/.test(frame()), 'the crew');
+    app.stdin.write('/stop api\r\n');
+    await until(() => frame().includes('/stop api') && frame().includes('enter run'), 'the line in the prompt');
+    assert.doesNotMatch(frame(), /There's no process/);
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('enter run'), 'the prompt closed');
+    app.stdin.write('rr');
+    await new Promise((r) => setTimeout(r, 150));
+    assert.doesNotMatch(frame(), /enter run/, 'other pastes are keys, not the prompt');
   } finally {
     app.unmount();
   }

@@ -113,7 +113,7 @@ Without a `bosun.json`, Bosun works out what to run from the first of these it f
 | Key | What it does |
 | --- | --- |
 | `1` `2` / `tab` | Crew, Log (`shift+tab` goes back) |
-| `:` or `/` | The command prompt, with completion (in Crew, `/` searches the log, so it's `:` there) |
+| `/` or `:` | The command prompt, with completion. Pasting a `/command` (or a `family:v1:` line from a sibling) while the prompt is closed opens it with that line, for you to run with `↵` |
 | `!` | Run a shell command, e.g. `!node --version` |
 | `esc` | Cancel the running command, or clear the activity lines |
 | `,` | Settings |
@@ -128,7 +128,7 @@ Without a `bosun.json`, Bosun works out what to run from the first of these it f
 | `R` | Restart them all, each after the one it waits for |
 | `s` | Stop it, or start it; while it waits to restart, it won't |
 | `a` | Every process's log at once, or back to the one |
-| `/` | Search the log beside the list: matches light up as you type, `↵` stops typing, `n` `N` go to the next and the one before, `esc` clears it |
+| `ctrl+f` | Search the log beside the list: matches light up as you type, `↵` stops typing, `n` `N` go to the next and the one before, `esc` clears it |
 | `e` | Only the lines that read as trouble (errors, exceptions, a port in use), or all of them again |
 | `↵` | Its whole log, in the viewer |
 | `c` | Clear its log |
@@ -146,7 +146,7 @@ in use is one, and `f` stops what holds it. The wheel over the log scrolls it ba
 the bottom follows it again. `w` needs [Claude Code](https://claude.com/claude-code) installed and
 signed in; Claude reads the log and may read the project's files, and changes nothing.
 
-The viewer (`↵`) searches the same way, starting from the newest match, and `e` there shows only
+The viewer (`↵`) searches the same way (with `/` or `ctrl+f`), starting from the newest match, and `e` there shows only
 the trouble too.
 
 In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page, `y`
