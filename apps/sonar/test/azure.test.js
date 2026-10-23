@@ -2,6 +2,7 @@
 // its Application Insights, production, settings, sparklines, completion, the tree, the demo's answers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { getEventListeners } from 'node:events';
 import { alertFrom, alertRange, createAzure, retryAfter, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
@@ -422,4 +423,23 @@ test('the tree with the other kinds: under their resource groups, databases unde
   assert.equal(d.sqlServers[0].admin, null, 'the admin is read when the cursor stops on a server, not with the subscription');
   assert.equal((await demoAzure().sqlAdmin(d.sqlServers[0])).login, 'SQL Admins');
   assert.deepEqual(Object.keys(sqlByLabel(d.sqlServers)), ['contoso-sql-prod', 'contoso-sql-prod/contoso', 'contoso-sql-prod/contoso-reporting', 'contoso-sql-qa', 'contoso-sql-qa/contoso-qa']);
+});
+
+test('calls under one signal (a load\'s) leave no listeners on it, and it still cancels them', async () => {
+  const { fetch, calls } = fakeFetch({ 'GET /subscriptions': { value: [{ subscriptionId: 's1', displayName: 'One', state: 'Enabled' }] } });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const load = new AbortController();
+  for (let i = 0; i < 30; i++) await azure.subscriptions({ signal: load.signal });
+  assert.equal(getEventListeners(load.signal, 'abort').length, 0);
+  // Each call had a signal of its own, aborted with the load's.
+  const hanging = createAzure({
+    fetch: (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))),
+    token: async () => 't',
+  });
+  const p = hanging.subscriptions({ signal: load.signal });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.notEqual(calls[0].init.signal, load.signal);
+  load.abort();
+  await assert.rejects(p, /aborted/);
+  assert.equal(getEventListeners(load.signal, 'abort').length, 0);
 });

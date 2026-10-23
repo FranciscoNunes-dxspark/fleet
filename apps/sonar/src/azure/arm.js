@@ -3,6 +3,7 @@
 // the app talks to; src/demo.js has the same interface without Azure. Everything goes through `fetch`
 // with a token from `token(resource)`, both passed in, so tests run it against a fake.
 import { metricsPath, seriesFrom } from '../metrics.js';
+import { callSignal } from '../run.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
@@ -207,8 +208,9 @@ export function retryAfter(res, tries = 0) {
 
 const pause = (ms, signal) =>
   new Promise((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => (clearTimeout(t), reject(Object.assign(new Error('Cancelled'), { cancelled: true }))), { once: true });
+    const stop = () => (clearTimeout(t), reject(Object.assign(new Error('Cancelled'), { cancelled: true })));
+    const t = setTimeout(() => (signal?.removeEventListener('abort', stop), resolve()), ms);
+    signal?.addEventListener('abort', stop, { once: true });
   });
 
 /** A query's first table as { columns: [{ name, type }], rows: [[...]] }. */
@@ -220,18 +222,27 @@ export function tableFrom(body) {
 /** The provider over real Azure: `fetch` and `token(resource)` from outside. */
 export function createAzure({ fetch = globalThis.fetch, token }) {
   const call = async (resource, url, { method = 'GET', body, signal, what = 'Azure' } = {}, tries = 0) => {
-    const res = await fetch(url, {
-      method,
-      signal,
-      headers: { Authorization: `Bearer ${await token(resource)}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    // Too many calls at once (a big subscription's slots, say): Azure says when to try again.
-    if (res.status === 429 && tries < 3 && !signal?.aborted) {
-      await pause(retryAfter(res, tries), signal);
-      return call(resource, url, { method, body, signal, what }, tries + 1);
+    // A signal of its own, so a load's hundreds of calls leave no listeners on the load's.
+    const own = callSignal(signal);
+    let res;
+    let text;
+    try {
+      res = await fetch(url, {
+        method,
+        signal: own.signal,
+        headers: { Authorization: `Bearer ${await token(resource)}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      // Too many calls at once (a big subscription's slots, say): Azure says when to try again.
+      if (res.status === 429 && tries < 3 && !signal?.aborted) {
+        own.done();
+        await pause(retryAfter(res, tries), signal);
+        return call(resource, url, { method, body, signal, what }, tries + 1);
+      }
+      text = await res.text();
+    } finally {
+      own.done();
     }
-    const text = await res.text();
     let json = null;
     try {
       json = text ? JSON.parse(text) : null;

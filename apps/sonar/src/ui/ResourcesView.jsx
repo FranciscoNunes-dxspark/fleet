@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
@@ -44,17 +44,15 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
   const listW = Math.max(34, Math.floor(width * 0.42));
   // On the app the command line named (focusId), else the first.
   const focusAt = focusId ? rows.findIndex((r) => r.target?.id === focusId) : -1;
-  const nav = useListNav(rows.length, innerH, { selectable: (i) => rows[i]?.kind !== 'group', resetKey: `${data.subscription.id}|${filter}|${focusId}`, start: focusAt > 0 ? focusAt : 1 });
   // When the subscription fills in or is read again, the cursor stays on what it was on, wherever
-  // that row has gone (slots coming in above it, say).
-  const seen = useRef({ data, id: null });
-  if (seen.current.data !== data) {
-    const j = seen.current.id ? rows.findIndex((r) => r.target?.id === seen.current.id) : -1;
-    seen.current.data = data;
-    if (j >= 0 && j !== nav.index) nav.setIndex(j);
-  }
+  // that row has gone (slots coming in above it, say): keyOf.
+  const nav = useListNav(rows.length, innerH, {
+    selectable: (i) => rows[i]?.kind !== 'group',
+    resetKey: `${data.subscription.id}|${filter}|${focusId}`,
+    start: focusAt > 0 ? focusAt : 1,
+    keyOf: (i) => rows[i]?.target?.id,
+  });
   const sel = rows[nav.index]?.target ?? null;
-  seen.current.id = sel?.id ?? null;
   const web = sel && !sel.type ? sel : null;
   const server = sel?.type === 'sqldb' ? (data.sqlServers ?? []).find((s) => s.id === sel.serverId) : sel?.type === 'sqlserver' ? sel : null;
   ctx.selectTarget(sel);
