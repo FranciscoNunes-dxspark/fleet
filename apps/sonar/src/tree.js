@@ -29,11 +29,9 @@ export function resourceRows(apps, slots = {}, filter = '', others = {}) {
   for (const a of (others.storage ?? []).filter(has)) add(a, [{ order: 3, kind: 'storage', target: a }]);
   const rows = [];
   // Groups in the order their first app came (apps arrive sorted), then the ones with only other kinds, by name.
-  const names = [...groups.keys()].sort((x, y) => {
-    const ix = apps.findIndex((a) => a.resourceGroup === x);
-    const iy = apps.findIndex((a) => a.resourceGroup === y);
-    return (ix < 0 ? Infinity : ix) - (iy < 0 ? Infinity : iy) || x.localeCompare(y);
-  });
+  const firstApp = new Map();
+  apps.forEach((a, i) => firstApp.has(a.resourceGroup) || firstApp.set(a.resourceGroup, i));
+  const names = [...groups.keys()].sort((x, y) => (firstApp.get(x) ?? Infinity) - (firstApp.get(y) ?? Infinity) || x.localeCompare(y));
   for (const g of names) {
     rows.push({ kind: 'group', text: g });
     // Apps keep the order they came in; the other kinds follow, by kind and then name.

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
@@ -33,7 +33,8 @@ const delayed = (fn, ms) => {
 
 /** The subscription's resources by resource group, slots and databases under theirs, and beside them the one under the cursor. */
 export function ResourcesView({ data, span, ctx, width, height, active, filter, focusId }) {
-  const rows = resourceRows(data.apps, data.slots, filter, data);
+  // Worked out again only when the subscription or the filter changes, not on every key.
+  const rows = useMemo(() => resourceRows(data.apps, data.slots, filter, data), [data, filter]);
   const innerH = height - 2;
   const listW = Math.max(34, Math.floor(width * 0.42));
   // On the app the command line named (focusId), else the first.
