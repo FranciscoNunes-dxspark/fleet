@@ -313,3 +313,30 @@ test('/ searches the log pane and the viewer, n N go between matches, esc clears
     app.unmount();
   }
 });
+
+test('c clears a log, l and /save-log write it to a file, asking before writing over one', async () => {
+  const dir = project({ procs: { talker: 'node talk.js' } }, { 'talk.js': `console.log('first words'); process.stdin.resume(); setTimeout(() => console.log('later words'), 1500); setInterval(() => {}, 1000);` });
+  const app = start({ dir });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('first words'), 'the log');
+    app.stdin.write('c');
+    await until(() => frame().includes("Cleared talker's log") && !frame().includes('first words'), 'cleared');
+    await until(() => frame().includes('later words'), 'what it says after');
+
+    app.stdin.write('l');
+    await until(() => frame().includes('/save-log talker talker.log'), 'the command in the prompt');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes("Wrote 1 line of talker's log to talker.log"), 'written');
+    assert.equal(readFileSync(join(dir, 'talker.log'), 'utf8'), 'later words\n');
+
+    app.stdin.write(':');
+    await type(app.stdin, 'save-log talker talker.log');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('talker.log is there already. Write over it?'), 'the question');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('Write over it?'), 'answered no');
+  } finally {
+    app.unmount();
+  }
+});

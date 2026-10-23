@@ -417,6 +417,15 @@ export class Supervisor {
     if (changed) this.onChange();
   }
 
+  /** c: forgets what `name` has said, and the trouble it noticed in it. */
+  clearLog(name) {
+    const p = this.procs.get(name);
+    if (!p) return;
+    p.lines = [];
+    p.trouble = null;
+    this.onChange();
+  }
+
   /** The port a process's own log says is taken (EADDRINUSE), for /free. */
   takenPort(name) {
     const p = this.procs.get(name);

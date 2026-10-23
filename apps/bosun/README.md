@@ -120,6 +120,8 @@ ports and health pages to.
 | `/` | Search the log beside the list: matches light up as you type, `↵` stops typing, `n` `N` go to the next and the one before, `esc` clears it |
 | `e` | Only the lines that read as trouble (errors, exceptions, a port in use), or all of them again |
 | `↵` | Its whole log, in the viewer |
+| `c` | Clear its log |
+| `l` | Save its log to a file: `/save-log` in the prompt, with `<name>.log` to change |
 | `w` | Ask Claude why it failed, from its log and the project's files |
 | `o` | Open its port in the browser |
 | `f` | Free its port: stop whatever else is holding it (asks first) |
@@ -180,6 +182,7 @@ Trawl.
 | `/stop <name\|all>` | Stop a process and what it started |
 | `/start [name\|all]` | Start a process, or all that aren't running |
 | `/log <name>` | Everything a process has said |
+| `/save-log <name> [file]` | Write a process's log to a file, from the project's folder (`<name>.log` unless given; asks before writing over one) |
 | `/why <name>` | Ask Claude why a process failed |
 | `/open <name>` | Open a process's port in the browser |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |

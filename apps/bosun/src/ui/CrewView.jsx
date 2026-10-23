@@ -153,6 +153,10 @@ export function CrewView({ procs, ctx, width, height, active }) {
     else if (input === 'w') a.why(ctx, sel.name);
     else if (input === 'o') a.openProc(ctx, sel.name);
     else if (input === 'f') a.free(ctx, ctx.crew?.takenPort(sel.name) ?? sel.port);
+    else if (input === 'c') {
+      a.clearLog(ctx, sel.name);
+      setBack(0);
+    } else if (input === 'l') a.saveLogPrompt(ctx, sel.name);
     else if (input === 'y') ctx.copy(sel.spec.run, 'its command');
   };
   useInput(keys, { isActive: active });

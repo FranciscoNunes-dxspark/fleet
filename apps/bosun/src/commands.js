@@ -9,6 +9,7 @@ export const COMMANDS = [
   { name: 'stop', args: '<name|all>', desc: 'Stop a process and what it started', complete: 'procs', run: (ctx, s) => a.stop(ctx, s) },
   { name: 'start', args: '[name|all]', desc: 'Start a process, or all that aren\'t running', complete: 'procs', run: (ctx, s) => a.start(ctx, s) },
   { name: 'log', args: '<name>', desc: 'Everything a process has said', complete: 'procs', run: (ctx, s) => a.showLog(ctx, s) },
+  { name: 'save-log', args: '<name> [file]', desc: 'Write a process\'s log to a file (name.log unless given)', complete: 'procs', run: (ctx, s) => a.saveLog(ctx, s) },
   { name: 'why', args: '<name>', desc: 'Ask Claude why a process failed, from its log', complete: 'procs', run: (ctx, s) => a.why(ctx, s) },
   { name: 'open', args: '<name>', desc: 'Open a process\'s port in the browser', complete: 'procs', run: (ctx, s) => a.openProc(ctx, s) },
   { name: 'free', args: '<port>', desc: 'Stop whatever holds a port on this machine (asks first)', run: (ctx, s) => a.free(ctx, s) },

@@ -40,6 +40,8 @@ export const HELP = [
       ['esc', 'Clear the search'],
       ['e', 'Only the lines that read as trouble, or all of them again'],
       ['↵', 'Its whole log in the viewer'],
+      ['c', 'Clear its log'],
+      ['l', 'Save its log to a file (/save-log, in the prompt to change the name)'],
       ['w', 'Ask Claude why it failed: its log, and the project\'s files it reads'],
       ['o', 'Open its port in the browser'],
       ['f', 'Free its port: stop whatever else holds it (asks first)'],

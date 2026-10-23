@@ -5,9 +5,10 @@ import { run } from './run.js';
 import { settingRows, settingSegments } from './settings.js';
 import { DEFAULT_ACCENT, isColour, setAccent, theme } from './theme.js';
 import { clip } from './claude-cli.js';
-import { FILE, specFor, writeSpec } from './crew.js';
+import { FILE, specFor, words, writeSpec } from './crew.js';
 import { choices, resolveFolder, samePath } from './projects.js';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
+import { existsSync, writeFileSync } from 'node:fs';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -74,6 +75,35 @@ export function showLog(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
   ctx.showText(`${p.name} · ${p.spec.run}`, p.lines.map((l) => l.text).join('\n') || '(nothing yet)', { bottom: true, log: true });
+}
+
+/** c: forgets what a process has said so far. */
+export function clearLog(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  ctx.crew.clearLog(p.name);
+  ctx.note(`Cleared ${p.name}'s log.`);
+}
+
+/** l: /save-log for the process under the cursor, in the prompt to change the file's name. */
+export const saveLogPrompt = (ctx, name) => ctx.prefill(`/save-log ${name} ${/\s/.test(name) ? `"${name}.log"` : `${name}.log`}`);
+
+/** /save-log: a process's log written to a file, from the project's folder (asks before writing over one). */
+export async function saveLog(ctx, rest) {
+  const [name, file = name ? `${name}.log` : undefined] = words(rest ?? '');
+  const p = proc(ctx, name);
+  if (!p) return false;
+  const path = resolve(ctx.dir, file);
+  if (existsSync(path)) {
+    const ok = await ctx.confirm({ title: `${file} is there already. Write over it?`, danger: true, options: YES_NO('Yes, write over it') });
+    if (!ok) return false;
+  }
+  try {
+    writeFileSync(path, p.lines.map((l) => `${l.text}\n`).join(''));
+  } catch (e) {
+    return ctx.note(`Couldn't write ${file}: ${e.message}`, 'error');
+  }
+  ctx.note(`Wrote ${p.lines.length} line${p.lines.length === 1 ? '' : 's'} of ${p.name}'s log to ${file}.`, 'ok');
 }
 
 /** f and /free: stops whatever holds `port` on this machine, after asking. */
