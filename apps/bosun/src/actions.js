@@ -10,6 +10,7 @@ import { choices, resolveFolder, samePath } from './projects.js';
 import { basename, resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { listSessions } from './recorder.js';
+import { markCrew } from './ports.js';
 import { clock, parseSession } from './replay.js';
 
 const YES_NO = (yes) => [
@@ -118,6 +119,43 @@ export async function free(ctx, port) {
   if (!ok) return false;
   ctx.killPids(pids);
   ctx.note(`Stopped what held port ${n}.`, 'ok');
+}
+
+/** /ports: the TCP ports listening on this machine, the crew's marked; f frees one, o opens it. */
+export function ports(ctx, { replace = false } = {}) {
+  ctx.showPicker(
+    {
+      title: 'Ports listening on this machine',
+      hint: 'f free it · o open it',
+      empty: "Nothing is listening (or this machine won't say: lsof, ss or netstat answers).",
+      load: async () => {
+        const procs = ctx.crew?.list() ?? [];
+        const list = markCrew(await ctx.listPorts(), procs);
+        const pidW = Math.max(3, ...list.map((e) => String(e.pid ?? '?').length));
+        return list.map((e) => ({
+          ...e,
+          segments: [
+            { text: `:${String(e.port).padEnd(6)}`, strong: true, color: e.proc ? theme.accent : undefined },
+            { text: `pid ${String(e.pid ?? '?').padStart(pidW)}  `, color: theme.dim },
+            { text: (e.name ?? '?').padEnd(16) },
+            { text: e.proc ? ` ${e.proc} (this crew)` : '', color: theme.accent },
+            { text: `  ${e.hosts.join(' ')}`, color: theme.dim },
+          ],
+        }));
+      },
+      keys: {
+        f: async (it) => {
+          if ((await free(ctx, it.port)) === false) return;
+          // Its holder takes a moment to go; then the list again, without it.
+          await new Promise((r) => setTimeout(r, 300));
+          ports(ctx, { replace: true });
+        },
+        o: (it) => ctx.openUrl(`http://localhost:${it.port}`),
+      },
+      onPick: (it) => ctx.openUrl(`http://localhost:${it.port}`),
+    },
+    { replace },
+  );
 }
 
 /** o and /open: the process's port in the browser. */

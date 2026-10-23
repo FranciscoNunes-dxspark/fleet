@@ -13,6 +13,7 @@ export const COMMANDS = [
   { name: 'why', args: '<name>', desc: 'Ask Claude why a process failed, from its log', complete: 'procs', run: (ctx, s) => a.why(ctx, s) },
   { name: 'open', args: '<name>', desc: 'Open a process\'s port in the browser', complete: 'procs', run: (ctx, s) => a.openProc(ctx, s) },
   { name: 'free', args: '<port>', desc: 'Stop whatever holds a port on this machine (asks first)', run: (ctx, s) => a.free(ctx, s) },
+  { name: 'ports', desc: 'The TCP ports listening on this machine, with what holds each (this crew\'s marked): f frees one, o opens it', run: (ctx) => a.ports(ctx) },
   { name: 'profile', args: '[name|none]', desc: 'Run the crew with a profile from bosun.json', complete: 'profiles', run: (ctx, s) => a.profiles(ctx, s) },
   { name: 'reload', desc: 'Read bosun.json and the env files again (what changed restarts)', run: (ctx) => ctx.reload() },
   { name: 'move', args: '[folder]', desc: 'Run another project instead (this one\'s processes stop)', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },

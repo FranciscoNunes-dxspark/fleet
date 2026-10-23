@@ -219,6 +219,7 @@ Trawl.
 | `/why <name>` | Ask Claude why a process failed |
 | `/open <name>` | Open a process's port in the browser |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
+| `/ports` | Every TCP port listening on this machine, with the process holding it (pid and name); the crew's are marked. `f` frees one (asks first), `o` or `↵` opens it in the browser |
 | `/profile [name\|none]` | Run the crew with a profile |
 | `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |
 | `/move [folder]` | Run another project instead: a path, or a folder beside this one (completed as you type); without one, a list of the projects run lately and the folders beside this one. This one's processes stop first |

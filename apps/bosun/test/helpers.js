@@ -50,6 +50,7 @@ export function start(props = {}) {
       openUrl: () => {},
       pidsOnPort: () => [],
       killPids: () => {},
+      listPorts: () => [],
       ...props,
     }),
   );

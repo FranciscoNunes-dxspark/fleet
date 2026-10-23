@@ -68,6 +68,14 @@ export const HELP = [
     ],
   },
   {
+    title: 'Ports',
+    about: '/ports: every TCP port listening on this machine, and what holds it; the crew\'s are marked',
+    rows: [
+      ['f', 'Free it: stop what holds it (asks first)'],
+      ['o / ↵', 'Open it in the browser'],
+    ],
+  },
+  {
     title: 'Replay',
     about: '/replay: a recorded run of the crew, played back',
     rows: [

@@ -29,6 +29,7 @@ import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
 import { decodeContext } from '../family.js';
 import { Recorder, sessionsDir } from '../recorder.js';
+import { listeningPorts } from '../ports.js';
 import { ReplayView } from './ReplayView.jsx';
 
 const VIEWS = [
@@ -126,13 +127,13 @@ const DOUBLE_CLICK_MS = 400;
 
 // `dir` is the project to start in (/move changes it); `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
-// `pidsOnPort` and `killPids` reach outside, so tests pass stubs. `mouse` is mouse.js's
+// `pidsOnPort`, `killPids` and `listPorts` reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
 // recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, restartTimes, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, restartTimes, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -421,6 +422,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     moveTo,
     askClaude,
     pidsOnPort: portPids,
+    // /ports: what's listening on this machine (ports.js; tests pass a stub).
+    listPorts: async () => listPorts(),
     killPids: stopPids,
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // Whether this terminal can report the mouse at all (/settings says so).
