@@ -8,7 +8,8 @@ import { HELP } from '../src/help.js';
 import { commandsSection, sectionLines } from '../src/help-layout.js';
 import { FACES, PALETTE, petPixels, petRows } from '../src/pet.js';
 import { settingRows } from '../src/settings.js';
-import { DEFAULT_ACCENT } from '../src/theme.js';
+import { DARK, DEFAULT_ACCENT, LIGHT, LIGHT_ACCENT, applyTheme, backgroundFrom, theme, themeMode } from '../src/theme.js';
+import { nextTheme } from '../src/settings.js';
 import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 
@@ -36,6 +37,30 @@ test('settings: the rows and their values', () => {
   assert.equal(set.accent.value, '#ff8800');
   assert.equal(set.mouse.value, 'off');
   assert.equal(set.history.action, 'clear');
+  assert.equal(by.theme.value, `auto (${theme.mode} here)`);
+  assert.equal(by.theme.action, 'theme');
+  assert.deepEqual([nextTheme({}), nextTheme({ theme: 'dark' }), nextTheme({ theme: 'light' })], ['dark', 'light', 'auto']);
+});
+
+test('theme: dark, light, or auto from COLORFGBG, with the accent kept over it', () => {
+  assert.equal(backgroundFrom('15;0'), 'dark');
+  assert.equal(backgroundFrom('0;default;15'), 'light');
+  assert.equal(backgroundFrom(''), null);
+  assert.equal(themeMode('auto', { COLORFGBG: '0;15' }), 'light');
+  assert.equal(themeMode(undefined, {}), 'dark');
+  assert.equal(themeMode('dark', { COLORFGBG: '0;15' }), 'dark');
+  assert.deepEqual(Object.keys(LIGHT).sort(), Object.keys(DARK).sort(), 'both palettes have every colour');
+  try {
+    assert.equal(applyTheme({ theme: 'light' }, {}), 'light');
+    assert.equal(theme.del, LIGHT.del);
+    assert.equal(theme.accent, LIGHT_ACCENT);
+    applyTheme({ theme: 'light', accent: '#ff8800' }, {});
+    assert.equal(theme.accent, '#ff8800');
+    assert.equal(settingRows({ theme: 'light' }).find((r) => r.id === 'accent').value, `${LIGHT_ACCENT} (default)`);
+  } finally {
+    applyTheme({ theme: 'dark' }, {});
+  }
+  assert.equal(theme.accent, DEFAULT_ACCENT);
 });
 
 test('the pet: every mood is the same size, drawn only in its palette, and has a face', () => {

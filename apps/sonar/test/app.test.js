@@ -1,7 +1,10 @@
 // Drives the real UI over the demo Azure: keys in, frames out, the demo's state checked.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { demoAzure } from '../src/demo.js';
+import { LIGHT, applyTheme, theme } from '../src/theme.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
@@ -181,5 +184,26 @@ test("live: an app's log as it's written, paused, and stopped once you leave", a
     assert.equal(lines, after, 'the stream stopped when Live went off screen');
   } finally {
     app.unmount();
+  }
+});
+
+test('settings: the theme goes dark, light, auto, and the screen takes it at once', async () => {
+  const app = start();
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    app.stdin.write(',');
+    await until(() => /❯ Theme\s+auto/.test(frame()), 'the theme row first');
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ Theme\s+dark\s+↵ light next/.test(frame()), 'dark');
+    app.stdin.write(KEYS.enter);
+    await until(() => /❯ Theme\s+light/.test(frame()), 'light');
+    assert.equal(theme.mode, 'light');
+    assert.equal(theme.del, LIGHT.del);
+    const saved = JSON.parse(readFileSync(join(process.env.SONAR_HOME, 'config.json'), 'utf8'));
+    assert.equal(saved.theme, 'light');
+  } finally {
+    app.unmount();
+    applyTheme({ theme: 'dark' }, {});
   }
 });

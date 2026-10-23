@@ -161,7 +161,7 @@ and Trawl.
 | `/portal [app]` | Open one in the Azure portal |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
-| `/settings` | Accent colour, mouse, updates, history |
+| `/settings` | Theme, accent colour, mouse, updates, history |
 | `/accent <#rrggbb>` | Change the accent colour (`default` puts it back) |
 | `/update` | Look for a new version now and install it |
 | `/help` | Keys and commands |
@@ -177,7 +177,8 @@ subscription last open, the time span, and the queries run lately.
 
 | Setting | |
 | --- | --- |
-| Accent colour | The colour of the cursor, borders and Ping |
+| Theme | Dark, light, or auto: auto goes by the terminal's background where it says (`COLORFGBG`), else dark |
+| Accent colour | The colour of the cursor, borders and Ping (each theme has its own default) |
 | Mouse | Off leaves selecting text to the terminal |
 | Check for new versions | Once a day, in the downloaded builds |
 | Install them by itself | Off only says a new version is out |

@@ -2,7 +2,7 @@ import React from 'react';
 import { render } from 'ink';
 import { COMPILED, VERSION } from './version.js';
 import { loadConfig } from './config.js';
-import { setAccent } from './theme.js';
+import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
 import { createAzure } from './azure/arm.js';
 import { currentSubscription, token } from './azure/az.js';
@@ -44,7 +44,7 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
 }
 
 const config = loadConfig();
-setAccent(config.accent);
+applyTheme(config);
 
 // Draw on the alternate screen, like a full-screen app, and give the terminal back untouched on exit.
 // The window title is saved on the terminal's title stack and popped on exit. Terminals without one
