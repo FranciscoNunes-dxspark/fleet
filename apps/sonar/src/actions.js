@@ -1,6 +1,9 @@
 // Every user-facing operation, written once: keys and slash commands both call these with `ctx`
 // (built in ui/App.jsx). Questions before anything destructive belong here too (ctx.confirm).
+import { writeFile } from 'node:fs/promises';
+import { extname, resolve } from 'node:path';
 import { label } from './azure/arm.js';
+import { EXPORTS } from './export.js';
 import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, isProduction, looksSecret, operationQuery, records, settingsDiff } from './insights.js';
@@ -305,6 +308,74 @@ export async function runQuery(ctx, kql) {
   }, { label: 'Querying' });
   if (done.ok) ctx.setResult({ query: q, component: scope.component, span, ...result });
   if (done.ok) ctx.setConfig((c) => ({ ...c, queries: [q, ...(c.queries ?? []).filter((x) => x !== q)].slice(0, 50) }));
+}
+
+/** s in Logs: the query under a name of yours, kept in the config for /queries. */
+export async function saveQuery(ctx, kql) {
+  const q = kql?.trim();
+  if (!q) return ctx.note('Write a query first (e), then s saves it.', 'error');
+  const saved = ctx.config.savedQueries ?? {};
+  const already = Object.keys(saved).find((n) => saved[n] === q);
+  const name = (await ctx.askText({ title: 'Save the query as', detail: q, value: already ?? '' }))?.trim();
+  if (!name) return;
+  ctx.setConfig((c) => ({ ...c, savedQueries: { ...(c.savedQueries ?? {}), [name]: q } }));
+  ctx.note(`${name in saved ? 'Replaced' : 'Saved'} the query "${name}": /queries runs it again.`, 'ok');
+}
+
+/** /queries: your saved queries, ↵ runs one, x forgets it; with a name, runs that one. */
+export function savedQueries(ctx, name, { replace = false, index } = {}) {
+  const saved = ctx.config.savedQueries ?? {};
+  const names = Object.keys(saved).sort((x, y) => x.localeCompare(y));
+  const n = name?.trim();
+  if (n) {
+    const hit = names.find((x) => x === n) ?? names.find((x) => x.toLowerCase() === n.toLowerCase());
+    if (!hit) return ctx.note(`No saved query called ${n}${names.length ? ` (there's ${names.join(', ')})` : ': s in Logs saves one'}.`, 'error');
+    return runQuery(ctx, saved[hit]);
+  }
+  if (!names.length && !replace) return ctx.note('No saved queries yet: s in Logs saves the one in the box.');
+  const nameW = Math.min(30, Math.max(8, ...names.map((x) => x.length)));
+  ctx.showPicker(
+    {
+      title: 'Saved queries',
+      hint: '↵ run it · x forget it · y copy it',
+      empty: 'No saved queries left. s in Logs saves one.',
+      index,
+      items: names.map((x) => ({ name: x, segments: [{ text: `${x.padEnd(nameW)}  `, strong: true }, { text: saved[x], color: theme.dim }] })),
+      onPick: (it) => {
+        ctx.closeOverlay();
+        runQuery(ctx, saved[it.name]);
+      },
+      keys: {
+        x: (it) => {
+          ctx.setConfig((c) => {
+            const { [it.name]: _, ...rest } = c.savedQueries ?? {};
+            return { ...c, savedQueries: rest };
+          });
+          ctx.note(`Forgot the query "${it.name}".`);
+          savedQueries(ctx, null, { replace: true, index: Math.max(0, (ctx.overlay()?.index ?? 1) - 1) });
+        },
+        y: (it) => ctx.copy(saved[it.name], 'the query'),
+      },
+    },
+    { replace },
+  );
+}
+
+/** /export <file>: the grid in Logs to a .csv, .json or .md file (relative to the folder Sonar started in). */
+export async function exportResult(ctx, path) {
+  const result = ctx.result();
+  if (!result) return ctx.note('Run a query in Logs first: there is nothing to export.', 'error');
+  const p = String(path ?? '').trim().replace(/^"(.*)"$/, '$1');
+  if (!p) return ctx.prefill('/export ');
+  const full = resolve(p);
+  const format = EXPORTS[extname(full).toLowerCase()];
+  if (!format) return ctx.note('Export to a .csv, .json or .md file.', 'error');
+  try {
+    await writeFile(full, format(result), 'utf8');
+    ctx.note(`Wrote ${result.rows.length} row${result.rows.length === 1 ? '' : 's'} to ${full}`, 'ok');
+  } catch (e) {
+    ctx.note(`Couldn't write ${full}: ${e.message}`, 'error');
+  }
 }
 
 /** A problem's latest occurrence: every row of that operation, in order (the end-to-end transaction). */

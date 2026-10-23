@@ -13,6 +13,7 @@ import { nextTheme } from '../src/settings.js';
 import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 import { notification, worthNotifying } from '../src/notify.js';
+import { EXPORTS, toCsv, toJson, toMarkdown } from '../src/export.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
   assert.equal(findCommand('kql').name, 'kql');
@@ -107,4 +108,12 @@ test('notifications: a bell, then OSC 9, or OSC 777 in VTE terminals, only past 
   const row = settingRows({ notifyAfter: 30 }).find((r) => r.id === 'notify');
   assert.deepEqual([row.value, row.action], ['on', 'toggle']);
   assert.match(row.note, /over 30 s/);
+});
+
+test('export: the grid as CSV, JSON or a Markdown table', () => {
+  const table = { columns: [{ name: 'timestamp', type: 'datetime' }, { name: 'name', type: 'string' }, { name: 'n', type: 'long' }, { name: 'd', type: 'dynamic' }], rows: [['2026-10-22T08:15:00.123Z', 'GET /a, "b"', 3, { k: 1 }], [null, 'x|y', 0, null]] };
+  assert.equal(toCsv(table), 'timestamp,name,n,d\r\n2026-10-22T08:15:00.123Z,"GET /a, ""b""",3,"{""k"":1}"\r\n,x|y,0,\r\n');
+  assert.deepEqual(JSON.parse(toJson(table)), [{ timestamp: '2026-10-22T08:15:00.123Z', name: 'GET /a, "b"', n: 3, d: { k: 1 } }, { timestamp: null, name: 'x|y', n: 0, d: null }]);
+  assert.equal(toMarkdown(table), '| timestamp | name | n | d |\n| --- | --- | ---: | --- |\n| 2026-10-22 08:15:00 | GET /a, "b" | 3 | {"k":1} |\n|  | x\\|y | 0 |  |\n');
+  assert.deepEqual(Object.keys(EXPORTS), ['.csv', '.json', '.md', '.markdown']);
 });

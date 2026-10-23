@@ -52,7 +52,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
   resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
-  logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
+  logs: 'e edit the query · ↵ run it / show a row · s save it · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
   problems: '↵ the latest occurrence · w ask Claude why · l its exceptions in Logs · y copy the message · c which insights',
   alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
@@ -133,6 +133,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   // Logs: the query in the box and what the last run found. Problems: what was found, for which scope.
   const [query, setQuery] = useState('');
   const [result, setResult] = useState(null);
+  const resultRef = useRef(null);
+  resultRef.current = result;
   const [problems, setProblems] = useState(null);
   const [alerts, setAlerts] = useState(null);
   // What Logs and Problems look at: an app (l, p) or, with `all`, everything in the chosen component.
@@ -428,6 +430,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     timespan: () => TIMESPANS[spanRef.current],
     setQuery,
     setResult,
+    result: () => resultRef.current,
     setFilter,
     setComponent: (component) => setScope({ target: null, component, all: Boolean(component) }),
     chooseComponent: () => a.chooseComponent(ctx),
@@ -765,13 +768,13 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     setTitle?.(title);
   }, [title]);
 
-  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets(), problems: ctx.problems() }) : [];
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets(), problems: ctx.problems(), queries: Object.keys(configRef.current.savedQueries ?? {}) }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets(), problems: ctx.problems() });
+    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets(), problems: ctx.problems(), queries: Object.keys(configRef.current.savedQueries ?? {}) });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);

@@ -1,7 +1,7 @@
 // Drives the real UI over the demo Azure: keys in, frames out, the demo's state checked.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { demoAzure } from '../src/demo.js';
 import { LIGHT, applyTheme, theme } from '../src/theme.js';
@@ -339,6 +339,58 @@ test('alerts: what fires in the subscription, an alert whole, and an availabilit
     app.stdin.write('t');
     app.stdin.write('5');
     await until(() => /3 firing · 7d/.test(frame()), 'more over a longer span');
+  } finally {
+    app.unmount();
+  }
+});
+
+test('logs: s saves the query under a name, /queries runs it again or forgets it, /export writes the grid', async () => {
+  const app = start();
+  const frame = () => app.lastFrame() ?? '';
+  const command = async (line) => {
+    app.stdin.write('/');
+    await type(app.stdin, line);
+    app.stdin.write(KEYS.enter);
+  };
+  const config = () => JSON.parse(readFileSync(join(process.env.SONAR_HOME, 'config.json'), 'utf8'));
+  try {
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    await command('kql exceptions | take 4');
+    await until(() => frame().includes('╭─ Logs') && frame().includes('4 rows'), 'four exceptions');
+    app.stdin.write('s');
+    await until(() => frame().includes('Save the query as'), 'a name asked for');
+    await type(app.stdin, 'four errors');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('Saved the query "four errors"'), 'saved');
+    assert.deepEqual(config().savedQueries, { 'four errors': 'exceptions | take 4' });
+
+    for (const ext of ['csv', 'json', 'md']) {
+      const file = join(process.env.SONAR_HOME, `out.${ext}`);
+      await command(`export ${file}`);
+      await until(() => frame().includes(`out.${ext}`) && frame().includes('Wrote 4 rows'), `the ${ext} written`);
+      assert.ok(existsSync(file));
+    }
+    assert.equal(JSON.parse(readFileSync(join(process.env.SONAR_HOME, 'out.json'), 'utf8')).length, 4);
+    assert.match(readFileSync(join(process.env.SONAR_HOME, 'out.csv'), 'utf8'), /^timestamp,problemId,type,/);
+    assert.match(readFileSync(join(process.env.SONAR_HOME, 'out.md'), 'utf8'), /^\| timestamp \| problemId/);
+    await command('export out.txt');
+    await until(() => frame().includes('Export to a .csv, .json or .md file.'), 'another kind refused');
+
+    await command('kql requests | take 2');
+    await until(() => frame().includes('2 rows'), 'another query');
+    await command('queries');
+    await until(() => frame().includes('Saved queries') && frame().includes('four errors'), 'the saved ones');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('4 rows') && frame().includes('> exceptions | take 4'), 'run again');
+    await command('kql requests | take 2');
+    await until(() => frame().includes('2 rows'), 'another query again');
+    await command('queries four');
+    await until(() => frame().includes('4 rows'), 'by name');
+    await command('queries');
+    await until(() => frame().includes('Saved queries'), 'the list again');
+    app.stdin.write('x');
+    await until(() => frame().includes('No saved queries left'), 'forgotten');
+    assert.deepEqual(config().savedQueries, {});
   } finally {
     app.unmount();
   }

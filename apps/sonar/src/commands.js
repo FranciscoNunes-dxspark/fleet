@@ -4,6 +4,8 @@ import * as a from './actions.js';
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
   { name: 'kql', args: '<query>', desc: 'Run a query in Logs, against the Application Insights in scope', run: (ctx, s) => a.runQuery(ctx, s) },
+  { name: 'queries', args: '[name]', desc: 'Your saved queries (s in Logs saves one): pick one to run, or name it', complete: 'queries', run: (ctx, s) => a.savedQueries(ctx, s) },
+  { name: 'export', args: '<file>', desc: "Save the grid in Logs to a file: .csv, .json or .md (a Markdown table)", run: (ctx, s) => a.exportResult(ctx, s) },
   { name: 'sub', args: '[name]', desc: 'Another subscription (a list to pick from if none is named)', complete: 'subscriptions', run: (ctx, s) => a.chooseSubscription(ctx, s) },
   { name: 'insights', args: '[name]', desc: 'The Application Insights that Logs and Problems look in', complete: 'components', run: (ctx, s) => a.chooseComponent(ctx, s) },
   { name: 'find', args: '[text]', desc: 'Show only the apps whose name or resource group has the text in it (none: all of them)', run: (ctx, s) => (ctx.setFilter(s.trim()), ctx.setView('resources')) },
@@ -35,7 +37,8 @@ export function findCommand(name, user = []) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, data, targets, problems) {
+function completions(kind, data, targets, problems, queries) {
+  if (kind === 'queries') return queries ?? [];
   if (kind === 'problems') return (problems ?? []).map((p) => p.problemId);
   if (kind === 'subscriptions') return (data?.subscriptions ?? []).map((s) => s.name);
   if (kind === 'components') return (data?.components ?? []).map((c) => c.name);
@@ -55,7 +58,7 @@ function ranked(names, query) {
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away.
  */
-export function suggestionsFor(value, { data, targets, problems, user = [] } = {}) {
+export function suggestionsFor(value, { data, targets, problems, queries, user = [] } = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   const all = [...COMMANDS, ...user];
@@ -70,7 +73,7 @@ export function suggestionsFor(value, { data, targets, problems, user = [] } = {
   const cmd = findCommand(value.slice(1, space), user);
   const rest = value.slice(space + 1);
   if (!cmd?.complete) return [];
-  const names = ranked(completions(cmd.complete, data, targets, problems), rest);
+  const names = ranked(completions(cmd.complete, data, targets, problems, queries), rest);
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
 }

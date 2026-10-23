@@ -106,6 +106,7 @@ it reads the code the exception went through.
 | --- | --- |
 | `e` / `i` | Edit the query: `tab` completes, `↑` `↓` go through the queries run before, `↵` runs it, `esc` stops editing |
 | `↵` | Run the query, or show the row under the cursor whole |
+| `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `Y` | Copy the row as JSON · every row, tab-separated |
 | `H` | Copy a request row as a request for [Hail](https://github.com/FranciscoNunes-dxspark/hail), to paste into a `.http` file and send again |
@@ -168,6 +169,8 @@ and Trawl.
 | Command | What it does |
 | --- | --- |
 | `/kql <query>` | Run a query in Logs |
+| `/queries [name]` | Your saved queries: pick one to run (`x` forgets it), or name it |
+| `/export <file>` | Save the grid in Logs to a `.csv`, `.json` or `.md` (a Markdown table) file |
 | `/sub [name]` | Another subscription (a list to pick from if none is named) |
 | `/insights [name]` | The Application Insights that Logs and Problems look in |
 | `/find [text]` | Show only the apps whose name or resource group has the text in it |
@@ -193,7 +196,7 @@ the one under the cursor in Resources.
 ## Settings
 
 `,` or `/settings`. They're kept in `~/.sonar/config.json` (`SONAR_HOME` moves it), with the
-subscription last open, the time span, and the queries run lately.
+subscription last open, the time span, the queries run lately, and the ones you saved (`"savedQueries"`).
 
 | Setting | |
 | --- | --- |

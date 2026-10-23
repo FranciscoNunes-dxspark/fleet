@@ -51,6 +51,7 @@ export const HELP = [
     rows: [
       ['e / i', 'Edit the query: tab completes tables, columns and operators, ↑↓ go through the queries run before, ↵ runs it, esc stops editing'],
       ['↵', 'Run the query, or show the row under the cursor whole'],
+      ['s', 'Save the query under a name; /queries runs it again, /export <file> saves the grid (.csv, .json, .md)'],
       ['h l / ← →', 'Across the columns'],
       ['y  Y', 'Copy the row (JSON) · every row (tab-separated)'],
       ['H', 'Copy a request row as a request for Hail, to paste into a .http file and send again'],
