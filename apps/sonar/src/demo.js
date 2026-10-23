@@ -302,6 +302,10 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       await wait(signal);
       return state.sites.filter((s) => s.sub === sub && !s.slot).map(view);
     },
+    async appsWithSlots(sub, { signal } = {}) {
+      await wait(signal);
+      return new Set(state.sites.filter((s) => s.sub === sub && s.slot).map((s) => s.id.replace(/\/slots\/[^/]+$/, '').toLowerCase()));
+    },
     async slots(app, { signal } = {}) {
       await wait(signal);
       return state.sites.filter((s) => s.slot && s.id.startsWith(`${app.id}/slots/`)).map(view);

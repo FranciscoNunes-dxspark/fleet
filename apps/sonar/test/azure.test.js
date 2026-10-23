@@ -17,7 +17,8 @@ function fakeFetch(routes) {
     const u = new URL(url);
     const key = `${init.method} ${u.host === 'management.azure.com' ? '' : u.host}${u.pathname}`;
     calls.push({ key, url, init, body: init.body ? JSON.parse(init.body) : undefined });
-    const hit = routes[key];
+    // A route can be a function of the request's body (pages asked for by token, say).
+    const hit = typeof routes[key] === 'function' ? routes[key](calls.at(-1).body) : routes[key];
     const [status, body] = Array.isArray(hit) ? hit : [hit === undefined ? 404 : 200, hit ?? { error: { code: 'NotFound', message: `No route ${key}` } }];
     return { ok: status < 300, status, text: async () => (typeof body?.raw === 'string' ? body.raw : JSON.stringify(body)) };
   };
@@ -70,6 +71,45 @@ test('the ARM client: lists across pages, slots, settings, changes with the righ
   await assert.rejects(azure.query({ ...ai, name: 'ai2', appId: 'app-2' }, 'requestz'), /Querying ai2: The request had some invalid properties: Failed to resolve table 'requestz'/);
   await assert.rejects(azure.stop(apps[1]), /Stopping web: not found/);
   assert.equal(azure.portalUrl(apps[1]), `https://portal.azure.com/#resource${apps[1].id}`);
+});
+
+test('slots: Resource Graph says which apps have any, across its pages, and only theirs are listed; without it, every app\'s', async () => {
+  const [web, api, jobs] = [site('web', 'rg-prod'), site('api', 'RG-PROD'), site('jobs', 'rg-dev')];
+  const routes = {
+    'GET /subscriptions': { value: [{ subscriptionId: 's1', displayName: 'One', state: 'Enabled' }] },
+    'GET /subscriptions/s1/providers/Microsoft.Web/sites': { value: [web, api, jobs] },
+    'GET /subscriptions/s1/providers/Microsoft.Insights/components': { value: [] },
+    // Two pages; Resource Graph may write an id's case differently from ARM.
+    'POST /providers/Microsoft.ResourceGraph/resources': (body) =>
+      body.options.$skipToken === 'p2' ? { data: [{ id: `${api.id.toLowerCase()}/slots/blue` }] } : { data: [{ id: `${web.id}/slots/staging` }, { id: `${web.id}/slots/qa` }], $skipToken: 'p2' },
+    [`GET ${web.id}/slots`]: { value: [{ ...site('web/staging', 'rg-prod'), id: `${web.id}/slots/staging` }] },
+    [`GET ${api.id}/slots`]: { value: [{ ...site('api/blue', 'RG-PROD'), id: `${api.id}/slots/blue` }] },
+    [`GET ${jobs.id}/slots`]: { value: [] },
+  };
+  const { fetch, calls } = fakeFetch(routes);
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const ids = await azure.appsWithSlots('s1');
+  assert.deepEqual([...ids], [web.id.toLowerCase(), api.id.toLowerCase()]);
+  const graph = calls.filter((c) => c.key.includes('ResourceGraph'));
+  assert.deepEqual(graph[0].body.subscriptions, ['s1']);
+  assert.match(graph[0].body.query, /microsoft\.web\/sites\/slots/);
+  assert.equal(graph[1].body.options.$skipToken, 'p2');
+
+  calls.length = 0;
+  const d = await loadSubscription(azure, 's1');
+  assert.deepEqual(Object.values(d.slots).flat().map(label).sort(), ['api/blue', 'web/staging']);
+  assert.ok(!calls.some((c) => c.key === `GET ${jobs.id}/slots`), 'not asked for an app without slots');
+
+  // Resource Graph refused: every app's slots, as before.
+  const without = fakeFetch({ ...routes, 'POST /providers/Microsoft.ResourceGraph/resources': [403, { error: { message: 'no' } }] });
+  const d2 = await loadSubscription(createAzure({ fetch: without.fetch, token: async () => 't' }), 's1');
+  assert.deepEqual(Object.values(d2.slots).flat().map(label).sort(), ['api/blue', 'web/staging']);
+  assert.ok(without.calls.some((c) => c.key === `GET ${jobs.id}/slots`));
+
+  // The demo says the same as its slots.
+  const demo = demoAzure();
+  const dd = await loadSubscription(demo);
+  assert.deepEqual([...(await demo.appsWithSlots('sub-prod'))].sort(), dd.apps.filter((a) => dd.slots[a.id].length).map((a) => a.id.toLowerCase()).sort());
 });
 
 test('az: a token kept until near its end, and sign-in trouble said plainly', async () => {

@@ -10,6 +10,7 @@ export const LOG_ANALYTICS = 'https://api.loganalytics.io';
 // Where the machine's public address comes from, for the SQL firewall.
 export const IPIFY = 'https://api.ipify.org';
 const APPS = '2024-03-01';
+const GRAPH = '2021-03-01';
 const SQL = '2021-11-01';
 const STORAGE = '2023-05-01';
 const WEB = '2023-12-01';
@@ -243,6 +244,21 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     async apps(sub, opts) {
       const sites = await all(`/subscriptions/${sub}/providers/Microsoft.Web/sites?api-version=${WEB}`, { ...opts, what: 'Listing the apps' });
       return sites.map((s) => siteFrom(s)).sort((a, b) => a.resourceGroup.localeCompare(b.resourceGroup) || a.name.localeCompare(b.name));
+    },
+    /**
+     * The ids (lower-case) of the subscription's apps that have slots, from one Azure Resource Graph
+     * query, so the slots are listed only for those; ARM has no listing of every slot at once.
+     */
+    async appsWithSlots(sub, { signal } = {}) {
+      const ids = new Set();
+      let skip = null;
+      do {
+        const body = { subscriptions: [sub], query: "resources | where type =~ 'microsoft.web/sites/slots' | project id", options: { $top: 1000, resultFormat: 'objectArray', ...(skip ? { $skipToken: skip } : {}) } };
+        const page = await arm(`/providers/Microsoft.ResourceGraph/resources?api-version=${GRAPH}`, { method: 'POST', body, signal, what: 'Finding the apps with slots' });
+        for (const row of page?.data ?? []) ids.add(String(row.id).replace(/\/slots\/[^/]+$/i, '').toLowerCase());
+        skip = page?.$skipToken ?? null;
+      } while (skip);
+      return ids;
     },
     async slots(app, opts) {
       const slots = await all(`${app.id}/slots?api-version=${WEB}`, { ...opts, what: `Listing ${app.name}'s slots` });
