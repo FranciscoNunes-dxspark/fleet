@@ -60,6 +60,8 @@ npm start
 | `env` | Settings for it, on top of the terminal's and its env files' |
 | `envFile` | A `.env` file (or a list of them) to read settings from, from its `cwd` |
 | `after` | Another process it starts after: once that one's port answers, or it has run a moment |
+| `watch` | Files that restart it when they change: paths or globs from its `cwd`, e.g. `["src", "lib/**/*.js"]` |
+| `ignore` | Changes to these don't (`"*.test.js"`, `"src/generated"`) |
 | `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
 
 `"envFile"` at the top level (from the project's folder) is read for every process, before each one's
@@ -68,6 +70,13 @@ single quotes taken as they are, double quotes with `\n` and running over severa
 (or `${NAME:-fallback}`) from the lines above or the terminal's settings. A setting comes from, the
 last one winning: the terminal, the top level's env files, the process's own env files in the order
 given, its `env`. `/reload` reads them again and restarts the processes whose settings changed.
+
+A process with `watch` restarts once the files it names stop changing for a moment (300 ms), and its
+log says what changed (`changed: src/app.js`). A folder counts with everything in it; `*` and `?`
+match within a name, `**` any folders, `{a,b}` either. An `ignore` pattern without a `/` matches any
+name along the path, as in `.gitignore`; `node_modules` and `.git` are always ignored. Watching starts
+when the process first starts and stops when you stop it; a change starts again one that crashed.
+Name the folders to watch rather than `**/*.js`, which watches the whole project.
 
 A process that `restart`s is started again after a wait: 1 second, then 2, 4, 8… up to 30 seconds
 while it keeps failing, back to 1 second once it has stayed up 30 seconds. The list says

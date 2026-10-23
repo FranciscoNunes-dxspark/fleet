@@ -15,6 +15,7 @@ import { DEFAULT_ACCENT } from '../src/theme.js';
 import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
 import { expand, parseDotenv } from '../src/dotenv.js';
+import { globRegex, watchMatcher, watchRoots } from '../src/watch.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
   assert.equal(findCommand('restart').name, 'restart');
@@ -150,4 +151,19 @@ test('.env files: comments, export, quotes, escapes, lines over several lines an
   assert.match(problems[0], /line 14: not a line isn't NAME=value/);
   assert.match(problems[1], /OPEN's " is never closed/);
   assert.equal(expand('${A-x}${B:-y}${C-z}', (n) => ({ A: '', B: '' })[n]), 'y' + 'z');
+});
+
+test('watch: globs, the folders to watch, and which changes restart', () => {
+  assert.ok(globRegex('src/**/*.js').test('src/a.js'));
+  assert.ok(globRegex('src/**/*.js').test('src/a/b/c.js'));
+  assert.ok(!globRegex('src/*.js').test('src/a/b.js'));
+  assert.ok(globRegex('*.{json,yml}').test('a.yml'));
+  assert.ok(globRegex('a?.txt').test('ab.txt'));
+  assert.deepEqual(watchRoots(['src', 'lib/**/*.js', '*.json', 'src/deep']), [{ root: 'src', deep: true }, { root: 'lib', deep: true }, { root: '.', deep: false }]);
+  assert.deepEqual(watchRoots(['./**/*.js', 'src']), [{ root: '.', deep: true }]);
+  const wanted = watchMatcher(['src', 'lib/**/*.js', '*.json'], ['*.test.js', 'src/generated']);
+  const yes = ['src/a.js', 'src/b/c.ts', 'lib/x/y.js', 'package.json', 'src\\win.js'];
+  const no = ['lib/a.ts', 'src/a.test.js', 'src/generated/x.js', 'src/node_modules/x.js', '.git/HEAD', 'other/x.js', 'sub/package.json'];
+  for (const f of yes) assert.ok(wanted(f), f);
+  for (const f of no) assert.ok(!wanted(f), f);
 });

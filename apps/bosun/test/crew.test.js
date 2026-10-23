@@ -261,3 +261,35 @@ test('env files: the top level\'s then the process\'s, under its own env, over t
     sup.dispose();
   }
 });
+
+test('watch: a change to a watched file restarts the process, an ignored one doesn\'t, and a stop stops watching', async () => {
+  const dir = project({}, { 'idle.js': 'console.log("up"); setInterval(() => {}, 1000);' });
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(dir, 'src', 'deep'), { recursive: true });
+  const sup = new Supervisor(readSpec({ procs: { api: { run: 'node idle.js', watch: ['src', 'missing'], ignore: ['*.tmp'] } } }).procs, { dir, debounce: 100 });
+  const api = sup.get('api');
+  const ups = () => api.lines.filter((l) => l.text === 'up').length;
+  try {
+    sup.start('api');
+    await until(() => ups() === 1, 'started');
+    assert.ok(api.lines.some((l) => l.text === "── can't watch missing: it isn't there"));
+    await new Promise((r) => setTimeout(r, 200));
+    writeFileSync(join(dir, 'src', 'deep', 'a.js'), '1');
+    writeFileSync(join(dir, 'src', 'deep', 'b.js'), '1');
+    await until(() => ups() === 2, 'restarted after the change');
+    assert.ok(api.lines.some((l) => /^── changed: src\/deep\/[ab]\.js( and 1 more)?$/.test(l.text)), api.lines.map((l) => l.text).join('\n'));
+    assert.equal(api.lines.filter((l) => l.text.startsWith('── changed')).length, 1, 'once for both');
+
+    writeFileSync(join(dir, 'src', 'x.tmp'), '1');
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(ups(), 2, 'an ignored file changes nothing');
+
+    await sup.stop('api');
+    writeFileSync(join(dir, 'src', 'c.js'), '1');
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(api.status, 'stopped', 'a stopped process isn\'t started by a change');
+    assert.equal(api.watchers, null);
+  } finally {
+    sup.dispose();
+  }
+});

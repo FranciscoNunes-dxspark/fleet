@@ -45,7 +45,7 @@ const fileList = (v) => (v == null ? [] : typeof v === 'string' ? [v] : Array.is
 export const RESTART = ['no', 'on-failure', 'always'];
 
 /**
- * bosun.json's crew checked: { procs: [{ name, run, cwd, port, health, env, envFile, after, restart }],
+ * bosun.json's crew checked: { procs: [{ name, run, cwd, port, health, env, envFile, watch, ignore, after, restart }],
  * envFile, profiles, problems }. `envFile`s are lists of paths: the top level's from the project's
  * folder, a process's from its `cwd`.
  * What's wrong with an entry is said in `problems` and the entry is left out.
@@ -60,7 +60,8 @@ export function readSpec(spec) {
     else if (proc.port != null && !(Number.isInteger(proc.port) && proc.port > 0 && proc.port < 65536)) problems.push(`"${name}": "port" is a number from 1 to 65535`);
     else if (proc.restart != null && !RESTART.includes(proc.restart)) problems.push(`"${name}": "restart" is ${RESTART.map((r) => `"${r}"`).join(', ')}`);
     else if (!fileList(proc.envFile)) problems.push(`"${name}": "envFile" is a file's path, or a list of them`);
-    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, envFile: fileList(proc.envFile), after: proc.after ?? null, restart: proc.restart ?? 'no' });
+    else if (!fileList(proc.watch) || !fileList(proc.ignore)) problems.push(`"${name}": "watch" and "ignore" are a path or glob, or a list of them`);
+    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, envFile: fileList(proc.envFile), watch: fileList(proc.watch), ignore: fileList(proc.ignore), after: proc.after ?? null, restart: proc.restart ?? 'no' });
   }
   let envFile = fileList(spec?.envFile);
   if (!envFile) {
@@ -166,7 +167,7 @@ export function withProfile(procs, profiles, name) {
 
 /** bosun.json for a crew, to start one from what was worked out (/init). */
 export function specFor(crew) {
-  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, envFile: p.envFile?.length ? (p.envFile.length === 1 ? p.envFile[0] : p.envFile) : undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined }).filter(([, v]) => v !== undefined))]));
+  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, envFile: p.envFile?.length ? (p.envFile.length === 1 ? p.envFile[0] : p.envFile) : undefined, watch: p.watch?.length ? p.watch : undefined, ignore: p.ignore?.length ? p.ignore : undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined }).filter(([, v]) => v !== undefined))]));
   const envFile = crew.envFile?.length ? { envFile: crew.envFile.length === 1 ? crew.envFile[0] : crew.envFile } : {};
   return { ...envFile, procs, ...(Object.keys(crew.profiles).length ? { profiles: crew.profiles } : {}) };
 }

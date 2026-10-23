@@ -2,9 +2,11 @@
 // in its own process group (taskkill's tree on Windows), so stopping one stops what it started too.
 // Nothing here draws: App subscribes and redraws.
 import { spawn, spawnSync } from 'node:child_process';
+import { statSync, watch as fsWatch } from 'node:fs';
 import { connect } from 'node:net';
 import { resolve } from 'node:path';
 import { isTrouble, portInUse, stripAnsi } from './crew.js';
+import { tidy, watchMatcher, watchRoots } from './watch.js';
 
 export const KEEP_LINES = 3000;
 const WIN = process.platform === 'win32';
@@ -71,11 +73,15 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * port, portOpen, health, restartAt, gaveUp }. `status` is stopped, starting, running, crashed (exited
  * with an error), exited (by itself, cleanly) or stopping. `restartAt` is when one that `restart`s
  * starts again, `gaveUp` that it ended too quickly too often to. `onChange` is called after anything
- * changes; `onEvent` hears { type: 'exit', p, plan } when one ended by itself (not stopped).
+ * changes; `onEvent` hears { type: 'exit', p, plan } when one ended by itself (not stopped). One with
+ * `watch` is restarted when a file it names changes, `debounce` ms after the last change, from its
+ * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch } = {}) {
     this.dir = dir;
+    this.debounce = debounce;
+    this.watchImpl = watchImpl;
     this.onChange = onChange;
     this.onEvent = onEvent;
     this.spawnImpl = spawnImpl;
@@ -115,12 +121,19 @@ export class Supervisor {
     const next = new Map();
     for (const p of procs) {
       const had = this.procs.get(p.name);
+      // What it watches changed: watched afresh (from now if it's running, else from its next start).
+      if (had?.watchers && JSON.stringify([had.spec.watch, had.spec.ignore, had.spec.cwd]) !== JSON.stringify([p.watch, p.ignore, p.cwd])) {
+        this.unwatch(had);
+        had.spec = p;
+        if (had.child) this.watch(had);
+      }
       next.set(p.name, had ? Object.assign(had, { spec: p, port: p.port }) : { name: p.name, spec: p, status: 'stopped', pid: null, startedAt: null, endedAt: null, code: null, lines: [], trouble: null, port: p.port, portOpen: null, health: null });
     }
     // One no longer in the crew is stopped, and one waiting to restart doesn't.
     for (const [name, had] of this.procs) {
       if (next.has(name)) continue;
       this.clearRestart(had);
+      this.unwatch(had);
       if (had.child) this.stop(name);
     }
     this.procs = next;
@@ -156,6 +169,7 @@ export class Supervisor {
     this.clearRestart(p);
     if (!auto) Object.assign(p, { attempt: 0, quick: 0 });
     p.gaveUp = false;
+    if (!p.watchers) this.watch(p);
     const { run, cwd, env } = p.spec;
     p.status = 'starting';
     p.code = null;
@@ -236,10 +250,70 @@ export class Supervisor {
     this.onEvent({ type: 'exit', p, plan });
   }
 
+  /**
+   * Watches the files `p`'s `watch` names, from its folder: a change restarts it (or starts it, when it
+   * ended), once nothing has changed for `debounce` ms. What can't be watched is said in its log.
+   */
+  watch(p) {
+    const patterns = p.spec.watch ?? [];
+    if (!patterns.length || this.closed) return;
+    const cwd = resolve(this.dir, p.spec.cwd ?? '.');
+    const wanted = watchMatcher(patterns, p.spec.ignore ?? []);
+    p.watchers = [];
+    p.changes = new Set();
+    for (const { root, deep } of watchRoots(patterns)) {
+      const at = resolve(cwd, root);
+      let isFile = false;
+      try {
+        isFile = statSync(at).isFile();
+      } catch {
+        this.push(p, `── can't watch ${root}: it isn't there`, true);
+        continue;
+      }
+      try {
+        const w = this.watchImpl(at, { recursive: deep && !isFile }, (_, name) => {
+          const file = isFile ? root : name ? tidy(`${root === '.' ? '' : `${root}/`}${tidy(name)}`) : null;
+          if (file && wanted(file)) this.changed(p, file);
+        });
+        w.on?.('error', () => {});
+        p.watchers.push(w);
+      } catch (e) {
+        this.push(p, `── can't watch ${root}: ${e.message}`, true);
+      }
+    }
+  }
+
+  /** Stops watching `p`'s files. */
+  unwatch(p) {
+    for (const w of p?.watchers ?? []) w.close();
+    if (p) {
+      p.watchers = null;
+      clearTimeout(p.changeTimer);
+      p.changeTimer = null;
+    }
+  }
+
+  /** A file `p` watches changed: restarted once they stop changing for a moment. */
+  changed(p, file) {
+    p.changes.add(file);
+    clearTimeout(p.changeTimer);
+    p.changeTimer = setTimeout(() => {
+      p.changeTimer = null;
+      const files = [...p.changes];
+      p.changes.clear();
+      if (this.closed || !p.watchers || p.status === 'stopping') return;
+      this.push(p, `── changed: ${files[0]}${files.length > 1 ? ` and ${files.length - 1} more` : ''}`);
+      this.onChange();
+      if (p.child) this.restart(p.name, { keepWatching: true });
+      else this.start(p.name);
+    }, this.debounce);
+  }
+
   /** Stops `name` and what it started; resolves once it's gone (it's forced after `grace` ms). */
-  stop(name, { grace = 3000 } = {}) {
+  stop(name, { grace = 3000, keepWatching = false } = {}) {
     const p = this.procs.get(name);
     if (p) p.gaveUp = false;
+    if (p && !keepWatching) this.unwatch(p);
     if (!p?.child) {
       this.cancelRestart(name);
       return Promise.resolve();
@@ -267,8 +341,8 @@ export class Supervisor {
     return gone;
   }
 
-  async restart(name) {
-    await this.stop(name);
+  async restart(name, { keepWatching = true } = {}) {
+    await this.stop(name, { keepWatching });
     this.start(name);
   }
 
@@ -314,6 +388,7 @@ export class Supervisor {
     this.closed = true;
     for (const p of this.procs.values()) {
       this.clearRestart(p);
+      this.unwatch(p);
       if (p.pid) killTreeNow(p.pid);
     }
   }
