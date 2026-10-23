@@ -3,6 +3,7 @@
 import { THEMES, defaultAccent, theme } from './theme.js';
 import { fit } from './text.js';
 import { NOTIFY_AFTER } from './notify.js';
+import { WATCH_STEPS, watchEvery } from './watches.js';
 
 const isOn = (value) => value !== false;
 const count = (n, one, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : 'none');
@@ -15,7 +16,7 @@ export const nextTheme = (config) => THEMES[(THEMES.indexOf(themeSetting(config)
 
 /**
  * The rows, from the config: { id, label, value, note, action }, where `action` is what ↵ does:
- * 'toggle' (an on/off setting named `id`), 'accent', 'theme', 'clear' (the list named `id`) or 'none'.
+ * 'toggle' (an on/off setting named `id`), 'cycle' (the next of `steps`), 'accent', 'theme', 'clear' (the list named `id`) or 'none'.
  * `mouse`: whether this terminal can report the mouse at all.
  */
 export function settingRows(config, { file = '', mouse = true } = {}) {
@@ -52,6 +53,12 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       note: `a bell and a desktop notification when a job takes over ${Number(config.notifyAfter) >= 0 ? Number(config.notifyAfter) : NOTIFY_AFTER} s`,
       action: 'toggle',
     },
+    (() => {
+      const every = watchEvery(config);
+      const next = WATCH_STEPS[(WATCH_STEPS.indexOf(every) + 1) % WATCH_STEPS.length];
+      const n = (config.watches ?? []).length;
+      return { id: 'watchEvery', label: 'Run watches every', value: `${every} min`, current: every, steps: WATCH_STEPS, note: `${next} min next · ${count(n, 'watch', 'watches')} (/watches)`, action: 'cycle' };
+    })(),
     { id: 'history', label: 'Prompt history', value: count(history.length, 'entry', 'entries'), note: history.length ? 'clear it' : '', action: history.length ? 'clear' : 'none' },
     { id: 'file', label: 'Settings file', value: file, note: '', action: 'none' },
   ];

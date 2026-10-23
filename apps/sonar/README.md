@@ -111,6 +111,23 @@ The point is the latest successful deployment of the app in scope, or without on
 time span; `/compare-window 2026-10-20T14:00Z` puts it at a time of yours, and `/compare-window deploy`
 insists on the deployment. Each window is as long as the time since the point, up to seven days.
 
+### Watches
+
+`/watch <name> <threshold> <kql>` pins a query whose answer starts with a number (the first column of
+the first row), such as
+
+```
+/watch failures 20 requests | where timestamp > ago(10m) and success == false | count
+```
+
+It runs against the Application Insights in scope when you made it (kept with it), at once and then
+every five minutes while Sonar runs (**Run watches every** in the settings), over the last 24 hours
+unless the query says otherwise. When its number goes over the threshold, Sonar says so in the activity
+lines and rings the bell with a desktop notification (as **Notify when done** does, and off with it);
+staying over says nothing more, and it says so again only after it has been back under. `/watches`
+lists them with what each said last: `↵` runs one in Logs, `x` removes it, `y` copies its query. They're
+kept in `config.json` under `"watches"`.
+
 ## Keys
 
 | Key | What it does |
@@ -256,11 +273,13 @@ and Trawl.
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
 | `/portal [app]` | Open one in the Azure portal |
 | `/compare-window [deploy\|<time>]` | What changed across the latest deployment of the app in scope, or a time: exceptions, dependencies, failing operations |
+| `/watch <name> <threshold> <kql>` | Pin a query whose first value is a number; going over the threshold says so (above) |
+| `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |
 | `/incident [problem]` | A problem as an incident (the one under the cursor in Problems if none is named); `/incident save <file>` writes its write-up |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
-| `/settings` | Theme, accent colour, mouse, updates, notifications, history |
+| `/settings` | Theme, accent colour, mouse, updates, notifications, watches, history |
 | `/accent <#rrggbb>` | Change the accent colour (`default` puts it back) |
 | `/update` | Look for a new version now and install it |
 | `/help` | Keys and commands |
@@ -272,7 +291,8 @@ the one under the cursor in Resources.
 ## Settings
 
 `,` or `/settings`. They're kept in `~/.sonar/config.json` (`SONAR_HOME` moves it), with the
-subscription last open, the time span, the queries run lately, and the ones you saved (`"savedQueries"`).
+subscription last open, the time span, the queries run lately, the ones you saved (`"savedQueries"`),
+and your watches (`"watches"`).
 
 | Setting | |
 | --- | --- |
@@ -282,6 +302,7 @@ subscription last open, the time span, the queries run lately, and the ones you 
 | Check for new versions | Once a day, in the downloaded builds |
 | Install them by itself | Off only says a new version is out |
 | Notify when done | When a job with the spinner takes over 10 seconds, ring the terminal's bell and ask it for a desktop notification |
+| Run watches every | 1, 5 (the default), 15, 30 or 60 minutes |
 | Prompt history | Clear it |
 
 When a job (a query, a restart, anything with the spinner) takes longer than 10 seconds, Sonar rings

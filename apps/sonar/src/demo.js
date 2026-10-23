@@ -2,7 +2,8 @@
 // two subscriptions of web and function apps with slots and settings, two Application Insights
 // components, and a few days of telemetry. Restarts, stops, swaps and saved settings change it until
 // the app closes. Its query engine understands the queries Sonar itself sends, and plain
-// `table | where cloud_RoleName == 'x' | take n` ones; anything else gets an error saying so.
+// `table | where cloud_RoleName == 'x' | where success == false | take n` (or `| count`) ones; anything
+// else gets an error saying so.
 
 import { metricInterval } from './metrics.js';
 
@@ -144,7 +145,7 @@ const COLUMNS = {
   dependency: ['timestamp', 'name', 'target', 'type', 'resultCode', 'success', 'duration', 'operation_Id', 'cloud_RoleName'],
   availability: ['timestamp', 'name', 'location', 'success', 'duration', 'message'],
 };
-const TYPES = { p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
+const TYPES = { Count: 'long', p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
 const table = (names, rows) => ({ columns: names.map((name) => ({ name, type: TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
 
 /** The demo's answer to `kql` over `items` (one component's, within the time span). */
@@ -222,7 +223,10 @@ export function demoQuery(kql, items) {
   const kind = TABLES[name];
   if (!kind) throw new Error(`Querying the demo: it answers requests, exceptions, traces, dependencies and availabilityResults (with where cloud_RoleName == '…' and take), not "${name ?? q}"`);
   const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 1000);
-  const rows = mine.filter((i) => i.itemType === kind).reverse().slice(0, take);
+  const failing = /\|\s*where success == false\b/.test(q);
+  const rows = mine.filter((i) => i.itemType === kind && (!failing || i.success === false)).reverse().slice(0, take);
+  // `| count`, as a watch's query ends.
+  if (/\|\s*count\s*$/.test(q)) return table(['Count'], [{ Count: rows.length }]);
   return table(COLUMNS[kind], rows);
 }
 

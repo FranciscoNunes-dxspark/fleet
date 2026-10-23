@@ -12,6 +12,7 @@ import { cellText, compareQueries, compareWindows, isProduction, latestException
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { repoRoot, shareLine, takeLine } from './family.js';
 import { copiedNote } from './kin.js';
+import { parseWatch, watchEvery } from './watches.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
@@ -836,6 +837,69 @@ export function comparisonLines(c, { what, len }) {
   return { lines, text: lines.map((l) => l.map((s) => s.text).join('')).join('\n') };
 }
 
+/**
+ * /watch <name> <threshold> <kql>: pins a query whose first column of its first row is a number, run
+ * every few minutes against the Application Insights in scope now; going over the threshold notifies.
+ */
+export async function watch(ctx, text) {
+  const w = parseWatch(text);
+  if (w.error) return ctx.note(w.error, 'error');
+  const scope = await ctx.scope();
+  if (!scope.component) return ctx.note(scope.why, 'error');
+  const { id, name, appId, workspaceId, resourceGroup } = scope.component;
+  const kept = { name: w.name, threshold: w.threshold, kql: w.kql, component: { id, name, appId, ...(workspaceId ? { workspaceId } : {}), resourceGroup } };
+  const before = (ctx.config.watches ?? []).some((x) => x.name === w.name);
+  ctx.setConfig((c) => ({ ...c, watches: [...(c.watches ?? []).filter((x) => x.name !== w.name), kept] }));
+  ctx.forgetWatch(w.name);
+  ctx.note(`${before ? 'Replaced' : 'Watching'} "${w.name}" in ${name}: over ${w.threshold} says so, checked every ${watchEvery(ctx.config)} min while Sonar runs. /watches lists them.`, 'ok');
+  ctx.checkWatches([w.name]);
+}
+
+/** /watches: the watches, each with what it said last; x removes one, ↵ runs its query in Logs. */
+export function watches(ctx, { replace = false, index } = {}) {
+  const list = ctx.config.watches ?? [];
+  if (!list.length && !replace) return ctx.note('No watches yet: /watch <name> <threshold> <kql> pins one.');
+  const nameW = Math.min(24, Math.max(6, ...list.map((w) => w.name.length)));
+  ctx.showPicker(
+    {
+      title: `Watches, every ${watchEvery(ctx.config)} min`,
+      hint: '↵ run it in Logs · x remove it · y copy its query',
+      empty: 'No watches left. /watch pins one.',
+      index,
+      items: list.map((w) => {
+        const st = ctx.watchState(w.name);
+        const said = st?.error ? `couldn't run: ${st.error}` : st?.value != null ? `${st.value}` : st ? 'not a number' : 'not run yet';
+        return {
+          w,
+          segments: [
+            { text: `${BULLET} `, color: st?.above ? theme.del : st && !st.error ? theme.add : theme.dim },
+            { text: `${w.name.padEnd(nameW)}  `, strong: true },
+            { text: fit(said, 14), color: st?.above ? theme.del : st?.error ? theme.warn : undefined, bold: Boolean(st?.above) },
+            { text: fit(`over ${w.threshold}`, 12), color: theme.dim },
+            { text: fit(w.component.name, 18), color: theme.info },
+            { text: ` ${w.kql}`, color: theme.dim },
+          ],
+        };
+      }),
+      onPick: (it) => {
+        ctx.closeOverlay();
+        ctx.setComponent(it.w.component);
+        runQuery(ctx, it.w.kql);
+      },
+      keys: {
+        x: (it) => {
+          ctx.setConfig((c) => ({ ...c, watches: (c.watches ?? []).filter((x) => x.name !== it.w.name) }));
+          ctx.forgetWatch(it.w.name);
+          ctx.note(`Stopped watching "${it.w.name}".`);
+          watches(ctx, { replace: true, index: Math.max(0, (ctx.overlay()?.index ?? 1) - 1) });
+        },
+        y: (it) => ctx.copy(it.w.kql, 'its query'),
+      },
+    },
+    { replace },
+  );
+}
+
 /** ↵ on an alert: everything Alerts Management says about it. */
 export function showAlert(ctx, alert) {
   const rows = [
@@ -900,6 +964,12 @@ async function changeSetting(ctx, row) {
   if (row.action === 'theme') {
     ctx.setConfig((c) => ({ ...c, theme: nextTheme(c) }));
     applyTheme(ctx.config);
+    return redrawSettings(ctx);
+  }
+  if (row.action === 'cycle') {
+    const steps = row.steps;
+    const now = steps.indexOf(row.current);
+    ctx.setConfig((c) => ({ ...c, [row.id]: steps[(now + 1) % steps.length] }));
     return redrawSettings(ctx);
   }
   if (row.action === 'accent') return ctx.prefill(`/accent ${ctx.config.accent ?? defaultAccent()}`);

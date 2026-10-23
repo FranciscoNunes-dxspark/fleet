@@ -122,6 +122,15 @@ export const HELP = [
     ],
   },
   {
+    title: 'Watches',
+    about: 'a query of yours with a threshold, run every few minutes while Sonar runs (/watch, /watches)',
+    rows: [
+      ['/watch', '/watch <name> <threshold> <kql>: a query whose first value is a number, against the Application Insights in scope now; going over the threshold says so in the log, with a bell and a desktop notification, once until it\'s back under'],
+      ['/watches', 'Them and what each said last: ↵ runs one in Logs, x removes it, y copies its query'],
+      ['settings', 'Run watches every: 1, 5, 15, 30 or 60 minutes'],
+    ],
+  },
+  {
     title: 'Incident',
     about: 'a problem told whole (I in Problems, /incident)',
     rows: [

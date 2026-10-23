@@ -5,6 +5,7 @@ import { label } from '../azure/arm.js';
 import { TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
 import { costDay } from '../cost.js';
+import { crossing, watchEvery, watchValue } from '../watches.js';
 import { targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
@@ -167,6 +168,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const settingsCache = useRef(new Map());
   const metricsCache = useRef(new Map());
   const firewallCache = useRef(new Map());
+  // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
+  const watchStates = useRef(new Map());
   // This month's costs per subscription, read once a day (r doesn't read them again).
   const costCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
@@ -352,6 +355,29 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     return cache.get(server.id);
   };
 
+  /**
+   * Runs the watches (`names`, or all of them) against the Application Insights each was made in, quietly,
+   * and says so, in the log and through `notify`, when one goes over its threshold.
+   */
+  const checkWatches = async (names) => {
+    const list = (configRef.current.watches ?? []).filter((w) => !names || names.includes(w.name));
+    await Promise.all(
+      list.map(async (w) => {
+        const was = watchStates.current.get(w.name);
+        try {
+          const value = watchValue(await provider.query(w.component, w.kql, { timespan: 'P1D' }));
+          const { above, crossed } = crossing(was?.above, value, w.threshold);
+          watchStates.current.set(w.name, { value, above, at: Date.now() });
+          if (!crossed) return;
+          note(`Watch "${w.name}" is ${value}, over ${w.threshold} (${w.component.name})\n${w.kql}`, 'error');
+          if (notify && configRef.current.notify !== false) notify(`Sonar: ${w.name} is over ${w.threshold}`, `${value} in ${w.component.name}`);
+        } catch (e) {
+          watchStates.current.set(w.name, { ...(was ?? {}), error: firstLine(e.message), at: Date.now() });
+        }
+      }),
+    );
+  };
+
   /** The subscription's costs this month by resource, kept for the day; null when they can't be read (no permission, say nothing). */
   const costsOf = (subId) => {
     const key = `${subId}|${costDay()}`;
@@ -464,6 +490,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     metricsOf,
     firewallOf,
     costsOf,
+    checkWatches,
+    watchState: (name) => watchStates.current.get(name) ?? null,
+    forgetWatch: (name) => watchStates.current.delete(name),
     forgetFirewall: (server) => firewallCache.current.delete(server.id),
     forgetSettings: (target) => settingsCache.current.delete(target.id),
     scope: resolveScope,
@@ -707,6 +736,15 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       clearInterval(flush);
     };
   }, [streamTarget?.id, liveTick]);
+
+  // The watches run every few minutes (the Watch every setting) for as long as Sonar runs.
+  const watchCount = (config.watches ?? []).length;
+  const watchMs = watchEvery(config) * 60_000;
+  useEffect(() => {
+    if (!watchCount) return;
+    const t = setInterval(() => checkWatches(), watchMs);
+    return () => clearInterval(t);
+  }, [watchCount, watchMs]);
 
   // Problems are looked for when the view shows, and again when what it looks at or the span changes.
   const [problemsTick, setProblemsTick] = useState(0);
