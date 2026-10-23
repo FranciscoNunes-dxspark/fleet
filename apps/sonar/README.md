@@ -185,5 +185,5 @@ subscription last open, the time span, and the queries run lately.
 
 ## Not yet
 
-Live log streaming, other kinds of resource (SQL, Storage, Container Apps), and Log Analytics
-workspaces queried directly.
+Other kinds of resource (SQL, Storage, Container Apps), and Log Analytics workspaces queried
+directly.
