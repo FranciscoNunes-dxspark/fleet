@@ -95,6 +95,7 @@ it reads the code the exception went through.
 | `R` | Restart it |
 | `S` | Stop it, or start it if it's stopped |
 | `W` | Swap a slot into production (on an app, pick the slot) |
+| `D` | Its deployments: who, when, through what, how it went, which is active; `↵` shows one's log |
 | `l` `p` | Its logs · its problems |
 | `L` | Its log as it's written, in Live |
 | `o` `b` | Open it in the Azure portal · open its site |
@@ -167,6 +168,7 @@ and Trawl.
 | `/restart [app]` | Restart an app or slot |
 | `/stop [app]` `/start [app]` | Stop or start one |
 | `/swap [app/slot]` | Swap a slot into production |
+| `/deployments [app]` | An app's or slot's deployments, and their logs |
 | `/portal [app]` | Open one in the Azure portal |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |

@@ -7,7 +7,8 @@ import { cellText, isProduction, looksSecret, operationQuery, records, settingsD
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
-import { applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
+import { BULLET, applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
+import { fit, relTime } from './text.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -42,6 +43,9 @@ export function targetNamed(ctx, name) {
   if (!n) return ctx.selectedTarget();
   return ctx.targets()[n] ?? Object.values(ctx.targets()).find((t) => label(t).toLowerCase() === n.toLowerCase()) ?? null;
 }
+
+/** What a resource is, in words. */
+export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
 
 const need = (ctx, target) => target ?? (ctx.note('Pick an app or a slot in Resources first, or name one.', 'error'), null);
 
@@ -184,6 +188,62 @@ export async function compareSettings(ctx, which, other) {
   ctx.showText(`${label(target)} → ${label(versus)}: ${diff.length} setting${diff.length === 1 ? '' : 's'} differ`, diff.map((d) => d.name).join('\n'), { lines });
 }
 
+const DEPLOY_COLOUR = { get succeeded() { return theme.add; }, get failed() { return theme.del; } };
+
+/** D and /deployments: an app's or slot's deployments, newest first; ↵ shows one's log. */
+export function deployments(ctx, which) {
+  const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!target) return;
+  if (target.type) return ctx.note(`Only web and function apps have deployments here; ${target.name} is a ${typeLabel(target)}.`, 'error');
+  ctx.showPicker({
+    title: `Deployments of ${label(target)}`,
+    hint: '↵ its log · y copy its id',
+    empty: 'No deployments: it was never deployed through App Service (zip, Git, Actions…).',
+    load: async () =>
+      (await ctx.provider.deployments(target)).map((d) => ({
+        d,
+        segments: [
+          { text: `${BULLET} `, color: DEPLOY_COLOUR[d.status] ?? theme.warn },
+          { text: fit(d.status, 10), color: DEPLOY_COLOUR[d.status] ?? theme.warn },
+          { text: fit(d.start ? `${relTime(Date.parse(d.start))} ago` : '', 9), color: theme.dim },
+          { text: fit(d.author || '—', 16), strong: true },
+          { text: fit(d.deployer, 16), color: theme.info },
+          { text: d.active ? 'active  ' : '', color: theme.accent, bold: true },
+          { text: d.message.split('\n')[0] },
+        ],
+      })),
+    onPick: (it) => deploymentLog(ctx, target, it.d),
+    keys: { y: (it) => ctx.copy(it.d.name, 'its id') },
+  });
+}
+
+/** ↵ on a deployment: its log, in the viewer. */
+export async function deploymentLog(ctx, target, d) {
+  const title = `${label(target)}: deployment ${d.name}, ${d.status}`;
+  const token = {};
+  ctx.showText(title, '', { loading: true, token });
+  const still = () => ctx.overlay()?.token === token;
+  try {
+    const log = await ctx.provider.deploymentLog(d);
+    if (!still()) return;
+    const head = [`${d.author || 'Someone'}${d.deployer ? ` through ${d.deployer}` : ''}, ${d.start ? cellText(d.start, 'datetime') : 'when unknown'}${d.end ? ` to ${cellText(d.end, 'datetime').slice(11)}` : ''}`, d.message, ''];
+    const text = [...head, ...log.map((l) => `${l.at ? cellText(l.at, 'datetime').slice(11) : ''}  ${l.message}`)].join('\n');
+    const lines = [
+      [{ text: head[0], bold: true }],
+      ...d.message.split('\n').map((m) => [{ text: m, color: theme.dim }]),
+      [],
+      ...(log.length ? log : [{ message: 'Its log is empty.' }]).map((l) => [
+        { text: l.at ? `${cellText(l.at, 'datetime').slice(11)}  ` : '', color: theme.dim },
+        { text: l.message, color: /fail|error|err!/i.test(l.message) ? theme.del : undefined },
+      ]),
+    ];
+    ctx.showText(title, text, { lines, token });
+  } catch (e) {
+    if (still()) ctx.closeOverlay();
+    ctx.note(e.message, 'error');
+  }
+}
+
 /** o: the app or slot in the Azure portal. b: its site. */
 export async function openInPortal(ctx, target) {
   if (!need(ctx, target)) return;
@@ -278,7 +338,7 @@ export async function showOperation(ctx, problem) {
         { text: r.duration != null ? `  ${Math.round(r.duration)} ms` : '', color: theme.dim },
       ]),
     ];
-    ctx.showText(`${problem.type}: the latest occurrence`, occurrenceText(problem, rows), { lines });
+    ctx.showText(`${problem.type}: the latest occurrence`, occurrenceText(problem, rows), { lines, token });
   } catch (e) {
     if (still()) ctx.closeOverlay();
     ctx.note(e.message, 'error');

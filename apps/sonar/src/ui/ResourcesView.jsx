@@ -59,6 +59,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
     if (input === 'l') return ctx.logsFor(sel);
     if (input === 'p') return ctx.problemsFor(sel);
     if (input === 'L') return ctx.liveFor(sel);
+    if (input === 'D') return a.deployments(ctx, sel);
     if (input === 'o') return a.openInPortal(ctx, sel);
     if (input === 'b') return a.browse(ctx, sel);
     if (input === 'y') return sel.host ? ctx.copy(sel.host) : undefined;
@@ -95,7 +96,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
               { text: metrics ? `  ${m.summary}` : '', color: m.summary === 'no data' ? theme.dim : undefined },
             ])),
         [],
-        [{ text: 'R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse', color: theme.dim }],
+        [{ text: 'R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse', color: theme.dim }],
       ]
     : [];
 

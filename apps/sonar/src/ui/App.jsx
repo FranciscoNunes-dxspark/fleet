@@ -49,7 +49,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse',
+  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
   logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
   problems: '↵ the latest occurrence · w ask Claude why · l its exceptions in Logs · y copy the message · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
@@ -503,7 +503,12 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       reload();
       setProblemsTick((n) => n + 1);
     },
-    showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
+    // `token` marks a viewer that's filled in later (shown loading first): the same token replaces it,
+    // keeping where it goes back to.
+    showText: (title, text, opts = {}) => {
+      if (opts.token && overlayRef.current?.token === opts.token) return setOverlay((cur) => ({ title, text, ...opts, back: cur?.back }));
+      setOverlay({ title, text, ...opts });
+    },
     // A list to pick from: { title, hint, items | load, onPick, keys, empty } (see Picker.jsx).
     // `replace`: swaps the picker on screen for this one (the same list, redrawn after a change), keeping
     // where it goes back to, instead of opening on top of it.

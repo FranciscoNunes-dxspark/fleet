@@ -289,3 +289,29 @@ test('problems: w asks Claude why, with the latest occurrence on stdin and read-
     app.unmount();
   }
 });
+
+test("deployments: D lists an app's, newest first, and ↵ shows one's log", async () => {
+  const app = start();
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    app.stdin.write('D');
+    await until(() => frame().includes('Deployments of contoso-web') && frame().includes('Release 2.13.1'), 'the deployments');
+    assert.match(frame(), /❯ ⏺ succeeded\s+3d ago\s+Ana Silva\s+GitHub Actions\s+active\s+Release 2\.14\.0/);
+    assert.match(frame(), /failed\s+5d ago\s+Rui Costa/);
+    app.stdin.write('j');
+    await until(() => /❯ ⏺ failed/.test(frame()), 'the failed one');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('contoso-web: deployment d2, failed') && frame().includes('ELIFECYCLE'), 'its log');
+    app.stdin.write(KEYS.esc);
+    await until(() => frame().includes('Deployments of contoso-web'), 'back to the list');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('Deployments of contoso-web'), 'closed');
+    app.stdin.write('/');
+    await type(app.stdin, 'deployments contoso-api/staging');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('Deployments of contoso-api/staging'), 'a slot by name');
+  } finally {
+    app.unmount();
+  }
+});

@@ -36,6 +36,7 @@ export const HELP = [
       ['R', 'Restart it'],
       ['S', 'Stop it, or start it if it is stopped'],
       ['W', 'Swap a slot into production (on an app, pick the slot)'],
+      ['D', 'Its deployments: who, when, through what, how it went, which is active; ↵ shows one\'s log'],
       ['l  p', 'Its logs · its problems'],
       ['L', 'Its log as it\'s written, in Live'],
       ['o  b', 'Open it in the Azure portal · open its site'],

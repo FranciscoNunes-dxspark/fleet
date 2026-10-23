@@ -2,7 +2,7 @@
 // its Application Insights, production, settings, sparklines, completion, the tree, the demo's answers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAzure, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
+import { createAzure, deploymentFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
@@ -230,4 +230,22 @@ test('metrics: the site\'s Azure Monitor metrics over the span, at its grain, as
   const m = await demo.metrics(d.apps[0], { span: TIMESPANS[0] });
   assert.deepEqual(m.map((x) => x.name), METRICS.map((x) => x.name));
   assert.equal(m[0].points.length, 12, 'an hour at five minutes');
+});
+
+test('deployments: listed newest first with Kudu\'s states in words, and one\'s log in order', async () => {
+  const web = siteFrom(site('web', 'rg'));
+  const dep = (name, status, start, extra = {}) => ({ id: `${web.id}/deployments/${name}`, name: `web/${name}`, properties: { status, start_time: start, end_time: start, author: 'Ana', deployer: 'GitHub', message: `m ${name}\n`, ...extra } });
+  const { fetch, calls } = fakeFetch({
+    [`GET ${web.id}/deployments`]: { value: [dep('a1', 4, '2026-10-01T10:00:00Z'), dep('b2', 3, '2026-10-05T10:00:00Z', { active: false }), dep('c3', 1, '2026-10-06T10:00:00Z', { active: true })] },
+    [`GET ${web.id}/deployments/b2/log`]: { value: [{ properties: { log_time: '2026-10-05T10:00:09Z', message: 'Build failed.' } }, { properties: { log_time: '2026-10-05T10:00:01Z', message: 'Fetching changes.' } }] },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const list = await azure.deployments(web);
+  assert.deepEqual(list.map((d) => [d.name, d.status, d.active]), [['c3', 'building', true], ['b2', 'failed', false], ['a1', 'succeeded', false]]);
+  assert.deepEqual([list[0].author, list[0].deployer, list[0].message], ['Ana', 'GitHub', 'm c3']);
+  assert.match(calls[0].url, /api-version=2023-12-01/);
+  assert.deepEqual((await azure.deploymentLog(list[1])).map((l) => l.message), ['Fetching changes.', 'Build failed.']);
+  const slot = { ...web, id: `${web.id}/slots/staging`, slot: 'staging' };
+  await assert.rejects(azure.deployments(slot), /Listing web\/staging's deployments: not found/);
+  assert.equal(deploymentFrom({ name: 'x', properties: { status: 9 } }).status, '9');
 });

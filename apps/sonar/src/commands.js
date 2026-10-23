@@ -13,6 +13,7 @@ export const COMMANDS = [
   { name: 'stop', args: '[app]', desc: 'Stop an app or slot (asks first)', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'stop') },
   { name: 'start', args: '[app]', desc: 'Start a stopped app or slot', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'start') },
   { name: 'swap', args: '[app/slot]', desc: 'Swap a slot into production (asks for the app\'s name)', complete: 'targets', run: (ctx, s) => a.swap(ctx, s) },
+  { name: 'deployments', args: '[app]', desc: "An app's or slot's deployments: who, when, how it went; ↵ shows one's log", complete: 'targets', run: (ctx, s) => a.deployments(ctx, s) },
   { name: 'portal', args: '[app]', desc: 'Open an app or slot in the Azure portal', complete: 'targets', run: (ctx, s) => a.openInPortal(ctx, a.targetNamed(ctx, s)) },
   { name: 'why', args: '[problem]', desc: "Ask Claude why a problem happens, from its latest occurrence (and the code, when Sonar runs in the app's folder)", complete: 'problems', run: (ctx, s) => a.why(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },

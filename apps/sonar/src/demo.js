@@ -227,6 +227,25 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       });
       return n;
     },
+    // A few deployments each, the latest active; the one before it failed on the main slots of production.
+    async deployments(target, { signal } = {}) {
+      await wait(signal);
+      const s = site(target);
+      const day = 24 * HOUR;
+      const list = [
+        { name: 'd3', status: 'succeeded', author: 'Ana Silva', deployer: 'GitHub Actions', ago: 3 * day, message: 'Release 2.14.0: the new checkout behind a flag', active: true },
+        { name: 'd2', status: s.sub === 'sub-prod' && !s.slot ? 'failed' : 'succeeded', author: 'Rui Costa', deployer: 'GitHub Actions', ago: 5 * day, message: 'Release 2.13.1: payments retries' },
+        { name: 'd1', status: 'succeeded', author: 'Ana Silva', deployer: 'ZipDeploy', ago: 12 * day, message: 'Release 2.13.0' },
+      ];
+      return list.map((d) => ({ id: `${s.id}/deployments/${d.name}`, name: d.name, status: d.status, author: d.author, deployer: d.deployer, start: new Date(now - d.ago).toISOString(), end: new Date(now - d.ago + 95_000).toISOString(), message: d.message, active: Boolean(d.active) }));
+    },
+    async deploymentLog(deployment, { signal } = {}) {
+      await wait(signal);
+      const failed = deployment.name === 'd2' && /sub-prod/.test(deployment.id) && !/\/slots\//.test(deployment.id);
+      const t0 = now - 5 * 24 * HOUR;
+      const lines = ['Fetching changes.', 'Updating submodules.', 'Preparing deployment for commit id \'4f2a9c1\'.', 'Running build: npm ci && npm run build', failed ? 'npm ERR! code ELIFECYCLE: the build exited with 1 (tsc found 2 errors)' : 'Build succeeded.', failed ? 'Deployment Failed.' : 'Deployment successful.'];
+      return lines.map((message, i) => ({ at: new Date(t0 + i * 15_000).toISOString(), message }));
+    },
     // Made-up metrics, the same for the same app and span: busier in production, a few 5xx now and then.
     async metrics(target, { span, signal } = {}) {
       await wait(signal);

@@ -46,6 +46,25 @@ export function siteFrom(s, parent = null) {
   };
 }
 
+// Kudu's deployment states, by number.
+const DEPLOY_STATUS = { 0: 'pending', 1: 'building', 2: 'deploying', 3: 'failed', 4: 'succeeded' };
+
+/** A deployment of an app or slot, as ARM lists it (Kudu's record underneath): who, when, how it went. */
+export function deploymentFrom(d) {
+  const p = d.properties ?? {};
+  return {
+    id: d.id,
+    name: String(d.name ?? '').split('/').pop(),
+    status: DEPLOY_STATUS[p.status] ?? String(p.status ?? 'unknown'),
+    author: p.author || p.author_email || '',
+    deployer: p.deployer ?? '',
+    start: p.start_time ?? p.received_time ?? null,
+    end: p.end_time ?? null,
+    message: String(p.message ?? '').trim(),
+    active: Boolean(p.active),
+  };
+}
+
 /** An Application Insights component: what its query API needs (AppId) and how apps point at it. */
 export function componentFrom(c) {
   const p = c.properties ?? {};
@@ -133,6 +152,16 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const res = await fetch(`https://${target.scmHost}/api/logstream`, { signal, headers: { Authorization: `Bearer ${await token(`${ARM}/`)}` } });
       if (!res.ok) throw new Error(azureError(res.status, null, `Streaming ${label(target)}'s log`));
       await readLines(res.body, onLine);
+    },
+    /** An app's or slot's deployments, newest first. */
+    async deployments(target, opts) {
+      const list = await all(`${target.id}/deployments?api-version=${WEB}`, { ...opts, what: `Listing ${label(target)}'s deployments` });
+      return list.map(deploymentFrom).sort((a, b) => String(b.start ?? '').localeCompare(String(a.start ?? '')));
+    },
+    /** One deployment's log: [{ at, message }] in order. */
+    async deploymentLog(deployment, opts) {
+      const list = await all(`${deployment.id}/log?api-version=${WEB}`, { ...opts, what: `Reading deployment ${deployment.name}'s log` });
+      return list.map((l) => ({ at: l.properties?.log_time ?? null, message: String(l.properties?.message ?? '') })).sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')));
     },
     /** Azure Monitor's metrics for an app or slot over `span` (insights.js TIMESPANS): metrics.js's series. */
     async metrics(target, { span, signal } = {}) {
