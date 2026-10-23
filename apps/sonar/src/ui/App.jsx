@@ -972,7 +972,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     if (ctx.claimsKey?.(input, key)) return;
     // A command or a sibling's context pasted while a view has the keys goes into the prompt, to run with ↵.
     // (A terminal ends a pasted line with \r, which the family's rule takes as a \n.)
-    const pasted = pastedLine(input.replace(/\r$/, '\n'));
+    const pasted = pastedLine(input);
     if (pasted) return prefill(pasted);
     globalKeys(input, key);
   });
