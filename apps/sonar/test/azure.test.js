@@ -2,10 +2,10 @@
 // its Application Insights, production, settings, sparklines, completion, the tree, the demo's answers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAzure, deploymentFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
+import { alertFrom, alertRange, createAzure, deploymentFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
-import { TIMESPANS, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
+import { TIMESPANS, availabilityQuery, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
 import { loadSubscription } from '../src/load.js';
 import { METRICS, metricInterval, metricRows, seriesFrom } from '../src/metrics.js';
 import { mapLimited, resourceRows, targetForUrl, targetsByLabel } from '../src/tree.js';
@@ -155,7 +155,7 @@ test('the demo: a subscription to read, the queries Sonar sends answered, change
   const timeline = records(await azure.query(ai, `union requests | where operation_Id == '${problems[0].operation}'`, { timespan: 'P7D' }));
   assert.deepEqual([...new Set(timeline.map((r) => r.itemType))].sort(), ['dependency', 'exception', 'request', 'trace']);
   assert.equal((await azure.query(ai, 'requests | take 3')).rows.length, 3);
-  assert.throws(() => demoQuery('pageViews | take 1', []), /it answers requests, exceptions, traces and dependencies/);
+  assert.throws(() => demoQuery('pageViews | take 1', []), /it answers requests, exceptions, traces, dependencies and availabilityResults/);
   const staging = d.slots[d.apps[0].id][0];
   await azure.swap(staging);
   assert.equal((await azure.settings(d.apps[0])).APP_VERSION, '2.15.0-rc.1');
@@ -248,4 +248,27 @@ test('deployments: listed newest first with Kudu\'s states in words, and one\'s 
   const slot = { ...web, id: `${web.id}/slots/staging`, slot: 'staging' };
   await assert.rejects(azure.deployments(slot), /Listing web\/staging's deployments: not found/);
   assert.equal(deploymentFrom({ name: 'x', properties: { status: 9 } }).status, '9');
+});
+
+test('alerts: the fired ones over the span, most severe first; availability tests summarised by the demo', async () => {
+  const alert = (name, severity, fired, extra = {}) => ({ id: `/subscriptions/s1/providers/Microsoft.AlertsManagement/alerts/${name}`, name, properties: { essentials: { severity, signalType: 'Metric', alertState: 'New', monitorCondition: 'Fired', targetResource: '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.Web/sites/web', targetResourceType: 'microsoft.web/sites', targetResourceGroup: 'rg', startDateTime: fired, alertRule: '/x/metricalerts/r1', ...extra } } });
+  const { fetch, calls } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.AlertsManagement/alerts': { value: [alert('slow', 'Sev3', '2026-10-22T10:00:00Z'), alert('down', 'Sev0', '2026-10-22T09:00:00Z', { targetResourceName: 'web' })] },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const list = await azure.alerts('s1', { span: TIMESPANS[2] });
+  assert.deepEqual(list.map((a) => [a.name, a.severity, a.target]), [['down', 'Sev0', 'web'], ['slow', 'Sev3', 'web']]);
+  const q = new URL(calls[0].url).searchParams;
+  assert.deepEqual([q.get('monitorCondition'), q.get('timeRange'), q.get('api-version')], ['Fired', '7d', '2019-05-05-preview']);
+  assert.deepEqual(TIMESPANS.map(alertRange), ['1h', '1d', '7d', '30d']);
+  assert.equal(alertFrom({ id: 'x', name: 'n', properties: {} }).target, '');
+
+  const demo = demoAzure({ now: Date.parse('2026-10-22T12:00:00Z') });
+  assert.deepEqual((await demo.alerts('sub-prod', { span: TIMESPANS[0] })).map((a) => a.severity), ['Sev1']);
+  assert.equal((await demo.alerts('sub-prod', { span: TIMESPANS[2] })).length, 3);
+  assert.equal((await demo.alerts('sub-dev', { span: TIMESPANS[3] })).length, 0);
+  const tests = records(await demo.query({ appId: 'app-prod' }, availabilityQuery(), { timespan: 'P1D' }));
+  assert.deepEqual(tests.map((t) => t.name).sort(), ['shop.contoso.com checkout', 'shop.contoso.com home page']);
+  assert.ok(tests.every((t) => t.total > 200 && t.locations === 3));
+  assert.equal(tests.find((t) => t.name.endsWith('home page')).failed, 0);
 });

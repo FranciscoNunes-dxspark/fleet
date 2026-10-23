@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
-import { TIMESPANS, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
+import { TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
 import { targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
@@ -20,6 +20,7 @@ import { Palette } from './Palette.jsx';
 import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from './parts.jsx';
 import { HelpView } from './HelpView.jsx';
 import { LiveView } from './LiveView.jsx';
+import { AlertsView } from './AlertsView.jsx';
 import { LogsView } from './LogsView.jsx';
 import { ProblemsView } from './ProblemsView.jsx';
 import { ResourcesView } from './ResourcesView.jsx';
@@ -36,6 +37,7 @@ const VIEWS = [
   { id: 'logs', label: 'Logs' },
   { id: 'problems', label: 'Problems' },
   { id: 'live', label: 'Live' },
+  { id: 'alerts', label: 'Alerts' },
   { id: 'log', label: 'Log' },
 ];
 
@@ -52,6 +54,7 @@ const HINTS = {
   resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
   logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
   problems: '↵ the latest occurrence · w ask Claude why · l its exceptions in Logs · y copy the message · c which insights',
+  alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
   log: '↵ all its output · y copy it',
 };
@@ -131,6 +134,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const [query, setQuery] = useState('');
   const [result, setResult] = useState(null);
   const [problems, setProblems] = useState(null);
+  const [alerts, setAlerts] = useState(null);
   // What Logs and Problems look at: an app (l, p) or, with `all`, everything in the chosen component.
   const [scopeState, setScopeState] = useState({ target: null, component: null, all: false });
   const scopeRef = useRef(scopeState);
@@ -404,6 +408,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       setScope({ target: null, component: null, all: false });
       setResult(null);
       setProblems(null);
+      setAlerts(null);
       setFilter('');
       await reload(id);
       if (dataRef.current) setConfig((c) => ({ ...c, subscription: dataRef.current.subscription.id }));
@@ -664,7 +669,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const [problemsTick, setProblemsTick] = useState(0);
   const scopeKey = `${scopeState.target?.id ?? ''}|${scopeState.component?.id ?? ''}|${scopeState.all}|${view === 'problems' ? selectedRef.current?.id : ''}`;
   useEffect(() => {
-    if (view !== 'problems' && view !== 'logs') return;
+    if (view !== 'problems' && view !== 'logs' && view !== 'alerts') return;
     let live = true;
     resolveScope().then((r) => live && setResolved(r));
     return () => {
@@ -686,6 +691,30 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       } catch (e) {
         if (!controller.signal.aborted) setProblems({ rows: [], error: firstLine(e.message), span });
       }
+    })();
+    return () => controller.abort();
+  }, [view, scopeKey, spanIndex, problemsTick, data]);
+
+  // Alerts: what's firing in the subscription, and the availability tests of the Application Insights in scope.
+  useEffect(() => {
+    if (view !== 'alerts' || !data) return;
+    const controller = new AbortController();
+    const span = TIMESPANS[spanIndex];
+    const opts = { span, signal: controller.signal };
+    setAlerts((a) => ({ ...(a ?? {}), loading: true, span }));
+    (async () => {
+      const [fired, tests] = await Promise.allSettled([
+        provider.alerts(data.subscription.id, opts),
+        resolveScope().then((scope) => (scope.component ? provider.query(scope.component, availabilityQuery(), { timespan: span.iso, signal: controller.signal }).then(records) : Promise.reject(new Error(scope.why)))),
+      ]);
+      if (controller.signal.aborted) return;
+      setAlerts({
+        span,
+        rows: fired.status === 'fulfilled' ? fired.value : [],
+        error: fired.status === 'rejected' ? firstLine(fired.reason.message) : null,
+        tests: tests.status === 'fulfilled' ? tests.value : [],
+        testsError: tests.status === 'rejected' ? firstLine(tests.reason.message) : null,
+      });
     })();
     return () => controller.abort();
   }, [view, scopeKey, spanIndex, problemsTick, data]);
@@ -954,6 +983,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     main = <LogsView query={query} result={result} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'live') {
     main = <LiveView live={{ ...live, target: streamTarget }} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'alerts') {
+    main = <AlertsView alerts={alerts} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'problems') {
     main = <ProblemsView problems={problems} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {

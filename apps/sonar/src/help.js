@@ -6,7 +6,7 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-5 / tab', 'Resources, Logs, Problems, Live, Log (shift+tab goes back)'],
+      ['1-6 / tab', 'Resources, Logs, Problems, Live, Alerts, Log (shift+tab goes back)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
       ['t', 'The time span Logs, Problems and the metrics in Resources look at: 1h, 24h, 7d, 30d'],
@@ -82,6 +82,17 @@ export const HELP = [
     ],
   },
   {
+    title: 'Alerts',
+    about: "the subscription's alerts still firing (metric and log alerts) that began in the time span, most severe first; under them the availability tests of the Application Insights in scope",
+    views: ['alerts'],
+    rows: [
+      ['↵', 'On an alert: all of it (severity, signal, target, rule, when it fired) · on a test: its results in Logs'],
+      ['o', 'An alert\'s target in the Azure portal'],
+      ['y', 'Copy its name'],
+      ['c', 'Which Application Insights the availability tests come from'],
+    ],
+  },
+  {
     title: 'Log',
     about: 'what has run, newest at the bottom',
     views: ['log'],
@@ -93,7 +104,7 @@ export const HELP = [
     rows: [
       ['"commands"', '{ "prod": "/sub Contoso Production", "errors": "/kql exceptions | order by timestamp desc | take 50" }: a line as typed at the prompt, or a list run in order, stopping at the first that fails (or that you answer no); { "run": …, "desc": … } gives it a description. They show in the / menu, the palette and Slash commands below'],
       ['$1 $2  $*', 'What\'s typed after it: a word each ("quoted words" are one), or all of it; a command with no $ gets it at the end of its line'],
-      ['"keys"', '{ "global": { "ctrl+e": "/kql exceptions | take 50" }, "resources": { "x": "R" } }: a key to another key (the view does what that one does) or to a command line, anywhere or in one view (resources, logs, problems, live, log). They work while a view has the keys, never while typing; Your keys (above Slash commands) lists them'],
+      ['"keys"', '{ "global": { "ctrl+e": "/kql exceptions | take 50" }, "resources": { "x": "R" } }: a key to another key (the view does what that one does) or to a command line, anywhere or in one view (resources, logs, problems, live, alerts, log). They work while a view has the keys, never while typing; Your keys (above Slash commands) lists them'],
       ['key names', 'a character (x, X, +), ctrl+s, alt+x, shift+tab, F1-F12, enter, esc, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown'],
     ],
   },

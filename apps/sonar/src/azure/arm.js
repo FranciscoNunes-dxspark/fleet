@@ -65,6 +65,31 @@ export function deploymentFrom(d) {
   };
 }
 
+/** A fired alert from Alerts Management, as the Alerts view shows it. */
+export function alertFrom(a) {
+  const e = a.properties?.essentials ?? {};
+  return {
+    id: a.id,
+    name: a.name,
+    severity: e.severity ?? '',
+    signal: e.signalType ?? '',
+    state: e.alertState ?? '',
+    condition: e.monitorCondition ?? '',
+    service: e.monitorService ?? '',
+    target: e.targetResourceName ?? String(e.targetResource ?? '').split('/').pop(),
+    targetId: e.targetResource ?? null,
+    targetType: e.targetResourceType ?? '',
+    resourceGroup: e.targetResourceGroup ?? '',
+    rule: e.alertRule ?? null,
+    fired: e.startDateTime ?? null,
+    changed: e.lastModifiedDateTime ?? null,
+    description: e.description ?? '',
+  };
+}
+
+/** Alerts Management's timeRange for a span (insights.js TIMESPANS): 1h, 1d, 7d or 30d. */
+export const alertRange = (span) => (span.hours <= 1 ? '1h' : span.hours <= 24 ? '1d' : span.hours <= 24 * 7 ? '7d' : '30d');
+
 /** An Application Insights component: what its query API needs (AppId) and how apps point at it. */
 export function componentFrom(c) {
   const p = c.properties ?? {};
@@ -152,6 +177,12 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const res = await fetch(`https://${target.scmHost}/api/logstream`, { signal, headers: { Authorization: `Bearer ${await token(`${ARM}/`)}` } });
       if (!res.ok) throw new Error(azureError(res.status, null, `Streaming ${label(target)}'s log`));
       await readLines(res.body, onLine);
+    },
+    /** The subscription's alerts still firing that began within `span`, the most severe first. */
+    async alerts(sub, { span, signal } = {}) {
+      const q = new URLSearchParams({ 'api-version': '2019-05-05-preview', monitorCondition: 'Fired', timeRange: alertRange(span) });
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.AlertsManagement/alerts?${q}`, { signal, what: 'Listing the alerts' });
+      return list.map(alertFrom).sort((a, b) => a.severity.localeCompare(b.severity) || String(b.fired ?? '').localeCompare(String(a.fired ?? '')));
     },
     /** An app's or slot's deployments, newest first. */
     async deployments(target, opts) {

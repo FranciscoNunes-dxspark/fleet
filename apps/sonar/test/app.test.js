@@ -315,3 +315,31 @@ test("deployments: D lists an app's, newest first, and ↵ shows one's log", asy
     app.unmount();
   }
 });
+
+test('alerts: what fires in the subscription, an alert whole, and an availability test\'s results in Logs', async () => {
+  const app = start();
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    app.stdin.write('5');
+    await until(() => frame().includes('╭─ Alerts') && /2 firing · 24h/.test(frame()) && frame().includes('checkout'), 'the alerts and the tests');
+    assert.match(frame(), /❯ Sev1\s+contoso-web 5xx over 20\s+contoso-web\s+Metric\s+20m ago/);
+    assert.match(frame(), /Sev2\s+Checkout availability below 95%/);
+    assert.doesNotMatch(frame(), /Payments timeouts/, 'older than the span');
+    assert.match(frame(), /Availability tests · contoso-prod-ai/);
+    assert.match(frame(), /✓ shop\.contoso\.com home page/);
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('Alert: contoso-web 5xx over 20') && /rule\s+contoso-web-5xx-over-20/.test(frame()), 'the alert whole');
+    app.stdin.write(KEYS.esc);
+    await until(() => frame().includes('╭─ Alerts'), 'back');
+    app.stdin.write('G');
+    await until(() => /❯\s+(\d+ ✗|✓) shop\.contoso\.com/.test(frame()), 'on a test');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('╭─ Logs') && /\d+ rows/.test(frame()) && frame().includes('location'), 'its results in Logs');
+    app.stdin.write('t');
+    app.stdin.write('5');
+    await until(() => /3 firing · 7d/.test(frame()), 'more over a longer span');
+  } finally {
+    app.unmount();
+  }
+});

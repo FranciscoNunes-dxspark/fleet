@@ -47,6 +47,10 @@ export function operationQuery(operationId) {
   return `union requests, dependencies, exceptions, traces | where operation_Id == ${quote(operationId)} | project timestamp, itemType, name = coalesce(name, type, message), detail = coalesce(tostring(resultCode), outerMessage, message, target), duration, success, cloud_RoleName | order by timestamp asc`;
 }
 
+/** The availability tests' results over the span, by test: how many ran, how many failed, when they last did. */
+export const availabilityQuery = () =>
+  'availabilityResults | summarize total = count(), failed = countif(success == false), last = max(timestamp), lastFailure = maxif(timestamp, success == false), locations = dcount(location), message = take_anyif(message, success == false) by name | order by failed desc, name asc';
+
 /** The query Logs starts with for an app: its latest requests. */
 export const starterQuery = (role) => `requests${roleFilter(role)} | order by timestamp desc | take 50`;
 

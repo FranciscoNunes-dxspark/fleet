@@ -44,7 +44,13 @@ function initialState(now) {
     { id: '/subscriptions/sub-prod/resourceGroups/contoso-prod/providers/Microsoft.Insights/components/contoso-prod-ai', name: 'contoso-prod-ai', appId: 'app-prod', key: 'k-prod', resourceGroup: 'contoso-prod', sub: 'sub-prod' },
     { id: '/subscriptions/sub-dev/resourceGroups/contoso-dev/providers/Microsoft.Insights/components/contoso-dev-ai', name: 'contoso-dev-ai', appId: 'app-dev', key: 'k-dev', resourceGroup: 'contoso-dev', sub: 'sub-dev' },
   ];
-  return { sites, components, telemetry: telemetry(now, sites) };
+  const prodRg = '/subscriptions/sub-prod/resourceGroups/contoso-prod';
+  const alerts = [
+    { sub: 'sub-prod', name: 'contoso-web 5xx over 20', severity: 'Sev1', signal: 'Metric', service: 'Platform', target: 'contoso-web', targetId: `${prodRg}/providers/Microsoft.Web/sites/contoso-web`, targetType: 'microsoft.web/sites', ago: 20 * 60 * 1000, description: 'More than 20 server errors in 5 minutes' },
+    { sub: 'sub-prod', name: 'Checkout availability below 95%', severity: 'Sev2', signal: 'Metric', service: 'Application Insights', target: 'contoso-prod-ai', targetId: `${prodRg}/providers/microsoft.insights/components/contoso-prod-ai`, targetType: 'microsoft.insights/components', ago: 3 * HOUR, description: 'The checkout availability test failed from 2 of 3 locations' },
+    { sub: 'sub-prod', name: 'Payments timeouts in traces', severity: 'Sev3', signal: 'Log', service: 'Log Analytics', target: 'contoso-prod-ai', targetId: `${prodRg}/providers/microsoft.insights/components/contoso-prod-ai`, targetType: 'microsoft.insights/components', ago: 30 * HOUR, description: '' },
+  ].map((a, i) => ({ id: `/subscriptions/${a.sub}/providers/Microsoft.AlertsManagement/alerts/demo-${i}`, state: 'New', condition: 'Fired', resourceGroup: 'contoso-prod', rule: `${prodRg}/providers/microsoft.insights/metricalerts/${a.name.replace(/\W+/g, '-')}`, fired: new Date(now - a.ago).toISOString(), changed: new Date(now - a.ago).toISOString(), ...a }));
+  return { sites, components, alerts, telemetry: telemetry(now, sites) };
 }
 
 // A few days of what the apps did: requests (some failing), the exceptions behind the failures, traces.
@@ -76,17 +82,27 @@ function telemetry(now, sites) {
       }
     }
   }
+  // Two availability tests on production, every 15 minutes from three places; the checkout one fails now and then.
+  for (const [test, flaky] of [['shop.contoso.com home page', 0], ['shop.contoso.com checkout', 0.12]]) {
+    for (let t = now - 60 * 1000; t > now - 7 * 24 * HOUR; t -= 15 * 60 * 1000) {
+      for (const location of ['West Europe', 'North Europe', 'East US']) {
+        const fails = rand() < flaky;
+        items.push({ itemType: 'availability', component: 'app-prod', timestamp: new Date(t - Math.floor(rand() * 60000)).toISOString(), name: test, location, success: !fails, duration: Math.round(fails ? 30000 : 150 + rand() * 300), message: fails ? 'Request timed out after 30 s' : 'Passed', cloud_RoleName: '' });
+      }
+    }
+  }
   return items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
-const TABLES = { requests: 'request', exceptions: 'exception', traces: 'trace', dependencies: 'dependency' };
+const TABLES = { requests: 'request', exceptions: 'exception', traces: 'trace', dependencies: 'dependency', availabilityResults: 'availability' };
 const COLUMNS = {
   request: ['timestamp', 'name', 'url', 'resultCode', 'success', 'duration', 'operation_Id', 'operation_Name', 'cloud_RoleName'],
   exception: ['timestamp', 'problemId', 'type', 'outerMessage', 'method', 'severityLevel', 'operation_Id', 'operation_Name', 'cloud_RoleName', 'user_Id'],
   trace: ['timestamp', 'message', 'severityLevel', 'operation_Id', 'operation_Name', 'cloud_RoleName'],
   dependency: ['timestamp', 'name', 'target', 'type', 'resultCode', 'success', 'duration', 'operation_Id', 'cloud_RoleName'],
+  availability: ['timestamp', 'name', 'location', 'success', 'duration', 'message'],
 };
-const TYPES = { timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
+const TYPES = { timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
 const table = (names, rows) => ({ columns: names.map((name) => ({ name, type: TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
 
 /** The demo's answer to `kql` over `items` (one component's, within the time span). */
@@ -125,9 +141,25 @@ export function demoQuery(kql, items) {
     const rows = [...groups.values()].map((g) => ({ ...g, users: g.users.size })).sort((a, b) => b.count - a.count);
     return table(['problemId', 'type', 'count', 'users', 'first', 'last', 'message', 'role', 'operation'], rows);
   }
+  if (/^availabilityResults\b.*summarize/.test(q)) {
+    const groups = new Map();
+    for (const r of items.filter((i) => i.itemType === 'availability')) {
+      const g = groups.get(r.name) ?? { name: r.name, total: 0, failed: 0, last: r.timestamp, lastFailure: null, locations: new Set(), message: null };
+      g.total++;
+      g.locations.add(r.location);
+      if (r.timestamp > g.last) g.last = r.timestamp;
+      if (!r.success) {
+        g.failed++;
+        if (!g.lastFailure || r.timestamp > g.lastFailure) Object.assign(g, { lastFailure: r.timestamp, message: r.message });
+      }
+      groups.set(r.name, g);
+    }
+    const rows = [...groups.values()].map((g) => ({ ...g, locations: g.locations.size })).sort((a, b) => b.failed - a.failed || a.name.localeCompare(b.name));
+    return table(['name', 'total', 'failed', 'last', 'lastFailure', 'locations', 'message'], rows);
+  }
   const name = /^(\w+)/.exec(q)?.[1];
   const kind = TABLES[name];
-  if (!kind) throw new Error(`Querying the demo: it answers requests, exceptions, traces and dependencies (with where cloud_RoleName == '…' and take), not "${name ?? q}"`);
+  if (!kind) throw new Error(`Querying the demo: it answers requests, exceptions, traces, dependencies and availabilityResults (with where cloud_RoleName == '…' and take), not "${name ?? q}"`);
   const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 1000);
   const rows = mine.filter((i) => i.itemType === kind).reverse().slice(0, take);
   return table(COLUMNS[kind], rows);
@@ -226,6 +258,11 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
         signal?.addEventListener('abort', () => (clearInterval(t), resolve()), { once: true });
       });
       return n;
+    },
+    async alerts(sub, { span, signal } = {}) {
+      await wait(signal);
+      const since = new Date(now - span.hours * HOUR).toISOString();
+      return state.alerts.filter((a) => a.sub === sub && a.condition === 'Fired' && a.fired >= since).map(({ sub: _, ago: __, ...a }) => a);
     },
     // A few deployments each, the latest active; the one before it failed on the main slots of production.
     async deployments(target, { signal } = {}) {

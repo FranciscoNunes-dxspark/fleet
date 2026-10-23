@@ -47,6 +47,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
+| **Alerts** | The subscription's metric and log alerts still firing that began in the time span (Azure Monitor's Alerts Management), most severe first: severity, the rule, what it's about, when it fired. Under them, the availability tests of the Application Insights in scope: how many ran from how many places, how many failed and when last. `↵` shows an alert whole, or a test's results in Logs |
 | **Log** | Everything that has run, with its output |
 
 Logs and Problems look at the app picked in Resources (by its role name), in the Application Insights
@@ -79,7 +80,7 @@ it reads the code the exception went through.
 
 | Key | What it does |
 | --- | --- |
-| `1`–`5` / `tab` | Resources, Logs, Problems, Live, Log (`shift+tab` goes back) |
+| `1`–`6` / `tab` | Resources, Logs, Problems, Live, Alerts, Log (`shift+tab` goes back) |
 | `t` | The time span: 1h, 24h, 7d, 30d (Logs, Problems, and the metrics in Resources) |
 | `r` | Read the subscription again |
 | `/` or `:` | The command prompt, with completion |
@@ -117,6 +118,13 @@ it reads the code the exception went through.
 | `c` `R` | Clear · Reconnect |
 | `y` | Copy what's there |
 
+| In Alerts | |
+| --- | --- |
+| `↵` | An alert whole; on an availability test, its results in Logs |
+| `o` | An alert's target in the Azure portal |
+| `y` | Copy its name |
+| `c` | Which Application Insights the availability tests come from |
+
 | In Problems | |
 | --- | --- |
 | `↵` | Its latest occurrence, end to end |
@@ -140,7 +148,7 @@ you to finish.
 ### Your own commands and keys
 
 Commands of your own go in the settings file (`~/.sonar/config.json`), under `"commands"`, and keys
-under `"keys"`, for every view (`"global"`) or for one (resources, logs, problems, live, log):
+under `"keys"`, for every view (`"global"`) or for one (resources, logs, problems, live, alerts, log):
 
 ```json
 {

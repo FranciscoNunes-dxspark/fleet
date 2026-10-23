@@ -391,6 +391,30 @@ export async function why(ctx, which) {
   return r;
 }
 
+/** ↵ on an alert: everything Alerts Management says about it. */
+export function showAlert(ctx, alert) {
+  const rows = [
+    ['severity', alert.severity],
+    ['signal', `${alert.signal}${alert.service ? ` · ${alert.service}` : ''}`],
+    ['state', `${alert.condition} · ${alert.state}`],
+    ['fired', alert.fired ? `${cellText(alert.fired, 'datetime')} (${relTime(Date.parse(alert.fired))} ago)` : '—'],
+    ['changed', alert.changed ? cellText(alert.changed, 'datetime') : '—'],
+    ['target', `${alert.target}${alert.targetType ? `  (${alert.targetType})` : ''}`],
+    ['group', alert.resourceGroup || '—'],
+    ['rule', alert.rule?.split('/').pop() ?? '—'],
+  ];
+  const text = [alert.name, alert.description, '', ...rows.map(([k, v]) => `${k.padEnd(10)}${v}`), '', alert.id].filter((l, i) => i !== 1 || l).join('\n');
+  const lines = [
+    [{ text: alert.name, bold: true }],
+    ...(alert.description ? [[{ text: alert.description, color: theme.dim }]] : []),
+    [],
+    ...rows.map(([k, v]) => [{ text: k.padEnd(10), color: theme.dim }, { text: v, color: k === 'severity' ? (/^Sev[01]$/.test(v) ? theme.del : theme.warn) : undefined }]),
+    [],
+    [{ text: 'o in Alerts opens its target in the portal', color: theme.dim }],
+  ];
+  ctx.showText(`Alert: ${alert.name}`, text, { lines });
+}
+
 /** /accent: a new accent colour, or `default` for the one Sonar comes with. */
 export function accent(ctx, value) {
   const v = value.trim();
