@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { takeLine, encodeContext } from '../src/family.js';
 import { deploymentHasCommit, take } from '../src/actions.js';
 import { problemLike } from '../src/ui/ProblemsView.jsx';
+import { BULLET } from '../src/theme.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
@@ -37,7 +38,7 @@ test('/take commit lists the deployments that shipped it across the apps, ↵ sh
   try {
     await until(() => frame().includes('contoso-orders'), 'the apps');
     await command(app, takeLine('commit', { hash: '9b1c7e2d4f60', subject: 'The new checkout' }));
-    await until(() => frame().includes('Deployments of 9b1c7e2d4f') && /❯ ⏺ contoso-web\s+succeeded\s+3d ago\s+Ana Silva\s+active\s+Release 2\.14\.0/.test(frame()), 'its deployments');
+    await until(() => frame().includes('Deployments of 9b1c7e2d4f') && new RegExp(`❯ ${BULLET} contoso-web\\s+succeeded\\s+3d ago\\s+Ana Silva\\s+active\\s+Release 2\\.14\\.0`).test(frame()), 'its deployments');
     assert.match(frame(), /5 deployments of it, in 5 of 5 apps and slots/);
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('contoso-web: deployment d3, succeeded'), 'its log');

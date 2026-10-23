@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encodeContext, readMoods, takeLine, writeMood } from '../src/family.js';
+import { encodeContext, projectAt, readMoods, shareLine, takeLine, writeMood } from '../src/family.js';
 import { familyChoices, familyMood, reactionLine, reactionTo } from '../src/kin.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
@@ -74,7 +74,9 @@ test('/family copies a line for each sibling from the folder Sonar started in', 
     await until(() => frame().includes('What ') && frame().includes('to the other apps') && frame().includes('Trawl'), 'the choices');
     assert.match(frame(), /❯ Splice\s+\/open /);
     assert.match(frame(), /Bosun\s+\/move /);
-    assert.match(frame(), /Hail\s+\/open \S+orders\.http\s+orders\.http/);
+    // Hail's whole line, which a Windows path, quoted, makes too long for the width.
+    assert.match(frame(), /Hail\s+\/open /);
+    assert.equal(familyChoices(projectAt(dir)).find((c) => c.app === 'hail').line, shareLine('open', [join(dir, 'orders.http')]));
     assert.match(frame(), /Trawl\s+\/azure-sql shop\.database\.windows\.net Shop\s+Shop from appsettings\.json/);
     assert.match(frame(), /Trawl\s+\/add Local localhost,14330 Shop --user sa --trust-cert\s+Local from appsettings\.json/);
     assert.doesNotMatch(frame(), /hunter2/);

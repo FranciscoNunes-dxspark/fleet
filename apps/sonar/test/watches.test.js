@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { crossing, parseWatch, watchEvery, watchValue } from '../src/watches.js';
 import { settingRows } from '../src/settings.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
+import { BULLET } from '../src/theme.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
@@ -59,7 +60,7 @@ test('/watch runs at once and every few minutes, says it once when over, again o
     app.stdin.write('/');
     await type(app.stdin, 'watches');
     app.stdin.write(KEYS.enter);
-    await until(() => /❯ ⏺ busy\s+40\s+over 20\s+contoso-prod-ai\s+requests \| count/.test(frame()), 'the watch listed with its last value');
+    await until(() => new RegExp(`❯ ${BULLET} busy\\s+40\\s+over 20\\s+contoso-prod-ai\\s+requests \\| count`).test(frame()), 'the watch listed with its last value');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('╭─ Logs') && frame().includes('> requests | count'), 'its query in Logs');
     app.stdin.write('/');

@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { demoAzure } from '../src/demo.js';
 import { contextIn } from '../src/family.js';
-import { LIGHT, applyTheme, theme } from '../src/theme.js';
+import { BULLET, LIGHT, applyTheme, theme } from '../src/theme.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
@@ -393,10 +393,10 @@ test("deployments: D lists an app's, newest first, and ↵ shows one's log", asy
     await until(() => frame().includes('contoso-orders'), 'the apps');
     app.stdin.write('D');
     await until(() => frame().includes('Deployments of contoso-web') && frame().includes('Release 2.13.1'), 'the deployments');
-    assert.match(frame(), /❯ ⏺ succeeded\s+3d ago\s+Ana Silva\s+GitHub Actions\s+active\s+Release 2\.14\.0/);
+    assert.match(frame(), new RegExp(`❯ ${BULLET} succeeded\\s+3d ago\\s+Ana Silva\\s+GitHub Actions\\s+active\\s+Release 2\\.14\\.0`));
     assert.match(frame(), /failed\s+5d ago\s+Rui Costa/);
     app.stdin.write('j');
-    await until(() => /❯ ⏺ failed/.test(frame()), 'the failed one');
+    await until(() => frame().includes(`❯ ${BULLET} failed`), 'the failed one');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('contoso-web: deployment d2, failed') && frame().includes('ELIFECYCLE'), 'its log');
     app.stdin.write(KEYS.esc);
