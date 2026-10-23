@@ -3,7 +3,8 @@
 # Sonar
 
 An Azure console for the terminal: your App Service and Function apps, their slots and settings, their
-logs and their problems, in one keyboard-driven window. When Keel says production is red, Sonar is
+logs and their problems, with your container apps, storage accounts and Azure SQL databases beside
+them, in one keyboard-driven window. When Keel says production is red, Sonar is
 where you find out why.
 
 A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/splice),
@@ -43,7 +44,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time) |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state, and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
@@ -61,6 +62,9 @@ first. For production, Sonar asks you to type the app's name, as the portal does
 production being an app or resource group named with prod, production, prd or live. Every swap asks
 for the name, since it changes what production serves, and says how many settings differ between
 the two slots before you go ahead.
+
+A container app's restart (`R`, which restarts its latest revision) and a SQL firewall rule (`F`)
+ask the same way.
 
 Settings (`↵` or `a` on an app or slot) hide the values that look secret (keys, passwords, connection
 strings) until `v` shows one (`V` all). `e` edits one, `n` adds one, `x` removes one; each change
@@ -102,6 +106,20 @@ it reads the code the exception went through.
 | `o` `b` | Open it in the Azure portal · open its site |
 | `y` | Copy its address |
 
+| On a container app | |
+| --- | --- |
+| `R` | Restart its latest revision |
+| `l` / `↵` | Its console log in Logs, from the Log Analytics workspace its environment writes to |
+| `o` `b` `y` | Open it in the portal · open its address · copy its address |
+
+| On a SQL server or database | |
+| --- | --- |
+| `T` | Copy a command that opens it in [Trawl](https://github.com/FranciscoNunes-dxspark/trawl), to paste into Trawl's prompt (below) |
+| `F` | Let this machine's public address through the server's firewall |
+| `o` `y` | Open it in the portal · copy its address |
+
+A storage account takes `o` (the portal) and `y` (copy its blob address).
+
 | In Logs | |
 | --- | --- |
 | `e` / `i` | Edit the query: `tab` completes, `↑` `↓` go through the queries run before, `↵` runs it, `esc` stops editing |
@@ -137,6 +155,27 @@ it reads the code the exception went through.
 In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
 mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll with the wheel, and
 drag to select text, which is copied when you let go.
+
+### SQL databases in Trawl
+
+`T` on a SQL database (or server), or `/trawl server/database`, copies a slash command for Trawl's
+prompt, such as
+
+```
+/azure-sql contoso-sql-prod.database.windows.net contoso --name contoso-sql-prod-contoso --user contoso_app --password-from contoso-prod/contoso-api --subscription <id> --prod
+```
+
+Paste it into Trawl's prompt and Trawl saves the connection and opens it. Sonar looks through the
+apps' connection strings and settings for one pointing at that server and database: when one signs in
+with a SQL login, the command names the login and the app it's in, and Trawl reads the password from
+that app through the Azure CLI, so it never passes through Sonar, the clipboard or the log (which says
+which app it comes from). When the app signs in with Entra (`Authentication=Active Directory…`), or no
+app has one, there's no `--user` and Trawl signs in with your `az` sign-in. `--prod` is there for
+production, as Sonar tells it (the server's name or resource group).
+
+Before copying, Sonar checks the server's firewall lets this machine's public address in (the "Allow
+Azure services" rule doesn't count: it's for Azure, not you), and if not, offers to add a rule for it,
+`sonar-<address>`, asking as every change does. `F` (or `/firewall`) adds one on its own.
 
 ### The command palette
 
@@ -180,6 +219,8 @@ and Trawl.
 | `/stop [app]` `/start [app]` | Stop or start one |
 | `/swap [app/slot]` | Swap a slot into production |
 | `/deployments [app]` | An app's or slot's deployments, and their logs |
+| `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
+| `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
 | `/portal [app]` | Open one in the Azure portal |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |
@@ -216,5 +257,6 @@ terminals), for when you've switched to another window. **Notify when done** tur
 
 ## Not yet
 
-Other kinds of resource (SQL, Storage, Container Apps), and Log Analytics workspaces queried
-directly.
+Storage beyond the list (its containers and blobs), other kinds of resource (Service Bus, Key Vault,
+Cosmos DB), container apps' metrics, and Log Analytics workspaces queried directly, other than a
+container app's logs.

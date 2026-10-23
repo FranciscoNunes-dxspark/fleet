@@ -15,6 +15,40 @@ function seeded(seed) {
 
 const conn = (key) => `InstrumentationKey=${key};IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/`;
 
+// Connection strings (ARM's, not app settings): contoso-api signs in to the production database with a
+// SQL login, contoso-web reaches the reporting one with its managed identity.
+const CONNECTION_STRINGS = {
+  'contoso-api': { DefaultConnection: 'Server=tcp:contoso-sql-prod.database.windows.net,1433;Initial Catalog=contoso;Persist Security Info=False;User ID=contoso_app;Password=demo-Sql-Pa55;Encrypt=True;' },
+  'contoso-web': { Reporting: 'Data Source=contoso-sql-prod.database.windows.net;Database=contoso-reporting;Authentication=Active Directory Managed Identity;' },
+};
+
+// The other kinds of resource: a container app, storage accounts, SQL servers with their databases.
+function otherResources() {
+  const rg = (sub, group) => `/subscriptions/${sub}/resourceGroups/${group}`;
+  const containers = [
+    { sub: 'sub-prod', type: 'container', id: `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.App/containerApps/contoso-worker`, name: 'contoso-worker', resourceGroup: 'contoso-prod', location: 'westeurope', state: 'Running', host: 'contoso-worker.happyfield-1a2b3c.westeurope.azurecontainerapps.io', latestRevision: 'contoso-worker--r7', readyRevision: 'contoso-worker--r7', environmentId: `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.App/managedEnvironments/contoso-env`, image: 'contosocr.azurecr.io/worker:2.14.0', restarts: 0 },
+  ];
+  const storage = [
+    { sub: 'sub-prod', type: 'storage', id: `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.Storage/storageAccounts/contosoprodstore`, name: 'contosoprodstore', resourceGroup: 'contoso-prod', location: 'westeurope', state: 'Available', kind: 'StorageV2', sku: 'Standard_RAGRS', tier: 'Hot', host: 'contosoprodstore.blob.core.windows.net' },
+    { sub: 'sub-dev', type: 'storage', id: `${rg('sub-dev', 'contoso-dev')}/providers/Microsoft.Storage/storageAccounts/contosodevstore`, name: 'contosodevstore', resourceGroup: 'contoso-dev', location: 'westeurope', state: 'Available', kind: 'StorageV2', sku: 'Standard_LRS', tier: 'Hot', host: 'contosodevstore.blob.core.windows.net' },
+  ];
+  const server = (sub, group, name, { admin = null, rules = [], databases = [] }) => {
+    const id = `${rg(sub, group)}/providers/Microsoft.Sql/servers/${name}`;
+    const fqdn = `${name}.database.windows.net`;
+    return {
+      sub, type: 'sqlserver', id, name, resourceGroup: group, location: 'westeurope', state: 'Ready', fqdn, host: fqdn, version: '12.0', publicAccess: 'Enabled', admin, rules,
+      databases: ['master', ...databases.map((d) => d[0])].map((d, i) => ({ type: 'sqldb', id: `${id}/databases/${d}`, name: d, server: name, serverId: id, fqdn, host: fqdn, resourceGroup: group, location: 'westeurope', state: 'Online', sku: i ? databases[i - 1][1] : 'System', tier: i ? databases[i - 1][2] : 'System' })),
+    };
+  };
+  const azure = { name: 'AllowAllWindowsAzureIps', start: '0.0.0.0', end: '0.0.0.0' };
+  const sqlServers = [
+    server('sub-prod', 'contoso-prod', 'contoso-sql-prod', { admin: { login: 'SQL Admins', type: 'Group', only: false }, rules: [azure, { name: 'office', start: '203.0.113.0', end: '203.0.113.255' }], databases: [['contoso', 'GP_S_Gen5_2', 'GeneralPurpose'], ['contoso-reporting', 'S1', 'Standard']] }),
+    server('sub-prod', 'contoso-qa', 'contoso-sql-qa', { rules: [azure], databases: [['contoso-qa', 'Basic', 'Basic']] }),
+    server('sub-dev', 'contoso-dev', 'contoso-sql-dev', { admin: { login: 'ana@contoso.com', type: 'User', only: true }, rules: [{ name: 'home', start: '198.51.100.0', end: '198.51.100.255' }], databases: [['contoso', 'Basic', 'Basic']] }),
+  ];
+  return { containers, storage, sqlServers };
+}
+
 function initialState(now) {
   const apps = [
     { sub: 'sub-prod', name: 'contoso-web', kind: 'app', resourceGroup: 'contoso-prod', runtime: 'NODE|22-lts', key: 'k-prod', slots: ['staging'], domain: 'shop.contoso.com' },
@@ -34,10 +68,10 @@ function initialState(now) {
       FeatureFlags__NewCheckout: 'false',
     };
     const host = `${a.name}.azurewebsites.net`;
-    const site = { id, sub: a.sub, name: a.name, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host, hostNames: a.domain ? [host, a.domain] : [host], modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
+    const site = { id, sub: a.sub, name: a.name, connectionStrings: CONNECTION_STRINGS[a.name] ?? {}, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host, hostNames: a.domain ? [host, a.domain] : [host], modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
     sites.push(site);
     for (const slot of a.slots) {
-      sites.push({ ...site, id: `${id}/slots/${slot}`, slot, host: `${a.name}-${slot}.azurewebsites.net`, hostNames: [`${a.name}-${slot}.azurewebsites.net`], settings: { ...base, APP_VERSION: '2.15.0-rc.1', FeatureFlags__NewCheckout: 'true', ASPNETCORE_ENVIRONMENT: 'Staging' } });
+      sites.push({ ...site, connectionStrings: {}, id: `${id}/slots/${slot}`, slot, host: `${a.name}-${slot}.azurewebsites.net`, hostNames: [`${a.name}-${slot}.azurewebsites.net`], settings: { ...base, APP_VERSION: '2.15.0-rc.1', FeatureFlags__NewCheckout: 'true', ASPNETCORE_ENVIRONMENT: 'Staging' } });
     }
   }
   const components = [
@@ -50,7 +84,7 @@ function initialState(now) {
     { sub: 'sub-prod', name: 'Checkout availability below 95%', severity: 'Sev2', signal: 'Metric', service: 'Application Insights', target: 'contoso-prod-ai', targetId: `${prodRg}/providers/microsoft.insights/components/contoso-prod-ai`, targetType: 'microsoft.insights/components', ago: 3 * HOUR, description: 'The checkout availability test failed from 2 of 3 locations' },
     { sub: 'sub-prod', name: 'Payments timeouts in traces', severity: 'Sev3', signal: 'Log', service: 'Log Analytics', target: 'contoso-prod-ai', targetId: `${prodRg}/providers/microsoft.insights/components/contoso-prod-ai`, targetType: 'microsoft.insights/components', ago: 30 * HOUR, description: '' },
   ].map((a, i) => ({ id: `/subscriptions/${a.sub}/providers/Microsoft.AlertsManagement/alerts/demo-${i}`, state: 'New', condition: 'Fired', resourceGroup: 'contoso-prod', rule: `${prodRg}/providers/microsoft.insights/metricalerts/${a.name.replace(/\W+/g, '-')}`, fired: new Date(now - a.ago).toISOString(), changed: new Date(now - a.ago).toISOString(), ...a }));
-  return { sites, components, alerts, telemetry: telemetry(now, sites) };
+  return { sites, components, alerts, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
 }
 
 // A few days of what the apps did: requests (some failing), the exceptions behind the failures, traces.
@@ -165,6 +199,20 @@ export function demoQuery(kql, items) {
   return table(COLUMNS[kind], rows);
 }
 
+/** The demo's Log Analytics workspace: the container app's console log, the newest first. */
+export function workspaceQuery(kql, now, hours = 24) {
+  const q = kql.replace(/\s+/g, ' ').trim();
+  if (!/^ContainerAppConsoleLogs_CL\b/.test(q)) throw new Error('Querying the demo workspace: it answers ContainerAppConsoleLogs_CL only');
+  const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 100);
+  const rand = seeded(7);
+  const rows = [];
+  for (let i = 0; i < Math.min(take, hours * 12); i++) {
+    const r = rand();
+    rows.push({ TimeGenerated: new Date(now - 60 * 1000 - i * 5 * 60 * 1000).toISOString(), ContainerAppName_s: 'contoso-worker', RevisionName_s: 'contoso-worker--r7', Log_s: r < 0.1 ? 'ERROR Message 4711 went to the dead-letter queue: payments timed out' : `INFO Processed ${Math.round(5 + rand() * 40)} order messages` });
+  }
+  return { columns: ['TimeGenerated', 'ContainerAppName_s', 'RevisionName_s', 'Log_s'].map((name) => ({ name, type: name === 'TimeGenerated' ? 'datetime' : 'string' })), rows: rows.map((r) => [r.TimeGenerated, r.ContainerAppName_s, r.RevisionName_s, r.Log_s]) };
+}
+
 /** The demo provider. `now` fixes the clock and `delay` (ms) makes every call that slow, for trying the spinner. */
 export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
   const state = initialState(now);
@@ -179,7 +227,12 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     if (!s) throw new Error(`${target.name}: not found`);
     return s;
   };
-  const view = ({ settings, sub, ...s }) => ({ ...s });
+  const view = ({ settings, connectionStrings, sub, ...s }) => ({ ...s });
+  const sqlServer = (server) => {
+    const s = state.sqlServers.find((x) => x.id === server.id);
+    if (!s) throw new Error(`${server.name}: not found`);
+    return s;
+  };
   return {
     kind: 'demo',
     state,
@@ -237,6 +290,7 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async query(component, kql, { timespan = 'P1D', signal } = {}) {
       await wait(signal);
       const hours = { PT1H: 1, P1D: 24, P7D: 168, P30D: 720 }[timespan] ?? 24;
+      if (component.workspaceId) return workspaceQuery(kql, now, hours);
       const since = new Date(now - hours * HOUR).toISOString();
       return demoQuery(kql, state.telemetry.filter((i) => i.component === component.appId && i.timestamp >= since));
     },
@@ -258,6 +312,50 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
         signal?.addEventListener('abort', () => (clearInterval(t), resolve()), { once: true });
       });
       return n;
+    },
+    async connectionStrings(target, { signal } = {}) {
+      await wait(signal);
+      return { ...site(target).connectionStrings };
+    },
+    async containerApps(sub, { signal } = {}) {
+      await wait(signal);
+      return state.containers.filter((c) => c.sub === sub).map(({ sub: _, restarts: __, ...c }) => c);
+    },
+    async restartRevision(app, { signal } = {}) {
+      await wait(signal);
+      state.containers.find((c) => c.id === app.id).restarts++;
+    },
+    async containerAppWorkspace(app, { signal } = {}) {
+      await wait(signal);
+      return { id: 'workspace:ws-prod', workspaceId: 'ws-prod', name: 'contoso-env logs', resourceGroup: app.resourceGroup };
+    },
+    async storageAccounts(sub, { signal } = {}) {
+      await wait(signal);
+      return state.storage.filter((a) => a.sub === sub).map(({ sub: _, ...a }) => a);
+    },
+    async sqlServers(sub, { signal } = {}) {
+      await wait(signal);
+      return state.sqlServers.filter((x) => x.sub === sub).map(({ sub: _, rules: __, databases: ___, admin: ____, ...x }) => ({ ...x, admin: null, databases: [] }));
+    },
+    async sqlDatabases(server, { signal } = {}) {
+      await wait(signal);
+      return sqlServer(server).databases.filter((d) => d.name !== 'master').map((d) => ({ ...d }));
+    },
+    async sqlAdmin(server, { signal } = {}) {
+      await wait(signal);
+      return sqlServer(server).admin;
+    },
+    async firewallRules(server, { signal } = {}) {
+      await wait(signal);
+      return sqlServer(server).rules.map((r) => ({ ...r }));
+    },
+    async addFirewallRule(server, { name, start, end }, { signal } = {}) {
+      await wait(signal);
+      const s = sqlServer(server);
+      s.rules = [...s.rules.filter((r) => r.name !== name), { name, start, end: end ?? start }];
+    },
+    async publicIp() {
+      return state.ip;
     },
     async alerts(sub, { span, signal } = {}) {
       await wait(signal);

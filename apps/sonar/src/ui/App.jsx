@@ -51,13 +51,16 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
+  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
   logs: 'e edit the query · ↵ run it / show a row · s save it · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
   problems: '↵ the latest occurrence · w ask Claude why · l its exceptions in Logs · y copy the message · c which insights',
   alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
   log: '↵ all its output · y copy it',
 };
+
+// Only web and function apps and their slots have settings, logs to stream and Application Insights.
+const webTarget = (t) => (t && !t.type ? t : null);
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
@@ -158,6 +161,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   problemsRef.current = problems;
   const settingsCache = useRef(new Map());
   const metricsCache = useRef(new Map());
+  const firewallCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
@@ -269,6 +273,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     setLoading(true);
     settingsCache.current = new Map();
     metricsCache.current = new Map();
+    firewallCache.current = new Map();
     try {
       const d = await load(provider, subId);
       dataRef.current = d;
@@ -329,12 +334,23 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     return cache.get(key);
   };
 
+  /** A SQL server's firewall rules, kept until r or a rule is added. */
+  const firewallOf = (server) => {
+    const cache = firewallCache.current;
+    if (!cache.has(server.id)) {
+      const p = provider.firewallRules(server);
+      p.catch(() => cache.delete(server.id));
+      cache.set(server.id, p);
+    }
+    return cache.get(server.id);
+  };
+
   /** What Logs and Problems ask: the component (chosen, or the app's own) and the app's role name. */
   const resolveScope = async () => {
     const d = dataRef.current;
     if (!d) return { component: null, role: null, why: 'No subscription read yet.' };
     const s = scopeRef.current;
-    const target = s.all ? null : (s.target ?? selectedRef.current);
+    const target = s.all ? null : (s.target ?? webTarget(selectedRef.current));
     let component = s.component;
     if (!component && target) component = componentFor(await settingsOf(target).catch(() => ({})), d.components);
     if (!component && d.components.length === 1) component = d.components[0];
@@ -415,16 +431,20 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       await reload(id);
       if (dataRef.current) setConfig((c) => ({ ...c, subscription: dataRef.current.subscription.id }));
     },
+    // Whatever is under the cursor in Resources; selectedTarget is only ever a web or function app (or slot).
     selectTarget: (t) => (selectedRef.current = t),
+    selectedResource: () => selectedRef.current,
     // The problem under the cursor in Problems, and the list there (for /why to name one).
     selectProblem: (p) => (selectedProblem.current = p),
     selectedProblem: () => selectedProblem.current,
     problems: () => problemsRef.current?.rows ?? [],
     askClaude,
-    selectedTarget: () => selectedRef.current,
+    selectedTarget: () => webTarget(selectedRef.current),
     targets: () => (dataRef.current ? targetsByLabel(dataRef.current.apps, dataRef.current.slots) : {}),
     settingsOf,
     metricsOf,
+    firewallOf,
+    forgetFirewall: (server) => firewallCache.current.delete(server.id),
     forgetSettings: (target) => settingsCache.current.delete(target.id),
     scope: resolveScope,
     timespan: () => TIMESPANS[spanRef.current],
@@ -644,7 +664,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
 
   // The log streams while Live is on screen, and stops when you leave it or pick another app. Lines
   // come in bursts, so they're gathered and drawn a few times a second, the last 2000 kept.
-  const streamTarget = view === 'live' ? (liveTarget ?? selectedRef.current) : null;
+  const streamTarget = view === 'live' ? (liveTarget ?? webTarget(selectedRef.current)) : null;
   useEffect(() => {
     if (!streamTarget) return;
     const controller = new AbortController();

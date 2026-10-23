@@ -6,6 +6,12 @@ import { metricsPath, seriesFrom } from '../metrics.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
+export const LOG_ANALYTICS = 'https://api.loganalytics.io';
+// Where the machine's public address comes from, for the SQL firewall.
+export const IPIFY = 'https://api.ipify.org';
+const APPS = '2024-03-01';
+const SQL = '2021-11-01';
+const STORAGE = '2023-05-01';
 const WEB = '2023-12-01';
 
 /** Azure's error, in words: ARM's { error: { code, message } } or App Insights' { error: { message, innererror } }. */
@@ -90,6 +96,83 @@ export function alertFrom(a) {
 /** Alerts Management's timeRange for a span (insights.js TIMESPANS): 1h, 1d, 7d or 30d. */
 export const alertRange = (span) => (span.hours <= 1 ? '1h' : span.hours <= 24 ? '1d' : span.hours <= 24 * 7 ? '7d' : '30d');
 
+const groupOf = (id) => /\/resourceGroups\/([^/]+)/i.exec(id ?? '')?.[1] ?? '';
+
+/** A container app (Microsoft.App/containerApps): its state, latest revision, address and environment. */
+export function containerAppFrom(c) {
+  const p = c.properties ?? {};
+  const fqdn = p.configuration?.ingress?.fqdn ?? p.latestRevisionFqdn ?? null;
+  return {
+    type: 'container',
+    id: c.id,
+    name: c.name,
+    resourceGroup: groupOf(c.id),
+    location: c.location,
+    state: p.runningStatus ?? p.provisioningState ?? 'Unknown',
+    host: fqdn,
+    latestRevision: p.latestRevisionName ?? null,
+    readyRevision: p.latestReadyRevisionName ?? null,
+    environmentId: p.managedEnvironmentId ?? p.environmentId ?? null,
+    image: p.template?.containers?.[0]?.image ?? null,
+  };
+}
+
+/** A storage account: its kind, SKU, access tier and blob endpoint. */
+export function storageFrom(a) {
+  const p = a.properties ?? {};
+  return {
+    type: 'storage',
+    id: a.id,
+    name: a.name,
+    resourceGroup: groupOf(a.id),
+    location: a.location,
+    state: p.provisioningState === 'Succeeded' ? (p.statusOfPrimary === 'available' || !p.statusOfPrimary ? 'Available' : p.statusOfPrimary) : (p.provisioningState ?? 'Unknown'),
+    kind: a.kind ?? '',
+    sku: a.sku?.name ?? '',
+    tier: p.accessTier ?? null,
+    host: p.primaryEndpoints?.blob ? p.primaryEndpoints.blob.replace(/^https:\/\//, '').replace(/\/$/, '') : null,
+  };
+}
+
+/** An Azure SQL server: its address, state, and the Entra admin when the listing carries it. */
+export function sqlServerFrom(s) {
+  const p = s.properties ?? {};
+  const admin = p.administrators?.login ? { login: p.administrators.login, type: p.administrators.principalType ?? p.administrators.administratorType ?? '', only: Boolean(p.administrators.azureADOnlyAuthentication) } : null;
+  return {
+    type: 'sqlserver',
+    id: s.id,
+    name: s.name,
+    resourceGroup: groupOf(s.id),
+    location: s.location,
+    state: p.state ?? 'Unknown',
+    fqdn: p.fullyQualifiedDomainName ?? `${s.name}.database.windows.net`,
+    host: p.fullyQualifiedDomainName ?? `${s.name}.database.windows.net`,
+    version: p.version ?? '',
+    publicAccess: p.publicNetworkAccess ?? null,
+    admin,
+    databases: [],
+  };
+}
+
+/** A database on `server`, with its status and SKU. */
+export function sqlDatabaseFrom(d, server) {
+  const p = d.properties ?? {};
+  return {
+    type: 'sqldb',
+    id: d.id,
+    name: d.name,
+    server: server.name,
+    serverId: server.id,
+    fqdn: server.fqdn,
+    host: server.fqdn,
+    resourceGroup: server.resourceGroup,
+    location: d.location,
+    state: p.status ?? 'Unknown',
+    sku: d.sku?.name ?? p.currentServiceObjectiveName ?? '',
+    tier: d.sku?.tier ?? '',
+  };
+}
+
 /** An Application Insights component: what its query API needs (AppId) and how apps point at it. */
 export function componentFrom(c) {
   const p = c.properties ?? {};
@@ -165,6 +248,11 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       return list.map(componentFrom);
     },
     async query(component, kql, { timespan = 'P1D', signal } = {}) {
+      // A Log Analytics workspace (a container app's logs) answers on its own API, with its own token.
+      if (component.workspaceId) {
+        const body = await call(LOG_ANALYTICS, `${LOG_ANALYTICS}/v1/workspaces/${component.workspaceId}/query`, { method: 'POST', body: { query: kql, timespan }, signal, what: `Querying ${component.name}` });
+        return tableFrom(body);
+      }
       const body = await call(INSIGHTS, `${INSIGHTS}/v1/apps/${component.appId}/query`, { method: 'POST', body: { query: kql, timespan }, signal, what: `Querying ${component.name}` });
       return tableFrom(body);
     },
@@ -177,6 +265,60 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const res = await fetch(`https://${target.scmHost}/api/logstream`, { signal, headers: { Authorization: `Bearer ${await token(`${ARM}/`)}` } });
       if (!res.ok) throw new Error(azureError(res.status, null, `Streaming ${label(target)}'s log`));
       await readLines(res.body, onLine);
+    },
+    async containerApps(sub, opts) {
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.App/containerApps?api-version=${APPS}`, { ...opts, what: 'Listing the container apps' });
+      return list.map(containerAppFrom);
+    },
+    // A container app restarts by restarting its latest revision.
+    restartRevision: (app, opts) =>
+      arm(`${app.id}/revisions/${app.latestRevision}/restart?api-version=${APPS}`, { ...opts, method: 'POST', what: `Restarting ${app.name}'s revision ${app.latestRevision}` }),
+    /** The Log Analytics workspace a container app's environment sends its logs to, as a component to query. */
+    async containerAppWorkspace(app, opts) {
+      if (!app.environmentId) throw new Error(`${app.name} has no environment to find its logs through`);
+      const env = await arm(`${app.environmentId}?api-version=${APPS}`, { ...opts, what: `Reading ${app.name}'s environment` });
+      const id = env?.properties?.appLogsConfiguration?.logAnalyticsConfiguration?.customerId;
+      if (!id) throw new Error(`${app.name}'s environment (${env?.name ?? app.environmentId.split('/').pop()}) sends its logs to no Log Analytics workspace`);
+      return { id: `workspace:${id}`, workspaceId: id, name: `${env.name} logs`, resourceGroup: groupOf(app.environmentId) };
+    },
+    async storageAccounts(sub, opts) {
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.Storage/storageAccounts?api-version=${STORAGE}`, { ...opts, what: 'Listing the storage accounts' });
+      return list.map(storageFrom);
+    },
+    async sqlServers(sub, opts) {
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.Sql/servers?api-version=${SQL}`, { ...opts, what: 'Listing the SQL servers' });
+      return list.map(sqlServerFrom);
+    },
+    /** A server's databases, without master. */
+    async sqlDatabases(server, opts) {
+      const list = await all(`${server.id}/databases?api-version=${SQL}`, { ...opts, what: `Listing ${server.name}'s databases` });
+      return list.filter((d) => d.name.toLowerCase() !== 'master').map((d) => sqlDatabaseFrom(d, server));
+    },
+    /** A server's Entra (Azure AD) admin, or null when none is set. */
+    async sqlAdmin(server, opts) {
+      const list = await all(`${server.id}/administrators?api-version=${SQL}`, { ...opts, what: `Reading ${server.name}'s Entra admin` });
+      const p = list[0]?.properties;
+      return p?.login ? { login: p.login, type: p.principalType ?? p.administratorType ?? '', only: Boolean(p.azureADOnlyAuthentication) } : null;
+    },
+    async firewallRules(server, opts) {
+      const list = await all(`${server.id}/firewallRules?api-version=${SQL}`, { ...opts, what: `Reading ${server.name}'s firewall` });
+      return list.map((r) => ({ name: r.name, start: r.properties?.startIpAddress, end: r.properties?.endIpAddress }));
+    },
+    async addFirewallRule(server, { name, start, end }, opts) {
+      await arm(`${server.id}/firewallRules/${encodeURIComponent(name)}?api-version=${SQL}`, { ...opts, method: 'PUT', body: { properties: { startIpAddress: start, endIpAddress: end ?? start } }, what: `Adding ${name} to ${server.name}'s firewall` });
+    },
+    /** An app's or slot's connection strings (not its app settings), { name: value }. */
+    async connectionStrings(target, opts) {
+      const r = await arm(`${target.id}/config/connectionstrings/list?api-version=${WEB}`, { ...opts, method: 'POST', what: `Reading ${label(target)}'s connection strings` });
+      return Object.fromEntries(Object.entries(r?.properties ?? {}).map(([k, v]) => [k, v?.value ?? '']));
+    },
+    /** This machine's public address, as the internet sees it. */
+    async publicIp({ signal } = {}) {
+      const res = await fetch(IPIFY, { method: 'GET', signal });
+      if (!res.ok) throw new Error(`Couldn't find this machine's public address (${IPIFY} answered ${res.status})`);
+      const ip = (await res.text()).trim();
+      if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) throw new Error(`Couldn't find this machine's public address (${IPIFY} said "${ip.slice(0, 40)}")`);
+      return ip;
     },
     /** The subscription's alerts still firing that began within `span`, the most severe first. */
     async alerts(sub, { span, signal } = {}) {
@@ -216,5 +358,5 @@ export async function readLines(body, onLine) {
   if (rest) onLine(rest);
 }
 
-/** "contoso-web" or "contoso-web/staging". */
-export const label = (t) => (t.slot ? `${t.name}/${t.slot}` : t.name);
+/** "contoso-web" or "contoso-web/staging"; a database is "server/database". */
+export const label = (t) => (t.type === 'sqldb' ? `${t.server}/${t.name}` : t.slot ? `${t.name}/${t.slot}` : t.name);

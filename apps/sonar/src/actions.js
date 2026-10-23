@@ -4,6 +4,8 @@ import { writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { label } from './azure/arm.js';
 import { EXPORTS } from './export.js';
+import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
+import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, isProduction, looksSecret, operationQuery, records, settingsDiff } from './insights.js';
@@ -12,6 +14,8 @@ import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
 import { BULLET, applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
 import { fit, relTime } from './text.js';
+
+const firstLine = (s) => String(s ?? '').split('\n')[0];
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -245,6 +249,122 @@ export async function deploymentLog(ctx, target, d) {
     if (still()) ctx.closeOverlay();
     ctx.note(e.message, 'error');
   }
+}
+
+/** R on a container app: restarts its latest revision, which restarts its replicas. */
+export async function restartContainer(ctx, app) {
+  if (!app.latestRevision) return ctx.note(`${app.name} has no revision to restart.`, 'error');
+  const ok = await confirmChange(ctx, app, { title: `Restart ${app.name} (revision ${app.latestRevision})?`, detail: 'Its replicas start again; work in flight is dropped.', yes: 'Yes, restart it' });
+  if (!ok) return;
+  await ctx.task(`Restart ${app.name}`, async (signal) => {
+    await ctx.provider.restartRevision(app, { signal });
+    return { stdout: `${app.name}'s revision ${app.latestRevision} is restarting` };
+  }, { label: 'Restarting', refresh: true });
+}
+
+/** l on a container app: its console log, from the Log Analytics workspace its environment writes to. */
+export async function containerLogs(ctx, app) {
+  let workspace;
+  try {
+    workspace = await ctx.provider.containerAppWorkspace(app);
+  } catch (e) {
+    return ctx.note(e.message, 'error');
+  }
+  ctx.setComponent(workspace);
+  return runQuery(ctx, `ContainerAppConsoleLogs_CL | where ContainerAppName_s == '${app.name.replace(/'/g, "\\'")}' | project TimeGenerated, RevisionName_s, Log_s | order by TimeGenerated desc | take 100`);
+}
+
+/** A SQL server by name, or a database as "server/database"; else the one under the cursor in Resources. */
+export function sqlNamed(ctx, name) {
+  const n = name?.trim();
+  const sel = ctx.selectedResource();
+  if (!n) return sel?.type === 'sqlserver' || sel?.type === 'sqldb' ? sel : null;
+  const all = sqlByLabel(ctx.data?.sqlServers);
+  return all[n] ?? Object.entries(all).find(([k]) => k.toLowerCase() === n.toLowerCase())?.[1] ?? null;
+}
+
+const serverOf = (ctx, t) => (t.type === 'sqldb' ? (ctx.data?.sqlServers ?? []).find((s) => s.id === t.serverId) : t);
+
+/**
+ * Before connecting to `server` from here: whether its firewall lets this machine's public address
+ * in, and if not, offers to add a rule for it (a change, so it asks as every change does). Resolves
+ * 'covered', 'added', 'declined' or 'unknown' (the address or the rules couldn't be read).
+ */
+async function letMeIn(ctx, server, { always = false } = {}) {
+  let ip;
+  let rules;
+  try {
+    [ip, rules] = await Promise.all([ctx.provider.publicIp(), ctx.firewallOf(server)]);
+  } catch (e) {
+    ctx.note(`Couldn't check ${server.name}'s firewall: ${firstLine(e.message)}`, 'error');
+    return 'unknown';
+  }
+  const rule = ruleCovering(ip, rules);
+  if (rule) {
+    if (always) ctx.note(`${server.name}'s firewall already lets ${ip} in (rule ${rule.name}).`);
+    return 'covered';
+  }
+  const name = ruleName(ip);
+  const ok = await confirmChange(ctx, server, {
+    title: `Let ${ip} through ${server.name}'s firewall?`,
+    detail: `No rule lets this machine in${rules.some((r) => r.start === '0.0.0.0' && r.end === '0.0.0.0') ? ' ("Allow Azure services" is for Azure, not you)' : ''}: this adds ${name}, for ${ip} alone.`,
+    yes: 'Yes, add it',
+  });
+  if (!ok) return 'declined';
+  const done = await ctx.task(`Add ${name} to ${server.name}'s firewall`, async (signal) => {
+    await ctx.provider.addFirewallRule(server, { name, start: ip, end: ip }, { signal });
+    ctx.forgetFirewall(server);
+    return { stdout: `${server.name} lets ${ip} in (rule ${name}); it can take a few minutes to apply` };
+  }, { label: 'Adding the rule' });
+  return done.ok ? 'added' : 'unknown';
+}
+
+/** F and /firewall: lets this machine's public address through a SQL server's firewall. */
+export async function firewall(ctx, which) {
+  const t = typeof which === 'object' && which ? which : sqlNamed(ctx, which);
+  if (!t) return ctx.note(which?.trim() ? `There's no SQL server called ${which.trim()}.` : 'Pick a SQL server (or one of its databases) in Resources first, or name one.', 'error');
+  const server = serverOf(ctx, t);
+  if (!server) return ctx.note(`Couldn't find ${t.server}'s server.`, 'error');
+  return letMeIn(ctx, server, { always: true });
+}
+
+/** Where an app's SQL logins might be: every app's and slot's connection strings and settings. */
+async function sqlSources(ctx, signal) {
+  const targets = Object.values(ctx.targets());
+  const lists = await mapLimited(targets, 6, async (target) => {
+    const [strings, settings] = await Promise.all([ctx.provider.connectionStrings(target, { signal }).catch(() => ({})), ctx.settingsOf(target).catch(() => ({}))]);
+    return [...Object.entries(strings), ...Object.entries(settings)].map(([setting, value]) => ({ target, setting, value: String(value ?? '') }));
+  });
+  return lists.flat();
+}
+
+/**
+ * T and /trawl: a slash command for Trawl's prompt that opens the database (or server), copied to
+ * the clipboard. It names the SQL login an app already uses for it, so Trawl reads the password from
+ * that app through az (Sonar never copies or shows it); without one, Trawl signs in with Entra. The
+ * firewall is checked first.
+ */
+export async function openInTrawl(ctx, which) {
+  const t = typeof which === 'object' && which ? which : sqlNamed(ctx, which);
+  if (!t) return ctx.note(which?.trim() ? `There's no SQL server or database called ${which.trim()}.` : 'Pick a SQL server or database in Resources first, or name one (server/database).', 'error');
+  const server = serverOf(ctx, t);
+  if (!server) return ctx.note(`Couldn't find ${t.server}'s server.`, 'error');
+  const database = t.type === 'sqldb' ? t : null;
+  const what = database ? label(database) : server.name;
+  const access = await letMeIn(ctx, server);
+  if (access === 'declined') ctx.note(`Trawl won't reach ${server.name} from here until its firewall lets this machine in (F adds it).`);
+  let login = null;
+  const found = await ctx.task(`Look for the login the apps use for ${what}`, async (signal) => {
+    login = findLogin(await sqlSources(ctx, signal), server, database?.name);
+    if (!login) return { stdout: `No app's connection string has a login for ${what}: Trawl signs in with Entra (az)` };
+    if (login.entra) return { stdout: `${label(login.target)} signs in to ${what} with Entra (${login.setting}), and so will Trawl (az)` };
+    return { stdout: `The login ${login.user}, from ${label(login.target)}'s ${login.setting}: Trawl reads its password from there through az` };
+  }, { label: 'Looking through the apps' });
+  if (!found.ok) return found;
+  const line = trawlCommand({ server, database, login, subscription: ctx.data.subscription.id, prod: isProduction(server) });
+  ctx.copy(line, 'a command for Trawl');
+  ctx.note(`Copied a command for Trawl: paste it into Trawl's prompt\n${line}`, 'ok');
+  return true;
 }
 
 /** o: the app or slot in the Azure portal. b: its site. */

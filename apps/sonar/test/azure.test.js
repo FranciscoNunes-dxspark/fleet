@@ -2,13 +2,13 @@
 // its Application Insights, production, settings, sparklines, completion, the tree, the demo's answers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alertFrom, alertRange, createAzure, deploymentFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
+import { alertFrom, alertRange, createAzure, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, availabilityQuery, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
 import { loadSubscription } from '../src/load.js';
 import { METRICS, metricInterval, metricRows, seriesFrom } from '../src/metrics.js';
-import { mapLimited, resourceRows, targetForUrl, targetsByLabel } from '../src/tree.js';
+import { mapLimited, resourceRows, sqlByLabel, targetForUrl, targetsByLabel } from '../src/tree.js';
 
 /** A fetch that answers from `routes` (method + path → body, or [status, body]) and records the calls. */
 function fakeFetch(routes) {
@@ -271,4 +271,62 @@ test('alerts: the fired ones over the span, most severe first; availability test
   assert.deepEqual(tests.map((t) => t.name).sort(), ['shop.contoso.com checkout', 'shop.contoso.com home page']);
   assert.ok(tests.every((t) => t.total > 200 && t.locations === 3));
   assert.equal(tests.find((t) => t.name.endsWith('home page')).failed, 0);
+});
+
+test('other resources: container apps, storage, SQL servers, databases, admins, firewall, connection strings, the public address, a workspace query', async () => {
+  const rg = '/subscriptions/s1/resourceGroups/rg-prod';
+  const ca = { id: `${rg}/providers/Microsoft.App/containerApps/worker`, name: 'worker', location: 'westeurope', properties: { runningStatus: 'Running', latestRevisionName: 'worker--r3', latestReadyRevisionName: 'worker--r2', managedEnvironmentId: `${rg}/providers/Microsoft.App/managedEnvironments/env`, configuration: { ingress: { fqdn: 'worker.x.azurecontainerapps.io' } }, template: { containers: [{ image: 'cr.io/worker:1' }] } } };
+  const sql = { id: `${rg}/providers/Microsoft.Sql/servers/db1`, name: 'db1', location: 'westeurope', properties: { state: 'Ready', fullyQualifiedDomainName: 'db1.database.windows.net', version: '12.0' } };
+  const web = siteFrom(site('web', 'rg-prod'));
+  const { fetch, calls } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.App/containerApps': { value: [ca] },
+    [`POST ${ca.id}/revisions/worker--r3/restart`]: {},
+    [`GET ${rg}/providers/Microsoft.App/managedEnvironments/env`]: { name: 'env', properties: { appLogsConfiguration: { logAnalyticsConfiguration: { customerId: 'ws-1' } } } },
+    'POST api.loganalytics.io/v1/workspaces/ws-1/query': { tables: [{ columns: [{ name: 'Log_s', type: 'string' }], rows: [['hello']] }] },
+    'GET /subscriptions/s1/providers/Microsoft.Storage/storageAccounts': { value: [{ id: `${rg}/providers/Microsoft.Storage/storageAccounts/st1`, name: 'st1', kind: 'StorageV2', sku: { name: 'Standard_LRS' }, properties: { provisioningState: 'Succeeded', statusOfPrimary: 'available', accessTier: 'Hot', primaryEndpoints: { blob: 'https://st1.blob.core.windows.net/' } } }] },
+    'GET /subscriptions/s1/providers/Microsoft.Sql/servers': { value: [sql] },
+    [`GET ${sql.id}/databases`]: { value: [{ id: `${sql.id}/databases/master`, name: 'master', properties: { status: 'Online' } }, { id: `${sql.id}/databases/shop`, name: 'shop', sku: { name: 'S1', tier: 'Standard' }, properties: { status: 'Online' } }] },
+    [`GET ${sql.id}/administrators`]: { value: [{ properties: { login: 'DBAs', principalType: 'Group', azureADOnlyAuthentication: true } }] },
+    [`GET ${sql.id}/firewallRules`]: { value: [{ name: 'AllowAllWindowsAzureIps', properties: { startIpAddress: '0.0.0.0', endIpAddress: '0.0.0.0' } }] },
+    [`PUT ${sql.id}/firewallRules/sonar-198-51-100-7`]: {},
+    [`POST ${web.id}/config/connectionstrings/list`]: { properties: { Db: { value: 'Server=db1;Password=x', type: 'SQLAzure' } } },
+    'GET api.ipify.org/': { raw: '198.51.100.7\n' },
+  });
+  const tokens = [];
+  const azure = createAzure({ fetch, token: async (r) => (tokens.push(r), 't') });
+  const [worker] = await azure.containerApps('s1');
+  assert.deepEqual([worker.type, worker.name, worker.resourceGroup, worker.state, worker.host, worker.latestRevision, worker.image], ['container', 'worker', 'rg-prod', 'Running', 'worker.x.azurecontainerapps.io', 'worker--r3', 'cr.io/worker:1']);
+  await azure.restartRevision(worker);
+  assert.match(calls.at(-1).url, /revisions\/worker--r3\/restart\?api-version=2024-03-01$/);
+  const ws = await azure.containerAppWorkspace(worker);
+  assert.deepEqual([ws.workspaceId, ws.name], ['ws-1', 'env logs']);
+  assert.deepEqual((await azure.query(ws, 'ContainerAppConsoleLogs_CL | take 1')).rows, [['hello']]);
+  assert.equal(tokens.at(-1), 'https://api.loganalytics.io');
+  const [st] = await azure.storageAccounts('s1');
+  assert.deepEqual([st.type, st.state, st.sku, st.tier, st.host], ['storage', 'Available', 'Standard_LRS', 'Hot', 'st1.blob.core.windows.net']);
+  const [server] = await azure.sqlServers('s1');
+  assert.deepEqual([server.type, server.fqdn, server.state, server.admin], ['sqlserver', 'db1.database.windows.net', 'Ready', null]);
+  const dbs = await azure.sqlDatabases(server);
+  assert.deepEqual(dbs.map((d) => [d.name, d.sku, d.tier, label(d)]), [['shop', 'S1', 'Standard', 'db1/shop']]);
+  assert.deepEqual(await azure.sqlAdmin(server), { login: 'DBAs', type: 'Group', only: true });
+  assert.deepEqual(await azure.firewallRules(server), [{ name: 'AllowAllWindowsAzureIps', start: '0.0.0.0', end: '0.0.0.0' }]);
+  await azure.addFirewallRule(server, { name: 'sonar-198-51-100-7', start: '198.51.100.7' });
+  assert.deepEqual([calls.at(-1).init.method, calls.at(-1).body], ['PUT', { properties: { startIpAddress: '198.51.100.7', endIpAddress: '198.51.100.7' } }]);
+  assert.match(calls.at(-1).url, /api-version=2021-11-01/);
+  assert.deepEqual(await azure.connectionStrings(web), { Db: 'Server=db1;Password=x' });
+  assert.equal(await azure.publicIp(), '198.51.100.7');
+  assert.equal(sqlServerFrom({ id: 'x', name: 'n', properties: { administrators: { login: 'me', principalType: 'User' } } }).admin.login, 'me');
+});
+
+test('the tree with the other kinds: under their resource groups, databases under their server, a filter that finds a database', async () => {
+  const d = await loadSubscription(demoAzure());
+  const rows = resourceRows(d.apps, d.slots, '', d);
+  assert.deepEqual(rows.map((r) => r.text ?? `${r.kind}:${label(r.target)}`), [
+    'contoso-prod', 'app:contoso-web', 'slot:contoso-web/staging', 'app:contoso-api', 'slot:contoso-api/staging', 'app:contoso-orders',
+    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore',
+    'contoso-qa', 'sqlserver:contoso-sql-qa', 'sqldb:contoso-sql-qa/contoso-qa',
+  ]);
+  assert.deepEqual(resourceRows(d.apps, d.slots, 'reporting', d).map((r) => r.text ?? label(r.target)), ['contoso-prod', 'contoso-sql-prod', 'contoso-sql-prod/contoso-reporting']);
+  assert.equal(d.sqlServers[0].admin.login, 'SQL Admins', 'the admin read for each server');
+  assert.deepEqual(Object.keys(sqlByLabel(d.sqlServers)), ['contoso-sql-prod', 'contoso-sql-prod/contoso', 'contoso-sql-prod/contoso-reporting', 'contoso-sql-qa', 'contoso-sql-qa/contoso-qa']);
 });

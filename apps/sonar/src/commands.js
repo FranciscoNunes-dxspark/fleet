@@ -1,4 +1,5 @@
 import * as a from './actions.js';
+import { sqlByLabel } from './tree.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -16,7 +17,9 @@ export const COMMANDS = [
   { name: 'start', args: '[app]', desc: 'Start a stopped app or slot', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'start') },
   { name: 'swap', args: '[app/slot]', desc: 'Swap a slot into production (asks for the app\'s name)', complete: 'targets', run: (ctx, s) => a.swap(ctx, s) },
   { name: 'deployments', args: '[app]', desc: "An app's or slot's deployments: who, when, how it went; ↵ shows one's log", complete: 'targets', run: (ctx, s) => a.deployments(ctx, s) },
-  { name: 'portal', args: '[app]', desc: 'Open an app or slot in the Azure portal', complete: 'targets', run: (ctx, s) => a.openInPortal(ctx, a.targetNamed(ctx, s)) },
+  { name: 'trawl', args: '[server/db]', desc: "Copy a command that opens a SQL database (or server) in Trawl, to paste into Trawl's prompt (checks the firewall first)", complete: 'sql', run: (ctx, s) => a.openInTrawl(ctx, s) },
+  { name: 'firewall', args: '[server]', desc: "Let this machine's address through a SQL server's firewall (asks first)", complete: 'sqlservers', run: (ctx, s) => a.firewall(ctx, s) },
+  { name: 'portal', args: '[app]', desc: 'Open an app or slot (or whatever is under the cursor in Resources) in the Azure portal', complete: 'targets', run: (ctx, s) => a.openInPortal(ctx, s.trim() ? a.targetNamed(ctx, s) : ctx.selectedResource()) },
   { name: 'why', args: '[problem]', desc: "Ask Claude why a problem happens, from its latest occurrence (and the code, when Sonar runs in the app's folder)", complete: 'problems', run: (ctx, s) => a.why(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
@@ -39,6 +42,8 @@ export function findCommand(name, user = []) {
 
 function completions(kind, data, targets, problems, queries) {
   if (kind === 'queries') return queries ?? [];
+  if (kind === 'sql') return Object.keys(sqlByLabel(data?.sqlServers));
+  if (kind === 'sqlservers') return (data?.sqlServers ?? []).map((s) => s.name);
   if (kind === 'problems') return (problems ?? []).map((p) => p.problemId);
   if (kind === 'subscriptions') return (data?.subscriptions ?? []).map((s) => s.name);
   if (kind === 'components') return (data?.components ?? []).map((c) => c.name);
