@@ -61,10 +61,11 @@ export function start(ctx, name) {
   ctx.crew.start(p.name);
 }
 
-/** s: stops it when it's running, starts it when it isn't. */
+/** s: stops it when it's running, starts it when it isn't; while it waits to restart, it won't. */
 export function toggle(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
+  if (p.restartAt) return void ctx.crew.cancelRestart(p.name);
   return p.child ? ctx.crew.stop(p.name) : ctx.crew.start(p.name);
 }
 

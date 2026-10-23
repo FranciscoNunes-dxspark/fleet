@@ -228,3 +228,19 @@ test('a crew that can\'t be read says so, and /reload tries again', async () => 
     app.unmount();
   }
 });
+
+test('a process that restarts says when, s stops it waiting, and one that keeps failing gives up', async () => {
+  const dir = project({ procs: { first: { run: 'node crash.js', restart: 'on-failure' }, second: { run: 'node crash.js', restart: 'always' } } }, { 'crash.js': `console.log('up'); process.exit(1);` });
+  const app = start({ dir, restartTimes: { first: 2500, max: 2500, stable: 60_000, quick: 60_000, giveUpAfter: 2 } });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => /first\s+restarting in [123]s/.test(frame()) && /second\s+restarting in/.test(frame()), 'both waiting to restart');
+    app.stdin.write('s');
+    await until(() => /❯ ● first\s+crashed\s+code 1/.test(frame()), 'the first not restarting');
+    await until(() => /second\s+crashed\s+gave up/.test(frame()), 'the second gave up', 10_000);
+    assert.match(frame(), /second gave up: it ended 2 times in a row/);
+    assert.match(frame(), /first\s+crashed\s+code 1/, 'and the first never came back');
+  } finally {
+    app.unmount();
+  }
+});

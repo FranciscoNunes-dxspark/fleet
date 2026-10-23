@@ -48,6 +48,9 @@ const HINTS = {
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
+// Whether a process runs differently now (its command or its settings), so /reload restarts it.
+const changedSpec = (had, now) => had.run !== now.run || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env);
+
 function Header({ data, width, loading, mood }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
@@ -109,9 +112,10 @@ const DOUBLE_CLICK_MS = 400;
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
 // `pidsOnPort` and `killPids` reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
+// `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, restartTimes, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -244,6 +248,12 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     setData(dataRef.current);
     setTick((n) => n + 1);
   };
+  // A process that ended by itself: said when it gave up restarting.
+  const crewEvent = (e) => {
+    if (e.type === 'exit' && e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
+  };
+  const crewEventRef = useRef(crewEvent);
+  crewEventRef.current = crewEvent;
   // The crew again (bosun.json changed, /reload, another profile): new processes start, ones gone stop,
   // and with `restartChanged` the ones whose command changed restart.
   const reload = async ({ restartChanged = false } = {}) => {
@@ -254,7 +264,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
       const first = !supRef.current;
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
@@ -270,7 +280,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
         const had = before.get(p.name);
         if (!had) {
           if (autostart) sup.start(p.name);
-        } else if (restartChanged && p.child && (had.run !== p.spec.run || JSON.stringify(had.env) !== JSON.stringify(p.spec.env))) sup.restart(p.name);
+        } else if (restartChanged && p.child && changedSpec(had, p.spec)) sup.restart(p.name);
       }
     } catch (e) {
       note(`Couldn't read the crew: ${firstLine(e.message)}`, 'error');

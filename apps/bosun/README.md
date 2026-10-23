@@ -59,8 +59,16 @@ npm start
 | `health` | A page on that port that answers 2xx or 3xx when it's well; ✗ otherwise |
 | `env` | Settings for it, on top of the terminal's |
 | `after` | Another process it starts after: once that one's port answers, or it has run a moment |
+| `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
 
-A profile changes some processes: `run` replaces the command, `args` adds to it, `env` adds settings.
+A process that `restart`s is started again after a wait: 1 second, then 2, 4, 8… up to 30 seconds
+while it keeps failing, back to 1 second once it has stayed up 30 seconds. The list says
+`restarting in 4s` meanwhile, and `s` stops it waiting. One that ends within 10 seconds of starting
+5 times in a row is given up on (`gave up` in the list; `s` or `r` starts it again). One you stop is
+never restarted.
+
+A profile changes some processes: `run` replaces the command, `args` adds to it, `env` adds settings,
+`restart` replaces that.
 `p` or `/profile` picks one (`--profile` starts with it), and the processes it changes restart.
 
 Without a `bosun.json`, Bosun runs package.json's `dev` script (else `start`). When that's a
@@ -88,7 +96,7 @@ ports and health pages to.
 | --- | --- |
 | `r` | Restart it |
 | `R` | Restart them all, each after the one it waits for |
-| `s` | Stop it, or start it |
+| `s` | Stop it, or start it; while it waits to restart, it won't |
 | `a` | Every process's log at once, or back to the one |
 | `↵` | Its whole log, in the viewer |
 | `w` | Ask Claude why it failed, from its log and the project's files |
@@ -98,7 +106,8 @@ ports and health pages to.
 | `y` | Copy its command |
 
 The dot before each name is green while it runs, yellow while it starts or stops, red when it crashed,
-grey when stopped. `!` after it means its log said something that reads as an error; a port already
+grey when stopped. One that restarts by itself says when it will (`restarting in 4s`), or `gave up`
+when it kept failing as soon as it started. `!` after it means its log said something that reads as an error; a port already
 in use is one, and `f` stops what holds it. The wheel over the log scrolls it back, and scrolling to
 the bottom follows it again. `w` needs [Claude Code](https://claude.com/claude-code) installed and
 signed in; Claude reads the log and may read the project's files, and changes nothing.

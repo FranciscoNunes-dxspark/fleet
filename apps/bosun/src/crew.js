@@ -37,8 +37,11 @@ export function splitConcurrently(line) {
 
 const NAME = /^[\w.-]+$/;
 
+/** What `restart` can say: never, when it exits with an error, or whenever it ends by itself. */
+export const RESTART = ['no', 'on-failure', 'always'];
+
 /**
- * bosun.json's crew checked: { procs: [{ name, run, cwd, port, health, env, after }], profiles, problems }.
+ * bosun.json's crew checked: { procs: [{ name, run, cwd, port, health, env, after, restart }], profiles, problems }.
  * What's wrong with an entry is said in `problems` and the entry is left out.
  */
 export function readSpec(spec) {
@@ -49,7 +52,8 @@ export function readSpec(spec) {
     if (!NAME.test(name)) problems.push(`"${name}": a name is letters, digits, dots, dashes and underscores`);
     else if (!proc?.run || typeof proc.run !== 'string') problems.push(`"${name}": it needs "run", the command to start it`);
     else if (proc.port != null && !(Number.isInteger(proc.port) && proc.port > 0 && proc.port < 65536)) problems.push(`"${name}": "port" is a number from 1 to 65535`);
-    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, after: proc.after ?? null });
+    else if (proc.restart != null && !RESTART.includes(proc.restart)) problems.push(`"${name}": "restart" is ${RESTART.map((r) => `"${r}"`).join(', ')}`);
+    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, after: proc.after ?? null, restart: proc.restart ?? 'no' });
   }
   for (const p of procs) {
     if (p.after && !procs.some((q) => q.name === p.after)) {
@@ -86,7 +90,7 @@ export function loadCrew(dir) {
   if (!dev) return { dir, file: null, from: null, procs: [], profiles: {}, problems: [] };
   const script = pkg.scripts.dev ? 'dev' : 'start';
   const split = splitConcurrently(dev);
-  const procs = (split ?? [{ name: script, run: `npm run ${script}` }]).map((p) => ({ cwd: '.', port: null, health: null, env: {}, after: null, ...p }));
+  const procs = (split ?? [{ name: script, run: `npm run ${script}` }]).map((p) => ({ cwd: '.', port: null, health: null, env: {}, after: null, restart: 'no', ...p }));
   // Other scripts that run the same with a twist (dev:mock) become profiles, when they split the same way.
   const profiles = {};
   for (const [name, line] of Object.entries(pkg.scripts)) {
@@ -97,20 +101,23 @@ export function loadCrew(dir) {
   return { dir, file: null, from: `package.json's ${script} script`, procs, profiles, problems: [] };
 }
 
-/** The crew with profile `name` applied: a profile's entry changes `run`, adds `args` to it, or merges `env`. */
+/**
+ * The crew with profile `name` applied: a profile's entry changes `run`, adds `args` to it, merges
+ * `env`, and can change `restart` (a value that isn't one of RESTART is passed over).
+ */
 export function withProfile(procs, profiles, name) {
   const profile = name ? profiles[name] : null;
   if (!profile) return procs;
   return procs.map((p) => {
     const change = profile[p.name];
     if (!change) return p;
-    return { ...p, run: `${change.run ?? p.run}${change.args ? ` ${change.args}` : ''}`, env: { ...p.env, ...change.env } };
+    return { ...p, run: `${change.run ?? p.run}${change.args ? ` ${change.args}` : ''}`, env: { ...p.env, ...change.env }, ...(RESTART.includes(change.restart) ? { restart: change.restart } : {}) };
   });
 }
 
 /** bosun.json for a crew, to start one from what was worked out (/init). */
 export function specFor(crew) {
-  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, after: p.after ?? undefined }).filter(([, v]) => v !== undefined))]));
+  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined }).filter(([, v]) => v !== undefined))]));
   return { procs, ...(Object.keys(crew.profiles).length ? { profiles: crew.profiles } : {}) };
 }
 

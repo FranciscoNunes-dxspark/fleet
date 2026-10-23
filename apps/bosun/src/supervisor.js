@@ -42,16 +42,45 @@ export function portOpen(port, { host = '127.0.0.1', timeout = 800 } = {}) {
 }
 
 /**
+ * How restarts wait: the first after `first` ms, each one after twice as long as the one before, up
+ * to `max`; a process that stayed up `stable` ms starts counting again. One that ends within `quick`
+ * ms of starting, `giveUpAfter` times in a row, isn't started again. Supervisor's `restartTimes`
+ * changes them (the tests).
+ */
+export const RESTART_TIMES = { first: 1000, max: 30_000, stable: 30_000, quick: 10_000, giveUpAfter: 5 };
+
+/**
+ * What to do once a process ended by itself (never after a stop): `policy` is its `restart`, `code`
+ * its exit code (null when a signal ended it), `ran` how long it was up, `state` the { attempt, quick }
+ * counts so far. Returns the new counts with { restart, delay } or { gaveUp }. Pure.
+ */
+export function afterExit({ policy = 'no', code, ran, state = {} }, times = RESTART_TIMES) {
+  const wanted = policy === 'always' || (policy === 'on-failure' && code !== 0);
+  if (!wanted) return { restart: false, attempt: 0, quick: 0 };
+  const attempt = ran >= times.stable ? 1 : (state.attempt ?? 0) + 1;
+  const quick = ran < times.quick ? (state.quick ?? 0) + 1 : 0;
+  if (quick >= times.giveUpAfter) return { restart: false, gaveUp: true, attempt, quick };
+  return { restart: true, delay: Math.min(times.max, times.first * 2 ** (attempt - 1)), attempt, quick };
+}
+
+/** 4000 → "4s", 1500 → "2s": a wait as the list says it. */
+export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
+
+/**
  * The crew's processes, by name: each { name, status, pid, startedAt, endedAt, code, lines, trouble,
- * port, portOpen, health }. `status` is stopped, starting, running, crashed (exited with an error),
- * exited (by itself, cleanly) or stopping. `onChange` is called after anything changes.
+ * port, portOpen, health, restartAt, gaveUp }. `status` is stopped, starting, running, crashed (exited
+ * with an error), exited (by itself, cleanly) or stopping. `restartAt` is when one that `restart`s
+ * starts again, `gaveUp` that it ended too quickly too often to. `onChange` is called after anything
+ * changes; `onEvent` hears { type: 'exit', p, plan } when one ended by itself (not stopped).
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, spawnImpl = spawn, env = process.env } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES } = {}) {
     this.dir = dir;
     this.onChange = onChange;
+    this.onEvent = onEvent;
     this.spawnImpl = spawnImpl;
     this.env = env;
+    this.times = restartTimes;
     this.procs = new Map();
     LIVE.add(this);
     this.setCrew(procs);
@@ -63,6 +92,24 @@ export class Supervisor {
     LIVE.delete(this);
   }
 
+  /** Forgets a restart `p` is waiting for; returns whether there was one. */
+  clearRestart(p) {
+    if (!p?.restartTimer) return false;
+    clearTimeout(p.restartTimer);
+    p.restartTimer = null;
+    p.restartAt = null;
+    return true;
+  }
+
+  /** s and /stop while it waits to restart: it won't. Returns whether it was waiting. */
+  cancelRestart(name) {
+    const p = this.procs.get(name);
+    if (!this.clearRestart(p)) return false;
+    this.push(p, '── not restarting it');
+    this.onChange();
+    return true;
+  }
+
   /** A new crew (bosun.json read again, another profile): what's running keeps running until restarted. */
   setCrew(procs) {
     const next = new Map();
@@ -70,8 +117,12 @@ export class Supervisor {
       const had = this.procs.get(p.name);
       next.set(p.name, had ? Object.assign(had, { spec: p, port: p.port }) : { name: p.name, spec: p, status: 'stopped', pid: null, startedAt: null, endedAt: null, code: null, lines: [], trouble: null, port: p.port, portOpen: null, health: null });
     }
-    // One no longer in the crew is stopped.
-    for (const [name, had] of this.procs) if (!next.has(name) && had.child) this.stop(name);
+    // One no longer in the crew is stopped, and one waiting to restart doesn't.
+    for (const [name, had] of this.procs) {
+      if (next.has(name)) continue;
+      this.clearRestart(had);
+      if (had.child) this.stop(name);
+    }
     this.procs = next;
     this.onChange();
   }
@@ -94,10 +145,17 @@ export class Supervisor {
     if (p.lines.length > KEEP_LINES) p.lines.splice(0, p.lines.length - KEEP_LINES);
   }
 
-  /** Starts `name` (nothing if it's running). Resolves once it's started, not once it's ready. */
-  start(name) {
+  /**
+   * Starts `name` (nothing if it's running). Resolves once it's started, not once it's ready. `auto`:
+   * a restart after it ended by itself, which keeps counting towards giving up; any other start
+   * counts from nothing again.
+   */
+  start(name, { auto = false } = {}) {
     const p = this.procs.get(name);
-    if (!p || p.child) return;
+    if (!p || p.child || this.closed) return;
+    this.clearRestart(p);
+    if (!auto) Object.assign(p, { attempt: 0, quick: 0 });
+    p.gaveUp = false;
     const { run, cwd, env } = p.spec;
     p.status = 'starting';
     p.code = null;
@@ -151,15 +209,40 @@ export class Supervisor {
       p.health = null;
       p.waiters?.forEach((w) => w());
       p.waiters = [];
+      if (!stopping && !this.closed) this.ended(p);
       this.onChange();
     });
     this.onChange();
   }
 
+  /** After `p` ended by itself: started again after a wait when its `restart` says so, or given up on. */
+  ended(p) {
+    const plan = afterExit({ policy: p.spec.restart, code: p.code, ran: p.endedAt - p.startedAt, state: p }, this.times);
+    p.attempt = plan.attempt;
+    p.quick = plan.quick;
+    if (plan.restart) {
+      p.restartAt = Date.now() + plan.delay;
+      p.restartTimer = setTimeout(() => {
+        p.restartTimer = null;
+        p.restartAt = null;
+        this.start(p.name, { auto: true });
+      }, plan.delay);
+      this.push(p, `── restarting in ${seconds(plan.delay)}`);
+    } else if (plan.gaveUp) {
+      p.gaveUp = true;
+      this.push(p, `── gave up: it ended ${plan.quick} times in a row within ${seconds(this.times.quick)} of starting`, true);
+    }
+    this.onEvent({ type: 'exit', p, plan });
+  }
+
   /** Stops `name` and what it started; resolves once it's gone (it's forced after `grace` ms). */
   stop(name, { grace = 3000 } = {}) {
     const p = this.procs.get(name);
-    if (!p?.child) return Promise.resolve();
+    if (p) p.gaveUp = false;
+    if (!p?.child) {
+      this.cancelRestart(name);
+      return Promise.resolve();
+    }
     p.status = 'stopping';
     this.onChange();
     const gone = new Promise((r) => (p.waiters ??= []).push(r));
@@ -225,9 +308,13 @@ export class Supervisor {
     return Promise.all([...this.procs.keys()].map((n) => this.stop(n)));
   }
 
-  /** Stops everything at once, without waiting: for when Bosun itself is exiting. */
+  /** Stops everything at once, without waiting: for when Bosun itself is exiting. Nothing restarts after. */
   killAllNow() {
-    for (const p of this.procs.values()) if (p.pid) killTreeNow(p.pid);
+    this.closed = true;
+    for (const p of this.procs.values()) {
+      this.clearRestart(p);
+      if (p.pid) killTreeNow(p.pid);
+    }
   }
 
   /** Checks each running process's port, and its health page when it has one: { open, status } on each. */

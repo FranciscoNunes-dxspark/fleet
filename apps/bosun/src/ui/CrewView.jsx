@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { isTrouble } from '../crew.js';
+import { seconds } from '../supervisor.js';
 import { theme } from '../theme.js';
 import { fit, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -26,6 +27,21 @@ export function portSegments(p) {
   return [{ text: ` :${p.port} ✓`, color: theme.add }];
 }
 
+/** A row's status: its state, or while it waits to start again, when it will. */
+export function statusSegment(p, now = Date.now()) {
+  if (p.restartAt) return { text: ` restarting in ${seconds(p.restartAt - now)}`, color: theme.warn };
+  return { text: ` ${fit(p.status, 8)}`, color: STATUS_COLOUR()[p.status] };
+}
+
+/** What a row says after the status: how long it has been up, that it gave up restarting, its exit code. */
+export function afterStatus(p, now = Date.now()) {
+  if (p.restartAt) return { text: '' };
+  if (p.gaveUp && !p.child) return { text: ' gave up', color: theme.del };
+  if (p.child && p.startedAt) return { text: ` ${uptime(p.startedAt, now)}`, color: theme.dim };
+  if (p.code != null && p.status === 'crashed') return { text: ` code ${p.code}`, color: theme.dim };
+  return { text: '' };
+}
+
 /** The lines of every process, in the order they came, each with its name in front: the `a` log. */
 export function mergedLines(procs, last) {
   const tails = procs.flatMap((p) => p.lines.slice(-last).map((l) => ({ ...l, name: p.name })));
@@ -48,6 +64,14 @@ export function CrewView({ procs, ctx, width, height, active }) {
     if (back) setBack(0);
   }
   const nameW = Math.min(16, Math.max(6, ...procs.map((p) => stringWidth(p.name))));
+  // Uptimes and restart countdowns count by the second.
+  const [, setSecond] = useState(0);
+  const ticking = procs.some((p) => p.child || p.restartAt);
+  useEffect(() => {
+    if (!ticking) return;
+    const t = setInterval(() => setSecond((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [ticking]);
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
@@ -102,9 +126,9 @@ export function CrewView({ procs, ctx, width, height, active }) {
             segments={[
               { text: '● ', color: colour[p.status] },
               { text: fit(p.name, nameW), strong: true },
-              { text: ` ${fit(p.status, 8)}`, color: colour[p.status] },
+              statusSegment(p, now),
               ...portSegments(p),
-              { text: p.child && p.startedAt ? ` ${uptime(p.startedAt, now)}` : p.code != null && p.status === 'crashed' ? ` code ${p.code}` : '', color: theme.dim },
+              afterStatus(p, now),
               ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),
             ]}
           />

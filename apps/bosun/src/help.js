@@ -33,7 +33,7 @@ export const HELP = [
     rows: [
       ['r', 'Restart it'],
       ['R', 'Restart them all (each after the one it waits for)'],
-      ['s', 'Stop it, or start it'],
+      ['s', 'Stop it, or start it; while it waits to restart ("restart" in bosun.json), it won\'t'],
       ['a', 'Every process\'s log at once, or back to the one'],
       ['↵', 'Its whole log in the viewer'],
       ['w', 'Ask Claude why it failed: its log, and the project\'s files it reads'],
@@ -42,7 +42,7 @@ export const HELP = [
       ['p', 'Profiles: the crew with another command or settings'],
       ['y', 'Copy its command'],
       ['wheel', 'Over the log, scroll it back; to the bottom follows it again'],
-      'In the list: ● green running · yellow starting or stopping · red crashed · grey stopped. :3000 ✓ answers (and its health page is fine), … not yet, ✗ its health page fails. ! its log has said something wrong.',
+      'In the list: ● green running · yellow starting or stopping · red crashed · grey stopped. :3000 ✓ answers (and its health page is fine), … not yet, ✗ its health page fails. ! its log has said something wrong. restarting in 4s: it ended and its "restart" starts it again (1s, 2s, 4s… up to 30s); gave up: it ended within 10s of starting 5 times in a row.',
     ],
   },
   {

@@ -7,8 +7,8 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isTrouble, loadCrew, portInUse, readSpec, specFor, splitConcurrently, stripAnsi, withProfile, words, writeSpec } from '../src/crew.js';
-import { Supervisor, pidsOnPort, portOpen } from '../src/supervisor.js';
-import { mergedLines, portSegments, uptime } from '../src/ui/CrewView.jsx';
+import { RESTART_TIMES, Supervisor, afterExit, pidsOnPort, portOpen, seconds } from '../src/supervisor.js';
+import { afterStatus, mergedLines, statusSegment, portSegments, uptime } from '../src/ui/CrewView.jsx';
 import { whyPrompt } from '../src/actions.js';
 import { project } from './helpers.js';
 
@@ -153,5 +153,82 @@ test('a port already taken is spotted in the log', async () => {
   } finally {
     sup.dispose();
     holder.close();
+  }
+});
+
+test('restart: the policy read and changed by a profile, and the waits it works out', () => {
+  const { procs, problems } = readSpec({ procs: { api: { run: 'node api', restart: 'on-failure' }, web: 'vite', bad: { run: 'x', restart: 'sometimes' } } });
+  assert.deepEqual(procs.map((p) => [p.name, p.restart]), [['api', 'on-failure'], ['web', 'no']]);
+  assert.match(problems[0], /"bad": "restart" is "no", "on-failure", "always"/);
+  assert.deepEqual(withProfile(procs, { up: { web: { restart: 'always' }, api: { restart: 'nonsense' } } }, 'up').map((p) => p.restart), ['on-failure', 'always']);
+  assert.equal(specFor({ procs, profiles: {} }).procs.api.restart, 'on-failure');
+  assert.equal(specFor({ procs, profiles: {} }).procs.web.restart, undefined, 'the default isn\'t written');
+
+  // Not wanted: never with "no", and not after a clean exit with "on-failure".
+  assert.equal(afterExit({ policy: 'no', code: 1, ran: 10 }).restart, false);
+  assert.equal(afterExit({ policy: 'on-failure', code: 0, ran: 10 }).restart, false);
+  assert.equal(afterExit({ policy: 'on-failure', code: null, ran: 10 }).restart, true, 'killed by a signal is a failure');
+  assert.equal(afterExit({ policy: 'always', code: 0, ran: 60_000 }).restart, true);
+
+  // 1s, 2s, 4s… up to 30s, while it doesn't stay up; giving up after 5 quick ends in a row.
+  let state = {};
+  const waits = [];
+  for (let i = 0; i < 4; i++) {
+    state = afterExit({ policy: 'always', code: 1, ran: 100, state });
+    waits.push(state.delay);
+  }
+  assert.deepEqual(waits, [1000, 2000, 4000, 8000]);
+  const last = afterExit({ policy: 'always', code: 1, ran: 100, state });
+  assert.deepEqual([last.restart, last.gaveUp, last.quick], [false, true, 5]);
+  // Slow failures never give up, and wait at most 30s; one that stayed up 30s starts again from 1s.
+  state = {};
+  for (let i = 0; i < 9; i++) state = afterExit({ policy: 'always', code: 1, ran: 15_000, state });
+  assert.deepEqual([state.restart, state.delay, state.quick], [true, RESTART_TIMES.max, 0]);
+  assert.equal(afterExit({ policy: 'always', code: 1, ran: 31_000, state }).delay, 1000);
+
+  assert.equal(seconds(3200), '4s');
+  const now = 1_000_000;
+  assert.equal(statusSegment({ restartAt: now + 3900, status: 'crashed' }, now).text, ' restarting in 4s');
+  assert.equal(statusSegment({ status: 'crashed' }, now).text, ' crashed ');
+  assert.equal(afterStatus({ gaveUp: true, child: null }, now).text, ' gave up');
+});
+
+test('restart: a crashing process comes back, gives up, and a stop is never restarted', async () => {
+  const dir = project({}, { 'crash.js': `console.log('up'); process.exit(4);`, 'idle.js': 'setInterval(() => {}, 1000);' });
+  const events = [];
+  const sup = new Supervisor(
+    readSpec({ procs: { flaky: { run: 'node crash.js', restart: 'on-failure' }, steady: { run: 'node idle.js', restart: 'always' }, plain: { run: 'node crash.js' } } }).procs,
+    { dir, onEvent: (e) => events.push(`${e.p.name}:${e.plan.restart ? 'restart' : e.plan.gaveUp ? 'gave up' : 'end'}`), restartTimes: { first: 100, max: 200, stable: 5000, quick: 5000, giveUpAfter: 3 } },
+  );
+  try {
+    sup.start('flaky');
+    sup.start('steady');
+    sup.start('plain');
+    const flaky = sup.get('flaky');
+    await until(() => flaky.gaveUp, 'giving up');
+    assert.equal(flaky.lines.filter((l) => l.text === 'up').length, 3, 'started three times');
+    assert.ok(flaky.lines.some((l) => l.text === '── restarting in 1s'));
+    assert.equal(flaky.restartAt, null);
+    assert.deepEqual(events.filter((e) => e.startsWith('flaky')), ['flaky:restart', 'flaky:restart', 'flaky:gave up']);
+    await until(() => sup.get('plain').status === 'crashed', 'the one that doesn\'t restart, crashed');
+    assert.ok(events.includes('plain:end'));
+
+    // A stop is a stop, even with "always"; a start counts from nothing again.
+    await until(() => sup.get('steady').status === 'running', 'steady up');
+    await sup.stop('steady');
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(sup.get('steady').status, 'stopped');
+    assert.ok(!events.some((e) => e.startsWith('steady')));
+    sup.start('flaky');
+    assert.equal(flaky.gaveUp, false);
+    assert.equal(flaky.quick, 0);
+    await until(() => flaky.restartAt, 'waiting to restart');
+    assert.equal(sup.cancelRestart('flaky'), true);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(flaky.status, 'crashed');
+    assert.equal(flaky.restartAt, null);
+    assert.ok(flaky.lines.some((l) => l.text === '── not restarting it'));
+  } finally {
+    sup.dispose();
   }
 });
