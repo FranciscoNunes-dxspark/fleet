@@ -35,6 +35,29 @@ test('resources: the apps show before their slots are read, and the cursor stays
   }
 });
 
+test('resources: stepping through the list reads nothing of the rows passed, only of the one the cursor rests on', async () => {
+  const provider = demoAzure();
+  const read = [];
+  const [settings, metrics] = [provider.settings, provider.metrics];
+  provider.settings = (t, ...rest) => (read.push(`settings ${t.id.split('/').pop()}`), settings(t, ...rest));
+  provider.metrics = (t, ...rest) => (read.push(`metrics ${t.id.split('/').pop()}`), metrics(t, ...rest));
+  const app = start({ provider });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('insights  contoso-prod-ai') && read.length === 2, 'the first app read');
+    // A step every 100 ms: contoso-web/staging, contoso-api, its staging, contoso-orders.
+    for (let i = 0; i < 4; i++) {
+      app.stdin.write('j');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    await until(() => /❯ ● contoso-orders/.test(frame()) && read.length === 4, 'the one it rests on read');
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(read, ['settings contoso-web', 'metrics contoso-web', 'settings contoso-orders', 'metrics contoso-orders']);
+  } finally {
+    app.unmount();
+  }
+});
+
 test('resources: the tree, an app beside it, its settings with secrets hidden, slots compared', async () => {
   const copied = [];
   const app = start({ copy: (t) => copied.push(t) });

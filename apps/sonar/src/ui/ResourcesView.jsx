@@ -26,7 +26,12 @@ const KEY_HINTS = {
   sqldb: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
 };
 
-const delayed = (fn, ms) => {
+// How long the cursor rests on a resource before what's beside it is read: longer than the gap
+// between steps through the list, so stepping past reads nothing (a settings read is a POST, which
+// ARM counts with the writes).
+const SETTLE = 150;
+
+const delayed = (fn, ms = SETTLE) => {
   const t = setTimeout(fn, ms);
   return () => clearTimeout(t);
 };
@@ -59,7 +64,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
     if (!web) return;
     let live = true;
     setSettings(null);
-    const stop = delayed(() => ctx.settingsOf(web).then((s) => live && setSettings(s), () => live && setSettings({ error: true })), 80);
+    const stop = delayed(() => ctx.settingsOf(web).then((s) => live && setSettings(s), () => live && setSettings({ error: true })));
     return () => {
       live = false;
       stop();
@@ -72,7 +77,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
     if (!web) return;
     let live = true;
     setMetrics(null);
-    const stop = delayed(() => ctx.metricsOf(web).then((m) => live && setMetrics({ series: m }), (e) => live && setMetrics({ error: e.message.split('\n')[0] })), 150);
+    const stop = delayed(() => ctx.metricsOf(web).then((m) => live && setMetrics({ series: m }), (e) => live && setMetrics({ error: e.message.split('\n')[0] })));
     return () => {
       live = false;
       stop();
@@ -103,7 +108,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
     if (!server) return;
     let live = true;
     setRules(null);
-    const stop = delayed(() => ctx.firewallOf(server).then((r) => live && setRules({ list: r }), (e) => live && setRules({ error: e.message.split('\n')[0] })), 80);
+    const stop = delayed(() => ctx.firewallOf(server).then((r) => live && setRules({ list: r }), (e) => live && setRules({ error: e.message.split('\n')[0] })));
     return () => {
       live = false;
       stop();
@@ -117,7 +122,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
     let live = true;
     setAdmin(server.admin ? { value: server.admin } : null);
     if (server.admin) return;
-    const stop = delayed(() => ctx.adminOf(server).then((v) => live && setAdmin({ value: v })), 80);
+    const stop = delayed(() => ctx.adminOf(server).then((v) => live && setAdmin({ value: v })));
     return () => {
       live = false;
       stop();
