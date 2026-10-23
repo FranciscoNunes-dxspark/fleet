@@ -3,6 +3,7 @@ import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
 import { componentFor, isProduction } from '../insights.js';
+import { metricRows } from '../metrics.js';
 import { resourceRows } from '../tree.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '../text.js';
@@ -12,7 +13,7 @@ import { Lines, Panel, Row } from './parts.jsx';
 export const stateColour = (state) => (state === 'Running' ? theme.add : state === 'Stopped' ? theme.del : theme.warn);
 
 /** The subscription's apps by resource group, slots under each, and beside them the one under the cursor. */
-export function ResourcesView({ data, ctx, width, height, active, filter, focusId }) {
+export function ResourcesView({ data, span, ctx, width, height, active, filter, focusId }) {
   const rows = resourceRows(data.apps, data.slots, filter);
   const innerH = height - 2;
   const listW = Math.max(34, Math.floor(width * 0.42));
@@ -33,6 +34,19 @@ export function ResourcesView({ data, ctx, width, height, active, filter, focusI
       clearTimeout(t);
     };
   }, [sel?.id]);
+
+  // Its metrics over the span, likewise, once the cursor has settled.
+  const [metrics, setMetrics] = useState(null);
+  useEffect(() => {
+    if (!sel) return;
+    let live = true;
+    setMetrics(null);
+    const t = setTimeout(() => ctx.metricsOf(sel).then((m) => live && setMetrics({ series: m }), (e) => live && setMetrics({ error: e.message.split('\n')[0] })), 150);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [sel?.id, span?.iso]);
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
@@ -57,6 +71,7 @@ export function ResourcesView({ data, ctx, width, height, active, filter, focusI
   });
 
   const component = settings && !settings.error ? componentFor(settings, data.components) : null;
+  const sparkW = Math.max(6, Math.min(24, width - listW - 40));
   const detail = sel
     ? [
         [{ text: label(sel), bold: true }, { text: `  ${sel.kind === 'function' ? 'function app' : 'web app'}${sel.slot ? ' slot' : ''}`, color: theme.dim }],
@@ -70,6 +85,15 @@ export function ResourcesView({ data, ctx, width, height, active, filter, focusI
         [{ text: 'changed   ', color: theme.dim }, { text: sel.modified ? `${relTime(Date.parse(sel.modified))} ago` : '—' }],
         [{ text: 'insights  ', color: theme.dim }, settings == null ? { text: '…', color: theme.dim } : settings.error ? { text: "can't read its settings", color: theme.del } : { text: component?.name ?? 'none linked', color: component ? undefined : theme.dim }],
         [{ text: 'settings  ', color: theme.dim }, { text: settings && !settings.error ? `${Object.keys(settings).length} (↵ shows them)` : '' }],
+        [],
+        [{ text: `the last ${span?.label ?? ''}`, color: theme.dim, bold: true }, { text: metrics ? '' : '  reading its metrics…', color: theme.dim }],
+        ...(metrics?.error
+          ? [[{ text: "can't read its metrics: ", color: theme.del }, { text: metrics.error, color: theme.dim }]]
+          : metricRows(metrics?.series ?? [], { width: sparkW }).map((m) => [
+              { text: m.label.padEnd(10), color: theme.dim },
+              { text: m.spark.padStart(sparkW), color: theme.warn },
+              { text: metrics ? `  ${m.summary}` : '', color: m.summary === 'no data' ? theme.dim : undefined },
+            ])),
         [],
         [{ text: 'R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse', color: theme.dim }],
       ]

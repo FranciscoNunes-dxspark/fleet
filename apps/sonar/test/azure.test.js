@@ -7,6 +7,7 @@ import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
 import { loadSubscription } from '../src/load.js';
+import { METRICS, metricInterval, metricRows, seriesFrom } from '../src/metrics.js';
 import { mapLimited, resourceRows, targetForUrl, targetsByLabel } from '../src/tree.js';
 
 /** A fetch that answers from `routes` (method + path → body, or [status, body]) and records the calls. */
@@ -18,7 +19,7 @@ function fakeFetch(routes) {
     calls.push({ key, url, init, body: init.body ? JSON.parse(init.body) : undefined });
     const hit = routes[key];
     const [status, body] = Array.isArray(hit) ? hit : [hit === undefined ? 404 : 200, hit ?? { error: { code: 'NotFound', message: `No route ${key}` } }];
-    return { ok: status < 300, status, text: async () => JSON.stringify(body) };
+    return { ok: status < 300, status, text: async () => (typeof body?.raw === 'string' ? body.raw : JSON.stringify(body)) };
   };
   return { fetch, calls };
 }
@@ -192,4 +193,41 @@ test('the log stream: lines across chunks, from the Kudu site with the ARM token
   assert.deepEqual(asked, [['https://web.scm.azurewebsites.net/api/logstream', 'Bearer t-https://management.azure.com/']]);
   assert.equal(lines.length, 3);
   assert.equal(siteFrom(site('shop', 'rg')).scmHost, 'shop.scm.azurewebsites.net', 'worked out when ARM lists no Kudu host');
+});
+
+test('metrics: the site\'s Azure Monitor metrics over the span, at its grain, as sparklines and a summary', async () => {
+  const web = siteFrom(site('web', 'rg'));
+  const body = {
+    value: [
+      { name: { value: 'CpuTime' }, unit: 'Seconds', timeseries: [{ data: [{ timeStamp: '2026-10-22T10:00:00Z', total: 30 }, { timeStamp: '2026-10-22T11:00:00Z', total: 90 }] }] },
+      { name: { value: 'MemoryWorkingSet' }, unit: 'Bytes', timeseries: [{ data: [{ timeStamp: '2026-10-22T10:00:00Z', average: 200 * 1024 ** 2 }, { timeStamp: '2026-10-22T11:00:00Z', average: 300 * 1024 ** 2 }] }] },
+      { name: { value: 'Http5xx' }, unit: 'Count', timeseries: [{ data: [{ timeStamp: '2026-10-22T10:00:00Z', total: 0 }, { timeStamp: '2026-10-22T11:00:00Z', total: 3 }] }] },
+      { name: { value: 'HttpResponseTime' }, unit: 'Seconds', timeseries: [] },
+    ],
+  };
+  const { fetch, calls } = fakeFetch({ [`GET ${web.id}/providers/Microsoft.Insights/metrics`]: body });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const series = await azure.metrics(web, { span: TIMESPANS[1] });
+  const q = new URL(calls[0].url).searchParams;
+  assert.equal(q.get('metricnames'), METRICS.map((m) => m.name).join(','));
+  assert.equal(q.get('interval'), 'PT1H');
+  assert.match(q.get('timespan'), /^\d{4}-.*Z\/\d{4}-.*Z$/);
+  assert.equal(q.get('aggregation'), 'Total,Average');
+  assert.deepEqual(series[0].points.map((p) => p.value), [30, 90]);
+  assert.deepEqual(seriesFrom(body)[1].points.map((p) => p.value), [200 * 1024 ** 2, 300 * 1024 ** 2]);
+  assert.deepEqual([metricInterval(TIMESPANS[0]), metricInterval(TIMESPANS[2]), metricInterval(TIMESPANS[3])], ['PT5M', 'PT6H', 'P1D']);
+  const rows = Object.fromEntries(metricRows(series, { width: 4 }).map((r) => [r.label, r]));
+  assert.equal(rows.cpu.summary, '2.0 min cpu');
+  assert.equal(rows.cpu.spark, '▄█');
+  assert.equal(rows.memory.summary, '300 MB · peak 300 MB');
+  assert.equal(rows['5xx'].summary, '3 errors');
+  assert.equal(rows.response.summary, 'no data');
+  const failing = createAzure({ fetch: fakeFetch({}).fetch, token: async () => 't' });
+  await assert.rejects(failing.metrics(web, { span: TIMESPANS[0] }), /Reading web's metrics: not found/);
+
+  const demo = demoAzure();
+  const d = await loadSubscription(demo);
+  const m = await demo.metrics(d.apps[0], { span: TIMESPANS[0] });
+  assert.deepEqual(m.map((x) => x.name), METRICS.map((x) => x.name));
+  assert.equal(m[0].points.length, 12, 'an hour at five minutes');
 });

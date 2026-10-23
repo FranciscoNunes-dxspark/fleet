@@ -9,7 +9,7 @@ export const HELP = [
       ['1-5 / tab', 'Resources, Logs, Problems, Live, Log (shift+tab goes back)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
-      ['t', 'The time span Logs and Problems look at: 1h, 24h, 7d, 30d'],
+      ['t', 'The time span Logs, Problems and the metrics in Resources look at: 1h, 24h, 7d, 30d'],
       ['r', 'Read the subscription again'],
       ['!', 'Run a shell command, e.g.  !az account show'],
       ['esc', 'Cancel what is running, or clear the activity lines'],
@@ -29,7 +29,7 @@ export const HELP = [
   },
   {
     title: 'Resources',
-    about: "the subscription's web and function apps (ƒ) by resource group, their slots under them",
+    about: "the subscription's web and function apps (ƒ) by resource group, their slots under them; beside them the one under the cursor, with its metrics over the time span (CPU, memory, 5xx, response time)",
     views: ['resources'],
     rows: [
       ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies'],

@@ -43,7 +43,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state. Beside them, the one under the cursor: address, plan, runtime, when it last changed, and which Application Insights it reports to |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time) |
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
@@ -51,7 +51,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 Logs and Problems look at the app picked in Resources (by its role name), in the Application Insights
 its settings point at. `c` picks another Application Insights, or all the apps in one. `t` changes
-the time span: the last hour, 24 hours, 7 days or 30 days.
+the time span: the last hour, 24 hours, 7 days or 30 days, for Logs, Problems and the metrics in Resources.
 
 ## Changing things
 
@@ -80,7 +80,7 @@ it reads the code the exception went through.
 | Key | What it does |
 | --- | --- |
 | `1`–`5` / `tab` | Resources, Logs, Problems, Live, Log (`shift+tab` goes back) |
-| `t` | The time span: 1h, 24h, 7d, 30d |
+| `t` | The time span: 1h, 24h, 7d, 30d (Logs, Problems, and the metrics in Resources) |
 | `r` | Read the subscription again |
 | `/` or `:` | The command prompt, with completion |
 | `!` | Run a shell command, e.g. `!az account show` |

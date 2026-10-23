@@ -2,6 +2,7 @@
 // settings, and Application Insights' query API for their telemetry. createAzure builds the provider
 // the app talks to; src/demo.js has the same interface without Azure. Everything goes through `fetch`
 // with a token from `token(resource)`, both passed in, so tests run it against a fake.
+import { metricsPath, seriesFrom } from '../metrics.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
@@ -132,6 +133,10 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const res = await fetch(`https://${target.scmHost}/api/logstream`, { signal, headers: { Authorization: `Bearer ${await token(`${ARM}/`)}` } });
       if (!res.ok) throw new Error(azureError(res.status, null, `Streaming ${label(target)}'s log`));
       await readLines(res.body, onLine);
+    },
+    /** Azure Monitor's metrics for an app or slot over `span` (insights.js TIMESPANS): metrics.js's series. */
+    async metrics(target, { span, signal } = {}) {
+      return seriesFrom(await arm(metricsPath(target, span), { signal, what: `Reading ${label(target)}'s metrics` }));
     },
     portalUrl: (target) => `https://portal.azure.com/#resource${target.id}`,
   };

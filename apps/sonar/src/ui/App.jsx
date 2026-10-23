@@ -151,6 +151,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const problemsRef = useRef(null);
   problemsRef.current = problems;
   const settingsCache = useRef(new Map());
+  const metricsCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
@@ -261,6 +262,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const reload = async (subId = dataRef.current?.subscription.id ?? configRef.current.subscription) => {
     setLoading(true);
     settingsCache.current = new Map();
+    metricsCache.current = new Map();
     try {
       const d = await load(provider, subId);
       dataRef.current = d;
@@ -306,6 +308,19 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       cache.set(target.id, p);
     }
     return cache.get(target.id);
+  };
+
+  /** An app's or slot's metrics over the time span, read when the cursor stops on it and kept until r. */
+  const metricsOf = (target) => {
+    const span = TIMESPANS[spanRef.current];
+    const key = `${target.id}|${span.iso}`;
+    const cache = metricsCache.current;
+    if (!cache.has(key)) {
+      const p = provider.metrics(target, { span });
+      p.catch(() => cache.delete(key));
+      cache.set(key, p);
+    }
+    return cache.get(key);
   };
 
   /** What Logs and Problems ask: the component (chosen, or the app's own) and the app's role name. */
@@ -402,6 +417,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     selectedTarget: () => selectedRef.current,
     targets: () => (dataRef.current ? targetsByLabel(dataRef.current.apps, dataRef.current.slots) : {}),
     settingsOf,
+    metricsOf,
     forgetSettings: (target) => settingsCache.current.delete(target.id),
     scope: resolveScope,
     timespan: () => TIMESPANS[spanRef.current],
@@ -936,7 +952,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   } else if (view === 'problems') {
     main = <ProblemsView problems={problems} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <ResourcesView data={data} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ResourcesView data={data} span={TIMESPANS[spanIndex]} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash

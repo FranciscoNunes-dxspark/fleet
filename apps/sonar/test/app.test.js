@@ -22,6 +22,10 @@ test('resources: the tree, an app beside it, its settings with secrets hidden, s
     assert.match(frame(), /DEMO/);
     assert.match(frame(), /❯ ● contoso-web/);
     assert.match(frame(), /production: changes ask you to type its name/);
+    // Put the welcome away, for room.
+    app.stdin.write(KEYS.esc);
+    await until(() => /cpu\s+\S+.*\d.* cpu/.test(frame()) && /memory\s+\S+.*MB · peak/.test(frame()) && /5xx\s/.test(frame()), 'its metrics as sparklines');
+    assert.match(frame(), /the last 24h/);
 
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Settings of contoso-web'), 'the settings');

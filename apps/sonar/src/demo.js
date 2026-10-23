@@ -4,6 +4,8 @@
 // the app closes. Its query engine understands the queries Sonar itself sends, and plain
 // `table | where cloud_RoleName == 'x' | take n` ones; anything else gets an error saying so.
 
+import { metricInterval } from './metrics.js';
+
 const HOUR = 60 * 60 * 1000;
 
 function seeded(seed) {
@@ -224,6 +226,23 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
         signal?.addEventListener('abort', () => (clearInterval(t), resolve()), { once: true });
       });
       return n;
+    },
+    // Made-up metrics, the same for the same app and span: busier in production, a few 5xx now and then.
+    async metrics(target, { span, signal } = {}) {
+      await wait(signal);
+      const s = site(target);
+      const rand = seeded(s.id.length * 7 + span.hours);
+      const step = { PT5M: 5 * 60 * 1000, PT1H: HOUR, PT6H: 6 * HOUR, P1D: 24 * HOUR }[metricInterval(span)];
+      const n = Math.round((span.hours * HOUR) / step);
+      const busy = s.sub === 'sub-prod' ? 1 : 0.2;
+      const at = (i) => new Date(now - (n - i) * step).toISOString();
+      const series = (name, unit, value) => ({ name, unit, points: Array.from({ length: n }, (_, i) => ({ at: at(i), value: s.state === 'Stopped' ? 0 : value(i) })) });
+      return [
+        series('CpuTime', 'Seconds', () => Math.round(busy * (step / 60000) * (2 + rand() * 6))),
+        series('MemoryWorkingSet', 'Bytes', () => Math.round((180 + busy * 220 + rand() * 60) * 1024 ** 2)),
+        series('Http5xx', 'Count', () => (rand() < 0.25 ? Math.round(busy * rand() * 12) : 0)),
+        series('HttpResponseTime', 'Seconds', () => busy * (0.08 + rand() * 0.3)),
+      ];
     },
     portalUrl: (target) => `https://portal.azure.com/#resource${target.id}`,
   };
