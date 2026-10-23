@@ -1,7 +1,8 @@
 // What Bosun runs: the crew, from bosun.json in the project, or worked out from package.json's dev
 // script (a `concurrently` line is split into its commands). Pure apart from reading those files.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { parseDotenv } from './dotenv.js';
 
 export const FILE = 'bosun.json';
 
@@ -37,11 +38,16 @@ export function splitConcurrently(line) {
 
 const NAME = /^[\w.-]+$/;
 
+/** An `envFile` as a list: a string is one file; null when it's neither (a problem to say). */
+const fileList = (v) => (v == null ? [] : typeof v === 'string' ? [v] : Array.isArray(v) && v.every((f) => typeof f === 'string') ? v : null);
+
 /** What `restart` can say: never, when it exits with an error, or whenever it ends by itself. */
 export const RESTART = ['no', 'on-failure', 'always'];
 
 /**
- * bosun.json's crew checked: { procs: [{ name, run, cwd, port, health, env, after, restart }], profiles, problems }.
+ * bosun.json's crew checked: { procs: [{ name, run, cwd, port, health, env, envFile, after, restart }],
+ * envFile, profiles, problems }. `envFile`s are lists of paths: the top level's from the project's
+ * folder, a process's from its `cwd`.
  * What's wrong with an entry is said in `problems` and the entry is left out.
  */
 export function readSpec(spec) {
@@ -53,7 +59,13 @@ export function readSpec(spec) {
     else if (!proc?.run || typeof proc.run !== 'string') problems.push(`"${name}": it needs "run", the command to start it`);
     else if (proc.port != null && !(Number.isInteger(proc.port) && proc.port > 0 && proc.port < 65536)) problems.push(`"${name}": "port" is a number from 1 to 65535`);
     else if (proc.restart != null && !RESTART.includes(proc.restart)) problems.push(`"${name}": "restart" is ${RESTART.map((r) => `"${r}"`).join(', ')}`);
-    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, after: proc.after ?? null, restart: proc.restart ?? 'no' });
+    else if (!fileList(proc.envFile)) problems.push(`"${name}": "envFile" is a file's path, or a list of them`);
+    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, envFile: fileList(proc.envFile), after: proc.after ?? null, restart: proc.restart ?? 'no' });
+  }
+  let envFile = fileList(spec?.envFile);
+  if (!envFile) {
+    problems.push('"envFile" is a file\'s path, or a list of them');
+    envFile = [];
   }
   for (const p of procs) {
     if (p.after && !procs.some((q) => q.name === p.after)) {
@@ -62,14 +74,51 @@ export function readSpec(spec) {
     }
   }
   const profiles = spec?.profiles && typeof spec.profiles === 'object' ? spec.profiles : {};
-  return { procs, profiles, problems };
+  return { procs, envFile, profiles, problems };
+}
+
+/**
+ * The crew's env files read: each process gets `fileEnv`, the settings of the top level's files then
+ * its own, in order (a later file wins, and ${VAR} reads the ones before and then `env`). A file that
+ * can't be read, or a line that can't, is said in `problems`.
+ */
+export function readEnvFiles(crew, dir, { env = process.env, read = (f) => readFileSync(f, 'utf8') } = {}) {
+  const problems = [];
+  const cache = new Map();
+  const load = (file, shown, before) => {
+    const key = `${file}\n${JSON.stringify(before)}`;
+    if (!cache.has(key)) {
+      let text;
+      try {
+        text = read(file);
+      } catch (e) {
+        problems.push(`${shown}: ${e.code === 'ENOENT' ? "it isn't there" : e.message}`);
+        cache.set(key, {});
+        return {};
+      }
+      const parsed = parseDotenv(text, { ...env, ...before });
+      problems.push(...parsed.problems.map((p) => `${shown}, ${p}`));
+      cache.set(key, parsed.values);
+    }
+    return cache.get(key);
+  };
+  let shared = {};
+  for (const f of crew.envFile ?? []) shared = { ...shared, ...load(resolve(dir, f), f, shared) };
+  const procs = crew.procs.map((p) => {
+    let fileEnv = shared;
+    for (const f of p.envFile ?? []) fileEnv = { ...fileEnv, ...load(resolve(dir, p.cwd ?? '.', f), `${p.name}'s ${f}`, fileEnv) };
+    return { ...p, fileEnv };
+  });
+  return { ...crew, procs, problems: [...crew.problems, ...[...new Set(problems)].map((p) => `env file ${p}`)] };
 }
 
 /**
  * The crew of the project in `dir`: { dir, file (bosun.json, or null), from, procs, profiles, problems }.
- * Without bosun.json, package.json's dev script: split when it's a concurrently line, else run whole.
+ * Without bosun.json, package.json's dev script: split when it's a concurrently line, else run whole
+ * (and no .env read: npm doesn't, and the tools it runs read their own). `env` is what ${VAR} in an
+ * env file falls back to.
  */
-export function loadCrew(dir) {
+export function loadCrew(dir, { env = process.env } = {}) {
   const file = join(dir, FILE);
   if (existsSync(file)) {
     let spec;
@@ -78,7 +127,7 @@ export function loadCrew(dir) {
     } catch (e) {
       throw new Error(`${FILE} isn't valid JSON: ${e.message}`);
     }
-    return { dir, file, from: FILE, ...readSpec(spec) };
+    return readEnvFiles({ dir, file, from: FILE, ...readSpec(spec) }, dir, { env });
   }
   let pkg = null;
   try {
@@ -117,8 +166,9 @@ export function withProfile(procs, profiles, name) {
 
 /** bosun.json for a crew, to start one from what was worked out (/init). */
 export function specFor(crew) {
-  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined }).filter(([, v]) => v !== undefined))]));
-  return { procs, ...(Object.keys(crew.profiles).length ? { profiles: crew.profiles } : {}) };
+  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, envFile: p.envFile?.length ? (p.envFile.length === 1 ? p.envFile[0] : p.envFile) : undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined }).filter(([, v]) => v !== undefined))]));
+  const envFile = crew.envFile?.length ? { envFile: crew.envFile.length === 1 ? crew.envFile[0] : crew.envFile } : {};
+  return { ...envFile, procs, ...(Object.keys(crew.profiles).length ? { profiles: crew.profiles } : {}) };
 }
 
 /** Writes bosun.json in `dir` unless there's one already; returns whether it did. */

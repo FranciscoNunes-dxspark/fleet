@@ -169,7 +169,8 @@ export class Supervisor {
       windowsHide: true,
       detached: !WIN,
       // FORCE_COLOR off: colours would be stripped anyway, and some tools write less without them.
-      env: { ...this.env, ...env, FORCE_COLOR: '0' },
+      // The terminal's, then the env files', then bosun.json's own.
+      env: { ...this.env, ...p.spec.fileEnv, ...env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     p.child = child;

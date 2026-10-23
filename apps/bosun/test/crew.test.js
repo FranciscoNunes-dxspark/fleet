@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isTrouble, loadCrew, portInUse, readSpec, specFor, splitConcurrently, stripAnsi, withProfile, words, writeSpec } from '../src/crew.js';
+import { isTrouble, loadCrew, readEnvFiles, portInUse, readSpec, specFor, splitConcurrently, stripAnsi, withProfile, words, writeSpec } from '../src/crew.js';
 import { RESTART_TIMES, Supervisor, afterExit, pidsOnPort, portOpen, seconds } from '../src/supervisor.js';
 import { afterStatus, mergedLines, statusSegment, portSegments, uptime } from '../src/ui/CrewView.jsx';
 import { whyPrompt } from '../src/actions.js';
@@ -228,6 +228,35 @@ test('restart: a crashing process comes back, gives up, and a stop is never rest
     assert.equal(flaky.status, 'crashed');
     assert.equal(flaky.restartAt, null);
     assert.ok(flaky.lines.some((l) => l.text === '── not restarting it'));
+  } finally {
+    sup.dispose();
+  }
+});
+
+test('env files: the top level\'s then the process\'s, under its own env, over the terminal\'s', async () => {
+  const dir = project(
+    { envFile: '.env', procs: { api: { run: 'node show.js', cwd: 'api', envFile: ['.env', '.env.local'], env: { C: 'from bosun.json' } }, web: { run: 'node show.js', envFile: 'missing.env' } } },
+    { '.env': 'A=top\nB=top\nC=top\nD=${TERMINAL}-${A}', 'show.js': 'console.log(JSON.stringify({ A: process.env.A, B: process.env.B, C: process.env.C, D: process.env.D, T: process.env.TERMINAL }))' },
+  );
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(dir, 'api'));
+  writeFileSync(join(dir, 'api', '.env'), 'B=api ${A}');
+  writeFileSync(join(dir, 'api', '.env.local'), 'B=${B} local');
+  writeFileSync(join(dir, 'api', 'show.js'), readFileSync(join(dir, 'show.js'), 'utf8'));
+  const crew = loadCrew(dir, { env: { TERMINAL: 'term' } });
+  const api = crew.procs.find((p) => p.name === 'api');
+  assert.deepEqual(api.fileEnv, { A: 'top', B: 'api top local', C: 'top', D: 'term-top' });
+  assert.deepEqual(crew.problems, ["env file web's missing.env: it isn't there"]);
+  assert.match(readSpec({ envFile: 3, procs: { x: { run: 'x', envFile: [1] } } }).problems.join('|'), /"x": "envFile" is a file's path.*\|"envFile" is/);
+  assert.equal(specFor(crew).envFile, '.env');
+  assert.deepEqual(specFor(crew).procs.api.envFile, ['.env', '.env.local']);
+  assert.deepEqual(readEnvFiles({ procs: [{ name: 'p', envFile: ['x'] }], envFile: [], problems: [] }, dir, { read: () => 'X=1' }).procs[0].fileEnv, { X: '1' });
+
+  const sup = new Supervisor(crew.procs, { dir, env: { ...process.env, TERMINAL: 'term', A: 'terminal', C: 'terminal' } });
+  try {
+    sup.start('api');
+    await until(() => sup.get('api').lines.some((l) => l.text.startsWith('{')), 'its settings printed');
+    assert.deepEqual(JSON.parse(sup.get('api').lines.find((l) => l.text.startsWith('{')).text), { A: 'top', B: 'api top local', C: 'from bosun.json', D: 'term-top', T: 'term' });
   } finally {
     sup.dispose();
   }

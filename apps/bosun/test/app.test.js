@@ -244,3 +244,22 @@ test('a process that restarts says when, s stops it waiting, and one that keeps 
     app.unmount();
   }
 });
+
+test('a changed env file restarts the process that reads it on /reload', async () => {
+  const dir = project({ procs: { api: { run: 'node show.js', envFile: '.env' }, other: 'node -e "setInterval(() => {}, 1000)"' } }, {
+    '.env': 'GREETING=hello',
+    'show.js': 'console.log("greeting " + process.env.GREETING); setInterval(() => {}, 1000);',
+  });
+  const app = start({ dir });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('greeting hello'), 'the setting from .env');
+    writeFileSync(join(dir, '.env'), 'GREETING=again');
+    app.stdin.write(':');
+    await type(app.stdin, 'reload');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('greeting again'), 'restarted with the new one');
+  } finally {
+    app.unmount();
+  }
+});

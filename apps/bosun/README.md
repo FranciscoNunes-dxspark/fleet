@@ -57,9 +57,17 @@ npm start
 | `cwd` | Where it runs, from the project's folder |
 | `port` | The port it listens on: shown with ✓ once it answers, `o` opens it |
 | `health` | A page on that port that answers 2xx or 3xx when it's well; ✗ otherwise |
-| `env` | Settings for it, on top of the terminal's |
+| `env` | Settings for it, on top of the terminal's and its env files' |
+| `envFile` | A `.env` file (or a list of them) to read settings from, from its `cwd` |
 | `after` | Another process it starts after: once that one's port answers, or it has run a moment |
 | `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
+
+`"envFile"` at the top level (from the project's folder) is read for every process, before each one's
+own. The files are in the usual dotenv format: `NAME=value` lines, `#` comments, `export ` in front,
+single quotes taken as they are, double quotes with `\n` and running over several lines, and `${NAME}`
+(or `${NAME:-fallback}`) from the lines above or the terminal's settings. A setting comes from, the
+last one winning: the terminal, the top level's env files, the process's own env files in the order
+given, its `env`. `/reload` reads them again and restarts the processes whose settings changed.
 
 A process that `restart`s is started again after a wait: 1 second, then 2, 4, 8… up to 30 seconds
 while it keeps failing, back to 1 second once it has stayed up 30 seconds. The list says
@@ -71,7 +79,9 @@ A profile changes some processes: `run` replaces the command, `args` adds to it,
 `restart` replaces that.
 `p` or `/profile` picks one (`--profile` starts with it), and the processes it changes restart.
 
-Without a `bosun.json`, Bosun runs package.json's `dev` script (else `start`). When that's a
+Without a `bosun.json`, Bosun runs package.json's `dev` script (else `start`), and reads no `.env`
+of its own accord: `npm run` doesn't, and the tools it runs (Vite, Next.js) read theirs, in their own
+order. When that's a
 `concurrently` line, each of its commands is a process of its own, named as `-n` names them, and other
 `dev:` scripts split the same way become profiles. `/init` writes that out as a `bosun.json`, to add
 ports and health pages to.
@@ -160,7 +170,7 @@ Trawl.
 | `/open <name>` | Open a process's port in the browser |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
 | `/profile [name\|none]` | Run the crew with a profile |
-| `/reload` | Read `bosun.json` again: new processes start, changed ones restart |
+| `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |
 | `/move [folder]` | Run another project instead: a path, or a folder beside this one (completed as you type); without one, a list of the projects run lately and the folders beside this one. This one's processes stop first |
 | `/init` | Write a `bosun.json` from what Bosun worked out |
 | `/run <command>` | Run a shell command (as `!` does) |

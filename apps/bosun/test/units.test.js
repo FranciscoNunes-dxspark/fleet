@@ -14,6 +14,7 @@ import { settingRows } from '../src/settings.js';
 import { DEFAULT_ACCENT } from '../src/theme.js';
 import { assetName, compareVersions, parseChecksums } from '../src/update.js';
 import { run } from '../src/run.js';
+import { expand, parseDotenv } from '../src/dotenv.js';
 
 test('commands: exact names, unambiguous prefixes, and completion of their argument', () => {
   assert.equal(findCommand('restart').name, 'restart');
@@ -114,4 +115,39 @@ test('run: output, a failure with the program\'s own words, and cancelling', asy
   const slow = run('node -e "setTimeout(() => {}, 20000)"', { signal: controller.signal });
   setTimeout(() => controller.abort(), 100);
   await assert.rejects(slow, (e) => e.cancelled);
+});
+
+test('.env files: comments, export, quotes, escapes, lines over several lines and ${VAR}', () => {
+  const text = [
+    '# a comment',
+    '',
+    'PLAIN=hello world  # said after',
+    'export EXPORTED=yes',
+    "SINGLE='keeps $PLAIN and \\n'",
+    'DOUBLE="line one\\nline two \\"quoted\\" ${PLAIN}"',
+    'MULTI="first',
+    'second"',
+    'URL=http://${HOST}:${PORT:-3000}/x',
+    'COST=\\$5',
+    'HASH=a#b',
+    'EMPTY=',
+    'KEEP=$PLAIN-$MISSING.',
+    'not a line',
+    'OPEN="never closed',
+  ].join('\n');
+  const { values, problems } = parseDotenv(text, { HOST: 'localhost', PLAIN: 'from the environment' });
+  assert.equal(values.PLAIN, 'hello world');
+  assert.equal(values.EXPORTED, 'yes');
+  assert.equal(values.SINGLE, 'keeps $PLAIN and \\n');
+  assert.equal(values.DOUBLE, 'line one\nline two "quoted" hello world', 'earlier lines win over the environment');
+  assert.equal(values.MULTI, 'first\nsecond');
+  assert.equal(values.URL, 'http://localhost:3000/x');
+  assert.equal(values.COST, '$5');
+  assert.equal(values.HASH, 'a#b', 'a # without a space before it is part of the value');
+  assert.equal(values.EMPTY, '');
+  assert.equal(values.KEEP, 'hello world-.');
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /line 14: not a line isn't NAME=value/);
+  assert.match(problems[1], /OPEN's " is never closed/);
+  assert.equal(expand('${A-x}${B:-y}${C-z}', (n) => ({ A: '', B: '' })[n]), 'y' + 'z');
 });
