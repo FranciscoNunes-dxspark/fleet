@@ -2,7 +2,7 @@
 // its Application Insights, production, settings, sparklines, completion, the tree, the demo's answers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alertFrom, alertRange, createAzure, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
+import { alertFrom, alertRange, createAzure, retryAfter, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, availabilityQuery, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
@@ -110,6 +110,24 @@ test('slots: Resource Graph says which apps have any, across its pages, and only
   const demo = demoAzure();
   const dd = await loadSubscription(demo);
   assert.deepEqual([...(await demo.appsWithSlots('sub-prod'))].sort(), dd.apps.filter((a) => dd.slots[a.id].length).map((a) => a.id.toLowerCase()).sort());
+});
+
+test('a throttled call (429) is tried again after Retry-After, up to three times', async () => {
+  let n = 0;
+  const fetch = async () => {
+    n++;
+    const throttled = n <= 2;
+    return { ok: !throttled, status: throttled ? 429 : 200, headers: { get: (h) => (h === 'retry-after' ? '0' : null) }, text: async () => JSON.stringify(throttled ? { error: { message: 'Too many requests' } } : { value: [{ subscriptionId: 's1', displayName: 'One' }] }) };
+  };
+  assert.deepEqual(await createAzure({ fetch, token: async () => 't' }).subscriptions(), [{ id: 's1', name: 'One' }]);
+  assert.equal(n, 3);
+  let m = 0;
+  const always = async () => (m++, { ok: false, status: 429, headers: { get: () => '0' }, text: async () => JSON.stringify({ error: { message: 'Too many requests' } }) });
+  await assert.rejects(createAzure({ fetch: always, token: async () => 't' }).subscriptions(), /Listing subscriptions: Too many requests/);
+  assert.equal(m, 4, 'the first call and three more');
+  assert.equal(retryAfter({ headers: { get: () => '7' } }), 7000);
+  assert.equal(retryAfter({ headers: { get: () => '600' } }), 30_000);
+  assert.equal(retryAfter({}, 2), 4000);
 });
 
 test('az: a token kept until near its end, and sign-in trouble said plainly', async () => {

@@ -199,6 +199,18 @@ export function costsFrom(body, into = { currency: null, byId: {} }) {
   return into;
 }
 
+/** How long to wait before trying a throttled call again (ms): Azure's Retry-After, else 1, 2, 4 s; at most 30 s. */
+export function retryAfter(res, tries = 0) {
+  const said = Number(res.headers?.get?.('retry-after'));
+  return Math.min(30_000, Number.isFinite(said) && said >= 0 ? said * 1000 : 1000 * 2 ** tries);
+}
+
+const pause = (ms, signal) =>
+  new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => (clearTimeout(t), reject(Object.assign(new Error('Cancelled'), { cancelled: true }))), { once: true });
+  });
+
 /** A query's first table as { columns: [{ name, type }], rows: [[...]] }. */
 export function tableFrom(body) {
   const t = body?.tables?.[0] ?? { columns: [], rows: [] };
@@ -207,13 +219,18 @@ export function tableFrom(body) {
 
 /** The provider over real Azure: `fetch` and `token(resource)` from outside. */
 export function createAzure({ fetch = globalThis.fetch, token }) {
-  const call = async (resource, url, { method = 'GET', body, signal, what = 'Azure' } = {}) => {
+  const call = async (resource, url, { method = 'GET', body, signal, what = 'Azure' } = {}, tries = 0) => {
     const res = await fetch(url, {
       method,
       signal,
       headers: { Authorization: `Bearer ${await token(resource)}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
+    // Too many calls at once (a big subscription's slots, say): Azure says when to try again.
+    if (res.status === 429 && tries < 3 && !signal?.aborted) {
+      await pause(retryAfter(res, tries), signal);
+      return call(resource, url, { method, body, signal, what }, tries + 1);
+    }
     const text = await res.text();
     let json = null;
     try {
