@@ -136,6 +136,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
   const [data, setData] = useState(null);
+  // Counts the subscriptions read: once when one first shows, once when it's whole. What looks again
+  // when the data changes (Problems, Alerts) follows this, not each step of a subscription filling in.
+  const [dataStamp, setDataStamp] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('resources');
   const [spanIndex, setSpanIndex] = useState(initialConfig.timespan ?? 1);
@@ -299,17 +302,21 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     // filling in as they come; reading the one on screen again keeps it until the new one is whole.
     const n = ++loads.current;
     const fresh = !dataRef.current || (subId != null && dataRef.current.subscription.id !== subId);
+    let shown = false;
     const onProgress = fresh
       ? (d) => {
           if (n !== loads.current) return;
           dataRef.current = d;
           setData(d);
+          if (!shown) setDataStamp((x) => x + 1);
+          shown = true;
         }
       : undefined;
     try {
       const d = await load(provider, subId, { onProgress });
       dataRef.current = d;
       setData(d);
+      setDataStamp((x) => x + 1);
     } catch (e) {
       note(`Couldn't read the subscription: ${firstLine(e.message)}`, 'error');
     } finally {
@@ -816,7 +823,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     return () => {
       live = false;
     };
-  }, [view, scopeKey, data]);
+  }, [view, scopeKey, dataStamp]);
   useEffect(() => {
     if (view !== 'problems' || !data) return;
     const controller = new AbortController();
@@ -834,7 +841,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       }
     })();
     return () => controller.abort();
-  }, [view, scopeKey, spanIndex, problemsTick, data]);
+  }, [view, scopeKey, spanIndex, problemsTick, dataStamp]);
 
   // Alerts: what's firing in the subscription, and the availability tests of the Application Insights in scope.
   useEffect(() => {
@@ -858,7 +865,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       });
     })();
     return () => controller.abort();
-  }, [view, scopeKey, spanIndex, problemsTick, data]);
+  }, [view, scopeKey, spanIndex, problemsTick, dataStamp]);
 
   useEffect(() => {
     if (custom.problems.length) {

@@ -35,6 +35,38 @@ test('resources: the apps show before their slots are read, and the cursor stays
   }
 });
 
+test('problems: open while the slots are still read, it looks once when the apps show and once when all is read', async () => {
+  const provider = demoAzure();
+  // The slots come in one app at a time, a while apart, each a step of its own.
+  let open;
+  const gate = new Promise((r) => (open = r));
+  const slots = provider.slots;
+  let asked = 0;
+  provider.slots = async (...args) => {
+    const wait = asked++ * 400;
+    await gate;
+    await new Promise((r) => setTimeout(r, wait));
+    return slots(...args);
+  };
+  const query = provider.query;
+  let queries = 0;
+  provider.query = (...args) => (queries++, query(...args));
+  const app = start({ provider });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('contoso-orders') && frame().includes('reading…'), 'the apps while the slots are read');
+    app.stdin.write('3');
+    await until(() => frame().includes('╭─ Problems') && /\d+ problems/.test(frame()), 'problems found');
+    await new Promise((r) => setTimeout(r, 400));
+    open();
+    await until(() => !frame().includes('reading…'), 'all read');
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(queries, 4, 'the problems and their trend, twice');
+  } finally {
+    app.unmount();
+  }
+});
+
 test('resources: stepping through the list reads nothing of the rows passed, only of the one the cursor rests on', async () => {
   const provider = demoAzure();
   const read = [];
