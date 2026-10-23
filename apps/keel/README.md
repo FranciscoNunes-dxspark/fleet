@@ -81,7 +81,7 @@ It works in one of two ways: through your team's Keel, signed in with your Keel 
 
 **Updates.** The downloaded executable keeps itself up to date, as Tiller does. Once a day at most, after it opens, it asks GitHub for the latest release; if that's newer than yours, it downloads it in the background and puts it in place of the executable you ran, and the new version starts the next time you open Keel. The activity lines and the welcome box say how far it got. `/update` does the same at once: it asks GitHub now, whenever it last checked, and installs a newer release, even with the automatic checks turned off (from a checkout it says `git pull`).
 
-- It asks GitHub's public API first, then through [gh](https://cli.github.com) with your existing sign-in (needed while the repository is private), and downloads the same way.
+- It asks GitHub's public API, and downloads from GitHub the same way. (With [gh](https://cli.github.com) signed in, it falls back to that, which is how a private fork's releases are seen.)
 - The download must match the checksum published with the release (`SHA256SUMS.txt`), or nothing is replaced.
 - On Windows a running program can't be overwritten, only renamed, so the old executable is moved aside (`keel.exe.old.<time>`) and deleted on a later start.
 - If Keel can't write to the folder it's in (installed under Program Files, say), or anything else goes wrong, nothing changes: it says a new version is out, and why it couldn't install it, with the download link.
