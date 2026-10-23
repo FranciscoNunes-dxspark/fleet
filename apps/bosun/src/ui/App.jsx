@@ -49,7 +49,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · e trouble · w why · ↵ whole log',
+  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · e trouble · t share it · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 

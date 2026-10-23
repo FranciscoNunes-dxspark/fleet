@@ -159,6 +159,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `f` | Free its port: stop whatever else is holding it (asks first) |
 | `p` | Profiles |
 | `y` | Copy its command |
+| `t` | Copy its latest trouble line for Sonar or Hail, to paste into their prompt (see The family) |
 
 The dot before each name is green while it runs, yellow while it starts or stops, red when it crashed,
 grey when stopped. One that restarts by itself says when it will (`restarting in 4s`), or `gave up`

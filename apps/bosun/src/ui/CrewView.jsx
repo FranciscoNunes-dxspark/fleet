@@ -165,6 +165,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
       setBack(0);
     } else if (input === 'l') a.saveLogPrompt(ctx, sel.name);
     else if (input === 'y') ctx.copy(sel.spec.run, 'its command');
+    else if (input === 't') a.shareTrouble(ctx, sel.name);
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {

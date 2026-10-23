@@ -11,6 +11,8 @@ import { basename, resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { listSessions } from './recorder.js';
 import { markCrew } from './ports.js';
+import { troubleContext } from './share.js';
+import { describeContext, takeLine } from './family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
 
@@ -108,6 +110,17 @@ export async function saveLog(ctx, rest) {
     return ctx.note(`Couldn't write ${file}: ${e.message}`, 'error');
   }
   ctx.note(`Wrote ${p.lines.length} line${p.lines.length === 1 ? '' : 's'} of ${p.name}'s log to ${file}.`, 'ok');
+}
+
+/** t: the latest trouble line of a process, as a /take line for Sonar or Hail (with the request it names). */
+export function shareTrouble(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  const data = troubleContext(basename(ctx.dir), p);
+  if (!data) return ctx.note(`${p.name}'s log has nothing that reads as trouble to share.`);
+  const line = takeLine('logline', data);
+  ctx.copy(line, 'the trouble line');
+  ctx.note(`Copied for Sonar or Hail: paste it into Sonar's or Hail's prompt\n${describeContext({ kind: 'logline', data })}${data.requestId ? `\nrequest ${data.requestId}` : ''}`, 'ok');
 }
 
 /** f and /free: stops whatever holds `port` on this machine, after asking. */
