@@ -494,6 +494,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     prefillKey.current = keySeq.current;
   };
 
+  const targetsMemo = useRef({ data: null, targets: {} });
   const ctxRef = useRef(null);
   if (!ctxRef.current) ctxRef.current = { get data() { return dataRef.current; }, get config() { return configRef.current; }, mouseHandlers: [] };
   const ctx = ctxRef.current;
@@ -523,7 +524,13 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     cwd: () => cwd,
     askClaude,
     selectedTarget: () => webTarget(selectedRef.current),
-    targets: () => (dataRef.current ? targetsByLabel(dataRef.current.apps, dataRef.current.slots) : {}),
+    // Worked out once per subscription read, not on every key typed in the prompt.
+    targets: () => {
+      const d = dataRef.current;
+      if (!d) return {};
+      if (targetsMemo.current.data !== d) targetsMemo.current = { data: d, targets: targetsByLabel(d.apps, d.slots) };
+      return targetsMemo.current.targets;
+    },
     settingsOf,
     metricsOf,
     firewallOf,
