@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encodeContext, readMoods, takeLine, writeMood } from '../src/family.js';
-import { familyChoices, familyMood, pastedLine, reactionLine, reactionTo, trawlLine } from '../src/kin.js';
+import { familyChoices, familyMood, reactionLine, reactionTo } from '../src/kin.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;
@@ -15,18 +15,9 @@ after(() => cleanup());
 
 const context = encodeContext('commit', { hash: '9b1c7e2d4f60' });
 
-test('what counts as a paste, the lines /family offers, moods in the family\'s words', () => {
-  assert.equal(pastedLine(`/take ${context}\r`), `/take ${context}`);
-  assert.equal(pastedLine(`\x1b[200~${context}\n\x1b[201~`), context);
-  assert.equal(pastedLine('/'), null, 'one key is a key');
-  assert.equal(pastedLine('jjj'), null, 'keys typed fast are keys');
-  assert.equal(pastedLine('/a\n/b'), null, 'two lines are not one command');
-
-  assert.equal(trawlLine({ name: 'Shop', kind: 'sqlserver', server: 'shop.database.windows.net', database: 'Shop', user: 'app', password: 'p' }), '/azure-sql shop.database.windows.net Shop');
-  assert.equal(trawlLine({ name: 'Local', kind: 'sqlserver', server: 'localhost', port: 14330, database: 'Shop', user: 'sa', password: 'p' }), '/add Local localhost,14330 Shop --user sa');
-  assert.equal(trawlLine({ name: 'DATABASE_URL', kind: 'postgres', server: 'db.local', port: 5432, database: 'shop', user: 'me', password: 's' }), '/add DATABASE_URL db.local shop --kind postgres --user me');
-  const choices = familyChoices({ dir: '/w/shop', repo: '/w/shop', crew: true, httpFiles: ['/w/shop/api/orders.http'], databases: [{ name: 'Shop', source: 'appsettings.json', kind: 'sqlserver', server: 'shop.database.windows.net', database: 'Shop' }] });
-  assert.deepEqual(choices.map((c) => [c.app, c.line]), [['splice', '/open /w/shop'], ['bosun', '/move /w/shop'], ['hail', '/open /w/shop/api/orders.http'], ['trawl', '/azure-sql shop.database.windows.net Shop']]);
+test('the lines /family offers, moods in the family\'s words', () => {
+  const choices = familyChoices({ dir: '/w/shop', repo: '/w/shop', crew: true, httpFiles: ['/w/shop/api/orders.http'], databases: [{ name: 'Shop', source: 'appsettings.json', kind: 'sqlserver', server: 'shop.database.windows.net', database: 'Shop' }, { name: 'DATABASE_URL', source: '.env', kind: 'postgres', server: 'db.local', port: 5433, database: 'shop', user: 'me', password: 's' }] });
+  assert.deepEqual(choices.map((c) => [c.app, c.line]), [['splice', '/open /w/shop'], ['bosun', '/move /w/shop'], ['hail', '/open /w/shop/api/orders.http'], ['trawl', '/azure-sql shop.database.windows.net Shop'], ['trawl', '/add DATABASE_URL db.local:5433 shop --kind postgres --user me']]);
   assert.equal(choices[2].what, 'api/orders.http');
   assert.ok(choices.every((c) => !/password|\bp\b/i.test(c.line)));
 
@@ -71,7 +62,7 @@ test('/family copies a line for each sibling from the folder Sonar started in', 
   mkdirSync(join(dir, '.git'));
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { dev: 'vite' } }));
   writeFileSync(join(dir, 'orders.http'), 'GET http://localhost/orders\n');
-  writeFileSync(join(dir, 'appsettings.json'), JSON.stringify({ ConnectionStrings: { Shop: 'Server=tcp:shop.database.windows.net,1433;Database=Shop;User ID=app;Password=hunter2' } }));
+  writeFileSync(join(dir, 'appsettings.json'), JSON.stringify({ ConnectionStrings: { Shop: 'Server=tcp:shop.database.windows.net,1433;Database=Shop;Authentication=Active Directory Default', Local: 'Server=localhost,14330;Database=Shop;User ID=sa;Password=hunter2;TrustServerCertificate=True' } }));
   const copied = [];
   const app = start({ cwd: dir, copy: (t) => copied.push(t) });
   const frame = () => app.lastFrame() ?? '';
@@ -85,12 +76,13 @@ test('/family copies a line for each sibling from the folder Sonar started in', 
     assert.match(frame(), /Bosun\s+\/move /);
     assert.match(frame(), /Hail\s+\/open \S+orders\.http\s+orders\.http/);
     assert.match(frame(), /Trawl\s+\/azure-sql shop\.database\.windows\.net Shop\s+Shop from appsettings\.json/);
+    assert.match(frame(), /Trawl\s+\/add Local localhost,14330 Shop --user sa --trust-cert\s+Local from appsettings\.json/);
     assert.doesNotMatch(frame(), /hunter2/);
     app.stdin.write('G');
-    await until(() => /❯ Trawl/.test(frame()), 'the cursor on Trawl');
+    await until(() => /❯ Trawl\s+\/add Local/.test(frame()), 'the cursor on Trawl');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes("Copied for Trawl: paste it into Trawl's prompt"), 'copied for Trawl');
-    assert.equal(copied.at(-1), '/azure-sql shop.database.windows.net Shop');
+    assert.equal(copied.at(-1), '/add Local localhost,14330 Shop --user sa --trust-cert');
   } finally {
     app.unmount();
     rmSync(dir, { recursive: true, force: true });

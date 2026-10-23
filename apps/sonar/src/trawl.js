@@ -1,6 +1,7 @@
 // Opening an Azure SQL database in Trawl, the sibling SQL client: the slash command T copies for
 // Trawl's prompt, the SQL login an app already uses (found in its connection strings or settings, and
 // named, never copied: Trawl reads the password from Azure itself), and the server firewall. Pure.
+import { quoteArg } from './family.js';
 
 // Each key a SQL connection string may spell its parts with, lower-cased.
 const KEYS = {
@@ -92,9 +93,6 @@ export function findLogin(sources, server, database) {
 /** The name Trawl keeps the connection under: "<server>-<database>", or the server's alone. */
 export const trawlName = (server, database) => (database ? `${server.name}-${database.name}` : server.name);
 
-// An argument as Trawl's prompt reads it: in quotes only when it has a space (or a quote) in it.
-const arg = (a) => (/[\s"]/.test(a) ? `"${String(a).replace(/"/g, '\\"')}"` : String(a));
-
 /**
  * The slash command for Trawl's prompt that opens `database` on `server` (or the server alone):
  * `/azure-sql <fqdn> [<database>] --name <name> [--user <login> --password-from <rg>/<app>[/<slot>]
@@ -110,7 +108,7 @@ export function trawlCommand({ server, database, login, subscription, prod }) {
     parts.push('--user', login.user, '--password-from', [t.resourceGroup, t.name, t.slot].filter(Boolean).join('/'), '--subscription', subscription);
   }
   if (prod) parts.push('--prod');
-  return parts.map(arg).join(' ');
+  return parts.map(quoteArg).join(' ');
 }
 
 const ipNumber = (ip) => String(ip).split('.').reduce((n, part) => n * 256 + Number(part), 0);

@@ -86,9 +86,9 @@ test('/take logline finds its request in Logs; other kinds are for the app that 
     await command(app, takeLine('logline', { process: 'web', text: 'listening on 3000' }));
     await until(() => frame().includes('carries no request or operation id'), 'nothing to look for');
     await command(app, takeLine('request', { method: 'GET', url: 'https://x/y' }));
-    await until(() => frame().includes("That's request GET https://x/y, for Hail: paste it into Hail's prompt instead."), 'a request is for Hail');
+    await until(() => frame().includes("That's request GET https://x/y, for Hail: paste it into its prompt instead."), 'a request is for Hail');
     await command(app, takeLine('query', { sql: 'select 1' }));
-    await until(() => frame().includes("for Trawl: paste it into Trawl's prompt instead"), 'a query is for Trawl');
+    await until(() => frame().includes("for Trawl: paste it into its prompt instead"), 'a query is for Trawl');
     await command(app, 'take nonsense');
     await until(() => frame().includes("That isn't a line one of the other apps copied"), 'nonsense refused');
   } finally {
@@ -97,5 +97,5 @@ test('/take logline finds its request in Logs; other kinds are for the app that 
   // Straight through the action, as a check of what it says.
   const ctx = { note: (t, s) => notes.push([t, s]) };
   await take(ctx, takeLine('file', { path: 'src/a.js', line: 3 }));
-  assert.deepEqual(notes, [["That's src/a.js:3, for Splice: paste it into Splice's prompt instead.", 'error']]);
+  assert.deepEqual(notes, [["That's src/a.js:3, for Splice: paste it into its prompt instead.", 'error']]);
 });

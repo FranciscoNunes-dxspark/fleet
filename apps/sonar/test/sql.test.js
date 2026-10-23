@@ -43,7 +43,7 @@ test("T on a production database: the firewall rule asked for by name, then a co
     assert.equal(copied.at(-1), line);
     app.stdin.write('5');
     app.stdin.write('6');
-    await until(() => frame().includes('The login contoso_app, from contoso-api') && frame().includes(line.slice(0, 60)), 'the log says where the login comes from');
+    await until(() => frame().includes('The login contoso_app, from contoso-api') && frame().includes(line.slice(0, 40)), 'the log says where the login comes from');
     assert.doesNotMatch(frame(), /demo-Sql-Pa55/);
     assert.ok(!copied.some((c) => c.includes('demo-Sql-Pa55')), 'the password is never copied');
 

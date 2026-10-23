@@ -10,8 +10,8 @@ import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, compareQueries, compareWindows, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
-import { contextIn, describeContext, projectAt, repoRoot, shareLine, takeLine } from './family.js';
-import { APP_NAMES, copiedNote, familyChoices } from './kin.js';
+import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, repoRoot, takeLine, trawlLine } from './family.js';
+import { familyChoices } from './kin.js';
 import { parseWatch, watchEvery } from './watches.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
@@ -372,7 +372,7 @@ export async function openInTrawl(ctx, which) {
 
 /** A line for a sibling's prompt to the clipboard, and the log saying where to paste it. */
 export function copyFor(ctx, app, line) {
-  ctx.copy(line, `a line for ${app[0].toUpperCase()}${app.slice(1)}`);
+  ctx.copy(line, `a line for ${APP_NAMES[app]}`);
   ctx.note(copiedNote(app, line), 'ok');
 }
 
@@ -731,7 +731,7 @@ function sqlForTrawl(ctx, inc) {
         const known = (ctx.data?.sqlServers ?? []).find((x) => x.fqdn?.toLowerCase() === server.toLowerCase() || x.name.toLowerCase() === server.toLowerCase());
         const db = known && database ? (known.databases ?? []).find((d) => d.name.toLowerCase() === database.toLowerCase()) : null;
         if (known) return openInTrawl(ctx, db ?? known);
-        copyFor(ctx, 'trawl', shareLine('azure-sql', [server, ...(database ? [database] : [])]));
+        copyFor(ctx, 'trawl', trawlLine({ kind: 'sqlserver', server, database }, [server.split('.')[0], database].filter(Boolean).join('-')));
       },
     },
   });
@@ -923,9 +923,6 @@ export function requestForHail(ctx, row) {
   copyFor(ctx, 'hail', takeLine('request', request));
 }
 
-// What each kind of context is for, when it isn't Sonar's to take.
-const TAKEN_BY = { request: 'hail', rows: 'trawl', query: 'trawl', file: 'splice' };
-
 /**
  * /take <context> (or a family:v1:… line on its own at the prompt): what a sibling copied for Sonar.
  * A commit finds the deployments that shipped it, an exception the problems like it, a log line the
@@ -937,8 +934,7 @@ export async function take(ctx, text) {
   if (c.kind === 'commit') return deploymentsOfCommit(ctx, c.data);
   if (c.kind === 'exception') return problemsLike(ctx, c.data);
   if (c.kind === 'logline') return requestOfLogLine(ctx, c.data);
-  const app = APP_NAMES[TAKEN_BY[c.kind]];
-  return ctx.note(app ? `That's ${describeContext(c)}, for ${app}: paste it into ${app}'s prompt instead.` : `Sonar has nothing to do with ${describeContext(c)}.`, 'error');
+  return ctx.note(notMine('sonar', c), 'error');
 }
 
 /** Whether a deployment is of commit `hash`: in its id, name or message, whole or as its first seven characters. */

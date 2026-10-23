@@ -96,7 +96,7 @@ files in its stack in the 14 days before it was first seen. Outside a checkout t
 | In an incident | |
 | --- | --- |
 | `Y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/splice)'s prompt |
-| `T` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's `/azure-sql` line (through `T`'s checks when the server is in the subscription) |
+| `T` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's line for Trawl (`/azure-sql` for Azure SQL) (through `T`'s checks when the server is in the subscription) |
 | `H` | Copy the failing request for Hail's prompt |
 | `w` | Ask Claude for a draft write-up in Markdown: summary, impact, timeline, likely cause, next steps (it may read the code, as `w` in Problems does) |
 | `s` | Save the write-up (or the incident itself, before there's one) to a Markdown file; `/incident save <file>` does it too |
@@ -149,7 +149,8 @@ the prompt rather than being taken as keys, to run with `↵`.
 `/family` lists what the folder Sonar was started in is to the others: its git checkout (Splice's
 `/open`), its processes when Bosun has something to run there (`/move`), each `.http` file (Hail's
 `/open`), and each database its `appsettings*.json` or `.env` files name (Trawl's `/azure-sql` for an
-Azure SQL server, else `/add`, with the login but never the password). `↵` copies one.
+Azure SQL server signing in with Entra, else `/add` with its port, its login and `--trust-cert` when the
+connection string trusts the server's certificate, but never the password). `↵` copies one.
 
 Ping tells the others how it feels (worried after something went wrong, busy, pleased, or just
 watching) and why, in a small file in `~/.family` (`FAMILY_HOME` moves it), and reads theirs every

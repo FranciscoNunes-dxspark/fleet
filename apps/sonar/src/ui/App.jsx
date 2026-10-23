@@ -33,8 +33,8 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { worthNotifying } from '../notify.js';
 import { ask } from '../claude-cli.js';
-import { decodeContext, readMoods, writeMood } from '../family.js';
-import { APP_NAMES, familyMood, moodKey, pastedLine, reactionLine, reactionTo } from '../kin.js';
+import { APP_NAMES, decodeContext, pastedLine, readMoods, writeMood } from '../family.js';
+import { familyMood, moodKey, reactionLine, reactionTo } from '../kin.js';
 
 const VIEWS = [
   { id: 'resources', label: 'Resources' },
@@ -971,7 +971,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     if (confirmRef.current || overlayRef.current || answerKey.current === keySeq.current) return;
     if (ctx.claimsKey?.(input, key)) return;
     // A command or a sibling's context pasted while a view has the keys goes into the prompt, to run with ↵.
-    const pasted = pastedLine(input);
+    // (A terminal ends a pasted line with \r, which the family's rule takes as a \n.)
+    const pasted = pastedLine(input.replace(/\r$/, '\n'));
     if (pasted) return prefill(pasted);
     globalKeys(input, key);
   });
