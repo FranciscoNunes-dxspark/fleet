@@ -6,6 +6,7 @@ import { parseDotenv } from './dotenv.js';
 import { parseYaml } from './yaml.js';
 import { testSpec } from './hailcheck.js';
 import { TUNNEL_TOOLS } from './tunnel.js';
+import { httpsProblem } from './https.js';
 
 const tunnelProblem = (where, v) => (v != null && !TUNNEL_TOOLS.includes(v) ? `${where}"tunnel" is ${TUNNEL_TOOLS.map((t) => `"${t}"`).join(' or ')}` : null);
 
@@ -73,8 +74,9 @@ export function readSpec(spec) {
     else if (!fileList(proc.watch) || !fileList(proc.ignore)) problems.push(`"${name}": "watch" and "ignore" are a path or glob, or a list of them`);
     else if (proc.test != null && !testSpec(proc.test)) problems.push(`"${name}": "test" is an .http file, or { "file": "api.http", "env": "dev" }`);
     else if (proc.test != null && proc.port == null) problems.push(`"${name}": "test" runs once its port answers, so it needs "port"`);
+    else if (httpsProblem(proc)) problems.push(`"${name}": ${httpsProblem(proc)}`);
     else if (tunnelProblem('', proc.tunnel)) problems.push(`"${name}": ${tunnelProblem('', proc.tunnel)}`);
-    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, envFile: fileList(proc.envFile), watch: fileList(proc.watch), ignore: fileList(proc.ignore), after: proc.after ?? null, restart: proc.restart ?? 'no', test: proc.test != null ? testSpec(proc.test) : null, tunnel: proc.tunnel ?? null });
+    else procs.push({ name, run: proc.run, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, envFile: fileList(proc.envFile), watch: fileList(proc.watch), ignore: fileList(proc.ignore), after: proc.after ?? null, restart: proc.restart ?? 'no', test: proc.test != null ? testSpec(proc.test) : null, tunnel: proc.tunnel ?? null, https: proc.https || null });
   }
   let envFile = fileList(spec?.envFile);
   if (!envFile) {
@@ -251,7 +253,7 @@ export function withProfile(procs, profiles, name) {
 
 /** bosun.json for a crew, to start one from what was worked out (/init). */
 export function specFor(crew) {
-  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, env: Object.keys(p.env ?? {}).length ? p.env : undefined, envFile: p.envFile?.length ? (p.envFile.length === 1 ? p.envFile[0] : p.envFile) : undefined, watch: p.watch?.length ? p.watch : undefined, ignore: p.ignore?.length ? p.ignore : undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined, test: p.test ? (p.test.env ? p.test : p.test.file) : undefined, tunnel: p.tunnel ?? undefined }).filter(([, v]) => v !== undefined))]));
+  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.run, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, env: Object.keys(p.env ?? {}).length ? p.env : undefined, envFile: p.envFile?.length ? (p.envFile.length === 1 ? p.envFile[0] : p.envFile) : undefined, watch: p.watch?.length ? p.watch : undefined, ignore: p.ignore?.length ? p.ignore : undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined, test: p.test ? (p.test.env ? p.test : p.test.file) : undefined, tunnel: p.tunnel ?? undefined, https: p.https ?? undefined }).filter(([, v]) => v !== undefined))]));
   const envFile = crew.envFile?.length ? { envFile: crew.envFile.length === 1 ? crew.envFile[0] : crew.envFile } : {};
   return { ...envFile, ...(crew.tunnel ? { tunnel: crew.tunnel } : {}), procs, ...(Object.keys(crew.profiles).length ? { profiles: crew.profiles } : {}) };
 }

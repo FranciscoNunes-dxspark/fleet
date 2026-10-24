@@ -76,6 +76,12 @@ export function usageSegments(p) {
   return [{ text: ` ${shortCpu(p.usage.cpu).padStart(4)} ${shortBytes(p.usage.mem).padStart(5)}`, color: theme.dim }];
 }
 
+/** Where it's served with TLS ("https"), beside its port: https://localhost:4443, or https:4443 with `short`. */
+export function httpsSegments(p, short = false) {
+  if (!p.https || !p.child) return [];
+  return [{ text: short ? ` https:${p.https.port}` : ` https://localhost:${p.https.port}`, color: theme.add }];
+}
+
 /** Its tunnel beside it: ⇄ and the address (⇄ … while it opens), or the ⇄ alone with `short`. */
 export function tunnelSegments(p, short = false) {
   if (!p.tunnel) return [];
@@ -332,7 +338,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
                 afterStatus(p, now),
                 ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),
               ],
-              [[tunnelSegments(p), tunnelSegments(p, true)], [usageSegments(p)]],
+              [[httpsSegments(p), httpsSegments(p, true)], [tunnelSegments(p), tunnelSegments(p, true)], [usageSegments(p)]],
               listW - 4,
             )}
           />

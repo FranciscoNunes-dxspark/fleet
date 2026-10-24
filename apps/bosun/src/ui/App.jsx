@@ -36,6 +36,7 @@ import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
 import { ReplayView } from './ReplayView.jsx';
 import { findOnPath } from '../which.js';
 import { tunnelTool } from '../tunnel.js';
+import { ensureCert, mkcertHint } from '../https.js';
 import { SAMPLE_EVERY, createSampler, keepSample, memoryAlertLabel, memoryGrowing, shortBytes } from '../usage.js';
 
 const VIEWS = [
@@ -137,9 +138,10 @@ const viewerKey = (overlay) => {
 // `sampleUsage(pids)` resolves each process tree's { cpu, mem } (usage.js's sampler; tests pass a stub),
 // every `sampleEvery` ms while the Crew view shows. `findTool(name)` finds a program on the PATH
 // (which.js's; tests pass their own) and `tunnelSpawn` starts a tunnel's (child_process's spawn; tests a fake).
+// `ensureCert(opts)` makes or reads the certificate "https" serves with (https.js's; tests pass their own).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, ensureCert: certFor = ensureCert, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -340,6 +342,40 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     }
     sup.onChange();
   };
+  // The certificate "https" serves with: read, or made once with mkcert (asking before it installs its
+  // authority). Without mkcert, how to install it is said once, and the next start looks again.
+  const cert = useRef(null);
+  const mkcertMissing = useRef(false);
+  const certificate = () =>
+    (cert.current ??= certFor({
+      find: findTool,
+      ask: () =>
+        ctx.confirm({
+          title: 'Let mkcert install its certificate authority, so browsers trust https://localhost?',
+          detail: "mkcert -install adds it to this machine's trust stores. No still serves https, with a certificate browsers warn about.",
+          options: [
+            { label: 'Yes, install it', value: true },
+            { label: 'No', value: false },
+          ],
+        }),
+    }).then(
+      (r) => {
+        if (r.missing) {
+          cert.current = null;
+          if (!mkcertMissing.current) note(mkcertHint(), 'error');
+          mkcertMissing.current = true;
+          return null;
+        }
+        if (r.installError) note(`mkcert -install didn't work: ${firstLine(r.installError)}\nRun it yourself in a terminal (it may ask for your password); the certificate is made already.`, 'error');
+        if (r.made) note(`Made a certificate for localhost with mkcert${r.installed ? ', which browsers trust' : ''}.`, 'ok');
+        return r;
+      },
+      (e) => {
+        cert.current = null;
+        note(`Couldn't make a certificate for localhost: ${firstLine(e.message)}`, 'error');
+        return null;
+      },
+    ));
   const crewEventRef = useRef(crewEvent);
   crewEventRef.current = crewEvent;
   // The crew again (bosun.json changed, /reload, another profile): new processes start, ones gone stop,
@@ -354,7 +390,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
       // Each run of a project's crew is recorded for /replay, unless the setting is off.
       const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs }) : null;
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, ...(tunnelSpawn ? { tunnelSpawn } : {}) });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.

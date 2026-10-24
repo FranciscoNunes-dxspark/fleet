@@ -326,7 +326,7 @@ export function openProc(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
   if (!p.port) return ctx.note(`${p.name} has no port: give it one in bosun.json ("port": 3000).`, 'error');
-  ctx.openUrl(`http://localhost:${p.port}`);
+  ctx.openUrl(p.https ? `https://localhost:${p.https.port}` : `http://localhost:${p.port}`);
 }
 
 /** The question for w and /why: what the process is and what it said last. */

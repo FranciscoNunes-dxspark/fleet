@@ -11,6 +11,7 @@ import { walksTree, watchTree } from './treewatch.js';
 import { crewOf, stateOf } from './recorder.js';
 import { troubleText } from './structured.js';
 import { tunnelArgs, tunnelProblem, tunnelUrl } from './tunnel.js';
+import { httpsPort, startHttpsProxy } from './https.js';
 
 // A folder that's still there: Windows reports one whose files changed as changed itself, and the files
 // it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
@@ -93,7 +94,7 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null } = {}) {
     this.dir = dir;
     this.debounce = debounce;
     this.watchImpl = watchImpl;
@@ -112,6 +113,10 @@ export class Supervisor {
     this.spawnImpl = spawnImpl;
     // Starts a tunnel's tool (tunnel.js): its path, its arguments, the options. Tests pass a fake.
     this.tunnelSpawn = tunnelSpawn;
+    // "https": `tls(p)` resolves the { key, cert } to serve it with (or null: said already, not served),
+    // `httpsProxy` serves it (https.js's startHttpsProxy).
+    this.tls = tls;
+    this.httpsProxy = httpsProxy;
     this.env = env;
     this.times = restartTimes;
     this.procs = new Map();
@@ -248,6 +253,7 @@ export class Supervisor {
       if (p.status === 'starting') p.status = 'running';
       this.onChange(p.status === status && p.trouble === trouble ? p : undefined);
     };
+    if (httpsPort(p.spec)) this.serveHttps(p, child);
     child.stdout?.setEncoding('utf8').on('data', take('out', false));
     child.stderr?.setEncoding('utf8').on('data', take('err', true));
     child.on('spawn', () => {
@@ -271,6 +277,7 @@ export class Supervisor {
       this.push(p, stopping ? '── stopped' : `── exited${code != null ? ` with ${code}` : ''}${signal ? ` (${signal})` : ''}`, !stopping && code !== 0);
       p.portOpen = null;
       p.health = null;
+      this.stopHttps(p);
       p.waiters?.forEach((w) => w());
       p.waiters = [];
       if (!stopping && !this.closed) this.ended(p);
@@ -279,6 +286,40 @@ export class Supervisor {
       this.onChange();
     });
     this.onChange();
+  }
+
+  /**
+   * Serves `p` with TLS on its "https" port while `child` runs: the certificate from `tls`, then the
+   * proxy to its port. What goes wrong is said in its log; the process runs either way.
+   */
+  async serveHttps(p, child) {
+    const port = httpsPort(p.spec);
+    if (!this.tls) return;
+    let creds;
+    try {
+      creds = await this.tls(p);
+    } catch (e) {
+      this.push(p, `── no https: ${e.message}`, true);
+      return this.onChange();
+    }
+    if (!creds || p.child !== child || this.closed) return;
+    let server;
+    try {
+      server = await this.httpsProxy({ port, target: p.port, key: creds.key, cert: creds.cert });
+    } catch (e) {
+      this.push(p, `── couldn't serve https on port ${port}: ${e.code === 'EADDRINUSE' ? 'something else holds it' : e.message}`, true);
+      return this.onChange();
+    }
+    if (p.child !== child || this.closed) return server.stop();
+    p.https = { port, server };
+    this.push(p, `── https://localhost:${port} passes on to :${p.port}`);
+    this.onChange();
+  }
+
+  /** Stops serving `p` with TLS. */
+  stopHttps(p) {
+    p.https?.server.stop();
+    p.https = null;
   }
 
   /** After `p` ended by itself: started again after a wait when its `restart` says so, or given up on. */
@@ -526,6 +567,7 @@ export class Supervisor {
       this.unwatch(p);
       if (p.pid) killTreeNow(p.pid);
       if (p.tunnel) this.closeTunnel(p.name);
+      this.stopHttps(p);
     }
   }
 

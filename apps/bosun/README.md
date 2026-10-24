@@ -56,6 +56,7 @@ npm start
 | `run` | The command, through the shell (a process can be just this string) |
 | `cwd` | Where it runs, from the project's folder |
 | `port` | The port it listens on: shown with ✓ once it answers, `o` opens it |
+| `https` | A port to serve it on with TLS too (`4443`), or `true` for the one after `port`: see Local HTTPS |
 | `health` | A page on that port that answers 2xx or 3xx when it's well; ✗ otherwise |
 | `env` | Settings for it, on top of the terminal's and its env files' |
 | `envFile` | A `.env` file (or a list of them) to read settings from, from its `cwd` |
@@ -178,6 +179,23 @@ when it kept failing as soon as it started. `!` after it means its log said some
 in use is one, and `f` stops what holds it. The wheel over the log scrolls it back, and scrolling to
 the bottom follows it again. `w` needs [Claude Code](https://claude.com/claude-code) installed and
 signed in; Claude reads the log and may read the project's files, and changes nothing.
+
+### Local HTTPS
+
+A process with `"https": 4443` (or `true`, for its `port` plus one) is served at
+`https://localhost:4443` as well, for what needs a secure page (cookies marked Secure, OAuth sign-ins,
+service workers on another host name): Bosun ends TLS on that port and passes everything on to the
+process's own port, websockets included, adding `X-Forwarded-Proto: https`. The list shows the
+address beside the port when it has room (`https:4443` when it has a little), the log says when it's
+served, and `o` opens it. The port and health checks still look at the process's own port.
+
+The certificate comes from [mkcert](https://github.com/FiloSottile/mkcert), made once into
+`~/.bosun/certs` for `localhost`, `127.0.0.1` and `::1`. The first time, Bosun asks whether to run
+`mkcert -install` too, which adds mkcert's certificate authority to this machine's trust stores so
+browsers trust the page (it may need your password, in which case run it yourself in a terminal);
+without it the page works behind a browser warning. Without mkcert on your PATH, Bosun says how to
+install it (`winget install FiloSottile.mkcert`, `brew install mkcert`, your package manager), and
+the process runs as before.
 
 ### Tunnels
 
