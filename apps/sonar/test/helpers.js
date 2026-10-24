@@ -12,17 +12,21 @@ export const KEYS = { down: '\x1b[B', up: '\x1b[A', enter: '\r', esc: '\x1b', ba
 
 let lastApp = null;
 
-/** A home folder of its own, so the settings a test saves never reach the real one; returns the cleanup. */
+/** A home folder of its own, so the settings (and moods) a test saves never reach the real ones; returns the cleanup. */
 export function tempHome() {
   const dir = mkdtempSync(join(tmpdir(), 'sonar-'));
   process.env.SONAR_HOME = dir;
+  // The moods Ping writes and reads, kept from the real ~/.family.
+  process.env.FAMILY_HOME = join(dir, 'family');
   return () => rmSync(dir, { recursive: true, force: true });
 }
 
 /** Renders App over a fresh demo Azure (or `props.provider`), remembered for until's message. */
 export function start(props = {}) {
   const provider = props.provider ?? demoAzure();
-  lastApp = render(React.createElement(App, { config: { history: [] }, provider, ...props }));
+  // Nothing reaches Claude from the tests.
+  const askClaude = async () => 'Claude is not here in the tests.';
+  lastApp = render(React.createElement(App, { config: { history: [] }, provider, askClaude, ...props }));
   lastApp.provider = provider;
   return lastApp;
 }

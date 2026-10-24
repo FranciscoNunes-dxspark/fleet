@@ -3,24 +3,52 @@
 import { label } from './azure/arm.js';
 
 /**
- * Rows for `apps` (sorted by resource group, then name) with `slots` (app id → its slots):
- * { kind: 'group', text } headings and { kind: 'app' | 'slot', target } rows. `filter` keeps the apps
- * whose name or resource group contains it, and their slots.
+ * Rows for `apps` (sorted by resource group, then name) with `slots` (app id → its slots), and the
+ * other kinds in `others` ({ containers, storage, sqlServers }, each server with its `databases`):
+ * { kind: 'group', text } headings, then per group its apps (each followed by its slots), container
+ * apps, SQL servers (each followed by its databases) and storage accounts, as { kind, target } with
+ * kind 'app' | 'slot' | 'container' | 'sqlserver' | 'sqldb' | 'storage'. `filter` keeps what has it in
+ * its name or resource group (a server stays for a database that has it).
  */
-export function resourceRows(apps, slots = {}, filter = '') {
+export function resourceRows(apps, slots = {}, filter = '', others = {}) {
   const f = filter.trim().toLowerCase();
-  const shown = f ? apps.filter((a) => a.name.toLowerCase().includes(f) || a.resourceGroup.toLowerCase().includes(f)) : apps;
+  const has = (t) => !f || t.name.toLowerCase().includes(f) || (t.resourceGroup ?? '').toLowerCase().includes(f);
+  const groups = new Map();
+  const add = (t, rows) => {
+    const g = t.resourceGroup ?? '';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push({ order: rows[0].order, name: t.name.toLowerCase(), rows });
+  };
+  for (const app of apps.filter(has)) add(app, [{ order: 0, kind: 'app', target: app }, ...(slots[app.id] ?? []).map((s) => ({ kind: 'slot', target: s }))]);
+  for (const c of (others.containers ?? []).filter(has)) add(c, [{ order: 1, kind: 'container', target: c }]);
+  for (const server of others.sqlServers ?? []) {
+    const dbs = has(server) ? (server.databases ?? []) : (server.databases ?? []).filter(has);
+    if (!has(server) && !dbs.length) continue;
+    add(server, [{ order: 2, kind: 'sqlserver', target: server }, ...dbs.map((d) => ({ kind: 'sqldb', target: d }))]);
+  }
+  for (const a of (others.storage ?? []).filter(has)) add(a, [{ order: 3, kind: 'storage', target: a }]);
   const rows = [];
-  let group = null;
-  for (const app of shown) {
-    if (app.resourceGroup !== group) {
-      group = app.resourceGroup;
-      rows.push({ kind: 'group', text: group });
-    }
-    rows.push({ kind: 'app', target: app });
-    for (const slot of slots[app.id] ?? []) rows.push({ kind: 'slot', target: slot });
+  // Groups in the order their first app came (apps arrive sorted), then the ones with only other kinds, by name.
+  const firstApp = new Map();
+  apps.forEach((a, i) => firstApp.has(a.resourceGroup) || firstApp.set(a.resourceGroup, i));
+  const names = [...groups.keys()].sort((x, y) => (firstApp.get(x) ?? Infinity) - (firstApp.get(y) ?? Infinity) || x.localeCompare(y));
+  for (const g of names) {
+    rows.push({ kind: 'group', text: g });
+    // Apps keep the order they came in; the other kinds follow, by kind and then name.
+    const items = groups.get(g).map((it, i) => ({ ...it, i })).sort((x, y) => x.order - y.order || (x.order === 0 ? x.i - y.i : x.name.localeCompare(y.name)));
+    for (const it of items) for (const r of it.rows) rows.push({ kind: r.kind, target: r.target });
   }
   return rows;
+}
+
+/** SQL servers by name and databases as "server/database", for /trawl and /firewall to name one. */
+export function sqlByLabel(sqlServers = []) {
+  const out = {};
+  for (const s of sqlServers) {
+    out[s.name] = s;
+    for (const d of s.databases ?? []) out[label(d)] = d;
+  }
+  return out;
 }
 
 /** Every app and slot by its label ("contoso-web", "contoso-web/staging"), for commands to name one. */

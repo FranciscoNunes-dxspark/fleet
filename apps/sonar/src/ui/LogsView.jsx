@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useInput } from 'ink';
-import { runQuery } from '../actions.js';
+import { requestForHail, runQuery, saveQuery } from '../actions.js';
 import { cellText, completeQuery, hailRequest, records } from '../insights.js';
 import { theme } from '../theme.js';
 import { clean, fit } from '../text.js';
@@ -26,7 +26,8 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
   const extra = edit ? Math.min(5, completeQuery(edit.text, edit.cursor).items.length) : 0;
   const innerH = Math.max(1, height - 6 - extra);
   const nav = useListNav(table.rows.length, innerH, { resetKey: result });
-  const widths = columnWidths(table);
+  // Measured once per result, not on every key.
+  const widths = useMemo(() => columnWidths(table), [result]);
 
   const editKeys = (input, key) => {
     const e = editRef.current;
@@ -68,6 +69,7 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
     if (editRef.current) return editKeys(input, key);
     if (input === 'e' || input === 'i') return setEdit({ text: query, cursor: query.length, pick: 0, history: -1 });
     if (input === 'c') return ctx.chooseComponent();
+    if (input === 's') return saveQuery(ctx, query);
     if (nav.handle(input, key)) return;
     if (input === 'h' || key.leftArrow) return setCol((c) => Math.max(0, c - 1));
     if (input === 'l' || key.rightArrow) return setCol((c) => Math.min(Math.max(0, table.columns.length - 1), c + 1));
@@ -75,12 +77,13 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
       const tsv = [table.columns.map((c) => c.name), ...table.rows.map((r) => r.map((v, i) => cellText(v, table.columns[i].type)))].map((r) => r.join('\t')).join('\n');
       return ctx.copy(tsv, `${table.rows.length} rows (tab-separated)`);
     }
-    const row = records(table)[nav.index];
+    const row = table.rows[nav.index] ? records({ columns: table.columns, rows: [table.rows[nav.index]] })[0] : undefined;
     if (!row) return key.return ? runQuery(ctx, query) : undefined;
     if (key.return) return ctx.showText(`Row ${nav.index + 1} of ${table.rows.length}`, JSON.stringify(row, null, 2));
     if (input === 'y') return ctx.copy(JSON.stringify(row, null, 2), 'the row');
-    // A request, to send again in Hail (paste it into a .http file).
-    if (input === 'H') return hailRequest(row) ? ctx.copy(hailRequest(row), 'it as a Hail request') : ctx.note('Only a row with a url (from requests) can be a Hail request.', 'error');
+    // A request, to send again in Hail: a /take for its prompt, or (F) the text of a .http file's request.
+    if (input === 'H') return requestForHail(ctx, row);
+    if (input === 'F') return hailRequest(row) ? ctx.copy(hailRequest(row), 'it as a .http request') : ctx.note('Only a row with a url (from requests) can be a .http request.', 'error');
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {

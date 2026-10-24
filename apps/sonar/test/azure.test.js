@@ -2,12 +2,14 @@
 // its Application Insights, production, settings, sparklines, completion, the tree, the demo's answers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAzure, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
+import { getEventListeners } from 'node:events';
+import { alertFrom, alertRange, createAzure, retryAfter, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
-import { TIMESPANS, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
+import { TIMESPANS, availabilityQuery, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
 import { loadSubscription } from '../src/load.js';
-import { mapLimited, resourceRows, targetForUrl, targetsByLabel } from '../src/tree.js';
+import { METRICS, metricInterval, metricRows, seriesFrom } from '../src/metrics.js';
+import { mapLimited, resourceRows, sqlByLabel, targetForUrl, targetsByLabel } from '../src/tree.js';
 
 /** A fetch that answers from `routes` (method + path → body, or [status, body]) and records the calls. */
 function fakeFetch(routes) {
@@ -16,9 +18,10 @@ function fakeFetch(routes) {
     const u = new URL(url);
     const key = `${init.method} ${u.host === 'management.azure.com' ? '' : u.host}${u.pathname}`;
     calls.push({ key, url, init, body: init.body ? JSON.parse(init.body) : undefined });
-    const hit = routes[key];
+    // A route can be a function of the request's body (pages asked for by token, say).
+    const hit = typeof routes[key] === 'function' ? routes[key](calls.at(-1).body) : routes[key];
     const [status, body] = Array.isArray(hit) ? hit : [hit === undefined ? 404 : 200, hit ?? { error: { code: 'NotFound', message: `No route ${key}` } }];
-    return { ok: status < 300, status, text: async () => JSON.stringify(body) };
+    return { ok: status < 300, status, text: async () => (typeof body?.raw === 'string' ? body.raw : JSON.stringify(body)) };
   };
   return { fetch, calls };
 }
@@ -71,6 +74,78 @@ test('the ARM client: lists across pages, slots, settings, changes with the righ
   assert.equal(azure.portalUrl(apps[1]), `https://portal.azure.com/#resource${apps[1].id}`);
 });
 
+test('slots: Resource Graph says which apps have any, across its pages, and only theirs are listed; without it, every app\'s', async () => {
+  const [web, api, jobs] = [site('web', 'rg-prod'), site('api', 'RG-PROD'), site('jobs', 'rg-dev')];
+  const routes = {
+    'GET /subscriptions': { value: [{ subscriptionId: 's1', displayName: 'One', state: 'Enabled' }] },
+    'GET /subscriptions/s1/providers/Microsoft.Web/sites': { value: [web, api, jobs] },
+    'GET /subscriptions/s1/providers/Microsoft.Insights/components': { value: [] },
+    // Two pages; Resource Graph may write an id's case differently from ARM.
+    'POST /providers/Microsoft.ResourceGraph/resources': (body) =>
+      body.options.$skipToken === 'p2' ? { data: [{ id: `${api.id.toLowerCase()}/slots/blue` }] } : { data: [{ id: `${web.id}/slots/staging` }, { id: `${web.id}/slots/qa` }], $skipToken: 'p2' },
+    [`GET ${web.id}/slots`]: { value: [{ ...site('web/staging', 'rg-prod'), id: `${web.id}/slots/staging` }] },
+    [`GET ${api.id}/slots`]: { value: [{ ...site('api/blue', 'RG-PROD'), id: `${api.id}/slots/blue` }] },
+    [`GET ${jobs.id}/slots`]: { value: [] },
+  };
+  const { fetch, calls } = fakeFetch(routes);
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const ids = await azure.appsWithSlots('s1');
+  assert.deepEqual([...ids], [web.id.toLowerCase(), api.id.toLowerCase()]);
+  const graph = calls.filter((c) => c.key.includes('ResourceGraph'));
+  assert.deepEqual(graph[0].body.subscriptions, ['s1']);
+  assert.match(graph[0].body.query, /microsoft\.web\/sites\/slots/);
+  assert.equal(graph[1].body.options.$skipToken, 'p2');
+
+  calls.length = 0;
+  const d = await loadSubscription(azure, 's1');
+  assert.deepEqual(Object.values(d.slots).flat().map(label).sort(), ['api/blue', 'web/staging']);
+  assert.ok(!calls.some((c) => c.key === `GET ${jobs.id}/slots`), 'not asked for an app without slots');
+
+  // Resource Graph refused: every app's slots, as before.
+  const without = fakeFetch({ ...routes, 'POST /providers/Microsoft.ResourceGraph/resources': [403, { error: { message: 'no' } }] });
+  const d2 = await loadSubscription(createAzure({ fetch: without.fetch, token: async () => 't' }), 's1');
+  assert.deepEqual(Object.values(d2.slots).flat().map(label).sort(), ['api/blue', 'web/staging']);
+  assert.ok(without.calls.some((c) => c.key === `GET ${jobs.id}/slots`));
+
+  // The demo says the same as its slots.
+  const demo = demoAzure();
+  const dd = await loadSubscription(demo);
+  assert.deepEqual([...(await demo.appsWithSlots('sub-prod'))].sort(), dd.apps.filter((a) => dd.slots[a.id].length).map((a) => a.id.toLowerCase()).sort());
+});
+
+test('loading: the subscription az has selected is asked for while the list is read, and a name or id given wins', async () => {
+  const order = [];
+  const provider = {
+    subscriptions: async () => (order.push('list'), await new Promise((r) => setTimeout(r, 10)), order.push('listed'), [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }]),
+    currentSubscription: async () => (order.push('current'), { id: 'b', name: 'B' }),
+    apps: async () => [],
+    components: async () => [],
+  };
+  assert.equal((await loadSubscription(provider)).subscription.id, 'b');
+  assert.ok(order.indexOf('current') < order.indexOf('listed'), order.join(' '));
+  order.length = 0;
+  assert.equal((await loadSubscription(provider, 'A')).subscription.id, 'a');
+  assert.ok(!order.includes('current'), 'not asked when one is named');
+});
+
+test('a throttled call (429) is tried again after Retry-After, up to three times', async () => {
+  let n = 0;
+  const fetch = async () => {
+    n++;
+    const throttled = n <= 2;
+    return { ok: !throttled, status: throttled ? 429 : 200, headers: { get: (h) => (h === 'retry-after' ? '0' : null) }, text: async () => JSON.stringify(throttled ? { error: { message: 'Too many requests' } } : { value: [{ subscriptionId: 's1', displayName: 'One' }] }) };
+  };
+  assert.deepEqual(await createAzure({ fetch, token: async () => 't' }).subscriptions(), [{ id: 's1', name: 'One' }]);
+  assert.equal(n, 3);
+  let m = 0;
+  const always = async () => (m++, { ok: false, status: 429, headers: { get: () => '0' }, text: async () => JSON.stringify({ error: { message: 'Too many requests' } }) });
+  await assert.rejects(createAzure({ fetch: always, token: async () => 't' }).subscriptions(), /Listing subscriptions: Too many requests/);
+  assert.equal(m, 4, 'the first call and three more');
+  assert.equal(retryAfter({ headers: { get: () => '7' } }), 7000);
+  assert.equal(retryAfter({ headers: { get: () => '600' } }), 30_000);
+  assert.equal(retryAfter({}, 2), 4000);
+});
+
 test('az: a token kept until near its end, and sign-in trouble said plainly', async () => {
   let runs = 0;
   const runner = async () => (runs++, { stdout: JSON.stringify({ token: `tok${runs}`, expires: String(Math.floor(Date.now() / 1000) + 3600) }) });
@@ -81,6 +156,25 @@ test('az: a token kept until near its end, and sign-in trouble said plainly', as
     throw Object.assign(new Error('failed'), { stderr: "AADSTS700082: The refresh token has expired. Please run 'az login'" });
   };
   await assert.rejects(token('https://r2/', { runner: refused }), /not signed in, or its sign-in ran out: run az login/);
+});
+
+test('az: calls that ask for a token at once share one az run, and a failed one is asked again', async () => {
+  let runs = 0;
+  const slow = async () => {
+    runs++;
+    await new Promise((r) => setTimeout(r, 20));
+    return { stdout: JSON.stringify({ token: `slow${runs}`, expires: String(Math.floor(Date.now() / 1000) + 3600) }) };
+  };
+  assert.deepEqual(await Promise.all([1, 2, 3, 4, 5].map(() => token('https://r3/', { runner: slow }))), ['slow1', 'slow1', 'slow1', 'slow1', 'slow1']);
+  assert.equal(runs, 1);
+  let tries = 0;
+  const flaky = async () => {
+    if (++tries === 1) throw new Error('network');
+    return { stdout: JSON.stringify({ token: 'ok', expires: String(Math.floor(Date.now() / 1000) + 3600) }) };
+  };
+  await assert.rejects(Promise.all([token('https://r4/', { runner: flaky }), token('https://r4/', { runner: flaky })]), /network/);
+  assert.equal(tries, 1, 'both waited on the one run');
+  assert.equal(await token('https://r4/', { runner: flaky }), 'ok');
 });
 
 test('linking an app to its Application Insights, production, secrets, settings compared', () => {
@@ -154,7 +248,7 @@ test('the demo: a subscription to read, the queries Sonar sends answered, change
   const timeline = records(await azure.query(ai, `union requests | where operation_Id == '${problems[0].operation}'`, { timespan: 'P7D' }));
   assert.deepEqual([...new Set(timeline.map((r) => r.itemType))].sort(), ['dependency', 'exception', 'request', 'trace']);
   assert.equal((await azure.query(ai, 'requests | take 3')).rows.length, 3);
-  assert.throws(() => demoQuery('pageViews | take 1', []), /it answers requests, exceptions, traces and dependencies/);
+  assert.throws(() => demoQuery('pageViews | take 1', []), /it answers requests, exceptions, traces, dependencies and availabilityResults/);
   const staging = d.slots[d.apps[0].id][0];
   await azure.swap(staging);
   assert.equal((await azure.settings(d.apps[0])).APP_VERSION, '2.15.0-rc.1');
@@ -192,4 +286,160 @@ test('the log stream: lines across chunks, from the Kudu site with the ARM token
   assert.deepEqual(asked, [['https://web.scm.azurewebsites.net/api/logstream', 'Bearer t-https://management.azure.com/']]);
   assert.equal(lines.length, 3);
   assert.equal(siteFrom(site('shop', 'rg')).scmHost, 'shop.scm.azurewebsites.net', 'worked out when ARM lists no Kudu host');
+});
+
+test('metrics: the site\'s Azure Monitor metrics over the span, at its grain, as sparklines and a summary', async () => {
+  const web = siteFrom(site('web', 'rg'));
+  const body = {
+    value: [
+      { name: { value: 'CpuTime' }, unit: 'Seconds', timeseries: [{ data: [{ timeStamp: '2026-10-22T10:00:00Z', total: 30 }, { timeStamp: '2026-10-22T11:00:00Z', total: 90 }] }] },
+      { name: { value: 'MemoryWorkingSet' }, unit: 'Bytes', timeseries: [{ data: [{ timeStamp: '2026-10-22T10:00:00Z', average: 200 * 1024 ** 2 }, { timeStamp: '2026-10-22T11:00:00Z', average: 300 * 1024 ** 2 }] }] },
+      { name: { value: 'Http5xx' }, unit: 'Count', timeseries: [{ data: [{ timeStamp: '2026-10-22T10:00:00Z', total: 0 }, { timeStamp: '2026-10-22T11:00:00Z', total: 3 }] }] },
+      { name: { value: 'HttpResponseTime' }, unit: 'Seconds', timeseries: [] },
+    ],
+  };
+  const { fetch, calls } = fakeFetch({ [`GET ${web.id}/providers/Microsoft.Insights/metrics`]: body });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const series = await azure.metrics(web, { span: TIMESPANS[1] });
+  const q = new URL(calls[0].url).searchParams;
+  assert.equal(q.get('metricnames'), METRICS.map((m) => m.name).join(','));
+  assert.equal(q.get('interval'), 'PT1H');
+  assert.match(q.get('timespan'), /^\d{4}-.*Z\/\d{4}-.*Z$/);
+  assert.equal(q.get('aggregation'), 'Total,Average');
+  assert.deepEqual(series[0].points.map((p) => p.value), [30, 90]);
+  assert.deepEqual(seriesFrom(body)[1].points.map((p) => p.value), [200 * 1024 ** 2, 300 * 1024 ** 2]);
+  assert.deepEqual([metricInterval(TIMESPANS[0]), metricInterval(TIMESPANS[2]), metricInterval(TIMESPANS[3])], ['PT5M', 'PT6H', 'P1D']);
+  const rows = Object.fromEntries(metricRows(series, { width: 4 }).map((r) => [r.label, r]));
+  assert.equal(rows.cpu.summary, '2.0 min cpu');
+  assert.equal(rows.cpu.spark, '▄█');
+  assert.equal(rows.memory.summary, '300 MB · peak 300 MB');
+  assert.equal(rows['5xx'].summary, '3 errors');
+  assert.equal(rows.response.summary, 'no data');
+  const failing = createAzure({ fetch: fakeFetch({}).fetch, token: async () => 't' });
+  await assert.rejects(failing.metrics(web, { span: TIMESPANS[0] }), /Reading web's metrics: not found/);
+
+  const demo = demoAzure();
+  const d = await loadSubscription(demo);
+  const m = await demo.metrics(d.apps[0], { span: TIMESPANS[0] });
+  assert.deepEqual(m.map((x) => x.name), METRICS.map((x) => x.name));
+  assert.equal(m[0].points.length, 12, 'an hour at five minutes');
+});
+
+test('deployments: listed newest first with Kudu\'s states in words, and one\'s log in order', async () => {
+  const web = siteFrom(site('web', 'rg'));
+  const dep = (name, status, start, extra = {}) => ({ id: `${web.id}/deployments/${name}`, name: `web/${name}`, properties: { status, start_time: start, end_time: start, author: 'Ana', deployer: 'GitHub', message: `m ${name}\n`, ...extra } });
+  const { fetch, calls } = fakeFetch({
+    [`GET ${web.id}/deployments`]: { value: [dep('a1', 4, '2026-10-01T10:00:00Z'), dep('b2', 3, '2026-10-05T10:00:00Z', { active: false }), dep('c3', 1, '2026-10-06T10:00:00Z', { active: true })] },
+    [`GET ${web.id}/deployments/b2/log`]: { value: [{ properties: { log_time: '2026-10-05T10:00:09Z', message: 'Build failed.' } }, { properties: { log_time: '2026-10-05T10:00:01Z', message: 'Fetching changes.' } }] },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const list = await azure.deployments(web);
+  assert.deepEqual(list.map((d) => [d.name, d.status, d.active]), [['c3', 'building', true], ['b2', 'failed', false], ['a1', 'succeeded', false]]);
+  assert.deepEqual([list[0].author, list[0].deployer, list[0].message], ['Ana', 'GitHub', 'm c3']);
+  assert.match(calls[0].url, /api-version=2023-12-01/);
+  assert.deepEqual((await azure.deploymentLog(list[1])).map((l) => l.message), ['Fetching changes.', 'Build failed.']);
+  const slot = { ...web, id: `${web.id}/slots/staging`, slot: 'staging' };
+  await assert.rejects(azure.deployments(slot), /Listing web\/staging's deployments: not found/);
+  assert.equal(deploymentFrom({ name: 'x', properties: { status: 9 } }).status, '9');
+});
+
+test('alerts: the fired ones over the span, most severe first; availability tests summarised by the demo', async () => {
+  const alert = (name, severity, fired, extra = {}) => ({ id: `/subscriptions/s1/providers/Microsoft.AlertsManagement/alerts/${name}`, name, properties: { essentials: { severity, signalType: 'Metric', alertState: 'New', monitorCondition: 'Fired', targetResource: '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.Web/sites/web', targetResourceType: 'microsoft.web/sites', targetResourceGroup: 'rg', startDateTime: fired, alertRule: '/x/metricalerts/r1', ...extra } } });
+  const { fetch, calls } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.AlertsManagement/alerts': { value: [alert('slow', 'Sev3', '2026-10-22T10:00:00Z'), alert('down', 'Sev0', '2026-10-22T09:00:00Z', { targetResourceName: 'web' })] },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const list = await azure.alerts('s1', { span: TIMESPANS[2] });
+  assert.deepEqual(list.map((a) => [a.name, a.severity, a.target]), [['down', 'Sev0', 'web'], ['slow', 'Sev3', 'web']]);
+  const q = new URL(calls[0].url).searchParams;
+  assert.deepEqual([q.get('monitorCondition'), q.get('timeRange'), q.get('api-version')], ['Fired', '7d', '2019-05-05-preview']);
+  assert.deepEqual(TIMESPANS.map(alertRange), ['1h', '1d', '7d', '30d']);
+  assert.equal(alertFrom({ id: 'x', name: 'n', properties: {} }).target, '');
+
+  const demo = demoAzure({ now: Date.parse('2026-10-22T12:00:00Z') });
+  assert.deepEqual((await demo.alerts('sub-prod', { span: TIMESPANS[0] })).map((a) => a.severity), ['Sev1']);
+  assert.equal((await demo.alerts('sub-prod', { span: TIMESPANS[2] })).length, 3);
+  assert.equal((await demo.alerts('sub-dev', { span: TIMESPANS[3] })).length, 0);
+  const tests = records(await demo.query({ appId: 'app-prod' }, availabilityQuery(), { timespan: 'P1D' }));
+  assert.deepEqual(tests.map((t) => t.name).sort(), ['shop.contoso.com checkout', 'shop.contoso.com home page']);
+  assert.ok(tests.every((t) => t.total > 200 && t.locations === 3));
+  assert.equal(tests.find((t) => t.name.endsWith('home page')).failed, 0);
+});
+
+test('other resources: container apps, storage, SQL servers, databases, admins, firewall, connection strings, the public address, a workspace query', async () => {
+  const rg = '/subscriptions/s1/resourceGroups/rg-prod';
+  const ca = { id: `${rg}/providers/Microsoft.App/containerApps/worker`, name: 'worker', location: 'westeurope', properties: { runningStatus: 'Running', latestRevisionName: 'worker--r3', latestReadyRevisionName: 'worker--r2', managedEnvironmentId: `${rg}/providers/Microsoft.App/managedEnvironments/env`, configuration: { ingress: { fqdn: 'worker.x.azurecontainerapps.io' } }, template: { containers: [{ image: 'cr.io/worker:1' }] } } };
+  const sql = { id: `${rg}/providers/Microsoft.Sql/servers/db1`, name: 'db1', location: 'westeurope', properties: { state: 'Ready', fullyQualifiedDomainName: 'db1.database.windows.net', version: '12.0' } };
+  const web = siteFrom(site('web', 'rg-prod'));
+  const { fetch, calls } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.App/containerApps': { value: [ca] },
+    [`POST ${ca.id}/revisions/worker--r3/restart`]: {},
+    [`GET ${rg}/providers/Microsoft.App/managedEnvironments/env`]: { name: 'env', properties: { appLogsConfiguration: { logAnalyticsConfiguration: { customerId: 'ws-1' } } } },
+    'POST api.loganalytics.io/v1/workspaces/ws-1/query': { tables: [{ columns: [{ name: 'Log_s', type: 'string' }], rows: [['hello']] }] },
+    'GET /subscriptions/s1/providers/Microsoft.Storage/storageAccounts': { value: [{ id: `${rg}/providers/Microsoft.Storage/storageAccounts/st1`, name: 'st1', kind: 'StorageV2', sku: { name: 'Standard_LRS' }, properties: { provisioningState: 'Succeeded', statusOfPrimary: 'available', accessTier: 'Hot', primaryEndpoints: { blob: 'https://st1.blob.core.windows.net/' } } }] },
+    'GET /subscriptions/s1/providers/Microsoft.Sql/servers': { value: [sql] },
+    [`GET ${sql.id}/databases`]: { value: [{ id: `${sql.id}/databases/master`, name: 'master', properties: { status: 'Online' } }, { id: `${sql.id}/databases/shop`, name: 'shop', sku: { name: 'S1', tier: 'Standard' }, properties: { status: 'Online' } }] },
+    [`GET ${sql.id}/administrators`]: { value: [{ properties: { login: 'DBAs', principalType: 'Group', azureADOnlyAuthentication: true } }] },
+    [`GET ${sql.id}/firewallRules`]: { value: [{ name: 'AllowAllWindowsAzureIps', properties: { startIpAddress: '0.0.0.0', endIpAddress: '0.0.0.0' } }] },
+    [`PUT ${sql.id}/firewallRules/sonar-198-51-100-7`]: {},
+    [`POST ${web.id}/config/connectionstrings/list`]: { properties: { Db: { value: 'Server=db1;Password=x', type: 'SQLAzure' } } },
+    'GET api.ipify.org/': { raw: '198.51.100.7\n' },
+  });
+  const tokens = [];
+  const azure = createAzure({ fetch, token: async (r) => (tokens.push(r), 't') });
+  const [worker] = await azure.containerApps('s1');
+  assert.deepEqual([worker.type, worker.name, worker.resourceGroup, worker.state, worker.host, worker.latestRevision, worker.image], ['container', 'worker', 'rg-prod', 'Running', 'worker.x.azurecontainerapps.io', 'worker--r3', 'cr.io/worker:1']);
+  await azure.restartRevision(worker);
+  assert.match(calls.at(-1).url, /revisions\/worker--r3\/restart\?api-version=2024-03-01$/);
+  const ws = await azure.containerAppWorkspace(worker);
+  assert.deepEqual([ws.workspaceId, ws.name], ['ws-1', 'env logs']);
+  assert.deepEqual((await azure.query(ws, 'ContainerAppConsoleLogs_CL | take 1')).rows, [['hello']]);
+  assert.equal(tokens.at(-1), 'https://api.loganalytics.io');
+  const [st] = await azure.storageAccounts('s1');
+  assert.deepEqual([st.type, st.state, st.sku, st.tier, st.host], ['storage', 'Available', 'Standard_LRS', 'Hot', 'st1.blob.core.windows.net']);
+  const [server] = await azure.sqlServers('s1');
+  assert.deepEqual([server.type, server.fqdn, server.state, server.admin], ['sqlserver', 'db1.database.windows.net', 'Ready', null]);
+  const dbs = await azure.sqlDatabases(server);
+  assert.deepEqual(dbs.map((d) => [d.name, d.sku, d.tier, label(d)]), [['shop', 'S1', 'Standard', 'db1/shop']]);
+  assert.deepEqual(await azure.sqlAdmin(server), { login: 'DBAs', type: 'Group', only: true });
+  assert.deepEqual(await azure.firewallRules(server), [{ name: 'AllowAllWindowsAzureIps', start: '0.0.0.0', end: '0.0.0.0' }]);
+  await azure.addFirewallRule(server, { name: 'sonar-198-51-100-7', start: '198.51.100.7' });
+  assert.deepEqual([calls.at(-1).init.method, calls.at(-1).body], ['PUT', { properties: { startIpAddress: '198.51.100.7', endIpAddress: '198.51.100.7' } }]);
+  assert.match(calls.at(-1).url, /api-version=2021-11-01/);
+  assert.deepEqual(await azure.connectionStrings(web), { Db: 'Server=db1;Password=x' });
+  assert.equal(await azure.publicIp(), '198.51.100.7');
+  assert.equal(sqlServerFrom({ id: 'x', name: 'n', properties: { administrators: { login: 'me', principalType: 'User' } } }).admin.login, 'me');
+});
+
+test('the tree with the other kinds: under their resource groups, databases under their server, a filter that finds a database', async () => {
+  const d = await loadSubscription(demoAzure());
+  const rows = resourceRows(d.apps, d.slots, '', d);
+  assert.deepEqual(rows.map((r) => r.text ?? `${r.kind}:${label(r.target)}`), [
+    'contoso-prod', 'app:contoso-web', 'slot:contoso-web/staging', 'app:contoso-api', 'slot:contoso-api/staging', 'app:contoso-orders',
+    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore',
+    'contoso-qa', 'sqlserver:contoso-sql-qa', 'sqldb:contoso-sql-qa/contoso-qa',
+  ]);
+  assert.deepEqual(resourceRows(d.apps, d.slots, 'reporting', d).map((r) => r.text ?? label(r.target)), ['contoso-prod', 'contoso-sql-prod', 'contoso-sql-prod/contoso-reporting']);
+  assert.equal(d.sqlServers[0].admin, null, 'the admin is read when the cursor stops on a server, not with the subscription');
+  assert.equal((await demoAzure().sqlAdmin(d.sqlServers[0])).login, 'SQL Admins');
+  assert.deepEqual(Object.keys(sqlByLabel(d.sqlServers)), ['contoso-sql-prod', 'contoso-sql-prod/contoso', 'contoso-sql-prod/contoso-reporting', 'contoso-sql-qa', 'contoso-sql-qa/contoso-qa']);
+});
+
+test('calls under one signal (a load\'s) leave no listeners on it, and it still cancels them', async () => {
+  const { fetch, calls } = fakeFetch({ 'GET /subscriptions': { value: [{ subscriptionId: 's1', displayName: 'One', state: 'Enabled' }] } });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const load = new AbortController();
+  for (let i = 0; i < 30; i++) await azure.subscriptions({ signal: load.signal });
+  assert.equal(getEventListeners(load.signal, 'abort').length, 0);
+  // Each call had a signal of its own, aborted with the load's.
+  const hanging = createAzure({
+    fetch: (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))),
+    token: async () => 't',
+  });
+  const p = hanging.subscriptions({ signal: load.signal });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.notEqual(calls[0].init.signal, load.signal);
+  load.abort();
+  await assert.rejects(p, /aborted/);
+  assert.equal(getEventListeners(load.signal, 'abort').length, 0);
 });

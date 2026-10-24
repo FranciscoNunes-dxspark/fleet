@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
-import { TIMESPANS, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
+import { TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
+import { costDay } from '../cost.js';
+import { crossing, watchEvery, watchValue } from '../watches.js';
 import { targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
@@ -20,6 +22,7 @@ import { Palette } from './Palette.jsx';
 import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from './parts.jsx';
 import { HelpView } from './HelpView.jsx';
 import { LiveView } from './LiveView.jsx';
+import { AlertsView } from './AlertsView.jsx';
 import { LogsView } from './LogsView.jsx';
 import { ProblemsView } from './ProblemsView.jsx';
 import { ResourcesView } from './ResourcesView.jsx';
@@ -28,12 +31,17 @@ import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
+import { worthNotifying } from '../notify.js';
+import { ask } from '../claude-cli.js';
+import { APP_NAMES, decodeContext, pastedLine, readMoods, writeMood } from '../family.js';
+import { familyMood, moodKey, reactionLine, reactionTo } from '../kin.js';
 
 const VIEWS = [
   { id: 'resources', label: 'Resources' },
   { id: 'logs', label: 'Logs' },
   { id: 'problems', label: 'Problems' },
   { id: 'live', label: 'Live' },
+  { id: 'alerts', label: 'Alerts' },
   { id: 'log', label: 'Log' },
 ];
 
@@ -47,12 +55,16 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · R restart · S stop/start · W swap · l logs · p problems · L live log · o portal · b browse',
-  logs: 'e edit the query · ↵ run it / show a row · h l columns · y copy the row · Y all · H as a Hail request · c which insights',
-  problems: '↵ the latest occurrence · l its exceptions in Logs · y copy the message · c which insights',
+  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
+  logs: 'e edit the query · ↵ run it / show a row · s save it · h l columns · y copy the row · Y all · H for Hail · F as .http · c which insights',
+  problems: '↵ the latest occurrence · I incident · K before/after · w ask Claude why · l in Logs · y copy · Y for Splice · c which insights',
+  alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
   log: '↵ all its output · y copy it',
 };
+
+// Only web and function apps and their slots have settings, logs to stream and Application Insights.
+const webTarget = (t) => (t && !t.type ? t : null);
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
@@ -62,7 +74,7 @@ function Header({ data, span, demo, width, loading, mood }) {
     { text: 'Sonar', bold: true },
   ];
   if (demo) segs.push({ text: '  ' }, { text: ' DEMO ', bg: theme.info, color: theme.ink, bold: true });
-  if (data) segs.push({ text: '  │  ', color: theme.border }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps`, color: theme.dim });
+  if (data) segs.push({ text: '  │  ', color: theme.border }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps${loading ? ' · reading…' : ''}`, color: theme.dim });
   else if (loading) segs.push({ text: '  loading…', color: theme.dim });
   segs.push({ text: '  │  last ', color: theme.dim }, { text: span.label, color: theme.warn, bold: true });
   return <Row pointer={false} width={width} segments={segs} />;
@@ -113,11 +125,20 @@ const DOUBLE_CLICK_MS = 400;
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+// `notify(title, body)` says a long job has finished (cli.jsx rings the terminal's bell and raises a
+// desktop notification); tests pass a recorder or nothing. `askClaude` is claude-cli.js's ask (w in
+// Problems); tests stub it.
+// `cwd` is the folder Sonar started in: where Claude reads code, the checkout an incident's commits come
+// from, and where files are written; tests pass their own.
+// `familyEvery` is how often the siblings' moods are read (ms); tests make it short.
+export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify, askClaude = ask, cwd = process.cwd(), familyEvery = 30_000 }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
   const [data, setData] = useState(null);
+  // Counts the subscriptions read: once when one first shows, once when it's whole. What looks again
+  // when the data changes (Problems, Alerts) follows this, not each step of a subscription filling in.
+  const [dataStamp, setDataStamp] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('resources');
   const [spanIndex, setSpanIndex] = useState(initialConfig.timespan ?? 1);
@@ -125,7 +146,12 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   // Logs: the query in the box and what the last run found. Problems: what was found, for which scope.
   const [query, setQuery] = useState('');
   const [result, setResult] = useState(null);
+  const resultRef = useRef(null);
+  resultRef.current = result;
   const [problems, setProblems] = useState(null);
+  // Problems shows only those like an exception taken from a sibling (/take exception) until x.
+  const [problemFilter, setProblemFilter] = useState(null);
+  const [alerts, setAlerts] = useState(null);
   // What Logs and Problems look at: an app (l, p) or, with `all`, everything in the chosen component.
   const [scopeState, setScopeState] = useState({ target: null, component: null, all: false });
   const scopeRef = useRef(scopeState);
@@ -142,7 +168,19 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const livePaused = useRef(false);
   const [liveTick, setLiveTick] = useState(0);
   const selectedRef = useRef(null);
+  const selectedProblem = useRef(null);
+  const problemsRef = useRef(null);
+  problemsRef.current = problems;
+  // The incident shown last (I in Problems), for /incident save.
+  const incidentRef = useRef(null);
   const settingsCache = useRef(new Map());
+  const metricsCache = useRef(new Map());
+  const firewallCache = useRef(new Map());
+  const adminCache = useRef(new Map());
+  // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
+  const watchStates = useRef(new Map());
+  // This month's costs per subscription, read once a day (r doesn't read them again).
+  const costCache = useRef(new Map());
   const [resolved, setResolved] = useState({ component: null, role: null, why: '' });
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
@@ -159,6 +197,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     const t = setTimeout(() => setMoodTick((n) => n + 1), 8100);
     return () => clearTimeout(t);
   }, [entries]);
+  // A sibling's mood, said once by Ping in a line of its own until esc ({ app, mood, reason, at }).
+  const [reaction, setReaction] = useState(null);
+  const seenMoods = useRef(new Set());
   // A word in the bottom line for a moment ("Copied 3 lines"), where it moves nothing on screen.
   const [flash, setFlash] = useState(null);
   useEffect(() => {
@@ -250,13 +291,32 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     addEntry({ title, status, lines });
   };
 
+  const loads = useRef(0);
   const reload = async (subId = dataRef.current?.subscription.id ?? configRef.current.subscription) => {
     setLoading(true);
     settingsCache.current = new Map();
+    metricsCache.current = new Map();
+    firewallCache.current = new Map();
+    adminCache.current = new Map();
+    // A subscription not on screen yet shows as soon as its apps are known, slots and databases
+    // filling in as they come; reading the one on screen again keeps it until the new one is whole.
+    const n = ++loads.current;
+    const fresh = !dataRef.current || (subId != null && dataRef.current.subscription.id !== subId);
+    let shown = false;
+    const onProgress = fresh
+      ? (d) => {
+          if (n !== loads.current) return;
+          dataRef.current = d;
+          setData(d);
+          if (!shown) setDataStamp((x) => x + 1);
+          shown = true;
+        }
+      : undefined;
     try {
-      const d = await load(provider, subId);
+      const d = await load(provider, subId, { onProgress });
       dataRef.current = d;
       setData(d);
+      setDataStamp((x) => x + 1);
     } catch (e) {
       note(`Couldn't read the subscription: ${firstLine(e.message)}`, 'error');
     } finally {
@@ -300,12 +360,75 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     return cache.get(target.id);
   };
 
+  /** An app's or slot's metrics over the time span, read when the cursor stops on it and kept until r. */
+  const metricsOf = (target) => {
+    const span = TIMESPANS[spanRef.current];
+    const key = `${target.id}|${span.iso}`;
+    const cache = metricsCache.current;
+    if (!cache.has(key)) {
+      const p = provider.metrics(target, { span });
+      p.catch(() => cache.delete(key));
+      cache.set(key, p);
+    }
+    return cache.get(key);
+  };
+
+  /** A SQL server's firewall rules, kept until r or a rule is added. */
+  const firewallOf = (server) => {
+    const cache = firewallCache.current;
+    if (!cache.has(server.id)) {
+      const p = provider.firewallRules(server);
+      p.catch(() => cache.delete(server.id));
+      cache.set(server.id, p);
+    }
+    return cache.get(server.id);
+  };
+
+  /** A SQL server's Entra admin (null when none is set, or it can't be read), the listing's when it carried one; kept until r. */
+  const adminOf = (server) => {
+    if (server.admin) return Promise.resolve(server.admin);
+    const cache = adminCache.current;
+    if (!cache.has(server.id)) cache.set(server.id, provider.sqlAdmin ? provider.sqlAdmin(server).catch(() => null) : Promise.resolve(null));
+    return cache.get(server.id);
+  };
+
+  /**
+   * Runs the watches (`names`, or all of them) against the Application Insights each was made in, quietly,
+   * and says so, in the log and through `notify`, when one goes over its threshold.
+   */
+  const checkWatches = async (names) => {
+    const list = (configRef.current.watches ?? []).filter((w) => !names || names.includes(w.name));
+    await Promise.all(
+      list.map(async (w) => {
+        const was = watchStates.current.get(w.name);
+        try {
+          const value = watchValue(await provider.query(w.component, w.kql, { timespan: 'P1D' }));
+          const { above, crossed } = crossing(was?.above, value, w.threshold);
+          watchStates.current.set(w.name, { value, above, at: Date.now() });
+          if (!crossed) return;
+          note(`Watch "${w.name}" is ${value}, over ${w.threshold} (${w.component.name})\n${w.kql}`, 'error');
+          if (notify && configRef.current.notify !== false) notify(`Sonar: ${w.name} is over ${w.threshold}`, `${value} in ${w.component.name}`);
+        } catch (e) {
+          watchStates.current.set(w.name, { ...(was ?? {}), error: firstLine(e.message), at: Date.now() });
+        }
+      }),
+    );
+  };
+
+  /** The subscription's costs this month by resource, kept for the day; null when they can't be read (no permission, say nothing). */
+  const costsOf = (subId) => {
+    const key = `${subId}|${costDay()}`;
+    const cache = costCache.current;
+    if (!cache.has(key)) cache.set(key, provider.costs ? provider.costs(subId).catch(() => null) : Promise.resolve(null));
+    return cache.get(key);
+  };
+
   /** What Logs and Problems ask: the component (chosen, or the app's own) and the app's role name. */
   const resolveScope = async () => {
     const d = dataRef.current;
     if (!d) return { component: null, role: null, why: 'No subscription read yet.' };
     const s = scopeRef.current;
-    const target = s.all ? null : (s.target ?? selectedRef.current);
+    const target = s.all ? null : (s.target ?? webTarget(selectedRef.current));
     let component = s.component;
     if (!component && target) component = componentFor(await settingsOf(target).catch(() => ({})), d.components);
     if (!component && d.components.length === 1) component = d.components[0];
@@ -326,15 +449,19 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     setBusy(b);
     const id = addEntry({ title, status: 'running' });
     setWelcome(false);
+    // A long job that ends says so, for when you've looked away (Settings' "Notify when done").
+    const tell = (line) => notify && worthNotifying(Date.now() - b.started, configRef.current) && notify(`Sonar: ${title}`, line ?? '');
     try {
       const { stdout = '', stderr = '' } = await start(controller.signal);
       const out = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
       lastOutput.current = { title, text: out || '(no output)' };
       updateEntry(id, { status: 'ok', lines: out ? out.split('\n') : ['Done'] });
+      tell(out ? out.split('\n')[0] : 'Done');
       return { ok: true, out };
     } catch (error) {
       lastOutput.current = { title, text: error.message };
       updateEntry(id, { status: 'error', lines: error.cancelled ? ['Cancelled'] : error.message.split('\n') });
+      if (!error.cancelled) tell(firstLine(error.message));
       return { ok: false, error };
     } finally {
       busyRef.current = null;
@@ -367,6 +494,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     prefillKey.current = keySeq.current;
   };
 
+  const targetsMemo = useRef({ data: null, targets: {} });
   const ctxRef = useRef(null);
   if (!ctxRef.current) ctxRef.current = { get data() { return dataRef.current; }, get config() { return configRef.current; }, mouseHandlers: [] };
   const ctx = ctxRef.current;
@@ -377,19 +505,47 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       setScope({ target: null, component: null, all: false });
       setResult(null);
       setProblems(null);
+      setAlerts(null);
       setFilter('');
       await reload(id);
       if (dataRef.current) setConfig((c) => ({ ...c, subscription: dataRef.current.subscription.id }));
     },
+    // Whatever is under the cursor in Resources; selectedTarget is only ever a web or function app (or slot).
     selectTarget: (t) => (selectedRef.current = t),
-    selectedTarget: () => selectedRef.current,
-    targets: () => (dataRef.current ? targetsByLabel(dataRef.current.apps, dataRef.current.slots) : {}),
+    selectedResource: () => selectedRef.current,
+    // The problem under the cursor in Problems, and the list there (for /why to name one).
+    selectProblem: (p) => (selectedProblem.current = p),
+    setProblemFilter,
+    selectedProblem: () => selectedProblem.current,
+    problems: () => problemsRef.current?.rows ?? [],
+    problemSpark: (id) => problemsRef.current?.spark?.[id] ?? '',
+    setIncident: (inc) => (incidentRef.current = inc),
+    incident: () => incidentRef.current,
+    cwd: () => cwd,
+    askClaude,
+    selectedTarget: () => webTarget(selectedRef.current),
+    // Worked out once per subscription read, not on every key typed in the prompt.
+    targets: () => {
+      const d = dataRef.current;
+      if (!d) return {};
+      if (targetsMemo.current.data !== d) targetsMemo.current = { data: d, targets: targetsByLabel(d.apps, d.slots) };
+      return targetsMemo.current.targets;
+    },
     settingsOf,
+    metricsOf,
+    firewallOf,
+    adminOf,
+    costsOf,
+    checkWatches,
+    watchState: (name) => watchStates.current.get(name) ?? null,
+    forgetWatch: (name) => watchStates.current.delete(name),
+    forgetFirewall: (server) => firewallCache.current.delete(server.id),
     forgetSettings: (target) => settingsCache.current.delete(target.id),
     scope: resolveScope,
     timespan: () => TIMESPANS[spanRef.current],
     setQuery,
     setResult,
+    result: () => resultRef.current,
     setFilter,
     setComponent: (component) => setScope({ target: null, component, all: Boolean(component) }),
     chooseComponent: () => a.chooseComponent(ctx),
@@ -470,7 +626,12 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       reload();
       setProblemsTick((n) => n + 1);
     },
-    showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
+    // `token` marks a viewer that's filled in later (shown loading first): the same token replaces it,
+    // keeping where it goes back to.
+    showText: (title, text, opts = {}) => {
+      if (opts.token && overlayRef.current?.token === opts.token) return setOverlay((cur) => ({ title, text, ...opts, back: cur?.back }));
+      setOverlay({ title, text, ...opts });
+    },
     // A list to pick from: { title, hint, items | load, onPick, keys, empty } (see Picker.jsx).
     // `replace`: swaps the picker on screen for this one (the same list, redrawn after a change), keeping
     // where it goes back to, instead of opening on top of it.
@@ -506,6 +667,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     try {
       let r;
       if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
+      // A context a sibling copied, typed or pasted on its own: /take's.
+      else if (decodeContext(text)) r = await a.take(ctx, text);
       else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
         const cmd = findCommand(name, customRef.current.commands);
@@ -598,7 +761,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
 
   // The log streams while Live is on screen, and stops when you leave it or pick another app. Lines
   // come in bursts, so they're gathered and drawn a few times a second, the last 2000 kept.
-  const streamTarget = view === 'live' ? (liveTarget ?? selectedRef.current) : null;
+  const streamTarget = view === 'live' ? (liveTarget ?? webTarget(selectedRef.current)) : null;
   useEffect(() => {
     if (!streamTarget) return;
     const controller = new AbortController();
@@ -622,17 +785,52 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     };
   }, [streamTarget?.id, liveTick]);
 
+  // The watches run every few minutes (the Watch every setting) for as long as Sonar runs.
+  const watchCount = (config.watches ?? []).length;
+  const watchMs = watchEvery(config) * 60_000;
+  useEffect(() => {
+    if (!watchCount) return;
+    const t = setInterval(() => checkWatches(), watchMs);
+    return () => clearInterval(t);
+  }, [watchCount, watchMs]);
+
+  // Ping's mood goes to the family whenever it changes, and the siblings' are read every 30 s: a worried,
+  // sad or happy one from the last 15 minutes is said once. The Family moods setting turns both off.
+  const familyOn = config.familyMoods !== false;
+  const said = familyMood(moodFor({ data, busy, lastEntry: entries.at(-1) }), { busy, lastEntry: entries.at(-1), data });
+  useEffect(() => {
+    if (familyOn) writeMood('sonar', said);
+  }, [said.mood, said.reason, familyOn]);
+  useEffect(() => {
+    if (!familyOn) return setReaction(null);
+    const look = () => {
+      const m = reactionTo(readMoods('sonar'), seenMoods.current);
+      if (!m) return;
+      seenMoods.current.add(moodKey(m));
+      setReaction(m);
+    };
+    look();
+    const t = setInterval(look, familyEvery);
+    return () => clearInterval(t);
+  }, [familyOn, familyEvery]);
+  // A word that's been there two minutes has been seen.
+  useEffect(() => {
+    if (!reaction) return;
+    const t = setTimeout(() => setReaction(null), 120_000);
+    return () => clearTimeout(t);
+  }, [reaction]);
+
   // Problems are looked for when the view shows, and again when what it looks at or the span changes.
   const [problemsTick, setProblemsTick] = useState(0);
   const scopeKey = `${scopeState.target?.id ?? ''}|${scopeState.component?.id ?? ''}|${scopeState.all}|${view === 'problems' ? selectedRef.current?.id : ''}`;
   useEffect(() => {
-    if (view !== 'problems' && view !== 'logs') return;
+    if (view !== 'problems' && view !== 'logs' && view !== 'alerts') return;
     let live = true;
     resolveScope().then((r) => live && setResolved(r));
     return () => {
       live = false;
     };
-  }, [view, scopeKey, data]);
+  }, [view, scopeKey, dataStamp]);
   useEffect(() => {
     if (view !== 'problems' || !data) return;
     const controller = new AbortController();
@@ -650,7 +848,31 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       }
     })();
     return () => controller.abort();
-  }, [view, scopeKey, spanIndex, problemsTick, data]);
+  }, [view, scopeKey, spanIndex, problemsTick, dataStamp]);
+
+  // Alerts: what's firing in the subscription, and the availability tests of the Application Insights in scope.
+  useEffect(() => {
+    if (view !== 'alerts' || !data) return;
+    const controller = new AbortController();
+    const span = TIMESPANS[spanIndex];
+    const opts = { span, signal: controller.signal };
+    setAlerts((a) => ({ ...(a ?? {}), loading: true, span }));
+    (async () => {
+      const [fired, tests] = await Promise.allSettled([
+        provider.alerts(data.subscription.id, opts),
+        resolveScope().then((scope) => (scope.component ? provider.query(scope.component, availabilityQuery(), { timespan: span.iso, signal: controller.signal }).then(records) : Promise.reject(new Error(scope.why)))),
+      ]);
+      if (controller.signal.aborted) return;
+      setAlerts({
+        span,
+        rows: fired.status === 'fulfilled' ? fired.value : [],
+        error: fired.status === 'rejected' ? firstLine(fired.reason.message) : null,
+        tests: tests.status === 'fulfilled' ? tests.value : [],
+        testsError: tests.status === 'rejected' ? firstLine(tests.reason.message) : null,
+      });
+    })();
+    return () => controller.abort();
+  }, [view, scopeKey, spanIndex, problemsTick, dataStamp]);
 
   useEffect(() => {
     if (custom.problems.length) {
@@ -698,13 +920,13 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     setTitle?.(title);
   }, [title]);
 
-  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets() }) : [];
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets(), problems: ctx.problems(), queries: Object.keys(configRef.current.savedQueries ?? {}) }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets() });
+    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets(), problems: ctx.problems(), queries: Object.keys(configRef.current.savedQueries ?? {}) });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -751,6 +973,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       else {
         setEntries((list) => list.map((e) => ({ ...e, shown: false })));
         setWelcome(false);
+        setReaction(null);
       }
       return;
     }
@@ -784,6 +1007,10 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     if (key.ctrl && input === 'c') return exit();
     if (confirmRef.current || overlayRef.current || answerKey.current === keySeq.current) return;
     if (ctx.claimsKey?.(input, key)) return;
+    // A command or a sibling's context pasted while a view has the keys goes into the prompt, to run with ↵.
+    // (A terminal ends a pasted line with \r, which the family's rule takes as a \n.)
+    const pasted = pastedLine(input);
+    if (pasted) return prefill(pasted);
     globalKeys(input, key);
   });
 
@@ -876,14 +1103,15 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
+  const reactionRows = reaction ? 1 : 0;
   // The welcome box only appears when the terminal has room for it next to a useful view.
   const showWelcome = welcome && H >= 28;
-  const mainH = Math.max(6, H - 2 - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  const mainH = Math.max(6, H - 2 - reactionRows - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
     mainTop: 2,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + act.length + (busy ? 1 : 0),
+    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reactionRows + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
     tabs: tabLabels(entries),
   };
@@ -916,10 +1144,12 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     main = <LogsView query={query} result={result} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'live') {
     main = <LiveView live={{ ...live, target: streamTarget }} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'alerts') {
+    main = <AlertsView alerts={alerts} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'problems') {
-    main = <ProblemsView problems={problems} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ProblemsView problems={problems} filter={problemFilter} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <ResourcesView data={data} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ResourcesView data={data} span={TIMESPANS[spanIndex]} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash
@@ -933,7 +1163,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
         : overlay?.kind === 'picker'
           ? 'j/k move · ↵ change · esc close'
           : overlay
-            ? 'j/k scroll · space page · y copy · esc close'
+            ? `${overlay.hint && !overlay.loading ? `${overlay.hint} · ` : ''}j/k scroll · space page · y copy · esc close`
             : HINTS[view];
   const right = focus === 'prompt' ? '' : '  t span · / commands · , settings · ? help';
 
@@ -945,6 +1175,17 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
         {main}
       </Box>
       {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
+      {reaction ? (
+        <Row
+          pointer={false}
+          width={W}
+          segments={[
+            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
+            { text: reactionLine(reaction), color: reaction.mood === 'happy' ? theme.add : theme.warn },
+            { text: `  (${APP_NAMES[reaction.app] ?? reaction.app} · esc)`, color: theme.dim },
+          ]}
+        />
+      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}

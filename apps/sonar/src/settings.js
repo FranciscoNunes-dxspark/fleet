@@ -1,21 +1,36 @@
 // The /settings list: every setting, its value and what ↵ does with it. Pure, so the list is tested
 // without the UI; actions.js shows it in a picker and makes the changes.
-import { DEFAULT_ACCENT, theme } from './theme.js';
+import { THEMES, defaultAccent, theme } from './theme.js';
 import { fit } from './text.js';
+import { NOTIFY_AFTER } from './notify.js';
+import { WATCH_STEPS, watchEvery } from './watches.js';
 
 const isOn = (value) => value !== false;
 const count = (n, one, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : 'none');
 
+/** The Theme setting: dark, light, or auto (the default: COLORFGBG says, else dark). */
+export const themeSetting = (config) => (THEMES.includes(config.theme) ? config.theme : 'auto');
+
+/** What ↵ on the Theme row changes it to: dark, light, auto, round again. */
+export const nextTheme = (config) => THEMES[(THEMES.indexOf(themeSetting(config)) + 1) % THEMES.length];
+
 /**
  * The rows, from the config: { id, label, value, note, action }, where `action` is what ↵ does:
- * 'toggle' (an on/off setting named `id`), 'accent', 'clear' (the list named `id`) or 'none'.
+ * 'toggle' (an on/off setting named `id`), 'cycle' (the next of `steps`), 'accent', 'theme', 'clear' (the list named `id`) or 'none'.
  * `mouse`: whether this terminal can report the mouse at all.
  */
 export function settingRows(config, { file = '', mouse = true } = {}) {
   const history = config.history ?? [];
   const checks = isOn(config.checkForUpdates);
   return [
-    { id: 'accent', label: 'Accent colour', value: config.accent ?? `${DEFAULT_ACCENT} (default)`, colour: config.accent ?? DEFAULT_ACCENT, note: 'type a new one', action: 'accent' },
+    {
+      id: 'theme',
+      label: 'Theme',
+      value: themeSetting(config) === 'auto' ? `auto (${theme.mode} here)` : themeSetting(config),
+      note: `${nextTheme(config)} next${themeSetting(config) === 'light' ? ': from the terminal, else dark' : ''}`,
+      action: 'theme',
+    },
+    { id: 'accent', label: 'Accent colour', value: config.accent ?? `${defaultAccent()} (default)`, colour: config.accent ?? defaultAccent(), note: 'type a new one', action: 'accent' },
     {
       id: 'mouse',
       label: 'Mouse',
@@ -29,6 +44,26 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       label: 'Install them by itself',
       value: isOn(config.autoUpdate) ? 'on' : 'off',
       note: checks ? 'they start the next time you open Sonar' : 'only while checking is on',
+      action: 'toggle',
+    },
+    {
+      id: 'notify',
+      label: 'Notify when done',
+      value: isOn(config.notify) ? 'on' : 'off',
+      note: `a bell and a desktop notification when a job takes over ${Number(config.notifyAfter) >= 0 ? Number(config.notifyAfter) : NOTIFY_AFTER} s`,
+      action: 'toggle',
+    },
+    (() => {
+      const every = watchEvery(config);
+      const next = WATCH_STEPS[(WATCH_STEPS.indexOf(every) + 1) % WATCH_STEPS.length];
+      const n = (config.watches ?? []).length;
+      return { id: 'watchEvery', label: 'Run watches every', value: `${every} min`, current: every, steps: WATCH_STEPS, note: `${next} min next · ${count(n, 'watch', 'watches')} (/watches)`, action: 'cycle' };
+    })(),
+    {
+      id: 'familyMoods',
+      label: 'Family moods',
+      value: isOn(config.familyMoods) ? 'on' : 'off',
+      note: isOn(config.familyMoods) ? "Ping tells Splice, Trawl, Bosun and Hail how it feels, and says how they do" : 'neither told nor heard',
       action: 'toggle',
     },
     { id: 'history', label: 'Prompt history', value: count(history.length, 'entry', 'entries'), note: history.length ? 'clear it' : '', action: history.length ? 'clear' : 'none' },

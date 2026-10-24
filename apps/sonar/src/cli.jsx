@@ -2,7 +2,7 @@ import React from 'react';
 import { render } from 'ink';
 import { COMPILED, VERSION } from './version.js';
 import { loadConfig } from './config.js';
-import { setAccent } from './theme.js';
+import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
 import { createAzure } from './azure/arm.js';
 import { currentSubscription, token } from './azure/az.js';
@@ -10,6 +10,8 @@ import { demoAzure } from './demo.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js';
 import { copyToClipboard } from './clipboard.js';
 import { terminalMouse } from './mouse.js';
+import { notification } from './notify.js';
+import { ask } from './claude-cli.js';
 
 const args = process.argv.slice(2);
 
@@ -44,7 +46,7 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
 }
 
 const config = loadConfig();
-setAccent(config.accent);
+applyTheme(config);
 
 // Draw on the alternate screen, like a full-screen app, and give the terminal back untouched on exit.
 // The window title is saved on the terminal's title stack and popped on exit. Terminals without one
@@ -72,7 +74,7 @@ const open = { sub: value('--sub'), app: value('--app'), url: value('--url'), in
 const opening = Object.values(open).some(Boolean) ? open : undefined;
 const provider = demo ? demoAzure() : { ...createAzure({ token }), currentSubscription };
 const app = render(
-  <App config={config} provider={provider} open={opening} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} provider={provider} open={opening} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} notify={(title, body) => process.stdout.write(notification(title, body))} askClaude={ask} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdout: mouse?.stdout ?? process.stdout },
 );

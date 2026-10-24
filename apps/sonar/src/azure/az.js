@@ -5,6 +5,8 @@ import { run } from '../run.js';
 // Tokens last about an hour; one is used until five minutes before it runs out.
 const MARGIN_MS = 5 * 60 * 1000;
 const cache = new Map();
+// Tokens being fetched: the calls that ask at once (a load starts several) share one az run.
+const pending = new Map();
 
 /** What `az` said, as JSON; signing in again is the answer when it says the sign-in has run out. */
 async function az(args, { runner = run, signal } = {}) {
@@ -24,11 +26,17 @@ async function az(args, { runner = run, signal } = {}) {
 export async function token(resource, { now = Date.now(), runner } = {}) {
   const hit = cache.get(resource);
   if (hit && hit.expires - MARGIN_MS > now) return hit.token;
-  const out = await az(`account get-access-token --resource "${resource}" --query "{token:accessToken,expires:expires_on,expiresOn:expiresOn}"`, { runner });
-  // expires_on is seconds since 1970 in newer CLIs; older ones only give expiresOn, a local time.
-  const expires = out.expires ? Number(out.expires) * 1000 : Date.parse(out.expiresOn) || now + 30 * 60 * 1000;
-  cache.set(resource, { token: out.token, expires });
-  return out.token;
+  if (pending.has(resource)) return pending.get(resource);
+  const p = az(`account get-access-token --resource "${resource}" --query "{token:accessToken,expires:expires_on,expiresOn:expiresOn}"`, { runner })
+    .then((out) => {
+      // expires_on is seconds since 1970 in newer CLIs; older ones only give expiresOn, a local time.
+      const expires = out.expires ? Number(out.expires) * 1000 : Date.parse(out.expiresOn) || now + 30 * 60 * 1000;
+      cache.set(resource, { token: out.token, expires });
+      return out.token;
+    })
+    .finally(() => pending.delete(resource));
+  pending.set(resource, p);
+  return p;
 }
 
 /** The subscription `az` has selected (az account set), to start on: { id, name }. */
