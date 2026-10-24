@@ -150,6 +150,8 @@ export const HELP = [
       'Anything else is for another app, and Sonar says which.',
       ['paste', 'A command (/…) or a family:v1:… line pasted while a view has the keys goes into the prompt, to run with ↵'],
       ['/family', 'What this folder is to the other apps (its checkout, processes, .http files, databases): ↵ copies a line for one\'s prompt'],
+      ['/timeline', 'What the family\'s apps changed (pushes, writes, restarts, swaps, crashes…), newest first: p this project only or all, ↵ an entry whole, y copies it; Sonar adds its own changes and watches going over'],
+      ['/wiring', 'What this folder points at (appsettings*.json, .env, Hail\'s env files): addresses, hosts, ports, connection strings, secrets masked'],
       ['moods', 'Ping tells the others how it feels, and says once when one of them has been worried, sad or happy lately (esc puts it away); Family moods in the settings turns it off'],
     ],
   },

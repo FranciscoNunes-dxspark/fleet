@@ -10,7 +10,7 @@ import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, compareQueries, compareWindows, componentFor, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround, workspaceStarter } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
-import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, repoRoot, takeLine, trawlLine } from './family.js';
+import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, takeLine, trawlLine } from './family.js';
 import { familyChoices } from './kin.js';
 import { referenceWords, resolved as refResolved } from './keyvault.js';
 import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, prettyBody, triggerLabel, withDisabled } from './functions.js';
@@ -56,6 +56,17 @@ async function confirmChange(ctx, target, { title, detail, strict = false, yes }
   return ctx.confirm({ title, detail, danger: true, options: YES_NO(yes) });
 }
 
+/**
+ * Adds what Sonar just changed in Azure to the family's activity log (family.js), for /timeline here and in
+ * the other apps, when `r` went through (a task's result, or true): what and where, never a value or a
+ * message body. Resolves `r`.
+ */
+export function activity(ctx, r, text, kind = 'change') {
+  if (!(r === true || r?.ok)) return r;
+  logActivity('sonar', { text: `${text}${ctx.data?.subscription ? ` (${ctx.data.subscription.name})` : ''}`, kind, project: ctx.cwd() });
+  return r;
+}
+
 /** An app or slot by label ("contoso-web/staging"), or the one under the cursor in Resources. */
 export function targetNamed(ctx, name) {
   const n = name?.trim();
@@ -73,10 +84,11 @@ export async function restart(ctx, which) {
   const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
   if (!target) return;
   if (!(await confirmChange(ctx, target, { title: `Restart ${label(target)}?`, detail: 'Requests in flight are dropped while it comes back up.', yes: 'Yes, restart it' }))) return;
-  await ctx.task(`Restart ${label(target)}`, async (signal) => {
+  const r = await ctx.task(`Restart ${label(target)}`, async (signal) => {
     await ctx.provider.restart(target, { signal });
     return { stdout: `${label(target)} is restarting` };
   }, { label: 'Restarting', refresh: true });
+  return activity(ctx, r, `restarted ${label(target)}`, 'restart');
 }
 
 /** S and /stop, /start: stops a running app or slot, starts a stopped one. */
@@ -85,10 +97,11 @@ export async function toggleRunning(ctx, which, want) {
   if (!target) return;
   const stop = want ? want === 'stop' : target.state === 'Running';
   if (stop && !(await confirmChange(ctx, target, { title: `Stop ${label(target)}?`, detail: 'It serves nothing until it is started again.', yes: 'Yes, stop it' }))) return;
-  await ctx.task(`${stop ? 'Stop' : 'Start'} ${label(target)}`, async (signal) => {
+  const r = await ctx.task(`${stop ? 'Stop' : 'Start'} ${label(target)}`, async (signal) => {
     await ctx.provider[stop ? 'stop' : 'start'](target, { signal });
     return { stdout: `${label(target)} ${stop ? 'stopped' : 'started'}` };
   }, { label: stop ? 'Stopping' : 'Starting', refresh: true });
+  return activity(ctx, r, `${stop ? 'stopped' : 'started'} ${label(target)}`, stop ? 'stop' : 'start');
 }
 
 /** W and /swap: a slot into production (on an app, one of its slots, picked from a list). */
@@ -110,10 +123,11 @@ export async function swap(ctx, which) {
     strict: true,
   });
   if (!ok) return;
-  await ctx.task(`Swap ${label(target)} into production`, async (signal) => {
+  const r = await ctx.task(`Swap ${label(target)} into production`, async (signal) => {
     await ctx.provider.swap(target, { signal });
     return { stdout: `Swapping ${label(target)} into production: Azure carries on with it for a minute or two` };
   }, { label: 'Swapping', refresh: true });
+  return activity(ctx, r, `swapped ${label(target)} into production`, 'swap');
 }
 
 const hide = (name, value) => (looksSecret(name, value) ? '••••••' : value);
@@ -184,6 +198,7 @@ async function saveSettings(ctx, target, before, next, redraw) {
     ctx.forgetSettings(target);
     return { stdout: 'Saved; the app restarts to take them' };
   }, { label: 'Saving' });
+  activity(ctx, done, `saved ${label(target)}'s settings: ${said}`, 'settings');
   if (done.ok) redraw();
 }
 
@@ -333,6 +348,7 @@ export async function toggleFunction(ctx, target, fn, off) {
     ctx.forgetSettings(target);
     return { stdout: `${fn.name} is ${off ? 'off' : 'on'}: the app restarts to take it` };
   }, { label: 'Saving' });
+  activity(ctx, done, `turned ${fn.name} ${off ? 'off' : 'on'} in ${label(target)}`, 'function');
   if (done.ok && ctx.overlay()?.title?.startsWith(`Functions of ${label(target)}`)) functions(ctx, target, { replace: true, index });
   return done;
 }
@@ -359,6 +375,7 @@ export async function invokeFunction(ctx, target, fn) {
     return { stdout: `${fn.name} answered ${res.status}` };
   }, { label: 'Invoking' });
   if (!done.ok) return done;
+  activity(ctx, done, `invoked ${fn.name} in ${label(target)} (${res.status})`, 'invoke');
   const body = prettyBody(res.body);
   const head = `${res.method} ${res.url}\n${res.status}${res.type ? `  ${res.type}` : ''}`;
   const good = res.status < 400;
@@ -418,7 +435,7 @@ export async function scale(ctx, text) {
     return { stdout: `${plan.name} is ${planLine(after)}` };
   }, { label: 'Scaling' });
   if (r.ok) ctx.planChanged?.();
-  return r;
+  return activity(ctx, r, `scaled ${plan.name} (${[target.name, ...others.map((x) => x.name)].join(', ')}) from ${plan.sku.name} × ${plan.sku.capacity} to ${what}`, 'scale');
 }
 
 /**
@@ -451,7 +468,7 @@ export async function route(ctx, text) {
     return { stdout: `${app.name}: production ${productionShare(next.rules)}%${next.rules.map((x) => `, ${x.slot} ${x.percent}%`).join('')}` };
   }, { label: 'Routing' });
   if (r.ok) await ctx.routingChanged(app);
-  return r;
+  return activity(ctx, r, want.percent ? `sent ${want.percent}% of ${app.name}'s traffic to ${slot.slot}` : `stopped sending ${app.name}'s traffic to ${slot.slot}`, 'route');
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -681,7 +698,7 @@ export async function resubmit(ctx, ns, entity, messages) {
     return { stdout: `Moved ${moved} of ${messages.length} to ${to}${missing.length ? `; ${missing.length} weren't there any more (${missing.join(', ')})` : ''}` };
   }, { label: 'Resubmitting' });
   if (r.ok) busChanged(ctx, ns, entity);
-  return r;
+  return activity(ctx, r, `resubmitted ${plural(messages.length, 'dead letter')} of ${entity.name} in ${ns.name}: ${r.out ?? ''}`, 'resubmit');
 }
 
 /** X: deletes every dead letter of an entity, for good, asking first (production asks for the namespace's name). */
@@ -693,7 +710,7 @@ export async function purgeDeadLetters(ctx, ns, entity) {
     return { stdout: `Deleted ${plural(n, 'dead letter')} of ${entity.name}` };
   }, { label: 'Purging' });
   if (r.ok) busChanged(ctx, ns, entity);
-  return r;
+  return activity(ctx, r, `purged ${entity.name}'s dead letters in ${ns.name}: ${r.out ?? ''}`, 'purge');
 }
 
 /** R on a container app: restarts its latest revision, which restarts its replicas. */
@@ -701,10 +718,11 @@ export async function restartContainer(ctx, app) {
   if (!app.latestRevision) return ctx.note(`${app.name} has no revision to restart.`, 'error');
   const ok = await confirmChange(ctx, app, { title: `Restart ${app.name} (revision ${app.latestRevision})?`, detail: 'Its replicas start again; work in flight is dropped.', yes: 'Yes, restart it' });
   if (!ok) return;
-  await ctx.task(`Restart ${app.name}`, async (signal) => {
+  const r = await ctx.task(`Restart ${app.name}`, async (signal) => {
     await ctx.provider.restartRevision(app, { signal });
     return { stdout: `${app.name}'s revision ${app.latestRevision} is restarting` };
   }, { label: 'Restarting', refresh: true });
+  return activity(ctx, r, `restarted ${app.name}'s revision ${app.latestRevision}`, 'restart');
 }
 
 /** ↵ or l on a Log Analytics workspace: Logs queries it directly, starting with which tables have rows. */
@@ -767,6 +785,7 @@ async function letMeIn(ctx, server, { always = false } = {}) {
     ctx.forgetFirewall(server);
     return { stdout: `${server.name} lets ${ip} in (rule ${name}); it can take a few minutes to apply` };
   }, { label: 'Adding the rule' });
+  activity(ctx, done, `let ${ip} through ${server.name}'s firewall (rule ${name})`, 'firewall');
   return done.ok ? 'added' : 'unknown';
 }
 
@@ -1484,6 +1503,65 @@ export function family(ctx) {
     items: choices.map((c) => ({ c, segments: [{ text: `${APP_NAMES[c.app].padEnd(7)}`, color: theme.accent, bold: true }, { text: `${c.line}  `, strong: true }, { text: c.what, color: theme.dim }] })),
     onPick: (it) => copyFor(ctx, it.c.app, it.c.line),
   });
+}
+
+/**
+ * /timeline: what the family's apps did that changed something (family.js readActivity: Splice's pushes,
+ * Trawl's writes, Sonar's restarts, Bosun's crashes…), newest first; p shows only this project's (the
+ * folder Sonar started in) or every one's again, ↵ an entry whole, y copies it.
+ */
+export function timeline(ctx, { mine = false, replace = false } = {}) {
+  const dir = ctx.cwd();
+  const list = readActivity({ project: mine ? dir : undefined, limit: 500 });
+  const appW = Math.max(...FAMILY.map((x) => APP_NAMES[x].length));
+  const base = (p) => String(p ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';
+  ctx.showPicker(
+    {
+      title: `Timeline${mine ? ` of ${base(dir) || dir}` : ': the family'} (${list.length})`,
+      hint: `↵ the whole entry · p ${mine ? 'every project' : 'this project only'} · y copy it`,
+      empty: mine ? `Nothing logged for ${dir} yet. p shows every project.` : 'Nothing logged yet: the apps add what they change (a push, a restart, a write to a database) as they do it.',
+      items: list.map((e) => ({
+        e,
+        segments: [
+          { text: fit(relTime(e.at), 4, 'right'), color: theme.dim },
+          { text: `  ${fit(APP_NAMES[e.app] ?? e.app, appW)}`, color: e.app === 'sonar' ? theme.accent : theme.info, bold: true },
+          { text: `  ${e.text}`, color: /alert|crash|fail/i.test(e.kind ?? '') ? theme.del : undefined },
+          ...(!mine && e.project ? [{ text: `  ${base(e.project)}`, color: theme.dim }] : []),
+        ],
+      })),
+      onPick: ({ e }) => {
+        const when = `${cellText(new Date(e.at).toISOString(), 'datetime')} (${relTime(e.at) === 'now' ? 'just now' : `${relTime(e.at)} ago`})`;
+        const rows = [['app', APP_NAMES[e.app] ?? e.app], ['when', when], ['kind', e.kind ?? 'info'], ...(e.project ? [['project', e.project]] : [])];
+        ctx.showText(`${APP_NAMES[e.app] ?? e.app}: ${e.kind ?? 'info'}`, [e.text, '', ...rows.map(([k, v]) => `${k.padEnd(9)}${v}`)].join('\n'), {
+          lines: [[{ text: e.text, bold: true }], [], ...rows.map(([k, v]) => [{ text: k.padEnd(9), color: theme.dim }, { text: v }])],
+        });
+      },
+      keys: { y: ({ e }) => ctx.copy(e.text, 'the entry') },
+      actions: { p: () => timeline(ctx, { mine: !mine, replace: true }) },
+    },
+    { replace },
+  );
+}
+
+/** /wiring: what the folder Sonar started in points at (family.js projectWiring: addresses, hosts, ports, connection strings, secrets masked), by file. */
+export function wiring(ctx) {
+  const dir = ctx.cwd();
+  const found = projectWiring(dir);
+  if (!found.length) return ctx.note(`Nothing in ${dir} points anywhere Sonar can see: no addresses, hosts, ports or connection strings in appsettings*.json, .env files or http-client env files.`);
+  const bySource = new Map();
+  for (const w of found) {
+    if (!bySource.has(w.source)) bySource.set(w.source, []);
+    bySource.get(w.source).push(w);
+  }
+  // As text, which the viewer wraps: connection strings run long.
+  const text = [];
+  for (const [source, list] of bySource) {
+    const keyW = Math.min(40, Math.max(...list.map((w) => w.key.length)));
+    if (text.length) text.push('');
+    text.push(source);
+    for (const w of list) text.push(`  ${fit(w.key, keyW)}  ${w.value}`);
+  }
+  ctx.showText(`What ${dir} points at (${found.length})`, text.join('\n'));
 }
 
 /** ↵ on an alert: everything Alerts Management says about it. */

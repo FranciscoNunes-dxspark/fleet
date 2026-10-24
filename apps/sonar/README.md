@@ -216,6 +216,18 @@ the prompt rather than being taken as keys, to run with `↵`.
 Azure SQL server signing in with Entra, else `/add` with its port, its login and `--trust-cert` when the
 connection string trusts the server's certificate, but never the password). `↵` copies one.
 
+`/timeline` shows what the five apps did that changed something, newest first, from the family's
+activity log in `~/.family`: Splice's pushes, Trawl's writes, Bosun's crashes, Hail's sends, and Sonar's
+own changes. Sonar adds one whenever it changes Azure (a restart, stop, start or swap, settings saved, a
+firewall rule, a scale, a route, a function turned off or on or invoked, dead letters resubmitted or
+purged) and when a watch goes over its threshold: what and where, never a value, a key or a message
+body. `p` shows only this project's (the folder Sonar started in) or every one's again, `↵` shows an
+entry whole, `y` copies it.
+
+`/wiring` shows what the folder Sonar started in points at, by file: the addresses, hosts, ports and
+connection strings in its `appsettings*.json`, `.env` files and Hail's `http-client*.env.json`, with
+passwords and keys masked.
+
 Ping tells the others how it feels (worried after something went wrong, busy, pleased, or just
 watching) and why, in a small file in `~/.family` (`FAMILY_HOME` moves it), and reads theirs every
 30 seconds: when Twig, Glim, Squawk or Hoot has been worried, sad or happy in the last 15 minutes, Ping
@@ -408,6 +420,8 @@ and Trawl.
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |
 | `/take <context>` | What another app copied for Sonar (above) |
 | `/family` | What this folder is to the other apps: a line for each one's prompt, `↵` copies it |
+| `/timeline` | What the family's apps changed, newest first: `p` this project only or all, `↵` an entry whole (above) |
+| `/wiring` | What this folder points at: addresses, hosts, ports, connection strings, by file, secrets masked |
 | `/incident [problem]` | A problem as an incident (the one under the cursor in Problems if none is named); `/incident save <file>` writes its write-up |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |

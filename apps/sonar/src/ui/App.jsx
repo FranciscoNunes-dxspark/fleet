@@ -34,7 +34,7 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { worthNotifying } from '../notify.js';
 import { ask } from '../claude-cli.js';
-import { APP_NAMES, decodeContext, pastedLine, readMoods, writeMood } from '../family.js';
+import { APP_NAMES, decodeContext, logActivity, pastedLine, readMoods, writeMood } from '../family.js';
 import { familyMood, moodKey, reactionLine, reactionTo } from '../kin.js';
 
 const VIEWS = [
@@ -512,6 +512,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
           watchStates.current.set(w.name, { value, above, at: Date.now() });
           if (!crossed) return;
           note(`Watch "${w.name}" is ${value}, over ${w.threshold} (${w.component.name})\n${w.kql}`, 'error');
+          logActivity('sonar', { text: `watch "${w.name}" is ${value}, over ${w.threshold} in ${w.component.name}`, kind: 'alert', project: cwd });
           if (notify && configRef.current.notify !== false) notify(`Sonar: ${w.name} is over ${w.threshold}`, `${value} in ${w.component.name}`);
         } catch (e) {
           watchStates.current.set(w.name, { ...(was ?? {}), error: firstLine(e.message), at: Date.now() });
