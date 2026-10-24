@@ -1,0 +1,8 @@
+# GitGuardian (and ggshield) settings for this repository. The tests and Sonar's demo data are full
+# of made-up connection strings and passwords (hunter2, demo-Sql-Pa55, …): Trawl, Sonar and the kit
+# test that they're read, handed over and masked, never shown. Real code is still scanned.
+version: 2
+secret:
+  ignored_paths:
+    - "**/test/**"
+    - apps/sonar/src/demo.js
