@@ -4,9 +4,9 @@ import * as a from '../actions.js';
 import { boardCards, boardColumns, cardLines, columnTitle } from '../board.js';
 import { fieldsMatch, shownFilter, splitFilter } from '../filters.js';
 import { theme } from '../theme.js';
-import { relTime } from '../text.js';
-import { useAsync, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { relTime } from '@fleet/kit/text.js';
+import { useAsync, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 // A column is at least this wide; more columns than fit scroll sideways with the cursor.
 const MIN_COL = 30;

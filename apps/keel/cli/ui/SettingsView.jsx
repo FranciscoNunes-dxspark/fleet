@@ -5,8 +5,8 @@ import {
   MERGE_LABEL, MERGE_STRATEGIES, UPDATE_LABEL, UPDATE_MODES, cycle, selectable, settingsRows, settingsSections, stepRefresh, stepThreshold, withAllRepos, withRepo, withTracked,
 } from '../settings.js';
 import { theme } from '../theme.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 const box = (on) => ({ text: on ? '[x] ' : '[ ] ', color: on ? theme.accent : theme.dim });
 

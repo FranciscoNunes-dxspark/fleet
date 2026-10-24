@@ -4,9 +4,10 @@ import * as a from '../actions.js';
 import { KIND, SEVERITY, inboxDetail } from '../format.js';
 import { shownFilter } from '../filters.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { wrapLines } from './wrap.js';
 
 const matches = (item, text) => {
   const q = text.trim().toLowerCase();
@@ -75,7 +76,7 @@ export function InboxView({ failed, attention, filter, ctx, width, height, activ
       </Panel>
       {split ? (
         <Panel title={item ? KIND[item.kind] ?? 'Item' : 'Item'} hint={item ? (item.kind === 'approval' ? 'a approve · x reject · s snooze' : '↵ open · s snooze') : ''} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={item ? inboxDetail(item) : []} />
+          <Lines width={sideW - 2} height={innerH} lines={wrapLines(item ? inboxDetail(item) : [], sideW - 2)} />
         </Panel>
       ) : null}
     </Box>

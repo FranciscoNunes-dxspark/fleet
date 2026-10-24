@@ -2,7 +2,7 @@
 // a tree, what failed with the last lines of its log, the tests and the commits it built. Pure,
 // so the tests can check it. The data is service.runDetails(), as the web app's run panel shows.
 import { branch, runState } from './format.js';
-import { relTime } from './text.js';
+import { relTime } from '@fleet/kit/text.js';
 
 const ago = (iso, now) => {
   if (!iso) return '';

@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { moodLine, pinchRows } from '../pinch.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
+import { fit } from '@fleet/kit/text.js';
 import { VERSION } from '../open.js';
-import { Row } from './parts.jsx';
+import { Row } from '@fleet/kit/ui/parts.jsx';
 
 export const PINCH_WIDTH = 16;
 export const WELCOME_HEIGHT = 7;

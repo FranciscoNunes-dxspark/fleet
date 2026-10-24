@@ -3,10 +3,11 @@ import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { WI_VIEW_IDS, isBlocked, wiDetail, wiRows, wiState, wiViews } from '../format.js';
 import { theme } from '../theme.js';
-import { fit, relTime } from '../text.js';
+import { fit, relTime } from '@fleet/kit/text.js';
 import { applyFilter, shownFilter } from '../filters.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { wrapLines } from './wrap.js';
 
 export const wiId = (w) => `${w.org ?? ''}/${w.id}`;
 
@@ -104,7 +105,7 @@ export function WorkItemsView({ failed, workItems, meta, show, filter, jump, ctx
       </Panel>
       {split ? (
         <Panel title={w ? `${w.type} ${w.id}` : 'Work item'} hint={w ? 's state · i take it · b blocked · ↵ more' : ''} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={w ? wiDetail(w, meta) : []} />
+          <Lines width={sideW - 2} height={innerH} lines={wrapLines(w ? wiDetail(w, meta) : [], sideW - 2)} />
         </Panel>
       ) : null}
     </Box>

@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import '../cli/register.js';
+import '@fleet/kit/register.js';
 
 await import('../cli/cli.jsx');

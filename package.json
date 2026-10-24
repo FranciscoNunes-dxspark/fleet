@@ -19,7 +19,7 @@
     "test:bosun": "npm test -w apps/bosun",
     "test:hail": "npm test -w apps/hail",
     "test:keel": "npm test -w apps/keel",
-    "postinstall": "patch-package"
+    "postinstall": "node scripts/postinstall.js"
   },
   "devDependencies": {
     "patch-package": "^8.0.1"

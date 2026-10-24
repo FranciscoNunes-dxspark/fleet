@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commandsSection, searchHelp, sectionFor, sectionLines } from '../cli/help-layout.js';
+import { commandsSection, searchHelp, sectionFor, sectionLines } from '@fleet/kit/help-layout.js';
 import { HELP } from '../cli/help.js';
 import { COMMANDS } from '../cli/commands.js';
 

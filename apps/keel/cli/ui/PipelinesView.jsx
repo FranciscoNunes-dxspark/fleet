@@ -3,10 +3,11 @@ import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { HEALTH, branch, pipelineDetail, runState } from '../format.js';
 import { theme } from '../theme.js';
-import { fit, relTime } from '../text.js';
+import { fit, relTime } from '@fleet/kit/text.js';
 import { applyFilter, shownFilter } from '../filters.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { wrapLines } from './wrap.js';
 
 export const pipelineId = (row) => `${row.org ?? ''}/${row.key}`;
 
@@ -97,7 +98,7 @@ export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, w
       </Panel>
       {split ? (
         <Panel title={row ? row.definition.name : 'Pipeline'} hint={row ? 'n run · l logs · ↵ all runs' : ''} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={row ? pipelineDetail(row, mine ? runs.value : null, { error: mine ? runs.error?.message : null }) : []} />
+          <Lines width={sideW - 2} height={innerH} lines={wrapLines(row ? pipelineDetail(row, mine ? runs.value : null, { error: mine ? runs.error?.message : null }) : [], sideW - 2)} />
         </Panel>
       ) : null}
     </Box>

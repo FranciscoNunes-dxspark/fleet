@@ -3,10 +3,11 @@ import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { branch, isGithubPr, prDetail, prRows, prState } from '../format.js';
 import { theme } from '../theme.js';
-import { fit, relTime, stringWidth } from '../text.js';
+import { fit, relTime, stringWidth } from '@fleet/kit/text.js';
 import { applyFilter, shownFilter } from '../filters.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { wrapLines } from './wrap.js';
 
 export const prId = (pr) => `${pr.org ?? ''}/${pr.key}`;
 const SHOW_LABEL = { all: '', review: 'waiting on your review', mine: 'yours' };
@@ -109,7 +110,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
       </Panel>
       {split ? (
         <Panel title={pr ? `!${pr.id} ${branch(pr.sourceBranch)}` : 'Pull request'} hint={pr ? stepHint(pr) : ''} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={pr ? prDetail(pr) : []} />
+          <Lines width={sideW - 2} height={innerH} lines={wrapLines(pr ? prDetail(pr) : [], sideW - 2)} />
         </Panel>
       ) : null}
     </Box>

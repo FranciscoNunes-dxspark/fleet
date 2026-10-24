@@ -1,12 +1,12 @@
 {
   "name": "keel",
-  "version": "0.1.0",
+  "version": "0.1.28",
   "private": true,
   "homepage": "https://keel.example.com",
   "description": "Keel: a tech lead's console for Azure DevOps. PRs, work items, boards, pipelines and releases across projects and repos.",
   "type": "module",
   "engines": {
-    "node": ">=20.12"
+    "node": ">=22"
   },
   "bin": {
     "keel": "bin/keel.js"
@@ -19,26 +19,24 @@
     "start:mock": "node server/index.js --mock",
     "cli": "node bin/keel.js",
     "cli:demo": "node bin/keel.js --demo",
-    "build:cli": "npx --yes bun@1.4.2 scripts/build-cli.js",
+    "build:cli": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js",
     "build:android": "node scripts/build-android.mjs",
-    "test": "node --import ./cli/register.js --test \"test/**/*.test.js\"",
-    "postinstall": "patch-package || exit 0"
+    "test": "node --import @fleet/kit/register.js --import ./cli/app.js --test \"test/**/*.test.js\"",
+    "postinstall": "patch-package --patch-dir ../../patches || exit 0"
   },
   "dependencies": {
+    "@fleet/kit": "file:../../packages/kit",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
-    "cli-truncate": "^4.0.0",
     "dompurify": "^3.4.17",
-    "esbuild": "^0.28.2",
     "express": "^5.3.0",
     "ink": "^6.8.0",
     "marked": "^18.1.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.4",
-    "string-width": "^7.2.0"
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
@@ -46,5 +44,14 @@
     "ink-testing-library": "^4.0.0",
     "patch-package": "^8.0.1",
     "vite": "^8.3.4"
+  },
+  "fleet": {
+    "app": "cli/app.js",
+    "entry": "cli/cli.jsx",
+    "out": "release",
+    "compile": {
+      "autoloadDotenv": false,
+      "autoloadBunfig": false
+    }
   }
 }

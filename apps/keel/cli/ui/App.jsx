@@ -4,7 +4,7 @@ import * as a from '../actions.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { WI_VIEW_IDS, monitorFullText, pipelineDetail, prFullText, wiFullText } from '../format.js';
 import { HELP } from '../help.js';
-import { commandsSection, sectionFor } from '../help-layout.js';
+import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
 import { logText } from '../log.js';
 import path from 'node:path';
 import { COMPILED, VERSION, openUrl as openInBrowser } from '../open.js';
@@ -14,10 +14,10 @@ import { ROOT } from '../../server/root.js';
 import { FACES, moodFor } from '../pinch.js';
 import { githubFullText, isGithubRelease, releaseFullText } from '../releases.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '../text.js';
+import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { mouseOn } from '../settings.js';
-import { useTerminalSize } from './hooks.js';
-import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from './parts.jsx';
+import { useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
 import { InboxView } from './InboxView.jsx';
 import { PipelinesView, pipelineId } from './PipelinesView.jsx';
 import { PrsView, prId } from './PrsView.jsx';
@@ -26,7 +26,7 @@ import { ReleasesView } from './ReleasesView.jsx';
 import { BoardView } from './BoardView.jsx';
 import { TeamView } from './TeamView.jsx';
 import { SettingsView } from './SettingsView.jsx';
-import { HelpView } from './HelpView.jsx';
+import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { WorkItemsView, wiId } from './WorkItemsView.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pinch.jsx';
@@ -147,7 +147,7 @@ function activityRows(entries) {
  * same way, on demo data), or from cli/remote.js when signed in to a Keel server (with `server`
  * and `logout` too). `openUrl` opens links (the browser by default); `openSonar` opens Sonar on a production
  * monitor (sonar.js's; tests pass a recorder); `poll` turns live checks off when false.
- * `checkUpdate` and `installUpdate` (cli/update.js) are only passed to the downloaded executable, and
+ * `checkUpdate` and `installUpdate` (the kit's update.js) are only passed to the downloaded executable, and
  * only when its .env lets it check (and install) by itself; `updater` ({ check, install }) is passed to
  * it always, for /update.
  * `envFile` is the .env this Keel reads, where Settings saves this computer's choices. `mouse` is
@@ -846,11 +846,11 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
-      {busy ? <Spinner label={busy.label} started={busy.started} width={W} /> : null}
+      {busy ? <Spinner label={busy.label} started={busy.started} width={W} hint="esc to stop waiting" /> : null}
       {confirmReq ? (
         <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands (try /approve or /run), ? for shortcuts" />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands (try /approve or /run), ? for shortcuts" bang={false} />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
       <Row

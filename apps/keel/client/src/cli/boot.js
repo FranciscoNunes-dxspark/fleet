@@ -9,7 +9,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { EventEmitter } from './shims/events.js';
 import { keelClient, remoteLive, remoteService } from '../../../cli/remote.js';
-import { mouseSession } from '../../../cli/mouse.js';
+import { mouseSession } from '@fleet/kit/mouse.js';
 import { App } from '../../../cli/ui/App.jsx';
 
 // chalk's browser build only trusts Chromium with colours; xterm.js shows them all.
