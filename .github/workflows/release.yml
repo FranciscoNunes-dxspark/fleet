@@ -1,8 +1,9 @@
 # Every push to main releases the apps it changed, each as the next version of its own: an app whose
-# folder changed, or all six when packages/kit, patches/ or the root package.json or lockfile did
-# (.github/scripts/changed.mjs). Pushes that only change Markdown release nothing. "Run workflow" on
-# the Actions tab releases one app, or all, by hand. Each app's release (release-app.yml) tests it,
-# builds its executables and publishes them as <app>-v<version>.
+# folder changed (and Fleet, which holds them all, with any of them), or all of them when packages/kit,
+# patches/ or the root package.json or lockfile did (.github/scripts/changed.mjs). Pushes that only
+# change Markdown release nothing. "Run workflow" on the Actions tab releases one app, or all, by
+# hand. Each app's release (release-app.yml) tests it, builds its executables and publishes them as
+# <app>-v<version>.
 name: Release
 
 on:
@@ -15,7 +16,7 @@ on:
         description: The app to release
         type: choice
         default: all
-        options: [all, splice, trawl, sonar, bosun, hail, keel]
+        options: [all, splice, trawl, sonar, bosun, hail, keel, fleet]
 
 permissions:
   contents: write
