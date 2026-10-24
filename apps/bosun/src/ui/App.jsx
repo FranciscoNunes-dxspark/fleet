@@ -338,7 +338,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     if (r.missing) {
       p.tests = null;
       sup.push(p, "── hail isn't installed, so its tests didn't run");
-      if (!hailMissing.current) note(`${p.name}'s "test" runs Hail's checks, but hail isn't on the PATH: install it from its releases (github.com/FranciscoNunes-dxspark/hail).`, 'error');
+      if (!hailMissing.current) note(`${p.name}'s "test" runs Hail's checks, but hail isn't on the PATH: install it from its releases (github.com/FranciscoNunes-dxspark/fleet/releases?q=hail-v).`, 'error');
       hailMissing.current = true;
     } else {
       const outcome = testOutcome(r);

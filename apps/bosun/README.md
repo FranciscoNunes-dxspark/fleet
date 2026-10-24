@@ -23,14 +23,15 @@ any are running) and starts the other's. The header and the window's title say w
 
 ## Install
 
-Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/bosun/releases/latest)
+Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=bosun-v&expanded=true)
 and put it on your PATH. It checks for a new version once a day and installs it by itself; the new
 version starts the next time you open Bosun.
 
-From a checkout (Node 22 or later):
+From a checkout of the [fleet repository](https://github.com/FranciscoNunes-dxspark/fleet) (Node 22 or later), where Bosun is `apps/bosun`:
 
 ```bash
-npm install
+npm install                  # at the repository's root: every app and the kit they share
+cd apps/bosun
 npm start
 ```
 
@@ -88,7 +89,7 @@ while it keeps failing, back to 1 second once it has stayed up 30 seconds. The l
 5 times in a row is given up on (`gave up` in the list; `s` or `r` starts it again). One you stop is
 never restarted.
 
-A process with `test` has its requests checked by [Hail](https://github.com/FranciscoNunes-dxspark/hail)
+A process with `test` has its requests checked by [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)
 once its port answers (and its health page is well, when it has one): Bosun runs `hail test <file>
 [--env <env>]`, shows `✓ tests` or `✗ 2 failed` beside it in the list, and puts Hail's report in its
 log. They run again after each restart. Hail must be on your PATH; Bosun says once when it isn't.
@@ -277,9 +278,9 @@ you to finish.
 
 ### The family
 
-Bosun's siblings ([Splice](https://github.com/FranciscoNunes-dxspark/splice) for git,
-[Trawl](https://github.com/FranciscoNunes-dxspark/trawl) for SQL, [Sonar](https://github.com/FranciscoNunes-dxspark/sonar)
-for Azure, [Hail](https://github.com/FranciscoNunes-dxspark/hail) for HTTP) never start each other.
+Bosun's siblings ([Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice) for git,
+[Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl) for SQL, [Sonar](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/sonar)
+for Azure, [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail) for HTTP) never start each other.
 What one hands another is a command line, copied for you to paste into the other's prompt and run
 there; it never holds a password or a token.
 

@@ -482,9 +482,10 @@ function AppearanceSettings() {
   );
 }
 
-// The terminal app's executables (scripts/build-cli.js), from the newest release. Android builds are
-// released with --latest=false (release-android.yml), so releases/latest is always the terminal app's.
-const RELEASES = 'https://github.com/FranciscoNunes-dxspark/keel/releases';
+// The terminal app's executables (the kit's scripts/build.js), released in the fleet repository as
+// keel-v… beside the other apps' releases, so GitHub's "latest" may be another app's: the links open
+// the list of Keel's releases, newest first, with their files.
+const RELEASES = 'https://github.com/FranciscoNunes-dxspark/fleet/releases?q=keel-v&expanded=true';
 const BUILDS = [
   { file: 'keel-windows-x64.exe', label: 'Windows' },
   { file: 'keel-macos-arm64', label: 'macOS (Apple silicon)' },
@@ -507,7 +508,7 @@ function buildForThisComputer() {
 function TerminalAppSettings() {
   const { authMode } = useApp();
   const mine = buildForThisComputer();
-  const href = (b) => `${RELEASES}/latest/download/${b.file}`;
+  const href = () => RELEASES;
   const others = BUILDS.filter((b) => b !== mine);
   return (
     <Section id="terminal-app" title={t('Terminal app')}>

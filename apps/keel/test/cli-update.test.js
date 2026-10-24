@@ -46,7 +46,7 @@ async function runUpdate(updater, done, what) {
   return lastApp;
 }
 
-const checked = { at: 0, latest: '9.9.9', url: 'https://github.com/FranciscoNunes-dxspark/keel/releases/latest' };
+const checked = { at: 0, latest: '9.9.9', url: 'https://github.com/FranciscoNunes-dxspark/fleet/releases/tag/keel-v9.9.9' };
 
 test('/update installs a newer release, and says it starts next time', async () => {
   const installed = [];

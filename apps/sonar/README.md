@@ -7,13 +7,13 @@ logs and their problems, with your container apps, storage accounts and Azure SQ
 them, in one keyboard-driven window. When Keel says production is red, Sonar is
 where you find out why.
 
-A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/splice),
-[Trawl](https://github.com/FranciscoNunes-dxspark/trawl) and [Hail](https://github.com/FranciscoNunes-dxspark/hail):
+A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice),
+[Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl) and [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail):
 the same prompt, help window, mouse, settings and self-updating builds.
 
 ## Install
 
-Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/sonar/releases/latest)
+Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=sonar-v&expanded=true)
 and put it on your PATH. It checks for a new version once a day and installs it by itself.
 
 Sonar signs in through the [Azure CLI](https://aka.ms/azure-cli): run `az login` once, and it uses that
@@ -27,7 +27,7 @@ sonar           # your Azure
 sonar --demo    # a made-up subscription, to try it without one
 ```
 
-From a checkout (Node 22 or later): `npm install`, then `npm start` (or `npm start -- --demo`).
+From a checkout of the [fleet repository](https://github.com/FranciscoNunes-dxspark/fleet) (Node 22 or later): `npm install` at its root, then `npm start -w apps/sonar` (or `cd apps/sonar && npm start -- --demo`).
 
 ### Starting somewhere
 
@@ -159,7 +159,7 @@ files in its stack in the 14 days before it was first seen. Outside a checkout t
 
 | In an incident | |
 | --- | --- |
-| `Y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/splice)'s prompt |
+| `Y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice)'s prompt |
 | `T` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's line for Trawl (`/azure-sql` for Azure SQL) (through `T`'s checks when the server is in the subscription) |
 | `H` | Copy the failing request for Hail's prompt |
 | `w` | Ask Claude for a draft write-up in Markdown: summary, impact, timeline, likely cause, next steps (it may read the code, as `w` in Problems does) |
@@ -269,7 +269,7 @@ moods** in the settings turns both off.
 
 | On a SQL server or database | |
 | --- | --- |
-| `T` | Copy a command that opens it in [Trawl](https://github.com/FranciscoNunes-dxspark/trawl), to paste into Trawl's prompt (below) |
+| `T` | Copy a command that opens it in [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl), to paste into Trawl's prompt (below) |
 | `F` | Let this machine's public address through the server's firewall |
 | `o` `y` | Open it in the portal · copy its address |
 
@@ -311,7 +311,7 @@ accounts show their details only.
 | `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `Y` | Copy the row as JSON · every row, tab-separated |
-| `H` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/hail)'s prompt, to send it again there |
+| `H` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there |
 | `F` | Copy a request row as the text of a request in a `.http` file |
 | `c` | Which Application Insights (or Log Analytics workspace) to look in |
 

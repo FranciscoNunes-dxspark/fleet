@@ -4,7 +4,7 @@
 
 A keyboard-driven git client for the terminal, with an interface modelled on Claude Code: titled rounded panels, a prompt box with slash commands and completion, `!` to run any git command, and a running log of what each command did.
 
-Splice used to be called Tiller. A Tiller that updates itself becomes Splice on its own (the executable keeps its old file name until you rename it), and your recent repositories and settings in `~/.tiller` carry over.
+Splice used to be called Tiller. Your recent repositories and settings in `~/.tiller` carry over; a Tiller executable no longer updates itself into Splice, so download Splice once.
 
 ```
 (•Π•) Splice  │  Keel  ⎇ main → origin/main ↑1  ● 2 changes                              C:\Team\Keel
@@ -30,19 +30,21 @@ Splice used to be called Tiller. A Tiller that updates itself becomes Splice on 
 
 ## Install
 
-**Download** the executable for your platform from [Releases](https://github.com/FranciscoNunes-dxspark/splice/releases): `splice-windows-x64.exe`, `splice-linux-x64` / `-arm64`, `splice-macos-arm64` / `-x64`. It's a single file with nothing else to install; it only needs git on the PATH. Rename it to `splice` (`splice.exe`) and put it in a folder on your PATH. `SHA256SUMS.txt` lists each file's checksum.
+**Download** the executable for your platform from [Releases](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=splice-v&expanded=true): `splice-windows-x64.exe`, `splice-linux-x64` / `-arm64`, `splice-macos-arm64` / `-x64`. It's a single file with nothing else to install; it only needs git on the PATH. Rename it to `splice` (`splice.exe`) and put it in a folder on your PATH. `SHA256SUMS.txt` lists each file's checksum.
 
 The builds aren't code-signed, so Windows SmartScreen may ask before the first run ("More info" → "Run anyway"), and on macOS you may need `xattr -d com.apple.quarantine splice-macos-arm64` once.
 
 **From source** (Node 22+):
 
 ```bash
-cd C:\Team\Splice
-npm install
+git clone https://github.com/FranciscoNunes-dxspark/fleet.git C:\Team\fleet
+cd C:\Team\fleet
+npm install       # every app in the repository, and the kit they share
+cd apps\splice
 npm link          # puts a `splice` command on your PATH
 ```
 
-Without `npm link`, run it with `node C:\Team\Splice\bin\splice.js`.
+Without `npm link`, run it with `node C:\Team\fleet\apps\splice\bin\splice.js`, or `npm start -w apps/splice` from the repository's root.
 
 ## Use
 
@@ -376,13 +378,13 @@ The app icon at every size it ships in, drawn by `scripts/logo.js` like the rest
 
 ### Updates
 
-The downloaded Splice keeps itself up to date. Once a day at most, after it opens, it asks GitHub for the latest release, and if it's newer than yours, downloads it in the background and puts it in place of the executable you ran; the new version starts the next time you open Splice. The activity lines and the welcome box say how far it got. `/update` does the same at once, whenever you like: it asks for the latest release however recently Splice last looked, and installs it even with the settings below turned off.
+The downloaded Splice keeps itself up to date. Once a day at most, after it opens, it asks GitHub for the newest Splice release (tagged `splice-v…` in the fleet repository, beside the other apps), and if it's newer than yours, downloads it in the background and puts it in place of the executable you ran; the new version starts the next time you open Splice. The activity lines and the welcome box say how far it got. `/update` does the same at once, whenever you like: it asks for the newest release however recently Splice last looked, and installs it even with the settings below turned off.
 
 - It asks GitHub's public API, and downloads from GitHub the same way. (With [gh](https://cli.github.com) signed in, it falls back to that, which is how a private fork's releases are seen.)
 - The download must match the checksum published with the release (`SHA256SUMS.txt`), or nothing is replaced.
 - On Windows a running program can't be overwritten, only renamed, so the old executable is moved aside (`splice.exe.old.<time>`) and deleted on a later start.
 - If Splice can't write to the folder it's in (installed under Program Files, say), or anything else goes wrong, nothing changes: it says a new version is out, and why it couldn't install it, with the download link.
-- Offline or without gh, it says nothing and tries again next time. Running from a checkout skips all of this; `git pull` updates that.
+- Offline or without gh, it says nothing and tries again next time. Running from a checkout skips all of this; `git pull && npm install` at the repository's root updates that.
 
 The last answer is kept in the config as `lastUpdateCheck`. To only be told about new versions, or not to check at all, use `/settings`, or set them in the file:
 
@@ -393,23 +395,26 @@ The last answer is kept in the config as `lastUpdateCheck`. To only be told abou
 
 ## Development
 
+Splice lives in `apps/splice` of the fleet repository, with the other apps and the kit they share (`packages/kit`, `@fleet/kit`: text, the Ink parts, the mouse, the palette, the updater, the build). Install once at the repository's root, then work here:
+
 ```bash
-npm test     # parser tests, plus end-to-end tests that drive the UI against a throwaway repo
-npm start    # run from the checkout
+npm install  # at the repository's root
+npm test     # in apps/splice: parser tests, plus end-to-end tests that drive the UI against a throwaway repo
+npm start    # run from the checkout (or npm start -w apps/splice from the root)
 ```
 
-The `.jsx` sources run directly: `src/register.js` installs a loader that compiles them with esbuild as they're imported, so there is no build step for development.
+The `.jsx` sources run directly: the kit's `register.js` (`@fleet/kit`, in `packages/kit`) installs a loader that compiles them with esbuild as they're imported, so there is no build step for development.
 
 ### Executables and releases
 
 ```bash
-npm run build       # dist/ executable for this machine
+npm run build       # dist/ executable for this machine (the kit's scripts/build.js)
 npm run build:all   # every platform (Bun cross-compiles)
 ```
 
 The executables are made with [Bun](https://bun.sh)'s `--compile` (fetched by npx, so nothing to install), which bundles the code and a runtime into one file of about 85 MB.
 
-Releases are automatic: every push to main (a merged pull request, say) publishes a new GitHub Release. The Release workflow (`.github/workflows/release.yml`) picks the next version, the latest release with the patch number raised (v0.2.0 → v0.2.1), runs the tests, builds every platform and publishes it with the files and generated notes, creating the tag. For a new minor or major version, set it in `package.json` (`npm version minor --no-git-tag-version`) and merge that; a version higher than the latest release is used as is. Nothing is committed back, so `package.json` keeps the last version set by hand, while the executables carry the released one. Pushes that only change Markdown files don't release, and "Run workflow" on the Release workflow in the Actions tab releases by hand. The Tests workflow runs the suite on Linux and Windows for every push to main and every pull request.
+Releases are automatic: every push to main (a merged pull request, say) that changes `apps/splice`, or the kit and the other files every app is built from, publishes a new Splice release in the [fleet repository](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=splice-v&expanded=true), tagged `splice-v<version>`. The Release workflow (`.github/workflows/release.yml` at the repository root) picks the next version, Splice's latest release with the patch number raised (splice-v0.2.0 → splice-v0.2.1), runs the tests, builds every platform and publishes it with the files and generated notes, creating the tag. For a new minor or major version, set it in `apps/splice/package.json` and merge that; a version higher than the latest release is used as is. Nothing is committed back, so `package.json` keeps the last version set by hand, while the executables carry the released one. Pushes that only change Markdown files don't release, and "Run workflow" on the Release workflow in the Actions tab releases Splice (or every app) by hand. The Tests workflow runs Splice's suite on Linux and Windows for every push to main and every pull request that changes it.
 
 - `src/parse.js`: pure parsers for git's porcelain output. Most tests target these.
 - `src/repo.js`: what's read from git for each view.
