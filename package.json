@@ -26,5 +26,8 @@
   },
   "devDependencies": {
     "patch-package": "^8.0.1"
+  },
+  "overrides": {
+    "@azure/msal-node": "^7.1.1"
   }
 }
