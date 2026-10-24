@@ -19,7 +19,7 @@ import { Lines, Panel, Row } from './parts.jsx';
 export const stateColour = (state) => (/^(Running|Ready|Online|Available|Succeeded)$/i.test(state) ? theme.add : /^(Stopped|Paused|Disabled|Offline|Failed)$/i.test(state) ? theme.del : theme.warn);
 
 // What each kind of row shows after its name, in dim.
-const TAGS = { container: 'container', sqlserver: 'sql server', storage: 'storage', servicebus: 'service bus' };
+const TAGS = { container: 'container', sqlserver: 'sql server', storage: 'storage', servicebus: 'service bus', cosmos: 'cosmos db' };
 
 // The keys each kind of resource takes, as the details' last line says them.
 const KEY_HINTS = {
@@ -27,6 +27,7 @@ const KEY_HINTS = {
   function: 'f functions · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
   container: 'R restart its revision · l its logs · o portal · b browse · y copy its address',
   storage: '↵ its containers and blobs · o portal · y copy its blob address',
+  cosmos: '↵ its databases and containers · o portal · y copy its address',
   servicebus: '↵ its queues and topics, their dead letters · o portal · y copy its address',
   sqlserver: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
   sqldb: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
@@ -196,6 +197,10 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       if (key.return) return a.storageContainers(ctx, sel);
       return;
     }
+    if (sel.type === 'cosmos') {
+      if (key.return) return a.cosmosTree(ctx, sel);
+      return;
+    }
     if (sel.type === 'servicebus') {
       if (key.return) return a.serviceBus(ctx, sel);
       return;
@@ -334,6 +339,21 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       ...costLine(sel),
       [],
       [{ text: KEY_HINTS.storage, color: theme.dim }],
+    ];
+  } else if (sel?.type === 'cosmos') {
+    detail = [
+      [{ text: sel.name, bold: true }, { text: `  Cosmos DB account (${sel.api})`, color: theme.dim }],
+      prod(sel),
+      [],
+      field('address', sel.host),
+      field('group', sel.resourceGroup),
+      field('regions', sel.regions.join(', ') || sel.location),
+      field('consist.', sel.consistency),
+      field('capacity', sel.serverless ? 'serverless' : `provisioned${sel.freeTier ? ' (free tier)' : ''}`),
+      field('sign-in', sel.localAuth),
+      ...costLine(sel),
+      [],
+      [{ text: KEY_HINTS.cosmos, color: theme.dim }],
     ];
   } else if (sel?.type === 'servicebus') {
     const t = entities?.list ? totals(entities.list) : null;

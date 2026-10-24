@@ -104,7 +104,18 @@ function otherResources() {
       invoices: [file('2026/10/inv-1001.json', JSON.stringify({ invoice: 'inv-1001', orderId: 'o-10211', total: 49.9, currency: 'EUR' }), { type: 'application/json', ago: 2 * day })],
     },
   };
-  return { containers, storage, sqlServers, serviceBus, blobs };
+  // A Cosmos DB account (NoSQL): a shop database sharing autoscale throughput, telemetry with its own per container.
+  const cosmos = [
+    {
+      sub: 'sub-prod', type: 'cosmos', id: `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.DocumentDB/databaseAccounts/contoso-cosmos`, name: 'contoso-cosmos', resourceGroup: 'contoso-prod', location: 'westeurope', state: 'Online', api: 'NoSQL',
+      endpoint: 'https://contoso-cosmos.documents.azure.com:443/', host: 'contoso-cosmos.documents.azure.com', consistency: 'Session', regions: ['West Europe', 'North Europe'], serverless: false, freeTier: false, localAuth: 'keys and Entra',
+      tree: [
+        { name: 'shop', throughput: { autoscale: 4000 }, containers: [{ name: 'carts', partitionKey: '/userId', hierarchical: false, ttl: 86400, throughput: null }, { name: 'orders', partitionKey: '/customerId', hierarchical: false, ttl: null, throughput: { manual: 400 } }] },
+        { name: 'telemetry', throughput: null, containers: [{ name: 'events', partitionKey: '/deviceId, /day', hierarchical: true, ttl: 2592000, throughput: { autoscale: 1000 } }] },
+      ],
+    },
+  ];
+  return { containers, storage, sqlServers, serviceBus, blobs, cosmos };
 }
 
 function initialState(now) {
@@ -525,6 +536,14 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async setRouting(app, rules, { signal } = {}) {
       await wait(signal);
       state.routing[site(app).id] = rules.map((r) => ({ ...r }));
+    },
+    async cosmosAccounts(sub, { signal } = {}) {
+      await wait(signal);
+      return state.cosmos.filter((a) => a.sub === sub).map(({ sub: _, tree: __, ...a }) => ({ ...a }));
+    },
+    async cosmosTree(account, { signal } = {}) {
+      await wait(signal);
+      return structuredClone(state.cosmos.find((a) => a.id === account.id)?.tree ?? []);
     },
     async containers(account, { signal } = {}) {
       await wait(signal);

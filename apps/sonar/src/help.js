@@ -29,7 +29,7 @@ export const HELP = [
   },
   {
     title: 'Resources',
-    about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them), storage accounts and Service Bus namespaces; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
+    about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them), storage accounts, Service Bus namespaces and Cosmos DB accounts; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
     views: ['resources'],
     rows: [
       ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies; a Key Vault reference shows ✓, or ✗ and why it didn\'t resolve'],
@@ -54,6 +54,9 @@ export const HELP = [
       { heading: 'On a storage account' },
       ['↵', 'Its blob containers, then their blobs a folder at a time (size, changed, tier): ↵ goes into a folder or shows a blob (text up to 1 MB), y copies its address; needs Storage Blob Data Reader'],
       ['o  y', 'The portal · copy its blob address'],
+      { heading: 'On a Cosmos DB account' },
+      ['↵', 'Its databases and containers: partition key, throughput (own or the database\'s shared), time to live; o there opens the Data Explorer (no documents: they need Cosmos DB\'s own data role)'],
+      ['o  y', 'The portal · copy its address'],
       { heading: 'On a Service Bus namespace' },
       ['↵', 'Its queues, topics and subscriptions with their counts; ↵ on one: its dead letters, peeked (locked and let go, so none is taken)'],
       ['in dead letters', '↵ one whole (v shows a body that looks secret) · v picks several · R resubmits them to their queue (a subscription\'s to its topic) · X purges them all · y copies its id'],

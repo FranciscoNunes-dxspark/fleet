@@ -19,6 +19,7 @@ import { autoscaleSummary, consumption, parseScale, planLine, scaledSku } from '
 import { parseRoute, productionShare, withRoute } from './routing.js';
 import { bodyPreview, resubmitPath, secretBody } from './servicebus.js';
 import { VIEW_MAX, blobUrl, isText, shortName, sizeText } from './blobs.js';
+import { dataExplorerUrl, throughputText } from './cosmos.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
@@ -62,7 +63,7 @@ export function targetNamed(ctx, name) {
 }
 
 /** What a resource is, in words. */
-export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database', servicebus: 'Service Bus namespace' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
+export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database', servicebus: 'Service Bus namespace', cosmos: 'Cosmos DB account' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
 
 const need = (ctx, target) => target ?? (ctx.note('Pick an app or a slot in Resources first, or name one.', 'error'), null);
 
@@ -553,6 +554,37 @@ export async function viewBlob(ctx, account, container, b) {
     if (ctx.overlay()?.token === token) ctx.closeOverlay();
     ctx.note(e.message, 'error');
   }
+}
+
+/**
+ * ↵ on a Cosmos DB account: its databases and their containers, with partition keys and throughput
+ * (Azure Resource Manager's; no documents). o opens the portal's Data Explorer, y copies a name.
+ */
+export function cosmosTree(ctx, account) {
+  ctx.showPicker({
+    title: `${account.name}: databases and containers (${account.api})`,
+    hint: 'o Data Explorer in the portal · y copy its name',
+    empty: ['NoSQL', 'MongoDB'].includes(account.api) ? 'No databases.' : `${account.api} accounts' tables and keyspaces aren't listed: o opens the portal.`,
+    load: async () => {
+      const tree = await ctx.provider.cosmosTree(account);
+      const w = Math.min(36, Math.max(10, ...tree.flatMap((d) => [d.name.length, ...d.containers.map((c) => c.name.length + 4)])));
+      return tree.flatMap((d) => [
+        { name: d.name, segments: [{ text: fit(d.name, w), strong: true }, { text: '  database   ', color: theme.dim }, { text: d.throughput ? `${throughputText(d.throughput)}, shared` : account.serverless ? 'serverless' : '', color: theme.info }] },
+        ...d.containers.map((c) => ({
+          name: `${d.name}/${c.name}`,
+          segments: [
+            { text: '  └ ', color: theme.dim },
+            { text: fit(c.name, w - 4), strong: true },
+            { text: fit(`  ${c.partitionKey}${c.hierarchical ? ' (hierarchical)' : ''}`, 36), color: theme.accent },
+            { text: c.throughput ? throughputText(c.throughput) : d.throughput ? 'the database\'s' : account.serverless ? 'serverless' : '', color: c.throughput ? theme.info : theme.dim },
+            { text: c.ttl != null ? `  ttl ${c.ttl === -1 ? 'on' : `${c.ttl} s`}` : '', color: theme.dim },
+          ],
+        })),
+      ]);
+    },
+    onPick: () => {},
+    keys: { o: () => openUrl(dataExplorerUrl(account)).catch((e) => ctx.note(`Couldn't open the browser: ${e.message}`, 'error')), y: (it) => ctx.copy(it.name, 'its name') },
+  });
 }
 
 const PEEK = 50;

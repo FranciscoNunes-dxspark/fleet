@@ -423,7 +423,7 @@ test('the tree with the other kinds: under their resource groups, databases unde
   const rows = resourceRows(d.apps, d.slots, '', d);
   assert.deepEqual(rows.map((r) => r.text ?? `${r.kind}:${label(r.target)}`), [
     'contoso-prod', 'app:contoso-web', 'slot:contoso-web/staging', 'app:contoso-api', 'slot:contoso-api/staging', 'app:contoso-orders',
-    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore', 'servicebus:contoso-bus',
+    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore', 'servicebus:contoso-bus', 'cosmos:contoso-cosmos',
     'contoso-qa', 'sqlserver:contoso-sql-qa', 'sqldb:contoso-sql-qa/contoso-qa',
   ]);
   assert.deepEqual(resourceRows(d.apps, d.slots, 'reporting', d).map((r) => r.text ?? label(r.target)), ['contoso-prod', 'contoso-sql-prod', 'contoso-sql-prod/contoso-reporting']);
@@ -635,4 +635,23 @@ test('blobs: containers across pages, a folder\'s prefixes and blobs, a blob\'s 
   assert.deepEqual([read.text, read.type, read.partial], ['a,b\n1,2\n', 'text/csv', false]);
   assert.equal(calls.at(-1).init.headers['x-ms-range'], 'bytes=0-1048575');
   await assert.rejects(azure.blobs(account, 'secret'), /Storage Blob Data Reader on acct is needed to read its blobs \(Listing secret\/\)/);
+});
+
+test('Cosmos DB: accounts with their API, databases and containers with partition keys and throughput (none where it is shared)', async () => {
+  const acc = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.DocumentDB/databaseAccounts/cos';
+  const { fetch } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.DocumentDB/databaseAccounts': { value: [{ id: acc, name: 'cos', kind: 'GlobalDocumentDB', location: 'westeurope', properties: { provisioningState: 'Succeeded', documentEndpoint: 'https://cos.documents.azure.com:443/', consistencyPolicy: { defaultConsistencyLevel: 'Session' }, locations: [{ locationName: 'West Europe' }], capabilities: [] } }, { id: `${acc}2`, name: 'mon', kind: 'MongoDB', properties: {} }] },
+    [`GET ${acc}/sqlDatabases`]: { value: [{ name: 'shop', properties: { resource: { id: 'shop' } } }] },
+    [`GET ${acc}/sqlDatabases/shop/throughputSettings/default`]: { properties: { resource: { autoscaleSettings: { maxThroughput: 4000 } } } },
+    [`GET ${acc}/sqlDatabases/shop/containers`]: { value: [{ name: 'orders', properties: { resource: { id: 'orders', partitionKey: { paths: ['/customerId'], kind: 'Hash' }, defaultTtl: -1 } } }, { name: 'carts', properties: { resource: { id: 'carts', partitionKey: { paths: ['/tenant', '/userId'], kind: 'MultiHash' } } } }] },
+    [`GET ${acc}/sqlDatabases/shop/containers/orders/throughputSettings/default`]: { properties: { resource: { throughput: 400 } } },
+    [`GET ${acc}/sqlDatabases/shop/containers/carts/throughputSettings/default`]: [404, { error: { message: 'Throughput settings are not found' } }],
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const [cos, mon] = await azure.cosmosAccounts('s1');
+  assert.deepEqual([cos.api, cos.host, cos.consistency, cos.regions, cos.state, mon.api], ['NoSQL', 'cos.documents.azure.com', 'Session', ['West Europe'], 'Online', 'MongoDB']);
+  const [shop] = await azure.cosmosTree(cos);
+  assert.deepEqual(shop.throughput, { autoscale: 4000 });
+  assert.deepEqual(shop.containers.map((c) => [c.name, c.partitionKey, c.hierarchical, c.throughput]), [['carts', '/tenant, /userId', true, null], ['orders', '/customerId', false, { manual: 400 }]]);
+  assert.deepEqual(await azure.cosmosTree({ ...cos, api: 'Cassandra' }), []);
 });

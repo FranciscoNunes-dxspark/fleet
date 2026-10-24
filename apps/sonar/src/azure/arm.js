@@ -8,6 +8,7 @@ import { functionFrom, functionUrl, invocation, isHttp } from '../functions.js';
 import { autoscaleFrom, planFrom } from '../scale.js';
 import { rampUpRules, routingFrom } from '../routing.js';
 import { STORAGE_VERSION, VIEW_MAX, blobUrl, parseBlobs, parseContainers, storageRoleNeeded } from '../blobs.js';
+import { containerFrom, cosmosFrom, throughputFrom } from '../cosmos.js';
 import { busRoleNeeded, deadLetterPath, entityFrom, messageFrom, namespaceFrom, resendHeaders, resubmitPath } from '../servicebus.js';
 
 export const ARM = 'https://management.azure.com';
@@ -25,6 +26,7 @@ const SQL = '2021-11-01';
 const STORAGE = '2023-05-01';
 const WEB = '2023-12-01';
 const BUS = '2021-11-01';
+const COSMOS = '2024-05-15';
 
 /** Azure's error, in words: ARM's { error: { code, message } } or App Insights' { error: { message, innererror } }. */
 export function azureError(status, body, what) {
@@ -385,6 +387,30 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const headers = { ...(key ? { 'x-functions-key': key } : {}), ...(send.body != null ? { 'Content-Type': send.admin ? 'application/json' : 'text/plain' } : {}) };
       const res = await call(null, url, { method: send.method, text: send.body, headers, raw: true, auth: false, anyStatus: true, signal, what: `Invoking ${fn.name}` });
       return { status: res.status, type: res.headers?.get?.('content-type') ?? '', body: res.text, url, method: send.method };
+    },
+    async cosmosAccounts(sub, opts) {
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.DocumentDB/databaseAccounts?api-version=${COSMOS}`, { ...opts, what: 'Listing the Cosmos DB accounts' });
+      return list.map(cosmosFrom);
+    },
+    /**
+     * An account's databases, each with its shared throughput (null when its containers have their own,
+     * or it's serverless) and its containers with their partition keys and throughput: NoSQL's
+     * sqlDatabases and containers, MongoDB's mongodbDatabases and collections. Other APIs list nothing.
+     */
+    async cosmosTree(account, { signal } = {}) {
+      const kinds = { NoSQL: ['sqlDatabases', 'containers'], MongoDB: ['mongodbDatabases', 'collections'] }[account.api];
+      if (!kinds) return [];
+      const [dbs, children] = kinds;
+      const throughput = (id) => arm(`${id}/throughputSettings/default?api-version=${COSMOS}`, { signal, what: 'Reading throughput' }).then(throughputFrom, () => null);
+      const list = await all(`${account.id}/${dbs}?api-version=${COSMOS}`, { signal, what: `Listing ${account.name}'s databases` });
+      return Promise.all(
+        list.map(async (d) => {
+          const id = `${account.id}/${dbs}/${encodeURIComponent(d.name)}`;
+          const [shared, containers] = await Promise.all([throughput(id), all(`${id}/${children}?api-version=${COSMOS}`, { signal, what: `Listing ${d.name}'s containers` })]);
+          const each = await Promise.all(containers.map(async (c) => ({ ...containerFrom(c), throughput: await throughput(`${id}/${children}/${encodeURIComponent(c.name)}`) })));
+          return { name: d.properties?.resource?.id ?? d.name, throughput: shared, containers: each.sort((a, b) => a.name.localeCompare(b.name)) };
+        }),
+      ).then((out) => out.sort((a, b) => a.name.localeCompare(b.name)));
     },
     /** A storage account's blob containers, every page: blobs.js parseContainers'. */
     async containers(account, { signal } = {}) {

@@ -46,7 +46,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state (and a slot's share of its app's traffic, `→ 10%`, when it takes some), and in the same groups its container apps, Azure SQL servers (their databases under them), storage accounts and Service Bus namespaces; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address; for a Service Bus namespace, its address and tier, how many messages its queues and subscriptions hold, and which have dead letters |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state (and a slot's share of its app's traffic, `→ 10%`, when it takes some), and in the same groups its container apps, Azure SQL servers (their databases under them), storage accounts, Service Bus namespaces and Cosmos DB accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address; for a Service Bus namespace, its address and tier, how many messages its queues and subscriptions hold, and which have dead letters; for a Cosmos DB account, its API, address, regions, consistency and whether it's serverless |
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
@@ -254,6 +254,17 @@ Blobs are read through Blob Storage's own API with your `az` sign-in, which need
 Reader (or Contributor) on the account: Owner and Contributor on it don't reach the blobs that way. Without
 it, Sonar says so. Sonar never writes a blob.
 
+| On a Cosmos DB account | |
+| --- | --- |
+| `↵` | Its databases and their containers (a MongoDB account's collections), with each one's partition key, throughput (its own, or the database's shared, autoscale or not) and time to live; `o` there opens the portal's Data Explorer, `y` copies a name |
+| `o` `y` | Open it in the portal · copy its address |
+
+Cosmos DB is listed from Azure Resource Manager, which is all an `az` sign-in reaches by itself: its
+documents need a role of Cosmos DB's own (a SQL role assignment such as Cosmos DB Built-in Data Reader,
+which Owner and Contributor don't give) and, for queries across partitions, a query plan its REST API
+doesn't make for you, so Sonar doesn't query them: the Data Explorer does. Cassandra, Table and Gremlin
+accounts show their details only.
+
 | On a Service Bus namespace | |
 | --- | --- |
 | `↵` | Its queues, topics and subscriptions, each with its active, dead-lettered and scheduled messages (below) |
@@ -413,5 +424,5 @@ terminals), for when you've switched to another window. **Notify when done** tur
 
 ## Not yet
 
-Other kinds of resource (Key Vault itself, Cosmos DB), writing blobs, container apps' metrics, and Log
-Analytics workspaces queried directly, other than a container app's logs.
+Key Vault itself (beyond the references in settings), Cosmos DB's documents, writing blobs, container
+apps' metrics, and Log Analytics workspaces queried directly, other than a container app's logs.
