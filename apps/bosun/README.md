@@ -161,6 +161,14 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `y` | Copy its command |
 | `t` | Copy its latest trouble line for Sonar or Hail, to paste into their prompt (see The family) |
 
+Beside each running process, when the list has room, is what it uses: its CPU (as a % of one core, so
+a busy process on several cores can pass 100%) and its memory, both counting everything it started
+(the shell, `npm`, the node under it, its workers). They're measured every 2 seconds while the Crew
+view shows, with one look at the machine for every process: `/proc` on Linux, `ps` on macOS, one
+PowerShell call on Windows. The log's title has them too, with a sparkline of the last minute of each,
+and `/top` lists every process the busiest first. The Memory alert setting says once, with a
+notification, when a process's memory keeps growing past it (a leak, most likely).
+
 The dot before each name is green while it runs, yellow while it starts or stops, red when it crashed,
 grey when stopped. One that restarts by itself says when it will (`restarting in 4s`), or `gave up`
 when it kept failing as soon as it started. `!` after it means its log said something that reads as an error; a port already
@@ -270,6 +278,7 @@ Trawl.
 | `/open <name>` | Open a process's port in the browser |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
 | `/preflight` | Check what the crew needs (Node version, Docker, free ports, `.env` keys, databases, `node_modules`), as a checklist |
+| `/top` | Every process's CPU and memory (with what it started), the busiest first, and a sparkline of the last minute of each; `↵` shows its log |
 | `/ports` | Every TCP port listening on this machine, with the process holding it (pid and name); the crew's are marked. `f` frees one (asks first), `o` or `↵` opens it in the browser |
 | `/profile [name\|none]` | Run the crew with a profile |
 | `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |
@@ -280,7 +289,7 @@ Trawl.
 | `/family` | What this project offers Splice, Hail and Trawl, as lines to paste into them; `↵` copies one |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
-| `/settings` | Theme, accent colour, mouse, notifications, recording, family moods, updates, history |
+| `/settings` | Theme, accent colour, mouse, notifications, memory alert, recording, family moods, updates, history |
 | `/accent <#rrggbb>` | Change the accent colour (`default` puts it back) |
 | `/update` | Look for a new version now and install it |
 | `/help` | Keys and commands |
@@ -296,6 +305,7 @@ Trawl.
 | Accent colour | The colour of the cursor, borders and the pet |
 | Mouse | Off leaves selecting text to the terminal |
 | Notify | On (the default), Bosun rings the terminal's bell and raises a desktop notification when a process crashes (once, not again each time it's restarted; never when you stop it), when one gives up restarting, and when a command (`!`, `w`) that took longer than 10 seconds ends. It's OSC 9, which Windows Terminal, iTerm2, WezTerm and kitty show, or OSC 777 in GNOME Terminal and other VTE terminals. A command you cancel says nothing. `"notifyAfter": 30` in the settings file changes the seconds |
+| Memory alert | Off (the default), 512 MB, 1 GB, 2 GB or 4 GB: `↵` goes round them. Once a process (with what it started) is over it and its memory has kept rising for at least 20 seconds, Bosun says so in the activity lines and with a notification (when Notify is on), once each time it starts |
 | Record sessions | On (the default), each run's output and states are recorded for `/replay`; off records nothing. Either counts from the next start |
 | Family moods | On (the default), Squawk writes how it feels for the sibling apps and says when theirs are worried, sad or happy; off does neither |
 | Check for new versions | Once a day, in the downloaded builds |

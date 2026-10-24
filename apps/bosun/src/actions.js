@@ -15,6 +15,7 @@ import { troubleContext } from './share.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, shareLine, takeLine, trawlLine } from './family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
+import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -245,6 +246,46 @@ export async function preflight(ctx) {
   ctx.showText('Pre-flight', checks.map(checkLine).join('\n'), { lines });
 }
 
+/** The processes by what they use: the busiest first (CPU, then memory), the ones not running last. */
+export const byUsage = (procs) =>
+  [...procs].sort((x, y) => (y.usage ? 1 : 0) - (x.usage ? 1 : 0) || (y.usage?.cpu ?? 0) - (x.usage?.cpu ?? 0) || (y.usage?.mem ?? 0) - (x.usage?.mem ?? 0) || x.name.localeCompare(y.name));
+
+/**
+ * /top: every process with its CPU and memory (with what it started), the busiest first, and the last
+ * minute of each as a sparkline; redrawn with each sample. ↵ shows its log.
+ */
+export function top(ctx, { replace = false } = {}) {
+  const procs = ctx.crew?.list() ?? [];
+  if (!procs.length) return ctx.note('Nothing to run, so nothing to measure.');
+  const nameW = Math.max(4, ...procs.map((p) => p.name.length));
+  const o = ctx.overlay();
+  ctx.showPicker(
+    {
+      title: 'Top',
+      hint: 'CPU (% of one core) and memory, with what each started · ↵ its log',
+      top: true,
+      index: replace && o?.top ? o.index : undefined,
+      empty: 'Nothing is running.',
+      items: byUsage(procs).map((p) => ({
+        name: p.name,
+        segments: [
+          { text: p.name.padEnd(nameW + 2), strong: true },
+          ...(p.usage
+            ? [
+                { text: shortCpu(p.usage.cpu).padStart(5), color: p.usage.cpu >= 80 ? theme.del : p.usage.cpu >= 30 ? theme.warn : undefined },
+                { text: `  ${sparkline((p.samples ?? []).map((s) => s.cpu), 15).padEnd(15)}`, color: theme.accent },
+                { text: shortBytes(p.usage.mem).padStart(7) },
+                { text: `  ${sparkline((p.samples ?? []).map((s) => s.mem), 15)}`, color: theme.accent },
+              ]
+            : [{ text: p.child ? '    … measuring' : `    ${p.status}`, color: theme.dim }]),
+        ],
+      })),
+      onPick: (it) => showLog(ctx, it.name),
+    },
+    { replace },
+  );
+}
+
 /** o and /open: the process's port in the browser. */
 export function openProc(ctx, name) {
   const p = proc(ctx, name);
@@ -402,6 +443,14 @@ export function redrawSettings(ctx) {
 async function changeSetting(ctx, row) {
   if (row.action === 'toggle') {
     ctx.setConfig((c) => ({ ...c, [row.id]: c[row.id] === false }));
+    return redrawSettings(ctx);
+  }
+  if (row.action === 'memory') {
+    ctx.setConfig((c) => {
+      const { memoryAlert: _, ...rest } = c;
+      const next = nextMemoryAlert(c.memoryAlert);
+      return next ? { ...rest, memoryAlert: next } : rest;
+    });
     return redrawSettings(ctx);
   }
   if (row.action === 'accent') return ctx.prefill(`/accent ${ctx.config.accent ?? defaultAccent()}`);

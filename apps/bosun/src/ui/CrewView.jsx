@@ -9,6 +9,7 @@ import { fit, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
 import { testsLabel } from '../hailcheck.js';
 import { Panel, Row } from './parts.jsx';
+import { shortBytes, shortCpu, sparkline } from '../usage.js';
 
 const STATUS_COLOUR = () => ({ running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del, exited: theme.dim, stopped: theme.dim });
 
@@ -68,6 +69,20 @@ export function testsSegments(p) {
   return l ? [{ text: l.text, color: theme[l.tone] }] : [];
 }
 
+/** Its CPU and memory beside it (with what it started), when it's running and has been measured. */
+export function usageSegments(p) {
+  if (!p.child || !p.usage) return [];
+  return [{ text: ` ${shortCpu(p.usage.cpu).padStart(4)} ${shortBytes(p.usage.mem).padStart(5)}`, color: theme.dim }];
+}
+
+/** The log pane's title for one process: its name, then its CPU and memory with the last minute of each. */
+export function logTitle(p, sparkW = 10) {
+  if (!p) return '';
+  if (!p.child || !p.usage) return p.name;
+  const spark = (key) => (sparkW ? ` ${sparkline((p.samples ?? []).map((s) => s[key]), sparkW)}` : '');
+  return `${p.name} · ${shortCpu(p.usage.cpu)}${spark('cpu')} · ${shortBytes(p.usage.mem)}${spark('mem')}`;
+}
+
 /** The lines of every process, in the order they came, each with its name in front: the `a` log. */
 export function mergedLines(procs, last) {
   // Each log is in time order already (unless the clock went back), so the newest `last` are taken
@@ -97,10 +112,23 @@ const slowMerge = (procs, tails, last) =>
     .sort((x, y) => x.at - y.at)
     .slice(-last);
 
+/** `segments`, then each group of `extras` in turn while it still fits in `width` (what's beside a process when there's room). */
+export function withRoom(segments, extras, width) {
+  const out = [...segments];
+  let used = out.reduce((n, s) => n + stringWidth(s.text), 0);
+  for (const group of extras) {
+    const w = group.reduce((n, s) => n + stringWidth(s.text), 0);
+    if (!w || used + w > width) continue;
+    out.push(...group);
+    used += w;
+  }
+  return out;
+}
+
 /** The crew: each process with its state, port and uptime, and beside it the log of the one under the cursor (or all of them). */
 export function CrewView({ procs, ctx, width, height, active }) {
   const innerH = height - 2;
-  const listW = Math.min(44, Math.max(30, Math.floor(width * 0.32)));
+  const listW = Math.min(width >= 150 ? 56 : 44, Math.max(30, Math.floor(width * 0.32)));
   const logW = width - listW;
   const nav = useListNav(procs.length, innerH);
   const sel = procs[nav.index];
@@ -239,7 +267,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
   const from = Math.max(0, list.length - back - innerH);
   const visible = list.slice(from, Math.max(0, list.length - back));
   const tagW = merged ? nameW + 1 : 0;
-  const logTitle = merged ? 'All' : (sel?.name ?? '');
+  const paneTitle = merged ? 'All' : logTitle(sel, logW >= 60 ? 10 : 0);
   const find = matcher(search.query);
   const hits = find ? hitsIn(list, search.query) : [];
   const here = hits[Math.min(search.at, hits.length - 1)];
@@ -256,19 +284,23 @@ export function CrewView({ procs, ctx, width, height, active }) {
             width={listW - 2}
             selected={nav.offset + i === nav.index}
             focused={active}
-            segments={[
-              { text: '● ', color: colour[p.status] },
-              { text: fit(p.name, nameW), strong: true },
-              statusSegment(p, now),
-              ...testsSegments(p),
-              ...portSegments(p),
-              afterStatus(p, now),
-              ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),
-            ]}
+            segments={withRoom(
+              [
+                { text: '● ', color: colour[p.status] },
+                { text: fit(p.name, nameW), strong: true },
+                statusSegment(p, now),
+                ...testsSegments(p),
+                ...portSegments(p),
+                afterStatus(p, now),
+                ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),
+              ],
+              [usageSegments(p)],
+              listW - 4,
+            )}
           />
         ))}
       </Panel>
-      <Panel title={logTitle} hint={logHint} width={logW} height={height}>
+      <Panel title={paneTitle} hint={logHint} width={logW} height={height}>
         {visible.map((l, i) => {
           const text = fit(l.text, lineW - tagW);
           const line = [{ text, color: l.text.startsWith('── ') ? theme.dim : isTrouble(l.text) ? theme.del : undefined }];

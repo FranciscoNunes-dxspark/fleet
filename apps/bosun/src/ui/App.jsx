@@ -34,6 +34,7 @@ import { listeningPorts } from '../ports.js';
 import { hailTest, testOutcome } from '../hailcheck.js';
 import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
 import { ReplayView } from './ReplayView.jsx';
+import { SAMPLE_EVERY, createSampler, keepSample, memoryAlertLabel, memoryGrowing, shortBytes } from '../usage.js';
 
 const VIEWS = [
   { id: 'crew', label: 'Crew' },
@@ -122,9 +123,11 @@ const DOUBLE_CLICK_MS = 400;
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
 // recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
+// `sampleUsage(pids)` resolves each process tree's { cpu, mem } (usage.js's sampler; tests pass a stub),
+// every `sampleEvery` ms while the Crew view shows.
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -395,6 +398,53 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     note(`Moved to ${next}`);
     await reload();
   };
+  // CPU and memory, each process with what it started, while the Crew view (or /top) shows: one look
+  // at the machine for all of them, kept on each process (`usage`, and a minute of `samples`).
+  const sampler = useRef(null);
+  const sampling = view === 'crew' || Boolean(overlay?.top);
+  useEffect(() => {
+    if (!sampling) return;
+    let looking = false;
+    const tick = async () => {
+      const sup = supRef.current;
+      if (!sup || looking) return;
+      const procs = sup.list();
+      const pids = procs.filter((p) => p.pid).map((p) => p.pid);
+      looking = true;
+      let got;
+      try {
+        got = await (sampleUsage ?? ((roots) => (sampler.current ??= createSampler()).sample(roots)))(pids);
+      } catch {
+        got = new Map();
+      } finally {
+        looking = false;
+      }
+      if (supRef.current !== sup) return;
+      const limit = (Number(configRef.current.memoryAlert) || 0) * 1024 * 1024;
+      for (const p of procs) {
+        const s = p.pid && got.get(p.pid);
+        if (!s) {
+          if (!p.pid) p.usage = null;
+          continue;
+        }
+        // A new start counts from nothing again.
+        if (p.sampledFor !== p.startedAt) Object.assign(p, { sampledFor: p.startedAt, samples: [], memAlerted: false });
+        keepSample(p, s);
+        if (limit && !p.memAlerted && memoryGrowing(p.samples, limit)) {
+          p.memAlerted = true;
+          const text = `${p.name}'s memory keeps growing: ${shortBytes(s.mem)}, over the ${memoryAlertLabel(configRef.current.memoryAlert)} alert.`;
+          note(text, 'error');
+          if (notify && configRef.current.notify !== false) notify(`Bosun: ${p.name}'s memory keeps growing`, text);
+        }
+      }
+      changed();
+      if (overlayRef.current?.top) a.top(ctx, { replace: true });
+    };
+    tick();
+    const t = setInterval(tick, sampleEvery);
+    return () => clearInterval(t);
+  }, [sampling]);
+
   // Ports and health pages, every two seconds; and every process stopped when Bosun closes.
   useEffect(() => {
     const t = setInterval(() => supRef.current?.checkPorts(), 2000);

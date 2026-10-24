@@ -11,7 +11,7 @@ export const HELP = [
       ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
       ['!', 'Run a shell command, e.g.  !node --version'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
-      [',', 'Settings (/settings): theme, accent colour, mouse, notifications, recording, family moods, updates, history'],
+      [',', 'Settings (/settings): theme, accent colour, mouse, notifications, memory alert, recording, family moods, updates, history'],
       ['?', 'This help'],
       ['q / ctrl+c', 'Quit, stopping every process Bosun started (and what they started)'],
       ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go'],
@@ -49,6 +49,7 @@ export const HELP = [
       ['y', 'Copy its command'],
       ['t', 'Copy its latest trouble line for Sonar or Hail (/take, with the request id it names), to find that request there'],
       ['wheel', 'Over the log, scroll it back; to the bottom follows it again'],
+      'Beside each running process, when there\'s room: its CPU (% of one core) and memory, with everything it started; the log\'s title has them with the last minute of each. /top lists them, the busiest first.',
       'In the list: ● green running · yellow starting or stopping · red crashed · grey stopped. ✓ tests / ✗ 2 failed: its Hail checks ("test" in bosun.json). :3000 ✓ answers (and its health page is fine), … not yet, ✗ its health page fails. ! its log has said something wrong. restarting in 4s: it ended and its "restart" starts it again (1s, 2s, 4s… up to 30s); gave up: it ended within 10s of starting 5 times in a row.',
     ],
   },
@@ -86,6 +87,11 @@ export const HELP = [
       ['f', 'Free it: stop what holds it (asks first)'],
       ['o / ↵', 'Open it in the browser'],
     ],
+  },
+  {
+    title: 'Top',
+    about: '/top: every process\'s CPU and memory, with what it started, the busiest first; redrawn every 2 seconds',
+    rows: [['↵', 'Its whole log']],
   },
   {
     title: 'Replay',

@@ -54,6 +54,8 @@ export function start(props = {}) {
       killPids: () => {},
       listPorts: () => [],
       runHail: async () => ({ missing: true }),
+      // No look at the machine's processes unless a test gives its own.
+      sampleUsage: async () => new Map(),
       ...props,
     }),
   );
