@@ -1,0 +1,140 @@
+// What Claude may see of a connection, and the /ask conversation with the claude CLI.
+// A connection's `ai` level decides: 'off' (nothing), 'schema' (table and column names, SQL text
+// and error messages) or 'results' (rows too). Rows are data that leaves this machine, so a
+// connection only sends them once you've said so.
+import { runClaude } from './claude-cli.js';
+import { objectName } from './schema.js';
+import { wrap } from './text.js';
+
+export const AI_LEVELS = ['off', 'schema', 'results'];
+
+export const AI_LABELS = { off: 'nothing', schema: 'schema only', results: 'schema and results' };
+
+/** The connection's level: what it says, else 'schema' (the demo shows everything, it's made up). */
+export const aiLevel = (conn) => (AI_LEVELS.includes(conn?.ai) ? conn.ai : conn?.demo ? 'results' : 'schema');
+
+export const canSeeSchema = (conn) => aiLevel(conn) !== 'off';
+export const canSeeResults = (conn) => aiLevel(conn) === 'results';
+
+/** One table or view on one line: dbo.Players(Id int PK, ClubId int, Name nvarchar(100) null). */
+export function tableLine(o) {
+  const cols = o.columns.map((c) => `${c.name} ${c.type}${c.pk ? ' PK' : ''}${c.nullable ? ' null' : ''}`);
+  return `${objectName(o)}(${cols.join(', ')})`;
+}
+
+/**
+ * The schema as Claude reads it. When the whole thing is too long, the tables whose names
+ * share a word with the question come first in full, and the rest by name only.
+ */
+export function schemaText(schema, question = '', { maxChars = 60_000 } = {}) {
+  const tables = schema.objects.filter((o) => o.kind === 'table' || o.kind === 'view');
+  const full = tables.map(tableLine);
+  if (full.join('\n').length <= maxChars) return full.join('\n');
+  const words = new Set(question.toLowerCase().match(/[a-z0-9_]{3,}/g) ?? []);
+  const hit = (o) => [...words].some((w) => o.name.toLowerCase().includes(w) || w.includes(o.name.toLowerCase()));
+  const out = [];
+  let size = 0;
+  for (const o of [...tables.filter(hit), ...tables.filter((o) => !hit(o))]) {
+    const line = tableLine(o);
+    if (size + line.length > maxChars * 0.8) break;
+    out.push(line);
+    size += line.length + 1;
+  }
+  const rest = tables.filter((o) => !out.some((l) => l.startsWith(`${objectName(o)}(`)));
+  return `${out.join('\n')}\n-- More tables, columns not shown: ${rest.map(objectName).join(', ')}`;
+}
+
+export const ASK_SYSTEM = `You write T-SQL for Microsoft SQL Server / Azure SQL.
+Answer with exactly one \`\`\`sql code block holding the query, then at most two short sentences on what it does or what you assumed.
+Use only the tables and columns in the schema you are given; if the question can't be answered from them, say so instead of guessing.
+Prefer reads. Never write DROP, TRUNCATE, or an UPDATE or DELETE without a WHERE. Use TOP rather than LIMIT.`;
+
+/** The prompt for one /ask: the database, its schema, and the question. */
+export function askPrompt({ question, schema, database }) {
+  return `Database: ${database}\n\nSchema (schema.table(column type ...)):\n${schemaText(schema, question)}\n\nQuestion: ${question}`;
+}
+
+export const EXPLAIN_SYSTEM = `You explain database execution plans (Microsoft SQL Server's, or PostgreSQL's or MySQL's EXPLAIN) to the developer who ran the query.
+You get the query and its plan as text (no rows of data); the first line says which database it is.
+The plan is either estimated, or actual: the statement ran, and each operator shows the rows it really produced beside the optimizer's estimate (▲ and ▼ mark those 10 times off or more).
+In plain text with no Markdown headings, at most about 25 short lines:
+1. What the plan does, step by step, from the operators that read data up to the result.
+2. What is likely to cost the most, and why (scans of big tables, key lookups, sorts, hash joins, implicit conversions, missing index warnings); on an actual plan, where the estimates were far off and what that suggests (stale statistics, parameter sniffing, a predicate the optimizer can't estimate).
+3. Concrete changes worth trying: an index (with its CREATE INDEX), a rewrite of a predicate, or "nothing to change" when it is already fine.
+Only talk about the tables, columns and operators in the plan; don't invent statistics or row counts that aren't there.`;
+
+/** The prompt for explaining a plan, estimated or actual: the query and its plan, never any rows. */
+export function explainPrompt({ sql, plan, database, label = 'SQL Server', how = 'SHOWPLAN_TEXT', actual = false }) {
+  return `Database: ${database} (${label})\n\nQuery:\n${sql}\n\n${actual ? 'Actual' : 'Estimated'} plan (${how}):\n${plan}`;
+}
+
+/** Splits Claude's answer into the SQL and the note around it. */
+export function parseAnswer(text) {
+  const t = String(text ?? '').replace(/\r\n?/g, '\n');
+  const block = t.match(/```(?:sql|tsql|t-sql)?[ \t]*\n([\s\S]*?)```/i);
+  if (!block) return { sql: null, note: t.trim() };
+  const note = (t.slice(0, block.index) + t.slice(block.index + block[0].length)).replace(/\s+/g, ' ').trim();
+  return { sql: block[1].trim(), note };
+}
+
+/** The answer as console text: the question and Claude's note as comments, then the SQL. */
+export function consoleText({ question, sql, note }) {
+  const comment = (s) => s.split('\n').map((l) => `-- ${l}`).join('\n');
+  return [comment(`Asked Claude: ${question}`), note ? comment(note) : null, sql].filter(Boolean).join('\n');
+}
+
+export const WHY_SYSTEM = `You explain an error a database server gave for SQL a developer ran, and fix the SQL.
+You get the error (its number, and the line of the SQL it is on), the SQL with its lines numbered, and the database's tables and columns (names and types, never rows); the first line says which database it is.
+Answer with at most four short sentences of plain text on what went wrong and why, then exactly one \`\`\`sql code block holding the corrected SQL: the whole statement or script, ready to run, without the line numbers.
+Use only the tables and columns in the schema; if the fix needs one that isn't there, say so instead of guessing.
+Write in the dialect the first line names. Change only what the error needs; never add DROP, TRUNCATE, or an UPDATE or DELETE without a WHERE.`;
+
+// Longer than this, only the lines around the error go to Claude.
+const WHY_LINES = 120;
+
+/**
+ * The prompt for /why: the database, the error with its number and line, the SQL with its lines
+ * numbered (around the error when it's long, the line marked >), and the schema's names. Never rows.
+ */
+export function whyPrompt({ message, number, line, sql, database, label = 'SQL Server', schema }) {
+  const lines = String(sql ?? '').replace(/\r\n?/g, '\n').split('\n');
+  const at = line && line >= 1 && line <= lines.length ? line : null;
+  const [from, to] = lines.length <= WHY_LINES ? [1, lines.length] : at ? [Math.max(1, at - 20), Math.min(lines.length, at + 20)] : [1, WHY_LINES];
+  const w = String(to).length;
+  const shown = lines.slice(from - 1, to).map((l, i) => `${from + i === at ? '>' : ' '} ${String(from + i).padStart(w)} | ${l}`);
+  const cut = from > 1 || to < lines.length ? `\n(lines ${from} to ${to} of ${lines.length})` : '';
+  const where = at ? `on line ${at}` : 'with no line given';
+  return `Database: ${database} (${label})
+
+Error${number != null ? ` ${number}` : ''}, ${where}: ${message}
+
+SQL:
+${shown.join('\n')}${cut}
+
+Schema (schema.table(column type ...)):
+${schema ? schemaText(schema, sql) : '(not loaded)'}`;
+}
+
+/** /why's answer as console text: the error and Claude's explanation as comments, then the corrected SQL. */
+export function whyConsoleText({ message, sql, note, width = 100 }) {
+  const comment = (s) => wrap(s, width - 3).map((l) => `-- ${l}`.trimEnd());
+  return [...comment(`Claude on the error: ${message.split('\n')[0]}`), ...(note ? comment(note) : []), sql].join('\n');
+}
+
+/**
+ * Asks the claude CLI, signed in as you, with no tools and none of your MCP servers: it can
+ * only answer. The prompt goes in on stdin, so its length and contents never reach a shell.
+ */
+export async function askClaude({ prompt, system = ASK_SYSTEM, signal, execImpl }) {
+  const args = ['-p', '--output-format', 'json', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--system-prompt', system];
+  // The prompt goes on stdin (the family's shared claude-cli.js), out of reach of argv's limits.
+  const r = await runClaude(args, { input: prompt, signal, execImpl });
+  let out;
+  try {
+    out = JSON.parse(r.stdout);
+  } catch {
+    throw new Error(r.message);
+  }
+  if (out.is_error) throw new Error(String(out.result ?? 'Claude could not answer.').trim());
+  return String(out.result ?? '');
+}
