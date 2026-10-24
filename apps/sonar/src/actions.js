@@ -8,11 +8,12 @@ import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
 import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
-import { cellText, compareQueries, compareWindows, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround } from './insights.js';
+import { cellText, compareQueries, compareWindows, componentFor, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, repoRoot, takeLine, trawlLine } from './family.js';
 import { familyChoices } from './kin.js';
 import { referenceWords, resolved as refResolved } from './keyvault.js';
+import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, prettyBody, triggerLabel, withDisabled } from './functions.js';
 import { parseWatch, watchEvery } from './watches.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
@@ -258,6 +259,111 @@ export async function deploymentLog(ctx, target, d) {
     if (still()) ctx.closeOverlay();
     ctx.note(e.message, 'error');
   }
+}
+
+/**
+ * f and /functions: a function app's functions, with their triggers, whether each is off, and how its
+ * runs went over the span (Application Insights); ↵ shows its runs in Logs, i invokes it, d turns it
+ * off or on, y copies its name.
+ */
+export async function functions(ctx, which, { replace = false, index } = {}) {
+  const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!target) return;
+  if (target.kind !== 'function') return ctx.note(`${label(target)} is a ${typeLabel(target)}: only function apps have functions.`, 'error');
+  const span = ctx.timespan();
+  ctx.showPicker(
+    {
+      title: `Functions of ${label(target)} · runs in the last ${span.label}`,
+      hint: '↵ its runs in Logs · i invoke · d turn off/on · y copy its name',
+      empty: 'No functions: nothing is deployed to it, or its host is stopped.',
+      index,
+      load: async () => {
+        const [list, settings] = await Promise.all([ctx.provider.functions(target), ctx.settingsOf(target).catch(() => ({}))]);
+        const component = componentFor(settings, ctx.data?.components ?? []);
+        const runs = component
+          ? Object.fromEntries(records(await ctx.provider.query(component, functionRunsQuery(target.name), { timespan: span.iso }).catch(() => ({ columns: [], rows: [] }))).map((r) => [r.name, r]))
+          : null;
+        const nameW = Math.min(28, Math.max(8, ...list.map((f) => f.name.length)));
+        return list.map((fn) => {
+          const off = isDisabled(fn, settings);
+          const r = runs?.[fn.name];
+          return {
+            fn,
+            off,
+            segments: [
+              { text: `${BULLET} `, color: off ? theme.del : theme.add },
+              { text: `${fn.name.padEnd(nameW)}  `, strong: true },
+              { text: fit(off ? 'off' : 'on', 5), color: off ? theme.del : theme.dim },
+              { text: fit(triggerLabel(fn), 24), color: theme.info },
+              { text: !runs ? fit('no insights', 22) : r ? fit(`${r.runs} run${r.runs === 1 ? '' : 's'}, `, 12) : fit('no runs', 22), color: theme.dim },
+              { text: r ? fit(`${r.failed} failed`, 10) : '', color: r?.failed ? theme.del : theme.dim, bold: Boolean(r?.failed) },
+              { text: r?.last ? `last ${relTime(Date.parse(r.last))} ago` : '', color: theme.dim },
+            ],
+          };
+        });
+      },
+      onPick: (it) => (ctx.closeOverlay(), ctx.logsFor(target, functionLogQuery(target.name, it.fn.name))),
+      keys: {
+        i: (it) => invokeFunction(ctx, target, it.fn),
+        d: (it) => toggleFunction(ctx, target, it.fn, !it.off),
+        y: (it) => ctx.copy(it.fn.name, 'its name'),
+      },
+    },
+    { replace },
+  );
+}
+
+/** d on a function: turns it off (or on) through its AzureWebJobs.<name>.Disabled setting, asking first. */
+export async function toggleFunction(ctx, target, fn, off) {
+  const settings = await ctx.settingsOf(target).catch((e) => (ctx.note(e.message, 'error'), null));
+  if (!settings) return;
+  const next = withDisabled(settings, fn, off);
+  const said = settingsDiff(settings, next).map((d) => (d.change === 'only-a' ? `removes ${d.name}` : `sets ${d.name} to ${d.b}`)).join(', ');
+  const ok = await confirmChange(ctx, target, { title: `Turn ${fn.name} ${off ? 'off' : 'on'} in ${label(target)}?`, detail: `This ${said}; Azure restarts the app to take it.`, yes: `Yes, turn it ${off ? 'off' : 'on'}` });
+  if (!ok) return;
+  const index = ctx.overlay()?.index;
+  const done = await ctx.task(`Turn ${fn.name} ${off ? 'off' : 'on'} in ${label(target)}`, async (signal) => {
+    await ctx.provider.saveSettings(target, next, { signal });
+    ctx.forgetSettings(target);
+    return { stdout: `${fn.name} is ${off ? 'off' : 'on'}: the app restarts to take it` };
+  }, { label: 'Saving' });
+  if (done.ok && ctx.overlay()?.title?.startsWith(`Functions of ${label(target)}`)) functions(ctx, target, { replace: true, index });
+  return done;
+}
+
+/**
+ * i on a function: invokes it, asking first. An HTTP one at its address with its own key (a body typed
+ * in a field, empty for none); any other through the admin endpoint with the master key (the input
+ * typed). The key goes no further than the request. What it answered shows in the viewer.
+ */
+export async function invokeFunction(ctx, target, fn) {
+  const http = isHttp(fn);
+  const typed = await ctx.askText({
+    title: http ? `${fn.name}: a body to send (empty for none)` : `${fn.name}: its input (empty for none)`,
+    detail: http ? `It takes ${(fn.methods ?? ['any method']).join(', ')}; with a body it's sent as ${invocation(fn, 'x').method}.` : 'Sent to the admin endpoint, as the portal\'s Test/Run does.',
+  });
+  if (typed == null) return;
+  const send = invocation(fn, typed);
+  const ok = await confirmChange(ctx, target, { title: `Invoke ${fn.name} in ${label(target)}${http ? ` (${send.method})` : ''}?`, detail: http ? 'It runs as a real request would, with whatever it changes.' : 'It runs now, as its trigger would run it, with whatever it changes.', yes: 'Yes, invoke it' });
+  if (!ok) return;
+  let res;
+  const back = ctx.overlay();
+  const done = await ctx.task(`Invoke ${fn.name} in ${label(target)}`, async (signal) => {
+    res = await ctx.provider.invokeFunction(target, fn, { input: typed, signal });
+    return { stdout: `${fn.name} answered ${res.status}` };
+  }, { label: 'Invoking' });
+  if (!done.ok) return done;
+  const body = prettyBody(res.body);
+  const head = `${res.method} ${res.url}\n${res.status}${res.type ? `  ${res.type}` : ''}`;
+  const good = res.status < 400;
+  const lines = [
+    [{ text: `${res.method} `, bold: true }, { text: res.url, color: theme.info }],
+    [{ text: String(res.status), bold: true, color: good ? theme.add : theme.del }, { text: res.type ? `  ${res.type}` : '', color: theme.dim }],
+    [],
+    ...(body ? body.split('\n').map((l) => [{ text: l }]) : [[{ text: res.status === 202 ? 'Accepted: it runs in the background (its runs show in Logs).' : '(no body)', color: theme.dim }]]),
+  ];
+  ctx.showText(`${fn.name}: ${res.status}`, `${head}\n\n${body}`, { lines, back });
+  return done;
 }
 
 /** R on a container app: restarts its latest revision, which restarts its replicas. */

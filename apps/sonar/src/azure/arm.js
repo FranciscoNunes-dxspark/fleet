@@ -4,6 +4,7 @@
 // with a token from `token(resource)`, both passed in, so tests run it against a fake.
 import { metricsPath, seriesFrom } from '../metrics.js';
 import { callSignal } from '../run.js';
+import { functionFrom, functionUrl, invocation, isHttp } from '../functions.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
@@ -246,7 +247,7 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
   // `text` is a body sent as it is (with `headers` saying its type); `auth: false` sends no token (a
   // function's own key goes in `headers` instead). Throttled calls are tried again, failures thrown in
   // words with the status on the error.
-  const call = async (resource, url, { method = 'GET', body, text: sent, headers = {}, raw = false, auth = true, signal, what = 'Azure' } = {}, tries = 0) => {
+  const call = async (resource, url, { method = 'GET', body, text: sent, headers = {}, raw = false, auth = true, anyStatus = false, signal, what = 'Azure' } = {}, tries = 0) => {
     // A signal of its own, so a load's hundreds of calls leave no listeners on the load's.
     const own = callSignal(signal);
     let res;
@@ -262,7 +263,7 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       if (res.status === 429 && tries < 3 && !signal?.aborted) {
         own.done();
         await pause(retryAfter(res, tries), signal);
-        return call(resource, url, { method, body, text: sent, headers, raw, auth, signal, what }, tries + 1);
+        return call(resource, url, { method, body, text: sent, headers, raw, auth, anyStatus, signal, what }, tries + 1);
       }
       text = await res.text();
     } finally {
@@ -274,7 +275,8 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     } catch {
       // Not JSON: the status says enough.
     }
-    if (!res.ok) {
+    // `anyStatus`: whatever it answered is the answer (a function's 500 is what you wanted to see).
+    if (!res.ok && !(raw && anyStatus)) {
       if (raw) {
         try {
           json = JSON.parse(text);
@@ -329,6 +331,34 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     async settings(target, opts) {
       const r = await arm(`${target.id}/config/appsettings/list?api-version=${WEB}`, { ...opts, method: 'POST', what: `Reading ${label(target)}'s settings` });
       return r?.properties ?? {};
+    },
+    /** A function app's (or slot's) functions: functions.js functionFrom's. */
+    async functions(target, opts) {
+      const list = await all(`${target.id}/functions?api-version=${WEB}`, { ...opts, what: `Listing ${label(target)}'s functions` });
+      return list.map(functionFrom).sort((a, b) => a.name.localeCompare(b.name));
+    },
+    /**
+     * Invokes `fn` with what was typed (`input`): an HTTP function at its address with its own key, any
+     * other through the admin endpoint with the master key. The key is read for this call and goes no
+     * further than its header: never in the address, the answer or an error. Resolves { status, type, body, url, method }.
+     */
+    async invokeFunction(target, fn, { input = '', signal } = {}) {
+      const send = invocation(fn, input);
+      const anonymous = isHttp(fn) && /^anonymous$/i.test(fn.authLevel ?? '');
+      let key = null;
+      if (!anonymous) {
+        const hostKeys = () => arm(`${target.id}/host/default/listkeys?api-version=${WEB}`, { method: 'POST', signal, what: `Reading ${label(target)}'s keys` });
+        if (send.admin || /^admin$/i.test(fn.authLevel ?? '')) key = (await hostKeys())?.masterKey;
+        else {
+          const own = await arm(`${target.id}/functions/${encodeURIComponent(fn.name)}/listkeys?api-version=${WEB}`, { method: 'POST', signal, what: `Reading ${fn.name}'s keys` }).catch(() => null);
+          key = keyIn(own?.properties ?? own) ?? keyIn((await hostKeys())?.functionKeys);
+        }
+        if (!key) throw new Error(`${label(target)} gave no key to invoke ${fn.name} with`);
+      }
+      const url = send.admin ? `https://${target.host}/admin/functions/${encodeURIComponent(fn.name)}` : functionUrl(fn, target.host);
+      const headers = { ...(key ? { 'x-functions-key': key } : {}), ...(send.body != null ? { 'Content-Type': send.admin ? 'application/json' : 'text/plain' } : {}) };
+      const res = await call(null, url, { method: send.method, text: send.body, headers, raw: true, auth: false, anyStatus: true, signal, what: `Invoking ${fn.name}` });
+      return { status: res.status, type: res.headers?.get?.('content-type') ?? '', body: res.text, url, method: send.method };
     },
     /** How each of its Key Vault references (@Microsoft.KeyVault(…) settings) resolved: referenceFrom's. */
     async keyVaultReferences(target, opts) {
@@ -456,6 +486,13 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     },
     portalUrl: (target) => `https://portal.azure.com/#resource${target.id}`,
   };
+}
+
+/** A key from a list of them ({ default: '…' }, or whichever there is), leaving out ARM's own fields. */
+function keyIn(keys) {
+  if (!keys || typeof keys !== 'object') return null;
+  if (typeof keys.default === 'string') return keys.default;
+  return Object.entries(keys).find(([k, v]) => typeof v === 'string' && !['id', 'name', 'type', 'kind', 'location'].includes(k))?.[1] ?? null;
 }
 
 /** Reads a byte stream as lines, calling `onLine` with each (without its line ending); a last partial line too. */

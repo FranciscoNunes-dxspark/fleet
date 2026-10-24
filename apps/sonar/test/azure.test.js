@@ -477,3 +477,44 @@ test('Storage\'s XML errors are said in words, with the status on the error', as
   assert.deepEqual(xmlError('<?xml version="1.0"?><Error><Code>AuthorizationPermissionMismatch</Code><Message>This request is not authorized.\nRequestId:1</Message></Error>'), { error: { message: 'AuthorizationPermissionMismatch: This request is not authorized.' } });
   assert.equal(xmlError('nothing'), null);
 });
+
+test('functions: listed with their triggers; invoked over HTTP with the function\'s key in a header only, else through the admin endpoint with the master key', async () => {
+  const fnApp = site('orders', 'rg-prod', 'functionapp');
+  const { fetch, calls } = fakeFetch({
+    [`GET ${fnApp.id}/functions`]: {
+      value: [
+        { id: `${fnApp.id}/functions/PlaceOrder`, name: 'orders/PlaceOrder', properties: { name: 'PlaceOrder', invoke_url_template: 'https://orders.azurewebsites.net/api/orders', config: { bindings: [{ type: 'httpTrigger', methods: ['post'], authLevel: 'function', route: 'orders' }, { type: 'http', direction: 'out' }] } } },
+        { id: `${fnApp.id}/functions/Cleanup`, name: 'orders/Cleanup', properties: { name: 'Cleanup', isDisabled: true, config: { bindings: [{ type: 'timerTrigger', schedule: '0 0 2 * * *' }] } } },
+      ],
+    },
+    [`POST ${fnApp.id}/functions/PlaceOrder/listkeys`]: { default: 'fn-key-123' },
+    [`POST ${fnApp.id}/host/default/listkeys`]: { masterKey: 'master-456', functionKeys: { default: 'host-fn-key' } },
+    'POST orders.azurewebsites.net/api/orders': [500, { raw: 'boom', headers: { 'content-type': 'text/plain' } }],
+    'POST orders.azurewebsites.net/admin/functions/Cleanup': [202, { raw: '' }],
+    'GET orders.azurewebsites.net/api/health': { raw: 'Healthy' },
+  });
+  const azure = createAzure({ fetch, token: async () => 'arm-token' });
+  const target = siteFrom(fnApp);
+  const list = await azure.functions(target);
+  assert.deepEqual(list.map((f) => [f.name, f.trigger, f.methods, f.source, f.disabled]), [['Cleanup', 'timerTrigger', null, '0 0 2 * * *', true], ['PlaceOrder', 'httpTrigger', ['POST'], null, false]]);
+
+  const res = await azure.invokeFunction(target, list[1], { input: '{"sku":1}' });
+  assert.deepEqual([res.status, res.type, res.body, res.method, res.url], [500, 'text/plain', 'boom', 'POST', 'https://orders.azurewebsites.net/api/orders']);
+  const sent = calls.at(-1);
+  assert.equal(sent.init.headers['x-functions-key'], 'fn-key-123');
+  assert.equal(sent.init.headers.Authorization, undefined, 'no Azure token goes to the function');
+  assert.deepEqual(sent.body, { sku: 1 });
+  assert.equal(sent.init.body, '{"sku":1}');
+  assert.doesNotMatch(sent.url, /fn-key|code=/);
+
+  const admin = await azure.invokeFunction(target, list[0], { input: 'now' });
+  assert.equal(admin.status, 202);
+  assert.equal(calls.at(-1).init.headers['x-functions-key'], 'master-456');
+  assert.deepEqual(calls.at(-1).body, { input: 'now' });
+
+  const before = calls.length;
+  const health = await azure.invokeFunction(target, { name: 'Health', trigger: 'httpTrigger', methods: ['GET'], authLevel: 'anonymous', url: 'https://orders.azurewebsites.net/api/health' });
+  assert.equal(health.body, 'Healthy');
+  assert.equal(calls.length, before + 1, 'an anonymous function needs no key');
+  assert.equal(calls.at(-1).init.headers['x-functions-key'], undefined);
+});

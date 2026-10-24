@@ -21,6 +21,7 @@ const TAGS = { container: 'container', sqlserver: 'sql server', storage: 'storag
 // The keys each kind of resource takes, as the details' last line says them.
 const KEY_HINTS = {
   web: 'R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
+  function: 'f functions · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
   container: 'R restart its revision · l its logs · o portal · b browse · y copy its address',
   storage: 'o portal · y copy its blob address',
   sqlserver: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
@@ -167,6 +168,7 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
     if (input === 'p') return ctx.problemsFor(sel);
     if (input === 'L') return ctx.liveFor(sel);
     if (input === 'D') return a.deployments(ctx, sel);
+    if (input === 'f') return a.functions(ctx, sel);
     if (input === 'b') return a.browse(ctx, sel);
   };
   useInput(keys, { isActive: active });
@@ -231,7 +233,7 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
             { text: metrics ? `  ${m.summary}` : '', color: m.summary === 'no data' ? theme.dim : undefined },
           ])),
       [],
-      [{ text: KEY_HINTS.web, color: theme.dim }],
+      [{ text: sel.kind === 'function' ? KEY_HINTS.function : KEY_HINTS.web, color: theme.dim }],
     ];
   } else if (sel?.type === 'container') {
     detail = [

@@ -38,6 +38,7 @@ export const HELP = [
       ['S', 'Stop it, or start it if it is stopped'],
       ['W', 'Swap a slot into production (on an app, pick the slot)'],
       ['D', 'Its deployments: who, when, through what, how it went, which is active; ↵ shows one\'s log'],
+      ['f', 'A function app\'s functions: trigger, on or off, runs and failures over the span; ↵ its runs in Logs, i invokes one (a body for HTTP, else the admin endpoint; asks first), d turns it off or on (its AzureWebJobs.<name>.Disabled setting), y copies its name'],
       ['l  p', 'Its logs · its problems'],
       ['L', 'Its log as it\'s written, in Live'],
       ['o  b', 'Open it in the Azure portal · open its site'],

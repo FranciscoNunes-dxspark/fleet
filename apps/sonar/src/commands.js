@@ -16,6 +16,7 @@ export const COMMANDS = [
   { name: 'stop', args: '[app]', desc: 'Stop an app or slot (asks first)', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'stop') },
   { name: 'start', args: '[app]', desc: 'Start a stopped app or slot', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'start') },
   { name: 'swap', args: '[app/slot]', desc: 'Swap a slot into production (asks for the app\'s name)', complete: 'targets', run: (ctx, s) => a.swap(ctx, s) },
+  { name: 'functions', args: '[app]', desc: "A function app's functions: trigger, on or off, runs and failures over the span; ↵ runs in Logs, i invokes, d turns off/on", complete: 'targets', run: (ctx, s) => a.functions(ctx, s) },
   { name: 'deployments', args: '[app]', desc: "An app's or slot's deployments: who, when, how it went; ↵ shows one's log", complete: 'targets', run: (ctx, s) => a.deployments(ctx, s) },
   { name: 'trawl', args: '[server/db]', desc: "Copy a command that opens a SQL database (or server) in Trawl, to paste into Trawl's prompt (checks the firewall first)", complete: 'sql', run: (ctx, s) => a.openInTrawl(ctx, s) },
   { name: 'firewall', args: '[server]', desc: "Let this machine's address through a SQL server's firewall (asks first)", complete: 'sqlservers', run: (ctx, s) => a.firewall(ctx, s) },

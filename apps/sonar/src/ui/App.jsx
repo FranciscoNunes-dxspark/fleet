@@ -55,7 +55,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
+  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · f functions · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
   logs: 'e edit the query · ↵ run it / show a row · s save it · h l columns · y copy the row · Y all · H for Hail · F as .http · c which insights',
   problems: '↵ the latest occurrence · I incident · K before/after · w ask Claude why · l in Logs · y copy · Y for Splice · c which insights',
   alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',

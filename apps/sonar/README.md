@@ -80,6 +80,21 @@ says what it changes before saving, and Azure restarts the app to take it. `d` c
 with another slot of the same app, which is where the difference between staging and production
 usually hides.
 
+### Functions
+
+`f` on a function app (or `/functions [app]`) lists its functions: what triggers each (HTTP and its
+methods, a timer's schedule, a queue), whether it's on or off, and from its Application Insights how
+many times it ran over the time span, how many of those failed and when it last ran. `↵` shows a
+function's latest runs in Logs, `y` copies its name.
+
+`d` turns one off, or on again, the way the portal does: through its `AzureWebJobs.<name>.Disabled`
+setting (the `__` spelling Linux plans use is honoured when it's already there), so the app restarts.
+`i` invokes one, after a field for what to send: an HTTP function at its own address with its function
+key (a body makes it a POST when it takes one, none a GET), any other through the host's admin endpoint
+with the master key, as the portal's Test/Run does. The key is read for that request and goes no
+further: it's never shown, copied or written to the log. What came back (status, type, body, JSON
+indented) shows in the viewer. Both ask first, as every change does.
+
 ### Asking Claude
 
 `w` on a problem (or `/why`) sends its latest occurrence, end to end, to
@@ -183,6 +198,7 @@ moods** in the settings turns both off.
 | `S` | Stop it, or start it if it's stopped |
 | `W` | Swap a slot into production (on an app, pick the slot) |
 | `D` | Its deployments: who, when, through what, how it went, which is active; `↵` shows one's log |
+| `f` | A function app's functions (below) |
 | `l` `p` | Its logs · its problems |
 | `L` | Its log as it's written, in Live |
 | `o` `b` | Open it in the Azure portal · open its site |
@@ -305,6 +321,7 @@ and Trawl.
 | `/restart [app]` | Restart an app or slot |
 | `/stop [app]` `/start [app]` | Stop or start one |
 | `/swap [app/slot]` | Swap a slot into production |
+| `/functions [app]` | A function app's functions: trigger, on or off, runs and failures; `↵` runs in Logs, `i` invokes, `d` turns off or on |
 | `/deployments [app]` | An app's or slot's deployments, and their logs |
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |

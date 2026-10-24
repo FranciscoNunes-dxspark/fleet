@@ -6,6 +6,7 @@
 // else gets an error saying so.
 
 import { metricInterval } from './metrics.js';
+import { functionUrl, invocation, isHttp } from './functions.js';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -21,6 +22,19 @@ const conn = (key) => `InstrumentationKey=${key};IngestionEndpoint=https://weste
 const CONNECTION_STRINGS = {
   'contoso-api': { DefaultConnection: 'Server=tcp:contoso-sql-prod.database.windows.net,1433;Initial Catalog=contoso;Persist Security Info=False;User ID=contoso_app;Password=demo-Sql-Pa55;Encrypt=True;' },
   'contoso-web': { Reporting: 'Data Source=contoso-sql-prod.database.windows.net;Database=contoso-reporting;Authentication=Active Directory Managed Identity;' },
+};
+
+// The function apps' functions: an HTTP one, one on a Service Bus queue, timers.
+const FUNCTIONS = {
+  'contoso-orders': [
+    { name: 'NightlyCleanup', trigger: 'timerTrigger', source: '0 0 2 * * *' },
+    { name: 'PlaceOrder', trigger: 'httpTrigger', methods: ['POST'], authLevel: 'function', route: 'orders' },
+    { name: 'ProcessPayment', trigger: 'serviceBusTrigger', source: 'payments' },
+  ],
+  'contoso-jobs-dev': [
+    { name: 'Health', trigger: 'httpTrigger', methods: ['GET'], authLevel: 'anonymous', route: 'health' },
+    { name: 'SendDigest', trigger: 'timerTrigger', source: '0 0 7 * * 1-5' },
+  ],
 };
 
 // The other kinds of resource: a container app, storage accounts, SQL servers with their databases.
@@ -70,6 +84,8 @@ function initialState(now) {
     };
     // contoso-api takes two secrets from Key Vault: one resolves, the other its identity may not read.
     if (a.name === 'contoso-api') Object.assign(base, { Payments__ApiKey: '@Microsoft.KeyVault(SecretUri=https://contoso-kv.vault.azure.net/secrets/payments-key/)', Smtp__Password: '@Microsoft.KeyVault(VaultName=contoso-kv;SecretName=smtp-password)' });
+    // contoso-jobs-dev's digest is turned off, as the portal does it.
+    if (a.name === 'contoso-jobs-dev') base['AzureWebJobs.SendDigest.Disabled'] = 'true';
     const host = `${a.name}.azurewebsites.net`;
     const site = { id, sub: a.sub, name: a.name, connectionStrings: CONNECTION_STRINGS[a.name] ?? {}, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host, hostNames: a.domain ? [host, a.domain] : [host], modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, planId: `/subscriptions/${a.sub}/resourceGroups/${a.resourceGroup}/providers/Microsoft.Web/serverfarms/${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
     sites.push(site);
@@ -89,7 +105,7 @@ function initialState(now) {
   ].map((a, i) => ({ id: `/subscriptions/${a.sub}/providers/Microsoft.AlertsManagement/alerts/demo-${i}`, state: 'New', condition: 'Fired', resourceGroup: 'contoso-prod', rule: `${prodRg}/providers/microsoft.insights/metricalerts/${a.name.replace(/\W+/g, '-')}`, fired: new Date(now - a.ago).toISOString(), changed: new Date(now - a.ago).toISOString(), ...a }));
   // The demo's vault: the secrets in it, and the ones the apps' identities may not read.
   const vault = { name: 'contoso-kv', secrets: ['payments-key', 'smtp-password'], denied: ['smtp-password'] };
-  return { sites, components, alerts, vault, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
+  return { sites, components, alerts, vault, invocations: [], ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
 }
 
 // A few days of what the apps did: requests (some failing), the exceptions behind the failures, traces.
@@ -129,6 +145,18 @@ function telemetry(now, sites) {
       }
     }
   }
+  // The functions' runs, each logged as a request named for the function; ProcessPayment fails now and then.
+  const frand = seeded(99);
+  for (const s of sites.filter((x) => x.kind === 'function' && !x.slot)) {
+    const component = s.name.endsWith('-dev') ? 'app-dev' : 'app-prod';
+    for (const fn of FUNCTIONS[s.name] ?? []) {
+      for (let i = 0; i < 40; i++) {
+        const at = now - 60 * 1000 - Math.floor(frand() * 7 * 24 * HOUR * (i < 15 ? 0.05 : 1));
+        const fails = frand() < (fn.name === 'ProcessPayment' ? 0.2 : 0.02);
+        items.push({ itemType: 'request', component, timestamp: new Date(at).toISOString(), name: fn.name, url: fn.route ? `https://${s.host}/api/${fn.route}` : undefined, resultCode: fails ? '0' : '200', success: !fails, duration: Math.round(15 + frand() * (fails ? 9000 : 600)), operation_Id: `op-${fn.name}-${i}`, operation_Name: fn.name, cloud_RoleName: s.name });
+      }
+    }
+  }
   // Two availability tests on production, every 15 minutes from three places; the checkout one fails now and then.
   for (const [test, flaky] of [['shop.contoso.com home page', 0], ['shop.contoso.com checkout', 0.12]]) {
     for (let t = now - 60 * 1000; t > now - 7 * 24 * HOUR; t -= 15 * 60 * 1000) {
@@ -149,7 +177,7 @@ const COLUMNS = {
   dependency: ['timestamp', 'name', 'target', 'type', 'resultCode', 'success', 'duration', 'operation_Id', 'cloud_RoleName'],
   availability: ['timestamp', 'name', 'location', 'success', 'duration', 'message'],
 };
-const TYPES = { Count: 'long', p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
+const TYPES = { runs: 'long', p50: 'real', Count: 'long', p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
 const table = (names, rows) => ({ columns: names.map((name) => ({ name, type: TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
 
 /** The demo's answer to `kql` over `items` (one component's, within the time span). */
@@ -207,6 +235,23 @@ export function demoQuery(kql, items) {
     const rows = [...groups.values()].map((g) => ({ ...g, users: g.users.size })).sort((a, b) => b.count - a.count);
     return table(['problemId', 'type', 'count', 'users', 'first', 'last', 'message', 'role', 'operation'], rows);
   }
+  // A function app's runs, by function (functions.js functionRunsQuery).
+  if (/^requests\b.*summarize runs = count\(\).* by name/.test(q)) {
+    const groups = new Map();
+    for (const r of mine.filter((i) => i.itemType === 'request')) {
+      const g = groups.get(r.name) ?? { name: r.name, runs: 0, failed: 0, last: r.timestamp, lastFailure: null, durations: [] };
+      g.runs++;
+      g.durations.push(r.duration);
+      if (r.timestamp > g.last) g.last = r.timestamp;
+      if (!r.success) {
+        g.failed++;
+        if (!g.lastFailure || r.timestamp > g.lastFailure) g.lastFailure = r.timestamp;
+      }
+      groups.set(r.name, g);
+    }
+    const rows = [...groups.values()].map((g) => ({ ...g, p50: g.durations.sort((a, b) => a - b)[Math.floor(g.durations.length / 2)] })).sort((a, b) => a.name.localeCompare(b.name));
+    return table(['name', 'runs', 'failed', 'last', 'lastFailure', 'p50'], rows);
+  }
   if (/^availabilityResults\b.*summarize/.test(q)) {
     const groups = new Map();
     for (const r of items.filter((i) => i.itemType === 'availability')) {
@@ -228,7 +273,8 @@ export function demoQuery(kql, items) {
   if (!kind) throw new Error(`Querying the demo: it answers requests, exceptions, traces, dependencies and availabilityResults (with where cloud_RoleName == '…' and take), not "${name ?? q}"`);
   const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 1000);
   const failing = /\|\s*where success == false\b/.test(q);
-  const rows = mine.filter((i) => i.itemType === kind && (!failing || i.success === false)).reverse().slice(0, take);
+  const named = /\|\s*where name == '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1');
+  const rows = mine.filter((i) => i.itemType === kind && (!failing || i.success === false) && (named == null || i.name === named)).reverse().slice(0, take);
   // `| count`, as a watch's query ends.
   if (/\|\s*count\s*$/.test(q)) return table(['Count'], [{ Count: rows.length }]);
   return table(COLUMNS[kind], rows);
@@ -384,6 +430,23 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
         signal?.addEventListener('abort', () => (clearInterval(t), resolve()), { once: true });
       });
       return n;
+    },
+    async functions(target, { signal } = {}) {
+      await wait(signal);
+      const s = site(target);
+      return (FUNCTIONS[s.name] ?? []).map((f) => ({ id: `${s.id}/functions/${f.name}`, name: f.name, trigger: f.trigger, methods: f.methods ?? null, authLevel: f.authLevel ?? null, route: f.route ?? null, source: f.source ?? null, url: isHttp(f) ? `https://${s.host}/api/${f.route}` : null, disabled: false, language: 'dotnet-isolated' }));
+    },
+    // What the functions answer: PlaceOrder wants an order in its body, Health says so, the rest are queued.
+    async invokeFunction(target, fn, { input = '', signal } = {}) {
+      await wait(signal);
+      const s = site(target);
+      const send = invocation(fn, input);
+      state.invocations.push({ target: s.slot ? `${s.name}/${s.slot}` : s.name, name: fn.name, input });
+      const url = send.admin ? `https://${s.host}/admin/functions/${fn.name}` : functionUrl(fn, s.host);
+      const answer = (status, type, body) => ({ status, type, body, url, method: send.method });
+      if (send.admin) return answer(202, '', '');
+      if (fn.name === 'PlaceOrder') return input.trim() ? answer(201, 'application/json; charset=utf-8', JSON.stringify({ orderId: 'o-10234', status: 'placed' })) : answer(400, 'application/json; charset=utf-8', JSON.stringify({ error: 'An order is needed in the body' }));
+      return answer(200, 'text/plain', 'Healthy');
     },
     async connectionStrings(target, { signal } = {}) {
       await wait(signal);
