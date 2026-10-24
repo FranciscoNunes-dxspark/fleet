@@ -27,13 +27,17 @@ import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
-import { decodeContext, pastedLine, readMoods, writeMood } from '../family.js';
+import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '../family.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { Recorder, sessionsDir } from '../recorder.js';
 import { listeningPorts } from '../ports.js';
 import { hailTest, testOutcome } from '../hailcheck.js';
 import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
 import { ReplayView } from './ReplayView.jsx';
+import { findOnPath } from '../which.js';
+import { tunnelTool } from '../tunnel.js';
+import { ensureCert, mkcertHint } from '../https.js';
+import { SAMPLE_EVERY, createSampler, keepSample, memoryAlertLabel, memoryGrowing, shortBytes } from '../usage.js';
 
 const VIEWS = [
   { id: 'crew', label: 'Crew' },
@@ -50,7 +54,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · e trouble · t share it · w why · ↵ whole log',
+  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share it · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
@@ -116,15 +120,28 @@ function activityRows(entries) {
 
 const DOUBLE_CLICK_MS = 400;
 
+// A viewer of its own for each thing shown, so going back from one (a log line's object to the log)
+// doesn't keep where the other was scrolled to.
+const viewerKeys = new WeakMap();
+let viewerCount = 0;
+const viewerKey = (overlay) => {
+  if (!viewerKeys.has(overlay)) viewerKeys.set(overlay, ++viewerCount);
+  return viewerKeys.get(overlay);
+};
+
 // `dir` is the project to start in (/move changes it); `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
 // `pidsOnPort`, `killPids`, `listPorts`, `gatherFacts` (preflight.js) and `runHail` (hailcheck.js) reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
 // `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
 // recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
+// `sampleUsage(pids)` resolves each process tree's { cpu, mem } (usage.js's sampler; tests pass a stub),
+// every `sampleEvery` ms while the Crew view shows. `findTool(name)` finds a program on the PATH
+// (which.js's; tests pass their own) and `tunnelSpawn` starts a tunnel's (child_process's spawn; tests a fake).
+// `ensureCert(opts)` makes or reads the certificate "https" serves with (https.js's; tests pass their own).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, ensureCert: certFor = ensureCert, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -253,6 +270,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     setEntries((list) => list.map((e) => (e.id === id ? { ...e, at: Date.now(), ...patch } : e)));
   };
 
+  // What changed something, for the family's activity log (family.js's logActivity; /timeline), this project's.
+  const activity = (text, { kind = 'info', project = dirRef.current } = {}) => logActivity('bosun', { text, kind, project });
+
   const note = (text, status = 'info') => {
     const [title, ...lines] = String(text).split('\n');
     addEntry({ title, status, lines });
@@ -285,9 +305,21 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // a notification (unless the setting is off). A stop never comes here.
   const crewEvent = (e) => {
     if (e.type === 'ready') return e.p.spec.test && runTests(e.p);
+    // A tunnel's address, copied as soon as its tool says it; one that ended by itself, why.
+    if (e.type === 'tunnel') {
+      activity(`Opened a tunnel to ${e.p.name} (port ${e.p.port}): ${e.url}`);
+      ctx.copy(e.url, 'the tunnel\'s address');
+      return note(`${e.p.name} is open at ${e.url} (copied). T closes it.`, 'ok');
+    }
+    if (e.type === 'tunnel-closed') {
+      activity(`Closed the tunnel to ${e.p.name}${e.url ? ` (${e.url})` : ''}${e.asked ? '' : ': it ended by itself'}`, { kind: e.asked ? 'info' : 'error' });
+      if (e.asked) return note(`Closed ${e.p.name}'s tunnel${e.url ? ` (${e.url})` : ''}.`);
+      return note([`${e.p.name}'s tunnel closed by itself.`, ...e.said.slice(-3)].join('\n'), 'error');
+    }
     if (e.type !== 'exit') return;
     if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
     const news = exitNews(e.p, e.plan);
+    if (news) activity(`${news.title.replace(/^Bosun: /, '')}: ${news.body}`, { kind: 'error' });
     if (news && notify && configRef.current.notify !== false) notify(news.title, news.body);
   };
   // A process's Hail checks ("test" in bosun.json), once its port answers: hail test through
@@ -316,6 +348,40 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     }
     sup.onChange();
   };
+  // The certificate "https" serves with: read, or made once with mkcert (asking before it installs its
+  // authority). Without mkcert, how to install it is said once, and the next start looks again.
+  const cert = useRef(null);
+  const mkcertMissing = useRef(false);
+  const certificate = () =>
+    (cert.current ??= certFor({
+      find: findTool,
+      ask: () =>
+        ctx.confirm({
+          title: 'Let mkcert install its certificate authority, so browsers trust https://localhost?',
+          detail: "mkcert -install adds it to this machine's trust stores. No still serves https, with a certificate browsers warn about.",
+          options: [
+            { label: 'Yes, install it', value: true },
+            { label: 'No', value: false },
+          ],
+        }),
+    }).then(
+      (r) => {
+        if (r.missing) {
+          cert.current = null;
+          if (!mkcertMissing.current) note(mkcertHint(), 'error');
+          mkcertMissing.current = true;
+          return null;
+        }
+        if (r.installError) note(`mkcert -install didn't work: ${firstLine(r.installError)}\nRun it yourself in a terminal (it may ask for your password); the certificate is made already.`, 'error');
+        if (r.made) note(`Made a certificate for localhost with mkcert${r.installed ? ', which browsers trust' : ''}.`, 'ok');
+        return r;
+      },
+      (e) => {
+        cert.current = null;
+        note(`Couldn't make a certificate for localhost: ${firstLine(e.message)}`, 'error');
+        return null;
+      },
+    ));
   const crewEventRef = useRef(crewEvent);
   crewEventRef.current = crewEvent;
   // The crew again (bosun.json changed, /reload, another profile): new processes start, ones gone stop,
@@ -330,7 +396,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
       // Each run of a project's crew is recorded for /replay, unless the setting is off.
       const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs }) : null;
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
@@ -381,6 +447,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // processes stop first, and what they started (actions.js asks before, when any are running).
   const moveTo = async (next) => {
     const sup = supRef.current;
+    activity(`Moved from ${basename(dirRef.current)} to ${basename(next)}`, { project: dirRef.current });
     if (sup) {
       await sup.stopAll();
       sup.dispose();
@@ -395,6 +462,53 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     note(`Moved to ${next}`);
     await reload();
   };
+  // CPU and memory, each process with what it started, while the Crew view (or /top) shows: one look
+  // at the machine for all of them, kept on each process (`usage`, and a minute of `samples`).
+  const sampler = useRef(null);
+  const sampling = view === 'crew' || Boolean(overlay?.top);
+  useEffect(() => {
+    if (!sampling) return;
+    let looking = false;
+    const tick = async () => {
+      const sup = supRef.current;
+      if (!sup || looking) return;
+      const procs = sup.list();
+      const pids = procs.filter((p) => p.pid).map((p) => p.pid);
+      looking = true;
+      let got;
+      try {
+        got = await (sampleUsage ?? ((roots) => (sampler.current ??= createSampler()).sample(roots)))(pids);
+      } catch {
+        got = new Map();
+      } finally {
+        looking = false;
+      }
+      if (supRef.current !== sup) return;
+      const limit = (Number(configRef.current.memoryAlert) || 0) * 1024 * 1024;
+      for (const p of procs) {
+        const s = p.pid && got.get(p.pid);
+        if (!s) {
+          if (!p.pid) p.usage = null;
+          continue;
+        }
+        // A new start counts from nothing again.
+        if (p.sampledFor !== p.startedAt) Object.assign(p, { sampledFor: p.startedAt, samples: [], memAlerted: false });
+        keepSample(p, s);
+        if (limit && !p.memAlerted && memoryGrowing(p.samples, limit)) {
+          p.memAlerted = true;
+          const text = `${p.name}'s memory keeps growing: ${shortBytes(s.mem)}, over the ${memoryAlertLabel(configRef.current.memoryAlert)} alert.`;
+          note(text, 'error');
+          if (notify && configRef.current.notify !== false) notify(`Bosun: ${p.name}'s memory keeps growing`, text);
+        }
+      }
+      changed();
+      if (overlayRef.current?.top) a.top(ctx, { replace: true });
+    };
+    tick();
+    const t = setInterval(tick, sampleEvery);
+    return () => clearInterval(t);
+  }, [sampling]);
+
   // Ports and health pages, every two seconds; and every process stopped when Bosun closes.
   useEffect(() => {
     const t = setInterval(() => supRef.current?.checkPorts(), 2000);
@@ -469,6 +583,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   Object.assign(ctx, {
     task,
     note,
+    activity: (text, opts) => activity(text, opts),
     confirm,
     // A masked field in the confirm's place: resolves { value } (or null on esc). askText shows what's typed.
     askSecret: (req) => confirm({ ...req, secret: true, options: [] }),
@@ -492,6 +607,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     gatherFacts: () => gather(dirRef.current, { ...crewRef.current, procs: withProfile(crewRef.current?.procs ?? [], crewRef.current?.profiles ?? {}, profileRef.current) }, { running: (supRef.current?.list() ?? []).filter((p) => p.child).map((p) => p.name) }),
     preflightReport: (facts) => preflightReport(facts),
     killPids: stopPids,
+    // T and /tunnel: cloudflared or ngrok, whichever is on the PATH (or the one bosun.json names).
+    tunnelTool: (preferred) => tunnelTool(preferred, findTool),
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // Whether this terminal can report the mouse at all (/settings says so).
     mouseAvailable: Boolean(mouse),
@@ -919,7 +1036,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   } else if (overlay?.kind === 'picker') {
     main = <Picker key={overlay.id} picker={overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay) {
-    main = <TextViewer {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+    main = <TextViewer key={viewerKey(overlay)} {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (!data) {

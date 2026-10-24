@@ -12,9 +12,13 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { listSessions } from './recorder.js';
 import { markCrew } from './ports.js';
 import { troubleContext } from './share.js';
-import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, shareLine, takeLine, trawlLine } from './family.js';
+import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine, trawlLine } from './family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
+import { installHint } from './tunnel.js';
+import { afterTree, namedProcs, treeLine } from './groups.js';
+import { levelTone, shownText, structuredOf, troubled } from './structured.js';
+import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -39,33 +43,84 @@ function proc(ctx, name) {
   return p ?? null;
 }
 
-/** r, R and /restart: one process, or `all`. */
+/** The processes of a group named `name`, when it names one and no process: { group, names }; else null. */
+function group(ctx, name) {
+  const found = namedProcs(ctx.crew?.list() ?? [], name);
+  return found?.group ? { group: found.group, names: found.procs.map((p) => p.name) } : null;
+}
+
+/** r, R and /restart: one process, a group, or `all`. */
 export async function restart(ctx, name) {
   if (String(name).trim() === 'all' || !String(name).trim()) {
     if (!ctx.crew) return;
     ctx.note('Restarting every process');
+    ctx.activity('Restarted the crew');
     await ctx.crew.stopAll();
     return ctx.crew.startAll();
   }
+  const g = group(ctx, name);
+  if (g) {
+    ctx.note(`Restarting ${g.group}: ${g.names.join(', ')}`);
+    ctx.activity(`Restarted ${g.group} (${g.names.join(', ')})`);
+    await Promise.all(g.names.map((n) => ctx.crew.stop(n, { keepWatching: true })));
+    return ctx.crew.startAll({ only: g.names });
+  }
   const p = proc(ctx, name);
   if (!p) return false;
+  ctx.activity(`Restarted ${p.name}`);
   await ctx.crew.restart(p.name);
 }
 
-/** /stop: one process, or `all`. */
+/** /stop: one process, a group, or `all`. */
 export async function stop(ctx, name) {
-  if (String(name).trim() === 'all') return ctx.crew?.stopAll();
+  if (String(name).trim() === 'all') {
+    if (!ctx.crew) return;
+    ctx.activity('Stopped the crew');
+    return ctx.crew.stopAll();
+  }
+  const g = group(ctx, name);
+  if (g) {
+    ctx.activity(`Stopped ${g.group} (${g.names.join(', ')})`);
+    return Promise.all(g.names.map((n) => ctx.crew.stop(n)));
+  }
   const p = proc(ctx, name);
   if (!p) return false;
+  if (p.child) ctx.activity(`Stopped ${p.name}`);
   await ctx.crew.stop(p.name);
 }
 
-/** /start: one process, or `all` (each after the one it waits for). */
+/** /start: one process, a group, or `all` (each after the one it waits for). */
 export function start(ctx, name) {
   if (String(name).trim() === 'all' || !String(name).trim()) return ctx.crew?.startAll();
+  const g = group(ctx, name);
+  if (g) return ctx.crew.startAll({ only: g.names });
   const p = proc(ctx, name);
   if (!p) return false;
   ctx.crew.start(p.name);
+}
+
+/** /graph: who starts after whom ("after" in bosun.json), as a tree, each with its state and group. */
+export function graph(ctx) {
+  const procs = ctx.crew?.list() ?? [];
+  if (!procs.length) return ctx.note('Nothing to run, so nothing waits for anything.');
+  const tree = afterTree(procs);
+  const by = new Map(procs.map((p) => [p.name, p]));
+  const colour = { running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del };
+  const lines = tree.map((n) => {
+    const p = by.get(n.name);
+    return [
+      { text: `${treeLine(n).slice(0, -n.name.length)}`, color: theme.dim },
+      { text: '● ', color: colour[p.status] ?? theme.dim },
+      { text: n.name, bold: true },
+      { text: p.port ? ` :${p.port}` : '', color: theme.dim },
+      { text: n.group ? `  (${n.group})` : '', color: theme.accent },
+      { text: n.circle ? '  waits in a circle: it never starts after them' : '', color: theme.del },
+    ];
+  });
+  const waits = procs.some((p) => p.spec.after);
+  ctx.showText('Who starts after whom', [...tree.map((n) => `${treeLine(n)}${n.group ? `  (${n.group})` : ''}`), ...(waits ? [] : ['', 'Nothing waits for anything: "after" in bosun.json makes one start once another\'s port answers.'])].join('\n'), {
+    lines: waits ? lines : [...lines, [], [{ text: 'Nothing waits for anything: "after" in bosun.json makes one start once another\'s port answers.', color: theme.dim }]],
+  });
 }
 
 /** s: stops it when it's running, starts it when it isn't; while it waits to restart, it won't. */
@@ -73,14 +128,26 @@ export function toggle(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
   if (p.restartAt) return void ctx.crew.cancelRestart(p.name);
+  if (p.child) ctx.activity(`Stopped ${p.name}`);
   return p.child ? ctx.crew.stop(p.name) : ctx.crew.start(p.name);
 }
 
-/** ↵: everything a process has said, in the viewer. */
+/**
+ * ↵: everything a process has said, in the viewer: structured lines formatted and coloured by level,
+ * and ↵ there shows one's whole object, pretty.
+ */
 export function showLog(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
-  ctx.showText(`${p.name} · ${p.spec.run}`, p.lines.map((l) => l.text).join('\n') || '(nothing yet)', { bottom: true, log: true });
+  const lines = [...p.lines];
+  const read = lines.map(structuredOf);
+  const rich = {
+    color: (i) => (read[i] ? theme[levelTone(read[i].level)] : lines[i]?.text.startsWith('── ') ? theme.dim : undefined),
+    trouble: (i) => Boolean(lines[i] && troubled(lines[i])),
+    opens: (i) => Boolean(read[i]),
+    open: (i) => ctx.showText(`${p.name} · ${new Date(lines[i].at).toLocaleTimeString()}`, JSON.stringify(read[i].obj, null, 2), { back: ctx.overlay() }),
+  };
+  ctx.showText(`${p.name} · ${p.spec.run}`, lines.map(shownText).join('\n') || '(nothing yet)', { bottom: true, log: true, rich });
 }
 
 /** c: forgets what a process has said so far. */
@@ -174,6 +241,71 @@ export function family(ctx) {
   });
 }
 
+const KIND_MARK = { error: '✗', info: '·' };
+
+/** When an activity happened, as /timeline says it: the time today, else the date and time. */
+export function when(at, now = Date.now()) {
+  const d = new Date(at);
+  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date(now).toDateString() ? t : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${t}`;
+}
+
+/**
+ * /timeline: what the family's apps did (family.js's readActivity), newest first: this project's
+ * (with the entries that name none) or, after p, every project's. ↵ shows one whole.
+ */
+export function timeline(ctx, { all = false, replace = false } = {}) {
+  const entries = readActivity({ project: all ? undefined : ctx.dir, limit: 500 });
+  const appW = Math.max(...Object.values(APP_NAMES).map((n) => n.length));
+  ctx.showPicker(
+    {
+      title: all ? "The family's activity, every project" : `The family's activity in ${basename(ctx.dir)}`,
+      hint: `p ${all ? 'this project only' : 'every project'} · ↵ the whole of it`,
+      empty: all ? 'Nothing yet: the apps add what they do here as they do it.' : `Nothing yet in ${basename(ctx.dir)}: p shows every project's.`,
+      items: entries.map((e) => ({
+        e,
+        segments: [
+          { text: `${when(e.at)}  `.padStart(14), color: theme.dim },
+          { text: `${(APP_NAMES[e.app] ?? e.app).padEnd(appW)} `, color: theme.accent, bold: true },
+          { text: `${KIND_MARK[e.kind] ?? '·'} `, color: e.kind === 'error' ? theme.del : theme.dim },
+          { text: e.text, color: e.kind === 'error' ? theme.del : undefined },
+          { text: all && e.project ? `  ${basename(e.project)}` : '', color: theme.dim },
+        ],
+      })),
+      actions: { p: () => timeline(ctx, { all: !all, replace: true }) },
+      onPick: ({ e }) =>
+        ctx.showText(
+          `${APP_NAMES[e.app] ?? e.app} · ${new Date(e.at).toLocaleString()}`,
+          [e.text, '', `app      ${APP_NAMES[e.app] ?? e.app}`, `when     ${new Date(e.at).toLocaleString()}`, `kind     ${e.kind ?? 'info'}`, ...(e.project ? [`project  ${e.project}`] : [])].join('\n'),
+        ),
+    },
+    { replace },
+  );
+}
+
+/** /wiring: what the project points at (family.js's projectWiring: addresses, hosts, ports, connection strings, masked), by the file it's in. */
+export function wiring(ctx) {
+  const found = projectWiring(ctx.dir);
+  if (!found.length) return ctx.note(`Nothing in ${basename(ctx.dir)} points anywhere: no addresses or connection strings in appsettings*.json, .env files or http-client.env.json.`);
+  const sources = [...new Set(found.map((w) => w.source))];
+  const keyW = Math.min(40, Math.max(...found.map((w) => w.key.length)));
+  const lines = [];
+  const text = [];
+  for (const source of sources) {
+    if (lines.length) {
+      lines.push([]);
+      text.push('');
+    }
+    lines.push([{ text: source, color: theme.accent, bold: true }]);
+    text.push(source);
+    for (const w of found.filter((x) => x.source === source)) {
+      lines.push([{ text: `  ${w.key.padEnd(keyW)}  `, color: theme.dim }, { text: w.value }]);
+      text.push(`  ${w.key.padEnd(keyW)}  ${w.value}`);
+    }
+  }
+  ctx.showText(`What ${basename(ctx.dir)} points at`, text.join('\n'), { lines });
+}
+
 /** f and /free: stops whatever holds `port` on this machine, after asking. */
 export async function free(ctx, port) {
   const n = Number(String(port ?? '').trim().replace(/^:/, ''));
@@ -245,12 +377,74 @@ export async function preflight(ctx) {
   ctx.showText('Pre-flight', checks.map(checkLine).join('\n'), { lines });
 }
 
+/** The processes by what they use: the busiest first (CPU, then memory), the ones not running last. */
+export const byUsage = (procs) =>
+  [...procs].sort((x, y) => (y.usage ? 1 : 0) - (x.usage ? 1 : 0) || (y.usage?.cpu ?? 0) - (x.usage?.cpu ?? 0) || (y.usage?.mem ?? 0) - (x.usage?.mem ?? 0) || x.name.localeCompare(y.name));
+
+/**
+ * /top: every process with its CPU and memory (with what it started), the busiest first, and the last
+ * minute of each as a sparkline; redrawn with each sample. ↵ shows its log.
+ */
+export function top(ctx, { replace = false } = {}) {
+  const procs = ctx.crew?.list() ?? [];
+  if (!procs.length) return ctx.note('Nothing to run, so nothing to measure.');
+  const nameW = Math.max(4, ...procs.map((p) => p.name.length));
+  const o = ctx.overlay();
+  ctx.showPicker(
+    {
+      title: 'Top',
+      hint: 'CPU (% of one core) and memory, with what each started · ↵ its log',
+      top: true,
+      index: replace && o?.top ? o.index : undefined,
+      empty: 'Nothing is running.',
+      items: byUsage(procs).map((p) => ({
+        name: p.name,
+        segments: [
+          { text: p.name.padEnd(nameW + 2), strong: true },
+          ...(p.usage
+            ? [
+                { text: shortCpu(p.usage.cpu).padStart(5), color: p.usage.cpu >= 80 ? theme.del : p.usage.cpu >= 30 ? theme.warn : undefined },
+                { text: `  ${sparkline((p.samples ?? []).map((s) => s.cpu), 15).padEnd(15)}`, color: theme.accent },
+                { text: shortBytes(p.usage.mem).padStart(7) },
+                { text: `  ${sparkline((p.samples ?? []).map((s) => s.mem), 15)}`, color: theme.accent },
+              ]
+            : [{ text: p.child ? '    … measuring' : `    ${p.status}`, color: theme.dim }]),
+        ],
+      })),
+      onPick: (it) => showLog(ctx, it.name),
+    },
+    { replace },
+  );
+}
+
+/**
+ * T and /tunnel: opens `name`'s port to the internet through cloudflared or ngrok (asking first), or
+ * closes the tunnel it has. The address is copied once the tool says it (App's crewEvent).
+ */
+export async function tunnel(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  if (p.tunnel) return void ctx.crew.closeTunnel(p.name);
+  if (!p.port) return ctx.note(`${p.name} has no port to open: give it one in bosun.json ("port": 3000).`, 'error');
+  if (!p.child) return ctx.note(`${p.name} isn't running: start it first (s), then open its tunnel.`, 'error');
+  const found = ctx.tunnelTool(p.spec.tunnel ?? ctx.data?.tunnel ?? null);
+  if (found.missing) return ctx.note(installHint(found.missing), 'error');
+  const ok = await ctx.confirm({
+    title: `Open ${p.name}'s port ${p.port} to the internet through ${found.tool}?`,
+    detail: 'Anyone with the address reaches it, until you close it (T) or the process stops.',
+    danger: true,
+    options: YES_NO('Yes, open it'),
+  });
+  if (!ok) return false;
+  if (ctx.crew.openTunnel(p.name, found)) ctx.note(`Opening a tunnel to ${p.name}'s port ${p.port} through ${found.tool}…`);
+}
+
 /** o and /open: the process's port in the browser. */
 export function openProc(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
   if (!p.port) return ctx.note(`${p.name} has no port: give it one in bosun.json ("port": 3000).`, 'error');
-  ctx.openUrl(`http://localhost:${p.port}`);
+  ctx.openUrl(p.https ? `https://localhost:${p.https.port}` : `http://localhost:${p.port}`);
 }
 
 /** The question for w and /why: what the process is and what it said last. */
@@ -402,6 +596,14 @@ export function redrawSettings(ctx) {
 async function changeSetting(ctx, row) {
   if (row.action === 'toggle') {
     ctx.setConfig((c) => ({ ...c, [row.id]: c[row.id] === false }));
+    return redrawSettings(ctx);
+  }
+  if (row.action === 'memory') {
+    ctx.setConfig((c) => {
+      const { memoryAlert: _, ...rest } = c;
+      const next = nextMemoryAlert(c.memoryAlert);
+      return next ? { ...rest, memoryAlert: next } : rest;
+    });
     return redrawSettings(ctx);
   }
   if (row.action === 'accent') return ctx.prefill(`/accent ${ctx.config.accent ?? defaultAccent()}`);

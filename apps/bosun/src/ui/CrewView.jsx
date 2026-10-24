@@ -9,6 +9,9 @@ import { fit, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
 import { testsLabel } from '../hailcheck.js';
 import { Panel, Row } from './parts.jsx';
+import { shortBytes, shortCpu, sparkline } from '../usage.js';
+import { crewRows, groupsOf, nextGroup } from '../groups.js';
+import { formatStructured, levelTone, parseFilter, passes, shownText, structuredOf, troubled } from '../structured.js';
 
 const STATUS_COLOUR = () => ({ running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del, exited: theme.dim, stopped: theme.dim });
 
@@ -68,6 +71,46 @@ export function testsSegments(p) {
   return l ? [{ text: l.text, color: theme[l.tone] }] : [];
 }
 
+/** Its CPU and memory beside it (with what it started), when it's running and has been measured. */
+export function usageSegments(p) {
+  if (!p.child || !p.usage) return [];
+  return [{ text: ` ${shortCpu(p.usage.cpu).padStart(4)} ${shortBytes(p.usage.mem).padStart(5)}`, color: theme.dim }];
+}
+
+/** Where it's served with TLS ("https"), beside its port: https://localhost:4443, or https:4443 with `short`. */
+export function httpsSegments(p, short = false) {
+  if (!p.https || !p.child) return [];
+  return [{ text: short ? ` https:${p.https.port}` : ` https://localhost:${p.https.port}`, color: theme.add }];
+}
+
+/** Its tunnel beside it: ⇄ and the address (⇄ … while it opens), or the ⇄ alone with `short`. */
+export function tunnelSegments(p, short = false) {
+  if (!p.tunnel) return [];
+  return [{ text: short || !p.tunnel.url ? ` ⇄${p.tunnel.url ? '' : ' …'}` : ` ⇄ ${p.tunnel.url.replace(/^https:\/\//, '')}`, color: theme.accent }];
+}
+
+/** The log pane's title for one process: its name, then its CPU and memory with the last minute of each, and its tunnel's address. */
+export function logTitle(p, sparkW = 10) {
+  if (!p) return '';
+  const tunnel = p.tunnel ? ` · ⇄ ${p.tunnel.url ?? 'opening…'}` : '';
+  if (!p.child || !p.usage) return `${p.name}${tunnel}`;
+  const spark = (key) => (sparkW ? ` ${sparkline((p.samples ?? []).map((s) => s[key]), sparkW)}` : '');
+  return `${p.name} · ${shortCpu(p.usage.cpu)}${spark('cpu')} · ${shortBytes(p.usage.mem)}${spark('mem')}${tunnel}`;
+}
+
+/** A level's colour: dim for trace and debug, the warning colour for warn, red for error and fatal. */
+export const levelColour = (level) => theme[levelTone(level)];
+
+/** A log line as segments: a structured one as time, level (in its colour), message and fields; else as it came, red when it reads as trouble. */
+export function lineSegments(line) {
+  const s = structuredOf(line);
+  if (!s) return [{ text: line.text, color: line.text.startsWith('── ') ? theme.dim : isTrouble(line.text) ? theme.del : undefined }];
+  const bad = s.level === 'error' || s.level === 'fatal';
+  return formatStructured(s).parts.map((p) =>
+    p.kind === 'level' ? { text: p.text, color: levelColour(s.level), bold: bad } : p.kind === 'message' ? { text: p.text, color: bad ? theme.del : undefined } : { text: p.text, color: theme.dim },
+  );
+}
+
 /** The lines of every process, in the order they came, each with its name in front: the `a` log. */
 export function mergedLines(procs, last) {
   // Each log is in time order already (unless the clock went back), so the newest `last` are taken
@@ -97,13 +140,36 @@ const slowMerge = (procs, tails, last) =>
     .sort((x, y) => x.at - y.at)
     .slice(-last);
 
+/**
+ * `segments`, then for each of `extras` (a list of choices, the longest first) the first choice that
+ * still fits in `width`: what's beside a process when there's room, said shorter when there's less.
+ */
+export function withRoom(segments, extras, width) {
+  const out = [...segments];
+  const size = (group) => group.reduce((n, s) => n + stringWidth(s.text), 0);
+  let used = size(out);
+  for (const choices of extras) {
+    const group = choices.find((g) => size(g) && used + size(g) <= width);
+    if (!group) continue;
+    out.push(...group);
+    used += size(group);
+  }
+  return out;
+}
+
 /** The crew: each process with its state, port and uptime, and beside it the log of the one under the cursor (or all of them). */
 export function CrewView({ procs, ctx, width, height, active }) {
   const innerH = height - 2;
-  const listW = Math.min(44, Math.max(30, Math.floor(width * 0.32)));
+  const listW = Math.min(width >= 150 ? 56 : 44, Math.max(30, Math.floor(width * 0.32)));
   const logW = width - listW;
-  const nav = useListNav(procs.length, innerH);
-  const sel = procs[nav.index];
+  // ctrl+g: one group at a time ("group" in bosun.json), or all of them; each group under its heading.
+  const [only, setOnly] = useState(null);
+  const groups = groupsOf(procs);
+  const group = groups.includes(only) ? only : null;
+  const rows = crewRows(procs, group);
+  const shown = group ? rows.filter((r) => r.p).map((r) => r.p) : procs;
+  const nav = useListNav(rows.length, innerH, { selectable: (i) => Boolean(rows[i]?.p), keyOf: (i) => rows[i]?.p?.name ?? `# ${rows[i]?.heading}` });
+  const sel = rows[nav.index]?.p;
   // `a`: every process's log at once. `back`: lines scrolled up from the bottom with the wheel.
   const [merged, setMerged] = useState(false);
   const [back, setBack] = useState(0);
@@ -121,6 +187,8 @@ export function CrewView({ procs, ctx, width, height, active }) {
     setSearchState(next);
   };
   const [troubleOnly, setTroubleOnly] = useState(false);
+  // ctrl+l: the filter (structured.js's parseFilter: level>=warn, field=value, words), with the search and e.
+  const [filter, setFilter] = useState(() => parseFilter(''));
   // Uptimes and restart countdowns: drawn again when one says something new (each second under a
   // minute, each minute under an hour), not every second.
   const [, setSecond] = useState(0);
@@ -134,13 +202,13 @@ export function CrewView({ procs, ctx, width, height, active }) {
   // Whose log is on screen (true: all of them), so App redraws for new lines there and nowhere else.
   ctx.logShown = merged ? true : (sel?.name ?? null);
   // The pane's lines: the one's or all of them, only the troubled ones with `e`.
-  const all = merged ? mergedLines(procs, KEEP_LINES) : (sel?.lines ?? []);
-  const list = troubleOnly ? all.filter((l) => isTrouble(l.text)) : all;
+  const all = merged ? mergedLines(shown, KEEP_LINES) : (sel?.lines ?? []);
+  const list = troubleOnly || filter.terms.length ? all.filter((l) => (!troubleOnly || troubled(l)) && passes(filter, l)) : all;
   const listRef = useRef(list);
   listRef.current = list;
   const hitsIn = (lines, query) => {
     const find = matcher(query);
-    return find ? lines.flatMap((l, i) => (find(l.text).length ? [i] : [])) : [];
+    return find ? lines.flatMap((l, i) => (find(shownText(l)).length ? [i] : [])) : [];
   };
 
   /** Scrolls to match `n` (round from either end), a third of the way down the pane. */
@@ -189,11 +257,26 @@ export function CrewView({ procs, ctx, width, height, active }) {
   );
   ctx.claimsKey = active ? (input, key) => searchRef.current.typing || (key.ctrl && input === 'f') || (Boolean(searchRef.current.query) && (key.escape || input === 'n' || input === 'N')) : null;
 
+  const askFilter = async () => {
+    const typed = await ctx.askText({ title: 'Filter the log', detail: 'level>=warn · field=value · field!=value · field~part · words it holds; all of them. Empty shows every line.', value: filter.text });
+    if (typed == null) return;
+    const next = parseFilter(typed);
+    if (next.problems.length) ctx.note(next.problems.join('\n'), 'error');
+    setFilter(next);
+    setBack(0);
+  };
+
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
     if (ctx.claimsKey?.(input, key)) {
       ctx.claimed?.();
       return searchKeys(input, key);
+    }
+    if (key.ctrl && input === 'l') return askFilter();
+    if (key.ctrl && input === 'g') {
+      if (!groups.length) return ctx.note('There are no groups: give processes a "group" in bosun.json ("group": "backend").');
+      setBack(0);
+      return setOnly(nextGroup(groups, group));
     }
     if (nav.handle(input, key)) return setBack(0);
     if (input === 'e') {
@@ -219,6 +302,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
     } else if (input === 'l') a.saveLogPrompt(ctx, sel.name);
     else if (input === 'y') ctx.copy(sel.spec.run, 'its command');
     else if (input === 't') a.shareTrouble(ctx, sel.name);
+    else if (input === 'T') a.tunnel(ctx, sel.name);
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {
@@ -239,39 +323,55 @@ export function CrewView({ procs, ctx, width, height, active }) {
   const from = Math.max(0, list.length - back - innerH);
   const visible = list.slice(from, Math.max(0, list.length - back));
   const tagW = merged ? nameW + 1 : 0;
-  const logTitle = merged ? 'All' : (sel?.name ?? '');
+  const paneTitle = merged ? 'All' : logTitle(sel, logW >= 60 ? 10 : 0);
   const find = matcher(search.query);
   const hits = find ? hitsIn(list, search.query) : [];
   const here = hits[Math.min(search.at, hits.length - 1)];
   const where = search.query || search.typing ? `find ${search.query}${search.typing ? '▏' : ''} ${hits.length ? `${Math.min(search.at, hits.length - 1) + 1}/${hits.length}` : 'no match'}` : '';
-  const logHint = [where, troubleOnly ? 'trouble only · e all' : '', back ? `${back} up · wheel down follows` : '', !merged && !troubleOnly && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
+  const logHint = [where, filter.terms.length ? `filter ${filter.text}` : '', troubleOnly ? 'trouble only · e all' : '', back ? `${back} up · wheel down follows` : '', !merged && !troubleOnly && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
 
   return (
     <>
-      <Panel title="Crew" hint={`${procs.filter((p) => p.child).length}/${procs.length}`} width={listW} height={height} focused={active}>
+      <Panel title={group ? `Crew · ${group}` : 'Crew'} hint={`${shown.filter((p) => p.child).length}/${shown.length}`} width={listW} height={height} focused={active}>
         {procs.length === 0 ? <Row pointer={false} width={listW - 2} segments={[{ text: '  Nothing to run: /init writes a bosun.json.', color: theme.dim }]} /> : null}
-        {procs.slice(nav.offset, nav.offset + innerH).map((p, i) => (
+        {rows.slice(nav.offset, nav.offset + innerH).map(({ p, heading, procs: members }, i) =>
+          heading ? (
+            <Row
+              key={`# ${heading}`}
+              pointer={false}
+              width={listW - 2}
+              segments={[
+                { text: ` ${heading}`, color: theme.accent, bold: true },
+                { text: ` ${members.filter((m) => m.child).length}/${members.length}`, color: theme.dim },
+              ]}
+            />
+          ) : (
           <Row
             key={p.name}
             width={listW - 2}
             selected={nav.offset + i === nav.index}
             focused={active}
-            segments={[
-              { text: '● ', color: colour[p.status] },
-              { text: fit(p.name, nameW), strong: true },
-              statusSegment(p, now),
-              ...testsSegments(p),
-              ...portSegments(p),
-              afterStatus(p, now),
-              ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),
-            ]}
+            segments={withRoom(
+              [
+                { text: '● ', color: colour[p.status] },
+                { text: fit(p.name, nameW), strong: true },
+                statusSegment(p, now),
+                ...testsSegments(p),
+                ...portSegments(p),
+                afterStatus(p, now),
+                ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),
+              ],
+              [[httpsSegments(p), httpsSegments(p, true)], [tunnelSegments(p), tunnelSegments(p, true)], [usageSegments(p)]],
+              listW - 4,
+            )}
           />
-        ))}
+          ),
+        )}
       </Panel>
-      <Panel title={logTitle} hint={logHint} width={logW} height={height}>
+      <Panel title={paneTitle} hint={logHint} width={logW} height={height}>
         {visible.map((l, i) => {
-          const text = fit(l.text, lineW - tagW);
-          const line = [{ text, color: l.text.startsWith('── ') ? theme.dim : isTrouble(l.text) ? theme.del : undefined }];
+          const line = lineSegments(l);
+          const text = fit(line.map((x) => x.text).join(''), lineW - tagW);
           return (
             <Row
               key={i}

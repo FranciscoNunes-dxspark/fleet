@@ -5,10 +5,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import { statSync, watch as fsWatch } from 'node:fs';
 import { connect } from 'node:net';
 import { resolve } from 'node:path';
-import { isTrouble, portInUse, stripAnsi } from './crew.js';
+import { portInUse, stripAnsi } from './crew.js';
 import { skipsFolder, tidy, watchMatcher, watchRoots } from './watch.js';
 import { walksTree, watchTree } from './treewatch.js';
 import { crewOf, stateOf } from './recorder.js';
+import { troubleText } from './structured.js';
+import { tunnelArgs, tunnelProblem, tunnelUrl } from './tunnel.js';
+import { httpsPort, startHttpsProxy } from './https.js';
 
 // A folder that's still there: Windows reports one whose files changed as changed itself, and the files
 // it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
@@ -91,7 +94,7 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null } = {}) {
     this.dir = dir;
     this.debounce = debounce;
     this.watchImpl = watchImpl;
@@ -108,6 +111,12 @@ export class Supervisor {
     };
     this.onEvent = onEvent;
     this.spawnImpl = spawnImpl;
+    // Starts a tunnel's tool (tunnel.js): its path, its arguments, the options. Tests pass a fake.
+    this.tunnelSpawn = tunnelSpawn;
+    // "https": `tls(p)` resolves the { key, cert } to serve it with (or null: said already, not served),
+    // `httpsProxy` serves it (https.js's startHttpsProxy).
+    this.tls = tls;
+    this.httpsProxy = httpsProxy;
     this.env = env;
     this.times = restartTimes;
     this.procs = new Map();
@@ -148,6 +157,7 @@ export class Supervisor {
     const p = this.procs.get(name);
     if (!this.clearRestart(p)) return false;
     this.push(p, '── not restarting it');
+    this.closeTunnel(name);
     this.onChange();
     return true;
   }
@@ -195,7 +205,7 @@ export class Supervisor {
       p.lines.push(entry);
       this.recorder?.line(p.name, entry);
       // Bosun's own lines (── the command, ── stopped) are never the process's trouble.
-      if (!p.trouble && !line.startsWith('── ') && isTrouble(line)) p.trouble = line.trim();
+      if (!p.trouble && !line.startsWith('── ')) p.trouble = troubleText(line);
     }
     if (p.lines.length > KEEP_LINES) p.lines.splice(0, p.lines.length - KEEP_LINES);
   }
@@ -243,6 +253,7 @@ export class Supervisor {
       if (p.status === 'starting') p.status = 'running';
       this.onChange(p.status === status && p.trouble === trouble ? p : undefined);
     };
+    if (httpsPort(p.spec)) this.serveHttps(p, child);
     child.stdout?.setEncoding('utf8').on('data', take('out', false));
     child.stderr?.setEncoding('utf8').on('data', take('err', true));
     child.on('spawn', () => {
@@ -266,12 +277,49 @@ export class Supervisor {
       this.push(p, stopping ? '── stopped' : `── exited${code != null ? ` with ${code}` : ''}${signal ? ` (${signal})` : ''}`, !stopping && code !== 0);
       p.portOpen = null;
       p.health = null;
+      this.stopHttps(p);
       p.waiters?.forEach((w) => w());
       p.waiters = [];
       if (!stopping && !this.closed) this.ended(p);
+      // Its tunnel goes with it, unless it's coming straight back (r, a watched file, its "restart").
+      if (p.tunnel && !(stopping ? p.keepTunnel : p.restartTimer)) this.closeTunnel(p.name);
       this.onChange();
     });
     this.onChange();
+  }
+
+  /**
+   * Serves `p` with TLS on its "https" port while `child` runs: the certificate from `tls`, then the
+   * proxy to its port. What goes wrong is said in its log; the process runs either way.
+   */
+  async serveHttps(p, child) {
+    const port = httpsPort(p.spec);
+    if (!this.tls) return;
+    let creds;
+    try {
+      creds = await this.tls(p);
+    } catch (e) {
+      this.push(p, `── no https: ${e.message}`, true);
+      return this.onChange();
+    }
+    if (!creds || p.child !== child || this.closed) return;
+    let server;
+    try {
+      server = await this.httpsProxy({ port, target: p.port, key: creds.key, cert: creds.cert });
+    } catch (e) {
+      this.push(p, `── couldn't serve https on port ${port}: ${e.code === 'EADDRINUSE' ? 'something else holds it' : e.message}`, true);
+      return this.onChange();
+    }
+    if (p.child !== child || this.closed) return server.stop();
+    p.https = { port, server };
+    this.push(p, `── https://localhost:${port} passes on to :${p.port}`);
+    this.onChange();
+  }
+
+  /** Stops serving `p` with TLS. */
+  stopHttps(p) {
+    p.https?.server.stop();
+    p.https = null;
   }
 
   /** After `p` ended by itself: started again after a wait when its `restart` says so, or given up on. */
@@ -289,6 +337,7 @@ export class Supervisor {
       this.push(p, `── restarting in ${seconds(plan.delay)}`);
     } else if (plan.gaveUp) {
       p.gaveUp = true;
+      this.closeTunnel(p.name);
       this.push(p, `── gave up: it ended ${plan.quick} times in a row within ${seconds(this.times.quick)} of starting`, true);
     }
     this.onEvent({ type: 'exit', p, plan });
@@ -392,26 +441,104 @@ export class Supervisor {
   }
 
   async restart(name, { keepWatching = true } = {}) {
+    const p = this.procs.get(name);
+    if (p) p.keepTunnel = true;
     await this.stop(name, { keepWatching });
+    if (p) p.keepTunnel = false;
     this.start(name);
+  }
+
+  /**
+   * Opens a tunnel to `name`'s port through `tool` (tunnel.js's; at `path`): a child of its own,
+   * `p.tunnel` { tool, url, startedAt } while it runs. The address, once the tool says it, is in its
+   * log and `onEvent` hears { type: 'tunnel', p, url }; { type: 'tunnel-closed', p, tool, url, asked,
+   * said } when it ends (`asked`: closed on purpose, `said` its last lines). It closes with the
+   * process (a stop, a crash it isn't restarted after) and with Bosun.
+   */
+  openTunnel(name, { tool, path }) {
+    const p = this.procs.get(name);
+    if (!p?.port || p.tunnel || this.closed) return false;
+    const args = tunnelArgs(tool, p.port);
+    let child;
+    try {
+      child = this.tunnelSpawn(path, args, { cwd: this.dir, windowsHide: true, detached: !WIN, stdio: ['ignore', 'pipe', 'pipe'], env: this.env });
+    } catch (e) {
+      this.push(p, `── the tunnel couldn't start: ${e.message}`, true);
+      this.onChange();
+      return false;
+    }
+    const t = { tool, child, pid: child.pid ?? null, url: null, startedAt: Date.now(), said: [] };
+    p.tunnel = t;
+    this.push(p, `── tunnel: ${tool} ${args.join(' ')}`);
+    const heard = (line) => {
+      if (!line.trim()) return;
+      t.said = [...t.said, stripAnsi(line).trim()].slice(-8);
+      const url = !t.url && tunnelUrl(tool, line);
+      if (url) {
+        t.url = url;
+        this.push(p, `── tunnel open: ${url}`);
+        this.onEvent({ type: 'tunnel', p, url });
+        this.onChange();
+        return;
+      }
+      const problem = tunnelProblem(tool, line);
+      if (problem) {
+        this.push(p, `── tunnel: ${problem}`, true);
+        this.onChange(p);
+      }
+    };
+    let rest = '';
+    const take = (d) => {
+      rest += d;
+      const lines = rest.split(/\r?\n/);
+      rest = lines.pop();
+      lines.forEach(heard);
+    };
+    child.stdout?.setEncoding('utf8').on('data', take);
+    child.stderr?.setEncoding('utf8').on('data', take);
+    child.on('error', (e) => {
+      t.said = [...t.said, e.message];
+      this.push(p, `── the tunnel couldn't start: ${e.message}`, true);
+    });
+    child.on('close', (code) => {
+      if (rest) heard(rest);
+      if (p.tunnel === t) p.tunnel = null;
+      this.push(p, `── tunnel closed${t.asked || code == null ? '' : ` (${tool} exited with ${code})`}`, !t.asked);
+      this.onEvent({ type: 'tunnel-closed', p, tool, url: t.url, asked: Boolean(t.asked), said: t.said });
+      this.onChange();
+    });
+    this.onChange();
+    return true;
+  }
+
+  /** Closes `name`'s tunnel; returns whether it had one. */
+  closeTunnel(name) {
+    const t = this.procs.get(name)?.tunnel;
+    if (!t || t.asked) return false;
+    t.asked = true;
+    if (t.pid) killTreeNow(t.pid);
+    else t.child.kill?.();
+    return true;
   }
 
   /**
    * Starts every process not running, each after the one it waits for (`after`): once that one's port
    * answers, or it has run a moment when it has no port.
    */
-  async startAll({ waitMs = 20000 } = {}) {
+  async startAll({ waitMs = 20000, only = null } = {}) {
     const started = new Set();
     const order = [];
+    // `only`: these names (a group), each still waiting for the one it starts after when that runs.
+    const wanted = (p) => !only || only.includes(p.name);
     const visit = (p, seen = new Set()) => {
       if (started.has(p.name) || seen.has(p.name)) return;
       seen.add(p.name);
       const dep = p.spec.after && this.procs.get(p.spec.after);
-      if (dep) visit(dep, seen);
+      if (dep && wanted(dep)) visit(dep, seen);
       started.add(p.name);
       order.push(p);
     };
-    for (const p of this.procs.values()) visit(p);
+    for (const p of this.procs.values()) if (wanted(p)) visit(p);
     for (const p of order) {
       const dep = p.spec.after && this.procs.get(p.spec.after);
       if (dep) await this.ready(dep, waitMs);
@@ -441,6 +568,8 @@ export class Supervisor {
       this.clearRestart(p);
       this.unwatch(p);
       if (p.pid) killTreeNow(p.pid);
+      if (p.tunnel) this.closeTunnel(p.name);
+      this.stopHttps(p);
     }
   }
 

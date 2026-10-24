@@ -11,16 +11,29 @@ import { Panel, Row } from './parts.jsx';
  * Text over the view (ctx.showText): a command's output, an item. `lines` (rows of
  * segments) draws it in colour instead of `text`, which y still copies. Scrolls; esc or q closes it.
  * `bottom` starts it at the end, as for a log. / (or ctrl+f) searches it (n N go from match to match, esc clears
- * the search); for a `log`, e shows only the lines that read as trouble.
+ * the search); for a `log`, e shows only the lines that read as trouble. `rich` says more about each
+ * line of `text` by its number: `color(i)`, `trouble(i)` (for e), and `opens(i)` with `open(i)`, what ↵
+ * shows of it (the line of the search's match, else the lowest on screen that opens).
  */
-export function TextViewer({ title, text, lines: given, loading, bottom = false, log = false, ctx, width, height, active, onClose }) {
+export function TextViewer({ title, text, lines: given, loading, bottom = false, log = false, rich, ctx, width, height, active, onClose }) {
   const innerW = width - 4;
   const innerH = height - 2;
   const [troubleOnly, setTroubleOnly] = useState(false);
-  const source = String(text ?? '').split('\n').filter((l) => !troubleOnly || isTrouble(l));
+  const source = String(text ?? '')
+    .split('\n')
+    .map((l, i) => ({ l, i }))
+    .filter(({ l, i }) => !troubleOnly || (rich?.trouble ? rich.trouble(i) : isTrouble(l)));
+  // Each row on screen, and the line of the text it came from.
+  const origin = [];
   const lines = loading
     ? [[{ text: 'Loading…', color: theme.dim }]]
-    : (given ?? source.flatMap((l) => (l ? wrap(l, innerW) : [''])).map((l) => [{ text: l }]));
+    : (given ??
+      source.flatMap(({ l, i }) =>
+        (l ? wrap(l, innerW) : ['']).map((w) => {
+          origin.push(i);
+          return [{ text: w, color: rich?.color?.(i) }];
+        }),
+      ));
   const max = Math.max(0, lines.length - innerH);
   const [top, setTopState] = useState(bottom ? max : 0);
   const topRef = useRef(bottom ? max : 0);
@@ -70,6 +83,14 @@ export function TextViewer({ title, text, lines: given, loading, bottom = false,
     if (s.query && key.escape) return setSearch(cleared);
     if (s.query && input === 'n') return goTo(s.at + 1);
     if (s.query && input === 'N') return goTo(s.at - 1);
+    if (key.return && rich?.open && !given) {
+      const hits = s.query ? hitsIn(linesRef.current, s.query) : [];
+      const from = Math.min(topRef.current, max);
+      let row = hits.length ? hits[Math.min(s.at, hits.length - 1)] : -1;
+      for (let r = Math.min(linesRef.current.length, from + innerH) - 1; row < 0 && r >= from; r--) if (rich.opens(origin[r])) row = r;
+      if (row >= 0 && rich.opens(origin[row])) rich.open(origin[row]);
+      return;
+    }
     if (log && input === 'e') {
       setTroubleOnly((t) => !t);
       return setTop(bottom ? Number.MAX_SAFE_INTEGER : 0);

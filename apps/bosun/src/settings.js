@@ -3,6 +3,7 @@
 import { THEMES, defaultAccent, theme } from './theme.js';
 import { fit } from './text.js';
 import { notifySeconds } from './notify.js';
+import { memoryAlertLabel, nextMemoryAlert } from './usage.js';
 
 const isOn = (value) => value !== false;
 const count = (n, one, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : 'none');
@@ -43,6 +44,13 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       value: isOn(config.notify) ? 'on' : 'off',
       note: isOn(config.notify) ? `a bell and a notification when a process crashes or gives up, and after a ${notifySeconds(config)} s command` : 'say nothing',
       action: 'toggle',
+    },
+    {
+      id: 'memoryAlert',
+      label: 'Memory alert',
+      value: memoryAlertLabel(config.memoryAlert),
+      note: `${memoryAlertLabel(nextMemoryAlert(config.memoryAlert))} next: ${config.memoryAlert ? 'say once when a process\'s memory keeps growing past it' : 'say nothing about memory'}`,
+      action: 'memory',
     },
     {
       id: 'record',
