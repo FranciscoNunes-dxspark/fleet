@@ -2,6 +2,7 @@
 import './app.js';
 import path from 'node:path';
 import { ROOT } from '../server/root.js';
+import { appTerminal } from '@fleet/kit/hosted.js';
 
 const args = process.argv.slice(2);
 const ENV_FILE = path.join(ROOT, '.env');
@@ -39,7 +40,9 @@ try {
 } catch {
   // No .env file: the real environment only.
 }
-const interactive = process.stdin.isTTY && process.stdout.isTTY;
+// The terminal, or inside Fleet the host's pipes made to look like one (the kit's hosted.js).
+const terminal = appTerminal();
+const interactive = terminal.stdin.isTTY && terminal.stdout.isTTY;
 const demo = args.includes('--demo') || args.includes('--mock');
 const isOn = (v) => /^(1|true|yes)$/i.test(v || '');
 
@@ -140,7 +143,8 @@ let checkUpdate;
 let installUpdate;
 // /update asks GitHub now and installs, whatever those two say: it's asked for.
 let updater;
-if (COMPILED) {
+// Inside Fleet, Fleet updates itself as a whole.
+if (COMPILED && !terminal.hosted) {
   const update = await import('@fleet/kit/update.js');
   const { config } = await import('../server/config.js');
   const last = update.lastCheckStore(path.join(config.dataDir, 'update-check.json'));
@@ -166,7 +170,7 @@ process.on('exit', () => process.stdout.write('\x1b[?1049l'));
 // on unless this computer's Settings turned it off. Set up before rendering, so mouse reports never
 // reach Ink as keys, and Ink draws through the mouse's stdout, which keeps the frames to select text from.
 const { terminalMouse } = await import('@fleet/kit/mouse.js');
-const mouse = await terminalMouse(process.stdin, process.stdout);
-const app = render(React.createElement(App, { keel, checkUpdate, installUpdate, updater, mouse }), { exitOnCtrlC: false, patchConsole: false, stdout: mouse?.stdout ?? process.stdout });
+const mouse = await terminalMouse(terminal.stdin, terminal.stdout);
+const app = render(React.createElement(App, { keel, checkUpdate, installUpdate, updater, mouse }), { exitOnCtrlC: false, patchConsole: false, stdin: terminal.stdin, stdout: mouse?.stdout ?? terminal.stdout });
 await app.waitUntilExit();
 process.exit(0);

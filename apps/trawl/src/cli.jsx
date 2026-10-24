@@ -10,6 +10,7 @@ import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
 import { familyDir } from '@fleet/kit/family.js';
 import { terminalMouse } from '@fleet/kit/mouse.js';
+import { appTerminal } from '@fleet/kit/hosted.js';
 import { notification } from './notify.js';
 import { parseArgs } from './launch.js';
 
@@ -55,7 +56,9 @@ if (args[0] === 'mcp') {
 
 /** The full-screen app: needs a real terminal. */
 async function runApp() {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+  // The terminal, or inside Fleet the host's pipes made to look like one (the kit's hosted.js).
+  const { stdin, stdout, hosted } = appTerminal();
+  if (!stdin.isTTY || !stdout.isTTY) {
     console.error('trawl needs an interactive terminal.');
     process.exit(1);
   }
@@ -83,12 +86,14 @@ async function runApp() {
 
   // Only the downloaded executables look for updates and install them: a checkout updates with git
   // pull, and its package.json version is behind the releases (the Release workflow sets the version as it builds).
-  const checkLatest = COMPILED ? (opts) => fetchLatest({ current: VERSION, ...opts }) : undefined;
+  // Inside Fleet, Fleet updates itself as a whole.
+  const updates = COMPILED && !hosted;
+  const checkLatest = updates ? (opts) => fetchLatest({ current: VERSION, ...opts }) : undefined;
   // What an earlier update moved aside; quietly, and it doesn't hold up the start.
-  if (COMPILED) removeOldExecutables();
+  if (updates) removeOldExecutables();
   // Clicks and the wheel, where the terminal can report them; App turns reporting on unless the setting
   // is off. Set up before rendering, so mouse reports never reach Ink as keys.
-  const mouse = await terminalMouse(process.stdin, process.stdout);
+  const mouse = await terminalMouse(stdin, stdout);
   const app = render(
     <App
       config={config}
@@ -96,14 +101,14 @@ async function runApp() {
       initialConnection={connectTo}
       azureSql={azureSql ?? undefined}
       checkLatest={checkLatest}
-      installUpdate={COMPILED ? installUpdate : undefined}
+      installUpdate={updates ? installUpdate : undefined}
       setTitle={setTitle}
       mouse={mouse}
       notify={(title, body) => process.stdout.write(notification(title, body))}
       familyHome={familyDir()}
     />,
     // Through the mouse's stdout, which watches the frames to select text from.
-    { exitOnCtrlC: false, stdout: mouse?.stdout ?? process.stdout },
+    { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
   );
   await app.waitUntilExit();
   process.exit(0);
