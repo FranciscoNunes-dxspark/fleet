@@ -249,7 +249,8 @@ const table = (names, rows) => ({ columns: names.map((name) => ({ name, type: TY
 
 /** The demo's answer to `kql` over `items` (one component's, within the time span). */
 export function demoQuery(kql, items) {
-  const q = kql.replace(/\s+/g, ' ').trim();
+  // `| render …` says how to draw it, which the query API leaves to the caller.
+  const q = kql.replace(/\s+/g, ' ').trim().replace(/\s*\|\s*render\s+\w+.*$/i, '');
   const role = /cloud_RoleName == '([^']*)'/.exec(q)?.[1];
   const mine = role ? items.filter((i) => i.cloud_RoleName === role) : items;
   const op = /operation_Id == '([^']*)'/.exec(q)?.[1];
@@ -335,6 +336,9 @@ export function demoQuery(kql, items) {
     const rows = [...groups.values()].map((g) => ({ ...g, locations: g.locations.size })).sort((a, b) => b.failed - a.failed || a.name.localeCompare(b.name));
     return table(['name', 'total', 'failed', 'last', 'lastFailure', 'locations', 'message'], rows);
   }
+  // `summarize count() by …`, by bins of time and by columns, as a chart's query asks.
+  const counted = /^(\w+)((?: \| where [^|]+)*) \| summarize (?:(\w+) = )?count\(\) by ([^|]+?)(?: \| (?:order|sort) by [^|]+)?(?: \| (?:take|limit) (\d+))?$/.exec(q);
+  if (counted && TABLES[counted[1]]) return countedAnswer(counted, mine, /\|\s*where success == false\b/.test(q));
   const name = /^(\w+)/.exec(q)?.[1];
   const kind = TABLES[name];
   if (!kind) throw new Error(`Querying the demo: it answers requests, exceptions, traces, dependencies and availabilityResults (with where cloud_RoleName == '…' and take), not "${name ?? q}"`);
@@ -345,6 +349,33 @@ export function demoQuery(kql, items) {
   // `| count`, as a watch's query ends.
   if (/\|\s*count\s*$/.test(q)) return table(['Count'], [{ Count: rows.length }]);
   return table(COLUMNS[kind], rows);
+}
+
+const BIN = { m: 60 * 1000, h: HOUR, d: 24 * HOUR };
+
+// `table | where … | summarize [n =] count() by bin(timestamp, 1h)[, column…]`: the rows counted by those keys.
+function countedAnswer([, name, , alias, by, take], mine, failing) {
+  const keys = by.split(/,\s*(?![^()]*\))/).map((k) => {
+    const bin = /^(?:(\w+) = )?bin\((\w+), (\d+)([mhd])\)$/.exec(k.trim());
+    if (bin) return { name: bin[1] ?? bin[2], field: bin[2], size: Number(bin[3]) * BIN[bin[4]] };
+    const plain = /^(?:(\w+) = )?(\w+)$/.exec(k.trim());
+    if (!plain) throw new Error(`Querying the demo: it counts by bin(timestamp, …) and columns, not "${k}"`);
+    return { name: plain[1] ?? plain[2], field: plain[2] };
+  });
+  const groups = new Map();
+  for (const i of mine.filter((x) => x.itemType === TABLES[name] && (!failing || x.success === false))) {
+    const vals = keys.map((k) => (k.size ? new Date(Math.floor(Date.parse(i[k.field]) / k.size) * k.size).toISOString() : i[k.field] ?? null));
+    const id = JSON.stringify(vals);
+    const g = groups.get(id) ?? { vals, n: 0 };
+    g.n++;
+    groups.set(id, g);
+  }
+  const binned = keys.findIndex((k) => k.size);
+  const rows = [...groups.values()].sort((a, b) => (binned >= 0 ? String(a.vals[binned]).localeCompare(String(b.vals[binned])) : b.n - a.n)).slice(0, take ? Number(take) : undefined);
+  return {
+    columns: [...keys.map((k) => ({ name: k.name, type: k.size ? 'datetime' : TYPES[k.field] ?? 'string' })), { name: alias ?? 'count_', type: 'long' }],
+    rows: rows.map((g) => [...g.vals, g.n]),
+  };
 }
 
 // /compare-window's queries: the table's rows between two times, summarised by a key and which side of the point they fell.

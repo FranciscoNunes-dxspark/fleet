@@ -6,6 +6,7 @@ import { sqlByLabel } from './tree.js';
 export const COMMANDS = [
   { name: 'kql', args: '<query>', desc: 'Run a query in Logs, against the Application Insights in scope', run: (ctx, s) => a.runQuery(ctx, s) },
   { name: 'queries', args: '[name]', desc: 'Your saved queries (s in Logs saves one): pick one to run, or name it', complete: 'queries', run: (ctx, s) => a.savedQueries(ctx, s) },
+  { name: 'chart', desc: 'Draw the result in Logs as a chart (a time series as sparklines, names as bars), or as the grid again', run: (ctx) => a.toggleChart(ctx) },
   { name: 'export', args: '<file>', desc: "Save the grid in Logs to a file: .csv, .json or .md (a Markdown table)", run: (ctx, s) => a.exportResult(ctx, s) },
   { name: 'sub', args: '[name]', desc: 'Another subscription (a list to pick from if none is named)', complete: 'subscriptions', run: (ctx, s) => a.chooseSubscription(ctx, s) },
   { name: 'insights', args: '[name]', desc: 'The Application Insights that Logs and Problems look in, or a Log Analytics workspace for Logs to query', complete: 'components', run: (ctx, s) => a.chooseComponent(ctx, s) },

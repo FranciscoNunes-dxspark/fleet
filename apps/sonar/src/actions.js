@@ -18,6 +18,7 @@ import { parseWatch, watchEvery } from './watches.js';
 import { autoscaleSummary, consumption, parseScale, planLine, scaledSku } from './scale.js';
 import { parseRoute, productionShare, withRoute } from './routing.js';
 import { bodyPreview, resubmitPath, secretBody } from './servicebus.js';
+import { chartOf, renderKind } from './chart.js';
 import { VIEW_MAX, blobUrl, isText, shortName, sizeText } from './blobs.js';
 import { dataExplorerUrl, throughputText } from './cosmos.js';
 import { openUrl } from './open.js';
@@ -887,8 +888,21 @@ export async function runQuery(ctx, kql) {
     result = await ctx.provider.query(scope.component, q, { timespan: span.iso, signal });
     return { stdout: `${result.rows.length} row${result.rows.length === 1 ? '' : 's'}` };
   }, { label: 'Querying' });
-  if (done.ok) ctx.setResult({ query: q, component: scope.component, span, ...result });
+  // A query that ends with `| render …` shows as a chart (v in Logs, or /chart, goes back to the grid).
+  if (done.ok) ctx.setResult({ query: q, component: scope.component, span, ...result, kind: renderKind(q), chart: Boolean(renderKind(q)) && !chartOf(result, renderKind(q)).error });
   if (done.ok) ctx.setConfig((c) => ({ ...c, queries: [q, ...(c.queries ?? []).filter((x) => x !== q)].slice(0, 50) }));
+}
+
+/** v in Logs and /chart: the result as a chart, or as the grid again; it says why when it makes no chart. */
+export function toggleChart(ctx) {
+  const result = ctx.result();
+  if (!result) return ctx.note('Run a query in Logs first: there is nothing to draw.', 'error');
+  if (!result.chart) {
+    const c = chartOf(result, result.kind);
+    if (c.error) return ctx.note(c.error, 'error');
+  }
+  ctx.setView('logs');
+  ctx.setResult({ ...result, chart: !result.chart });
 }
 
 /** s in Logs: the query under a name of yours, kept in the config for /queries. */

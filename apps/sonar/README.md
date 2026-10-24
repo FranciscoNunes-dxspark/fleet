@@ -127,6 +127,19 @@ Messages are read through Service Bus's own API with your `az` sign-in, which ne
 namespace: Azure Service Bus Data Receiver to peek, Data Owner to resubmit and purge (Owner and
 Contributor don't reach messages). Without one, Sonar says which it needs.
 
+### Charts
+
+A query that ends with `| render timechart` (or `linechart`, `areachart`), `columnchart`, `barchart` or
+`piechart` comes back as a chart, and `v` (or `/chart`) turns any result with a column of numbers into one,
+or back into the grid. A time series draws a sparkline per series on one time axis, each with its
+lowest, highest and last value: one per value of a name column (the eight biggest), or one per column
+of numbers. Anything else draws horizontal bars with their values, a pie each one's share too:
+
+```
+requests | summarize n = count() by bin(timestamp, 1h), resultCode | render timechart
+requests | where success == false | summarize count() by name | render barchart
+```
+
 ### Asking Claude
 
 `w` on a problem (or `/why`) sends its latest occurrence, end to end, to
@@ -282,6 +295,7 @@ accounts show their details only.
 | --- | --- |
 | `e` / `i` | Edit the query: `tab` completes, `↑` `↓` go through the queries run before, `↵` runs it, `esc` stops editing |
 | `↵` | Run the query, or show the row under the cursor whole |
+| `v` | The result as a chart, or as the grid again (below) |
 | `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `Y` | Copy the row as JSON · every row, tab-separated |
@@ -372,6 +386,7 @@ and Trawl.
 | --- | --- |
 | `/kql <query>` | Run a query in Logs |
 | `/queries [name]` | Your saved queries: pick one to run (`x` forgets it), or name it |
+| `/chart` | Draw the result in Logs as a chart, or as the grid again |
 | `/export <file>` | Save the grid in Logs to a `.csv`, `.json` or `.md` (a Markdown table) file |
 | `/sub [name]` | Another subscription (a list to pick from if none is named) |
 | `/insights [name]` | The Application Insights that Logs and Problems look in, or a Log Analytics workspace for Logs |
