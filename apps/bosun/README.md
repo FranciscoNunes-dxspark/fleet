@@ -21,6 +21,8 @@ Opened somewhere with nothing to run (a launcher's folder, your home), it opens 
 last instead. `/move` takes it to another project: it stops this one's processes (asking first when
 any are running) and starts the other's. The header and the window's title say which project it's in.
 
+Bosun also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]`; a line Bosun copies for a sibling goes straight to that app's prompt there.
+
 ## Install
 
 Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=bosun-v&expanded=true)
