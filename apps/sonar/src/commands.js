@@ -8,7 +8,7 @@ export const COMMANDS = [
   { name: 'queries', args: '[name]', desc: 'Your saved queries (s in Logs saves one): pick one to run, or name it', complete: 'queries', run: (ctx, s) => a.savedQueries(ctx, s) },
   { name: 'export', args: '<file>', desc: "Save the grid in Logs to a file: .csv, .json or .md (a Markdown table)", run: (ctx, s) => a.exportResult(ctx, s) },
   { name: 'sub', args: '[name]', desc: 'Another subscription (a list to pick from if none is named)', complete: 'subscriptions', run: (ctx, s) => a.chooseSubscription(ctx, s) },
-  { name: 'insights', args: '[name]', desc: 'The Application Insights that Logs and Problems look in', complete: 'components', run: (ctx, s) => a.chooseComponent(ctx, s) },
+  { name: 'insights', args: '[name]', desc: 'The Application Insights that Logs and Problems look in, or a Log Analytics workspace for Logs to query', complete: 'components', run: (ctx, s) => a.chooseComponent(ctx, s) },
   { name: 'find', args: '[text]', desc: 'Show only the apps whose name or resource group has the text in it (none: all of them)', run: (ctx, s) => (ctx.setFilter(s.trim()), ctx.setView('resources')) },
   { name: 'appsettings', args: '[app]', desc: "An app's or slot's settings, to see, edit or compare", complete: 'targets', run: (ctx, s) => a.showSettings(ctx, s) },
   { name: 'compare', args: '[app]', desc: "How a slot's settings differ from another slot's of the same app", complete: 'targets', run: (ctx, s) => a.compareSettings(ctx, s) },
@@ -55,7 +55,7 @@ function completions(kind, data, targets, problems, queries) {
   if (kind === 'sqlservers') return (data?.sqlServers ?? []).map((s) => s.name);
   if (kind === 'problems') return (problems ?? []).map((p) => p.problemId);
   if (kind === 'subscriptions') return (data?.subscriptions ?? []).map((s) => s.name);
-  if (kind === 'components') return (data?.components ?? []).map((c) => c.name);
+  if (kind === 'components') return [...(data?.components ?? []), ...(data?.workspaces ?? [])].map((c) => c.name);
   if (kind === 'targets') return Object.keys(targets ?? {});
   return [];
 }

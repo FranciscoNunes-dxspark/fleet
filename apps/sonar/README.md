@@ -46,8 +46,8 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state (and a slot's share of its app's traffic, `→ 10%`, when it takes some), and in the same groups its container apps, Azure SQL servers (their databases under them), storage accounts, Service Bus namespaces and Cosmos DB accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment, and its metrics over the time span (requests, CPU, memory, replicas); for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address; for a Service Bus namespace, its address and tier, how many messages its queues and subscriptions hold, and which have dead letters; for a Cosmos DB account, its API, address, regions, consistency and whether it's serverless |
-| **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state (and a slot's share of its app's traffic, `→ 10%`, when it takes some), and in the same groups its container apps, Azure SQL servers (their databases under them), storage accounts, Service Bus namespaces, Cosmos DB accounts and Log Analytics workspaces; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment, and its metrics over the time span (requests, CPU, memory, replicas); for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address; for a Service Bus namespace, its address and tier, how many messages its queues and subscriptions hold, and which have dead letters; for a Cosmos DB account, its API, address, regions, consistency and whether it's serverless |
+| **Logs** | A KQL query over Application Insights (or a Log Analytics workspace) and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type: a workspace's own tables and columns when Logs queries one |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
 | **Alerts** | The subscription's metric and log alerts still firing that began in the time span (Azure Monitor's Alerts Management), most severe first: severity, the rule, what it's about, when it fired. Under them, the availability tests of the Application Insights in scope: how many ran from how many places, how many failed and when last. `↵` shows an alert whole, or a test's results in Logs |
@@ -58,7 +58,10 @@ Sonar runs. Without permission to read them (Cost Management Reader, or Reader o
 Sonar says nothing of costs.
 
 Logs and Problems look at the app picked in Resources (by its role name), in the Application Insights
-its settings point at. `c` picks another Application Insights, or all the apps in one. `t` changes
+its settings point at. `c` picks another Application Insights, or all the apps in one, or a Log
+Analytics workspace: Logs then queries its tables directly (a workspace-based Application Insights
+writes `AppRequests`, `AppExceptions`, `AppTraces`… there), with its tables and columns in completion
+(from the query API's metadata, or which tables have rows when that can't be read). `t` changes
 the time span: the last hour, 24 hours, 7 days or 30 days, for Logs, Problems and the metrics in Resources.
 
 ## Changing things
@@ -254,6 +257,11 @@ Blobs are read through Blob Storage's own API with your `az` sign-in, which need
 Reader (or Contributor) on the account: Owner and Contributor on it don't reach the blobs that way. Without
 it, Sonar says so. Sonar never writes a blob.
 
+| On a Log Analytics workspace | |
+| --- | --- |
+| `↵` / `l` | Query it in Logs, starting with which of its tables have rows and how many |
+| `o` | Open it in the portal |
+
 | On a Cosmos DB account | |
 | --- | --- |
 | `↵` | Its databases and their containers (a MongoDB account's collections), with each one's partition key, throughput (its own, or the database's shared, autoscale or not) and time to live; `o` there opens the portal's Data Explorer, `y` copies a name |
@@ -279,7 +287,7 @@ accounts show their details only.
 | `y` `Y` | Copy the row as JSON · every row, tab-separated |
 | `H` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/hail)'s prompt, to send it again there |
 | `F` | Copy a request row as the text of a request in a `.http` file |
-| `c` | Which Application Insights to look in |
+| `c` | Which Application Insights (or Log Analytics workspace) to look in |
 
 | In Live | |
 | --- | --- |
@@ -366,7 +374,7 @@ and Trawl.
 | `/queries [name]` | Your saved queries: pick one to run (`x` forgets it), or name it |
 | `/export <file>` | Save the grid in Logs to a `.csv`, `.json` or `.md` (a Markdown table) file |
 | `/sub [name]` | Another subscription (a list to pick from if none is named) |
-| `/insights [name]` | The Application Insights that Logs and Problems look in |
+| `/insights [name]` | The Application Insights that Logs and Problems look in, or a Log Analytics workspace for Logs |
 | `/find [text]` | Show only the apps whose name or resource group has the text in it |
 | `/appsettings [app]` | An app's or slot's settings |
 | `/compare [app]` | How a slot's settings differ from another slot's |
@@ -424,5 +432,4 @@ terminals), for when you've switched to another window. **Notify when done** tur
 
 ## Not yet
 
-Key Vault itself (beyond the references in settings), Cosmos DB's documents, writing blobs, and Log
-Analytics workspaces queried directly, other than a container app's logs.
+Key Vault itself (beyond the references in settings), Cosmos DB's documents, and writing blobs.

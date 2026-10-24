@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
-import { TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
+import { SCHEMA, TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
 import { costDay } from '../cost.js';
 import { autoscaleFor } from '../scale.js';
@@ -185,6 +185,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   // App Service plans by id, and each subscription's autoscale settings, kept until r or a scale.
   const planCache = useRef(new Map());
   const autoscaleCache = useRef(new Map());
+  // A Log Analytics workspace's tables and columns, for completion in Logs; kept until r.
+  const tablesCache = useRef(new Map());
   // What the list shows beside each app or slot, by id: { refs, routing } (its Key Vault references, an app's ramp-up rules).
   const [extras, setExtras] = useState({});
   // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
@@ -312,6 +314,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     routingCache.current = new Map();
     planCache.current = new Map();
     autoscaleCache.current = new Map();
+    tablesCache.current = new Map();
     // A subscription not on screen yet shows as soon as its apps are known, slots and databases
     // filling in as they come; reading the one on screen again keeps it until the new one is whole.
     const n = ++loads.current;
@@ -402,6 +405,21 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     routingCache.current.delete(app.id);
     const routing = await routingOf(app).catch(() => null);
     setExtras((x) => ({ ...x, [app.id]: { ...x[app.id], routing } }));
+  };
+
+  /**
+   * What completion in Logs offers for a component: Application Insights' tables, or a workspace's own
+   * (insights.js SCHEMA when they can't be read).
+   */
+  const schemaOf = (component) => {
+    if (!component?.workspaceId) return Promise.resolve(SCHEMA);
+    const cache = tablesCache.current;
+    if (!cache.has(component.workspaceId)) {
+      const p = (provider.workspaceTables ? provider.workspaceTables(component) : Promise.resolve(SCHEMA)).then((t) => (Object.keys(t).length ? t : SCHEMA));
+      p.catch(() => cache.delete(component.workspaceId));
+      cache.set(component.workspaceId, p);
+    }
+    return cache.get(component.workspaceId);
   };
 
   /** An App Service plan by its id (scale.js planFrom), read once and kept until r or it's scaled. */
@@ -630,6 +648,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     forgetSettings: (target) => (settingsCache.current.delete(target.id), refsCache.current.delete(target.id)),
     referencesOf,
     planOf,
+    schemaOf,
     routingOf,
     routingChanged,
     autoscaleOf,

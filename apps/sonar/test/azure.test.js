@@ -423,7 +423,7 @@ test('the tree with the other kinds: under their resource groups, databases unde
   const rows = resourceRows(d.apps, d.slots, '', d);
   assert.deepEqual(rows.map((r) => r.text ?? `${r.kind}:${label(r.target)}`), [
     'contoso-prod', 'app:contoso-web', 'slot:contoso-web/staging', 'app:contoso-api', 'slot:contoso-api/staging', 'app:contoso-orders',
-    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore', 'servicebus:contoso-bus', 'cosmos:contoso-cosmos',
+    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore', 'servicebus:contoso-bus', 'cosmos:contoso-cosmos', 'workspace:contoso-logs',
     'contoso-qa', 'sqlserver:contoso-sql-qa', 'sqldb:contoso-sql-qa/contoso-qa',
   ]);
   assert.deepEqual(resourceRows(d.apps, d.slots, 'reporting', d).map((r) => r.text ?? label(r.target)), ['contoso-prod', 'contoso-sql-prod', 'contoso-sql-prod/contoso-reporting']);
@@ -680,4 +680,22 @@ test('container apps\' metrics: requests, CPU, memory and replicas asked for, re
   const d = await demo.metrics(demo.state.containers[0], { span: TIMESPANS[0] });
   assert.deepEqual(d.map((s) => [s.name, s.points.length]), [['Requests', 12], ['UsageNanoCores', 12], ['WorkingSetBytes', 12], ['Replicas', 12]]);
   assert.match(metricRows(d, { defs: metricsFor(target) })[1].summary, /millicores · peak \d+ millicores/);
+});
+
+test('Log Analytics workspaces: listed with their customer id; their tables from the query API\'s metadata, else from a query', async () => {
+  const wsId = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.OperationalInsights/workspaces/logs';
+  const { fetch, calls } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.OperationalInsights/workspaces': { value: [{ id: wsId, name: 'logs', location: 'westeurope', properties: { customerId: 'cust-1', retentionInDays: 30, provisioningState: 'Succeeded', sku: { name: 'PerGB2018' } } }] },
+    'GET api.loganalytics.io/v1/workspaces/cust-1/metadata': { tables: [{ name: 'AppTraces', columns: [{ name: 'Message' }] }, { name: 'AppRequests', columns: [{ name: 'Name' }, { name: 'Url' }] }] },
+    'GET api.loganalytics.io/v1/workspaces/cust-2/metadata': [403, { error: { message: 'no' } }],
+    'POST api.loganalytics.io/v1/workspaces/cust-2/query': { tables: [{ columns: [{ name: '$table', type: 'string' }], rows: [['Heartbeat'], ['AppRequests']] }] },
+  });
+  const tokens = [];
+  const azure = createAzure({ fetch, token: async (r) => (tokens.push(r), 't') });
+  const [ws] = await azure.logWorkspaces('s1');
+  assert.deepEqual([ws.type, ws.name, ws.workspaceId, ws.retention, ws.sku, ws.state], ['workspace', 'logs', 'cust-1', 30, 'PerGB2018', 'Ready']);
+  assert.deepEqual(await azure.workspaceTables(ws), { AppRequests: ['Name', 'Url'], AppTraces: ['Message'] });
+  assert.equal(tokens.at(-1), 'https://api.loganalytics.io');
+  assert.deepEqual(await azure.workspaceTables({ ...ws, workspaceId: 'cust-2' }), { AppRequests: [], Heartbeat: [] });
+  assert.deepEqual(calls.at(-1).body, { query: 'search * | distinct $table | take 500', timespan: 'P7D' });
 });

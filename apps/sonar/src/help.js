@@ -29,7 +29,7 @@ export const HELP = [
   },
   {
     title: 'Resources',
-    about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them), storage accounts, Service Bus namespaces and Cosmos DB accounts; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
+    about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them), storage accounts, Service Bus namespaces, Cosmos DB accounts and Log Analytics workspaces; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
     views: ['resources'],
     rows: [
       ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies; a Key Vault reference shows ✓, or ✗ and why it didn\'t resolve'],
@@ -55,6 +55,8 @@ export const HELP = [
       { heading: 'On a storage account' },
       ['↵', 'Its blob containers, then their blobs a folder at a time (size, changed, tier): ↵ goes into a folder or shows a blob (text up to 1 MB), y copies its address; needs Storage Blob Data Reader'],
       ['o  y', 'The portal · copy its blob address'],
+      { heading: 'On a Log Analytics workspace' },
+      ['↵ / l', 'Query it in Logs (which tables have rows, to start); completion knows its tables'],
       { heading: 'On a Cosmos DB account' },
       ['↵', 'Its databases and containers: partition key, throughput (own or the database\'s shared), time to live; o there opens the Data Explorer (no documents: they need Cosmos DB\'s own data role)'],
       ['o  y', 'The portal · copy its address'],
@@ -79,7 +81,7 @@ export const HELP = [
       ['y  Y', 'Copy the row (JSON) · every row (tab-separated)'],
       ['H', 'Copy a request row for Hail\'s prompt (/take request), to send it again there'],
       ['F', 'Copy a request row as the text of a request in a .http file'],
-      ['c', 'Which Application Insights to look in (the selected app\'s own by default)'],
+      ['c', 'Which Application Insights to look in (the selected app\'s own by default), or a Log Analytics workspace to query directly'],
     ],
   },
   {

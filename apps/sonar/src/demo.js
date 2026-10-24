@@ -115,7 +115,9 @@ function otherResources() {
       ],
     },
   ];
-  return { containers, storage, sqlServers, serviceBus, blobs, cosmos };
+  // The workspace the container apps' environment (and production's Application Insights) writes to.
+  const workspaces = [{ sub: 'sub-prod', type: 'workspace', id: `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.OperationalInsights/workspaces/contoso-logs`, name: 'contoso-logs', resourceGroup: 'contoso-prod', location: 'westeurope', state: 'Ready', workspaceId: 'ws-prod', retention: 30, sku: 'PerGB2018' }];
+  return { containers, storage, sqlServers, serviceBus, blobs, cosmos, workspaces };
 }
 
 function initialState(now) {
@@ -366,18 +368,53 @@ function windowedAnswer([, name, from, to, point, key], mine) {
   return table(columns, rows);
 }
 
-/** The demo's Log Analytics workspace: the container app's console log, the newest first. */
-export function workspaceQuery(kql, now, hours = 24) {
-  const q = kql.replace(/\s+/g, ' ').trim();
-  if (!/^ContainerAppConsoleLogs_CL\b/.test(q)) throw new Error('Querying the demo workspace: it answers ContainerAppConsoleLogs_CL only');
-  const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 100);
-  const rand = seeded(7);
-  const rows = [];
-  for (let i = 0; i < Math.min(take, hours * 12); i++) {
-    const r = rand();
-    rows.push({ TimeGenerated: new Date(now - 60 * 1000 - i * 5 * 60 * 1000).toISOString(), ContainerAppName_s: 'contoso-worker', RevisionName_s: 'contoso-worker--r7', Log_s: r < 0.1 ? 'ERROR Message 4711 went to the dead-letter queue: payments timed out' : `INFO Processed ${Math.round(5 + rand() * 40)} order messages` });
+// The demo workspace's tables: the container app's console log, and production's telemetry as
+// workspace-based Application Insights writes it (AppRequests, AppExceptions, AppTraces).
+export const WORKSPACE_TABLES = {
+  AppExceptions: ['TimeGenerated', 'ProblemId', 'ExceptionType', 'OuterMessage', 'OperationId', 'AppRoleName'],
+  AppRequests: ['TimeGenerated', 'Name', 'Url', 'ResultCode', 'Success', 'DurationMs', 'OperationId', 'AppRoleName'],
+  AppTraces: ['TimeGenerated', 'Message', 'SeverityLevel', 'OperationId', 'AppRoleName'],
+  ContainerAppConsoleLogs_CL: ['TimeGenerated', 'ContainerAppName_s', 'RevisionName_s', 'Log_s'],
+};
+const WORKSPACE_TYPES = { TimeGenerated: 'datetime', Success: 'bool', DurationMs: 'real', SeverityLevel: 'int', rows: 'long', Count: 'long' };
+
+/** The rows of a workspace table, from `items` (telemetry) and the made-up console log. */
+function workspaceRows(name, items, now, hours) {
+  const of = (kind) => items.filter((i) => i.itemType === kind).reverse();
+  if (name === 'AppRequests') return of('request').map((i) => ({ TimeGenerated: i.timestamp, Name: i.name, Url: i.url ?? null, ResultCode: i.resultCode, Success: i.success, DurationMs: i.duration, OperationId: i.operation_Id, AppRoleName: i.cloud_RoleName }));
+  if (name === 'AppExceptions') return of('exception').map((i) => ({ TimeGenerated: i.timestamp, ProblemId: i.problemId, ExceptionType: i.type, OuterMessage: i.outerMessage, OperationId: i.operation_Id, AppRoleName: i.cloud_RoleName }));
+  if (name === 'AppTraces') return of('trace').map((i) => ({ TimeGenerated: i.timestamp, Message: i.message, SeverityLevel: i.severityLevel, OperationId: i.operation_Id, AppRoleName: i.cloud_RoleName }));
+  if (name === 'ContainerAppConsoleLogs_CL') {
+    const rand = seeded(7);
+    const rows = [];
+    for (let i = 0; i < hours * 12; i++) {
+      const r = rand();
+      rows.push({ TimeGenerated: new Date(now - 60 * 1000 - i * 5 * 60 * 1000).toISOString(), ContainerAppName_s: 'contoso-worker', RevisionName_s: 'contoso-worker--r7', Log_s: r < 0.1 ? 'ERROR Message 4711 went to the dead-letter queue: payments timed out' : `INFO Processed ${Math.round(5 + rand() * 40)} order messages` });
+    }
+    return rows;
   }
-  return { columns: ['TimeGenerated', 'ContainerAppName_s', 'RevisionName_s', 'Log_s'].map((name) => ({ name, type: name === 'TimeGenerated' ? 'datetime' : 'string' })), rows: rows.map((r) => [r.TimeGenerated, r.ContainerAppName_s, r.RevisionName_s, r.Log_s]) };
+  return null;
+}
+
+/**
+ * The demo's Log Analytics workspace: its tables (WORKSPACE_TABLES) with `| where Column == 'x'`,
+ * `take` and `| count`, and which tables have rows (`search * | summarize … by $table`, or `distinct $table`).
+ */
+export function workspaceQuery(kql, now, hours = 24, items = []) {
+  const q = kql.replace(/\s+/g, ' ').trim();
+  const wtable = (names, rows) => ({ columns: names.map((name) => ({ name, type: WORKSPACE_TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
+  if (/^search \* \| (summarize|distinct)\b.*\$table/.test(q)) {
+    const counts = Object.keys(WORKSPACE_TABLES).map((t) => ({ $table: t, rows: workspaceRows(t, items, now, hours).length })).filter((t) => t.rows);
+    if (/distinct/.test(q)) return wtable(['$table'], counts);
+    return wtable(['$table', 'rows'], counts.sort((a, b) => b.rows - a.rows));
+  }
+  const name = /^(\w+)/.exec(q)?.[1];
+  let rows = workspaceRows(name, items, now, hours);
+  if (!rows) throw new Error(`Querying the demo workspace: it answers ${Object.keys(WORKSPACE_TABLES).join(', ')} (with where Column == '…', take and count), not "${name ?? q}"`);
+  for (const [, col, val] of q.matchAll(/\| where (\w+) == '([^']*)'/g)) rows = rows.filter((r) => String(r[col]) === val);
+  const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 1000);
+  if (/\|\s*count\s*$/.test(q)) return wtable(['Count'], [{ Count: rows.length }]);
+  return wtable(WORKSPACE_TABLES[name], rows.slice(0, take));
 }
 
 /** The demo provider. `now` fixes the clock and `delay` (ms) makes every call that slow, for trying the spinner. */
@@ -504,7 +541,7 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async query(component, kql, { timespan = 'P1D', signal } = {}) {
       await wait(signal);
       const hours = { PT1H: 1, P1D: 24, P7D: 168, P30D: 720 }[timespan] ?? 24;
-      if (component.workspaceId) return workspaceQuery(kql, now, hours);
+      if (component.workspaceId) return workspaceQuery(kql, now, hours, state.telemetry.filter((i) => i.component === 'app-prod' && i.timestamp >= new Date(now - hours * HOUR).toISOString()));
       // A span, or an interval between two times (start/end), as /compare-window asks.
       const since = String(timespan).includes('/') ? String(timespan).split('/')[0] : new Date(now - hours * HOUR).toISOString();
       return demoQuery(kql, state.telemetry.filter((i) => i.component === component.appId && i.timestamp >= since));
@@ -631,6 +668,14 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async connectionStrings(target, { signal } = {}) {
       await wait(signal);
       return { ...site(target).connectionStrings };
+    },
+    async logWorkspaces(sub, { signal } = {}) {
+      await wait(signal);
+      return state.workspaces.filter((w) => w.sub === sub).map(({ sub: _, ...w }) => ({ ...w }));
+    },
+    async workspaceTables(ws, { signal } = {}) {
+      await wait(signal);
+      return structuredClone(WORKSPACE_TABLES);
     },
     async containerApps(sub, { signal } = {}) {
       await wait(signal);

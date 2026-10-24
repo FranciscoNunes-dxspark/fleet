@@ -47,8 +47,9 @@ test("Resources: each resource group's cost this month, an app's own and its pla
   app.provider.costs = (...args) => (asked++, costs(...args));
   try {
     await until(() => /contoso-prod\s+€324\.28/.test(frame()), "the group's cost");
-    assert.match(frame(), /contoso-qa\s+€3\.65/);
+    // The welcome box goes, leaving room for the groups under contoso-prod.
     app.stdin.write(KEYS.esc);
+    await until(() => /contoso-qa\s+€3\.65/.test(frame()), "another group's cost");
     await until(() => /cost\s+€0\.41 this month · its plan €122\.40/.test(frame()), "the app's cost and its plan's");
     for (let i = 0; i < 5; i++) app.stdin.write('j');
     await until(() => /❯ ● contoso-worker/.test(frame()), 'the container app');

@@ -210,6 +210,29 @@ export function referenceFrom(r) {
   };
 }
 
+/** A Log Analytics workspace: its customer id (what its query API takes), retention and SKU, as a component to query. */
+export function workspaceFrom(w) {
+  const p = w.properties ?? {};
+  return {
+    type: 'workspace',
+    id: w.id,
+    name: w.name,
+    resourceGroup: groupOf(w.id),
+    location: w.location,
+    state: p.provisioningState === 'Succeeded' ? 'Ready' : (p.provisioningState ?? 'Unknown'),
+    workspaceId: p.customerId,
+    retention: p.retentionInDays ?? null,
+    sku: p.sku?.name ?? '',
+  };
+}
+
+/** The query API's metadata as { table: [column names] }, the tables sorted. */
+export function tablesFrom(body) {
+  const out = {};
+  for (const t of [...(body?.tables ?? [])].sort((a, b) => a.name.localeCompare(b.name))) out[t.name] = (t.columns ?? []).map((c) => c.name);
+  return out;
+}
+
 /** An Application Insights component: what its query API needs (AppId) and how apps point at it. */
 export function componentFrom(c) {
   const p = c.properties ?? {};
@@ -577,6 +600,23 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const res = await fetch(`https://${target.scmHost}/api/logstream`, { signal, headers: { Authorization: `Bearer ${await token(`${ARM}/`)}` } });
       if (!res.ok) throw new Error(azureError(res.status, null, `Streaming ${label(target)}'s log`));
       await readLines(res.body, onLine);
+    },
+    async logWorkspaces(sub, opts) {
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.OperationalInsights/workspaces?api-version=2023-09-01`, { ...opts, what: 'Listing the Log Analytics workspaces' });
+      return list.map(workspaceFrom);
+    },
+    /**
+     * A workspace's tables and their columns, for completion: the query API's metadata, else (when it
+     * can't be read) the tables that have rows, from a query, without their columns.
+     */
+    async workspaceTables(ws, { signal } = {}) {
+      try {
+        return tablesFrom(await call(LOG_ANALYTICS, `${LOG_ANALYTICS}/v1/workspaces/${ws.workspaceId}/metadata`, { signal, what: `Reading ${ws.name}'s tables` }));
+      } catch (e) {
+        if (e.cancelled) throw e;
+        const t = await this.query(ws, 'search * | distinct $table | take 500', { timespan: 'P7D', signal });
+        return Object.fromEntries(t.rows.map((r) => [String(r[0]), []]).sort((a, b) => a[0].localeCompare(b[0])));
+      }
     },
     async containerApps(sub, opts) {
       const list = await all(`/subscriptions/${sub}/providers/Microsoft.App/containerApps?api-version=${APPS}`, { ...opts, what: 'Listing the container apps' });

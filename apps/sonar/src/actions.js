@@ -8,7 +8,7 @@ import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
 import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
-import { cellText, compareQueries, compareWindows, componentFor, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround } from './insights.js';
+import { cellText, compareQueries, compareWindows, componentFor, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround, workspaceStarter } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, repoRoot, takeLine, trawlLine } from './family.js';
 import { familyChoices } from './kin.js';
@@ -63,7 +63,7 @@ export function targetNamed(ctx, name) {
 }
 
 /** What a resource is, in words. */
-export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database', servicebus: 'Service Bus namespace', cosmos: 'Cosmos DB account' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
+export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database', servicebus: 'Service Bus namespace', cosmos: 'Cosmos DB account', workspace: 'Log Analytics workspace' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
 
 const need = (ctx, target) => target ?? (ctx.note('Pick an app or a slot in Resources first, or name one.', 'error'), null);
 
@@ -706,6 +706,12 @@ export async function restartContainer(ctx, app) {
   }, { label: 'Restarting', refresh: true });
 }
 
+/** ↵ or l on a Log Analytics workspace: Logs queries it directly, starting with which tables have rows. */
+export function workspaceLogs(ctx, w) {
+  ctx.setComponent(workspaceScope(w));
+  return runQuery(ctx, workspaceStarter);
+}
+
 /** l on a container app: its console log, from the Log Analytics workspace its environment writes to. */
 export async function containerLogs(ctx, app) {
   let workspace;
@@ -844,10 +850,16 @@ export function chooseSubscription(ctx, name) {
   });
 }
 
-/** c and /insights: which Application Insights Logs and Problems ask (by default, the selected app's). */
+/** A workspace as Logs queries it: its customer id is what the query API takes. */
+export const workspaceScope = (w) => ({ id: w.id, workspaceId: w.workspaceId, name: w.name, resourceGroup: w.resourceGroup });
+
+/**
+ * c and /insights: which Application Insights Logs and Problems ask (by default, the selected app's), or a
+ * Log Analytics workspace, whose tables Logs then queries directly.
+ */
 export function chooseComponent(ctx, name) {
-  const list = ctx.data?.components ?? [];
-  if (!list.length) return ctx.note('This subscription has no Application Insights to query.', 'error');
+  const list = [...(ctx.data?.components ?? []), ...(ctx.data?.workspaces ?? []).map(workspaceScope)];
+  if (!list.length) return ctx.note('This subscription has no Application Insights or Log Analytics workspace to query.', 'error');
   const n = name?.trim().toLowerCase();
   if (n) {
     const c = list.find((x) => x.name.toLowerCase() === n);
@@ -856,7 +868,7 @@ export function chooseComponent(ctx, name) {
   }
   ctx.showPicker({
     title: 'Application Insights to query',
-    items: [{ c: null, segments: [{ text: "The selected app's own", strong: true }] }, ...list.map((c) => ({ c, segments: [{ text: c.name, strong: true }, { text: `  ${c.resourceGroup}`, color: theme.dim }] }))],
+    items: [{ c: null, segments: [{ text: "The selected app's own", strong: true }] }, ...list.map((c) => ({ c, segments: [{ text: c.name, strong: true }, { text: `  ${c.resourceGroup}`, color: theme.dim }, { text: c.workspaceId ? '  Log Analytics workspace' : '', color: theme.info }] }))],
     onPick: (it) => (ctx.closeOverlay(), ctx.setComponent(it.c)),
   });
 }

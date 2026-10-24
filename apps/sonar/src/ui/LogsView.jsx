@@ -22,8 +22,17 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
     setEditState(e);
   };
   const [col, setCol] = useState(0);
+  // The tables and columns completion offers: a workspace's own when Logs queries one.
+  const [schema, setSchema] = useState(undefined);
+  useEffect(() => {
+    let live = true;
+    ctx.schemaOf(scope.component).then((s) => live && setSchema(s), () => live && setSchema(undefined));
+    return () => {
+      live = false;
+    };
+  }, [scope.component?.workspaceId ?? '']);
   const table = result ?? { columns: [], rows: [] };
-  const extra = edit ? Math.min(5, completeQuery(edit.text, edit.cursor).items.length) : 0;
+  const extra = edit ? Math.min(5, completeQuery(edit.text, edit.cursor, schema).items.length) : 0;
   const innerH = Math.max(1, height - 6 - extra);
   const nav = useListNav(table.rows.length, innerH, { resetKey: result });
   // Measured once per result, not on every key.
@@ -31,7 +40,7 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
 
   const editKeys = (input, key) => {
     const e = editRef.current;
-    const { word, items } = completeQuery(e.text, e.cursor);
+    const { word, items } = completeQuery(e.text, e.cursor, schema);
     const put = (text, cursor) => setEdit({ ...e, text, cursor, pick: 0 });
     if (key.escape) return setEdit(null);
     if (key.return) {
@@ -97,7 +106,7 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
   const start = Math.max(0, shown.cursor - inner + 3);
   const visible = clean(shown.text.slice(start, start + inner - 2));
   const at = shown.cursor - start;
-  const { items } = edit ? completeQuery(edit.text, edit.cursor) : { items: [] };
+  const { items } = edit ? completeQuery(edit.text, edit.cursor, schema) : { items: [] };
   const where = scope.component ? `${scope.component.name}${scope.role ? ` · ${scope.role}` : ''}` : scope.why;
   const status = !result ? (query ? '↵ runs it' : 'e to write a query') : `${table.rows.length} row${table.rows.length === 1 ? '' : 's'} · ${result.span.label}${table.columns.length > 1 ? ` · columns ${col + 1}-${table.columns.length}` : ''}`;
   return (
