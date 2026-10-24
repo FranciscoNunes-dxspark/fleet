@@ -12,7 +12,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { listSessions } from './recorder.js';
 import { markCrew } from './ports.js';
 import { troubleContext } from './share.js';
-import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, shareLine, takeLine, trawlLine } from './family.js';
+import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine, trawlLine } from './family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
 import { installHint } from './tunnel.js';
@@ -54,27 +54,38 @@ export async function restart(ctx, name) {
   if (String(name).trim() === 'all' || !String(name).trim()) {
     if (!ctx.crew) return;
     ctx.note('Restarting every process');
+    ctx.activity('Restarted the crew');
     await ctx.crew.stopAll();
     return ctx.crew.startAll();
   }
   const g = group(ctx, name);
   if (g) {
     ctx.note(`Restarting ${g.group}: ${g.names.join(', ')}`);
+    ctx.activity(`Restarted ${g.group} (${g.names.join(', ')})`);
     await Promise.all(g.names.map((n) => ctx.crew.stop(n, { keepWatching: true })));
     return ctx.crew.startAll({ only: g.names });
   }
   const p = proc(ctx, name);
   if (!p) return false;
+  ctx.activity(`Restarted ${p.name}`);
   await ctx.crew.restart(p.name);
 }
 
 /** /stop: one process, a group, or `all`. */
 export async function stop(ctx, name) {
-  if (String(name).trim() === 'all') return ctx.crew?.stopAll();
+  if (String(name).trim() === 'all') {
+    if (!ctx.crew) return;
+    ctx.activity('Stopped the crew');
+    return ctx.crew.stopAll();
+  }
   const g = group(ctx, name);
-  if (g) return Promise.all(g.names.map((n) => ctx.crew.stop(n)));
+  if (g) {
+    ctx.activity(`Stopped ${g.group} (${g.names.join(', ')})`);
+    return Promise.all(g.names.map((n) => ctx.crew.stop(n)));
+  }
   const p = proc(ctx, name);
   if (!p) return false;
+  if (p.child) ctx.activity(`Stopped ${p.name}`);
   await ctx.crew.stop(p.name);
 }
 
@@ -117,6 +128,7 @@ export function toggle(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
   if (p.restartAt) return void ctx.crew.cancelRestart(p.name);
+  if (p.child) ctx.activity(`Stopped ${p.name}`);
   return p.child ? ctx.crew.stop(p.name) : ctx.crew.start(p.name);
 }
 
@@ -227,6 +239,71 @@ export function family(ctx) {
       ctx.note(copiedNote(o.app, o.line), 'ok');
     },
   });
+}
+
+const KIND_MARK = { error: '✗', info: '·' };
+
+/** When an activity happened, as /timeline says it: the time today, else the date and time. */
+export function when(at, now = Date.now()) {
+  const d = new Date(at);
+  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date(now).toDateString() ? t : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${t}`;
+}
+
+/**
+ * /timeline: what the family's apps did (family.js's readActivity), newest first: this project's
+ * (with the entries that name none) or, after p, every project's. ↵ shows one whole.
+ */
+export function timeline(ctx, { all = false, replace = false } = {}) {
+  const entries = readActivity({ project: all ? undefined : ctx.dir, limit: 500 });
+  const appW = Math.max(...Object.values(APP_NAMES).map((n) => n.length));
+  ctx.showPicker(
+    {
+      title: all ? "The family's activity, every project" : `The family's activity in ${basename(ctx.dir)}`,
+      hint: `p ${all ? 'this project only' : 'every project'} · ↵ the whole of it`,
+      empty: all ? 'Nothing yet: the apps add what they do here as they do it.' : `Nothing yet in ${basename(ctx.dir)}: p shows every project's.`,
+      items: entries.map((e) => ({
+        e,
+        segments: [
+          { text: `${when(e.at)}  `.padStart(14), color: theme.dim },
+          { text: `${(APP_NAMES[e.app] ?? e.app).padEnd(appW)} `, color: theme.accent, bold: true },
+          { text: `${KIND_MARK[e.kind] ?? '·'} `, color: e.kind === 'error' ? theme.del : theme.dim },
+          { text: e.text, color: e.kind === 'error' ? theme.del : undefined },
+          { text: all && e.project ? `  ${basename(e.project)}` : '', color: theme.dim },
+        ],
+      })),
+      actions: { p: () => timeline(ctx, { all: !all, replace: true }) },
+      onPick: ({ e }) =>
+        ctx.showText(
+          `${APP_NAMES[e.app] ?? e.app} · ${new Date(e.at).toLocaleString()}`,
+          [e.text, '', `app      ${APP_NAMES[e.app] ?? e.app}`, `when     ${new Date(e.at).toLocaleString()}`, `kind     ${e.kind ?? 'info'}`, ...(e.project ? [`project  ${e.project}`] : [])].join('\n'),
+        ),
+    },
+    { replace },
+  );
+}
+
+/** /wiring: what the project points at (family.js's projectWiring: addresses, hosts, ports, connection strings, masked), by the file it's in. */
+export function wiring(ctx) {
+  const found = projectWiring(ctx.dir);
+  if (!found.length) return ctx.note(`Nothing in ${basename(ctx.dir)} points anywhere: no addresses or connection strings in appsettings*.json, .env files or http-client.env.json.`);
+  const sources = [...new Set(found.map((w) => w.source))];
+  const keyW = Math.min(40, Math.max(...found.map((w) => w.key.length)));
+  const lines = [];
+  const text = [];
+  for (const source of sources) {
+    if (lines.length) {
+      lines.push([]);
+      text.push('');
+    }
+    lines.push([{ text: source, color: theme.accent, bold: true }]);
+    text.push(source);
+    for (const w of found.filter((x) => x.source === source)) {
+      lines.push([{ text: `  ${w.key.padEnd(keyW)}  `, color: theme.dim }, { text: w.value }]);
+      text.push(`  ${w.key.padEnd(keyW)}  ${w.value}`);
+    }
+  }
+  ctx.showText(`What ${basename(ctx.dir)} points at`, text.join('\n'), { lines });
 }
 
 /** f and /free: stops whatever holds `port` on this machine, after asking. */

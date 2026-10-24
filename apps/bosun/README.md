@@ -297,11 +297,19 @@ there; it never holds a password or a token.
   say it open in the viewer. Anything else is another app's, and Bosun says whose.
 - Pasting a `/command` or a `family:v1:` line while a view has the keys opens the prompt with it, to
   run with `↵`.
+- `/timeline` shows what the five apps did, newest first, from the log they all add to: Bosun adds a
+  process crashing (once, not each time it's restarted) or giving up, your restarts and stops (of a
+  process, a group or the crew), tunnels opened and closed, and `/move`; the siblings add their own
+  (a push, a write to a database…). It starts with this project's (and what names no project); `p`
+  shows every project's, and `↵` one whole. Nothing secret goes in.
+- `/wiring` lists what the project points at, by the file that says it: the addresses, hosts, ports
+  and connection strings in its `appsettings*.json`, `.env` files and Hail's `http-client.env.json`,
+  with passwords and tokens masked, the same in every app.
 - The mascots tell each other how they feel: Squawk is worried when a process crashes or its checks
   fail, sad when one gives up, busy while a command runs, happy when the crew is up. When a sibling's
   is worried, sad or happy (within the last 15 minutes), Squawk says so once in a line above the
   activity lines; `esc` puts it away. The Family moods setting turns both off. They're kept in
-  `~/.family` (`FAMILY_HOME` moves it).
+  `~/.family` (`FAMILY_HOME` moves it), with the activity `/timeline` shows.
 
 ### Your own commands and keys
 
@@ -351,6 +359,8 @@ Trawl.
 | `/init` | Write a `bosun.json` from what Bosun worked out (a Procfile, a compose file, package.json) |
 | `/take <family:v1:…>` | Take what a sibling app copied: a log line or exception is looked for in the crew's logs |
 | `/family` | What this project offers Splice, Hail and Trawl, as lines to paste into them; `↵` copies one |
+| `/timeline` | What the family's apps did here, newest first (`p`: every project's); `↵` shows one whole |
+| `/wiring` | What this project points at (addresses, hosts, ports, connection strings), by file, passwords masked |
 | `/run <command>` | Run a shell command (as `!` does) |
 | `/last` | All the output of the last command |
 | `/settings` | Theme, accent colour, mouse, notifications, memory alert, recording, family moods, updates, history |

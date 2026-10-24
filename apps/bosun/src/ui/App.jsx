@@ -27,7 +27,7 @@ import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
-import { decodeContext, pastedLine, readMoods, writeMood } from '../family.js';
+import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '../family.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { Recorder, sessionsDir } from '../recorder.js';
 import { listeningPorts } from '../ports.js';
@@ -270,6 +270,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     setEntries((list) => list.map((e) => (e.id === id ? { ...e, at: Date.now(), ...patch } : e)));
   };
 
+  // What changed something, for the family's activity log (family.js's logActivity; /timeline), this project's.
+  const activity = (text, { kind = 'info', project = dirRef.current } = {}) => logActivity('bosun', { text, kind, project });
+
   const note = (text, status = 'info') => {
     const [title, ...lines] = String(text).split('\n');
     addEntry({ title, status, lines });
@@ -304,16 +307,19 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     if (e.type === 'ready') return e.p.spec.test && runTests(e.p);
     // A tunnel's address, copied as soon as its tool says it; one that ended by itself, why.
     if (e.type === 'tunnel') {
+      activity(`Opened a tunnel to ${e.p.name} (port ${e.p.port}): ${e.url}`);
       ctx.copy(e.url, 'the tunnel\'s address');
       return note(`${e.p.name} is open at ${e.url} (copied). T closes it.`, 'ok');
     }
     if (e.type === 'tunnel-closed') {
+      activity(`Closed the tunnel to ${e.p.name}${e.url ? ` (${e.url})` : ''}${e.asked ? '' : ': it ended by itself'}`, { kind: e.asked ? 'info' : 'error' });
       if (e.asked) return note(`Closed ${e.p.name}'s tunnel${e.url ? ` (${e.url})` : ''}.`);
       return note([`${e.p.name}'s tunnel closed by itself.`, ...e.said.slice(-3)].join('\n'), 'error');
     }
     if (e.type !== 'exit') return;
     if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
     const news = exitNews(e.p, e.plan);
+    if (news) activity(`${news.title.replace(/^Bosun: /, '')}: ${news.body}`, { kind: 'error' });
     if (news && notify && configRef.current.notify !== false) notify(news.title, news.body);
   };
   // A process's Hail checks ("test" in bosun.json), once its port answers: hail test through
@@ -441,6 +447,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // processes stop first, and what they started (actions.js asks before, when any are running).
   const moveTo = async (next) => {
     const sup = supRef.current;
+    activity(`Moved from ${basename(dirRef.current)} to ${basename(next)}`, { project: dirRef.current });
     if (sup) {
       await sup.stopAll();
       sup.dispose();
@@ -576,6 +583,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   Object.assign(ctx, {
     task,
     note,
+    activity: (text, opts) => activity(text, opts),
     confirm,
     // A masked field in the confirm's place: resolves { value } (or null on esc). askText shows what's typed.
     askSecret: (req) => confirm({ ...req, secret: true, options: [] }),
