@@ -1,0 +1,126 @@
+// What ? shows (ui/HelpView.jsx, laid out by help-layout.js): sections of [keys, what they do]. A \n
+// in the text starts a line of its own; a string is a note; { heading } starts a part of a section.
+// `views` are the views ? opens on that section from. The slash commands come from commands.js, as
+// a section of their own after these.
+export const HELP = [
+  {
+    title: 'Anywhere',
+    rows: [
+      ['1-2 / tab', 'Crew, Log (shift+tab goes back)'],
+      ['/ or :', 'Command prompt (slash commands, with completion); pasting a /command or a family:v1: line opens it with that, to run with ↵'],
+      ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
+      ['!', 'Run a shell command, e.g.  !node --version'],
+      ['esc', 'Cancel the running command, or clear the activity lines'],
+      [',', 'Settings (/settings): theme, accent colour, mouse, notifications, memory alert, recording, family moods, updates, history'],
+      ['?', 'This help'],
+      ['q / ctrl+c', 'Quit, stopping every process Bosun started (and what they started)'],
+      ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go'],
+    ],
+  },
+  {
+    title: 'Lists',
+    rows: [
+      ['j k / ↑ ↓', 'Move'],
+      ['g G', 'Top, bottom'],
+      ['ctrl+d ctrl+u', 'Page down, up'],
+      ['y', 'Copy it'],
+    ],
+  },
+  {
+    title: 'Crew',
+    about: 'the processes, from bosun.json, a Procfile, a compose file or package.json\'s dev script; beside them the log of the one under the cursor',
+    views: ['crew'],
+    rows: [
+      ['r', 'Restart it'],
+      ['R', 'Restart them all (each after the one it waits for)'],
+      ['s', 'Stop it, or start it; while it waits to restart ("restart" in bosun.json), it won\'t'],
+      ['a', 'Every process\'s log at once, or back to the one'],
+      ['ctrl+g', 'One group at a time ("group" in bosun.json), then all of them again'],
+      ['ctrl+f', 'Search its log: matches light up as you type, ↵ stops typing'],
+      ['n N', 'The next match, the one before (from the newest)'],
+      ['esc', 'Clear the search'],
+      ['e', 'Only the lines that read as trouble, or all of them again'],
+      ['ctrl+l', 'Filter its log: level>=warn, field=value, field!=value, field~part and words it holds, all of them (with e and the search); empty shows every line'],
+      ['↵', 'Its whole log in the viewer'],
+      ['c', 'Clear its log'],
+      ['l', 'Save its log to a file (/save-log, in the prompt to change the name)'],
+      ['w', 'Ask Claude why it failed: its log, and the project\'s files it reads'],
+      ['o', 'Open its port in the browser'],
+      ['f', 'Free its port: stop whatever else holds it (asks first)'],
+      ['p', 'Profiles: the crew with another command or settings'],
+      ['y', 'Copy its command'],
+      ['t', 'Copy its latest trouble line for Sonar or Hail (/take, with the request id it names), to find that request there'],
+      ['T', 'Open its port to the internet through cloudflared or ngrok (asks first; the address is copied), or close its tunnel'],
+      ['wheel', 'Over the log, scroll it back; to the bottom follows it again'],
+      'A line that is a JSON object (pino, bunyan, Serilog, winston…) shows as time, level (in its colour), message and its other fields as key=value.',
+      'Beside each running process, when there\'s room: its CPU (% of one core) and memory, with everything it started; the log\'s title has them with the last minute of each. /top lists them, the busiest first.',
+      'In the list: ● green running · yellow starting or stopping · red crashed · grey stopped. ✓ tests / ✗ 2 failed: its Hail checks ("test" in bosun.json). :3000 ✓ answers (and its health page is fine), … not yet, ✗ its health page fails. ! its log has said something wrong. ⇄ its tunnel is open. https:4443 it\'s served with TLS there too ("https" in bosun.json). restarting in 4s: it ended and its "restart" starts it again (1s, 2s, 4s… up to 30s); gave up: it ended within 10s of starting 5 times in a row.',
+    ],
+  },
+  {
+    title: 'Log',
+    about: 'what has run, newest at the bottom',
+    views: ['log'],
+    rows: [['↵', 'All of its output']],
+  },
+  {
+    title: 'Your own commands and keys',
+    about: 'in the settings file (config.json), read when Bosun starts; what\'s wrong with them is said in the log then',
+    rows: [
+      ['"commands"', '{ "morning": ["/one", "/two"], "v": "!node --version" }: a line as typed at the prompt, or a list run in order, stopping at the first that fails (or that you answer no); { "run": …, "desc": … } gives it a description. They show in the / menu, the palette and Slash commands below'],
+      ['$1 $2  $*', 'What\'s typed after it: a word each ("quoted words" are one), or all of it; a command with no $ gets it at the end of its line'],
+      ['"keys"', '{ "global": { "ctrl+s": "/settings" }, "crew": { "x": "/why web" } }: a key to another key (the view does what that one does) or to a command line, anywhere or in one view (crew, log). They work while a view has the keys, never while typing; Your keys (above Slash commands) lists them'],
+      ['key names', 'a character (x, X, +), ctrl+s, alt+x, shift+tab, F1-F12, enter, esc, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown'],
+    ],
+  },
+  {
+    title: 'The family',
+    about: 'Splice, Trawl, Sonar and Hail: lines copied to paste into each other\'s prompts, never a secret',
+    rows: [
+      ['/family', 'What this project offers them: the checkout, .http files, databases; ↵ copies the line'],
+      ['t', 'In Crew: the latest trouble line for Sonar or Hail (/take, with its request id)'],
+      ['/take', 'What a sibling copied: a log line or exception is found in the crew\'s logs'],
+      ['/timeline', 'What the five apps did, newest first: this project\'s, p every project\'s, ↵ one whole'],
+      ['/wiring', 'What this project points at (addresses, connection strings), by file, passwords masked'],
+      ['paste', 'A /command or family:v1: line pasted into a view opens the prompt with it'],
+      ['esc', 'Put away what Squawk says about a sibling\'s mood'],
+    ],
+  },
+  {
+    title: 'Ports',
+    about: '/ports: every TCP port listening on this machine, and what holds it; the crew\'s are marked',
+    rows: [
+      ['f', 'Free it: stop what holds it (asks first)'],
+      ['o / ↵', 'Open it in the browser'],
+    ],
+  },
+  {
+    title: 'Top',
+    about: '/top: every process\'s CPU and memory, with what it started, the busiest first; redrawn every 2 seconds',
+    rows: [['↵', 'Its whole log']],
+  },
+  {
+    title: 'Replay',
+    about: '/replay: a recorded run of the crew, played back',
+    rows: [
+      ['← →', 'A second back, on (shift: ten)'],
+      ['[ ]', 'The crash or trouble line before, after'],
+      ['space', 'Play or pause'],
+      ['+ -', 'Faster, slower (1× to 64×)'],
+      ['j k  a', 'The process whose log shows; every log at once'],
+      ['esc', 'Back to the recordings'],
+      'On the timeline: ✗ a crash, ! a line that read as trouble, ● where it is. A click on it goes there.',
+    ],
+  },
+  {
+    title: 'Viewer',
+    about: 'output, a whole log, Claude\'s answer',
+    rows: [
+      ['j k  space  g G', 'Scroll'],
+      ['/ or ctrl+f  n N', 'Search, the next match, the one before (esc clears it)'],
+      ['e', 'In a process\'s log: only the lines that read as trouble'],
+      ['↵', 'In a process\'s log: the JSON object of a structured line, pretty (the search\'s match, else the lowest on screen)'],
+      ['esc / q', 'Close'],
+    ],
+  },
+];

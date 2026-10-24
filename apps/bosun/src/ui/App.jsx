@@ -1,0 +1,1109 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { basename, resolve } from 'node:path';
+import { Box, Text, useApp, useInput, useStdin } from 'ink';
+import * as a from '../actions.js';
+import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
+import { saveConfig } from '../config.js';
+import { HELP } from '../help.js';
+import { commandsSection, sectionFor } from '../help-layout.js';
+import { loadCrew, withProfile } from '../crew.js';
+import { remember } from '../projects.js';
+import { Supervisor, killPids, pidsOnPort } from '../supervisor.js';
+import { ask } from '../claude-cli.js';
+import { BULLET, theme } from '../theme.js';
+import { fitSegments, stringWidth } from '../text.js';
+import { VERSION } from '../version.js';
+import { useKeyTranslation, useTerminalSize } from './hooks.js';
+import { keymapSection, parseKeymap, translateKey } from '../keymap.js';
+import { expandLines, userCommands } from '../usercommands.js';
+import { paletteItems } from '../palette.js';
+import { Palette } from './Palette.jsx';
+import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from './parts.jsx';
+import { HelpView } from './HelpView.jsx';
+import { CrewView } from './CrewView.jsx';
+import { LogView } from './LogView.jsx';
+import { Picker } from './Picker.jsx';
+import { TextViewer } from './TextViewer.jsx';
+import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
+import { FACES, moodFor } from '../pet.js';
+import { exitNews, worthNotifying } from '../notify.js';
+import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '../family.js';
+import { familyMood, reactionTo } from '../moods.js';
+import { Recorder, sessionsDir } from '../recorder.js';
+import { listeningPorts } from '../ports.js';
+import { hailTest, testOutcome } from '../hailcheck.js';
+import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
+import { ReplayView } from './ReplayView.jsx';
+import { findOnPath } from '../which.js';
+import { tunnelTool } from '../tunnel.js';
+import { ensureCert, mkcertHint } from '../https.js';
+import { SAMPLE_EVERY, createSampler, keepSample, memoryAlertLabel, memoryGrowing, shortBytes } from '../usage.js';
+
+const VIEWS = [
+  { id: 'crew', label: 'Crew' },
+  { id: 'log', label: 'Log' },
+];
+
+const VIEW_LABELS = Object.fromEntries(VIEWS.map((v) => [v.id, v.label]));
+
+// What ? shows: help.js's sections, the keys you mapped, then the slash commands, yours with them.
+const helpSections = (user, keymap) => [...HELP, ...[keymapSection(keymap, VIEW_LABELS)].filter(Boolean), commandsSection([...COMMANDS, ...user])];
+
+// ctrl+p, as the terminal sends it: the command palette.
+const CTRL_P = '\x10';
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+const HINTS = {
+  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share it · w why · ↵ whole log',
+  log: '↵ all its output · y copy it',
+};
+
+const firstLine = (s) => String(s ?? '').split('\n')[0];
+
+// Whether a process runs differently now (its command or its settings), so /reload restarts it.
+const changedSpec = (had, now) => had.run !== now.run || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
+
+function Header({ data, width, loading, mood }) {
+  const segs = [
+    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
+    { text: 'Bosun', bold: true },
+  ];
+  if (data?.dir) segs.push({ text: '  │  ', color: theme.border }, { text: basename(data.dir), bold: true });
+  if (data) {
+    const up = data.procs.filter((p) => p.child).length;
+    const crashed = data.procs.filter((p) => p.status === 'crashed').length;
+    segs.push({ text: '  │  ', color: theme.border }, { text: `${up}/${data.procs.length} running`, color: theme.dim });
+    if (crashed) segs.push({ text: `  ${crashed} crashed`, color: theme.del, bold: true });
+    if (data.from) segs.push({ text: `  │  ${data.from}`, color: theme.dim });
+    if (data.profile) segs.push({ text: `  │  profile ${data.profile}`, color: theme.accent });
+  }
+  else if (loading) segs.push({ text: '  loading…', color: theme.dim });
+  return <Row pointer={false} width={width} segments={segs} />;
+}
+
+/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
+function tabLabels(entries) {
+  let x = 0;
+  return VIEWS.map((v, i) => {
+    let label = ` ${i + 1} ${v.label}`;
+    if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
+    label += ' ';
+    const from = x;
+    x += stringWidth(label) + 1;
+    return { id: v.id, label, from, to: from + stringWidth(label) };
+  });
+}
+
+function Tabs({ view, entries, width }) {
+  const segs = [];
+  for (const t of tabLabels(entries)) {
+    const on = t.id === view;
+    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
+  }
+  return <Row pointer={false} width={width} segments={segs} />;
+}
+
+// The last two results, Claude Code style: "● node --version" then "  ⎿  output".
+function activityRows(entries) {
+  const out = [];
+  for (const e of entries.slice(-2)) {
+    const color = { error: theme.del, ok: theme.accent, running: theme.dim, info: theme.info }[e.status];
+    out.push([{ text: `${BULLET} `, color }, { text: e.title, bold: e.status !== 'info' }]);
+    const max = e.status === 'error' ? 3 : 2;
+    e.lines.slice(0, max).forEach((l, i) =>
+      out.push([{ text: i === 0 ? '  ⎿  ' : '     ', color: theme.dim }, { text: l, color: e.status === 'error' ? theme.del : theme.dim }]),
+    );
+    if (e.lines.length > max) out.push([{ text: '     ' }, { text: `… +${e.lines.length - max} lines (/last to see all)`, color: theme.dim }]);
+  }
+  return out.slice(-6);
+}
+
+const DOUBLE_CLICK_MS = 400;
+
+// A viewer of its own for each thing shown, so going back from one (a log line's object to the log)
+// doesn't keep where the other was scrolled to.
+const viewerKeys = new WeakMap();
+let viewerCount = 0;
+const viewerKey = (overlay) => {
+  if (!viewerKeys.has(overlay)) viewerKeys.set(overlay, ++viewerCount);
+  return viewerKeys.get(overlay);
+};
+
+// `dir` is the project to start in (/move changes it); `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
+// `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
+// `pidsOnPort`, `killPids`, `listPorts`, `gatherFacts` (preflight.js) and `runHail` (hailcheck.js) reach outside, so tests pass stubs. `mouse` is mouse.js's
+// terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
+// `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
+// recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
+// `sampleUsage(pids)` resolves each process tree's { cpu, mem } (usage.js's sampler; tests pass a stub),
+// every `sampleEvery` ms while the Crew view shows. `findTool(name)` finds a program on the PATH
+// (which.js's; tests pass their own) and `tunnelSpawn` starts a tunnel's (child_process's spawn; tests a fake).
+// `ensureCert(opts)` makes or reads the certificate "https" serves with (https.js's; tests pass their own).
+// `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
+// come only in the downloaded builds, so tests and checkouts never go online or replace anything.
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, ensureCert: certFor = ensureCert, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+  const { exit } = useApp();
+  const { columns, rows } = useTerminalSize();
+  const [config, setConfigState] = useState(initialConfig);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState('crew');
+  const [focus, setFocusState] = useState('view');
+  const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
+  const [sugIndex, setSugIndex] = useState(0);
+  const [overlay, setOverlayState] = useState(null);
+  const [confirmReq, setConfirmReq] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const [welcome, setWelcome] = useState(true);
+  const [update, setUpdate] = useState(null);
+  // The pet looks happy (or worried) for a few seconds after a result; re-render when that wears off.
+  const [, setMoodTick] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setMoodTick((n) => n + 1), 8100);
+    return () => clearTimeout(t);
+  }, [entries]);
+  // A word in the bottom line for a moment ("Copied 3 lines"), where it moves nothing on screen.
+  const [flash, setFlash] = useState(null);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 3000);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  // A sibling's mood Squawk reacts to (family.js's readMoods, every `moodEvery` ms): one line until esc.
+  const [reaction, setReaction] = useState(null);
+  const reactionRef = useRef(null);
+  reactionRef.current = reaction;
+  const seenMoods = useRef(new Set());
+  useEffect(() => {
+    if (config.familyMoods === false) return setReaction(null);
+    const look = () => {
+      const r = reactionTo(readMoods('bosun'), seenMoods.current);
+      if (!r) return;
+      seenMoods.current.add(r.key);
+      setReaction(r);
+    };
+    look();
+    const t = setInterval(look, moodEvery);
+    return () => clearInterval(t);
+  }, [config.familyMoods]);
+
+  // Errors said and questions answered no, counted so a line of your own command knows it failed.
+  const errorCount = useRef(0);
+  const declines = useRef(0);
+  // Your own commands and keys (the config's "commands" and "keys"), and what was wrong with them.
+  const custom = useMemo(() => {
+    const mine = userCommands(config.commands, COMMANDS.map((c) => c.name));
+    const commands = mine.commands.map((c) => ({ ...c, run: (_, rest) => ctx.runUserCommand(c, rest) }));
+    const keymap = parseKeymap(config.keys, VIEWS.map((v) => v.id));
+    return { commands, keymap, sections: helpSections(commands, keymap), problems: [...mine.problems.map((p) => `commands: ${p}`), ...keymap.problems.map((p) => `keys: ${p}`)] };
+  }, [config.commands, config.keys]);
+  const customRef = useRef(custom);
+  customRef.current = custom;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  // A key picked in the palette, sent to the view once it's back on screen (the effect below).
+  const pendingKey = useRef(null);
+
+  // Async actions read the latest state through refs, not through stale closures.
+  const dataRef = useRef(null);
+  const busyRef = useRef(null);
+  const configRef = useRef(config);
+  const promptRef = useRef(prompt);
+  const confirmRef = useRef(null);
+  const nextId = useRef(1);
+  const historyPos = useRef(-1);
+  const lastOutput = useRef(null);
+  // Counts keypresses, ahead of every handler, so the dispatcher can tell the key that opened the prompt.
+  const keySeq = useRef(0);
+  const prefillKey = useRef(-1);
+  // The key that answered the last confirmation: it's that one's, and no other handler's.
+  const answerKey = useRef(-1);
+  // The key a view took through claimsKey: Ink calls the handlers in no fixed order, so a view's may run
+  // first and drop its claim (esc clearing a search), and this one mustn't then take the key too.
+  const claimedKey = useRef(-1);
+  const { internal_eventEmitter: inputEvents } = useStdin();
+  useEffect(() => {
+    if (!inputEvents) return;
+    const count = () => keySeq.current++;
+    inputEvents.prependListener('input', count);
+    return () => inputEvents.removeListener('input', count);
+  }, [inputEvents]);
+
+  const setConfig = (update) => {
+    const next = update(configRef.current);
+    configRef.current = next;
+    setConfigState(next);
+    saveConfig(next);
+  };
+
+  const focusRef = useRef('view');
+  const overlayRef = useRef(null);
+  const setFocus = (f) => {
+    focusRef.current = f;
+    setFocusState(f);
+  };
+  const setOverlay = (next) => {
+    const cur = overlayRef.current;
+    let o = typeof next === 'function' ? next(cur) : next;
+    // An overlay opened from a picker goes back to the picker when closed.
+    if (o && o !== cur && !o.back && cur?.kind === 'picker' && typeof next !== 'function') o = { ...o, back: cur };
+    overlayRef.current = o;
+    setOverlayState(o);
+  };
+  const pickerIds = useRef(0);
+
+  const setPrompt = (value, cursor = value.length) => {
+    promptRef.current = { value, cursor };
+    setPromptState(promptRef.current);
+  };
+
+  const addEntry = (e) => {
+    if (e.status === 'error') errorCount.current++;
+    const id = nextId.current++;
+    setEntries((list) => [...list.slice(-99), { id, lines: [], at: Date.now(), ...e }]);
+    return id;
+  };
+  const updateEntry = (id, patch) => {
+    if (patch.status === 'error') errorCount.current++;
+    setEntries((list) => list.map((e) => (e.id === id ? { ...e, at: Date.now(), ...patch } : e)));
+  };
+
+  // What changed something, for the family's activity log (family.js's logActivity; /timeline), this project's.
+  const activity = (text, { kind = 'info', project = dirRef.current } = {}) => logActivity('bosun', { text, kind, project });
+
+  const note = (text, status = 'info') => {
+    const [title, ...lines] = String(text).split('\n');
+    addEntry({ title, status, lines });
+  };
+
+  // The supervisor runs the crew; it changes in place, so a change only asks for a redraw, a few a second at most.
+  const supRef = useRef(null);
+  const crewRef = useRef(null);
+  // The project: where Bosun started, until /move takes it to another.
+  const dirRef = useRef(dir);
+  const profileRef = useRef(initialProfile);
+  const [, setTick] = useState(0);
+  const redrawSoon = useRef(null);
+  const changed = (linesOf) => {
+    // New lines in a log that isn't on screen (CrewView says which is, in `logShown`) change nothing drawn.
+    const shown = ctxRef.current?.logShown;
+    if (linesOf && shown !== true && shown !== linesOf.name) return;
+    if (redrawSoon.current) return;
+    redrawSoon.current = setTimeout(() => {
+      redrawSoon.current = null;
+      if (supRef.current) publish();
+    }, 80);
+  };
+  const publish = () => {
+    dataRef.current = { ...crewRef.current, dir: dirRef.current, profile: profileRef.current, procs: supRef.current.list() };
+    setData(dataRef.current);
+    setTick((n) => n + 1);
+  };
+  // A process that ended by itself: said when it gave up restarting, and a crash or giving up raises
+  // a notification (unless the setting is off). A stop never comes here.
+  const crewEvent = (e) => {
+    if (e.type === 'ready') return e.p.spec.test && runTests(e.p);
+    // A tunnel's address, copied as soon as its tool says it; one that ended by itself, why.
+    if (e.type === 'tunnel') {
+      activity(`Opened a tunnel to ${e.p.name} (port ${e.p.port}): ${e.url}`);
+      ctx.copy(e.url, 'the tunnel\'s address');
+      return note(`${e.p.name} is open at ${e.url} (copied). T closes it.`, 'ok');
+    }
+    if (e.type === 'tunnel-closed') {
+      activity(`Closed the tunnel to ${e.p.name}${e.url ? ` (${e.url})` : ''}${e.asked ? '' : ': it ended by itself'}`, { kind: e.asked ? 'info' : 'error' });
+      if (e.asked) return note(`Closed ${e.p.name}'s tunnel${e.url ? ` (${e.url})` : ''}.`);
+      return note([`${e.p.name}'s tunnel closed by itself.`, ...e.said.slice(-3)].join('\n'), 'error');
+    }
+    if (e.type !== 'exit') return;
+    if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
+    const news = exitNews(e.p, e.plan);
+    if (news) activity(`${news.title.replace(/^Bosun: /, '')}: ${news.body}`, { kind: 'error' });
+    if (news && notify && configRef.current.notify !== false) notify(news.title, news.body);
+  };
+  // A process's Hail checks ("test" in bosun.json), once its port answers: hail test through
+  // `runHail` (hailcheck.js's; tests pass a stub), the outcome beside it and the report in its log.
+  const hailMissing = useRef(false);
+  const runTests = async (p) => {
+    const sup = supRef.current;
+    const started = p.startedAt;
+    const { file, env } = p.spec.test;
+    p.tests = { state: 'running' };
+    sup.push(p, `── hail test ${file}${env ? ` --env ${env}` : ''}`);
+    sup.onChange();
+    const r = await runHail(p.spec.test, { cwd: resolve(dirRef.current, p.spec.cwd ?? '.') });
+    // Restarted (or Bosun moved on) meanwhile: the next start runs its own.
+    if (supRef.current !== sup || p.startedAt !== started) return;
+    if (r.missing) {
+      p.tests = null;
+      sup.push(p, "── hail isn't installed, so its tests didn't run");
+      if (!hailMissing.current) note(`${p.name}'s "test" runs Hail's checks, but hail isn't on the PATH: install it from its releases (github.com/FranciscoNunes-dxspark/hail).`, 'error');
+      hailMissing.current = true;
+    } else {
+      const outcome = testOutcome(r);
+      p.tests = { state: outcome.state, failed: outcome.failed };
+      if (outcome.text) sup.push(p, outcome.text);
+      sup.push(p, outcome.state === 'ok' ? '── tests passed' : outcome.state === 'failed' ? `── ${plural(outcome.failed, 'test')} failed` : "── hail couldn't run the tests", outcome.state !== 'ok');
+    }
+    sup.onChange();
+  };
+  // The certificate "https" serves with: read, or made once with mkcert (asking before it installs its
+  // authority). Without mkcert, how to install it is said once, and the next start looks again.
+  const cert = useRef(null);
+  const mkcertMissing = useRef(false);
+  const certificate = () =>
+    (cert.current ??= certFor({
+      find: findTool,
+      ask: () =>
+        ctx.confirm({
+          title: 'Let mkcert install its certificate authority, so browsers trust https://localhost?',
+          detail: "mkcert -install adds it to this machine's trust stores. No still serves https, with a certificate browsers warn about.",
+          options: [
+            { label: 'Yes, install it', value: true },
+            { label: 'No', value: false },
+          ],
+        }),
+    }).then(
+      (r) => {
+        if (r.missing) {
+          cert.current = null;
+          if (!mkcertMissing.current) note(mkcertHint(), 'error');
+          mkcertMissing.current = true;
+          return null;
+        }
+        if (r.installError) note(`mkcert -install didn't work: ${firstLine(r.installError)}\nRun it yourself in a terminal (it may ask for your password); the certificate is made already.`, 'error');
+        if (r.made) note(`Made a certificate for localhost with mkcert${r.installed ? ', which browsers trust' : ''}.`, 'ok');
+        return r;
+      },
+      (e) => {
+        cert.current = null;
+        note(`Couldn't make a certificate for localhost: ${firstLine(e.message)}`, 'error');
+        return null;
+      },
+    ));
+  const crewEventRef = useRef(crewEvent);
+  crewEventRef.current = crewEvent;
+  // The crew again (bosun.json changed, /reload, another profile): new processes start, ones gone stop,
+  // and with `restartChanged` the ones whose command changed restart.
+  const reload = async ({ restartChanged = false } = {}) => {
+    try {
+      const crew = await load(dirRef.current);
+      crewRef.current = crew;
+      if (profileRef.current && !crew.profiles[profileRef.current]) profileRef.current = null;
+      const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
+      const first = !supRef.current;
+      const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
+      // Each run of a project's crew is recorded for /replay, unless the setting is off.
+      const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs }) : null;
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
+      else supRef.current.setCrew(procs);
+      publish();
+      // A project with something to run is remembered, for /move and for starting where there's nothing.
+      if (crew.procs.length) setConfig((c) => ({ ...c, projects: remember(c.projects, dirRef.current) }));
+      if (crew.problems.length) note([`Some of ${crew.from} was left out:`, ...crew.problems].join('\n'), 'error');
+      if (!crew.procs.length && first) note('Nothing to run here: no bosun.json, Procfile or compose file, and no dev or start script in package.json. /init writes a bosun.json to fill in.');
+      const sup = supRef.current;
+      if (first) {
+        if (!autostart) return;
+        // Pre-flight: the ports before anything starts (the crew would hold them after), the rest
+        // alongside the start. What's wrong is said; nothing waits on it.
+        const checked = { ...crew, procs };
+        const before = await gather(dirRef.current, checked, { part: 'ports' }).catch(() => ({}));
+        if (supRef.current !== sup) return;
+        sup.startAll();
+        gather(dirRef.current, checked, { part: 'rest' }).then(
+          (rest) => supRef.current === sup && preflightReport({ ...before, ...rest }),
+          () => {},
+        );
+        return;
+      }
+      for (const p of sup.list()) {
+        const had = before.get(p.name);
+        if (!had) {
+          if (autostart) sup.start(p.name);
+        } else if (restartChanged && p.child && changedSpec(had, p.spec)) sup.restart(p.name);
+      }
+    } catch (e) {
+      note(`Couldn't read the crew: ${firstLine(e.message)}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+  // The pre-flight checklist in the log: the summary, then a line a check (✓, or ✗ with what to do).
+  const preflightReport = (facts) => {
+    const checks = runChecks(facts);
+    const text = [summary(checks), ...checks.map(checkLine)].join('\n');
+    lastOutput.current = { title: 'Pre-flight', text };
+    if (checks.length) note(text);
+    return checks;
+  };
+  const setProfile = (name) => {
+    profileRef.current = name;
+    note(name ? `Profile ${name}` : 'No profile');
+    return reload({ restartChanged: true });
+  };
+  // /move: the crew of the project in `next` instead, read and started as on opening. This one's
+  // processes stop first, and what they started (actions.js asks before, when any are running).
+  const moveTo = async (next) => {
+    const sup = supRef.current;
+    activity(`Moved from ${basename(dirRef.current)} to ${basename(next)}`, { project: dirRef.current });
+    if (sup) {
+      await sup.stopAll();
+      sup.dispose();
+    }
+    supRef.current = null;
+    crewRef.current = null;
+    dataRef.current = null;
+    profileRef.current = null;
+    setData(null);
+    setLoading(true);
+    dirRef.current = next;
+    note(`Moved to ${next}`);
+    await reload();
+  };
+  // CPU and memory, each process with what it started, while the Crew view (or /top) shows: one look
+  // at the machine for all of them, kept on each process (`usage`, and a minute of `samples`).
+  const sampler = useRef(null);
+  const sampling = view === 'crew' || Boolean(overlay?.top);
+  useEffect(() => {
+    if (!sampling) return;
+    let looking = false;
+    const tick = async () => {
+      const sup = supRef.current;
+      if (!sup || looking) return;
+      const procs = sup.list();
+      const pids = procs.filter((p) => p.pid).map((p) => p.pid);
+      looking = true;
+      let got;
+      try {
+        got = await (sampleUsage ?? ((roots) => (sampler.current ??= createSampler()).sample(roots)))(pids);
+      } catch {
+        got = new Map();
+      } finally {
+        looking = false;
+      }
+      if (supRef.current !== sup) return;
+      const limit = (Number(configRef.current.memoryAlert) || 0) * 1024 * 1024;
+      for (const p of procs) {
+        const s = p.pid && got.get(p.pid);
+        if (!s) {
+          if (!p.pid) p.usage = null;
+          continue;
+        }
+        // A new start counts from nothing again.
+        if (p.sampledFor !== p.startedAt) Object.assign(p, { sampledFor: p.startedAt, samples: [], memAlerted: false });
+        keepSample(p, s);
+        if (limit && !p.memAlerted && memoryGrowing(p.samples, limit)) {
+          p.memAlerted = true;
+          const text = `${p.name}'s memory keeps growing: ${shortBytes(s.mem)}, over the ${memoryAlertLabel(configRef.current.memoryAlert)} alert.`;
+          note(text, 'error');
+          if (notify && configRef.current.notify !== false) notify(`Bosun: ${p.name}'s memory keeps growing`, text);
+        }
+      }
+      changed();
+      if (overlayRef.current?.top) a.top(ctx, { replace: true });
+    };
+    tick();
+    const t = setInterval(tick, sampleEvery);
+    return () => clearInterval(t);
+  }, [sampling]);
+
+  // Ports and health pages, every two seconds; and every process stopped when Bosun closes.
+  useEffect(() => {
+    const t = setInterval(() => supRef.current?.checkPorts(), 2000);
+    return () => {
+      clearInterval(t);
+      clearTimeout(redrawSoon.current);
+      supRef.current?.dispose();
+    };
+  }, []);
+
+  // One command at a time, with the spinner, esc to cancel, and a line in the activity log.
+  // `start(signal)` resolves with { stdout, stderr }.
+  const task = async (title, start, { label = 'Working', refresh = false } = {}) => {
+    if (busyRef.current) {
+      note(`Wait for "${busyRef.current.label}" to finish (esc cancels it).`, 'error');
+      return { ok: false, error: new Error('busy') };
+    }
+    const controller = new AbortController();
+    const b = { label, started: Date.now(), abort: () => controller.abort() };
+    busyRef.current = b;
+    setBusy(b);
+    const id = addEntry({ title, status: 'running' });
+    setWelcome(false);
+    // A long one that ends (not cancelled) says so, for when you've looked away.
+    const tell = (said, body) => notify && worthNotifying(Date.now() - b.started, configRef.current) && notify(`Bosun: ${title}${said}`, body);
+    try {
+      const { stdout = '', stderr = '' } = await start(controller.signal);
+      const out = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
+      lastOutput.current = { title, text: out || '(no output)' };
+      updateEntry(id, { status: 'ok', lines: out ? out.split('\n') : ['Done'] });
+      tell('', out.split('\n').at(-1) || 'Done');
+      return { ok: true, out };
+    } catch (error) {
+      lastOutput.current = { title, text: error.message };
+      updateEntry(id, { status: 'error', lines: error.cancelled ? ['Cancelled'] : error.message.split('\n') });
+      if (!error.cancelled) tell(' failed', firstLine(error.message));
+      return { ok: false, error };
+    } finally {
+      busyRef.current = null;
+      setBusy(null);
+      if (refresh) await reload();
+    }
+  };
+
+  const confirm = (req) =>
+    new Promise((done) => {
+      const full = { options: [{ label: 'Yes', value: true }, { label: 'No', value: false }], ...req, id: nextId.current++, done };
+      confirmRef.current = full;
+      setConfirmReq(full);
+    });
+  const onConfirm = (value) => {
+    const req = confirmRef.current;
+    confirmRef.current = null;
+    answerKey.current = keySeq.current;
+    if (value === false || value == null) declines.current++;
+    setConfirmReq(null);
+    req?.done(value);
+  };
+
+  const prefill = (text, cursor = text.length) => {
+    setPrompt(text, cursor);
+    setSugIndex(0);
+    historyPos.current = -1;
+    setFocus('prompt');
+    // Noted so that the key that did this isn't also typed into the prompt (see the dispatcher).
+    prefillKey.current = keySeq.current;
+  };
+
+  const ctxRef = useRef(null);
+  if (!ctxRef.current) ctxRef.current = { get data() { return dataRef.current; }, get config() { return configRef.current; }, get crew() { return supRef.current; }, get dir() { return dirRef.current; }, mouseHandlers: [] };
+  const ctx = ctxRef.current;
+  Object.assign(ctx, {
+    task,
+    note,
+    activity: (text, opts) => activity(text, opts),
+    confirm,
+    // A masked field in the confirm's place: resolves { value } (or null on esc). askText shows what's typed.
+    askSecret: (req) => confirm({ ...req, secret: true, options: [] }),
+    askText: async (req) => (await confirm({ ...req, secret: true, plain: true, options: [] }))?.value ?? null,
+    // A view that takes keys the app would otherwise use (a search being typed) sets this to say so.
+    claimsKey: null,
+    // Said by a view as it handles a key it claims, so the dispatcher leaves that key alone.
+    claimed: () => {
+      claimedKey.current = keySeq.current;
+    },
+    prefill,
+    reload: () => reload({ restartChanged: true }),
+    setView,
+    setProfile,
+    moveTo,
+    askClaude,
+    pidsOnPort: portPids,
+    // /ports: what's listening on this machine (ports.js; tests pass a stub).
+    listPorts: async () => listPorts(),
+    // /preflight: the facts the checks read (preflight.js; tests pass their own gatherFacts), and the report.
+    gatherFacts: () => gather(dirRef.current, { ...crewRef.current, procs: withProfile(crewRef.current?.procs ?? [], crewRef.current?.profiles ?? {}, profileRef.current) }, { running: (supRef.current?.list() ?? []).filter((p) => p.child).map((p) => p.name) }),
+    preflightReport: (facts) => preflightReport(facts),
+    killPids: stopPids,
+    // T and /tunnel: cloudflared or ngrok, whichever is on the PATH (or the one bosun.json names).
+    tunnelTool: (preferred) => tunnelTool(preferred, findTool),
+    openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
+    // Whether this terminal can report the mouse at all (/settings says so).
+    mouseAvailable: Boolean(mouse),
+    // /update: asks for the latest release now, whatever the daily check last said, and installs it.
+    updateNow: () => {
+      if (!checkUpdate) return note(`This Bosun (${VERSION}) runs from a checkout: git pull updates it.`);
+      if (update?.state === 'installing') return note(`Bosun ${update.latest} is being installed already.`);
+      if (update?.state === 'installed') return note(`Bosun ${update.latest} is installed. It starts the next time you open Bosun.`);
+      const said = (text) => ({ stdout: text, stderr: '' });
+      return task(
+        'Looking for a new version of Bosun',
+        async () => {
+          const { checked, newer } = await checkUpdate(null);
+          setConfig((c) => ({ ...c, lastUpdateCheck: checked }));
+          if (!newer) return said(`Bosun ${VERSION} is the latest version.`);
+          if (!installUpdate) {
+            setUpdate({ ...checked, state: 'out' });
+            return said(`Bosun ${checked.latest} is out (you have ${VERSION}). Download it from ${checked.url}`);
+          }
+          setUpdate({ ...checked, state: 'installing' });
+          try {
+            await installUpdate(checked.latest);
+          } catch (e) {
+            setUpdate({ ...checked, state: 'out' });
+            throw new Error(`Bosun ${checked.latest} is out, but it couldn't be installed: ${firstLine(e.message)}\nDownload it from ${checked.url}`);
+          }
+          setUpdate({ ...checked, state: 'installed' });
+          return said(`Bosun ${checked.latest} is installed. It starts the next time you open Bosun.`);
+        },
+        { label: 'Updating Bosun' },
+      );
+    },
+    // y in the views: `text` to the clipboard, said in the bottom line as "Copied <what>".
+    copy: (text, what = text) => {
+      if (!copy) return note("Copying to the clipboard isn't available here.", 'error');
+      copy(text);
+      setFlash({ text: `Copied ${what}` });
+    },
+    // Views call this first in their key handlers, for the same reason as the dispatcher below.
+    viewHasKeys: () => focusRef.current === 'view' && !overlayRef.current && !confirmRef.current && answerKey.current !== keySeq.current,
+    overlayHasKeys: () => focusRef.current === 'view' && !confirmRef.current && answerKey.current !== keySeq.current,
+    quit: () => exit(),
+    showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
+    // /replay: a recorded session (replay.js's parseSession) played back over the view.
+    showReplay: (session, title) => setOverlay({ kind: 'replay', session, title }),
+    // A list to pick from: { title, hint, items | load, onPick, keys, empty } (see Picker.jsx).
+    // `replace`: swaps the picker on screen for this one (the same list, redrawn after a change), keeping
+    // where it goes back to, instead of opening on top of it.
+    showPicker: (picker, { replace = false } = {}) => {
+      const next = { ...picker, kind: 'picker', id: ++pickerIds.current };
+      if (replace) setOverlay((cur) => ({ ...next, back: cur?.back }));
+      else setOverlay(next);
+    },
+    overlay: () => overlayRef.current,
+    // Settings change through App's copy, the only one written to disk (ctx.config reads it).
+    setConfig,
+    closeOverlay: () => {
+      const closing = overlayRef.current;
+      // As a function, so a picker going back to another picker isn't given this one to return to.
+      setOverlay((cur) => cur?.back ?? null);
+      closing?.onClosed?.();
+    },
+    // On the section for the view on screen.
+    showHelp: () => setOverlay({ kind: 'help', start: sectionFor(customRef.current.sections, view) }),
+    // Your own command `cmd` (usercommands.js) with what was typed after it, and any line as typed at
+    // the prompt; both resolve false when it failed.
+    runUserCommand: (cmd, rest) => runUserCommand(cmd, rest),
+    runLine: (text) => runLine(text),
+    openPalette: () => openPalette(),
+    showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('No command has run yet.')),
+  });
+
+  // One line as typed at the prompt: a shell command after !, else a slash command. Resolves false
+  // when it failed: it threw, said an error, or a question it asked was answered no (so your own
+  // commands stop there).
+  const runLine = async (text) => {
+    const [errors, declined] = [errorCount.current, declines.current];
+    try {
+      let r;
+      if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
+      // A sibling's context pasted alone is /take's.
+      else if (decodeContext(text)) r = await a.take(ctx, text);
+      else {
+        const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
+        const cmd = findCommand(name, customRef.current.commands);
+        if (!cmd) {
+          note(`Unknown command: /${name}. Type / to see them all.`, 'error');
+          return false;
+        }
+        r = await cmd.run(ctx, rest.trim());
+      }
+      return r !== false && r?.ok !== false && errorCount.current === errors && declines.current === declined;
+    } catch (e) {
+      note(firstLine(e.message), 'error');
+      return false;
+    }
+  };
+
+  // One of your own commands: its lines in order, with what was typed after it filled in, stopping at
+  // the first that fails. Commands of yours may run each other, but not round in a circle.
+  const userDepth = useRef(0);
+  const runUserCommand = async (cmd, rest) => {
+    if (userDepth.current >= 5) {
+      note(`/${cmd.name}: your commands run each other round in a circle, so it stopped.`, 'error');
+      return false;
+    }
+    const lines = expandLines(cmd, rest);
+    userDepth.current++;
+    try {
+      for (const [i, line] of lines.entries()) {
+        if (await runLine(line)) continue;
+        if (i < lines.length - 1) note(`/${cmd.name} stopped at ${line}: the ${plural(lines.length - i - 1, 'line')} after it didn't run.`, 'error');
+        return false;
+      }
+      return true;
+    } finally {
+      userDepth.current--;
+    }
+  };
+
+  const submit = async (raw) => {
+    const text = raw.trim();
+    setPrompt('');
+    setFocus('view');
+    if (!text) return;
+    const history = [text, ...(configRef.current.history ?? []).filter((h) => h !== text)].slice(0, 100);
+    setConfig((c) => ({ ...c, history }));
+    await runLine(text);
+  };
+
+  // ctrl+p: the palette, over the view, starting from what's typed in the prompt when it's open there.
+  const openPalette = () => {
+    const typed = focusRef.current === 'prompt' ? promptRef.current.value.trim() : '';
+    if (focusRef.current === 'prompt') setFocus('view');
+    setOverlay({ kind: 'palette', query: typed.startsWith('!') ? '' : typed.replace(/^\//, '') });
+  };
+  // What's picked in it: a key goes to the view, a command runs, or waits in the prompt for what it
+  // takes. After every handler has had the ↵ that picked it, so it isn't also the prompt's.
+  const runPicked = (it) =>
+    queueMicrotask(() => {
+      ctx.closeOverlay();
+      if (it.key) pendingKey.current = it.key.seq;
+      else if (it.ask) prefill(`${it.command} `);
+      else runLine(it.command);
+    });
+
+  // Your keys, where they come in: while a view has the keys (never while typing, in a confirm or
+  // over an overlay), a key you mapped becomes the key it stands for, for the view and App alike, or
+  // runs its command line. Then ctrl+p opens the palette, from a view or the prompt.
+  const sendKey = useKeyTranslation((input) => {
+    let out = input;
+    if (focusRef.current === 'view' && !overlayRef.current && !confirmRef.current && !ctx.claimsKey?.(input, {})) {
+      const b = translateKey(customRef.current.keymap, viewRef.current, input);
+      if (b?.command) {
+        queueMicrotask(() => runLine(b.command));
+        return null;
+      }
+      if (b?.key) out = b.key.seq;
+    }
+    if (out === CTRL_P && !overlayRef.current && !confirmRef.current && (focusRef.current === 'view' || focusRef.current === 'prompt')) {
+      openPalette();
+      return null;
+    }
+    return out;
+  });
+  useEffect(() => {
+    if (pendingKey.current == null || overlayRef.current) return;
+    const k = pendingKey.current;
+    pendingKey.current = null;
+    sendKey(k);
+  });
+
+  useEffect(() => {
+    if (custom.problems.length) {
+      const text = ['Some of your commands or keys in the config were left out:', ...custom.problems].join('\n');
+      note(text, 'error');
+      lastOutput.current = { title: 'Your commands and keys', text };
+    }
+    (async () => {
+      await reload();
+      // After the first load, so it doesn't slow it down.
+      if (checkUpdate && configRef.current.checkForUpdates !== false) {
+        checkUpdate(configRef.current.lastUpdateCheck).then(
+          ({ checked, newer }) => {
+            setConfig((c) => ({ ...c, lastUpdateCheck: checked }));
+            if (!newer) return;
+            const outNote = (why = '') => note(`Bosun ${checked.latest} is out (you have ${VERSION})${why}.\nDownload it from ${checked.url}`);
+            if (!installUpdate || configRef.current.autoUpdate === false) {
+              setUpdate({ ...checked, state: 'out' });
+              return outNote();
+            }
+            // In the background, without the spinner: nothing waits on it, and it only counts from the next start.
+            setUpdate({ ...checked, state: 'installing' });
+            installUpdate(checked.latest).then(
+              () => {
+                setUpdate({ ...checked, state: 'installed' });
+                note(`Bosun ${checked.latest} is installed. It starts the next time you open Bosun.`);
+              },
+              (e) => {
+                setUpdate({ ...checked, state: 'out' });
+                outNote(`, but it couldn't be installed: ${firstLine(e.message)}`);
+              },
+            );
+          },
+          // Offline, or no way to ask: try again next time.
+          () => {},
+        );
+      }
+    })();
+  }, []);
+
+  // cli.jsx passes the terminal's title setter; tests pass a stub or nothing.
+  const title = `${VIEWS.find((v) => v.id === view).label} · ${basename(data?.dir ?? dirRef.current)} — Bosun`;
+  useEffect(() => {
+    setTitle?.(title);
+  }, [title]);
+
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data }) : [];
+  const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
+
+  // Line editing in the prompt.
+  const promptKeys = (input, key) => {
+    const { value, cursor } = promptRef.current;
+    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current });
+    const pick = items[Math.min(sugIndex, items.length - 1)];
+    const edit = (v, c) => {
+      setPrompt(v, c);
+      setSugIndex(0);
+    };
+    if (key.ctrl && input === 'c') return value ? edit('', 0) : exit();
+    if (key.escape) return setFocus('view');
+    if (key.return) {
+      if (pick && value.trim() !== pick.insert.trim()) return pick.run ? submit(pick.insert) : edit(pick.insert);
+      return submit(value);
+    }
+    if (key.tab) return pick ? edit(pick.insert) : undefined;
+    if (key.upArrow || key.downArrow) {
+      if (items.length) return setSugIndex((s) => (s + (key.upArrow ? items.length - 1 : 1)) % items.length);
+      const history = configRef.current.history ?? [];
+      const pos = Math.max(-1, Math.min(history.length - 1, historyPos.current + (key.upArrow ? 1 : -1)));
+      historyPos.current = pos;
+      return setPrompt(pos < 0 ? '' : history[pos]);
+    }
+    if (key.leftArrow) return setPrompt(value, Math.max(0, cursor - 1));
+    if (key.rightArrow) return setPrompt(value, Math.min(value.length, cursor + 1));
+    // Most terminals send DEL for backspace, which Ink reports as `delete`.
+    if (key.backspace || key.delete) {
+      if (!value) return setFocus('view');
+      if (cursor > 0) edit(value.slice(0, cursor - 1) + value.slice(cursor), cursor - 1);
+      return;
+    }
+    if (key.ctrl && input === 'a') return setPrompt(value, 0);
+    if (key.ctrl && input === 'e') return setPrompt(value, value.length);
+    if (key.ctrl && input === 'u') return edit(value.slice(cursor), 0);
+    if (key.ctrl && input === 'w') {
+      const start = value.slice(0, cursor).replace(/\S+\s*$/, '').length;
+      return edit(value.slice(0, start) + value.slice(cursor), start);
+    }
+    if (key.ctrl || key.meta || !input) return;
+    const text = input.replace(/[\r\n]+/g, ' ').replace(/[\x00-\x1f\x7f]/g, '');
+    if (text) edit(value.slice(0, cursor) + text + value.slice(cursor), cursor + text.length);
+  };
+
+  // Keys that work in every view.
+  const globalKeys = (input, key) => {
+    if (key.escape) {
+      if (busyRef.current) busyRef.current.abort();
+      else if (reactionRef.current) setReaction(null);
+      else {
+        setEntries((list) => list.map((e) => ({ ...e, shown: false })));
+        setWelcome(false);
+      }
+      return;
+    }
+    // A paste of a command line (or a sibling's family:v1: context) opens the prompt with it, to run with ↵.
+    // (A terminal ends a pasted line with \r, which the family's rule takes as a \n.)
+    const pasted = pastedLine(input);
+    if (pasted) return prefill(pasted);
+    if (input === '/' || input === ':') return prefill('/');
+    if (input === '!') return prefill('!');
+    if (input === '?') return ctx.showHelp();
+    if (input === ',') return a.settings(ctx);
+    if (input === 'q') return exit();
+    const n = Number(input);
+    if (n >= 1 && n <= VIEWS.length) return setView(VIEWS[n - 1].id);
+    if (key.tab) {
+      const i = VIEWS.findIndex((v) => v.id === view);
+      return setView(VIEWS[(i + (key.shift ? VIEWS.length - 1 : 1)) % VIEWS.length].id);
+    }
+  };
+
+  // One dispatcher reading focus from refs, which change the instant focus moves. Handlers that
+  // switch on with the next render would let fast typing (or a paste) after "/" leak into the view.
+  useInput((input, key) => {
+    // Ink calls the handlers for a key in no fixed order. When a view's ran first and opened the prompt,
+    // this same key mustn't then be typed into it.
+    if (focusRef.current === 'prompt' && !confirmRef.current) return prefillKey.current === keySeq.current ? undefined : promptKeys(input, key);
+    if (key.ctrl && input === 'c') return exit();
+    if (confirmRef.current || overlayRef.current || answerKey.current === keySeq.current) return;
+    if (claimedKey.current === keySeq.current || ctx.claimsKey?.(input, key)) return;
+    globalKeys(input, key);
+  });
+
+  // The terminal reports the mouse while the setting is on (it is unless set off).
+  useEffect(() => {
+    mouse?.enable(config.mouse !== false);
+  }, [config.mouse]);
+
+  // Where things were drawn, for matching clicks against (set as the layout below is worked out).
+  const layout = useRef(null);
+  const lastPress = useRef(null);
+  // The component under a point of the main area (`y` counted from its top), and that `y` in it.
+  const mouseTarget = (y) => {
+    const target = ctx.mouseHandlers.findLast((h) => h.top <= y);
+    return target && { target, y: y - target.top };
+  };
+  const onMouse = (e) => {
+    if (e.type === 'copy') {
+      const n = e.text.split('\n').length;
+      return setFlash({ text: n > 1 ? `Copied ${n} lines` : `Copied ${e.text.length} character${e.text.length === 1 ? '' : 's'}` });
+    }
+    if (e.button === 'left' && !e.release && !e.drag) {
+      const prev = lastPress.current;
+      const now = Date.now();
+      const count = prev && prev.x === e.x && prev.y === e.y && now - prev.at < DOUBLE_CLICK_MS ? prev.count + 1 : 1;
+      e.double = count === 2;
+      e.triple = count === 3;
+      // A fourth click starts over rather than counting on.
+      lastPress.current = count < 3 ? { x: e.x, y: e.y, at: now, count } : null;
+    } else if (!e.drag && e.button !== 'wheel') return;
+    // A confirmation's options are picked with keys.
+    if (confirmRef.current || !layout.current) return;
+    const { mainTop, mainH, promptTop, sugCount, tabs } = layout.current;
+    if (e.drag) {
+      // A drag the component it started in takes itself (claimDrags below; useMouse's `drags`).
+      const hit = mouseTarget(e.from.y - mainTop);
+      if (!hit) return;
+      if (focusRef.current === 'prompt') setFocus('view');
+      return hit.target.handle({ ...e, y: e.y - mainTop - hit.target.top, from: { x: e.from.x, y: hit.y } });
+    }
+    if (e.y === mainTop - 1 && !e.wheel) {
+      const tab = tabs.find((t) => e.x >= t.from && e.x < t.to);
+      if (!tab) return;
+      // Whatever is open over the view closes: a click on a tab should never do nothing.
+      for (let n = 0; overlayRef.current && n < 20; n++) ctx.closeOverlay();
+      setFocus('view');
+      return setView(tab.id);
+    }
+    if (e.y >= mainTop && e.y < mainTop + mainH) {
+      // Like esc, a click on the view leaves the prompt's text for later.
+      if (!e.wheel && focusRef.current === 'prompt') setFocus('view');
+      const hit = mouseTarget(e.y - mainTop);
+      return hit?.target.handle({ ...e, y: hit.y });
+    }
+    if (e.wheel) return;
+    if (e.y >= promptTop && e.y < promptTop + 3) {
+      // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
+      const { value, cursor } = promptRef.current;
+      const inner = columns - 6;
+      const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      return setFocus('prompt');
+    }
+    const sug = e.y - promptTop - 3;
+    if (sug >= 0 && sug < sugCount) {
+      setSugIndex(sug);
+      // As ↵ would, on the suggestion under the pointer.
+      if (e.double) promptKeys('', { return: true });
+    }
+  };
+  const mouseRef = useRef(onMouse);
+  mouseRef.current = onMouse;
+  useEffect(() => mouse?.subscribe((e) => mouseRef.current(e)), [mouse]);
+  // Drags that start where the component on screen selects for itself skip the screen selection.
+  useEffect(
+    () =>
+      mouse?.claimDrags?.((e) => {
+        const at = layout.current;
+        if (confirmRef.current || !at || e.y < at.mainTop || e.y >= at.mainTop + at.mainH) return false;
+        const hit = mouseTarget(e.y - at.mainTop);
+        return Boolean(hit?.target.drags?.({ ...e, y: hit.y }));
+      }),
+    [mouse],
+  );
+
+  // Layout: everything is sized to the terminal, one row short of it so Ink never clears the screen.
+  const W = columns;
+  const H = Math.max(12, rows - 1);
+  // esc hides the activity lines; the Log view keeps them all.
+  const act = activityRows(entries.filter((e) => e.shown !== false));
+  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
+  // How Squawk feels, for the siblings (family.js's writeMood), whenever that changes.
+  const told = familyMood({ mood, data, lastEntry: entries.at(-1), busy });
+  useEffect(() => {
+    if (config.familyMoods !== false) writeMood('bosun', told);
+  }, [told.mood, told.reason, config.familyMoods]);
+  // The welcome box only appears when the terminal has room for it next to a useful view.
+  const showWelcome = welcome && H >= 28;
+  const reacting = reaction ? 1 : 0;
+  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  const viewActive = focus === 'view' && !overlay && !confirmReq;
+  layout.current = {
+    mainTop: 2,
+    mainH,
+    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    sugCount: suggestions.length,
+    tabs: tabLabels(entries),
+  };
+
+  // The palette's list: this view's keys, yours, then the commands.
+  const paletteList = useMemo(
+    () => paletteItems({ commands: COMMANDS, user: custom.commands, sections: HELP.filter((s) => s.title === 'Anywhere' || s.views?.includes(view)), keymap: custom.keymap, view, skip: ['ctrl+p'] }),
+    [custom, view],
+  );
+
+  let main;
+  if (overlay?.kind === 'palette') {
+    // Closed once every handler has had the esc, or App's would also take it (and clear the log).
+    main = <Palette items={paletteList} query={overlay.query} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onPick={runPicked} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
+  } else if (overlay?.kind === 'help') {
+    main = <HelpView sections={custom.sections} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+  } else if (overlay?.kind === 'replay') {
+    main = <ReplayView session={overlay.session} title={overlay.title} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+  } else if (overlay?.kind === 'picker') {
+    main = <Picker key={overlay.id} picker={overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
+  } else if (overlay) {
+    main = <TextViewer key={viewerKey(overlay)} {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+  } else if (view === 'log') {
+    main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (!data) {
+    main = (
+      <Panel title={VIEWS.find((v) => v.id === view).label} width={W} height={mainH}>
+        <Text color={theme.dim}>{loading ? '  Reading the crew…' : '  Nothing read. /reload tries again.'}</Text>
+      </Panel>
+    );
+  } else {
+    main = <CrewView procs={data.procs} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  }
+
+  const left = flash
+    ? flash.text
+    : focus === 'prompt'
+      ? 'enter run · tab complete · ↑↓ pick or history · esc back'
+      : overlay?.kind === 'help'
+        ? 'j/k section · space scroll · / search · esc close'
+        : overlay?.kind === 'palette'
+        ? 'type to filter · ↑↓ pick · ↵ run it (a key in the view; a command that takes more goes into the prompt) · esc close'
+        : overlay?.kind === 'replay'
+        ? '←→ a second (shift: ten) · [ ] the crash or trouble before, after · space play · + - speed · a all logs · esc close'
+        : overlay?.kind === 'picker'
+          ? 'j/k move · ↵ change · esc close'
+          : overlay
+            ? 'j/k scroll · space page · y copy · esc close'
+            : HINTS[view];
+  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+
+  return (
+    <Box flexDirection="column" width={W} height={H}>
+      <Header data={data} width={W} loading={loading} mood={mood} />
+      <Tabs view={view} entries={entries} width={W} />
+      <Box height={mainH} width={W}>
+        {main}
+      </Box>
+      {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
+      {reaction ? (
+        <Row
+          pointer={false}
+          width={W}
+          segments={[
+            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
+            { text: reaction.text },
+            { text: '  esc', color: theme.dim },
+          ]}
+        />
+      ) : null}
+      {act.map((segs, i) => (
+        <Row key={i} pointer={false} width={W} segments={segs} />
+      ))}
+      {busy ? <Spinner label={busy.label} started={busy.started} width={W} /> : null}
+      {confirmReq ? (
+        confirmReq.secret ? (
+          <SecretPrompt key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
+        ) : (
+          <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
+        )
+      ) : (
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
+      )}
+      {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
+      <Row
+        pointer={false}
+        width={W}
+        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
+      />
+    </Box>
+  );
+}
