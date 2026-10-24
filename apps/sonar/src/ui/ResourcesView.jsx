@@ -6,6 +6,7 @@ import { componentFor, isProduction } from '../insights.js';
 import { metricRows } from '../metrics.js';
 import { costOf, groupCost, money } from '../cost.js';
 import { resourceRows } from '../tree.js';
+import { referenceWords, unresolved } from '../keyvault.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -37,7 +38,7 @@ const delayed = (fn, ms = SETTLE) => {
 };
 
 /** The subscription's resources by resource group, slots and databases under theirs, and beside them the one under the cursor. */
-export function ResourcesView({ data, span, ctx, width, height, active, filter, focusId }) {
+export function ResourcesView({ data, extras = {}, span, ctx, width, height, active, filter, focusId }) {
   // Worked out again only when the subscription or the filter changes, not on every key.
   const rows = useMemo(() => resourceRows(data.apps, data.slots, filter, data), [data, filter]);
   const innerH = height - 2;
@@ -63,6 +64,19 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
     let live = true;
     setSettings(null);
     const stop = delayed(() => ctx.settingsOf(web).then((s) => live && setSettings(s), () => live && setSettings({ error: true })));
+    return () => {
+      live = false;
+      stop();
+    };
+  }, [sel?.id]);
+
+  // Its Key Vault references: the background scan's, or read now when it hasn't come to it yet.
+  const [refs, setRefs] = useState(null);
+  useEffect(() => {
+    if (!web) return;
+    let live = true;
+    setRefs(null);
+    const stop = delayed(() => ctx.referencesOf(web).then((r) => live && setRefs({ list: r }), (e) => live && setRefs({ error: e.message.split('\n')[0] })));
     return () => {
       live = false;
       stop();
@@ -180,6 +194,17 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
           ? [[{ text: 'no rules: nothing outside Azure gets in', color: theme.dim }]]
           : []),
   ];
+  // Its Key Vault references: how many resolved, and each that didn't, in words.
+  const vaultLines = (r) => {
+    if (!r) return [];
+    if (r.error) return [[{ text: 'key vault ', color: theme.dim }, { text: `can't say: ${r.error}`, color: theme.dim }]];
+    if (!r.list.length) return [];
+    const bad = unresolved(r.list);
+    return [
+      [{ text: 'key vault ', color: theme.dim }, { text: `${r.list.length} reference${r.list.length === 1 ? '' : 's'}, ${r.list.length - bad.length} resolved`, color: bad.length ? theme.warn : theme.add }],
+      ...bad.map((x) => [{ text: '  ⚠ ', color: theme.warn }, { text: `${x.name}: `, bold: true }, { text: referenceWords(x), color: theme.del }]),
+    ];
+  };
   let detail = [];
   if (sel && !sel.type) {
     detail = [
@@ -194,6 +219,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
       field('changed', sel.modified ? `${relTime(Date.parse(sel.modified))} ago` : null),
       [{ text: 'insights  ', color: theme.dim }, settings == null ? { text: '…', color: theme.dim } : settings.error ? { text: "can't read its settings", color: theme.del } : { text: component?.name ?? 'none linked', color: component ? undefined : theme.dim }],
       [{ text: 'settings  ', color: theme.dim }, { text: settings && !settings.error ? `${Object.keys(settings).length} (↵ shows them)` : '' }],
+      ...vaultLines(refs),
       ...(sel.slot ? [] : costLine(sel, sel.planId)),
       [],
       [{ text: `the last ${span?.label ?? ''}`, color: theme.dim, bold: true }, { text: metrics ? '' : '  reading its metrics…', color: theme.dim }],
@@ -279,6 +305,7 @@ export function ResourcesView({ data, span, ctx, width, height, active, filter, 
                 { text: '● ', color: stateColour(t.state) },
                 { text: fit(name, Math.max(8, listW - 18 - (under ? 4 : 0))), strong: true },
                 { text: t.kind === 'function' && !t.type ? ' ƒ' : '', color: theme.info },
+                { text: unresolved(extras[t.id]?.refs).length ? ' ⚠' : '', color: theme.warn },
                 { text: tag ? ` ${tag}` : '', color: theme.dim },
               ]}
             />

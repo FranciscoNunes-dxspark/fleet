@@ -27,6 +27,13 @@ export function azureError(status, body, what) {
   return `${what}: ${message}`;
 }
 
+/** An error in Storage's XML (<Error><Code>…</Code><Message>…</Message></Error>) as ARM's shape, for azureError. */
+export function xmlError(text) {
+  const code = /<Code>([^<]*)<\/Code>/.exec(String(text ?? ''))?.[1];
+  const message = /<Message>([^<]*)<\/Message>/.exec(String(text ?? ''))?.[1]?.split('\n')[0];
+  return code || message ? { error: { message: [code, message].filter(Boolean).join(': ') } } : null;
+}
+
 /** The app's kind from ARM's comma list ("functionapp,linux"): 'function' or 'app'. */
 export const kindOf = (kind) => (/functionapp/i.test(kind ?? '') ? 'function' : 'app');
 
@@ -177,6 +184,20 @@ export function sqlDatabaseFrom(d, server) {
   };
 }
 
+/** A Key Vault reference's state, from ARM's configreferences: the setting, how it went, which vault and secret. */
+export function referenceFrom(r) {
+  const p = r.properties ?? {};
+  return {
+    name: String(r.name ?? r.id ?? '').split('/').pop(),
+    status: p.status ?? 'Unknown',
+    details: p.details ?? '',
+    vault: p.vaultName ?? '',
+    secret: p.secretName ?? '',
+    identity: p.identityType ?? '',
+    reference: p.reference ?? '',
+  };
+}
+
 /** An Application Insights component: what its query API needs (AppId) and how apps point at it. */
 export function componentFrom(c) {
   const p = c.properties ?? {};
@@ -221,7 +242,11 @@ export function tableFrom(body) {
 
 /** The provider over real Azure: `fetch` and `token(resource)` from outside. */
 export function createAzure({ fetch = globalThis.fetch, token }) {
-  const call = async (resource, url, { method = 'GET', body, signal, what = 'Azure' } = {}, tries = 0) => {
+  // `raw` answers { status, headers, text } rather than JSON (Storage's XML, a Service Bus message);
+  // `text` is a body sent as it is (with `headers` saying its type); `auth: false` sends no token (a
+  // function's own key goes in `headers` instead). Throttled calls are tried again, failures thrown in
+  // words with the status on the error.
+  const call = async (resource, url, { method = 'GET', body, text: sent, headers = {}, raw = false, auth = true, signal, what = 'Azure' } = {}, tries = 0) => {
     // A signal of its own, so a load's hundreds of calls leave no listeners on the load's.
     const own = callSignal(signal);
     let res;
@@ -230,14 +255,14 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       res = await fetch(url, {
         method,
         signal: own.signal,
-        headers: { Authorization: `Bearer ${await token(resource)}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-        body: body ? JSON.stringify(body) : undefined,
+        headers: { ...(auth ? { Authorization: `Bearer ${await token(resource)}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers },
+        body: body ? JSON.stringify(body) : sent,
       });
       // Too many calls at once (a big subscription's slots, say): Azure says when to try again.
       if (res.status === 429 && tries < 3 && !signal?.aborted) {
         own.done();
         await pause(retryAfter(res, tries), signal);
-        return call(resource, url, { method, body, signal, what }, tries + 1);
+        return call(resource, url, { method, body, text: sent, headers, raw, auth, signal, what }, tries + 1);
       }
       text = await res.text();
     } finally {
@@ -245,12 +270,21 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     }
     let json = null;
     try {
-      json = text ? JSON.parse(text) : null;
+      json = text && !raw ? JSON.parse(text) : null;
     } catch {
       // Not JSON: the status says enough.
     }
-    if (!res.ok) throw new Error(azureError(res.status, json, what));
-    return json;
+    if (!res.ok) {
+      if (raw) {
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = xmlError(text);
+        }
+      }
+      throw Object.assign(new Error(azureError(res.status, json, what)), { status: res.status });
+    }
+    return raw ? { status: res.status, headers: res.headers, text } : json;
   };
   const arm = (path, opts) => call(`${ARM}/`, path.startsWith('http') ? path : `${ARM}${path}`, opts);
   // ARM pages its lists with nextLink.
@@ -295,6 +329,11 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     async settings(target, opts) {
       const r = await arm(`${target.id}/config/appsettings/list?api-version=${WEB}`, { ...opts, method: 'POST', what: `Reading ${label(target)}'s settings` });
       return r?.properties ?? {};
+    },
+    /** How each of its Key Vault references (@Microsoft.KeyVault(…) settings) resolved: referenceFrom's. */
+    async keyVaultReferences(target, opts) {
+      const list = await all(`${target.id}/config/configreferences/appsettings?api-version=2022-03-01`, { ...opts, what: `Reading ${label(target)}'s Key Vault references` });
+      return list.map(referenceFrom);
     },
     // ARM replaces the whole set: what isn't in `settings` is removed.
     async saveSettings(target, settings, opts) {

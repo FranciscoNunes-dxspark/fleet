@@ -2,6 +2,7 @@
 // stack it went through, the deployments before it, the commits that touched its files, the SQL behind
 // it, the request that failed, the Markdown write-up and what Claude is asked. actions.js fetches.
 import { matchFrameFile, quoteArg, stackFrames } from './family.js';
+import { referenceWords, resolved } from './keyvault.js';
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
@@ -121,6 +122,11 @@ export function incidentMarkdown(inc, now = Date.now()) {
   if (inc.deploys?.error) out.push(`Couldn't read them: ${inc.deploys.error}`);
   else if (inc.deploys?.within?.length) for (const d of inc.deploys.within) out.push(`- ${when(d.start)} ${d.status} by ${d.author || 'someone'}${d.deployer ? ` through ${d.deployer}` : ''}: ${d.message.split('\n')[0]}${d.active ? ' (active)' : ''}`);
   else out.push(`None.${inc.deploys?.latest ? ` The latest before it: ${when(inc.deploys.latest.start)}, ${inc.deploys.latest.message.split('\n')[0]}.` : ''}`);
+  if (inc.refs?.error) out.push('', '## Key Vault references (now)', '', `Couldn't read them: ${inc.refs.error}`);
+  else if (inc.refs?.length) {
+    out.push('', '## Key Vault references (now)', '');
+    for (const r of inc.refs) out.push(`- ${resolved(r) ? '✓' : '✗'} ${r.name}: ${referenceWords(r)}`);
+  }
   out.push('', '## The latest occurrence', '');
   if (inc.rows?.length) {
     out.push('```');

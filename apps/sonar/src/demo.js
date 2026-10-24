@@ -68,6 +68,8 @@ function initialState(now) {
       Db__ConnectionString: `Server=tcp:${a.resourceGroup}.database.windows.net;Database=contoso;Password=demo-Pa55w0rd;`,
       FeatureFlags__NewCheckout: 'false',
     };
+    // contoso-api takes two secrets from Key Vault: one resolves, the other its identity may not read.
+    if (a.name === 'contoso-api') Object.assign(base, { Payments__ApiKey: '@Microsoft.KeyVault(SecretUri=https://contoso-kv.vault.azure.net/secrets/payments-key/)', Smtp__Password: '@Microsoft.KeyVault(VaultName=contoso-kv;SecretName=smtp-password)' });
     const host = `${a.name}.azurewebsites.net`;
     const site = { id, sub: a.sub, name: a.name, connectionStrings: CONNECTION_STRINGS[a.name] ?? {}, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host, hostNames: a.domain ? [host, a.domain] : [host], modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, planId: `/subscriptions/${a.sub}/resourceGroups/${a.resourceGroup}/providers/Microsoft.Web/serverfarms/${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
     sites.push(site);
@@ -85,7 +87,9 @@ function initialState(now) {
     { sub: 'sub-prod', name: 'Checkout availability below 95%', severity: 'Sev2', signal: 'Metric', service: 'Application Insights', target: 'contoso-prod-ai', targetId: `${prodRg}/providers/microsoft.insights/components/contoso-prod-ai`, targetType: 'microsoft.insights/components', ago: 3 * HOUR, description: 'The checkout availability test failed from 2 of 3 locations' },
     { sub: 'sub-prod', name: 'Payments timeouts in traces', severity: 'Sev3', signal: 'Log', service: 'Log Analytics', target: 'contoso-prod-ai', targetId: `${prodRg}/providers/microsoft.insights/components/contoso-prod-ai`, targetType: 'microsoft.insights/components', ago: 30 * HOUR, description: '' },
   ].map((a, i) => ({ id: `/subscriptions/${a.sub}/providers/Microsoft.AlertsManagement/alerts/demo-${i}`, state: 'New', condition: 'Fired', resourceGroup: 'contoso-prod', rule: `${prodRg}/providers/microsoft.insights/metricalerts/${a.name.replace(/\W+/g, '-')}`, fired: new Date(now - a.ago).toISOString(), changed: new Date(now - a.ago).toISOString(), ...a }));
-  return { sites, components, alerts, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
+  // The demo's vault: the secrets in it, and the ones the apps' identities may not read.
+  const vault = { name: 'contoso-kv', secrets: ['payments-key', 'smtp-password'], denied: ['smtp-password'] };
+  return { sites, components, alerts, vault, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
 }
 
 // A few days of what the apps did: requests (some failing), the exceptions behind the failures, traces.
@@ -313,6 +317,17 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async settings(target, { signal } = {}) {
       await wait(signal);
       return { ...site(target).settings };
+    },
+    // What App Service would say of each @Microsoft.KeyVault(…) setting, from the demo's vault.
+    async keyVaultReferences(target, { signal } = {}) {
+      await wait(signal);
+      return Object.entries(site(target).settings)
+        .filter(([, v]) => /^@Microsoft\.KeyVault\(/i.test(v))
+        .map(([name, v]) => {
+          const secret = /secrets\/([^/)]+)/i.exec(v)?.[1] ?? /SecretName=([^;)]+)/i.exec(v)?.[1] ?? '';
+          const status = !state.vault.secrets.includes(secret) ? 'SecretNotFound' : state.vault.denied.includes(secret) ? 'AccessToKeyVaultDenied' : 'Resolved';
+          return { name, status, details: status === 'AccessToKeyVaultDenied' ? 'Forbidden: the identity has no get permission on secrets' : '', vault: state.vault.name, secret, identity: 'SystemAssigned', reference: v };
+        });
     },
     async saveSettings(target, settings, { signal } = {}) {
       await wait(signal);

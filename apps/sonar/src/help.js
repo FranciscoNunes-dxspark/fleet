@@ -32,7 +32,8 @@ export const HELP = [
     about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them) and storage accounts; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
     views: ['resources'],
     rows: [
-      ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies'],
+      ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies; a Key Vault reference shows ✓, or ✗ and why it didn\'t resolve'],
+      ['⚠', 'Beside an app or slot: one of its Key Vault references didn\'t resolve (its details say which and why)'],
       ['R', 'Restart it'],
       ['S', 'Stop it, or start it if it is stopped'],
       ['W', 'Swap a slot into production (on an app, pick the slot)'],
@@ -76,7 +77,7 @@ export const HELP = [
     rows: [
       ['↵', 'The latest occurrence: everything in that operation, in order (requests, dependencies, exceptions, traces)'],
       ['w', 'Ask Claude why it happens: it reads the latest occurrence, and the code when Sonar was started in the app\'s folder'],
-      ['I', 'The incident: first and last seen, count, the deployments in the 24 h before it, its latest occurrence, its stack, failing SQL, and commits to its files in the 14 days before (when Sonar was started in the app\'s checkout)'],
+      ['I', 'The incident: first and last seen, count, the deployments in the 24 h before it, the app\'s Key Vault references, its latest occurrence, its stack, failing SQL, and commits to its files in the 14 days before (when Sonar was started in the app\'s checkout)'],
       ['K', 'Before and after the latest deployment of the app in scope (else the middle of the span), in two equal windows: exception types new, gone or twice as frequent, dependencies\' p95 duration, operations whose 5xx rate rose (/compare-window takes a time too)'],
       ['l', 'Its exceptions in Logs'],
       ['y', 'Copy the message'],

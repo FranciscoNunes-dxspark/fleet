@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getEventListeners } from 'node:events';
-import { alertFrom, alertRange, createAzure, retryAfter, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
+import { alertFrom, alertRange, createAzure, retryAfter, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom, xmlError } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, availabilityQuery, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
@@ -17,11 +17,18 @@ function fakeFetch(routes) {
   const fetch = async (url, init) => {
     const u = new URL(url);
     const key = `${init.method} ${u.host === 'management.azure.com' ? '' : u.host}${u.pathname}`;
-    calls.push({ key, url, init, body: init.body ? JSON.parse(init.body) : undefined });
+    let sent;
+    try {
+      sent = init.body ? JSON.parse(init.body) : undefined;
+    } catch {
+      sent = init.body;
+    }
+    calls.push({ key, url, init, body: sent });
     // A route can be a function of the request's body (pages asked for by token, say).
-    const hit = typeof routes[key] === 'function' ? routes[key](calls.at(-1).body) : routes[key];
+    const hit = typeof routes[key] === 'function' ? routes[key](calls.at(-1).body, calls.at(-1)) : routes[key];
     const [status, body] = Array.isArray(hit) ? hit : [hit === undefined ? 404 : 200, hit ?? { error: { code: 'NotFound', message: `No route ${key}` } }];
-    return { ok: status < 300, status, text: async () => (typeof body?.raw === 'string' ? body.raw : JSON.stringify(body)) };
+    // { raw, headers } answers text with headers of its own (Storage's XML, a Service Bus message).
+    return { ok: status < 300, status, headers: new Headers(body?.headers ?? {}), text: async () => (typeof body?.raw === 'string' ? body.raw : body == null ? '' : JSON.stringify(body)) };
   };
   return { fetch, calls };
 }
@@ -442,4 +449,31 @@ test('calls under one signal (a load\'s) leave no listeners on it, and it still 
   load.abort();
   await assert.rejects(p, /aborted/);
   assert.equal(getEventListeners(load.signal, 'abort').length, 0);
+});
+
+test('Key Vault references: each setting\'s status from configreferences; the demo resolves from its vault', async () => {
+  const web = site('web', 'rg-prod');
+  const { fetch, calls } = fakeFetch({
+    [`GET ${web.id}/config/configreferences/appsettings`]: {
+      value: [
+        { id: `${web.id}/config/configreferences/appsettings/Db__Password`, name: 'Db__Password', properties: { reference: '@Microsoft.KeyVault(VaultName=kv;SecretName=db)', status: 'AccessToKeyVaultDenied', vaultName: 'kv', secretName: 'db', identityType: 'SystemAssigned', details: 'Forbidden' } },
+        { id: `${web.id}/config/configreferences/appsettings/ApiKey`, properties: { status: 'Resolved', vaultName: 'kv', secretName: 'api' } },
+      ],
+    },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const refs = await azure.keyVaultReferences(siteFrom(web));
+  assert.deepEqual(refs.map((r) => [r.name, r.status, r.vault, r.secret]), [['Db__Password', 'AccessToKeyVaultDenied', 'kv', 'db'], ['ApiKey', 'Resolved', 'kv', 'api']]);
+  assert.match(calls[0].url, /api-version=2022-03-01/);
+
+  const demo = demoAzure();
+  const api = demo.state.sites.find((s) => s.name === 'contoso-api' && !s.slot);
+  const said = Object.fromEntries((await demo.keyVaultReferences(api)).map((r) => [r.name, r.status]));
+  assert.deepEqual(said, { Payments__ApiKey: 'Resolved', Smtp__Password: 'AccessToKeyVaultDenied' });
+  assert.deepEqual(await demo.keyVaultReferences(demo.state.sites.find((s) => s.name === 'contoso-web' && !s.slot)), []);
+});
+
+test('Storage\'s XML errors are said in words, with the status on the error', async () => {
+  assert.deepEqual(xmlError('<?xml version="1.0"?><Error><Code>AuthorizationPermissionMismatch</Code><Message>This request is not authorized.\nRequestId:1</Message></Error>'), { error: { message: 'AuthorizationPermissionMismatch: This request is not authorized.' } });
+  assert.equal(xmlError('nothing'), null);
 });

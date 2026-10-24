@@ -6,7 +6,7 @@ import { TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, spa
 import { loadSubscription } from '../load.js';
 import { costDay } from '../cost.js';
 import { crossing, watchEvery, watchValue } from '../watches.js';
-import { targetForUrl, targetsByLabel } from '../tree.js';
+import { mapLimited, targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
@@ -177,6 +177,10 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const metricsCache = useRef(new Map());
   const firewallCache = useRef(new Map());
   const adminCache = useRef(new Map());
+  // Each app's and slot's Key Vault references, read in the background after a load (scanExtras).
+  const refsCache = useRef(new Map());
+  // What the list shows beside each app or slot, by id: { refs } (its Key Vault references).
+  const [extras, setExtras] = useState({});
   // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
   const watchStates = useRef(new Map());
   // This month's costs per subscription, read once a day (r doesn't read them again).
@@ -298,6 +302,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     metricsCache.current = new Map();
     firewallCache.current = new Map();
     adminCache.current = new Map();
+    refsCache.current = new Map();
     // A subscription not on screen yet shows as soon as its apps are known, slots and databases
     // filling in as they come; reading the one on screen again keeps it until the new one is whole.
     const n = ++loads.current;
@@ -317,6 +322,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       dataRef.current = d;
       setData(d);
       setDataStamp((x) => x + 1);
+      scanExtras(d, n);
     } catch (e) {
       note(`Couldn't read the subscription: ${firstLine(e.message)}`, 'error');
     } finally {
@@ -358,6 +364,35 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       cache.set(target.id, p);
     }
     return cache.get(target.id);
+  };
+
+  /** An app's or slot's Key Vault references (keyvault.js), read once and kept until r or its settings change. */
+  const referencesOf = (target) => {
+    const cache = refsCache.current;
+    if (!cache.has(target.id)) {
+      const p = provider.keyVaultReferences ? provider.keyVaultReferences(target) : Promise.resolve([]);
+      p.catch(() => cache.delete(target.id));
+      cache.set(target.id, p);
+    }
+    return cache.get(target.id);
+  };
+
+  /**
+   * What the list flags beside the apps and slots (Key Vault references that didn't resolve), read in the
+   * background after load `n`, four at a time, and drawn as it comes in (at most every 250 ms).
+   */
+  const scanExtras = async (d, n) => {
+    const found = {};
+    let said = 0;
+    const flush = () => n === loads.current && setExtras({ ...found });
+    const targets = d.apps.flatMap((app) => [app, ...(d.slots[app.id] ?? [])]);
+    await mapLimited(targets, 4, async (t) => {
+      if (n !== loads.current) return;
+      const refs = await referencesOf(t).catch(() => null);
+      found[t.id] = { ...found[t.id], refs };
+      if (Date.now() - said > 250) (said = Date.now()), flush();
+    });
+    flush();
   };
 
   /** An app's or slot's metrics over the time span, read when the cursor stops on it and kept until r. */
@@ -540,7 +575,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     watchState: (name) => watchStates.current.get(name) ?? null,
     forgetWatch: (name) => watchStates.current.delete(name),
     forgetFirewall: (server) => firewallCache.current.delete(server.id),
-    forgetSettings: (target) => settingsCache.current.delete(target.id),
+    forgetSettings: (target) => (settingsCache.current.delete(target.id), refsCache.current.delete(target.id)),
+    referencesOf,
+    extras: () => extras,
     scope: resolveScope,
     timespan: () => TIMESPANS[spanRef.current],
     setQuery,
@@ -1149,7 +1186,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   } else if (view === 'problems') {
     main = <ProblemsView problems={problems} filter={problemFilter} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <ResourcesView data={data} span={TIMESPANS[spanIndex]} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ResourcesView data={data} extras={extras} span={TIMESPANS[spanIndex]} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash

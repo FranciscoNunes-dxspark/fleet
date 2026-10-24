@@ -12,6 +12,7 @@ import { cellText, compareQueries, compareWindows, isProduction, latestException
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, repoRoot, takeLine, trawlLine } from './family.js';
 import { familyChoices } from './kin.js';
+import { referenceWords, resolved as refResolved } from './keyvault.js';
 import { parseWatch, watchEvery } from './watches.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
@@ -116,6 +117,9 @@ export async function showSettings(ctx, which, { replace = false, index, shown =
   if (!target) return;
   const settings = await ctx.settingsOf(target).catch((e) => (ctx.note(e.message, 'error'), null));
   if (!settings) return;
+  // How its Key Vault references went, beside them: ✓, or ✗ and why.
+  const refs = Object.fromEntries(((await ctx.referencesOf?.(target).catch(() => null)) ?? []).map((r) => [r.name, r]));
+  const mark = (n) => (refs[n] ? (refResolved(refs[n]) ? { text: '✓ ', color: theme.add } : { text: `✗ ${referenceWords(refs[n])}  `, color: theme.del }) : { text: '' });
   const names = Object.keys(settings).sort((a, b) => a.localeCompare(b));
   const nameW = Math.min(40, Math.max(10, ...names.map((n) => n.length)));
   const again = (opts = {}) => showSettings(ctx, target, { replace: true, index: ctx.overlay()?.index, shown, ...opts });
@@ -129,6 +133,7 @@ export async function showSettings(ctx, which, { replace = false, index, shown =
         name: n,
         segments: [
           { text: `${n.padEnd(nameW)}  `, strong: true },
+          mark(n),
           { text: shown.includes(n) || shown.includes('*') ? settings[n] : hide(n, settings[n]), color: looksSecret(n, settings[n]) ? theme.warn : undefined },
         ],
       })),
@@ -609,11 +614,13 @@ export async function gatherIncident(ctx, component, problem) {
   const opts = { timespan: ctx.timespan().iso };
   const ask = (q) => ctx.provider.query(component, q, opts).then(records);
   const target = appOfRole(ctx, problem.role);
-  const [latest, rows, sql, deploys] = await Promise.all([
+  const [latest, rows, sql, deploys, refs] = await Promise.all([
     ask(latestExceptionQuery(problem.problemId)).then((r) => r[0] ?? null),
     ask(operationQuery(problem.operation)),
     ask(sqlDependenciesQuery(problem.problemId)).catch(() => []),
     target ? ctx.provider.deployments(target).then((list) => deploymentsBefore(list, problem.first), (e) => ({ error: firstLine(e.message) })) : Promise.resolve({ within: [], latest: null, error: `no app called ${problem.role} in this subscription` }),
+    // Its Key Vault references as they are now: one that doesn't resolve is a likely cause.
+    target && ctx.referencesOf ? ctx.referencesOf(target).catch((e) => ({ error: firstLine(e.message) })) : Promise.resolve(null),
   ]);
   const frames = framesOf(latest?.details);
   const repo = repoRoot(ctx.cwd());
@@ -627,7 +634,7 @@ export async function gatherIncident(ctx, component, problem) {
       commits = { error: firstLine(e.message) };
     }
   }
-  return { problem, spark: ctx.problemSpark(problem.problemId), span: ctx.timespan(), latest, rows, sql, deploys, frames, request: requestOf(rows), repo, files, commits };
+  return { problem, spark: ctx.problemSpark(problem.problemId), span: ctx.timespan(), latest, rows, sql, deploys, refs, frames, request: requestOf(rows), repo, files, commits };
 }
 
 const DOT = (colour) => ({ text: `${BULLET} `, color: colour });
@@ -651,6 +658,11 @@ function incidentLines(inc) {
   if (inc.deploys.error) lines.push([dim(`  can't say: ${inc.deploys.error}`)]);
   else if (inc.deploys.within.length) for (const d of inc.deploys.within) lines.push([DOT(DEPLOY_COLOUR[d.status] ?? theme.warn), { text: `${time(d.start)}  `, color: theme.dim }, { text: `${d.author || 'someone'}  `, bold: true }, dim(`${d.deployer}  `), { text: d.message.split('\n')[0] }]);
   else lines.push([dim(`  none${inc.deploys.latest ? `; the latest before it was ${relTime(Date.parse(inc.deploys.latest.start))} earlier: ${inc.deploys.latest.message.split('\n')[0]}` : ''}`)]);
+  if (inc.refs?.error || inc.refs?.length) {
+    lines.push(...head('Key Vault references (now)'));
+    if (inc.refs.error) lines.push([dim(`  can't say: ${inc.refs.error}`)]);
+    else for (const r of inc.refs) lines.push([{ text: refResolved(r) ? '  ✓ ' : '  ✗ ', color: refResolved(r) ? theme.add : theme.del }, { text: `${r.name}  `, bold: true }, { text: referenceWords(r), color: refResolved(r) ? theme.dim : theme.del }]);
+  }
   lines.push(...head('The latest occurrence'));
   const colour = { request: theme.info, dependency: theme.dim, exception: theme.del, trace: undefined };
   if (!inc.rows.length) lines.push([dim('  not found in this span')]);

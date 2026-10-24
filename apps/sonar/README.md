@@ -46,7 +46,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state, and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state, and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
@@ -73,7 +73,9 @@ A container app's restart (`R`, which restarts its latest revision) and a SQL fi
 ask the same way.
 
 Settings (`↵` or `a` on an app or slot) hide the values that look secret (keys, passwords, connection
-strings) until `v` shows one (`V` all). `e` edits one, `n` adds one, `x` removes one; each change
+strings) until `v` shows one (`V` all). A Key Vault reference (`@Microsoft.KeyVault(…)`) shows ✓ when App
+Service resolved it, else ✗ and why: no managed identity, no such vault or secret, or the identity may
+not read the vault. `e` edits one, `n` adds one, `x` removes one; each change
 says what it changes before saving, and Azure restarts the app to take it. `d` compares the settings
 with another slot of the same app, which is where the difference between staging and production
 usually hides.
@@ -90,7 +92,7 @@ it reads the code the exception went through.
 
 `I` on a problem (or `/incident`) tells it whole, in the viewer: when it was first and last seen, how
 often and to how many users, with its sparkline; the app's deployments in the 24 hours before it was
-first seen (or the latest before that); its latest occurrence end to end; the stack it went through;
+first seen (or the latest before that); the app's Key Vault references as they are now, when it has any (one that doesn't resolve is a likely cause); its latest occurrence end to end; the stack it went through;
 the SQL calls that failed in its operations (the server and database, and the command when Application
 Insights kept it); and when Sonar was started in the app's git checkout, the commits that touched the
 files in its stack in the 14 days before it was first seen. Outside a checkout that part is left out.
