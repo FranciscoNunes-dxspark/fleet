@@ -1,0 +1,114 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import express from 'express';
+import { config } from './config.js';
+import { createService } from './service.js';
+import { apiRouter } from './routes.js';
+import { hostGuard, securityHeaders } from './security.js';
+import { createWatcher } from './watcher.js';
+import { createAuth } from './auth.js';
+import { createMonitoring } from './monitoring.js';
+import { createOrgStore } from './orgs.js';
+import { createMultiService } from './multiorg.js';
+import { createChannels } from './channels.js';
+import { createPush } from './push.js';
+import { createSchedules } from './schedules.js';
+import { providerFor } from './providers.js';
+import { azureDevOpsToken } from './azdo/azcli.js';
+import { createSettingsStore, defaultSettingsFile } from './settings.js';
+import { assetLinks } from './android.js';
+
+const app = express();
+app.disable('x-powered-by');
+if (config.trustProxy) app.set('trust proxy', /^\d+$/.test(config.trustProxy) ? Number(config.trustProxy) : config.trustProxy);
+app.use(hostGuard);
+app.use(securityHeaders);
+
+// Production checks run once per server and are shared by everyone using it.
+const monitoring = createMonitoring();
+
+if (config.authMode === 'login') {
+  // Everyone signs in with their own PAT; each request runs as that person.
+  // Scheduled completions run as whoever scheduled them.
+  let auth = null;
+  const schedules = createSchedules({ resolveService: (ownerId) => auth.serviceFor(ownerId) });
+  auth = createAuth({ monitoring, schedules });
+  // Channel posts read Azure DevOps as the Admin who set the channel up.
+  const channels = createChannels({ resolveService: (ownerId) => auth.serviceFor(ownerId) });
+  // Push notifications read Azure DevOps as the person whose device it is.
+  const push = createPush({ resolveService: (userId) => auth.serviceFor(userId) });
+  app.use('/api/auth', auth.router);
+  app.use('/api/admin/users', auth.adminRouter);
+  app.use('/api', auth.requireUser, apiRouter({ channels, push, schedules }));
+  auth.announceSetup();
+} else {
+  // One person: the PAT in .env (or demo data), used for every organization
+  // (created for "All accessible organizations" when there are several, which Azure DevOps
+  // stops accepting on 1 December 2026; sign-in mode links a token per organization instead).
+  const orgStore = createOrgStore();
+  const settings = createSettingsStore(defaultSettingsFile());
+  const schedules = createSchedules({ resolveService: () => localCtx().service });
+  // AZDO_AUTH=az without a PAT: your Azure CLI sign-in, shared by every organization.
+  const azToken = config.azAuth && !config.pat ? azureDevOpsToken() : undefined;
+  let ctx = null;
+  const localCtx = () => {
+    if (ctx?.sig === orgStore.signature()) return ctx;
+    ctx?.watcher.close();
+    const entries = orgStore.all().map((org) => ({
+      org,
+      service: createService({
+        provider: providerFor(org, { azToken }),
+        settings,
+        monitoring: org.primary ? monitoring : null,
+        org,
+        schedules,
+      }),
+    }));
+    const service = createMultiService(entries);
+    // Local mode: the one person using it is the admin.
+    ctx = { service, watcher: createWatcher(service), role: 'admin', user: null, sig: orgStore.signature() };
+    return ctx;
+  };
+  app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: orgStore.primary()?.url }));
+  const channels = createChannels({ resolveService: () => localCtx().service });
+  const push = createPush({ resolveService: () => localCtx().service });
+  app.use('/api', (req, res, next) => {
+    req.ctx = localCtx();
+    next();
+  }, apiRouter({ channels, push, schedules }));
+}
+
+// Lets the Android app open Keel without Chrome's address bar (server/android.js).
+// Not a file in dist/: express.static leaves dot-folders alone, and the certificate comes from .env.
+const androidLinks = assetLinks({ packageId: config.androidPackage, fingerprints: config.androidCertSha256 });
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  if (!androidLinks) return res.status(404).json({ error: 'ANDROID_CERT_SHA256 is not set' });
+  res.set('Cache-Control', 'no-cache').json(androidLinks);
+});
+
+const dist = path.join(config.root, 'dist');
+if (fs.existsSync(path.join(dist, 'index.html'))) {
+  app.use(express.static(dist, {
+    index: false,
+    maxAge: '1h',
+    // The service worker, manifest and build id are checked on every visit, so an update reaches installed apps.
+    setHeaders: (res, file) => {
+      if (/[\\/](sw\.js|manifest\.webmanifest|build\.json)$/.test(file)) res.setHeader('Cache-Control', 'no-cache');
+    },
+  }));
+  app.get('/{*splat}', (req, res) => res.sendFile(path.join(dist, 'index.html')));
+} else {
+  app.get('/', (req, res) => res.type('text').send('UI not built. Run `npm run dev` (UI on http://localhost:5173) or `npm run build` first.'));
+}
+
+app.listen(config.port, config.host, () => {
+  const mode = config.mock ? `DEMO DATA (${config.mockReason})` : config.authMode === 'login' ? `${config.orgUrl} · sign-in with personal PATs` : config.orgUrl;
+  console.log(`Keel API on http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}  →  ${mode}`);
+  console.log(`Data folder: ${config.dataDir}`);
+  if (config.authMode === 'login') {
+    if (!process.env.SESSION_SECRET) console.warn(`Note: SESSION_SECRET not set; using a generated key in ${config.dataDir}. Keep that folder private and backed up.`);
+    if (!config.trustProxy) console.warn('Note: TRUST_PROXY not set. Behind an HTTPS proxy, set TRUST_PROXY=1 so session cookies are marked Secure.');
+  } else if (config.host !== '127.0.0.1' && config.host !== 'localhost') {
+    console.warn('Warning: HOST is not loopback. Anyone who can reach this port can act on Azure DevOps as you. Use AUTH_MODE=login to require sign-in.');
+  }
+});

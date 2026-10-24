@@ -1,0 +1,7 @@
+# Keep Unix line endings everywhere (the server runs on Linux).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

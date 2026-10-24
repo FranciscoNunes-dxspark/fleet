@@ -1,0 +1,226 @@
+import { Link } from 'react-router-dom';
+import { useApi, useApp } from '../context.js';
+import { age, dateTime, REVIEW_STATE } from '../format.js';
+import { Chip, Empty, ErrorBox, ExternalLink, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
+import { t, tx } from '../i18n.js';
+import { useProjectLabel } from '../orgs.js';
+import { ChangeSections, deployStatus } from './DeployDetail.jsx';
+
+const DAY = 86_400_000;
+
+/** Waiting longer than this reads as a warning: the change is done but users don't have it. */
+export const LONG_WAIT_DAYS = 7;
+
+/** How long the oldest change has waited, as a tone for chips and numbers. */
+export const waitTone = (oldestAt) => (!oldestAt ? 'ok' : Date.now() - Date.parse(oldestAt) > LONG_WAIT_DAYS * DAY ? 'warn' : 'info');
+
+/** Environments whose waiting can't be counted (not linked, not comparable, unreadable). */
+export const uncounted = (e) => !!(e.error || e.unknown || e.unlinked || e.diverged || e.missingBranch);
+
+/** Environments with the most waiting (the oldest change first), then the up-to-date ones, then those that can't be counted. */
+export const byWaiting = (a, b) => uncounted(a) - uncounted(b)
+  || (Date.parse(a.oldestAt) || Infinity) - (Date.parse(b.oldestAt) || Infinity) || a.name.localeCompare(b.name);
+
+/**
+ * What's merged but not in production yet: for each production environment,
+ * the commits on its branch since the last successful deploy, grouped into
+ * pull requests and work items. Answers "is my fix live?" and "what goes out
+ * with the next deploy?".
+ */
+export default function Shipping() {
+  const { data, error, reload } = useApi('/deploys/pending');
+  return (
+    <div className="page page-wide">
+      <PageHeader title={t('Production')} sub={t("What's merged but not deployed yet, per production environment.")} />
+      <ProductionTabs />
+      {!data ? (error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />) : !data.targets.length ? (
+        <Empty title={t('No production environment found.')}>
+          {t('Link a production monitor to the release stage or pipeline that deploys it, or name the classic release stage "Production".')}
+          {' '}<Link to="/settings#production">{t('Settings → Production monitors')}</Link>
+        </Empty>
+      ) : (
+        <div className="monitor-list">
+          {[...data.targets].sort(byWaiting).map((env) => <Environment key={`${env.org || ''}:${env.key}`} env={env} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Open pull requests into the branch this environment deploys from: what
+ * merges next, so the card shows the whole way from PR to production.
+ */
+function ComingNext({ env }) {
+  const { openDrawer } = useApp();
+  const n = env.upcoming.length;
+  return (
+    <details className="ship-next" open={n <= 5}>
+      <summary className="small">
+        {t('Coming next')}
+        <span className="muted"> · {t(n === 1 ? '{n} open pull request into {branch}' : '{n} open pull requests into {branch}', { n, branch: env.branch })}</span>
+      </summary>
+      <ul className="deploy-list">
+        {env.upcoming.map((p) => {
+          const state = REVIEW_STATE[p.reviewState] || REVIEW_STATE['in-review'];
+          return (
+            <li key={p.id}>
+              <button type="button" className="row-link" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>{p.title}</button>
+              <div className="sub">
+                <span className="mono">!{p.id}</span>
+                {p.author && <span>{p.author}</span>}
+                <span>{t('open {age}', { age: age(p.createdAt) })}</span>
+                <Chip tone={state.tone}>{state.label}</Chip>
+                {p.autoComplete && <Chip tone="ok">{t('Auto-complete')}</Chip>}
+                {p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+/** Why Keel doesn't know what production runs (see whyUnknown in server/service.js). */
+function unknownWhy(why) {
+  switch (why?.reason) {
+    case 'none': return t('No deploy in the last 90 days.');
+    case 'noSuccess': return t('No successful deploy in the last 90 days ({n} that failed).', { n: why.count });
+    case 'noCommit': return t("The deploys in the last 90 days don't say which commit they shipped (their artifact isn't a build of an Azure Repos Git repository), so what's waiting can't be listed.");
+    case 'otherBranch': return t('No successful run of this pipeline on {branch} in the last 90 days; the latest successful one ({label}) was on {other}.', { branch: why.branch, other: why.other || '?', label: why.label });
+    default: return t('No successful deploy with a known commit in the last 90 days.');
+  }
+}
+
+function Environment({ env }) {
+  const { openDrawer, can } = useApp();
+  const projectLabel = useProjectLabel();
+  // Changes, as the server counts them: each merged PR once, plus commits pushed without one.
+  const waiting = env.waiting ?? 0;
+  const last = env.lastDeploy;
+  const openDeploy = () => openDrawer({ type: 'deploy', projectId: env.projectId, target: env.key, id: last.id, org: env.org });
+
+  const failed = env.lastFailed;
+  let chip;
+  if (env.error) chip = <Chip tone="bad">{t("Couldn't read")}</Chip>;
+  else if (env.unlinked) chip = <Chip tone="muted">{t('Not linked')}</Chip>;
+  // What's happening to the next deploy says more than the count (with auto-deploy, it's usually what's waiting).
+  else if (env.deploy?.state === 'deploying') chip = <Chip tone="info">{t('Deploying now')}</Chip>;
+  else if (env.deploy?.state === 'approval') chip = <Chip tone="warn">{t('Waiting for approval')}</Chip>;
+  else if (failed) chip = <Chip tone={deployStatus(failed.status).tone}>{failed.status === 'partiallySucceeded' ? t('Last deploy partially succeeded') : t('Last deploy failed')}</Chip>;
+  else if (env.diverged || env.missingBranch) chip = <Chip tone="warn">{t("Can't compare")}</Chip>;
+  else if (env.unknown) chip = <Chip tone="muted">{t('Unknown')}</Chip>;
+  else if (!waiting) chip = <Chip tone="ok">{t('Up to date')}</Chip>;
+  else chip = <Chip tone={waitTone(env.oldestAt)}>{t(waiting === 1 ? '{n} change waiting' : '{n} changes waiting', { n: waiting })}{env.truncated ? '+' : ''}</Chip>;
+
+  return (
+    <section className={`panel monitor ship-env ${env.error ? 'monitor-down' : env.deploy ? (env.deploy.state === 'approval' ? 'monitor-degraded' : 'monitor-deploying') : failed ? 'monitor-down' : uncounted(env) ? '' : !waiting ? 'monitor-up' : waitTone(env.oldestAt) === 'warn' ? 'monitor-degraded' : 'monitor-deploying'}`} aria-label={env.name}>
+      <header className="monitor-head">
+        <div>
+          <h2>{env.name}</h2>
+          <div className="small muted">
+            {[projectLabel(env.projectName, env.org), env.repo?.name, env.branch].filter(Boolean).join(' · ')}
+            {env.branchSet && env.branch && !env.branchGone && <span title={t('Set in Settings → Production monitors')}> {t('(set)')}</span>}
+          </div>
+        </div>
+        {chip}
+      </header>
+
+      {env.error && <p className="callout callout-bad">{tx(env.error)}</p>}
+      {env.deploy && (
+        <p className={`ship-now small ship-now-${env.deploy.state}`}>
+          <strong>{env.deploy.state === 'deploying' ? t('Deploying now') : t('Waiting for approval')}</strong>
+          {' · '}
+          {env.deploy.webUrl ? <a href={env.deploy.webUrl} target="_blank" rel="noreferrer">{env.deploy.label}</a> : env.deploy.label}
+          <span className="muted" title={dateTime(env.deploy.startedAt)}>
+            {' · '}
+            {env.deploy.state === 'deploying'
+              ? t('started {age} ago', { age: age(env.deploy.startedAt) })
+              : t('waiting {age}', { age: age(env.deploy.startedAt) })}
+            {env.deploy.by ? ` · ${env.deploy.by}` : ''}
+          </span>
+        </p>
+      )}
+      {failed && !env.deploy && (
+        <p className="ship-now small ship-now-failed">
+          <strong>{failed.status === 'partiallySucceeded' ? t('Last deploy partially succeeded') : t('Last deploy failed')}</strong>
+          {' · '}
+          <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'deploy', projectId: env.projectId, target: env.key, id: failed.id, org: env.org })} title={t('What this deploy would have shipped')}>{failed.label}</button>
+          <span className="muted" title={dateTime(failed.at)}>
+            {' · '}{t('{age} ago', { age: age(failed.at) })}
+            {last ? ` · ${t('production is still on {label}', { label: last.label })}` : ''}
+          </span>
+        </p>
+      )}
+      {env.unlinked && (
+        <p className="muted small">
+          {t("This monitor isn't linked to the release stage or pipeline that deploys it, so Keel can't tell what's live.")}
+          {can('monitors.manage') && <> <Link to="/settings#production">{t('Link it in Settings → Production monitors')}</Link></>}
+        </p>
+      )}
+      {env.missingBranch && (
+        <p className="callout">
+          {env.branchGone
+            ? t("Production was built from {gone}, and the repo's default branch {branch} doesn't exist either, so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.", { gone: env.branchGone, branch: env.missingBranch })
+            : t("The repo's default branch {branch} doesn't exist (renamed or deleted), so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.", { branch: env.missingBranch })}
+        </p>
+      )}
+      {env.branchGone && !env.missingBranch && (
+        <p className="muted small">
+          {env.branchSet
+            ? t("The production branch {gone} set in Settings doesn't exist, so this compares with {branch}.", { gone: env.branchGone, branch: env.branch })
+            : t('Production was built from {gone}, which no longer exists, so this compares with {branch}.', { gone: env.branchGone, branch: env.branch })}
+        </p>
+      )}
+      {env.diverged && (
+        <p className="callout">
+          {env.deployedBranch && env.deployedBranch !== env.branch
+            ? t("Production runs a build from {deployed}, which isn't on {branch}, so what's waiting can't be counted.", { deployed: env.deployedBranch, branch: env.branch })
+            : t("Production runs a commit that isn't on {branch} (built from another branch, or the branch was rewritten), so what's waiting can't be counted.", { branch: env.branch })}
+        </p>
+      )}
+      {env.unknown && (
+        <p className="muted small">
+          {env.untracked ? t("The last deploy shipped a repository you don't track, so what's waiting can't be listed.") : unknownWhy(env.why)}
+        </p>
+      )}
+
+      {last && !env.error && !env.diverged && (
+        <dl className="fact-row monitor-facts">
+          <div className="fact">
+            <dt>{t('Last deploy')}</dt>
+            <dd><button type="button" className="link-btn" onClick={openDeploy} title={t('What this deploy shipped')}>{last.label}</button></dd>
+            <dd className="muted small" title={dateTime(last.at)}>{t('{age} ago', { age: age(last.at) })}{last.by ? ` · ${last.by}` : ''}</dd>
+          </div>
+          {!env.unknown && <>
+            <div className="fact">
+              <dt>{t('Waiting')}</dt>
+              <dd>{waiting}</dd>
+              <dd className="muted small">
+                {[
+                  env.pullRequests.length && t(env.pullRequests.length === 1 ? '{n} pull request' : '{n} pull requests', { n: env.pullRequests.length }),
+                  env.directCommits.length && t(env.directCommits.length === 1 ? '{n} commit without a pull request' : '{n} commits without a pull request', { n: env.directCommits.length }),
+                ].filter(Boolean).join(' · ') || t('nothing waiting')}
+              </dd>
+            </div>
+            <div className="fact">
+              <dt>{t('Oldest change')}</dt>
+              <dd className={waitTone(env.oldestAt) === 'warn' ? 'text-warn' : ''}>{env.oldestAt ? age(env.oldestAt) : '—'}</dd>
+              <dd className="muted small">{env.oldestAt ? t('since it was merged') : t('nothing waiting')}</dd>
+            </div>
+          </>}
+        </dl>
+      )}
+
+      {waiting > 0 && (
+        <details className="ship-changes" open={waiting <= 12}>
+          <summary className="small">{t('What goes out with the next deploy')}{env.authors?.length ? <span className="muted"> · {env.authors.join(', ')}</span> : null}</summary>
+          <ChangeSections changes={env} org={env.org} />
+        </details>
+      )}
+      {env.upcoming?.length > 0 && <ComingNext env={env} />}
+      {last?.webUrl && <div className="ship-foot"><ExternalLink href={last.webUrl}>{t('Last deploy in Azure DevOps')}</ExternalLink></div>}
+    </section>
+  );
+}

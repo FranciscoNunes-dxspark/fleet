@@ -1,0 +1,591 @@
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { api } from './api.js';
+import { AppContext, useApi, useApp } from './context.js';
+import { Drawer, ErrorBox, Loading, Logo, pinchLine } from './ui.jsx';
+import { pinchMood } from './pinch.js';
+import { loadPrefs, showDesktop } from './notify.js';
+import Inbox from './pages/Inbox.jsx';
+import PullRequests from './pages/PullRequests.jsx';
+import PrDetail from './pages/PrDetail.jsx';
+import WorkItems from './pages/WorkItems.jsx';
+import WorkItemDetail from './pages/WorkItemDetail.jsx';
+import PipelineDetail from './pages/PipelineDetail.jsx';
+import Commits from './pages/Commits.jsx';
+import CommitDetail from './pages/CommitDetail.jsx';
+import DeployDetail from './pages/DeployDetail.jsx';
+import Summary from './pages/Summary.jsx';
+import NewWorkItem from './pages/NewWorkItem.jsx';
+import NewPr from './pages/NewPr.jsx';
+import Board from './pages/Board.jsx';
+import Epics from './pages/Epics.jsx';
+import Dashboard from './pages/Dashboard.jsx';
+import NotFound from './pages/NotFound.jsx';
+import Pipelines from './pages/Pipelines.jsx';
+import Production from './pages/Production.jsx';
+import Totals from './pages/Totals.jsx';
+import Shipping from './pages/Shipping.jsx';
+import ReleaseNotes from './pages/ReleaseNotes.jsx';
+import Team from './pages/Team.jsx';
+import Insights from './pages/Insights.jsx';
+import Settings from './pages/Settings.jsx';
+import { Icon } from './icons.jsx';
+import { CommandPalette } from './palette.jsx';
+import { useSticky } from './sticky.js';
+import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
+import Users from './pages/Users.jsx';
+import TerminalSignIn from './pages/TerminalSignIn.jsx';
+// Ink and xterm.js load only when the page opens.
+const WebTerminal = lazy(() => import('./pages/WebTerminal.jsx'));
+import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
+import { applyTheme } from './theme.js';
+import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
+import { updateNow, useNewVersion } from './version.js';
+
+/**
+ * Auth gate. In login mode (hosted), shows sign-in until there's a session,
+ * and again whenever the server says the session ended or the token was
+ * rejected. In local mode it's a pass-through.
+ */
+/**
+ * Auth gate. Hosted mode (AUTH_MODE=login): first-run setup, invite and reset
+ * links, sign-in, then connecting Azure DevOps, before the console itself.
+ * Local mode is a pass-through.
+ */
+// Server notifications (server/domain/changes.js): Keel writes most titles and
+// bodies, but some carry an Azure DevOps PR or work item title as is (inbox
+// entries for a PR or work item, and the body of a vote). Those stay untranslated.
+const noteTitle = (n) => (/^attention:(pr|wi):/.test(n.key || '') ? n.title : tx(n.title));
+const noteBody = (n) => (/^vote:/.test(n.key || '') ? n.body : tx(n.body));
+
+/** Re-renders everything when the language changes (Settings, or another device via synced prefs). */
+export default function App() {
+  const [lang, setLang] = useState(getLanguage);
+  useEffect(() => {
+    const onChange = (e) => setLang(e.detail);
+    window.addEventListener('keel:language', onChange);
+    return () => window.removeEventListener('keel:language', onChange);
+  }, []);
+  return <AuthGate key={lang} />;
+}
+
+function AuthGate() {
+  const [auth, setAuth] = useState(null);
+  const [reason, setReason] = useState(null);
+  const [session, setSession] = useState(0);
+  const [linkToken, setLinkToken] = useState(() => (window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)$/) || [])[1] || null);
+
+  const check = useCallback(() => {
+    fetch('/api/auth/status', { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then(setAuth)
+      .catch(() => setAuth({ mode: 'local', signedIn: true, unreachable: true }));
+  }, []);
+  useEffect(check, [check]);
+
+  useEffect(() => {
+    const onSignedOut = (e) => {
+      setReason(e.detail?.reason || 'signin-required');
+      setAuth((a) => (a?.mode === 'login' ? { ...a, signedIn: false } : a));
+    };
+    const onToken = (e) => {
+      setReason(e.detail?.reason || 'token-required');
+      setAuth((a) => (a?.mode === 'login' ? { ...a, needsToken: true } : a));
+    };
+    window.addEventListener('keel:signed-out', onSignedOut);
+    window.addEventListener('keel:token-required', onToken);
+    return () => {
+      window.removeEventListener('keel:signed-out', onSignedOut);
+      window.removeEventListener('keel:token-required', onToken);
+    };
+  }, []);
+
+  const restart = () => {
+    setReason(null);
+    setSession((n) => n + 1); // fresh console state for the new session
+    check();
+  };
+  const signOut = async () => {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } finally {
+      setReason(null);
+      setAuth((a) => ({ ...a, signedIn: false, user: null }));
+    }
+  };
+
+  if (!auth) return <div className="boot"><Loading label={t('Starting…')} /></div>;
+  if (auth.mode === 'login') {
+    if (linkToken) {
+      return (
+        <LinkAccept
+          orgUrl={auth.orgUrl}
+          token={linkToken}
+          onDone={() => {
+            window.history.replaceState({}, '', '/');
+            setLinkToken(null);
+            restart();
+          }}
+        />
+      );
+    }
+    if (auth.setupRequired) return <Setup orgUrl={auth.orgUrl} onDone={restart} />;
+    if (!auth.signedIn) return <SignIn orgUrl={auth.orgUrl} reason={reason} onDone={restart} />;
+    if (auth.needsToken) return <ConnectAzure orgUrl={auth.orgUrl} user={auth.user} reason={reason} onDone={restart} onSignOut={signOut} />;
+  }
+  return <Console key={session} authMode={auth.mode} onSignedOut={() => { setReason(null); setAuth((a) => ({ ...a, signedIn: false })); }} />;
+}
+
+function Console({ authMode, onSignedOut }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [drawer, setDrawer] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const [meta, setMeta] = useState(null);
+  const [metaError, setMetaError] = useState(null);
+
+  const [live, setLive] = useState({ connected: false });
+  const navigate = useNavigate();
+
+  const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const dismiss = useCallback((id) => setToasts((list) => list.filter((x) => x.id !== id)), []);
+  const toast = useCallback((text, tone = 'ok', { action, body, ttl = 4000 } = {}) => {
+    const id = Math.random();
+    setToasts((list) => [...list.slice(-4), { id, text, tone, action, body }]);
+    setTimeout(() => dismiss(id), ttl);
+  }, [dismiss]);
+
+  // Where a notification or inbox entry leads.
+  const openTarget = useCallback((target) => {
+    if (!target) return;
+    if (target.type === 'pr' || target.type === 'workitem' || (target.type === 'pipeline' && target.key)) setDrawer(target);
+    else if (target.type === 'release') navigate('/pipelines?tab=releases');
+    else if (target.type === 'pipeline' || target.type === 'approval') navigate('/pipelines');
+    else if (target.type === 'person') navigate('/team');
+    else if (target.type === 'production') navigate('/production');
+  }, [navigate]);
+
+  // A tapped push notification (public/sw.js) leads to a page, with ?open= naming the PR or work item to show.
+  const { pathname: here, search: query } = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(query);
+    const raw = params.get('open');
+    if (!raw) return;
+    params.delete('open');
+    navigate({ pathname: here, search: params.toString() ? `?${params}` : '' }, { replace: true });
+    try {
+      const target = JSON.parse(raw);
+      // Only plain values: it came from a link.
+      if (target && typeof target === 'object') openTarget(Object.fromEntries(Object.entries(target).filter(([, v]) => ['string', 'number'].includes(typeof v))));
+    } catch {
+      // Not a target: just the page.
+    }
+  }, [here, query, navigate, openTarget]);
+  // With Keel already open, the service worker asks it to go there instead of opening another window.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined;
+    const onMessage = (e) => {
+      if (e.data?.type === 'keel:open' && typeof e.data.path === 'string' && e.data.path.startsWith('/') && !e.data.path.startsWith('//')) navigate(e.data.path);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [navigate]);
+
+  // Live updates: the server polls Azure DevOps and tells us when to refetch,
+  // and what happened that's worth a notification.
+  useEffect(() => {
+    const es = new EventSource('/api/events');
+    es.addEventListener('status', (e) => setLive({ ...JSON.parse(e.data), connected: true }));
+    es.addEventListener('changed', () => bump());
+    es.addEventListener('notify', (e) => {
+      const prefs = loadPrefs();
+      const items = JSON.parse(e.data).items.filter((n) => prefs.categories[n.category] !== false);
+      if (!items.length) return;
+      if (items.length > 3) {
+        const summary = t('{n} updates in Azure DevOps', { n: items.length });
+        if (prefs.inApp) toast(summary, 'note', { body: items.slice(0, 3).map(noteTitle).join(' · '), action: { label: t('Open inbox'), onClick: () => navigate('/inbox') }, ttl: 10000 });
+        showDesktop({ title: summary, body: items.slice(0, 4).map(noteTitle).join('\n'), tag: 'keel-batch', onClick: () => navigate('/inbox') });
+        return;
+      }
+      for (const n of items) {
+        const open = () => openTarget(n.target);
+        if (prefs.inApp) toast(noteTitle(n), n.severity === 'high' ? 'alert' : 'note', { body: noteBody(n), action: n.target ? { label: t('Open'), onClick: open } : null, ttl: 10000 });
+        showDesktop({ title: noteTitle(n), body: noteBody(n), tag: n.key, onClick: open });
+      }
+    });
+    es.onerror = () => setLive((l) => ({ ...l, connected: false }));
+    return () => es.close();
+  }, [bump, toast, navigate, openTarget]);
+
+  const loadMeta = useCallback(() => {
+    api('/meta').then((m) => {
+      // Preferences saved on your account win over this browser's copy.
+      if (m.prefs && Object.keys(m.prefs).length) {
+        if (adoptServerPrefs(m.prefs)) {
+          applyTheme();
+          applySavedLanguage();
+        }
+      } else {
+        seedServerPrefs(m.prefs);
+      }
+      setMeta(m);
+      setMetaError(null);
+    }).catch(setMetaError);
+  }, []);
+  useEffect(loadMeta, [loadMeta, refreshKey]);
+
+  // Fallback while the live connection is down: plain periodic refetching.
+  useEffect(() => {
+    if (live.connected || !meta?.refreshSeconds) return undefined;
+    const timer = setInterval(() => document.visibilityState === 'visible' && bump(), meta.refreshSeconds * 1000);
+    return () => clearInterval(timer);
+  }, [live.connected, meta?.refreshSeconds, bump]);
+
+  const signOut = useCallback(async () => {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } finally {
+      onSignedOut();
+    }
+  }, [onSignedOut]);
+
+  // Back online after starting without a connection: try again.
+  useEffect(() => {
+    const retry = () => {
+      if (!meta) loadMeta();
+    };
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [meta, loadMeta]);
+
+  // What this person's role allows (the server enforces the same rules).
+  const can = useCallback((perm) => !meta || (meta.permissions || []).includes(perm), [meta]);
+
+  const ctx = useMemo(() => ({ meta, refreshKey, refresh: bump, openDrawer: setDrawer, openTarget, toast, live, authMode, signOut, can }), [meta, refreshKey, bump, toast, live, openTarget, authMode, signOut, can]);
+
+  if (metaError && !meta) {
+    // The installed app opened with no connection: say so, and connect when it's back (below).
+    if (navigator.onLine === false) {
+      return (
+        <div className="boot">
+          <p>{t("You're offline")}</p>
+          <p className="muted">{t('Keel will connect again when you are back online.')}</p>
+        </div>
+      );
+    }
+    return (
+      <div className="boot">
+        <ErrorBox error={metaError} onRetry={loadMeta} />
+        <p className="muted">{tj("Check the terminal running the server. Common causes: an expired PAT, a wrong {orgUrl}, or the API server isn't running.", { orgUrl: <code>AZDO_ORG_URL</code> })}</p>
+      </div>
+    );
+  }
+  if (!meta) return <div className="boot"><Loading label={t('Connecting to Azure DevOps…')} /></div>;
+
+  // Where `keel login` sends you: just the question, like the sign-in screen, with nothing to wander off to.
+  if (here === '/terminal') {
+    return (
+      <AppContext.Provider value={ctx}>
+        <TerminalSignIn />
+      </AppContext.Provider>
+    );
+  }
+  // The terminal app in the browser: the whole window, as a terminal is, without the menu (q goes back to the Dashboard).
+  if (here === '/cli') {
+    return (
+      <AppContext.Provider value={ctx}>
+        <Suspense fallback={<div className="boot"><Loading /></div>}><WebTerminal /></Suspense>
+      </AppContext.Provider>
+    );
+  }
+
+  return (
+    <AppContext.Provider value={ctx}>
+      <Shell />
+      <CommandPalette />
+      <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')}>
+        {drawer?.type === 'pr' && <PrDetail target={drawer} />}
+        {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
+        {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
+        {drawer?.type === 'commit' && <CommitDetail key={`${drawer.repoId}:${drawer.id}`} target={drawer} />}
+        {drawer?.type === 'deploy' && <DeployDetail key={`${drawer.target}:${drawer.id}`} target={drawer} />}
+        {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
+        {drawer?.type === 'newworkitem' && <NewWorkItem key={JSON.stringify(drawer)} preset={drawer} />}
+      </Drawer>
+      <div className="toasts" aria-live="polite">
+        {toasts.map((item) => (
+          <div key={item.id} className={`toast toast-${item.tone}`}>
+            <div className="toast-text">
+              <strong>{item.text}</strong>
+              {item.body && <span className="toast-body">{item.body}</span>}
+            </div>
+            {item.action && <button type="button" className="toast-action" onClick={() => { item.action.onClick(); dismiss(item.id); }}>{item.action.label}</button>}
+            {(item.action || item.body) && <button type="button" className="toast-close" aria-label={t('Dismiss')} onClick={() => dismiss(item.id)}>✕</button>}
+          </div>
+        ))}
+      </div>
+    </AppContext.Provider>
+  );
+}
+
+/**
+ * After an action or auto-refresh, lists can lose rows (a reviewed PR leaves
+ * "Needs my review", a snoozed item leaves the inbox). If you're scrolled near
+ * the bottom, the shorter page would yank you upward. Hold the current height
+ * until you navigate, so content changes never move the viewport.
+ */
+function useStableHeight(ref, refreshKey) {
+  const { pathname, search } = useLocation();
+  const seen = useRef(refreshKey);
+  useLayoutEffect(() => {
+    if (seen.current === refreshKey || !ref.current) return;
+    seen.current = refreshKey;
+    const el = ref.current;
+    el.style.minHeight = `${Math.max(el.offsetHeight, parseFloat(el.style.minHeight) || 0)}px`;
+  }, [refreshKey, ref]);
+  useEffect(() => {
+    if (ref.current) ref.current.style.minHeight = '';
+  }, [pathname, search, ref]);
+}
+
+function Shell() {
+  const [collapsed, setCollapsed] = useSticky('sidebar.collapsed', false);
+  // Phones: a tab bar at the bottom, whose More tab opens the whole menu as a sheet; it closes when you go somewhere.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname, search } = useLocation();
+  useEffect(() => setMenuOpen(false), [pathname, search]);
+  const menuRef = useRef(null);
+  const moreRef = useRef(null);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setMenuOpen(false);
+      moreRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    menuRef.current?.focus({ preventScroll: true });
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
+  const { meta, refresh, toast, refreshKey, authMode, signOut, can, live } = useApp();
+  const newVersion = useNewVersion();
+  const mainRef = useRef(null);
+  useStableHeight(mainRef, refreshKey);
+  const { data: attention } = useApi('/attention');
+  const [spinning, setSpinning] = useState(false);
+  const s = attention?.summary;
+  // Pinch in the corner reacts to what Keel sees, and says why on hover.
+  const mood = pinchMood({ attention, live, busy: spinning });
+
+  // Browser tab title carries the "act now" count, so it shows on a background tab.
+  useEffect(() => {
+    document.title = s?.high ? `(${s.high}) Keel` : 'Keel';
+  }, [s?.high]);
+
+  const hardRefresh = async () => {
+    setSpinning(true);
+    try {
+      await api('/refresh', { method: 'POST' });
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setTimeout(() => setSpinning(false), 400);
+    }
+  };
+
+  // Grouped by what you're doing: today's triage, planning work, shipping code, the people.
+  const nav = [
+    { items: [
+      { to: '/', label: t('Dashboard'), icon: 'dashboard', end: true },
+      { to: '/inbox', label: t('Inbox'), icon: 'inbox', count: s?.high, tone: 'bad' },
+      { to: '/summary', label: t('Weekly summary'), icon: 'summary' },
+    ] },
+    { label: t('Work'), items: [
+      // Epics is a tab of Work items (ui.jsx WorkTabs).
+      { to: '/work', label: t('Work items'), icon: 'workItems', also: ['/epics'] },
+      { to: '/board', label: t('Board'), icon: 'board' },
+    ] },
+    { label: t('Code and delivery'), items: [
+      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits', '/release-notes'] },
+      { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
+      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals', '/ship'] },
+    ] },
+    { label: t('People'), items: [
+      // Users is a tab of Team, for Admins of a Keel with accounts (ui.jsx TeamTabs).
+      { to: '/team', label: t('Team'), icon: 'team', also: ['/users'] },
+      { to: '/insights', label: t('Insights'), icon: 'insights' },
+    ] },
+  ];
+
+  // Collapsed: icons only, names on hover (desktop; phones have the tab bar instead).
+  const tip = (label) => (collapsed ? label : undefined);
+  const lit = (n) => pathname === n.to || (!n.end && pathname.startsWith(`${n.to}/`)) || !!n.also?.some((p) => pathname.startsWith(p));
+
+  // The phone tab bar: the four places you check most, with shorter names, then More.
+  const items = nav.flatMap((g) => g.items);
+  const tabs = [['/', t('Home')], ['/inbox', t('Inbox')], ['/prs', t('PRs')], ['/production', t('Production')]]
+    .map(([to, short]) => ({ ...items.find((n) => n.to === to), short }));
+  // More carries the counts of what's only in the menu (approvals and failing pipelines).
+  const rest = items.filter((n) => !tabs.some((x) => x.to === n.to));
+  const moreCount = rest.reduce((sum, n) => sum + (n.count || 0), 0);
+  const moreTone = rest.some((n) => n.count > 0 && n.tone === 'bad') ? 'bad' : 'accent';
+  const moreLit = menuOpen || !tabs.some(lit);
+  const badge = (count, tone) => count > 0 && (
+    <span className={`nav-count nav-count-${tone}`} title={t(count === 1 ? '{n} needs attention' : '{n} need attention', { n: count })}>{count}</span>
+  );
+
+  return (
+    <div className={`shell${collapsed ? ' shell-collapsed' : ''}${menuOpen ? ' menu-open' : ''}`}>
+      <nav className="sidebar" aria-label={t('Main')}>
+        <div className="brand">
+          <Logo mood={mood} title={pinchLine(mood, { attention, live })} />
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? t('Expand menu') : t('Collapse menu')}
+            title={collapsed ? t('Expand menu') : t('Collapse menu')}
+          >
+            <Icon name={collapsed ? 'expand' : 'collapse'} />
+          </button>
+          <div className="brand-text">
+            <div className="brand-name">Keel</div>
+            <div className="brand-org truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>{meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\//, '')}</div>
+          </div>
+        </div>
+        <button type="button" className="search-btn" onClick={() => window.dispatchEvent(new Event('keel:palette'))} title={tip(t('Search (Ctrl+K)'))} aria-label={t('Search (Ctrl+K)')}>
+          <Icon name="search" /><span className="nav-text">{t('Search')}</span><kbd className="nav-text">{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>
+        </button>
+        {/* Desktop: just the sidebar's contents. Phones: the sheet More opens. */}
+        <div className="sidebar-menu" id="main-menu" ref={menuRef} tabIndex={-1} role={menuOpen ? 'dialog' : undefined} aria-modal={menuOpen || undefined} aria-label={menuOpen ? t('Menu') : undefined}>
+          <div className="sheet-head">
+            <strong>{t('Menu')}</strong>
+            <button type="button" className="drawer-close" onClick={() => setMenuOpen(false)} aria-label={t('Close')}>✕</button>
+          </div>
+          <div className="nav-groups">
+            {nav.map((group, i) => (
+              <div key={group.label || i} className="nav-group">
+                {group.label && <div className="nav-group-label" id={`nav-group-${i}`}>{group.label}</div>}
+                <ul className="nav" aria-labelledby={group.label ? `nav-group-${i}` : undefined}>
+                  {group.items.map((n) => (
+                    <li key={n.to}>
+                      <NavLink
+                        to={n.to}
+                        end={n.end}
+                        // Entries with tabs (Pull requests → Commits and Release notes, Production → Waiting to ship and Platform totals) stay lit on every tab.
+                        className={({ isActive }) => `nav-link${isActive || n.also?.some((p) => pathname.startsWith(p)) ? ' active' : ''}`}
+                        title={tip(n.label)}
+                        aria-label={collapsed ? n.label : undefined}
+                      >
+                        <span className="nav-label"><Icon name={n.icon} /><span className="nav-text">{n.label}</span></span>
+                        {badge(n.count, n.tone)}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="sidebar-foot">
+            {/* The terminal app in the browser, on a page of its own (no menu); not on touch screens, which have no keys for it. */}
+            <NavLink to="/cli" className="nav-link nav-terminal" title={t('Below deck: Keel in the terminal, here in the browser')} aria-label={collapsed ? t('Below deck') : undefined}><span className="nav-label"><Icon name="terminal" /><span className="nav-text">{t('Below deck')}</span></span></NavLink>
+            <NavLink to="/settings" className="nav-link" title={tip(t('Settings'))} aria-label={collapsed ? t('Settings') : undefined}><span className="nav-label"><Icon name="settings" /><span className="nav-text">{t('Settings')}</span></span></NavLink>
+            <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning} title={tip(t('Refresh from Azure DevOps'))} aria-label={collapsed ? t('Refresh from Azure DevOps') : undefined}>
+              <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> <span className="nav-text">{t('Refresh from Azure DevOps')}</span>
+            </button>
+            <LiveStatus />
+            {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut} title={tip(t('Sign out'))} aria-label={collapsed ? t('Sign out') : undefined}><Icon name="signOut" size={14} /> <span className="nav-text">{t('Sign out')}</span></button>}
+            <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
+              {t('Signed in as {name}', { name: meta.account?.name || meta.me.displayName })}
+              {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <main className="main" ref={mainRef}>
+        {newVersion && (
+          <div className="update-banner" role="status">
+            <span>{t('A new version of Keel is available.')}</span>
+            <button type="button" className="btn btn-small btn-primary" onClick={updateNow}>{t('Update')}</button>
+          </div>
+        )}
+        {meta.mock && (
+          <div className="demo-banner">
+            {tj("You're looking at demo data ({reason}). Add {orgUrl} and {pat} to {env} and restart to connect your organization.", {
+              reason: tx(meta.mockReason), orgUrl: <code>AZDO_ORG_URL</code>, pat: <code>AZDO_PAT</code>, env: <code>.env</code>,
+            })}
+          </div>
+        )}
+        {!meta.trackedProjects.length && (
+          <div className="demo-banner">
+            {tj('No projects tracked yet. {link} to fill the console.', { link: <NavLink to="/settings">{t('Choose your projects and repos')}</NavLink> })}
+          </div>
+        )}
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/inbox" element={<Inbox />} />
+          <Route path="/summary" element={<Summary />} />
+          <Route path="/prs" element={<PullRequests />} />
+          <Route path="/commits" element={<Commits />} />
+          <Route path="/release-notes" element={<ReleaseNotes />} />
+          <Route path="/work" element={<WorkItems />} />
+          <Route path="/board" element={<Board />} />
+          <Route path="/sprint" element={<Navigate to="/board?mode=sprint" replace />} />
+          <Route path="/epics" element={<Epics />} />
+          <Route path="/pipelines" element={<Pipelines />} />
+          <Route path="/production" element={<Production />} />
+          <Route path="/ship" element={<Shipping />} />
+          <Route path="/totals" element={<Totals />} />
+          <Route path="/totals/:id" element={<Totals />} />
+          <Route path="/team" element={<Team />} />
+          <Route path="/insights" element={<Insights />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/users" element={<Users />} />
+          {/* Unknown paths go home. */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </main>
+      {menuOpen && <div className="menu-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
+      <nav className="tabbar" aria-label={t('Shortcuts')}>
+        {tabs.map((n) => (
+          <NavLink key={n.to} to={n.to} end={n.end} className={() => `tab${lit(n) && !menuOpen ? ' active' : ''}`} aria-label={n.label} onClick={() => setMenuOpen(false)}>
+            <span className="tab-icon"><Icon name={n.icon} />{badge(n.count, n.tone)}</span>
+            <span className="tab-label" aria-hidden="true">{n.short}</span>
+          </NavLink>
+        ))}
+        <button type="button" ref={moreRef} className={`tab${moreLit ? ' active' : ''}`} aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
+          <span className="tab-icon"><Icon name={menuOpen ? 'close' : 'more'} />{!menuOpen && badge(moreCount, moreTone)}</span>
+          <span className="tab-label">{t('More')}</span>
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+/** "Live · checked 12s ago", or why live updates are paused. */
+function LiveStatus() {
+  const { live } = useApp();
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((n) => n + 1), 5000);
+    return () => clearInterval(timer);
+  }, []);
+  const ago = live.lastPollAt ? Math.max(0, Math.round((Date.now() - Date.parse(live.lastPollAt)) / 1000)) : null;
+  let tone = 'ok';
+  let text = ago === null ? t('Live · checking…')
+    : ago < 60 ? t('Live · checked {n}s ago', { n: ago })
+      : t('Live · checked {n}m ago', { n: Math.round(ago / 60) });
+  let title = t('Checks Azure DevOps every {n}s while the console is open', { n: live.intervalSeconds || '…' });
+  if (!live.connected) {
+    tone = 'warn';
+    text = t('Reconnecting…');
+    title = t('Lost the live connection to the server. Retrying every few seconds.');
+  } else if (!live.ok && live.error) {
+    tone = 'bad';
+    text = t("Can't reach Azure DevOps");
+    title = tx(live.error);
+  }
+  return <div className={`live live-${tone}`} title={`${text} · ${title}`}><span className="live-dot" aria-hidden="true" /><span className="live-text">{text}</span></div>;
+}
