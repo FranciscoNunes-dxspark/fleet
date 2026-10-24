@@ -4,11 +4,11 @@ import * as a from '../actions.js';
 import { accept, completeAt, signatureAt } from '../complete.js';
 import * as ed from '../editor.js';
 import { highlight, mask, oneLine, splitStatements, statementAt, withoutLeadingComments } from '../sql.js';
-import { fit, fitSegments, stringWidth } from '../text.js';
+import { fit, fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { theme } from '../theme.js';
-import { atLeast } from '../mouse.js';
-import { useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { atLeast } from '@fleet/kit/mouse.js';
+import { useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 const COLORS = () => ({ keyword: theme.accent, function: theme.func, string: theme.warn, comment: theme.dim, number: theme.number, variable: theme.routine });
 const KIND_COLORS = () => ({ join: theme.ok, expand: theme.ok, parameter: theme.routine, keyword: theme.accent, function: theme.func, procedure: theme.routine, table: theme.table, view: theme.view, schema: theme.schema, database: theme.schema });

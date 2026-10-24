@@ -8,12 +8,12 @@ import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { memoryCredentials } from '../src/credentials.js';
+import { memoryCredentials } from '@fleet/kit/credentials.js';
 import { environmentsFrom } from '../src/environments.js';
 import { fill } from '../src/variables.js';
 import { authorizationCode, clientCredentials, createTokens, deviceAuthorization, passwordGrant, pkcePair, readAuthConfig, refreshName } from '../src/oauth.js';
 import { runTests } from '../src/headless.js';
-import { readActivity } from '../src/family.js';
+import { readActivity } from '@fleet/kit/family.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;

@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { logActivity, readActivity } from '../src/family.js';
+import { logActivity, readActivity } from '@fleet/kit/family.js';
 import { addPending, endText, endsTransaction, rowsChanged, statementKind, timelineItems, wiringText, writeKinds, writeText } from '../src/timeline.js';
 import { App } from '../src/ui/App.jsx';
 

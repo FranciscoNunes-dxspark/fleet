@@ -1,13 +1,15 @@
+// First, so the kit knows which app this is before anything asks (configureApp).
+import './app.js';
 import React from 'react';
 import { render } from 'ink';
-import { COMPILED, VERSION } from './version.js';
-import { fetchLatest, installUpdate, removeOldExecutables } from './update.js';
+import { COMPILED, VERSION } from './app.js';
+import { fetchLatest, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { loadConfig } from './config.js';
 import { DEMO_CONNECTIONS } from './connections.js';
 import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
-import { familyDir } from './family.js';
-import { terminalMouse } from './mouse.js';
+import { familyDir } from '@fleet/kit/family.js';
+import { terminalMouse } from '@fleet/kit/mouse.js';
 import { notification } from './notify.js';
 import { parseArgs } from './launch.js';
 

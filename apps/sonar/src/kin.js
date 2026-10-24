@@ -2,7 +2,7 @@
 // who takes what, the paste rule, the copied note and Trawl's lines): what /family offers, and Ping's
 // mood in the family's words and its word on theirs. Pure.
 import { relative } from 'node:path';
-import { APP_NAMES, PET_NAMES, shareLine, trawlLine } from './family.js';
+import { APP_NAMES, PET_NAMES, shareLine, trawlLine } from '@fleet/kit/family.js';
 
 /**
  * /family: what the project in `p` (family.js projectAt) offers the siblings, as lines for their prompts:

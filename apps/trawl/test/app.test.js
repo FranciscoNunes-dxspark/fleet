@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { memoryCredentials } from '../src/credentials.js';
+import { memoryCredentials } from '@fleet/kit/credentials.js';
 import { DbError, findPassword, signIn, untrustedCert } from '../src/db.js';
 import { demoSession } from '../src/demo.js';
 import { applyTheme, theme } from '../src/theme.js';

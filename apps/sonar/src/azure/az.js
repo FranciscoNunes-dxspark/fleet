@@ -1,6 +1,6 @@
 // The Azure CLI's sign-in, which is all Sonar uses: tokens come from `az account get-access-token`,
 // as Trawl and Keel get theirs, so Sonar never sees a password or keeps a secret.
-import { run } from '../run.js';
+import { run } from '@fleet/kit/run.js';
 
 // Tokens last about an hour; one is used until five minutes before it runs out.
 const MARGIN_MS = 5 * 60 * 1000;

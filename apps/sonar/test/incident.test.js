@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { contextIn } from '../src/family.js';
+import { contextIn } from '@fleet/kit/family.js';
 import { deploymentsBefore, framesInCheckout, framesOf, gitLogCommand, incidentMarkdown, parseGitLog, requestContext, sqlTarget } from '../src/incident.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 

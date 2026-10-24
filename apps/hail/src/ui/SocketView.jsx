@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useInput } from 'ink';
 import { theme } from '../theme.js';
-import { wrap } from '../text.js';
+import { wrap } from '@fleet/kit/text.js';
 import { prettyMessage } from '../websocket.js';
-import { useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { wrapIndented } from './response.js';
 
 const clock = (at) => new Date(at).toTimeString().slice(0, 8);

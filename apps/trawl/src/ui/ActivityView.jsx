@@ -4,9 +4,9 @@ import * as a from '../actions.js';
 import { TOP_SORTS, TOP_SOURCES, activityRows, count, duration, shortDuration, jobDetails, nextSort, queryDetails, serverTime, sessionDetails } from '../activity.js';
 import { oneLine } from '../sql.js';
 import { theme } from '../theme.js';
-import { fit, relTime, wrap } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit, relTime, wrap } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 const STATUS_COLORS = () => ({ running: theme.ok, runnable: theme.ok, suspended: theme.warn, sleeping: theme.dim, background: theme.dim });
 

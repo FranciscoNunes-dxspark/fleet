@@ -9,7 +9,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
 import { columnKinds, drawChart, formatNumber, hbar, planChart, timeFormatter, toNumber, toTime } from '../src/chart.js';
-import { stringWidth } from '../src/text.js';
+import { stringWidth } from '@fleet/kit/text.js';
 import { App } from '../src/ui/App.jsx';
 
 const d = (s) => new Date(`${s}T00:00:00Z`);

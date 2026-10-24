@@ -3,9 +3,9 @@ import { Box, useInput } from 'ink';
 import { isTrouble } from '../crew.js';
 import { Replayer, SPEEDS, clock, marksOf, nextMark, timeline } from '../replay.js';
 import { theme } from '../theme.js';
-import { fit, stringWidth } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { fit, stringWidth } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { afterStatus, mergedLines, portSegments, statusSegment, testsSegments } from './CrewView.jsx';
 
 const STATUS_COLOUR = () => ({ running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del, exited: theme.dim, stopped: theme.dim });

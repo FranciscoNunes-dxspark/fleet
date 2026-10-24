@@ -12,7 +12,7 @@ import { connect } from './db.js';
 import { buildSchema, describeObject, findObject, objectName } from './schema.js';
 import { dialectOf } from './dialects.js';
 import { classifyScript, formatValue } from './sql.js';
-import { VERSION } from './version.js';
+import { VERSION } from './app.js';
 
 const PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25'];
 const MAX_ROWS = 1000;

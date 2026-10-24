@@ -1,7 +1,7 @@
 // The /settings list: every setting, its value and what ↵ does with it. Pure, so the list is tested
 // without the UI; actions.js shows it in a picker and makes the changes.
 import { DEFAULT_ACCENT, LIGHT_ACCENT, THEMES, theme } from './theme.js';
-import { fit } from './text.js';
+import { fit } from '@fleet/kit/text.js';
 import { notifySeconds } from './notify.js';
 import { SPLIT_WIDTH } from './split.js';
 

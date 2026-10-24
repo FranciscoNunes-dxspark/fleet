@@ -1,6 +1,7 @@
 // One palette for the whole UI, dark or light (the Theme setting: "theme": "dark" | "light" | "auto"
 // in the config). The accent can be changed too, in /settings ("accent": "#hex"). Everything on
 // screen takes its colours from `theme`, read as it draws, so applyTheme repaints the next frame.
+import { theme as kitTheme } from '@fleet/kit/theme.js';
 export const DARK = {
   accent: '#5fd787', // DEFAULT_ACCENT, below
   border: '#5f5f5f',
@@ -47,7 +48,8 @@ export const LIGHT = {
   lanes: ['#005fd7', '#d75f00', '#00875f', '#8700af', '#af8700', '#008787', '#d7005f', '#5f8700'],
 };
 
-export const theme = { ...DARK, mode: 'dark' };
+// The kit's theme object (the kit's parts draw from it too), filled with this app's palette.
+export const theme = Object.assign(kitTheme, DARK, { mode: 'dark' });
 
 // Windows terminals draw ⏺ as a wide emoji, so use the plain circle there (as Claude Code does).
 export const BULLET = process.platform === 'win32' ? '●' : '⏺';

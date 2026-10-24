@@ -1,7 +1,7 @@
 // Trawl's side of the family (family.js is the part every sibling shares, the names, who takes what and
 // Trawl's lines among it): what it hands the others, what it does with what they hand it, the databases
 // a project's files name, and Glim's mood in the family's words. Pure.
-import { APP_NAMES, PET_NAMES, databaseOf, quoteArg, shareLine, takeLine, trawlLine } from './family.js';
+import { APP_NAMES, PET_NAMES, databaseOf, quoteArg, shareLine, takeLine, trawlLine } from '@fleet/kit/family.js';
 import { serverHost } from './azure.js';
 import { DEMO_CONNECTIONS } from './connections.js';
 import { valueLiteral } from './edit.js';

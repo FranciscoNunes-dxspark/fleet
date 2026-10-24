@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { contextIn } from '../src/family.js';
+import { contextIn } from '@fleet/kit/family.js';
 import { API_SYSTEM, apiFileName, apiLanguage, apiPrompt, apiRequest, parseApi, projectLanguage } from '../src/api.js';
 import { App } from '../src/ui/App.jsx';
 

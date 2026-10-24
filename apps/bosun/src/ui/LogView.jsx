@@ -1,9 +1,9 @@
 import React from 'react';
 import { useInput } from 'ink';
 import { BULLET, theme } from '../theme.js';
-import { relTime } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { relTime } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 const COLOURS = () => ({ error: theme.del, ok: theme.accent, running: theme.dim, info: theme.info });
 

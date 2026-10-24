@@ -5,9 +5,9 @@ import { relTime } from '../parse.js';
 import { commitDetail, commitSignature } from '../repo.js';
 import { signatureLine } from '../signing.js';
 import { codeColor, theme } from '../theme.js';
-import { fit, fitSegments, wrap } from '../text.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit, fitSegments, wrap } from '@fleet/kit/text.js';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /** A row's graph cells (from `layoutGraph`) as segments, cut or padded to `width`. */
 export function graphSegments(cells, width) {

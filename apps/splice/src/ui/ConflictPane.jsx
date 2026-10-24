@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseConflicts } from '../conflict.js';
 import { theme } from '../theme.js';
-import { Panel, Row } from './parts.jsx';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 // Lines of the file shown above and below each block.
 const CONTEXT = 3;

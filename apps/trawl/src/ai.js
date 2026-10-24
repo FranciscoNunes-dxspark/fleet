@@ -2,9 +2,9 @@
 // A connection's `ai` level decides: 'off' (nothing), 'schema' (table and column names, SQL text
 // and error messages) or 'results' (rows too). Rows are data that leaves this machine, so a
 // connection only sends them once you've said so.
-import { runClaude } from './claude-cli.js';
+import { runClaude } from '@fleet/kit/claude-cli.js';
 import { objectName } from './schema.js';
-import { wrap } from './text.js';
+import { wrap } from '@fleet/kit/text.js';
 
 export const AI_LEVELS = ['off', 'schema', 'results'];
 

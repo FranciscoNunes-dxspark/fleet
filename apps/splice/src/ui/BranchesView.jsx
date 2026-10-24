@@ -5,11 +5,11 @@ import { prsByBranch } from '../hosting.js';
 import { defaultBranch, isDefaultBranch, relTime } from '../parse.js';
 import { compareRefs, refLog } from '../repo.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
+import { fit } from '@fleet/kit/text.js';
 import { useForecasts } from './forecasts.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { usePrList } from './prList.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { TONE, checksText } from './PrView.jsx';
 
 function track(b) {

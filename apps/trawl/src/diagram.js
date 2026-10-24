@@ -2,7 +2,7 @@
 // for the terminal, or as a Mermaid erDiagram. Pure, over the loaded schema (schema.js buildSchema's
 // objects and foreignKeys), so it is the same for SQL Server, Postgres and MySQL.
 import { findObject, objectName } from './schema.js';
-import { fit, stringWidth } from './text.js';
+import { fit, stringWidth } from '@fleet/kit/text.js';
 
 /**
  * The tables and keys to draw: { root, nodes: [{ name, layer, object }], edges: [foreign key], depth }

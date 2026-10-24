@@ -1,7 +1,7 @@
 // What the siblings copy for Sonar, taken at its prompt: /take <context>, or the context on its own.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { takeLine, encodeContext } from '../src/family.js';
+import { takeLine, encodeContext } from '@fleet/kit/family.js';
 import { deploymentHasCommit, take } from '../src/actions.js';
 import { problemLike } from '../src/ui/ProblemsView.jsx';
 import { BULLET } from '../src/theme.js';

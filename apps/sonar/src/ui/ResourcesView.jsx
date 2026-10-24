@@ -11,9 +11,9 @@ import { autoscaleSummary, planLine } from '../scale.js';
 import { productionShare } from '../routing.js';
 import { totals } from '../servicebus.js';
 import { theme } from '../theme.js';
-import { fit, relTime, stringWidth } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit, relTime, stringWidth } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /** Green for running (or ready, online, available), red for stopped, yellow for anything in between. */
 export const stateColour = (state) => (/^(Running|Ready|Online|Available|Succeeded)$/i.test(state) ? theme.add : /^(Stopped|Paused|Disabled|Offline|Failed)$/i.test(state) ? theme.del : theme.warn);

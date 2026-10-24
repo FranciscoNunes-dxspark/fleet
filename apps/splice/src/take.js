@@ -1,6 +1,6 @@
 // What Splice does with a context a sibling app copied (family.js's /take family:v1:…), and the lines it
 // hands them. Pure: actions.js's `take` asks git and opens the pickers.
-import { TAKEN_BY, matchFrameFile, stackFrames } from './family.js';
+import { TAKEN_BY, matchFrameFile, stackFrames } from '@fleet/kit/family.js';
 
 /** The kinds Splice takes (family.js's TAKEN_BY says the same). */
 export const TAKES = Object.keys(TAKEN_BY).filter((k) => TAKEN_BY[k].includes('splice'));

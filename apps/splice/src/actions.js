@@ -61,7 +61,7 @@ import { SIGNING_KEYS, checkGpgKey, explainSigning, needsPinentryCheck, parseVer
 import { LFS_MISSING, lfsCommand, lfsError, lfsText, parseLfsFiles, parseLfsLocks, withoutHints } from './lfs.js';
 import { run as runGit } from './git.js';
 import { commitsLine, insideSummary, parseGitlinks, parseInside, submoduleInfo } from './submodules.js';
-import { fit } from './text.js';
+import { fit } from '@fleet/kit/text.js';
 import { futureItems, futureRefspecs, lineInBase, nameList, touchingHunks } from './future.js';
 import { historyArgs, outgoingArgs, parseRiskLog, riskBlobs, riskFiles, riskSummary, riskText, scoreRisk } from './risk.js';
 import { familyOffers } from './siblings.js';
@@ -70,7 +70,7 @@ import { NOTES_REFSPEC, noteArgs, notePrefill, notesArgs, withKeptNote } from '.
 import { COMMIT_HOOKS, PUSH_HOOKS, hookArgs, hookRows, hookRunArgs } from './githooks.js';
 import { CODEOWNERS_PATHS, changedOwnersText, ownersOfFiles, ownersText, reviewerNames } from './codeowners.js';
 import { TAKES, exceptionFrames, framesInRepo, pathAndLine } from './take.js';
-import { APP_NAMES, FAMILY, TAKEN_BY, contextIn, copiedNote, describeContext, familyDir, logActivity, matchFrameFile, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine } from './family.js';
+import { APP_NAMES, FAMILY, TAKEN_BY, contextIn, copiedNote, describeContext, familyDir, logActivity, matchFrameFile, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine } from '@fleet/kit/family.js';
 import { DEFAULT_ACCENT, applyTheme, isColour, setAccent, theme } from './theme.js';
 import {
   REFLOG_FORMAT,

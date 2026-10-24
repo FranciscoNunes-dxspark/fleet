@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
-import { contextIn, encodeContext, takeLine } from '../src/family.js';
+import { contextIn, encodeContext, takeLine } from '@fleet/kit/family.js';
 import { TAKES, exceptionFrames, framesInRepo, pathAndLine } from '../src/take.js';
 import { App } from '../src/ui/App.jsx';
 

@@ -6,9 +6,9 @@ import { relTime } from '../parse.js';
 import { worktreeDetail } from '../repo.js';
 import { eachLimited, summarize } from '../repos.js';
 import { codeColor, theme } from '../theme.js';
-import { fit } from '../text.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit } from '@fleet/kit/text.js';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { summaryText } from './ReposView.jsx';
 
 function branchLabel(w) {

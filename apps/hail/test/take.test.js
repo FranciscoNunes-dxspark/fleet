@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encodeContext, takeLine } from '../src/family.js';
+import { encodeContext, takeLine } from '@fleet/kit/family.js';
 import { findByRequestId, hostVariable, idsIn, replaceBody, replayBlock, rowsJson, rowsRequestBlock } from '../src/takes.js';
 import { KEYS, start, tempHome, until } from './helpers.js';
 

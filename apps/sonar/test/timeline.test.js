@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { logActivity, readActivity } from '../src/family.js';
+import { logActivity, readActivity } from '@fleet/kit/family.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;

@@ -3,9 +3,9 @@ import { useInput } from 'ink';
 import { showAlert } from '../actions.js';
 import { openUrl } from '../open.js';
 import { theme } from '../theme.js';
-import { fit, relTime } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { fit, relTime } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /** Sev0 and Sev1 are red, Sev2 yellow, the rest blue. */
 export const severityColour = (sev) => (/^Sev[01]$/.test(sev) ? theme.del : sev === 'Sev2' ? theme.warn : theme.info);

@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DEMO_CONNECTIONS, cleanFolder, connectionRows } from './connections.js';
-import { STORE_NAME } from './credentials.js';
+import { STORE_NAME } from '@fleet/kit/credentials.js';
 
 const decode = (s) =>
   String(s ?? '')

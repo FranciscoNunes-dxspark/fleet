@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encodeContext, familyDir, quoteArg, shareLine, writeMood } from '../src/family.js';
+import { encodeContext, familyDir, quoteArg, shareLine, writeMood } from '@fleet/kit/family.js';
 import { pathArg } from '../src/files.js';
 import { familyOffers } from '../src/actions.js';
 import { familyMood, reactionLine } from '../src/pet.js';

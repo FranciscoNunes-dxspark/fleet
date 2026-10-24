@@ -2,13 +2,13 @@ import React from 'react';
 import { Box, useInput } from 'ink';
 import { configDir } from '../config.js';
 import { ACCENTS, THEMES, applyTheme, setAccent, theme } from '../theme.js';
-import { relTime, wrap } from '../text.js';
-import { checksDisabled } from '../update.js';
+import { relTime, wrap } from '@fleet/kit/text.js';
+import { checksDisabled } from '@fleet/kit/update.js';
 import { NOTIFY_AFTER } from '../notify.js';
 import { minutesText, nextWarnMinutes, warnMinutes } from '../transactions.js';
-import { VERSION } from '../version.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { VERSION } from '../app.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 const LABEL_W = 20;
 

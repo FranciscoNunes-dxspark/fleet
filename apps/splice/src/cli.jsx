@@ -1,16 +1,18 @@
+// First, so the kit knows which app this is before anything asks (configureApp).
+import './app.js';
 import React from 'react';
 import { render } from 'ink';
 import { resolve } from 'node:path';
-import { COMPILED, VERSION } from './version.js';
+import { COMPILED, VERSION } from './app.js';
 import { loadConfig } from './config.js';
 import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
-import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js';
+import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { ask } from './claude.js';
-import { copyToClipboard } from './clipboard.js';
-import { terminalMouse } from './mouse.js';
+import { copyToClipboard } from '@fleet/kit/clipboard.js';
+import { terminalMouse } from '@fleet/kit/mouse.js';
 import { notification } from './notify.js';
-import { familyDir } from './family.js';
+import { familyDir } from '@fleet/kit/family.js';
 
 const args = process.argv.slice(2);
 

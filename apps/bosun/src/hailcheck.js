@@ -2,7 +2,7 @@
 // `hail test` once its port answers, and again after each restart. The command line and reading the
 // outcome are pure; `hailTest` runs it through run.js when hail is on the PATH.
 import { findOnPath } from './which.js';
-import { run } from './run.js';
+import { run } from '@fleet/kit/run.js';
 
 /** bosun.json's "test": "api.http" or { "file": "api.http", "env": "dev" }, as { file, env }; null when it's neither. */
 export function testSpec(value) {

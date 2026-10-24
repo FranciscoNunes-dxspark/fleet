@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
-import { encodeContext, projectAt, shareLine, takeLine, writeMood } from '../src/family.js';
+import { encodeContext, projectAt, shareLine, takeLine, writeMood } from '@fleet/kit/family.js';
 import { familyMood, familyOffers, moodsToShow, reactionText, trawlName } from '../src/siblings.js';
 import { App } from '../src/ui/App.jsx';
 

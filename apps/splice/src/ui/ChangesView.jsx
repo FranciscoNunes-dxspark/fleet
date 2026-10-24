@@ -9,9 +9,9 @@ import { ownersLine, ownersOf } from '../codeowners.js';
 import { wordChanges } from '../search.js';
 import { SPLIT_WIDTH, rowLines, splitView } from '../split.js';
 import { codeColor, theme } from '../theme.js';
-import { clean, fitSegments } from '../text.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { clean, fitSegments } from '@fleet/kit/text.js';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { diffSegments } from './diffstyle.js';
 import { ConflictPane, useConflicts } from './ConflictPane.jsx';
 

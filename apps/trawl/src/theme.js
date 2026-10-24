@@ -1,6 +1,7 @@
 // One palette for the whole UI, dark or light (the Theme setting: "theme": "dark" | "light" | "auto"
 // in ~/.trawl/config.json). The accent can be changed too ("accent": "#hex"). Everything on screen
 // takes its colours from `theme`, read as it draws, so applyTheme repaints the next frame.
+import { theme as kitTheme } from '@fleet/kit/theme.js';
 export const DARK = {
   accent: '#5fafff',
   border: '#5f5f5f',
@@ -42,7 +43,8 @@ export const LIGHT = {
   bangMode: '#d7005f',
 };
 
-export const theme = { ...DARK, mode: 'dark' };
+// The kit's theme object (the kit's parts draw from it too), filled with this app's palette.
+export const theme = Object.assign(kitTheme, DARK, { mode: 'dark' });
 
 // Windows terminals draw ⏺ as a wide emoji, so use the plain circle there (as Claude Code does).
 export const BULLET = process.platform === 'win32' ? '●' : '⏺';

@@ -12,7 +12,7 @@ import { DEFAULT_PORT, routesFor, startMock } from './mock.js';
 import { changedOnly, lineDiff } from './diff.js';
 import { pathArg, writeExample } from './files.js';
 import { previousOf } from './history.js';
-import { run } from './run.js';
+import { run } from '@fleet/kit/run.js';
 import { checkSummary } from './checks.js';
 import { exchange, inRun, reportLines, runFailed, summaryLine } from './runner.js';
 import { grpcSend } from './grpc.js';
@@ -25,8 +25,8 @@ import { parseTimeout } from './transport.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
 import { applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
 import { checkLines, contractLines, statusColour } from './ui/response.js';
-import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, shareLine, trawlLine } from './family.js';
-import { fit, relTime } from './text.js';
+import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, shareLine, trawlLine } from '@fleet/kit/family.js';
+import { fit, relTime } from '@fleet/kit/text.js';
 import { findByRequestId, hostVariable, idsIn, replayBlock, startsWithVariable, rowsJson, rowsRequestBlock, tablePath } from './takes.js';
 
 const YES_NO = (yes) => [

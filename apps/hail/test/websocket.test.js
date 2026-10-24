@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { memoryCredentials } from '../src/credentials.js';
+import { memoryCredentials } from '@fleet/kit/credentials.js';
 import { parseHttpFile, highlight } from '../src/http-file.js';
 import { openSocket, socketMessages, socketUrl, transcript } from '../src/websocket.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';

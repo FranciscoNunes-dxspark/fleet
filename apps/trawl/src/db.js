@@ -5,7 +5,7 @@
 import net from 'node:net';
 import { az as runAz, azureSqlToken, passwordFromApp } from './azure.js';
 import { tediousConfig } from './connections.js';
-import { STORE_NAME, osCredentials } from './credentials.js';
+import { STORE_NAME, osCredentials } from '@fleet/kit/credentials.js';
 import { demoSession } from './demo.js';
 import { dialectOf } from './dialects.js';
 import { splitBatches } from './sql.js';

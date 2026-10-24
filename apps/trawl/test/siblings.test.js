@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { contextIn, projectAt, readMoods, shareLine, takeLine, writeMood } from '../src/family.js';
+import { contextIn, projectAt, readMoods, shareLine, takeLine, writeMood } from '@fleet/kit/family.js';
 import { connectionForQuery, familyMood, familyOffers, moodsToShow, reactionText, rowsContext, rowsScript } from '../src/siblings.js';
 import { App } from '../src/ui/App.jsx';
 

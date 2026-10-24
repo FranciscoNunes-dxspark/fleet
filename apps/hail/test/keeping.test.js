@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { draftPrompt, parseDraft } from '../src/claude.js';
-import { memoryCredentials } from '../src/credentials.js';
+import { memoryCredentials } from '@fleet/kit/credentials.js';
 import { changedOnly, lineDiff } from '../src/diff.js';
 import { appendHistory, entryFor, historyFile, latestByLabel, previousOf, readHistory } from '../src/history.js';
 import { parseHttpFile } from '../src/http-file.js';

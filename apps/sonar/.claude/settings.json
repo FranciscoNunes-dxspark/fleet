@@ -3,7 +3,7 @@
   "permissions": {
     "allow": [
       "Bash(npm test)",
-      "Bash(node --import ./src/register.js --test *)",
+      "Bash(node --import @fleet/kit/register.js --import ./src/app.js --test *)",
       "Bash(npm run build)",
       "Bash(npm run build:all)",
       "Bash(node scripts/logo.js)",
@@ -14,7 +14,7 @@
       "Bash(git log *)",
       "Bash(git show *)",
       "PowerShell(npm test)",
-      "PowerShell(node --import ./src/register.js --test *)",
+      "PowerShell(node --import @fleet/kit/register.js --import ./src/app.js --test *)",
       "PowerShell(npm run build)",
       "PowerShell(npm run build:all)",
       "PowerShell(node scripts/logo.js)",

@@ -6,11 +6,11 @@ import { label } from './azure/arm.js';
 import { EXPORTS } from './export.js';
 import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
 import { mapLimited, sqlByLabel } from './tree.js';
-import { clip } from './claude-cli.js';
+import { clip } from '@fleet/kit/claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, compareQueries, compareWindows, componentFor, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround, workspaceStarter } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
-import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, takeLine, trawlLine } from './family.js';
+import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, takeLine, trawlLine } from '@fleet/kit/family.js';
 import { familyChoices } from './kin.js';
 import { referenceWords, resolved as refResolved } from './keyvault.js';
 import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, prettyBody, triggerLabel, withDisabled } from './functions.js';
@@ -22,10 +22,10 @@ import { chartOf, renderKind } from './chart.js';
 import { VIEW_MAX, blobUrl, isText, shortName, sizeText } from './blobs.js';
 import { dataExplorerUrl, throughputText } from './cosmos.js';
 import { openUrl } from './open.js';
-import { run } from './run.js';
+import { run } from '@fleet/kit/run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
 import { BULLET, applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
-import { fit, relTime } from './text.js';
+import { fit, relTime } from '@fleet/kit/text.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 

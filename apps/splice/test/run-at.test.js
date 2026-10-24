@@ -10,7 +10,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
 import { planCleanup, runAtHash } from '../src/cleanup.js';
-import { shareLine } from '../src/family.js';
+import { shareLine } from '@fleet/kit/family.js';
 import { runAtPath } from '../src/prflow.js';
 import { App } from '../src/ui/App.jsx';
 

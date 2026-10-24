@@ -2,10 +2,10 @@
 // sees a key. The prompts and the parsing of answers are pure, for tests; `ask` (the family's shared
 // claude-cli.js) runs the CLI.
 import { hasMarkers } from './conflict.js';
-import { clip } from './claude-cli.js';
+import { clip } from '@fleet/kit/claude-cli.js';
 import { isoDate } from './parse.js';
 
-export { ask, clip } from './claude-cli.js';
+export { ask, clip } from '@fleet/kit/claude-cli.js';
 
 // Explaining and reviewing may look at the rest of the repository, but never change it or run anything.
 export const READ_ONLY = ['Read', 'Grep', 'Glob'];

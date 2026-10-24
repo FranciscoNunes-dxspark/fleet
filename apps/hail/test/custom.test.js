@@ -1,7 +1,7 @@
 // The command palette, your own commands and your own keys, through the real UI.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseKey } from '../src/keymap.js';
+import { parseKey } from '@fleet/kit/keymap.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;

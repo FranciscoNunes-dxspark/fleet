@@ -15,7 +15,7 @@ import {
   splitArgs,
 } from '../src/parse.js';
 import { suggestionsFor, findCommand } from '../src/commands.js';
-import { fitSegments, clean } from '../src/text.js';
+import { fitSegments, clean } from '@fleet/kit/text.js';
 import { graphSegments, refPills } from '../src/ui/GraphView.jsx';
 
 test('status: branch header, all entry kinds, and paths with spaces', () => {

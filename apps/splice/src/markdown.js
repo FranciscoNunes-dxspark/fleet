@@ -1,5 +1,5 @@
 import { theme } from './theme.js';
-import { clean, stringWidth } from './text.js';
+import { clean, stringWidth } from '@fleet/kit/text.js';
 
 // Escapes, `code`, images, [links](url), <autolinks>, HTML tags (dropped), **bold**, ~~strike~~, *italic*, _italic_.
 const INLINE =

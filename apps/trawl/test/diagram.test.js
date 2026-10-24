@@ -9,7 +9,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
 import { boxColumns, diagramGraph, drawDiagram, mermaidDiagram, parseDiagramArgs } from '../src/diagram.js';
-import { stringWidth } from '../src/text.js';
+import { stringWidth } from '@fleet/kit/text.js';
 import { App } from '../src/ui/App.jsx';
 
 const col = (name, type, extra = {}) => ({ name, type, nullable: false, identity: false, pk: false, ...extra });

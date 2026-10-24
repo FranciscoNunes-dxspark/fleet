@@ -8,7 +8,7 @@
 // anywhere but to the request that asked for it.
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
-import { callSignal } from './run.js';
+import { callSignal } from '@fleet/kit/run.js';
 import { fill } from './variables.js';
 
 export const GRANTS = {

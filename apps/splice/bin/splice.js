@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import '../src/register.js';
+import '@fleet/kit/register.js';
 
 // React's development build is several times slower and only adds warnings. React picks its build
 // when first imported, so NODE_ENV is set for these imports only and then put back: git hooks run
