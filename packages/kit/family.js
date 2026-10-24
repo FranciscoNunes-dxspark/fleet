@@ -4,6 +4,7 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { handOff } from './hosted.js';
 
 export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail'];
 
@@ -67,9 +68,15 @@ export const TAKEN_BY = {
 
 const either = (apps) => apps.map((a) => APP_NAMES[a] ?? a).join(' or ');
 
-/** The log line for a share copied for `apps` (one app or a list), with the line or the context's description. */
+/**
+ * The log line for a share copied for `apps` (one app or a list), with the line or the context's
+ * description. Every app says this right after copying a line for a sibling, so it's also where an app
+ * running inside Fleet tells the host (hosted.js handOff), which switches to the sibling and types the
+ * line into its prompt; outside the host that does nothing.
+ */
 export function copiedNote(apps, line) {
   const list = [].concat(apps);
+  handOff(list, line);
   const what = contextIn(line) ? describeContext(contextIn(line)) : line;
   return `Copied for ${either(list)}: paste it into ${list.length === 1 ? `${APP_NAMES[list[0]] ?? list[0]}'s` : "one's"} prompt. ${what}`;
 }

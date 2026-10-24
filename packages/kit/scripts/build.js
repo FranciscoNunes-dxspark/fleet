@@ -5,18 +5,28 @@
 //   bun ../../packages/kit/scripts/build.js bun-linux-x64   specific targets
 // It reads the app's package.json (the version, and an optional "fleet" section: `entry`, the app's
 // entry point, default src/cli.jsx; `app`, its configureApp module, default src/app.js; `out`, the
-// output folder, default dist; `compile`, more of Bun's compile options) and the app's names from
-// its configureApp module. Output goes to <out>/<app>-<platform>[.exe], the names the updater looks for.
+// output folder, default dist; `compile`, more of Bun's compile options; `includes`, the folders of
+// other apps built into this one, as Fleet holds all six, whose versions are baked in too, each from
+// its own package.json) and the app's names from its configureApp module. Output goes to
+// <out>/<app>-<platform>[.exe], the names the updater looks for.
 import { readdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { versionVariable as variableOf } from '../app.js';
 import { buildTargets } from '../update.js';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-const { entry = 'src/cli.jsx', app: appModule = 'src/app.js', out = 'dist', compile = {} } = pkg.fleet ?? {};
+const { entry = 'src/cli.jsx', app: appModule = 'src/app.js', out = 'dist', compile = {}, includes = [] } = pkg.fleet ?? {};
 const app = await import(pathToFileURL(resolve(appModule)).href);
 const { name, title, versionVariable } = app.default ?? app.APP;
 const TARGETS = buildTargets(name);
+// Each app inside reads its own process.env.<APP>_VERSION (its src/app.js), so each is defined here.
+const included = Object.fromEntries(
+  includes.map((dir) => {
+    const own = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    return [`process.env.${variableOf(own.name)}`, JSON.stringify(own.version)];
+  }),
+);
 
 const args = process.argv.slice(2);
 const here = `bun-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
@@ -46,7 +56,7 @@ for (const target of targets) {
     // The version, as the app's configureApp reads it (process.env.<APP>_VERSION). NODE_ENV picks React's
     // production build (several times faster to draw); defined in the bundle, it never reaches the
     // environment of what the app starts (git, az, its hooks).
-    define: { [`process.env.${versionVariable}`]: JSON.stringify(pkg.version), 'process.env.NODE_ENV': '"production"' },
+    define: { ...included, [`process.env.${versionVariable}`]: JSON.stringify(pkg.version), 'process.env.NODE_ENV': '"production"' },
   });
   if (!result.success) {
     for (const log of result.logs) console.error(log);
