@@ -1,0 +1,623 @@
+<p align="center"><img src="assets/logo.svg" width="120" alt="Hoot, the Hail owl"></p>
+
+# Hail
+
+An HTTP client for the terminal, over `.http` files: the format VS Code's REST Client and JetBrains'
+HTTP Client already read, so the requests live in the repository next to the code and work in all
+three. Open a file, pick a request, press `↵`.
+
+A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/splice) and
+[Trawl](https://github.com/FranciscoNunes-dxspark/trawl): the same prompt, help window, mouse,
+settings and self-updating builds.
+
+## Install
+
+Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/hail/releases/latest)
+and put it on your PATH. It checks for a new version once a day and installs it by itself; the new
+version starts the next time you open Hail.
+
+From a checkout (Node 22 or later):
+
+```bash
+npm install
+npm start -- api.http
+```
+
+## Use
+
+```bash
+hail api.http     # that file
+hail              # the first .http (or .rest) file in this folder or the two below it
+hail test api.http [--env dev] [--contract-strict]   # send them all without the screen and report (for CI)
+hail mock api.http [--port 4010] [--env dev]         # serve the responses kept for them, until ctrl+c
+```
+
+With none, `/new` writes an example to start from.
+
+```http
+@host = https://api.example.com
+
+### Log in
+# @name login
+POST {{host}}/login
+Content-Type: application/json
+
+{ "user": "ana", "password": "{{password}}" }
+
+### Who am I
+GET {{host}}/me
+Authorization: Bearer {{login.response.body.token}}
+```
+
+`###` starts a request, and the rest of its line names it. Under it: the method and URL (a plain URL is
+a GET), the headers, a blank line, and the body. A body can come from a file: `< ./body.json` as it is,
+`<@ ./body.json` with its variables filled in. Query lines under the URL (`?page=2`, `&size=10`) are
+joined onto it. After the body, a response handler can check what comes back (see [Checking responses](#checking-responses)).
+
+A multipart form is written out as JetBrains writes it, and a part can take a file, sent byte for byte
+(images and all); `<@` fills in the file's variables first:
+
+```http
+### Upload a photo
+POST {{host}}/photos
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="title"
+
+Holidays
+--WebAppBoundary
+Content-Disposition: form-data; name="photo"; filename="beach.png"
+Content-Type: image/png
+
+< ./beach.png
+--WebAppBoundary--
+```
+
+GraphQL, also as JetBrains has it: the `GRAPHQL` method (or `X-REQUEST-TYPE: GraphQL` on a POST), the
+query as the body, and, after a blank line, a JSON object of its variables. It's sent as the POST of
+`{ "query": …, "variables": … }`.
+
+```http
+### A hero
+GRAPHQL {{host}}/graphql
+
+query Hero($id: ID!) {
+  hero(id: $id) { name }
+}
+
+{ "id": "{{heroId}}" }
+```
+
+A WebSocket, as JetBrains writes one: `WEBSOCKET` and a `ws://` (or `wss://`) URL (an `http(s)://` one,
+as `{{host}}` often is, is taken as `ws(s)://`), headers, and after a
+blank line the messages to send, each under a `===` line. `=== wait-for-server` waits for a message
+from the server before the next one goes (two such lines wait for two).
+
+```http
+### Chat
+WEBSOCKET {{host}}/chat
+Authorization: Bearer {{token}}
+
+===
+{ "type": "join", "room": "ops" }
+=== wait-for-server
+{ "type": "say", "text": "hello" }
+```
+
+`↵` opens it in a view of its own, live: each message as it goes (`→`) or comes (`←`), with the time,
+JSON indented, newest at the bottom (`↑`/`↓` and the page keys scroll back). Type a message on the line
+under them and `↵` sends it, its `{{variables}}` filled in; every key is text there. `esc` closes the
+connection and the view. The conversation is then kept as the request's response (status 101), in the
+history too, with the secrets it carried left out. `Sec-WebSocket-Protocol` asks for subprotocols. A run
+of the whole file (`A`, `hail test`) leaves WebSockets out.
+
+A gRPC call, as JetBrains writes one: `GRPC`, the server's `host:port`, the service's full name and the
+method, headers as the call's metadata, and the request message as JSON:
+
+```http
+### An order
+GRPC localhost:50051/shop.Orders/Get
+Authorization: Bearer {{token}}
+
+{ "orderId": 42 }
+```
+
+Hail learns the service's types from the server's own reflection service (`grpc.reflection.v1`, or the
+older `v1alpha`), so it needs no `.proto` files, but the server must have reflection on. The answer is a
+response like any other: the message as JSON (proto3's JSON: fields by their JSON names, enums by name,
+64-bit numbers as strings, bytes as base64, Timestamp, Duration, the wrappers and Struct as their JSON),
+the metadata and `grpc-status` as headers, and gRPC's status made the nearest HTTP one (`OK` 200,
+`NOT_FOUND` 404, `UNAUTHENTICATED` 401…) with its name and message beside it, so response handlers,
+`/send all`, `hail test` and `/load` work on it. The URL is plain text (HTTP/2 without TLS) unless it
+starts with `grpcs://` or `https://`, which use TLS (`SSLConfiguration` skips the check, as for
+https). Only unary calls are made: a streaming method is refused, saying so; client certificates,
+compressed messages, `google.protobuf.Any` and proto2 groups aren't supported.
+
+A response that's a stream of server-sent events (`Content-Type: text/event-stream`) shows as it comes:
+the Response view opens on it and keeps its newest events on screen (scrolling up stops that, `G` goes
+back), each event under a line with its number, `event:` and `id:`, its data JSON indented, and the
+spinner counts them. It goes on until the server ends it or `esc` stops it, which keeps what came; then
+it's kept like any response. In a run of the whole file (or `hail test`) an endless stream needs a
+`# @timeout`, which ends it there rather than failing it.
+
+Hail reads the file again whenever it's saved, so it can sit beside your editor, or you can edit it
+in Hail itself.
+
+### Editing the file
+
+The Edit tab (`2`, or `i` on a request in Requests) is the file itself in an editor inside Hail, as
+Trawl's SQL console is: `###` lines, comments, directives, `@variables`, methods, URLs, headers,
+`{{placeholders}}`, multipart boundaries and files, GraphQL's `query` and `mutation`, and response
+handlers each in a colour of their own. Press `↵` or `i` to start typing and `esc` to stop. While you type, every
+key is text, so the digits and `q` don't switch views or quit. `ctrl+r` sends the request the cursor is
+in (the gutter marks it), as it is on screen, and its response shows beside the text, so you can keep
+typing. A click starts typing where it lands.
+
+What you type is saved to the file a moment after you stop (`ctrl+s` saves straight away), keeping its
+line endings. When the file is changed somewhere else, the change comes in, unless what you've typed
+hasn't been saved yet. `ctrl+z` undoes, a word at a time, and `ctrl+y` redoes, typing or not. `[` and `]`
+go to the request before or after, `ctrl+f` (or `/find <text>`) finds text and selects it, and `n` and
+`N` find the next and previous match.
+
+As you type, a list under the cursor suggests what could come next: inside `{{`, the variables there are
+(the environment's, the file's, `login.response.body.` for each named request, and the built-ins); where
+the request line goes, the methods; under it, header names, and values for `Content-Type`, `Accept` and
+`Authorization`. `tab` takes the highlighted one; `↑`/`↓` pick another, and then `↵` takes it too. `esc`
+closes the list, and `ctrl+n` brings it up where nothing has been typed yet.
+
+Editing keys, as in Trawl's console: arrows, `home`/`end` (`ctrl+e` too), `ctrl+home`/`ctrl+end`,
+`ctrl+←`/`ctrl+→` a word at a time, `ctrl+w`, `ctrl+backspace` or `alt+backspace` delete the word before
+the cursor and `ctrl+delete` the one after, `ctrl+u`/`ctrl+k` cut to the start or end of the line, and
+`tab` inserts two spaces. `shift` with a movement selects, and `ctrl+a` selects everything; `ctrl+c`
+copies the selection and `ctrl+x` cuts it (with nothing selected, the line). A drag selects too, and
+copies it. `alt+↑`/`alt+↓` move the line, or the selected lines, up or down; `ctrl+d` writes it again
+under itself; `ctrl+/` comments it out with `#` or back in; `tab` and `shift+tab` indent selected lines.
+
+### Importing curl
+
+`/import-curl <command>` (or `I` in Requests, which starts it for you to paste into) turns a curl command
+into a request at the end of the file, named after its method and path (`### POST /v1/users`), and puts
+the cursor on it. It reads what a browser's "Copy as cURL" gives in any shell: bash's quoting and `\`
+at line ends, Windows cmd's `^` escapes, PowerShell's backticks, and the lines run together as a paste
+into the prompt has them. `-X`, `-H`, `-d` and the other `--data` forms (`@file` becomes a body file),
+`--json`, `-u user:password` (an `Authorization: Basic` header), `-F` (a multipart body, files as `< path`
+lines), `-G`, `-I`, `-A`, `-e`, `-b` and `-m` (`# @timeout`) carry over; options about how curl itself
+runs (`--compressed`, `-L`, `-s`, `-o`…) are dropped, and the ones that mean something Hail does
+another way (`-k`) are named when it's added.
+
+### Importing from Postman, a browser or an OpenAPI document
+
+`/import <file>` adds the requests in another tool's file to the end of the open one, through the editor
+(so `ctrl+z` in Edit takes them out again), and picks the first; `/import <file> --new` (or with no
+file open) writes them to a `.http` file of their own beside it, named after it, and opens that. What it
+reads:
+
+| File | What comes in |
+| --- | --- |
+| A Postman collection (v2.0 or v2.1) | A request per item, named after its folders and itself (`### Orders / Get order`); the collection's variables as `@variables` (Postman's `{{var}}`s work as they are, and `:id` in a path becomes `{{id}}`); raw, form, multipart (files as `< path` lines), GraphQL and file bodies; bearer, basic and API-key auth as headers (or the query). Pre-request and test scripts, and other kinds of auth, are left out, and said |
+| A Postman environment | An environment of `http-client.env.json`, beside the file, by its name |
+| A HAR file (a browser's "Save all as HAR") | A request per entry, named after its method and path, its body indented when it's JSON. Cookies, `Authorization` and the like are left out (said), and so are the headers that belong to the connection |
+| An OpenAPI 3 or Swagger 2 document, JSON or YAML | A request per operation, named by its summary (and `# @name` its operationId), to `{{host}}` (declared from the servers or host and basePath, unless the file or environment has one); path parameters, and the query and header ones it requires, as variables declared with an example; a JSON body made from the schema's examples (or its types); `Accept`; the security it asks for as a header |
+
+Nothing secret is written: a credential that was in the file becomes a `{{$secret …}}` placeholder (asked
+for the first time it's used, or saved now with `/secret`), and one that was a variable stays the
+variable; what became placeholders is said. OpenAPI's OAuth 2 and OpenID Connect become
+`{{$auth.token("<scheme>")}}`, for an environment's `"Security"` (see [OAuth 2](#oauth-2)). A variable the
+file or its environment has already isn't declared again. `/draft` is the way to have Claude write
+requests from a description that isn't one of these (or to pick some of them).
+
+An `Authorization: Basic user:password` header (or `Basic user password`) is encoded as it goes out, as
+VS Code's REST Client does, so the password can be a `{{$secret}}`.
+
+### Variables
+
+`{{name}}` in the URL, the headers or the body. Values come from, first to last:
+
+| Where | |
+| --- | --- |
+| Response handlers | `client.global.set("token", …)` in a script after an earlier request (see [Checking responses](#checking-responses)), while Hail runs |
+| The environment | `http-client.env.json` beside the file: `{ "dev": { "host": "http://localhost:3000" }, "prod": { ... } }`, with `"$shared"` going into every one. `http-client.private.env.json` beside it goes over it, for secrets kept out of git. `e` picks the environment; Hail starts on one called dev or local and remembers the choice for each file |
+| The file | `@name = value` lines |
+| Earlier responses | `{{login.response.body.token}}` is the `token` field of what the request named `login` (`# @name login`) got back; a path like `data.items[0].id` (or `$.data…`) reaches further in, `.headers.X-Request-Id` reads a header |
+| Secrets | `{{$secret api-key}}`: kept in the system's own credential store (Windows Credential Manager, the macOS Keychain, the Secret Service keyring on Linux), never in a file. The first request that needs one asks for it in a hidden field and saves it; `/secret <name>` saves or replaces one, `/secret` lists them to replace or forget |
+| Sign-ins | `{{$auth.token("api")}}`: an OAuth 2 access token for the environment's auth called `api` (see [OAuth 2](#oauth-2)); `{{$auth.idToken("api")}}` its ID token |
+| Built-ins | `{{$uuid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt 1 100}}`, `{{$processEnv NAME}}` or `{{$env.NAME}}` (this computer's environment), `{{$azToken [resource]}}` (a token from the Azure CLI's sign-in, Azure Resource Manager's unless a resource is named) |
+
+A secret can sit in an environment file too (`"apiKey": "{{$secret prod-api-key}}"`), so the file can
+be committed. The environment wins over the file, so a file can hold defaults that environments override. A
+variable can be made of others. A request with a variable nothing gives a value isn't sent: Hail
+says which.
+
+### OAuth 2
+
+As in JetBrains, an environment can say how to sign in, under `"Security"`, and a request uses the
+token with `{{$auth.token("<id>")}}`:
+
+```json
+{
+  "dev": {
+    "host": "http://localhost:3000",
+    "Security": {
+      "Auth": {
+        "api": {
+          "Type": "OAuth2",
+          "Grant Type": "Authorization Code",
+          "Auth URL": "https://login.example.com/authorize",
+          "Token URL": "https://login.example.com/token",
+          "Client ID": "my-app",
+          "Client Secret": "{{$secret my-app-secret}}",
+          "Scope": "openid offline_access api",
+          "Redirect URL": "http://127.0.0.1:8765/callback"
+        }
+      }
+    }
+  }
+}
+```
+
+```http
+GET {{host}}/me
+Authorization: Bearer {{$auth.token("api")}}
+```
+
+| Setting | |
+| --- | --- |
+| `"Type"` | `"OAuth2"` |
+| `"Grant Type"` | `"Client Credentials"`, `"Password"`, `"Authorization Code"` or `"Device Authorization"` (Implicit isn't supported) |
+| `"Token URL"`, `"Client ID"` | Every grant needs them |
+| `"Client Secret"` | When the client has one; best as `{{$secret name}}`, asked for and kept in the system's store. `"Client Credentials": "basic"` sends the client's id and secret as an `Authorization: Basic` header, `"none"` sends no secret; they go in the form unless said |
+| `"Scope"` | What to ask for |
+| `"Auth URL"`, `"Redirect URL"`, `"PKCE"` | Authorization Code: the sign-in page opens in the browser, and Hail catches the code on this machine at the Redirect URL (which has to be `http://127.0.0.1:<port>/…` or `http://localhost:<port>/…`, as the app is registered with; without one, any free port and `/callback`). PKCE (S256) is used unless `"PKCE": false`; `{ "Code Challenge Method": "Plain", "Code Verifier": "…" }` sets it. If the browser doesn't open, the page's address is in the Log. Hail waits five minutes; `esc` stops waiting |
+| `"Device Auth URL"` | Device Authorization: the code to enter and the page to enter it at show where questions do (↵ opens the page or copies the code), and Hail polls until you've signed in there; `esc` cancels |
+| `"Username"`, `"Password"` | Password grant (best as `{{$secret …}}`) |
+| `"Audience"`, `"Resource"`, `"Custom Request Parameters"` | Sent with the sign-in and token requests; a custom parameter can be `{ "Value": "…", "Use": "In Auth Request" }` (or `"In Token Request"`) |
+| `"Use ID Token"` | `true`: `{{$auth.token}}` gives the ID token |
+
+Every value can use variables. The config can be split between the env files, so the private one
+holds the secret; `"$shared"` works too. A token is kept in memory, for the file and environment,
+until it runs out, then refreshed; a refresh token, when the server gives one, is kept in the system's
+credential store (never in a file), so the next time Hail opens it refreshes rather than asks you to
+sign in again. Tokens are secrets to the history and the activity lines: they're blanked wherever they
+turn up. `/auth` lists the environment's sign-ins and how each stands (never the token): `↵` signs in
+again, `x` forgets it; `/auth <id>` signs in with one now; `/auth clear` forgets them all.
+`hail test` signs in with Client Credentials and Password itself, and uses a refresh token Hail kept
+for the others (a browser or device sign-in needs Hail once).
+
+### Checking responses
+
+JetBrains' response handlers work as they do there: after a request's body, `> {% ... %}` holds a script
+(over as many lines as it needs), or `> ./checks.js` names a file of one beside the `.http` file. It runs
+when the response comes, and what it found shows with the response: a line for each test, passed or
+failed, and what it logged.
+
+```http
+### Log in
+POST {{host}}/login
+Content-Type: application/json
+
+{ "user": "ana", "password": "{{$secret password}}" }
+
+> {%
+  client.test("signed in", () => client.assert(response.status === 200, "got " + response.status));
+  client.test("a token came back", () => client.assert(response.body.token, "no token"));
+  client.global.set("token", response.body.token);
+%}
+
+### Who am I
+GET {{host}}/me
+Authorization: Bearer {{token}}
+```
+
+| In a script | |
+| --- | --- |
+| `client.test(name, fn)` | A test: it passes unless `fn` throws |
+| `client.assert(condition, message)` | Throws (failing the test it's in) when the condition is false; outside a test it fails as a test of its own |
+| `client.global.set(name, value)` | A variable for the requests after it: `{{name}}` reads it. `client.global.get(name)` reads it back, `clear(name)` and `clearAll()` forget them |
+| `client.log(...)` | A line under the response (`console.log` too) |
+| `client.exit()` | Stops the script there |
+| `response.status`, `response.body` | The status, and the body: parsed when it's JSON, else the text |
+| `response.headers.valueOf(name)` | A header's value (`valuesOf(name)` gives every one, for `Set-Cookie`) |
+| `response.contentType` | `{ mimeType, charset }` |
+
+A global variable wins over the environment's and the file's of the same name, as the newest value. The
+globals last until Hail closes or another file is opened. Scripts run in a sandbox of their own: no
+`require`, no `process`, no timers, no files, nothing from Hail but the response, and two seconds to
+finish. The tests are kept in the history with the response.
+
+### Saving a response
+
+`>> ./out.json` after a request (after its handler, if it has one) saves the body of what comes back to
+that file, beside the `.http` file unless the path says otherwise, byte for byte, so an image or a zip
+comes out whole. Folders on the way are made. As in JetBrains, a file that's there already is kept and the
+body goes to `out-1.json`, then `out-2.json`; `>>! ./out.json` writes over it instead. Variables work in
+the path (`>> ./exports/{{date}}.csv`). Where it went shows with the response.
+
+### Sending the whole file
+
+`A` in Requests (or `/send all`) sends every request in the file, top to bottom, each one using what the
+ones above it left: their responses and the globals their scripts set. A request with a variable
+nothing gives a value is passed over; one that gets no answer stops the run; failed tests don't. Then a
+report shows each request's status, how long it took and how its tests went, with the failures under
+it.
+
+From the shell, for CI:
+
+```bash
+hail test api.http --env dev
+```
+
+does the same without the screen: it prints the report and exits with 1 when a test failed, a script
+broke, or a request wasn't sent or got no answer (2 when it couldn't run at all, as with a file that
+isn't there). Without `--env` it uses the environment Hail would pick (the one chosen last for the
+file, else dev or local). Nothing is kept in the history. `{{$secret}}` reads the system's store as Hail
+does; on a build server, `{{$processEnv NAME}}` is usually the way to hand it a secret. Responses are
+checked against the file's contract (see [Contract drift](#contract-drift)); `--contract-strict` makes
+drift fail the run too.
+
+### Load in a pinch
+
+`/load [request] [count] [concurrency]` (or `L` in Requests, which starts it for you with the request
+under the cursor) sends one request `count` times (200 unless said), `concurrency` at a time (10), to
+see how an endpoint holds up: not a load-testing tool, but enough to tell whether it falls over at 50
+at once. `count=` and `concurrency=` (or `n=` and `c=`) say which number is which. Its variables are
+filled in once, and it goes out as `↵` sends it (the environment's certificates and proxy,
+`# @no-redirect` and `# @timeout`), but without the cookie jar, response handlers or `>>` saving. The
+spinner counts them as they come back; `esc` stops it and reports what had finished. Then the report:
+how long it took and how many requests a second, the latency's p50, p90, p95, p99, maximum and mean, a
+sparkline of the latency over the run, how many came back with each status, and the errors (no answer,
+out of time) counted by kind. None of it is kept in the history, which stays the responses you sent
+yourself; the summary line stays in the Log. Up to 5,000 requests, 100 at a time.
+
+### A mock of the API
+
+`/mock` serves the open file's API on `http://127.0.0.1:4010` (`/mock 5000` on another port), for a
+frontend or a test to point at while the real one is away: each request's latest response kept in the
+history (its status, headers and body) is answered to the same method and path, a `{{variable}}` in the
+path matching any segment (`GET {{host}}/users/{{id}}` answers `/users/7`), and the path that `{{host}}`
+itself has in the environment counted (`http://localhost:3000/api` makes it `/api/users/7`). A request
+the file has no response for gets the example of the [contract](#contract-drift)'s operation, when there's
+one; anything else a 404 whose JSON lists what is served. It follows the history: send a request again
+and the mock answers with the new response. Credential headers and cookies aren't handed on, and it
+answers browsers' CORS questions. The header shows `mock :4010` while it runs, each request it gets is a
+line in the Log, and `/mock` again (or `/mock off`) stops it; it stops when Hail closes.
+
+From the shell, without the screen, until `ctrl+c`:
+
+```bash
+hail mock api.http --port 4010 --env dev
+```
+
+prints what it serves and a line per request it gets, reading the history again as Hail adds to it.
+Bosun can run it as one of a project's processes, beside the frontend that uses it (in `bosun.json`, or
+a `Procfile` line: `mock: hail mock api.http --port 4010`).
+
+### Contract drift
+
+`/contract openapi.yaml` (or a `.json` file, or a URL) checks every response to the open file's
+requests against an OpenAPI 3 or Swagger 2 document, from then on: Hail remembers it for the file, and
+`/contract off` forgets it (`/contract` alone says which it is). Each response is matched to its
+operation by method and path (the servers' or `basePath`'s prefix taken off, `{id}` templates matched),
+and its status to the operation's responses (the status itself, then `2XX`, then `default`). Its JSON
+body is checked against the schema: types (and `nullable`), required fields, the properties there are
+(`additionalProperties` included), array items, `enum`, `oneOf`, `anyOf` and `allOf`, and `$ref`s inside
+the document; formats aren't checked.
+
+A Contract section shows with the response: `+` a field the contract doesn't have, `−` a required one
+that's missing, `≠` a wrong type or a value outside its `enum`, and a status, method or path the
+contract doesn't document; the same difference in many items of an array is said once. A response that
+drifted has a `⚠` beside its status in Requests, and `/send all` lists the differences under each
+request. Drift isn't a failure: `hail test` reports it and still exits with 0, unless
+`--contract-strict` is given. It uses the contract set for the file, or `--contract <file or URL>`'s.
+
+### Cookies
+
+A response's `Set-Cookie` is kept, as a browser keeps it: for the site and path it names, until it
+expires (or, without an expiry, until Hail closes), `Secure` ones only over https. Later requests to
+the same site send them back, unless the request sets `Cookie` itself. Redirects are followed with the
+jar, so a sign-in that sets a cookie and redirects carries on signed in. Each file has a jar per
+environment, in memory only: nothing about them is written anywhere, and the history hides
+`Cookie` and `Set-Cookie` headers. `/cookies` lists them, `/cookies clear` forgets them, and
+`# @no-cookie-jar` above a request (JetBrains') keeps that one out of it: it sends none and keeps none.
+
+### Directives, certificates and proxies
+
+Comment lines above a request's line (or among its headers) can change how it's sent, as in JetBrains:
+
+| Directive | |
+| --- | --- |
+| `# @no-redirect` | Show a redirect (its status and where it points) rather than follow it |
+| `# @timeout 30` | Give up waiting after 30 seconds; `500 ms` and `2 m` work too |
+| `# @no-cookie-jar` | Neither send the jar's cookies nor keep the ones it gets |
+
+Certificates are checked, unless the environment says otherwise, as JetBrains has it:
+`"SSLConfiguration": { "verifyHostCertificate": false }` inside an environment (in either env file, or
+`$shared`) skips the check for its requests, for a server with a certificate of its own making. A response
+that came back without the check says so in yellow.
+
+Requests go through the proxy that `HTTPS_PROXY` (for https) or `HTTP_PROXY` (for http) names, as curl
+does, `user:password@` in it included, except to hosts `NO_PROXY` lists (names, `.domain`s, `*`, and
+`10.0.0.0/8`-style ranges) and to this machine, which never goes through one. The response says which
+proxy it went through.
+
+### History
+
+Every response is kept, across runs, in `~/.hail/history` (one file per `.http` file). When a file is
+opened, each request's last response is there again, so its variables work before anything is sent.
+The History tab lists them newest first: `↵` shows one, `d` compares it with the response before it to
+the same request, `D` forgets them all. What's kept leaves out the secrets and Azure tokens that were
+filled in, wherever they turn up (the server's answer too), and hides the headers that carry
+credentials (`Authorization`, `Cookie`, `Set-Cookie`, API keys and anything named like a token or
+password). Bodies over 512 KB are cut. The newest 300 responses per file are kept.
+
+### Claude drafts requests
+
+`/draft <openapi.json, a URL, or any file> [what to write]` hands an API description to Claude (through
+Claude Code, signed in as you are) and asks for requests in this format: a name for each, path
+parameters and auth as variables, example bodies, and the file's own variables used rather than
+declared again. The draft shows first; it's added to the open file only once you say yes (a new
+`requests.http` if none is open). The description can be an OpenAPI or Swagger document, or the code
+that defines the routes.
+
+```
+/draft openapi.json the order endpoints
+/draft https://petstore3.swagger.io/api/v3/openapi.json
+/draft ../server/routes.js
+```
+
+## With the sibling apps
+
+Hail, [Splice](https://github.com/FranciscoNunes-dxspark/splice) (git), [Trawl](https://github.com/FranciscoNunes-dxspark/trawl)
+(SQL), Sonar (Azure) and Bosun (processes) hand each other things as command lines: one app copies a
+line, and you paste it into the other's prompt. None of them starts another, and a line never carries a
+secret. What one app hands another without a command of its own is `/take family:v1:…`, which every
+app's prompt reads (with or without `/take`).
+
+Pasting a line that starts with `/`, or one of those `family:v1:` contexts, while a view has the keys
+(not while typing in Edit) opens the prompt with it rather than taking it as keys, so you can look it
+over and press `↵`.
+
+| What's taken | |
+| --- | --- |
+| A request (Sonar copies them from its logs and incidents, Trawl the request for an endpoint it wrote) | Added to the end of the file as `### replay <METHOD> <path>` and picked in Requests, ready to send. When the environment says where the API is (`host`, `baseUrl` or `baseURL`), Hail asks whether to send it there (the URL's scheme and host become `{{host}}`) or to where it came from; a URL that starts with a variable already (`{{host}}/players`) is added as it is. Credential headers it may carry are left out |
+| Rows (Trawl copies them from its results) | Made a JSON body, an array of objects (one object for one row), and Hail asks where it goes: a new `POST` request at the end of the file, to `{{host}}/<table>` when the table is known, or in place of the body of the request under the cursor (a `Content-Type: application/json` header added when it has none). Either is an edit of the file, so `ctrl+z` in Edit undoes it |
+| A log line (Bosun copies them from a process's log) | Its request id (or, when it has none, the ids in its text: GUIDs, trace ids, `request_id=…`) is looked for in the History: the newest response whose request or response headers carry it (`X-Request-Id`, `Request-Id`, `traceparent`'s trace id, correlation ids, `X-Amzn-Trace-Id`) is shown, with the History's cursor on it. Those headers are kept in the history as they are; only credential headers are hidden |
+| Anything else | Said to be another app's: a commit, a file or an exception is Splice's, a query is Trawl's |
+
+`/family` lists what the open file's project offers the others, from its folder and the git checkout
+it's in: Splice's `/open <checkout>`, Bosun's `/move <folder>` when there's something to run there
+(`bosun.json`, a `Procfile`, a compose file, or `package.json`'s `dev` or `start` script), and for each
+database the project's settings name (`appsettings*.json`'s `ConnectionStrings`, `DATABASE_URL`-style
+lines in `.env` files) the line Trawl connects with: `/azure-sql <server> [database]` for Azure SQL
+signed in with Entra ID, else `/add <name> <server> [database]` with its port, `--kind`, `--user` and `--trust-cert` as the
+connection says, never its password (Trawl asks for that). `↵` copies the one under the cursor.
+
+`/timeline` shows the family's activity log: what each of the five apps did that the others would want
+to know (Splice's pushes, Trawl's writes, Bosun's restarts and crashes…), newest first, with the app and
+the project it was in. `p` shows this project's alone (the checkout the open file is in, and entries that
+name none), or everything again; `↵` shows an entry whole, `y` copies it. Hail adds a `/load` run's
+summary, a `/send all` that failed (and which requests), the mock starting and stopping, OAuth sign-ins
+(the auth's name and grant, never a token) and imports: names, counts and where, nothing secret.
+
+`/wiring` shows what the open file's project points at, read from its folder and the checkout it's in:
+the addresses, hosts, ports and connection strings in `appsettings*.json`, `.env` files and
+`http-client.env.json`, grouped by the file they're in, every password, key and token in them masked.
+
+Each app's mascot also says how it feels, in a small file the others read (`~/.family`). Hoot's mood
+(happy after a response, worried when one failed its checks or something went wrong, busy while
+sending) is written whenever it changes, and every 30 seconds Hoot looks at the others': when one of
+them has been worried, sad or happy in the last 15 minutes, he says so once in a line above the
+activity lines ("Sonar looks worried: production has 12 new exceptions"), until `esc`. The Family moods
+setting turns both off.
+
+## Keys
+
+| Key | What it does |
+| --- | --- |
+| `1` `2` `3` `4` `5` / `tab` | Requests, Edit, Response, History, Log (`shift+tab` goes back) |
+| `↵` | Send the request under the cursor; in Response, send it again; in Edit, start typing |
+| `A` | In Requests: send every request, top to bottom, and show a report |
+| `L` | In Requests: load in a pinch (starts `/load <request> 200 10` for you to change and run) |
+| `i` | Edit the file, typing, on the request under the cursor |
+| `ctrl+r` | In Edit: send the request the cursor is in |
+| `c` | Copy the request as a curl command, variables filled in (a multipart form as `-F` fields) |
+| `I` | In Requests: import a curl command (starts `/import-curl ` for you to paste after) |
+| `y` | Copy the request's URL; in Response, the body |
+| `v` | The response, the whole width |
+| `h` | In Response: show or hide the headers |
+| `/` then `n` `N` | In Response: search the response (matches show as you type; a capital letter makes it match case), then go from match to match; `esc` clears it |
+| `d` `D` | In History: compare with the response before it · forget them all |
+| `e` | Pick the environment |
+| `r` | Read the file again |
+| `/` or `:` | The command prompt, with completion |
+| `!` | Run a shell command, e.g. `!node --version` |
+| `esc` | Cancel the request on its way, or clear the activity lines (and Hoot's remark about a sibling) |
+| `,` | Settings |
+| `?` | Every key and command |
+| `q` / `ctrl+c` | Quit |
+
+In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
+mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll with the wheel, and
+drag to select text, which is copied when you let go.
+
+Beside the list is the request under the cursor as written, or, once it's been sent, its response:
+the status, how long it took, its size, how its tests went, and the body, JSON indented. A request whose
+tests failed has a ✗ beside its status in the list.
+
+### The command palette
+
+`ctrl+p` opens a list of everything you can do from where you are: the keys of the view you're in,
+your own keys and commands, and every slash command. Type to narrow it (the words can come in any
+order and needn't be whole), `↑`/`↓` pick, `↵` runs the one picked, `esc` closes it. A key runs as if
+you'd pressed it in the view; a command that needs something typed after it goes into the prompt for
+you to finish.
+
+### Your own commands and keys
+
+Commands of your own go in the settings file (`~/.hail/config.json`), under `"commands"`, and keys
+under `"keys"`, for every view (`"global"`) or for one (requests, edit, response, history, log):
+
+```json
+{
+  "commands": { "dev": "/env dev", "login": ["/env dev", "/send login"] },
+  "keys": { "global": { "ctrl+s": "/send" }, "response": { "H": "h" } }
+}
+```
+
+A command is a line as you'd type it at the prompt, or a list of them run in order, stopping at the
+first that fails or asks a question you answer no to. `$1`, `$2`… are the words typed after it, `$*`
+all of them. A key maps to another key (the view does what that one does) or to a command line. What
+can't be used is said in the activity lines when Hail starts. These work as they do in Splice
+and Trawl.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `/send [request]` | Send a request by name (the one under the cursor if none is named); `/send all` sends every one and shows a report |
+| `/load [request] [count] [concurrency]` | Send a request many times, so many at once (200, 10 at a time, unless said), and report how it held up |
+| `/env [name]` | The environment the variables come from (a list to pick from if none is named) |
+| `/curl [request]` | Copy a request, filled in, as a curl command |
+| `/import <file> [--new]` | Add the requests in a Postman collection, a HAR recording or an OpenAPI or Swagger document (or a Postman environment, to `http-client.env.json`); `--new` writes them to a file of their own |
+| `/import-curl <command>` | Add a request to the end of the file from a curl command, and pick it |
+| `/open <file.http>` | Open another file |
+| `/mock [port\|off]` | Serve the responses kept for this file's requests (and the contract's examples) on `http://127.0.0.1:4010`, or stop it |
+| `/contract [file\|url\|off]` | Check every response against an OpenAPI or Swagger document, remembered for the file (`off` forgets it) |
+| `/find <text>` | Find text in the file, in Edit (`n` and `N` go on to the next and the one before) |
+| `/auth [id\|clear]` | The environment's OAuth sign-ins and how each stands (`↵` signs in again, `x` forgets it); an id signs in with it; `clear` forgets them all |
+| `/secret [name]` | Save a secret in the system's store for `{{$secret name}}` (the saved ones, to replace or forget, if none is named) |
+| `/history [clear]` | The responses kept for this file (`clear` forgets them) |
+| `/cookies [clear]` | The cookies kept for this file and environment (`clear` forgets them) |
+| `/draft <spec> [what]` | Claude writes requests from an API description, for you to look over and add |
+| `/new [file.http]` | Write an example file to start from (`requests.http`) and open it |
+| `/take <family:v1:…>` | Take what a sibling app copied (see [With the sibling apps](#with-the-sibling-apps)) |
+| `/family` | What this project offers the sibling apps: the command for Splice, Bosun or Trawl, copied with `↵` |
+| `/timeline` | What the family's apps did, newest first (`p` this project only, `↵` an entry whole, `y` copies it) |
+| `/wiring` | What this project points at: addresses, hosts, ports and connection strings in its settings, secrets masked |
+| `/run <command>` | Run a shell command (as `!` does) |
+| `/last` | All the output of the last command |
+| `/settings` | Accent colour, theme, mouse, updates, notifications, family moods, history |
+| `/accent <#rrggbb>` | Change the accent colour (`default` puts it back) |
+| `/update` | Look for a new version now and install it |
+| `/help` | Keys and commands |
+| `/quit` | Exit |
+
+## Settings
+
+`,` or `/settings`. They're kept in `~/.hail/config.json` (`HAIL_HOME` moves it), with the environment
+picked for each file, the files opened lately and the names (never the values) of the secrets saved.
+
+| Setting | |
+| --- | --- |
+| Accent colour | The colour of the cursor, borders and Hoot |
+| Theme | Dark, light, or auto: light when the terminal says its background is (`COLORFGBG`, which many set), else dark. `↵` goes round them |
+| Mouse | Off leaves selecting text to the terminal |
+| Check for new versions | Once a day, in the downloaded builds |
+| Install them by itself | Off only says a new version is out |
+| Notify when done | When a request (or `/send all`, or anything else with the spinner) takes over 10 seconds, Hail rings the terminal's bell and asks it for a desktop notification saying what finished and how (OSC 9, which Windows Terminal, iTerm2, WezTerm and kitty show, or OSC 777 in GNOME Terminal and other VTE terminals), for when you've switched to another window. A run you cancel says nothing. `"notifyAfter": 30` in `config.json` changes the seconds |
+| Family moods | Hoot shares his mood with the sibling apps and remarks on theirs (see [With the sibling apps](#with-the-sibling-apps)); off keeps him to himself |
+| Prompt history | Clear it |
+
+## License
+
+MIT, see [LICENSE](LICENSE).
