@@ -29,7 +29,7 @@ export const HELP = [
   },
   {
     title: 'Resources',
-    about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them) and storage accounts; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
+    about: "the subscription's web and function apps (ƒ) by resource group (with what each group has cost this month), their slots under them, and its container apps, SQL servers (databases under them), storage accounts and Service Bus namespaces; beside them the one under the cursor, with its cost this month and its metrics over the time span (CPU, memory, 5xx, response time)",
     views: ['resources'],
     rows: [
       ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies; a Key Vault reference shows ✓, or ✗ and why it didn\'t resolve'],
@@ -53,6 +53,10 @@ export const HELP = [
       ['o  y', 'The portal · copy its address'],
       { heading: 'On a storage account' },
       ['o  y', 'The portal · copy its blob address'],
+      { heading: 'On a Service Bus namespace' },
+      ['↵', 'Its queues, topics and subscriptions with their counts; ↵ on one: its dead letters, peeked (locked and let go, so none is taken)'],
+      ['in dead letters', '↵ one whole (v shows a body that looks secret) · v picks several · R resubmits them to their queue (a subscription\'s to its topic) · X purges them all · y copies its id'],
+      ['o  y', 'The portal · copy its address'],
       ['/route', '/route <app> <slot> <percent>: send that share of production\'s traffic to a slot (0 stops it); a slot shows its share beside it (→ 10%)'],
       ['/scale', '/scale [app] <instances|tier>: the App Service plan it runs on, to so many instances or a tier (P1v3, S1…); says which apps share it and whether autoscale is on (the details show the plan, its size and autoscale)'],
       'Anything that changes Azure asks first. For production (an app or resource group named prod, production, prd or live), and for every swap, you type the app\'s name.',

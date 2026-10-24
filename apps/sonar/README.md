@@ -46,7 +46,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state (and a slot's share of its app's traffic, `→ 10%`, when it takes some), and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state (and a slot's share of its app's traffic, `→ 10%`, when it takes some), and in the same groups its container apps, Azure SQL servers (their databases under them), storage accounts and Service Bus namespaces; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address; for a Service Bus namespace, its address and tier, how many messages its queues and subscriptions hold, and which have dead letters |
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
@@ -105,6 +105,24 @@ key (a body makes it a POST when it takes one, none a GET), any other through th
 with the master key, as the portal's Test/Run does. The key is read for that request and goes no
 further: it's never shown, copied or written to the log. What came back (status, type, body, JSON
 indented) shows in the viewer. Both ask first, as every change does.
+
+### Service Bus
+
+`↵` on a namespace lists its queues, topics and subscriptions with their counts (from Azure Resource
+Manager). `↵` on a queue or subscription shows its dead letters, oldest first (up to 50): each is read
+by locking it and letting it go again, so nothing is taken (its delivery count goes up by one). The
+list shows why each was dead-lettered and the start of its body; `↵` shows one whole, its properties
+and its body (JSON indented). A body that looks like it holds a secret (a password, a token, a key)
+stays hidden until `v` shows it. Bodies are never written to the log.
+
+`R` resubmits the dead letter under the cursor, or those picked with `v`: each is sent again to its
+queue (a subscription's to its topic, which hands a copy to every subscription of it) and only then
+taken off the dead letters, saying how many moved. `X` purges an entity's dead letters, deleting them
+for good. Both ask first, as every change does (a production namespace asks for its name).
+
+Messages are read through Service Bus's own API with your `az` sign-in, which needs a data role on the
+namespace: Azure Service Bus Data Receiver to peek, Data Owner to resubmit and purge (Owner and
+Contributor don't reach messages). Without one, Sonar says which it needs.
 
 ### Asking Claude
 
@@ -228,6 +246,11 @@ moods** in the settings turns both off.
 | `o` `y` | Open it in the portal · copy its address |
 
 A storage account takes `o` (the portal) and `y` (copy its blob address).
+
+| On a Service Bus namespace | |
+| --- | --- |
+| `↵` | Its queues, topics and subscriptions, each with its active, dead-lettered and scheduled messages (below) |
+| `o` `y` | Open it in the portal · copy its address |
 
 | In Logs | |
 | --- | --- |

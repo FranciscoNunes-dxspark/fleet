@@ -423,7 +423,7 @@ test('the tree with the other kinds: under their resource groups, databases unde
   const rows = resourceRows(d.apps, d.slots, '', d);
   assert.deepEqual(rows.map((r) => r.text ?? `${r.kind}:${label(r.target)}`), [
     'contoso-prod', 'app:contoso-web', 'slot:contoso-web/staging', 'app:contoso-api', 'slot:contoso-api/staging', 'app:contoso-orders',
-    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore',
+    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore', 'servicebus:contoso-bus',
     'contoso-qa', 'sqlserver:contoso-sql-qa', 'sqldb:contoso-sql-qa/contoso-qa',
   ]);
   assert.deepEqual(resourceRows(d.apps, d.slots, 'reporting', d).map((r) => r.text ?? label(r.target)), ['contoso-prod', 'contoso-sql-prod', 'contoso-sql-prod/contoso-reporting']);
@@ -551,4 +551,60 @@ test('routing: the ramp-up rules read from config/web, and written back whole wi
   assert.deepEqual(await azure.routing(siteFrom(web)), [{ slot: 'staging', host: 'web-staging.azurewebsites.net', percent: 10 }]);
   await azure.setRouting(siteFrom(web), [{ slot: 'beta', host: 'web-beta.azurewebsites.net', percent: 5 }]);
   assert.deepEqual(calls.at(-1).body, { properties: { experiments: { rampUpRules: [{ actionHostName: 'web-beta.azurewebsites.net', reroutePercentage: 5, name: 'beta' }] } } });
+});
+
+test('Service Bus: namespaces and entities with their counts; dead letters peeked by locking and letting go, resubmitted, purged; a 403 names the role', async () => {
+  const nsId = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.ServiceBus/namespaces/bus';
+  const letter = (seq, extra = {}) => ({ raw: `{"n":${seq}}`, headers: { BrokerProperties: JSON.stringify({ MessageId: `m${seq}`, SequenceNumber: seq, DeliveryCount: 10, EnqueuedTimeUtc: 'Sat, 24 Oct 2026 10:00:00 GMT', Label: 'charge' }), 'Content-Type': 'application/json', Location: `https://bus.servicebus.windows.net/q/$DeadLetterQueue/messages/m${seq}/lock-${seq}`, DeadLetterReason: '"MaxDeliveryCountExceeded"', Attempt: '10', ...extra } });
+  let queue = [1, 2, 3];
+  const locked = new Set();
+  const lockHead = () => {
+    const seq = queue.find((x) => !locked.has(x));
+    if (seq == null) return [204, { raw: '' }];
+    locked.add(seq);
+    return [201, letter(seq)];
+  };
+  const routes = {
+    'GET /subscriptions/s1/providers/Microsoft.ServiceBus/namespaces': { value: [{ id: nsId, name: 'bus', location: 'westeurope', sku: { name: 'Standard' }, properties: { serviceBusEndpoint: 'https://bus.servicebus.windows.net:443/', status: 'Active' } }] },
+    [`GET ${nsId}/queues`]: { value: [{ name: 'q', properties: { status: 'Active', countDetails: { activeMessageCount: 5, deadLetterMessageCount: 3, scheduledMessageCount: 1 } } }] },
+    [`GET ${nsId}/topics`]: { value: [{ name: 't', properties: { subscriptionCount: 1, countDetails: { activeMessageCount: 0 } } }] },
+    [`GET ${nsId}/topics/t/subscriptions`]: { value: [{ name: 's', properties: { countDetails: { activeMessageCount: 2, deadLetterMessageCount: 1 } } }] },
+    'POST bus.servicebus.windows.net/q/$DeadLetterQueue/messages/head': lockHead,
+    'POST bus.servicebus.windows.net/q/messages': [201, { raw: '' }],
+    'DELETE bus.servicebus.windows.net/q/$DeadLetterQueue/messages/head': () => (queue.length ? (queue.shift(), [200, letter(9)]) : [204, { raw: '' }]),
+  };
+  for (const n of [1, 2, 3]) {
+    routes[`PUT bus.servicebus.windows.net/q/$DeadLetterQueue/messages/m${n}/lock-${n}`] = () => (locked.delete(n), [200, { raw: '' }]);
+    routes[`DELETE bus.servicebus.windows.net/q/$DeadLetterQueue/messages/m${n}/lock-${n}`] = () => ((queue = queue.filter((x) => x !== n)), locked.delete(n), [200, { raw: '' }]);
+  }
+  const { fetch, calls } = fakeFetch(routes);
+  const tokens = [];
+  const azure = createAzure({ fetch, token: async (r) => (tokens.push(r), 't') });
+  const [ns] = await azure.serviceBusNamespaces('s1');
+  assert.deepEqual([ns.name, ns.host, ns.sku, ns.type], ['bus', 'bus.servicebus.windows.net', 'Standard', 'servicebus']);
+  const entities = await azure.serviceBusEntities(ns);
+  assert.deepEqual(entities.map((e) => [e.kind, e.name, e.path, e.active, e.deadLetter, e.scheduled]), [['queue', 'q', 'q', 5, 3, 1], ['topic', 't', 't', 0, 0, 0], ['subscription', 't/s', 't/subscriptions/s', 2, 1, 0]]);
+
+  const peeked = await azure.peekDeadLetters(ns, entities[0], { max: 10 });
+  assert.deepEqual(peeked.map((m) => [m.sequence, m.id, m.reason, m.label, m.body, m.properties.attempt]), [1, 2, 3].map((n) => [n, `m${n}`, 'MaxDeliveryCountExceeded', 'charge', `{"n":${n}}`, '10']));
+  assert.equal(locked.size, 0, 'every lock let go');
+  assert.deepEqual(queue, [1, 2, 3], 'nothing taken');
+  assert.ok(tokens.includes('https://servicebus.azure.net'));
+
+  const { moved, missing } = await azure.resubmitDeadLetters(ns, entities[0], [2, 7]);
+  assert.deepEqual([moved, missing], [1, ['7']]);
+  assert.deepEqual(queue, [1, 3]);
+  assert.equal(locked.size, 0);
+  const sent = calls.find((c) => c.key === 'POST bus.servicebus.windows.net/q/messages');
+  assert.equal(sent.init.body, '{"n":2}');
+  assert.deepEqual(JSON.parse(sent.init.headers.BrokerProperties), { MessageId: 'm2', Label: 'charge' });
+  // fetch gives header names in lower case, so a custom property goes back that way.
+  assert.equal(sent.init.headers.attempt, '10');
+  assert.equal(Object.keys(sent.init.headers).some((k) => /deadletter/i.test(k)), false);
+
+  assert.equal(await azure.purgeDeadLetters(ns, entities[0]), 2);
+  assert.deepEqual(queue, []);
+
+  const denied = createAzure({ fetch: fakeFetch({ 'POST bus.servicebus.windows.net/q/$DeadLetterQueue/messages/head': [401, { raw: '<Error><Code>401</Code><Detail>Unauthorized</Detail></Error>' }] }).fetch, token: async () => 't' });
+  await assert.rejects(denied.peekDeadLetters(ns, entities[0]), /Azure Service Bus Data Owner \(or Data Receiver to peek\) on bus/);
 });

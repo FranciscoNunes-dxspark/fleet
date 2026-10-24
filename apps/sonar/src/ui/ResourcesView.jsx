@@ -9,6 +9,7 @@ import { resourceRows } from '../tree.js';
 import { referenceWords, unresolved } from '../keyvault.js';
 import { autoscaleSummary, planLine } from '../scale.js';
 import { productionShare } from '../routing.js';
+import { totals } from '../servicebus.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -18,7 +19,7 @@ import { Lines, Panel, Row } from './parts.jsx';
 export const stateColour = (state) => (/^(Running|Ready|Online|Available|Succeeded)$/i.test(state) ? theme.add : /^(Stopped|Paused|Disabled|Offline|Failed)$/i.test(state) ? theme.del : theme.warn);
 
 // What each kind of row shows after its name, in dim.
-const TAGS = { container: 'container', sqlserver: 'sql server', storage: 'storage' };
+const TAGS = { container: 'container', sqlserver: 'sql server', storage: 'storage', servicebus: 'service bus' };
 
 // The keys each kind of resource takes, as the details' last line says them.
 const KEY_HINTS = {
@@ -26,6 +27,7 @@ const KEY_HINTS = {
   function: 'f functions · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
   container: 'R restart its revision · l its logs · o portal · b browse · y copy its address',
   storage: 'o portal · y copy its blob address',
+  servicebus: '↵ its queues and topics, their dead letters · o portal · y copy its address',
   sqlserver: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
   sqldb: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
 };
@@ -151,6 +153,19 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
     };
   }, [server?.id, rulesTick]);
 
+  // A Service Bus namespace's queues, topics and subscriptions, with their counts.
+  const [entities, setEntities] = useState(null);
+  useEffect(() => {
+    if (sel?.type !== 'servicebus') return;
+    let live = true;
+    setEntities(null);
+    const stop = delayed(() => ctx.provider.serviceBusEntities(sel).then((l) => live && setEntities({ list: l }), (e) => live && setEntities({ error: e.message.split('\n')[0] })));
+    return () => {
+      live = false;
+      stop();
+    };
+  }, [sel?.id]);
+
   // Its Entra admin, which the listing doesn't carry.
   const [admin, setAdmin] = useState(null);
   useEffect(() => {
@@ -175,6 +190,10 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       if (key.return || input === 'l') return a.containerLogs(ctx, sel);
       if (input === 'R') return a.restartContainer(ctx, sel);
       if (input === 'b') return a.browse(ctx, sel);
+      return;
+    }
+    if (sel.type === 'servicebus') {
+      if (key.return) return a.serviceBus(ctx, sel);
       return;
     }
     if (sel.type === 'sqlserver' || sel.type === 'sqldb') {
@@ -311,6 +330,28 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       ...costLine(sel),
       [],
       [{ text: KEY_HINTS.storage, color: theme.dim }],
+    ];
+  } else if (sel?.type === 'servicebus') {
+    const t = entities?.list ? totals(entities.list) : null;
+    const withDead = (entities?.list ?? []).filter((e) => e.deadLetter);
+    detail = [
+      [{ text: sel.name, bold: true }, { text: '  Service Bus namespace', color: theme.dim }],
+      prod(sel),
+      [],
+      field('address', sel.host),
+      field('group', sel.resourceGroup),
+      field('where', sel.location ?? ''),
+      field('sku', sel.sku),
+      ...costLine(sel),
+      [],
+      entities?.error
+        ? [{ text: "can't list its queues: ", color: theme.del }, { text: entities.error, color: theme.dim }]
+        : !entities
+          ? [{ text: 'reading its queues and topics…', color: theme.dim }]
+          : [{ text: `${entities.list.filter((e) => e.kind === 'queue').length} queues, ${entities.list.filter((e) => e.kind === 'topic').length} topics · ${t.active} active, `, color: theme.dim }, { text: `${t.deadLetter} dead letters`, color: t.deadLetter ? theme.del : theme.dim, bold: Boolean(t.deadLetter) }],
+      ...withDead.map((e) => [{ text: '  ' }, { text: fit(e.name, 24), bold: true }, { text: `${e.deadLetter} dead`, color: theme.del }]),
+      [],
+      [{ text: KEY_HINTS.servicebus, color: theme.dim }],
     ];
   } else if (server) {
     const db = sel.type === 'sqldb' ? sel : null;

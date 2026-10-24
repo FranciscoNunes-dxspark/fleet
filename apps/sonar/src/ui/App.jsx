@@ -1255,7 +1255,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
         : overlay?.kind === 'palette'
         ? 'type to filter · ↑↓ pick · ↵ run it (a key in the view; a command that takes more goes into the prompt) · esc close'
         : overlay?.kind === 'picker'
-          ? 'j/k move · ↵ change · esc close'
+          ? overlay.hint
+            ? `${overlay.hint} · esc close`
+            : 'j/k move · ↵ change · esc close'
           : overlay
             ? `${overlay.hint && !overlay.loading ? `${overlay.hint} · ` : ''}j/k scroll · space page · y copy · esc close`
             : HINTS[view];

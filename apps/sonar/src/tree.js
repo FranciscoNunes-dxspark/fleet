@@ -4,10 +4,10 @@ import { label } from './azure/arm.js';
 
 /**
  * Rows for `apps` (sorted by resource group, then name) with `slots` (app id → its slots), and the
- * other kinds in `others` ({ containers, storage, sqlServers }, each server with its `databases`):
+ * other kinds in `others` ({ containers, storage, sqlServers, serviceBus }, each server with its `databases`):
  * { kind: 'group', text } headings, then per group its apps (each followed by its slots), container
  * apps, SQL servers (each followed by its databases) and storage accounts, as { kind, target } with
- * kind 'app' | 'slot' | 'container' | 'sqlserver' | 'sqldb' | 'storage'. `filter` keeps what has it in
+ * kind 'app' | 'slot' | 'container' | 'sqlserver' | 'sqldb' | 'storage' | 'servicebus'. `filter` keeps what has it in
  * its name or resource group (a server stays for a database that has it).
  */
 export function resourceRows(apps, slots = {}, filter = '', others = {}) {
@@ -27,6 +27,7 @@ export function resourceRows(apps, slots = {}, filter = '', others = {}) {
     add(server, [{ order: 2, kind: 'sqlserver', target: server }, ...dbs.map((d) => ({ kind: 'sqldb', target: d }))]);
   }
   for (const a of (others.storage ?? []).filter(has)) add(a, [{ order: 3, kind: 'storage', target: a }]);
+  for (const n of (others.serviceBus ?? []).filter(has)) add(n, [{ order: 4, kind: 'servicebus', target: n }]);
   const rows = [];
   // Groups in the order their first app came (apps arrive sorted), then the ones with only other kinds, by name.
   const firstApp = new Map();

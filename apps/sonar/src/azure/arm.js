@@ -7,10 +7,13 @@ import { callSignal } from '../run.js';
 import { functionFrom, functionUrl, invocation, isHttp } from '../functions.js';
 import { autoscaleFrom, planFrom } from '../scale.js';
 import { rampUpRules, routingFrom } from '../routing.js';
+import { busRoleNeeded, deadLetterPath, entityFrom, messageFrom, namespaceFrom, resendHeaders, resubmitPath } from '../servicebus.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
 export const LOG_ANALYTICS = 'https://api.loganalytics.io';
+// Service Bus's own API (messages), with a token of its own.
+export const SERVICE_BUS = 'https://servicebus.azure.net';
 // Where the machine's public address comes from, for the SQL firewall.
 export const IPIFY = 'https://api.ipify.org';
 const APPS = '2024-03-01';
@@ -18,6 +21,7 @@ const GRAPH = '2021-03-01';
 const SQL = '2021-11-01';
 const STORAGE = '2023-05-01';
 const WEB = '2023-12-01';
+const BUS = '2021-11-01';
 
 /** Azure's error, in words: ARM's { error: { code, message } } or App Insights' { error: { message, innererror } }. */
 export function azureError(status, body, what) {
@@ -33,7 +37,7 @@ export function azureError(status, body, what) {
 /** An error in Storage's XML (<Error><Code>…</Code><Message>…</Message></Error>) as ARM's shape, for azureError. */
 export function xmlError(text) {
   const code = /<Code>([^<]*)<\/Code>/.exec(String(text ?? ''))?.[1];
-  const message = /<Message>([^<]*)<\/Message>/.exec(String(text ?? ''))?.[1]?.split('\n')[0];
+  const message = /<(?:Message|Detail)>([^<]*)<\/(?:Message|Detail)>/.exec(String(text ?? ''))?.[1]?.split('\n')[0];
   return code || message ? { error: { message: [code, message].filter(Boolean).join(': ') } } : null;
 }
 
@@ -291,6 +295,18 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     return raw ? { status: res.status, headers: res.headers, text } : json;
   };
   const arm = (path, opts) => call(`${ARM}/`, path.startsWith('http') ? path : `${ARM}${path}`, opts);
+  // Service Bus's REST API for one namespace: a path in it, or a lock's whole address. A 401 or 403
+  // there is about its data roles, which ARM's don't give, so it says which.
+  const bus = (ns, where, opts) =>
+    call(SERVICE_BUS, /^https:/.test(where) ? where : `https://${ns.host}/${where}`, { raw: true, ...opts }).catch((e) => {
+      throw e.status === 401 || e.status === 403 ? Object.assign(new Error(busRoleNeeded(ns, opts.what)), { status: e.status }) : e;
+    });
+  // Peek-locks the next dead letter of `entity` (null when there's none left).
+  const lockNext = async (ns, entity, signal, what) => {
+    const res = await bus(ns, `${deadLetterPath(entity)}/messages/head?timeout=1`, { method: 'POST', signal, what });
+    return res.status === 204 || !res.headers?.get?.('brokerproperties') ? null : messageFrom(res);
+  };
+  const unlock = (ns, held) => Promise.all(held.map((m) => (m.lock ? bus(ns, m.lock, { method: 'PUT', what: 'Letting go of a dead letter' }).catch(() => {}) : null)));
   // ARM pages its lists with nextLink.
   const all = async (path, opts) => {
     const out = [];
@@ -361,6 +377,75 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const headers = { ...(key ? { 'x-functions-key': key } : {}), ...(send.body != null ? { 'Content-Type': send.admin ? 'application/json' : 'text/plain' } : {}) };
       const res = await call(null, url, { method: send.method, text: send.body, headers, raw: true, auth: false, anyStatus: true, signal, what: `Invoking ${fn.name}` });
       return { status: res.status, type: res.headers?.get?.('content-type') ?? '', body: res.text, url, method: send.method };
+    },
+    async serviceBusNamespaces(sub, opts) {
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.ServiceBus/namespaces?api-version=${BUS}`, { ...opts, what: 'Listing the Service Bus namespaces' });
+      return list.map(namespaceFrom);
+    },
+    /** A namespace's queues, topics and each topic's subscriptions, with their counts: servicebus.js entityFrom's. */
+    async serviceBusEntities(ns, { signal } = {}) {
+      const [queues, topics] = await Promise.all([
+        all(`${ns.id}/queues?api-version=${BUS}`, { signal, what: `Listing ${ns.name}'s queues` }),
+        all(`${ns.id}/topics?api-version=${BUS}`, { signal, what: `Listing ${ns.name}'s topics` }),
+      ]);
+      const subs = await Promise.all(topics.map((t) => all(`${ns.id}/topics/${encodeURIComponent(t.name)}/subscriptions?api-version=${BUS}`, { signal, what: `Listing ${t.name}'s subscriptions` })));
+      return [...queues.map((q) => entityFrom('queue', q)), ...topics.flatMap((t, i) => [entityFrom('topic', t), ...subs[i].map((x) => entityFrom('subscription', x, t.name))])];
+    },
+    /**
+     * Up to `max` of an entity's dead letters, oldest first, without taking them: each is peek-locked,
+     * and every lock let go again once they're read (their delivery count goes up by one).
+     */
+    async peekDeadLetters(ns, entity, { max = 20, signal } = {}) {
+      const what = `Peeking ${entity.name}'s dead letters`;
+      const held = [];
+      try {
+        while (held.length < max) {
+          const m = await lockNext(ns, entity, signal, what);
+          if (!m) break;
+          held.push(m);
+        }
+      } finally {
+        await unlock(ns, held);
+      }
+      return held.map(({ lock: _, ...m }) => m).sort((a, b) => Number(a.sequence) - Number(b.sequence));
+    },
+    /**
+     * Resubmits the dead letters with these sequence numbers: each is locked, a copy sent to the entity
+     * (a subscription's to its topic), and only then completed; the others locked on the way are let go.
+     * Looks through at most `scan` of them. Resolves { moved, missing } (the sequence numbers not found).
+     */
+    async resubmitDeadLetters(ns, entity, sequences, { signal, scan = 500 } = {}) {
+      const want = new Set(sequences.map(String));
+      const held = [];
+      let moved = 0;
+      let seen = 0;
+      try {
+        while (want.size && seen < scan) {
+          const m = await lockNext(ns, entity, signal, `Resubmitting ${entity.name}'s dead letters`);
+          if (!m) break;
+          seen++;
+          held.push(m);
+          if (!want.has(String(m.sequence))) continue;
+          await bus(ns, `${resubmitPath(entity)}/messages`, { method: 'POST', text: m.body, headers: resendHeaders(m), signal, what: `Sending a copy of ${m.id || m.sequence} to ${resubmitPath(entity)}` });
+          await bus(ns, m.lock, { method: 'DELETE', signal, what: `Completing dead letter ${m.id || m.sequence}` });
+          held.pop();
+          want.delete(String(m.sequence));
+          moved++;
+        }
+      } finally {
+        await unlock(ns, held);
+      }
+      return { moved, missing: [...want] };
+    },
+    /** Receives and deletes every dead letter of an entity (at most `max`): how many went. */
+    async purgeDeadLetters(ns, entity, { signal, max = 10_000 } = {}) {
+      let n = 0;
+      while (n < max) {
+        const res = await bus(ns, `${deadLetterPath(entity)}/messages/head?timeout=1`, { method: 'DELETE', signal, what: `Purging ${entity.name}'s dead letters` });
+        if (res.status === 204 || !res.headers?.get?.('brokerproperties')) break;
+        n++;
+      }
+      return n;
     },
     /** An app's ramp-up rules (testing in production): routing.js's [{ slot, host, percent }]. */
     async routing(app, opts) {

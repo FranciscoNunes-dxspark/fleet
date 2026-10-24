@@ -61,7 +61,34 @@ function otherResources() {
     server('sub-prod', 'contoso-qa', 'contoso-sql-qa', { rules: [azure], databases: [['contoso-qa', 'Basic', 'Basic']] }),
     server('sub-dev', 'contoso-dev', 'contoso-sql-dev', { admin: { login: 'ana@contoso.com', type: 'User', only: true }, rules: [{ name: 'home', start: '198.51.100.0', end: '198.51.100.255' }], databases: [['contoso', 'Basic', 'Basic']] }),
   ];
-  return { containers, storage, sqlServers };
+  // A Service Bus namespace: orders come in on a queue, payments fail into its dead letters, events fan out.
+  const nsId = `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.ServiceBus/namespaces/contoso-bus`;
+  const dead = (seq, body, reason, description, ago, extra = {}) => ({
+    id: `m-${seq}`, sequence: seq, enqueued: new Date(Date.now() - ago).toISOString(), deliveryCount: 10, label: extra.label ?? '', correlationId: extra.correlationId ?? '', sessionId: '', contentType: 'application/json',
+    reason, description, source: '', properties: { DeadLetterReason: reason, DeadLetterErrorDescription: description, ...(extra.properties ?? {}) }, body, broker: { MessageId: `m-${seq}`, SequenceNumber: seq, ...(extra.label ? { Label: extra.label } : {}) },
+  });
+  const timeout = 'Message could not be consumed after 10 delivery attempts.';
+  const serviceBus = [
+    {
+      sub: 'sub-prod', type: 'servicebus', id: nsId, name: 'contoso-bus', resourceGroup: 'contoso-prod', location: 'westeurope', state: 'Active', sku: 'Standard', host: 'contoso-bus.servicebus.windows.net',
+      entities: [
+        { kind: 'queue', name: 'orders', path: 'orders', topic: null, active: 3, deadLetter: 0, scheduled: 0, transfer: 0, status: 'Active', maxDelivery: 10, subscriptions: null, dead: [] },
+        {
+          kind: 'queue', name: 'payments', path: 'payments', topic: null, active: 12, scheduled: 2, transfer: 0, status: 'Active', maxDelivery: 10, subscriptions: null,
+          dead: [
+            dead(4711, '{"orderId":"o-10211","amount":49.9,"currency":"EUR"}', 'MaxDeliveryCountExceeded', timeout, 3 * HOUR, { label: 'charge', properties: { Attempt: '10' } }),
+            dead(4712, '{"orderId":"o-10214","amount":12.5,"currency":"EUR"}', 'MaxDeliveryCountExceeded', timeout, 2 * HOUR, { label: 'charge' }),
+            dead(4719, '{"orderId":"o-10220","amount":230,"currency":"EUR","card":{"token":"tok_live_9f8e7d6c5b4a"}}', 'MaxDeliveryCountExceeded', timeout, HOUR, { label: 'charge' }),
+            dead(4720, 'not json at all', 'DeserializationFailed', 'Unexpected character encountered while parsing value: n.', 30 * 60 * 1000),
+          ],
+        },
+        { kind: 'topic', name: 'events', path: 'events', topic: null, active: 0, deadLetter: 0, scheduled: 0, transfer: 0, status: 'Active', maxDelivery: null, subscriptions: 2, dead: [] },
+        { kind: 'subscription', name: 'events/audit', path: 'events/subscriptions/audit', topic: 'events', active: 1, scheduled: 0, transfer: 0, status: 'Active', maxDelivery: 10, subscriptions: null, dead: [dead(88, '{"event":"OrderPlaced","orderId":"o-10199"}', 'TTLExpiredException', 'The message expired and was dead lettered.', 26 * HOUR)] },
+        { kind: 'subscription', name: 'events/search', path: 'events/subscriptions/search', topic: 'events', active: 0, scheduled: 0, transfer: 0, status: 'Active', maxDelivery: 10, subscriptions: null, dead: [] },
+      ],
+    },
+  ];
+  return { containers, storage, sqlServers, serviceBus };
 }
 
 function initialState(now) {
@@ -341,6 +368,16 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     return s;
   };
   const view = ({ settings, connectionStrings, sub, ...s }) => ({ ...s });
+  const busOf = (ns) => {
+    const n = state.serviceBus.find((x) => x.id === ns.id);
+    if (!n) throw new Error(`${ns.name}: not found`);
+    return n;
+  };
+  const entityOf = (ns, entity) => {
+    const e = busOf(ns).entities.find((x) => x.path === entity.path);
+    if (!e) throw new Error(`${entity.name}: not found in ${ns.name}`);
+    return e;
+  };
   const sqlServer = (server) => {
     const s = state.sqlServers.find((x) => x.id === server.id);
     if (!s) throw new Error(`${server.name}: not found`);
@@ -466,6 +503,37 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async setRouting(app, rules, { signal } = {}) {
       await wait(signal);
       state.routing[site(app).id] = rules.map((r) => ({ ...r }));
+    },
+    async serviceBusNamespaces(sub, { signal } = {}) {
+      await wait(signal);
+      return state.serviceBus.filter((n) => n.sub === sub).map(({ sub: _, entities: __, ...n }) => ({ ...n }));
+    },
+    async serviceBusEntities(ns, { signal } = {}) {
+      await wait(signal);
+      return busOf(ns).entities.map(({ dead, ...e }) => ({ ...e, deadLetter: dead.length }));
+    },
+    async peekDeadLetters(ns, entity, { max = 20, signal } = {}) {
+      await wait(signal);
+      return entityOf(ns, entity).dead.slice(0, max).map((m) => structuredClone(m));
+    },
+    // A resubmitted dead letter goes back to its queue (a subscription's to its topic, which gives it to every subscription).
+    async resubmitDeadLetters(ns, entity, sequences, { signal } = {}) {
+      await wait(signal);
+      const e = entityOf(ns, entity);
+      const want = new Set(sequences.map(String));
+      const moving = e.dead.filter((m) => want.has(String(m.sequence)));
+      e.dead = e.dead.filter((m) => !want.has(String(m.sequence)));
+      const to = entity.kind === 'subscription' ? busOf(ns).entities.filter((x) => x.topic === entity.topic) : [e];
+      for (const x of to) x.active += moving.length;
+      for (const m of moving) want.delete(String(m.sequence));
+      return { moved: moving.length, missing: [...want] };
+    },
+    async purgeDeadLetters(ns, entity, { signal } = {}) {
+      await wait(signal);
+      const e = entityOf(ns, entity);
+      const n = e.dead.length;
+      e.dead = [];
+      return n;
     },
     async plan(planId, { signal } = {}) {
       await wait(signal);

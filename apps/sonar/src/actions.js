@@ -17,6 +17,7 @@ import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, pr
 import { parseWatch, watchEvery } from './watches.js';
 import { autoscaleSummary, consumption, parseScale, planLine, scaledSku } from './scale.js';
 import { parseRoute, productionShare, withRoute } from './routing.js';
+import { bodyPreview, resubmitPath, secretBody } from './servicebus.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
@@ -60,7 +61,7 @@ export function targetNamed(ctx, name) {
 }
 
 /** What a resource is, in words. */
-export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
+export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database', servicebus: 'Service Bus namespace' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
 
 const need = (ctx, target) => target ?? (ctx.note('Pick an app or a slot in Resources first, or name one.', 'error'), null);
 
@@ -447,6 +448,150 @@ export async function route(ctx, text) {
     return { stdout: `${app.name}: production ${productionShare(next.rules)}%${next.rules.map((x) => `, ${x.slot} ${x.percent}%`).join('')}` };
   }, { label: 'Routing' });
   if (r.ok) await ctx.routingChanged(app);
+  return r;
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** ↵ on a Service Bus namespace: its queues, topics and subscriptions with their counts; ↵ on one peeks its dead letters. */
+export function serviceBus(ctx, ns) {
+  ctx.showPicker({
+    title: `${ns.name}: queues, topics, subscriptions`,
+    hint: '↵ its dead letters · X purge them · y copy its name',
+    empty: 'No queues or topics.',
+    busEntities: true,
+    load: async () => {
+      const list = await ctx.provider.serviceBusEntities(ns);
+      const w = Math.min(32, Math.max(8, ...list.map((e) => e.name.length)));
+      return list.map((e) => ({
+        e,
+        segments: [
+          { text: fit(e.kind, 13), color: theme.dim },
+          { text: `${e.name.padEnd(w)}  `, strong: true },
+          ...(e.kind === 'topic'
+            ? [{ text: `${plural(e.subscriptions ?? 0, 'subscription')}`, color: theme.dim }]
+            : [
+                { text: fit(`${e.active} active`, 12) },
+                { text: fit(`${e.deadLetter} dead`, 10), color: e.deadLetter ? theme.del : theme.dim, bold: Boolean(e.deadLetter) },
+                { text: e.scheduled ? `${e.scheduled} scheduled` : '', color: theme.dim },
+                { text: e.status && e.status !== 'Active' ? `  ${e.status}` : '', color: theme.warn },
+              ]),
+        ],
+      }));
+    },
+    onPick: (it) => (it.e.kind === 'topic' ? ctx.note(`A topic keeps no messages of its own: its subscriptions (${it.e.name}/…) do.`) : deadLetters(ctx, ns, it.e)),
+    keys: {
+      X: (it) => (it.e.kind === 'topic' ? ctx.note('A topic has no dead letters of its own: purge one of its subscriptions\'.', 'error') : purgeDeadLetters(ctx, ns, it.e)),
+      y: (it) => ctx.copy(it.e.name, 'its name'),
+    },
+  });
+}
+
+const PEEK = 50;
+
+/**
+ * An entity's dead letters, oldest first (up to 50), peeked: locked and let go, so none is taken. ↵ shows
+ * one whole; R resubmits the one under the cursor (or those picked with v); X purges them all. A body that
+ * looks like it holds a secret stays hidden until v in the viewer.
+ */
+export function deadLetters(ctx, ns, entity, { replace = false } = {}) {
+  ctx.showPicker(
+    {
+      title: `Dead letters of ${entity.name} (${ns.name})`,
+      hint: '↵ see it · v pick several · R resubmit · X purge all · y copy its id',
+      empty: `${entity.name} has no dead letters.`,
+      range: true,
+      busLetters: entity.path,
+      load: async () =>
+        (await ctx.provider.peekDeadLetters(ns, entity, { max: PEEK })).map((m) => ({
+          m,
+          segments: [
+            { text: fit(String(m.sequence ?? ''), 8), color: theme.dim },
+            { text: fit(m.enqueued ? `${relTime(Date.parse(m.enqueued))} ago` : '', 9), color: theme.dim },
+            { text: fit(m.reason || '—', 26), color: theme.del },
+            { text: secretBody(m.body) ? '•••••• (looks secret: ↵ then v)' : bodyPreview(m.body), color: secretBody(m.body) ? theme.warn : undefined },
+          ],
+        })),
+      onPick: (it) => deadLetter(ctx, ns, entity, it.m),
+      keys: {
+        R: (it, picked) => resubmit(ctx, ns, entity, picked.map((x) => x.m)),
+        X: () => purgeDeadLetters(ctx, ns, entity),
+        y: (it) => ctx.copy(it.m.id, 'its message id'),
+      },
+    },
+    { replace },
+  );
+}
+
+/** ↵ on a dead letter: its properties and body (a secret-looking body hidden until v); R resubmits it. */
+export function deadLetter(ctx, ns, entity, m, { shown = false, replace = false } = {}) {
+  const hidden = secretBody(m.body) && !shown;
+  const body = hidden ? '•••••• it looks like it holds a secret: v shows it' : prettyBody(m.body);
+  const rows = [
+    ['message', m.id],
+    ['sequence', String(m.sequence ?? '')],
+    ['enqueued', m.enqueued ? `${cellText(m.enqueued, 'datetime')} (${relTime(Date.parse(m.enqueued))} ago)` : ''],
+    ['delivered', m.deliveryCount != null ? `${m.deliveryCount} times` : ''],
+    ['label', m.label],
+    ['correlation', m.correlationId],
+    ['type', m.contentType],
+    ['reason', m.reason],
+    ['why', m.description],
+    ...Object.entries(m.properties ?? {}).filter(([k]) => !/^DeadLetter(Reason|ErrorDescription)$/i.test(k)).map(([k, v]) => [k, v]),
+  ].filter(([, v]) => v);
+  const w = Math.min(16, Math.max(...rows.map(([k]) => k.length))) + 2;
+  const lines = [
+    ...rows.map(([k, v]) => [{ text: k.padEnd(w), color: theme.dim }, { text: String(v), color: k === 'reason' || k === 'why' ? theme.del : undefined }]),
+    [],
+    ...body.split('\n').map((l) => [{ text: l, color: hidden ? theme.warn : undefined }]),
+  ];
+  const text = [...rows.map(([k, v]) => `${k.padEnd(w)}${v}`), '', body].join('\n');
+  const opts = { lines, hint: `${hidden ? 'v show the body · ' : shown ? 'v hide the body · ' : ''}R resubmit it`, keys: { R: () => resubmit(ctx, ns, entity, [m]), ...(secretBody(m.body) ? { v: () => deadLetter(ctx, ns, entity, m, { shown: !shown, replace: true }) } : {}) } };
+  const title = `Dead letter ${m.sequence ?? m.id} of ${entity.name}`;
+  if (replace) ctx.showText(title, text, { ...opts, back: ctx.overlay()?.back, token: ctx.overlay()?.token });
+  else ctx.showText(title, text, { ...opts, token: {} });
+}
+
+/** After a resubmit or purge: the lists of dead letters and entities on screen read again. */
+function busChanged(ctx, ns, entity) {
+  // Out of the message viewer, back to its list.
+  if (ctx.overlay()?.title?.startsWith('Dead letter ')) ctx.closeOverlay();
+  const o = ctx.overlay();
+  // The entities' list underneath reads its counts again when it's back.
+  for (let x = o; x; x = x.back) if (x.busEntities) delete x.items;
+  if (o?.busLetters === entity.path) deadLetters(ctx, ns, entity, { replace: true });
+}
+
+/**
+ * R on dead letters: resubmits them, asking first. Each is sent again to its queue (a subscription's to
+ * its topic, which hands it to every subscription) and only then taken off the dead letters.
+ */
+export async function resubmit(ctx, ns, entity, messages) {
+  if (!messages.length) return;
+  const to = resubmitPath(entity);
+  const ok = await confirmChange(ctx, ns, {
+    title: `Resubmit ${plural(messages.length, 'dead letter')} of ${entity.name} to ${to}?`,
+    detail: `${entity.kind === 'subscription' ? `It goes to the topic ${to}, so every subscription of it gets a copy. ` : ''}Each is sent again, then taken off the dead letters.`,
+    yes: 'Yes, resubmit',
+  });
+  if (!ok) return;
+  const r = await ctx.task(`Resubmit ${plural(messages.length, 'dead letter')} of ${entity.name} to ${to}`, async (signal) => {
+    const { moved, missing } = await ctx.provider.resubmitDeadLetters(ns, entity, messages.map((m) => m.sequence), { signal });
+    return { stdout: `Moved ${moved} of ${messages.length} to ${to}${missing.length ? `; ${missing.length} weren't there any more (${missing.join(', ')})` : ''}` };
+  }, { label: 'Resubmitting' });
+  if (r.ok) busChanged(ctx, ns, entity);
+  return r;
+}
+
+/** X: deletes every dead letter of an entity, for good, asking first (production asks for the namespace's name). */
+export async function purgeDeadLetters(ctx, ns, entity) {
+  const ok = await confirmChange(ctx, ns, { title: `Purge ${entity.name}'s dead letters${entity.deadLetter ? ` (${entity.deadLetter})` : ''}?`, detail: "They're deleted for good: nothing can bring them back.", yes: 'Yes, delete them' });
+  if (!ok) return;
+  const r = await ctx.task(`Purge ${entity.name}'s dead letters`, async (signal) => {
+    const n = await ctx.provider.purgeDeadLetters(ns, entity, { signal });
+    return { stdout: `Deleted ${plural(n, 'dead letter')} of ${entity.name}` };
+  }, { label: 'Purging' });
+  if (r.ok) busChanged(ctx, ns, entity);
   return r;
 }
 
