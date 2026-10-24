@@ -245,7 +245,14 @@ moods** in the settings turns both off.
 | `F` | Let this machine's public address through the server's firewall |
 | `o` `y` | Open it in the portal · copy its address |
 
-A storage account takes `o` (the portal) and `y` (copy its blob address).
+| On a storage account | |
+| --- | --- |
+| `↵` | Its blob containers; `↵` goes into one, a folder at a time (the `/` in blob names), with each blob's size, when it changed and its tier; `↵` on a blob shows it (text up to 1 MB, JSON indented); `y` copies its address |
+| `o` `y` | Open it in the portal · copy its blob address |
+
+Blobs are read through Blob Storage's own API with your `az` sign-in, which needs Storage Blob Data
+Reader (or Contributor) on the account: Owner and Contributor on it don't reach the blobs that way. Without
+it, Sonar says so. Sonar never writes a blob.
 
 | On a Service Bus namespace | |
 | --- | --- |
@@ -406,6 +413,5 @@ terminals), for when you've switched to another window. **Notify when done** tur
 
 ## Not yet
 
-Storage beyond the list (its containers and blobs), other kinds of resource (Service Bus, Key Vault,
-Cosmos DB), container apps' metrics, and Log Analytics workspaces queried directly, other than a
-container app's logs.
+Other kinds of resource (Key Vault itself, Cosmos DB), writing blobs, container apps' metrics, and Log
+Analytics workspaces queried directly, other than a container app's logs.

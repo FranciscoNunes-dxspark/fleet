@@ -18,6 +18,7 @@ import { parseWatch, watchEvery } from './watches.js';
 import { autoscaleSummary, consumption, parseScale, planLine, scaledSku } from './scale.js';
 import { parseRoute, productionShare, withRoute } from './routing.js';
 import { bodyPreview, resubmitPath, secretBody } from './servicebus.js';
+import { VIEW_MAX, blobUrl, isText, shortName, sizeText } from './blobs.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
@@ -485,6 +486,73 @@ export function serviceBus(ctx, ns) {
       y: (it) => ctx.copy(it.e.name, 'its name'),
     },
   });
+}
+
+/** ↵ on a storage account: its blob containers; ↵ on one goes into it. Reading only. */
+export function storageContainers(ctx, account) {
+  ctx.showPicker({
+    title: `${account.name}: containers`,
+    hint: '↵ its blobs · y copy its address',
+    empty: `${account.name} has no blob containers.`,
+    load: async () =>
+      (await ctx.provider.containers(account)).map((c) => ({
+        c,
+        segments: [{ text: '▸ ', color: theme.dim }, { text: fit(c.name, 40), strong: true }, { text: fit(c.access === 'private' ? '' : `public: ${c.access}`, 18), color: theme.warn }, { text: c.modified ? `changed ${relTime(Date.parse(c.modified))} ago` : '', color: theme.dim }],
+      })),
+    onPick: (it) => blobFolder(ctx, account, it.c.name, ''),
+    keys: { y: (it) => ctx.copy(blobUrl(account, it.c.name), 'its address') },
+  });
+}
+
+/**
+ * A folder of a container (`prefix`, '' for its top): its folders, then its blobs with their size,
+ * when they changed and their tier. ↵ goes into a folder or shows a blob (text up to 1 MB), y copies
+ * its address.
+ */
+export function blobFolder(ctx, account, container, prefix) {
+  ctx.showPicker({
+    title: `${account.name}/${container}/${prefix}`,
+    hint: '↵ open it · y copy its address',
+    empty: 'Nothing in it.',
+    load: async () => {
+      const { prefixes, blobs, more } = await ctx.provider.blobs(account, container, prefix);
+      const w = Math.min(48, Math.max(12, ...[...prefixes, ...blobs.map((b) => b.name)].map((n) => shortName(n, prefix).length)));
+      return [
+        ...prefixes.map((p) => ({ folder: p, segments: [{ text: '▸ ', color: theme.accent }, { text: fit(shortName(p, prefix), w), strong: true, color: theme.accent }] })),
+        ...blobs.map((b) => ({
+          b,
+          segments: [
+            { text: '  ' },
+            { text: `${fit(shortName(b.name, prefix), w)}  `, strong: true },
+            { text: fit(sizeText(b.size), 9, 'right'), color: b.size > VIEW_MAX ? theme.dim : undefined },
+            { text: `  ${fit(b.modified ? `${relTime(Date.parse(b.modified))} ago` : '', 9)}`, color: theme.dim },
+            { text: fit(b.tier, 8), color: theme.info },
+            { text: b.type, color: theme.dim },
+          ],
+        })),
+        ...(more ? [{ more: true, segments: [{ text: '  … more than 5000 blobs here: only the first are listed', color: theme.dim }] }] : []),
+      ];
+    },
+    onPick: (it) => (it.folder ? blobFolder(ctx, account, container, it.folder) : it.b ? viewBlob(ctx, account, container, it.b) : null),
+    keys: { y: (it) => (it.more ? null : ctx.copy(blobUrl(account, container, it.folder ?? it.b.name), 'its address')) },
+  });
+}
+
+/** ↵ on a blob: its text in the viewer, when it's text and at most 1 MB (JSON indented). */
+export async function viewBlob(ctx, account, container, b) {
+  if (b.size > VIEW_MAX) return ctx.note(`${b.name} is ${sizeText(b.size)}: the viewer shows blobs up to ${sizeText(VIEW_MAX)}. y copies its address.`, 'error');
+  if (!isText(b)) return ctx.note(`${b.name} is ${b.type || 'not text'}: the viewer shows text. y copies its address.`, 'error');
+  const title = `${container}/${b.name}`;
+  const token = {};
+  ctx.showText(title, '', { loading: true, token });
+  try {
+    const { text } = await ctx.provider.readBlob(account, container, b.name);
+    if (ctx.overlay()?.token !== token) return;
+    ctx.showText(title, prettyBody(text), { token, hint: `${sizeText(b.size)} · ${b.type || 'text'}` });
+  } catch (e) {
+    if (ctx.overlay()?.token === token) ctx.closeOverlay();
+    ctx.note(e.message, 'error');
+  }
 }
 
 const PEEK = 50;

@@ -26,7 +26,7 @@ const KEY_HINTS = {
   web: 'R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
   function: 'f functions · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
   container: 'R restart its revision · l its logs · o portal · b browse · y copy its address',
-  storage: 'o portal · y copy its blob address',
+  storage: '↵ its containers and blobs · o portal · y copy its blob address',
   servicebus: '↵ its queues and topics, their dead letters · o portal · y copy its address',
   sqlserver: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
   sqldb: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
@@ -190,6 +190,10 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       if (key.return || input === 'l') return a.containerLogs(ctx, sel);
       if (input === 'R') return a.restartContainer(ctx, sel);
       if (input === 'b') return a.browse(ctx, sel);
+      return;
+    }
+    if (sel.type === 'storage') {
+      if (key.return) return a.storageContainers(ctx, sel);
       return;
     }
     if (sel.type === 'servicebus') {

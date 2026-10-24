@@ -7,6 +7,7 @@
 
 import { metricInterval } from './metrics.js';
 import { functionUrl, invocation, isHttp } from './functions.js';
+import { storageRoleNeeded } from './blobs.js';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -88,7 +89,22 @@ function otherResources() {
       ],
     },
   ];
-  return { containers, storage, sqlServers, serviceBus };
+  // The production account's blobs (the dev one's can't be read: no data role there).
+  const day = 24 * HOUR;
+  const file = (name, content, { type = 'text/plain', ago = day, tier = 'Hot', size } = {}) => ({ name, content, size: size ?? Buffer.byteLength(content ?? ''), type, tier, modified: new Date(Date.now() - ago).toISOString(), kind: 'BlockBlob' });
+  const csv = (d) => `orderId,placedAt,total\no-${d}01,2026-10-${d}T09:12:00Z,49.90\no-${d}02,2026-10-${d}T11:40:00Z,12.50\n`;
+  const blobs = {
+    contosoprodstore: {
+      exports: [
+        file('orders/2026-10-23.csv', csv(23), { type: 'text/csv', ago: day }),
+        file('orders/2026-10-24.csv', csv(24), { type: 'text/csv', ago: HOUR }),
+        file('orders/archive/2026-09.zip', null, { type: 'application/zip', ago: 30 * day, tier: 'Cool', size: 5 * 1024 * 1024 }),
+        file('readme.txt', 'Nightly exports of the orders, one CSV a day.\n', { ago: 90 * day }),
+      ],
+      invoices: [file('2026/10/inv-1001.json', JSON.stringify({ invoice: 'inv-1001', orderId: 'o-10211', total: 49.9, currency: 'EUR' }), { type: 'application/json', ago: 2 * day })],
+    },
+  };
+  return { containers, storage, sqlServers, serviceBus, blobs };
 }
 
 function initialState(now) {
@@ -368,6 +384,12 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     return s;
   };
   const view = ({ settings, connectionStrings, sub, ...s }) => ({ ...s });
+  // An account's blobs, or Storage's 403 in words, as the real one says it.
+  const blobsOf = (account, what) => {
+    const b = state.blobs[account.name];
+    if (!b) throw Object.assign(new Error(storageRoleNeeded(account, what)), { status: 403 });
+    return b;
+  };
   const busOf = (ns) => {
     const n = state.serviceBus.find((x) => x.id === ns.id);
     if (!n) throw new Error(`${ns.name}: not found`);
@@ -503,6 +525,26 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async setRouting(app, rules, { signal } = {}) {
       await wait(signal);
       state.routing[site(app).id] = rules.map((r) => ({ ...r }));
+    },
+    async containers(account, { signal } = {}) {
+      await wait(signal);
+      const b = blobsOf(account, `Listing ${account.name}'s containers`);
+      return Object.keys(b).map((name) => ({ name, modified: new Date(now - 90 * 24 * HOUR).toISOString(), access: 'private' }));
+    },
+    async blobs(account, container, prefix = '', { signal } = {}) {
+      await wait(signal);
+      const list = blobsOf(account, `Listing ${container}/${prefix}`)[container];
+      if (!list) throw new Error(`Listing ${container}: not found`);
+      const under = list.filter((x) => x.name.startsWith(prefix));
+      const prefixes = [...new Set(under.map((x) => x.name.slice(prefix.length)).filter((n) => n.includes('/')).map((n) => `${prefix}${n.split('/')[0]}/`))].sort();
+      const files = under.filter((x) => !x.name.slice(prefix.length).includes('/')).map(({ content: _, ...x }) => ({ ...x }));
+      return { prefixes, blobs: files, more: false };
+    },
+    async readBlob(account, container, name, { signal } = {}) {
+      await wait(signal);
+      const b = (blobsOf(account, `Reading ${container}/${name}`)[container] ?? []).find((x) => x.name === name);
+      if (!b) throw new Error(`Reading ${container}/${name}: not found`);
+      return { text: b.content ?? '', type: b.type, partial: false };
     },
     async serviceBusNamespaces(sub, { signal } = {}) {
       await wait(signal);

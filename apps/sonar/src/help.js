@@ -52,6 +52,7 @@ export const HELP = [
       ['F', 'Let this machine\'s public address through the server\'s firewall'],
       ['o  y', 'The portal · copy its address'],
       { heading: 'On a storage account' },
+      ['↵', 'Its blob containers, then their blobs a folder at a time (size, changed, tier): ↵ goes into a folder or shows a blob (text up to 1 MB), y copies its address; needs Storage Blob Data Reader'],
       ['o  y', 'The portal · copy its blob address'],
       { heading: 'On a Service Bus namespace' },
       ['↵', 'Its queues, topics and subscriptions with their counts; ↵ on one: its dead letters, peeked (locked and let go, so none is taken)'],

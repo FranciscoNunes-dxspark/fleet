@@ -608,3 +608,31 @@ test('Service Bus: namespaces and entities with their counts; dead letters peeke
   const denied = createAzure({ fetch: fakeFetch({ 'POST bus.servicebus.windows.net/q/$DeadLetterQueue/messages/head': [401, { raw: '<Error><Code>401</Code><Detail>Unauthorized</Detail></Error>' }] }).fetch, token: async () => 't' });
   await assert.rejects(denied.peekDeadLetters(ns, entities[0]), /Azure Service Bus Data Owner \(or Data Receiver to peek\) on bus/);
 });
+
+test('blobs: containers across pages, a folder\'s prefixes and blobs, a blob\'s first megabyte, with Storage\'s version and token; a 403 names the role', async () => {
+  const account = { name: 'acct', host: 'acct.blob.core.windows.net' };
+  const { fetch, calls } = fakeFetch({
+    'GET acct.blob.core.windows.net/': (_, call) =>
+      new URL(call.url).searchParams.get('marker')
+        ? { raw: '<EnumerationResults><Containers><Container><Name>logs</Name><Properties><Last-Modified>Sat, 24 Oct 2026 10:00:00 GMT</Last-Modified></Properties></Container></Containers><NextMarker /></EnumerationResults>' }
+        : { raw: '<?xml version="1.0"?><EnumerationResults><Containers><Container><Name>exports</Name><Properties><Last-Modified>Fri, 23 Oct 2026 10:00:00 GMT</Last-Modified><PublicAccess>blob</PublicAccess></Properties></Container></Containers><NextMarker>m2</NextMarker></EnumerationResults>' },
+    'GET acct.blob.core.windows.net/exports': { raw: '<EnumerationResults><Blobs><BlobPrefix><Name>orders/archive/</Name></BlobPrefix><Blob><Name>orders/a &amp; b.csv</Name><Properties><Last-Modified>Fri, 23 Oct 2026 10:00:00 GMT</Last-Modified><Content-Length>91</Content-Length><Content-Type>text/csv</Content-Type><BlobType>BlockBlob</BlobType><AccessTier>Hot</AccessTier></Properties></Blob></Blobs><NextMarker/></EnumerationResults>' },
+    'GET acct.blob.core.windows.net/exports/orders/a%20%26%20b.csv': [206, { raw: 'a,b\n1,2\n', headers: { 'content-type': 'text/csv', 'content-range': 'bytes 0-7/8' } }],
+    'GET acct.blob.core.windows.net/secret': [403, { raw: '<Error><Code>AuthorizationPermissionMismatch</Code><Message>This request is not authorized to perform this operation using this permission.</Message></Error>' }],
+  });
+  const tokens = [];
+  const azure = createAzure({ fetch, token: async (r) => (tokens.push(r), 't') });
+  const containers = await azure.containers(account);
+  assert.deepEqual(containers.map((c) => [c.name, c.access]), [['exports', 'blob'], ['logs', 'private']]);
+  assert.equal(calls[0].init.headers['x-ms-version'], '2023-11-03');
+  assert.ok(tokens.every((t) => t === 'https://storage.azure.com/'));
+  const folder = await azure.blobs(account, 'exports', 'orders/');
+  assert.deepEqual(folder.prefixes, ['orders/archive/']);
+  assert.deepEqual(folder.blobs.map((b) => [b.name, b.size, b.type, b.tier]), [['orders/a & b.csv', 91, 'text/csv', 'Hot']]);
+  const q = new URL(calls.at(-1).url).searchParams;
+  assert.deepEqual([q.get('restype'), q.get('comp'), q.get('delimiter'), q.get('prefix')], ['container', 'list', '/', 'orders/']);
+  const read = await azure.readBlob(account, 'exports', 'orders/a & b.csv');
+  assert.deepEqual([read.text, read.type, read.partial], ['a,b\n1,2\n', 'text/csv', false]);
+  assert.equal(calls.at(-1).init.headers['x-ms-range'], 'bytes=0-1048575');
+  await assert.rejects(azure.blobs(account, 'secret'), /Storage Blob Data Reader on acct is needed to read its blobs \(Listing secret\/\)/);
+});

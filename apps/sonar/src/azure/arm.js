@@ -7,11 +7,14 @@ import { callSignal } from '../run.js';
 import { functionFrom, functionUrl, invocation, isHttp } from '../functions.js';
 import { autoscaleFrom, planFrom } from '../scale.js';
 import { rampUpRules, routingFrom } from '../routing.js';
+import { STORAGE_VERSION, VIEW_MAX, blobUrl, parseBlobs, parseContainers, storageRoleNeeded } from '../blobs.js';
 import { busRoleNeeded, deadLetterPath, entityFrom, messageFrom, namespaceFrom, resendHeaders, resubmitPath } from '../servicebus.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
 export const LOG_ANALYTICS = 'https://api.loganalytics.io';
+// Blob Storage's own API, with a token of its own.
+export const BLOB_STORAGE = 'https://storage.azure.com/';
 // Service Bus's own API (messages), with a token of its own.
 export const SERVICE_BUS = 'https://servicebus.azure.net';
 // Where the machine's public address comes from, for the SQL firewall.
@@ -301,6 +304,11 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     call(SERVICE_BUS, /^https:/.test(where) ? where : `https://${ns.host}/${where}`, { raw: true, ...opts }).catch((e) => {
       throw e.status === 401 || e.status === 403 ? Object.assign(new Error(busRoleNeeded(ns, opts.what)), { status: e.status }) : e;
     });
+  // Blob Storage's API for one account; a 403 there is about its data roles.
+  const blob = (account, url, opts) =>
+    call(BLOB_STORAGE, url, { raw: true, ...opts, headers: { 'x-ms-version': STORAGE_VERSION, ...(opts.headers ?? {}) } }).catch((e) => {
+      throw e.status === 403 ? Object.assign(new Error(storageRoleNeeded(account, opts.what)), { status: 403 }) : e;
+    });
   // Peek-locks the next dead letter of `entity` (null when there's none left).
   const lockNext = async (ns, entity, signal, what) => {
     const res = await bus(ns, `${deadLetterPath(entity)}/messages/head?timeout=1`, { method: 'POST', signal, what });
@@ -377,6 +385,37 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const headers = { ...(key ? { 'x-functions-key': key } : {}), ...(send.body != null ? { 'Content-Type': send.admin ? 'application/json' : 'text/plain' } : {}) };
       const res = await call(null, url, { method: send.method, text: send.body, headers, raw: true, auth: false, anyStatus: true, signal, what: `Invoking ${fn.name}` });
       return { status: res.status, type: res.headers?.get?.('content-type') ?? '', body: res.text, url, method: send.method };
+    },
+    /** A storage account's blob containers, every page: blobs.js parseContainers'. */
+    async containers(account, { signal } = {}) {
+      const out = [];
+      let marker = null;
+      do {
+        const q = new URLSearchParams({ comp: 'list', maxresults: '500', ...(marker ? { marker } : {}) });
+        const page = parseContainers((await blob(account, `https://${account.host}/?${q}`, { signal, what: `Listing ${account.name}'s containers` })).text);
+        out.push(...page.containers);
+        marker = page.next;
+      } while (marker);
+      return out;
+    },
+    /** One folder of a container (`prefix`, ending in "/", or '' for its top): { prefixes, blobs, more }, at most `max` blobs. */
+    async blobs(account, container, prefix = '', { signal, max = 5000 } = {}) {
+      const out = { prefixes: [], blobs: [], more: false };
+      let marker = null;
+      do {
+        const q = new URLSearchParams({ restype: 'container', comp: 'list', delimiter: '/', maxresults: '1000', ...(prefix ? { prefix } : {}), ...(marker ? { marker } : {}) });
+        const page = parseBlobs((await blob(account, `${blobUrl(account, container)}?${q}`, { signal, what: `Listing ${container}/${prefix}` })).text);
+        out.prefixes.push(...page.prefixes);
+        out.blobs.push(...page.blobs);
+        marker = page.next;
+      } while (marker && out.blobs.length < max);
+      out.more = Boolean(marker);
+      return out;
+    },
+    /** A blob's first `max` bytes as text: { text, type, partial }. */
+    async readBlob(account, container, name, { signal, max = VIEW_MAX } = {}) {
+      const res = await blob(account, blobUrl(account, container, name), { signal, headers: { 'x-ms-range': `bytes=0-${max - 1}` }, what: `Reading ${container}/${name}` });
+      return { text: res.text, type: res.headers?.get?.('content-type') ?? '', partial: res.status === 206 && /\/(\d+)$/.exec(res.headers?.get?.('content-range') ?? '')?.[1] > max };
     },
     async serviceBusNamespaces(sub, opts) {
       const list = await all(`/subscriptions/${sub}/providers/Microsoft.ServiceBus/namespaces?api-version=${BUS}`, { ...opts, what: 'Listing the Service Bus namespaces' });
