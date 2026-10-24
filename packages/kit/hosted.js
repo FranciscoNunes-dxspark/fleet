@@ -2,8 +2,10 @@
 // one terminal and switches between them. The host starts each app as a child process with
 // FLEET_HOSTED=1 and pipes, not a terminal: it reads what the app draws from its stdout, and writes the
 // keys meant for it into its stdin. Ink wants a terminal, so here the app's stdin and stdout are made
-// to look like one (isTTY, raw mode, a size and 'resize'), and a third pipe, fd 3, carries messages
-// both ways as lines of JSON: the host's size changes and repaints, the app's hand-offs.
+// to look like one (isTTY, raw mode, a size and 'resize'). A third pipe, fd 3, carries the host's
+// messages as lines of JSON (size changes and repaints); the app's own messages (ready, hand-offs) go
+// out in its stdout as a private OSC sequence the host takes out, since on Windows a child's writes to
+// fd 3 never reached the host, while its stdout always does.
 //
 // Each app's cli takes its streams from appTerminal(), which outside the host are process.stdin and
 // process.stdout, untouched; everything else (config, credentials, mouse reports, OSC 52, the bell)
@@ -25,6 +27,24 @@ export const isHosted = (env = process.env) => env[HOSTED_VARIABLE] === '1';
 
 /** One message as the line that carries it. */
 export const encodeMessage = (message) => `${JSON.stringify(message)}\n`;
+
+/** The start of an app's message in its output: OSC 5379, then the JSON, ended with BEL. */
+export const APP_MESSAGE = '\x1b]5379;';
+
+/** One message from the app, as the sequence in its output that carries it. */
+export const encodeAppMessage = (message) => `${APP_MESSAGE}${JSON.stringify(message)}\x07`;
+
+/** The message an OSC sequence from the app carries, or null when it's another sequence (or not JSON). */
+export function decodeAppMessage(seq) {
+  if (!seq.startsWith(APP_MESSAGE)) return null;
+  const body = seq.slice(APP_MESSAGE.length).replace(/(\x07|\x1b\\)$/, '');
+  try {
+    const message = JSON.parse(body);
+    return message && typeof message === 'object' && !Array.isArray(message) ? message : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * A reader of newline-delimited JSON: call it with each chunk (text), and `onMessage` gets each whole
@@ -139,8 +159,10 @@ function controlPipe(fd = CONTROL_FD) {
  * { onData, onEnd, write } (fd 3 unless given); `exit` is what happens when the host goes away.
  */
 export function hostedStreams({ stdin, stdout, control = controlPipe(), env = process.env, exit = () => process.exit(0) }) {
+  // Straight to the pipe, past the kept screen: a message is never part of what's drawn again.
+  const write = stdout.write;
   const send = (message) => {
-    control.write(encodeMessage(message));
+    write.call(stdout, encodeAppMessage(message));
     return true;
   };
   const define = (stream, key, value) => Object.defineProperty(stream, key, { value, configurable: true, writable: true, enumerable: true });
@@ -164,7 +186,6 @@ export function hostedStreams({ stdin, stdout, control = controlPipe(), env = pr
   });
   if (typeof stdin.ref !== 'function') define(stdin, 'ref', () => stdin);
   if (typeof stdin.unref !== 'function') define(stdin, 'unref', () => stdin);
-  const write = stdout.write;
   const kept = screenKeeper();
   define(stdout, 'write', function (data, ...rest) {
     kept.write(data);

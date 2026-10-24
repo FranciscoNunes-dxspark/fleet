@@ -42,3 +42,12 @@ test('an OSC cut across reads, ended with ESC \\, passes whole', () => {
   assert.equal(f.push('\x1b]52;c;aGk=', { bar: BAR }), '');
   assert.equal(f.push('\x1b\\x', { bar: BAR }), `\x1b]52;c;aGk=\x1b\\x${BAR}`);
 });
+
+test("the app's messages are taken out of its output, whole across reads, on screen or not", () => {
+  const got = [];
+  const filter = new OutputFilter({ onMessage: (m) => got.push(m) });
+  assert.equal(filter.push('a\x1b]5379;{"ready":tr'), 'a');
+  assert.equal(filter.push('ue}\x07b\x1b]0;title\x07'), 'b\x1b]0;title\x07');
+  assert.equal(filter.push('\x1b]5379;{"handoff":"trawl","line":"/x"}\x1b\\', { active: false }), '');
+  assert.deepEqual(got, [{ ready: true }, { handoff: 'trawl', line: '/x' }]);
+});

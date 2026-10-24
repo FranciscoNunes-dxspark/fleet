@@ -4,7 +4,10 @@
 // reset. It also keeps the modes the app set (the mouse, the cursor, bracketed paste) to set them
 // again when the app comes back on screen, and finds where the bar can be drawn again without
 // cutting into anything: after a whole frame (just before a synchronized update ends, or at the end of
-// what came when nothing is left open), never inside an escape sequence or a saved cursor.
+// what came when nothing is left open), never inside an escape sequence or a saved cursor. The app's
+// messages to the host (the kit's hosted.js: an OSC 5379 sequence) are taken out and handed to
+// `onMessage`, on screen or not.
+import { decodeAppMessage } from '@fleet/kit/hosted.js';
 
 /** The private modes kept per app, and what "off" is for each when none was set. */
 export const MOUSE_MODES = [9, 1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016];
@@ -17,7 +20,8 @@ const ESC = '\x1b';
 export const SYNC_END = '\x1b[?2026l';
 
 export class OutputFilter {
-  constructor() {
+  constructor({ onMessage = () => {} } = {}) {
+    this.onMessage = onMessage;
     this.state = 'ground';
     this.seq = '';
     this.modes = new Map();
@@ -76,12 +80,12 @@ export class OutputFilter {
           break;
         case 'string':
           this.seq += ch;
-          if (ch === '\x07') this.finish(this.seq, emit, i);
+          if (ch === '\x07') this.finish(this.message(this.seq), emit, i);
           else if (ch === ESC) this.state = 'stringEsc';
           break;
         case 'stringEsc':
           this.seq += ch;
-          if (ch === '\\') this.finish(this.seq, emit, i);
+          if (ch === '\\') this.finish(this.message(this.seq), emit, i);
           else this.state = ch === ESC ? 'stringEsc' : 'string';
           break;
       }
@@ -101,6 +105,14 @@ export class OutputFilter {
     this.state = 'ground';
     this.seq = '';
     this.done = true;
+  }
+
+  // A whole string sequence (OSC and the like): the app's message to the host goes no further.
+  message(seq) {
+    const message = decodeAppMessage(seq);
+    if (!message) return seq;
+    this.onMessage(message);
+    return '';
   }
 
   // ESC and one character: save and restore the cursor are tracked, a full reset (ESC c) is dropped.

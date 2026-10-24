@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough, Writable } from 'node:stream';
-import { encodeMessage, handOff, hostedStreams, isHosted, messageReader, screenKeeper, sizeOf } from '../hosted.js';
+import { decodeAppMessage, encodeAppMessage, encodeMessage, handOff, hostedStreams, isHosted, messageReader, screenKeeper, sizeOf } from '../hosted.js';
 import { copiedNote } from '../family.js';
 
 test('messages are lines of JSON objects, cut anywhere; anything else is skipped', () => {
@@ -73,7 +73,10 @@ test('hosted streams look like a terminal of the size the host says, and repaint
   stdin.setRawMode(true);
   stdin.setRawMode(false);
   stdin.setRawMode(true);
-  assert.deepEqual(sent, ['{"ready":true}\n']);
+  // Messages to the host go out in the app's output (fd 3 only carries the host's).
+  assert.equal(stdout.data, encodeAppMessage({ ready: true }));
+  assert.deepEqual(sent, []);
+  stdout.data = '';
   assert.equal(stdin.isRaw, true);
 
   let resized = 0;
@@ -96,8 +99,11 @@ test('hosted streams look like a terminal of the size the host says, and repaint
   await new Promise((r) => setTimeout(r, 120));
   assert.equal(stdout.data, '\x1b[2K\x1b[Gnarrow\n');
 
+  stdout.data = '';
   term.send({ handoff: 'trawl', line: '/x' });
-  assert.equal(sent.at(-1), '{"handoff":"trawl","line":"/x"}\n');
+  assert.equal(stdout.data, '\x1b]5379;{"handoff":"trawl","line":"/x"}\x07');
+  assert.deepEqual(decodeAppMessage(stdout.data), { handoff: 'trawl', line: '/x' });
+  assert.equal(decodeAppMessage('\x1b]0;title\x07'), null);
   hostGoes();
   assert.equal(exited, true);
 });

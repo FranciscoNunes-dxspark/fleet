@@ -261,8 +261,10 @@ export class Host {
   /** Starts the app of `space`, at the size of the screen above the bar. */
   launch(space) {
     const decoder = new StringDecoder('utf8');
-    Object.assign(space, { state: 'running', code: null, filter: new OutputFilter(), ready: false, stderr: '' });
     let child;
+    // The app's messages come in its output, taken out by the filter (hosted.js says why not fd 3).
+    const filter = new OutputFilter({ onMessage: (m) => this.message(space, child, m) });
+    Object.assign(space, { state: 'running', code: null, filter, ready: false, stderr: '' });
     try {
       child = this.spawnApp(space.id, { ...this.appSize(), args: this.args[space.id] ?? [] });
     } catch (e) {
