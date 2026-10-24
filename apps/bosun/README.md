@@ -60,6 +60,7 @@ npm start
 | `health` | A page on that port that answers 2xx or 3xx when it's well; ✗ otherwise |
 | `env` | Settings for it, on top of the terminal's and its env files' |
 | `envFile` | A `.env` file (or a list of them) to read settings from, from its `cwd` |
+| `group` | A name it's listed under, with the others of that group (`"backend"`); `/start`, `/stop` and `/restart` take it |
 | `after` | Another process it starts after: once that one's port answers, or it has run a moment |
 | `watch` | Files that restart it when they change: paths or globs from its `cwd`, e.g. `["src", "lib/**/*.js"]` |
 | `ignore` | Changes to these don't (`"*.test.js"`, `"src/generated"`) |
@@ -93,7 +94,12 @@ once its port answers (and its health page is well, when it has one): Bosun runs
 log. They run again after each restart. Hail must be on your PATH; Bosun says once when it isn't.
 
 A profile changes some processes: `run` replaces the command, `args` adds to it, `env` adds settings,
-`restart` replaces that.
+`restart` and `group` replace those (`"group": null` takes it out of its group).
+
+Processes with a `group` are listed under its heading, with how many of them run, after the ones
+without; `ctrl+g` shows one group at a time, then all of them again. `/start backend`, `/stop backend`
+and `/restart backend` act on every process of the group (a process of that name wins), each still
+after the one it waits for. `/graph` draws who starts after whom (`after`) as a tree.
 `p` or `/profile` picks one (`--profile` starts with it), and the processes it changes restart.
 
 Without a `bosun.json`, Bosun works out what to run from the first of these it finds:
@@ -151,6 +157,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `R` | Restart them all, each after the one it waits for |
 | `s` | Stop it, or start it; while it waits to restart, it won't |
 | `a` | Every process's log at once, or back to the one |
+| `ctrl+g` | One group at a time, then all of them again |
 | `ctrl+f` | Search the log beside the list: matches light up as you type, `↵` stops typing, `n` `N` go to the next and the one before, `esc` clears it |
 | `e` | Only the lines that read as trouble (errors, exceptions, a port in use), or all of them again |
 | `ctrl+l` | Filter the log beside the list (see Structured logs) |
@@ -324,9 +331,10 @@ Trawl.
 
 | Command | What it does |
 | --- | --- |
-| `/restart [name\|all]` | Restart a process, or all of them |
-| `/stop <name\|all>` | Stop a process and what it started |
-| `/start [name\|all]` | Start a process, or all that aren't running |
+| `/restart [name\|group\|all]` | Restart a process, a group, or all of them |
+| `/stop <name\|group\|all>` | Stop a process (or every one of a group) and what it started |
+| `/start [name\|group\|all]` | Start a process, a group, or all that aren't running |
+| `/graph` | Who starts after whom (`after` in `bosun.json`), as a tree, each with its state, port and group |
 | `/log <name>` | Everything a process has said |
 | `/save-log <name> [file]` | Write a process's log to a file, from the project's folder (`<name>.log` unless given; asks before writing over one) |
 | `/why <name>` | Ask Claude why a process failed |

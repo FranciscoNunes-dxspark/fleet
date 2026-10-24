@@ -35,6 +35,7 @@ export const HELP = [
       ['R', 'Restart them all (each after the one it waits for)'],
       ['s', 'Stop it, or start it; while it waits to restart ("restart" in bosun.json), it won\'t'],
       ['a', 'Every process\'s log at once, or back to the one'],
+      ['ctrl+g', 'One group at a time ("group" in bosun.json), then all of them again'],
       ['ctrl+f', 'Search its log: matches light up as you type, ↵ stops typing'],
       ['n N', 'The next match, the one before (from the newest)'],
       ['esc', 'Clear the search'],

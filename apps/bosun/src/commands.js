@@ -1,13 +1,14 @@
 import { basename } from 'node:path';
 import * as a from './actions.js';
 import { siblings } from './projects.js';
+import { groupsOf } from './groups.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
-  { name: 'restart', args: '[name|all]', desc: 'Restart a process, or all of them', complete: 'procs', run: (ctx, s) => a.restart(ctx, s || 'all') },
-  { name: 'stop', args: '<name|all>', desc: 'Stop a process and what it started', complete: 'procs', run: (ctx, s) => a.stop(ctx, s) },
-  { name: 'start', args: '[name|all]', desc: 'Start a process, or all that aren\'t running', complete: 'procs', run: (ctx, s) => a.start(ctx, s) },
+  { name: 'restart', args: '[name|group|all]', desc: 'Restart a process, a group, or all of them', complete: 'targets', run: (ctx, s) => a.restart(ctx, s || 'all') },
+  { name: 'stop', args: '<name|group|all>', desc: 'Stop a process (or a group) and what it started', complete: 'targets', run: (ctx, s) => a.stop(ctx, s) },
+  { name: 'start', args: '[name|group|all]', desc: 'Start a process, a group, or all that aren\'t running', complete: 'targets', run: (ctx, s) => a.start(ctx, s) },
   { name: 'log', args: '<name>', desc: 'Everything a process has said', complete: 'procs', run: (ctx, s) => a.showLog(ctx, s) },
   { name: 'save-log', args: '<name> [file]', desc: 'Write a process\'s log to a file (name.log unless given)', complete: 'procs', run: (ctx, s) => a.saveLog(ctx, s) },
   { name: 'why', args: '<name>', desc: 'Ask Claude why a process failed, from its log', complete: 'procs', run: (ctx, s) => a.why(ctx, s) },
@@ -16,6 +17,7 @@ export const COMMANDS = [
   { name: 'free', args: '<port>', desc: 'Stop whatever holds a port on this machine (asks first)', run: (ctx, s) => a.free(ctx, s) },
   { name: 'preflight', desc: 'Check what the crew needs: Node version, Docker, free ports, .env keys, databases, node_modules', run: (ctx) => a.preflight(ctx) },
   { name: 'ports', desc: 'The TCP ports listening on this machine, with what holds each (this crew\'s marked): f frees one, o opens it', run: (ctx) => a.ports(ctx) },
+  { name: 'graph', desc: 'Who starts after whom ("after" in bosun.json), as a tree', run: (ctx) => a.graph(ctx) },
   { name: 'top', desc: 'Every process\'s CPU and memory (with what it started), the busiest first, and the last minute of each', run: (ctx) => a.top(ctx) },
   { name: 'profile', args: '[name|none]', desc: 'Run the crew with a profile from bosun.json', complete: 'profiles', run: (ctx, s) => a.profiles(ctx, s) },
   { name: 'reload', desc: 'Read bosun.json and the env files again (what changed restarts)', run: (ctx) => ctx.reload() },
@@ -45,6 +47,7 @@ export function findCommand(name, user = []) {
 
 function completions(kind, data) {
   if (kind === 'procs') return [...(data?.procs ?? []).map((p) => p.name), 'all'];
+  if (kind === 'targets') return [...(data?.procs ?? []).map((p) => p.name), ...groupsOf(data?.procs ?? []).filter((g) => !(data?.procs ?? []).some((p) => p.name === g)), 'all'];
   if (kind === 'profiles') return [...Object.keys(data?.profiles ?? {}), 'none'];
   // The projects beside this one, by name, as /move takes them.
   if (kind === 'folders') return data?.dir ? siblings(data.dir).map((d) => basename(d)).filter((n) => n !== basename(data.dir)) : [];

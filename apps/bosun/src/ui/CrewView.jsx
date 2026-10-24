@@ -10,6 +10,7 @@ import { useListNav, useMouse } from './hooks.js';
 import { testsLabel } from '../hailcheck.js';
 import { Panel, Row } from './parts.jsx';
 import { shortBytes, shortCpu, sparkline } from '../usage.js';
+import { crewRows, groupsOf, nextGroup } from '../groups.js';
 import { formatStructured, levelTone, parseFilter, passes, shownText, structuredOf, troubled } from '../structured.js';
 
 const STATUS_COLOUR = () => ({ running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del, exited: theme.dim, stopped: theme.dim });
@@ -161,8 +162,14 @@ export function CrewView({ procs, ctx, width, height, active }) {
   const innerH = height - 2;
   const listW = Math.min(width >= 150 ? 56 : 44, Math.max(30, Math.floor(width * 0.32)));
   const logW = width - listW;
-  const nav = useListNav(procs.length, innerH);
-  const sel = procs[nav.index];
+  // ctrl+g: one group at a time ("group" in bosun.json), or all of them; each group under its heading.
+  const [only, setOnly] = useState(null);
+  const groups = groupsOf(procs);
+  const group = groups.includes(only) ? only : null;
+  const rows = crewRows(procs, group);
+  const shown = group ? rows.filter((r) => r.p).map((r) => r.p) : procs;
+  const nav = useListNav(rows.length, innerH, { selectable: (i) => Boolean(rows[i]?.p), keyOf: (i) => rows[i]?.p?.name ?? `# ${rows[i]?.heading}` });
+  const sel = rows[nav.index]?.p;
   // `a`: every process's log at once. `back`: lines scrolled up from the bottom with the wheel.
   const [merged, setMerged] = useState(false);
   const [back, setBack] = useState(0);
@@ -195,7 +202,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
   // Whose log is on screen (true: all of them), so App redraws for new lines there and nowhere else.
   ctx.logShown = merged ? true : (sel?.name ?? null);
   // The pane's lines: the one's or all of them, only the troubled ones with `e`.
-  const all = merged ? mergedLines(procs, KEEP_LINES) : (sel?.lines ?? []);
+  const all = merged ? mergedLines(shown, KEEP_LINES) : (sel?.lines ?? []);
   const list = troubleOnly || filter.terms.length ? all.filter((l) => (!troubleOnly || troubled(l)) && passes(filter, l)) : all;
   const listRef = useRef(list);
   listRef.current = list;
@@ -266,6 +273,11 @@ export function CrewView({ procs, ctx, width, height, active }) {
       return searchKeys(input, key);
     }
     if (key.ctrl && input === 'l') return askFilter();
+    if (key.ctrl && input === 'g') {
+      if (!groups.length) return ctx.note('There are no groups: give processes a "group" in bosun.json ("group": "backend").');
+      setBack(0);
+      return setOnly(nextGroup(groups, group));
+    }
     if (nav.handle(input, key)) return setBack(0);
     if (input === 'e') {
       setBack(0);
@@ -320,9 +332,20 @@ export function CrewView({ procs, ctx, width, height, active }) {
 
   return (
     <>
-      <Panel title="Crew" hint={`${procs.filter((p) => p.child).length}/${procs.length}`} width={listW} height={height} focused={active}>
+      <Panel title={group ? `Crew · ${group}` : 'Crew'} hint={`${shown.filter((p) => p.child).length}/${shown.length}`} width={listW} height={height} focused={active}>
         {procs.length === 0 ? <Row pointer={false} width={listW - 2} segments={[{ text: '  Nothing to run: /init writes a bosun.json.', color: theme.dim }]} /> : null}
-        {procs.slice(nav.offset, nav.offset + innerH).map((p, i) => (
+        {rows.slice(nav.offset, nav.offset + innerH).map(({ p, heading, procs: members }, i) =>
+          heading ? (
+            <Row
+              key={`# ${heading}`}
+              pointer={false}
+              width={listW - 2}
+              segments={[
+                { text: ` ${heading}`, color: theme.accent, bold: true },
+                { text: ` ${members.filter((m) => m.child).length}/${members.length}`, color: theme.dim },
+              ]}
+            />
+          ) : (
           <Row
             key={p.name}
             width={listW - 2}
@@ -342,7 +365,8 @@ export function CrewView({ procs, ctx, width, height, active }) {
               listW - 4,
             )}
           />
-        ))}
+          ),
+        )}
       </Panel>
       <Panel title={paneTitle} hint={logHint} width={logW} height={height}>
         {visible.map((l, i) => {

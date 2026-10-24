@@ -16,6 +16,7 @@ import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, p
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
 import { installHint } from './tunnel.js';
+import { afterTree, namedProcs, treeLine } from './groups.js';
 import { levelTone, shownText, structuredOf, troubled } from './structured.js';
 import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
 
@@ -42,7 +43,13 @@ function proc(ctx, name) {
   return p ?? null;
 }
 
-/** r, R and /restart: one process, or `all`. */
+/** The processes of a group named `name`, when it names one and no process: { group, names }; else null. */
+function group(ctx, name) {
+  const found = namedProcs(ctx.crew?.list() ?? [], name);
+  return found?.group ? { group: found.group, names: found.procs.map((p) => p.name) } : null;
+}
+
+/** r, R and /restart: one process, a group, or `all`. */
 export async function restart(ctx, name) {
   if (String(name).trim() === 'all' || !String(name).trim()) {
     if (!ctx.crew) return;
@@ -50,25 +57,59 @@ export async function restart(ctx, name) {
     await ctx.crew.stopAll();
     return ctx.crew.startAll();
   }
+  const g = group(ctx, name);
+  if (g) {
+    ctx.note(`Restarting ${g.group}: ${g.names.join(', ')}`);
+    await Promise.all(g.names.map((n) => ctx.crew.stop(n, { keepWatching: true })));
+    return ctx.crew.startAll({ only: g.names });
+  }
   const p = proc(ctx, name);
   if (!p) return false;
   await ctx.crew.restart(p.name);
 }
 
-/** /stop: one process, or `all`. */
+/** /stop: one process, a group, or `all`. */
 export async function stop(ctx, name) {
   if (String(name).trim() === 'all') return ctx.crew?.stopAll();
+  const g = group(ctx, name);
+  if (g) return Promise.all(g.names.map((n) => ctx.crew.stop(n)));
   const p = proc(ctx, name);
   if (!p) return false;
   await ctx.crew.stop(p.name);
 }
 
-/** /start: one process, or `all` (each after the one it waits for). */
+/** /start: one process, a group, or `all` (each after the one it waits for). */
 export function start(ctx, name) {
   if (String(name).trim() === 'all' || !String(name).trim()) return ctx.crew?.startAll();
+  const g = group(ctx, name);
+  if (g) return ctx.crew.startAll({ only: g.names });
   const p = proc(ctx, name);
   if (!p) return false;
   ctx.crew.start(p.name);
+}
+
+/** /graph: who starts after whom ("after" in bosun.json), as a tree, each with its state and group. */
+export function graph(ctx) {
+  const procs = ctx.crew?.list() ?? [];
+  if (!procs.length) return ctx.note('Nothing to run, so nothing waits for anything.');
+  const tree = afterTree(procs);
+  const by = new Map(procs.map((p) => [p.name, p]));
+  const colour = { running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del };
+  const lines = tree.map((n) => {
+    const p = by.get(n.name);
+    return [
+      { text: `${treeLine(n).slice(0, -n.name.length)}`, color: theme.dim },
+      { text: '● ', color: colour[p.status] ?? theme.dim },
+      { text: n.name, bold: true },
+      { text: p.port ? ` :${p.port}` : '', color: theme.dim },
+      { text: n.group ? `  (${n.group})` : '', color: theme.accent },
+      { text: n.circle ? '  waits in a circle: it never starts after them' : '', color: theme.del },
+    ];
+  });
+  const waits = procs.some((p) => p.spec.after);
+  ctx.showText('Who starts after whom', [...tree.map((n) => `${treeLine(n)}${n.group ? `  (${n.group})` : ''}`), ...(waits ? [] : ['', 'Nothing waits for anything: "after" in bosun.json makes one start once another\'s port answers.'])].join('\n'), {
+    lines: waits ? lines : [...lines, [], [{ text: 'Nothing waits for anything: "after" in bosun.json makes one start once another\'s port answers.', color: theme.dim }]],
+  });
 }
 
 /** s: stops it when it's running, starts it when it isn't; while it waits to restart, it won't. */

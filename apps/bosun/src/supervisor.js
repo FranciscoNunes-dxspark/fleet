@@ -525,18 +525,20 @@ export class Supervisor {
    * Starts every process not running, each after the one it waits for (`after`): once that one's port
    * answers, or it has run a moment when it has no port.
    */
-  async startAll({ waitMs = 20000 } = {}) {
+  async startAll({ waitMs = 20000, only = null } = {}) {
     const started = new Set();
     const order = [];
+    // `only`: these names (a group), each still waiting for the one it starts after when that runs.
+    const wanted = (p) => !only || only.includes(p.name);
     const visit = (p, seen = new Set()) => {
       if (started.has(p.name) || seen.has(p.name)) return;
       seen.add(p.name);
       const dep = p.spec.after && this.procs.get(p.spec.after);
-      if (dep) visit(dep, seen);
+      if (dep && wanted(dep)) visit(dep, seen);
       started.add(p.name);
       order.push(p);
     };
-    for (const p of this.procs.values()) visit(p);
+    for (const p of this.procs.values()) if (wanted(p)) visit(p);
     for (const p of order) {
       const dep = p.spec.after && this.procs.get(p.spec.after);
       if (dep) await this.ready(dep, waitMs);
