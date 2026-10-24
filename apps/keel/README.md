@@ -279,7 +279,7 @@ To try accounts and roles before deploying, run on demo data with `AUTH_MODE=log
 
 ### What you need on Hostinger
 
-The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps** (Node 22 or later). Point a Node.js app at a clone of the fleet repository with `apps/keel` as the app's folder: it installs (`npm install` or `npm ci`), builds (`npm run build`) and starts (`npm start`) there. PHP-only shared hosting can't run it. You also need a domain or subdomain with HTTPS.
+The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps** (Node 22 or later). Point a Node.js app at the fleet repository with the **repository's root** as the app's folder and `apps/keel/server/index.js` as its entry file: it installs (`npm install` or `npm ci`) and builds (`npm run build`, which the root passes to Keel) there. Not `apps/keel` itself: every dependency is installed at the root, so that folder deployed alone can't start. PHP-only shared hosting can't run it. You also need a domain or subdomain with HTTPS.
 
 ### Where Keel keeps its data
 

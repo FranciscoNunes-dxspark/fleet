@@ -20,6 +20,8 @@
     "test:hail": "npm test -w apps/hail",
     "test:keel": "npm test -w apps/keel",
     "test:fleet": "npm test -w apps/fleet",
+    "build": "npm run build -w apps/keel",
+    "start": "npm start -w apps/keel",
     "postinstall": "node scripts/postinstall.js"
   },
   "devDependencies": {
