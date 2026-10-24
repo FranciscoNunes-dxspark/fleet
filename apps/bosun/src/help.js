@@ -49,10 +49,11 @@ export const HELP = [
       ['p', 'Profiles: the crew with another command or settings'],
       ['y', 'Copy its command'],
       ['t', 'Copy its latest trouble line for Sonar or Hail (/take, with the request id it names), to find that request there'],
+      ['T', 'Open its port to the internet through cloudflared or ngrok (asks first; the address is copied), or close its tunnel'],
       ['wheel', 'Over the log, scroll it back; to the bottom follows it again'],
       'A line that is a JSON object (pino, bunyan, Serilog, winston…) shows as time, level (in its colour), message and its other fields as key=value.',
       'Beside each running process, when there\'s room: its CPU (% of one core) and memory, with everything it started; the log\'s title has them with the last minute of each. /top lists them, the busiest first.',
-      'In the list: ● green running · yellow starting or stopping · red crashed · grey stopped. ✓ tests / ✗ 2 failed: its Hail checks ("test" in bosun.json). :3000 ✓ answers (and its health page is fine), … not yet, ✗ its health page fails. ! its log has said something wrong. restarting in 4s: it ended and its "restart" starts it again (1s, 2s, 4s… up to 30s); gave up: it ended within 10s of starting 5 times in a row.',
+      'In the list: ● green running · yellow starting or stopping · red crashed · grey stopped. ✓ tests / ✗ 2 failed: its Hail checks ("test" in bosun.json). :3000 ✓ answers (and its health page is fine), … not yet, ✗ its health page fails. ! its log has said something wrong. ⇄ its tunnel is open. restarting in 4s: it ended and its "restart" starts it again (1s, 2s, 4s… up to 30s); gave up: it ended within 10s of starting 5 times in a row.',
     ],
   },
   {

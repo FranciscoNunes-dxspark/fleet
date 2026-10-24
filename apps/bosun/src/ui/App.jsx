@@ -34,6 +34,8 @@ import { listeningPorts } from '../ports.js';
 import { hailTest, testOutcome } from '../hailcheck.js';
 import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
 import { ReplayView } from './ReplayView.jsx';
+import { findOnPath } from '../which.js';
+import { tunnelTool } from '../tunnel.js';
 import { SAMPLE_EVERY, createSampler, keepSample, memoryAlertLabel, memoryGrowing, shortBytes } from '../usage.js';
 
 const VIEWS = [
@@ -133,10 +135,11 @@ const viewerKey = (overlay) => {
 // `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
 // recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
 // `sampleUsage(pids)` resolves each process tree's { cpu, mem } (usage.js's sampler; tests pass a stub),
-// every `sampleEvery` ms while the Crew view shows.
+// every `sampleEvery` ms while the Crew view shows. `findTool(name)` finds a program on the PATH
+// (which.js's; tests pass their own) and `tunnelSpawn` starts a tunnel's (child_process's spawn; tests a fake).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -297,6 +300,15 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // a notification (unless the setting is off). A stop never comes here.
   const crewEvent = (e) => {
     if (e.type === 'ready') return e.p.spec.test && runTests(e.p);
+    // A tunnel's address, copied as soon as its tool says it; one that ended by itself, why.
+    if (e.type === 'tunnel') {
+      ctx.copy(e.url, 'the tunnel\'s address');
+      return note(`${e.p.name} is open at ${e.url} (copied). T closes it.`, 'ok');
+    }
+    if (e.type === 'tunnel-closed') {
+      if (e.asked) return note(`Closed ${e.p.name}'s tunnel${e.url ? ` (${e.url})` : ''}.`);
+      return note([`${e.p.name}'s tunnel closed by itself.`, ...e.said.slice(-3)].join('\n'), 'error');
+    }
     if (e.type !== 'exit') return;
     if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
     const news = exitNews(e.p, e.plan);
@@ -342,7 +354,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
       // Each run of a project's crew is recorded for /replay, unless the setting is off.
       const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs }) : null;
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, ...(tunnelSpawn ? { tunnelSpawn } : {}) });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
@@ -551,6 +563,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     gatherFacts: () => gather(dirRef.current, { ...crewRef.current, procs: withProfile(crewRef.current?.procs ?? [], crewRef.current?.profiles ?? {}, profileRef.current) }, { running: (supRef.current?.list() ?? []).filter((p) => p.child).map((p) => p.name) }),
     preflightReport: (facts) => preflightReport(facts),
     killPids: stopPids,
+    // T and /tunnel: cloudflared or ngrok, whichever is on the PATH (or the one bosun.json names).
+    tunnelTool: (preferred) => tunnelTool(preferred, findTool),
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // Whether this terminal can report the mouse at all (/settings says so).
     mouseAvailable: Boolean(mouse),

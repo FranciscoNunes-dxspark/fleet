@@ -76,12 +76,19 @@ export function usageSegments(p) {
   return [{ text: ` ${shortCpu(p.usage.cpu).padStart(4)} ${shortBytes(p.usage.mem).padStart(5)}`, color: theme.dim }];
 }
 
-/** The log pane's title for one process: its name, then its CPU and memory with the last minute of each. */
+/** Its tunnel beside it: ⇄ and the address (⇄ … while it opens), or the ⇄ alone with `short`. */
+export function tunnelSegments(p, short = false) {
+  if (!p.tunnel) return [];
+  return [{ text: short || !p.tunnel.url ? ` ⇄${p.tunnel.url ? '' : ' …'}` : ` ⇄ ${p.tunnel.url.replace(/^https:\/\//, '')}`, color: theme.accent }];
+}
+
+/** The log pane's title for one process: its name, then its CPU and memory with the last minute of each, and its tunnel's address. */
 export function logTitle(p, sparkW = 10) {
   if (!p) return '';
-  if (!p.child || !p.usage) return p.name;
+  const tunnel = p.tunnel ? ` · ⇄ ${p.tunnel.url ?? 'opening…'}` : '';
+  if (!p.child || !p.usage) return `${p.name}${tunnel}`;
   const spark = (key) => (sparkW ? ` ${sparkline((p.samples ?? []).map((s) => s[key]), sparkW)}` : '');
-  return `${p.name} · ${shortCpu(p.usage.cpu)}${spark('cpu')} · ${shortBytes(p.usage.mem)}${spark('mem')}`;
+  return `${p.name} · ${shortCpu(p.usage.cpu)}${spark('cpu')} · ${shortBytes(p.usage.mem)}${spark('mem')}${tunnel}`;
 }
 
 /** A level's colour: dim for trace and debug, the warning colour for warn, red for error and fatal. */
@@ -126,15 +133,19 @@ const slowMerge = (procs, tails, last) =>
     .sort((x, y) => x.at - y.at)
     .slice(-last);
 
-/** `segments`, then each group of `extras` in turn while it still fits in `width` (what's beside a process when there's room). */
+/**
+ * `segments`, then for each of `extras` (a list of choices, the longest first) the first choice that
+ * still fits in `width`: what's beside a process when there's room, said shorter when there's less.
+ */
 export function withRoom(segments, extras, width) {
   const out = [...segments];
-  let used = out.reduce((n, s) => n + stringWidth(s.text), 0);
-  for (const group of extras) {
-    const w = group.reduce((n, s) => n + stringWidth(s.text), 0);
-    if (!w || used + w > width) continue;
+  const size = (group) => group.reduce((n, s) => n + stringWidth(s.text), 0);
+  let used = size(out);
+  for (const choices of extras) {
+    const group = choices.find((g) => size(g) && used + size(g) <= width);
+    if (!group) continue;
     out.push(...group);
-    used += w;
+    used += size(group);
   }
   return out;
 }
@@ -273,6 +284,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
     } else if (input === 'l') a.saveLogPrompt(ctx, sel.name);
     else if (input === 'y') ctx.copy(sel.spec.run, 'its command');
     else if (input === 't') a.shareTrouble(ctx, sel.name);
+    else if (input === 'T') a.tunnel(ctx, sel.name);
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {
@@ -320,7 +332,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
                 afterStatus(p, now),
                 ...(p.trouble && p.status !== 'stopped' ? [{ text: ' !', color: theme.del, bold: true }] : []),
               ],
-              [usageSegments(p)],
+              [[tunnelSegments(p), tunnelSegments(p, true)], [usageSegments(p)]],
               listW - 4,
             )}
           />

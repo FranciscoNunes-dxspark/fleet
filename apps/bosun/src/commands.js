@@ -12,6 +12,7 @@ export const COMMANDS = [
   { name: 'save-log', args: '<name> [file]', desc: 'Write a process\'s log to a file (name.log unless given)', complete: 'procs', run: (ctx, s) => a.saveLog(ctx, s) },
   { name: 'why', args: '<name>', desc: 'Ask Claude why a process failed, from its log', complete: 'procs', run: (ctx, s) => a.why(ctx, s) },
   { name: 'open', args: '<name>', desc: 'Open a process\'s port in the browser', complete: 'procs', run: (ctx, s) => a.openProc(ctx, s) },
+  { name: 'tunnel', args: '<name>', desc: 'Open a process\'s port to the internet through cloudflared or ngrok (asks first), or close its tunnel', complete: 'procs', run: (ctx, s) => a.tunnel(ctx, s) },
   { name: 'free', args: '<port>', desc: 'Stop whatever holds a port on this machine (asks first)', run: (ctx, s) => a.free(ctx, s) },
   { name: 'preflight', desc: 'Check what the crew needs: Node version, Docker, free ports, .env keys, databases, node_modules', run: (ctx) => a.preflight(ctx) },
   { name: 'ports', desc: 'The TCP ports listening on this machine, with what holds each (this crew\'s marked): f frees one, o opens it', run: (ctx) => a.ports(ctx) },

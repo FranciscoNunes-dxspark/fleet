@@ -63,6 +63,7 @@ npm start
 | `watch` | Files that restart it when they change: paths or globs from its `cwd`, e.g. `["src", "lib/**/*.js"]` |
 | `ignore` | Changes to these don't (`"*.test.js"`, `"src/generated"`) |
 | `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
+| `tunnel` | `"cloudflared"` or `"ngrok"`: the tool `T` opens its tunnel with (see Tunnels). At the top level, for every process |
 | `test` | Hail's checks for it: an `.http` file (`"api.http"`), or `{ "file": "api.http", "env": "dev" }`, from its `cwd`. Needs `port` |
 
 `"envFile"` at the top level (from the project's folder) is read for every process, before each one's
@@ -161,6 +162,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `p` | Profiles |
 | `y` | Copy its command |
 | `t` | Copy its latest trouble line for Sonar or Hail, to paste into their prompt (see The family) |
+| `T` | Open its port to the internet, or close its tunnel (see Tunnels) |
 
 Beside each running process, when the list has room, is what it uses: its CPU (as a % of one core, so
 a busy process on several cores can pass 100%) and its memory, both counting everything it started
@@ -176,6 +178,17 @@ when it kept failing as soon as it started. `!` after it means its log said some
 in use is one, and `f` stops what holds it. The wheel over the log scrolls it back, and scrolling to
 the bottom follows it again. `w` needs [Claude Code](https://claude.com/claude-code) installed and
 signed in; Claude reads the log and may read the project's files, and changes nothing.
+
+### Tunnels
+
+`T` (or `/tunnel <name>`) opens a running process's port to the internet for a while, to show someone
+your work or to take a webhook: Bosun asks first, then runs `cloudflared tunnel --url
+http://localhost:<port>` (a quick tunnel, no account needed) or `ngrok http <port>`, whichever is on
+your PATH, cloudflared first unless `"tunnel": "ngrok"` in `bosun.json` says otherwise. The address it
+gets (`https://….trycloudflare.com`, `https://….ngrok-free.app`) is copied and said, shown beside the
+process (`⇄`) and in its log's title, and its log says when the tunnel opens and closes. `T` again
+closes it. It closes when the process stops, crashes or gives up (a restart with `r`, a watched file
+or `"restart"` keeps it) and when Bosun quits. Without either tool, Bosun says how to install one.
 
 ### Structured logs
 
@@ -300,6 +313,7 @@ Trawl.
 | `/save-log <name> [file]` | Write a process's log to a file, from the project's folder (`<name>.log` unless given; asks before writing over one) |
 | `/why <name>` | Ask Claude why a process failed |
 | `/open <name>` | Open a process's port in the browser |
+| `/tunnel <name>` | Open a process's port to the internet through cloudflared or ngrok (asks first; the address is copied), or close its tunnel |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
 | `/preflight` | Check what the crew needs (Node version, Docker, free ports, `.env` keys, databases, `node_modules`), as a checklist |
 | `/top` | Every process's CPU and memory (with what it started), the busiest first, and a sparkline of the last minute of each; `↵` shows its log |

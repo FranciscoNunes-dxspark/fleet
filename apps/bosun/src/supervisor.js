@@ -10,6 +10,7 @@ import { skipsFolder, tidy, watchMatcher, watchRoots } from './watch.js';
 import { walksTree, watchTree } from './treewatch.js';
 import { crewOf, stateOf } from './recorder.js';
 import { troubleText } from './structured.js';
+import { tunnelArgs, tunnelProblem, tunnelUrl } from './tunnel.js';
 
 // A folder that's still there: Windows reports one whose files changed as changed itself, and the files
 // it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
@@ -92,7 +93,7 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null } = {}) {
     this.dir = dir;
     this.debounce = debounce;
     this.watchImpl = watchImpl;
@@ -109,6 +110,8 @@ export class Supervisor {
     };
     this.onEvent = onEvent;
     this.spawnImpl = spawnImpl;
+    // Starts a tunnel's tool (tunnel.js): its path, its arguments, the options. Tests pass a fake.
+    this.tunnelSpawn = tunnelSpawn;
     this.env = env;
     this.times = restartTimes;
     this.procs = new Map();
@@ -149,6 +152,7 @@ export class Supervisor {
     const p = this.procs.get(name);
     if (!this.clearRestart(p)) return false;
     this.push(p, '── not restarting it');
+    this.closeTunnel(name);
     this.onChange();
     return true;
   }
@@ -270,6 +274,8 @@ export class Supervisor {
       p.waiters?.forEach((w) => w());
       p.waiters = [];
       if (!stopping && !this.closed) this.ended(p);
+      // Its tunnel goes with it, unless it's coming straight back (r, a watched file, its "restart").
+      if (p.tunnel && !(stopping ? p.keepTunnel : p.restartTimer)) this.closeTunnel(p.name);
       this.onChange();
     });
     this.onChange();
@@ -290,6 +296,7 @@ export class Supervisor {
       this.push(p, `── restarting in ${seconds(plan.delay)}`);
     } else if (plan.gaveUp) {
       p.gaveUp = true;
+      this.closeTunnel(p.name);
       this.push(p, `── gave up: it ended ${plan.quick} times in a row within ${seconds(this.times.quick)} of starting`, true);
     }
     this.onEvent({ type: 'exit', p, plan });
@@ -393,8 +400,84 @@ export class Supervisor {
   }
 
   async restart(name, { keepWatching = true } = {}) {
+    const p = this.procs.get(name);
+    if (p) p.keepTunnel = true;
     await this.stop(name, { keepWatching });
+    if (p) p.keepTunnel = false;
     this.start(name);
+  }
+
+  /**
+   * Opens a tunnel to `name`'s port through `tool` (tunnel.js's; at `path`): a child of its own,
+   * `p.tunnel` { tool, url, startedAt } while it runs. The address, once the tool says it, is in its
+   * log and `onEvent` hears { type: 'tunnel', p, url }; { type: 'tunnel-closed', p, tool, url, asked,
+   * said } when it ends (`asked`: closed on purpose, `said` its last lines). It closes with the
+   * process (a stop, a crash it isn't restarted after) and with Bosun.
+   */
+  openTunnel(name, { tool, path }) {
+    const p = this.procs.get(name);
+    if (!p?.port || p.tunnel || this.closed) return false;
+    const args = tunnelArgs(tool, p.port);
+    let child;
+    try {
+      child = this.tunnelSpawn(path, args, { cwd: this.dir, windowsHide: true, detached: !WIN, stdio: ['ignore', 'pipe', 'pipe'], env: this.env });
+    } catch (e) {
+      this.push(p, `── the tunnel couldn't start: ${e.message}`, true);
+      this.onChange();
+      return false;
+    }
+    const t = { tool, child, pid: child.pid ?? null, url: null, startedAt: Date.now(), said: [] };
+    p.tunnel = t;
+    this.push(p, `── tunnel: ${tool} ${args.join(' ')}`);
+    const heard = (line) => {
+      if (!line.trim()) return;
+      t.said = [...t.said, stripAnsi(line).trim()].slice(-8);
+      const url = !t.url && tunnelUrl(tool, line);
+      if (url) {
+        t.url = url;
+        this.push(p, `── tunnel open: ${url}`);
+        this.onEvent({ type: 'tunnel', p, url });
+        this.onChange();
+        return;
+      }
+      const problem = tunnelProblem(tool, line);
+      if (problem) {
+        this.push(p, `── tunnel: ${problem}`, true);
+        this.onChange(p);
+      }
+    };
+    let rest = '';
+    const take = (d) => {
+      rest += d;
+      const lines = rest.split(/\r?\n/);
+      rest = lines.pop();
+      lines.forEach(heard);
+    };
+    child.stdout?.setEncoding('utf8').on('data', take);
+    child.stderr?.setEncoding('utf8').on('data', take);
+    child.on('error', (e) => {
+      t.said = [...t.said, e.message];
+      this.push(p, `── the tunnel couldn't start: ${e.message}`, true);
+    });
+    child.on('close', (code) => {
+      if (rest) heard(rest);
+      if (p.tunnel === t) p.tunnel = null;
+      this.push(p, `── tunnel closed${t.asked || code == null ? '' : ` (${tool} exited with ${code})`}`, !t.asked);
+      this.onEvent({ type: 'tunnel-closed', p, tool, url: t.url, asked: Boolean(t.asked), said: t.said });
+      this.onChange();
+    });
+    this.onChange();
+    return true;
+  }
+
+  /** Closes `name`'s tunnel; returns whether it had one. */
+  closeTunnel(name) {
+    const t = this.procs.get(name)?.tunnel;
+    if (!t || t.asked) return false;
+    t.asked = true;
+    if (t.pid) killTreeNow(t.pid);
+    else t.child.kill?.();
+    return true;
   }
 
   /**
@@ -442,6 +525,7 @@ export class Supervisor {
       this.clearRestart(p);
       this.unwatch(p);
       if (p.pid) killTreeNow(p.pid);
+      if (p.tunnel) this.closeTunnel(p.name);
     }
   }
 

@@ -15,6 +15,7 @@ import { troubleContext } from './share.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, shareLine, takeLine, trawlLine } from './family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
+import { installHint } from './tunnel.js';
 import { levelTone, shownText, structuredOf, troubled } from './structured.js';
 import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
 
@@ -296,6 +297,28 @@ export function top(ctx, { replace = false } = {}) {
     },
     { replace },
   );
+}
+
+/**
+ * T and /tunnel: opens `name`'s port to the internet through cloudflared or ngrok (asking first), or
+ * closes the tunnel it has. The address is copied once the tool says it (App's crewEvent).
+ */
+export async function tunnel(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  if (p.tunnel) return void ctx.crew.closeTunnel(p.name);
+  if (!p.port) return ctx.note(`${p.name} has no port to open: give it one in bosun.json ("port": 3000).`, 'error');
+  if (!p.child) return ctx.note(`${p.name} isn't running: start it first (s), then open its tunnel.`, 'error');
+  const found = ctx.tunnelTool(p.spec.tunnel ?? ctx.data?.tunnel ?? null);
+  if (found.missing) return ctx.note(installHint(found.missing), 'error');
+  const ok = await ctx.confirm({
+    title: `Open ${p.name}'s port ${p.port} to the internet through ${found.tool}?`,
+    detail: 'Anyone with the address reaches it, until you close it (T) or the process stops.',
+    danger: true,
+    options: YES_NO('Yes, open it'),
+  });
+  if (!ok) return false;
+  if (ctx.crew.openTunnel(p.name, found)) ctx.note(`Opening a tunnel to ${p.name}'s port ${p.port} through ${found.tool}…`);
 }
 
 /** o and /open: the process's port in the browser. */

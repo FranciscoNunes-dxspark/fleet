@@ -139,7 +139,7 @@ test('sparklines, sizes, the busiest first, and memory that keeps growing', () =
   assert.match(logTitle(p, 5), /^api · 39% \S{5} · 100M \S{5}$/);
   assert.equal(logTitle({ ...p, child: null }), 'api');
   assert.equal(usageSegments(p)[0].text, '  39%  100M');
-  assert.deepEqual(withRoom([{ text: 'abc' }], [[{ text: 'de' }], [{ text: 'fghij' }]], 6).map((s) => s.text), ['abc', 'de']);
+  assert.deepEqual(withRoom([{ text: 'abc' }], [[[{ text: 'de' }]], [[{ text: 'fghij' }]]], 6).map((s) => s.text), ['abc', 'de']);
 });
 
 const TICKER = `setInterval(() => console.log('tick'), 200);`;
