@@ -10,6 +10,7 @@ import { useListNav, useMouse } from './hooks.js';
 import { testsLabel } from '../hailcheck.js';
 import { Panel, Row } from './parts.jsx';
 import { shortBytes, shortCpu, sparkline } from '../usage.js';
+import { formatStructured, levelTone, parseFilter, passes, shownText, structuredOf, troubled } from '../structured.js';
 
 const STATUS_COLOUR = () => ({ running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del, exited: theme.dim, stopped: theme.dim });
 
@@ -83,6 +84,19 @@ export function logTitle(p, sparkW = 10) {
   return `${p.name} · ${shortCpu(p.usage.cpu)}${spark('cpu')} · ${shortBytes(p.usage.mem)}${spark('mem')}`;
 }
 
+/** A level's colour: dim for trace and debug, the warning colour for warn, red for error and fatal. */
+export const levelColour = (level) => theme[levelTone(level)];
+
+/** A log line as segments: a structured one as time, level (in its colour), message and fields; else as it came, red when it reads as trouble. */
+export function lineSegments(line) {
+  const s = structuredOf(line);
+  if (!s) return [{ text: line.text, color: line.text.startsWith('── ') ? theme.dim : isTrouble(line.text) ? theme.del : undefined }];
+  const bad = s.level === 'error' || s.level === 'fatal';
+  return formatStructured(s).parts.map((p) =>
+    p.kind === 'level' ? { text: p.text, color: levelColour(s.level), bold: bad } : p.kind === 'message' ? { text: p.text, color: bad ? theme.del : undefined } : { text: p.text, color: theme.dim },
+  );
+}
+
 /** The lines of every process, in the order they came, each with its name in front: the `a` log. */
 export function mergedLines(procs, last) {
   // Each log is in time order already (unless the clock went back), so the newest `last` are taken
@@ -149,6 +163,8 @@ export function CrewView({ procs, ctx, width, height, active }) {
     setSearchState(next);
   };
   const [troubleOnly, setTroubleOnly] = useState(false);
+  // ctrl+l: the filter (structured.js's parseFilter: level>=warn, field=value, words), with the search and e.
+  const [filter, setFilter] = useState(() => parseFilter(''));
   // Uptimes and restart countdowns: drawn again when one says something new (each second under a
   // minute, each minute under an hour), not every second.
   const [, setSecond] = useState(0);
@@ -163,12 +179,12 @@ export function CrewView({ procs, ctx, width, height, active }) {
   ctx.logShown = merged ? true : (sel?.name ?? null);
   // The pane's lines: the one's or all of them, only the troubled ones with `e`.
   const all = merged ? mergedLines(procs, KEEP_LINES) : (sel?.lines ?? []);
-  const list = troubleOnly ? all.filter((l) => isTrouble(l.text)) : all;
+  const list = troubleOnly || filter.terms.length ? all.filter((l) => (!troubleOnly || troubled(l)) && passes(filter, l)) : all;
   const listRef = useRef(list);
   listRef.current = list;
   const hitsIn = (lines, query) => {
     const find = matcher(query);
-    return find ? lines.flatMap((l, i) => (find(l.text).length ? [i] : [])) : [];
+    return find ? lines.flatMap((l, i) => (find(shownText(l)).length ? [i] : [])) : [];
   };
 
   /** Scrolls to match `n` (round from either end), a third of the way down the pane. */
@@ -217,12 +233,22 @@ export function CrewView({ procs, ctx, width, height, active }) {
   );
   ctx.claimsKey = active ? (input, key) => searchRef.current.typing || (key.ctrl && input === 'f') || (Boolean(searchRef.current.query) && (key.escape || input === 'n' || input === 'N')) : null;
 
+  const askFilter = async () => {
+    const typed = await ctx.askText({ title: 'Filter the log', detail: 'level>=warn · field=value · field!=value · field~part · words it holds; all of them. Empty shows every line.', value: filter.text });
+    if (typed == null) return;
+    const next = parseFilter(typed);
+    if (next.problems.length) ctx.note(next.problems.join('\n'), 'error');
+    setFilter(next);
+    setBack(0);
+  };
+
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
     if (ctx.claimsKey?.(input, key)) {
       ctx.claimed?.();
       return searchKeys(input, key);
     }
+    if (key.ctrl && input === 'l') return askFilter();
     if (nav.handle(input, key)) return setBack(0);
     if (input === 'e') {
       setBack(0);
@@ -272,7 +298,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
   const hits = find ? hitsIn(list, search.query) : [];
   const here = hits[Math.min(search.at, hits.length - 1)];
   const where = search.query || search.typing ? `find ${search.query}${search.typing ? '▏' : ''} ${hits.length ? `${Math.min(search.at, hits.length - 1) + 1}/${hits.length}` : 'no match'}` : '';
-  const logHint = [where, troubleOnly ? 'trouble only · e all' : '', back ? `${back} up · wheel down follows` : '', !merged && !troubleOnly && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
+  const logHint = [where, filter.terms.length ? `filter ${filter.text}` : '', troubleOnly ? 'trouble only · e all' : '', back ? `${back} up · wheel down follows` : '', !merged && !troubleOnly && sel?.trouble ? 'trouble' : ''].filter(Boolean).join(' · ');
 
   return (
     <>
@@ -302,8 +328,8 @@ export function CrewView({ procs, ctx, width, height, active }) {
       </Panel>
       <Panel title={paneTitle} hint={logHint} width={logW} height={height}>
         {visible.map((l, i) => {
-          const text = fit(l.text, lineW - tagW);
-          const line = [{ text, color: l.text.startsWith('── ') ? theme.dim : isTrouble(l.text) ? theme.del : undefined }];
+          const line = lineSegments(l);
+          const text = fit(line.map((x) => x.text).join(''), lineW - tagW);
           return (
             <Row
               key={i}

@@ -15,6 +15,7 @@ import { troubleContext } from './share.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, shareLine, takeLine, trawlLine } from './family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
+import { levelTone, shownText, structuredOf, troubled } from './structured.js';
 import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
 
 const YES_NO = (yes) => [
@@ -77,11 +78,22 @@ export function toggle(ctx, name) {
   return p.child ? ctx.crew.stop(p.name) : ctx.crew.start(p.name);
 }
 
-/** ↵: everything a process has said, in the viewer. */
+/**
+ * ↵: everything a process has said, in the viewer: structured lines formatted and coloured by level,
+ * and ↵ there shows one's whole object, pretty.
+ */
 export function showLog(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
-  ctx.showText(`${p.name} · ${p.spec.run}`, p.lines.map((l) => l.text).join('\n') || '(nothing yet)', { bottom: true, log: true });
+  const lines = [...p.lines];
+  const read = lines.map(structuredOf);
+  const rich = {
+    color: (i) => (read[i] ? theme[levelTone(read[i].level)] : lines[i]?.text.startsWith('── ') ? theme.dim : undefined),
+    trouble: (i) => Boolean(lines[i] && troubled(lines[i])),
+    opens: (i) => Boolean(read[i]),
+    open: (i) => ctx.showText(`${p.name} · ${new Date(lines[i].at).toLocaleTimeString()}`, JSON.stringify(read[i].obj, null, 2), { back: ctx.overlay() }),
+  };
+  ctx.showText(`${p.name} · ${p.spec.run}`, lines.map(shownText).join('\n') || '(nothing yet)', { bottom: true, log: true, rich });
 }
 
 /** c: forgets what a process has said so far. */

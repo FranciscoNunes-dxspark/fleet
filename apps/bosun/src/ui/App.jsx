@@ -51,7 +51,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · e trouble · t share it · w why · ↵ whole log',
+  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share it · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
@@ -116,6 +116,15 @@ function activityRows(entries) {
 }
 
 const DOUBLE_CLICK_MS = 400;
+
+// A viewer of its own for each thing shown, so going back from one (a log line's object to the log)
+// doesn't keep where the other was scrolled to.
+const viewerKeys = new WeakMap();
+let viewerCount = 0;
+const viewerKey = (overlay) => {
+  if (!viewerKeys.has(overlay)) viewerKeys.set(overlay, ++viewerCount);
+  return viewerKeys.get(overlay);
+};
 
 // `dir` is the project to start in (/move changes it); `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
@@ -969,7 +978,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   } else if (overlay?.kind === 'picker') {
     main = <Picker key={overlay.id} picker={overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay) {
-    main = <TextViewer {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+    main = <TextViewer key={viewerKey(overlay)} {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (!data) {

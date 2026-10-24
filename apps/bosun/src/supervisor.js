@@ -5,10 +5,11 @@ import { spawn, spawnSync } from 'node:child_process';
 import { statSync, watch as fsWatch } from 'node:fs';
 import { connect } from 'node:net';
 import { resolve } from 'node:path';
-import { isTrouble, portInUse, stripAnsi } from './crew.js';
+import { portInUse, stripAnsi } from './crew.js';
 import { skipsFolder, tidy, watchMatcher, watchRoots } from './watch.js';
 import { walksTree, watchTree } from './treewatch.js';
 import { crewOf, stateOf } from './recorder.js';
+import { troubleText } from './structured.js';
 
 // A folder that's still there: Windows reports one whose files changed as changed itself, and the files
 // it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
@@ -195,7 +196,7 @@ export class Supervisor {
       p.lines.push(entry);
       this.recorder?.line(p.name, entry);
       // Bosun's own lines (── the command, ── stopped) are never the process's trouble.
-      if (!p.trouble && !line.startsWith('── ') && isTrouble(line)) p.trouble = line.trim();
+      if (!p.trouble && !line.startsWith('── ')) p.trouble = troubleText(line);
     }
     if (p.lines.length > KEEP_LINES) p.lines.splice(0, p.lines.length - KEEP_LINES);
   }

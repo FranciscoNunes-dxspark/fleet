@@ -151,6 +151,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `a` | Every process's log at once, or back to the one |
 | `ctrl+f` | Search the log beside the list: matches light up as you type, `↵` stops typing, `n` `N` go to the next and the one before, `esc` clears it |
 | `e` | Only the lines that read as trouble (errors, exceptions, a port in use), or all of them again |
+| `ctrl+l` | Filter the log beside the list (see Structured logs) |
 | `↵` | Its whole log, in the viewer |
 | `c` | Clear its log |
 | `l` | Save its log to a file: `/save-log` in the prompt, with `<name>.log` to change |
@@ -175,6 +176,29 @@ when it kept failing as soon as it started. `!` after it means its log said some
 in use is one, and `f` stops what holds it. The wheel over the log scrolls it back, and scrolling to
 the bottom follows it again. `w` needs [Claude Code](https://claude.com/claude-code) installed and
 signed in; Claude reads the log and may read the project's files, and changes nothing.
+
+### Structured logs
+
+A line that is a JSON object, as pino, bunyan, winston and Serilog's compact JSON write them (or any
+object with a level and a message: `level`/`severity`, `msg`/`message`, `time`/`timestamp`/`ts`), is
+shown as `14:03:07.120 WARN  slow query ms=812 route=/orders`: the time, the level in its colour
+(dim for trace and debug, red for error and fatal), the message, then its other fields as
+`key=value` (pid, hostname and the like left out). One at error or worse is the process's trouble.
+In the viewer (`↵`), `↵` shows a line's whole object, pretty: the line of the search's match, else the
+lowest one on screen.
+
+`ctrl+l` filters the log beside the list. Type terms separated by spaces; a line must hold all of them:
+
+| Term | Keeps |
+| --- | --- |
+| `level>=warn` | Lines at that level or worse (`<=`, `>`, `<`, `=`, `!=` too); the levels are trace, debug, info, warn, error, fatal, and a plain line counts as error when it reads as trouble |
+| `route=/orders` | Lines whose field is that (any case); `req.method=GET` reaches inside |
+| `route!=/orders` | Structured lines whose field isn't that |
+| `msg~timeout` | Lines whose field holds that |
+| `timeout` | Lines that say that (a capital in it makes the case matter); `"in quotes"` keeps spaces |
+
+The log's title says the filter while one is on; `ctrl+l` and an empty line takes it off. It works
+together with `e` and the search.
 
 The viewer (`↵`) searches the same way (with `/` or `ctrl+f`), starting from the newest match, and `e` there shows only
 the trouble too.
