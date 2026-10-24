@@ -5,6 +5,7 @@
 import { metricsPath, seriesFrom } from '../metrics.js';
 import { callSignal } from '../run.js';
 import { functionFrom, functionUrl, invocation, isHttp } from '../functions.js';
+import { autoscaleFrom, planFrom } from '../scale.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
@@ -359,6 +360,26 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const headers = { ...(key ? { 'x-functions-key': key } : {}), ...(send.body != null ? { 'Content-Type': send.admin ? 'application/json' : 'text/plain' } : {}) };
       const res = await call(null, url, { method: send.method, text: send.body, headers, raw: true, auth: false, anyStatus: true, signal, what: `Invoking ${fn.name}` });
       return { status: res.status, type: res.headers?.get?.('content-type') ?? '', body: res.text, url, method: send.method };
+    },
+    /** An App Service plan (serverfarm) by its id: scale.js planFrom's. */
+    async plan(planId, opts) {
+      return planFrom(await arm(`${planId}?api-version=${WEB}`, { ...opts, what: `Reading the plan ${planId.split('/').pop()}` }));
+    },
+    /**
+     * Scales a plan to `sku` ({ name, tier, capacity }). The plan's update (PATCH) takes no SKU, so it's
+     * read and written back whole (PUT) with the new one, as az appservice plan update does.
+     */
+    async scalePlan(plan, sku, { signal } = {}) {
+      const what = `Scaling ${plan.name}`;
+      const now = await arm(`${plan.id}?api-version=${WEB}`, { signal, what });
+      const { name, tier, capacity } = sku;
+      const next = { location: now.location, kind: now.kind, tags: now.tags, sku: { name, tier, capacity }, properties: now.properties ?? {} };
+      return planFrom(await arm(`${plan.id}?api-version=${WEB}`, { method: 'PUT', body: next, signal, what }));
+    },
+    /** The subscription's autoscale settings (Microsoft.Insights/autoscalesettings): scale.js autoscaleFrom's. */
+    async autoscaleSettings(sub, opts) {
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.Insights/autoscalesettings?api-version=2022-10-01`, { ...opts, what: 'Reading the autoscale settings' });
+      return list.map(autoscaleFrom);
     },
     /** How each of its Key Vault references (@Microsoft.KeyVault(…) settings) resolved: referenceFrom's. */
     async keyVaultReferences(target, opts) {

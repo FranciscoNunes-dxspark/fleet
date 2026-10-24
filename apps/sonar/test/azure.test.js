@@ -518,3 +518,25 @@ test('functions: listed with their triggers; invoked over HTTP with the function
   assert.equal(calls.length, before + 1, 'an anonymous function needs no key');
   assert.equal(calls.at(-1).init.headers['x-functions-key'], undefined);
 });
+
+test('plans: read, scaled by writing them back whole with the new SKU; autoscale settings with their rules', async () => {
+  const planId = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.Web/serverfarms/plan-1';
+  const raw = { id: planId, name: 'plan-1', location: 'westeurope', kind: 'linux', tags: { team: 'a' }, sku: { name: 'P1v3', tier: 'PremiumV3', size: 'P1v3', family: 'Pv3', capacity: 2 }, properties: { numberOfSites: 3, maximumNumberOfWorkers: 30, reserved: true, status: 'Ready' } };
+  const { fetch, calls } = fakeFetch({
+    [`GET ${planId}`]: raw,
+    [`PUT ${planId}`]: (body) => ({ ...raw, sku: body.sku }),
+    'GET /subscriptions/s1/providers/Microsoft.Insights/autoscalesettings': {
+      value: [{ id: '/x/autoscalesettings/a1', name: 'a1', properties: { enabled: true, targetResourceUri: planId.toLowerCase(), profiles: [{ name: 'Default', capacity: { minimum: '2', maximum: '5', default: '2' }, rules: [{ metricTrigger: { metricName: 'CpuPercentage', operator: 'GreaterThan', threshold: 70 }, scaleAction: { direction: 'Increase', type: 'ChangeCount', value: '1' } }] }] } }],
+    },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const plan = await azure.plan(planId);
+  assert.deepEqual([plan.name, plan.sku, plan.maxWorkers, plan.sites], ['plan-1', { name: 'P1v3', tier: 'PremiumV3', capacity: 2 }, 30, 3]);
+  const after = await azure.scalePlan(plan, { name: 'P1v3', tier: 'PremiumV3', capacity: 4 });
+  assert.equal(after.sku.capacity, 4);
+  const put = calls.at(-1);
+  assert.equal(put.init.method, 'PUT');
+  assert.deepEqual(put.body, { location: 'westeurope', kind: 'linux', tags: { team: 'a' }, sku: { name: 'P1v3', tier: 'PremiumV3', capacity: 4 }, properties: raw.properties });
+  const [auto] = await azure.autoscaleSettings('s1');
+  assert.deepEqual([auto.enabled, auto.profiles[0].min, auto.profiles[0].max, auto.profiles[0].rules[0].metric], [true, 2, 5, 'CpuPercentage']);
+});

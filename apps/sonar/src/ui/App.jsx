@@ -5,6 +5,7 @@ import { label } from '../azure/arm.js';
 import { TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
 import { costDay } from '../cost.js';
+import { autoscaleFor } from '../scale.js';
 import { crossing, watchEvery, watchValue } from '../watches.js';
 import { mapLimited, targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
@@ -179,6 +180,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const adminCache = useRef(new Map());
   // Each app's and slot's Key Vault references, read in the background after a load (scanExtras).
   const refsCache = useRef(new Map());
+  // App Service plans by id, and each subscription's autoscale settings, kept until r or a scale.
+  const planCache = useRef(new Map());
+  const autoscaleCache = useRef(new Map());
   // What the list shows beside each app or slot, by id: { refs } (its Key Vault references).
   const [extras, setExtras] = useState({});
   // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
@@ -303,6 +307,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     firewallCache.current = new Map();
     adminCache.current = new Map();
     refsCache.current = new Map();
+    planCache.current = new Map();
+    autoscaleCache.current = new Map();
     // A subscription not on screen yet shows as soon as its apps are known, slots and databases
     // filling in as they come; reading the one on screen again keeps it until the new one is whole.
     const n = ++loads.current;
@@ -375,6 +381,30 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       cache.set(target.id, p);
     }
     return cache.get(target.id);
+  };
+
+  /** An App Service plan by its id (scale.js planFrom), read once and kept until r or it's scaled. */
+  const planOf = (planId) => {
+    const key = String(planId).toLowerCase();
+    const cache = planCache.current;
+    if (!cache.has(key)) {
+      const p = provider.plan ? provider.plan(planId) : Promise.reject(new Error("Plans can't be read here"));
+      p.catch(() => cache.delete(key));
+      cache.set(key, p);
+    }
+    return cache.get(key);
+  };
+
+  /** The autoscale settings that target plan `planId`, from the subscription's (read once, kept until r). */
+  const autoscaleOf = async (planId) => {
+    const sub = dataRef.current?.subscription.id;
+    const cache = autoscaleCache.current;
+    if (!cache.has(sub)) {
+      const p = provider.autoscaleSettings ? provider.autoscaleSettings(sub) : Promise.resolve([]);
+      p.catch(() => cache.delete(sub));
+      cache.set(sub, p);
+    }
+    return autoscaleFor(await cache.get(sub), planId);
   };
 
   /**
@@ -577,6 +607,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     forgetFirewall: (server) => firewallCache.current.delete(server.id),
     forgetSettings: (target) => (settingsCache.current.delete(target.id), refsCache.current.delete(target.id)),
     referencesOf,
+    planOf,
+    autoscaleOf,
+    forgetPlan: (planId) => planCache.current.delete(String(planId).toLowerCase()),
     extras: () => extras,
     scope: resolveScope,
     timespan: () => TIMESPANS[spanRef.current],

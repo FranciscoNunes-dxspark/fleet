@@ -37,6 +37,8 @@ test('Resources flags an app whose reference fails, its details and settings say
     app.stdin.write('/');
     await type(app.stdin, 'find contoso-api');
     app.stdin.write(KEYS.enter);
+    // Room for the details: the welcome box goes.
+    app.stdin.write(KEYS.esc);
     await until(() => frame().includes('key vault 2 references, 1 resolved'), 'its details');
     assert.match(frame(), /⚠ Smtp__Password: the app's identity may not read/);
     app.stdin.write(KEYS.enter);

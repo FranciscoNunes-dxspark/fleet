@@ -105,7 +105,15 @@ function initialState(now) {
   ].map((a, i) => ({ id: `/subscriptions/${a.sub}/providers/Microsoft.AlertsManagement/alerts/demo-${i}`, state: 'New', condition: 'Fired', resourceGroup: 'contoso-prod', rule: `${prodRg}/providers/microsoft.insights/metricalerts/${a.name.replace(/\W+/g, '-')}`, fired: new Date(now - a.ago).toISOString(), changed: new Date(now - a.ago).toISOString(), ...a }));
   // The demo's vault: the secrets in it, and the ones the apps' identities may not read.
   const vault = { name: 'contoso-kv', secrets: ['payments-key', 'smtp-password'], denied: ['smtp-password'] };
-  return { sites, components, alerts, vault, invocations: [], ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
+  // The plans the apps run on (one per resource group), and the production one's autoscale.
+  const plans = [...new Set(sites.map((x) => x.planId))].map((id) => {
+    const prod = /contoso-prod/.test(id);
+    return { id, name: id.split('/').pop(), resourceGroup: /resourceGroups\/([^/]+)/.exec(id)[1], location: 'westeurope', kind: 'linux', sku: prod ? { name: 'P1v3', tier: 'PremiumV3', capacity: 2 } : { name: 'B1', tier: 'Basic', capacity: 1 }, maxWorkers: prod ? 30 : 3, elasticMax: null, sites: sites.filter((x) => x.planId === id && !x.slot).length, status: 'Ready' };
+  });
+  const autoscale = [
+    { sub: 'sub-prod', id: `${prodRg}/providers/microsoft.insights/autoscalesettings/contoso-prod-plan-autoscale`, name: 'contoso-prod-plan-autoscale', enabled: true, target: plans.find((x) => /contoso-prod/.test(x.id)).id, profiles: [{ name: 'Default', min: 2, max: 5, default: 2, fixed: false, recurring: false, rules: [{ metric: 'CpuPercentage', operator: 'GreaterThan', threshold: 70, direction: 'Increase', change: 1, type: 'ChangeCount' }, { metric: 'CpuPercentage', operator: 'LessThan', threshold: 30, direction: 'Decrease', change: 1, type: 'ChangeCount' }] }] },
+  ];
+  return { sites, components, alerts, vault, invocations: [], plans, autoscale, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
 }
 
 // A few days of what the apps did: requests (some failing), the exceptions behind the failures, traces.
@@ -447,6 +455,22 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       if (send.admin) return answer(202, '', '');
       if (fn.name === 'PlaceOrder') return input.trim() ? answer(201, 'application/json; charset=utf-8', JSON.stringify({ orderId: 'o-10234', status: 'placed' })) : answer(400, 'application/json; charset=utf-8', JSON.stringify({ error: 'An order is needed in the body' }));
       return answer(200, 'text/plain', 'Healthy');
+    },
+    async plan(planId, { signal } = {}) {
+      await wait(signal);
+      const p = state.plans.find((x) => x.id.toLowerCase() === String(planId).toLowerCase());
+      if (!p) throw new Error(`Reading the plan ${String(planId).split('/').pop()}: not found`);
+      return structuredClone(p);
+    },
+    async scalePlan(plan, sku, { signal } = {}) {
+      await wait(signal);
+      const p = state.plans.find((x) => x.id === plan.id);
+      p.sku = { name: sku.name, tier: sku.tier, capacity: sku.capacity };
+      return structuredClone(p);
+    },
+    async autoscaleSettings(sub, { signal } = {}) {
+      await wait(signal);
+      return state.autoscale.filter((a) => a.sub === sub).map(({ sub: _, ...a }) => structuredClone(a));
     },
     async connectionStrings(target, { signal } = {}) {
       await wait(signal);

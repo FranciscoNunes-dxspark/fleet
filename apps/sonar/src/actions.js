@@ -15,6 +15,7 @@ import { familyChoices } from './kin.js';
 import { referenceWords, resolved as refResolved } from './keyvault.js';
 import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, prettyBody, triggerLabel, withDisabled } from './functions.js';
 import { parseWatch, watchEvery } from './watches.js';
+import { autoscaleSummary, consumption, parseScale, planLine, scaledSku } from './scale.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
@@ -364,6 +365,55 @@ export async function invokeFunction(ctx, target, fn) {
   ];
   ctx.showText(`${fn.name}: ${res.status}`, `${head}\n\n${body}`, { lines, back });
   return done;
+}
+
+/** The apps (main slots) that run on plan `planId`, by name. */
+export const appsOnPlan = (ctx, planId) => (ctx.data?.apps ?? []).filter((a) => a.planId && a.planId.toLowerCase() === String(planId ?? '').toLowerCase());
+
+/**
+ * /scale [app] <instances|tier>: the App Service plan an app runs on, to so many instances or another
+ * tier. It says which other apps share the plan (they scale with it) and whether autoscale is on, and
+ * asks as a change to production does when any of them is production.
+ */
+export async function scale(ctx, text) {
+  const want = parseScale(text, Object.keys(ctx.targets()));
+  if (want.error) return ctx.note(want.error, 'error');
+  const target = need(ctx, want.app ? targetNamed(ctx, want.app) : ctx.selectedTarget());
+  if (!target) return;
+  if (!target.planId) return ctx.note(`${label(target)} runs on no plan Sonar can see.`, 'error');
+  let plan;
+  let auto;
+  try {
+    [plan, auto] = await Promise.all([ctx.planOf(target.planId), ctx.autoscaleOf(target.planId).catch(() => [])]);
+  } catch (e) {
+    return ctx.note(e.message, 'error');
+  }
+  if (consumption(plan)) return ctx.note(`${plan.name} is a ${plan.sku.tier} plan: it scales by itself, so it has no instances or tier to set.`, 'error');
+  const sku = scaledSku(plan, want);
+  if (sku.name === plan.sku.name && sku.capacity === plan.sku.capacity) return ctx.note(`${plan.name} is ${planLine(plan)} already.`);
+  if (want.instances && plan.maxWorkers && want.instances > plan.maxWorkers) return ctx.note(`${plan.name} (${plan.sku.name}) goes up to ${plan.maxWorkers} instances.`, 'error');
+  const on = appsOnPlan(ctx, plan.id);
+  const others = on.filter((a) => a.id !== target.id.replace(/\/slots\/[^/]+$/, ''));
+  const autoOn = (auto ?? []).some((a) => a.enabled);
+  const what = want.instances ? `${want.instances} instance${want.instances === 1 ? '' : 's'}` : `${sku.name} (${sku.tier})`;
+  const ok = await confirmChange(ctx, target, {
+    title: `Scale ${plan.name} from ${plan.sku.name} × ${plan.sku.capacity} to ${what}?`,
+    detail: [
+      others.length ? `It also runs ${others.map((a) => a.name).join(', ')}, which scale with it.` : `Only ${target.name} runs on it.`,
+      autoOn && want.instances ? `Autoscale is ${autoscaleSummary(auto)}: it may change the count again.` : '',
+      want.sku ? 'Changing the tier moves the apps to new machines; they restart.' : '',
+    ].filter(Boolean).join(' '),
+    strict: on.some(isProduction),
+    yes: 'Yes, scale it',
+  });
+  if (!ok) return;
+  const r = await ctx.task(`Scale ${plan.name} to ${what}`, async (signal) => {
+    const after = await ctx.provider.scalePlan(plan, sku, { signal });
+    ctx.forgetPlan(plan.id);
+    return { stdout: `${plan.name} is ${planLine(after)}` };
+  }, { label: 'Scaling' });
+  if (r.ok) ctx.planChanged?.();
+  return r;
 }
 
 /** R on a container app: restarts its latest revision, which restarts its replicas. */

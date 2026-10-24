@@ -46,7 +46,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state, and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state, and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
 | **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
@@ -68,6 +68,12 @@ first. For production, Sonar asks you to type the app's name, as the portal does
 production being an app or resource group named with prod, production, prd or live. Every swap asks
 for the name, since it changes what production serves, and says how many settings differ between
 the two slots before you go ahead.
+
+`/scale [app] <instances|tier>` scales the App Service plan an app runs on: `/scale 3` to three
+instances, `/scale contoso-web P1v3` to another tier (B1, S1, P1v3, P2mv3, I1v2, EP1…). It says which
+other apps share the plan (they scale with it) and, when autoscale is on for it, that it may change the
+count again; a plan that runs a production app asks for the app's name. A Consumption plan scales by
+itself, so there's nothing to set. Autoscale settings are shown, not changed.
 
 A container app's restart (`R`, which restarts its latest revision) and a SQL firewall rule (`F`)
 ask the same way.
@@ -322,6 +328,7 @@ and Trawl.
 | `/stop [app]` `/start [app]` | Stop or start one |
 | `/swap [app/slot]` | Swap a slot into production |
 | `/functions [app]` | A function app's functions: trigger, on or off, runs and failures; `↵` runs in Logs, `i` invokes, `d` turns off or on |
+| `/scale [app] <instances\|tier>` | Scale the App Service plan an app runs on (above) |
 | `/deployments [app]` | An app's or slot's deployments, and their logs |
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |

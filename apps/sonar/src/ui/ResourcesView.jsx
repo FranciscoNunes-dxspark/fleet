@@ -7,6 +7,7 @@ import { metricRows } from '../metrics.js';
 import { costOf, groupCost, money } from '../cost.js';
 import { resourceRows } from '../tree.js';
 import { referenceWords, unresolved } from '../keyvault.js';
+import { autoscaleSummary, planLine } from '../scale.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -60,6 +61,9 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
   ctx.selectTarget(sel);
   // The settings say which Application Insights it reports to; read when the cursor stops on it.
   const [settings, setSettings] = useState(null);
+  // Bumped after /scale, so the plan is read again.
+  const [planTick, setPlanTick] = useState(0);
+  ctx.planChanged = () => setPlanTick((n) => n + 1);
   useEffect(() => {
     if (!web) return;
     let live = true;
@@ -83,6 +87,24 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       stop();
     };
   }, [sel?.id]);
+
+  // Its plan: tier, instances, autoscale.
+  const [plan, setPlan] = useState(null);
+  useEffect(() => {
+    if (!web?.planId) return;
+    let live = true;
+    setPlan(null);
+    const stop = delayed(() =>
+      Promise.all([ctx.planOf(web.planId), ctx.autoscaleOf(web.planId).catch(() => [])]).then(
+        ([p, auto]) => live && setPlan({ plan: p, auto }),
+        (e) => live && setPlan({ error: e.message.split('\n')[0] }),
+      ),
+    );
+    return () => {
+      live = false;
+      stop();
+    };
+  }, [sel?.id, planTick]);
 
   // Its metrics over the span, likewise, once the cursor has settled.
   const [metrics, setMetrics] = useState(null);
@@ -196,6 +218,19 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
           ? [[{ text: 'no rules: nothing outside Azure gets in', color: theme.dim }]]
           : []),
   ];
+  // Its plan: its tier and instances, autoscale, the other apps on it.
+  const planLines = (t) => {
+    if (!plan) return [field('plan', t.plan)];
+    if (plan.error) return [field('plan', t.plan), [{ text: '          ' }, { text: `can't read it: ${plan.error}`, color: theme.dim }]];
+    const others = a.appsOnPlan(ctx, t.planId).filter((x) => x.name !== t.name).map((x) => x.name);
+    const auto = autoscaleSummary(plan.auto);
+    return [
+      field('plan', plan.plan.name),
+      field('size', planLine(plan.plan), theme.info),
+      ...(auto ? [[{ text: 'autoscale ', color: theme.dim }, { text: auto, color: /^on/.test(auto) ? undefined : theme.dim }]] : []),
+      ...(others.length ? [[{ text: 'shared    ', color: theme.dim }, { text: `with ${others.join(', ')}`, color: theme.dim }]] : []),
+    ];
+  };
   // Its Key Vault references: how many resolved, and each that didn't, in words.
   const vaultLines = (r) => {
     if (!r) return [];
@@ -216,7 +251,7 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       field('address', sel.host),
       field('group', sel.resourceGroup),
       field('where', sel.location ?? ''),
-      field('plan', sel.plan),
+      ...planLines(sel),
       field('runtime', sel.runtime),
       field('changed', sel.modified ? `${relTime(Date.parse(sel.modified))} ago` : null),
       [{ text: 'insights  ', color: theme.dim }, settings == null ? { text: '…', color: theme.dim } : settings.error ? { text: "can't read its settings", color: theme.del } : { text: component?.name ?? 'none linked', color: component ? undefined : theme.dim }],
