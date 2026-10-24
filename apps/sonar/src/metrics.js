@@ -1,6 +1,7 @@
 // Azure Monitor's metrics for an app or slot (Microsoft.Insights/metrics on the site): CPU time,
 // memory, server errors and response time over the time span, drawn as sparklines beside the app in
-// Resources. Pure: the ARM call is the provider's (azure/arm.js `metrics`, demo.js too).
+// Resources; for a container app, its requests, CPU, memory and replicas. Pure: the ARM call is the
+// provider's (azure/arm.js `metrics`, demo.js too).
 import { sparklines } from './insights.js';
 
 /** The metrics shown, in order: ARM's name, the aggregation asked for, and how a value reads. */
@@ -11,6 +12,18 @@ export const METRICS = [
   { name: 'HttpResponseTime', label: 'response', aggregation: 'average', format: (v) => `${Math.round(v * 1000)} ms` },
 ];
 
+/** A container app's (Microsoft.App/containerApps): requests, CPU in cores, memory, replicas. */
+export const CONTAINER_METRICS = [
+  { name: 'Requests', label: 'requests', aggregation: 'total', sum: true, format: (v) => `${Math.round(v)} request${Math.round(v) === 1 ? '' : 's'}` },
+  { name: 'UsageNanoCores', label: 'cpu', aggregation: 'average', format: (v) => cores(v) },
+  { name: 'WorkingSetBytes', label: 'memory', aggregation: 'average', format: (v) => bytes(v) },
+  { name: 'Replicas', label: 'replicas', aggregation: 'maximum', format: (v) => `${Math.round(v)}` },
+];
+
+/** The metrics shown for a target: a container app's, else a web app's. */
+export const metricsFor = (target) => (target?.type === 'container' ? CONTAINER_METRICS : METRICS);
+
+const cores = (v) => (v >= 1e9 ? `${(v / 1e9).toFixed(2)} cores` : `${Math.round(v / 1e6)} millicores`);
 const seconds = (v) => (v >= 3600 ? `${(v / 3600).toFixed(1)} h` : v >= 60 ? `${(v / 60).toFixed(1)} min` : `${v >= 10 ? Math.round(v) : v.toFixed(1)} s`);
 const bytes = (v) => (v >= 1024 ** 3 ? `${(v / 1024 ** 3).toFixed(1)} GB` : `${Math.round(v / 1024 ** 2)} MB`);
 
@@ -23,23 +36,23 @@ export function metricInterval(span) {
 }
 
 /** The metrics API's path and query for `target` over `span`, ending at `now`. */
-export function metricsPath(target, span, now = Date.now()) {
+export function metricsPath(target, span, now = Date.now(), defs = metricsFor(target)) {
   const from = new Date(now - span.hours * 60 * 60 * 1000).toISOString();
   const to = new Date(now).toISOString();
   const q = new URLSearchParams({
     'api-version': '2023-10-01',
-    metricnames: METRICS.map((m) => m.name).join(','),
+    metricnames: defs.map((m) => m.name).join(','),
     timespan: `${from}/${to}`,
     interval: metricInterval(span),
-    aggregation: 'Total,Average',
+    aggregation: defs.some((m) => m.aggregation === 'maximum') ? 'Total,Average,Maximum' : 'Total,Average',
   });
   return `${target.id}/providers/Microsoft.Insights/metrics?${q}`;
 }
 
 /** ARM's answer as [{ name, unit, points: [{ at, value }] }], each value the metric's own aggregation. */
-export function seriesFrom(body) {
+export function seriesFrom(body, defs = METRICS) {
   return (body?.value ?? []).map((m) => {
-    const def = METRICS.find((d) => d.name === m.name?.value);
+    const def = defs.find((d) => d.name === m.name?.value);
     const data = (m.timeseries ?? []).flatMap((t) => t.data ?? []);
     return {
       name: m.name?.value,
@@ -53,8 +66,8 @@ export function seriesFrom(body) {
  * The lines the details show: { label, spark, summary } per metric, the sparkline as wide as `width`
  * (the newest on the right), the summary a total over the span or the latest value and the highest.
  */
-export function metricRows(series, { width = 24 } = {}) {
-  return METRICS.map((def) => {
+export function metricRows(series, { width = 24, defs = METRICS } = {}) {
+  return defs.map((def) => {
     const s = series.find((x) => x.name === def.name);
     const values = (s?.points ?? []).filter((p) => p.value != null);
     if (!values.length) return { label: def.label, spark: '', summary: 'no data' };

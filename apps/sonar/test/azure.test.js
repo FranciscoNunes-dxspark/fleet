@@ -8,7 +8,7 @@ import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, availabilityQuery, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
 import { loadSubscription } from '../src/load.js';
-import { METRICS, metricInterval, metricRows, seriesFrom } from '../src/metrics.js';
+import { METRICS, metricInterval, metricRows, metricsFor, seriesFrom } from '../src/metrics.js';
 import { mapLimited, resourceRows, sqlByLabel, targetForUrl, targetsByLabel } from '../src/tree.js';
 
 /** A fetch that answers from `routes` (method + path → body, or [status, body]) and records the calls. */
@@ -654,4 +654,30 @@ test('Cosmos DB: accounts with their API, databases and containers with partitio
   assert.deepEqual(shop.throughput, { autoscale: 4000 });
   assert.deepEqual(shop.containers.map((c) => [c.name, c.partitionKey, c.hierarchical, c.throughput]), [['carts', '/tenant, /userId', true, null], ['orders', '/customerId', false, { manual: 400 }]]);
   assert.deepEqual(await azure.cosmosTree({ ...cos, api: 'Cassandra' }), []);
+});
+
+test('container apps\' metrics: requests, CPU, memory and replicas asked for, read with each one\'s aggregation, as sparklines', async () => {
+  const id = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.App/containerApps/worker';
+  const point = (t, v) => ({ timeStamp: t, total: v, average: v / 2, maximum: v * 2 });
+  const { fetch, calls } = fakeFetch({
+    [`GET ${id}/providers/Microsoft.Insights/metrics`]: {
+      value: ['Requests', 'UsageNanoCores', 'WorkingSetBytes', 'Replicas'].map((n, i) => ({ name: { value: n }, unit: 'Count', timeseries: [{ data: [point('2026-10-24T10:00:00Z', 2 + i), point('2026-10-24T11:00:00Z', 4 + i)] }] })),
+    },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const target = { type: 'container', id, name: 'worker' };
+  const series = await azure.metrics(target, { span: TIMESPANS[1] });
+  const q = new URL(calls[0].url).searchParams;
+  assert.equal(q.get('metricnames'), 'Requests,UsageNanoCores,WorkingSetBytes,Replicas');
+  assert.equal(q.get('aggregation'), 'Total,Average,Maximum');
+  assert.deepEqual(series.map((s) => s.points.map((p) => p.value)), [[2, 4], [1.5, 2.5], [2, 3], [10, 14]]);
+  const rows = metricRows(series, { width: 4, defs: metricsFor(target) });
+  assert.deepEqual(rows.map((r) => r.label), ['requests', 'cpu', 'memory', 'replicas']);
+  assert.equal(rows[0].summary, '6 requests');
+  assert.equal(rows[3].summary, '14 · peak 14');
+  assert.equal(metricsFor({ kind: 'app' }), METRICS);
+  const demo = demoAzure();
+  const d = await demo.metrics(demo.state.containers[0], { span: TIMESPANS[0] });
+  assert.deepEqual(d.map((s) => [s.name, s.points.length]), [['Requests', 12], ['UsageNanoCores', 12], ['WorkingSetBytes', 12], ['Replicas', 12]]);
+  assert.match(metricRows(d, { defs: metricsFor(target) })[1].summary, /millicores · peak \d+ millicores/);
 });

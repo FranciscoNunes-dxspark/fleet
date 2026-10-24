@@ -33,7 +33,7 @@ export const HELP = [
     views: ['resources'],
     rows: [
       ['↵ / a', 'Its settings: v shows a hidden value (V all), e edits, n adds, x removes, d compares with another slot, y copies; a Key Vault reference shows ✓, or ✗ and why it didn\'t resolve'],
-      ['⚠', 'Beside an app or slot: one of its Key Vault references didn\'t resolve (its details say which and why)'],
+      '⚠ beside an app or slot: one of its Key Vault references didn\'t resolve (its details say which and why). → 10% beside a slot: its share of the app\'s traffic (/route).',
       ['R', 'Restart it'],
       ['S', 'Stop it, or start it if it is stopped'],
       ['W', 'Swap a slot into production (on an app, pick the slot)'],
@@ -44,6 +44,7 @@ export const HELP = [
       ['o  b', 'Open it in the Azure portal · open its site'],
       ['y', 'Copy its address'],
       { heading: 'On a container app' },
+      ['details', 'Its address, revision, image, environment, and its metrics over the span: requests, CPU, memory, replicas'],
       ['R', 'Restart its latest revision'],
       ['l / ↵', 'Its console log in Logs (from its environment\'s Log Analytics workspace)'],
       ['o  b  y', 'The portal · its address · copy its address'],

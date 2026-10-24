@@ -3,7 +3,7 @@ import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
 import { componentFor, isProduction } from '../insights.js';
-import { metricRows } from '../metrics.js';
+import { metricRows, metricsFor } from '../metrics.js';
 import { costOf, groupCost, money } from '../cost.js';
 import { resourceRows } from '../tree.js';
 import { referenceWords, unresolved } from '../keyvault.js';
@@ -112,11 +112,12 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
 
   // Its metrics over the span, likewise, once the cursor has settled.
   const [metrics, setMetrics] = useState(null);
+  const measured = web ?? (sel?.type === 'container' ? sel : null);
   useEffect(() => {
-    if (!web) return;
+    if (!measured) return;
     let live = true;
     setMetrics(null);
-    const stop = delayed(() => ctx.metricsOf(web).then((m) => live && setMetrics({ series: m }), (e) => live && setMetrics({ error: e.message.split('\n')[0] })));
+    const stop = delayed(() => ctx.metricsOf(measured).then((m) => live && setMetrics({ series: m }), (e) => live && setMetrics({ error: e.message.split('\n')[0] })));
     return () => {
       live = false;
       stop();
@@ -231,6 +232,17 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
 
   const component = settings && !settings.error ? componentFor(settings, data.components) : null;
   const sparkW = Math.max(6, Math.min(24, width - listW - 40));
+  // Its metrics over the span, a sparkline each with what it came to.
+  const metricLines = (t) => [
+    [{ text: `the last ${span?.label ?? ''}`, color: theme.dim, bold: true }, { text: metrics ? '' : '  reading its metrics…', color: theme.dim }],
+    ...(metrics?.error
+      ? [[{ text: "can't read its metrics: ", color: theme.del }, { text: metrics.error, color: theme.dim }]]
+      : metricRows(metrics?.series ?? [], { width: sparkW, defs: metricsFor(t) }).map((m) => [
+          { text: m.label.padEnd(10), color: theme.dim },
+          { text: m.spark.padStart(sparkW), color: theme.warn },
+          { text: metrics ? `  ${m.summary}` : '', color: m.summary === 'no data' ? theme.dim : undefined },
+        ])),
+  ];
   const field = (name, value, color) => [{ text: name.padEnd(10), color: theme.dim }, { text: value ?? '—', color }];
   const prod = (t) => [{ text: t.state, color: stateColour(t.state), bold: true }, { text: isProduction(t) ? '  production: changes ask you to type its name' : '', color: theme.warn }];
   const firewallLines = () => [
@@ -299,14 +311,7 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       ...vaultLines(refs),
       ...(sel.slot ? [] : costLine(sel, sel.planId)),
       [],
-      [{ text: `the last ${span?.label ?? ''}`, color: theme.dim, bold: true }, { text: metrics ? '' : '  reading its metrics…', color: theme.dim }],
-      ...(metrics?.error
-        ? [[{ text: "can't read its metrics: ", color: theme.del }, { text: metrics.error, color: theme.dim }]]
-        : metricRows(metrics?.series ?? [], { width: sparkW }).map((m) => [
-            { text: m.label.padEnd(10), color: theme.dim },
-            { text: m.spark.padStart(sparkW), color: theme.warn },
-            { text: metrics ? `  ${m.summary}` : '', color: m.summary === 'no data' ? theme.dim : undefined },
-          ])),
+      ...metricLines(sel),
       [],
       [{ text: sel.kind === 'function' ? KEY_HINTS.function : KEY_HINTS.web, color: theme.dim }],
     ];
@@ -322,6 +327,8 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       field('image', sel.image),
       field('environ.', sel.environmentId?.split('/').pop()),
       ...costLine(sel),
+      [],
+      ...metricLines(sel),
       [],
       [{ text: KEY_HINTS.container, color: theme.dim }],
     ];

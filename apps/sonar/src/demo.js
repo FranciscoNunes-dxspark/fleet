@@ -401,6 +401,22 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     if (!b) throw Object.assign(new Error(storageRoleNeeded(account, what)), { status: 403 });
     return b;
   };
+  // A container app's: a steady trickle of requests, a fraction of a core, two replicas that go to three when busy.
+  const containerMetrics = (target, span) => {
+    const c = state.containers.find((x) => x.id === target.id);
+    if (!c) throw new Error(`${target.name}: not found`);
+    const rand = seeded(c.id.length * 3 + span.hours);
+    const step = { PT5M: 5 * 60 * 1000, PT1H: HOUR, PT6H: 6 * HOUR, P1D: 24 * HOUR }[metricInterval(span)];
+    const n = Math.round((span.hours * HOUR) / step);
+    const at = (i) => new Date(now - (n - i) * step).toISOString();
+    const series = (name, unit, value) => ({ name, unit, points: Array.from({ length: n }, (_, i) => ({ at: at(i), value: value(i) })) });
+    return [
+      series('Requests', 'Count', () => Math.round((step / 60000) * (3 + rand() * 9))),
+      series('UsageNanoCores', 'NanoCores', () => Math.round((0.12 + rand() * 0.3) * 1e9)),
+      series('WorkingSetBytes', 'Bytes', () => Math.round((210 + rand() * 90) * 1024 ** 2)),
+      series('Replicas', 'Count', () => (rand() < 0.2 ? 3 : 2)),
+    ];
+  };
   const busOf = (ns) => {
     const n = state.serviceBus.find((x) => x.id === ns.id);
     if (!n) throw new Error(`${ns.name}: not found`);
@@ -683,6 +699,7 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     // Made-up metrics, the same for the same app and span: busier in production, a few 5xx now and then.
     async metrics(target, { span, signal } = {}) {
       await wait(signal);
+      if (target.type === 'container') return containerMetrics(target, span);
       const s = site(target);
       const rand = seeded(s.id.length * 7 + span.hours);
       const step = { PT5M: 5 * 60 * 1000, PT1H: HOUR, PT6H: 6 * HOUR, P1D: 24 * HOUR }[metricInterval(span)];

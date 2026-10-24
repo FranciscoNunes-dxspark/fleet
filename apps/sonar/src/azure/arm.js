@@ -2,7 +2,7 @@
 // settings, and Application Insights' query API for their telemetry. createAzure builds the provider
 // the app talks to; src/demo.js has the same interface without Azure. Everything goes through `fetch`
 // with a token from `token(resource)`, both passed in, so tests run it against a fake.
-import { metricsPath, seriesFrom } from '../metrics.js';
+import { metricsFor, metricsPath, seriesFrom } from '../metrics.js';
 import { callSignal } from '../run.js';
 import { functionFrom, functionUrl, invocation, isHttp } from '../functions.js';
 import { autoscaleFrom, planFrom } from '../scale.js';
@@ -648,9 +648,9 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const list = await all(`${deployment.id}/log?api-version=${WEB}`, { ...opts, what: `Reading deployment ${deployment.name}'s log` });
       return list.map((l) => ({ at: l.properties?.log_time ?? null, message: String(l.properties?.message ?? '') })).sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')));
     },
-    /** Azure Monitor's metrics for an app or slot over `span` (insights.js TIMESPANS): metrics.js's series. */
+    /** Azure Monitor's metrics for an app, slot or container app over `span` (insights.js TIMESPANS): metrics.js's series. */
     async metrics(target, { span, signal } = {}) {
-      return seriesFrom(await arm(metricsPath(target, span), { signal, what: `Reading ${label(target)}'s metrics` }));
+      return seriesFrom(await arm(metricsPath(target, span), { signal, what: `Reading ${label(target)}'s metrics` }), metricsFor(target));
     },
     /** The subscription's cost this month so far, by resource: costsFrom's { currency, byId }. */
     async costs(sub, { signal } = {}) {
