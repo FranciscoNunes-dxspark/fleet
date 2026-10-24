@@ -1,26 +1,61 @@
 // The /settings list: every setting, its value and what ↵ does with it. Pure, so the list is tested
 // without the UI; actions.js shows it in a picker and makes the changes.
-import { DEFAULT_ACCENT, theme } from './theme.js';
+import { THEMES, defaultAccent, theme } from './theme.js';
 import { fit } from './text.js';
+import { notifySeconds } from './notify.js';
 
 const isOn = (value) => value !== false;
 const count = (n, one, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : 'none');
 
+/** The Theme setting: dark, light, or auto (the default: COLORFGBG says, else dark). */
+export const themeSetting = (config) => (THEMES.includes(config.theme) ? config.theme : 'auto');
+
+/** What ↵ on the Theme row changes it to: dark, light, auto, round again. */
+export const nextTheme = (config) => THEMES[(THEMES.indexOf(themeSetting(config)) + 1) % THEMES.length];
+
 /**
  * The rows, from the config: { id, label, value, note, action }, where `action` is what ↵ does:
- * 'toggle' (an on/off setting named `id`), 'accent', 'clear' (the list named `id`) or 'none'.
+ * 'toggle' (an on/off setting named `id`), 'theme', 'accent', 'clear' (the list named `id`) or 'none'.
  * `mouse`: whether this terminal can report the mouse at all.
  */
 export function settingRows(config, { file = '', mouse = true } = {}) {
   const history = config.history ?? [];
   const checks = isOn(config.checkForUpdates);
   return [
-    { id: 'accent', label: 'Accent colour', value: config.accent ?? `${DEFAULT_ACCENT} (default)`, colour: config.accent ?? DEFAULT_ACCENT, note: 'type a new one', action: 'accent' },
+    {
+      id: 'theme',
+      label: 'Theme',
+      value: themeSetting(config) === 'auto' ? `auto (${theme.mode} here)` : themeSetting(config),
+      note: `${nextTheme(config)} next${themeSetting(config) === 'light' ? ': from the terminal, else dark' : ''}`,
+      action: 'theme',
+    },
+    { id: 'accent', label: 'Accent colour', value: config.accent ?? `${defaultAccent()} (default)`, colour: config.accent ?? defaultAccent(), note: 'type a new one', action: 'accent' },
     {
       id: 'mouse',
       label: 'Mouse',
       value: isOn(config.mouse) ? 'on' : 'off',
       note: !mouse ? "this terminal can't report it" : isOn(config.mouse) ? 'off leaves selecting to the terminal' : 'click, scroll, drag to copy',
+      action: 'toggle',
+    },
+    {
+      id: 'notify',
+      label: 'Notify',
+      value: isOn(config.notify) ? 'on' : 'off',
+      note: isOn(config.notify) ? `a bell and a notification when a process crashes or gives up, and after a ${notifySeconds(config)} s command` : 'say nothing',
+      action: 'toggle',
+    },
+    {
+      id: 'record',
+      label: 'Record sessions',
+      value: isOn(config.record) ? 'on' : 'off',
+      note: isOn(config.record) ? 'every run\'s logs and states, for /replay (from the next start)' : 'record nothing (from the next start)',
+      action: 'toggle',
+    },
+    {
+      id: 'familyMoods',
+      label: 'Family moods',
+      value: isOn(config.familyMoods) ? 'on' : 'off',
+      note: isOn(config.familyMoods) ? 'Squawk tells the siblings how it feels, and says when theirs are worried, sad or happy' : 'keep to itself',
       action: 'toggle',
     },
     { id: 'checkForUpdates', label: 'Check for new versions', value: checks ? 'on' : 'off', note: 'once a day, in the downloaded Bosun', action: 'toggle' },

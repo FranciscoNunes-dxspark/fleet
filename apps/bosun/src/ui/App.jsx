@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
@@ -26,6 +26,14 @@ import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
+import { exitNews, worthNotifying } from '../notify.js';
+import { decodeContext, pastedLine, readMoods, writeMood } from '../family.js';
+import { familyMood, reactionTo } from '../moods.js';
+import { Recorder, sessionsDir } from '../recorder.js';
+import { listeningPorts } from '../ports.js';
+import { hailTest, testOutcome } from '../hailcheck.js';
+import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
+import { ReplayView } from './ReplayView.jsx';
 
 const VIEWS = [
   { id: 'crew', label: 'Crew' },
@@ -42,11 +50,14 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · R all · a all logs · w why · o open · ↵ whole log',
+  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · e trouble · t share it · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
+
+// Whether a process runs differently now (its command or its settings), so /reload restarts it.
+const changedSpec = (had, now) => had.run !== now.run || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
 
 function Header({ data, width, loading, mood }) {
   const segs = [
@@ -107,11 +118,13 @@ const DOUBLE_CLICK_MS = 400;
 
 // `dir` is the project to start in (/move changes it); `load` reads its crew (crew.js's loadCrew; tests pass their own folder instead).
 // `autostart` starts the crew on opening; `profile` is the one to start with. `askClaude`, `openUrl`,
-// `pidsOnPort` and `killPids` reach outside, so tests pass stubs. `mouse` is mouse.js's
+// `pidsOnPort`, `killPids`, `listPorts`, `gatherFacts` (preflight.js) and `runHail` (hailcheck.js) reach outside, so tests pass stubs. `mouse` is mouse.js's
 // terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
+// `notify(title, body)` rings the terminal's bell with a desktop notification (cli.jsx's; tests pass a
+// recorder or nothing). `restartTimes` changes how long restarts wait (supervisor.js's RESTART_TIMES; tests make them short).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -140,6 +153,24 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     const t = setTimeout(() => setFlash(null), 3000);
     return () => clearTimeout(t);
   }, [flash]);
+
+  // A sibling's mood Squawk reacts to (family.js's readMoods, every `moodEvery` ms): one line until esc.
+  const [reaction, setReaction] = useState(null);
+  const reactionRef = useRef(null);
+  reactionRef.current = reaction;
+  const seenMoods = useRef(new Set());
+  useEffect(() => {
+    if (config.familyMoods === false) return setReaction(null);
+    const look = () => {
+      const r = reactionTo(readMoods('bosun'), seenMoods.current);
+      if (!r) return;
+      seenMoods.current.add(r.key);
+      setReaction(r);
+    };
+    look();
+    const t = setInterval(look, moodEvery);
+    return () => clearInterval(t);
+  }, [config.familyMoods]);
 
   // Errors said and questions answered no, counted so a line of your own command knows it failed.
   const errorCount = useRef(0);
@@ -172,6 +203,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const prefillKey = useRef(-1);
   // The key that answered the last confirmation: it's that one's, and no other handler's.
   const answerKey = useRef(-1);
+  // The key a view took through claimsKey: Ink calls the handlers in no fixed order, so a view's may run
+  // first and drop its claim (esc clearing a search), and this one mustn't then take the key too.
+  const claimedKey = useRef(-1);
   const { internal_eventEmitter: inputEvents } = useStdin();
   useEffect(() => {
     if (!inputEvents) return;
@@ -232,7 +266,10 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const profileRef = useRef(initialProfile);
   const [, setTick] = useState(0);
   const redrawSoon = useRef(null);
-  const changed = () => {
+  const changed = (linesOf) => {
+    // New lines in a log that isn't on screen (CrewView says which is, in `logShown`) change nothing drawn.
+    const shown = ctxRef.current?.logShown;
+    if (linesOf && shown !== true && shown !== linesOf.name) return;
     if (redrawSoon.current) return;
     redrawSoon.current = setTimeout(() => {
       redrawSoon.current = null;
@@ -244,6 +281,43 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     setData(dataRef.current);
     setTick((n) => n + 1);
   };
+  // A process that ended by itself: said when it gave up restarting, and a crash or giving up raises
+  // a notification (unless the setting is off). A stop never comes here.
+  const crewEvent = (e) => {
+    if (e.type === 'ready') return e.p.spec.test && runTests(e.p);
+    if (e.type !== 'exit') return;
+    if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
+    const news = exitNews(e.p, e.plan);
+    if (news && notify && configRef.current.notify !== false) notify(news.title, news.body);
+  };
+  // A process's Hail checks ("test" in bosun.json), once its port answers: hail test through
+  // `runHail` (hailcheck.js's; tests pass a stub), the outcome beside it and the report in its log.
+  const hailMissing = useRef(false);
+  const runTests = async (p) => {
+    const sup = supRef.current;
+    const started = p.startedAt;
+    const { file, env } = p.spec.test;
+    p.tests = { state: 'running' };
+    sup.push(p, `── hail test ${file}${env ? ` --env ${env}` : ''}`);
+    sup.onChange();
+    const r = await runHail(p.spec.test, { cwd: resolve(dirRef.current, p.spec.cwd ?? '.') });
+    // Restarted (or Bosun moved on) meanwhile: the next start runs its own.
+    if (supRef.current !== sup || p.startedAt !== started) return;
+    if (r.missing) {
+      p.tests = null;
+      sup.push(p, "── hail isn't installed, so its tests didn't run");
+      if (!hailMissing.current) note(`${p.name}'s "test" runs Hail's checks, but hail isn't on the PATH: install it from its releases (github.com/FranciscoNunes-dxspark/hail).`, 'error');
+      hailMissing.current = true;
+    } else {
+      const outcome = testOutcome(r);
+      p.tests = { state: outcome.state, failed: outcome.failed };
+      if (outcome.text) sup.push(p, outcome.text);
+      sup.push(p, outcome.state === 'ok' ? '── tests passed' : outcome.state === 'failed' ? `── ${plural(outcome.failed, 'test')} failed` : "── hail couldn't run the tests", outcome.state !== 'ok');
+    }
+    sup.onChange();
+  };
+  const crewEventRef = useRef(crewEvent);
+  crewEventRef.current = crewEvent;
   // The crew again (bosun.json changed, /reload, another profile): new processes start, ones gone stop,
   // and with `restartChanged` the ones whose command changed restart.
   const reload = async ({ restartChanged = false } = {}) => {
@@ -254,29 +328,49 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
       const first = !supRef.current;
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed });
+      // Each run of a project's crew is recorded for /replay, unless the setting is off.
+      const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs }) : null;
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
       if (crew.procs.length) setConfig((c) => ({ ...c, projects: remember(c.projects, dirRef.current) }));
       if (crew.problems.length) note([`Some of ${crew.from} was left out:`, ...crew.problems].join('\n'), 'error');
-      if (!crew.procs.length && first) note(`Nothing to run here: no ${'bosun.json'}, and no dev or start script in package.json. /init writes a bosun.json to fill in.`);
+      if (!crew.procs.length && first) note('Nothing to run here: no bosun.json, Procfile or compose file, and no dev or start script in package.json. /init writes a bosun.json to fill in.');
       const sup = supRef.current;
       if (first) {
-        if (autostart) sup.startAll();
+        if (!autostart) return;
+        // Pre-flight: the ports before anything starts (the crew would hold them after), the rest
+        // alongside the start. What's wrong is said; nothing waits on it.
+        const checked = { ...crew, procs };
+        const before = await gather(dirRef.current, checked, { part: 'ports' }).catch(() => ({}));
+        if (supRef.current !== sup) return;
+        sup.startAll();
+        gather(dirRef.current, checked, { part: 'rest' }).then(
+          (rest) => supRef.current === sup && preflightReport({ ...before, ...rest }),
+          () => {},
+        );
         return;
       }
       for (const p of sup.list()) {
         const had = before.get(p.name);
         if (!had) {
           if (autostart) sup.start(p.name);
-        } else if (restartChanged && p.child && (had.run !== p.spec.run || JSON.stringify(had.env) !== JSON.stringify(p.spec.env))) sup.restart(p.name);
+        } else if (restartChanged && p.child && changedSpec(had, p.spec)) sup.restart(p.name);
       }
     } catch (e) {
       note(`Couldn't read the crew: ${firstLine(e.message)}`, 'error');
     } finally {
       setLoading(false);
     }
+  };
+  // The pre-flight checklist in the log: the summary, then a line a check (✓, or ✗ with what to do).
+  const preflightReport = (facts) => {
+    const checks = runChecks(facts);
+    const text = [summary(checks), ...checks.map(checkLine)].join('\n');
+    lastOutput.current = { title: 'Pre-flight', text };
+    if (checks.length) note(text);
+    return checks;
   };
   const setProfile = (name) => {
     profileRef.current = name;
@@ -324,15 +418,19 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     setBusy(b);
     const id = addEntry({ title, status: 'running' });
     setWelcome(false);
+    // A long one that ends (not cancelled) says so, for when you've looked away.
+    const tell = (said, body) => notify && worthNotifying(Date.now() - b.started, configRef.current) && notify(`Bosun: ${title}${said}`, body);
     try {
       const { stdout = '', stderr = '' } = await start(controller.signal);
       const out = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
       lastOutput.current = { title, text: out || '(no output)' };
       updateEntry(id, { status: 'ok', lines: out ? out.split('\n') : ['Done'] });
+      tell('', out.split('\n').at(-1) || 'Done');
       return { ok: true, out };
     } catch (error) {
       lastOutput.current = { title, text: error.message };
       updateEntry(id, { status: 'error', lines: error.cancelled ? ['Cancelled'] : error.message.split('\n') });
+      if (!error.cancelled) tell(' failed', firstLine(error.message));
       return { ok: false, error };
     } finally {
       busyRef.current = null;
@@ -377,6 +475,10 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     askText: async (req) => (await confirm({ ...req, secret: true, plain: true, options: [] }))?.value ?? null,
     // A view that takes keys the app would otherwise use (a search being typed) sets this to say so.
     claimsKey: null,
+    // Said by a view as it handles a key it claims, so the dispatcher leaves that key alone.
+    claimed: () => {
+      claimedKey.current = keySeq.current;
+    },
     prefill,
     reload: () => reload({ restartChanged: true }),
     setView,
@@ -384,6 +486,11 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     moveTo,
     askClaude,
     pidsOnPort: portPids,
+    // /ports: what's listening on this machine (ports.js; tests pass a stub).
+    listPorts: async () => listPorts(),
+    // /preflight: the facts the checks read (preflight.js; tests pass their own gatherFacts), and the report.
+    gatherFacts: () => gather(dirRef.current, { ...crewRef.current, procs: withProfile(crewRef.current?.procs ?? [], crewRef.current?.profiles ?? {}, profileRef.current) }, { running: (supRef.current?.list() ?? []).filter((p) => p.child).map((p) => p.name) }),
+    preflightReport: (facts) => preflightReport(facts),
     killPids: stopPids,
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // Whether this terminal can report the mouse at all (/settings says so).
@@ -428,6 +535,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     overlayHasKeys: () => focusRef.current === 'view' && !confirmRef.current && answerKey.current !== keySeq.current,
     quit: () => exit(),
     showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
+    // /replay: a recorded session (replay.js's parseSession) played back over the view.
+    showReplay: (session, title) => setOverlay({ kind: 'replay', session, title }),
     // A list to pick from: { title, hint, items | load, onPick, keys, empty } (see Picker.jsx).
     // `replace`: swaps the picker on screen for this one (the same list, redrawn after a change), keeping
     // where it goes back to, instead of opening on top of it.
@@ -463,6 +572,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     try {
       let r;
       if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
+      // A sibling's context pasted alone is /take's.
+      else if (decodeContext(text)) r = await a.take(ctx, text);
       else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
         const cmd = findCommand(name, customRef.current.commands);
@@ -648,12 +759,17 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const globalKeys = (input, key) => {
     if (key.escape) {
       if (busyRef.current) busyRef.current.abort();
+      else if (reactionRef.current) setReaction(null);
       else {
         setEntries((list) => list.map((e) => ({ ...e, shown: false })));
         setWelcome(false);
       }
       return;
     }
+    // A paste of a command line (or a sibling's family:v1: context) opens the prompt with it, to run with ↵.
+    // (A terminal ends a pasted line with \r, which the family's rule takes as a \n.)
+    const pasted = pastedLine(input);
+    if (pasted) return prefill(pasted);
     if (input === '/' || input === ':') return prefill('/');
     if (input === '!') return prefill('!');
     if (input === '?') return ctx.showHelp();
@@ -675,7 +791,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     if (focusRef.current === 'prompt' && !confirmRef.current) return prefillKey.current === keySeq.current ? undefined : promptKeys(input, key);
     if (key.ctrl && input === 'c') return exit();
     if (confirmRef.current || overlayRef.current || answerKey.current === keySeq.current) return;
-    if (ctx.claimsKey?.(input, key)) return;
+    if (claimedKey.current === keySeq.current || ctx.claimsKey?.(input, key)) return;
     globalKeys(input, key);
   });
 
@@ -768,14 +884,20 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
+  // How Squawk feels, for the siblings (family.js's writeMood), whenever that changes.
+  const told = familyMood({ mood, data, lastEntry: entries.at(-1), busy });
+  useEffect(() => {
+    if (config.familyMoods !== false) writeMood('bosun', told);
+  }, [told.mood, told.reason, config.familyMoods]);
   // The welcome box only appears when the terminal has room for it next to a useful view.
   const showWelcome = welcome && H >= 28;
-  const mainH = Math.max(6, H - 2 - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  const reacting = reaction ? 1 : 0;
+  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
     mainTop: 2,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + act.length + (busy ? 1 : 0),
+    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
     tabs: tabLabels(entries),
   };
@@ -792,6 +914,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     main = <Palette items={paletteList} query={overlay.query} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onPick={runPicked} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay?.kind === 'help') {
     main = <HelpView sections={custom.sections} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+  } else if (overlay?.kind === 'replay') {
+    main = <ReplayView session={overlay.session} title={overlay.title} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
   } else if (overlay?.kind === 'picker') {
     main = <Picker key={overlay.id} picker={overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay) {
@@ -816,6 +940,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
         ? 'j/k section · space scroll · / search · esc close'
         : overlay?.kind === 'palette'
         ? 'type to filter · ↑↓ pick · ↵ run it (a key in the view; a command that takes more goes into the prompt) · esc close'
+        : overlay?.kind === 'replay'
+        ? '←→ a second (shift: ten) · [ ] the crash or trouble before, after · space play · + - speed · a all logs · esc close'
         : overlay?.kind === 'picker'
           ? 'j/k move · ↵ change · esc close'
           : overlay
@@ -831,6 +957,17 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
         {main}
       </Box>
       {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
+      {reaction ? (
+        <Row
+          pointer={false}
+          width={W}
+          segments={[
+            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
+            { text: reaction.text },
+            { text: '  esc', color: theme.dim },
+          ]}
+        />
+      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}

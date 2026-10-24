@@ -14,6 +14,8 @@ let lastApp = null;
 export function tempHome() {
   const dir = mkdtempSync(join(tmpdir(), 'bosun-'));
   process.env.BOSUN_HOME = dir;
+  // The family's moods too (family.js), never the real ~/.family.
+  process.env.FAMILY_HOME = join(dir, 'family');
   return () => rmSync(dir, { recursive: true, force: true });
 }
 
@@ -50,6 +52,8 @@ export function start(props = {}) {
       openUrl: () => {},
       pidsOnPort: () => [],
       killPids: () => {},
+      listPorts: () => [],
+      runHail: async () => ({ missing: true }),
       ...props,
     }),
   );

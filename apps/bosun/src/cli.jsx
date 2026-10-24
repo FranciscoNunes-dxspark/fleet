@@ -2,12 +2,13 @@ import React from 'react';
 import { render } from 'ink';
 import { COMPILED, VERSION } from './version.js';
 import { loadConfig } from './config.js';
-import { setAccent } from './theme.js';
+import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
 import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js';
 import { copyToClipboard } from './clipboard.js';
 import { terminalMouse } from './mouse.js';
 import { killEverything } from './supervisor.js';
+import { notification } from './notify.js';
 import { startFolder } from './projects.js';
 import { existsSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -23,8 +24,9 @@ if (args.includes('-h') || args.includes('--help')) {
   console.log(`bosun [folder] [--profile <name>] [--no-start]
 
 Runs a project's processes for you in the terminal, each with its own log, port and health.
-It reads them from bosun.json in the folder (the current one unless given), else from
-package.json's dev script, split into its commands when it's a concurrently line. Started
+It reads them from bosun.json in the folder (the current one unless given), else from a
+Procfile, else from a compose file (a process per service), else from package.json's dev
+script, split into its commands when it's a concurrently line. Started
 where there's neither, it opens the project you ran last; /move goes to another.
 
   --profile    start with this profile from bosun.json
@@ -62,7 +64,8 @@ const openUrl = (url) => {
   spawn(cmd, cmdArgs, { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref();
 };
 
-setAccent(config.accent);
+// The Theme setting (dark, light, or auto from COLORFGBG) and the accent over it.
+applyTheme(config);
 
 // Draw on the alternate screen, like a full-screen app, and give the terminal back untouched on exit.
 // The window title is saved on the terminal's title stack and popped on exit. Terminals without one
@@ -82,7 +85,7 @@ const mouse = await terminalMouse(process.stdin, process.stdout);
 // y copies: to the system clipboard, or through the terminal (OSC 52) over SSH or when that fails.
 const copy = (text) => copyToClipboard(text);
 const app = render(
-  <App config={config} dir={dir} profile={value('--profile') ?? null} autostart={!args.includes('--no-start')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} dir={dir} profile={value('--profile') ?? null} autostart={!args.includes('--no-start')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={COMPILED ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} notify={(title, body) => process.stdout.write(notification(title, body))} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdout: mouse?.stdout ?? process.stdout },
 );
