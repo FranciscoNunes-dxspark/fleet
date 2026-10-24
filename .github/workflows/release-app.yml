@@ -1,0 +1,129 @@
+# Releases one app (release.yml calls it for each): tests it, builds its executables for every
+# platform with Bun, and publishes them with SHA256SUMS.txt as <app>-v<version>, creating the tag.
+# The version is the newest release of the app's own (a tag <app>-v…) with the patch raised
+# (splice-v0.2.35 → 0.2.36), or the app's package.json version when that's higher, which is how to
+# move to a new minor or major version. Nothing is committed back: the version is set in the runner
+# and baked into the builds (the kit's scripts/build.js), so package.json lags behind the releases.
+name: Release an app
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: The app's folder under apps/
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      previous: ${{ steps.next.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Next version
+        id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP: ${{ inputs.app }}
+        run: |
+          gh release list --limit 1000 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' > tags.txt
+          node -e '
+            const fs = require("fs");
+            const [app] = process.argv.slice(1);
+            const parse = (v) => (/^(\d+)\.(\d+)\.(\d+)$/.exec(v) || []).slice(1).map(Number);
+            const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+            const prefix = `${app}-v`;
+            const mine = fs.readFileSync("tags.txt", "utf8").split("\n").filter((t) => t.startsWith(prefix)).map((t) => parse(t.slice(prefix.length))).filter((v) => v.length === 3).sort(cmp);
+            const latest = mine.at(-1);
+            const pkg = parse(require(`./apps/${app}/package.json`).version);
+            const next = !latest || cmp(pkg, latest) > 0 ? pkg : [latest[0], latest[1], latest[2] + 1];
+            console.log(`Latest release ${latest ? prefix + latest.join(".") : "none"}; releasing ${prefix}${next.join(".")}.`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${next.join(".")}\nprevious=${latest ? prefix + latest.join(".") : ""}\n`);
+          ' "$APP"
+
+  test:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test -w apps/${{ inputs.app }}
+
+  build:
+    needs: [version, test]
+    strategy:
+      matrix:
+        include:
+          # Bun only embeds the Windows icon when it builds on Windows.
+          - os: windows-latest
+            targets: bun-windows-x64
+          - os: ubuntu-latest
+            targets: bun-linux-x64 bun-linux-arm64 bun-darwin-x64 bun-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/${{ inputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        working-directory: .
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # The kit's scripts/build.js bakes package.json's version into the executables, and writes them
+      # to the app's output folder ("fleet": { "out" } in its package.json, else dist/).
+      - name: Set the version
+        id: out
+        run: |
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.version = process.argv[1];
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `dir=${pkg.fleet?.out ?? "dist"}\n`);
+          ' "${{ needs.version.outputs.version }}"
+      - run: bun ../../packages/kit/scripts/build.js ${{ matrix.targets }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app }}-${{ matrix.os }}
+          path: apps/${{ inputs.app }}/${{ steps.out.outputs.dir }}/
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.app }}-*
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        working-directory: out
+        run: sha256sum * > SHA256SUMS.txt
+      # Creates the tag on this commit too. The notes start from the app's own previous release, not
+      # whichever app released last.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP: ${{ inputs.app }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+        run: |
+          title="$(node -p "const n = process.argv[1]; n[0].toUpperCase() + n.slice(1)" "$APP")"
+          gh release create "$APP-v$VERSION" out/* --target "$GITHUB_SHA" --title "$title v$VERSION" \
+            --generate-notes ${PREVIOUS:+--notes-start-tag "$PREVIOUS"}

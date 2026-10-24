@@ -1,0 +1,45 @@
+# Tests what a change touches, on Linux and Windows: an app's own folder tests that app; the kit,
+# patches/, the root package*.json, the workflows and the root's scripts test the kit and every app
+# (.github/scripts/changed.mjs). Apps a change leaves alone don't run.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      workspaces: ${{ steps.pick.outputs.workspaces }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: pick
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: node .github/scripts/changed.mjs test "$BASE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.workspaces != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJSON(needs.changes.outputs.workspaces) }}
+        os: [ubuntu-latest, windows-latest]
+    name: ${{ matrix.workspace }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test -w ${{ matrix.workspace }}
+      # Hostinger builds Keel's web app from apps/keel, so a change that breaks the build shows here.
+      - if: matrix.workspace == 'apps/keel'
+        run: npm run build -w apps/keel

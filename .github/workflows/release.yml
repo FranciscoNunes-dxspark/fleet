@@ -1,0 +1,59 @@
+# Every push to main releases the apps it changed, each as the next version of its own: an app whose
+# folder changed, or all six when packages/kit, patches/ or the root package.json or lockfile did
+# (.github/scripts/changed.mjs). Pushes that only change Markdown release nothing. "Run workflow" on
+# the Actions tab releases one app, or all, by hand. Each app's release (release-app.yml) tests it,
+# builds its executables and publishes them as <app>-v<version>.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+    inputs:
+      app:
+        description: The app to release
+        type: choice
+        default: all
+        options: [all, splice, trawl, sonar, bosun, hail, keel]
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.pick.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: pick
+        env:
+          APP: ${{ inputs.app }}
+          BASE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$APP" != all ]; then
+            echo "apps=[\"$APP\"]" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            node .github/scripts/changed.mjs release "" >> "$GITHUB_OUTPUT"
+          else
+            node .github/scripts/changed.mjs release "$BASE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.apps != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+    # An app's releases go one at a time, so two quick merges get two versions in order; different
+    # apps release side by side.
+    concurrency:
+      group: release-${{ matrix.app }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/release-app.yml
+    with:
+      app: ${{ matrix.app }}
