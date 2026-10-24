@@ -21,6 +21,8 @@ A keyboard-driven SQL Server client for the terminal, built the same way as [Til
   dbo.Players
 ```
 
+Trawl also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]`; a line Trawl copies for a sibling goes straight to that app's prompt there.
+
 ## Install
 
 **Download** the executable for your platform from [Releases](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=trawl-v&expanded=true): `trawl-windows-x64.exe`, `trawl-linux-x64` / `-arm64`, `trawl-macos-arm64` / `-x64`. Trawl is released from the fleet repository, beside the other apps, as `trawl-v<version>`; it's private, so download in the browser while signed in, or with the GitHub CLI (the version is the newest `trawl-v…` on that page):

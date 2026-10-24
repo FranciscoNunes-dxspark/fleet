@@ -75,7 +75,7 @@ export function atLeast(version, major, minor) {
 const VT_INPUT = 0x200;
 
 /** Turns VT input on after every switch to raw mode, through Bun's FFI (the compiled builds). */
-async function keepVtInput(stdin) {
+export async function keepVtInput(stdin) {
   const { dlopen, ptr } = await import('bun:ffi');
   const { symbols: k } = dlopen('kernel32.dll', {
     GetStdHandle: { args: ['i32'], returns: 'ptr' },

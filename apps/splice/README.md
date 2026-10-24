@@ -28,6 +28,8 @@ Splice used to be called Tiller. Your recent repositories and settings in `~/.ti
   feature/totals
 ```
 
+Splice also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]`; a line Splice copies for a sibling goes straight to that app's prompt there.
+
 ## Install
 
 **Download** the executable for your platform from [Releases](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=splice-v&expanded=true): `splice-windows-x64.exe`, `splice-linux-x64` / `-arm64`, `splice-macos-arm64` / `-x64`. It's a single file with nothing else to install; it only needs git on the PATH. Rename it to `splice` (`splice.exe`) and put it in a folder on your PATH. `SHA256SUMS.txt` lists each file's checksum.

@@ -74,6 +74,8 @@ Thresholds, the blocked tag, auto-complete defaults and the refresh interval are
 
 `npm run cli` opens Keel in the terminal (or run `npm link` once, then `keel` from any folder). It works like Tiller and Trawl: titled panels, a prompt with slash commands, and Pinch the crab keeping an eye on things. `npm run cli:demo` (`keel --demo`) opens the demo organization, no credentials needed.
 
+The terminal app also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]` (`fleet keel --demo` opens the demo there).
+
 It works in one of two ways: through your team's Keel, signed in with your Keel account, or straight with Azure DevOps, reading the same `.env` and data folder as the web app in local mode, so tracked projects, snoozes and settings are shared.
 
 **Your team's Keel.** `keel login` signs in with your account on your team's Keel (keel.example.com, or `keel login <address>` for another), the way `gh auth login` does: it shows a code and opens `<address>/terminal` in your browser (a page of its own, like the sign-in screen, without the menu), where you sign in if you aren't already, type the code and choose **Allow**, after seeing which computer asked. The code has to be typed, not passed in the link, so nobody can send you a link that signs their terminal in as you, and it lasts 10 minutes. The terminal then gets its own token, saved in its `.env` (`KEEL_SERVER` and `KEEL_TOKEN`), and works through that Keel as you: your role, your Azure DevOps connection, your tracked projects and settings, with the server's live updates (the same event stream the browser listens to). It never sees your Azure DevOps token. **Settings → Your account → Terminals signed in** on the web lists each terminal with when it was last used, and signs any of them out. A terminal is also signed out after 90 days unused, when you change or reset your password, or when an Admin disables your account; the next start then asks you to sign in again. `keel logout` (or `/logout` inside) signs out and goes back to working straight with Azure DevOps. The first start asks which of the two you want.
@@ -277,7 +279,7 @@ To try accounts and roles before deploying, run on demo data with `AUTH_MODE=log
 
 ### What you need on Hostinger
 
-The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps** (Node 22 or later). Point a Node.js app at a clone of the fleet repository with `apps/keel` as the app's folder: it installs (`npm install` or `npm ci`), builds (`npm run build`) and starts (`npm start`) there. PHP-only shared hosting can't run it. You also need a domain or subdomain with HTTPS.
+The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps** (Node 22 or later). Point a Node.js app at the fleet repository with the **repository's root** as the app's folder and `apps/keel/server/index.js` as its entry file: it installs (`npm install` or `npm ci`) and builds (`npm run build`, which the root passes to Keel) there. Not `apps/keel` itself: every dependency is installed at the root, so that folder deployed alone can't start. PHP-only shared hosting can't run it. You also need a domain or subdomain with HTTPS.
 
 ### Where Keel keeps its data
 

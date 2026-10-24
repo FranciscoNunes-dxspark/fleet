@@ -1,0 +1,55 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Fleet (`apps/fleet`, package `@fleet/host`, binary and releases `fleet`, tags `fleet-v…`) is the host: one terminal program that runs the family's six apps (Splice, Trawl, Sonar, Bosun, Hail, Keel's terminal app) and switches between them with a prefix, `ctrl+]`, like tmux. Plain JavaScript ES modules; the host itself draws with escape sequences, not Ink. The README is the user-facing spec; when behaviour changes, update it too. The root CLAUDE.md has the repository's rules (the kit, CI, releases).
+
+## Commands
+
+```bash
+npm test                                                       # here; npm run test:fleet at the root
+node --import @fleet/kit/register.js --import ./src/app.js --test test/keys.test.js     # one file
+npm start                                                      # run from the checkout (needs a real TTY): node bin/fleet.js [app] [args…]
+npm run build                                                  # Bun-compiled executable for this machine → dist/fleet-<platform>, all six apps inside
+node scripts/logo.js                                           # regenerate assets/ (the six tiles, from src/spaces.js's accents)
+```
+
+## Design
+
+**Each app stays its own process.** Running them in one process would break the kit's per-process state (`configureApp` is the app's name for credentials, releases and the version; `theme` is one object), so the host starts each app as a child. No pty either (the Bun builds can't carry node-pty): the child gets pipes, and runs in **hosted mode** (the kit's `hosted.js`), which makes them look like a terminal to Ink.
+
+**Hosted mode** (`packages/kit/hosted.js`, on when `FLEET_HOSTED=1`): every app's cli takes its streams from `appTerminal()` (process.stdin and process.stdout, untouched, outside the host) and gives them to the TTY check, `terminalMouse` and Ink's `render({ stdin, stdout })`; with `hosted` it also leaves the self-update off (the fleet binary updates as one). Inside the host, `hostedStreams` gives those pipes `isTTY`, a no-op `setRawMode` (whose first call tells the host the app reads keys), `columns`/`rows` (from `FLEET_COLUMNS`/`FLEET_ROWS` at start, then the host's messages) and `'resize'`. It also keeps the app's screen (`screenKeeper`: from the last frame Ink's log-update wrote, or the last clear, plus what came after, without OSC sequences or the bell), because Ink only draws what changed: the host's repaint is that screen written again. When the control pipe ends (the host quit or died) the app exits by itself (`process.exit(0)`, so its own exit handlers run, Bosun's stopping its crew). Everything else the app does (config, credentials, its name and version, `familyHome`, mouse reports, OSC 52 and 9, the bell) goes through stdin and stdout as it always did, and the host passes it on.
+
+**The control pipe** is fd 3, newline-delimited JSON from the host to the app (`encodeMessage`, `messageReader`). Node reads it as a socket; Bun can't wrap fd 3 in one, so in the compiled build it's read with `fs.createReadStream`. The app's messages go the other way inside its stdout, as `ESC ] 5379 ; <json> BEL` (`encodeAppMessage`), which `screen.js`'s `OutputFilter` takes out and hands to the host (`decodeAppMessage`), on screen or not: on Windows a child's writes to fd 3 never reached the host, while its stdout always does.
+- host → app: `{ "resize": { "columns", "rows" } }`: the size to draw at; the same size again means repaint (the kept screen is written at once); a new size emits `'resize'`, and if Ink draws nothing new within 60 ms the kept screen is written again.
+- app → host: `{ "ready": true }` (Ink started reading keys) and `{ "handoff": "trawl" | [apps], "line": "…" }`.
+
+**Hand-offs**: every app says `copiedNote(apps, line)` (the kit's `family.js`) right after copying a line for a sibling, so that's where `handOff` tells the host. The host (`handoff.js` `routeHandoff`: one app, or the first running of several) switches to that app, starting it if needed, and once it's `ready` (300 ms after, for its views to settle; 100 ms after a switch to one already running) writes the line into its stdin in one write, which the apps' paste rule (`pastedLine`) puts in the prompt. The apps don't read bracketed paste, so it's plain text, line breaks taken out.
+
+## Architecture
+
+- **`src/main.js`**: the entry point (bin/fleet.js from a checkout, the build's `entry`). It imports nothing up front, because `fleet --run <app> [args]` makes the process that app: it takes `--run <app>` out of `process.argv` and imports the app's cli (`../../<app>/src/cli.jsx`, Keel's `cli/cli.jsx`), which must be the first to call `configureApp`. Anything else imports `cli.js`, the host.
+- **`src/cli.js`**: the host's command line (`fleet [app] [args…]`, `-v`, `-h`), the TTY check, raw mode, the first space (named, else `host.json`'s last, else Splice), cleanup (every app stopped and the terminal given back however the host ends: `exit`, `SIGTERM`, `SIGHUP`, an uncaught error), and its own update check (compiled only, the kit's `update.js` under the name `fleet`).
+- **`src/spaces.js`**: the six spaces (`id`, `title`, `letter`, `accent` from each app's theme) and `launchCommand`: from a checkout `node apps/<app>/bin/<app>.js`, as the app's `npm start`; compiled, the executable itself with `--run <app>`.
+- **`src/launch.js`**: `appSpawner` starts an app with stdio `pipe` ×4 (stderr kept for the exited screen, fd 3 the control pipe), in its own process group off Windows, with `appEnv` (hosted mode, the size, and `FORCE_COLOR` from the terminal's colour depth, since colour libraries see a pipe). `killTree`: SIGTERM, or SIGKILL to the group; `taskkill /T /F` on Windows.
+- **`src/keys.js`** (pure): `readKeys(state, input)` → `{ state, actions }`: `send` (everything but the prefix and its key, unchanged), `switch`, `move`, `quit`, `help`, `prefix`. The key after the prefix is a whole escape sequence where it is one, so an arrow can't leak `[A` to the app. `takeBarClicks` takes SGR mouse reports on the bar's row out of what goes to the app.
+- **`src/bar.js`** (pure): `barLayout` (tabs, state marks, the hint or the prefix's keys or a notice; widths through the kit's `text.js`; names shrink to letters, then the line is cut), `tabAt` for clicks, `renderBar` (the accent in 24-bit colour, else the nearest of 256).
+- **`src/screen.js`** (pure): `OutputFilter`, one per app, passes its output through and drops what would break the shared screen (the alternate screen 47/1047/1048/1049, the title stack `CSI 22/23 t`, `ESC c`), keeps the modes it set (mouse, cursor, focus, bracketed paste) for `restoreModes` on a switch, never cuts an escape sequence (a partial one waits for its end), and puts the bar in where it's safe: just before a synchronized update ends (`CSI ?2026l`), else at the end of a chunk when nothing is open (no sequence, no sync, no saved cursor of the app's own).
+- **`src/host.js`**: `Host`, with everything injected (`input`, `output` with columns/rows/'resize', `spawn`, timers). The apps get every row but the last. `switchTo` clears the screen, sets the app's modes, draws the bar and sends the app its size (the repaint), or starts it the first time; inactive apps keep running, their output only read for their modes. An app that exits shows "<App> exited — ↵ to start again" with the end of its stderr. Help is an overlay (the app's output is held back until it closes, then repainted). `quit` ends every control pipe (the apps quit by themselves), kills what's left after 3 s, and writes `LEAVE`.
+- **`src/state.js`**: `~/.fleet/host.json` (`FLEET_HOME`): `last`, `update`.
+
+**Why the bar is drawn again rather than kept out of the apps' way**: Ink draws whole frames and, in the full-screen case, starts each with clearing the terminal, which a scroll region wouldn't stop; and the apps' frames are a row shorter than their screen, which ends with a newline onto the row below, which inside a scroll region would scroll it. So the apps draw on rows 1 to rows−1 of the whole screen, and the bar is written again after each of their frames, from a saved cursor (`ESC 7` … `ESC 8`, which keeps the app's cursor and colours), inside the frame's synchronized update when it has one, so the terminal never shows a frame without it.
+
+## Version and build
+
+The kit's `scripts/build.js` reads `"fleet"` in package.json: `entry` `src/main.js`, `compile` off Bun's `.env` and bunfig loading (Keel's server code is inside), and `includes`, the six apps' folders: each one's `process.env.<APP>_VERSION` is defined from its own package.json, as each app's `src/app.js` reads it, beside `FLEET_VERSION`. So inside the build every app is `COMPILED` with its own version (Keel keeps its data in `~/.keel` as its own build does), and none updates itself, since each cli turns updates off in hosted mode. Releases are `fleet-v…`, made whenever any app, the kit or Fleet changes (`.github/scripts/changed.mjs` adds Fleet to any app's change).
+
+## Tests
+
+`test/keys.test.js`, `bar.test.js`, `screen.test.js`, `handoff.test.js` and `names.test.js` cover the pure parts. `test/host.test.js` is end to end: `Host` on a fake terminal (`helpers.js` `Terminal`, which keeps a screen through `test/vt.js`, a small VT100 model) with real child processes of `test/fixtures/fake-app.js` (hosted mode through the kit, as the apps), driven through its input: switching, the literal prefix, repaint, resize, exit and restart, hand-offs, the mouse, quitting. `test/hosted-app.test.js` runs the real Hail hosted from the checkout. `quietEnv` takes CI's variables out of the apps' environment: Ink draws nothing when it thinks it runs in CI (`is-in-ci`). Use `until(check, what)` rather than fixed sleeps; `stopAll` (in `after`) stops what a failed test left running.
+
+## Rules
+
+- Every app's cli keeps hosted mode working: streams from `appTerminal()`, given to Ink's `render` and `terminalMouse`; updates off when `hosted`; nothing written to the real terminal some other way. The app stays full-screen on the alternate screen, its frames starting at the top left corner.
+- A new hand-off between apps goes through `copiedNote` (or calls `handOff` itself).
+- Windows: the Bun build's `fs` reading of fd 3 hasn't been tried on Windows (Node's socket on it is, in CI); `taskkill /T /F` stops an app there.

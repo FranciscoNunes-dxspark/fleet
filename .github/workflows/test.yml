@@ -1,6 +1,6 @@
-# Tests what a change touches, on Linux and Windows: an app's own folder tests that app; the kit,
-# patches/, the root package*.json, the workflows and the root's scripts test the kit and every app
-# (.github/scripts/changed.mjs). Apps a change leaves alone don't run.
+# Tests what a change touches, on Linux and Windows: an app's own folder tests that app (and Fleet,
+# which runs them all); the kit, patches/, the root package*.json, the workflows and the root's
+# scripts test the kit and every app (.github/scripts/changed.mjs). Apps a change leaves alone don't run.
 name: Tests
 
 on:
