@@ -60,7 +60,7 @@ Only `ctrl+]` is Fleet's, and the key after it:
 | `ctrl+]` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+]` `?` | The keys |
 
-Any other key after `ctrl+]` cancels it. A click on a tab in the bar switches to it.
+Any other key after `ctrl+]` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
 
 ## Hand-offs
 

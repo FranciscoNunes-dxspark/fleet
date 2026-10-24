@@ -14,6 +14,15 @@ export const MOUSE_MODES = [9, 1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016];
 const KEPT = new Set([...MOUSE_MODES, 25, 1004, 2004]);
 const DROPPED = new Set([47, 1047, 1048, 1049]);
 
+/**
+ * The mouse the host keeps on whatever the app does (clicks, as SGR reports), so a click on the bar
+ * always arrives: an app that has the mouse off, or has exited, can't take the bar's clicks with it.
+ * The host passes mouse reports on only to an app that asked for them (`wantsMouse`).
+ */
+const HOST_MOUSE_MODES = new Set([1000, 1006]);
+export const HOST_MOUSE = '\x1b[?1000h\x1b[?1006h';
+const REPORTING = [9, 1000, 1002, 1003];
+
 const ESC = '\x1b';
 
 /** A synchronized update's end (DEC private mode 2026, reset). */
@@ -137,6 +146,8 @@ export class OutputFilter {
           this.sync = on;
         }
         if (KEPT.has(n)) this.modes.set(n, on);
+        // The app turning these off turns its reports off (wantsMouse), not the terminal's.
+        if (!on && HOST_MOUSE_MODES.has(n)) continue;
         kept.push(n);
       }
       return { endsFrame, seq: kept.length ? `\x1b[?${kept.join(';')}${m[2]}` : '' };
@@ -146,10 +157,16 @@ export class OutputFilter {
     return { seq };
   }
 
-  /** What sets the terminal's modes the way this app left them, from whatever another app left. */
+  /** Whether the app asked for mouse reports (the host's own mouse is only for the bar). */
+  wantsMouse() {
+    return REPORTING.some((n) => this.modes.get(n));
+  }
+
+  /** What sets the terminal's modes the way this app left them, from whatever another app left, and the host's mouse. */
   restoreModes() {
     let out = MOUSE_MODES.map((n) => `\x1b[?${n}l`).join('') + '\x1b[?1004l\x1b[?2004l';
     for (const [n, on] of this.modes) if (n !== 25 && on) out += `\x1b[?${n}h`;
+    out += HOST_MOUSE;
     out += this.modes.get(25) === false ? '\x1b[?25l' : '\x1b[?25h';
     return out;
   }

@@ -35,6 +35,13 @@ test('off screen nothing is written, but the modes it sets are kept for when it 
   assert.ok(!f.restoreModes().includes('\x1b[?1002h'));
   assert.ok(f.restoreModes().endsWith('\x1b[?25h'));
   assert.ok(new OutputFilter().restoreModes().endsWith('\x1b[?25h'));
+  // The host's own clicks stay on, whatever the app does with its mouse.
+  assert.ok(new OutputFilter().restoreModes().includes('\x1b[?1000h\x1b[?1006h'));
+  const off = new OutputFilter();
+  assert.equal(off.push('\x1b[?1000h\x1b[?1006h'), '\x1b[?1000h\x1b[?1006h');
+  assert.equal(off.wantsMouse(), true);
+  assert.equal(off.push('\x1b[?1000l\x1b[?1006l\x1b[?25l'), '\x1b[?25l');
+  assert.equal(off.wantsMouse(), false);
 });
 
 test('an OSC cut across reads, ended with ESC \\, passes whole', () => {

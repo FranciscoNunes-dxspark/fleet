@@ -17,7 +17,7 @@ apps/fleet/             the host (@fleet/host, binary fleet): the six apps in on
 .github/scripts/        changed.mjs: which apps a change touches
 ```
 
-Plain JavaScript ES modules everywhere, `.jsx` for components; no TypeScript, no linter config, no build step for development. Every app runs on Node 22+ (Keel too). Dependencies are kept at the same versions in every package (ink 6.8.x, react 19.3.x, esbuild 0.28 through the kit); a dependency only one app uses stays in that app's package.json (Trawl's database drivers, Keel's web stack).
+Plain JavaScript ES modules everywhere, `.jsx` for components; no TypeScript, no linter config, no build step for development. Every app runs on Node 22+ (Keel too). Dependencies are kept at the same versions in every package (ink 6.8.x, react 19.3.x, esbuild 0.28 through the kit); a dependency only one app uses stays in that app's package.json (Trawl's database drivers, Keel's web stack). The root's `overrides` lift a dependency of a dependency past a security advisory when its parent hasn't yet: `@azure/msal-node` ^7.1.1 under tedious's `@azure/identity` (which asks for ^6; Trawl never signs in through it, but the advisory flags the install). Drop an override once the parent asks for the fixed version itself.
 
 ## Commands
 
