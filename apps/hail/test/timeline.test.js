@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { logActivity, readActivity } from '../src/family.js';
+import { logActivity, readActivity } from '@fleet/kit/family.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;

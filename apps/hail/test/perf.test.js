@@ -11,7 +11,7 @@ import { readHistory } from '../src/history.js';
 import { parseYaml } from '../src/yaml.js';
 import { send } from '../src/send.js';
 import { highlight, highlightLines, parseHttpFile } from '../src/http-file.js';
-import { wrap } from '../src/text.js';
+import { wrap } from '@fleet/kit/text.js';
 import { bodyLines, responseLines, wrapIndented } from '../src/ui/response.js';
 
 // wrapIndented as it was, through wrap for every line.

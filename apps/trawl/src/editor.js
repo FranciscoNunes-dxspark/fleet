@@ -1,6 +1,6 @@
 // The console's text editing, as pure functions over { lines, row, col }. The UI only maps keys
 // to these, so every edit can be tested without a terminal.
-import { stringWidth } from './text.js';
+import { stringWidth } from '@fleet/kit/text.js';
 
 export const fromText = (text) => {
   const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');

@@ -3,9 +3,9 @@ import { useInput } from 'ink';
 import { clearHistory, diffEntry, showEntry } from '../actions.js';
 import { formatSize } from '../send.js';
 import { theme } from '../theme.js';
-import { fit, relTime } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { fit, relTime } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { methodColour, statusColour } from './response.js';
 
 // How its tests went, when it had any: "  ✓ 3" or "  ✗ 1/3".

@@ -2,6 +2,7 @@
 // in the config, as Splice has it). The accent can be changed too, in /settings ("accent": "#hex").
 // Everything on screen takes its colours from `theme`, read as it draws, so applyTheme repaints the
 // next frame: a module-level table of colours uses getters, never values copied at import.
+import { theme as kitTheme } from '@fleet/kit/theme.js';
 export const DARK = {
   accent: '#e8445a', // DEFAULT_ACCENT, below
   border: '#5f5f5f',
@@ -37,7 +38,8 @@ export const LIGHT = {
   methods: { GET: '#005fd7', POST: '#008700', PUT: '#af5f00', PATCH: '#875f00', DELETE: '#d70000', GRAPHQL: '#8700af' },
 };
 
-export const theme = { ...DARK, mode: 'dark' };
+// The kit's theme object (the kit's parts draw from it too), filled with this app's palette.
+export const theme = Object.assign(kitTheme, DARK, { mode: 'dark' });
 
 // Windows terminals draw ⏺ as a wide emoji, so use the plain circle there (as Claude Code does).
 export const BULLET = process.platform === 'win32' ? '●' : '⏺';

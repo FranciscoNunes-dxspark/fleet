@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { parseHttpFile } from '../src/http-file.js';
 import { detectImport, exampleFor, importHar, importOpenApi, importPostman, importPostmanEnvironment, importText } from '../src/importers.js';
 import { basicAuth } from '../src/send.js';
-import { readActivity } from '../src/family.js';
+import { readActivity } from '@fleet/kit/family.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
 let cleanup;

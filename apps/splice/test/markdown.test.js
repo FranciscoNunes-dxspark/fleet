@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderMarkdown } from '../src/markdown.js';
 import { theme } from '../src/theme.js';
-import { stringWidth } from '../src/text.js';
+import { stringWidth } from '@fleet/kit/text.js';
 
 const text = (lines) => lines.map((l) => l.map((s) => s.text).join('').trimEnd());
 const seg = (lines, t) => lines.flat().find((s) => s.text === t);

@@ -3,9 +3,9 @@ import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { samePath } from '../config.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { fit } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 export function summaryText(s) {
   if (!s) return { text: '…', color: theme.dim };

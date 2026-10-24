@@ -4,7 +4,7 @@
 // stub it.
 import { parseHttpFile } from './http-file.js';
 
-export { ask, clip } from './claude-cli.js';
+export { ask, clip } from '@fleet/kit/claude-cli.js';
 
 /**
  * What to ask for requests drafted from an API description (OpenAPI, Swagger, or any text that

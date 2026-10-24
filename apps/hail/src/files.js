@@ -65,4 +65,4 @@ export function writeExample(path) {
   return true;
 }
 
-export { pathArg } from './family.js';
+export { pathArg } from '@fleet/kit/family.js';

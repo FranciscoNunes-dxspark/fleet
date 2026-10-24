@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { useInput } from 'ink';
 import { theme } from '../theme.js';
-import { stringWidth, wrap } from '../text.js';
-import { useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { stringWidth, wrap } from '@fleet/kit/text.js';
+import { useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /** `line` wrapped to `width`, its continuation lines under its text (past its indent), as a log reads best. */
 export function wrapIndented(line, width) {

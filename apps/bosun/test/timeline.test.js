@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { PassThrough } from 'node:stream';
 import { basename, join } from 'node:path';
-import { familyDir, logActivity, readActivity } from '../src/family.js';
+import { familyDir, logActivity, readActivity } from '@fleet/kit/family.js';
 import { when } from '../src/actions.js';
 import { KEYS, project, start, tempHome, type, until } from './helpers.js';
 

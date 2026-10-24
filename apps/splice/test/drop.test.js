@@ -10,7 +10,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
 import { droppedPaths, insideRepo, pathArg } from '../src/drop.js';
-import { quoteArg } from '../src/family.js';
+import { quoteArg } from '@fleet/kit/family.js';
 import { App } from '../src/ui/App.jsx';
 
 test("a path as a sibling's /open line quotes it, or as typed", () => {

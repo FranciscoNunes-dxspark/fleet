@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { demoAzure } from '../src/demo.js';
-import { contextIn } from '../src/family.js';
+import { contextIn } from '@fleet/kit/family.js';
 import { BULLET, LIGHT, applyTheme, theme } from '../src/theme.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 

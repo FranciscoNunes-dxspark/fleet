@@ -6,20 +6,21 @@ An HTTP client for the terminal, over `.http` files: the format VS Code's REST C
 HTTP Client already read, so the requests live in the repository next to the code and work in all
 three. Open a file, pick a request, press `↵`.
 
-A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/splice) and
-[Trawl](https://github.com/FranciscoNunes-dxspark/trawl): the same prompt, help window, mouse,
+A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice) and
+[Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl): the same prompt, help window, mouse,
 settings and self-updating builds.
 
 ## Install
 
-Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/hail/releases/latest)
+Download the build for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=hail-v&expanded=true)
 and put it on your PATH. It checks for a new version once a day and installs it by itself; the new
 version starts the next time you open Hail.
 
-From a checkout (Node 22 or later):
+From a checkout of the [fleet repository](https://github.com/FranciscoNunes-dxspark/fleet) (Node 22 or later), where Hail is `apps/hail`:
 
 ```bash
-npm install
+npm install                  # at the repository's root: every app and the kit they share
+cd apps/hail
 npm start -- api.http
 ```
 
@@ -467,7 +468,7 @@ that defines the routes.
 
 ## With the sibling apps
 
-Hail, [Splice](https://github.com/FranciscoNunes-dxspark/splice) (git), [Trawl](https://github.com/FranciscoNunes-dxspark/trawl)
+Hail, [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice) (git), [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl)
 (SQL), Sonar (Azure) and Bosun (processes) hand each other things as command lines: one app copies a
 line, and you paste it into the other's prompt. None of them starts another, and a line never carries a
 secret. What one app hands another without a command of its own is `/take family:v1:…`, which every

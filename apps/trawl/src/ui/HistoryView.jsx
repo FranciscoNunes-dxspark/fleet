@@ -3,9 +3,9 @@ import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { oneLine } from '../sql.js';
 import { theme } from '../theme.js';
-import { fit, relTime } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit, relTime } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 export function HistoryView({ ran, ctx, width, height, active }) {
   const split = width >= 100;

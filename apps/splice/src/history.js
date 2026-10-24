@@ -7,7 +7,7 @@ import { HISTORY_FORMAT, isoDate, parseBlame, parseFileHistory, relTime } from '
 import { parseDiff } from './patch.js';
 import { ownersLine, ownersOf } from './codeowners.js';
 import { theme } from './theme.js';
-import { fit, stringWidth } from './text.js';
+import { fit, stringWidth } from '@fleet/kit/text.js';
 
 const short = (hash) => hash.slice(0, 7);
 const MAX_HISTORY = 2000;

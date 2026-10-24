@@ -1,7 +1,7 @@
 // App Service plans (serverfarms): their tier, size and instance count, what /scale asks for, and the
 // autoscale settings that target a plan, summed up. Pure: the provider reads and changes them
 // (azure/arm.js plan, scalePlan, autoscaleSettings; demo.js too).
-import { splitArgs } from './family.js';
+import { splitArgs } from '@fleet/kit/family.js';
 
 const groupOf = (id) => /\/resourceGroups\/([^/]+)/i.exec(id ?? '')?.[1] ?? '';
 

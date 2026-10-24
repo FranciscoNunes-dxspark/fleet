@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { watchShipped } from '../actions.js';
 import { prNews } from '../notify.js';
 import { shippedIn } from '../prflow.js';
-import { useAsync } from './hooks.js';
+import { useAsync } from '@fleet/kit/ui/hooks.js';
 
 // PR list requests by key, finished or not, so PRs and Branches share one fetch (and one failure).
 const prLists = new Map();

@@ -8,7 +8,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
 import { App } from '../src/ui/App.jsx';
-import { VERSION } from '../src/version.js';
+import { VERSION } from '../src/app.js';
 
 let base;
 

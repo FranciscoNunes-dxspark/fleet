@@ -5,9 +5,9 @@ import * as a from '../actions.js';
 import { relTime } from '../parse.js';
 import { stashFiles, stashStat } from '../repo.js';
 import { codeColor, theme } from '../theme.js';
-import { fit } from '../text.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit } from '@fleet/kit/text.js';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 const WHAT = { M: 'modified', A: 'added', D: 'deleted', T: 'type changed', '?': 'untracked' };
 

@@ -2,11 +2,12 @@ import React, { useEffect, useMemo } from 'react';
 import { Box, useInput } from 'ink';
 import { teamBrief, teamDetail, teamRows } from '../team.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
+import { fit } from '@fleet/kit/text.js';
 import * as a from '../actions.js';
 import { applyFilter, shownFilter } from '../filters.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { wrapLines } from './wrap.js';
 
 /**
  * The team, as the web app's Team page: who carries what (in progress, the sprint, reviews, pull
@@ -73,7 +74,7 @@ export function TeamView({ version, workItems, prs, filter, ctx, width, height, 
       </Panel>
       {split ? (
         <Panel title={r ? r.person.displayName : 'Person'} hint={r ? '↵ work items · p pull requests' : ''} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={r ? teamDetail(r, { workItems: workItems?.items, prs }) : []} />
+          <Lines width={sideW - 2} height={innerH} lines={wrapLines(r ? teamDetail(r, { workItems: workItems?.items, prs }) : [], sideW - 2)} />
         </Panel>
       ) : null}
     </Box>

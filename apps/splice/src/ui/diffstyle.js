@@ -1,7 +1,7 @@
 // How diff lines are coloured in the views and the viewer.
 import { theme } from '../theme.js';
 import { markRanges } from '../search.js';
-import { clean } from '../text.js';
+import { clean } from '@fleet/kit/text.js';
 
 /** A diff line coloured by its prefix. */
 export function diffSegment(line) {

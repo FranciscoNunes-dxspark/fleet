@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { glimRows, moodLine } from '../glim.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
-import { VERSION } from '../version.js';
-import { Row } from './parts.jsx';
+import { fit } from '@fleet/kit/text.js';
+import { VERSION } from '../app.js';
+import { Row } from '@fleet/kit/ui/parts.jsx';
 
 export const GLIM_WIDTH = 16;
 export const WELCOME_HEIGHT = 7;

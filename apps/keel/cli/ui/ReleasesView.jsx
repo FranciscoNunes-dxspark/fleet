@@ -3,10 +3,11 @@ import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { approvalsFor, githubDetail, githubRows, githubStrip, isGithubRelease, releaseDetail, releaseHealth, releaseRows, stageStrip } from '../releases.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
+import { fit } from '@fleet/kit/text.js';
 import { applyFilter, shownFilter } from '../filters.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { wrapLines } from './wrap.js';
 
 export const releaseId = (d) => `${d.org ?? ''}/${d.key}`;
 
@@ -91,7 +92,7 @@ export function ReleasesView({ version, filter, ctx, width, height, active }) {
       </Panel>
       {split ? (
         <Panel title={d ? d.name : 'Release pipeline'} hint={!d ? '' : isGithubRelease(d) ? 'D download · ↵ all · o GitHub' : 'n release · d deploy · ↵ all'} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={!d ? [] : isGithubRelease(d) ? githubDetail(d) : releaseDetail(d, approvals)} />
+          <Lines width={sideW - 2} height={innerH} lines={wrapLines(!d ? [] : isGithubRelease(d) ? githubDetail(d) : releaseDetail(d, approvals), sideW - 2)} />
         </Panel>
       ) : null}
     </Box>

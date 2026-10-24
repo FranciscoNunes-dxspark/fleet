@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
-import { logActivity, readActivity } from '../src/family.js';
+import { logActivity, readActivity } from '@fleet/kit/family.js';
 import { App } from '../src/ui/App.jsx';
 
 let base;

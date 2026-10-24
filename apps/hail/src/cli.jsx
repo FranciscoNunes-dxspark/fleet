@@ -1,15 +1,17 @@
+// First, so the kit knows which app this is before anything asks (configureApp).
+import './app.js';
 import React from 'react';
 import { render } from 'ink';
 import { resolve } from 'node:path';
-import { COMPILED, VERSION } from './version.js';
+import { COMPILED, VERSION } from './app.js';
 import { loadConfig } from './config.js';
 import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
 import { findHttpFiles } from './files.js';
 import { ask } from './claude.js';
-import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js';
-import { copyToClipboard } from './clipboard.js';
-import { terminalMouse } from './mouse.js';
+import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
+import { copyToClipboard } from '@fleet/kit/clipboard.js';
+import { terminalMouse } from '@fleet/kit/mouse.js';
 import { notification } from './notify.js';
 import { openInBrowser } from './browser.js';
 
@@ -18,7 +20,7 @@ const args = process.argv.slice(2);
 // hail test api.http [--env dev]: every request without the UI, for CI.
 if (args[0] === 'test') {
   const { runTests } = await import('./headless.js');
-  const { osCredentials } = await import('./credentials.js');
+  const { osCredentials } = await import('@fleet/kit/credentials.js');
   const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
   const code = await runTests(args.slice(1), { credentials: osCredentials, color });
   // Everything written gets out before exiting, piped or not (pipes are asynchronous on Windows).

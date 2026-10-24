@@ -39,4 +39,4 @@ export function insideRepo(root, path, { windows = process.platform === 'win32' 
   return rel.replace(/\\/g, '/');
 }
 
-export { pathArg } from './family.js';
+export { pathArg } from '@fleet/kit/family.js';

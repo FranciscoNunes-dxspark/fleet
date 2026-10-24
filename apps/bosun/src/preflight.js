@@ -5,8 +5,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { connect } from 'node:net';
 import { parseDotenv } from './dotenv.js';
-import { projectAt } from './family.js';
-import { run as runShell } from './run.js';
+import { projectAt } from '@fleet/kit/family.js';
+import { run as runShell } from '@fleet/kit/run.js';
 import { portOpen as portAnswers, pidsOnPort as holders } from './supervisor.js';
 
 // ---------------------------------------------------------------------------------------------------

@@ -4,9 +4,9 @@ import { requestForHail, runQuery, saveQuery, toggleChart } from '../actions.js'
 import { chartLines, chartOf } from '../chart.js';
 import { cellText, completeQuery, hailRequest, records } from '../insights.js';
 import { theme } from '../theme.js';
-import { clean, fit } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { clean, fit } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { Grid, columnWidths } from './Grid.jsx';
 
 /**

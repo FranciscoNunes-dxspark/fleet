@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useInput } from 'ink';
 import { label } from '../azure/arm.js';
 import { theme } from '../theme.js';
-import { useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /** A log line's colour: errors red, warnings yellow, the rest plain. */
 export const lineColour = (l) => (/\b(ERR|ERROR|FATAL|CRIT|Exception|fail(ed|ure)?)\b/i.test(l) ? theme.del : /\b(WRN|WARN(ING)?)\b/i.test(l) ? theme.warn : undefined);

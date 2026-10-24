@@ -1,9 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { useInput } from 'ink';
 import { theme } from '../theme.js';
-import { wrap } from '../text.js';
-import { useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { wrap } from '@fleet/kit/text.js';
+import { useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /**
  * Text over the view (ctx.showText): a command's output, a past response, a diff. `lines` (rows of

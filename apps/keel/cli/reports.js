@@ -3,7 +3,7 @@
 // Each reads what the web app's page of the same name reads from the service. Pure, so the tests
 // can check it.
 import { branch } from './format.js';
-import { relTime } from './text.js';
+import { relTime } from '@fleet/kit/text.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const ago = (iso, now) => {

@@ -1,6 +1,6 @@
 // {{$azToken [resource]}}: a token from the Azure CLI's sign-in, as Trawl and Keel get theirs, so a
 // request to Azure (or to anything behind Entra ID) needs no secret in the file. Kept for half an hour.
-import { run } from './run.js';
+import { run } from '@fleet/kit/run.js';
 
 const cache = new Map();
 const KEEP_MS = 30 * 60 * 1000;

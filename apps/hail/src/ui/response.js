@@ -4,7 +4,7 @@
 import { driftSummary, issueText } from '../contract.js';
 import { formatSize, prettyBody } from '../send.js';
 import { theme } from '../theme.js';
-import { relTime, wrap } from '../text.js';
+import { relTime, wrap } from '@fleet/kit/text.js';
 
 const PRINTABLE = /^[\x20-\x7e]*$/;
 

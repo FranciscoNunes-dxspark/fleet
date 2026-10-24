@@ -2,7 +2,7 @@
 // at its problems. Sonar is another terminal app, so it can't share this terminal: in Windows Terminal
 // it opens in a new tab; anywhere else the command is copied for you to run.
 import { spawn } from 'node:child_process';
-import { copyToClipboard } from './clipboard.js';
+import { copyToClipboard } from '@fleet/kit/clipboard.js';
 
 /** Sonar's arguments for monitor `m`: its address, its Application Insights when it has one, and Problems. */
 export function sonarArgs(m) {

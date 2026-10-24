@@ -2,7 +2,7 @@
 // indented, binary as a hex dump, anything else as it is, every line folded to the viewer's width.
 // Pure: the grid cuts long values short, and this is where they can be read.
 import { formatValue } from './sql.js';
-import { clean, stringWidth } from './text.js';
+import { clean, stringWidth } from '@fleet/kit/text.js';
 
 /**
  * Re-indents JSON text that parses, two spaces a level, without parsing its values: numbers too

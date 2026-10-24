@@ -1,9 +1,9 @@
 // What Trawl adds to the family's activity log (family.js logActivity), and how /timeline and /wiring
 // show the log and a project's wiring. Pure. A write is said by its kinds of statement and the
 // tables they change, the connection and the rows: never its values, which the SQL's literals hold.
-import { APP_NAMES } from './family.js';
+import { APP_NAMES } from '@fleet/kit/family.js';
 import { classify, mask, splitStatements, withoutLeadingComments } from './sql.js';
-import { relTime } from './text.js';
+import { relTime } from '@fleet/kit/text.js';
 
 // The statement's verb and what it acts on, read on the mask (strings and comments blanked), so no
 // literal can come through: INSERT INTO t, UPDATE t, DELETE FROM t, MERGE INTO t, CREATE TABLE t…

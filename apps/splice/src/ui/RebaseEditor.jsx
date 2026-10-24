@@ -3,9 +3,9 @@ import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { planProblem } from '../rebase.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { fit } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 const KEYS = { p: 'pick', r: 'reword', e: 'edit', s: 'squash', f: 'fixup', d: 'drop' };
 // Getters, so the colours are the theme's as it is now (light or dark).

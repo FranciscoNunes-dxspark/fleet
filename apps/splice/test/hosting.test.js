@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { azurePr, azureReview, checkSummary, githubPr, parseRemote, sortPrs } from '../src/hosting.js';
 import { parseRemotes } from '../src/repo.js';
-import { wrap } from '../src/text.js';
+import { wrap } from '@fleet/kit/text.js';
 
 test('remote URLs: GitHub and Azure DevOps, https and ssh', () => {
   assert.deepEqual(parseRemote('https://github.com/FranciscoNunes-dxspark/keel.git'), { kind: 'github', owner: 'FranciscoNunes-dxspark', repo: 'keel' });

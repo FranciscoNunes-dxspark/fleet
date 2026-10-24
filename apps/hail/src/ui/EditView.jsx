@@ -4,11 +4,11 @@ import { copyCurl, send } from '../actions.js';
 import { accept, completeAt } from '../complete.js';
 import * as ed from '../editor.js';
 import { blockAt, highlightLines } from '../http-file.js';
-import { fit } from '../text.js';
+import { fit } from '@fleet/kit/text.js';
 import { theme } from '../theme.js';
-import { atLeast } from '../mouse.js';
-import { useMouse } from './hooks.js';
-import { Lines, Panel } from './parts.jsx';
+import { atLeast } from '@fleet/kit/mouse.js';
+import { useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel } from '@fleet/kit/ui/parts.jsx';
 import { methodColour, responseLines } from './response.js';
 
 const COLORS = () => ({

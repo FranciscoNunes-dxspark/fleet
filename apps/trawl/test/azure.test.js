@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { addFirewallRule, firewallBlock, parseConnectionString, passwordFromApp, publicIp, ruleName, serverHost } from '../src/azure.js';
 import { azureSqlConnection, findAzureSql, parseAzureSqlArgs } from '../src/connections.js';
 import { parseArgs } from '../src/launch.js';
-import { memoryCredentials } from '../src/credentials.js';
+import { memoryCredentials } from '@fleet/kit/credentials.js';
 import { DbError, findPassword, signIn } from '../src/db.js';
 
 const BLOCKED = "Cannot open server 'clubs' requested by the login. Client with IP address '203.0.113.7' is not allowed to access the server.  To enable access, use the Azure Management Portal or run sp_set_firewall_rule on the master database to create a firewall rule for this IP address or address range.  It may take up to five minutes for this change to take effect.";

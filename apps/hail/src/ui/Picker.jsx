@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useInput } from 'ink';
 import { theme } from '../theme.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /**
  * A list to pick from, as an overlay (ctx.showPicker): the settings, or anything else to choose one of.

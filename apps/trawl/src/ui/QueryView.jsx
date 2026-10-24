@@ -3,9 +3,9 @@ import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { oneLine, withoutLeadingComments } from '../sql.js';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /** The lines of `file` from the first selected statement to the last, GO lines included. */
 export function scriptFor(file, from, to) {

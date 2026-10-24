@@ -1,0 +1,27 @@
+{
+  "name": "fleet",
+  "private": true,
+  "description": "The family of keyboard-driven terminal apps (Splice, Trawl, Sonar, Bosun, Hail, Keel) and the kit they share",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "test:kit": "npm test -w packages/kit",
+    "test:splice": "npm test -w apps/splice",
+    "test:trawl": "npm test -w apps/trawl",
+    "test:sonar": "npm test -w apps/sonar",
+    "test:bosun": "npm test -w apps/bosun",
+    "test:hail": "npm test -w apps/hail",
+    "test:keel": "npm test -w apps/keel",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.1"
+  }
+}

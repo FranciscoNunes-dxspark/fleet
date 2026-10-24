@@ -27,7 +27,7 @@ export async function sonar(ctx, m = ctx.current().monitor) {
   try {
     const r = await ctx.openSonar(sonarArgs(m));
     if (r.how === 'tab') ctx.note(`Opened Sonar on ${m.name} in a new tab`);
-    else ctx.note(`Copied ${r.command}\nRun it in another terminal to open Sonar on ${m.name}. Sonar: https://github.com/FranciscoNunes-dxspark/sonar`);
+    else ctx.note(`Copied ${r.command}\nRun it in another terminal to open Sonar on ${m.name}. Sonar: https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/sonar`);
   } catch (e) {
     ctx.note(`Couldn't open Sonar: ${e.message}`, 'error');
   }

@@ -1,0 +1,54 @@
+{
+  "name": "@fleet/kit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The pieces the fleet's terminal apps share: text, the Ink parts and hooks, the mouse, the clipboard, the palette, your own keys and commands, the family, the updater and the build",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    "./app.js": "./app.js",
+    "./version.js": "./version.js",
+    "./theme.js": "./theme.js",
+    "./text.js": "./text.js",
+    "./ui/parts.jsx": "./ui/parts.jsx",
+    "./ui/hooks.js": "./ui/hooks.js",
+    "./ui/HelpView.jsx": "./ui/HelpView.jsx",
+    "./ui/Palette.jsx": "./ui/Palette.jsx",
+    "./mouse.js": "./mouse.js",
+    "./selection.js": "./selection.js",
+    "./clipboard.js": "./clipboard.js",
+    "./jsx-hooks.js": "./jsx-hooks.js",
+    "./register.js": "./register.js",
+    "./help-layout.js": "./help-layout.js",
+    "./keymap.js": "./keymap.js",
+    "./usercommands.js": "./usercommands.js",
+    "./palette.js": "./palette.js",
+    "./run.js": "./run.js",
+    "./credentials.js": "./credentials.js",
+    "./claude-cli.js": "./claude-cli.js",
+    "./family.js": "./family.js",
+    "./update.js": "./update.js",
+    "./scripts/build.js": "./scripts/build.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node --import ./register.js --test test/*.test.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "cli-truncate": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "string-width": "^7.2.0"
+  },
+  "peerDependencies": {
+    "ink": "^6.8.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "ink": "^6.8.0",
+    "ink-testing-library": "^4.0.0",
+    "react": "^19.3.1"
+  }
+}

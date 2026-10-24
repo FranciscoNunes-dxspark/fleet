@@ -1,0 +1,72 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Fleet is the family of keyboard-driven terminal apps in one repository: Splice (git), Trawl (SQL), Sonar (Azure), Bosun (a project's processes), Hail (HTTP) and Keel (Azure DevOps: a web app, a terminal app and an Android app), and the kit they share. Each app keeps its own CLAUDE.md (read it before changing the app: it has the app's architecture, tests and rules) and README (the user-facing spec: when behaviour changes, update it too). This file is what holds across them.
+
+## Layout
+
+```
+package.json            private root: npm workspaces ["packages/*", "apps/*"], Node >= 22, test scripts, postinstall
+package-lock.json       the one lockfile
+patches/                patch-package's patches, applied to the root node_modules on install (scripts/postinstall.js)
+packages/kit/           @fleet/kit: the shared files and their tests
+apps/<app>/             splice, trawl, sonar, bosun, hail, keel: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
+.github/workflows/      test.yml, release.yml (+ release-app.yml), release-keel-android.yml
+.github/scripts/        changed.mjs: which apps a change touches
+```
+
+Plain JavaScript ES modules everywhere, `.jsx` for components; no TypeScript, no linter config, no build step for development. Every app runs on Node 22+ (Keel too). Dependencies are kept at the same versions in every package (ink 6.8.x, react 19.3.x, esbuild 0.28 through the kit); a dependency only one app uses stays in that app's package.json (Trawl's database drivers, Keel's web stack).
+
+## Commands
+
+```bash
+npm install                    # at the root: every package, linked; applies patches/
+npm test                       # every package's suite, one after another
+npm run test:<app>             # one app (test:kit for the kit), the same as npm test -w apps/<app>
+npm start -w apps/<app>        # run an app from the checkout (or cd apps/<app> && npm start); needs a real TTY
+cd apps/<app> && npm run build # its executable for this machine (Bun 1.4.2 via npx), the kit's scripts/build.js
+```
+
+Inside an app, its own CLAUDE.md lists the rest (one test file, a name pattern, its scripts). Tests that make git repositories need no git identity: CI has none, so run them with `GIT_CONFIG_GLOBAL` pointing at an empty file to be sure.
+
+## The kit (`packages/kit`, `@fleet/kit`)
+
+What the apps used to copy between them (and checked with a `shared-check.js` script) is one package now: `text.js`, `ui/parts.jsx`, `ui/hooks.js`, `ui/HelpView.jsx`, `ui/Palette.jsx`, `mouse.js`, `selection.js`, `clipboard.js`, `jsx-hooks.js` and `register.js` (the `.jsx` loader), `help-layout.js`, `keymap.js`, `usercommands.js`, `palette.js`, `run.js`, `credentials.js`, `claude-cli.js`, `family.js`, `update.js` (the updater), `theme.js` (the colour object the kit's parts draw with), `app.js` and `version.js`, and `scripts/build.js` (the Bun build). Apps import them by path, `@fleet/kit/text.js`, each listed in the kit's package.json `exports`. Its tests are in `packages/kit/test` (`npm run test:kit`).
+
+Rules:
+
+- **No copies.** A shared file exists once, in the kit; an app never keeps its own version of one, and never imports another app's files. What only one app needs lives in that app (Splice's `ui/diffstyle.js`, Keel's `cli/ui/wrap.js`). A change to a kit file changes every app: run every suite (`npm test`), and keep the kit's API backward compatible or change every caller in the same commit. Prefer an option with the old behaviour as its default (`Spinner`'s `hint`, `PromptBox`'s `bang`) to a fork.
+- **The app's name.** A few things carry it: the credential store's entries (`Trawl:<name>`, service `Trawl`: changing it loses saved passwords), the version baked into a build (`TRAWL_VERSION`), the release files (`trawl-linux-x64`) and tags (`trawl-v1.2.3`), the update's work folder and messages. The kit learns it once: each app's `src/app.js` (Keel: `cli/app.js`) calls `configureApp({ name, title, version: process.env.<APP>_VERSION, packageUrl })` and exports `APP`, `VERSION` and `COMPILED`. The entry point (`cli.jsx`) imports it first, everything that wants the version imports it from there, and the test scripts preload it (`--import ./src/app.js`), so it has always run before the kit asks (`app()` throws if not). `version` must be written as that literal `process.env` expression: the build defines it. Each app's `test/names.test.js` checks its names.
+- **Colours.** The kit's parts read `theme` from `@fleet/kit/theme.js`; each app's own `theme.js` fills that same object (`Object.assign(kitTheme, DARK, …)`) and exports it, so the app and the kit always draw with the same palette. Read colours while drawing, never copied at import.
+- **The family.** `family.js` is the protocol between the apps (contexts, moods, activity): shared, and never edited for one app's convenience.
+
+## Installing, and Keel on Hostinger
+
+`npm install` (or `npm ci`) at the root installs every package into the root `node_modules`, with `@fleet/kit` linked, and `scripts/postinstall.js` applies `patches/` there (an install without dev dependencies has no patch-package and skips it). Run in an app's folder, npm still finds the root (`apps/*` is a workspace of it) and installs that app's dependencies into the root `node_modules` from the root lockfile: that's how Hostinger builds Keel's web app from `apps/keel` in a clone of this repository (`npm install` or `npm ci`, `npm run build`, `npm start`). There is no lockfile inside an app; the root's is the only one, so a change to any package.json means running `npm install` at the root and committing `package-lock.json`. Keel's own `postinstall` (`patch-package --patch-dir ../../patches || exit 0`) only matters when Ink lands in `apps/keel/node_modules`, and never fails an install.
+
+`patches/ink+6.8.0.patch` keeps Ink's width and tokenize caches from one frame to the next rather than starting each frame empty, bounds its measure and wrap caches, measures text through `build/text-width.js` (printable ASCII and characters that never join, colour codes or not, without string-width), leaves a line inside a clip uncut, and turns a row into a string without diffing the styles of characters styled alike: a 160×50 frame of coloured rows goes from about 17 ms to 3. `packages/kit/test/ink-patch.test.js` checks Ink still draws what it did. Upgrading Ink means checking `build/output.js` still has `OutputCaches` and remaking the patch (`npx patch-package ink` at the root), or dropping it once Ink does this itself.
+
+## CI
+
+`.github/workflows/test.yml` runs on pull requests and pushes to main. `.github/scripts/changed.mjs` works out what a change touches from `git diff` against the base: an app's folder is that app; `packages/kit`, `patches/`, the root `package.json`/`package-lock.json`, `.github/` and the root `scripts/` are the kit and every app; Markdown is nothing. Each of those runs on ubuntu-latest and windows-latest: `npm ci` at the root, then `npm test -w <workspace>`, and for Keel also `npm run build -w apps/keel` (the web app Hostinger builds). Apps a change leaves alone don't run, so keep a change to one app inside its folder. CI has no git identity, and paths and line endings must work on Windows too (`.gitattributes` forces LF).
+
+## Releases
+
+Every push to main (except Markdown-only ones) runs `release.yml`, which releases each app the change touched (the same rules as the tests, without `.github/` and `scripts/`: an app's folder, or all six for the kit, `patches/` or the root package files). "Run workflow" releases one app, or `all`, by hand. Per app, in `release-app.yml`, one at a time per app (`concurrency: release-<app>`):
+
+1. The version: the newest release in this repository whose tag starts `<app>-v`, with the patch raised, or the app's package.json version when that's higher (bump it there for a minor or major version). Nothing is committed back, so package.json on main lags behind the releases.
+2. The app's tests on ubuntu.
+3. The executables with Bun 1.4.2, from the app's folder (`bun ../../packages/kit/scripts/build.js <targets>`): the Windows one on windows-latest (only there does Bun embed the icon), Linux and macOS on ubuntu. The build reads the app's package.json (`version`, and an optional `"fleet"` section: Keel's `entry` is `cli/cli.jsx`, `app` `cli/app.js`, `out` `release`, and `compile` turns off Bun's .env and bunfig loading) and names the files `<app>-windows-x64.exe`, `<app>-linux-x64`, `-linux-arm64`, `<app>-macos-x64`, `-macos-arm64` (`buildTargets` in the kit's `update.js`, which the updater uses too).
+4. `gh release create <app>-v<version>` with the files and `SHA256SUMS.txt`, its notes starting from the app's previous release.
+
+Keel's Android app is released by hand (`release-keel-android.yml`) as `keel-android-v<run number + 100>`, not marked latest.
+
+The apps update themselves from these releases (the kit's `update.js`, only in compiled builds): once a day they list `GET /repos/FranciscoNunes-dxspark/fleet/releases?per_page=100` (through `gh api` when that fails, as the repository is private), take the newest release whose tag starts `<app>-v` that isn't a draft or a pre-release, download `releases/download/<app>-v<version>/<file>` next to the executable and check it against `SHA256SUMS.txt` before swapping it in. GitHub's own "latest release" means nothing here: it is whichever app released last.
+
+## Conventions
+
+- Commit messages are short sentences describing the change, without type prefixes; one commit per logical change.
+- Comments explain why and read as plain sentences; match the surrounding density.
+- Adding or changing a key or command: the handler, the app's `commands.js`, its `help.js`, and its README's tables (each app's CLAUDE.md says where).
+- Keel's web app has English and European Portuguese (`t()`, `locales/pt/`); its terminal app is English only.

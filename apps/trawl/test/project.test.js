@@ -8,8 +8,8 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS, parseAddArgs } from '../src/connections.js';
-import { memoryCredentials } from '../src/credentials.js';
-import { projectAt } from '../src/family.js';
+import { memoryCredentials } from '@fleet/kit/credentials.js';
+import { projectAt } from '@fleet/kit/family.js';
 import { newDatabases, projectLine, projectNote, savedFor } from '../src/siblings.js';
 import { App } from '../src/ui/App.jsx';
 

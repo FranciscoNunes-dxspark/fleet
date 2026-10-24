@@ -1,8 +1,8 @@
 import React from 'react';
 import { cellText } from '../insights.js';
 import { theme } from '../theme.js';
-import { fit, stringWidth } from '../text.js';
-import { Row } from './parts.jsx';
+import { fit, stringWidth } from '@fleet/kit/text.js';
+import { Row } from '@fleet/kit/ui/parts.jsx';
 
 /** How wide each column is drawn: as wide as its name and the widest value shown, within reason. */
 export function columnWidths(table, rows = table.rows) {

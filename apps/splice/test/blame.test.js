@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { isoDate, parseBlame, parseFileHistory } from '../src/parse.js';
 import { blameItems, repoPath } from '../src/history.js';
 import { completionKind, suggestionsFor } from '../src/commands.js';
-import { fitSegments, stringWidth } from '../src/text.js';
+import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);

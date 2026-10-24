@@ -1,12 +1,14 @@
+// First, so the kit knows which app this is before anything asks (configureApp).
+import './app.js';
 import React from 'react';
 import { render } from 'ink';
-import { COMPILED, VERSION } from './version.js';
+import { COMPILED, VERSION } from './app.js';
 import { loadConfig } from './config.js';
 import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
-import { checkForUpdate, installUpdate, removeOldExecutables } from './update.js';
-import { copyToClipboard } from './clipboard.js';
-import { terminalMouse } from './mouse.js';
+import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
+import { copyToClipboard } from '@fleet/kit/clipboard.js';
+import { terminalMouse } from '@fleet/kit/mouse.js';
 import { killEverything } from './supervisor.js';
 import { notification } from './notify.js';
 import { startFolder } from './projects.js';

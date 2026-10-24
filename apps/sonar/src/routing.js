@@ -1,7 +1,7 @@
 // Testing in production: an app's ramp-up rules (its config/web experiments.rampUpRules), which send a
 // share of production's traffic to a slot. Pure: the provider reads and writes them (azure/arm.js
 // routing, setRouting; demo.js too).
-import { splitArgs } from './family.js';
+import { splitArgs } from '@fleet/kit/family.js';
 
 /** ARM's site config as [{ slot, host, percent }]: each slot's share of the traffic. */
 export function routingFrom(config) {

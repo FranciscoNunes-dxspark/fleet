@@ -1,9 +1,9 @@
 import React from 'react';
 import { Box, useInput } from 'ink';
 import { theme } from '../theme.js';
-import { fit } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /**
  * Pick one from a list, an overlay over the view: `items` are { label, detail, text } (text shows on

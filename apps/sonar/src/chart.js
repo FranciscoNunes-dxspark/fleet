@@ -3,7 +3,7 @@
 // with each one's share). Pure: which chart a result makes, and its lines of segments (colours read
 // from the theme when they're made, as everything drawn does).
 import { theme } from './theme.js';
-import { fit, stringWidth } from './text.js';
+import { fit, stringWidth } from '@fleet/kit/text.js';
 
 /** The chart a query asks for with `| render …`: 'time' (timechart, linechart, areachart), 'bars' (columnchart, barchart) or 'pie'; null for none. */
 export function renderKind(query) {

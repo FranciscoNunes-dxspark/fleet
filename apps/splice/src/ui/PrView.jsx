@@ -4,10 +4,10 @@ import * as a from '../actions.js';
 import { renderMarkdown } from '../markdown.js';
 import { relTime } from '../parse.js';
 import { theme } from '../theme.js';
-import { fit, fitSegments, wrap } from '../text.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
+import { fit, fitSegments, wrap } from '@fleet/kit/text.js';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { usePrList } from './prList.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 // Getters, so the colours are the theme's as it is now (light or dark).
 export const TONE = { get good() { return theme.add; }, get bad() { return theme.del; }, get wait() { return theme.warn; }, get none() { return theme.dim; } };

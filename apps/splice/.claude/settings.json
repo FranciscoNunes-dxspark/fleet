@@ -4,7 +4,7 @@
     "allow": [
       "Bash(npm test)",
       "Bash(npm test:*)",
-      "Bash(node --import ./src/register.js --test:*)",
+      "Bash(node --import @fleet/kit/register.js --import ./src/app.js --test:*)",
       "Bash(npm run build)",
       "Bash(npm run build:all)",
       "Bash(node scripts/logo.js)",

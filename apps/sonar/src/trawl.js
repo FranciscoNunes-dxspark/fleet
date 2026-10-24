@@ -1,7 +1,7 @@
 // Opening an Azure SQL database in Trawl, the sibling SQL client: the slash command T copies for
 // Trawl's prompt, the SQL login an app already uses (found in its connection strings or settings, and
 // named, never copied: Trawl reads the password from Azure itself), and the server firewall. Pure.
-import { quoteArg } from './family.js';
+import { quoteArg } from '@fleet/kit/family.js';
 
 // Each key a SQL connection string may spell its parts with, lower-cased.
 const KEYS = {

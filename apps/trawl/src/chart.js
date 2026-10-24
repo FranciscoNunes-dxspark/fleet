@@ -1,7 +1,7 @@
 // /chart: a result set drawn as a chart in the terminal, pure. `planChart` picks the chart and its
 // columns (from what the user named, else from the columns themselves); `drawChart` lays it out at a
 // size as lines of { text, color } segments, the colours handed in (read from the theme while drawing).
-import { fit, stringWidth } from './text.js';
+import { fit, stringWidth } from '@fleet/kit/text.js';
 
 export const CHART_TYPES = ['bars', 'line', 'histogram', 'scatter'];
 const ALIASES = { bar: 'bars', bars: 'bars', line: 'line', lines: 'line', time: 'line', timeseries: 'line', series: 'line', hist: 'histogram', histogram: 'histogram', scatter: 'scatter', xy: 'scatter' };

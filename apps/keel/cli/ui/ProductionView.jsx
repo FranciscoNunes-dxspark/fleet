@@ -4,9 +4,10 @@ import * as a from '../actions.js';
 import { monitorBrief, monitorDetail, monitorRows, monitorState } from '../format.js';
 import { shownFilter } from '../filters.js';
 import { theme } from '../theme.js';
-import { fit, stringWidth } from '../text.js';
-import { useAsync, useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { fit, stringWidth } from '@fleet/kit/text.js';
+import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { wrapLines } from './wrap.js';
 
 /**
  * Production monitors, as the web app's Production page: those that need you first (down,
@@ -75,7 +76,7 @@ export function ProductionView({ failed, production, version, filter, ctx, width
       </Panel>
       {split ? (
         <Panel title={m ? monitorState(m).label : 'Monitor'} hint={m ? '↵ all of it · o open the site' : ''} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={m ? monitorDetail(m, target(m)) : []} />
+          <Lines width={sideW - 2} height={innerH} lines={wrapLines(m ? monitorDetail(m, target(m)) : [], sideW - 2)} />
         </Panel>
       ) : null}
     </Box>

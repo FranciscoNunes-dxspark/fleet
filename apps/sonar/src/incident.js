@@ -1,7 +1,7 @@
 // An incident: one problem told whole, for the incident view (I in Problems, /incident). Pure: the
 // stack it went through, the deployments before it, the commits that touched its files, the SQL behind
 // it, the request that failed, the Markdown write-up and what Claude is asked. actions.js fetches.
-import { matchFrameFile, quoteArg, stackFrames } from './family.js';
+import { matchFrameFile, quoteArg, stackFrames } from '@fleet/kit/family.js';
 import { referenceWords, resolved } from './keyvault.js';
 
 const HOUR = 3600_000;

@@ -6,9 +6,9 @@ import { lineTarget, withThreads } from '../review.js';
 import { lineText, markRanges, matcher, matchingLines, wordChanges } from '../search.js';
 import { SPLIT_WIDTH, lineOn, rowLines, sideOf, splitView } from '../split.js';
 import { theme } from '../theme.js';
-import { clean, fitSegments } from '../text.js';
-import { useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { clean, fitSegments } from '@fleet/kit/text.js';
+import { useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { RANGE_COMMIT, diffSegments, rangeDiffSegments } from './diffstyle.js';
 
 /**

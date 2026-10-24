@@ -3,7 +3,7 @@
 // requests the other tabs already read.
 import { prState, wiState } from './format.js';
 import { theme } from './theme.js';
-import { relTime } from './text.js';
+import { relTime } from '@fleet/kit/text.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const hours = (h) => (h >= 48 ? `${Math.round(h / 24)}d` : `${Math.round(h)}h`);

@@ -6,9 +6,9 @@ import { changesText, editRefusal, editText, emptyIsDefault, hasChanges, nextNew
 import { cutOff, moreQuery } from '../more.js';
 import { formatValue, isNumericType, viewOrder } from '../sql.js';
 import { theme } from '../theme.js';
-import { clean, fit, stringWidth } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Lines, Panel, Row } from './parts.jsx';
+import { clean, fit, stringWidth } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 const SEP = ' │ ';
 const MAX_COL = 40;

@@ -3,7 +3,7 @@
 // the app talks to; src/demo.js has the same interface without Azure. Everything goes through `fetch`
 // with a token from `token(resource)`, both passed in, so tests run it against a fake.
 import { metricsFor, metricsPath, seriesFrom } from '../metrics.js';
-import { callSignal } from '../run.js';
+import { callSignal } from '@fleet/kit/run.js';
 import { functionFrom, functionUrl, invocation, isHttp } from '../functions.js';
 import { autoscaleFrom, planFrom } from '../scale.js';
 import { rampUpRules, routingFrom } from '../routing.js';

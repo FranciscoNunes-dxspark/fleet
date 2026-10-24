@@ -2,9 +2,9 @@ import React from 'react';
 import { useInput } from 'ink';
 import { compareWindow, exceptionForSplice, incident, showOperation, why } from '../actions.js';
 import { theme } from '../theme.js';
-import { fit, relTime } from '../text.js';
-import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { fit, relTime } from '@fleet/kit/text.js';
+import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /** Whether a problem is like an exception taken from a sibling: the same type (or its last part), or the same message. */
 export function problemLike(p, { type, message }) {

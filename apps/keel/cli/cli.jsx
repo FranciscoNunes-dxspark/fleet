@@ -1,3 +1,5 @@
+// First, so the kit knows which app this is before anything asks (configureApp).
+import './app.js';
 import path from 'node:path';
 import { ROOT } from '../server/root.js';
 
@@ -139,7 +141,7 @@ let installUpdate;
 // /update asks GitHub now and installs, whatever those two say: it's asked for.
 let updater;
 if (COMPILED) {
-  const update = await import('./update.js');
+  const update = await import('@fleet/kit/update.js');
   const { config } = await import('../server/config.js');
   const last = update.lastCheckStore(path.join(config.dataDir, 'update-check.json'));
   const check = async (since) => {
@@ -163,7 +165,7 @@ process.on('exit', () => process.stdout.write('\x1b[?1049l'));
 // Clicks, the wheel and drag-to-copy, where the terminal can report them (mouse.js); App turns reporting
 // on unless this computer's Settings turned it off. Set up before rendering, so mouse reports never
 // reach Ink as keys, and Ink draws through the mouse's stdout, which keeps the frames to select text from.
-const { terminalMouse } = await import('./mouse.js');
+const { terminalMouse } = await import('@fleet/kit/mouse.js');
 const mouse = await terminalMouse(process.stdin, process.stdout);
 const app = render(React.createElement(App, { keel, checkUpdate, installUpdate, updater, mouse }), { exitOnCtrlC: false, patchConsole: false, stdout: mouse?.stdout ?? process.stdout });
 await app.waitUntilExit();

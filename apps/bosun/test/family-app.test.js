@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { encodeContext, shareLine, takeLine, writeMood, familyDir } from '../src/family.js';
+import { encodeContext, shareLine, takeLine, writeMood, familyDir } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../src/moods.js';
 import { familyOffers, trawlName } from '../src/actions.js';
 import { KEYS, project, start, tempHome, type, until } from './helpers.js';

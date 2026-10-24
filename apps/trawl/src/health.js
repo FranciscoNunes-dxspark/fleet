@@ -3,7 +3,7 @@
 // the same whatever the kind, so the rest is pure: buildHealth turns what the reads gave into groups
 // of findings, each with why it matters and the statement that would fix it; healthText is the
 // viewer's report and healthScript the fix script, which nothing runs by itself.
-import { fit, stringWidth, wrap } from './text.js';
+import { fit, stringWidth, wrap } from '@fleet/kit/text.js';
 
 const rowsOf = (set) => (set ? set.rows.map((row) => Object.fromEntries(set.columns.map((c, i) => [c.name, row[i]]))) : []);
 const num = (v) => (v == null || v === '' ? null : Number(v));

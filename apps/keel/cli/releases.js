@@ -3,7 +3,7 @@
 // GitHub releases of tracked repos with their files. Pure, so the tests can check it. The data is
 // service.releases() and service.repoReleases(), the web app's Releases tab.
 import { theme } from './theme.js';
-import { relTime } from './text.js';
+import { relTime } from '@fleet/kit/text.js';
 
 const ago = (iso, now) => (iso ? relTime(Date.parse(iso), now) : '');
 

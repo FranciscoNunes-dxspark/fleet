@@ -6,17 +6,16 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { KEEP, choices, pathArg, remember, resolveFolder, startFolder } from '../src/projects.js';
-import { quoteArg } from '../src/family.js';
+import { quoteArg } from '@fleet/kit/family.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../src/commands.js';
 import { HELP } from '../src/help.js';
-import { commandsSection, sectionLines } from '../src/help-layout.js';
+import { commandsSection, sectionLines } from '@fleet/kit/help-layout.js';
 import { FACES, PALETTE, petPixels, petRows } from '../src/pet.js';
 import { settingRows } from '../src/settings.js';
 import { DARK, DEFAULT_ACCENT, LIGHT, LIGHT_ACCENT, applyTheme, backgroundFrom, theme, themeMode } from '../src/theme.js';
 import { nextTheme } from '../src/settings.js';
 import { exitNews, notification, worthNotifying } from '../src/notify.js';
-import { assetName, compareVersions, parseChecksums } from '../src/update.js';
-import { run } from '../src/run.js';
+import { run } from '@fleet/kit/run.js';
 import { expand, parseDotenv } from '../src/dotenv.js';
 import { markRanges, matcher } from '../src/search.js';
 import { parseYaml, scalar } from '../src/yaml.js';
@@ -102,18 +101,6 @@ test('the pet: every mood is the same size, drawn only in its palette, and has a
       for (const c of row) assert.ok(c === '.' || PALETTE[c], `${mood} uses ${c}`);
     }
     assert.equal(petRows(mood).length, 5);
-  }
-});
-
-test('updates: versions compare, checksums parse, and every release file is one build.js makes', () => {
-  assert.ok(compareVersions('v1.2.10', '1.2.9') > 0);
-  assert.ok(compareVersions('1.0.0-beta', '1.0.0') < 0);
-  assert.equal(compareVersions('junk', '1.0.0'), 0);
-  const sums = parseChecksums(`${'a'.repeat(64)}  bosun-linux-x64\n${'b'.repeat(64)} *bosun-windows-x64.exe\n`);
-  assert.equal(sums.get('bosun-windows-x64.exe'), 'b'.repeat(64));
-  const build = readFileSync(new URL('../scripts/build.js', import.meta.url), 'utf8');
-  for (const [platform, arch] of [['win32', 'x64'], ['linux', 'x64'], ['linux', 'arm64'], ['darwin', 'x64'], ['darwin', 'arm64']]) {
-    assert.ok(build.includes(`'${assetName(platform, arch)}'`), `${platform} ${arch}`);
   }
 });
 

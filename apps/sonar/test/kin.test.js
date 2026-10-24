@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encodeContext, projectAt, readMoods, shareLine, takeLine, writeMood } from '../src/family.js';
+import { encodeContext, projectAt, readMoods, shareLine, takeLine, writeMood } from '@fleet/kit/family.js';
 import { familyChoices, familyMood, reactionLine, reactionTo } from '../src/kin.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 

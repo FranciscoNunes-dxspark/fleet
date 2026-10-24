@@ -1,47 +1,14 @@
+// What Splice does with the updater (the kit's update.js, tested in packages/kit): the note, the
+// check kept in the config, installing in the background.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
-import { assetName, checkForUpdate, compareVersions, installUpdate, parseChecksums, removeOldExecutables } from '../src/update.js';
 import { App } from '../src/ui/App.jsx';
-
-test('versions compare by number, with pre-releases before their release', () => {
-  assert.ok(compareVersions('0.10.0', '0.9.9') > 0);
-  assert.ok(compareVersions('v1.0.0', '0.99.99') > 0);
-  assert.equal(compareVersions('v0.2.0', '0.2.0'), 0);
-  assert.ok(compareVersions('0.3.0-beta.1', '0.3.0') < 0);
-  assert.ok(compareVersions('0.3.0-beta.1', '0.2.0') > 0);
-  assert.equal(compareVersions('nightly', '0.2.0'), 0);
-  assert.equal(compareVersions(undefined, '0.2.0'), 0);
-});
-
-test('asks at most once a day, and only says "newer" for a newer release', async () => {
-  const DAY = 24 * 60 * 60 * 1000;
-  let asked = 0;
-  const fetchLatest = async () => {
-    asked++;
-    return { version: '0.3.0', url: 'https://example.com/v0.3.0' };
-  };
-  const first = await checkForUpdate(undefined, { current: '0.2.0', now: 1000, fetchLatest });
-  assert.deepEqual(first, { checked: { at: 1000, latest: '0.3.0', url: 'https://example.com/v0.3.0' }, newer: true });
-  assert.equal(asked, 1);
-
-  const sameDay = await checkForUpdate(first.checked, { current: '0.2.0', now: 1000 + DAY - 1, fetchLatest });
-  assert.equal(asked, 1);
-  assert.equal(sameDay.newer, true);
-  assert.equal((await checkForUpdate(first.checked, { current: '0.3.0', now: 2000, fetchLatest })).newer, false);
-
-  await checkForUpdate(first.checked, { current: '0.2.0', now: 1000 + DAY, fetchLatest });
-  assert.equal(asked, 2);
-  // A clock that went back doesn't keep an old answer forever.
-  await checkForUpdate({ ...first.checked, at: 10 * DAY }, { current: '0.2.0', now: DAY, fetchLatest });
-  assert.equal(asked, 3);
-});
 
 test('the app shows a newer release, keeps the check in the config, and can be told not to ask', async () => {
   const home = mkdtempSync(join(tmpdir(), 'splice-update-'));
@@ -90,88 +57,6 @@ test('the app shows a newer release, keeps the check in the config, and can be t
     if (prevHome === undefined) delete process.env.SPLICE_HOME;
     else process.env.SPLICE_HOME = prevHome;
     await removeTemp(home);
-  }
-});
-
-test('the release file for each platform, and the checksums file', () => {
-  assert.equal(assetName('win32', 'x64'), 'splice-windows-x64.exe');
-  assert.equal(assetName('darwin', 'arm64'), 'splice-macos-arm64');
-  assert.equal(assetName('linux', 'x64'), 'splice-linux-x64');
-  assert.equal(assetName('win32', 'arm64'), null);
-  const a = 'a'.repeat(64);
-  const b = 'B'.repeat(64);
-  const sums = parseChecksums(`${a}  splice-linux-x64\r\n${b} *splice-windows-x64.exe\nnot a line\n`);
-  assert.deepEqual([...sums], [
-    ['splice-linux-x64', a],
-    ['splice-windows-x64.exe', 'b'.repeat(64)],
-  ]);
-});
-
-test('installing an update swaps the executable, only with a matching checksum, and tidies up after', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'splice-install-'));
-  const sha = (s) => createHash('sha256').update(s).digest('hex');
-  // Stands in for GitHub: the release's files, written where installUpdate asks.
-  const release = (content, sum = sha(content)) => async (version, names, into) => {
-    assert.equal(version, '0.3.0');
-    writeFileSync(join(into, names[0]), content);
-    writeFileSync(join(into, names[1]), `${sum}  ${names[0]}\n`);
-  };
-  const leftovers = () => readdirSync(dir).filter((f) => f.startsWith('.splice-update-'));
-  try {
-    // Windows: the running one is renamed aside, and the new one takes its name.
-    const exe = join(dir, 'splice.exe');
-    writeFileSync(exe, 'old build');
-    const win = { exe, platform: 'win32', arch: 'x64', installed: async () => '0.2.0' };
-    assert.equal(await installUpdate('0.3.0', { ...win, download: release('new build') }), 'installed');
-    assert.equal(readFileSync(exe, 'utf8'), 'new build');
-    const aside = readdirSync(dir).filter((f) => f.startsWith('splice.exe.old.'));
-    assert.equal(aside.length, 1);
-    assert.equal(readFileSync(join(dir, aside[0]), 'utf8'), 'old build');
-    assert.deepEqual(leftovers(), []);
-
-    // A download that doesn't match its checksum leaves everything as it was.
-    writeFileSync(exe, 'current');
-    await assert.rejects(installUpdate('0.3.0', { ...win, download: release('tampered', sha('something else')) }), /doesn't match its checksum/);
-    assert.equal(readFileSync(exe, 'utf8'), 'current');
-    assert.deepEqual(leftovers(), []);
-
-    // Already that version (another window installed it): nothing is downloaded.
-    let downloads = 0;
-    const counted = async (...args) => {
-      downloads++;
-      return release('x')(...args);
-    };
-    assert.equal(await installUpdate('0.3.0', { ...win, installed: async () => '0.3.0', download: counted }), 'already');
-    assert.equal(downloads, 0);
-
-    // macOS and Linux: a rename replaces it in one step, with nothing set aside.
-    const unixExe = join(dir, 'splice');
-    writeFileSync(unixExe, 'old build');
-    await installUpdate('0.3.0', { exe: unixExe, platform: 'linux', arch: 'x64', installed: async () => '0.2.0', download: release('new build') });
-    assert.equal(readFileSync(unixExe, 'utf8'), 'new build');
-    assert.ok(!readdirSync(dir).some((f) => f.startsWith('splice.old.')));
-
-    await assert.rejects(installUpdate('0.3.0', { ...win, arch: 'arm64', download: release('x') }), /no release build/);
-  } finally {
-    await removeTemp(dir);
-  }
-});
-
-test('old executables and abandoned downloads are removed, but not a download still going', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'splice-old-'));
-  try {
-    const exe = join(dir, 'splice.exe');
-    writeFileSync(exe, 'current');
-    writeFileSync(join(dir, 'splice.exe.old.1700000000000'), 'old');
-    writeFileSync(join(dir, 'notes.txt'), 'mine');
-    mkdirSync(join(dir, '.splice-update-stale'));
-    mkdirSync(join(dir, '.splice-update-busy'));
-    const twoHoursAgo = (Date.now() - 2 * 60 * 60 * 1000) / 1000;
-    utimesSync(join(dir, '.splice-update-stale'), twoHoursAgo, twoHoursAgo);
-    await removeOldExecutables(exe);
-    assert.deepEqual(readdirSync(dir).sort(), ['.splice-update-busy', 'notes.txt', 'splice.exe']);
-  } finally {
-    await removeTemp(dir);
   }
 });
 

@@ -1,7 +1,7 @@
 // How Inbox items, pull requests and pipelines read in the terminal: icons, colours, the
 // order of lists and the lines of the detail panes. Pure, so the tests can check it.
 import { theme } from './theme.js';
-import { fit, relTime } from './text.js';
+import { fit, relTime } from '@fleet/kit/text.js';
 
 export const branch = (ref) => String(ref ?? '').replace(/^refs\/heads\//, '');
 const ago = (iso, now) => (iso ? relTime(Date.parse(iso), now) : '');

@@ -1,7 +1,7 @@
 // Splice's side of the family (family.js, the kit the sibling apps share, has the names, the paste rule
 // and Trawl's lines): what this repository offers them (/family), and Twig's mood told to the others and
 // theirs read back. Pure: actions.js and App.jsx do the copying, the reading and the writing.
-import { APP_NAMES, PET_NAMES, shareLine, trawlLine } from './family.js';
+import { APP_NAMES, PET_NAMES, shareLine, trawlLine } from '@fleet/kit/family.js';
 
 const isEnvName = (s) => /^[A-Z0-9_]+$/.test(s);
 

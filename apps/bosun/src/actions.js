@@ -1,10 +1,10 @@
 // Every user-facing operation, written once: keys and slash commands both call these with `ctx`
 // (built in ui/App.jsx). Questions before anything destructive belong here too (ctx.confirm).
 import { configFile } from './config.js';
-import { run } from './run.js';
+import { run } from '@fleet/kit/run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
 import { applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
-import { clip } from './claude-cli.js';
+import { clip } from '@fleet/kit/claude-cli.js';
 import { FILE, specFor, words, writeSpec } from './crew.js';
 import { choices, resolveFolder, samePath } from './projects.js';
 import { basename, relative, resolve } from 'node:path';
@@ -12,7 +12,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { listSessions } from './recorder.js';
 import { markCrew } from './ports.js';
 import { troubleContext } from './share.js';
-import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine, trawlLine } from './family.js';
+import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine, trawlLine } from '@fleet/kit/family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
 import { installHint } from './tunnel.js';

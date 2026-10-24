@@ -73,5 +73,5 @@ export function remember(recent = [], dir) {
   return [dir, ...recent.filter((d) => !samePath(d, dir))].slice(0, KEEP);
 }
 
-import { pathArg } from './family.js';
+import { pathArg } from '@fleet/kit/family.js';
 export { pathArg };
