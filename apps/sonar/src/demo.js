@@ -113,7 +113,10 @@ function initialState(now) {
   const autoscale = [
     { sub: 'sub-prod', id: `${prodRg}/providers/microsoft.insights/autoscalesettings/contoso-prod-plan-autoscale`, name: 'contoso-prod-plan-autoscale', enabled: true, target: plans.find((x) => /contoso-prod/.test(x.id)).id, profiles: [{ name: 'Default', min: 2, max: 5, default: 2, fixed: false, recurring: false, rules: [{ metric: 'CpuPercentage', operator: 'GreaterThan', threshold: 70, direction: 'Increase', change: 1, type: 'ChangeCount' }, { metric: 'CpuPercentage', operator: 'LessThan', threshold: 30, direction: 'Decrease', change: 1, type: 'ChangeCount' }] }] },
   ];
-  return { sites, components, alerts, vault, invocations: [], plans, autoscale, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
+  // contoso-web sends a tenth of its traffic to staging.
+  const web = sites.find((x) => x.name === 'contoso-web' && !x.slot);
+  const routing = { [web.id]: [{ slot: 'staging', host: 'contoso-web-staging.azurewebsites.net', percent: 10 }] };
+  return { sites, components, alerts, vault, invocations: [], plans, autoscale, routing, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
 }
 
 // A few days of what the apps did: requests (some failing), the exceptions behind the failures, traces.
@@ -455,6 +458,14 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       if (send.admin) return answer(202, '', '');
       if (fn.name === 'PlaceOrder') return input.trim() ? answer(201, 'application/json; charset=utf-8', JSON.stringify({ orderId: 'o-10234', status: 'placed' })) : answer(400, 'application/json; charset=utf-8', JSON.stringify({ error: 'An order is needed in the body' }));
       return answer(200, 'text/plain', 'Healthy');
+    },
+    async routing(app, { signal } = {}) {
+      await wait(signal);
+      return (state.routing[site(app).id] ?? []).map((r) => ({ ...r }));
+    },
+    async setRouting(app, rules, { signal } = {}) {
+      await wait(signal);
+      state.routing[site(app).id] = rules.map((r) => ({ ...r }));
     },
     async plan(planId, { signal } = {}) {
       await wait(signal);

@@ -16,6 +16,7 @@ import { referenceWords, resolved as refResolved } from './keyvault.js';
 import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, prettyBody, triggerLabel, withDisabled } from './functions.js';
 import { parseWatch, watchEvery } from './watches.js';
 import { autoscaleSummary, consumption, parseScale, planLine, scaledSku } from './scale.js';
+import { parseRoute, productionShare, withRoute } from './routing.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
@@ -413,6 +414,39 @@ export async function scale(ctx, text) {
     return { stdout: `${plan.name} is ${planLine(after)}` };
   }, { label: 'Scaling' });
   if (r.ok) ctx.planChanged?.();
+  return r;
+}
+
+/**
+ * /route <app> <slot> <percent>: sends that share of production's traffic to a slot (testing in
+ * production); 0 stops it. Asks as a change to production does.
+ */
+export async function route(ctx, text) {
+  const want = parseRoute(text);
+  if (want.error) return ctx.note(want.error, 'error');
+  const app = (ctx.data?.apps ?? []).find((x) => x.name.toLowerCase() === want.app.toLowerCase());
+  if (!app) return ctx.note(`There's no app called ${want.app}.`, 'error');
+  const slots = ctx.data.slots[app.id] ?? [];
+  const slot = slots.find((x) => x.slot.toLowerCase() === want.slot.toLowerCase());
+  if (!slot) return ctx.note(`${app.name} has no slot called ${want.slot}${slots.length ? ` (it has ${slots.map((x) => x.slot).join(', ')})` : ''}.`, 'error');
+  let rules;
+  try {
+    rules = await ctx.routingOf(app);
+  } catch (e) {
+    return ctx.note(e.message, 'error');
+  }
+  const was = rules.find((r) => r.slot.toLowerCase() === slot.slot.toLowerCase())?.percent ?? 0;
+  if (was === want.percent) return ctx.note(`${slot.slot} takes ${was}% of ${app.name}'s traffic already.`);
+  const next = withRoute(rules, slot, want.percent);
+  if (next.error) return ctx.note(next.error, 'error');
+  const title = want.percent ? `Send ${want.percent}% of ${app.name}'s traffic to ${slot.slot}?` : `Stop sending ${app.name}'s traffic to ${slot.slot} (it takes ${was}% now)?`;
+  const ok = await confirmChange(ctx, app, { title, detail: `Production then keeps ${productionShare(next.rules)}%${next.rules.length ? `; ${next.rules.map((r) => `${r.slot} takes ${r.percent}%`).join(', ')}` : ''}. A visitor stays where they were sent (a cookie).`, yes: 'Yes, route it' });
+  if (!ok) return;
+  const r = await ctx.task(want.percent ? `Route ${want.percent}% of ${app.name} to ${slot.slot}` : `Stop routing ${app.name} to ${slot.slot}`, async (signal) => {
+    await ctx.provider.setRouting(app, next.rules, { signal });
+    return { stdout: `${app.name}: production ${productionShare(next.rules)}%${next.rules.map((x) => `, ${x.slot} ${x.percent}%`).join('')}` };
+  }, { label: 'Routing' });
+  if (r.ok) await ctx.routingChanged(app);
   return r;
 }
 

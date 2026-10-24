@@ -180,10 +180,12 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const adminCache = useRef(new Map());
   // Each app's and slot's Key Vault references, read in the background after a load (scanExtras).
   const refsCache = useRef(new Map());
+  // Each app's ramp-up rules (routing.js), read with the references for the apps that have slots.
+  const routingCache = useRef(new Map());
   // App Service plans by id, and each subscription's autoscale settings, kept until r or a scale.
   const planCache = useRef(new Map());
   const autoscaleCache = useRef(new Map());
-  // What the list shows beside each app or slot, by id: { refs } (its Key Vault references).
+  // What the list shows beside each app or slot, by id: { refs, routing } (its Key Vault references, an app's ramp-up rules).
   const [extras, setExtras] = useState({});
   // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
   const watchStates = useRef(new Map());
@@ -307,6 +309,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     firewallCache.current = new Map();
     adminCache.current = new Map();
     refsCache.current = new Map();
+    routingCache.current = new Map();
     planCache.current = new Map();
     autoscaleCache.current = new Map();
     // A subscription not on screen yet shows as soon as its apps are known, slots and databases
@@ -383,6 +386,24 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     return cache.get(target.id);
   };
 
+  /** An app's ramp-up rules, read once and kept until r or /route changes them. */
+  const routingOf = (app) => {
+    const cache = routingCache.current;
+    if (!cache.has(app.id)) {
+      const p = provider.routing ? provider.routing(app) : Promise.resolve([]);
+      p.catch(() => cache.delete(app.id));
+      cache.set(app.id, p);
+    }
+    return cache.get(app.id);
+  };
+
+  /** After /route: the app's rules read again, and the list's marks with them. */
+  const routingChanged = async (app) => {
+    routingCache.current.delete(app.id);
+    const routing = await routingOf(app).catch(() => null);
+    setExtras((x) => ({ ...x, [app.id]: { ...x[app.id], routing } }));
+  };
+
   /** An App Service plan by its id (scale.js planFrom), read once and kept until r or it's scaled. */
   const planOf = (planId) => {
     const key = String(planId).toLowerCase();
@@ -408,7 +429,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   };
 
   /**
-   * What the list flags beside the apps and slots (Key Vault references that didn't resolve), read in the
+   * What the list shows beside the apps and slots (Key Vault references that didn't resolve, the share of
+   * traffic a slot takes), read in the
    * background after load `n`, four at a time, and drawn as it comes in (at most every 250 ms).
    */
   const scanExtras = async (d, n) => {
@@ -418,8 +440,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     const targets = d.apps.flatMap((app) => [app, ...(d.slots[app.id] ?? [])]);
     await mapLimited(targets, 4, async (t) => {
       if (n !== loads.current) return;
-      const refs = await referencesOf(t).catch(() => null);
-      found[t.id] = { ...found[t.id], refs };
+      const [refs, routing] = await Promise.all([referencesOf(t).catch(() => null), !t.slot && d.slots[t.id]?.length ? routingOf(t).catch(() => null) : null]);
+      found[t.id] = { ...found[t.id], refs, ...(routing ? { routing } : {}) };
       if (Date.now() - said > 250) (said = Date.now()), flush();
     });
     flush();
@@ -608,6 +630,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     forgetSettings: (target) => (settingsCache.current.delete(target.id), refsCache.current.delete(target.id)),
     referencesOf,
     planOf,
+    routingOf,
+    routingChanged,
     autoscaleOf,
     forgetPlan: (planId) => planCache.current.delete(String(planId).toLowerCase()),
     extras: () => extras,

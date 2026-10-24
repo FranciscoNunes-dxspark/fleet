@@ -8,6 +8,7 @@ import { costOf, groupCost, money } from '../cost.js';
 import { resourceRows } from '../tree.js';
 import { referenceWords, unresolved } from '../keyvault.js';
 import { autoscaleSummary, planLine } from '../scale.js';
+import { productionShare } from '../routing.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
@@ -218,6 +219,16 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
           ? [[{ text: 'no rules: nothing outside Azure gets in', color: theme.dim }]]
           : []),
   ];
+  // The share of its app's traffic a slot takes (testing in production), and the app's split.
+  const appOf = (t) => data.apps.find((x) => x.id === t.id.replace(/\/slots\/[^/]+$/, ''));
+  const shareOf = (t) => extras[appOf(t)?.id]?.routing?.find((x) => x.slot === t.slot)?.percent ?? 0;
+  const routeMark = (t) => (shareOf(t) ? ` → ${shareOf(t)}%` : '');
+  const routingLines = (t) => {
+    if (t.slot) return shareOf(t) ? [[{ text: 'traffic   ', color: theme.dim }, { text: `${shareOf(t)}% of ${t.name}'s production traffic`, color: theme.accent }]] : [];
+    const rules = extras[t.id]?.routing;
+    if (!rules?.length) return [];
+    return [[{ text: 'routing   ', color: theme.dim }, { text: `production ${productionShare(rules)}%${rules.map((x) => `, ${x.slot} ${x.percent}%`).join('')}`, color: theme.accent }]];
+  };
   // Its plan: its tier and instances, autoscale, the other apps on it.
   const planLines = (t) => {
     if (!plan) return [field('plan', t.plan)];
@@ -249,6 +260,7 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       prod(sel),
       [],
       field('address', sel.host),
+      ...routingLines(sel),
       field('group', sel.resourceGroup),
       field('where', sel.location ?? ''),
       ...planLines(sel),
@@ -343,6 +355,7 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
                 { text: fit(name, Math.max(8, listW - 18 - (under ? 4 : 0))), strong: true },
                 { text: t.kind === 'function' && !t.type ? ' ƒ' : '', color: theme.info },
                 { text: unresolved(extras[t.id]?.refs).length ? ' ⚠' : '', color: theme.warn },
+                { text: r.kind === 'slot' ? routeMark(t) : '', color: theme.accent },
                 { text: tag ? ` ${tag}` : '', color: theme.dim },
               ]}
             />

@@ -6,6 +6,7 @@ import { metricsPath, seriesFrom } from '../metrics.js';
 import { callSignal } from '../run.js';
 import { functionFrom, functionUrl, invocation, isHttp } from '../functions.js';
 import { autoscaleFrom, planFrom } from '../scale.js';
+import { rampUpRules, routingFrom } from '../routing.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
@@ -360,6 +361,14 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const headers = { ...(key ? { 'x-functions-key': key } : {}), ...(send.body != null ? { 'Content-Type': send.admin ? 'application/json' : 'text/plain' } : {}) };
       const res = await call(null, url, { method: send.method, text: send.body, headers, raw: true, auth: false, anyStatus: true, signal, what: `Invoking ${fn.name}` });
       return { status: res.status, type: res.headers?.get?.('content-type') ?? '', body: res.text, url, method: send.method };
+    },
+    /** An app's ramp-up rules (testing in production): routing.js's [{ slot, host, percent }]. */
+    async routing(app, opts) {
+      return routingFrom(await arm(`${app.id}/config/web?api-version=${WEB}`, { ...opts, what: `Reading ${label(app)}'s routing` }));
+    },
+    /** Sets them whole: what isn't in `rules` gets no traffic. */
+    async setRouting(app, rules, opts) {
+      await arm(`${app.id}/config/web?api-version=${WEB}`, { ...opts, method: 'PATCH', body: { properties: { experiments: { rampUpRules: rampUpRules(rules) } } }, what: `Routing ${label(app)}'s traffic` });
     },
     /** An App Service plan (serverfarm) by its id: scale.js planFrom's. */
     async plan(planId, opts) {

@@ -53,6 +53,7 @@ export const HELP = [
       ['o  y', 'The portal · copy its address'],
       { heading: 'On a storage account' },
       ['o  y', 'The portal · copy its blob address'],
+      ['/route', '/route <app> <slot> <percent>: send that share of production\'s traffic to a slot (0 stops it); a slot shows its share beside it (→ 10%)'],
       ['/scale', '/scale [app] <instances|tier>: the App Service plan it runs on, to so many instances or a tier (P1v3, S1…); says which apps share it and whether autoscale is on (the details show the plan, its size and autoscale)'],
       'Anything that changes Azure asks first. For production (an app or resource group named prod, production, prd or live), and for every swap, you type the app\'s name.',
     ],

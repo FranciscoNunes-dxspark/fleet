@@ -540,3 +540,15 @@ test('plans: read, scaled by writing them back whole with the new SKU; autoscale
   const [auto] = await azure.autoscaleSettings('s1');
   assert.deepEqual([auto.enabled, auto.profiles[0].min, auto.profiles[0].max, auto.profiles[0].rules[0].metric], [true, 2, 5, 'CpuPercentage']);
 });
+
+test('routing: the ramp-up rules read from config/web, and written back whole with PATCH', async () => {
+  const web = site('web', 'rg-prod');
+  const { fetch, calls } = fakeFetch({
+    [`GET ${web.id}/config/web`]: { properties: { experiments: { rampUpRules: [{ actionHostName: 'web-staging.azurewebsites.net', reroutePercentage: 10, name: 'staging' }] } } },
+    [`PATCH ${web.id}/config/web`]: {},
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  assert.deepEqual(await azure.routing(siteFrom(web)), [{ slot: 'staging', host: 'web-staging.azurewebsites.net', percent: 10 }]);
+  await azure.setRouting(siteFrom(web), [{ slot: 'beta', host: 'web-beta.azurewebsites.net', percent: 5 }]);
+  assert.deepEqual(calls.at(-1).body, { properties: { experiments: { rampUpRules: [{ actionHostName: 'web-beta.azurewebsites.net', reroutePercentage: 5, name: 'beta' }] } } });
+});
