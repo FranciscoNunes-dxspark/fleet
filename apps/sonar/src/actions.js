@@ -8,11 +8,19 @@ import { findLogin, ruleCovering, ruleName, trawlCommand } from './trawl.js';
 import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from './claude-cli.js';
 import { configFile } from './config.js';
-import { cellText, compareQueries, compareWindows, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround } from './insights.js';
+import { cellText, compareQueries, compareWindows, componentFor, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround, workspaceStarter } from './insights.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
-import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, repoRoot, takeLine, trawlLine } from './family.js';
+import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, takeLine, trawlLine } from './family.js';
 import { familyChoices } from './kin.js';
+import { referenceWords, resolved as refResolved } from './keyvault.js';
+import { functionLogQuery, functionRunsQuery, invocation, isDisabled, isHttp, prettyBody, triggerLabel, withDisabled } from './functions.js';
 import { parseWatch, watchEvery } from './watches.js';
+import { autoscaleSummary, consumption, parseScale, planLine, scaledSku } from './scale.js';
+import { parseRoute, productionShare, withRoute } from './routing.js';
+import { bodyPreview, resubmitPath, secretBody } from './servicebus.js';
+import { chartOf, renderKind } from './chart.js';
+import { VIEW_MAX, blobUrl, isText, shortName, sizeText } from './blobs.js';
+import { dataExplorerUrl, throughputText } from './cosmos.js';
 import { openUrl } from './open.js';
 import { run } from './run.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
@@ -48,6 +56,17 @@ async function confirmChange(ctx, target, { title, detail, strict = false, yes }
   return ctx.confirm({ title, detail, danger: true, options: YES_NO(yes) });
 }
 
+/**
+ * Adds what Sonar just changed in Azure to the family's activity log (family.js), for /timeline here and in
+ * the other apps, when `r` went through (a task's result, or true): what and where, never a value or a
+ * message body. Resolves `r`.
+ */
+export function activity(ctx, r, text, kind = 'change') {
+  if (!(r === true || r?.ok)) return r;
+  logActivity('sonar', { text: `${text}${ctx.data?.subscription ? ` (${ctx.data.subscription.name})` : ''}`, kind, project: ctx.cwd() });
+  return r;
+}
+
 /** An app or slot by label ("contoso-web/staging"), or the one under the cursor in Resources. */
 export function targetNamed(ctx, name) {
   const n = name?.trim();
@@ -56,7 +75,7 @@ export function targetNamed(ctx, name) {
 }
 
 /** What a resource is, in words. */
-export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
+export const typeLabel = (t) => ({ container: 'container app', storage: 'storage account', sqlserver: 'SQL server', sqldb: 'SQL database', servicebus: 'Service Bus namespace', cosmos: 'Cosmos DB account', workspace: 'Log Analytics workspace' })[t.type] ?? (t.kind === 'function' ? 'function app' : 'web app');
 
 const need = (ctx, target) => target ?? (ctx.note('Pick an app or a slot in Resources first, or name one.', 'error'), null);
 
@@ -65,10 +84,11 @@ export async function restart(ctx, which) {
   const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
   if (!target) return;
   if (!(await confirmChange(ctx, target, { title: `Restart ${label(target)}?`, detail: 'Requests in flight are dropped while it comes back up.', yes: 'Yes, restart it' }))) return;
-  await ctx.task(`Restart ${label(target)}`, async (signal) => {
+  const r = await ctx.task(`Restart ${label(target)}`, async (signal) => {
     await ctx.provider.restart(target, { signal });
     return { stdout: `${label(target)} is restarting` };
   }, { label: 'Restarting', refresh: true });
+  return activity(ctx, r, `restarted ${label(target)}`, 'restart');
 }
 
 /** S and /stop, /start: stops a running app or slot, starts a stopped one. */
@@ -77,10 +97,11 @@ export async function toggleRunning(ctx, which, want) {
   if (!target) return;
   const stop = want ? want === 'stop' : target.state === 'Running';
   if (stop && !(await confirmChange(ctx, target, { title: `Stop ${label(target)}?`, detail: 'It serves nothing until it is started again.', yes: 'Yes, stop it' }))) return;
-  await ctx.task(`${stop ? 'Stop' : 'Start'} ${label(target)}`, async (signal) => {
+  const r = await ctx.task(`${stop ? 'Stop' : 'Start'} ${label(target)}`, async (signal) => {
     await ctx.provider[stop ? 'stop' : 'start'](target, { signal });
     return { stdout: `${label(target)} ${stop ? 'stopped' : 'started'}` };
   }, { label: stop ? 'Stopping' : 'Starting', refresh: true });
+  return activity(ctx, r, `${stop ? 'stopped' : 'started'} ${label(target)}`, stop ? 'stop' : 'start');
 }
 
 /** W and /swap: a slot into production (on an app, one of its slots, picked from a list). */
@@ -102,10 +123,11 @@ export async function swap(ctx, which) {
     strict: true,
   });
   if (!ok) return;
-  await ctx.task(`Swap ${label(target)} into production`, async (signal) => {
+  const r = await ctx.task(`Swap ${label(target)} into production`, async (signal) => {
     await ctx.provider.swap(target, { signal });
     return { stdout: `Swapping ${label(target)} into production: Azure carries on with it for a minute or two` };
   }, { label: 'Swapping', refresh: true });
+  return activity(ctx, r, `swapped ${label(target)} into production`, 'swap');
 }
 
 const hide = (name, value) => (looksSecret(name, value) ? '••••••' : value);
@@ -116,6 +138,9 @@ export async function showSettings(ctx, which, { replace = false, index, shown =
   if (!target) return;
   const settings = await ctx.settingsOf(target).catch((e) => (ctx.note(e.message, 'error'), null));
   if (!settings) return;
+  // How its Key Vault references went, beside them: ✓, or ✗ and why.
+  const refs = Object.fromEntries(((await ctx.referencesOf?.(target).catch(() => null)) ?? []).map((r) => [r.name, r]));
+  const mark = (n) => (refs[n] ? (refResolved(refs[n]) ? { text: '✓ ', color: theme.add } : { text: `✗ ${referenceWords(refs[n])}  `, color: theme.del }) : { text: '' });
   const names = Object.keys(settings).sort((a, b) => a.localeCompare(b));
   const nameW = Math.min(40, Math.max(10, ...names.map((n) => n.length)));
   const again = (opts = {}) => showSettings(ctx, target, { replace: true, index: ctx.overlay()?.index, shown, ...opts });
@@ -129,6 +154,7 @@ export async function showSettings(ctx, which, { replace = false, index, shown =
         name: n,
         segments: [
           { text: `${n.padEnd(nameW)}  `, strong: true },
+          mark(n),
           { text: shown.includes(n) || shown.includes('*') ? settings[n] : hide(n, settings[n]), color: looksSecret(n, settings[n]) ? theme.warn : undefined },
         ],
       })),
@@ -172,6 +198,7 @@ async function saveSettings(ctx, target, before, next, redraw) {
     ctx.forgetSettings(target);
     return { stdout: 'Saved; the app restarts to take them' };
   }, { label: 'Saving' });
+  activity(ctx, done, `saved ${label(target)}'s settings: ${said}`, 'settings');
   if (done.ok) redraw();
 }
 
@@ -255,15 +282,453 @@ export async function deploymentLog(ctx, target, d) {
   }
 }
 
+/**
+ * f and /functions: a function app's functions, with their triggers, whether each is off, and how its
+ * runs went over the span (Application Insights); ↵ shows its runs in Logs, i invokes it, d turns it
+ * off or on, y copies its name.
+ */
+export async function functions(ctx, which, { replace = false, index } = {}) {
+  const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!target) return;
+  if (target.kind !== 'function') return ctx.note(`${label(target)} is a ${typeLabel(target)}: only function apps have functions.`, 'error');
+  const span = ctx.timespan();
+  ctx.showPicker(
+    {
+      title: `Functions of ${label(target)} · runs in the last ${span.label}`,
+      hint: '↵ its runs in Logs · i invoke · d turn off/on · y copy its name',
+      empty: 'No functions: nothing is deployed to it, or its host is stopped.',
+      index,
+      load: async () => {
+        const [list, settings] = await Promise.all([ctx.provider.functions(target), ctx.settingsOf(target).catch(() => ({}))]);
+        const component = componentFor(settings, ctx.data?.components ?? []);
+        const runs = component
+          ? Object.fromEntries(records(await ctx.provider.query(component, functionRunsQuery(target.name), { timespan: span.iso }).catch(() => ({ columns: [], rows: [] }))).map((r) => [r.name, r]))
+          : null;
+        const nameW = Math.min(28, Math.max(8, ...list.map((f) => f.name.length)));
+        return list.map((fn) => {
+          const off = isDisabled(fn, settings);
+          const r = runs?.[fn.name];
+          return {
+            fn,
+            off,
+            segments: [
+              { text: `${BULLET} `, color: off ? theme.del : theme.add },
+              { text: `${fn.name.padEnd(nameW)}  `, strong: true },
+              { text: fit(off ? 'off' : 'on', 5), color: off ? theme.del : theme.dim },
+              { text: fit(triggerLabel(fn), 24), color: theme.info },
+              { text: !runs ? fit('no insights', 22) : r ? fit(`${r.runs} run${r.runs === 1 ? '' : 's'}, `, 12) : fit('no runs', 22), color: theme.dim },
+              { text: r ? fit(`${r.failed} failed`, 10) : '', color: r?.failed ? theme.del : theme.dim, bold: Boolean(r?.failed) },
+              { text: r?.last ? `last ${relTime(Date.parse(r.last))} ago` : '', color: theme.dim },
+            ],
+          };
+        });
+      },
+      onPick: (it) => (ctx.closeOverlay(), ctx.logsFor(target, functionLogQuery(target.name, it.fn.name))),
+      keys: {
+        i: (it) => invokeFunction(ctx, target, it.fn),
+        d: (it) => toggleFunction(ctx, target, it.fn, !it.off),
+        y: (it) => ctx.copy(it.fn.name, 'its name'),
+      },
+    },
+    { replace },
+  );
+}
+
+/** d on a function: turns it off (or on) through its AzureWebJobs.<name>.Disabled setting, asking first. */
+export async function toggleFunction(ctx, target, fn, off) {
+  const settings = await ctx.settingsOf(target).catch((e) => (ctx.note(e.message, 'error'), null));
+  if (!settings) return;
+  const next = withDisabled(settings, fn, off);
+  const said = settingsDiff(settings, next).map((d) => (d.change === 'only-a' ? `removes ${d.name}` : `sets ${d.name} to ${d.b}`)).join(', ');
+  const ok = await confirmChange(ctx, target, { title: `Turn ${fn.name} ${off ? 'off' : 'on'} in ${label(target)}?`, detail: `This ${said}; Azure restarts the app to take it.`, yes: `Yes, turn it ${off ? 'off' : 'on'}` });
+  if (!ok) return;
+  const index = ctx.overlay()?.index;
+  const done = await ctx.task(`Turn ${fn.name} ${off ? 'off' : 'on'} in ${label(target)}`, async (signal) => {
+    await ctx.provider.saveSettings(target, next, { signal });
+    ctx.forgetSettings(target);
+    return { stdout: `${fn.name} is ${off ? 'off' : 'on'}: the app restarts to take it` };
+  }, { label: 'Saving' });
+  activity(ctx, done, `turned ${fn.name} ${off ? 'off' : 'on'} in ${label(target)}`, 'function');
+  if (done.ok && ctx.overlay()?.title?.startsWith(`Functions of ${label(target)}`)) functions(ctx, target, { replace: true, index });
+  return done;
+}
+
+/**
+ * i on a function: invokes it, asking first. An HTTP one at its address with its own key (a body typed
+ * in a field, empty for none); any other through the admin endpoint with the master key (the input
+ * typed). The key goes no further than the request. What it answered shows in the viewer.
+ */
+export async function invokeFunction(ctx, target, fn) {
+  const http = isHttp(fn);
+  const typed = await ctx.askText({
+    title: http ? `${fn.name}: a body to send (empty for none)` : `${fn.name}: its input (empty for none)`,
+    detail: http ? `It takes ${(fn.methods ?? ['any method']).join(', ')}; with a body it's sent as ${invocation(fn, 'x').method}.` : 'Sent to the admin endpoint, as the portal\'s Test/Run does.',
+  });
+  if (typed == null) return;
+  const send = invocation(fn, typed);
+  const ok = await confirmChange(ctx, target, { title: `Invoke ${fn.name} in ${label(target)}${http ? ` (${send.method})` : ''}?`, detail: http ? 'It runs as a real request would, with whatever it changes.' : 'It runs now, as its trigger would run it, with whatever it changes.', yes: 'Yes, invoke it' });
+  if (!ok) return;
+  let res;
+  const back = ctx.overlay();
+  const done = await ctx.task(`Invoke ${fn.name} in ${label(target)}`, async (signal) => {
+    res = await ctx.provider.invokeFunction(target, fn, { input: typed, signal });
+    return { stdout: `${fn.name} answered ${res.status}` };
+  }, { label: 'Invoking' });
+  if (!done.ok) return done;
+  activity(ctx, done, `invoked ${fn.name} in ${label(target)} (${res.status})`, 'invoke');
+  const body = prettyBody(res.body);
+  const head = `${res.method} ${res.url}\n${res.status}${res.type ? `  ${res.type}` : ''}`;
+  const good = res.status < 400;
+  const lines = [
+    [{ text: `${res.method} `, bold: true }, { text: res.url, color: theme.info }],
+    [{ text: String(res.status), bold: true, color: good ? theme.add : theme.del }, { text: res.type ? `  ${res.type}` : '', color: theme.dim }],
+    [],
+    ...(body ? body.split('\n').map((l) => [{ text: l }]) : [[{ text: res.status === 202 ? 'Accepted: it runs in the background (its runs show in Logs).' : '(no body)', color: theme.dim }]]),
+  ];
+  ctx.showText(`${fn.name}: ${res.status}`, `${head}\n\n${body}`, { lines, back });
+  return done;
+}
+
+/** The apps (main slots) that run on plan `planId`, by name. */
+export const appsOnPlan = (ctx, planId) => (ctx.data?.apps ?? []).filter((a) => a.planId && a.planId.toLowerCase() === String(planId ?? '').toLowerCase());
+
+/**
+ * /scale [app] <instances|tier>: the App Service plan an app runs on, to so many instances or another
+ * tier. It says which other apps share the plan (they scale with it) and whether autoscale is on, and
+ * asks as a change to production does when any of them is production.
+ */
+export async function scale(ctx, text) {
+  const want = parseScale(text, Object.keys(ctx.targets()));
+  if (want.error) return ctx.note(want.error, 'error');
+  const target = need(ctx, want.app ? targetNamed(ctx, want.app) : ctx.selectedTarget());
+  if (!target) return;
+  if (!target.planId) return ctx.note(`${label(target)} runs on no plan Sonar can see.`, 'error');
+  let plan;
+  let auto;
+  try {
+    [plan, auto] = await Promise.all([ctx.planOf(target.planId), ctx.autoscaleOf(target.planId).catch(() => [])]);
+  } catch (e) {
+    return ctx.note(e.message, 'error');
+  }
+  if (consumption(plan)) return ctx.note(`${plan.name} is a ${plan.sku.tier} plan: it scales by itself, so it has no instances or tier to set.`, 'error');
+  const sku = scaledSku(plan, want);
+  if (sku.name === plan.sku.name && sku.capacity === plan.sku.capacity) return ctx.note(`${plan.name} is ${planLine(plan)} already.`);
+  if (want.instances && plan.maxWorkers && want.instances > plan.maxWorkers) return ctx.note(`${plan.name} (${plan.sku.name}) goes up to ${plan.maxWorkers} instances.`, 'error');
+  const on = appsOnPlan(ctx, plan.id);
+  const others = on.filter((a) => a.id !== target.id.replace(/\/slots\/[^/]+$/, ''));
+  const autoOn = (auto ?? []).some((a) => a.enabled);
+  const what = want.instances ? `${want.instances} instance${want.instances === 1 ? '' : 's'}` : `${sku.name} (${sku.tier})`;
+  const ok = await confirmChange(ctx, target, {
+    title: `Scale ${plan.name} from ${plan.sku.name} × ${plan.sku.capacity} to ${what}?`,
+    detail: [
+      others.length ? `It also runs ${others.map((a) => a.name).join(', ')}, which scale with it.` : `Only ${target.name} runs on it.`,
+      autoOn && want.instances ? `Autoscale is ${autoscaleSummary(auto)}: it may change the count again.` : '',
+      want.sku ? 'Changing the tier moves the apps to new machines; they restart.' : '',
+    ].filter(Boolean).join(' '),
+    strict: on.some(isProduction),
+    yes: 'Yes, scale it',
+  });
+  if (!ok) return;
+  const r = await ctx.task(`Scale ${plan.name} to ${what}`, async (signal) => {
+    const after = await ctx.provider.scalePlan(plan, sku, { signal });
+    ctx.forgetPlan(plan.id);
+    return { stdout: `${plan.name} is ${planLine(after)}` };
+  }, { label: 'Scaling' });
+  if (r.ok) ctx.planChanged?.();
+  return activity(ctx, r, `scaled ${plan.name} (${[target.name, ...others.map((x) => x.name)].join(', ')}) from ${plan.sku.name} × ${plan.sku.capacity} to ${what}`, 'scale');
+}
+
+/**
+ * /route <app> <slot> <percent>: sends that share of production's traffic to a slot (testing in
+ * production); 0 stops it. Asks as a change to production does.
+ */
+export async function route(ctx, text) {
+  const want = parseRoute(text);
+  if (want.error) return ctx.note(want.error, 'error');
+  const app = (ctx.data?.apps ?? []).find((x) => x.name.toLowerCase() === want.app.toLowerCase());
+  if (!app) return ctx.note(`There's no app called ${want.app}.`, 'error');
+  const slots = ctx.data.slots[app.id] ?? [];
+  const slot = slots.find((x) => x.slot.toLowerCase() === want.slot.toLowerCase());
+  if (!slot) return ctx.note(`${app.name} has no slot called ${want.slot}${slots.length ? ` (it has ${slots.map((x) => x.slot).join(', ')})` : ''}.`, 'error');
+  let rules;
+  try {
+    rules = await ctx.routingOf(app);
+  } catch (e) {
+    return ctx.note(e.message, 'error');
+  }
+  const was = rules.find((r) => r.slot.toLowerCase() === slot.slot.toLowerCase())?.percent ?? 0;
+  if (was === want.percent) return ctx.note(`${slot.slot} takes ${was}% of ${app.name}'s traffic already.`);
+  const next = withRoute(rules, slot, want.percent);
+  if (next.error) return ctx.note(next.error, 'error');
+  const title = want.percent ? `Send ${want.percent}% of ${app.name}'s traffic to ${slot.slot}?` : `Stop sending ${app.name}'s traffic to ${slot.slot} (it takes ${was}% now)?`;
+  const ok = await confirmChange(ctx, app, { title, detail: `Production then keeps ${productionShare(next.rules)}%${next.rules.length ? `; ${next.rules.map((r) => `${r.slot} takes ${r.percent}%`).join(', ')}` : ''}. A visitor stays where they were sent (a cookie).`, yes: 'Yes, route it' });
+  if (!ok) return;
+  const r = await ctx.task(want.percent ? `Route ${want.percent}% of ${app.name} to ${slot.slot}` : `Stop routing ${app.name} to ${slot.slot}`, async (signal) => {
+    await ctx.provider.setRouting(app, next.rules, { signal });
+    return { stdout: `${app.name}: production ${productionShare(next.rules)}%${next.rules.map((x) => `, ${x.slot} ${x.percent}%`).join('')}` };
+  }, { label: 'Routing' });
+  if (r.ok) await ctx.routingChanged(app);
+  return activity(ctx, r, want.percent ? `sent ${want.percent}% of ${app.name}'s traffic to ${slot.slot}` : `stopped sending ${app.name}'s traffic to ${slot.slot}`, 'route');
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** ↵ on a Service Bus namespace: its queues, topics and subscriptions with their counts; ↵ on one peeks its dead letters. */
+export function serviceBus(ctx, ns) {
+  ctx.showPicker({
+    title: `${ns.name}: queues, topics, subscriptions`,
+    hint: '↵ its dead letters · X purge them · y copy its name',
+    empty: 'No queues or topics.',
+    busEntities: true,
+    load: async () => {
+      const list = await ctx.provider.serviceBusEntities(ns);
+      const w = Math.min(32, Math.max(8, ...list.map((e) => e.name.length)));
+      return list.map((e) => ({
+        e,
+        segments: [
+          { text: fit(e.kind, 13), color: theme.dim },
+          { text: `${e.name.padEnd(w)}  `, strong: true },
+          ...(e.kind === 'topic'
+            ? [{ text: `${plural(e.subscriptions ?? 0, 'subscription')}`, color: theme.dim }]
+            : [
+                { text: fit(`${e.active} active`, 12) },
+                { text: fit(`${e.deadLetter} dead`, 10), color: e.deadLetter ? theme.del : theme.dim, bold: Boolean(e.deadLetter) },
+                { text: e.scheduled ? `${e.scheduled} scheduled` : '', color: theme.dim },
+                { text: e.status && e.status !== 'Active' ? `  ${e.status}` : '', color: theme.warn },
+              ]),
+        ],
+      }));
+    },
+    onPick: (it) => (it.e.kind === 'topic' ? ctx.note(`A topic keeps no messages of its own: its subscriptions (${it.e.name}/…) do.`) : deadLetters(ctx, ns, it.e)),
+    keys: {
+      X: (it) => (it.e.kind === 'topic' ? ctx.note('A topic has no dead letters of its own: purge one of its subscriptions\'.', 'error') : purgeDeadLetters(ctx, ns, it.e)),
+      y: (it) => ctx.copy(it.e.name, 'its name'),
+    },
+  });
+}
+
+/** ↵ on a storage account: its blob containers; ↵ on one goes into it. Reading only. */
+export function storageContainers(ctx, account) {
+  ctx.showPicker({
+    title: `${account.name}: containers`,
+    hint: '↵ its blobs · y copy its address',
+    empty: `${account.name} has no blob containers.`,
+    load: async () =>
+      (await ctx.provider.containers(account)).map((c) => ({
+        c,
+        segments: [{ text: '▸ ', color: theme.dim }, { text: fit(c.name, 40), strong: true }, { text: fit(c.access === 'private' ? '' : `public: ${c.access}`, 18), color: theme.warn }, { text: c.modified ? `changed ${relTime(Date.parse(c.modified))} ago` : '', color: theme.dim }],
+      })),
+    onPick: (it) => blobFolder(ctx, account, it.c.name, ''),
+    keys: { y: (it) => ctx.copy(blobUrl(account, it.c.name), 'its address') },
+  });
+}
+
+/**
+ * A folder of a container (`prefix`, '' for its top): its folders, then its blobs with their size,
+ * when they changed and their tier. ↵ goes into a folder or shows a blob (text up to 1 MB), y copies
+ * its address.
+ */
+export function blobFolder(ctx, account, container, prefix) {
+  ctx.showPicker({
+    title: `${account.name}/${container}/${prefix}`,
+    hint: '↵ open it · y copy its address',
+    empty: 'Nothing in it.',
+    load: async () => {
+      const { prefixes, blobs, more } = await ctx.provider.blobs(account, container, prefix);
+      const w = Math.min(48, Math.max(12, ...[...prefixes, ...blobs.map((b) => b.name)].map((n) => shortName(n, prefix).length)));
+      return [
+        ...prefixes.map((p) => ({ folder: p, segments: [{ text: '▸ ', color: theme.accent }, { text: fit(shortName(p, prefix), w), strong: true, color: theme.accent }] })),
+        ...blobs.map((b) => ({
+          b,
+          segments: [
+            { text: '  ' },
+            { text: `${fit(shortName(b.name, prefix), w)}  `, strong: true },
+            { text: fit(sizeText(b.size), 9, 'right'), color: b.size > VIEW_MAX ? theme.dim : undefined },
+            { text: `  ${fit(b.modified ? `${relTime(Date.parse(b.modified))} ago` : '', 9)}`, color: theme.dim },
+            { text: fit(b.tier, 8), color: theme.info },
+            { text: b.type, color: theme.dim },
+          ],
+        })),
+        ...(more ? [{ more: true, segments: [{ text: '  … more than 5000 blobs here: only the first are listed', color: theme.dim }] }] : []),
+      ];
+    },
+    onPick: (it) => (it.folder ? blobFolder(ctx, account, container, it.folder) : it.b ? viewBlob(ctx, account, container, it.b) : null),
+    keys: { y: (it) => (it.more ? null : ctx.copy(blobUrl(account, container, it.folder ?? it.b.name), 'its address')) },
+  });
+}
+
+/** ↵ on a blob: its text in the viewer, when it's text and at most 1 MB (JSON indented). */
+export async function viewBlob(ctx, account, container, b) {
+  if (b.size > VIEW_MAX) return ctx.note(`${b.name} is ${sizeText(b.size)}: the viewer shows blobs up to ${sizeText(VIEW_MAX)}. y copies its address.`, 'error');
+  if (!isText(b)) return ctx.note(`${b.name} is ${b.type || 'not text'}: the viewer shows text. y copies its address.`, 'error');
+  const title = `${container}/${b.name}`;
+  const token = {};
+  ctx.showText(title, '', { loading: true, token });
+  try {
+    const { text } = await ctx.provider.readBlob(account, container, b.name);
+    if (ctx.overlay()?.token !== token) return;
+    ctx.showText(title, prettyBody(text), { token, hint: `${sizeText(b.size)} · ${b.type || 'text'}` });
+  } catch (e) {
+    if (ctx.overlay()?.token === token) ctx.closeOverlay();
+    ctx.note(e.message, 'error');
+  }
+}
+
+/**
+ * ↵ on a Cosmos DB account: its databases and their containers, with partition keys and throughput
+ * (Azure Resource Manager's; no documents). o opens the portal's Data Explorer, y copies a name.
+ */
+export function cosmosTree(ctx, account) {
+  ctx.showPicker({
+    title: `${account.name}: databases and containers (${account.api})`,
+    hint: 'o Data Explorer in the portal · y copy its name',
+    empty: ['NoSQL', 'MongoDB'].includes(account.api) ? 'No databases.' : `${account.api} accounts' tables and keyspaces aren't listed: o opens the portal.`,
+    load: async () => {
+      const tree = await ctx.provider.cosmosTree(account);
+      const w = Math.min(36, Math.max(10, ...tree.flatMap((d) => [d.name.length, ...d.containers.map((c) => c.name.length + 4)])));
+      return tree.flatMap((d) => [
+        { name: d.name, segments: [{ text: fit(d.name, w), strong: true }, { text: '  database   ', color: theme.dim }, { text: d.throughput ? `${throughputText(d.throughput)}, shared` : account.serverless ? 'serverless' : '', color: theme.info }] },
+        ...d.containers.map((c) => ({
+          name: `${d.name}/${c.name}`,
+          segments: [
+            { text: '  └ ', color: theme.dim },
+            { text: fit(c.name, w - 4), strong: true },
+            { text: fit(`  ${c.partitionKey}${c.hierarchical ? ' (hierarchical)' : ''}`, 36), color: theme.accent },
+            { text: c.throughput ? throughputText(c.throughput) : d.throughput ? 'the database\'s' : account.serverless ? 'serverless' : '', color: c.throughput ? theme.info : theme.dim },
+            { text: c.ttl != null ? `  ttl ${c.ttl === -1 ? 'on' : `${c.ttl} s`}` : '', color: theme.dim },
+          ],
+        })),
+      ]);
+    },
+    onPick: () => {},
+    keys: { o: () => openUrl(dataExplorerUrl(account)).catch((e) => ctx.note(`Couldn't open the browser: ${e.message}`, 'error')), y: (it) => ctx.copy(it.name, 'its name') },
+  });
+}
+
+const PEEK = 50;
+
+/**
+ * An entity's dead letters, oldest first (up to 50), peeked: locked and let go, so none is taken. ↵ shows
+ * one whole; R resubmits the one under the cursor (or those picked with v); X purges them all. A body that
+ * looks like it holds a secret stays hidden until v in the viewer.
+ */
+export function deadLetters(ctx, ns, entity, { replace = false } = {}) {
+  ctx.showPicker(
+    {
+      title: `Dead letters of ${entity.name} (${ns.name})`,
+      hint: '↵ see it · v pick several · R resubmit · X purge all · y copy its id',
+      empty: `${entity.name} has no dead letters.`,
+      range: true,
+      busLetters: entity.path,
+      load: async () =>
+        (await ctx.provider.peekDeadLetters(ns, entity, { max: PEEK })).map((m) => ({
+          m,
+          segments: [
+            { text: fit(String(m.sequence ?? ''), 8), color: theme.dim },
+            { text: fit(m.enqueued ? `${relTime(Date.parse(m.enqueued))} ago` : '', 9), color: theme.dim },
+            { text: fit(m.reason || '—', 26), color: theme.del },
+            { text: secretBody(m.body) ? '•••••• (looks secret: ↵ then v)' : bodyPreview(m.body), color: secretBody(m.body) ? theme.warn : undefined },
+          ],
+        })),
+      onPick: (it) => deadLetter(ctx, ns, entity, it.m),
+      keys: {
+        R: (it, picked) => resubmit(ctx, ns, entity, picked.map((x) => x.m)),
+        X: () => purgeDeadLetters(ctx, ns, entity),
+        y: (it) => ctx.copy(it.m.id, 'its message id'),
+      },
+    },
+    { replace },
+  );
+}
+
+/** ↵ on a dead letter: its properties and body (a secret-looking body hidden until v); R resubmits it. */
+export function deadLetter(ctx, ns, entity, m, { shown = false, replace = false } = {}) {
+  const hidden = secretBody(m.body) && !shown;
+  const body = hidden ? '•••••• it looks like it holds a secret: v shows it' : prettyBody(m.body);
+  const rows = [
+    ['message', m.id],
+    ['sequence', String(m.sequence ?? '')],
+    ['enqueued', m.enqueued ? `${cellText(m.enqueued, 'datetime')} (${relTime(Date.parse(m.enqueued))} ago)` : ''],
+    ['delivered', m.deliveryCount != null ? `${m.deliveryCount} times` : ''],
+    ['label', m.label],
+    ['correlation', m.correlationId],
+    ['type', m.contentType],
+    ['reason', m.reason],
+    ['why', m.description],
+    ...Object.entries(m.properties ?? {}).filter(([k]) => !/^DeadLetter(Reason|ErrorDescription)$/i.test(k)).map(([k, v]) => [k, v]),
+  ].filter(([, v]) => v);
+  const w = Math.min(16, Math.max(...rows.map(([k]) => k.length))) + 2;
+  const lines = [
+    ...rows.map(([k, v]) => [{ text: k.padEnd(w), color: theme.dim }, { text: String(v), color: k === 'reason' || k === 'why' ? theme.del : undefined }]),
+    [],
+    ...body.split('\n').map((l) => [{ text: l, color: hidden ? theme.warn : undefined }]),
+  ];
+  const text = [...rows.map(([k, v]) => `${k.padEnd(w)}${v}`), '', body].join('\n');
+  const opts = { lines, hint: `${hidden ? 'v show the body · ' : shown ? 'v hide the body · ' : ''}R resubmit it`, keys: { R: () => resubmit(ctx, ns, entity, [m]), ...(secretBody(m.body) ? { v: () => deadLetter(ctx, ns, entity, m, { shown: !shown, replace: true }) } : {}) } };
+  const title = `Dead letter ${m.sequence ?? m.id} of ${entity.name}`;
+  if (replace) ctx.showText(title, text, { ...opts, back: ctx.overlay()?.back, token: ctx.overlay()?.token });
+  else ctx.showText(title, text, { ...opts, token: {} });
+}
+
+/** After a resubmit or purge: the lists of dead letters and entities on screen read again. */
+function busChanged(ctx, ns, entity) {
+  // Out of the message viewer, back to its list.
+  if (ctx.overlay()?.title?.startsWith('Dead letter ')) ctx.closeOverlay();
+  const o = ctx.overlay();
+  // The entities' list underneath reads its counts again when it's back.
+  for (let x = o; x; x = x.back) if (x.busEntities) delete x.items;
+  if (o?.busLetters === entity.path) deadLetters(ctx, ns, entity, { replace: true });
+}
+
+/**
+ * R on dead letters: resubmits them, asking first. Each is sent again to its queue (a subscription's to
+ * its topic, which hands it to every subscription) and only then taken off the dead letters.
+ */
+export async function resubmit(ctx, ns, entity, messages) {
+  if (!messages.length) return;
+  const to = resubmitPath(entity);
+  const ok = await confirmChange(ctx, ns, {
+    title: `Resubmit ${plural(messages.length, 'dead letter')} of ${entity.name} to ${to}?`,
+    detail: `${entity.kind === 'subscription' ? `It goes to the topic ${to}, so every subscription of it gets a copy. ` : ''}Each is sent again, then taken off the dead letters.`,
+    yes: 'Yes, resubmit',
+  });
+  if (!ok) return;
+  const r = await ctx.task(`Resubmit ${plural(messages.length, 'dead letter')} of ${entity.name} to ${to}`, async (signal) => {
+    const { moved, missing } = await ctx.provider.resubmitDeadLetters(ns, entity, messages.map((m) => m.sequence), { signal });
+    return { stdout: `Moved ${moved} of ${messages.length} to ${to}${missing.length ? `; ${missing.length} weren't there any more (${missing.join(', ')})` : ''}` };
+  }, { label: 'Resubmitting' });
+  if (r.ok) busChanged(ctx, ns, entity);
+  return activity(ctx, r, `resubmitted ${plural(messages.length, 'dead letter')} of ${entity.name} in ${ns.name}: ${r.out ?? ''}`, 'resubmit');
+}
+
+/** X: deletes every dead letter of an entity, for good, asking first (production asks for the namespace's name). */
+export async function purgeDeadLetters(ctx, ns, entity) {
+  const ok = await confirmChange(ctx, ns, { title: `Purge ${entity.name}'s dead letters${entity.deadLetter ? ` (${entity.deadLetter})` : ''}?`, detail: "They're deleted for good: nothing can bring them back.", yes: 'Yes, delete them' });
+  if (!ok) return;
+  const r = await ctx.task(`Purge ${entity.name}'s dead letters`, async (signal) => {
+    const n = await ctx.provider.purgeDeadLetters(ns, entity, { signal });
+    return { stdout: `Deleted ${plural(n, 'dead letter')} of ${entity.name}` };
+  }, { label: 'Purging' });
+  if (r.ok) busChanged(ctx, ns, entity);
+  return activity(ctx, r, `purged ${entity.name}'s dead letters in ${ns.name}: ${r.out ?? ''}`, 'purge');
+}
+
 /** R on a container app: restarts its latest revision, which restarts its replicas. */
 export async function restartContainer(ctx, app) {
   if (!app.latestRevision) return ctx.note(`${app.name} has no revision to restart.`, 'error');
   const ok = await confirmChange(ctx, app, { title: `Restart ${app.name} (revision ${app.latestRevision})?`, detail: 'Its replicas start again; work in flight is dropped.', yes: 'Yes, restart it' });
   if (!ok) return;
-  await ctx.task(`Restart ${app.name}`, async (signal) => {
+  const r = await ctx.task(`Restart ${app.name}`, async (signal) => {
     await ctx.provider.restartRevision(app, { signal });
     return { stdout: `${app.name}'s revision ${app.latestRevision} is restarting` };
   }, { label: 'Restarting', refresh: true });
+  return activity(ctx, r, `restarted ${app.name}'s revision ${app.latestRevision}`, 'restart');
+}
+
+/** ↵ or l on a Log Analytics workspace: Logs queries it directly, starting with which tables have rows. */
+export function workspaceLogs(ctx, w) {
+  ctx.setComponent(workspaceScope(w));
+  return runQuery(ctx, workspaceStarter);
 }
 
 /** l on a container app: its console log, from the Log Analytics workspace its environment writes to. */
@@ -320,6 +785,7 @@ async function letMeIn(ctx, server, { always = false } = {}) {
     ctx.forgetFirewall(server);
     return { stdout: `${server.name} lets ${ip} in (rule ${name}); it can take a few minutes to apply` };
   }, { label: 'Adding the rule' });
+  activity(ctx, done, `let ${ip} through ${server.name}'s firewall (rule ${name})`, 'firewall');
   return done.ok ? 'added' : 'unknown';
 }
 
@@ -404,10 +870,16 @@ export function chooseSubscription(ctx, name) {
   });
 }
 
-/** c and /insights: which Application Insights Logs and Problems ask (by default, the selected app's). */
+/** A workspace as Logs queries it: its customer id is what the query API takes. */
+export const workspaceScope = (w) => ({ id: w.id, workspaceId: w.workspaceId, name: w.name, resourceGroup: w.resourceGroup });
+
+/**
+ * c and /insights: which Application Insights Logs and Problems ask (by default, the selected app's), or a
+ * Log Analytics workspace, whose tables Logs then queries directly.
+ */
 export function chooseComponent(ctx, name) {
-  const list = ctx.data?.components ?? [];
-  if (!list.length) return ctx.note('This subscription has no Application Insights to query.', 'error');
+  const list = [...(ctx.data?.components ?? []), ...(ctx.data?.workspaces ?? []).map(workspaceScope)];
+  if (!list.length) return ctx.note('This subscription has no Application Insights or Log Analytics workspace to query.', 'error');
   const n = name?.trim().toLowerCase();
   if (n) {
     const c = list.find((x) => x.name.toLowerCase() === n);
@@ -416,7 +888,7 @@ export function chooseComponent(ctx, name) {
   }
   ctx.showPicker({
     title: 'Application Insights to query',
-    items: [{ c: null, segments: [{ text: "The selected app's own", strong: true }] }, ...list.map((c) => ({ c, segments: [{ text: c.name, strong: true }, { text: `  ${c.resourceGroup}`, color: theme.dim }] }))],
+    items: [{ c: null, segments: [{ text: "The selected app's own", strong: true }] }, ...list.map((c) => ({ c, segments: [{ text: c.name, strong: true }, { text: `  ${c.resourceGroup}`, color: theme.dim }, { text: c.workspaceId ? '  Log Analytics workspace' : '', color: theme.info }] }))],
     onPick: (it) => (ctx.closeOverlay(), ctx.setComponent(it.c)),
   });
 }
@@ -435,8 +907,21 @@ export async function runQuery(ctx, kql) {
     result = await ctx.provider.query(scope.component, q, { timespan: span.iso, signal });
     return { stdout: `${result.rows.length} row${result.rows.length === 1 ? '' : 's'}` };
   }, { label: 'Querying' });
-  if (done.ok) ctx.setResult({ query: q, component: scope.component, span, ...result });
+  // A query that ends with `| render …` shows as a chart (v in Logs, or /chart, goes back to the grid).
+  if (done.ok) ctx.setResult({ query: q, component: scope.component, span, ...result, kind: renderKind(q), chart: Boolean(renderKind(q)) && !chartOf(result, renderKind(q)).error });
   if (done.ok) ctx.setConfig((c) => ({ ...c, queries: [q, ...(c.queries ?? []).filter((x) => x !== q)].slice(0, 50) }));
+}
+
+/** v in Logs and /chart: the result as a chart, or as the grid again; it says why when it makes no chart. */
+export function toggleChart(ctx) {
+  const result = ctx.result();
+  if (!result) return ctx.note('Run a query in Logs first: there is nothing to draw.', 'error');
+  if (!result.chart) {
+    const c = chartOf(result, result.kind);
+    if (c.error) return ctx.note(c.error, 'error');
+  }
+  ctx.setView('logs');
+  ctx.setResult({ ...result, chart: !result.chart });
 }
 
 /** s in Logs: the query under a name of yours, kept in the config for /queries. */
@@ -609,11 +1094,13 @@ export async function gatherIncident(ctx, component, problem) {
   const opts = { timespan: ctx.timespan().iso };
   const ask = (q) => ctx.provider.query(component, q, opts).then(records);
   const target = appOfRole(ctx, problem.role);
-  const [latest, rows, sql, deploys] = await Promise.all([
+  const [latest, rows, sql, deploys, refs] = await Promise.all([
     ask(latestExceptionQuery(problem.problemId)).then((r) => r[0] ?? null),
     ask(operationQuery(problem.operation)),
     ask(sqlDependenciesQuery(problem.problemId)).catch(() => []),
     target ? ctx.provider.deployments(target).then((list) => deploymentsBefore(list, problem.first), (e) => ({ error: firstLine(e.message) })) : Promise.resolve({ within: [], latest: null, error: `no app called ${problem.role} in this subscription` }),
+    // Its Key Vault references as they are now: one that doesn't resolve is a likely cause.
+    target && ctx.referencesOf ? ctx.referencesOf(target).catch((e) => ({ error: firstLine(e.message) })) : Promise.resolve(null),
   ]);
   const frames = framesOf(latest?.details);
   const repo = repoRoot(ctx.cwd());
@@ -627,7 +1114,7 @@ export async function gatherIncident(ctx, component, problem) {
       commits = { error: firstLine(e.message) };
     }
   }
-  return { problem, spark: ctx.problemSpark(problem.problemId), span: ctx.timespan(), latest, rows, sql, deploys, frames, request: requestOf(rows), repo, files, commits };
+  return { problem, spark: ctx.problemSpark(problem.problemId), span: ctx.timespan(), latest, rows, sql, deploys, refs, frames, request: requestOf(rows), repo, files, commits };
 }
 
 const DOT = (colour) => ({ text: `${BULLET} `, color: colour });
@@ -651,6 +1138,11 @@ function incidentLines(inc) {
   if (inc.deploys.error) lines.push([dim(`  can't say: ${inc.deploys.error}`)]);
   else if (inc.deploys.within.length) for (const d of inc.deploys.within) lines.push([DOT(DEPLOY_COLOUR[d.status] ?? theme.warn), { text: `${time(d.start)}  `, color: theme.dim }, { text: `${d.author || 'someone'}  `, bold: true }, dim(`${d.deployer}  `), { text: d.message.split('\n')[0] }]);
   else lines.push([dim(`  none${inc.deploys.latest ? `; the latest before it was ${relTime(Date.parse(inc.deploys.latest.start))} earlier: ${inc.deploys.latest.message.split('\n')[0]}` : ''}`)]);
+  if (inc.refs?.error || inc.refs?.length) {
+    lines.push(...head('Key Vault references (now)'));
+    if (inc.refs.error) lines.push([dim(`  can't say: ${inc.refs.error}`)]);
+    else for (const r of inc.refs) lines.push([{ text: refResolved(r) ? '  ✓ ' : '  ✗ ', color: refResolved(r) ? theme.add : theme.del }, { text: `${r.name}  `, bold: true }, { text: referenceWords(r), color: refResolved(r) ? theme.dim : theme.del }]);
+  }
   lines.push(...head('The latest occurrence'));
   const colour = { request: theme.info, dependency: theme.dim, exception: theme.del, trace: undefined };
   if (!inc.rows.length) lines.push([dim('  not found in this span')]);
@@ -1011,6 +1503,65 @@ export function family(ctx) {
     items: choices.map((c) => ({ c, segments: [{ text: `${APP_NAMES[c.app].padEnd(7)}`, color: theme.accent, bold: true }, { text: `${c.line}  `, strong: true }, { text: c.what, color: theme.dim }] })),
     onPick: (it) => copyFor(ctx, it.c.app, it.c.line),
   });
+}
+
+/**
+ * /timeline: what the family's apps did that changed something (family.js readActivity: Splice's pushes,
+ * Trawl's writes, Sonar's restarts, Bosun's crashes…), newest first; p shows only this project's (the
+ * folder Sonar started in) or every one's again, ↵ an entry whole, y copies it.
+ */
+export function timeline(ctx, { mine = false, replace = false } = {}) {
+  const dir = ctx.cwd();
+  const list = readActivity({ project: mine ? dir : undefined, limit: 500 });
+  const appW = Math.max(...FAMILY.map((x) => APP_NAMES[x].length));
+  const base = (p) => String(p ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';
+  ctx.showPicker(
+    {
+      title: `Timeline${mine ? ` of ${base(dir) || dir}` : ': the family'} (${list.length})`,
+      hint: `↵ the whole entry · p ${mine ? 'every project' : 'this project only'} · y copy it`,
+      empty: mine ? `Nothing logged for ${dir} yet. p shows every project.` : 'Nothing logged yet: the apps add what they change (a push, a restart, a write to a database) as they do it.',
+      items: list.map((e) => ({
+        e,
+        segments: [
+          { text: fit(relTime(e.at), 4, 'right'), color: theme.dim },
+          { text: `  ${fit(APP_NAMES[e.app] ?? e.app, appW)}`, color: e.app === 'sonar' ? theme.accent : theme.info, bold: true },
+          { text: `  ${e.text}`, color: /alert|crash|fail/i.test(e.kind ?? '') ? theme.del : undefined },
+          ...(!mine && e.project ? [{ text: `  ${base(e.project)}`, color: theme.dim }] : []),
+        ],
+      })),
+      onPick: ({ e }) => {
+        const when = `${cellText(new Date(e.at).toISOString(), 'datetime')} (${relTime(e.at) === 'now' ? 'just now' : `${relTime(e.at)} ago`})`;
+        const rows = [['app', APP_NAMES[e.app] ?? e.app], ['when', when], ['kind', e.kind ?? 'info'], ...(e.project ? [['project', e.project]] : [])];
+        ctx.showText(`${APP_NAMES[e.app] ?? e.app}: ${e.kind ?? 'info'}`, [e.text, '', ...rows.map(([k, v]) => `${k.padEnd(9)}${v}`)].join('\n'), {
+          lines: [[{ text: e.text, bold: true }], [], ...rows.map(([k, v]) => [{ text: k.padEnd(9), color: theme.dim }, { text: v }])],
+        });
+      },
+      keys: { y: ({ e }) => ctx.copy(e.text, 'the entry') },
+      actions: { p: () => timeline(ctx, { mine: !mine, replace: true }) },
+    },
+    { replace },
+  );
+}
+
+/** /wiring: what the folder Sonar started in points at (family.js projectWiring: addresses, hosts, ports, connection strings, secrets masked), by file. */
+export function wiring(ctx) {
+  const dir = ctx.cwd();
+  const found = projectWiring(dir);
+  if (!found.length) return ctx.note(`Nothing in ${dir} points anywhere Sonar can see: no addresses, hosts, ports or connection strings in appsettings*.json, .env files or http-client env files.`);
+  const bySource = new Map();
+  for (const w of found) {
+    if (!bySource.has(w.source)) bySource.set(w.source, []);
+    bySource.get(w.source).push(w);
+  }
+  // As text, which the viewer wraps: connection strings run long.
+  const text = [];
+  for (const [source, list] of bySource) {
+    const keyW = Math.min(40, Math.max(...list.map((w) => w.key.length)));
+    if (text.length) text.push('');
+    text.push(source);
+    for (const w of list) text.push(`  ${fit(w.key, keyW)}  ${w.value}`);
+  }
+  ctx.showText(`What ${dir} points at (${found.length})`, text.join('\n'));
 }
 
 /** ↵ on an alert: everything Alerts Management says about it. */

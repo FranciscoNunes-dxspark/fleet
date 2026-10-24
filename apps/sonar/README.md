@@ -46,8 +46,8 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 | | |
 | --- | --- |
-| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state, and in the same groups its container apps, Azure SQL servers (their databases under them) and storage accounts; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, plan, runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment; for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address |
-| **Logs** | A KQL query over Application Insights and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type |
+| **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state (and a slot's share of its app's traffic, `→ 10%`, when it takes some), and in the same groups its container apps, Azure SQL servers (their databases under them), storage accounts, Service Bus namespaces, Cosmos DB accounts and Log Analytics workspaces; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment, and its metrics over the time span (requests, CPU, memory, replicas); for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address; for a Service Bus namespace, its address and tier, how many messages its queues and subscriptions hold, and which have dead letters; for a Cosmos DB account, its API, address, regions, consistency and whether it's serverless |
+| **Logs** | A KQL query over Application Insights (or a Log Analytics workspace) and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type: a workspace's own tables and columns when Logs queries one |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
 | **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
 | **Alerts** | The subscription's metric and log alerts still firing that began in the time span (Azure Monitor's Alerts Management), most severe first: severity, the rule, what it's about, when it fired. Under them, the availability tests of the Application Insights in scope: how many ran from how many places, how many failed and when last. `↵` shows an alert whole, or a test's results in Logs |
@@ -58,7 +58,10 @@ Sonar runs. Without permission to read them (Cost Management Reader, or Reader o
 Sonar says nothing of costs.
 
 Logs and Problems look at the app picked in Resources (by its role name), in the Application Insights
-its settings point at. `c` picks another Application Insights, or all the apps in one. `t` changes
+its settings point at. `c` picks another Application Insights, or all the apps in one, or a Log
+Analytics workspace: Logs then queries its tables directly (a workspace-based Application Insights
+writes `AppRequests`, `AppExceptions`, `AppTraces`… there), with its tables and columns in completion
+(from the query API's metadata, or which tables have rows when that can't be read). `t` changes
 the time span: the last hour, 24 hours, 7 days or 30 days, for Logs, Problems and the metrics in Resources.
 
 ## Changing things
@@ -69,14 +72,73 @@ production being an app or resource group named with prod, production, prd or li
 for the name, since it changes what production serves, and says how many settings differ between
 the two slots before you go ahead.
 
+`/route <app> <slot> <percent>` sends that share of an app's production traffic to one of its slots
+(App Service's testing in production): `/route contoso-web staging 10`, and `0` stops it. It says what
+production keeps, and asks as any change to production does. The list shows each slot's share beside it,
+and the app's details the whole split.
+
+`/scale [app] <instances|tier>` scales the App Service plan an app runs on: `/scale 3` to three
+instances, `/scale contoso-web P1v3` to another tier (B1, S1, P1v3, P2mv3, I1v2, EP1…). It says which
+other apps share the plan (they scale with it) and, when autoscale is on for it, that it may change the
+count again; a plan that runs a production app asks for the app's name. A Consumption plan scales by
+itself, so there's nothing to set. Autoscale settings are shown, not changed.
+
 A container app's restart (`R`, which restarts its latest revision) and a SQL firewall rule (`F`)
 ask the same way.
 
 Settings (`↵` or `a` on an app or slot) hide the values that look secret (keys, passwords, connection
-strings) until `v` shows one (`V` all). `e` edits one, `n` adds one, `x` removes one; each change
+strings) until `v` shows one (`V` all). A Key Vault reference (`@Microsoft.KeyVault(…)`) shows ✓ when App
+Service resolved it, else ✗ and why: no managed identity, no such vault or secret, or the identity may
+not read the vault. `e` edits one, `n` adds one, `x` removes one; each change
 says what it changes before saving, and Azure restarts the app to take it. `d` compares the settings
 with another slot of the same app, which is where the difference between staging and production
 usually hides.
+
+### Functions
+
+`f` on a function app (or `/functions [app]`) lists its functions: what triggers each (HTTP and its
+methods, a timer's schedule, a queue), whether it's on or off, and from its Application Insights how
+many times it ran over the time span, how many of those failed and when it last ran. `↵` shows a
+function's latest runs in Logs, `y` copies its name.
+
+`d` turns one off, or on again, the way the portal does: through its `AzureWebJobs.<name>.Disabled`
+setting (the `__` spelling Linux plans use is honoured when it's already there), so the app restarts.
+`i` invokes one, after a field for what to send: an HTTP function at its own address with its function
+key (a body makes it a POST when it takes one, none a GET), any other through the host's admin endpoint
+with the master key, as the portal's Test/Run does. The key is read for that request and goes no
+further: it's never shown, copied or written to the log. What came back (status, type, body, JSON
+indented) shows in the viewer. Both ask first, as every change does.
+
+### Service Bus
+
+`↵` on a namespace lists its queues, topics and subscriptions with their counts (from Azure Resource
+Manager). `↵` on a queue or subscription shows its dead letters, oldest first (up to 50): each is read
+by locking it and letting it go again, so nothing is taken (its delivery count goes up by one). The
+list shows why each was dead-lettered and the start of its body; `↵` shows one whole, its properties
+and its body (JSON indented). A body that looks like it holds a secret (a password, a token, a key)
+stays hidden until `v` shows it. Bodies are never written to the log.
+
+`R` resubmits the dead letter under the cursor, or those picked with `v`: each is sent again to its
+queue (a subscription's to its topic, which hands a copy to every subscription of it) and only then
+taken off the dead letters, saying how many moved. `X` purges an entity's dead letters, deleting them
+for good. Both ask first, as every change does (a production namespace asks for its name).
+
+Messages are read through Service Bus's own API with your `az` sign-in, which needs a data role on the
+namespace: Azure Service Bus Data Receiver to peek, Data Owner to resubmit and purge (Owner and
+Contributor don't reach messages). Without one, Sonar says which it needs.
+
+### Charts
+
+A query that ends with `| render timechart` (or `linechart`, `areachart`), `columnchart`, `barchart` or
+`piechart` comes back as a chart, and `v` (or `/chart`) turns any result with a column of numbers into one,
+or back into the grid. A time series draws a sparkline per series on one time axis, each with its
+lowest, highest and last value: one per value of a name column (the eight biggest), or one per column
+of numbers. Anything else draws horizontal bars with their values, a pie each one's share too:
+
+```
+requests | summarize n = count() by bin(timestamp, 1h), resultCode | render timechart
+requests | where success == false | summarize count() by name | render barchart
+```
 
 ### Asking Claude
 
@@ -90,7 +152,7 @@ it reads the code the exception went through.
 
 `I` on a problem (or `/incident`) tells it whole, in the viewer: when it was first and last seen, how
 often and to how many users, with its sparkline; the app's deployments in the 24 hours before it was
-first seen (or the latest before that); its latest occurrence end to end; the stack it went through;
+first seen (or the latest before that); the app's Key Vault references as they are now, when it has any (one that doesn't resolve is a likely cause); its latest occurrence end to end; the stack it went through;
 the SQL calls that failed in its operations (the server and database, and the command when Application
 Insights kept it); and when Sonar was started in the app's git checkout, the commits that touched the
 files in its stack in the 14 days before it was first seen. Outside a checkout that part is left out.
@@ -154,6 +216,18 @@ the prompt rather than being taken as keys, to run with `↵`.
 Azure SQL server signing in with Entra, else `/add` with its port, its login and `--trust-cert` when the
 connection string trusts the server's certificate, but never the password). `↵` copies one.
 
+`/timeline` shows what the five apps did that changed something, newest first, from the family's
+activity log in `~/.family`: Splice's pushes, Trawl's writes, Bosun's crashes, Hail's sends, and Sonar's
+own changes. Sonar adds one whenever it changes Azure (a restart, stop, start or swap, settings saved, a
+firewall rule, a scale, a route, a function turned off or on or invoked, dead letters resubmitted or
+purged) and when a watch goes over its threshold: what and where, never a value, a key or a message
+body. `p` shows only this project's (the folder Sonar started in) or every one's again, `↵` shows an
+entry whole, `y` copies it.
+
+`/wiring` shows what the folder Sonar started in points at, by file: the addresses, hosts, ports and
+connection strings in its `appsettings*.json`, `.env` files and Hail's `http-client*.env.json`, with
+passwords and keys masked.
+
 Ping tells the others how it feels (worried after something went wrong, busy, pleased, or just
 watching) and why, in a small file in `~/.family` (`FAMILY_HOME` moves it), and reads theirs every
 30 seconds: when Twig, Glim, Squawk or Hoot has been worried, sad or happy in the last 15 minutes, Ping
@@ -181,6 +255,7 @@ moods** in the settings turns both off.
 | `S` | Stop it, or start it if it's stopped |
 | `W` | Swap a slot into production (on an app, pick the slot) |
 | `D` | Its deployments: who, when, through what, how it went, which is active; `↵` shows one's log |
+| `f` | A function app's functions (below) |
 | `l` `p` | Its logs · its problems |
 | `L` | Its log as it's written, in Live |
 | `o` `b` | Open it in the Azure portal · open its site |
@@ -198,18 +273,47 @@ moods** in the settings turns both off.
 | `F` | Let this machine's public address through the server's firewall |
 | `o` `y` | Open it in the portal · copy its address |
 
-A storage account takes `o` (the portal) and `y` (copy its blob address).
+| On a storage account | |
+| --- | --- |
+| `↵` | Its blob containers; `↵` goes into one, a folder at a time (the `/` in blob names), with each blob's size, when it changed and its tier; `↵` on a blob shows it (text up to 1 MB, JSON indented); `y` copies its address |
+| `o` `y` | Open it in the portal · copy its blob address |
+
+Blobs are read through Blob Storage's own API with your `az` sign-in, which needs Storage Blob Data
+Reader (or Contributor) on the account: Owner and Contributor on it don't reach the blobs that way. Without
+it, Sonar says so. Sonar never writes a blob.
+
+| On a Log Analytics workspace | |
+| --- | --- |
+| `↵` / `l` | Query it in Logs, starting with which of its tables have rows and how many |
+| `o` | Open it in the portal |
+
+| On a Cosmos DB account | |
+| --- | --- |
+| `↵` | Its databases and their containers (a MongoDB account's collections), with each one's partition key, throughput (its own, or the database's shared, autoscale or not) and time to live; `o` there opens the portal's Data Explorer, `y` copies a name |
+| `o` `y` | Open it in the portal · copy its address |
+
+Cosmos DB is listed from Azure Resource Manager, which is all an `az` sign-in reaches by itself: its
+documents need a role of Cosmos DB's own (a SQL role assignment such as Cosmos DB Built-in Data Reader,
+which Owner and Contributor don't give) and, for queries across partitions, a query plan its REST API
+doesn't make for you, so Sonar doesn't query them: the Data Explorer does. Cassandra, Table and Gremlin
+accounts show their details only.
+
+| On a Service Bus namespace | |
+| --- | --- |
+| `↵` | Its queues, topics and subscriptions, each with its active, dead-lettered and scheduled messages (below) |
+| `o` `y` | Open it in the portal · copy its address |
 
 | In Logs | |
 | --- | --- |
 | `e` / `i` | Edit the query: `tab` completes, `↑` `↓` go through the queries run before, `↵` runs it, `esc` stops editing |
 | `↵` | Run the query, or show the row under the cursor whole |
+| `v` | The result as a chart, or as the grid again (below) |
 | `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `Y` | Copy the row as JSON · every row, tab-separated |
 | `H` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/hail)'s prompt, to send it again there |
 | `F` | Copy a request row as the text of a request in a `.http` file |
-| `c` | Which Application Insights to look in |
+| `c` | Which Application Insights (or Log Analytics workspace) to look in |
 
 | In Live | |
 | --- | --- |
@@ -294,15 +398,19 @@ and Trawl.
 | --- | --- |
 | `/kql <query>` | Run a query in Logs |
 | `/queries [name]` | Your saved queries: pick one to run (`x` forgets it), or name it |
+| `/chart` | Draw the result in Logs as a chart, or as the grid again |
 | `/export <file>` | Save the grid in Logs to a `.csv`, `.json` or `.md` (a Markdown table) file |
 | `/sub [name]` | Another subscription (a list to pick from if none is named) |
-| `/insights [name]` | The Application Insights that Logs and Problems look in |
+| `/insights [name]` | The Application Insights that Logs and Problems look in, or a Log Analytics workspace for Logs |
 | `/find [text]` | Show only the apps whose name or resource group has the text in it |
 | `/appsettings [app]` | An app's or slot's settings |
 | `/compare [app]` | How a slot's settings differ from another slot's |
 | `/restart [app]` | Restart an app or slot |
 | `/stop [app]` `/start [app]` | Stop or start one |
 | `/swap [app/slot]` | Swap a slot into production |
+| `/functions [app]` | A function app's functions: trigger, on or off, runs and failures; `↵` runs in Logs, `i` invokes, `d` turns off or on |
+| `/route <app> <slot> <percent>` | Send a share of an app's production traffic to a slot; `0` stops it (above) |
+| `/scale [app] <instances\|tier>` | Scale the App Service plan an app runs on (above) |
 | `/deployments [app]` | An app's or slot's deployments, and their logs |
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
@@ -312,6 +420,8 @@ and Trawl.
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |
 | `/take <context>` | What another app copied for Sonar (above) |
 | `/family` | What this folder is to the other apps: a line for each one's prompt, `↵` copies it |
+| `/timeline` | What the family's apps changed, newest first: `p` this project only or all, `↵` an entry whole (above) |
+| `/wiring` | What this folder points at: addresses, hosts, ports, connection strings, by file, secrets masked |
 | `/incident [problem]` | A problem as an incident (the one under the cursor in Problems if none is named); `/incident save <file>` writes its write-up |
 | `/why [problem]` | Ask Claude why a problem happens (the one under the cursor in Problems if none is named) |
 | `/run <command>` | Run a shell command (as `!` does) |
@@ -351,6 +461,4 @@ terminals), for when you've switched to another window. **Notify when done** tur
 
 ## Not yet
 
-Storage beyond the list (its containers and blobs), other kinds of resource (Service Bus, Key Vault,
-Cosmos DB), container apps' metrics, and Log Analytics workspaces queried directly, other than a
-container app's logs.
+Key Vault itself (beyond the references in settings), Cosmos DB's documents, and writing blobs.

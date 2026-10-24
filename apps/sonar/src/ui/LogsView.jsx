@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useInput } from 'ink';
-import { requestForHail, runQuery, saveQuery } from '../actions.js';
+import { requestForHail, runQuery, saveQuery, toggleChart } from '../actions.js';
+import { chartLines, chartOf } from '../chart.js';
 import { cellText, completeQuery, hailRequest, records } from '../insights.js';
 import { theme } from '../theme.js';
 import { clean, fit } from '../text.js';
 import { useListNav, useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { Lines, Panel, Row } from './parts.jsx';
 import { Grid, columnWidths } from './Grid.jsx';
 
 /**
@@ -22,8 +23,17 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
     setEditState(e);
   };
   const [col, setCol] = useState(0);
+  // The tables and columns completion offers: a workspace's own when Logs queries one.
+  const [schema, setSchema] = useState(undefined);
+  useEffect(() => {
+    let live = true;
+    ctx.schemaOf(scope.component).then((s) => live && setSchema(s), () => live && setSchema(undefined));
+    return () => {
+      live = false;
+    };
+  }, [scope.component?.workspaceId ?? '']);
   const table = result ?? { columns: [], rows: [] };
-  const extra = edit ? Math.min(5, completeQuery(edit.text, edit.cursor).items.length) : 0;
+  const extra = edit ? Math.min(5, completeQuery(edit.text, edit.cursor, schema).items.length) : 0;
   const innerH = Math.max(1, height - 6 - extra);
   const nav = useListNav(table.rows.length, innerH, { resetKey: result });
   // Measured once per result, not on every key.
@@ -31,7 +41,7 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
 
   const editKeys = (input, key) => {
     const e = editRef.current;
-    const { word, items } = completeQuery(e.text, e.cursor);
+    const { word, items } = completeQuery(e.text, e.cursor, schema);
     const put = (text, cursor) => setEdit({ ...e, text, cursor, pick: 0 });
     if (key.escape) return setEdit(null);
     if (key.return) {
@@ -70,6 +80,8 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
     if (input === 'e' || input === 'i') return setEdit({ text: query, cursor: query.length, pick: 0, history: -1 });
     if (input === 'c') return ctx.chooseComponent();
     if (input === 's') return saveQuery(ctx, query);
+    if (input === 'v') return toggleChart(ctx);
+    if (result?.chart) return key.return ? runQuery(ctx, query) : undefined;
     if (nav.handle(input, key)) return;
     if (input === 'h' || key.leftArrow) return setCol((c) => Math.max(0, c - 1));
     if (input === 'l' || key.rightArrow) return setCol((c) => Math.min(Math.max(0, table.columns.length - 1), c + 1));
@@ -97,9 +109,11 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
   const start = Math.max(0, shown.cursor - inner + 3);
   const visible = clean(shown.text.slice(start, start + inner - 2));
   const at = shown.cursor - start;
-  const { items } = edit ? completeQuery(edit.text, edit.cursor) : { items: [] };
+  const { items } = edit ? completeQuery(edit.text, edit.cursor, schema) : { items: [] };
   const where = scope.component ? `${scope.component.name}${scope.role ? ` · ${scope.role}` : ''}` : scope.why;
-  const status = !result ? (query ? '↵ runs it' : 'e to write a query') : `${table.rows.length} row${table.rows.length === 1 ? '' : 's'} · ${result.span.label}${table.columns.length > 1 ? ` · columns ${col + 1}-${table.columns.length}` : ''}`;
+  const status = !result ? (query ? '↵ runs it' : 'e to write a query') : `${table.rows.length} row${table.rows.length === 1 ? '' : 's'} · ${result.span.label}${result.chart ? ' · chart (v grid)' : table.columns.length > 1 ? ` · columns ${col + 1}-${table.columns.length}` : ''}`;
+  // The result as a chart (a query ending in render, or v): worked out once per result and width.
+  const chart = useMemo(() => (result?.chart ? chartLines(chartOf(table, result.kind), width - 4) : null), [result, width]);
   return (
     <Panel title="Logs" hint={`${where} · ${status}`} width={width} height={height} focused={active}>
       <Row
@@ -115,7 +129,9 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
         <Row key={it} pointer={false} width={width - 2} segments={[{ text: '    ' }, { text: fit(it, 30), color: i === edit.pick % items.length ? theme.accent : theme.dim, bold: i === edit.pick % items.length }, { text: i === 0 ? 'tab completes · ↑↓ pick' : '', color: theme.dim }]} />
       ))}
       <Row pointer={false} width={width - 2} segments={[{ text: '─'.repeat(width - 2), color: theme.border }]} />
-      {result ? (
+      {chart ? (
+        <Lines lines={chart.map((segs) => [{ text: ' ' }, ...segs])} width={width - 2} height={innerH + 2} />
+      ) : result ? (
         table.rows.length ? (
           <Grid table={table} widths={widths} width={width - 2} height={innerH} offset={nav.offset} index={nav.index} col={col} active={active && !edit} />
         ) : (

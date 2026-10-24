@@ -6,9 +6,10 @@ import { sqlByLabel } from './tree.js';
 export const COMMANDS = [
   { name: 'kql', args: '<query>', desc: 'Run a query in Logs, against the Application Insights in scope', run: (ctx, s) => a.runQuery(ctx, s) },
   { name: 'queries', args: '[name]', desc: 'Your saved queries (s in Logs saves one): pick one to run, or name it', complete: 'queries', run: (ctx, s) => a.savedQueries(ctx, s) },
+  { name: 'chart', desc: 'Draw the result in Logs as a chart (a time series as sparklines, names as bars), or as the grid again', run: (ctx) => a.toggleChart(ctx) },
   { name: 'export', args: '<file>', desc: "Save the grid in Logs to a file: .csv, .json or .md (a Markdown table)", run: (ctx, s) => a.exportResult(ctx, s) },
   { name: 'sub', args: '[name]', desc: 'Another subscription (a list to pick from if none is named)', complete: 'subscriptions', run: (ctx, s) => a.chooseSubscription(ctx, s) },
-  { name: 'insights', args: '[name]', desc: 'The Application Insights that Logs and Problems look in', complete: 'components', run: (ctx, s) => a.chooseComponent(ctx, s) },
+  { name: 'insights', args: '[name]', desc: 'The Application Insights that Logs and Problems look in, or a Log Analytics workspace for Logs to query', complete: 'components', run: (ctx, s) => a.chooseComponent(ctx, s) },
   { name: 'find', args: '[text]', desc: 'Show only the apps whose name or resource group has the text in it (none: all of them)', run: (ctx, s) => (ctx.setFilter(s.trim()), ctx.setView('resources')) },
   { name: 'appsettings', args: '[app]', desc: "An app's or slot's settings, to see, edit or compare", complete: 'targets', run: (ctx, s) => a.showSettings(ctx, s) },
   { name: 'compare', args: '[app]', desc: "How a slot's settings differ from another slot's of the same app", complete: 'targets', run: (ctx, s) => a.compareSettings(ctx, s) },
@@ -16,6 +17,9 @@ export const COMMANDS = [
   { name: 'stop', args: '[app]', desc: 'Stop an app or slot (asks first)', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'stop') },
   { name: 'start', args: '[app]', desc: 'Start a stopped app or slot', complete: 'targets', run: (ctx, s) => a.toggleRunning(ctx, s, 'start') },
   { name: 'swap', args: '[app/slot]', desc: 'Swap a slot into production (asks for the app\'s name)', complete: 'targets', run: (ctx, s) => a.swap(ctx, s) },
+  { name: 'functions', args: '[app]', desc: "A function app's functions: trigger, on or off, runs and failures over the span; ↵ runs in Logs, i invokes, d turns off/on", complete: 'targets', run: (ctx, s) => a.functions(ctx, s) },
+  { name: 'scale', args: '<[app] instances | tier>', desc: "Scale the App Service plan an app runs on: so many instances, or a tier such as P1v3 (asks first; says which apps share it)", run: (ctx, s) => a.scale(ctx, s) },
+  { name: 'route', args: '<app> <slot> <percent>', desc: "Send a share of an app's production traffic to a slot (testing in production); 0 stops it (asks first)", run: (ctx, s) => a.route(ctx, s) },
   { name: 'deployments', args: '[app]', desc: "An app's or slot's deployments: who, when, how it went; ↵ shows one's log", complete: 'targets', run: (ctx, s) => a.deployments(ctx, s) },
   { name: 'trawl', args: '[server/db]', desc: "Copy a command that opens a SQL database (or server) in Trawl, to paste into Trawl's prompt (checks the firewall first)", complete: 'sql', run: (ctx, s) => a.openInTrawl(ctx, s) },
   { name: 'firewall', args: '[server]', desc: "Let this machine's address through a SQL server's firewall (asks first)", complete: 'sqlservers', run: (ctx, s) => a.firewall(ctx, s) },
@@ -26,6 +30,8 @@ export const COMMANDS = [
   { name: 'watch', args: '<name> <threshold> <kql>', desc: 'Pin a query whose first value is a number, run every few minutes against the Application Insights in scope; going over the threshold notifies', run: (ctx, s) => a.watch(ctx, s) },
   { name: 'watches', desc: 'Your watches and what they said last: ↵ runs one in Logs, x removes it', run: (ctx) => a.watches(ctx) },
   { name: 'take', args: '<context>', desc: "What another app copied for Sonar: a commit's deployments, problems like an exception, a log line's request", run: (ctx, s) => a.take(ctx, s) },
+  { name: 'timeline', desc: "What the family's apps did that changed something (pushes, writes, restarts, swaps…), newest first: p this project only or all, ↵ an entry whole", run: (ctx) => a.timeline(ctx) },
+  { name: 'wiring', desc: 'What this folder points at: addresses, hosts, ports and connection strings in appsettings*.json, .env and http-client env files, by file (secrets masked)', run: (ctx) => a.wiring(ctx) },
   { name: 'family', desc: 'What this folder is to the other apps (its checkout, processes, .http files, databases): ↵ copies a line for one\'s prompt', run: (ctx) => a.family(ctx) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
@@ -52,7 +58,7 @@ function completions(kind, data, targets, problems, queries) {
   if (kind === 'sqlservers') return (data?.sqlServers ?? []).map((s) => s.name);
   if (kind === 'problems') return (problems ?? []).map((p) => p.problemId);
   if (kind === 'subscriptions') return (data?.subscriptions ?? []).map((s) => s.name);
-  if (kind === 'components') return (data?.components ?? []).map((c) => c.name);
+  if (kind === 'components') return [...(data?.components ?? []), ...(data?.workspaces ?? [])].map((c) => c.name);
   if (kind === 'targets') return Object.keys(targets ?? {});
   return [];
 }

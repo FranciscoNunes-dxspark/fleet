@@ -3,12 +3,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getEventListeners } from 'node:events';
-import { alertFrom, alertRange, createAzure, retryAfter, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom } from '../src/azure/arm.js';
+import { alertFrom, alertRange, createAzure, retryAfter, deploymentFrom, sqlServerFrom, kindOf, label, readLines, siteFrom, xmlError } from '../src/azure/arm.js';
 import { token } from '../src/azure/az.js';
 import { demoAzure, demoQuery } from '../src/demo.js';
 import { TIMESPANS, availabilityQuery, cellText, completeQuery, hailRequest, componentFor, isProduction, looksSecret, problemsQuery, records, settingsDiff, sparklines, starterQuery, trendQuery } from '../src/insights.js';
 import { loadSubscription } from '../src/load.js';
-import { METRICS, metricInterval, metricRows, seriesFrom } from '../src/metrics.js';
+import { METRICS, metricInterval, metricRows, metricsFor, seriesFrom } from '../src/metrics.js';
 import { mapLimited, resourceRows, sqlByLabel, targetForUrl, targetsByLabel } from '../src/tree.js';
 
 /** A fetch that answers from `routes` (method + path → body, or [status, body]) and records the calls. */
@@ -17,11 +17,18 @@ function fakeFetch(routes) {
   const fetch = async (url, init) => {
     const u = new URL(url);
     const key = `${init.method} ${u.host === 'management.azure.com' ? '' : u.host}${u.pathname}`;
-    calls.push({ key, url, init, body: init.body ? JSON.parse(init.body) : undefined });
+    let sent;
+    try {
+      sent = init.body ? JSON.parse(init.body) : undefined;
+    } catch {
+      sent = init.body;
+    }
+    calls.push({ key, url, init, body: sent });
     // A route can be a function of the request's body (pages asked for by token, say).
-    const hit = typeof routes[key] === 'function' ? routes[key](calls.at(-1).body) : routes[key];
+    const hit = typeof routes[key] === 'function' ? routes[key](calls.at(-1).body, calls.at(-1)) : routes[key];
     const [status, body] = Array.isArray(hit) ? hit : [hit === undefined ? 404 : 200, hit ?? { error: { code: 'NotFound', message: `No route ${key}` } }];
-    return { ok: status < 300, status, text: async () => (typeof body?.raw === 'string' ? body.raw : JSON.stringify(body)) };
+    // { raw, headers } answers text with headers of its own (Storage's XML, a Service Bus message).
+    return { ok: status < 300, status, headers: new Headers(body?.headers ?? {}), text: async () => (typeof body?.raw === 'string' ? body.raw : body == null ? '' : JSON.stringify(body)) };
   };
   return { fetch, calls };
 }
@@ -416,7 +423,7 @@ test('the tree with the other kinds: under their resource groups, databases unde
   const rows = resourceRows(d.apps, d.slots, '', d);
   assert.deepEqual(rows.map((r) => r.text ?? `${r.kind}:${label(r.target)}`), [
     'contoso-prod', 'app:contoso-web', 'slot:contoso-web/staging', 'app:contoso-api', 'slot:contoso-api/staging', 'app:contoso-orders',
-    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore',
+    'container:contoso-worker', 'sqlserver:contoso-sql-prod', 'sqldb:contoso-sql-prod/contoso', 'sqldb:contoso-sql-prod/contoso-reporting', 'storage:contosoprodstore', 'servicebus:contoso-bus', 'cosmos:contoso-cosmos', 'workspace:contoso-logs',
     'contoso-qa', 'sqlserver:contoso-sql-qa', 'sqldb:contoso-sql-qa/contoso-qa',
   ]);
   assert.deepEqual(resourceRows(d.apps, d.slots, 'reporting', d).map((r) => r.text ?? label(r.target)), ['contoso-prod', 'contoso-sql-prod', 'contoso-sql-prod/contoso-reporting']);
@@ -442,4 +449,253 @@ test('calls under one signal (a load\'s) leave no listeners on it, and it still 
   load.abort();
   await assert.rejects(p, /aborted/);
   assert.equal(getEventListeners(load.signal, 'abort').length, 0);
+});
+
+test('Key Vault references: each setting\'s status from configreferences; the demo resolves from its vault', async () => {
+  const web = site('web', 'rg-prod');
+  const { fetch, calls } = fakeFetch({
+    [`GET ${web.id}/config/configreferences/appsettings`]: {
+      value: [
+        { id: `${web.id}/config/configreferences/appsettings/Db__Password`, name: 'Db__Password', properties: { reference: '@Microsoft.KeyVault(VaultName=kv;SecretName=db)', status: 'AccessToKeyVaultDenied', vaultName: 'kv', secretName: 'db', identityType: 'SystemAssigned', details: 'Forbidden' } },
+        { id: `${web.id}/config/configreferences/appsettings/ApiKey`, properties: { status: 'Resolved', vaultName: 'kv', secretName: 'api' } },
+      ],
+    },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const refs = await azure.keyVaultReferences(siteFrom(web));
+  assert.deepEqual(refs.map((r) => [r.name, r.status, r.vault, r.secret]), [['Db__Password', 'AccessToKeyVaultDenied', 'kv', 'db'], ['ApiKey', 'Resolved', 'kv', 'api']]);
+  assert.match(calls[0].url, /api-version=2022-03-01/);
+
+  const demo = demoAzure();
+  const api = demo.state.sites.find((s) => s.name === 'contoso-api' && !s.slot);
+  const said = Object.fromEntries((await demo.keyVaultReferences(api)).map((r) => [r.name, r.status]));
+  assert.deepEqual(said, { Payments__ApiKey: 'Resolved', Smtp__Password: 'AccessToKeyVaultDenied' });
+  assert.deepEqual(await demo.keyVaultReferences(demo.state.sites.find((s) => s.name === 'contoso-web' && !s.slot)), []);
+});
+
+test('Storage\'s XML errors are said in words, with the status on the error', async () => {
+  assert.deepEqual(xmlError('<?xml version="1.0"?><Error><Code>AuthorizationPermissionMismatch</Code><Message>This request is not authorized.\nRequestId:1</Message></Error>'), { error: { message: 'AuthorizationPermissionMismatch: This request is not authorized.' } });
+  assert.equal(xmlError('nothing'), null);
+});
+
+test('functions: listed with their triggers; invoked over HTTP with the function\'s key in a header only, else through the admin endpoint with the master key', async () => {
+  const fnApp = site('orders', 'rg-prod', 'functionapp');
+  const { fetch, calls } = fakeFetch({
+    [`GET ${fnApp.id}/functions`]: {
+      value: [
+        { id: `${fnApp.id}/functions/PlaceOrder`, name: 'orders/PlaceOrder', properties: { name: 'PlaceOrder', invoke_url_template: 'https://orders.azurewebsites.net/api/orders', config: { bindings: [{ type: 'httpTrigger', methods: ['post'], authLevel: 'function', route: 'orders' }, { type: 'http', direction: 'out' }] } } },
+        { id: `${fnApp.id}/functions/Cleanup`, name: 'orders/Cleanup', properties: { name: 'Cleanup', isDisabled: true, config: { bindings: [{ type: 'timerTrigger', schedule: '0 0 2 * * *' }] } } },
+      ],
+    },
+    [`POST ${fnApp.id}/functions/PlaceOrder/listkeys`]: { default: 'fn-key-123' },
+    [`POST ${fnApp.id}/host/default/listkeys`]: { masterKey: 'master-456', functionKeys: { default: 'host-fn-key' } },
+    'POST orders.azurewebsites.net/api/orders': [500, { raw: 'boom', headers: { 'content-type': 'text/plain' } }],
+    'POST orders.azurewebsites.net/admin/functions/Cleanup': [202, { raw: '' }],
+    'GET orders.azurewebsites.net/api/health': { raw: 'Healthy' },
+  });
+  const azure = createAzure({ fetch, token: async () => 'arm-token' });
+  const target = siteFrom(fnApp);
+  const list = await azure.functions(target);
+  assert.deepEqual(list.map((f) => [f.name, f.trigger, f.methods, f.source, f.disabled]), [['Cleanup', 'timerTrigger', null, '0 0 2 * * *', true], ['PlaceOrder', 'httpTrigger', ['POST'], null, false]]);
+
+  const res = await azure.invokeFunction(target, list[1], { input: '{"sku":1}' });
+  assert.deepEqual([res.status, res.type, res.body, res.method, res.url], [500, 'text/plain', 'boom', 'POST', 'https://orders.azurewebsites.net/api/orders']);
+  const sent = calls.at(-1);
+  assert.equal(sent.init.headers['x-functions-key'], 'fn-key-123');
+  assert.equal(sent.init.headers.Authorization, undefined, 'no Azure token goes to the function');
+  assert.deepEqual(sent.body, { sku: 1 });
+  assert.equal(sent.init.body, '{"sku":1}');
+  assert.doesNotMatch(sent.url, /fn-key|code=/);
+
+  const admin = await azure.invokeFunction(target, list[0], { input: 'now' });
+  assert.equal(admin.status, 202);
+  assert.equal(calls.at(-1).init.headers['x-functions-key'], 'master-456');
+  assert.deepEqual(calls.at(-1).body, { input: 'now' });
+
+  const before = calls.length;
+  const health = await azure.invokeFunction(target, { name: 'Health', trigger: 'httpTrigger', methods: ['GET'], authLevel: 'anonymous', url: 'https://orders.azurewebsites.net/api/health' });
+  assert.equal(health.body, 'Healthy');
+  assert.equal(calls.length, before + 1, 'an anonymous function needs no key');
+  assert.equal(calls.at(-1).init.headers['x-functions-key'], undefined);
+});
+
+test('plans: read, scaled by writing them back whole with the new SKU; autoscale settings with their rules', async () => {
+  const planId = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.Web/serverfarms/plan-1';
+  const raw = { id: planId, name: 'plan-1', location: 'westeurope', kind: 'linux', tags: { team: 'a' }, sku: { name: 'P1v3', tier: 'PremiumV3', size: 'P1v3', family: 'Pv3', capacity: 2 }, properties: { numberOfSites: 3, maximumNumberOfWorkers: 30, reserved: true, status: 'Ready' } };
+  const { fetch, calls } = fakeFetch({
+    [`GET ${planId}`]: raw,
+    [`PUT ${planId}`]: (body) => ({ ...raw, sku: body.sku }),
+    'GET /subscriptions/s1/providers/Microsoft.Insights/autoscalesettings': {
+      value: [{ id: '/x/autoscalesettings/a1', name: 'a1', properties: { enabled: true, targetResourceUri: planId.toLowerCase(), profiles: [{ name: 'Default', capacity: { minimum: '2', maximum: '5', default: '2' }, rules: [{ metricTrigger: { metricName: 'CpuPercentage', operator: 'GreaterThan', threshold: 70 }, scaleAction: { direction: 'Increase', type: 'ChangeCount', value: '1' } }] }] } }],
+    },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const plan = await azure.plan(planId);
+  assert.deepEqual([plan.name, plan.sku, plan.maxWorkers, plan.sites], ['plan-1', { name: 'P1v3', tier: 'PremiumV3', capacity: 2 }, 30, 3]);
+  const after = await azure.scalePlan(plan, { name: 'P1v3', tier: 'PremiumV3', capacity: 4 });
+  assert.equal(after.sku.capacity, 4);
+  const put = calls.at(-1);
+  assert.equal(put.init.method, 'PUT');
+  assert.deepEqual(put.body, { location: 'westeurope', kind: 'linux', tags: { team: 'a' }, sku: { name: 'P1v3', tier: 'PremiumV3', capacity: 4 }, properties: raw.properties });
+  const [auto] = await azure.autoscaleSettings('s1');
+  assert.deepEqual([auto.enabled, auto.profiles[0].min, auto.profiles[0].max, auto.profiles[0].rules[0].metric], [true, 2, 5, 'CpuPercentage']);
+});
+
+test('routing: the ramp-up rules read from config/web, and written back whole with PATCH', async () => {
+  const web = site('web', 'rg-prod');
+  const { fetch, calls } = fakeFetch({
+    [`GET ${web.id}/config/web`]: { properties: { experiments: { rampUpRules: [{ actionHostName: 'web-staging.azurewebsites.net', reroutePercentage: 10, name: 'staging' }] } } },
+    [`PATCH ${web.id}/config/web`]: {},
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  assert.deepEqual(await azure.routing(siteFrom(web)), [{ slot: 'staging', host: 'web-staging.azurewebsites.net', percent: 10 }]);
+  await azure.setRouting(siteFrom(web), [{ slot: 'beta', host: 'web-beta.azurewebsites.net', percent: 5 }]);
+  assert.deepEqual(calls.at(-1).body, { properties: { experiments: { rampUpRules: [{ actionHostName: 'web-beta.azurewebsites.net', reroutePercentage: 5, name: 'beta' }] } } });
+});
+
+test('Service Bus: namespaces and entities with their counts; dead letters peeked by locking and letting go, resubmitted, purged; a 403 names the role', async () => {
+  const nsId = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.ServiceBus/namespaces/bus';
+  const letter = (seq, extra = {}) => ({ raw: `{"n":${seq}}`, headers: { BrokerProperties: JSON.stringify({ MessageId: `m${seq}`, SequenceNumber: seq, DeliveryCount: 10, EnqueuedTimeUtc: 'Sat, 24 Oct 2026 10:00:00 GMT', Label: 'charge' }), 'Content-Type': 'application/json', Location: `https://bus.servicebus.windows.net/q/$DeadLetterQueue/messages/m${seq}/lock-${seq}`, DeadLetterReason: '"MaxDeliveryCountExceeded"', Attempt: '10', ...extra } });
+  let queue = [1, 2, 3];
+  const locked = new Set();
+  const lockHead = () => {
+    const seq = queue.find((x) => !locked.has(x));
+    if (seq == null) return [204, { raw: '' }];
+    locked.add(seq);
+    return [201, letter(seq)];
+  };
+  const routes = {
+    'GET /subscriptions/s1/providers/Microsoft.ServiceBus/namespaces': { value: [{ id: nsId, name: 'bus', location: 'westeurope', sku: { name: 'Standard' }, properties: { serviceBusEndpoint: 'https://bus.servicebus.windows.net:443/', status: 'Active' } }] },
+    [`GET ${nsId}/queues`]: { value: [{ name: 'q', properties: { status: 'Active', countDetails: { activeMessageCount: 5, deadLetterMessageCount: 3, scheduledMessageCount: 1 } } }] },
+    [`GET ${nsId}/topics`]: { value: [{ name: 't', properties: { subscriptionCount: 1, countDetails: { activeMessageCount: 0 } } }] },
+    [`GET ${nsId}/topics/t/subscriptions`]: { value: [{ name: 's', properties: { countDetails: { activeMessageCount: 2, deadLetterMessageCount: 1 } } }] },
+    'POST bus.servicebus.windows.net/q/$DeadLetterQueue/messages/head': lockHead,
+    'POST bus.servicebus.windows.net/q/messages': [201, { raw: '' }],
+    'DELETE bus.servicebus.windows.net/q/$DeadLetterQueue/messages/head': () => (queue.length ? (queue.shift(), [200, letter(9)]) : [204, { raw: '' }]),
+  };
+  for (const n of [1, 2, 3]) {
+    routes[`PUT bus.servicebus.windows.net/q/$DeadLetterQueue/messages/m${n}/lock-${n}`] = () => (locked.delete(n), [200, { raw: '' }]);
+    routes[`DELETE bus.servicebus.windows.net/q/$DeadLetterQueue/messages/m${n}/lock-${n}`] = () => ((queue = queue.filter((x) => x !== n)), locked.delete(n), [200, { raw: '' }]);
+  }
+  const { fetch, calls } = fakeFetch(routes);
+  const tokens = [];
+  const azure = createAzure({ fetch, token: async (r) => (tokens.push(r), 't') });
+  const [ns] = await azure.serviceBusNamespaces('s1');
+  assert.deepEqual([ns.name, ns.host, ns.sku, ns.type], ['bus', 'bus.servicebus.windows.net', 'Standard', 'servicebus']);
+  const entities = await azure.serviceBusEntities(ns);
+  assert.deepEqual(entities.map((e) => [e.kind, e.name, e.path, e.active, e.deadLetter, e.scheduled]), [['queue', 'q', 'q', 5, 3, 1], ['topic', 't', 't', 0, 0, 0], ['subscription', 't/s', 't/subscriptions/s', 2, 1, 0]]);
+
+  const peeked = await azure.peekDeadLetters(ns, entities[0], { max: 10 });
+  assert.deepEqual(peeked.map((m) => [m.sequence, m.id, m.reason, m.label, m.body, m.properties.attempt]), [1, 2, 3].map((n) => [n, `m${n}`, 'MaxDeliveryCountExceeded', 'charge', `{"n":${n}}`, '10']));
+  assert.equal(locked.size, 0, 'every lock let go');
+  assert.deepEqual(queue, [1, 2, 3], 'nothing taken');
+  assert.ok(tokens.includes('https://servicebus.azure.net'));
+
+  const { moved, missing } = await azure.resubmitDeadLetters(ns, entities[0], [2, 7]);
+  assert.deepEqual([moved, missing], [1, ['7']]);
+  assert.deepEqual(queue, [1, 3]);
+  assert.equal(locked.size, 0);
+  const sent = calls.find((c) => c.key === 'POST bus.servicebus.windows.net/q/messages');
+  assert.equal(sent.init.body, '{"n":2}');
+  assert.deepEqual(JSON.parse(sent.init.headers.BrokerProperties), { MessageId: 'm2', Label: 'charge' });
+  // fetch gives header names in lower case, so a custom property goes back that way.
+  assert.equal(sent.init.headers.attempt, '10');
+  assert.equal(Object.keys(sent.init.headers).some((k) => /deadletter/i.test(k)), false);
+
+  assert.equal(await azure.purgeDeadLetters(ns, entities[0]), 2);
+  assert.deepEqual(queue, []);
+
+  const denied = createAzure({ fetch: fakeFetch({ 'POST bus.servicebus.windows.net/q/$DeadLetterQueue/messages/head': [401, { raw: '<Error><Code>401</Code><Detail>Unauthorized</Detail></Error>' }] }).fetch, token: async () => 't' });
+  await assert.rejects(denied.peekDeadLetters(ns, entities[0]), /Azure Service Bus Data Owner \(or Data Receiver to peek\) on bus/);
+});
+
+test('blobs: containers across pages, a folder\'s prefixes and blobs, a blob\'s first megabyte, with Storage\'s version and token; a 403 names the role', async () => {
+  const account = { name: 'acct', host: 'acct.blob.core.windows.net' };
+  const { fetch, calls } = fakeFetch({
+    'GET acct.blob.core.windows.net/': (_, call) =>
+      new URL(call.url).searchParams.get('marker')
+        ? { raw: '<EnumerationResults><Containers><Container><Name>logs</Name><Properties><Last-Modified>Sat, 24 Oct 2026 10:00:00 GMT</Last-Modified></Properties></Container></Containers><NextMarker /></EnumerationResults>' }
+        : { raw: '<?xml version="1.0"?><EnumerationResults><Containers><Container><Name>exports</Name><Properties><Last-Modified>Fri, 23 Oct 2026 10:00:00 GMT</Last-Modified><PublicAccess>blob</PublicAccess></Properties></Container></Containers><NextMarker>m2</NextMarker></EnumerationResults>' },
+    'GET acct.blob.core.windows.net/exports': { raw: '<EnumerationResults><Blobs><BlobPrefix><Name>orders/archive/</Name></BlobPrefix><Blob><Name>orders/a &amp; b.csv</Name><Properties><Last-Modified>Fri, 23 Oct 2026 10:00:00 GMT</Last-Modified><Content-Length>91</Content-Length><Content-Type>text/csv</Content-Type><BlobType>BlockBlob</BlobType><AccessTier>Hot</AccessTier></Properties></Blob></Blobs><NextMarker/></EnumerationResults>' },
+    'GET acct.blob.core.windows.net/exports/orders/a%20%26%20b.csv': [206, { raw: 'a,b\n1,2\n', headers: { 'content-type': 'text/csv', 'content-range': 'bytes 0-7/8' } }],
+    'GET acct.blob.core.windows.net/secret': [403, { raw: '<Error><Code>AuthorizationPermissionMismatch</Code><Message>This request is not authorized to perform this operation using this permission.</Message></Error>' }],
+  });
+  const tokens = [];
+  const azure = createAzure({ fetch, token: async (r) => (tokens.push(r), 't') });
+  const containers = await azure.containers(account);
+  assert.deepEqual(containers.map((c) => [c.name, c.access]), [['exports', 'blob'], ['logs', 'private']]);
+  assert.equal(calls[0].init.headers['x-ms-version'], '2023-11-03');
+  assert.ok(tokens.every((t) => t === 'https://storage.azure.com/'));
+  const folder = await azure.blobs(account, 'exports', 'orders/');
+  assert.deepEqual(folder.prefixes, ['orders/archive/']);
+  assert.deepEqual(folder.blobs.map((b) => [b.name, b.size, b.type, b.tier]), [['orders/a & b.csv', 91, 'text/csv', 'Hot']]);
+  const q = new URL(calls.at(-1).url).searchParams;
+  assert.deepEqual([q.get('restype'), q.get('comp'), q.get('delimiter'), q.get('prefix')], ['container', 'list', '/', 'orders/']);
+  const read = await azure.readBlob(account, 'exports', 'orders/a & b.csv');
+  assert.deepEqual([read.text, read.type, read.partial], ['a,b\n1,2\n', 'text/csv', false]);
+  assert.equal(calls.at(-1).init.headers['x-ms-range'], 'bytes=0-1048575');
+  await assert.rejects(azure.blobs(account, 'secret'), /Storage Blob Data Reader on acct is needed to read its blobs \(Listing secret\/\)/);
+});
+
+test('Cosmos DB: accounts with their API, databases and containers with partition keys and throughput (none where it is shared)', async () => {
+  const acc = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.DocumentDB/databaseAccounts/cos';
+  const { fetch } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.DocumentDB/databaseAccounts': { value: [{ id: acc, name: 'cos', kind: 'GlobalDocumentDB', location: 'westeurope', properties: { provisioningState: 'Succeeded', documentEndpoint: 'https://cos.documents.azure.com:443/', consistencyPolicy: { defaultConsistencyLevel: 'Session' }, locations: [{ locationName: 'West Europe' }], capabilities: [] } }, { id: `${acc}2`, name: 'mon', kind: 'MongoDB', properties: {} }] },
+    [`GET ${acc}/sqlDatabases`]: { value: [{ name: 'shop', properties: { resource: { id: 'shop' } } }] },
+    [`GET ${acc}/sqlDatabases/shop/throughputSettings/default`]: { properties: { resource: { autoscaleSettings: { maxThroughput: 4000 } } } },
+    [`GET ${acc}/sqlDatabases/shop/containers`]: { value: [{ name: 'orders', properties: { resource: { id: 'orders', partitionKey: { paths: ['/customerId'], kind: 'Hash' }, defaultTtl: -1 } } }, { name: 'carts', properties: { resource: { id: 'carts', partitionKey: { paths: ['/tenant', '/userId'], kind: 'MultiHash' } } } }] },
+    [`GET ${acc}/sqlDatabases/shop/containers/orders/throughputSettings/default`]: { properties: { resource: { throughput: 400 } } },
+    [`GET ${acc}/sqlDatabases/shop/containers/carts/throughputSettings/default`]: [404, { error: { message: 'Throughput settings are not found' } }],
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const [cos, mon] = await azure.cosmosAccounts('s1');
+  assert.deepEqual([cos.api, cos.host, cos.consistency, cos.regions, cos.state, mon.api], ['NoSQL', 'cos.documents.azure.com', 'Session', ['West Europe'], 'Online', 'MongoDB']);
+  const [shop] = await azure.cosmosTree(cos);
+  assert.deepEqual(shop.throughput, { autoscale: 4000 });
+  assert.deepEqual(shop.containers.map((c) => [c.name, c.partitionKey, c.hierarchical, c.throughput]), [['carts', '/tenant, /userId', true, null], ['orders', '/customerId', false, { manual: 400 }]]);
+  assert.deepEqual(await azure.cosmosTree({ ...cos, api: 'Cassandra' }), []);
+});
+
+test('container apps\' metrics: requests, CPU, memory and replicas asked for, read with each one\'s aggregation, as sparklines', async () => {
+  const id = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.App/containerApps/worker';
+  const point = (t, v) => ({ timeStamp: t, total: v, average: v / 2, maximum: v * 2 });
+  const { fetch, calls } = fakeFetch({
+    [`GET ${id}/providers/Microsoft.Insights/metrics`]: {
+      value: ['Requests', 'UsageNanoCores', 'WorkingSetBytes', 'Replicas'].map((n, i) => ({ name: { value: n }, unit: 'Count', timeseries: [{ data: [point('2026-10-24T10:00:00Z', 2 + i), point('2026-10-24T11:00:00Z', 4 + i)] }] })),
+    },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const target = { type: 'container', id, name: 'worker' };
+  const series = await azure.metrics(target, { span: TIMESPANS[1] });
+  const q = new URL(calls[0].url).searchParams;
+  assert.equal(q.get('metricnames'), 'Requests,UsageNanoCores,WorkingSetBytes,Replicas');
+  assert.equal(q.get('aggregation'), 'Total,Average,Maximum');
+  assert.deepEqual(series.map((s) => s.points.map((p) => p.value)), [[2, 4], [1.5, 2.5], [2, 3], [10, 14]]);
+  const rows = metricRows(series, { width: 4, defs: metricsFor(target) });
+  assert.deepEqual(rows.map((r) => r.label), ['requests', 'cpu', 'memory', 'replicas']);
+  assert.equal(rows[0].summary, '6 requests');
+  assert.equal(rows[3].summary, '14 · peak 14');
+  assert.equal(metricsFor({ kind: 'app' }), METRICS);
+  const demo = demoAzure();
+  const d = await demo.metrics(demo.state.containers[0], { span: TIMESPANS[0] });
+  assert.deepEqual(d.map((s) => [s.name, s.points.length]), [['Requests', 12], ['UsageNanoCores', 12], ['WorkingSetBytes', 12], ['Replicas', 12]]);
+  assert.match(metricRows(d, { defs: metricsFor(target) })[1].summary, /millicores · peak \d+ millicores/);
+});
+
+test('Log Analytics workspaces: listed with their customer id; their tables from the query API\'s metadata, else from a query', async () => {
+  const wsId = '/subscriptions/s1/resourceGroups/rg/providers/Microsoft.OperationalInsights/workspaces/logs';
+  const { fetch, calls } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.OperationalInsights/workspaces': { value: [{ id: wsId, name: 'logs', location: 'westeurope', properties: { customerId: 'cust-1', retentionInDays: 30, provisioningState: 'Succeeded', sku: { name: 'PerGB2018' } } }] },
+    'GET api.loganalytics.io/v1/workspaces/cust-1/metadata': { tables: [{ name: 'AppTraces', columns: [{ name: 'Message' }] }, { name: 'AppRequests', columns: [{ name: 'Name' }, { name: 'Url' }] }] },
+    'GET api.loganalytics.io/v1/workspaces/cust-2/metadata': [403, { error: { message: 'no' } }],
+    'POST api.loganalytics.io/v1/workspaces/cust-2/query': { tables: [{ columns: [{ name: '$table', type: 'string' }], rows: [['Heartbeat'], ['AppRequests']] }] },
+  });
+  const tokens = [];
+  const azure = createAzure({ fetch, token: async (r) => (tokens.push(r), 't') });
+  const [ws] = await azure.logWorkspaces('s1');
+  assert.deepEqual([ws.type, ws.name, ws.workspaceId, ws.retention, ws.sku, ws.state], ['workspace', 'logs', 'cust-1', 30, 'PerGB2018', 'Ready']);
+  assert.deepEqual(await azure.workspaceTables(ws), { AppRequests: ['Name', 'Url'], AppTraces: ['Message'] });
+  assert.equal(tokens.at(-1), 'https://api.loganalytics.io');
+  assert.deepEqual(await azure.workspaceTables({ ...ws, workspaceId: 'cust-2' }), { AppRequests: [], Heartbeat: [] });
+  assert.deepEqual(calls.at(-1).body, { query: 'search * | distinct $table | take 500', timespan: 'P7D' });
 });

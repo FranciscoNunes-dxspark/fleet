@@ -6,6 +6,8 @@
 // else gets an error saying so.
 
 import { metricInterval } from './metrics.js';
+import { functionUrl, invocation, isHttp } from './functions.js';
+import { storageRoleNeeded } from './blobs.js';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -21,6 +23,19 @@ const conn = (key) => `InstrumentationKey=${key};IngestionEndpoint=https://weste
 const CONNECTION_STRINGS = {
   'contoso-api': { DefaultConnection: 'Server=tcp:contoso-sql-prod.database.windows.net,1433;Initial Catalog=contoso;Persist Security Info=False;User ID=contoso_app;Password=demo-Sql-Pa55;Encrypt=True;' },
   'contoso-web': { Reporting: 'Data Source=contoso-sql-prod.database.windows.net;Database=contoso-reporting;Authentication=Active Directory Managed Identity;' },
+};
+
+// The function apps' functions: an HTTP one, one on a Service Bus queue, timers.
+const FUNCTIONS = {
+  'contoso-orders': [
+    { name: 'NightlyCleanup', trigger: 'timerTrigger', source: '0 0 2 * * *' },
+    { name: 'PlaceOrder', trigger: 'httpTrigger', methods: ['POST'], authLevel: 'function', route: 'orders' },
+    { name: 'ProcessPayment', trigger: 'serviceBusTrigger', source: 'payments' },
+  ],
+  'contoso-jobs-dev': [
+    { name: 'Health', trigger: 'httpTrigger', methods: ['GET'], authLevel: 'anonymous', route: 'health' },
+    { name: 'SendDigest', trigger: 'timerTrigger', source: '0 0 7 * * 1-5' },
+  ],
 };
 
 // The other kinds of resource: a container app, storage accounts, SQL servers with their databases.
@@ -47,7 +62,62 @@ function otherResources() {
     server('sub-prod', 'contoso-qa', 'contoso-sql-qa', { rules: [azure], databases: [['contoso-qa', 'Basic', 'Basic']] }),
     server('sub-dev', 'contoso-dev', 'contoso-sql-dev', { admin: { login: 'ana@contoso.com', type: 'User', only: true }, rules: [{ name: 'home', start: '198.51.100.0', end: '198.51.100.255' }], databases: [['contoso', 'Basic', 'Basic']] }),
   ];
-  return { containers, storage, sqlServers };
+  // A Service Bus namespace: orders come in on a queue, payments fail into its dead letters, events fan out.
+  const nsId = `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.ServiceBus/namespaces/contoso-bus`;
+  const dead = (seq, body, reason, description, ago, extra = {}) => ({
+    id: `m-${seq}`, sequence: seq, enqueued: new Date(Date.now() - ago).toISOString(), deliveryCount: 10, label: extra.label ?? '', correlationId: extra.correlationId ?? '', sessionId: '', contentType: 'application/json',
+    reason, description, source: '', properties: { DeadLetterReason: reason, DeadLetterErrorDescription: description, ...(extra.properties ?? {}) }, body, broker: { MessageId: `m-${seq}`, SequenceNumber: seq, ...(extra.label ? { Label: extra.label } : {}) },
+  });
+  const timeout = 'Message could not be consumed after 10 delivery attempts.';
+  const serviceBus = [
+    {
+      sub: 'sub-prod', type: 'servicebus', id: nsId, name: 'contoso-bus', resourceGroup: 'contoso-prod', location: 'westeurope', state: 'Active', sku: 'Standard', host: 'contoso-bus.servicebus.windows.net',
+      entities: [
+        { kind: 'queue', name: 'orders', path: 'orders', topic: null, active: 3, deadLetter: 0, scheduled: 0, transfer: 0, status: 'Active', maxDelivery: 10, subscriptions: null, dead: [] },
+        {
+          kind: 'queue', name: 'payments', path: 'payments', topic: null, active: 12, scheduled: 2, transfer: 0, status: 'Active', maxDelivery: 10, subscriptions: null,
+          dead: [
+            dead(4711, '{"orderId":"o-10211","amount":49.9,"currency":"EUR"}', 'MaxDeliveryCountExceeded', timeout, 3 * HOUR, { label: 'charge', properties: { Attempt: '10' } }),
+            dead(4712, '{"orderId":"o-10214","amount":12.5,"currency":"EUR"}', 'MaxDeliveryCountExceeded', timeout, 2 * HOUR, { label: 'charge' }),
+            dead(4719, '{"orderId":"o-10220","amount":230,"currency":"EUR","card":{"token":"tok_live_9f8e7d6c5b4a"}}', 'MaxDeliveryCountExceeded', timeout, HOUR, { label: 'charge' }),
+            dead(4720, 'not json at all', 'DeserializationFailed', 'Unexpected character encountered while parsing value: n.', 30 * 60 * 1000),
+          ],
+        },
+        { kind: 'topic', name: 'events', path: 'events', topic: null, active: 0, deadLetter: 0, scheduled: 0, transfer: 0, status: 'Active', maxDelivery: null, subscriptions: 2, dead: [] },
+        { kind: 'subscription', name: 'events/audit', path: 'events/subscriptions/audit', topic: 'events', active: 1, scheduled: 0, transfer: 0, status: 'Active', maxDelivery: 10, subscriptions: null, dead: [dead(88, '{"event":"OrderPlaced","orderId":"o-10199"}', 'TTLExpiredException', 'The message expired and was dead lettered.', 26 * HOUR)] },
+        { kind: 'subscription', name: 'events/search', path: 'events/subscriptions/search', topic: 'events', active: 0, scheduled: 0, transfer: 0, status: 'Active', maxDelivery: 10, subscriptions: null, dead: [] },
+      ],
+    },
+  ];
+  // The production account's blobs (the dev one's can't be read: no data role there).
+  const day = 24 * HOUR;
+  const file = (name, content, { type = 'text/plain', ago = day, tier = 'Hot', size } = {}) => ({ name, content, size: size ?? Buffer.byteLength(content ?? ''), type, tier, modified: new Date(Date.now() - ago).toISOString(), kind: 'BlockBlob' });
+  const csv = (d) => `orderId,placedAt,total\no-${d}01,2026-10-${d}T09:12:00Z,49.90\no-${d}02,2026-10-${d}T11:40:00Z,12.50\n`;
+  const blobs = {
+    contosoprodstore: {
+      exports: [
+        file('orders/2026-10-23.csv', csv(23), { type: 'text/csv', ago: day }),
+        file('orders/2026-10-24.csv', csv(24), { type: 'text/csv', ago: HOUR }),
+        file('orders/archive/2026-09.zip', null, { type: 'application/zip', ago: 30 * day, tier: 'Cool', size: 5 * 1024 * 1024 }),
+        file('readme.txt', 'Nightly exports of the orders, one CSV a day.\n', { ago: 90 * day }),
+      ],
+      invoices: [file('2026/10/inv-1001.json', JSON.stringify({ invoice: 'inv-1001', orderId: 'o-10211', total: 49.9, currency: 'EUR' }), { type: 'application/json', ago: 2 * day })],
+    },
+  };
+  // A Cosmos DB account (NoSQL): a shop database sharing autoscale throughput, telemetry with its own per container.
+  const cosmos = [
+    {
+      sub: 'sub-prod', type: 'cosmos', id: `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.DocumentDB/databaseAccounts/contoso-cosmos`, name: 'contoso-cosmos', resourceGroup: 'contoso-prod', location: 'westeurope', state: 'Online', api: 'NoSQL',
+      endpoint: 'https://contoso-cosmos.documents.azure.com:443/', host: 'contoso-cosmos.documents.azure.com', consistency: 'Session', regions: ['West Europe', 'North Europe'], serverless: false, freeTier: false, localAuth: 'keys and Entra',
+      tree: [
+        { name: 'shop', throughput: { autoscale: 4000 }, containers: [{ name: 'carts', partitionKey: '/userId', hierarchical: false, ttl: 86400, throughput: null }, { name: 'orders', partitionKey: '/customerId', hierarchical: false, ttl: null, throughput: { manual: 400 } }] },
+        { name: 'telemetry', throughput: null, containers: [{ name: 'events', partitionKey: '/deviceId, /day', hierarchical: true, ttl: 2592000, throughput: { autoscale: 1000 } }] },
+      ],
+    },
+  ];
+  // The workspace the container apps' environment (and production's Application Insights) writes to.
+  const workspaces = [{ sub: 'sub-prod', type: 'workspace', id: `${rg('sub-prod', 'contoso-prod')}/providers/Microsoft.OperationalInsights/workspaces/contoso-logs`, name: 'contoso-logs', resourceGroup: 'contoso-prod', location: 'westeurope', state: 'Ready', workspaceId: 'ws-prod', retention: 30, sku: 'PerGB2018' }];
+  return { containers, storage, sqlServers, serviceBus, blobs, cosmos, workspaces };
 }
 
 function initialState(now) {
@@ -68,6 +138,10 @@ function initialState(now) {
       Db__ConnectionString: `Server=tcp:${a.resourceGroup}.database.windows.net;Database=contoso;Password=demo-Pa55w0rd;`,
       FeatureFlags__NewCheckout: 'false',
     };
+    // contoso-api takes two secrets from Key Vault: one resolves, the other its identity may not read.
+    if (a.name === 'contoso-api') Object.assign(base, { Payments__ApiKey: '@Microsoft.KeyVault(SecretUri=https://contoso-kv.vault.azure.net/secrets/payments-key/)', Smtp__Password: '@Microsoft.KeyVault(VaultName=contoso-kv;SecretName=smtp-password)' });
+    // contoso-jobs-dev's digest is turned off, as the portal does it.
+    if (a.name === 'contoso-jobs-dev') base['AzureWebJobs.SendDigest.Disabled'] = 'true';
     const host = `${a.name}.azurewebsites.net`;
     const site = { id, sub: a.sub, name: a.name, connectionStrings: CONNECTION_STRINGS[a.name] ?? {}, slot: null, kind: a.kind, resourceGroup: a.resourceGroup, location: 'westeurope', state: 'Running', host, hostNames: a.domain ? [host, a.domain] : [host], modified: new Date(now - 3 * 24 * HOUR).toISOString(), plan: `${a.resourceGroup}-plan`, planId: `/subscriptions/${a.sub}/resourceGroups/${a.resourceGroup}/providers/Microsoft.Web/serverfarms/${a.resourceGroup}-plan`, runtime: a.runtime, settings: base };
     sites.push(site);
@@ -85,7 +159,20 @@ function initialState(now) {
     { sub: 'sub-prod', name: 'Checkout availability below 95%', severity: 'Sev2', signal: 'Metric', service: 'Application Insights', target: 'contoso-prod-ai', targetId: `${prodRg}/providers/microsoft.insights/components/contoso-prod-ai`, targetType: 'microsoft.insights/components', ago: 3 * HOUR, description: 'The checkout availability test failed from 2 of 3 locations' },
     { sub: 'sub-prod', name: 'Payments timeouts in traces', severity: 'Sev3', signal: 'Log', service: 'Log Analytics', target: 'contoso-prod-ai', targetId: `${prodRg}/providers/microsoft.insights/components/contoso-prod-ai`, targetType: 'microsoft.insights/components', ago: 30 * HOUR, description: '' },
   ].map((a, i) => ({ id: `/subscriptions/${a.sub}/providers/Microsoft.AlertsManagement/alerts/demo-${i}`, state: 'New', condition: 'Fired', resourceGroup: 'contoso-prod', rule: `${prodRg}/providers/microsoft.insights/metricalerts/${a.name.replace(/\W+/g, '-')}`, fired: new Date(now - a.ago).toISOString(), changed: new Date(now - a.ago).toISOString(), ...a }));
-  return { sites, components, alerts, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
+  // The demo's vault: the secrets in it, and the ones the apps' identities may not read.
+  const vault = { name: 'contoso-kv', secrets: ['payments-key', 'smtp-password'], denied: ['smtp-password'] };
+  // The plans the apps run on (one per resource group), and the production one's autoscale.
+  const plans = [...new Set(sites.map((x) => x.planId))].map((id) => {
+    const prod = /contoso-prod/.test(id);
+    return { id, name: id.split('/').pop(), resourceGroup: /resourceGroups\/([^/]+)/.exec(id)[1], location: 'westeurope', kind: 'linux', sku: prod ? { name: 'P1v3', tier: 'PremiumV3', capacity: 2 } : { name: 'B1', tier: 'Basic', capacity: 1 }, maxWorkers: prod ? 30 : 3, elasticMax: null, sites: sites.filter((x) => x.planId === id && !x.slot).length, status: 'Ready' };
+  });
+  const autoscale = [
+    { sub: 'sub-prod', id: `${prodRg}/providers/microsoft.insights/autoscalesettings/contoso-prod-plan-autoscale`, name: 'contoso-prod-plan-autoscale', enabled: true, target: plans.find((x) => /contoso-prod/.test(x.id)).id, profiles: [{ name: 'Default', min: 2, max: 5, default: 2, fixed: false, recurring: false, rules: [{ metric: 'CpuPercentage', operator: 'GreaterThan', threshold: 70, direction: 'Increase', change: 1, type: 'ChangeCount' }, { metric: 'CpuPercentage', operator: 'LessThan', threshold: 30, direction: 'Decrease', change: 1, type: 'ChangeCount' }] }] },
+  ];
+  // contoso-web sends a tenth of its traffic to staging.
+  const web = sites.find((x) => x.name === 'contoso-web' && !x.slot);
+  const routing = { [web.id]: [{ slot: 'staging', host: 'contoso-web-staging.azurewebsites.net', percent: 10 }] };
+  return { sites, components, alerts, vault, invocations: [], plans, autoscale, routing, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
 }
 
 // A few days of what the apps did: requests (some failing), the exceptions behind the failures, traces.
@@ -125,6 +212,18 @@ function telemetry(now, sites) {
       }
     }
   }
+  // The functions' runs, each logged as a request named for the function; ProcessPayment fails now and then.
+  const frand = seeded(99);
+  for (const s of sites.filter((x) => x.kind === 'function' && !x.slot)) {
+    const component = s.name.endsWith('-dev') ? 'app-dev' : 'app-prod';
+    for (const fn of FUNCTIONS[s.name] ?? []) {
+      for (let i = 0; i < 40; i++) {
+        const at = now - 60 * 1000 - Math.floor(frand() * 7 * 24 * HOUR * (i < 15 ? 0.05 : 1));
+        const fails = frand() < (fn.name === 'ProcessPayment' ? 0.2 : 0.02);
+        items.push({ itemType: 'request', component, timestamp: new Date(at).toISOString(), name: fn.name, url: fn.route ? `https://${s.host}/api/${fn.route}` : undefined, resultCode: fails ? '0' : '200', success: !fails, duration: Math.round(15 + frand() * (fails ? 9000 : 600)), operation_Id: `op-${fn.name}-${i}`, operation_Name: fn.name, cloud_RoleName: s.name });
+      }
+    }
+  }
   // Two availability tests on production, every 15 minutes from three places; the checkout one fails now and then.
   for (const [test, flaky] of [['shop.contoso.com home page', 0], ['shop.contoso.com checkout', 0.12]]) {
     for (let t = now - 60 * 1000; t > now - 7 * 24 * HOUR; t -= 15 * 60 * 1000) {
@@ -145,12 +244,13 @@ const COLUMNS = {
   dependency: ['timestamp', 'name', 'target', 'type', 'resultCode', 'success', 'duration', 'operation_Id', 'cloud_RoleName'],
   availability: ['timestamp', 'name', 'location', 'success', 'duration', 'message'],
 };
-const TYPES = { Count: 'long', p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
+const TYPES = { runs: 'long', p50: 'real', Count: 'long', p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
 const table = (names, rows) => ({ columns: names.map((name) => ({ name, type: TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
 
 /** The demo's answer to `kql` over `items` (one component's, within the time span). */
 export function demoQuery(kql, items) {
-  const q = kql.replace(/\s+/g, ' ').trim();
+  // `| render …` says how to draw it, which the query API leaves to the caller.
+  const q = kql.replace(/\s+/g, ' ').trim().replace(/\s*\|\s*render\s+\w+.*$/i, '');
   const role = /cloud_RoleName == '([^']*)'/.exec(q)?.[1];
   const mine = role ? items.filter((i) => i.cloud_RoleName === role) : items;
   const op = /operation_Id == '([^']*)'/.exec(q)?.[1];
@@ -203,6 +303,23 @@ export function demoQuery(kql, items) {
     const rows = [...groups.values()].map((g) => ({ ...g, users: g.users.size })).sort((a, b) => b.count - a.count);
     return table(['problemId', 'type', 'count', 'users', 'first', 'last', 'message', 'role', 'operation'], rows);
   }
+  // A function app's runs, by function (functions.js functionRunsQuery).
+  if (/^requests\b.*summarize runs = count\(\).* by name/.test(q)) {
+    const groups = new Map();
+    for (const r of mine.filter((i) => i.itemType === 'request')) {
+      const g = groups.get(r.name) ?? { name: r.name, runs: 0, failed: 0, last: r.timestamp, lastFailure: null, durations: [] };
+      g.runs++;
+      g.durations.push(r.duration);
+      if (r.timestamp > g.last) g.last = r.timestamp;
+      if (!r.success) {
+        g.failed++;
+        if (!g.lastFailure || r.timestamp > g.lastFailure) g.lastFailure = r.timestamp;
+      }
+      groups.set(r.name, g);
+    }
+    const rows = [...groups.values()].map((g) => ({ ...g, p50: g.durations.sort((a, b) => a - b)[Math.floor(g.durations.length / 2)] })).sort((a, b) => a.name.localeCompare(b.name));
+    return table(['name', 'runs', 'failed', 'last', 'lastFailure', 'p50'], rows);
+  }
   if (/^availabilityResults\b.*summarize/.test(q)) {
     const groups = new Map();
     for (const r of items.filter((i) => i.itemType === 'availability')) {
@@ -219,15 +336,46 @@ export function demoQuery(kql, items) {
     const rows = [...groups.values()].map((g) => ({ ...g, locations: g.locations.size })).sort((a, b) => b.failed - a.failed || a.name.localeCompare(b.name));
     return table(['name', 'total', 'failed', 'last', 'lastFailure', 'locations', 'message'], rows);
   }
+  // `summarize count() by …`, by bins of time and by columns, as a chart's query asks.
+  const counted = /^(\w+)((?: \| where [^|]+)*) \| summarize (?:(\w+) = )?count\(\) by ([^|]+?)(?: \| (?:order|sort) by [^|]+)?(?: \| (?:take|limit) (\d+))?$/.exec(q);
+  if (counted && TABLES[counted[1]]) return countedAnswer(counted, mine, /\|\s*where success == false\b/.test(q));
   const name = /^(\w+)/.exec(q)?.[1];
   const kind = TABLES[name];
   if (!kind) throw new Error(`Querying the demo: it answers requests, exceptions, traces, dependencies and availabilityResults (with where cloud_RoleName == '…' and take), not "${name ?? q}"`);
   const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 1000);
   const failing = /\|\s*where success == false\b/.test(q);
-  const rows = mine.filter((i) => i.itemType === kind && (!failing || i.success === false)).reverse().slice(0, take);
+  const named = /\|\s*where name == '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1');
+  const rows = mine.filter((i) => i.itemType === kind && (!failing || i.success === false) && (named == null || i.name === named)).reverse().slice(0, take);
   // `| count`, as a watch's query ends.
   if (/\|\s*count\s*$/.test(q)) return table(['Count'], [{ Count: rows.length }]);
   return table(COLUMNS[kind], rows);
+}
+
+const BIN = { m: 60 * 1000, h: HOUR, d: 24 * HOUR };
+
+// `table | where … | summarize [n =] count() by bin(timestamp, 1h)[, column…]`: the rows counted by those keys.
+function countedAnswer([, name, , alias, by, take], mine, failing) {
+  const keys = by.split(/,\s*(?![^()]*\))/).map((k) => {
+    const bin = /^(?:(\w+) = )?bin\((\w+), (\d+)([mhd])\)$/.exec(k.trim());
+    if (bin) return { name: bin[1] ?? bin[2], field: bin[2], size: Number(bin[3]) * BIN[bin[4]] };
+    const plain = /^(?:(\w+) = )?(\w+)$/.exec(k.trim());
+    if (!plain) throw new Error(`Querying the demo: it counts by bin(timestamp, …) and columns, not "${k}"`);
+    return { name: plain[1] ?? plain[2], field: plain[2] };
+  });
+  const groups = new Map();
+  for (const i of mine.filter((x) => x.itemType === TABLES[name] && (!failing || x.success === false))) {
+    const vals = keys.map((k) => (k.size ? new Date(Math.floor(Date.parse(i[k.field]) / k.size) * k.size).toISOString() : i[k.field] ?? null));
+    const id = JSON.stringify(vals);
+    const g = groups.get(id) ?? { vals, n: 0 };
+    g.n++;
+    groups.set(id, g);
+  }
+  const binned = keys.findIndex((k) => k.size);
+  const rows = [...groups.values()].sort((a, b) => (binned >= 0 ? String(a.vals[binned]).localeCompare(String(b.vals[binned])) : b.n - a.n)).slice(0, take ? Number(take) : undefined);
+  return {
+    columns: [...keys.map((k) => ({ name: k.name, type: k.size ? 'datetime' : TYPES[k.field] ?? 'string' })), { name: alias ?? 'count_', type: 'long' }],
+    rows: rows.map((g) => [...g.vals, g.n]),
+  };
 }
 
 // /compare-window's queries: the table's rows between two times, summarised by a key and which side of the point they fell.
@@ -251,18 +399,53 @@ function windowedAnswer([, name, from, to, point, key], mine) {
   return table(columns, rows);
 }
 
-/** The demo's Log Analytics workspace: the container app's console log, the newest first. */
-export function workspaceQuery(kql, now, hours = 24) {
-  const q = kql.replace(/\s+/g, ' ').trim();
-  if (!/^ContainerAppConsoleLogs_CL\b/.test(q)) throw new Error('Querying the demo workspace: it answers ContainerAppConsoleLogs_CL only');
-  const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 100);
-  const rand = seeded(7);
-  const rows = [];
-  for (let i = 0; i < Math.min(take, hours * 12); i++) {
-    const r = rand();
-    rows.push({ TimeGenerated: new Date(now - 60 * 1000 - i * 5 * 60 * 1000).toISOString(), ContainerAppName_s: 'contoso-worker', RevisionName_s: 'contoso-worker--r7', Log_s: r < 0.1 ? 'ERROR Message 4711 went to the dead-letter queue: payments timed out' : `INFO Processed ${Math.round(5 + rand() * 40)} order messages` });
+// The demo workspace's tables: the container app's console log, and production's telemetry as
+// workspace-based Application Insights writes it (AppRequests, AppExceptions, AppTraces).
+export const WORKSPACE_TABLES = {
+  AppExceptions: ['TimeGenerated', 'ProblemId', 'ExceptionType', 'OuterMessage', 'OperationId', 'AppRoleName'],
+  AppRequests: ['TimeGenerated', 'Name', 'Url', 'ResultCode', 'Success', 'DurationMs', 'OperationId', 'AppRoleName'],
+  AppTraces: ['TimeGenerated', 'Message', 'SeverityLevel', 'OperationId', 'AppRoleName'],
+  ContainerAppConsoleLogs_CL: ['TimeGenerated', 'ContainerAppName_s', 'RevisionName_s', 'Log_s'],
+};
+const WORKSPACE_TYPES = { TimeGenerated: 'datetime', Success: 'bool', DurationMs: 'real', SeverityLevel: 'int', rows: 'long', Count: 'long' };
+
+/** The rows of a workspace table, from `items` (telemetry) and the made-up console log. */
+function workspaceRows(name, items, now, hours) {
+  const of = (kind) => items.filter((i) => i.itemType === kind).reverse();
+  if (name === 'AppRequests') return of('request').map((i) => ({ TimeGenerated: i.timestamp, Name: i.name, Url: i.url ?? null, ResultCode: i.resultCode, Success: i.success, DurationMs: i.duration, OperationId: i.operation_Id, AppRoleName: i.cloud_RoleName }));
+  if (name === 'AppExceptions') return of('exception').map((i) => ({ TimeGenerated: i.timestamp, ProblemId: i.problemId, ExceptionType: i.type, OuterMessage: i.outerMessage, OperationId: i.operation_Id, AppRoleName: i.cloud_RoleName }));
+  if (name === 'AppTraces') return of('trace').map((i) => ({ TimeGenerated: i.timestamp, Message: i.message, SeverityLevel: i.severityLevel, OperationId: i.operation_Id, AppRoleName: i.cloud_RoleName }));
+  if (name === 'ContainerAppConsoleLogs_CL') {
+    const rand = seeded(7);
+    const rows = [];
+    for (let i = 0; i < hours * 12; i++) {
+      const r = rand();
+      rows.push({ TimeGenerated: new Date(now - 60 * 1000 - i * 5 * 60 * 1000).toISOString(), ContainerAppName_s: 'contoso-worker', RevisionName_s: 'contoso-worker--r7', Log_s: r < 0.1 ? 'ERROR Message 4711 went to the dead-letter queue: payments timed out' : `INFO Processed ${Math.round(5 + rand() * 40)} order messages` });
+    }
+    return rows;
   }
-  return { columns: ['TimeGenerated', 'ContainerAppName_s', 'RevisionName_s', 'Log_s'].map((name) => ({ name, type: name === 'TimeGenerated' ? 'datetime' : 'string' })), rows: rows.map((r) => [r.TimeGenerated, r.ContainerAppName_s, r.RevisionName_s, r.Log_s]) };
+  return null;
+}
+
+/**
+ * The demo's Log Analytics workspace: its tables (WORKSPACE_TABLES) with `| where Column == 'x'`,
+ * `take` and `| count`, and which tables have rows (`search * | summarize … by $table`, or `distinct $table`).
+ */
+export function workspaceQuery(kql, now, hours = 24, items = []) {
+  const q = kql.replace(/\s+/g, ' ').trim();
+  const wtable = (names, rows) => ({ columns: names.map((name) => ({ name, type: WORKSPACE_TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
+  if (/^search \* \| (summarize|distinct)\b.*\$table/.test(q)) {
+    const counts = Object.keys(WORKSPACE_TABLES).map((t) => ({ $table: t, rows: workspaceRows(t, items, now, hours).length })).filter((t) => t.rows);
+    if (/distinct/.test(q)) return wtable(['$table'], counts);
+    return wtable(['$table', 'rows'], counts.sort((a, b) => b.rows - a.rows));
+  }
+  const name = /^(\w+)/.exec(q)?.[1];
+  let rows = workspaceRows(name, items, now, hours);
+  if (!rows) throw new Error(`Querying the demo workspace: it answers ${Object.keys(WORKSPACE_TABLES).join(', ')} (with where Column == '…', take and count), not "${name ?? q}"`);
+  for (const [, col, val] of q.matchAll(/\| where (\w+) == '([^']*)'/g)) rows = rows.filter((r) => String(r[col]) === val);
+  const take = Number(/\|\s*(?:take|limit) (\d+)/.exec(q)?.[1] ?? 1000);
+  if (/\|\s*count\s*$/.test(q)) return wtable(['Count'], [{ Count: rows.length }]);
+  return wtable(WORKSPACE_TABLES[name], rows.slice(0, take));
 }
 
 /** The demo provider. `now` fixes the clock and `delay` (ms) makes every call that slow, for trying the spinner. */
@@ -280,6 +463,38 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     return s;
   };
   const view = ({ settings, connectionStrings, sub, ...s }) => ({ ...s });
+  // An account's blobs, or Storage's 403 in words, as the real one says it.
+  const blobsOf = (account, what) => {
+    const b = state.blobs[account.name];
+    if (!b) throw Object.assign(new Error(storageRoleNeeded(account, what)), { status: 403 });
+    return b;
+  };
+  // A container app's: a steady trickle of requests, a fraction of a core, two replicas that go to three when busy.
+  const containerMetrics = (target, span) => {
+    const c = state.containers.find((x) => x.id === target.id);
+    if (!c) throw new Error(`${target.name}: not found`);
+    const rand = seeded(c.id.length * 3 + span.hours);
+    const step = { PT5M: 5 * 60 * 1000, PT1H: HOUR, PT6H: 6 * HOUR, P1D: 24 * HOUR }[metricInterval(span)];
+    const n = Math.round((span.hours * HOUR) / step);
+    const at = (i) => new Date(now - (n - i) * step).toISOString();
+    const series = (name, unit, value) => ({ name, unit, points: Array.from({ length: n }, (_, i) => ({ at: at(i), value: value(i) })) });
+    return [
+      series('Requests', 'Count', () => Math.round((step / 60000) * (3 + rand() * 9))),
+      series('UsageNanoCores', 'NanoCores', () => Math.round((0.12 + rand() * 0.3) * 1e9)),
+      series('WorkingSetBytes', 'Bytes', () => Math.round((210 + rand() * 90) * 1024 ** 2)),
+      series('Replicas', 'Count', () => (rand() < 0.2 ? 3 : 2)),
+    ];
+  };
+  const busOf = (ns) => {
+    const n = state.serviceBus.find((x) => x.id === ns.id);
+    if (!n) throw new Error(`${ns.name}: not found`);
+    return n;
+  };
+  const entityOf = (ns, entity) => {
+    const e = busOf(ns).entities.find((x) => x.path === entity.path);
+    if (!e) throw new Error(`${entity.name}: not found in ${ns.name}`);
+    return e;
+  };
   const sqlServer = (server) => {
     const s = state.sqlServers.find((x) => x.id === server.id);
     if (!s) throw new Error(`${server.name}: not found`);
@@ -314,6 +529,17 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       await wait(signal);
       return { ...site(target).settings };
     },
+    // What App Service would say of each @Microsoft.KeyVault(…) setting, from the demo's vault.
+    async keyVaultReferences(target, { signal } = {}) {
+      await wait(signal);
+      return Object.entries(site(target).settings)
+        .filter(([, v]) => /^@Microsoft\.KeyVault\(/i.test(v))
+        .map(([name, v]) => {
+          const secret = /secrets\/([^/)]+)/i.exec(v)?.[1] ?? /SecretName=([^;)]+)/i.exec(v)?.[1] ?? '';
+          const status = !state.vault.secrets.includes(secret) ? 'SecretNotFound' : state.vault.denied.includes(secret) ? 'AccessToKeyVaultDenied' : 'Resolved';
+          return { name, status, details: status === 'AccessToKeyVaultDenied' ? 'Forbidden: the identity has no get permission on secrets' : '', vault: state.vault.name, secret, identity: 'SystemAssigned', reference: v };
+        });
+    },
     async saveSettings(target, settings, { signal } = {}) {
       await wait(signal);
       site(target).settings = { ...settings };
@@ -346,7 +572,7 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async query(component, kql, { timespan = 'P1D', signal } = {}) {
       await wait(signal);
       const hours = { PT1H: 1, P1D: 24, P7D: 168, P30D: 720 }[timespan] ?? 24;
-      if (component.workspaceId) return workspaceQuery(kql, now, hours);
+      if (component.workspaceId) return workspaceQuery(kql, now, hours, state.telemetry.filter((i) => i.component === 'app-prod' && i.timestamp >= new Date(now - hours * HOUR).toISOString()));
       // A span, or an interval between two times (start/end), as /compare-window asks.
       const since = String(timespan).includes('/') ? String(timespan).split('/')[0] : new Date(now - hours * HOUR).toISOString();
       return demoQuery(kql, state.telemetry.filter((i) => i.component === component.appId && i.timestamp >= since));
@@ -370,9 +596,117 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       });
       return n;
     },
+    async functions(target, { signal } = {}) {
+      await wait(signal);
+      const s = site(target);
+      return (FUNCTIONS[s.name] ?? []).map((f) => ({ id: `${s.id}/functions/${f.name}`, name: f.name, trigger: f.trigger, methods: f.methods ?? null, authLevel: f.authLevel ?? null, route: f.route ?? null, source: f.source ?? null, url: isHttp(f) ? `https://${s.host}/api/${f.route}` : null, disabled: false, language: 'dotnet-isolated' }));
+    },
+    // What the functions answer: PlaceOrder wants an order in its body, Health says so, the rest are queued.
+    async invokeFunction(target, fn, { input = '', signal } = {}) {
+      await wait(signal);
+      const s = site(target);
+      const send = invocation(fn, input);
+      state.invocations.push({ target: s.slot ? `${s.name}/${s.slot}` : s.name, name: fn.name, input });
+      const url = send.admin ? `https://${s.host}/admin/functions/${fn.name}` : functionUrl(fn, s.host);
+      const answer = (status, type, body) => ({ status, type, body, url, method: send.method });
+      if (send.admin) return answer(202, '', '');
+      if (fn.name === 'PlaceOrder') return input.trim() ? answer(201, 'application/json; charset=utf-8', JSON.stringify({ orderId: 'o-10234', status: 'placed' })) : answer(400, 'application/json; charset=utf-8', JSON.stringify({ error: 'An order is needed in the body' }));
+      return answer(200, 'text/plain', 'Healthy');
+    },
+    async routing(app, { signal } = {}) {
+      await wait(signal);
+      return (state.routing[site(app).id] ?? []).map((r) => ({ ...r }));
+    },
+    async setRouting(app, rules, { signal } = {}) {
+      await wait(signal);
+      state.routing[site(app).id] = rules.map((r) => ({ ...r }));
+    },
+    async cosmosAccounts(sub, { signal } = {}) {
+      await wait(signal);
+      return state.cosmos.filter((a) => a.sub === sub).map(({ sub: _, tree: __, ...a }) => ({ ...a }));
+    },
+    async cosmosTree(account, { signal } = {}) {
+      await wait(signal);
+      return structuredClone(state.cosmos.find((a) => a.id === account.id)?.tree ?? []);
+    },
+    async containers(account, { signal } = {}) {
+      await wait(signal);
+      const b = blobsOf(account, `Listing ${account.name}'s containers`);
+      return Object.keys(b).map((name) => ({ name, modified: new Date(now - 90 * 24 * HOUR).toISOString(), access: 'private' }));
+    },
+    async blobs(account, container, prefix = '', { signal } = {}) {
+      await wait(signal);
+      const list = blobsOf(account, `Listing ${container}/${prefix}`)[container];
+      if (!list) throw new Error(`Listing ${container}: not found`);
+      const under = list.filter((x) => x.name.startsWith(prefix));
+      const prefixes = [...new Set(under.map((x) => x.name.slice(prefix.length)).filter((n) => n.includes('/')).map((n) => `${prefix}${n.split('/')[0]}/`))].sort();
+      const files = under.filter((x) => !x.name.slice(prefix.length).includes('/')).map(({ content: _, ...x }) => ({ ...x }));
+      return { prefixes, blobs: files, more: false };
+    },
+    async readBlob(account, container, name, { signal } = {}) {
+      await wait(signal);
+      const b = (blobsOf(account, `Reading ${container}/${name}`)[container] ?? []).find((x) => x.name === name);
+      if (!b) throw new Error(`Reading ${container}/${name}: not found`);
+      return { text: b.content ?? '', type: b.type, partial: false };
+    },
+    async serviceBusNamespaces(sub, { signal } = {}) {
+      await wait(signal);
+      return state.serviceBus.filter((n) => n.sub === sub).map(({ sub: _, entities: __, ...n }) => ({ ...n }));
+    },
+    async serviceBusEntities(ns, { signal } = {}) {
+      await wait(signal);
+      return busOf(ns).entities.map(({ dead, ...e }) => ({ ...e, deadLetter: dead.length }));
+    },
+    async peekDeadLetters(ns, entity, { max = 20, signal } = {}) {
+      await wait(signal);
+      return entityOf(ns, entity).dead.slice(0, max).map((m) => structuredClone(m));
+    },
+    // A resubmitted dead letter goes back to its queue (a subscription's to its topic, which gives it to every subscription).
+    async resubmitDeadLetters(ns, entity, sequences, { signal } = {}) {
+      await wait(signal);
+      const e = entityOf(ns, entity);
+      const want = new Set(sequences.map(String));
+      const moving = e.dead.filter((m) => want.has(String(m.sequence)));
+      e.dead = e.dead.filter((m) => !want.has(String(m.sequence)));
+      const to = entity.kind === 'subscription' ? busOf(ns).entities.filter((x) => x.topic === entity.topic) : [e];
+      for (const x of to) x.active += moving.length;
+      for (const m of moving) want.delete(String(m.sequence));
+      return { moved: moving.length, missing: [...want] };
+    },
+    async purgeDeadLetters(ns, entity, { signal } = {}) {
+      await wait(signal);
+      const e = entityOf(ns, entity);
+      const n = e.dead.length;
+      e.dead = [];
+      return n;
+    },
+    async plan(planId, { signal } = {}) {
+      await wait(signal);
+      const p = state.plans.find((x) => x.id.toLowerCase() === String(planId).toLowerCase());
+      if (!p) throw new Error(`Reading the plan ${String(planId).split('/').pop()}: not found`);
+      return structuredClone(p);
+    },
+    async scalePlan(plan, sku, { signal } = {}) {
+      await wait(signal);
+      const p = state.plans.find((x) => x.id === plan.id);
+      p.sku = { name: sku.name, tier: sku.tier, capacity: sku.capacity };
+      return structuredClone(p);
+    },
+    async autoscaleSettings(sub, { signal } = {}) {
+      await wait(signal);
+      return state.autoscale.filter((a) => a.sub === sub).map(({ sub: _, ...a }) => structuredClone(a));
+    },
     async connectionStrings(target, { signal } = {}) {
       await wait(signal);
       return { ...site(target).connectionStrings };
+    },
+    async logWorkspaces(sub, { signal } = {}) {
+      await wait(signal);
+      return state.workspaces.filter((w) => w.sub === sub).map(({ sub: _, ...w }) => ({ ...w }));
+    },
+    async workspaceTables(ws, { signal } = {}) {
+      await wait(signal);
+      return structuredClone(WORKSPACE_TABLES);
     },
     async containerApps(sub, { signal } = {}) {
       await wait(signal);
@@ -441,6 +775,7 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     // Made-up metrics, the same for the same app and span: busier in production, a few 5xx now and then.
     async metrics(target, { span, signal } = {}) {
       await wait(signal);
+      if (target.type === 'container') return containerMetrics(target, span);
       const s = site(target);
       const rand = seeded(s.id.length * 7 + span.hours);
       const step = { PT5M: 5 * 60 * 1000, PT1H: HOUR, PT6H: 6 * HOUR, P1D: 24 * HOUR }[metricInterval(span)];

@@ -120,6 +120,9 @@ export function compareWindows({ exceptions = [], dependencies = [], requests = 
 export const availabilityQuery = () =>
   'availabilityResults | summarize total = count(), failed = countif(success == false), last = max(timestamp), lastFailure = maxif(timestamp, success == false), locations = dcount(location), message = take_anyif(message, success == false) by name | order by failed desc, name asc';
 
+/** The query Logs starts with for a Log Analytics workspace: which of its tables have rows, and how many. */
+export const workspaceStarter = 'search * | summarize rows = count() by $table | order by rows desc';
+
 /** The query Logs starts with for an app: its latest requests. */
 export const starterQuery = (role) => `requests${roleFilter(role)} | order by timestamp desc | take 50`;
 
@@ -197,14 +200,18 @@ export function cellText(value, type) {
   return String(value).replace(/\s*\n\s*/g, ' ⏎ ');
 }
 
-/** The word being typed at `cursor` in a query, and what completes it: tables, then the first table's columns, then operators. */
-export function completeQuery(query, cursor) {
+/**
+ * The word being typed at `cursor` in a query, and what completes it: tables, then the first table's
+ * columns, then operators. `schema` ({ table: [columns] }) is Application Insights' by default, a Log
+ * Analytics workspace's own tables when the query goes to one.
+ */
+export function completeQuery(query, cursor, schema = SCHEMA) {
   const before = query.slice(0, cursor);
   const word = /[\w(.-]*$/.exec(before)[0];
   if (!word) return { word, items: [] };
   const table = /^\s*(\w+)/.exec(query)?.[1];
   const afterPipe = /\|[^|]*$/.test(before);
-  const pool = !afterPipe && !/\s/.test(before.trim()) ? Object.keys(SCHEMA) : [...(SCHEMA[table] ?? []), ...OPERATORS, ...Object.keys(SCHEMA)];
+  const pool = !afterPipe && !/\s/.test(before.trim()) ? Object.keys(schema) : [...(schema[table] ?? []), ...OPERATORS, ...Object.keys(schema)];
   const w = word.toLowerCase();
   const items = [...new Set(pool)].filter((p) => p.toLowerCase().startsWith(w) && p.toLowerCase() !== w).slice(0, 6);
   return { word, items };

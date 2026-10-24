@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
-import { TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
+import { SCHEMA, TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
 import { loadSubscription } from '../load.js';
 import { costDay } from '../cost.js';
+import { autoscaleFor } from '../scale.js';
 import { crossing, watchEvery, watchValue } from '../watches.js';
-import { targetForUrl, targetsByLabel } from '../tree.js';
+import { mapLimited, targetForUrl, targetsByLabel } from '../tree.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
@@ -33,7 +34,7 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { worthNotifying } from '../notify.js';
 import { ask } from '../claude-cli.js';
-import { APP_NAMES, decodeContext, pastedLine, readMoods, writeMood } from '../family.js';
+import { APP_NAMES, decodeContext, logActivity, pastedLine, readMoods, writeMood } from '../family.js';
 import { familyMood, moodKey, reactionLine, reactionTo } from '../kin.js';
 
 const VIEWS = [
@@ -55,8 +56,8 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
-  logs: 'e edit the query · ↵ run it / show a row · s save it · h l columns · y copy the row · Y all · H for Hail · F as .http · c which insights',
+  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · f functions · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
+  logs: 'e edit the query · ↵ run it / show a row · v chart/grid · s save it · h l columns · y copy the row · Y all · H for Hail · F as .http · c which insights',
   problems: '↵ the latest occurrence · I incident · K before/after · w ask Claude why · l in Logs · y copy · Y for Splice · c which insights',
   alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
   live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
@@ -177,6 +178,17 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const metricsCache = useRef(new Map());
   const firewallCache = useRef(new Map());
   const adminCache = useRef(new Map());
+  // Each app's and slot's Key Vault references, read in the background after a load (scanExtras).
+  const refsCache = useRef(new Map());
+  // Each app's ramp-up rules (routing.js), read with the references for the apps that have slots.
+  const routingCache = useRef(new Map());
+  // App Service plans by id, and each subscription's autoscale settings, kept until r or a scale.
+  const planCache = useRef(new Map());
+  const autoscaleCache = useRef(new Map());
+  // A Log Analytics workspace's tables and columns, for completion in Logs; kept until r.
+  const tablesCache = useRef(new Map());
+  // What the list shows beside each app or slot, by id: { refs, routing } (its Key Vault references, an app's ramp-up rules).
+  const [extras, setExtras] = useState({});
   // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
   const watchStates = useRef(new Map());
   // This month's costs per subscription, read once a day (r doesn't read them again).
@@ -298,6 +310,11 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     metricsCache.current = new Map();
     firewallCache.current = new Map();
     adminCache.current = new Map();
+    refsCache.current = new Map();
+    routingCache.current = new Map();
+    planCache.current = new Map();
+    autoscaleCache.current = new Map();
+    tablesCache.current = new Map();
     // A subscription not on screen yet shows as soon as its apps are known, slots and databases
     // filling in as they come; reading the one on screen again keeps it until the new one is whole.
     const n = ++loads.current;
@@ -317,6 +334,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       dataRef.current = d;
       setData(d);
       setDataStamp((x) => x + 1);
+      scanExtras(d, n);
     } catch (e) {
       note(`Couldn't read the subscription: ${firstLine(e.message)}`, 'error');
     } finally {
@@ -358,6 +376,93 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       cache.set(target.id, p);
     }
     return cache.get(target.id);
+  };
+
+  /** An app's or slot's Key Vault references (keyvault.js), read once and kept until r or its settings change. */
+  const referencesOf = (target) => {
+    const cache = refsCache.current;
+    if (!cache.has(target.id)) {
+      const p = provider.keyVaultReferences ? provider.keyVaultReferences(target) : Promise.resolve([]);
+      p.catch(() => cache.delete(target.id));
+      cache.set(target.id, p);
+    }
+    return cache.get(target.id);
+  };
+
+  /** An app's ramp-up rules, read once and kept until r or /route changes them. */
+  const routingOf = (app) => {
+    const cache = routingCache.current;
+    if (!cache.has(app.id)) {
+      const p = provider.routing ? provider.routing(app) : Promise.resolve([]);
+      p.catch(() => cache.delete(app.id));
+      cache.set(app.id, p);
+    }
+    return cache.get(app.id);
+  };
+
+  /** After /route: the app's rules read again, and the list's marks with them. */
+  const routingChanged = async (app) => {
+    routingCache.current.delete(app.id);
+    const routing = await routingOf(app).catch(() => null);
+    setExtras((x) => ({ ...x, [app.id]: { ...x[app.id], routing } }));
+  };
+
+  /**
+   * What completion in Logs offers for a component: Application Insights' tables, or a workspace's own
+   * (insights.js SCHEMA when they can't be read).
+   */
+  const schemaOf = (component) => {
+    if (!component?.workspaceId) return Promise.resolve(SCHEMA);
+    const cache = tablesCache.current;
+    if (!cache.has(component.workspaceId)) {
+      const p = (provider.workspaceTables ? provider.workspaceTables(component) : Promise.resolve(SCHEMA)).then((t) => (Object.keys(t).length ? t : SCHEMA));
+      p.catch(() => cache.delete(component.workspaceId));
+      cache.set(component.workspaceId, p);
+    }
+    return cache.get(component.workspaceId);
+  };
+
+  /** An App Service plan by its id (scale.js planFrom), read once and kept until r or it's scaled. */
+  const planOf = (planId) => {
+    const key = String(planId).toLowerCase();
+    const cache = planCache.current;
+    if (!cache.has(key)) {
+      const p = provider.plan ? provider.plan(planId) : Promise.reject(new Error("Plans can't be read here"));
+      p.catch(() => cache.delete(key));
+      cache.set(key, p);
+    }
+    return cache.get(key);
+  };
+
+  /** The autoscale settings that target plan `planId`, from the subscription's (read once, kept until r). */
+  const autoscaleOf = async (planId) => {
+    const sub = dataRef.current?.subscription.id;
+    const cache = autoscaleCache.current;
+    if (!cache.has(sub)) {
+      const p = provider.autoscaleSettings ? provider.autoscaleSettings(sub) : Promise.resolve([]);
+      p.catch(() => cache.delete(sub));
+      cache.set(sub, p);
+    }
+    return autoscaleFor(await cache.get(sub), planId);
+  };
+
+  /**
+   * What the list shows beside the apps and slots (Key Vault references that didn't resolve, the share of
+   * traffic a slot takes), read in the
+   * background after load `n`, four at a time, and drawn as it comes in (at most every 250 ms).
+   */
+  const scanExtras = async (d, n) => {
+    const found = {};
+    let said = 0;
+    const flush = () => n === loads.current && setExtras({ ...found });
+    const targets = d.apps.flatMap((app) => [app, ...(d.slots[app.id] ?? [])]);
+    await mapLimited(targets, 4, async (t) => {
+      if (n !== loads.current) return;
+      const [refs, routing] = await Promise.all([referencesOf(t).catch(() => null), !t.slot && d.slots[t.id]?.length ? routingOf(t).catch(() => null) : null]);
+      found[t.id] = { ...found[t.id], refs, ...(routing ? { routing } : {}) };
+      if (Date.now() - said > 250) (said = Date.now()), flush();
+    });
+    flush();
   };
 
   /** An app's or slot's metrics over the time span, read when the cursor stops on it and kept until r. */
@@ -407,6 +512,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
           watchStates.current.set(w.name, { value, above, at: Date.now() });
           if (!crossed) return;
           note(`Watch "${w.name}" is ${value}, over ${w.threshold} (${w.component.name})\n${w.kql}`, 'error');
+          logActivity('sonar', { text: `watch "${w.name}" is ${value}, over ${w.threshold} in ${w.component.name}`, kind: 'alert', project: cwd });
           if (notify && configRef.current.notify !== false) notify(`Sonar: ${w.name} is over ${w.threshold}`, `${value} in ${w.component.name}`);
         } catch (e) {
           watchStates.current.set(w.name, { ...(was ?? {}), error: firstLine(e.message), at: Date.now() });
@@ -540,7 +646,15 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     watchState: (name) => watchStates.current.get(name) ?? null,
     forgetWatch: (name) => watchStates.current.delete(name),
     forgetFirewall: (server) => firewallCache.current.delete(server.id),
-    forgetSettings: (target) => settingsCache.current.delete(target.id),
+    forgetSettings: (target) => (settingsCache.current.delete(target.id), refsCache.current.delete(target.id)),
+    referencesOf,
+    planOf,
+    schemaOf,
+    routingOf,
+    routingChanged,
+    autoscaleOf,
+    forgetPlan: (planId) => planCache.current.delete(String(planId).toLowerCase()),
+    extras: () => extras,
     scope: resolveScope,
     timespan: () => TIMESPANS[spanRef.current],
     setQuery,
@@ -1149,7 +1263,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   } else if (view === 'problems') {
     main = <ProblemsView problems={problems} filter={problemFilter} scope={resolved} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <ResourcesView data={data} span={TIMESPANS[spanIndex]} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ResourcesView data={data} extras={extras} span={TIMESPANS[spanIndex]} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash
@@ -1161,7 +1275,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
         : overlay?.kind === 'palette'
         ? 'type to filter · ↑↓ pick · ↵ run it (a key in the view; a command that takes more goes into the prompt) · esc close'
         : overlay?.kind === 'picker'
-          ? 'j/k move · ↵ change · esc close'
+          ? overlay.hint
+            ? `${overlay.hint} · esc close`
+            : 'j/k move · ↵ change · esc close'
           : overlay
             ? `${overlay.hint && !overlay.loading ? `${overlay.hint} · ` : ''}j/k scroll · space page · y copy · esc close`
             : HINTS[view];
