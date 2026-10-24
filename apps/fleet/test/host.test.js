@@ -111,12 +111,17 @@ test("the active app's mouse comes back with it, and a click on a tab switches",
   keys('\x1b[<0;15;14M\x1b[<0;15;14m');
   await until(() => screen.row(0) === 'two 70x13', 'the click', { term });
   assert.equal(screen.modes.get(1002), false);
-  // Clicks elsewhere are the app's.
+  // Two never asked for the mouse: the host keeps clicks on for the bar, and Two gets none.
+  assert.equal(screen.modes.get(1000), true);
   keys('\x1b[<0;3;2M');
-  await until(() => screen.row(1) === 'keys: "\\u001b[<0;3;2M"', 'the click passed on', { term });
+  keys('k');
+  await until(() => screen.row(1) === 'keys: "k"', 'only the key', { term });
   keys('\x1b[<0;3;14M');
   await until(() => screen.row(0) === 'one 70x13', 'back by a click', { term });
   assert.equal(screen.modes.get(1002), true);
+  // Clicks elsewhere are the app's, when it asked for them.
+  keys('\x1b[<0;3;2M');
+  await until(() => screen.row(1) === 'keys: "M\\u001b[<0;3;2M"', 'the click passed on', { term });
   keys(`${PREFIX}q`);
   keys('y');
   await done;

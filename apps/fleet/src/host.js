@@ -18,11 +18,11 @@ import { fit, stringWidth } from '@fleet/kit/text.js';
 import { barLayout, renderBar, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { readKeys, takeBarClicks } from './keys.js';
-import { MOUSE_MODES, OutputFilter } from './screen.js';
+import { HOST_MOUSE, MOUSE_MODES, OutputFilter } from './screen.js';
 import { SPACES } from './spaces.js';
 
 /** What the host writes to take the screen, and to give it back as it found it. */
-export const ENTER = '\x1b[?1049h\x1b[22;0t\x1b[2J\x1b[H';
+export const ENTER = `\x1b[?1049h\x1b[22;0t\x1b[2J\x1b[H${HOST_MOUSE}`;
 export const LEAVE = `\x1b[?2026l\x1b[0m${MOUSE_MODES.map((n) => `\x1b[?${n}l`).join('')}\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[?1049l\x1b[23;0t`;
 
 const CLEAR = '\x1b[?2026l\x1b[0m\x1b[2J\x1b[H';
@@ -159,9 +159,11 @@ export class Host {
       if (rest && !/^(\x1b\[<[\d;]+[Mm])+$/.test(rest)) this.closeHelp();
       return;
     }
-    if (!rest) return;
     const space = this.space(this.active);
-    if (space.child) space.child.stdin.write(rest);
+    // The mouse is on for the bar's sake; an app that didn't ask for it gets no reports.
+    const forApp = space.child && !space.filter.wantsMouse() ? rest.replace(/\x1b\[<[\d;]+[Mm]/g, '') : rest;
+    if (!forApp) return;
+    if (space.child) space.child.stdin.write(forApp);
     else if (/\r/.test(rest)) this.launch(space);
   }
 
