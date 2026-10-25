@@ -310,11 +310,14 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
 
   r.use((req, res) => res.status(404).json({ error: `No API route ${req.method} ${req.path}` }));
   // eslint-disable-next-line no-unused-vars
-  r.use((err, req, res, next) => {
+  r.use(async (err, req, res, next) => {
     const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
     if (status >= 500) console.error('[api]', err);
-    // Azure DevOps rejected the signed-in user's token: end their session so they're asked to sign in again.
-    if (err.code === 'token-rejected') req.onTokenRejected?.();
+    // Azure DevOps rejected the signed-in user's token: forget it so they're asked for a new one, unless
+    // the token still works and only this call is outside what it may do.
+    if (err.code === 'token-rejected' && req.onTokenRejected && !(await req.onTokenRejected())) {
+      return res.status(403).json({ error: "Azure DevOps refused this request: your token doesn't have the scope it needs." });
+    }
     res.status(status).json({ error: err.message || 'Unexpected error', ...(err.code ? { code: err.code } : {}) });
   });
   return r;

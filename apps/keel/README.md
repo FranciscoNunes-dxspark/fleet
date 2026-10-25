@@ -268,7 +268,7 @@ Everyone can see everything. Roles only limit what a person can change, and the 
 ### What's stored where
 
 - **Passwords** are hashed with scrypt.
-- **Tokens:** each PAT is checked against your organization, then stored encrypted (AES-256-GCM) using `SESSION_SECRET`. It's never sent back to a browser. **Settings → Your account** replaces or disconnects it. If Azure DevOps stops accepting a token (expired or revoked), that person is asked for a new one.
+- **Tokens:** each PAT is checked against your organization, then stored encrypted (AES-256-GCM) using `SESSION_SECRET`. It's never sent back to a browser. **Settings → Your account** replaces or disconnects it. If Azure DevOps stops accepting a token (expired or revoked), that person is asked for a new one. A token that only lacks the scope one feature needs is kept, and that feature says so.
 - **Browser:** only a random session cookie (HttpOnly, SameSite=Strict, and Secure/`__Host-` behind HTTPS).
 - **Sessions** last `SESSION_DAYS` (7 by default, renewed while you use it, 30 days at most). Changing your password signs out your other devices.
 - **Terminals** signed in with `keel login` (`terminals.json`): only a SHA-256 hash of each one's token, with the name it gave (user and computer), the IP it signed in from, and when it was last used. Their tokens reach the API as you, never the account pages (password, Azure DevOps token, users), and end after 90 days unused, on a new password, or when the account is disabled or removed. **Settings → Your account** lists and signs them out.
@@ -281,7 +281,7 @@ To try accounts and roles before deploying, run on demo data with `AUTH_MODE=log
 
 The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps** (Node 22 or later). Point a Node.js app at the fleet repository with the **repository's root** as the app's folder and `apps/keel/server/index.js` as its entry file: it installs there (`npm install` or `npm ci`), and the install builds the web app too, so no build command is needed. Not `apps/keel` itself: every dependency is installed at the root, so that folder deployed alone can't start. PHP-only shared hosting can't run it. You also need a domain or subdomain with HTTPS.
 
-Set Keel's settings (`AZDO_ORG_URL`, `AUTH_MODE`, `SESSION_SECRET`, `TRUST_PROXY=1`, …) as the Node.js app's environment variables in hPanel: a `.env` would have to sit in `apps/keel`, and isn't in the repository. Keel listens on the port Hostinger gives it in `PORT` (`API_PORT` wins when set), so leave both of those and `HOST` unset there.
+Set Keel's settings (`AZDO_ORG_URL`, `AUTH_MODE`, `SESSION_SECRET`, `TRUST_PROXY=1`, …) as the Node.js app's environment variables in hPanel. Keel reads a `.env` in `apps/keel`, then one at the repository's root, where Hostinger may write them; a value set in more than one place takes the real environment's, then `apps/keel/.env`'s. On start, the log shows `Encryption key: … fingerprint …` for each server process: if two show different fingerprints, they see different `SESSION_SECRET`s, and a token linked through one can't be read by the other. Keel listens on the port Hostinger gives it in `PORT` (`API_PORT` wins when set), so leave both of those and `HOST` unset there.
 
 ### Where Keel keeps its data
 

@@ -8,6 +8,15 @@ try {
 } catch {
   // No .env file: fall back to the real environment.
 }
+// In the fleet repository (apps/keel), a host deploying from the repository's root, as Hostinger
+// does, may write its .env there. Values already set, from the real environment or the .env above, win.
+if (path.basename(path.dirname(ROOT)) === 'apps') {
+  try {
+    process.loadEnvFile(path.join(ROOT, '..', '..', '.env'));
+  } catch {
+    // none there either
+  }
+}
 
 /**
  * Where accounts, sessions and settings live. DATA_DIR wins. Hosts that build
