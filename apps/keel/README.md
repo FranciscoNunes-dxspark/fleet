@@ -281,6 +281,8 @@ To try accounts and roles before deploying, run on demo data with `AUTH_MODE=log
 
 The app is a Node.js server, so it needs a **VPS**, or a plan that can run **Node.js apps** (Node 22 or later). Point a Node.js app at the fleet repository with the **repository's root** as the app's folder and `apps/keel/server/index.js` as its entry file: it installs (`npm install` or `npm ci`) and builds (`npm run build`, which the root passes to Keel) there. Not `apps/keel` itself: every dependency is installed at the root, so that folder deployed alone can't start. PHP-only shared hosting can't run it. You also need a domain or subdomain with HTTPS.
 
+Set Keel's settings (`AZDO_ORG_URL`, `AUTH_MODE`, `SESSION_SECRET`, `TRUST_PROXY=1`, …) as the Node.js app's environment variables in hPanel: a `.env` would have to sit in `apps/keel`, and isn't in the repository. Keel listens on the port Hostinger gives it in `PORT` (`API_PORT` wins when set), so leave both of those and `HOST` unset there.
+
 ### Where Keel keeps its data
 
 Accounts, sessions, settings and monitors are files in a data folder. The server log shows which one (`Data folder: …`) when Keel starts.

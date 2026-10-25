@@ -33,7 +33,8 @@ const authMode = (orgUrl || mockRequested) && /^login$/i.test(process.env.AUTH_M
 
 export const config = {
   root: ROOT,
-  port: Number(process.env.API_PORT) || 4280,
+  // Hosts that run the app for you (Hostinger's Node.js apps, Render, Heroku) say which port to listen on in PORT.
+  port: Number(process.env.API_PORT) || Number(process.env.PORT) || 4280,
   // Bound to loopback by default: the server holds your PAT and acts as you.
   host: process.env.HOST || '127.0.0.1',
   orgUrl,
