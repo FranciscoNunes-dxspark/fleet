@@ -17,6 +17,7 @@ import { providerFor } from './providers.js';
 import { azureDevOpsToken } from './azdo/azcli.js';
 import { createSettingsStore, defaultSettingsFile } from './settings.js';
 import { assetLinks } from './android.js';
+import { keyFingerprint } from './secrets.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -106,6 +107,8 @@ app.listen(config.port, config.host, () => {
   console.log(`Keel API on http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}  →  ${mode}`);
   console.log(`Data folder: ${config.dataDir}`);
   if (config.authMode === 'login') {
+    // Every server process must show the same fingerprint, or a token one saved can't be read by another.
+    console.log(`Encryption key: ${process.env.SESSION_SECRET ? 'SESSION_SECRET' : 'generated'}, fingerprint ${keyFingerprint()} (process ${process.pid})`);
     if (!process.env.SESSION_SECRET) console.warn(`Note: SESSION_SECRET not set; using a generated key in ${config.dataDir}. Keep that folder private and backed up.`);
     if (!config.trustProxy) console.warn('Note: TRUST_PROXY not set. Behind an HTTPS proxy, set TRUST_PROXY=1 so session cookies are marked Secure.');
   } else if (config.host !== '127.0.0.1' && config.host !== 'localhost') {

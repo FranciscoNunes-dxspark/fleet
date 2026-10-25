@@ -41,6 +41,11 @@ export function getKey() {
   return key;
 }
 
+/** A short fingerprint of the key, never the key: the startup log shows it, so server processes and deploys can be compared. */
+export function keyFingerprint() {
+  return crypto.createHash('sha256').update(getKey()).digest('hex').slice(0, 8);
+}
+
 export function encrypt(k, text) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', k, iv);
