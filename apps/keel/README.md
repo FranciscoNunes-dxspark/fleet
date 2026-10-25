@@ -268,7 +268,7 @@ Everyone can see everything. Roles only limit what a person can change, and the 
 ### What's stored where
 
 - **Passwords** are hashed with scrypt.
-- **Tokens:** each PAT is checked against your organization, then stored encrypted (AES-256-GCM) using `SESSION_SECRET`. It's never sent back to a browser. **Settings → Your account** replaces or disconnects it. If Azure DevOps stops accepting a token (expired or revoked), that person is asked for a new one.
+- **Tokens:** each PAT is checked against your organization, then stored encrypted (AES-256-GCM) using `SESSION_SECRET`. It's never sent back to a browser. **Settings → Your account** replaces or disconnects it. If Azure DevOps stops accepting a token (expired or revoked), that person is asked for a new one. A token that only lacks the scope one feature needs is kept, and that feature says so.
 - **Browser:** only a random session cookie (HttpOnly, SameSite=Strict, and Secure/`__Host-` behind HTTPS).
 - **Sessions** last `SESSION_DAYS` (7 by default, renewed while you use it, 30 days at most). Changing your password signs out your other devices.
 - **Terminals** signed in with `keel login` (`terminals.json`): only a SHA-256 hash of each one's token, with the name it gave (user and computer), the IP it signed in from, and when it was last used. Their tokens reach the API as you, never the account pages (password, Azure DevOps token, users), and end after 90 days unused, on a new password, or when the account is disabled or removed. **Settings → Your account** lists and signs them out.

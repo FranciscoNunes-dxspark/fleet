@@ -478,15 +478,45 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
     if (!accounts.hasToken(cur.user.id)) return res.status(409).json({ error: 'Connect your Azure DevOps account to continue.', code: 'token-required' });
     try {
       req.ctx = contextFor(cur.user);
-    } catch {
+    } catch (err) {
+      const unreadable = orgStore.all().filter((org) => {
+        try {
+          accounts.tokenOf(cur.user.id, org.key);
+          return false;
+        } catch {
+          return true;
+        }
+      });
+      // Anything else isn't the token's fault: forgetting it would only ask for it again and hide the error.
+      if (!unreadable.length) {
+        console.error('[auth]', err);
+        return res.status(500).json({ error: err.message || 'Unexpected error' });
+      }
       // Unreadable token (e.g. SESSION_SECRET changed): ask for it again.
-      accounts.setToken(cur.user.id, null, null);
+      for (const org of unreadable) accounts.setToken(cur.user.id, null, null, org.key);
       return res.status(409).json({ error: 'Connect your Azure DevOps account again.', code: 'token-required' });
     }
-    // If Azure DevOps rejects this person's token, forget it so they're asked for a new one.
-    req.onTokenRejected = () => {
+    // Azure DevOps answers 401 both for a token that stopped working and for one that lacks a call's
+    // scope (Release, Graph...). Forget it, so they're asked for a new one, only when it can't even say
+    // who it belongs to; resolves whether it was forgotten.
+    req.onTokenRejected = async () => {
+      let pat = null;
+      try {
+        pat = accounts.tokenOf(cur.user.id);
+      } catch {
+        // unreadable: forget it
+      }
+      if (pat) {
+        try {
+          await providerOf(pat).me();
+          return false;
+        } catch (err) {
+          if (err.code !== 'token-rejected') return false;
+        }
+      }
       accounts.setToken(cur.user.id, null, null);
       dropContext(cur.user.id);
+      return true;
     };
     return next();
   }

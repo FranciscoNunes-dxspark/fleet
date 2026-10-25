@@ -235,6 +235,7 @@ export default {
   // ---------------------------------------------------------------- Azure DevOps (azdo/client.js, azdo/provider.js)
   'Network error calling Azure DevOps: {error}': 'Erro de rede ao contactar o Azure DevOps: {error}',
   'Azure DevOps rejected the token: it may have expired, been revoked, or lack the needed scopes.': 'O Azure DevOps recusou o token: pode ter expirado, sido revogado ou não ter as permissões necessárias.',
+  "Azure DevOps refused this request: your token doesn't have the scope it needs.": 'O Azure DevOps recusou este pedido: o seu token não tem a permissão necessária.',
   'Azure DevOps {method} {path} failed ({status}): {detail}': 'O pedido {method} {path} ao Azure DevOps falhou ({status}): {detail}',
   'Invalid image URL': 'URL de imagem inválido',
   'Only images from your Azure DevOps organization can be loaded': 'Só é possível carregar imagens da sua organização do Azure DevOps',

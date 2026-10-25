@@ -17,12 +17,26 @@ export function getKey() {
     return key;
   }
   const file = path.join(config.dataDir, 'secret.key');
-  try {
-    key = Buffer.from(fs.readFileSync(file, 'utf8').trim(), 'hex');
-  } catch {
-    key = crypto.randomBytes(32);
+  const read = () => {
+    try {
+      const saved = fs.readFileSync(file, 'utf8').trim();
+      return /^[0-9a-f]{64}$/.test(saved) ? Buffer.from(saved, 'hex') : null;
+    } catch {
+      return null;
+    }
+  };
+  key = read();
+  if (!key) {
     fs.mkdirSync(config.dataDir, { recursive: true });
-    fs.writeFileSync(file, key.toString('hex'), { mode: 0o600 });
+    try {
+      // 'wx' fails if another server process wrote its key first; then every process uses that one,
+      // or a token one of them encrypted couldn't be read by the others.
+      fs.writeFileSync(file, crypto.randomBytes(32).toString('hex'), { mode: 0o600, flag: 'wx' });
+    } catch {
+      // written by another process
+    }
+    key = read();
+    if (!key) throw new Error(`Couldn't read the encryption key in ${file}. Set SESSION_SECRET, or remove that file.`);
   }
   return key;
 }
