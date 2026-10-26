@@ -149,13 +149,13 @@ test('signatures stay unchecked until Show signatures is on; /verify lists the u
     app.stdin.write('\x1b');
     await until(() => !frame().includes('Signatures:'), 'the report closed');
 
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => frame().includes("Push 2 commits that aren't signed?"), 'the question before pushing');
     assert.match(frame(), /commit\.gpgsign is on here/);
     app.stdin.write('2');
     await until(() => !frame().includes("Push 2 commits that aren't signed?"), 'no');
     assert.notEqual(execFileSync('git', ['rev-parse', 'main'], { cwd: origin, encoding: 'utf8' }).trim(), git('rev-parse', 'HEAD'), 'not pushed');
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => frame().includes("Push 2 commits that aren't signed?"), 'asked again');
     app.stdin.write('1');
     await until(() => execFileSync('git', ['rev-parse', 'main'], { cwd: origin, encoding: 'utf8' }).trim() === git('rev-parse', 'HEAD'), 'pushed');

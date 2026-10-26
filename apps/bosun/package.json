@@ -12,7 +12,7 @@
   },
   "scripts": {
     "start": "node bin/bosun.js",
-    "test": "node --import @fleet/kit/register.js --import ./src/app.js --test test/*.test.js",
+    "test": "node --import @fleet/kit/register.js --import ./src/app.js --test --test-concurrency=3 test/*.test.js",
     "build": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js",
     "build:all": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js --all"
   },

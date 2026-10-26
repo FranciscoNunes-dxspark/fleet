@@ -123,7 +123,7 @@ test('/insights opens in the viewer on the demo organization', async () => {
     await until(() => frame().includes('Insights, the last 14 days') && frame().includes('Pull requests'), 'the insights');
     assert.match(frame(), /merged · \d+ abandoned/);
     // Delivery to production comes after, further down.
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => frame().includes('By environment') || frame().includes('Time to restore'), 'the delivery measures');
     app.stdin.write('\x1b');
     await until(() => !frame().includes('Insights, the last 14 days'), 'the viewer closed');

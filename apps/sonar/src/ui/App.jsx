@@ -12,11 +12,12 @@ import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
+import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
-import { keymapSection, parseKeymap, translateKey } from '@fleet/kit/keymap.js';
+import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
@@ -56,11 +57,11 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · R restart · S stop/start · W swap · D deployments · f functions · l logs · p problems · L live log · o portal · b browse · on SQL: T Trawl, F firewall',
-  logs: 'e edit the query · ↵ run it / show a row · v chart/grid · s save it · h l columns · y copy the row · Y all · H for Hail · F as .http · c which insights',
-  problems: '↵ the latest occurrence · I incident · K before/after · w ask Claude why · l in Logs · y copy · Y for Splice · c which insights',
+  resources: '↵ settings · alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · f functions · l logs · p problems · alt+l live log · o portal · b browse · on SQL: alt+t Trawl, alt+f firewall',
+  logs: 'e edit the query · ↵ run it / show a row · v chart/grid · s save it · h l columns · y copy the row · alt+y all · alt+h for Hail · alt+f as .http · c which insights',
+  problems: '↵ the latest occurrence · alt+i incident · alt+k before/after · w ask Claude why · l in Logs · y copy · alt+y for Splice · c which insights',
   alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
-  live: 'j/k scroll back · G follow · p pause · c clear · R reconnect · y copy',
+  live: 'j/k scroll back · alt+g follow · p pause · c clear · alt+r reconnect · y copy',
   log: '↵ all its output · y copy it',
 };
 
@@ -701,6 +702,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     mouseAvailable: Boolean(mouse),
     // /update: asks for the latest release now, whatever the daily check last said, and installs it.
     updateNow: () => {
+      if (askHostToUpdate()) return note('Asked Fleet to look for a new version of the whole fleet.');
       if (!checkUpdate) return note(`This Sonar (${VERSION}) runs from a checkout: git pull updates it.`);
       if (update?.state === 'installing') return note(`Sonar ${update.latest} is being installed already.`);
       if (update?.state === 'installed') return note(`Sonar ${update.latest} is installed. It starts the next time you open Sonar.`);
@@ -862,6 +864,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       }
       if (b?.key) out = b.key.seq;
     }
+    // Uppercase shortcuts are alt+letter (caps lock can't fire them); typing in a view is left alone.
+    if (out === input && focusRef.current === 'view' && !confirmRef.current && !['palette', 'help'].includes(overlayRef.current?.kind) && !ctx.claimsKey?.(input, {})) out = shortcutKey(input);
+    if (out == null) return null;
     if (out === CTRL_P && !overlayRef.current && !confirmRef.current && (focusRef.current === 'view' || focusRef.current === 'prompt')) {
       openPalette();
       return null;

@@ -63,7 +63,7 @@ export function RebaseEditor({ plan, ctx, width, height, active }) {
         segments={
           problem
             ? [{ text: `  ${problem}`, color: theme.del }]
-            : [{ text: `  p pick · r reword · e edit · s squash · f fixup (into the one below) · d drop · J/K move${changed ? '' : '   (nothing changed yet)'}`, color: theme.dim }]
+            : [{ text: `  p pick · r reword · e edit · s squash · f fixup (into the one below) · d drop · alt+j/k move${changed ? '' : '   (nothing changed yet)'}`, color: theme.dim }]
         }
       />
       {shown.slice(nav.offset, nav.offset + innerH).map((r, i) => {

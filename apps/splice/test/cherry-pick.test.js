@@ -117,10 +117,10 @@ test('V selects commits in the graph and C cherry-picks them onto the current br
     // A merge in the selection: refused, saying why. The selection is the rows from one to the other,
     // whichever branch they're on.
     await pick(/❯.*Side four/, 'Side four');
-    app.stdin.write('V');
+    app.stdin.write('\x1bv');
     await pick(/❯.*Side three/, 'Side three');
     await until(() => frame().includes('4 selected'), 'four selected, the merge and main\'s commit too');
-    app.stdin.write('C');
+    app.stdin.write('\x1bc');
     await until(() => frame().includes('is a merge commit'), 'the merge refused');
     assert.equal(subjects()[0], 'Main changes base');
 
@@ -129,11 +129,11 @@ test('V selects commits in the graph and C cherry-picks them onto the current br
     await until(() => /❯.*Side three/.test(frame()), 'the cursor where it was');
     app.stdin.write('k');
     await until(() => /❯.*Main moves on/.test(frame()), 'the cursor on main\'s commit');
-    app.stdin.write('V');
+    app.stdin.write('\x1bv');
     await until(() => frame().includes('1 selected'), 'the selection started');
     await pick(/❯.*Side one/, 'Side one');
-    await until(() => frame().includes('4 selected · C cherry-pick'), 'four selected');
-    app.stdin.write('C');
+    await until(() => frame().includes('4 selected · alt+c cherry-pick'), 'four selected');
+    app.stdin.write('\x1bc');
     // main has its own commit already, so three are left.
     await until(() => frame().includes('Cherry-pick these 3 commits onto main, oldest first?'), 'the question');
     // The list, oldest first, in the viewer above it.

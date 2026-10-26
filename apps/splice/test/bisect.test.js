@@ -73,14 +73,14 @@ test('B marks commits bad and good, the cursor follows what git checks out, and 
   const first = git('rev-parse', 'HEAD~4');
   try {
     await until(() => /❯.*Commit 10/.test(frame()), 'the graph');
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('bad or good?'), 'the question');
     app.stdin.write('1');
     await until(() => frame().includes('BISECTING') && git('for-each-ref', 'refs/bisect').includes('refs/bisect/bad'), 'the bisect started, 10 bad');
 
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => /❯.*Commit 1\b/.test(frame()), 'the cursor on the first commit');
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('3. Skip'), 'the question, with skip now');
     app.stdin.write('2');
     await until(() => git('rev-parse', 'HEAD') !== git('rev-parse', 'main'), 'git to check out a commit halfway');
@@ -90,7 +90,7 @@ test('B marks commits bad and good, the cursor follows what git checks out, and 
       const head = git('rev-parse', 'HEAD');
       const subject = git('log', '-1', '--format=%s', head);
       await until(() => new RegExp(`❯.*${subject}\\b`).test(frame()), `the cursor on ${subject}`);
-      app.stdin.write('B');
+      app.stdin.write('\x1bb');
       await until(() => frame().includes('Mark ') && frame().includes('3. Skip'), 'the question');
       const bad = readFileSync(join(dir, 'a.txt'), 'utf8').includes('bug');
       app.stdin.write(bad ? '1' : '2');
@@ -144,19 +144,19 @@ function runRepo(name) {
 async function markEnds(app, g) {
   const frame = () => app.lastFrame() ?? '';
   await until(() => /❯.*Commit 10/.test(frame()), 'the graph');
-  app.stdin.write('B');
+  app.stdin.write('\x1bb');
   await until(() => frame().includes('bad or good?'), 'the question');
   app.stdin.write('1');
   await until(() => frame().includes('BISECTING') && g('for-each-ref', 'refs/bisect').includes('refs/bisect/bad'), 'the bisect started, 10 bad');
   // Only once there's a good commit too does B offer the run.
-  app.stdin.write('B');
+  app.stdin.write('\x1bb');
   await until(() => frame().includes('3. Skip') && !frame().includes('Run a command'), 'the question, without the run');
   app.stdin.write(KEYS.esc);
   await until(() => !frame().includes('3. Skip'), 'the question gone');
-  app.stdin.write('G');
+  app.stdin.write('\x1bg');
   await until(() => /❯.*Commit 1\b/.test(frame()), 'the cursor on the first commit');
   const head = g('rev-parse', 'HEAD');
-  app.stdin.write('B');
+  app.stdin.write('\x1bb');
   await until(() => frame().includes('3. Skip'), 'the question');
   app.stdin.write('2');
   await until(() => g('rev-parse', 'HEAD') !== head, 'git to check out a commit halfway');
@@ -171,7 +171,7 @@ test('/bisect run tests each commit with a command (125 skips one), and the curs
   try {
     await markEnds(app, g);
     // B now offers the run, which puts the command in the prompt.
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('4. Run a command on each commit'), 'the run offered');
     app.stdin.write('4');
     await until(() => frame().includes('> /bisect run'), 'the prompt');

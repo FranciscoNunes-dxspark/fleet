@@ -70,7 +70,7 @@ test('the Production tab lists the monitors with what is waiting to ship; ↵ sh
   await until(() => /Waiting to ship/.test(frame()) && !/Reading…/.test(frame()), "what's waiting to ship");
   lastApp.stdin.write('\r');
   await until(() => frame().includes('Deploys') && frame().includes('esc close'), 'everything about it');
-  lastApp.stdin.write('G');
+  lastApp.stdin.write('\x1bg');
   await until(() => /Waiting to ship to |Coming next|Nothing: all deployed/.test(frame()), 'the end of it: what is waiting to ship');
   lastApp.stdin.write('\x1b');
   await until(() => frame().includes('╭─ Production'), 'the list again');
@@ -86,7 +86,7 @@ test('S opens Sonar on the monitor: its address, its Application Insights, at it
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
   lastApp.stdin.write('5');
   await until(() => frame().includes('Storefront (production)'), 'the monitors');
-  lastApp.stdin.write('S');
+  lastApp.stdin.write('\x1bs');
   await until(() => frame().includes('Run it in another terminal'), 'the command copied');
   assert.equal(sonarCalls.length, 1);
   assert.equal(sonarCalls[0][0], '--url');

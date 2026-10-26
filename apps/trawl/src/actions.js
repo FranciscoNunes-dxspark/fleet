@@ -293,7 +293,7 @@ export function openUndo(ctx, snapshot) {
   else ctx.addConsoleTab('undo');
   ctx.setConsole(ed.fromText(script));
   const elsewhere = ctx.session && ctx.session.database !== snapshot.database ? ` It ran on ${snapshot.database}, and you're on ${ctx.session.database}: /use ${snapshot.database} first.` : '';
-  ctx.note(`The script that undoes it is in the console tab undo: read it, then R runs it.${elsewhere}`, elsewhere ? 'error' : 'ok');
+  ctx.note(`The script that undoes it is in the console tab undo: read it, then alt+r runs it.${elsewhere}`, elsewhere ? 'error' : 'ok');
 }
 
 /**
@@ -1661,7 +1661,7 @@ export async function importCsv(ctx, rest) {
   const tabs = ctx.consoleTabs.names.map((n) => ({ name: n }));
   ctx.addConsoleTab(freeName(tabs, 'import'));
   ctx.setConsole(ed.fromText(script));
-  ctx.note(`The INSERT script for ${what} is in a console tab of its own: R runs it.`, 'ok');
+  ctx.note(`The INSERT script for ${what} is in a console tab of its own: alt+r runs it.`, 'ok');
 }
 
 // Bigger than this, a dropped file is better read through /open, which doesn't load it into the editor.
@@ -1698,7 +1698,7 @@ export function openDropped(ctx, text) {
     ctx.setConsole(ed.fromText(text), { record: false });
     opened.push(name);
   });
-  if (opened.length) ctx.note(`${opened.join(', ')} ${opened.length === 1 ? 'is' : 'are'} in a console tab of ${opened.length === 1 ? 'its' : 'their'} own: R runs it all.`, 'ok');
+  if (opened.length) ctx.note(`${opened.join(', ')} ${opened.length === 1 ? 'is' : 'are'} in a console tab of ${opened.length === 1 ? 'its' : 'their'} own: alt+r runs it all.`, 'ok');
   return true;
 }
 
@@ -2124,7 +2124,7 @@ function showMigrationStatus(ctx, root, m) {
   const text = statusText(m.status, { database: m.database, folder: root, history: m.history, files: m.files.length });
   ctx.rememberOutput(title, text);
   const n = m.status.pending.length;
-  ctx.showText(title, text, m.status.runnable && n ? { keys: { R: () => runMigrations(ctx, root) }, hint: `R runs the ${n} pending (/migrations run)` } : {});
+  ctx.showText(title, text, m.status.runnable && n ? { keys: { R: () => runMigrations(ctx, root) }, hint: `alt+r runs the ${n} pending (/migrations run)` } : {});
 }
 
 /**
@@ -2254,7 +2254,7 @@ export async function generateData(ctx, rest) {
         refs.push({ ...fk, rows, capped: rows.length >= 1000 });
       }
       built = generateScript(obj, count, { seed, kind: dialect.kind, quote: dialect.quote, refs, unique });
-      return ['The INSERTs are in a console tab of their own (generate): read them, then R runs them.'];
+      return ['The INSERTs are in a console tab of their own (generate): read them, then alt+r runs them.'];
     },
     { label: `Making ${plural(count, 'row')} for ${objectName(obj)}` },
   );
@@ -2341,7 +2341,7 @@ function takeRows(ctx, data) {
   if (!Array.isArray(data.columns) || !Array.isArray(data.rows)) return ctx.note('Those rows came without their columns.', 'error');
   const d = dialectOf(ctx.session);
   const tab = consoleTabWith(ctx, 'rows', rowsScript(data, { quote: d.quote, kind: d.kind }));
-  ctx.note(`${plural(data.rows.length, 'row')}${data.table ? ` of ${data.table}` : ''} as an INSERT, in the console tab ${tab}: read it, then R runs it${data.table ? '' : ' (put the table\'s name in first)'}.`, 'ok');
+  ctx.note(`${plural(data.rows.length, 'row')}${data.table ? ` of ${data.table}` : ''} as an INSERT, in the console tab ${tab}: read it, then alt+r runs it${data.table ? '' : ' (put the table\'s name in first)'}.`, 'ok');
 }
 
 /**

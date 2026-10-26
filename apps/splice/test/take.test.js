@@ -141,12 +141,12 @@ test('/take: an exception opens blame at its frame, a file at its line, a commit
     assert.match(frame(), /❯.*4 │ four/);
 
     // Y hands the line on, and in the graph the commit (for Sonar).
-    app.stdin.write('Y');
+    app.stdin.write('\x1by');
     await until(() => copied.length === 1, 'the line copied');
     assert.deepEqual(contextIn(copied[0]), { kind: 'file', data: { path: 'src/orders.js', line: 4 } });
     assert.match(flat(frame()), /Copied for Splice: paste it into Splice's prompt\. src\/orders\.js:4/);
     await esc('Blame src/orders.js');
-    app.stdin.write('Y');
+    app.stdin.write('\x1by');
     await until(() => copied.length === 2, 'the commit copied');
     assert.deepEqual(contextIn(copied[1]), { kind: 'commit', data: { repo: 'shop', hash: git('rev-parse', 'HEAD'), subject: 'Better third line' } });
     assert.match(flat(frame()), /Copied for Sonar: paste it into Sonar's prompt\. commit [0-9a-f]{10} Better third line/);

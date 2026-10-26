@@ -124,7 +124,7 @@ test('stashing one file, restoring single files from a stash, and asking before 
     // f in Stash lists a stash's files; ↵ restores the untracked one, untracked.
     app.stdin.write('5');
     await until(() => /❯ stash@\{0\}/.test(frame()), 'the Stash view');
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => frame().includes('Files in stash@{0}') && /❯ \? u\.txt\s+untracked/.test(frame()), 'the files of stash@{0}');
     app.stdin.write(KEYS.enter);
     await until(() => git('status', '--porcelain').includes('?? u.txt'), 'u.txt to be restored');
@@ -142,7 +142,7 @@ test('stashing one file, restoring single files from a stash, and asking before 
 
     // A modified file comes back unstaged.
     await pick(/❯ stash@\{1\}/, 'stash@{1}');
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => /❯ M b\.txt\s+modified/.test(frame()), 'the files of stash@{1}');
     app.stdin.write(KEYS.enter);
     await until(() => read('b.txt') === 'b\nstashed\n', 'b.txt to be restored');
@@ -164,7 +164,7 @@ test('stashing one file, restoring single files from a stash, and asking before 
     await until(() => !frame().includes('Files in stash@{1}'), 'the files to close');
 
     // S stashes everything with a message typed first.
-    app.stdin.write('S');
+    app.stdin.write('\x1bs');
     await until(() => frame().includes('/stash'), 'the prefilled prompt');
     await type(app.stdin, 'all of it');
     await until(() => frame().includes('/stash all of it'), 'the typed message');

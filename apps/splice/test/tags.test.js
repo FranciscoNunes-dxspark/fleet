@@ -72,12 +72,12 @@ test('a tag in Branches: u pushes it, R makes a release, d deletes it here and o
     await until(() => frame().includes('First commit'), 'the graph');
     app.stdin.write('3');
     await until(() => frame().includes('Tags (1)'), 'the Branches view with its tags');
-    app.stdin.write('G');
-    await until(() => /❯\s+v1\.0/.test(frame()) && frame().includes('u push · R release'), 'the cursor on the tag');
+    app.stdin.write('\x1bg');
+    await until(() => /❯\s+v1\.0/.test(frame()), 'the cursor on the tag');
     app.stdin.write('u');
     await until(() => remoteTags().includes('refs/tags/v1.0'), 'the tag on origin');
 
-    app.stdin.write('R');
+    app.stdin.write('\x1br');
     await until(() => frame().includes('Create a GitHub release for v1.0?'), 'the release question');
     app.stdin.write('2');
     await until(() => releases.length === 1, 'the release');

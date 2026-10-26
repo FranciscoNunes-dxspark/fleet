@@ -155,7 +155,7 @@ test('Branches compares the selected branch with the default branch, and D shows
     // No remote: no PR column, and no errors about one.
     assert.doesNotMatch(frame(), /#\d/);
 
-    app.stdin.write('D');
+    app.stdin.write('\x1bd');
     await until(() => frame().includes('main...feature') && frame().includes('+feature line'), 'the diff of what feature adds');
     assert.doesNotMatch(frame(), /^\+two/m);
     app.stdin.write(KEYS.esc);
@@ -164,7 +164,7 @@ test('Branches compares the selected branch with the default branch, and D shows
     app.stdin.write('j');
     await until(() => /❯ ● main/.test(frame()), 'the cursor on main');
     await until(() => !frame().includes('ahead ·') && frame().includes('Main moves on'), "main's own history");
-    app.stdin.write('D');
+    app.stdin.write('\x1bd');
     await until(() => frame().includes('main is the default branch itself'), 'D on the default branch to explain itself');
     app.stdin.write('o');
     await until(() => frame().includes("remote isn't on GitHub, Azure DevOps or GitLab"), 'o without a host');

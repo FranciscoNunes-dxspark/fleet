@@ -50,8 +50,8 @@ function subSegments(s) {
 function subLines(s) {
   const [, text, tone] = SUB_STATE[s.state] ?? SUB_STATE.ok;
   const what = {
-    uninitialised: 'Not cloned or checked out yet. I initialises it.',
-    'out of date': 'It has another commit checked out than the one this repository records. I checks out the recorded one; committing here records the one it has.',
+    uninitialised: 'Not cloned or checked out yet. alt+i initialises it.',
+    'out of date': 'It has another commit checked out than the one this repository records. alt+i checks out the recorded one; committing here records the one it has.',
     conflict: 'Both sides of the merge moved it. Stage the commit it should have.',
     modified: 'It has uncommitted changes of its own: o opens it to commit or discard them.',
     ok: 'At the commit this repository records.',
@@ -62,7 +62,7 @@ function subLines(s) {
     '',
     [{ text: what ?? '' }],
     '',
-    [{ text: 'I init/update · o open it as a repository · /submodules lists them all', color: theme.dim }],
+    [{ text: 'alt+i init/update · o open it as a repository · /submodules lists them all', color: theme.dim }],
   ];
 }
 
@@ -290,18 +290,18 @@ export function ChangesView({ data, ctx, width, height, active }) {
     ? ''
     : pane === 'files'
       ? target === 'conflict'
-        ? '↵ resolve block by block · J/K scroll'
-        : `↵ pick hunks · J/K scroll`
+        ? '↵ resolve block by block · alt+j/k scroll'
+        : `↵ pick hunks · alt+j/k scroll`
       : pane === 'conflict'
-        ? 'o ours · t theirs · b both · n/N · esc'
+        ? 'o ours · t theirs · b both · n/alt+n · esc'
         : range
         ? `space ${verb} lines${f.area === 'unstaged' ? ' · d discard · s stash' : ''} · esc`
-        : `space ${verb} hunk · v lines · n/N · esc`;
+        : `space ${verb} hunk · v lines · n/alt+n · esc`;
   const splitHint = target === 'diff' && split && width - LIST_MIN >= SPLIT_WIDTH ? (sideBySide ? ' · w one column' : ' · w side by side') : '';
   const listHint = fileSpan
     ? `${selectedFiles().length} selected · s stash`
     : f?.area === 'conflict'
-      ? 'space resolved · O ours · T theirs · C Claude'
+      ? 'space resolved · alt+o ours · alt+t theirs · alt+c Claude'
       : f?.kind === 'untracked'
         ? 'space stage · i ignore'
         : 'space stage/unstage · i ignore';
@@ -343,7 +343,7 @@ export function ChangesView({ data, ctx, width, height, active }) {
         </Panel>
       ) : null}
       {showDiff && sub ? (
-        <Panel title={sub.path} hint="I init/update · o open" width={diffW} height={height}>
+        <Panel title={sub.path} hint="alt+i init/update · o open" width={diffW} height={height}>
           <Lines lines={subLines(sub)} width={diffW - 2} height={innerH} />
         </Panel>
       ) : showDiff && target === 'conflict' ? (

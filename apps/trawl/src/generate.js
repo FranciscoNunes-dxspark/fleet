@@ -356,7 +356,7 @@ export function refValuesSql(dialect, fk, cap = 1000) {
 export function generateScript(table, count, { seed = 1, kind = 'sqlserver', quote = (n) => `[${String(n).replace(/]/g, ']]')}]`, refs = [], unique = [] } = {}) {
   const { columns, rows, notes } = generateRows(table, count, { seed, kind, refs, unique });
   const name = `${quote(table.schema)}.${quote(table.name)}`;
-  const head = [`-- ${count} row${count === 1 ? '' : 's'} of made-up data for ${table.schema}.${table.name} (seed ${seed}). Nothing has run: read it, then R runs it.`, ...notes.map((n) => `-- ${n}`)];
+  const head = [`-- ${count} row${count === 1 ? '' : 's'} of made-up data for ${table.schema}.${table.name} (seed ${seed}). Nothing has run: read it, then alt+r runs it.`, ...notes.map((n) => `-- ${n}`)];
   if (!columns.length) return { script: [...head, ...rows.map(() => `INSERT INTO ${name} DEFAULT VALUES;`)].join('\n') + '\n', rows: count, columns: [], notes };
   const types = columns.map((c) => typeInfo(c.type, kind));
   const values = rows.map((row) => `(${row.map((v, i) => literalFor(v, types[i], kind)).join(', ')})`);

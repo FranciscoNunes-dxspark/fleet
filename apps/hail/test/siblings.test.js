@@ -67,11 +67,11 @@ test('a pasted command or context opens the prompt with it, unrun, from the view
     await until(() => frame().includes('> /send Ping'), 'the prompt with the paste');
     assert.doesNotMatch(frame(), /⏺ GET|200 OK/, 'not sent');
     app.stdin.write(KEYS.esc);
-    await until(() => frame().includes('↵ send · A send all'), 'back in the view');
+    await until(() => frame().includes('↵ send · alt+a send all'), 'back in the view');
     app.stdin.write('3');
     await until(() => frame().includes('Not sent yet'), 'the Response view');
     app.stdin.write('1');
-    await until(() => frame().includes('↵ send · A send all'), 'Requests');
+    await until(() => frame().includes('↵ send · alt+a send all'), 'Requests');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('200 OK'), 'a response');
     app.stdin.write('3');
@@ -84,7 +84,7 @@ test('a pasted command or context opens the prompt with it, unrun, from the view
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes("That's commit abc123, for Splice or Sonar"), 'it taken');
     app.stdin.write('1');
-    await until(() => frame().includes('↵ send · A send all'), 'Requests again');
+    await until(() => frame().includes('↵ send · alt+a send all'), 'Requests again');
     app.stdin.write('/');
     await new Promise((r) => setTimeout(r, 50));
     app.stdin.write('family');

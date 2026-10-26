@@ -97,8 +97,8 @@ test("/migrations compares a folder with Flyway's history, and R runs the pendin
   assert.match(frame(), /~ changed {2}V2 {2}V2__Add_players\.sql +checksum -?\d+ now, -?\d+ when applied/);
   assert.match(frame(), /• pending {2}V3 {2}sql\/V3__Add_stadiums\.sql /);
   assert.match(frame(), /1 applied · 1 pending · 1 changed/);
-  assert.match(frame(), /R runs the 1 pending/);
-  app.stdin.write('R');
+  assert.match(frame(), /alt\+r runs the 1 pending/);
+  app.stdin.write('\x1br');
   await until(() => frame().includes('Run 1 pending migration on demo?'), 'the question');
   assert.match(frame(), /1 applied one is changed, missing or failed, which Flyway would stop at/);
   app.stdin.write('1');

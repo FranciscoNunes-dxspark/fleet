@@ -84,7 +84,7 @@ function SessionsList({ activity, session, ctx, width, height, active }) {
   const hint = !session
     ? ''
     : activity?.error
-      ? 'R try again'
+      ? 'alt+r try again'
       : activity
         ? `${rows.length} of ${activity.sessions.length}${chains ? ` · ${chains} blocking` : ''} · read ${relTime(activity.at)} ago`
         : 'reading…';
@@ -191,7 +191,7 @@ function JobsList({ read, session, ctx, width, height, active }) {
   const hint = !session
     ? ''
     : read?.error
-      ? 'R try again'
+      ? 'alt+r try again'
       : read && !read.unavailable
         ? `${jobs.length}${failed ? ` · ${failed} failed` : ''}${running ? ` · ${running} running` : ''}`
         : read
@@ -289,7 +289,7 @@ function TopQueriesList({ read, session, ctx, width, height, active }) {
   const hint = !session
     ? ''
     : read?.error
-      ? 'R try again'
+      ? 'alt+r try again'
       : read && source
         ? `${queries.length}`
         : read

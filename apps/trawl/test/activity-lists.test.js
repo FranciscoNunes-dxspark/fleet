@@ -53,7 +53,7 @@ test('J lists the SQL Agent jobs, ↵ shows a failed run’s step, s starts a jo
   await until(() => frame().includes('Clubs'), 'the explorer');
   app.stdin.write('6');
   await until(() => frame().includes('Activity · sessions') && frame().includes('blocked by 53'), 'the sessions');
-  app.stdin.write('J');
+  app.stdin.write('\x1bj');
   await until(() => frame().includes('Activity · SQL Agent jobs') && frame().includes('Stats refresh'), 'the jobs');
   assert.match(frame(), /❯ ✗ Backup ClubA\s+failed\s+2 min 05 s\s+next/);
   assert.match(frame(), /Nightly load\s+succeeded\s+12 min 31 s/);
@@ -77,7 +77,7 @@ test('J lists the SQL Agent jobs, ↵ shows a failed run’s step, s starts a jo
   app.stdin.write('1');
   await until(() => /Old archive\s+running/.test(frame()), 'the job running');
   assert.match(frame(), /start job Old archive/);
-  app.stdin.write('J');
+  app.stdin.write('\x1bj');
   await until(() => frame().includes('Activity · sessions'), 'back to the sessions');
   await command(app, '/jobs');
   await until(() => frame().includes('Activity · SQL Agent jobs'), '/jobs');
@@ -102,7 +102,7 @@ test('Q lists the top queries from Query Store, o sorts by CPU, ↵ shows one, e
   await until(() => frame().includes('Clubs'), 'the explorer');
   app.stdin.write('6');
   await until(() => frame().includes('Activity · sessions'), 'the sessions');
-  app.stdin.write('Q');
+  app.stdin.write('\x1bq');
   await until(() => frame().includes('Activity · top queries') && frame().includes('SELECT * FROM dbo.M'), 'the top queries');
   assert.match(frame(), /Query Store, last 24 h · by total duration/);
   assert.match(frame(), /total\s+avg\s+cpu\s+reads\s+runs\s+query/);
@@ -135,7 +135,7 @@ test('Q lists the top queries from Query Store, o sorts by CPU, ↵ shows one, e
   await until(() => !frame().includes('typing SQL'), 'typing stopped');
   app.stdin.write('6');
   await until(() => frame().includes('Activity · top queries') && /❯.*SELECT c\.Name/.test(frame()), 'the list kept, on the same query');
-  app.stdin.write('Q');
+  app.stdin.write('\x1bq');
   await until(() => frame().includes('Activity · sessions'), 'Q back to the sessions');
   app.unmount();
 });
@@ -162,7 +162,7 @@ test('where there is no SQL Agent or no pg_stat_statements, the lists say so', a
   await until(() => frame().includes('Clubs'), 'the explorer');
   await command(app, '/jobs');
   await until(() => frame().includes('PostgreSQL has no SQL Agent'), 'no Agent on Postgres');
-  app.stdin.write('Q');
+  app.stdin.write('\x1bq');
   await until(() => frame().includes("pg_stat_statements isn't installed in ClubA") && frame().includes('shared_preload_libraries'), 'how to have pg_stat_statements');
   app.unmount();
 });

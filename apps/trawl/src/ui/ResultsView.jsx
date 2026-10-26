@@ -114,7 +114,7 @@ export function ResultsView({ results, changes, setIndex, view, ctx, width, heig
     const more = !moreQuery(results, setIndex, { step, dialect: dialectOf(ctx.session).kind }).reason;
     notes.unshift({ text: `The row limit stopped it at ${set.rows.length.toLocaleString('en')} rows${more ? ` · m fetches ${step.toLocaleString('en')} more` : ''}`, color: theme.warn });
   }
-  if (editable && hasChanges(pending)) notes.unshift({ text: `${changesText(pending)} not saved · s saves · u undoes the row · U all`, color: theme.warn });
+  if (editable && hasChanges(pending)) notes.unshift({ text: `${changesText(pending)} not saved · s saves · u undoes the row · alt+u all`, color: theme.warn });
   const noteLines = Math.min(3, notes.length);
   const gridH = Math.max(1, innerH - 2 - noteLines);
   const nav = useListNav(shownRows.length, gridH, { resetKey: `${results?.id}:${setIndex}:${sort?.col}:${sort?.dir}:${filter}` });

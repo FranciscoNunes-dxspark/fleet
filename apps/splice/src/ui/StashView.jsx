@@ -67,7 +67,7 @@ export function StashView({ data, ctx, width, height, active }) {
     <Box width={width} height={height}>
       <Panel title="Stashes" hint={`${list.length}`} width={listW} height={height} focused={active}>
         {list.length === 0 ? (
-          <Row pointer={false} width={listW - 2} segments={[{ text: '  No stashes. Press s to stash your changes (S to give the stash a message).', color: theme.dim }]} />
+          <Row pointer={false} width={listW - 2} segments={[{ text: '  No stashes. Press s to stash your changes (alt+s to give the stash a message).', color: theme.dim }]} />
         ) : null}
         {list.slice(nav.offset, nav.offset + innerH).map((st, i) => (
           <Row

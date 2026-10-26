@@ -33,7 +33,7 @@ test("T on a production database: the firewall rule asked for by name, then a co
     await until(() => /❯\s+└ ● contoso\s/.test(frame()) && frame().includes('SQL database'), 'the database');
     assert.match(frame(), /GP_S_Gen5_2 · GeneralPurpose/);
 
-    app.stdin.write('T');
+    app.stdin.write('\x1bt');
     await until(() => frame().includes("Let 198.51.100.7 through contoso-sql-prod's firewall? Type contoso-sql-prod to go ahead") && frame().includes('No rule lets this machine in'), 'the rule asked for, by name for production');
     await type(app.stdin, 'contoso-sql-prod');
     app.stdin.write(KEYS.enter);
@@ -50,9 +50,9 @@ test("T on a production database: the firewall rule asked for by name, then a co
     // The reporting database: its app uses its managed identity, so Trawl signs in with Entra; the firewall is open now.
     app.stdin.write('1');
     await until(() => /❯ ● contoso-sql-prod/.test(frame()), 'Resources again');
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => /❯\s+└ ● contoso-reporting/.test(frame()), 'the reporting database');
-    app.stdin.write('T');
+    app.stdin.write('\x1bt');
     await until(() => copied.length === 2, 'copied again, without asking');
     assert.equal(copied[1], '/azure-sql contoso-sql-prod.database.windows.net contoso-reporting --name contoso-sql-prod-contoso-reporting --prod');
   } finally {
@@ -84,7 +84,7 @@ test('/trawl on a test database: a plain question for the firewall, declined, an
     // F on the server in Resources.
     await command(app, 'find sql-qa');
     await until(() => /❯ ● contoso-sql-qa/.test(frame()) && frame().includes('sonar-198-51-100-7'), 'the server, the new rule beside it');
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => frame().split("already lets").length > 2 || /already lets 198\.51\.100\.7 in/.test(frame()), 'F says so too');
   } finally {
     app.unmount();
@@ -103,7 +103,7 @@ test('a container app: its details, its logs from its workspace, a restart of it
     await until(() => frame().includes('╭─ Logs') && frame().includes('contoso-env logs') && frame().includes('Processed'), 'its console log');
     app.stdin.write('1');
     await until(() => /❯ ● contoso-worker/.test(frame()), 'back');
-    app.stdin.write('R');
+    app.stdin.write('\x1br');
     await until(() => frame().includes('Restart contoso-worker (revision contoso-worker--r7)? Type contoso-worker'), 'by name, in production');
     await type(app.stdin, 'contoso-worker');
     app.stdin.write(KEYS.enter);

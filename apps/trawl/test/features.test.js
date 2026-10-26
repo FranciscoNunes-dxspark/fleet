@@ -130,12 +130,12 @@ test('F on a foreign key cell opens the row it refers to, and on a key others re
   await until(() => frame().includes('Rui Costa'), 'the players');
   app.stdin.write('l');
   await new Promise((r) => setTimeout(r, 100));
-  app.stdin.write('F');
+  app.stdin.write('\x1bf');
   await until(() => frame().includes('SELECT TOP (500) * FROM [dbo].[Clubs] WHERE [Id] = 1;'), 'the club row');
   // On Clubs.Id, three foreign keys point back: it asks.
   app.stdin.write('h');
   await new Promise((r) => setTimeout(r, 100));
-  app.stdin.write('F');
+  app.stdin.write('\x1bf');
   await until(() => frame().includes('Follow which foreign key?'), 'the question');
   assert.match(frame(), /dbo\.Players where ClubId = 1 \(rows referring to this one\) \(FK_Players_Clubs\)/);
   app.stdin.write(KEYS.down);
@@ -152,7 +152,7 @@ test('S saves the console statement as a snippet; running it asks for its @param
   await until(() => frame().includes('Clubs'), 'the explorer');
   app.stdin.write('2');
   await until(() => frame().includes('WHERE Id = @id'), 'the console');
-  app.stdin.write('S');
+  app.stdin.write('\x1bs');
   await until(() => frame().includes('/snippet save'), 'the prompt');
   await command(app, 'player by id');
   await until(() => frame().includes('Saved the snippet player by id for demo'), 'saved');
@@ -281,7 +281,7 @@ test('a long run ends with a notification, unless Settings turns it off', async 
   app.stdin.write(',');
   await until(() => frame().includes('Row limit'), 'Settings');
   // The last rows are the open-transaction warning and the family's moods; the notify row is above them.
-  app.stdin.write('G');
+  app.stdin.write('\x1bg');
   app.stdin.write('k');
   app.stdin.write('k');
   await until(() => /❯ Notify when done\s+on\s+after 0\.5 s/.test(frame()), 'the notify row');

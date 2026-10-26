@@ -250,7 +250,7 @@ test("a PR's diff shows its review comments; t picks one and r replies to it", a
     app.stdin.write('6');
     await until(() => /❯.*Bump b/.test(frame()), 'the PR');
     app.stdin.write('\r');
-    await until(() => frame().includes('Why 3?') && frame().includes('1 comment · t/T · r reply'), 'the diff with its comment');
+    await until(() => frame().includes('Why 3?') && frame().includes('1 comment · t/alt+t · r reply'), 'the diff with its comment');
     app.stdin.write('t');
     await until(() => frame().includes('┏ 1 comment'), 'the comment picked');
     app.stdin.write('r');
@@ -306,7 +306,7 @@ test("c comments on the line under the cursor in a PR's diff; a header can't tak
     await until(() => frame().includes('> /review-comment'), 'the comment in the prompt');
     await type(app.stdin, 'Why not 4?');
     app.stdin.write('\r');
-    await until(() => posted.length === 1 && frame().includes('Why not 4?') && frame().includes('1 comment · t/T'), 'the comment posted and shown under its line');
+    await until(() => posted.length === 1 && frame().includes('Why not 4?') && frame().includes('1 comment · t/alt+t'), 'the comment posted and shown under its line');
     assert.deepEqual(posted[0], [7, { path: 'src/app.js', line: 11, side: 'new', text: '  const b = 3;' }, 'Why not 4?']);
     assert.match(frame(), /\+  const b = 3;\s*│?\n.*┌ 1 comment/);
 
@@ -317,7 +317,7 @@ test("c comments on the line under the cursor in a PR's diff; a header can't tak
     await until(() => frame().includes('> /review-comment'), 'the second comment in the prompt');
     await type(app.stdin, 'It was 2');
     app.stdin.write('\r');
-    await until(() => posted.length === 2 && frame().includes('2 comments · t/T'), 'the second comment posted');
+    await until(() => posted.length === 2 && frame().includes('2 comments · t/alt+t'), 'the second comment posted');
     assert.deepEqual(posted[1], [7, { path: 'src/app.js', line: 11, side: 'old', text: '  const b = 2;' }, 'It was 2']);
   } finally {
     app.unmount();

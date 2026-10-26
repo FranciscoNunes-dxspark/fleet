@@ -94,7 +94,7 @@ test('L starts /load for the request; it sends them, reports, and keeps nothing 
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('Ping'), 'the requests');
-    app.stdin.write('L');
+    app.stdin.write('\x1bl');
     await until(() => frame().includes('/load Ping 200 10'), 'the prefilled command');
     for (let i = 0; i < 6; i++) app.stdin.write(KEYS.backspace);
     await type(app.stdin, '40 4');

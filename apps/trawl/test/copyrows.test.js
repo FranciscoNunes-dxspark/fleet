@@ -167,7 +167,7 @@ test('C in the Explorer picks the target, and a production target is refused', a
   await until(() => frame().includes('Clubs'), 'the explorer');
   await command(app, 'copy-rows demo-prod dbo.Clubs');
   await until(() => frame().includes('demo-prod is production: /copy-rows only writes to a connection that is neither'), 'production refused');
-  app.stdin.write('C');
+  app.stdin.write('\x1bc');
   await until(() => frame().includes("Copy dbo.Clubs's rows to"), 'the targets');
   assert.match(frame(), /❯ dev/);
   assert.doesNotMatch(frame(), /❯ demo-prod|^│ +demo-prod/m);

@@ -81,7 +81,7 @@ test('a secret asked for once and kept in the store, history across runs, and co
     await until(() => frame().includes('- ') && frame().includes('"call": 1') && frame().includes('"call": 2'), 'the diff with the one before');
     app.stdin.write(KEYS.esc);
     await until(() => frame().includes('2 kept'), 'History again');
-    app.stdin.write('D');
+    app.stdin.write('\x1bd');
     await until(() => frame().includes('Forget the 2 responses'), 'asked first');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('0 kept'), 'forgotten');

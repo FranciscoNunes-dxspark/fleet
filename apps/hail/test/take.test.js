@@ -148,7 +148,7 @@ test('/take logline finds the response whose headers carry its request id, or sa
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('First'), 'the requests');
-    app.stdin.write('A');
+    app.stdin.write('\x1ba');
     await until(() => frame().includes('Sent all'), 'both sent');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('Sent all:'), 'the report closed');

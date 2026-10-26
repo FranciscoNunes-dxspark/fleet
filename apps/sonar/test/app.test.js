@@ -145,7 +145,7 @@ test('changes: restart asks for production\'s name and refuses a wrong one, a sw
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('contoso-orders'), 'the apps');
-    app.stdin.write('R');
+    app.stdin.write('\x1br');
     await until(() => frame().includes('Restart contoso-web? Type contoso-web to go ahead'), 'the name asked for');
     await type(app.stdin, 'contoso-api');
     app.stdin.write(KEYS.enter);
@@ -153,7 +153,7 @@ test('changes: restart asks for production\'s name and refuses a wrong one, a sw
 
     app.stdin.write('j');
     await until(() => /❯\s+└ ● staging/.test(frame()), 'the staging slot');
-    app.stdin.write('W');
+    app.stdin.write('\x1bw');
     await until(() => frame().includes('Swap contoso-web/staging into production? Type contoso-web'), 'the swap asked about');
     assert.match(frame(), /3 settings differ/);
     await type(app.stdin, 'contoso-web');
@@ -166,7 +166,7 @@ test('changes: restart asks for production\'s name and refuses a wrong one, a sw
     await type(app.stdin, 'sub Contoso Dev');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('contoso-web-dev') && frame().includes('Contoso Dev'), 'the other subscription');
-    app.stdin.write('S');
+    app.stdin.write('\x1bs');
     await until(() => frame().includes('Stop contoso-web-dev?') && frame().includes('Yes, stop it'), 'a plain question for dev');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('contoso-web-dev stopped') && frame().includes('Stopped'), 'stopped');
@@ -229,14 +229,14 @@ test('opened from the command line: an address finds its app, Problems about it;
   frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('╭─ Logs') && frame().includes('contoso-prod-ai · contoso-api') && frame().includes('50 rows'), "the app's requests");
-    app.stdin.write('H');
+    app.stdin.write('\x1bh');
     await until(() => frame().includes("Copied for Hail: paste it into Hail's prompt"), 'the request for Hail');
     const { kind, data } = contextIn(copied.at(-1));
     assert.equal(kind, 'request');
     assert.equal(data.method, 'GET');
     assert.match(data.url, /^https:\/\/contoso-api\.azurewebsites\.net\//);
     assert.match(frame(), /request GET https:\/\/contoso-api/);
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => frame().includes('Copied it as a .http request'), 'the .http text');
     assert.match(copied.at(-1), /^### GET \/\S* \(answered \d+\)\nGET https:\/\/contoso-api\.azurewebsites\.net\/\S*\n$/);
   } finally {
@@ -260,7 +260,7 @@ test("live: an app's log as it's written, paused, and stopped once you leave", a
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('contoso-orders'), 'the apps');
-    app.stdin.write('L');
+    app.stdin.write('\x1bl');
     await until(() => frame().includes('Live: contoso-web') && frame().includes('Streaming the log of contoso-web') && /\[(INF|WRN|ERR)\]/.test(frame()), 'the log streaming');
     assert.match(frame(), / live · p pause/);
     app.stdin.write('p');
@@ -373,7 +373,7 @@ test('problems: w asks Claude why, with the latest occurrence on stdin and read-
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('╭─ Why '), 'closed again');
 
-    app.stdin.write('Y');
+    app.stdin.write('\x1by');
     await until(() => frame().includes("Copied for Splice: paste it into Splice's prompt"), 'the exception for Splice');
     const { kind: k, data: ex } = contextIn(copied.at(-1));
     assert.equal(k, 'exception');
@@ -391,7 +391,7 @@ test("deployments: D lists an app's, newest first, and ↵ shows one's log", asy
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('contoso-orders'), 'the apps');
-    app.stdin.write('D');
+    app.stdin.write('\x1bd');
     await until(() => frame().includes('Deployments of contoso-web') && frame().includes('Release 2.13.1'), 'the deployments');
     assert.match(frame(), new RegExp(`❯ ${BULLET} succeeded\\s+3d ago\\s+Ana Silva\\s+GitHub Actions\\s+active\\s+Release 2\\.14\\.0`));
     assert.match(frame(), /failed\s+5d ago\s+Rui Costa/);
@@ -428,7 +428,7 @@ test('alerts: what fires in the subscription, an alert whole, and an availabilit
     await until(() => frame().includes('Alert: contoso-web 5xx over 20') && /rule\s+contoso-web-5xx-over-20/.test(frame()), 'the alert whole');
     app.stdin.write(KEYS.esc);
     await until(() => frame().includes('╭─ Alerts'), 'back');
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => /❯\s+(\d+ ✗|✓) shop\.contoso\.com/.test(frame()), 'on a test');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('╭─ Logs') && /\d+ rows/.test(frame()) && frame().includes('location'), 'its results in Logs');

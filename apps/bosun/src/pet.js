@@ -102,5 +102,5 @@ export function moodLine(mood, data) {
   const n = data.procs.length;
   if (!n) return 'Nothing to run here yet: /init writes a bosun.json.';
   const up = data.procs.filter((p) => p.child).length;
-  return up ? `${up} of ${n} running. r restarts one, R all of them.` : `None of the ${n} running: R starts them.`;
+  return up ? `${up} of ${n} running. r restarts one, alt+r all of them.` : `None of the ${n} running: alt+r starts them.`;
 }

@@ -128,7 +128,7 @@ test('/risk says why; P stops on a high score until you say yes', async () => {
     app.stdin.write('\x1b');
     await until(() => !frame().includes('Risk before push'), 'closed');
 
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => frame().includes('Push anyway? The risk is high (6)'), 'the question');
     assert.match(frame(), /Before pushing: the risk is high/);
     app.stdin.write('2');
@@ -136,7 +136,7 @@ test('/risk says why; P stops on a high score until you say yes', async () => {
     await new Promise((r) => setTimeout(r, 300));
     assert.notEqual(run(origin, 'rev-parse', 'main'), git('rev-parse', 'HEAD'), 'not pushed');
 
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => frame().includes('Push anyway? The risk is high'), 'asked again');
     app.stdin.write('1');
     await until(() => run(origin, 'rev-parse', 'main') === git('rev-parse', 'HEAD'), 'pushed');

@@ -86,7 +86,7 @@ test('F on the Board narrows the cards to a person, picked from those on it; /fi
     app.stdin.write('7');
     await until(() => frame().includes('Commerce Team · Stories'), 'the board');
     const before = (frame().match(/■ \d+/g) ?? []).length;
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => frame().includes('Filter by') && frame().includes('Assigned to'), 'the fields');
     app.stdin.write('1');
     await until(() => frame().includes('Anyone') && frame().includes('Nobody'), 'the people');

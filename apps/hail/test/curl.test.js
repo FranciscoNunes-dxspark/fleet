@@ -91,7 +91,7 @@ test('/import-curl adds the request to the end of the file and picks it; I start
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('First'), 'the request');
-    app.stdin.write('I');
+    app.stdin.write('\x1bi');
     await until(() => frame().includes('> /import-curl '), 'the prompt, started');
     // Pasted: the lines come in together.
     app.stdin.write("curl 'https://x.test/v1/users' \\\n  -H 'accept: application/json' \\\n  --data-raw 'name=Ana' -k");

@@ -8,13 +8,14 @@ import { samePath, saveConfig, withRecent } from '../config.js';
 import { git, run } from '../git.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
+import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { canonical, changeDiff, commitPatch, findRepo, loadRepo, snapshot, stashFileDiff, stashPatch } from '../repo.js';
 import { discover, eachLimited, summarize } from '../repos.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
-import { keymapSection, parseKeymap, translateKey } from '@fleet/kit/keymap.js';
+import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
@@ -39,6 +40,9 @@ import { droppedPaths } from '../drop.js';
 import { ownersLine, ownersOf } from '../codeowners.js';
 import { familyMood, moodsToShow, reactionText } from '../siblings.js';
 
+// Overlays with a text box: capitals typed there are text, not shortcuts.
+const TYPING_OVERLAYS = ['palette', 'help'];
+
 const VIEWS = [
   { id: 'graph', label: 'Graph' },
   { id: 'changes', label: 'Changes' },
@@ -59,13 +63,13 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  graph: '↵ diff · c checkout · b branch · m merge · i rebase from here · C cherry-pick · V select several · v revert · X reset · B bisect · w run it (Bosun) · Y for Sonar · e/R Claude explains/reviews',
-  changes: 'space stage · ↵ hunks/lines · a all · u unstage all · d discard · i ignore · s stash file · v select files · c commit · A amend · M message in your editor · F fix up · H history · B blame · L LFS lock · W Claude writes it · S splits it · R review · on a submodule: I init/update · o open',
-  branches: '↵ checkout · n new · m merge · e rebase · d delete · D diff vs default · o open PR · S sync · B update branch · C clean up · U upstream · M remotes · on a tag: u push · R release',
-  stash: '↵ diff · s stash · S with a message · a apply · o pop · x drop · F files, to restore one',
-  prs: '↵ diff · c checkout · w review in a worktree · a approve · m merge · s checks · A reviewers · D draft/ready · E title · B description · C comment · o open in browser · n new PR · W Claude drafts one · e/R explain/review',
-  repos: '↵ open · F fetch them all · s scan folder · x forget',
-  worktrees: '↵ open · n new · x remove or prune · C clean up',
+  graph: '↵ diff · c checkout · b branch · m merge · i rebase from here · alt+c cherry-pick · alt+v select several · v revert · alt+x reset · alt+b bisect · w run it (Bosun) · alt+y for Sonar · e/alt+r Claude explains/reviews',
+  changes: 'space stage · ↵ hunks/lines · a all · u unstage all · d discard · i ignore · s stash file · v select files · c commit · alt+a amend · alt+m message in your editor · alt+f fix up · alt+h history · alt+b blame · alt+l LFS lock · alt+w Claude writes it · alt+s splits it · alt+r review · on a submodule: alt+i init/update · o open',
+  branches: '↵ checkout · n new · m merge · e rebase · d delete · alt+d diff vs default · o open PR · alt+s sync · alt+b update branch · alt+c clean up · alt+u upstream · alt+m remotes · on a tag: u push · alt+r release',
+  stash: '↵ diff · s stash · alt+s with a message · a apply · o pop · x drop · alt+f files, to restore one',
+  prs: '↵ diff · c checkout · w review in a worktree · a approve · m merge · s checks · alt+a reviewers · alt+d draft/ready · alt+e title · alt+b description · alt+c comment · o open in browser · n new PR · alt+w Claude drafts one · e/alt+r explain/review',
+  repos: '↵ open · alt+f fetch them all · s scan folder · x forget',
+  worktrees: '↵ open · n new · x remove or prune · alt+c clean up',
 };
 
 const POLL_MS = 3000;
@@ -479,6 +483,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     familyHome,
     // /update: asks for the latest release now, whatever the daily check last said, and installs it.
     updateNow: () => {
+      if (askHostToUpdate()) return note('Asked Fleet to look for a new version of the whole fleet.');
       if (!checkUpdate) return note(`This Splice (${VERSION}) runs from a checkout: git pull updates it.`);
       if (update?.state === 'installing') return note(`Splice ${update.latest} is being installed already.`);
       if (update?.state === 'installed') return note(`Splice ${update.latest} is installed. It starts the next time you open Splice.`);
@@ -744,6 +749,9 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
       }
       if (b?.key) out = b.key.seq;
     }
+    // Uppercase shortcuts are alt+letter (caps lock can't fire them); typing in a view is left alone.
+    if (out === input && focusRef.current === 'view' && !confirmRef.current && !TYPING_OVERLAYS.includes(overlayRef.current?.kind) && !ctx.viewerTyping?.()) out = shortcutKey(input);
+    if (out == null) return null;
     if (out === CTRL_P && !overlayRef.current && !confirmRef.current && (focusRef.current === 'view' || focusRef.current === 'prompt')) {
       openPalette();
       return null;
@@ -1120,9 +1128,9 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
           : overlay?.kind === 'picker'
           ? 'j/k move · esc close'
           : overlay
-          ? 'j/k scroll · space page · n/N hunk · / search · esc close'
+          ? 'j/k scroll · space page · n/alt+n hunk · / search · esc close'
           : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  f fetch · p pull · P push · z undo · / commands · ! git · ? help';
+  const right = focus === 'prompt' ? '' : '  f fetch · p pull · alt+p push · z undo · / commands · ! git · ? help';
 
   return (
     <Box flexDirection="column" width={W} height={H}>

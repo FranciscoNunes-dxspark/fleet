@@ -63,7 +63,7 @@ test("the Explorer lists the server's databases, the current one opened up, and 
   // The cursor starts on the first table; the server's own databases come last.
   assert.match(frame(), /─ demo ─.*6 objects · 3 databases/);
   assert.match(frame(), /▾ ClubA +current[\s\S]*❯ T Clubs[\s\S]*Translations[\s\S]*▸ ClubB[\s\S]*▸ master/);
-  app.stdin.write('G');
+  app.stdin.write('\x1bg');
   await until(() => /❯ master/.test(frame()) && frame().includes('↵ switch to it'), 'the cursor on master');
   app.stdin.write('k');
   await until(() => /❯ ClubB/.test(frame()), 'the cursor on ClubB');
@@ -588,7 +588,7 @@ test('y and Y copy the cell and the row, and /copy the whole result set', async 
   app.stdin.write('y');
   await until(() => frame().includes("Copied Name's value."), 'the cell copied');
   assert.equal(copied[0], 'Club A FC');
-  app.stdin.write('Y');
+  app.stdin.write('\x1by');
   await until(() => frame().includes('Copied row 1, tab-separated.'), 'the row copied');
   assert.equal(copied[1], '1\tClub A FC\tPT\t1904-03-14\t1');
   await type(app.stdin, '/copy insert');

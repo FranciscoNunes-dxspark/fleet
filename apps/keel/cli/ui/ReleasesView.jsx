@@ -91,7 +91,7 @@ export function ReleasesView({ version, filter, ctx, width, height, active }) {
         })}
       </Panel>
       {split ? (
-        <Panel title={d ? d.name : 'Release pipeline'} hint={!d ? '' : isGithubRelease(d) ? 'D download · ↵ all · o GitHub' : 'n release · d deploy · ↵ all'} width={sideW} height={height}>
+        <Panel title={d ? d.name : 'Release pipeline'} hint={!d ? '' : isGithubRelease(d) ? 'alt+d download · ↵ all · o GitHub' : 'n release · d deploy · ↵ all'} width={sideW} height={height}>
           <Lines width={sideW - 2} height={innerH} lines={wrapLines(!d ? [] : isGithubRelease(d) ? githubDetail(d) : releaseDetail(d, approvals), sideW - 2)} />
         </Panel>
       ) : null}

@@ -1,7 +1,8 @@
 // What the host does with the bytes typed into it, pure. Everything goes to the active app as it came
 // (keys, pastes, mouse reports) except after the prefix, ctrl+] (0x1d), whose next key is the host's:
 // 1–6 or an app's letter switches, ] or n the next space and p the one before, q quits, ? helps,
-// ctrl+] again sends a literal 0x1d; any other key cancels the prefix and is dropped.
+// ctrl+] again sends a literal 0x1d; any other key cancels the prefix and is dropped. Without it,
+// alt+1 to alt+6 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
 import { SPACES } from './spaces.js';
 
 export const PREFIX = '\x1d';
@@ -58,6 +59,9 @@ export function readKeys(state, input, spaces = SPACES) {
         flush();
         actions.push(action);
       }
+    } else if (/^[1-9]$/.test(key) && spaces[Number(key[1]) - 1]) {
+      flush();
+      actions.push({ type: 'switch', id: spaces[Number(key[1]) - 1].id });
     } else if (key === PREFIX) {
       flush();
       prefix = true;

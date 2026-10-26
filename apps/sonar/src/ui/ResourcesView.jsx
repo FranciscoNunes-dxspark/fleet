@@ -23,15 +23,15 @@ const TAGS = { container: 'container', sqlserver: 'sql server', storage: 'storag
 
 // The keys each kind of resource takes, as the details' last line says them.
 const KEY_HINTS = {
-  web: 'R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
-  function: 'f functions · R restart · S stop/start · W swap · D deployments · l logs · p problems · L live log · o portal · b browse',
-  container: 'R restart its revision · l its logs · o portal · b browse · y copy its address',
+  web: 'alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · l logs · p problems · alt+l live log · o portal · b browse',
+  function: 'f functions · alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · l logs · p problems · alt+l live log · o portal · b browse',
+  container: 'alt+r restart its revision · l its logs · o portal · b browse · y copy its address',
   storage: '↵ its containers and blobs · o portal · y copy its blob address',
   workspace: '↵ / l query it in Logs · o portal',
   cosmos: '↵ its databases and containers · o portal · y copy its address',
   servicebus: '↵ its queues and topics, their dead letters · o portal · y copy its address',
-  sqlserver: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
-  sqldb: 'T open in Trawl · F let this machine through the firewall · o portal · y copy its address',
+  sqlserver: 'alt+t open in Trawl · alt+f let this machine through the firewall · o portal · y copy its address',
+  sqldb: 'alt+t open in Trawl · alt+f let this machine through the firewall · o portal · y copy its address',
 };
 
 // How long the cursor rests on a resource before what's beside it is read: longer than the gap

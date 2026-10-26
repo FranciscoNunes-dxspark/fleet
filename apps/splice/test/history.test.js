@@ -83,7 +83,7 @@ test('history of a file in Changes follows the rename, opens diffs and blames an
     app.stdin.write('2');
     await until(() => /❯ M notes\.txt/.test(frame()) && frame().includes('Unstaged (1)'), 'notes.txt in Changes');
 
-    app.stdin.write('H');
+    app.stdin.write('\x1bh');
     await until(() => frame().includes('History of notes.txt') && frame().includes('Add notes'), 'the history');
     const f = frame();
     for (const s of ['Edit notes', 'Rename notes', 'Grow notes', 'Add notes']) assert.ok(f.includes(s), `${s} is listed`);
@@ -103,7 +103,7 @@ test('history of a file in Changes follows the rename, opens diffs and blames an
     app.stdin.write(KEYS.esc);
     await until(() => frame().includes('History of notes.txt') && /❯ .*Grow notes/.test(frame()), 'the history again, cursor kept');
 
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes(`Blame old.txt at ${hash('Grow notes')}`) && frame().includes('gamma'), 'the blame as of Grow notes');
     assert.doesNotMatch(frame(), /BETA|delta/);
     assert.match(frame(), new RegExp(`${hash('Add notes')} Test\\s+\\d{4}-\\d\\d-\\d\\d 1 │ alpha`));
@@ -125,7 +125,7 @@ test('blame of the working-tree file: uncommitted lines, ↵ to the commit and b
     app.stdin.write('2');
     await until(() => /❯ M notes\.txt/.test(frame()) && frame().includes('Unstaged (1)'), 'notes.txt in Changes');
 
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('Blame notes.txt') && frame().includes('delta'), 'the blame');
     assert.match(frame(), /Not committed yet\s+4 │ delta/);
     // Lines 1 and 3 come from one commit, line 2 from another, so each starts its own run.
@@ -144,7 +144,7 @@ test('blame of the working-tree file: uncommitted lines, ↵ to the commit and b
     app.stdin.write(KEYS.esc);
     await until(() => frame().includes('Blame notes.txt') && /❯ .*2 │ BETA/.test(frame()), 'the blame again');
 
-    app.stdin.write('H');
+    app.stdin.write('\x1bh');
     await until(() => frame().includes('History of notes.txt') && frame().includes('Add notes'), 'the history from the blame');
     app.stdin.write(KEYS.esc);
     await until(() => frame().includes('Blame notes.txt'), 'back to the blame');
@@ -167,7 +167,7 @@ test('/history of a deleted file, and /blame with a completed path', async () =>
     await until(() => frame().includes('History of gone.txt') && frame().includes('Add gone'), 'the deleted file history');
     assert.match(frame(), /deleted\s+Remove gone/);
     // Blaming it as of the commit that deleted it blames the version just before.
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('Blame gone.txt at') && frame().includes('short-lived'), 'the blame of the deleted file');
     app.stdin.write(KEYS.esc);
     await until(() => frame().includes('History of gone.txt'), 'back to the history');

@@ -79,7 +79,7 @@ test('K in Problems compares round the latest deployment; /compare-window takes 
     await until(() => frame().includes('contoso-orders'), 'the apps');
     app.stdin.write('p');
     await until(() => /\d+ problems/.test(frame()), "contoso-web's problems");
-    app.stdin.write('K');
+    app.stdin.write('\x1bk');
     await until(() => frame().includes('Before and after the deployment 3d ago (Release 2.14.0') && frame().includes('New exception types'), 'the comparison');
     assert.match(frame(), /The 3d before it, against the 3d after/);
     assert.match(frame(), /New exception types\s*│\n│\s+\d+× TypeError\s+Cannot read properties/);

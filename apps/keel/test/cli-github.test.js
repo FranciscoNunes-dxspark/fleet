@@ -96,13 +96,13 @@ test('GitHub releases are below the release pipelines; D downloads a file of one
   app.stdin.write('6');
   await until(app, (f) => /↓ api\s+v2\.4\.0 · 4 files · 6d ago\s+v2\.5\.0/.test(f), 'the api repo with its latest release, and the newer pre-release');
   // The repo released most lately first, so web-app is last.
-  app.stdin.write('G');
+  app.stdin.write('\x1bg');
   await until(app, (f) => /❯ ↓ web-app/.test(f), 'web-app selected');
   app.stdin.write('k');
   await until(app, (f) => /❯ ↓ api/.test(f) && f.includes('api-2.5.0-rc.1-linux-x64.tar.gz'), 'api with its files beside it');
   app.stdin.write('n');
   await until(app, (f) => f.includes('api is a GitHub repo: its releases are made on GitHub'), 'n refused');
-  app.stdin.write('D');
+  app.stdin.write('\x1bd');
   await until(app, (f) => f.includes('Download from which release of api?'), 'the releases');
   app.stdin.write('2');
   await until(app, (f) => f.includes('Download which file of v2.4.0?'), 'the files');

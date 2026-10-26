@@ -30,13 +30,14 @@ const DEFAULTS = {
   'signal-exit': 'onExit', 'cli-cursor': 'cliCursor', 'patch-console': 'patchConsole', 'terminal-size': 'terminalSize',
   'stack-utils': 'StackUtils', 'is-in-ci': false, ws: {}, 'react-devtools-core': {}, 'bun:ffi': {},
 };
-// The modules that start programs, the terminal app's own and the kit's (@fleet/kit, packages/kit
+// The modules that start programs or talk to Fleet, the terminal app's own and the kit's (@fleet/kit, packages/kit
 // in the repository): the page has its own. The kit's are matched where they really are, which is
 // packages/kit through the workspace's link, or a copy in node_modules in a standalone install.
 const KIT = realpathSync(path.dirname(createRequire(import.meta.url).resolve('@fleet/kit/package.json')));
 const SWAPPED = new Map([
   [path.join(ROOT, 'cli', 'open.js'), shim('open.js')],
   [path.join(KIT, 'clipboard.js'), shim('clipboard.js')],
+  [path.join(KIT, 'hosted.js'), shim('hosted.js')],
 ]);
 const cliInBrowser = {
   name: 'keel-cli-in-browser',
@@ -46,6 +47,7 @@ const cliInBrowser = {
     if (NODE[bare]) return shim(NODE[bare]);
     if (bare in DEFAULTS) return `\0keel-shim:${bare}`;
     if (source === '@fleet/kit/clipboard.js') return shim('clipboard.js');
+    if (source === '@fleet/kit/hosted.js') return shim('hosted.js');
     if (importer && source.startsWith('.')) return SWAPPED.get(path.resolve(path.dirname(importer.split('?')[0]), source)) ?? null;
     return null;
   },

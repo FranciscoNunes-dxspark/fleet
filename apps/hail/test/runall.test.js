@@ -68,7 +68,7 @@ test('a response handler\'s tests show with the response, its globals feed later
     assert.match(frame(), /1 of 2 tests failed/);
     assert.match(frame(), /GET\s+200 ✗ Me/, 'the list marks it');
 
-    app.stdin.write('A');
+    app.stdin.write('\x1ba');
     await until(() => frame().includes('Sent all: api.http'), 'the report');
     assert.match(frame(), /✓ 200 Log in\s+\d+ ms\s+1 test passed/);
     assert.match(frame(), /✗ 200 Me\s+\d+ ms\s+1 of 2 tests failed/);
@@ -108,7 +108,7 @@ test('A over many requests redraws as it goes, not once a response, and every re
   try {
     await until(() => frame().includes('n0'), 'the requests');
     const before = frames;
-    app.stdin.write('A');
+    app.stdin.write('\x1ba');
     await until(() => frame().includes('60 requests sent'), 'the report');
     assert.ok(frames - before < 60, `${frames - before} frames for 60 responses`);
     app.stdin.write(KEYS.esc);

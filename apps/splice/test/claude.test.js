@@ -119,7 +119,7 @@ test('through the UI: Claude writes the commit message, then explains and review
   try {
     app.stdin.write('2');
     await until(() => frame().includes('Staged (1)'), 'the Changes view');
-    app.stdin.write('W');
+    app.stdin.write('\x1bw');
     await until(() => frame().includes('/commit Add a second note'), 'the message in the prompt');
     const first = asked[0];
     assert.match(first.prompt, /- Start the notes/);
@@ -143,7 +143,7 @@ test('through the UI: Claude writes the commit message, then explains and review
 
     app.stdin.write('2');
     await until(() => frame().includes('Staged (0)'), 'Changes, now clean');
-    app.stdin.write('R');
+    app.stdin.write('\x1br');
     await until(() => frame().includes('no changes to look at'), 'the note that there is nothing to review');
     assert.equal(asked.length, 2);
   } finally {

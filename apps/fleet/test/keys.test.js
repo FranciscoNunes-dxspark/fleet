@@ -58,3 +58,12 @@ test("clicks on the bar's row are the host's; the rest stay for the app", () => 
   // Only the press of the left button counts; the release and the wheel go nowhere.
   assert.deepEqual(clicks, [11]);
 });
+
+test('alt+1 to alt+6 switch without the prefix, and the keys around them still go to the app', () => {
+  const { actions } = run('a\x1b3b\x1b9');
+  assert.deepEqual(actions, [
+    { type: 'send', data: 'a' },
+    { type: 'switch', id: 'sonar' },
+    { type: 'send', data: 'b\x1b9' },
+  ]);
+});

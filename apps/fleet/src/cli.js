@@ -65,6 +65,7 @@ const host = new Host({
   args: named ? { [named.id]: args.slice(1) } : {},
   truecolor: depth >= 24,
   onSwitch: (id) => saveState({ last: id }),
+  onUpdate: () => updateFleet(true),
 });
 
 // However the host ends, the apps end with it and the terminal is given back.
@@ -89,18 +90,30 @@ process.on('uncaughtException', (e) => {
   process.exit(1);
 });
 
-// Only the downloaded executable updates itself, as one: the apps inside it don't (hosted mode).
-if (COMPILED && !checksDisabled(state)) {
-  removeOldExecutables();
-  checkForUpdate(state.update)
-    .then(async ({ checked, newer }) => {
-      saveState({ update: checked });
-      if (!newer) return;
-      await installUpdate(checked.latest);
-      host.notice(`Fleet ${checked.latest} is installed: it runs from the next start`);
-    })
-    .catch(() => {});
+// Only the downloaded executable updates itself, as one: the apps inside it don't (hosted mode). At
+// start it's the daily check; an app's /update asks for one now (`asked`), whatever the last one said.
+let updating = false;
+async function updateFleet(asked) {
+  if (!COMPILED) return asked && host.notice(`This Fleet (${VERSION}) runs from a checkout: git pull updates it`);
+  if (checksDisabled(state)) return asked && host.notice('Update checks are off for Fleet');
+  if (updating) return asked && host.notice('Fleet is being updated already');
+  updating = true;
+  try {
+    if (asked) host.notice('Looking for a new version of Fleet');
+    const { checked, newer } = await checkForUpdate(asked ? null : state.update);
+    state.update = checked;
+    saveState({ update: checked });
+    if (!newer) return asked && host.notice(`Fleet ${VERSION} is the latest version`);
+    await installUpdate(checked.latest);
+    host.notice(`Fleet ${checked.latest} is installed: it runs from the next start`);
+  } catch (e) {
+    if (asked) host.notice(`Couldn't update Fleet: ${String(e.message).split('\n')[0]}`);
+  } finally {
+    updating = false;
+  }
 }
+if (COMPILED) removeOldExecutables();
+updateFleet(false);
 
 await host.start(first.id);
 left = true;

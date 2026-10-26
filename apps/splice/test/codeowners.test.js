@@ -196,7 +196,7 @@ test('owners in Changes, in blame, through /owners, and offered as the reviewers
     await until(() => /❯ M src\/app\.js\s+@me @web-team/.test(frame()), 'the owners beside the file');
     assert.match(flat(frame()), /src\/app\.js · @me @web-team/, "and in the diff's title");
 
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('Blame src/app.js · owners @me @web-team'), "blame's title");
     app.stdin.write('\x1b');
     await until(() => !frame().includes('Blame src/app.js'), 'blame closed');

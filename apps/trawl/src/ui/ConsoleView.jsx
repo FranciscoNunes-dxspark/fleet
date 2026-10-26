@@ -449,7 +449,7 @@ export function ConsoleView({ editor, tabs = ['console'], tab = 0, editing, ctx,
       ? 'selected · ctrl+r runs just this · ctrl+c/x copy/cut · esc let go'
       : editing
       ? 'typing · ctrl+n suggest · ctrl+r run · alt+shift+f format · ctrl+z undo · esc stop'
-      : `${editor.lines.length} lines · ↵ type · ctrl+r run · R run all · f format · p plan · ctrl+f find`;
+      : `${editor.lines.length} lines · ↵ type · ctrl+r run · alt+r run all · f format · p plan · ctrl+f find`;
   return (
     <Panel title={title} hint={hint} width={width} height={height} focused={active}>
       {empty && !editing ? (

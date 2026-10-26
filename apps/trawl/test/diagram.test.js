@@ -170,14 +170,14 @@ test('D in the Explorer draws the table under the cursor; m gives the Mermaid, y
   const app = (lastApp = render(React.createElement(App, { config, initialConnection: 'demo', projectDir: base, clipboard: (t) => copied.push(t) })));
   await until(() => frame().includes('Translations'), 'the explorer');
   // The cursor starts on Clubs, which Players and Matches refer to.
-  app.stdin.write('D');
+  app.stdin.write('\x1bd');
   await until(() => frame().includes('dbo.Clubs: its keys 1 level out both ways · 3 tables'), 'the diagram');
   assert.match(frame(), /│ dbo\.Matches/);
   assert.match(frame(), /FK HomeId/);
   assert.match(frame(), /│ PK Id +├◀/);
   app.stdin.write('m');
   await until(() => frame().includes('Mermaid erDiagram: dbo.Clubs'), 'the Mermaid text');
-  app.stdin.write('G');
+  app.stdin.write('\x1bg');
   await until(() => /dbo_Clubs \|\|--o\{ dbo_Players : "FK_Players_Clubs"/.test(frame()), 'the end of it');
   app.stdin.write('y');
   await until(() => copied.length === 1 && frame().includes('Copied the Mermaid diagram'), 'the copy');

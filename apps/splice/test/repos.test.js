@@ -94,7 +94,7 @@ test('F fetches every listed repository; each row then shows how far behind it i
   try {
     await until(() => ['alpha', 'beta', 'gamma'].every((n) => row(frame(), n).includes('✓')), 'the repositories and their summaries');
     assert.doesNotMatch(row(frame(), 'alpha'), /↓/, 'nothing fetched yet');
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => frame().includes('Fetched 2 of 3 repositories'), 'the fetch to finish');
     assert.match(row(frame(), 'alpha'), /↓2/);
     assert.match(row(frame(), 'beta'), /✗ .*nowhere\.git/);
@@ -111,7 +111,7 @@ test('esc stops fetching them all; the repositories still being fetched go back 
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => row(frame(), 'gamma').includes('✓'), 'the repositories');
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => row(frame(), 'gamma').includes('fetching…') && frame().includes('fetched 2 of 3'), 'gamma still fetching');
     app.stdin.write('\x1b');
     await until(() => frame().includes('Cancelled') && !frame().includes('fetching…'), 'the cancel');

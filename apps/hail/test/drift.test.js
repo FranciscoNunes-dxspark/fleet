@@ -67,7 +67,7 @@ test('/contract checks each response, shows the drift with it and in Requests, a
     assert.match(frame(), /200 ⚠ Drifts/);
     const saved = JSON.parse(readFileSync(configFile(), 'utf8'));
     assert.equal(saved.contracts[join(dir, 'api.http')], join(dir, 'openapi.yaml'));
-    app.stdin.write('A');
+    app.stdin.write('\x1ba');
     await until(() => frame().includes('1 drifted from the contract'), 'the report');
     assert.match(frame(), /⚠ 2 differences from the contract/);
   } finally {

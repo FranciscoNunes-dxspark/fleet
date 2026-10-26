@@ -341,7 +341,7 @@ test('/cleanup removes clean worktrees and deletes branches with nothing only he
     // C in Branches lists what would go, and "No" leaves everything alone.
     app.stdin.write('3');
     await until(() => frame().includes('Local ('), 'the Branches view');
-    app.stdin.write('C');
+    app.stdin.write('\x1bc');
     await until(() => frame().includes('Delete 4 branches and 3 worktrees with nothing of yours on them?'), 'the confirmation');
     const list = frame();
     assert.match(list, /Worktrees to remove \(3\)/);

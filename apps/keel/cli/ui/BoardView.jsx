@@ -172,7 +172,7 @@ export function BoardView({ version, filter, meta, ctx, width, height, active })
       { text: filter ? ` · matching ${shownFilter(filter)}` : '', color: theme.dim },
       { text: start > 0 ? `  ◂ ${start} more` : '', color: theme.accent },
       { text: start + shown < columns.length ? `  ${columns.length - start - shown} more ▸` : '', color: theme.accent },
-      { text: '   t team · v board · F filter · f sprint or open', color: theme.dim },
+      { text: '   t team · v board · alt+f filter · f sprint or open', color: theme.dim },
     ];
   }
 

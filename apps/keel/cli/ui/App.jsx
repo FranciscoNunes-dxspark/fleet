@@ -5,6 +5,7 @@ import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { WI_VIEW_IDS, monitorFullText, pipelineDetail, prFullText, wiFullText } from '../format.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
+import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { logText } from '../log.js';
 import path from 'node:path';
 import { COMPILED, VERSION, openUrl as openInBrowser } from '../open.js';
@@ -16,7 +17,8 @@ import { githubFullText, isGithubRelease, releaseFullText } from '../releases.js
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { mouseOn } from '../settings.js';
-import { useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { shortcutKey } from '@fleet/kit/keymap.js';
 import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
 import { InboxView } from './InboxView.jsx';
 import { PipelinesView, pipelineId } from './PipelinesView.jsx';
@@ -52,7 +54,7 @@ const HINTS = {
   pipelines: 'n run · c cancel the run · l the run in full, with logs · ↵ all runs · o browser',
   workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
   production: '↵ everything, and all that is waiting to ship · o open the site',
-  releases: 'n new release · d deploy to a stage · a/x approve or reject · D download a GitHub release file · ↵ everything · o browser',
+  releases: 'n new release · d deploy to a stage · a/x approve or reject · alt+d download a GitHub release file · ↵ everything · o browser',
   board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',
   team: '↵ their work items · p their pull requests · /find a name',
 };
@@ -517,6 +519,7 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('Nothing has run yet.')),
     // /update: asks GitHub for the latest release now, whatever the daily check last said, and installs it.
     updateNow: () => {
+      if (askHostToUpdate()) return note('Asked Fleet to look for a new version of the whole fleet.');
       if (!updater) {
         return note(process.platform === 'browser'
           ? `This is the web app's terminal (Keel ${VERSION}): it's as new as the web app.`
@@ -725,6 +728,10 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
 
   // One dispatcher reading focus from refs, which change the instant focus moves. Handlers that
   // switch on with the next render would let fast typing (or a paste) after "/" leak into the view.
+  // Uppercase shortcuts are alt+letter (caps lock can't fire them): where a view has the keys, alt+letter
+  // is the capital the handlers match and a bare capital is dropped.
+  useKeyTranslation((input) => (focusRef.current === 'view' && !confirmRef.current && !overlayRef.current?.help && !overlayRef.current?.settings ? shortcutKey(input) : input));
+
   useInput((input, key) => {
     if (focusRef.current === 'prompt' && !confirmRef.current) return promptKeys(input, key);
     if (key.ctrl && input === 'c') return nothingToCopy();

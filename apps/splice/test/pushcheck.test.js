@@ -183,14 +183,14 @@ test('P with a secret in the commits to push lists it and asks; no keeps it here
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('Deploy script'), 'the graph');
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => frame().includes('Push anyway, with what looks like a secret?'), 'the question');
     assert.match(frame(), /deploy\.sh:2 {2}an AWS access key \(AKIA…\)/);
     assert.match(frame(), /in [0-9a-f]{7} Deploy script/);
     app.stdin.write('2');
     await until(() => !frame().includes('Push anyway'), 'the question gone');
     assert.equal(remote('log', '-1', '--format=%s', 'main'), 'First');
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => frame().includes('Push anyway, with what looks like a secret?'), 'the question again');
     app.stdin.write('1');
     await until(() => remote('log', '-1', '--format=%s', 'main') === 'Deploy script', 'the push');
@@ -209,7 +209,7 @@ test('a new branch with a file over 50 MB asks before its first push; with the c
   let frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('Add the video'), 'the graph');
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => frame().includes('Push anyway, with a file over 50 MB?'), 'the question');
     assert.match(frame(), /video\.bin {2}51 MB/);
     app.stdin.write('2');
@@ -222,7 +222,7 @@ test('a new branch with a file over 50 MB asks before its first push; with the c
   frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('Add the video'), 'the graph again');
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => remote('branch', '--list', 'assets').includes('assets'), 'the push', 20000);
     assert.doesNotMatch(frame(), /Push anyway/);
   } finally {

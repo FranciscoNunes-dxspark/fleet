@@ -41,7 +41,7 @@ test('/timeline shows the family newest first, p this project alone; Hail logs a
   const f = () => app.lastFrame() ?? '';
   try {
     await until(() => f().includes('Broken'), 'the file');
-    app.stdin.write('A');
+    app.stdin.write('\x1ba');
     await until(() => f().includes('Sent all'), 'the run');
     app.stdin.write(KEYS.esc);
     await until(() => !f().includes('Sent all'), 'the report closed');
@@ -79,7 +79,7 @@ test('/timeline shows the family newest first, p this project alone; Hail logs a
     await until(() => f().includes(`Timeline of`), 'this project only');
     assert.doesNotMatch(f(), /Ran an UPDATE/);
     assert.match(f(), /Splice\s+Pushed main/);
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => /❯.*Pushed main/.test(f()), 'the oldest');
     app.stdin.write(KEYS.enter);
     await until(() => f().includes('App: Splice'), 'the entry whole');

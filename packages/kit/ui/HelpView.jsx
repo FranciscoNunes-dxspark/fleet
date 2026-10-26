@@ -4,11 +4,21 @@ import { searchHelp, sectionLines } from '../help-layout.js';
 import { stringWidth } from '../text.js';
 import { theme } from '../theme.js';
 import { useMouse } from './hooks.js';
-import { Panel, Row } from './parts.jsx';
+import { Panel, Row, cutHint } from './parts.jsx';
 
 // Narrower than this, the list of sections goes and the pane takes the whole width.
 const SIDE_MIN = 72;
 const TITLE = 'Keyboard shortcuts';
+
+/** A hint cut short ("↵ diff · alt+h history · …"), whole, as a section: a row for each of its parts. */
+function onScreenSection(cut) {
+  if (!cut) return null;
+  const rows = cut.hint.split(' · ').map((part) => {
+    const [keys, ...rest] = part.split(' ');
+    return [keys, rest.join(' ')];
+  });
+  return { title: 'On screen', about: `${cut.title ? `${cut.title}: ` : ''}the hint too long for its border, in full.`, rows };
+}
 
 const COLORS = () => ({ keys: { color: theme.accent }, args: { color: theme.dim }, note: { color: theme.dim }, heading: { bold: true }, title: { color: theme.accent, bold: true } });
 
@@ -16,12 +26,16 @@ const COLORS = () => ({ keys: { color: theme.accent }, args: { color: theme.dim 
  * The ? window: the sections down the left, the one picked on the right, opening on `start` (the
  * view on screen's). j k pick a section, space and J K scroll it, / searches every section (the
  * pane then shows each match under its section's name, and j k jump between them), esc clears the
- * search and then closes. Shared through the kit; each app passes its own help.js sections.
+ * search and then closes. Shared through the kit; each app passes its own help.js sections. When the
+ * panel on screen had to cut its hint, the window opens on "On screen", that hint in full.
  */
-export function HelpView({ sections, start = 0, ctx, width, height, active, onClose }) {
+export function HelpView({ sections: given, start = 0, ctx, width, height, active, onClose }) {
+  // Read once, as the window opens: from then on the focused panel is its own.
+  const [onScreen] = useState(() => onScreenSection(cutHint()));
+  const sections = useMemo(() => (onScreen ? [onScreen, ...given] : given), [onScreen, given]);
   // Which section, the search and whether it's being typed. Keys read and change the latest of
   // these (in a ref), not this render's: fast typing outruns re-rendering.
-  const [state, setState] = useState({ index: start, query: '', typing: false });
+  const [state, setState] = useState({ index: onScreen ? 0 : start, query: '', typing: false });
   const ref = useRef(state);
   const update = (patch) => {
     ref.current = { ...ref.current, ...patch };

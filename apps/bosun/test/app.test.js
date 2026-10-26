@@ -315,7 +315,7 @@ test('ctrl+f searches the log pane and the viewer, n N go between matches, esc c
     assert.doesNotMatch(frame(), /> \/pear/, 'not typed into the prompt');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('find pear 3/3'), 'done typing');
-    app.stdin.write('N');
+    app.stdin.write('\x1bn');
     await until(() => frame().includes('find pear 2/3'), 'an older one');
     app.stdin.write('n');
     app.stdin.write('n');

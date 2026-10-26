@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough, Writable } from 'node:stream';
-import { decodeAppMessage, encodeAppMessage, encodeMessage, handOff, hostedStreams, isHosted, messageReader, screenKeeper, sizeOf } from '../hosted.js';
+import { decodeAppMessage, encodeAppMessage, encodeMessage, askHostToUpdate, handOff, hostedStreams, isHosted, messageReader, screenKeeper, sizeOf } from '../hosted.js';
 import { copiedNote } from '../family.js';
 
 test('messages are lines of JSON objects, cut anywhere; anything else is skipped', () => {
@@ -111,4 +111,8 @@ test('hosted streams look like a terminal of the size the host says, and repaint
 test('outside the host, a hand-off does nothing and the note reads as it always has', () => {
   assert.equal(handOff('trawl', '/azure-sql srv db'), false);
   assert.equal(copiedNote('trawl', '/azure-sql srv db'), "Copied for Trawl: paste it into Trawl's prompt. /azure-sql srv db");
+});
+
+test('outside the host, asking it to update does nothing, so the app updates itself', () => {
+  assert.equal(askHostToUpdate(), false);
 });

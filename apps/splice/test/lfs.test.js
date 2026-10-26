@@ -124,7 +124,7 @@ before(() => {
   run(origin, ['add', '.']);
   run(origin, ['commit', '-q', '-m', 'Big files']);
   dir = join(base, 'app');
-  run(base, ['clone', '-q', origin, dir], { GIT_LFS_SKIP_SMUDGE: '1' });
+  run(base, ['-c', 'filter.lfs.process=', '-c', 'filter.lfs.required=false', 'clone', '-q', origin, dir], { GIT_LFS_SKIP_SMUDGE: '1' });
   for (const [k, v] of [['core.autocrlf', 'false'], ['user.name', 'Test'], ['user.email', 'test@example.com'], ['commit.gpgsign', 'false']]) git('config', k, v);
   git('lfs', 'install', '--local');
 });
@@ -162,7 +162,7 @@ const start = (path) => {
 
 test('a load keeps ls-files\'s answer while HEAD, the index and the files it listed are as they were', { skip: !hasLfs && 'git lfs is not installed' }, async () => {
   const path = join(base, 'kept');
-  run(base, ['clone', '-q', join(base, 'origin'), path], { GIT_LFS_SKIP_SMUDGE: '1' });
+  run(base, ['-c', 'filter.lfs.process=', '-c', 'filter.lfs.required=false', 'clone', '-q', join(base, 'origin'), path], { GIT_LFS_SKIP_SMUDGE: '1' });
   for (const [k, v] of [['core.autocrlf', 'false'], ['user.name', 'Test'], ['user.email', 'test@example.com'], ['commit.gpgsign', 'false']]) run(path, ['config', k, v]);
   run(path, ['lfs', 'install', '--local']);
   const repo = await findRepo(path);
@@ -232,7 +232,7 @@ test('Changes marks LFS files; /lfs, /lfs pull, /lfs locks and L', { skip: !hasL
     await until(() => frame().includes('Nothing is locked.'), 'the empty lock list');
     app.stdin.write('\x1b');
     await until(() => !frame().includes('Nothing is locked.'), 'the list to close');
-    app.stdin.write('L');
+    app.stdin.write('\x1bl');
     await until(() => /git lfs lock y\.bin/.test(frame()) && /failed/i.test(frame()), 'the lock to fail with git lfs\'s reason');
 
     // Forcing a lock open asks first; no leaves it.

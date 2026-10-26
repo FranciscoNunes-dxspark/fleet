@@ -171,7 +171,7 @@ export function BranchesView({ data, ctx, width, height, active, prVersion }) {
     if (nav.pick(e.y - 1) && e.double) keys('', { return: true });
   });
 
-  const hint = [vsDefault ? 'D diff' : '', selPr ? 'o open PR' : '', sel?.type === 'tag' ? 'u push · R release · d delete' : ''].filter(Boolean).join(' · ');
+  const hint = [vsDefault ? 'alt+d diff' : '', selPr ? 'o open PR' : '', sel?.type === 'tag' ? 'u push · alt+r release · d delete' : ''].filter(Boolean).join(' · ');
   return (
     <Box width={width} height={height}>
       <Panel title="Branches" hint={`${local.length} local · ${remote.length} remote`} width={listW} height={height} focused={active}>
