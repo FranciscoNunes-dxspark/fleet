@@ -1,0 +1,36 @@
+{
+    "$schema": "https://aka.ms/terminal-profiles-schema",
+    "defaultProfile": "{0b5e7c41-6f2a-4d0e-9a31-f1ee70000001}",
+    "alwaysShowTabs": false,
+    "showTabsInTitlebar": false,
+    "launchMode": "maximized",
+    "windowingBehavior": "useNew",
+    "warning.confirmCloseAllTabs": false,
+    "theme": "dark",
+    "copyOnSelect": true,
+    "actions": [
+        { "command": { "action": "copy", "singleLine": false }, "keys": "ctrl+c" },
+        { "command": "paste", "keys": "ctrl+v" },
+        { "command": { "action": "copy", "singleLine": false }, "keys": "ctrl+shift+c" },
+        { "command": "paste", "keys": "ctrl+shift+v" }
+    ],
+    "disabledProfileSources": [ "Windows.Terminal.Wsl", "Windows.Terminal.Azure", "Windows.Terminal.PowershellCore", "Windows.Terminal.SSH", "Windows.Terminal.VisualStudio" ],
+    "profiles": {
+        "defaults": {
+            "font": { "face": "Maple Mono NF CN, Cascadia Mono", "size": 9 },
+            "padding": "0",
+            "bellStyle": "none",
+            "scrollbarState": "hidden"
+        },
+        "list": [
+            {
+                "guid": "{0b5e7c41-6f2a-4d0e-9a31-f1ee70000001}",
+                "name": "Fleet",
+                "commandline": "%LOCALAPPDATA%\\Programs\\Fleet\\fleet.exe",
+                "icon": "%LOCALAPPDATA%\\Programs\\Fleet\\fleet.ico",
+                "startingDirectory": null,
+                "closeOnExit": "always"
+            }
+        ]
+    }
+}

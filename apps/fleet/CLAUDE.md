@@ -12,6 +12,7 @@ node --import @fleet/kit/register.js --import ./src/app.js --test test/keys.test
 npm start                                                      # run from the checkout (needs a real TTY): node bin/fleet.js [app] [args…]
 npm run build                                                  # Bun-compiled executable for this machine → dist/fleet-<platform>, all six apps inside
 node scripts/logo.js                                           # regenerate assets/ (the ship's wheel, its handles in src/spaces.js's accents)
+powershell -File installer\build.ps1 [-Version 1.2.3]        # Windows, after npm run build: dist\fleet-windows-x64-setup.exe (needs Inno Setup 6)
 ```
 
 ## Design
@@ -43,6 +44,10 @@ node scripts/logo.js                                           # regenerate asse
 ## Version and build
 
 The kit's `scripts/build.js` reads `"fleet"` in package.json: `entry` `src/main.js`, `compile` off Bun's `.env` and bunfig loading (Keel's server code is inside), and `includes`, the six apps' folders: each one's `process.env.<APP>_VERSION` is defined from its own package.json, as each app's `src/app.js` reads it, beside `FLEET_VERSION`. So inside the build every app is `COMPILED` with its own version (Keel keeps its data in `~/.keel` as its own build does), and none updates itself, since each cli turns updates off in hosted mode. Releases are `fleet-v…`, made whenever any app, the kit or Fleet changes (`.github/scripts/changed.mjs` adds Fleet to any app's change).
+
+## The Windows installer
+
+`installer/` builds `fleet-windows-x64-setup.exe`, which the Release workflow publishes beside the executables (`release-app.yml`, Fleet's Windows build only). `build.ps1` downloads the portable Windows Terminal pinned in `terminal.json` (the same release as Harbor's `Setup.cs`; moving to another means its version and SHA-256 there), checks it, marks it portable (`.portable`), and runs Inno Setup on `Fleet.iss`. The setup installs per user into `%LOCALAPPDATA%\Programs\Fleet` (fixed: `settings.json`'s Fleet profile names `fleet.exe` by that path), `fleet.exe`, `fleet.ico` and the terminal in `terminal\`, with `settings.json` (a Fleet profile, a font list, ctrl+c/ctrl+v as copy and paste) written only when there isn't one. The Start menu shortcut starts `WindowsTerminal.exe -p Fleet` in the folder picked in the setup (the profile's `startingDirectory` is null, so the terminal starts where the shortcut says), with an AppUserModelID of Fleet's own, so the terminal's windows go under its button. Fleet updates `fleet.exe` there itself; a new setup brings a new terminal.
 
 ## Tests
 
