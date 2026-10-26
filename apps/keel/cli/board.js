@@ -102,5 +102,14 @@ export function cardLines(w, { split = false, blockedTag } = {}) {
   const bottom = [{ text: '  ' }, { text: bits.join(' · '), color: theme.dim }];
   if (split && w.board?.done) bottom.push({ text: '  ✓ done', color: theme.ok });
   if (blocked) bottom.push({ text: '  blocked', color: theme.del });
+  // Its tags, each cut to 10 characters, but not the one that says it's blocked (said just before).
+  const tags = (w.tags || []).filter((tag) => !(blockedTag && tag.toLowerCase() === blockedTag.toLowerCase()));
+  if (tags.length) bottom.push({ text: `  ${tags.map((tag) => `#${shortTag(tag)}`).join(' ')}`, color: theme.accent });
   return [top, bottom];
+}
+
+/** A tag as a card shows it: at most 10 characters, a longer one cut with "…". */
+export function shortTag(tag, max = 10) {
+  const chars = [...tag];
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : tag;
 }

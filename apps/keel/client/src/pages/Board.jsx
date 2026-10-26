@@ -440,6 +440,10 @@ export default function Board() {
   );
 }
 
+// A tag on a card shows at most 10 characters (the whole of it on hover), so a long one can't crowd the card.
+const TAG_MAX = 10;
+const shortTag = (tag) => ([...tag].length > TAG_MAX ? `${[...tag].slice(0, TAG_MAX - 1).join('')}…` : tag);
+
 function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, onDragStart, onDragEnd, onDragOverCard, dropMark, onNudge, draggable = true }) {
   const kidsDone = kids.filter((k) => k.stateCategory === 'Completed').length;
   return (
@@ -468,6 +472,11 @@ function Card({ w, kids, isTask, blocked, moving, split, onToggleDone, onOpen, o
         <span className="mono muted small">{w.id}</span>
       </div>
       <div className="card-title">{w.title}</div>
+      {w.tags?.length > 0 && (
+        <div className="card-tags">
+          {w.tags.map((tag) => <Chip key={tag} title={tag}>{shortTag(tag)}</Chip>)}
+        </div>
+      )}
       <div className="card-foot">
         <Avatar person={w.assignedTo} size={20} />
         <span className="muted small">{w.state}</span>

@@ -497,6 +497,7 @@ tr.saving { opacity: 0.55; }
 .card-top { display: flex; justify-content: space-between; }
 .card-title { font-weight: 500; line-height: 1.35; }
 .card-foot { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
 
 /* ------------------------------------------------------------ pipelines */
 .runs { display: flex; gap: 3px; }
