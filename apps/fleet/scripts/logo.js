@@ -83,11 +83,29 @@ function at(u, v) {
   return [...rgb(BACKGROUND), 255];
 }
 
-/** RGBA rows of the logo at `size` px, each pixel sampled at its centre. */
+/**
+ * RGBA rows of the logo at `size` px. At a multiple of the grid's 32 every pixel is one colour of the
+ * drawing, sampled at its centre; at the sizes in between (the .ico's 16, 24 and 48, which Windows
+ * shows in lists and the taskbar) a pixel would fall across the drawing's, and one sample would drop
+ * a spoke or thicken a handle, so each is the average of a grid of samples inside it.
+ */
 function canvas(size) {
+  const n = size % UNITS === 0 ? 1 : 8;
   return Array.from({ length: size }, (_, y) => {
     const row = Buffer.alloc(size * 4);
-    for (let x = 0; x < size; x++) row.set(at(((x + 0.5) * UNITS) / size, ((y + 0.5) * UNITS) / size), x * 4);
+    for (let x = 0; x < size; x++) {
+      const sum = [0, 0, 0, 0];
+      for (let j = 0; j < n; j++) {
+        for (let i = 0; i < n; i++) {
+          const c = at(((x + (i + 0.5) / n) * UNITS) / size, ((y + (j + 0.5) / n) * UNITS) / size);
+          // Colours weighed by how opaque they are, so the transparent corners don't darken the edge.
+          for (let k = 0; k < 3; k++) sum[k] += c[k] * c[3];
+          sum[3] += c[3];
+        }
+      }
+      const a = sum[3];
+      row.set(a ? [...sum.slice(0, 3).map((v) => Math.round(v / a)), Math.round(a / (n * n))] : [0, 0, 0, 0], x * 4);
+    }
     return row;
   });
 }
