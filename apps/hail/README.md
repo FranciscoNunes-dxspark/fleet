@@ -113,7 +113,7 @@ JSON indented, newest at the bottom (`↑`/`↓` and the page keys scroll back).
 under them and `↵` sends it, its `{{variables}}` filled in; every key is text there. `esc` closes the
 connection and the view. The conversation is then kept as the request's response (status 101), in the
 history too, with the secrets it carried left out. `Sec-WebSocket-Protocol` asks for subprotocols. A run
-of the whole file (`A`, `hail test`) leaves WebSockets out.
+of the whole file (`alt+a`, `hail test`) leaves WebSockets out.
 
 A gRPC call, as JetBrains writes one: `GRPC`, the server's `host:port`, the service's full name and the
 method, headers as the call's metadata, and the request message as JSON:
@@ -138,7 +138,7 @@ https). Only unary calls are made: a streaming method is refused, saying so; cli
 compressed messages, `google.protobuf.Any` and proto2 groups aren't supported.
 
 A response that's a stream of server-sent events (`Content-Type: text/event-stream`) shows as it comes:
-the Response view opens on it and keeps its newest events on screen (scrolling up stops that, `G` goes
+the Response view opens on it and keeps its newest events on screen (scrolling up stops that, `alt+g` goes
 back), each event under a line with its number, `event:` and `id:`, its data JSON indented, and the
 spinner counts them. It goes on until the server ends it or `esc` stops it, which keeps what came; then
 it's kept like any response. In a run of the whole file (or `hail test`) an endless stream needs a
@@ -161,7 +161,7 @@ What you type is saved to the file a moment after you stop (`ctrl+s` saves strai
 line endings. When the file is changed somewhere else, the change comes in, unless what you've typed
 hasn't been saved yet. `ctrl+z` undoes, a word at a time, and `ctrl+y` redoes, typing or not. `[` and `]`
 go to the request before or after, `ctrl+f` (or `/find <text>`) finds text and selects it, and `n` and
-`N` find the next and previous match.
+`alt+n` find the next and previous match.
 
 As you type, a list under the cursor suggests what could come next: inside `{{`, the variables there are
 (the environment's, the file's, `login.response.body.` for each named request, and the built-ins); where
@@ -179,7 +179,7 @@ under itself; `ctrl+/` comments it out with `#` or back in; `tab` and `shift+tab
 
 ### Importing curl
 
-`/import-curl <command>` (or `I` in Requests, which starts it for you to paste into) turns a curl command
+`/import-curl <command>` (or `alt+i` in Requests, which starts it for you to paste into) turns a curl command
 into a request at the end of the file, named after its method and path (`### POST /v1/users`), and puts
 the cursor on it. It reads what a browser's "Copy as cURL" gives in any shell: bash's quoting and `\`
 at line ends, Windows cmd's `^` escapes, PowerShell's backticks, and the lines run together as a paste
@@ -338,7 +338,7 @@ the path (`>> ./exports/{{date}}.csv`). Where it went shows with the response.
 
 ### Sending the whole file
 
-`A` in Requests (or `/send all`) sends every request in the file, top to bottom, each one using what the
+`alt+a` in Requests (or `/send all`) sends every request in the file, top to bottom, each one using what the
 ones above it left: their responses and the globals their scripts set. A request with a variable
 nothing gives a value is passed over; one that gets no answer stops the run; failed tests don't. Then a
 report shows each request's status, how long it took and how its tests went, with the failures under
@@ -360,7 +360,7 @@ drift fail the run too.
 
 ### Load in a pinch
 
-`/load [request] [count] [concurrency]` (or `L` in Requests, which starts it for you with the request
+`/load [request] [count] [concurrency]` (or `alt+l` in Requests, which starts it for you with the request
 under the cursor) sends one request `count` times (200 unless said), `concurrency` at a time (10), to
 see how an endpoint holds up: not a load-testing tool, but enough to tell whether it falls over at 50
 at once. `count=` and `concurrency=` (or `n=` and `c=`) say which number is which. Its variables are
@@ -448,7 +448,7 @@ proxy it went through.
 Every response is kept, across runs, in `~/.hail/history` (one file per `.http` file). When a file is
 opened, each request's last response is there again, so its variables work before anything is sent.
 The History tab lists them newest first: `↵` shows one, `d` compares it with the response before it to
-the same request, `D` forgets them all. What's kept leaves out the secrets and Azure tokens that were
+the same request, `alt+d` forgets them all. What's kept leaves out the secrets and Azure tokens that were
 filled in, wherever they turn up (the server's answer too), and hides the headers that carry
 credentials (`Authorization`, `Cookie`, `Set-Cookie`, API keys and anything named like a token or
 password). Bodies over 512 KB are cut. The newest 300 responses per file are kept.
@@ -519,17 +519,17 @@ setting turns both off.
 | --- | --- |
 | `1` `2` `3` `4` `5` / `tab` | Requests, Edit, Response, History, Log (`shift+tab` goes back) |
 | `↵` | Send the request under the cursor; in Response, send it again; in Edit, start typing |
-| `A` | In Requests: send every request, top to bottom, and show a report |
-| `L` | In Requests: load in a pinch (starts `/load <request> 200 10` for you to change and run) |
+| `alt+a` | In Requests: send every request, top to bottom, and show a report |
+| `alt+l` | In Requests: load in a pinch (starts `/load <request> 200 10` for you to change and run) |
 | `i` | Edit the file, typing, on the request under the cursor |
 | `ctrl+r` | In Edit: send the request the cursor is in |
 | `c` | Copy the request as a curl command, variables filled in (a multipart form as `-F` fields) |
-| `I` | In Requests: import a curl command (starts `/import-curl ` for you to paste after) |
+| `alt+i` | In Requests: import a curl command (starts `/import-curl ` for you to paste after) |
 | `y` | Copy the request's URL; in Response, the body |
 | `v` | The response, the whole width |
 | `h` | In Response: show or hide the headers |
-| `/` then `n` `N` | In Response: search the response (matches show as you type; a capital letter makes it match case), then go from match to match; `esc` clears it |
-| `d` `D` | In History: compare with the response before it · forget them all |
+| `/` then `n` `alt+n` | In Response: search the response (matches show as you type; a capital letter makes it match case), then go from match to match; `esc` clears it |
+| `d` `alt+d` | In History: compare with the response before it · forget them all |
 | `e` | Pick the environment |
 | `r` | Read the file again |
 | `/` or `:` | The command prompt, with completion |
@@ -541,7 +541,7 @@ setting turns both off.
 | `ctrl+c` | Copy the text you dragged over (dragging copies it too); it never quits |
 | `ctrl+v` | Paste |
 
-In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
+In lists: `j` `k` or the arrows move, `g` `alt+g` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
 mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll with the wheel, and
 drag to select text, which is copied when you let go.
 
@@ -588,7 +588,7 @@ and Trawl.
 | `/open <file.http>` | Open another file |
 | `/mock [port\|off]` | Serve the responses kept for this file's requests (and the contract's examples) on `http://127.0.0.1:4010`, or stop it |
 | `/contract [file\|url\|off]` | Check every response against an OpenAPI or Swagger document, remembered for the file (`off` forgets it) |
-| `/find <text>` | Find text in the file, in Edit (`n` and `N` go on to the next and the one before) |
+| `/find <text>` | Find text in the file, in Edit (`n` and `alt+n` go on to the next and the one before) |
 | `/auth [id\|clear]` | The environment's OAuth sign-ins and how each stands (`↵` signs in again, `x` forgets it); an id signs in with it; `clear` forgets them all |
 | `/secret [name]` | Save a secret in the system's store for `{{$secret name}}` (the saved ones, to replace or forget, if none is named) |
 | `/history [clear]` | The responses kept for this file (`clear` forgets them) |

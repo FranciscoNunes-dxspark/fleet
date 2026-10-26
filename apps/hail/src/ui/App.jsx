@@ -5,6 +5,7 @@ import { basename } from 'node:path';
 import * as a from '../actions.js';
 import { azToken as azCli } from '../azure.js';
 import { osCredentials } from '@fleet/kit/credentials.js';
+import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { appendHistory, clearHistory, entryFor, historyFile, latestByLabel, readHistory } from '../history.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import * as ed from '../editor.js';
@@ -24,7 +25,7 @@ import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
-import { keymapSection, parseKeymap, translateKey } from '@fleet/kit/keymap.js';
+import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
@@ -61,10 +62,10 @@ const SHOW_EVERY = 100;
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  requests: '↵ send · A send all · L load · I import curl · i edit it · c copy as curl · y copy the URL · v the response, full view · e environment',
+  requests: '↵ send · alt+a send all · alt+l load · alt+i import curl · i edit it · c copy as curl · y copy the URL · v the response, full view · e environment',
   edit: '↵ or i type · ctrl+r send · ctrl+s save · ctrl+z undo · ctrl+f find · [ ] requests · c copy as curl',
   response: '↵ send again · h headers · y copy the body · j/k space scroll',
-  history: '↵ show it · d compare with the one before · D forget them all',
+  history: '↵ show it · d compare with the one before · alt+d forget them all',
   log: '↵ all its output · y copy it',
 };
 
@@ -708,6 +709,7 @@ export function App({ config: initialConfig, initialFile, load = loadHttpFile, a
     mouseAvailable: Boolean(mouse),
     // /update: asks for the latest release now, whatever the daily check last said, and installs it.
     updateNow: () => {
+      if (askHostToUpdate()) return note('Asked Fleet to look for a new version of the whole fleet.');
       if (!checkUpdate) return note(`This Hail (${VERSION}) runs from a checkout: git pull updates it.`);
       if (update?.state === 'installing') return note(`Hail ${update.latest} is being installed already.`);
       if (update?.state === 'installed') return note(`Hail ${update.latest} is installed. It starts the next time you open Hail.`);
@@ -908,6 +910,9 @@ export function App({ config: initialConfig, initialFile, load = loadHttpFile, a
       }
       if (b?.key) out = b.key.seq;
     }
+    // Uppercase shortcuts are alt+letter (caps lock can't fire them); typing in a view is left alone.
+    if (out === input && focusRef.current === 'view' && !confirmRef.current && !['palette', 'help'].includes(overlayRef.current?.kind) && !ctx.claimsKey?.(input, {})) out = shortcutKey(input);
+    if (out == null) return null;
     if (out === CTRL_P && !overlayRef.current && !confirmRef.current && (focusRef.current === 'view' || focusRef.current === 'prompt')) {
       openPalette();
       return null;

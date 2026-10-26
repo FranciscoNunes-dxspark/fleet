@@ -108,7 +108,7 @@ test('sending requests, a response used by the next, the full view, curl, enviro
     app.stdin.write(KEYS.enter);
     await until(() => /env broken/.test(frame()), 'broken picked');
     assert.match(frame(), /❯ GET\s+200 Who am I/, 'the cursor where it was before the Response view');
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => /❯ GET\s+Not there/.test(frame()), 'the last request');
     app.stdin.write(KEYS.enter);
     await until(() => /nothing is listening at 127\.0\.0\.1:\d+/.test(frame()), 'the network error in words');
