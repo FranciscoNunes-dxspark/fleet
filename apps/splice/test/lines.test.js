@@ -72,7 +72,7 @@ test('in blame, v selects lines and L shows the commits that changed them', asyn
     await until(() => frame().includes('Start the file'), 'the graph');
     app.stdin.write('2');
     await until(() => /❯ M f\.txt/.test(frame()), 'the changed file');
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('Blame f.txt') && frame().includes('Not committed yet'), 'the blame');
     // Lines 3 and 4 of the working tree ("TWO", "three"): lines 2 and 3 in HEAD.
     app.stdin.write('j');
@@ -82,9 +82,9 @@ test('in blame, v selects lines and L shows the commits that changed them', asyn
     app.stdin.write('v');
     app.stdin.write('j');
     await until(() => frame().includes('2 selected'), 'two lines selected');
-    app.stdin.write('L');
+    app.stdin.write('\x1bl');
     await until(() => frame().includes('Lines 2–3 of f.txt') && frame().includes('Shout line two'), 'the history of the lines');
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => frame().includes('Start the file'), 'the commit that wrote them first, further down');
     // Line four's commit isn't there: searching for it finds nothing.
     app.stdin.write('/');
@@ -114,7 +114,7 @@ test('in blame, e asks Claude why the lines are the way they are, from the file 
     await until(() => frame().includes('Start the file'), 'the graph');
     app.stdin.write('2');
     await until(() => /❯ M f\.txt/.test(frame()), 'the changed file');
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('Blame f.txt') && frame().includes('Not committed yet'), 'the blame');
     // The line written just now has no history to go on.
     app.stdin.write('e');

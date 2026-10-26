@@ -89,13 +89,13 @@ test('remotes: add one, push to it, rename and remove it; set and unset an upstr
 
     app.stdin.write('3');
     await until(() => frame().includes('Local (2)'), 'the Branches view');
-    app.stdin.write('M');
+    app.stdin.write('\x1bm');
     await until(() => frame().includes('Remotes') && /❯ backup/.test(frame()), 'the remotes, backup first');
     app.stdin.write('p');
     await until(() => execFileSync('git', ['ls-remote', '--heads', backup], { encoding: 'utf8' }).includes('refs/heads/main'), 'main pushed to backup');
     assert.equal(git('rev-parse', '--abbrev-ref', 'main@{upstream}'), 'origin/main', 'a branch with an upstream keeps it');
 
-    app.stdin.write('R');
+    app.stdin.write('\x1br');
     await until(() => frame().includes('> /remote rename backup'), 'the rename in the prompt');
     await type(app.stdin, 'mirror');
     app.stdin.write('\r');
@@ -108,7 +108,7 @@ test('remotes: add one, push to it, rename and remove it; set and unset an upstr
     app.stdin.write('\x1b');
     await until(() => frame().includes('Local (2)'), 'back in Branches');
 
-    app.stdin.write('U');
+    app.stdin.write('\x1bu');
     await until(() => frame().includes('> /upstream main origin/main'), 'U to start from the upstream as it is');
     app.stdin.write('\x15');
     await type(app.stdin, '/upstream topic origin/topic');

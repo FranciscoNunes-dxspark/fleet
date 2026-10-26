@@ -65,7 +65,7 @@ test('Changes lists submodules with their state; I initialises one and o opens i
     await until(() => frame().includes('Add the library'), 'the graph');
     app.stdin.write('2');
     await until(() => frame().includes('Submodules (1)') && /❯ ○ lib\s+not initialised/.test(frame()), 'the submodule, not initialised');
-    app.stdin.write('I');
+    app.stdin.write('\x1bi');
     await until(() => /^[0-9a-f]/.test(git('submodule', 'status')), 'the submodule checked out');
     await until(() => /✓ lib\s+up to date/.test(frame()), 'shown up to date');
 
@@ -140,14 +140,14 @@ test('/submodules lists recorded and checked-out commits, branch and changes; u,
     run(lib, 'add', '.');
     run(lib, 'commit', '-q', '-m', 'Newer');
     const tip = run(lib, 'rev-parse', 'HEAD');
-    app.stdin.write('U');
+    app.stdin.write('\x1bu');
     await until(() => frame().includes('Move lib to the newest commit on its remote branch?'), 'the question');
     mark = app.frames.length;
     app.stdin.write('2');
     await until(() => !frame().includes('Move lib to the newest'), 'the question answered no');
     await reread(mark, 'the list read again after no');
     assert.equal(run(sub, 'rev-parse', 'HEAD'), recorded);
-    app.stdin.write('U');
+    app.stdin.write('\x1bu');
     await until(() => frame().includes('Move lib to the newest commit on its remote branch?'), 'the question again');
     app.stdin.write('1');
     await until(() => run(sub, 'rev-parse', 'HEAD') === tip, 'the remote branch checked out');

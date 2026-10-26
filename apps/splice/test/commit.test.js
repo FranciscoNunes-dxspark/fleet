@@ -91,7 +91,7 @@ test('\\n in /commit, then M and /amend --file write the message to a file to ed
     await typeCommand(app, 'commit Count to three');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('enter run'), 'back in the view');
-    app.stdin.write('M');
+    app.stdin.write('\x1bm');
     await until(() => existsSync(commitFile) && frame().includes('splice-commit-message.txt') && frame().includes('Wrote the commit message'), 'the message file');
     const written = readFileSync(commitFile, 'utf8');
     assert.ok(written.startsWith('Count to three\n\n# '), written);
@@ -164,7 +164,7 @@ test('W: a subject alone goes in the prompt; with a body, into the message file,
     await until(() => frame().includes('Start the notes'), 'the graph');
     app.stdin.write('2');
     await until(() => frame().includes('Staged (1)'), 'the Changes view');
-    app.stdin.write('W');
+    app.stdin.write('\x1bw');
     await until(
       () => frame().includes('Commit message from Claude') && frame().includes('which made') && /> \/commit --file .*splice-commit-message\.txt/.test(frame()),
       'the message in the viewer, and the file in the prompt',

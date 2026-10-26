@@ -180,7 +180,7 @@ test('S in Branches fetches, fast-forwards what is only behind, reports the rest
     await until(() => frame().includes('Mine on div'), 'the graph');
     app.stdin.write('3');
     await until(() => frame().includes('Local (6)'), 'the Branches view');
-    app.stdin.write('S');
+    app.stdin.write('\x1bs');
     await until(() => frame().includes('Fast-forwarded (2)'), 'the report', 15000);
     assert.match(frame(), /Diverged, left alone \(1\)/);
     assert.match(frame(), /Ahead, left alone \(1\)/);

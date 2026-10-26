@@ -178,7 +178,7 @@ test('/hooks lists and shows them and runs one; a commit and a push ask whether 
     assert.equal(log(), 'pre-commit ran\npre-commit ran\n', 'the hook ran');
 
     // Pushing: the pre-push hook runs with the remote's name.
-    app.stdin.write('P');
+    app.stdin.write('\x1bp');
     await until(() => frame().includes('Push main?') && frame().includes('running the pre-push hook'), 'the push question');
     app.stdin.write('1');
     await until(() => run(origin, 'rev-parse', 'main') === git('rev-parse', 'HEAD'), 'pushed');

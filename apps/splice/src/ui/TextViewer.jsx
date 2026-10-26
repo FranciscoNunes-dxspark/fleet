@@ -288,8 +288,8 @@ export function TextViewer({ title, text, loading, diff, rangeDiff, markdown, th
   const hint = search.typing
     ? `/${search.query}▏ ${search.query ? found : ''} · ↵ done · esc cancel`
     : search.query
-      ? `"${search.query}" ${found} · n/N · esc clears`
-      : `${pos}${pos ? ' · ' : ''}${starts.length ? `${starts.length} comment${starts.length === 1 ? '' : 's'} · t/T · r reply · x resolve · ` : ''}${pr ? 'c comment · ' : ''}${copy ? 'y copy · ' : ''}${splitHint}/ search · esc close`;
+      ? `"${search.query}" ${found} · n/alt+n · esc clears`
+      : `${pos}${pos ? ' · ' : ''}${starts.length ? `${starts.length} comment${starts.length === 1 ? '' : 's'} · t/alt+t · r reply · x resolve · ` : ''}${pr ? 'c comment · ' : ''}${copy ? 'y copy · ' : ''}${splitHint}/ search · esc close`;
   return (
     <Panel title={title} hint={hint} width={width} height={height} focused={active}>
       {loading ? (

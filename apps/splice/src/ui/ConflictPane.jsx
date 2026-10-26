@@ -111,7 +111,7 @@ export function ConflictPane({ cf, f, width, height, focused, hint }) {
   else if (cf.file.error) {
     body = message(
       cf.file.error.code === 'ENOENT'
-        ? [`${f.path} isn't in the working tree: one side deleted it.`, 'O or T takes a side for the whole file.']
+        ? [`${f.path} isn't in the working tree: one side deleted it.`, 'alt+o or alt+t takes a side for the whole file.']
         : [cf.file.error.message.split('\n')[0]],
     );
   } else if (!cf.count) body = message([`No conflicts left in ${f.path}.`, 'space marks it resolved (in the file list).']);

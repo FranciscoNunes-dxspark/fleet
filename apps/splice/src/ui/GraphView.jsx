@@ -231,7 +231,7 @@ export function GraphView({ data, ctx, width, height, active, filter, jump }) {
   const visible = rows.slice(nav.offset, nav.offset + innerH);
   const filtered = filter ? filterTitle(filter, commits) : { title: 'Commits', empty: 'No commits yet.' };
   const hint = span
-    ? `${picked.length} selected · C cherry-pick · esc`
+    ? `${picked.length} selected · alt+c cherry-pick · esc`
     : filter
       ? 'esc clears'
       : data.graphComplete
@@ -294,7 +294,7 @@ export function GraphView({ data, ctx, width, height, active, filter, jump }) {
         })}
       </Panel>
       {split ? (
-        <Panel title={sel?.wip ? 'Working tree' : 'Commit'} hint={c ? 'J/K scroll' : ''} width={detailW} height={height}>
+        <Panel title={sel?.wip ? 'Working tree' : 'Commit'} hint={c ? 'alt+j/k scroll' : ''} width={detailW} height={height}>
           {c ? (
             <Lines lines={detailLines(c, detail.value?.hash === c.hash ? detail.value : null, detailW - 4, sigShown)} width={detailW - 2} height={innerH} offset={detailOffset} />
           ) : sel?.wip ? (

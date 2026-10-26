@@ -168,7 +168,7 @@ test('through the UI: taking ours, theirs and both, block by block', async () =>
 
     app.stdin.write('n');
     await until(() => frame().includes('▌Conflict 2 of 3'), 'the next block');
-    app.stdin.write('N');
+    app.stdin.write('\x1bn');
     await until(() => frame().includes('▌Conflict 1 of 3'), 'back to the first block');
 
     app.stdin.write('o');
@@ -209,7 +209,7 @@ test('through the UI: Claude proposes a resolution, shown as a diff, written onl
   const app = start(dir, { askClaude });
   const frame = () => app.lastFrame() ?? '';
   const ask = async () => {
-    app.stdin.write('C');
+    app.stdin.write('\x1bc');
     await until(() => frame().includes("Use Claude's resolution for g.txt?"), 'the question');
   };
   try {

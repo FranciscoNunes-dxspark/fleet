@@ -90,7 +90,7 @@ test('F picks an older commit, commits the fixup and folds it in, keeping other 
     await until(() => frame().includes('Gamma'), 'the graph');
     app.stdin.write('2');
     await until(() => frame().includes('Staged (1)') && /❯ M Gamma\.txt/.test(frame()), 'the Changes view');
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => frame().includes('Fix up which commit on main?') && /now\s+Alpha/.test(frame()), 'the picker with its commits');
     // Newest first: Gamma, Beta, Alpha.
     assert.match(frame(), /❯ [0-9a-f]{7}\s+now\s+Gamma/);
@@ -235,7 +235,7 @@ test('Z absorbs each staged hunk into the branch commit that last changed its li
     await until(() => frame().includes('Beta'), 'the graph');
     app.stdin.write('2');
     await until(() => frame().includes('Staged (2)'), 'the Changes view');
-    app.stdin.write('Z');
+    app.stdin.write('\x1bz');
     await until(() => frame().includes('Make 2 fixup! commits of 2 hunks?'), 'the plan and the question');
     assert.match(frame(), /Absorb: 2 hunks into 2 commits/);
     assert.match(frame(), /[0-9a-f]{7} Beta/);

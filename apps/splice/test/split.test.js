@@ -125,7 +125,7 @@ test('S in Changes: Claude proposes commits, each is reviewed, committed with ju
     await until(() => frame().includes('First commit'), 'the graph');
     app.stdin.write('2');
     await until(() => frame().includes('Staged (1)'), 'the Changes view');
-    app.stdin.write('S');
+    app.stdin.write('\x1bs');
     await until(() => frame().includes('Unstage everything first'), 'the question about what is staged');
     app.stdin.write('1');
     await until(() => frame().includes('Commit 1 of 3: "Change the top line"?') && frame().includes('+TOP'), 'the first commit, with its diff');

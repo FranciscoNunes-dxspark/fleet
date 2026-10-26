@@ -489,7 +489,7 @@ function showRemotes(ctx, { replace = false } = {}) {
   ctx.showPicker(
     {
       title: 'Remotes',
-      hint: `n add · R rename · x remove · u set URL · f fetch${branch.head ? ` · p push ${branch.head} to it` : ''}`,
+      hint: `n add · alt+r rename · x remove · u set URL · f fetch${branch.head ? ` · p push ${branch.head} to it` : ''}`,
       empty: 'No remotes. n adds one.',
       remotes: true,
       items: () =>
@@ -948,7 +948,7 @@ export async function sync(ctx) {
     title: `${mine.name} and ${mine.upstream} have diverged. Rebase ${mine.name} onto ${mine.upstream}?`,
     detail: `${expect ? `${expect} ` : ''}Replays its ${mine.ahead} commit${mine.ahead === 1 ? '' : 's'} on the ${mine.behind} new one${mine.behind === 1 ? '' : 's'} there${
       autostash ? ', with your changes set aside (--autostash)' : ''
-    }; then P pushes it.`,
+    }; then alt+p pushes it.`,
     options: [
       { label: 'Yes, rebase it', value: true },
       { label: 'No, leave it', value: false },
@@ -983,7 +983,7 @@ export async function updateBranch(ctx, text) {
   const base = args.base ?? def?.ref;
   if (!base) return ctx.note("Couldn't tell which branch is the default one. Say what to rebase onto: /update-branch <base>", 'error');
   if (!args.base && (head === def.name || head === def.ref)) {
-    return ctx.note(`${head} is the default branch itself. /sync (S in Branches) brings it up to date with ${def.ref}.`, 'error');
+    return ctx.note(`${head} is the default branch itself. /sync (alt+s in Branches) brings it up to date with ${def.ref}.`, 'error');
   }
   // The base's latest commits first, when it's a remote branch.
   const rb = ctx.data.refs.remote.find((b) => b.name === base);
@@ -1099,7 +1099,7 @@ export async function continueOp(ctx) {
   if (!needRepo(ctx)) return;
   const { state } = ctx.data;
   if (!state) return ctx.note('There is no merge, rebase, cherry-pick or revert in progress.', 'error');
-  if (state === 'bisecting') return ctx.note('A bisect goes on as you mark commits: B on one in the graph, or /bisect good, bad or skip.', 'error');
+  if (state === 'bisecting') return ctx.note('A bisect goes on as you mark commits: alt+b on one in the graph, or /bisect good, bad or skip.', 'error');
   if (ctx.data.changes.conflicts.length) return ctx.note('Some files still have conflicts. Resolve and stage them first.', 'error');
   // A merge is finished by committing it; the others have --continue.
   const r = await ctx.exec(state === 'merging' ? ['commit', '--no-edit'] : [OP[state], '--continue'], { label: 'Continuing' });
@@ -1187,16 +1187,16 @@ async function foundIt(ctx, hash) {
 export async function bisectRun(ctx, words) {
   if (!needRepo(ctx)) return;
   if (ctx.data.state !== 'bisecting') {
-    return ctx.note('Start a bisect first: B on a commit in the graph marks it bad or good. With one of each, /bisect run <command> tests the rest.', 'error');
+    return ctx.note('Start a bisect first: alt+b on a commit in the graph marks it bad or good. With one of each, /bisect run <command> tests the rest.', 'error');
   }
   if (!words.length) return ctx.prefill('/bisect run ');
   const marks = await bisectMarks(ctx);
-  if (!marks.bad || !marks.good) return ctx.note(`Mark a ${marks.bad ? 'good' : 'bad'} commit too (B in the graph), so git knows which commits to test.`, 'error');
+  if (!marks.bad || !marks.good) return ctx.note(`Mark a ${marks.bad ? 'good' : 'bad'} commit too (alt+b in the graph), so git knows which commits to test.`, 'error');
   const shown = words.map((w) => (/[\s"]/.test(w) || w === '' ? JSON.stringify(w) : w)).join(' ');
   // stdin closed, so a command that reads it doesn't wait for ever.
   const r = await ctx.exec(['bisect', 'run', ...words], { label: 'Testing each commit', input: '', tree: true });
   if (r.error?.cancelled) {
-    return ctx.note('Stopped the bisect run. The bisect stays where it got to, with what was tested so far marked:\n/bisect run again, B on the commit checked out to go on by hand, or /abort to stop.');
+    return ctx.note('Stopped the bisect run. The bisect stays where it got to, with what was tested so far marked:\n/bisect run again, alt+b on the commit checked out to go on by hand, or /abort to stop.');
   }
   ctx.showText(`git bisect run ${shown}`, r.ok ? r.out : r.error.message);
   const found = r.ok && firstBadCommit(r.out);
@@ -1215,7 +1215,7 @@ export async function bisect(ctx, how, ref) {
   }
   if (!['good', 'bad', 'skip'].includes(how)) return ctx.note('Use /bisect good, bad or skip [ref], or /bisect reset.', 'error');
   if (!on) {
-    if (how === 'skip') return ctx.note('Start a bisect by marking a commit good or bad (B in the graph).', 'error');
+    if (how === 'skip') return ctx.note('Start a bisect by marking a commit good or bad (alt+b in the graph).', 'error');
     if (!(await ctx.exec(['bisect', 'start'], { label: 'Starting a bisect', refresh: false })).ok) return;
   }
   const r = await ctx.exec(['bisect', how, ...(ref ? [ref] : [])], { label: 'Bisecting' });
@@ -2031,7 +2031,7 @@ export async function updateSubmodules(ctx, text, { init = true } = {}) {
   const path = (text ?? '').trim().replace(/[\\/]+$/, '');
   const target = path ? subs.find((s) => s.path === path) : null;
   if (path && !target) return ctx.note(`No submodule at ${path}.`, 'error');
-  if (!init && target?.state === 'uninitialised') return ctx.note(`${target.path} isn't initialised yet: I clones and checks it out.`, 'error');
+  if (!init && target?.state === 'uninitialised') return ctx.note(`${target.path} isn't initialised yet: alt+i clones and checks it out.`, 'error');
   const moving = (target ? [target] : subs).filter((s) => s.state === 'out of date');
   if (moving.length) {
     const ok = await ctx.confirm({
@@ -2047,7 +2047,7 @@ export async function updateSubmodules(ctx, text, { init = true } = {}) {
 
 /** o or ↵ on a submodule in Changes or /submodules: opens it in Splice as the repository it is. */
 export function openSubmodule(ctx, sub) {
-  if (sub.state === 'uninitialised') return ctx.note(`${sub.path} isn't initialised yet: I clones and checks it out.`, 'error');
+  if (sub.state === 'uninitialised') return ctx.note(`${sub.path} isn't initialised yet: alt+i clones and checks it out.`, 'error');
   return ctx.openRepo(join(ctx.data.root, sub.path));
 }
 
@@ -2110,13 +2110,13 @@ export function showSubmodules(ctx, { replace = false, index } = {}) {
   };
   const initialised = (s) => {
     if (s.state !== 'uninitialised') return true;
-    ctx.note(`${s.path} isn't initialised yet: I clones and checks it out.`, 'error');
+    ctx.note(`${s.path} isn't initialised yet: alt+i clones and checks it out.`, 'error');
     return false;
   };
   ctx.showPicker(
     {
       title: 'Submodules',
-      hint: '↵ open · I init/update · u update · f fetch · U to its remote branch · s sync URL',
+      hint: '↵ open · alt+i init/update · u update · f fetch · alt+u to its remote branch · s sync URL',
       empty: 'This repository has no submodules.',
       submodules: true,
       index,
@@ -2260,8 +2260,8 @@ export function showLfsLocks(ctx, { replace = false, index } = {}) {
   ctx.showPicker(
     {
       title: 'Git LFS locks',
-      hint: 'x unlock · X force someone else\'s open (asks first) · y copy path',
-      empty: 'Nothing is locked. L on a file in Changes locks it (or /lfs lock <path>).',
+      hint: 'x unlock · alt+x force someone else\'s open (asks first) · y copy path',
+      empty: 'Nothing is locked. alt+l on a file in Changes locks it (or /lfs lock <path>).',
       lfsLocks: true,
       index,
       load: async () => {
@@ -2415,7 +2415,7 @@ export async function runRebase(ctx, base, rows) {
     if (r.ok) afterRewrite(ctx, was);
     activity(ctx, r, `rewrote ${rows.length} commit${rows.length === 1 ? '' : 's'} of ${branch.head ?? 'HEAD'} (${planSummary(rows)})`, 'rebase');
   } else if (ctx.data.changes.conflicts.length) afterConflicts(ctx);
-  else ctx.note('Stopped for editing. Change what you need, amend (A in Changes), then /continue.');
+  else ctx.note('Stopped for editing. Change what you need, amend (alt+a in Changes), then /continue.');
   return true;
 }
 
@@ -2503,7 +2503,7 @@ async function fixupInto(ctx, target, { stageAll }) {
   return offerFold(ctx, target, {
     title: `Fold it into "${target.subject}" now?`,
     kept: `Kept "fixup! ${target.subject}" as its own commit for now.`,
-    later: `To fold it in later: i on ${short(target.hash)} in the graph, J to move the fixup! commit just above it, f to fix up, ↵.`,
+    later: `To fold it in later: i on ${short(target.hash)} in the graph, alt+j to move the fixup! commit just above it, f to fix up, ↵.`,
   });
 }
 
@@ -2640,7 +2640,7 @@ export async function absorb(ctx) {
   return offerFold(ctx, oldest, {
     title: n === 1 ? `Fold it into "${oldest.subject}" now?` : `Fold them into their ${n} commits now?`,
     kept: n === 1 ? `Kept "fixup! ${oldest.subject}" as its own commit for now.` : `Kept the ${n} fixup! commits as they are for now.`,
-    later: `To fold ${n === 1 ? 'it' : 'them'} in later: i on ${short(oldest.hash)} in the graph, J/K to move each fixup! commit just above its commit, f to fix up, ↵.`,
+    later: `To fold ${n === 1 ? 'it' : 'them'} in later: i on ${short(oldest.hash)} in the graph, alt+j/k to move each fixup! commit just above its commit, f to fix up, ↵.`,
     many: n > 1,
   });
 }
@@ -2820,7 +2820,7 @@ export function prChecks(ctx, pr, { replace = false } = {}) {
   ctx.showPicker(
     {
       title: `Checks of ${pr.label} ${pr.title}`,
-      hint: `↵ log · o open in browser${host.canRerun ? ' · R re-run failed' : ''}`,
+      hint: `↵ log · o open in browser${host.canRerun ? ' · alt+r re-run failed' : ''}`,
       empty: 'No checks have run on it.',
       load: async () => {
         all = (await host.checks(pr)).sort((a, b) => order[a.state] - order[b.state]);
@@ -3439,7 +3439,7 @@ export async function claudeSplit(ctx) {
   const units = splitUnits(await ctx.git(['diff', '--no-ext-diff']));
   if (units.length < 2) {
     await putBack();
-    return ctx.note('There is only one change, so there is nothing to split: commit it (c), or W for a message.', 'error');
+    return ctx.note('There is only one change, so there is nothing to split: commit it (c), or alt+w for a message.', 'error');
   }
   const recent = (await ctx.git(['log', '-n15', '--format=%s']).catch(() => '')).split('\n').filter(Boolean);
   const r = await askClaude(ctx, 'split into commits', splitPrompt(recent), splitInput(units));
@@ -3678,9 +3678,9 @@ export async function claudeResolve(ctx, f) {
   try {
     current = await readFile(full, 'utf8');
   } catch {
-    return ctx.note(`${f.path} isn't in the working tree (one side deleted it), so there's nothing to merge. O or T takes a side.`, 'error');
+    return ctx.note(`${f.path} isn't in the working tree (one side deleted it), so there's nothing to merge. alt+o or alt+t takes a side.`, 'error');
   }
-  if (!parseConflicts(current).blocks.length) return ctx.note(`No conflict markers in ${f.path}: space marks it resolved, or O/T takes a side.`, 'error');
+  if (!parseConflicts(current).blocks.length) return ctx.note(`No conflict markers in ${f.path}: space marks it resolved, or alt+o/t takes a side.`, 'error');
   const { ours, theirs } = await conflictSides(ctx);
   const input = resolveInput({ path: f.path, state: ctx.data.state, ours, theirs, text: current });
   // A cut-off file can't come back whole.
@@ -3717,7 +3717,7 @@ export async function claudeResolve(ctx, f) {
   try {
     // Claude took a while: don't overwrite edits made meanwhile.
     if ((await readFile(full, 'utf8')) !== current) {
-      ctx.note(`${f.path} changed while Claude was working on it, so it was left alone. C asks again.`, 'error');
+      ctx.note(`${f.path} changed while Claude was working on it, so it was left alone. alt+c asks again.`, 'error');
       return r;
     }
     await writeFile(full, proposed);
@@ -4414,11 +4414,11 @@ export async function future(ctx, target) {
       const open = ctx.overlay();
       const blame = open?.kind === 'picker' && open.blame ? open : ctx.lastBlame?.();
       const row = blame?.items?.[blame.index ?? 0];
-      if (!row) return ctx.note('No blame to take a line from: /future <path>:<line>, or F on a line in blame (/blame <path>).', 'error');
+      if (!row) return ctx.note('No blame to take a line from: /future <path>:<line>, or alt+f on a line in blame (/blame <path>).', 'error');
       at = { ...blame.blame, line: row.line };
     }
   }
-  if (!at.path || !at.line) return ctx.note('Say which line: /future <path>:<line>, or F on a line in blame.', 'error');
+  if (!at.path || !at.line) return ctx.note('Say which line: /future <path>:<line>, or alt+f on a line in blame.', 'error');
   const host = needHost(ctx);
   if (!host) return;
   if (!host.headRef) return ctx.note(`Splice can't fetch pull requests from ${host.name}.`, 'error');
@@ -4667,7 +4667,7 @@ export function showReflog(ctx) {
   const done = (r) => r?.ok && ctx.closeOverlay();
   ctx.showPicker({
     title: 'Reflog: where HEAD has been',
-    hint: '↵ diff · X reset to it · c check out',
+    hint: '↵ diff · alt+x reset to it · c check out',
     empty: "HEAD's reflog is empty.",
     load: async () => {
       const now = Date.now() / 1000;

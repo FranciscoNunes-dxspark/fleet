@@ -126,7 +126,7 @@ test('F in blame: the open pull requests changing the line, with their hunks; �
     await until(() => flat(frame()).includes('No blame to take a line from'), 'no blame shown yet');
     await command(app, 'blame f.txt:6');
     await until(() => /❯.*6 │ five/.test(frame()), 'blame on line 6');
-    app.stdin.write('F');
+    app.stdin.write('\x1bf');
     await until(() => frame().includes('1 open pull request changing line 6 of f.txt'), 'the pull requests');
     assert.match(frame(), /#1\s+Shout five\s+ana/);
     assert.match(frame(), /@@ -5 \+5 @@/);

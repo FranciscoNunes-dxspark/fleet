@@ -127,7 +127,7 @@ test("s in PRs lists the checks, failed first; ↵ shows a check's log and R re-
     await until(() => frame().includes('Error: expected 2, got 3'), 'the failed check’s log');
     app.stdin.write('\x1b');
     await until(() => frame().includes('Checks of #7'), 'back to the checks');
-    app.stdin.write('R');
+    app.stdin.write('\x1br');
     await until(() => frame().includes('Re-run the 1 failed check of #7?'), 'the re-run question');
     app.stdin.write('1');
     await until(() => calls.length === 1, 'the re-run');
@@ -157,18 +157,18 @@ test('A asks for reviewers, D makes it a draft, E retitles it and B edits its de
     await until(() => frame().includes('First commit'), 'the graph');
     app.stdin.write('6');
     await until(() => /❯.*Bump b/.test(frame()), 'the PR');
-    app.stdin.write('A');
+    app.stdin.write('\x1ba');
     await until(() => frame().includes('> /reviewer'), 'the reviewer prompt');
     await type(app.stdin, 'ana, bo');
     app.stdin.write('\r');
     await until(() => calls.length === 1, 'the reviewers');
     assert.deepEqual(calls[0], ['reviewers', 7, ['ana', 'bo']]);
 
-    app.stdin.write('D');
+    app.stdin.write('\x1bd');
     await until(() => calls.length === 2, 'the draft');
     assert.deepEqual(calls[1], ['draft', 7, true]);
 
-    app.stdin.write('E');
+    app.stdin.write('\x1be');
     await until(() => frame().includes('> /title Bump b'), 'the title to edit');
     await type(app.stdin, ' to 2');
     app.stdin.write('\r');
@@ -177,7 +177,7 @@ test('A asks for reviewers, D makes it a draft, E retitles it and B edits its de
     // The call is made before the command finishes, and a key pressed while it runs is ignored.
     await until(() => /retitle "Bump b to 2"\n\s*⎿ +Done/.test(frame()), 'the retitle to finish');
 
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     const file = join(dir, '.git', 'splice-pr-7.md');
     // The file from the repository's root, so a long temp path (Windows) doesn't scroll the command away.
     await until(() => existsSync(file) && frame().includes('Edit it in your editor') && frame().includes('> /body --file .git/splice-pr-7.md '), 'the body file in the prompt');
@@ -208,7 +208,7 @@ test('X asks for changes: GitHub wants the text, then Splice asks before sending
     await until(() => frame().includes('First commit'), 'the graph');
     app.stdin.write('6');
     await until(() => /❯.*Bump b/.test(frame()), 'the PR');
-    app.stdin.write('X');
+    app.stdin.write('\x1bx');
     await until(() => frame().includes('> /request-changes'), 'the prompt');
     app.stdin.write('\r');
     await until(() => frame().includes('GitHub needs to be told what to change') && frame().includes('> /request-changes'), 'the text asked for');

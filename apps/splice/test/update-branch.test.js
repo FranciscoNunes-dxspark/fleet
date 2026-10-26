@@ -103,7 +103,7 @@ test('B rebases a pushed branch onto the latest default branch, fetching it firs
     await until(() => frame().includes('Feature work'), 'the graph');
     app.stdin.write('3');
     await until(() => frame().includes('Local (2)'), 'the Branches view');
-    app.stdin.write('B');
+    app.stdin.write('\x1bb');
     await until(() => frame().includes('Rebase feature onto origin/main?'), 'the question', 15000);
     assert.match(frame(), /feature is already pushed\. No conflicts expected/);
     assert.match(frame(), /Replays 1 commit of feature on top of origin\/main/);
