@@ -178,7 +178,7 @@ Pages fit the screen, so pinch and double-tap zoom are turned off, in the browse
 - **Devices:** each one is listed with a **Remove** button, and **Send a test** checks one is working. A device whose subscription has expired is removed by itself.
 - **Requirements:** push needs Keel served over https (or `localhost`).
 - **Push services:** Keel sends only to the browsers' push services (Google, Apple, Mozilla and Microsoft), so a device can't make the server call any other address. List any extra push service hosts in `PUSH_ALLOW_HOSTS`.
-- **Identifying the server:** messages are encrypted for the one device they're for (RFC 8291). The server identifies itself with a VAPID key pair made on first use. Push services may contact the address in `PUSH_SUBJECT`, which defaults to `PUBLIC_URL`.
+- **Identifying the server:** messages are encrypted for the one device they're for (RFC 8291). The server identifies itself with a VAPID key pair made on first use, kept encrypted with the server's key: if that key changes (a new `SESSION_SECRET`, or `secret.key` made again), Keel makes a new pair and each device needs push turned on again. Push services may contact the address in `PUSH_SUBJECT`, which defaults to `PUBLIC_URL`.
 - **Offline:** the installed app keeps only Keel itself (the page and its files) for quick and offline starts. It never stores Azure DevOps data.
 
 ### Android app

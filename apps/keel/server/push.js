@@ -68,16 +68,29 @@ export function createPush({
   const previous = new Map();
 
   function vapid() {
-    let v = store.get().vapid;
-    if (!v) {
-      store.update((s) => {
-        s.vapid ||= (() => {
-          const keys = generateVapidKeys();
-          return { publicKey: keys.publicKey, privateKey: encrypt(getKey(), keys.privateKey) };
-        })();
-      });
-      v = store.get().vapid;
+    const old = store.get().vapid;
+    if (old) {
+      try {
+        return { publicKey: old.publicKey, privateKey: decrypt(getKey(), old.privateKey) };
+      } catch {
+        // Encrypted with another server key (SESSION_SECRET changed, or secret.key was made again):
+        // a new pair. Browsers subscribed with the old one can't take its messages, and their
+        // addresses can't be read either, so each device turns push on again.
+        console.warn('[push] The push key was encrypted with another server key; made a new one, so each device needs push turned on again');
+        store.update((s) => {
+          if (s.vapid?.privateKey !== old.privateKey) return;
+          delete s.vapid;
+          s.devices = [];
+        });
+      }
     }
+    store.update((s) => {
+      s.vapid ||= (() => {
+        const keys = generateVapidKeys();
+        return { publicKey: keys.publicKey, privateKey: encrypt(getKey(), keys.privateKey) };
+      })();
+    });
+    const v = store.get().vapid;
     return { publicKey: v.publicKey, privateKey: decrypt(getKey(), v.privateKey) };
   }
 

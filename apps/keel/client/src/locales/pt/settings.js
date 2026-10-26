@@ -61,6 +61,7 @@ export default {
   'Push notifications': 'Notificações push',
   'On your phone or computer, even when Keel is closed: the same updates as above, checked every two minutes.': 'No telemóvel ou no computador, mesmo com o Keel fechado: as mesmas atualizações de cima, verificadas a cada dois minutos.',
   "This Keel server doesn't send push notifications.": 'Este servidor do Keel não envia notificações push.',
+  "Couldn't read push notifications from the server: {error}": 'Não foi possível ler as notificações push do servidor: {error}',
   'On iPhone and iPad, push notifications work in the Keel app: tap Share, then Add to Home Screen, and open Keel from there.': 'No iPhone e no iPad, as notificações push funcionam na app do Keel: toque em Partilhar, depois em Adicionar ao ecrã principal, e abra o Keel a partir daí.',
   'Push notifications need Keel to be opened over https.': 'As notificações push precisam que o Keel seja aberto por https.',
   "This browser doesn't support push notifications.": 'Este browser não suporta notificações push.',
