@@ -35,6 +35,7 @@ const STOP_GRACE = 3000;
 const NOTICE_MS = 4000;
 
 export const HELP = [
+  ['alt+1-6', 'switch to that space'],
   ['ctrl+] 1-6', 'switch to that space'],
   ['ctrl+] s t o b h k', 'Splice, Trawl, Sonar, Bosun, Hail, Keel'],
   ['ctrl+] ] or n', 'next space'],
@@ -56,10 +57,11 @@ export class Host {
     args = {},
     truecolor = true,
     onSwitch = () => {},
+    onUpdate = () => {},
     setTimer = (fn, ms) => setTimeout(fn, ms),
     clearTimer = (t) => clearTimeout(t),
   }) {
-    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, setTimer, clearTimer });
+    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer });
     this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '' }));
     this.active = null;
     this.keys = { prefix: false };
@@ -305,6 +307,7 @@ export class Host {
       if (space.paste != null) this.setTimer(() => this.typePaste(space), READY_DELAY);
     }
     if (m.handoff) this.handoff(space, m);
+    if (m.update) this.onUpdate();
   }
 
   handoff(from, m) {

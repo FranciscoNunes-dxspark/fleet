@@ -162,3 +162,15 @@ export function keymapSection(keymap, labels = {}) {
   }
   return { title: 'Your keys', about: '"keys" in the settings file; they work while a view has the keys, not while typing', rows };
 }
+
+/**
+ * What a view's shortcut handlers should see for `input` where a view has the keys: an uppercase
+ * shortcut is alt+letter (ESC and the letter, which caps lock doesn't change), so alt+t, alt+T both
+ * become T, and a bare uppercase letter, which caps lock or a stray shift also sends, becomes null
+ * (swallowed). Everything else comes back as it is. Not for text being typed: the caller says when.
+ */
+export function shortcutKey(input) {
+  if (/^\x1b[a-zA-Z]$/.test(input)) return input[1].toUpperCase();
+  if (/^[A-Z]$/.test(input)) return null;
+  return input;
+}

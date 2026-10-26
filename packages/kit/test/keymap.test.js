@@ -64,3 +64,13 @@ test("the keymap as a section of the ? window, anywhere first, then each view's"
   assert.deepEqual(s.rows, [{ heading: 'Anywhere' }, ['ctrl+s', 'runs /commit'], { heading: 'Graph' }, ['x', 'does what X does']]);
   assert.equal(keymapSection(parseKeymap({}, []), {}), null);
 });
+
+test('shortcutKey: alt+letter is the uppercase shortcut, a bare capital (caps lock) is swallowed', async () => {
+  const { shortcutKey } = await import('../keymap.js');
+  assert.equal(shortcutKey('\x1bt'), 'T');
+  assert.equal(shortcutKey('\x1bT'), 'T');
+  assert.equal(shortcutKey('T'), null);
+  assert.equal(shortcutKey('t'), 't');
+  assert.equal(shortcutKey('\x1b[A'), '\x1b[A');
+  assert.equal(shortcutKey('\x1b1'), '\x1b1');
+});

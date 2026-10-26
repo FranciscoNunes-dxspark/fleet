@@ -245,3 +245,14 @@ export function handOff(apps, line) {
   if (!list.length || !line) return false;
   return current.send({ handoff: list.length === 1 ? list[0] : list, line: String(line) });
 }
+
+/**
+ * Asks the host to look for a new version of the whole fleet now (an app's /update: inside the host the
+ * apps don't update themselves, Fleet does as one) and install it. Does nothing outside the host, or
+ * before the app asked for its terminal. Returns whether the host was told, so the app falls back to its
+ * own update when not.
+ */
+export function askHostToUpdate() {
+  if (!current?.hosted) return false;
+  return current.send({ update: true });
+}
