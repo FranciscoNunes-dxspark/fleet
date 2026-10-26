@@ -1,6 +1,8 @@
-// Draws Fleet's logo into assets/: six tiles in the family's accents, as the bar's six spaces, on the
-// dark rounded square the siblings' icons use. logo.svg (README), logo.png (512 px) and logo.ico (the
-// Windows executable's icon, which the kit's scripts/build.js embeds). Don't edit assets/ by hand: run
+// Draws Fleet's logo into assets/: a ship's wheel with six handles in the family's accents, one per
+// space in the bar, clockwise from the top in the order of their keys, on the dark rounded square the
+// siblings' icons use. It's pixel art on a 32-pixel grid, lit from the top left. logo.svg (README),
+// logo.png (512 px) and logo.ico (the Windows executable's icon, which the kit's scripts/build.js
+// embeds). Don't edit assets/ by hand: run
 //   node scripts/logo.js
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
@@ -9,15 +11,71 @@ import { SPACES } from '../src/spaces.js';
 const BACKGROUND = '#1c1b22';
 const UNITS = 32; // the drawing's grid; every size is drawn from it
 const RADIUS = 6;
-// The tiles: three across, two down, in the order of their keys.
-const TILES = SPACES.map((s, i) => ({ colour: s.accent, x: 4 + (i % 3) * 9, y: 6 + Math.floor(i / 3) * 12, w: 6, h: 8 }));
+const CENTRE = UNITS / 2;
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const WOOD = rgb('#a8784a');
+const WOOD_LIGHT = rgb('#d4a46e');
+const WOOD_DARK = rgb('#6b4a2e');
+const BRASS = rgb('#f2c14e');
+const BOLT = rgb('#2a2733');
+
+// The wheel's measures, in grid units from the centre.
+const BOLT_R = 1.4;
+const HUB_R = 3.2;
+const RIM_IN = 6.6;
+const RIM_OUT = 8.8;
+const SPOKE = 0.9; // half a spoke's width
+const NECK_TO = 10; // where a handle's wooden neck meets its knob
+const KNOB = { at: 12.3, length: 2.5, width: 2.5 }; // an ellipse along the spoke: centre, half-length, half-width
+
+/** How much a surface facing (vx, vy) is lit, from -1 to 1. */
+const litOf = (vx, vy) => {
+  const n = Math.hypot(vx, vy);
+  return n ? -(vx + vy) / (n * Math.SQRT2) : 0;
+};
+const shade = (colour, lit) => (lit > 0.35 ? mix(colour, [255, 255, 255], 0.3) : lit < -0.35 ? mix(colour, [0, 0, 0], 0.3) : colour);
+
+/** The wheel's colour at grid pixel (x, y), [r, g, b], or null where the background shows. */
+function wheel(x, y) {
+  const dx = x + 0.5 - CENTRE;
+  const dy = y + 0.5 - CENTRE;
+  const r = Math.hypot(dx, dy);
+  if (r <= BOLT_R) return BOLT;
+  if (r <= HUB_R) return shade(BRASS, litOf(dx, dy));
+  if (r >= RIM_IN && r <= RIM_OUT) {
+    const lit = litOf(dx, dy);
+    if (r > RIM_OUT - 0.9) return lit > -0.3 ? WOOD_LIGHT : WOOD;
+    if (r < RIM_IN + 0.9) return lit > 0.3 ? WOOD : WOOD_DARK;
+    return lit > 0.3 ? WOOD : lit < -0.3 ? WOOD_DARK : mix(WOOD, WOOD_DARK, 0.4);
+  }
+  for (const [i, space] of SPACES.entries()) {
+    const a = ((-90 + 60 * i) * Math.PI) / 180;
+    const ax = Math.cos(a);
+    const ay = Math.sin(a);
+    const t = dx * ax + dy * ay; // along the spoke
+    const s = -dx * ay + dy * ax; // across it
+    if (t <= 0) continue;
+    if (t < RIM_IN && Math.abs(s) < SPOKE) return WOOD_LIGHT;
+    if (t > RIM_OUT && t < NECK_TO && Math.abs(s) < SPOKE) return WOOD;
+    const u = (t - KNOB.at) / KNOB.length;
+    const v = s / KNOB.width;
+    if (u * u + v * v <= 1) {
+      const colour = rgb(space.accent);
+      // The knob's middle is its own colour, its rim lit or in shadow as its surface faces.
+      return u * u + v * v < 0.35 ? colour : shade(colour, litOf(u * ax - v * ay, u * ay + v * ax));
+    }
+  }
+  return null;
+}
+
+const PIXELS = Array.from({ length: UNITS }, (_, y) => Array.from({ length: UNITS }, (_, x) => wheel(x, y)));
 
 /** The colour at unit coordinates (u, v), [r, g, b, a]. */
 function at(u, v) {
-  const tile = TILES.find((t) => u >= t.x && u < t.x + t.w && v >= t.y && v < t.y + t.h);
-  if (tile) return [...rgb(tile.colour), 255];
+  const pixel = PIXELS[Math.floor(v)]?.[Math.floor(u)];
+  if (pixel) return [...pixel, 255];
   // Outside the rounded square's corners: transparent.
   const cx = Math.min(Math.max(u, RADIUS), UNITS - RADIUS);
   const cy = Math.min(Math.max(v, RADIUS), UNITS - RADIUS);
@@ -107,10 +165,24 @@ function ico(sizes) {
   return Buffer.concat([header, ...entries, ...images]);
 }
 
+const hex = (c) => '#' + c.map((n) => n.toString(16).padStart(2, '0')).join('');
+// The pixels as one rect per run of a colour along a row.
+const runs = PIXELS.flatMap((row, y) => {
+  const out = [];
+  for (let x = 0; x < UNITS; x++) {
+    if (!row[x]) continue;
+    const colour = hex(row[x]);
+    const last = out.at(-1);
+    if (last && last.colour === colour && last.x + last.w === x) last.w++;
+    else out.push({ x, y, w: 1, colour });
+  }
+  return out;
+});
+
 const svg = [
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${UNITS} ${UNITS}" width="256" height="256">`,
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${UNITS} ${UNITS}" width="256" height="256" shape-rendering="crispEdges">`,
   `  <rect width="${UNITS}" height="${UNITS}" rx="${RADIUS}" fill="${BACKGROUND}"/>`,
-  ...TILES.map((t) => `  <rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" fill="${t.colour}"/>`),
+  ...runs.map((p) => `  <rect x="${p.x}" y="${p.y}" width="${p.w}" height="1" fill="${p.colour}"/>`),
   '</svg>',
   '',
 ].join('\n');
