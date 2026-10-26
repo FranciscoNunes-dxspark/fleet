@@ -17,6 +17,7 @@
 //                        { "handoff": "trawl" | ["sonar", "hail"], "line": "/take …" }   copied for a sibling
 import fs from 'node:fs';
 import net from 'node:net';
+import { pasteOnCtrlV } from './clipboard.js';
 
 /** The variable the host sets on its children, and the fd of the control pipe. */
 export const HOSTED_VARIABLE = 'FLEET_HOSTED';
@@ -217,13 +218,15 @@ let current = null;
 /**
  * The terminal this app draws on: { stdin, stdout, hosted, send(message) }. Outside the host,
  * process.stdin and process.stdout as they are, and `send` does nothing (false). Inside it, those same
- * streams made to look like a terminal (hostedStreams). The same object every time it's asked.
+ * streams made to look like a terminal (hostedStreams). Either way ctrl+v pastes the clipboard where
+ * the terminal hands it on as a key (clipboard.js `pasteOnCtrlV`). The same object every time it's asked.
  */
 export function appTerminal({ env = process.env } = {}) {
   if (current) return current;
   current = isHosted(env)
     ? hostedStreams({ stdin: process.stdin, stdout: process.stdout, env })
     : { stdin: process.stdin, stdout: process.stdout, hosted: false, send: () => false };
+  pasteOnCtrlV(current.stdin);
   return current;
 }
 

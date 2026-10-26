@@ -15,8 +15,8 @@ export const HELP = [
       ['esc', 'Cancel what is running, or clear the activity lines'],
       [',', 'Settings (/settings): theme (dark, light, or auto from the terminal), accent colour, mouse, updates, notifying when a job takes over 10 s (a bell and a desktop notification), how often watches run, family moods, history'],
       ['?', 'This help'],
-      ['q / ctrl+c', 'Quit'],
-      ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go'],
+      ['q', 'Quit'],
+      ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go (ctrl+c copies it again; it never quits) · ctrl+v pastes'],
     ],
   },
   {

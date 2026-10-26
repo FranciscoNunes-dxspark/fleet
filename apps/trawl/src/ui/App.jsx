@@ -254,6 +254,8 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   }, [entries]);
   // A word in the bottom line for a moment ("Copied 3 lines"), where it moves nothing on screen.
   const [flash, setFlash] = useState(null);
+  // What ctrl+c says when there's nothing selected to copy.
+  const nothingToCopy = () => setFlash({ text: 'Drag over text to copy it · q quits' });
   useEffect(() => {
     if (!flash) return;
     const t = setTimeout(() => setFlash(null), 3000);
@@ -1459,7 +1461,9 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
       setPrompt(v, c);
       setSugIndex(0);
     };
-    if (key.ctrl && input === 'c') return value ? edit('', 0) : quit();
+    // ctrl+c never quits: a mouse selection takes it first (mouse.js), so here it clears the line
+    // or says how to copy.
+    if (key.ctrl && input === 'c') return value ? edit('', 0) : nothingToCopy();
     if (key.escape) return setFocus('view');
     if (key.return) {
       if (pick && value.trim() !== pick.insert.trim()) return pick.run ? submit(pick.insert) : edit(pick.insert);
@@ -1534,7 +1538,7 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
     // While typing in the console or a cell, every key is text (their own handlers take them).
     if (focusRef.current === 'editor' || focusRef.current === 'cell') return;
     if (focusRef.current === 'prompt' && !confirmRef.current) return promptKeys(input, key);
-    if (key.ctrl && input === 'c') return quit();
+    if (key.ctrl && input === 'c') return nothingToCopy();
     if (confirmRef.current || overlayRef.current) return;
     globalKeys(input, key);
   });

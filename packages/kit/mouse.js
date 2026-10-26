@@ -35,8 +35,9 @@ export function parseMouse(chunk) {
 }
 
 /**
- * Takes mouse reports out of what Ink reads from `stdin` and calls `onMouse` with each, and `onKeys`
- * when anything else comes in. Returns an undo.
+ * Takes mouse reports out of what Ink reads from `stdin` and calls `onMouse` with each, and
+ * `onKeys(keys)` when anything else comes in, which can return what Ink gets of them instead ('' to
+ * take them). Returns an undo.
  */
 export function listenMouse(stdin, onMouse, onKeys) {
   const read = stdin.read;
@@ -46,18 +47,14 @@ export function listenMouse(stdin, onMouse, onKeys) {
     if (typeof chunk !== 'string') return chunk;
     chunk = held + chunk;
     held = '';
-    if (!chunk.includes('\x1b[<')) {
-      if (chunk) onKeys?.();
-      return chunk;
-    }
+    if (!chunk.includes('\x1b[<')) return chunk ? (onKeys?.(chunk) ?? chunk) : chunk;
     const { rest, events } = parseMouse(chunk);
     events.forEach(onMouse);
     // Only once "ESC [ <" has arrived: holding a lone ESC back would hold up the esc key.
     const cut = /\x1b\[<[\d;]*$/.exec(rest);
     const keys = cut ? rest.slice(0, cut.index) : rest;
     if (cut) held = cut[0];
-    if (keys) onKeys?.();
-    return keys;
+    return keys ? (onKeys?.(keys) ?? keys) : keys;
   };
   return () => {
     stdin.read = read;
@@ -102,7 +99,8 @@ const RESTORE = '\x1b8';
  * Listeners get the wheel, and a left click once the button comes back up where it went down.
  * Dragging instead selects text, painted over the frame and copied on release (clipboard.js, as y
  * copies: the system clipboard, or OSC 52 through `stdout`); listeners then get
- * { type: 'copy', text }. A key, a click or the wheel clears the selection. Ink must draw through
+ * { type: 'copy', text }. The selection stays painted until a key, a click or the wheel clears it;
+ * ctrl+c while it's there copies it again (the same event) and goes no further, so no app takes it. Ink must draw through
  * `stdout` (the same stream, watched for frames to select from and paint over); `off` turns the
  * terminal's reporting off when the app exits.
  *
@@ -171,8 +169,16 @@ export function mouseSession(stdin, stdout, { copy = (text) => copyToClipboard(t
     clear();
     emit(e);
   };
-  listenMouse(stdin, onMouse, () => {
+  listenMouse(stdin, onMouse, (keys) => {
     press = null;
+    if (keys === '\x03' && sel) {
+      const text = selectedText(selectionRows(frame, sel.a, sel.b));
+      clear();
+      if (!text.trim()) return '';
+      copy(text);
+      emit({ type: 'copy', text });
+      return '';
+    }
     clear();
   });
 

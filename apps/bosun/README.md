@@ -150,7 +150,9 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `esc` | Cancel the running command, or clear the activity lines |
 | `,` | Settings |
 | `?` | Every key and command |
-| `q` / `ctrl+c` | Quit, stopping every process (and what they started) |
+| `q` | Quit, stopping every process (and what they started) |
+| `ctrl+c` | Copy the text you dragged over (dragging copies it too); it never quits |
+| `ctrl+v` | Paste |
 
 ### Crew
 

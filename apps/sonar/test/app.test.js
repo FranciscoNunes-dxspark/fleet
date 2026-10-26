@@ -499,3 +499,19 @@ test('logs: s saves the query under a name, /queries runs it again or forgets it
     app.unmount();
   }
 });
+
+test('ctrl+c never quits: with nothing selected it says how to copy, and the app carries on', async () => {
+  const app = start();
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('contoso-orders'), 'the apps');
+    app.stdin.write('\x03');
+    await until(() => frame().includes('Drag over text to copy it · q quits'), 'the hint');
+    const cursor = () => frame().split('\n').find((l) => l.includes('❯'));
+    const before = cursor();
+    app.stdin.write('j');
+    await until(() => cursor() !== before, 'the cursor moving, so the app is still there');
+  } finally {
+    app.unmount();
+  }
+});

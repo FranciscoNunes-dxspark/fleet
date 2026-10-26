@@ -42,7 +42,7 @@ fleet hail api.http # anything after the app's name is that app's own arguments
 ```
 
 An app starts the first time you switch to it, in the folder you started Fleet in, and keeps running
-when you switch away. Quitting one (its own `q` or `ctrl+c`) leaves its space saying so: `↵` starts
+when you switch away. Quitting one (its own `q`) leaves its space saying so: `↵` starts
 it again.
 
 ## Keys

@@ -14,8 +14,8 @@ export const HELP = [
       ['?', 'This help'],
       [',', 'Settings (/settings): row limit, accent colour, theme, mouse, updates'],
       ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
-      ['q / ctrl+c', 'Quit (asks first if a transaction is open)'],
-      ['mouse', 'Click a tab, a row, a cell or the prompt · double-click does ↵ (but never runs a statement)\nthe wheel scrolls (shift+wheel: Results\' columns) · drag to select text, copied when you let go\nin the console: a click starts typing there; double-click a word, triple-click a line, click the gutter for the statement, click a suggestion to take it; a drag selects the SQL (ctrl+r runs just that)'],
+      ['q', 'Quit (asks first if a transaction is open)'],
+      ['mouse', 'Click a tab, a row, a cell or the prompt · double-click does ↵ (but never runs a statement)\nthe wheel scrolls (shift+wheel: Results\' columns) · drag to select text, copied when you let go (ctrl+c copies it again; it never quits) · ctrl+v pastes\nin the console: a click starts typing there; double-click a word, triple-click a line, click the gutter for the statement, click a suggestion to take it; a drag selects the SQL (ctrl+r runs just that)'],
     ],
   },
   {

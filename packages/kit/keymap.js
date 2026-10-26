@@ -75,7 +75,7 @@ export function parseKey(text) {
   if (ctrl) {
     const c = last.toLowerCase();
     if (CTRL_SAME[c]) return { error: `"${raw}" is the same as ${CTRL_SAME[c]} in a terminal` };
-    if (c === 'c') return { error: '"ctrl+c" always quits' };
+    if (c === 'c') return { error: '"ctrl+c" always copies' };
     if (!/^[a-z]$/.test(c)) return { error: `"${raw}": ctrl goes with a letter` };
     return key(`ctrl+${c}`, [String.fromCharCode(c.charCodeAt(0) - 96)]);
   }

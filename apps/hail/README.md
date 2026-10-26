@@ -537,7 +537,9 @@ setting turns both off.
 | `esc` | Cancel the request on its way, or clear the activity lines (and Hoot's remark about a sibling) |
 | `,` | Settings |
 | `?` | Every key and command |
-| `q` / `ctrl+c` | Quit |
+| `q` | Quit |
+| `ctrl+c` | Copy the text you dragged over (dragging copies it too); it never quits |
+| `ctrl+v` | Paste |
 
 In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
 mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll with the wheel, and

@@ -152,6 +152,25 @@ test('a press and release in one place is a click; a drag selects, paints and co
   assert.equal(t.written.at(-1), MOUSE_OFF);
 });
 
+test("ctrl+c copies what's selected and goes no further; with nothing selected it reaches the app", () => {
+  const t = fakeTerminal();
+  t.mouse.stdout.write('\x1b[2K\x1b[Gheader\nsome text here\nmore\n');
+  t.sgr(0, 5, 1);
+  t.sgr(32, 8, 1);
+  t.sgr(0, 8, 1, 'm');
+  assert.deepEqual(t.copied, ['text']);
+
+  // Still painted: ctrl+c copies it again, clears it, and Ink gets nothing.
+  assert.equal(t.input('\x03'), '');
+  assert.deepEqual(t.copied, ['text', 'text']);
+  assert.deepEqual(t.heard.at(-1), { type: 'copy', text: 'text' });
+  assert.match(t.written.at(-1), /\x1b\[2;1H\x1b\[0msome text here/);
+
+  // Nothing selected now: the app gets the key.
+  assert.equal(t.input('\x03'), '\x03');
+  assert.equal(t.copied.length, 2);
+});
+
 test('a drag the app claims goes to it, move by move, and nothing is painted or copied', () => {
   const t = fakeTerminal();
   t.mouse.stdout.write('header\nsome text here\nmore\n');

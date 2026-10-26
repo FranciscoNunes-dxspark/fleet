@@ -29,7 +29,7 @@ test("key names terminals can't send, or that mean another key, are refused with
   assert.match(parseKey('ctrl+shift+x').error, /ctrl with shift/);
   assert.match(parseKey('ctrl+i').error, /same as tab/);
   assert.match(parseKey('ctrl+m').error, /same as enter/);
-  assert.match(parseKey('ctrl+c').error, /always quits/);
+  assert.match(parseKey('ctrl+c').error, /always copies/);
   assert.match(parseKey('ctrl+1').error, /ctrl goes with a letter/);
   assert.match(parseKey('hyper+x').error, /isn't ctrl, alt or shift/);
   assert.match(parseKey('shift+1').error, /shift goes with a letter/);
