@@ -21,10 +21,10 @@ export const HELP = [
     title: 'Lists',
     rows: [
       ['j k / ↑ ↓', 'Move'],
-      ['g G', 'Top, bottom'],
+      ['g alt+g', 'Top, bottom'],
       ['ctrl+d ctrl+u', 'Page down, up'],
       ['/find <text>', 'Filter (empty clears it). Fields too, with plain words: who:tom (who:me, who:none), type:bug, tag:, state:, project:, repo:, team:'],
-      ['F', 'Filter by a field, picked from the values in the list with how many have each, as the web app\'s dropdowns (/filter too)'],
+      ['alt+f', 'Filter by a field, picked from the values in the list with how many have each, as the web app\'s dropdowns (/filter too)'],
     ],
   },
   {
@@ -44,7 +44,7 @@ export const HELP = [
     rows: [
       ['p', 'Publish a draft'],
       ['a', 'Approve'],
-      ['A', 'Approve with suggestions'],
+      ['alt+a', 'Approve with suggestions'],
       ['w', 'Wait for the author'],
       ['x', 'Reject (asks first)'],
       ['0', 'Clear your vote'],
@@ -90,7 +90,7 @@ export const HELP = [
     rows: [
       ['↵', 'Everything about it: issues, what fails most, deploys, and all that\'s waiting to ship to its environment (pull requests, commits, work items, coming next)'],
       ['o', 'Open the site'],
-      ['S', 'Sonar, the Azure console, on the app behind it, at its problems: in a new tab in Windows Terminal, else the command is copied to run'],
+      ['alt+s', 'Sonar, the Azure console, on the app behind it, at its problems: in a new tab in Windows Terminal, else the command is copied to run'],
     ],
   },
   {
@@ -101,7 +101,7 @@ export const HELP = [
       ['n', 'Create a release from the latest artifacts (asks first; /release <description> too)'],
       ['d', 'Deploy or redeploy a recent release to a stage: pick the stage, then the release (/stage <name> too). Approvals and gates still apply'],
       ['a  x', 'Approve or reject what a stage waits on (asks first; /deploy and /stop with a comment)'],
-      ['D', 'On a GitHub repo: download a file from one of its releases, picked from two lists (it downloads in your browser)'],
+      ['alt+d', 'On a GitHub repo: download a file from one of its releases, picked from two lists (it downloads in your browser)'],
       ['↵', 'Everything: every stage and every recent release; on a GitHub repo, its releases with each file\'s download link'],
     ],
   },
@@ -112,7 +112,7 @@ export const HELP = [
     rows: [
       ['h l / ← →', 'Column (more than fit scroll in)'],
       ['j k / ↑ ↓', 'Card'],
-      ['> <  (L H)', 'Move the card to the next or previous column that takes it: its column and the state that column maps to'],
+      ['> <  (alt+l alt+h)', 'Move the card to the next or previous column that takes it: its column and the state that column maps to'],
       ['m', 'Move it to a column picked from a list'],
       ['space', 'In a split column: Done there, or back to Doing'],
       ['↵', 'The card\'s work item in full'],
@@ -184,7 +184,7 @@ export const HELP = [
     title: 'Viewer',
     about: 'a pull request, a work item, the weekly summary, the last output, the log',
     rows: [
-      ['j k  space  g G', 'Scroll'],
+      ['j k  space  g alt+g', 'Scroll'],
       ['esc / q', 'Close'],
     ],
   },

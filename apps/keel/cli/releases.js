@@ -194,7 +194,7 @@ function githubReleaseLines(r, now, { urls = false } = {}) {
 export function githubDetail(repo, { now = Date.now(), urls = false } = {}) {
   const lines = [
     [{ text: repo.repoName, bold: true }],
-    [{ text: `${repo.projectName} · GitHub releases · D downloads a file`, color: theme.dim }],
+    [{ text: `${repo.projectName} · GitHub releases · alt+d downloads a file`, color: theme.dim }],
   ];
   for (const r of repo.releases) lines.push('', ...githubReleaseLines(r, now, { urls }));
   return lines;

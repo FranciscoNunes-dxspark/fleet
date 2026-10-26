@@ -428,7 +428,7 @@ export function showWorkItem(ctx, text) {
 /** GitHub releases are made on GitHub: the release pipelines' actions don't apply to a repo's row. */
 const onGithub = (ctx, def) => {
   if (!isGithubRelease(def)) return false;
-  ctx.note(`${def.name} is a GitHub repo: its releases are made on GitHub. D downloads a file, o opens its releases.`, 'error');
+  ctx.note(`${def.name} is a GitHub repo: its releases are made on GitHub. alt+d downloads a file, o opens its releases.`, 'error');
   return true;
 };
 
@@ -486,7 +486,7 @@ export async function deployStage(ctx, def = ctx.current().release, name = '') {
 
 /** g in Releases, on a GitHub repo: picks a release, then one of its files, and downloads it in the browser. */
 export async function downloadReleaseFile(ctx, repo = ctx.current().release) {
-  if (!isGithubRelease(repo)) return ctx.note('Pick a GitHub repo first (Releases tab, below the release pipelines): D downloads a file from its releases.', 'error');
+  if (!isGithubRelease(repo)) return ctx.note('Pick a GitHub repo first (Releases tab, below the release pipelines): alt+d downloads a file from its releases.', 'error');
   const choices = downloadChoices(repo);
   if (!choices.length) return ctx.note(`${repo.name}'s releases have no files attached. o opens them on GitHub.`);
   const release = choices.length === 1 ? choices[0] : await ctx.confirm({
