@@ -19,6 +19,7 @@
     "./mouse.js": "./mouse.js",
     "./selection.js": "./selection.js",
     "./clipboard.js": "./clipboard.js",
+    "./glyphs.js": "./glyphs.js",
     "./jsx-hooks.js": "./jsx-hooks.js",
     "./register.js": "./register.js",
     "./help-layout.js": "./help-layout.js",

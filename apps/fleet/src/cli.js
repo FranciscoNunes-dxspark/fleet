@@ -3,6 +3,7 @@ import './app.js';
 import { COMPILED, VERSION } from './app.js';
 import { checkForUpdate, checksDisabled, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { keepVtInput } from '@fleet/kit/mouse.js';
+import { plainOutput } from '@fleet/kit/glyphs.js';
 import { Host, LEAVE } from './host.js';
 import { appSpawner } from './launch.js';
 import { SPACES, spaceNamed } from './spaces.js';
@@ -54,6 +55,8 @@ const depth = process.stdout.getColorDepth?.() ?? 24;
 if (process.platform === 'win32' && typeof Bun !== 'undefined') await keepVtInput(process.stdin).catch(() => {});
 process.stdin.setRawMode(true);
 process.stdin.resume();
+// In Windows' own console, the characters its font lacks are swapped for ones it has, the apps' too.
+plainOutput(process.stdout);
 
 const host = new Host({
   input: process.stdin,
