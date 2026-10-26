@@ -188,7 +188,7 @@ export function blamePicker(ctx, path, { rev = null, line = null } = {}) {
     title: `Blame ${path}${rev ? ` at ${rev.replace(/^[0-9a-f]{40,64}/, short)}` : ''}${line ? `, line ${line}` : ''}${owners ? ` · owners ${owners}` : ''}`,
     // The cursor starts on `line` (Picker.jsx's `index`), once the lines are in.
     index: line ? line - 1 : undefined,
-    hint: '↵ diff · alt+h history · v/alt+l lines’ history · e why · alt+f PRs',
+    hint: '↵ diff · alt+h file · v/alt+l lines · e why · alt+f PRs',
     range: true,
     // What /future reads, with the line under the cursor.
     blame: { path, rev },
