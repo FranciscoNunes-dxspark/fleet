@@ -5,6 +5,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { Box } from 'ink';
 import { Lines, Panel } from '../ui/parts.jsx';
+import { HelpView } from '../ui/HelpView.jsx';
 
 const draw = (props) => {
   const app = render(React.createElement(Box, { flexDirection: 'column', width: 20 }, React.createElement(Lines, { width: 20, ...props })));
@@ -40,4 +41,27 @@ test('Panel cuts a hint too long for its top border to the parts that fit, never
   // Room for not even one part: the first, cut; for not even that, nothing.
   assert.equal(top(28, hint), '╭─ Blame f.txt  2 select… ─╮');
   assert.equal(top(22, hint), '╭─ Blame f.txt ──────╮');
+});
+
+test('the ? window opens on the hint the focused panel had to cut, in full, and as before when none was', () => {
+  const sections = [{ title: 'Graph', rows: [['c', 'Check out']] }, { title: 'Blame', rows: [['↵', 'The diff']] }];
+  const ctx = { mouseHandlers: [] };
+  const help = () => {
+    const app = render(React.createElement(HelpView, { sections, start: 1, ctx, width: 100, height: 16, active: true, onClose: () => {} }));
+    const out = app.lastFrame();
+    app.unmount();
+    return out;
+  };
+  const hint = '2 selected · ↵ diff · alt+h history · v/alt+l lines’ history · e why · alt+f PRs · esc close';
+  render(React.createElement(Panel, { title: 'Blame f.txt', hint, width: 40, height: 3, focused: true }, null)).unmount();
+  const cut = help();
+  assert.match(cut, /On screen/);
+  assert.match(cut, /Blame f\.txt: the hint too long for its border, in full\./);
+  assert.match(cut, /alt\+f\s+PRs/);
+  assert.match(cut, /v\/alt\+l\s+lines’ history/);
+  // A focused panel whose hint fits: no such section, and the window opens where it was asked to.
+  render(React.createElement(Panel, { title: 'Blame f.txt', hint: '↵ diff', width: 40, height: 3, focused: true }, null)).unmount();
+  const whole = help();
+  assert.doesNotMatch(whole, /On screen/);
+  assert.match(whole, /↵\s+The diff/);
 });

@@ -48,6 +48,13 @@ function fitHint(hint, room) {
   return room >= 6 ? ` ${fit(parts[0], room - 2).trimEnd()} ` : '';
 }
 
+// The hint a focused panel last had to cut, whole, with its title: the ? window shows it (HelpView's
+// "On screen"). One app draws in each process, so one is enough.
+let cutShort = null;
+
+/** The hint the focused panel last cut short ({ title, hint }), or null when it showed whole. */
+export const cutHint = () => cutShort;
+
 export function Panel({ title, hint, width, height, focused = false, children }) {
   const color = focused ? theme.accent : theme.border;
   const label = title ? ` ${title} ` : '';
@@ -56,6 +63,7 @@ export function Panel({ title, hint, width, height, focused = false, children })
   const shownLabel = label ? fit(label, Math.min(stringWidth(label), room - 1)).trimEnd() + ' ' : '';
   // The title comes first; the hint gets what's left.
   const shownHint = fitHint(hint, room - stringWidth(shownLabel));
+  if (focused) cutShort = hint && shownHint !== ` ${hint} ` ? { title, hint } : null;
   const fill = Math.max(0, room - stringWidth(shownLabel) - stringWidth(shownHint));
   return (
     <Box flexDirection="column" width={width} height={height}>
