@@ -214,6 +214,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const seenMoods = useRef(new Set());
   // A word in the bottom line for a moment ("Copied 3 lines"), where it moves nothing on screen.
   const [flash, setFlash] = useState(null);
+  // What ctrl+c says when there's nothing selected to copy.
+  const nothingToCopy = () => setFlash({ text: 'Drag over text to copy it · q quits' });
   useEffect(() => {
     if (!flash) return;
     const t = setTimeout(() => setFlash(null), 3000);
@@ -1046,7 +1048,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       setPrompt(v, c);
       setSugIndex(0);
     };
-    if (key.ctrl && input === 'c') return value ? edit('', 0) : exit();
+    // ctrl+c never quits: a mouse selection takes it first (mouse.js), so here it clears the line
+    // or says how to copy.
+    if (key.ctrl && input === 'c') return value ? edit('', 0) : nothingToCopy();
     if (key.escape) return setFocus('view');
     if (key.return) {
       if (pick && value.trim() !== pick.insert.trim()) return pick.run ? submit(pick.insert) : edit(pick.insert);
@@ -1118,7 +1122,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     // Ink calls the handlers for a key in no fixed order. When a view's ran first and opened the prompt,
     // this same key mustn't then be typed into it.
     if (focusRef.current === 'prompt' && !confirmRef.current) return prefillKey.current === keySeq.current ? undefined : promptKeys(input, key);
-    if (key.ctrl && input === 'c') return exit();
+    if (key.ctrl && input === 'c') return nothingToCopy();
     if (confirmRef.current || overlayRef.current || answerKey.current === keySeq.current) return;
     if (ctx.claimsKey?.(input, key)) return;
     // A command or a sibling's context pasted while a view has the keys goes into the prompt, to run with ↵.

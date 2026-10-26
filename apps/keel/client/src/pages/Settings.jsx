@@ -337,7 +337,8 @@ function PushSettings() {
   const available = pushAvailability();
 
   const load = () => {
-    api('/push').then(setInfo).catch(() => setInfo({ unavailable: true, devices: [] }));
+    // Only a server without push answers 404; anything else is a problem to show as it is.
+    api('/push').then(setInfo).catch((e) => setInfo(e.status === 404 ? { unavailable: true, devices: [] } : { error: e.message, devices: [] }));
     currentSubscription().then((sub) => (sub ? deviceId(sub.endpoint) : null)).then(setHere).catch(() => setHere(null));
   };
   useEffect(load, []);
@@ -382,6 +383,8 @@ function PushSettings() {
       <p className="muted small">{t('On your phone or computer, even when Keel is closed: the same updates as above, checked every two minutes.')}</p>
       {info?.unavailable ? (
         <p className="small text-warn">{t("This Keel server doesn't send push notifications.")}</p>
+      ) : info?.error ? (
+        <p className="small text-warn">{t("Couldn't read push notifications from the server: {error}", { error: info.error })}</p>
       ) : available === 'install' ? (
         <p className="callout small">{t('On iPhone and iPad, push notifications work in the Keel app: tap Share, then Add to Home Screen, and open Keel from there.')}</p>
       ) : available === 'insecure' ? (

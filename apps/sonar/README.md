@@ -248,7 +248,9 @@ moods** in the settings turns both off.
 | `esc` | Cancel what's running, or clear the activity lines |
 | `,` | Settings |
 | `?` | Every key and command |
-| `q` / `ctrl+c` | Quit |
+| `q` | Quit |
+| `ctrl+c` | Copy the text you dragged over (dragging copies it too); it never quits |
+| `ctrl+v` | Paste |
 
 | In Resources | |
 | --- | --- |

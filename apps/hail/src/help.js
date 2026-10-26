@@ -15,8 +15,8 @@ export const HELP = [
       ['esc', 'Cancel the request on its way, or clear the activity lines'],
       [',', 'Settings (/settings): accent colour, theme (dark, light, or auto from the terminal), mouse, updates,\nnotifying when a request takes over 10 s (a bell and a desktop notification), family moods, history'],
       ['?', 'This help'],
-      ['q / ctrl+c', 'Quit'],
-      ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go'],
+      ['q', 'Quit'],
+      ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go (ctrl+c copies it again; it never quits) · ctrl+v pastes'],
     ],
   },
   {

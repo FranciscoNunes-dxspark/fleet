@@ -13,7 +13,8 @@ export const HELP = [
       ['r', 'Ask Azure DevOps again now (Keel also checks by itself, as the web app does)'],
       ['esc', 'Stop waiting for what\'s running, or clear the activity lines'],
       ['?', 'This help'],
-      ['q / ctrl+c', 'Quit'],
+      ['q', 'Quit'],
+      ['ctrl+c / ctrl+v', 'Copy the text you dragged over (ctrl+c never quits) · paste'],
     ],
   },
   {

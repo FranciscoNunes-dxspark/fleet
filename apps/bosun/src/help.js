@@ -13,8 +13,8 @@ export const HELP = [
       ['esc', 'Cancel the running command, or clear the activity lines'],
       [',', 'Settings (/settings): theme, accent colour, mouse, notifications, memory alert, recording, family moods, updates, history'],
       ['?', 'This help'],
-      ['q / ctrl+c', 'Quit, stopping every process Bosun started (and what they started)'],
-      ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go'],
+      ['q', 'Quit, stopping every process Bosun started (and what they started)'],
+      ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go (ctrl+c copies it again; it never quits) · ctrl+v pastes'],
     ],
   },
   {

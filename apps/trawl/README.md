@@ -179,7 +179,7 @@ Press `?` inside for every shortcut: the sections down the left, opening on the 
 
 | Where | Keys |
 | --- | --- |
-| Anywhere | `1`–`6` or `tab` switch views · `/` commands · `!` SQL · `ctrl+p` the command palette · `r` reload the schema · `,` settings · `esc` cancel the running query · `q` quit |
+| Anywhere | `1`–`6` or `tab` switch views · `/` commands · `!` SQL · `ctrl+p` the command palette · `r` reload the schema · `,` settings · `esc` cancel the running query · `q` quit · `ctrl+c` copies the text you dragged over (it never quits) · `ctrl+v` pastes |
 | Lists | `j`/`k` or arrows · `g`/`G` top/bottom · `ctrl+d`/`ctrl+u` page |
 | Explorer | `↵` first rows (on a database: switch to it) · `d` describe · `s` start a query on it in the console · `c` its CREATE script, into the console · `u` what uses it, and what it uses · `D` a diagram of its foreign keys · `C` copy its rows to another connection · `/find <text>` filter · `/grep <text>` search inside the definitions |
 | Query, the console | `↵` or `i` start typing · `esc` stop · `ctrl+r` run the selection, or the statement under the cursor · `R` run it all · `f` format (`alt+shift+f` while typing) · `p` plan, `P` actual plan (then `a`: Claude explains it) · `S` save as a snippet · `t` share the statement · `[`/`]` previous/next tab · `+` new tab · `ctrl+f` find, then `n`/`N` · `ctrl+z`/`ctrl+y` undo/redo · while typing, `tab` takes a suggestion and `ctrl+n` asks for them |
@@ -433,7 +433,7 @@ Keys go under `"keys"`, for every view (`"global"`) or for one (`explorer`, `que
 }
 ```
 
-A key can stand for another key, so the view does what that key does there (above, `x` in Results edits the cell, as `e` does), or for a command line, as you'd type it at the prompt. Keys are written as a character (`x`, `X`, `+`), `ctrl+` a letter, `alt+` a character, `shift+tab`, `F1` to `F12`, or `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup` and `pagedown`. They only apply while a view has the keys: never while you type in the prompt, the console or a cell, nor while a question is open or a window (help, settings, a list) is over the view. A view's own keys come before the global ones, and `ctrl+c` always quits. The `?` window lists yours under **Your keys**, and a key name or view Trawl doesn't know (`ctrl+shift+x` is one terminals can't send) is said in the activity log when it starts. Both are read when Trawl starts.
+A key can stand for another key, so the view does what that key does there (above, `x` in Results edits the cell, as `e` does), or for a command line, as you'd type it at the prompt. Keys are written as a character (`x`, `X`, `+`), `ctrl+` a letter, `alt+` a character, `shift+tab`, `F1` to `F12`, or `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup` and `pagedown`. They only apply while a view has the keys: never while you type in the prompt, the console or a cell, nor while a question is open or a window (help, settings, a list) is over the view. A view's own keys come before the global ones, and `ctrl+c` always copies. The `?` window lists yours under **Your keys**, and a key name or view Trawl doesn't know (`ctrl+shift+x` is one terminals can't send) is said in the activity log when it starts. Both are read when Trawl starts.
 
 ### Theme
 

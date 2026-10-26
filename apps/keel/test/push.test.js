@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { allowedEndpoint, encryptPayload, generateVapidKeys, sendPush, vapidAuthorization } from '../server/webpush.js';
 import { createPush, openUrl, pushMessages, wanted } from '../server/push.js';
+import { encrypt } from '../server/secrets.js';
 import { translator } from '../server/i18n.js';
 
 const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
@@ -176,5 +177,28 @@ test('push: devices per person, sent what is new each look, forgotten when the p
     assert.equal(push.info('u1').devices.length, 0);
   } finally {
     push.close();
+  }
+});
+
+test("push: a key encrypted with another server key is made again, and the devices turn push on again", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'keel-push-'));
+  const other = crypto.randomBytes(32);
+  const keys = generateVapidKeys();
+  fs.writeFileSync(path.join(dir, 'push.json'), JSON.stringify({
+    vapid: { publicKey: keys.publicKey, privateKey: encrypt(other, keys.privateKey) },
+    devices: [{ id: 'd1', userId: 'local', label: 'Pixel', sub: encrypt(other, '{}'), createdAt: '2026-10-01T00:00:00Z' }],
+  }));
+  const warn = console.warn;
+  console.warn = () => {};
+  const push = createPush({ dataDir: dir, mock: false, resolveService: async () => null, every: 3_600_000 });
+  try {
+    const info = push.info();
+    assert.notEqual(info.publicKey, keys.publicKey);
+    assert.equal(info.devices.length, 0);
+    assert.equal(push.info().publicKey, info.publicKey, 'kept from then on');
+  } finally {
+    console.warn = warn;
+    push.close?.();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

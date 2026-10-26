@@ -14,7 +14,7 @@ const React = (await import('react')).default;
 const { render } = await import('ink-testing-library');
 const { openKeel } = await import('../cli/service.js');
 const { App } = await import('../cli/ui/App.jsx');
-const { boardCards, boardColumns, cardLines, columnTitle, doneChanges } = await import('../cli/board.js');
+const { boardCards, boardColumns, cardLines, columnTitle, doneChanges, shortTag } = await import('../cli/board.js');
 
 let keel;
 before(() => {
@@ -90,7 +90,12 @@ test("a card's lines: number and title, then who has it, points, tasks, lane and
   const [top, bottom] = cardLines({ ...card(4, 'Doing'), assignedTo: { displayName: 'Ana Silva' }, storyPoints: 3, tasks: { done: 1, total: 2 }, board: { column: 'Doing', done: true, lane: 'Expedite' } }, { split: true });
   assert.equal(text(top), '■ 4 Story 4');
   assert.equal(text(bottom), '  Ana · 3 pts · 1/2 tasks · Expedite  ✓ done');
-  assert.match(text(cardLines({ ...card(5, 'New'), tags: ['Blocked'] }, { blockedTag: 'Blocked' })[1]), /unassigned  blocked/);
+  assert.match(text(cardLines({ ...card(5, 'New'), tags: ['Blocked'] }, { blockedTag: 'Blocked' })[1]), /unassigned  blocked$/);
+  // Its tags last, each at most 10 characters.
+  assert.equal(text(cardLines({ ...card(6, 'New'), tags: ['ui', 'customer-reported', 'Blocked'] }, { blockedTag: 'Blocked' })[1]), '  unassigned  blocked  #ui #customer-…');
+  assert.equal(shortTag('tech-debt'), 'tech-debt');
+  assert.equal(shortTag('performance'), 'performan…');
+  assert.equal([...shortTag('performance')].length, 10);
 });
 
 test('the Board tab draws the columns; > moves a card on and the cursor goes with it; t picks another team', async () => {
