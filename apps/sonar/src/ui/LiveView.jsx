@@ -50,12 +50,12 @@ export function LiveView({ live, ctx, width, height, active }) {
 
   const shown = Math.min(back, max);
   const end = lines.length - shown;
-  const status = { connecting: 'connecting…', streaming: live.paused ? 'paused (p goes on)' : 'live', ended: 'the stream ended (R reconnects)', error: 'failed (R tries again)' }[live.status] ?? '';
-  const where = shown ? `${shown} lines back (G follows) · ` : '';
+  const status = { connecting: 'connecting…', streaming: live.paused ? 'paused (p goes on)' : 'live', ended: 'the stream ended (alt+r reconnects)', error: 'failed (alt+r tries again)' }[live.status] ?? '';
+  const where = shown ? `${shown} lines back (alt+g follows) · ` : '';
   const title = live.target ? `Live: ${label(live.target)}` : 'Live';
   return (
     <Panel title={title} hint={`${where}${status} · p pause · c clear`} width={width} height={height} focused={active}>
-      {!live.target ? <Row pointer={false} width={width - 2} segments={[{ text: '  Pick an app in Resources and press L to stream its log.', color: theme.dim }]} /> : null}
+      {!live.target ? <Row pointer={false} width={width - 2} segments={[{ text: '  Pick an app in Resources and press alt+l to stream its log.', color: theme.dim }]} /> : null}
       {live.error ? <Row pointer={false} width={width - 2} segments={[{ text: `  ${live.error}`, color: theme.del }]} /> : null}
       {lines.slice(Math.max(0, end - innerH), end).map((l, i) => (
         <Row key={i} pointer={false} width={width - 2} segments={[{ text: ` ${l}`, color: lineColour(l) }]} />

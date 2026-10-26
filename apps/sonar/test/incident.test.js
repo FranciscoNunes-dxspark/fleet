@@ -53,10 +53,10 @@ test('the incident: a problem whole, with its deployments, SQL, stack and commit
     app.stdin.write('/');
     await type(app.stdin, 'incident SqlException');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('Incident: Microsoft.Data.SqlClient.SqlException') && frame().includes('Y exception'), 'the incident');
+    await until(() => frame().includes('Incident: Microsoft.Data.SqlClient.SqlException') && frame().includes('alt+y exception'), 'the incident');
     assert.match(frame(), /deadlocked on lock resources/);
     assert.match(frame(), /app\s+contoso-api/);
-    assert.match(frame(), /Y exception → Splice/);
+    assert.match(frame(), /alt\+y exception → Splice/);
     // The whole of it, as s would save it before a write-up.
     app.stdin.write('y');
     await until(() => copied.length === 1, 'the incident copied');
@@ -68,7 +68,7 @@ test('the incident: a problem whole, with its deployments, SQL, stack and commit
     assert.match(md, /Save the order and its lines in one transaction/);
     assert.doesNotMatch(md, /Say more in the README/);
 
-    app.stdin.write('Y');
+    app.stdin.write('\x1by');
     await until(() => frame().includes("Copied for Splice: paste it into Splice's prompt"), 'the exception for Splice');
     const exception = contextIn(copied.at(-1));
     assert.equal(exception.kind, 'exception');
@@ -76,11 +76,11 @@ test('the incident: a problem whole, with its deployments, SQL, stack and commit
     assert.equal(exception.data.frames[0].line, 42);
     assert.match(exception.data.request.url, /^https:\/\/contoso-api\.azurewebsites\.net\//);
 
-    app.stdin.write('H');
+    app.stdin.write('\x1bh');
     await until(() => frame().includes("Copied for Hail: paste it into Hail's prompt"), 'the request for Hail');
     assert.equal(contextIn(copied.at(-1)).kind, 'request');
 
-    app.stdin.write('T');
+    app.stdin.write('\x1bt');
     await until(() => frame().includes('The SQL that failed with'), 'the failing SQL');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes("Copied for Trawl: paste it into Trawl's prompt"), 'a query for Trawl');
@@ -124,9 +124,9 @@ test('outside a checkout, I says nothing of commits and fails nowhere', async ()
     await until(() => frame().includes('contoso-orders'), 'the apps');
     app.stdin.write('3');
     await until(() => /\d+ problems/.test(frame()), 'the problems');
-    app.stdin.write('I');
-    await until(() => frame().includes('Incident: ') && frame().includes('Y exception'), 'the incident');
-    app.stdin.write('G');
+    app.stdin.write('\x1bi');
+    await until(() => frame().includes('Incident: ') && frame().includes('alt+y exception'), 'the incident');
+    app.stdin.write('\x1bg');
     await until(() => frame().includes('Failing SQL'), 'the end of it');
     assert.doesNotMatch(frame(), /Commits to its files/);
   } finally {

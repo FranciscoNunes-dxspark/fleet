@@ -67,13 +67,13 @@ test('a namespace\'s queues and dead letters: peeked, a secret-looking body hidd
     await new Promise((r) => setTimeout(r, 100));
     app.stdin.write('j');
     await until(() => /❯ 4712/.test(frame()), 'two picked');
-    app.stdin.write('R');
+    app.stdin.write('\x1br');
     await until(() => frame().includes('Resubmit 2 dead letters of payments to payments?'), 'the question');
     await type(app.stdin, 'contoso-bus');
     app.stdin.write(KEYS.enter);
     await until(() => payments().dead.length === 2 && payments().active === 14, 'two moved');
     await until(() => frame().includes('Moved 2 of 2 to payments') && !frame().includes('4711'), 'the list read again');
-    app.stdin.write('X');
+    app.stdin.write('\x1bx');
     await until(() => frame().includes("Purge payments's dead letters"), 'the question');
     await type(app.stdin, 'contoso-bus');
     app.stdin.write(KEYS.enter);

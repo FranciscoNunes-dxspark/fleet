@@ -477,7 +477,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export function serviceBus(ctx, ns) {
   ctx.showPicker({
     title: `${ns.name}: queues, topics, subscriptions`,
-    hint: '↵ its dead letters · X purge them · y copy its name',
+    hint: '↵ its dead letters · alt+x purge them · y copy its name',
     empty: 'No queues or topics.',
     busEntities: true,
     load: async () => {
@@ -616,7 +616,7 @@ export function deadLetters(ctx, ns, entity, { replace = false } = {}) {
   ctx.showPicker(
     {
       title: `Dead letters of ${entity.name} (${ns.name})`,
-      hint: '↵ see it · v pick several · R resubmit · X purge all · y copy its id',
+      hint: '↵ see it · v pick several · alt+r resubmit · alt+x purge all · y copy its id',
       empty: `${entity.name} has no dead letters.`,
       range: true,
       busLetters: entity.path,
@@ -831,7 +831,7 @@ export async function openInTrawl(ctx, which) {
   const database = t.type === 'sqldb' ? t : null;
   const what = database ? label(database) : server.name;
   const access = await letMeIn(ctx, server);
-  if (access === 'declined') ctx.note(`Trawl won't reach ${server.name} from here until its firewall lets this machine in (F adds it).`);
+  if (access === 'declined') ctx.note(`Trawl won't reach ${server.name} from here until its firewall lets this machine in (alt+f adds it).`);
   let login = null;
   const found = await ctx.task(`Look for the login the apps use for ${what}`, async (signal) => {
     login = findLogin(await sqlSources(ctx, signal), server, database?.name);
@@ -1192,7 +1192,7 @@ export async function incident(ctx, which) {
     ctx.showText(title, inc.markdown, {
       lines: incidentLines(inc),
       token,
-      hint: 'Y exception → Splice · T SQL → Trawl · H request → Hail · w write-up · s save',
+      hint: 'alt+y exception → Splice · alt+t SQL → Trawl · alt+h request → Hail · w write-up · s save',
       keys: incidentKeys(ctx, inc),
     });
   } catch (e) {

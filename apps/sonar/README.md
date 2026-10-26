@@ -41,7 +41,7 @@ sonar --insights <AppId> --problems                        # everything in one A
 ```
 
 `--url` finds the app that serves an address, by its own host name or one of its custom domains.
-Keel's terminal app opens Sonar this way from a production monitor (`S` in its Production view):
+Keel's terminal app opens Sonar this way from a production monitor (`alt+s` in its Production view):
 in a new tab when it runs in Windows Terminal, or by copying the command to run.
 
 ## The views
@@ -51,7 +51,7 @@ in a new tab when it runs in Windows Terminal, or by copying the command to run.
 | **Resources** | The subscription's web and function apps (ƒ) by resource group, their slots under them, each with its state (and a slot's share of its app's traffic, `→ 10%`, when it takes some), and in the same groups its container apps, Azure SQL servers (their databases under them), storage accounts, Service Bus namespaces, Cosmos DB accounts and Log Analytics workspaces; each resource group with what it has cost this month so far. Beside them, the one under the cursor: address, its App Service plan (tier, size and instances, its autoscale setting summed up, and the other apps that share it), runtime, when it last changed, which Application Insights it reports to, its cost this month (and its plan's, where an app's cost mostly is), its Key Vault references (an app or slot with one App Service couldn't resolve is flagged ⚠ in the list, and the details say which and why), and its Azure Monitor metrics over the time span as sparklines (CPU time, memory, 5xx errors, response time). For a container app, its address, latest revision, image and environment, and its metrics over the time span (requests, CPU, memory, replicas); for a SQL server or database, its address, SKU, Entra admin (or that there's none) and the server's firewall rules; for a storage account, its kind, SKU, tier and blob address; for a Service Bus namespace, its address and tier, how many messages its queues and subscriptions hold, and which have dead letters; for a Cosmos DB account, its API, address, regions, consistency and whether it's serverless |
 | **Logs** | A KQL query over Application Insights (or a Log Analytics workspace) and a grid of what came back. `l` on an app starts with its latest requests. Completion offers tables, columns and operators as you type: a workspace's own tables and columns when Logs queries one |
 | **Problems** | Exceptions grouped as Application Insights groups them, most frequent first, with how often each happened over the span as a sparkline, how many users it hit, which app, and when last. `↵` on one shows its latest occurrence end to end: the request, its dependencies, the exception and the traces, in order |
-| **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `L` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
+| **Live** | An app's log as it's written: App Service's log stream, through its Kudu site with the same Azure CLI sign-in. `alt+l` on an app opens it; it follows the newest lines until you scroll back, and streams only while Live is on screen. Errors show red and warnings yellow. On Linux, an app writes to the stream only once App Service logs are on (Application logging: File System) |
 | **Alerts** | The subscription's metric and log alerts still firing that began in the time span (Azure Monitor's Alerts Management), most severe first: severity, the rule, what it's about, when it fired. Under them, the availability tests of the Application Insights in scope: how many ran from how many places, how many failed and when last. `↵` shows an alert whole, or a test's results in Logs |
 | **Log** | Everything that has run, with its output |
 
@@ -68,7 +68,7 @@ the time span: the last hour, 24 hours, 7 days or 30 days, for Logs, Problems an
 
 ## Changing things
 
-Restart (`R`), stop or start (`S`), swap a slot into production (`W`), and editing settings all ask
+Restart (`alt+r`), stop or start (`alt+s`), swap a slot into production (`alt+w`), and editing settings all ask
 first. For production, Sonar asks you to type the app's name, as the portal does for deletes:
 production being an app or resource group named with prod, production, prd or live. Every swap asks
 for the name, since it changes what production serves, and says how many settings differ between
@@ -85,11 +85,11 @@ other apps share the plan (they scale with it) and, when autoscale is on for it,
 count again; a plan that runs a production app asks for the app's name. A Consumption plan scales by
 itself, so there's nothing to set. Autoscale settings are shown, not changed.
 
-A container app's restart (`R`, which restarts its latest revision) and a SQL firewall rule (`F`)
+A container app's restart (`alt+r`, which restarts its latest revision) and a SQL firewall rule (`alt+f`)
 ask the same way.
 
 Settings (`↵` or `a` on an app or slot) hide the values that look secret (keys, passwords, connection
-strings) until `v` shows one (`V` all). A Key Vault reference (`@Microsoft.KeyVault(…)`) shows ✓ when App
+strings) until `v` shows one (`alt+v` all). A Key Vault reference (`@Microsoft.KeyVault(…)`) shows ✓ when App
 Service resolved it, else ✗ and why: no managed identity, no such vault or secret, or the identity may
 not read the vault. `e` edits one, `n` adds one, `x` removes one; each change
 says what it changes before saving, and Azure restarts the app to take it. `d` compares the settings
@@ -120,9 +120,9 @@ list shows why each was dead-lettered and the start of its body; `↵` shows one
 and its body (JSON indented). A body that looks like it holds a secret (a password, a token, a key)
 stays hidden until `v` shows it. Bodies are never written to the log.
 
-`R` resubmits the dead letter under the cursor, or those picked with `v`: each is sent again to its
+`alt+r` resubmits the dead letter under the cursor, or those picked with `v`: each is sent again to its
 queue (a subscription's to its topic, which hands a copy to every subscription of it) and only then
-taken off the dead letters, saying how many moved. `X` purges an entity's dead letters, deleting them
+taken off the dead letters, saying how many moved. `alt+x` purges an entity's dead letters, deleting them
 for good. Both ask first, as every change does (a production namespace asks for its name).
 
 Messages are read through Service Bus's own API with your `az` sign-in, which needs a data role on the
@@ -152,7 +152,7 @@ it reads the code the exception went through.
 
 ### Incidents
 
-`I` on a problem (or `/incident`) tells it whole, in the viewer: when it was first and last seen, how
+`alt+i` on a problem (or `/incident`) tells it whole, in the viewer: when it was first and last seen, how
 often and to how many users, with its sparkline; the app's deployments in the 24 hours before it was
 first seen (or the latest before that); the app's Key Vault references as they are now, when it has any (one that doesn't resolve is a likely cause); its latest occurrence end to end; the stack it went through;
 the SQL calls that failed in its operations (the server and database, and the command when Application
@@ -161,16 +161,16 @@ files in its stack in the 14 days before it was first seen. Outside a checkout t
 
 | In an incident | |
 | --- | --- |
-| `Y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice)'s prompt |
-| `T` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's line for Trawl (`/azure-sql` for Azure SQL) (through `T`'s checks when the server is in the subscription) |
-| `H` | Copy the failing request for Hail's prompt |
+| `alt+y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice)'s prompt |
+| `alt+t` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's line for Trawl (`/azure-sql` for Azure SQL) (through `alt+t`'s checks when the server is in the subscription) |
+| `alt+h` | Copy the failing request for Hail's prompt |
 | `w` | Ask Claude for a draft write-up in Markdown: summary, impact, timeline, likely cause, next steps (it may read the code, as `w` in Problems does) |
 | `s` | Save the write-up (or the incident itself, before there's one) to a Markdown file; `/incident save <file>` does it too |
 | `y` | Copy the incident as Markdown |
 
 ### Before and after
 
-`K` in Problems (or `/compare-window`) takes two equal windows either side of a point and says what
+`alt+k` in Problems (or `/compare-window`) takes two equal windows either side of a point and says what
 changed across it: exception types that are new, gone, or at least twice as frequent; dependencies
 whose 95th percentile duration moved by a tenth or more; operations whose rate of 5xx answers rose.
 The point is the latest successful deployment of the app in scope, or without one the middle of the
@@ -254,27 +254,27 @@ moods** in the settings turns both off.
 
 | In Resources | |
 | --- | --- |
-| `↵` / `a` | Its settings: `v` shows a hidden value (`V` all), `e` edits, `n` adds, `x` removes, `d` compares with another slot, `y` copies |
-| `R` | Restart it |
-| `S` | Stop it, or start it if it's stopped |
-| `W` | Swap a slot into production (on an app, pick the slot) |
-| `D` | Its deployments: who, when, through what, how it went, which is active; `↵` shows one's log |
+| `↵` / `a` | Its settings: `v` shows a hidden value (`alt+v` all), `e` edits, `n` adds, `x` removes, `d` compares with another slot, `y` copies |
+| `alt+r` | Restart it |
+| `alt+s` | Stop it, or start it if it's stopped |
+| `alt+w` | Swap a slot into production (on an app, pick the slot) |
+| `alt+d` | Its deployments: who, when, through what, how it went, which is active; `↵` shows one's log |
 | `f` | A function app's functions (below) |
 | `l` `p` | Its logs · its problems |
-| `L` | Its log as it's written, in Live |
+| `alt+l` | Its log as it's written, in Live |
 | `o` `b` | Open it in the Azure portal · open its site |
 | `y` | Copy its address |
 
 | On a container app | |
 | --- | --- |
-| `R` | Restart its latest revision |
+| `alt+r` | Restart its latest revision |
 | `l` / `↵` | Its console log in Logs, from the Log Analytics workspace its environment writes to |
 | `o` `b` `y` | Open it in the portal · open its address · copy its address |
 
 | On a SQL server or database | |
 | --- | --- |
-| `T` | Copy a command that opens it in [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl), to paste into Trawl's prompt (below) |
-| `F` | Let this machine's public address through the server's firewall |
+| `alt+t` | Copy a command that opens it in [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl), to paste into Trawl's prompt (below) |
+| `alt+f` | Let this machine's public address through the server's firewall |
 | `o` `y` | Open it in the portal · copy its address |
 
 | On a storage account | |
@@ -314,16 +314,16 @@ accounts show their details only.
 | `v` | The result as a chart, or as the grid again (below) |
 | `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
-| `y` `Y` | Copy the row as JSON · every row, tab-separated |
-| `H` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there |
-| `F` | Copy a request row as the text of a request in a `.http` file |
+| `y` `alt+y` | Copy the row as JSON · every row, tab-separated |
+| `alt+h` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there |
+| `alt+f` | Copy a request row as the text of a request in a `.http` file |
 | `c` | Which Application Insights (or Log Analytics workspace) to look in |
 
 | In Live | |
 | --- | --- |
-| `j` `k` `g` `G` | Scroll back · `G` follows the end again |
+| `j` `k` `g` `alt+g` | Scroll back · `alt+g` follows the end again |
 | `p` | Pause, or go on |
-| `c` `R` | Clear · Reconnect |
+| `c` `alt+r` | Clear · Reconnect |
 | `y` | Copy what's there |
 
 | In Alerts | |
@@ -337,21 +337,21 @@ accounts show their details only.
 | --- | --- |
 | `↵` | Its latest occurrence, end to end |
 | `w` | Ask Claude why it happens |
-| `I` | The incident: the problem told whole (below) |
-| `K` | Before and after: what changed across the app's latest deployment (below) |
+| `alt+i` | The incident: the problem told whole (below) |
+| `alt+k` | Before and after: what changed across the app's latest deployment (below) |
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
-| `Y` | Copy its latest exception, with its stack and the request it failed, for Splice's prompt |
+| `alt+y` | Copy its latest exception, with its stack and the request it failed, for Splice's prompt |
 | `x` | Show them all again, after `/take` showed only those like an exception |
 | `c` | Which Application Insights to look in |
 
-In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
+In lists: `j` `k` or the arrows move, `g` `alt+g` go to the top and bottom, `ctrl+d` `ctrl+u` page. The
 mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll with the wheel, and
 drag to select text, which is copied when you let go.
 
 ### SQL databases in Trawl
 
-`T` on a SQL database (or server), or `/trawl server/database`, copies a slash command for Trawl's
+`alt+t` on a SQL database (or server), or `/trawl server/database`, copies a slash command for Trawl's
 prompt, such as
 
 ```
@@ -368,7 +368,7 @@ production, as Sonar tells it (the server's name or resource group).
 
 Before copying, Sonar checks the server's firewall lets this machine's public address in (the "Allow
 Azure services" rule doesn't count: it's for Azure, not you), and if not, offers to add a rule for it,
-`sonar-<address>`, asking as every change does. `F` (or `/firewall`) adds one on its own.
+`sonar-<address>`, asking as every change does. `alt+f` (or `/firewall`) adds one on its own.
 
 ### The command palette
 

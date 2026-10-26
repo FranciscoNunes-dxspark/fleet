@@ -80,7 +80,7 @@ test('/family copies a line for each sibling from the folder Sonar started in', 
     assert.match(frame(), /Trawl\s+\/azure-sql shop\.database\.windows\.net Shop\s+Shop from appsettings\.json/);
     assert.match(frame(), /Trawl\s+\/add Local localhost,14330 Shop --user sa --trust-cert\s+Local from appsettings\.json/);
     assert.doesNotMatch(frame(), /hunter2/);
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => /❯ Trawl\s+\/add Local/.test(frame()), 'the cursor on Trawl');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes("Copied for Trawl: paste it into Trawl's prompt"), 'copied for Trawl');
