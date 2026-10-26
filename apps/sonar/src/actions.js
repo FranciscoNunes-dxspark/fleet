@@ -798,14 +798,23 @@ export async function firewall(ctx, which) {
   return letMeIn(ctx, server, { always: true });
 }
 
+// What sqlSources read, per loaded subscription: reading every app is the slow part of T, and the
+// answer holds until r loads the subscription again.
+const sqlSourcesOf = new WeakMap();
+
 /** Where an app's SQL logins might be: every app's and slot's connection strings and settings. */
 async function sqlSources(ctx, signal) {
+  const key = ctx.data;
+  if (key && sqlSourcesOf.has(key)) return sqlSourcesOf.get(key);
   const targets = Object.values(ctx.targets());
   const lists = await mapLimited(targets, 6, async (target) => {
     const [strings, settings] = await Promise.all([ctx.provider.connectionStrings(target, { signal }).catch(() => ({})), ctx.settingsOf(target).catch(() => ({}))]);
     return [...Object.entries(strings), ...Object.entries(settings)].map(([setting, value]) => ({ target, setting, value: String(value ?? '') }));
   });
-  return lists.flat();
+  const sources = lists.flat();
+  // Not kept when cancelled: a partial read would be taken for the whole.
+  if (key && !signal?.aborted) sqlSourcesOf.set(key, sources);
+  return sources;
 }
 
 /**
