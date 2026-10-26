@@ -100,7 +100,7 @@ test('P runs the statement with its actual plan: the rows in Results, the plan w
   await until(() => frame().includes('Clubs'), 'the explorer');
   app.stdin.write('2');
   await until(() => frame().includes('WHERE Goals > 3'), 'the console');
-  app.stdin.write('P');
+  app.stdin.write('\x1bp');
   await until(() => frame().includes('Actual plan: SELECT * FROM dbo.Players WHERE Goals > 3') && frame().includes('a Claude explains it'), 'the plan');
   assert.match(frame(), /actual 12 \/ est 1\s+▲ 12×\s+\|--Clustered Index Scan\(OBJECT:\(\[ClubA\]\.\[dbo\]\.\[Players\]/);
   assert.match(frame(), /▲ more rows than estimated/);

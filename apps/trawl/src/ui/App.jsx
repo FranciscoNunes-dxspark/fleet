@@ -9,6 +9,7 @@ import { freeFile, tabsOf } from '../consoles.js';
 import * as ed from '../editor.js';
 import { commitMode, describeConn, isReadOnly } from '../connections.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
+import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { osCredentials } from '@fleet/kit/credentials.js';
 import { DbError, findPassword, connect as openSession } from '../db.js';
 import { run as runCommand } from '@fleet/kit/run.js';
@@ -21,7 +22,7 @@ import { qualified, splitStatements, statisticsSummary } from '../sql.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
-import { keymapSection, parseKeymap, translateKey } from '@fleet/kit/keymap.js';
+import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
@@ -69,17 +70,17 @@ const helpSections = (user, keymap) => [...HELP, ...[keymapSection(keymap, VIEW_
 const CTRL_P = '\x10';
 
 const HINTS = {
-  explorer: '↵ first rows · d describe · s query it in the console · c CREATE script · C copy rows · /find filter',
-  query: '↵ run statement · v select several · R run file · e edit in the console · /console',
-  results: 'h/l columns · o sort · f filter · ↵ record · v value · y/Y copy · F follow key · p pin · c compare · e edit · n NULL · d delete · a add · s save · x export · b chart · t share · C copy rows',
+  explorer: '↵ first rows · d describe · s query it in the console · c CREATE script · alt+c copy rows · /find filter',
+  query: '↵ run statement · v select several · alt+r run file · e edit in the console · /console',
+  results: 'h/l columns · o sort · f filter · ↵ record · v value · y/alt+y copy · alt+f follow key · p pin · c compare · e edit · n NULL · d delete · a add · s save · x export · b chart · t share · alt+c copy rows',
   history: '↵ run again · e edit in the console · ◆ ran by Claude',
   connections: '↵ connect · n new · p password · f folder · x forget',
-  activity: 'R read again · ↵ full SQL · x kill · a idle sessions too · J jobs · Q top queries',
+  activity: 'alt+r read again · ↵ full SQL · x kill · a idle sessions too · alt+j jobs · alt+q top queries',
 };
 // The Activity tab's other lists.
 const ACTIVITY_HINTS = {
-  jobs: 'R read again · ↵ recent runs · s start the job · J or esc back to sessions · Q top queries',
-  queries: 'R read again · ↵ full text · e edit in the console · o sort by · Q or esc back to sessions · J jobs',
+  jobs: 'alt+r read again · ↵ recent runs · s start the job · alt+j or esc back to sessions · alt+q top queries',
+  queries: 'alt+r read again · ↵ full text · e edit in the console · o sort by · alt+q or esc back to sessions · alt+j jobs',
 };
 // What the Activity tab lists ('sessions', 'jobs' or 'queries'), and the jobs and top queries read
 // for it ({ …, at, conn, error, unavailable }).
@@ -1005,6 +1006,7 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   // /update: checks now and, in the downloaded Trawl, installs a newer release (whatever
   // "autoUpdate" says, since you asked); otherwise says how to get it.
   const checkUpdates = async () => {
+    if (askHostToUpdate()) return note('Asked Fleet to look for a new version of the whole fleet.');
     if (!checkLatest) return note('Update checks are off in this copy.');
     let newer = null;
     const r = await task(
@@ -1381,6 +1383,9 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
       }
       if (b?.key) out = b.key.seq;
     }
+    // Uppercase shortcuts are alt+letter (caps lock can't fire them); typing in a view is left alone.
+    if (out === input && focusRef.current === 'view' && !confirmRef.current && !(overlayRef.current?.palette || overlayRef.current?.help)) out = shortcutKey(input);
+    if (out == null) return null;
     if (out === CTRL_P && !overlayRef.current && !confirmRef.current && (focusRef.current === 'view' || focusRef.current === 'prompt')) {
       openPalette();
       return null;
@@ -1742,7 +1747,7 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
           : overlay
           ? 'j/k scroll · space page · esc close'
           : view === 'query' && queryMode === 'console'
-            ? '↵/i type · ctrl+r run statement · R run all · t share · /save <file> · /open <file>'
+            ? '↵/i type · ctrl+r run statement · alt+r run all · t share · /save <file> · /open <file>'
             : view === 'activity' && activityLists.show !== 'sessions'
               ? ACTIVITY_HINTS[activityLists.show]
               : HINTS[view];

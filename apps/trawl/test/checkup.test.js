@@ -88,7 +88,7 @@ test('/health on Postgres says which checks it has no equivalent for', async () 
   // The end of the report lists what isn't checked here.
   await command(app, '/last');
   await until(() => frame().includes('Health: pg/ClubA'), 'the report again');
-  app.stdin.write('G');
+  app.stdin.write('\x1bg');
   await until(() => frame().includes('Not checked on PostgreSQL:'), 'the checks it has not');
   assert.match(frame(), /Missing indexes the server suggests: PostgreSQL doesn't suggest/);
   app.unmount();

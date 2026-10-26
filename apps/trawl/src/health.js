@@ -246,8 +246,8 @@ export const CHECKS = [
     reads: ['missing'],
     why: { sqlserver: "What the optimizer asked for while compiling queries since the server started, most useful first by its own estimate (the cost it would save × how often). They often overlap each other and the indexes already there: read them together before creating any." },
     unavailable: {
-      postgres: "PostgreSQL doesn't suggest missing indexes (the hypopg and pg_qualstats extensions come close): the top queries (Q in Activity) and their plans are where to look.",
-      mysql: "MySQL doesn't suggest missing indexes: the top queries (Q in Activity) and their plans are where to look.",
+      postgres: "PostgreSQL doesn't suggest missing indexes (the hypopg and pg_qualstats extensions come close): the top queries (alt+q in Activity) and their plans are where to look.",
+      mysql: "MySQL doesn't suggest missing indexes: the top queries (alt+q in Activity) and their plans are where to look.",
     },
   },
   {

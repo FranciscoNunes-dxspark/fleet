@@ -261,7 +261,7 @@ export function reverseScript(s) {
   const head = [
     `-- Undoes: ${s.sql}`,
     `-- Run on ${s.conn}/${s.database} at ${when} UTC${s.op === 'insert' ? `, adding ${plural(n, 'row')}` : `; the ${plural(n, 'row')} it changed, as they were before it ran`}.`,
-    `-- Nothing has run: read it through, then R runs it (the usual checks apply). Rows changed since then get these values back.`,
+    `-- Nothing has run: read it through, then alt+r runs it (the usual checks apply). Rows changed since then get these values back.`,
   ];
   if (!n) return [...head, '-- It changed no rows, so there is nothing to undo.', ''].join('\n');
   const col = (c) => s.columns.findIndex((x) => !x.unknown && x.name.toLowerCase() === c.toLowerCase());

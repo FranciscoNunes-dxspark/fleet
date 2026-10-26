@@ -64,7 +64,7 @@ export function connectionForQuery(connections, { server, database }) {
 export function rowsScript({ table, columns = [], rows = [], server, database }, { quote = (n) => `[${String(n).replace(/]/g, ']]')}]`, kind = 'sqlserver' } = {}) {
   const name = table ? String(table).split('.').map(quote).join('.') : '<table>';
   const literal = (v) => (v == null ? 'NULL' : valueLiteral(typeof v === 'object' ? JSON.stringify(v) : v, 'nvarchar', kind));
-  const head = [`-- ${rows.length} row${rows.length === 1 ? '' : 's'}${table ? ` of ${table}` : ''}${server || database ? ` from ${[server, database].filter(Boolean).join('/')}` : ''}, handed over. Nothing has run: read it, then R runs it.`];
+  const head = [`-- ${rows.length} row${rows.length === 1 ? '' : 's'}${table ? ` of ${table}` : ''}${server || database ? ` from ${[server, database].filter(Boolean).join('/')}` : ''}, handed over. Nothing has run: read it, then alt+r runs it.`];
   if (!table) head.push('-- They came without a table: put its name in place of <table>.');
   if (!rows.length) return `${head.join('\n')}\n`;
   const values = rows.map((r) => `(${columns.map((_, i) => literal(r[i])).join(', ')})`);

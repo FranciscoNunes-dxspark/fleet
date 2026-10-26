@@ -93,7 +93,7 @@ export function QueryView({ file, ctx, width, height, active }) {
         })}
       </Panel>
       {split ? (
-        <Panel title={st ? `line ${st.line}` : 'Statement'} hint={st ? '↵ run · v select · R run file' : ''} width={sideW} height={height}>
+        <Panel title={st ? `line ${st.line}` : 'Statement'} hint={st ? '↵ run · v select · alt+r run file' : ''} width={sideW} height={height}>
           <Lines width={sideW - 2} height={innerH} lines={preview} />
         </Panel>
       ) : null}

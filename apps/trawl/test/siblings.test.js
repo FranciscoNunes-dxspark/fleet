@@ -67,7 +67,7 @@ test('rows: from a set, without secrets, and back as an INSERT; the connection a
   const r = rowsContext(set, [0], { table: 'dbo.People', server: 'srv', database: 'Db' });
   assert.deepEqual(r.hidden, ['PasswordHash']);
   assert.deepEqual(contextIn(r.line).data, { server: 'srv', database: 'Db', table: 'dbo.People', columns: ['Id', 'Name', 'PasswordHash', 'Born'], rows: [[1, "O'Neil", null, '1990-01-02 00:00:00']] });
-  assert.equal(rowsScript(contextIn(r.line).data), "-- 1 row of dbo.People from srv/Db, handed over. Nothing has run: read it, then R runs it.\nINSERT INTO [dbo].[People] ([Id], [Name], [PasswordHash], [Born]) VALUES\n  (1, N'O''Neil', NULL, N'1990-01-02 00:00:00');\n");
+  assert.equal(rowsScript(contextIn(r.line).data), "-- 1 row of dbo.People from srv/Db, handed over. Nothing has run: read it, then alt+r runs it.\nINSERT INTO [dbo].[People] ([Id], [Name], [PasswordHash], [Born]) VALUES\n  (1, N'O''Neil', NULL, N'1990-01-02 00:00:00');\n");
   assert.match(rowsScript({ columns: ['a'], rows: [[true]] }, { quote: (n) => `"${n}"`, kind: 'postgres' }), /put its name in place of <table>\.\nINSERT INTO <table> \("a"\) VALUES\n {2}\(TRUE\);/);
   const conns = [...DEMO_CONNECTIONS, { name: 'shop', server: 'tcp:Shop.database.windows.net,1433', database: 'Shop' }];
   assert.equal(connectionForQuery(conns, { server: 'shop.database.windows.net', database: 'shop' }).name, 'shop');

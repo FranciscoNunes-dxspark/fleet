@@ -87,7 +87,7 @@ test('a foreign key of two columns takes both from one referenced row', () => {
 
 test('the script: INSERTs of a thousand rows at most, literals each server’s way', () => {
   const { script } = generateScript(PEOPLE, 1001, { refs: REFS });
-  assert.match(script, /^-- 1001 rows of made-up data for dbo\.Customers \(seed 1\)\. Nothing has run: read it, then R runs it\.\n-- Left out:/);
+  assert.match(script, /^-- 1001 rows of made-up data for dbo\.Customers \(seed 1\)\. Nothing has run: read it, then alt\+r runs it\.\n-- Left out:/);
   assert.equal(script.match(/^INSERT INTO \[dbo\]\.\[Customers\] \(\[FirstName\], \[LastName\], \[Email\]/gm).length, 2);
   assert.match(script, /\(N'[^']*(?:''[^']*)*', N'/, 'nvarchar as N\'…\'');
   const pg = generateScript({ ...PEOPLE, schema: 'public', columns: [col('id', 'integer', { pk: true, identity: true }), col('name', 'text'), col('active', 'boolean'), col('born', 'timestamp without time zone'), col('blob', 'bytea')] }, 2, { kind: 'postgres', quote: DIALECTS.postgres.quote }).script;
