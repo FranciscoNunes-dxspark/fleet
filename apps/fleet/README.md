@@ -17,7 +17,18 @@ tab in its own colour.
 
 ## Install
 
-Download `fleet` for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
+**On Windows**, download `fleet-windows-x64-setup.exe` from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
+and run it. It installs Fleet for you (no administrator needed), with a Windows Terminal of its own to
+open in, and adds **Fleet** to the Start menu. It asks which folder Fleet should open in: the one that
+holds your repositories and projects. That terminal has a font with every character the apps draw
+(Maple Mono NF CN when you have it installed, else Cascadia Mono), and ctrl+c and ctrl+v copy and paste. Run
+the setup again to pick another folder; your changes to the terminal's settings
+(`%LOCALAPPDATA%\Programs\Fleet\terminal\settings\settings.json`) are kept.
+
+Started some other way on Windows, as the bare `fleet-windows-x64.exe` opens in Windows' own console,
+whose one font lacks many of the apps' characters: Fleet draws lookalikes in their place there.
+
+**Elsewhere**, or for the bare executable, download `fleet` for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
 and put it on your PATH. It is one executable with all six apps inside, so it's the only download you
 need. It checks for a new version once a day and installs it by itself; the new version starts the
 next time you open Fleet. (The apps inside don't update themselves: Fleet updates them together.)
