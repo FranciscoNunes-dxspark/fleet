@@ -33,14 +33,29 @@ export function Row({ segments, width, selected = false, marked = false, focused
 }
 
 /** A rounded box with its title set into the top border, like Claude Code's panels. */
+/**
+ * A hint cut to `room` columns (with its spaces around it): whole " · " parts from the start, the rest
+ * as "…", so what comes first (a count, the main keys) stays; nothing when not even a few columns are left.
+ */
+function fitHint(hint, room) {
+  if (!hint) return '';
+  if (stringWidth(hint) + 2 <= room) return ` ${hint} `;
+  const parts = hint.split(' · ');
+  for (let k = parts.length - 1; k > 0; k--) {
+    const cut = `${parts.slice(0, k).join(' · ')} · …`;
+    if (stringWidth(cut) + 2 <= room) return ` ${cut} `;
+  }
+  return room >= 6 ? ` ${fit(parts[0], room - 2).trimEnd()} ` : '';
+}
+
 export function Panel({ title, hint, width, height, focused = false, children }) {
   const color = focused ? theme.accent : theme.border;
   const label = title ? ` ${title} ` : '';
-  const right = hint ? ` ${hint} ` : '';
   const room = width - 4;
   // One column is kept for the space after the label, so a long title never pushes the corner off.
   const shownLabel = label ? fit(label, Math.min(stringWidth(label), room - 1)).trimEnd() + ' ' : '';
-  const shownHint = stringWidth(shownLabel) + stringWidth(right) <= room ? right : '';
+  // The title comes first; the hint gets what's left.
+  const shownHint = fitHint(hint, room - stringWidth(shownLabel));
   const fill = Math.max(0, room - stringWidth(shownLabel) - stringWidth(shownHint));
   return (
     <Box flexDirection="column" width={width} height={height}>
