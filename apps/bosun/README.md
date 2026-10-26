@@ -68,7 +68,7 @@ npm start
 | `watch` | Files that restart it when they change: paths or globs from its `cwd`, e.g. `["src", "lib/**/*.js"]` |
 | `ignore` | Changes to these don't (`"*.test.js"`, `"src/generated"`) |
 | `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
-| `tunnel` | `"cloudflared"` or `"ngrok"`: the tool `T` opens its tunnel with (see Tunnels). At the top level, for every process |
+| `tunnel` | `"cloudflared"` or `"ngrok"`: the tool `alt+t` opens its tunnel with (see Tunnels). At the top level, for every process |
 | `test` | Hail's checks for it: an `.http` file (`"api.http"`), or `{ "file": "api.http", "env": "dev" }`, from its `cwd`. Needs `port` |
 
 `"envFile"` at the top level (from the project's folder) is read for every process, before each one's
@@ -123,7 +123,7 @@ Without a `bosun.json`, Bosun works out what to run from the first of these it f
 `/init` writes what was worked out as a `bosun.json`, to add ports, health pages, `watch` and
 `restart` to; from then on that's what Bosun reads.
 
-`--no-start` opens without starting anything (`R` starts them all).
+`--no-start` opens without starting anything (`alt+r` starts them all).
 
 ### Pre-flight
 
@@ -159,11 +159,11 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | Key | What it does |
 | --- | --- |
 | `r` | Restart it |
-| `R` | Restart them all, each after the one it waits for |
+| `alt+r` | Restart them all, each after the one it waits for |
 | `s` | Stop it, or start it; while it waits to restart, it won't |
 | `a` | Every process's log at once, or back to the one |
 | `ctrl+g` | One group at a time, then all of them again |
-| `ctrl+f` | Search the log beside the list: matches light up as you type, `↵` stops typing, `n` `N` go to the next and the one before, `esc` clears it |
+| `ctrl+f` | Search the log beside the list: matches light up as you type, `↵` stops typing, `n` `alt+n` go to the next and the one before, `esc` clears it |
 | `e` | Only the lines that read as trouble (errors, exceptions, a port in use), or all of them again |
 | `ctrl+l` | Filter the log beside the list (see Structured logs) |
 | `↵` | Its whole log, in the viewer |
@@ -175,7 +175,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `p` | Profiles |
 | `y` | Copy its command |
 | `t` | Copy its latest trouble line for Sonar or Hail, to paste into their prompt (see The family) |
-| `T` | Open its port to the internet, or close its tunnel (see Tunnels) |
+| `alt+t` | Open its port to the internet, or close its tunnel (see Tunnels) |
 
 Beside each running process, when the list has room, is what it uses: its CPU (as a % of one core, so
 a busy process on several cores can pass 100%) and its memory, both counting everything it started
@@ -211,12 +211,12 @@ the process runs as before.
 
 ### Tunnels
 
-`T` (or `/tunnel <name>`) opens a running process's port to the internet for a while, to show someone
+`alt+t` (or `/tunnel <name>`) opens a running process's port to the internet for a while, to show someone
 your work or to take a webhook: Bosun asks first, then runs `cloudflared tunnel --url
 http://localhost:<port>` (a quick tunnel, no account needed) or `ngrok http <port>`, whichever is on
 your PATH, cloudflared first unless `"tunnel": "ngrok"` in `bosun.json` says otherwise. The address it
 gets (`https://….trycloudflare.com`, `https://….ngrok-free.app`) is copied and said, shown beside the
-process (`⇄`) and in its log's title, and its log says when the tunnel opens and closes. `T` again
+process (`⇄`) and in its log's title, and its log says when the tunnel opens and closes. `alt+t` again
 closes it. It closes when the process stops, crashes or gives up (a restart with `r`, a watched file
 or `"restart"` keeps it) and when Bosun quits. Without either tool, Bosun says how to install one.
 
@@ -246,7 +246,7 @@ together with `e` and the search.
 The viewer (`↵`) searches the same way (with `/` or `ctrl+f`), starting from the newest match, and `e` there shows only
 the trouble too.
 
-In lists: `j` `k` or the arrows move, `g` `G` go to the top and bottom, `ctrl+d` `ctrl+u` page, `y`
+In lists: `j` `k` or the arrows move, `g` `alt+g` go to the top and bottom, `ctrl+d` `ctrl+u` page, `y`
 copies, `↵` opens. The mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll
 with the wheel, and drag to select text, which is copied when you let go.
 

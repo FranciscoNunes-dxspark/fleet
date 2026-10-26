@@ -126,7 +126,7 @@ test('T asks, opens the tunnel and copies its address; T again closes it; withou
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => /api\s+running/.test(frame()) && /web\s+running/.test(frame()), 'the crew up');
-    app.stdin.write('T');
+    app.stdin.write('\x1bt');
     await until(() => frame().includes("Open api's port 4281 to the internet through ngrok?"), 'the question');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('api is open at https://3f2a-81-2-69-160.ngrok-free.app (copied)'), 'open, and said');
@@ -134,7 +134,7 @@ test('T asks, opens the tunnel and copies its address; T again closes it; withou
     assert.ok(frame().includes('⇄'), 'beside it');
     assert.ok(frame().includes('⇄ https://3f2a-81-2-69-160.ngrok-free.app'), 'in its log\'s title');
     assert.deepEqual(tool.started[0].args, ['http', '4281', '--log', 'stdout', '--log-format', 'json']);
-    app.stdin.write('T');
+    app.stdin.write('\x1bt');
     await until(() => frame().includes("Closed api's tunnel"), 'closed');
     assert.ok(!frame().includes('⇄'));
 

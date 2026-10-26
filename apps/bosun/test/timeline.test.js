@@ -48,7 +48,7 @@ test('crashes, giving up, restarts, stops, tunnels and /move go to the family\'s
 
     app.stdin.write('r');
     await until(() => mine().includes('Restarted api'), 'a restart');
-    app.stdin.write('T');
+    app.stdin.write('\x1bt');
     await until(() => frame().includes('to the internet'), 'the tunnel asked for');
     app.stdin.write(KEYS.enter);
     await until(() => mine().includes('Opened a tunnel to api (port 4290): https://quiet-river-1.trycloudflare.com'), 'the tunnel opened');
@@ -65,7 +65,7 @@ test('crashes, giving up, restarts, stops, tunnels and /move go to the family\'s
     await until(() => frame().includes('every project') && frame().includes('Ran an UPDATE on shop-dev') && frame().includes(basename(other)), 'every project\'s');
     app.stdin.write('p');
     await until(() => !frame().includes('Ran an UPDATE'), 'this one\'s again');
-    app.stdin.write('G');
+    app.stdin.write('\x1bg');
     await until(() => /❯ .*Pushed main/.test(frame()), 'on the oldest');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Splice ·') && frame().includes(`project  ${dir}`), 'the whole of it');

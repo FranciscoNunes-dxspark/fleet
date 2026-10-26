@@ -6,6 +6,7 @@ import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
 import { saveConfig } from '../config.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
+import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { loadCrew, withProfile } from '../crew.js';
 import { remember } from '../projects.js';
 import { Supervisor, killPids, pidsOnPort } from '../supervisor.js';
@@ -14,7 +15,7 @@ import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
-import { keymapSection, parseKeymap, translateKey } from '@fleet/kit/keymap.js';
+import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
@@ -54,7 +55,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · R all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share it · w why · ↵ whole log',
+  crew: 'r restart · s stop/start · alt+r all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share it · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
@@ -311,7 +312,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     if (e.type === 'tunnel') {
       activity(`Opened a tunnel to ${e.p.name} (port ${e.p.port}): ${e.url}`);
       ctx.copy(e.url, 'the tunnel\'s address');
-      return note(`${e.p.name} is open at ${e.url} (copied). T closes it.`, 'ok');
+      return note(`${e.p.name} is open at ${e.url} (copied). alt+t closes it.`, 'ok');
     }
     if (e.type === 'tunnel-closed') {
       activity(`Closed the tunnel to ${e.p.name}${e.url ? ` (${e.url})` : ''}${e.asked ? '' : ': it ended by itself'}`, { kind: e.asked ? 'info' : 'error' });
@@ -616,6 +617,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     mouseAvailable: Boolean(mouse),
     // /update: asks for the latest release now, whatever the daily check last said, and installs it.
     updateNow: () => {
+      if (askHostToUpdate()) return note('Asked Fleet to look for a new version of the whole fleet.');
       if (!checkUpdate) return note(`This Bosun (${VERSION}) runs from a checkout: git pull updates it.`);
       if (update?.state === 'installing') return note(`Bosun ${update.latest} is being installed already.`);
       if (update?.state === 'installed') return note(`Bosun ${update.latest} is installed. It starts the next time you open Bosun.`);
@@ -770,6 +772,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       }
       if (b?.key) out = b.key.seq;
     }
+    // Uppercase shortcuts are alt+letter (caps lock can't fire them); typing in a view is left alone.
+    if (out === input && focusRef.current === 'view' && !confirmRef.current && !['palette', 'help'].includes(overlayRef.current?.kind) && !ctx.claimsKey?.(input, {})) out = shortcutKey(input);
+    if (out == null) return null;
     if (out === CTRL_P && !overlayRef.current && !confirmRef.current && (focusRef.current === 'view' || focusRef.current === 'prompt')) {
       openPalette();
       return null;
