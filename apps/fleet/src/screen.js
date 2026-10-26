@@ -164,9 +164,10 @@ export class OutputFilter {
 
   /** What sets the terminal's modes the way this app left them, from whatever another app left, and the host's mouse. */
   restoreModes() {
-    let out = MOUSE_MODES.map((n) => `\x1b[?${n}l`).join('') + '\x1b[?1004l\x1b[?2004l';
+    // The host's mouse goes first: a terminal keeps one tracking mode, the last set, so the app's own
+    // (drags, for selecting text) has to come after it.
+    let out = MOUSE_MODES.map((n) => `\x1b[?${n}l`).join('') + '\x1b[?1004l\x1b[?2004l' + HOST_MOUSE;
     for (const [n, on] of this.modes) if (n !== 25 && on) out += `\x1b[?${n}h`;
-    out += HOST_MOUSE;
     out += this.modes.get(25) === false ? '\x1b[?25l' : '\x1b[?25h';
     return out;
   }
