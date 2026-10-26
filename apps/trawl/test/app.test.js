@@ -297,6 +297,19 @@ test('Settings, an overlay, changes the row limit, the accent and updates, and k
   applyTheme({});
 });
 
+test('a line a sibling hands over while typing in the console goes to the prompt, not the SQL', async () => {
+  const app = start();
+  await until(() => frame().includes('Clubs'), 'the explorer');
+  app.stdin.write('2');
+  await until(() => frame().includes('An empty console'), 'the empty console');
+  app.stdin.write('i');
+  await until(() => frame().includes('typing SQL'), 'typing mode');
+  app.stdin.write('/azure-sql shop.database.windows.net Shop --name shop-Shop');
+  await until(() => !frame().includes('typing SQL') && frame().includes('> /azure-sql shop.database.windows.net Shop'), 'the line in the prompt');
+  assert.ok(frame().includes('An empty console'), 'the console is still empty');
+  app.unmount();
+});
+
 test('the console: type SQL, ctrl+r runs it with the results underneath, and it is kept', async () => {
   const app = start();
   await until(() => frame().includes('Clubs'), 'the explorer');

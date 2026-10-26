@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
+import { decodeContext, pastedLine } from '@fleet/kit/family.js';
 import { accept, completeAt, signatureAt } from '../complete.js';
 import * as ed from '../editor.js';
 import { highlight, mask, oneLine, splitStatements, statementAt, withoutLeadingComments } from '../sql.js';
@@ -218,6 +219,13 @@ export function ConsoleView({ editor, tabs = ['console'], tab = 0, editing, ctx,
       if (!ctx.editorHasKeys()) return;
       // Edit the latest text, not this render's: fast typing outruns re-rendering.
       const editor = ctx.console;
+      // A line a sibling hands over (Fleet types it in as one paste) is for the prompt, not the SQL.
+      const handed = pastedLine(input);
+      if (handed && (/^\/(azure-sql|add|take)\s/.test(handed) || decodeContext(handed))) {
+        ctx.setEditing(false);
+        // After App's dispatcher has seen this input too, which would type it again into the prompt.
+        return queueMicrotask(() => ctx.prefill(handed));
+      }
       const open = menuRef.current;
       const completion = open && completeAt(editor, ctx.schema, { force: open.force });
       const items = completion?.items ?? [];
