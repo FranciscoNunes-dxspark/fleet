@@ -11,7 +11,7 @@ npm test                                                       # here; npm run t
 node --import @fleet/kit/register.js --import ./src/app.js --test test/keys.test.js     # one file
 npm start                                                      # run from the checkout (needs a real TTY): node bin/fleet.js [app] [args…]
 npm run build                                                  # Bun-compiled executable for this machine → dist/fleet-<platform>, all six apps inside
-node scripts/logo.js                                           # regenerate assets/ (the six tiles, from src/spaces.js's accents)
+node scripts/logo.js                                           # regenerate assets/ (the ship's wheel, its handles in src/spaces.js's accents)
 ```
 
 ## Design

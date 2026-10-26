@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo.svg" width="120" alt="Six tiles, one per app"></p>
+<p align="center"><img src="assets/logo.svg" width="120" alt="A ship's wheel with six handles, one per app"></p>
 
 # Fleet
 
