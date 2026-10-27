@@ -10,7 +10,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
 import { contextIn, encodeContext, takeLine } from '@fleet/kit/family.js';
-import { TAKES, exceptionFrames, framesInRepo, pathAndLine } from '../src/take.js';
+import { TAKES, branchRefs, exceptionFrames, framesInRepo, pathAndLine, shortRef } from '../src/take.js';
 import { App } from '../src/ui/App.jsx';
 
 test('frames matched to the checkout, top first, each file and line once', () => {
@@ -30,8 +30,15 @@ test('a path and a line, as /blame takes them', () => {
   assert.deepEqual(pathAndLine('C:\\x\\a.js:3'), { path: 'C:\\x\\a.js', line: 3 });
 });
 
+test("where a pull request's branch may be: each remote's copy, origin first, then a local one", () => {
+  assert.deepEqual(branchRefs('refs/heads/feature/pay', ['upstream', 'origin']), ['refs/remotes/origin/feature/pay', 'refs/remotes/upstream/feature/pay', 'refs/heads/feature/pay']);
+  assert.deepEqual(branchRefs('', ['origin']), []);
+  assert.equal(shortRef('refs/remotes/origin/feature/pay'), 'origin/feature/pay');
+  assert.equal(shortRef('refs/heads/main'), 'main');
+});
+
 test('the kinds Splice takes, as the family says', () => {
-  assert.deepEqual(TAKES, ['exception', 'commit', 'file']);
+  assert.deepEqual(TAKES, ['exception', 'commit', 'file', 'pullrequest']);
 });
 
 let base;
@@ -149,7 +156,28 @@ test('/take: an exception opens blame at its frame, a file at its line, a commit
     app.stdin.write('\x1by');
     await until(() => copied.length === 2, 'the commit copied');
     assert.deepEqual(contextIn(copied[1]), { kind: 'commit', data: { repo: 'shop', hash: git('rev-parse', 'HEAD'), subject: 'Better third line' } });
-    assert.match(flat(frame()), /Copied for Sonar: paste it into Sonar's prompt\. commit [0-9a-f]{10} Better third line/);
+    assert.match(flat(frame()), /Copied for Sonar or Keel: paste it into one's prompt\. commit [0-9a-f]{10} Better third line/);
+  } finally {
+    app.unmount();
+  }
+});
+
+test("/take pullrequest (from Keel): what its branch adds to its target; a branch that isn't here says so", async () => {
+  git('checkout', '-q', '-b', 'feature/pay');
+  writeFileSync(join(dir, 'src', 'pay.js'), 'pay one\npay two\npay three\n');
+  git('commit', '-q', '-am', 'Pay three');
+  git('checkout', '-q', 'main');
+  lastApp = render(React.createElement(App, { initialPath: dir, config: { recent: [], roots: [], history: [] }, copy: () => {} }));
+  const app = lastApp;
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => frame().includes('Better third line'), 'the graph');
+    await command(app, takeLine('pullrequest', { repo: 'shop', id: 7, title: 'Pay three', sourceBranch: 'feature/pay', targetBranch: 'main' }));
+    await until(() => frame().includes('main...feature/pay') && frame().includes('+pay three'), 'the branch diff');
+    app.stdin.write('\x1b');
+    await until(() => !frame().includes('main...feature/pay'), 'closed');
+    await command(app, takeLine('pullrequest', { repo: 'shop', id: 8, sourceBranch: 'gone', targetBranch: 'main' }));
+    await until(() => flat(frame()).includes("gone isn't in shop, and it has no remote to fetch from."), 'the missing branch');
   } finally {
     app.unmount();
   }

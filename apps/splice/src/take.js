@@ -30,6 +30,21 @@ export function framesInRepo(frames, files) {
 }
 
 /**
+ * Where a pull request's branch (a `pullrequest` context's, from Keel) may be in this repository, best
+ * first: each remote's copy (origin first, as the pull request is about what was pushed), then a local
+ * branch of that name. `refs/heads/` is taken off when it came with it.
+ */
+export function branchRefs(branch, remotes = []) {
+  const name = String(branch ?? '').trim().replace(/^refs\/heads\//, '');
+  if (!name) return [];
+  const order = [...remotes].sort((a, b) => (a === 'origin' ? -1 : b === 'origin' ? 1 : 0));
+  return [...order.map((r) => `refs/remotes/${r}/${name}`), `refs/heads/${name}`];
+}
+
+/** A ref as Splice shows it and `/compare` takes it: origin/main, main. */
+export const shortRef = (ref) => String(ref).replace(/^refs\/(?:remotes|heads)\//, '');
+
+/**
  * `/blame <path>:<line>` (or `<path>#L<line>`, as a link to a line reads): { path, line }; `line` null
  * when none was given. A Windows drive's colon isn't taken for one.
  */
