@@ -495,7 +495,7 @@ lines in `.env` files) the line Trawl connects with: `/azure-sql <server> [datab
 signed in with Entra ID, else `/add <name> <server> [database]` with its port, `--kind`, `--user` and `--trust-cert` as the
 connection says, never its password (Trawl asks for that). `↵` copies the one under the cursor.
 
-`/timeline` shows the family's activity log: what each of the six apps did that the others would want
+`/timeline` shows the family's activity log: what each of the family's apps did that the others would want
 to know (Splice's pushes, Trawl's writes, Bosun's restarts and crashes…), newest first, with the app and
 the project it was in. `p` shows this project's alone (the checkout the open file is in, and entries that
 name none), or everything again; `↵` shows an entry whole, `y` copies it. Hail adds a `/load` run's

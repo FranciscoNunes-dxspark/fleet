@@ -80,7 +80,7 @@ export const HELP = [
       ['/family', 'What this project offers them: the checkout, .http files, databases; ↵ copies the line'],
       ['t', 'In Crew: the latest trouble line for Sonar, Hail or Wharf (/take, with its request id)'],
       ['/take', 'What a sibling copied: a log line or exception is found in the crew\'s logs'],
-      ['/timeline', 'What the six apps did, newest first: this project\'s, p every project\'s, ↵ one whole'],
+      ['/timeline', 'What the family\'s apps did, newest first: this project\'s, p every project\'s, ↵ one whole'],
       ['/wiring', 'What this project points at (addresses, connection strings), by file, passwords masked'],
       ['paste', 'A /command or family:v1: line pasted into a view opens the prompt with it'],
       ['esc', 'Put away what Squawk says about a sibling\'s mood'],

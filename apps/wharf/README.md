@@ -78,7 +78,7 @@ A name can be a prefix when it's unambiguous, an id, or `project/service`.
 
 ## The family
 
-Wharf is one of the six apps that hand each other what is under their cursor, as lines to paste into the other's prompt (never a secret).
+Wharf is one of the family's apps that hand each other what is under their cursor, as lines to paste into the other's prompt (never a secret).
 
 - `t` in a log copies its newest line that reads as trouble for Sonar, Hail or Bosun (`/take` there finds it in their logs and requests). In Fleet, the other app opens with it in its prompt.
 - `/take <line>` takes a log line a sibling copied: it is looked for in the last 1000 lines of every running container (and the pods the Pods tab has read), and the first log that has it opens with the line searched.
