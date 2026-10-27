@@ -90,9 +90,11 @@ test('alt+y hands a pull request and a run to Splice; alt+s a deploying run and 
 
     // The monitor whose failures went up after a deploy: Sonar's /compare-window at that deploy.
     const m = (await keel.service.production()).monitors.find((x) => x.issues?.some((i) => i.code === 'deploy-regression'));
-    await command(`find ${m.name}`);
+    // The demo's monitors go down and up with the clock, and those that are down sort first: find this one in Production itself.
     lastApp.stdin.write('5');
-    await until(() => frame().includes('╭─ Production') && frame().includes(m.name), 'the monitor');
+    await until(() => frame().includes('╭─ Production'), 'Production');
+    await command(`find ${m.name}`);
+    await until(() => frame().split('\n').some((l) => l.includes('❯') && l.includes(m.name)), 'the monitor under the cursor');
     lastApp.stdin.write('\x1bk');
     await until(() => copied.length === 3, 'the line for Sonar');
     assert.match(copied[2], /^\/compare-window \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
@@ -139,7 +141,8 @@ test('Keel logs what it changes for /timeline, writes its mood, and says once ho
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
     await until(() => frame().includes('Twig says: PR #12 merged'), "Twig's word");
     await until(() => existsSync(join(familyHome, 'keel.mood.json')), 'its mood written');
-    assert.match(JSON.parse(readFileSync(join(familyHome, 'keel.mood.json'), 'utf8')).reason, /watching \d+ pull requests and \d+ pipelines/);
+    // Calm, or worried while one of the demo's monitors is down (they go down and up with the clock).
+    assert.match(JSON.parse(readFileSync(join(familyHome, 'keel.mood.json'), 'utf8')).reason, /^watching \d+ pull requests and \d+ pipelines|is down$/);
     lastApp.stdin.write('\x1b');
     await until(() => !frame().includes('Twig says'), 'put away with esc');
 
