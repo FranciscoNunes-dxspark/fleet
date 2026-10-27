@@ -94,6 +94,7 @@ export const HELP = [
       ['w', 'Ask Claude why it happens: it reads the latest occurrence, and the code when Sonar was started in the app\'s folder'],
       ['alt+i', 'The incident: first and last seen, count, the deployments in the 24 h before it, the app\'s Key Vault references, its latest occurrence, its stack, failing SQL, and commits to its files in the 14 days before (when Sonar was started in the app\'s checkout)'],
       ['alt+k', 'Before and after the latest deployment of the app in scope (else the middle of the span), in two equal windows: exception types new, gone or twice as frequent, dependencies\' p95 duration, operations whose 5xx rate rose (/compare-window takes a time too)'],
+      ['alt+q', 'The slowest SQL of the app in scope over the span (/slow-sql): p95, average and calls of each command Application Insights kept the text of; ↵ copies one for Trawl (/explain-slow: its estimated plan, never run, and Claude on indexes), a its server\'s line, y the SQL'],
       ['l', 'Its exceptions in Logs'],
       ['y', 'Copy the message'],
       ['alt+y', 'Copy its latest exception, with its stack and request, for Splice\'s prompt (/take exception)'],

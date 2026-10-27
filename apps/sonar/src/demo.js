@@ -212,6 +212,20 @@ function telemetry(now, sites) {
       }
     }
   }
+  // The SQL the requests that went well ran, for /slow-sql: an order lookup that scans and is slow,
+  // a cart read that isn't. Its own random numbers, so the rest of the demo stays as it was.
+  const qrand = seeded(7);
+  const QUERIES = {
+    '/api/orders': [['SELECT o.Id, o.Status, o.Total, o.CreatedAt FROM dbo.Orders o WHERE o.CustomerId = @customerId AND o.Status <> @status ORDER BY o.CreatedAt DESC', 400, 2600]],
+    '/api/cart': [['SELECT c.ProductId, c.Quantity FROM dbo.CartItems c WHERE c.CartId = @cartId', 3, 40]],
+    '/checkout': [['SELECT p.Id, p.Price FROM dbo.Products p WHERE p.Id IN (SELECT ProductId FROM dbo.CartItems WHERE CartId = @cartId)', 20, 300]],
+  };
+  for (const r of items.filter((i) => i.itemType === 'request' && i.success)) {
+    for (const [data, low, spread] of QUERIES[r.url.replace(/^https:\/\/[^/]+/, '')] ?? []) {
+      const target = r.component === 'app-dev' ? 'contoso-sql-dev.database.windows.net | contoso' : 'contoso-sql-prod.database.windows.net | contoso';
+      items.push({ itemType: 'dependency', component: r.component, timestamp: new Date(Date.parse(r.timestamp) + 3).toISOString(), name: target, target, type: 'SQL', data, resultCode: '0', success: true, duration: Math.round(low + qrand() * qrand() * spread), operation_Id: r.operation_Id, cloud_RoleName: r.cloud_RoleName });
+    }
+  }
   // The functions' runs, each logged as a request named for the function; ProcessPayment fails now and then.
   const frand = seeded(99);
   for (const s of sites.filter((x) => x.kind === 'function' && !x.slot)) {
@@ -244,7 +258,7 @@ const COLUMNS = {
   dependency: ['timestamp', 'name', 'target', 'type', 'resultCode', 'success', 'duration', 'operation_Id', 'cloud_RoleName'],
   availability: ['timestamp', 'name', 'location', 'success', 'duration', 'message'],
 };
-const TYPES = { runs: 'long', p50: 'real', Count: 'long', p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
+const TYPES = { runs: 'long', calls: 'long', avg: 'real', p50: 'real', Count: 'long', p95: 'real', details: 'dynamic', timestamp: 'datetime', first: 'datetime', last: 'datetime', bucket: 'datetime', lastFailure: 'datetime', total: 'long', failed: 'long', locations: 'long', success: 'bool', duration: 'real', count: 'long', users: 'long', n: 'long', severityLevel: 'int' };
 const table = (names, rows) => ({ columns: names.map((name) => ({ name, type: TYPES[name] ?? 'string' })), rows: rows.map((r) => names.map((n) => r[n] ?? null)) });
 
 /** The demo's answer to `kql` over `items` (one component's, within the time span). */
@@ -273,6 +287,22 @@ export function demoQuery(kql, items) {
       groups.set(k, g);
     }
     return table(['target', 'data', 'count', 'last', 'resultCode'], [...groups.values()].sort((a, b) => b.count - a.count));
+  }
+  if (/^dependencies\b.*summarize calls = count\(\), avg = avg\(duration\), p95 = percentile\(duration, 95\)/.test(q)) {
+    const groups = new Map();
+    for (const d of mine.filter((i) => i.itemType === 'dependency' && /sql/i.test(i.type))) {
+      const k = `${d.target}\n${d.data ?? ''}`;
+      const g = groups.get(k) ?? { target: d.target, data: d.data ?? '', durations: [], failed: 0, last: d.timestamp };
+      g.durations.push(d.duration);
+      if (!d.success) g.failed++;
+      if (d.timestamp > g.last) g.last = d.timestamp;
+      groups.set(k, g);
+    }
+    const rows = [...groups.values()].map((g) => {
+      const sorted = g.durations.sort((a, b) => a - b);
+      return { ...g, calls: sorted.length, avg: sorted.reduce((a, b) => a + b, 0) / sorted.length, p95: sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)] };
+    });
+    return table(['target', 'data', 'calls', 'avg', 'p95', 'failed', 'last'], rows.sort((a, b) => b.p95 - a.p95));
   }
   if (op) {
     const rows = mine
