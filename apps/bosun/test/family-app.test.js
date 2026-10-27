@@ -65,7 +65,7 @@ test('/take finds a sibling\'s log line in the crew\'s logs; other kinds are ano
     app.stdin.write(encodeContext('commit', { hash: 'abc1234' }));
     await until(() => frame().includes('enter run'), 'a bare context in the prompt');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes("That's commit abc1234, for Splice or Sonar: paste it into one's prompt instead."), 'another app\'s');
+    await until(() => frame().includes("That's commit abc1234, for Splice or Sonar or Keel: paste it into one's prompt instead."), 'another app\'s');
   } finally {
     app.unmount();
     rmSync(dir, { recursive: true, force: true });

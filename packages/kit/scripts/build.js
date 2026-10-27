@@ -6,7 +6,7 @@
 // It reads the app's package.json (the version, and an optional "fleet" section: `entry`, the app's
 // entry point, default src/cli.jsx; `app`, its configureApp module, default src/app.js; `out`, the
 // output folder, default dist; `compile`, more of Bun's compile options; `includes`, the folders of
-// other apps built into this one, as Fleet holds all six, whose versions are baked in too, each from
+// other apps built into this one, as Fleet holds all seven, whose versions are baked in too, each from
 // its own package.json) and the app's names from its configureApp module. Output goes to
 // <out>/<app>-<platform>[.exe], the names the updater looks for.
 import { readdirSync, readFileSync } from 'node:fs';

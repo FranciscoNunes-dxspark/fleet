@@ -1,4 +1,4 @@
-// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf) share about each other: what one copies
+// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf, keel) share about each other: what one copies
 // for another, the project a folder is and what it points at, the mascots' moods, and what each app
 // did. The same file in every app (scripts/shared-check.js), so it names no app as "this".
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync } from 'node:fs';
@@ -6,10 +6,10 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { handOff } from './hosted.js';
 
-export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf'];
+export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf', 'keel'];
 
 /** What each app is for, in a picker's words. */
-export const ROLES = { splice: 'git', trawl: 'SQL', sonar: 'Azure', bosun: 'processes', hail: 'HTTP', wharf: 'containers' };
+export const ROLES = { splice: 'git', trawl: 'SQL', sonar: 'Azure', bosun: 'processes', hail: 'HTTP', wharf: 'containers', keel: 'Azure DevOps' };
 
 // ---------------------------------------------------------------------------------------------------
 // Sharing: what one app hands another is a command line, copied for you to paste into the other app's
@@ -52,8 +52,8 @@ export const takeLine = (kind, data) => shareLine('take', [encodeContext(kind, d
 export const contextIn = (line) => decodeContext(String(line ?? '').trim().replace(/^\/?take\s+/, ''));
 
 /** The apps' names as they're written, and their mascots'. */
-export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf' };
-export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark' };
+export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf', keel: 'Keel' };
+export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark', keel: 'Pinch' };
 
 /** Which apps take each kind of context with /take. */
 export const TAKEN_BY = {
@@ -61,9 +61,11 @@ export const TAKEN_BY = {
   request: ['hail'],
   rows: ['trawl', 'hail'],
   query: ['trawl'],
-  commit: ['splice', 'sonar'],
+  commit: ['splice', 'sonar', 'keel'],
   file: ['splice'],
   logline: ['sonar', 'hail', 'bosun', 'wharf'],
+  pullrequest: ['splice', 'keel'],
+  pipeline: ['keel'],
 };
 
 const either = (apps) => apps.map((a) => APP_NAMES[a] ?? a).join(' or ');
@@ -124,9 +126,11 @@ export function trawlLine(db, name) {
 //   commit    { repo?, hash, subject? }
 //   file      { path, line? }
 //   logline   { project?, process, text, time?, requestId? }
+//   pullrequest { org?, project?, repo, id, title?, sourceBranch, targetBranch, url? }   branches without refs/heads/
+//   pipeline  { org?, project?, definitionId?, definition, runId?, run?, branch?, commit?, step?, test?, url? }   run: its number (20261027.3)
 
 const PREFIX = 'family:v1:';
-export const CONTEXT_KINDS = ['exception', 'request', 'rows', 'query', 'commit', 'file', 'logline'];
+export const CONTEXT_KINDS = ['exception', 'request', 'rows', 'query', 'commit', 'file', 'logline', 'pullrequest', 'pipeline'];
 
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64url = (s) => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
@@ -160,6 +164,8 @@ export function describeContext({ kind, data }) {
     case 'commit': return `commit ${String(data.hash ?? '').slice(0, 10)}${data.subject ? ` ${data.subject}` : ''}`;
     case 'file': return `${data.path}${data.line ? `:${data.line}` : ''}`;
     case 'logline': return `${data.process ?? 'log'}: ${data.text ?? ''}`;
+    case 'pullrequest': return `pull request !${data.id ?? '?'}${data.title ? ` ${data.title}` : ''}${data.sourceBranch && data.targetBranch ? ` (${data.sourceBranch} → ${data.targetBranch})` : ''}`;
+    case 'pipeline': return `pipeline ${data.definition ?? data.definitionId ?? ''}${data.run ? ` ${data.run}` : ''}${data.step ? `, failed at ${data.step}` : ''}${data.test ? ` (${data.test})` : ''}`;
     default: return kind;
   }
 }
@@ -435,7 +441,7 @@ export function readMoods(self, { dir = familyDir(), now = Date.now(), maxAge = 
 // ---------------------------------------------------------------------------------------------------
 // The family's activity: each app adds what it did that changes something (a push, a write to a
 // database, a restart, a crash) to one log in the family's folder, so any of them can show what
-// happened, in order, across all six. Nothing secret goes in: the text is passed through redactSecrets.
+// happened, in order, across all of them. Nothing secret goes in: the text is passed through redactSecrets.
 
 const ACTIVITY_FILE = 'activity.jsonl';
 const ACTIVITY_MAX = 1024 * 1024;
