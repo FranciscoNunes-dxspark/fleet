@@ -66,7 +66,7 @@ const HINTS = {
   requests: '↵ send · alt+a send all · alt+l load · alt+i import curl · i edit it · c copy as curl · y copy the URL · v the response, full view · e environment',
   edit: '↵ or i type · ctrl+r send · ctrl+s save · ctrl+z undo · ctrl+f find · [ ] requests · c copy as curl',
   response: '↵ send again · h headers · y copy the body · d the body as data · j/k space scroll',
-  history: '↵ show it · d compare with the one before · alt+d forget them all',
+  history: '↵ show it · d compare with the one before · alt+r replay elsewhere · alt+d forget them all',
   log: '↵ all its output · y copy it',
 };
 

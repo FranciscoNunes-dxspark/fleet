@@ -448,10 +448,33 @@ proxy it went through.
 Every response is kept, across runs, in `~/.hail/history` (one file per `.http` file). When a file is
 opened, each request's last response is there again, so its variables work before anything is sent.
 The History tab lists them newest first: `↵` shows one, `d` compares it with the response before it to
-the same request, `alt+d` forgets them all. What's kept leaves out the secrets and Azure tokens that were
+the same request, `alt+r` replays it elsewhere and compares the answers (below), `alt+d` forgets them all. What's kept leaves out the secrets and Azure tokens that were
 filled in, wherever they turn up (the server's answer too), and hides the headers that carry
 credentials (`Authorization`, `Cookie`, `Set-Cookie`, API keys and anything named like a token or
 password). Bodies over 512 KB are cut. The newest 300 responses per file are kept.
+
+### Replaying a request elsewhere
+
+`/replay [environment|base-url]` sends a request that was answered somewhere again, to another address,
+and compares the two answers: the request last taken from Sonar (production's, with the status and time
+it answered there), else the response under the cursor in History (`alt+r` there), else the newest
+response kept for the request picked in Requests. With nothing after it, Hail asks where: each
+environment whose variables say where the API is (`host`, `baseUrl`, `baseURL`), each process with a
+`port` in the project's `bosun.json` (`http://localhost:<port>`, and its `https` port), or an address of
+your own; `/replay staging`, `/replay http://localhost:5000` and `/replay :5000` say it at once.
+
+The method, path, query, headers and body go as they were, under the address's own path when it has one
+(`http://localhost:5000/api`). The headers that belong to the connection don't, and neither do the ones
+that carry credentials (`Authorization`, `Cookie`, API keys, anything named like a token): a production
+token never travels. The environment's own take their place when its variables have them: `token`,
+`accessToken` or `bearerToken` as `Authorization: Bearer …`, `authorization` as it is, `apiKey` for
+`X-Api-Key`, and so on (the environment picked, or the one in use for an address).
+
+The viewer then shows both answers, their status and time, and how they differ: the status, the headers
+that say something (not `Date`, request ids and the like) and the body, JSON indented. Sonar keeps no
+headers or bodies of production's answers, so for a request taken from it the body is compared with the
+last response History has to the same method, path and query, wherever it went; with none, only the
+status is. The replay's own answer isn't kept in History, since it belongs to no request of the file.
 
 ### Claude drafts requests
 
@@ -482,7 +505,7 @@ over and press `↵`.
 
 | What's taken | |
 | --- | --- |
-| A request (Sonar copies them from its logs and incidents, Trawl the request for an endpoint it wrote) | Added to the end of the file as `### replay <METHOD> <path>` and picked in Requests, ready to send. When the environment says where the API is (`host`, `baseUrl` or `baseURL`), Hail asks whether to send it there (the URL's scheme and host become `{{host}}`) or to where it came from; a URL that starts with a variable already (`{{host}}/players`) is added as it is. Credential headers it may carry are left out |
+| A request (Sonar copies them from its logs and incidents, Trawl the request for an endpoint it wrote) | Added to the end of the file as `### replay <METHOD> <path>` and picked in Requests, ready to send. When the environment says where the API is (`host`, `baseUrl` or `baseURL`), Hail asks whether to send it there (the URL's scheme and host become `{{host}}`), to where it came from, or to replay it elsewhere and compare the answer with what it answered there (Sonar's carries production's status and time: see [Replaying a request elsewhere](#replaying-a-request-elsewhere); `/replay` does it later too); a URL that starts with a variable already (`{{host}}/players`) is added as it is. Credential headers it may carry are left out |
 | Rows (Trawl copies them from its results) | Made a JSON body, an array of objects (one object for one row), and Hail asks where it goes: a new `POST` request at the end of the file, to `{{host}}/<table>` when the table is known, or in place of the body of the request under the cursor (a `Content-Type: application/json` header added when it has none). Either is an edit of the file, so `ctrl+z` in Edit undoes it |
 | A log line (Bosun copies them from a process's log) | Its request id (or, when it has none, the ids in its text: GUIDs, trace ids, `request_id=…`) is looked for in the History: the newest response whose request or response headers carry it (`X-Request-Id`, `Request-Id`, `traceparent`'s trace id, correlation ids, `X-Amzn-Trace-Id`) is shown, with the History's cursor on it. Those headers are kept in the history as they are; only credential headers are hidden |
 | Anything else | Said to be another app's: a commit, a file or an exception is Splice's, a query is Trawl's |
@@ -531,6 +554,7 @@ setting turns both off.
 | `h` | In Response: show or hide the headers |
 | `/` then `n` `alt+n` | In Response: search the response (matches show as you type; a capital letter makes it match case), then go from match to match; `esc` clears it |
 | `d` `alt+d` | In History: compare with the response before it · forget them all |
+| `alt+r` | In History: replay it elsewhere (`/replay`) and compare the answers |
 | `e` | Pick the environment |
 | `r` | Read the file again |
 | `/` or `:` | The command prompt, with completion |
@@ -594,6 +618,7 @@ and Trawl.
 | `/auth [id\|clear]` | The environment's OAuth sign-ins and how each stands (`↵` signs in again, `x` forgets it); an id signs in with it; `clear` forgets them all |
 | `/secret [name]` | Save a secret in the system's store for `{{$secret name}}` (the saved ones, to replace or forget, if none is named) |
 | `/history [clear]` | The responses kept for this file (`clear` forgets them) |
+| `/replay [environment\|base-url]` | Send a request again elsewhere (the one taken from Sonar, the response under the cursor in History, or the request picked) and compare the answers (see [Replaying a request elsewhere](#replaying-a-request-elsewhere)) |
 | `/cookies [clear]` | The cookies kept for this file and environment (`clear` forgets them) |
 | `/draft <spec> [what]` | Claude writes requests from an API description, for you to look over and add |
 | `/new [file.http]` | Write an example file to start from (`requests.http`) and open it |
