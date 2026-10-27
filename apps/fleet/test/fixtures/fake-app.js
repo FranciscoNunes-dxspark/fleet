@@ -1,7 +1,8 @@
 // A tiny app for the host's tests, in hosted mode as the real ones are (the kit's hosted.js): it draws
 // its name, its size and the keys it got, whole, on a cleared screen. X exits with 3; H hands a line
 // to the app named in FAKE_HANDOFF; M turns the mouse on; P adds the folder it runs in to its keys; V
-// asks the host to move the fleet to FAKE_MOVE.
+// asks the host to move the fleet to FAKE_MOVE; C copies "copied" to the clipboard (OSC 52) and rings
+// the bell.
 import { appTerminal, askHostToMove, handOff } from '@fleet/kit/hosted.js';
 
 const name = process.argv[2] ?? 'fake';
@@ -15,6 +16,7 @@ stdin.on('data', (d) => {
   if (d === 'H') return handOff(process.env.FAKE_HANDOFF ?? 'two', '/take family:v1:commit:eyJoYXNoIjoiYWJjIn0');
   if (d === 'M') stdout.write('\x1b[?1002h\x1b[?1006h');
   if (d === 'V') return askHostToMove(process.env.FAKE_MOVE);
+  if (d === 'C') return stdout.write(`\x1b]52;c;${Buffer.from('copied').toString('base64')}\x07\x07`);
   if (d === 'P') d = `[${process.cwd()}]`;
   keys += d;
   draw();

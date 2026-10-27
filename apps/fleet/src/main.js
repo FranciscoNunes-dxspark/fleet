@@ -2,8 +2,8 @@
 // front: `fleet --run <app> [args]`, which is how the compiled build starts an app (it holds all eight),
 // makes this process that app, and the app's cli must be the first to say which app the process is
 // (the kit's configureApp). `fleet mcp` is the MCP server for Claude Code (mcp/server.js), and
-// `fleet --mcp-worker <app>` one app's part of it, in a process that is that app. Anything else is
-// the host (cli.js).
+// `fleet --mcp-worker <app>` one app's part of it, in a process that is that app. `fleet gui` is the
+// fleet in a window (gui/cli.js). Anything else is the host (cli.js).
 const RUN = {
   splice: () => import('../../splice/src/cli.jsx'),
   trawl: () => import('../../trawl/src/cli.jsx'),
@@ -24,6 +24,11 @@ if (process.argv[2] === '--run') {
   // The app reads its own arguments from process.argv, as when it runs by itself.
   process.argv.splice(2, 2);
   await RUN[id]();
+} else if (process.argv[2] === 'gui') {
+  // The fleet in a window (gui/cli.js): Fleet's own process, so it says which app it is first.
+  await import('./app.js');
+  const { runGui } = await import('./gui/cli.js');
+  await runGui(process.argv.slice(3));
 } else if (process.argv[2] === 'mcp') {
   const { serve } = await import('./mcp/server.js');
   serve(process.argv.slice(3));
