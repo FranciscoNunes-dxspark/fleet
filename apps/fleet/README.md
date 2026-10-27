@@ -83,6 +83,46 @@ into its prompt. Press `↵` to run it. The line is still copied too. A line tha
 (a log line, which Sonar, Hail and Bosun all read) goes to the first of them that's running, else
 stays on the clipboard only.
 
+## Claude Code reads the whole fleet (MCP)
+
+`fleet mcp` runs Fleet as an MCP server, so Claude Code, working in a repository, can see what the
+apps see there: the git history, the processes Bosun ran, Hail's requests and the answers they got,
+Application Insights, Azure DevOps, containers and pods, the databases, and what the apps did lately.
+Register it once:
+
+```bash
+claude mcp add --scope user fleet -- fleet mcp
+```
+
+(From a checkout: `claude mcp add --scope user fleet -- node C:\Team\fleet\apps\fleet\bin\fleet.js mcp`.)
+It reads for the folder Claude Code starts it in; `fleet mcp --project <dir>` names another.
+
+| Tools | What Claude can read |
+| --- | --- |
+| `git_status`, `git_log`, `git_show`, `git_diff`, `git_blame`, `git_branches` | The repository, through Splice's own git (never a prompt, never the index lock): the branch and changes, commits (`graph` draws them), one commit's diff, the working tree's diff, who changed a range of lines, the branches and tags |
+| `bosun_crew`, `bosun_log`, `bosun_search` | The project's processes as Bosun ran them, from its recordings (`~/.bosun/sessions`; the run going on now is recorded as it happens): each one's state, port, health and trouble, the last lines of one, lines by text or by request id |
+| `hail_requests`, `hail_history` | The requests in the project's `.http` files, their `{{variables}}` left as written, and the responses Hail kept for them |
+| `sonar_components`, `sonar_problems`, `sonar_incident`, `sonar_query` | Application Insights, through your `az login`, in Sonar's last subscription: the problems, one told whole (its stack, its operation, the SQL that failed), and any KQL query |
+| `keel_inbox`, `keel_prs`, `keel_pipelines`, `keel_pipeline_runs` | Azure DevOps (and GitHub) through Keel, as it's set up on this computer: the Inbox, active pull requests, pipelines and their health, one pipeline's runs |
+| `wharf_containers`, `wharf_container_logs`, `wharf_pods`, `wharf_pod_logs` | Docker's containers and kubectl's pods, and the end of their logs |
+| `trawl_list_connections`, `trawl_list_tables`, `trawl_describe_table`, `trawl_run_query` | Trawl's own MCP tools (`trawl mcp`, below the surface), with every rule they have: your saved connections, each one's Claude access level, writes refused, every query rolled back, all of it in Trawl's History |
+| `family_timeline`, `family_moods`, `family_wiring` | What the apps did that changed something (this project's, or every project's), how their mascots feel and why (a quick read of what's wrong now), and what the project points at (addresses and connection strings, masked) |
+
+- **It only reads.** No tool changes anything: no git command that writes, no restart, no request
+  sent, no query but reads (Trawl refuses writes and rolls back; Application Insights' query API
+  can't change anything, and a control command is refused).
+- **Never a secret**, as everywhere in the family: everything a tool answers goes through the same
+  masking as the activity log and `/wiring` (passwords in connection strings and URLs, bearer tokens,
+  values whose names say they're secret come back as `••••`), and Hail's history never kept the
+  secrets a request used or the headers that carry credentials.
+- Answers are bounded (40,000 characters at most, less by default for diffs and logs); a cut one
+  says so, and how to ask for less.
+- Sonar and Keel sign in as they do themselves, with nothing to configure here. When they can't (no
+  `az login`, Keel not set up on this computer), the tool says what to do: usually, open the app once.
+- Keel's tools run in a process of Fleet's own, and Trawl's are `trawl mcp` itself, started by Fleet
+  when Claude first lists or calls them; when Trawl can't start, its tools are left out.
+- `fleet mcp --demo` puts Sonar, Keel, Wharf and Trawl on their demo data, to try it.
+
 ## Notes
 
 - Fleet keeps the app it opened last in `~/.fleet/host.json` (`FLEET_HOME` moves the folder).
