@@ -11,7 +11,7 @@ export const stateMark = (space) => (space.state === 'exited' ? `✕${space.code
 
 /** The hint at the right: the prefix's keys while it waits for one, else how to get them. */
 export function hintFor({ prefix, notice }) {
-  if (prefix) return '1-7 s t o b h k w · n p · q quit · ? help';
+  if (prefix) return '1-7 s t o b h k w · n p · r · q quit · ? help';
   return notice || 'ctrl+] ? help';
 }
 

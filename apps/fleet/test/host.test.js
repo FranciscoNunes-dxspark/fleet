@@ -2,6 +2,9 @@
 // are) as real processes, driven through its input and read from the screen it draws.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { alive, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
 
 after(stopAll);
@@ -122,6 +125,47 @@ test("the active app's mouse comes back with it, and a click on a tab switches",
   // Clicks elsewhere are the app's, when it asked for them.
   keys('\x1b[<0;3;2M');
   await until(() => screen.row(1) === 'keys: "M\\u001b[<0;3;2M"', 'the click passed on', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+/** A folder for a test's panels: the start folder, Fleet's home and the family's. */
+function toolsIn(files = {}) {
+  const tmp = mkdtempSync(join(tmpdir(), 'fleet-host-'));
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(tmp, path, '..'), { recursive: true });
+    writeFileSync(join(tmp, path), text);
+  }
+  return { cwd: join(tmp, 'project'), env: { FLEET_HOME: join(tmp, 'home') }, familyDir: join(tmp, 'family') };
+}
+
+test("a runbook's step is handed to its app as a hand-off, and ctrl+] r comes back to the runbook", async () => {
+  const tools = toolsIn({ 'project/.fleet/runbooks/check.md': '# Check two\n\nSay hello first.\n\n```two\n/hello two\n/bye\n```\n' });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 70, rows: 14 });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 70x13', 'the app', { term });
+  keys(`${PREFIX}r`);
+  await until(() => term.text().includes('Runbooks') && term.text().includes('› Check two  2 steps'), 'the picker', { term });
+  keys('\r');
+  await until(() => term.text().includes('Say hello first.') && /› +1 {2}Two {2}\/hello two/.test(term.text()), 'the runbook', { term });
+  // While it's open, the app's drawing waits and keys stay with the panel.
+  keys('j');
+  await until(() => /› +2 {2}Two {2}\/bye/.test(term.text()), 'the cursor moved', { term });
+  keys('k\r');
+  await until(() => screen.row(0) === 'two 70x13' && screen.row(1) === 'keys: "/hello two"', 'the step typed into the other app', { term });
+  assert.match(screen.row(-1), /Handed to Two/);
+  keys(`${PREFIX}r`);
+  await until(() => /✓ +1 {2}Two {2}\/hello two/.test(term.text()) && /› +2 {2}Two {2}\/bye/.test(term.text()), 'back in the runbook, the step done', { term });
+  assert.ok(term.text().includes('1 of 2 steps handed over'));
+  keys('\x1b');
+  await until(() => screen.row(0) === 'two 70x13' && !term.text().includes('Check two'), 'closed, the app repainted', { term });
+  // l goes back to the list, n drafts one there.
+  keys(`${PREFIX}r`);
+  await until(() => term.text().includes('1 of 2 steps'), 'the runbook again', { term });
+  keys('ln');
+  await until(() => /^Drafted \.fleet.runbooks.\d{4}-\d\d-\d\d-draft\.md/.test(host.noticeText) && term.text().includes('› Draft of'), 'the draft, listed', { term });
+  keys('\x1b');
   keys(`${PREFIX}q`);
   keys('y');
   await done;

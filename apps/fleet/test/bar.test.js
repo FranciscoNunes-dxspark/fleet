@@ -30,7 +30,7 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 120, prefix: true })), /1-7 s t o b h k w · n p · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 120, prefix: true })), /1-7 s t o b h k w · n p · r · q quit · \? help $/);
   // With little room the prefix's keys win over the names.
   const tight = barLayout({ spaces, active: 'splice', width: 92, prefix: true });
   assert.equal(width(tight), 92);
