@@ -4,7 +4,6 @@
 // level decides whether rows may be returned at all (ai.js). Each query is logged for History.
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 import { AI_LABELS, aiLevel, canSeeResults, canSeeSchema, tableLine } from './ai.js';
 import { configDir, loadConfig } from './config.js';
 import { DEMO_CONNECTIONS, describeConn, isReadOnly } from './connections.js';
@@ -13,8 +12,8 @@ import { buildSchema, describeObject, findObject, objectName } from './schema.js
 import { dialectOf } from './dialects.js';
 import { classifyScript, formatValue } from './sql.js';
 import { VERSION } from './app.js';
+import { ToolError, mcpHandler, serveMcp } from '@fleet/kit/mcp.js';
 
-const PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25'];
 const MAX_ROWS = 1000;
 const CELL = 200;
 
@@ -71,8 +70,6 @@ const TOOLS = [
     },
   },
 ].map((t) => ({ ...t, annotations: { readOnlyHint: true, openWorldHint: false } }));
-
-class ToolError extends Error {}
 
 /** A result set as a plain-text table, long cells cut short. */
 export function setText(set, { truncatedAt } = {}) {
@@ -202,38 +199,13 @@ export function createServer({ demo = false, log = logQuery, open = connect } = 
   }
 
   /** Handles one JSON-RPC message; resolves with the response, or null for a notification. */
-  async function handle(msg) {
-    const reply = (result) => (msg.id === undefined ? null : { jsonrpc: '2.0', id: msg.id, result });
-    const fail = (code, message) => (msg.id === undefined ? null : { jsonrpc: '2.0', id: msg.id, error: { code, message } });
-    switch (msg.method) {
-      case 'initialize': {
-        const asked = msg.params?.protocolVersion;
-        return reply({
-          protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS.at(-1),
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: 'trawl', version: VERSION },
-          instructions: INSTRUCTIONS,
-        });
-      }
-      case 'ping':
-        return reply({});
-      case 'tools/list':
-        return reply({ tools: TOOLS });
-      case 'tools/call': {
-        const { name, arguments: args = {} } = msg.params ?? {};
-        if (!tools[name]) return fail(-32602, `Unknown tool: ${name}`);
-        try {
-          return reply({ content: [{ type: 'text', text: await tools[name](args) }] });
-        } catch (e) {
-          // Tool failures go back to Claude as results it can read and act on.
-          return reply({ content: [{ type: 'text', text: e instanceof ToolError ? e.message : `Error: ${e.message}` }], isError: true });
-        }
-      }
-      default:
-        if (msg.method?.startsWith('notifications/')) return null;
-        return fail(-32601, `Method not found: ${msg.method}`);
-    }
-  }
+  const handle = mcpHandler({
+    name: 'trawl',
+    version: VERSION,
+    instructions: INSTRUCTIONS,
+    tools: TOOLS,
+    call: (name, args) => (Object.hasOwn(tools, name) ? tools[name](args) : undefined),
+  });
 
   const close = () => {
     for (const s of sessions.values()) s.close();
@@ -256,23 +228,14 @@ export function logQuery(entry) {
 /** Runs the server on stdin/stdout: one JSON-RPC message per line. Logs go to stderr only. */
 export function serve({ demo = false, input = process.stdin, output = process.stdout } = {}) {
   const server = createServer({ demo });
-  const rl = createInterface({ input, crlfDelay: Infinity });
-  rl.on('line', async (line) => {
-    if (!line.trim()) return;
-    let msg;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      output.write(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }) + '\n');
-      return;
-    }
-    const res = await server.handle(msg).catch((e) => ({ jsonrpc: '2.0', id: msg.id ?? null, error: { code: -32603, message: e.message } }));
-    if (res) output.write(JSON.stringify(res) + '\n');
-  });
-  rl.on('close', () => {
-    server.close();
-    process.exit(0);
+  serveMcp({
+    handle: server.handle,
+    input,
+    output,
+    onClose: () => {
+      server.close();
+      process.exit(0);
+    },
   });
   process.stderr.write(`trawl ${VERSION} MCP server ready${demo ? ' (with the demo connections)' : ''}\n`);
 }
-

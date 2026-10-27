@@ -31,7 +31,10 @@ fleet alone opens the one you used last.
   ctrl+] ?                    the keys
 
 An app starts the first time you switch to it. A line an app copies "for
-Trawl" (or any sibling) goes straight to that app's prompt.`);
+Trawl" (or any sibling) goes straight to that app's prompt.
+
+fleet mcp [--project <dir>] runs Fleet as an MCP server for Claude Code, which
+reads every app's world through it, read-only (claude mcp add fleet -- fleet mcp).`);
   process.exit(0);
 }
 
