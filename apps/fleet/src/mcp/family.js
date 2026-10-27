@@ -13,7 +13,7 @@ export const familyTools = [
       properties: {
         all_projects: { type: 'boolean', description: "Every project's entries, not only this project's (default false)" },
         since: { type: 'string', description: 'Only entries after this: an ISO time, or an age such as "90m", "2h", "3d"' },
-        app: { type: 'string', description: 'Only this app: splice, trawl, sonar, bosun, hail, wharf, keel' },
+        app: { type: 'string', description: 'Only this app: splice, trawl, sonar, bosun, hail, wharf, keel, locker' },
         limit: { type: 'integer', description: 'At most this many entries (default 50, at most 500)' },
       },
     },

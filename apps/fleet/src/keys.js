@@ -1,10 +1,10 @@
 // What the host does with the bytes typed into it, pure. Everything goes to the active app as it came
 // (keys, pastes, mouse reports) except after the prefix, ctrl+] (0x1d), whose next key is the host's:
-// 1–7 or an app's letter switches, ] or n the next space and p the one before, | or \ splits the
+// 1–8 or an app's letter switches, ] or n the next space and p the one before, | or \ splits the
 // screen in two (| again, or x, puts it back), tab or an arrow left or right goes to the other pane, m
 // asks for a folder to move every app to, r opens the runbooks and f follows a request (panels.js), q
 // quits, ? helps, ctrl+] again sends a literal 0x1d; any other key cancels the prefix and is dropped. Without it,
-// alt+1 to alt+7 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
+// alt+1 to alt+8 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
 import { SPACES } from './spaces.js';
 
 export const PREFIX = '\x1d';

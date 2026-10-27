@@ -22,7 +22,7 @@
   },
   "fleet": {
     "entry": "src/main.js",
-    "includes": ["../splice", "../trawl", "../sonar", "../bosun", "../hail", "../keel", "../wharf"],
+    "includes": ["../splice", "../trawl", "../sonar", "../bosun", "../hail", "../keel", "../wharf", "../locker"],
     "compile": {
       "autoloadDotenv": false,
       "autoloadBunfig": false

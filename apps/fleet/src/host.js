@@ -51,8 +51,8 @@ const NOTICE_MS = 4000;
 const ATTENTION_MS = 3000;
 
 export const HELP = [
-  ['alt+1-7', 'switch to that space'],
-  ['ctrl+] 1-7', 'switch to that space'],
+  ['alt+1-8', 'switch to that space'],
+  ['ctrl+] 1-8', 'switch to that space'],
   ['ctrl+] s t o b h k w', 'Splice, Trawl, Sonar, Bosun, Hail, Keel, Wharf'],
   ['ctrl+] ] or n', 'next space'],
   ['ctrl+] p', 'previous space'],
