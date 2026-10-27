@@ -107,7 +107,8 @@ export function Lines({ lines, count, width, height, offset = 0 }) {
   ));
 }
 
-const FRAMES = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
+// ✱ rather than ✳: terminals draw ✳ as a green emoji square.
+const FRAMES = ['·', '✢', '✱', '✶', '✻', '✽', '✻', '✶', '✱', '✢'];
 
 /** "✻ Running… (3s · esc to cancel)", animated while a command runs; `hint` says what esc does. */
 export function Spinner({ label, started, width, hint = 'esc to cancel' }) {
