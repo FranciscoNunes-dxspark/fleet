@@ -38,6 +38,7 @@ import { RequestsView } from './RequestsView.jsx';
 import { ResponseView } from './ResponseView.jsx';
 import { EditView } from './EditView.jsx';
 import { TextViewer } from './TextViewer.jsx';
+import { DataViewer } from '@fleet/kit/ui/DataViewer.jsx';
 import { SocketView } from './SocketView.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, familyMood, moodFor, reactionLine } from '../pet.js';
@@ -64,7 +65,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const HINTS = {
   requests: '↵ send · alt+a send all · alt+l load · alt+i import curl · i edit it · c copy as curl · y copy the URL · v the response, full view · e environment',
   edit: '↵ or i type · ctrl+r send · ctrl+s save · ctrl+z undo · ctrl+f find · [ ] requests · c copy as curl',
-  response: '↵ send again · h headers · y copy the body · j/k space scroll',
+  response: '↵ send again · h headers · y copy the body · d the body as data · j/k space scroll',
   history: '↵ show it · d compare with the one before · alt+d forget them all',
   log: '↵ all its output · y copy it',
 };
@@ -782,6 +783,10 @@ export function App({ config: initialConfig, initialFile, load = loadHttpFile, a
       if (dataRef.current) readContract(dataRef.current);
     },
     showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
+    // JSON, JSON lines or CSV (`text`) or rows over the view, as a tree or a table to open and query (the kit's DataViewer).
+    showData: (title, data) => setOverlay({ kind: 'data', title, ...data }),
+    // What came back for the request picked in Requests ({ request, response }), if it has been sent.
+    selectedResponse: () => responsesRef.current[dataRef.current?.requests[selectedRef.current]?.label] ?? null,
     // A WebSocket's session (websocket.js), live over the view; it closes when the view does.
     showSocket: (session, title) => setOverlay({ kind: 'socket', session, title, onClosed: () => session.close() }),
     sendOnSocket: (session, text) => a.socketSend(ctx, session, text),
@@ -1204,6 +1209,8 @@ export function App({ config: initialConfig, initialFile, load = loadHttpFile, a
     main = <Palette items={paletteList} query={overlay.query} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onPick={runPicked} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay?.kind === 'help') {
     main = <HelpView sections={custom.sections} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+  } else if (overlay?.kind === 'data') {
+    main = <DataViewer title={overlay.title} text={overlay.text} rows={overlay.rows} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay?.kind === 'socket') {
     main = <SocketView key={overlay.session.started} session={overlay.session} title={overlay.title} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
   } else if (overlay?.kind === 'picker') {
@@ -1241,6 +1248,8 @@ export function App({ config: initialConfig, initialFile, load = loadHttpFile, a
         ? 'type to filter · ↑↓ pick · ↵ run it (a key in the view; a command that takes more goes into the prompt) · esc close'
         : overlay?.kind === 'picker'
           ? 'j/k move · ↵ change · esc close'
+          : overlay?.kind === 'data'
+          ? 'j/k move · →← open · y copy · / query · esc close'
           : overlay?.kind === 'socket'
           ? 'type a message · ↵ send it · ↑↓ pgup pgdn scroll back · esc close the connection'
           : overlay

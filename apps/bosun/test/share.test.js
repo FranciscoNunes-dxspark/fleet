@@ -2,7 +2,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { rmSync } from 'node:fs';
-import { latestTrouble, redact, requestIdIn, troubleContext } from '../src/share.js';
+import { latestTrouble, redact, troubleContext } from '../src/share.js';
+import { requestIdIn } from '@fleet/kit/family.js';
 import { contextIn } from '@fleet/kit/family.js';
 import { project, start, tempHome, until } from './helpers.js';
 

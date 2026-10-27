@@ -218,7 +218,7 @@ the prompt rather than being taken as keys, to run with `↵`.
 Azure SQL server signing in with Entra, else `/add` with its port, its login and `--trust-cert` when the
 connection string trusts the server's certificate, but never the password). `↵` copies one.
 
-`/timeline` shows what the five apps did that changed something, newest first, from the family's
+`/timeline` shows what the six apps did that changed something, newest first, from the family's
 activity log in `~/.family`: Splice's pushes, Trawl's writes, Bosun's crashes, Hail's sends, and Sonar's
 own changes. Sonar adds one whenever it changes Azure (a restart, stop, start or swap, settings saved, a
 firewall rule, a scale, a route, a function turned off or on or invoked, dead letters resubmitted or

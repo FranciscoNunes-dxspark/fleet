@@ -495,7 +495,7 @@ lines in `.env` files) the line Trawl connects with: `/azure-sql <server> [datab
 signed in with Entra ID, else `/add <name> <server> [database]` with its port, `--kind`, `--user` and `--trust-cert` as the
 connection says, never its password (Trawl asks for that). `↵` copies the one under the cursor.
 
-`/timeline` shows the family's activity log: what each of the five apps did that the others would want
+`/timeline` shows the family's activity log: what each of the six apps did that the others would want
 to know (Splice's pushes, Trawl's writes, Bosun's restarts and crashes…), newest first, with the app and
 the project it was in. `p` shows this project's alone (the checkout the open file is in, and entries that
 name none), or everything again; `↵` shows an entry whole, `y` copies it. Hail adds a `/load` run's
@@ -526,6 +526,7 @@ setting turns both off.
 | `c` | Copy the request as a curl command, variables filled in (a multipart form as `-F` fields) |
 | `alt+i` | In Requests: import a curl command (starts `/import-curl ` for you to paste after) |
 | `y` | Copy the request's URL; in Response, the body |
+| `d` | In Response: the body as data (`/data`), see below |
 | `v` | The response, the whole width |
 | `h` | In Response: show or hide the headers |
 | `/` then `n` `alt+n` | In Response: search the response (matches show as you type; a capital letter makes it match case), then go from match to match; `esc` clears it |
@@ -583,6 +584,7 @@ and Trawl.
 | `/load [request] [count] [concurrency]` | Send a request many times, so many at once (200, 10 at a time, unless said), and report how it held up |
 | `/env [name]` | The environment the variables come from (a list to pick from if none is named) |
 | `/curl [request]` | Copy a request, filled in, as a curl command |
+| `/data` | The response body, when it is JSON, JSON lines or CSV/TSV, as a tree to open and close (`→ ← ↵`) or, for rows, a table (`t`); `y` copies a value, `p` its path, `/` asks a path such as `.items[0].name` or `.items[].id \| length`; `esc` closes (`d` in Response) |
 | `/import <file> [--new]` | Add the requests in a Postman collection, a HAR recording or an OpenAPI or Swagger document (or a Postman environment, to `http-client.env.json`); `--new` writes them to a file of their own |
 | `/import-curl <command>` | Add a request to the end of the file from a curl command, and pick it |
 | `/open <file.http>` | Open another file |

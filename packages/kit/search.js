@@ -1,5 +1,5 @@
-// Searching a log (/ then n/N), and picking out the matches in a line's segments: Hail's, which is
-// Splice's viewer search. Pure, so it's tested without the UI.
+// Searching a log, a response or any text in a viewer (/ then n/N), and picking out the matches in a
+// line's segments. Shared by Bosun, Hail and Wharf. Pure, so it's tested without the UI.
 
 /**
  * A function finding `query` in a text, as [from, to) offsets. Smart case: a query with a capital

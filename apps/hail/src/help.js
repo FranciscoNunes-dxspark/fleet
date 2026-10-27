@@ -70,6 +70,7 @@ export const HELP = [
       ['j k  space  g alt+g', 'Scroll'],
       ['h', 'Show or hide the headers'],
       ['y', 'Copy the body'],
+      ['d', 'The body as data (/data), when it is JSON, JSON lines or CSV: a tree to open and close (→ ← ↵), a table for rows (t), y copies a value, p its path, / asks a path like .items[].name (| length, | keys); esc closes'],
       ['↵', 'Send the request again'],
       ['/', 'Search the response: matches show as you type, ↵ keeps it (a capital letter makes it match case)'],
       ['n alt+n', 'Next, previous match · esc clears the search'],

@@ -19,6 +19,7 @@
     "test:bosun": "npm test -w apps/bosun",
     "test:hail": "npm test -w apps/hail",
     "test:keel": "npm test -w apps/keel",
+    "test:wharf": "npm test -w apps/wharf",
     "test:fleet": "npm test -w apps/fleet",
     "build": "npm run build -w apps/keel",
     "start": "npm start -w apps/keel",

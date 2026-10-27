@@ -1,25 +1,8 @@
 // What Bosun hands its siblings about a process's log: the latest line that read as trouble, with the
 // request it was about when the line (or one just before it) names one, as a `logline` context for
-// Sonar or Hail to find that request. Pure.
+// Sonar, Hail or Wharf to find that request. Pure.
 import { isTrouble } from './crew.js';
-
-// The ways logs name a request, in the order they're tried.
-const REQUEST_IDS = [
-  /x-request-id["']?\s*[:=]\s*["']?([\w.:-]{6,})/i,
-  /\brequest[_-]?id["']?\s*[:=]\s*["']?([\w.:-]{6,})/i,
-  /\btraceparent["']?\s*[:=]?\s*["']?[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}\b/i,
-  /\b00-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}\b/i,
-  /\boperation_?Id["']?\s*[:=]\s*["']?([\w.:-]{6,})/i,
-];
-
-/** The request a log line names (x-request-id, requestId, request_id, traceparent's trace id, operation_Id), or null. */
-export function requestIdIn(text) {
-  for (const re of REQUEST_IDS) {
-    const m = re.exec(String(text ?? ''));
-    if (m) return m[1].replace(/[.:]+$/, '');
-  }
-  return null;
-}
+import { requestIdIn } from '@fleet/kit/family.js';
 
 /** The index of the newest line of `lines` ({ text }) that reads as trouble (Bosun's own ── lines aren't), or -1. */
 export function latestTrouble(lines) {

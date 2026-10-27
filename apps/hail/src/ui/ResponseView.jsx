@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useInput } from 'ink';
-import { lineText, markRanges, matcher } from '../search.js';
+import { lineText, markRanges, matcher } from '@fleet/kit/search.js';
 import { theme } from '../theme.js';
 import { useMouse } from '@fleet/kit/ui/hooks.js';
 import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import * as a from '../actions.js';
 import { bodyLines, responseLines } from './response.js';
 
 /**
@@ -109,6 +110,7 @@ export function ResponseView({ request, sent, ctx, width, height, active }) {
     if (input === 'h') return setHeaders((h) => !h);
     if (!sent) return;
     if (input === 'y') return ctx.copy(sent.response.body, 'the body');
+    if (input === 'd' && !key.ctrl) return a.showData(ctx);
     if (key.return) return ctx.send(request);
   };
   useInput(keys, { isActive: active });

@@ -49,6 +49,7 @@ import { toXlsx } from './xlsx.js';
 import { diagramGraph, drawDiagram, mermaidDiagram, parseDiagramArgs } from './diagram.js';
 import { theme } from './theme.js';
 import { applySqlcmd, bindVariables, classifyScript, countQuery, oneLine, scriptVariables, splitStatements, sqlcmdVariables, statementAt, toCsv, toJson, toMarkdown, withoutLeadingComments } from './sql.js';
+import { parseData } from '@fleet/kit/datatree.js';
 
 // A WHERE that still changes more rows than this is asked about too.
 const MANY_ROWS = 1000;
@@ -2975,7 +2976,7 @@ async function loadWithTool(ctx, { args, conn, kind }) {
 // The family's activity log and a project's wiring.
 
 /**
- * /timeline: what the five apps did that changed something (family.js readActivity), newest first;
+ * /timeline: what the six apps did that changed something (family.js readActivity), newest first;
  * `p` switches between this project's and everything, ↵ shows an entry whole.
  */
 export function timeline(ctx, { all = false } = {}) {
@@ -3002,4 +3003,20 @@ export function wiring(ctx) {
   const text = wiringText(dir, projectWiring(dir));
   ctx.rememberOutput(`Wiring: ${basename(dir) || dir}`, text);
   ctx.showText(`Wiring: ${basename(dir) || dir}`, text);
+}
+
+/**
+ * w in Results and /data: the cell under the cursor when it holds JSON text (an object or an array), else the whole
+ * result set on screen, in the data viewer (a table, or a tree to open and query).
+ */
+export function showData(ctx) {
+  const set = ctx.currentSet();
+  if (!set) return ctx.note('Run a query first: there is no result set to look into.', 'error');
+  const c = ctx.cellOnScreen;
+  if (c && !c.isDefault && typeof c.value === 'string') {
+    const read = parseData(c.value);
+    if (read.kind === 'json' && read.value !== null && typeof read.value === 'object') return ctx.showData(`${c.set.columns[c.col].name} · ${c.label}`, { text: c.value });
+  }
+  if (!set.rows.length) return ctx.note('The result set has no rows to look into.', 'error');
+  ctx.showData(`Result set · ${set.rows.length} row${set.rows.length === 1 ? '' : 's'}`, { rows: { columns: set.columns.map((x) => x.name), rows: set.rows } });
 }

@@ -179,7 +179,7 @@ export async function saveLog(ctx, rest) {
   ctx.note(`Wrote ${p.lines.length} line${p.lines.length === 1 ? '' : 's'} of ${p.name}'s log to ${file}.`, 'ok');
 }
 
-/** t: the latest trouble line of a process, as a /take line for Sonar or Hail (with the request it names). */
+/** t: the latest trouble line of a process, as a /take line for Sonar, Hail or Wharf (with the request it names). */
 export function shareTrouble(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
@@ -197,7 +197,7 @@ export function shareTrouble(ctx, name) {
  */
 export function take(ctx, rest) {
   const c = contextIn(rest);
-  if (!c) return ctx.note('That isn\'t a line from a sibling app: /take family:v1:…, as Splice, Trawl, Sonar or Hail copy it.', 'error');
+  if (!c) return ctx.note('That isn\'t a line from a sibling app: /take family:v1:…, as Splice, Trawl, Sonar, Hail or Wharf copy it.', 'error');
   if (!TAKEN_BY[c.kind]?.includes('bosun')) return ctx.note(notMine('bosun', c), 'error');
   const what = describeContext(c);
   const needles = [c.data.requestId, c.data.operationId, c.kind === 'logline' ? c.data.text : c.data.message].filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim());

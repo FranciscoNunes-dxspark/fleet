@@ -1,4 +1,4 @@
-// What the sibling apps (splice, trawl, sonar, bosun, hail) share about each other: what one copies
+// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf) share about each other: what one copies
 // for another, the project a folder is and what it points at, the mascots' moods, and what each app
 // did. The same file in every app (scripts/shared-check.js), so it names no app as "this".
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync } from 'node:fs';
@@ -6,10 +6,10 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { handOff } from './hosted.js';
 
-export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail'];
+export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf'];
 
 /** What each app is for, in a picker's words. */
-export const ROLES = { splice: 'git', trawl: 'SQL', sonar: 'Azure', bosun: 'processes', hail: 'HTTP' };
+export const ROLES = { splice: 'git', trawl: 'SQL', sonar: 'Azure', bosun: 'processes', hail: 'HTTP', wharf: 'containers' };
 
 // ---------------------------------------------------------------------------------------------------
 // Sharing: what one app hands another is a command line, copied for you to paste into the other app's
@@ -52,8 +52,8 @@ export const takeLine = (kind, data) => shareLine('take', [encodeContext(kind, d
 export const contextIn = (line) => decodeContext(String(line ?? '').trim().replace(/^\/?take\s+/, ''));
 
 /** The apps' names as they're written, and their mascots'. */
-export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail' };
-export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot' };
+export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf' };
+export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark' };
 
 /** Which apps take each kind of context with /take. */
 export const TAKEN_BY = {
@@ -63,7 +63,7 @@ export const TAKEN_BY = {
   query: ['trawl'],
   commit: ['splice', 'sonar'],
   file: ['splice'],
-  logline: ['sonar', 'hail', 'bosun'],
+  logline: ['sonar', 'hail', 'bosun', 'wharf'],
 };
 
 const either = (apps) => apps.map((a) => APP_NAMES[a] ?? a).join(' or ');
@@ -336,6 +336,24 @@ export function redactSecrets(text) {
     .replace(/\b((?:pass(?:word)?|pwd|secret|token|api[-_]?key|accountkey|sharedaccesskey)\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s;,&]+)/gi, `$1${MASK}`);
 }
 
+// The ways logs name a request, in the order they're tried.
+const REQUEST_IDS = [
+  /x-request-id["']?\s*[:=]\s*["']?([\w.:-]{6,})/i,
+  /\brequest[_-]?id["']?\s*[:=]\s*["']?([\w.:-]{6,})/i,
+  /\btraceparent["']?\s*[:=]?\s*["']?[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}\b/i,
+  /\b00-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}\b/i,
+  /\boperation_?Id["']?\s*[:=]\s*["']?([\w.:-]{6,})/i,
+];
+
+/** The request a log line names (x-request-id, requestId, request_id, traceparent's trace id, operation_Id), or null. */
+export function requestIdIn(text) {
+  for (const re of REQUEST_IDS) {
+    const m = re.exec(String(text ?? ''));
+    if (m) return m[1].replace(/[.:]+$/, '');
+  }
+  return null;
+}
+
 const WIRING_KEY = /url|uri|host|endpoint|connection|port|database|server|base[-_]?address|address|origin|domain|dsn/i;
 const looksWired = (key, value) => WIRING_KEY.test(key) || /^[a-z][a-z0-9+.-]*:\/\//i.test(value) || Boolean(databaseOf(value));
 
@@ -417,7 +435,7 @@ export function readMoods(self, { dir = familyDir(), now = Date.now(), maxAge = 
 // ---------------------------------------------------------------------------------------------------
 // The family's activity: each app adds what it did that changes something (a push, a write to a
 // database, a restart, a crash) to one log in the family's folder, so any of them can show what
-// happened, in order, across all five. Nothing secret goes in: the text is passed through redactSecrets.
+// happened, in order, across all six. Nothing secret goes in: the text is passed through redactSecrets.
 
 const ACTIVITY_FILE = 'activity.jsonl';
 const ACTIVITY_MAX = 1024 * 1024;

@@ -85,7 +85,7 @@ test('who takes what, and what each says', () => {
   assert.equal(copiedNote('hail', take), "Copied for Hail: paste it into Hail's prompt. request GET http://x/a");
   assert.equal(copiedNote(['sonar', 'hail'], '/x'), "Copied for Sonar or Hail: paste it into one's prompt. /x");
   assert.equal(notMine('splice', contextIn(take)), "That's request GET http://x/a, for Hail: paste it into its prompt instead.");
-  assert.equal(notMine('trawl', { kind: 'logline', data: { process: 'api', text: 'x' } }), "That's api: x, for Sonar or Hail or Bosun: paste it into one's prompt instead.");
+  assert.equal(notMine('trawl', { kind: 'logline', data: { process: 'api', text: 'x' } }), "That's api: x, for Sonar or Hail or Bosun or Wharf: paste it into one's prompt instead.");
 });
 
 test('the paste rule', () => {
@@ -162,4 +162,12 @@ test('the activity log: appended, redacted, newest first, by project, and kept s
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('request ids, as logs name them', async () => {
+  const { requestIdIn } = await import('../family.js');
+  assert.equal(requestIdIn('GET /orders 500 x-request-id: 7f3a9c21-aa'), '7f3a9c21-aa');
+  assert.equal(requestIdIn('{"level":"error","requestId":"req_123456"}'), 'req_123456');
+  assert.equal(requestIdIn('traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'), '4bf92f3577b34da6a3ce929d0e0e4736');
+  assert.equal(requestIdIn('Error: nothing to see'), null);
 });

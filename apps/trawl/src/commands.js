@@ -41,6 +41,7 @@ export const COMMANDS = [
   { name: 'follow', desc: 'From the cell under the cursor in Results along its foreign key (F)', run: (ctx) => a.followKey(ctx) },
   { name: 'pin', desc: 'Keep the result set on screen to compare a later run with (p in Results)', run: (ctx) => a.pinResult(ctx) },
   { name: 'compare', desc: 'What changed between the pinned result and the one on screen (c in Results)', run: (ctx) => a.compareResults(ctx) },
+  { name: 'data', desc: "The result set on screen as a table to look into, or the cell's value when it is JSON text, as a tree to open and query with a path like .items[0].name (w in Results)", run: (ctx) => a.showData(ctx) },
   { name: 'copy', args: '[tsv|csv|json|md|insert]', desc: 'Copy the result set on screen (tab-separated pastes into a spreadsheet)', run: (ctx, s) => a.copyResults(ctx, s.trim()) },
   { name: 'chart', args: '[bars|line|histogram|scatter] [x] [y…]', desc: 'The result set on screen as a chart, picked from its columns unless named (b in Results; esc back to the grid)', run: (ctx, s) => a.chart(ctx, s) },
   { name: 'export', args: '<file.csv|file.xlsx|file.json|file.md>', desc: 'Save the result set on screen (.xlsx: every result set, a sheet each)', run: (ctx, s) => a.exportResults(ctx, s) },

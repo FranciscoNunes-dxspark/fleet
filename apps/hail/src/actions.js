@@ -10,6 +10,7 @@ import { curlToHttp, parseCurl } from './curl.js';
 import { KIND_NAMES, importText } from './importers.js';
 import { DEFAULT_PORT, routesFor, startMock } from './mock.js';
 import { changedOnly, lineDiff } from './diff.js';
+import { parseData } from '@fleet/kit/datatree.js';
 import { pathArg, writeExample } from './files.js';
 import { previousOf } from './history.js';
 import { run } from '@fleet/kit/run.js';
@@ -1006,7 +1007,7 @@ export function activity(ctx, text, kind = 'info') {
 }
 
 /**
- * /timeline: what the family's apps did, newest first, from all five; p shows this project's alone (and
+ * /timeline: what the family's apps did, newest first, from all six; p shows this project's alone (and
  * what names none), or everything again; ↵ shows an entry whole, y copies it.
  */
 export function timeline(ctx, { mine = false, replace = false } = {}) {
@@ -1074,4 +1075,15 @@ export function wiring(ctx) {
   }
   if (!total) return ctx.note(`Nothing here points anywhere Hail can see: no addresses, hosts, ports or connection strings in appsettings*.json, .env files or http-client.env.json in ${dirs.join(' or ')}.`);
   ctx.showText(`What ${basename(projectOf(ctx))} points at (${total})`, text.join('\n'), { lines });
+}
+
+/** d in Response and /data: the body of the picked request's response in the data viewer, when it reads as JSON or CSV. */
+export function showData(ctx) {
+  const request = ctx.selectedRequest();
+  const sent = ctx.selectedResponse();
+  if (!request || !sent?.response) return ctx.note('Send a request first: there is no response to look into.', 'error');
+  const body = String(sent.response.body ?? '');
+  const read = parseData(body);
+  if (read.error) return ctx.note(`The body isn't data the viewer reads: ${read.error}`, 'error');
+  ctx.showData(`${request.label} · ${sent.response.status ?? ''}`.trim(), { text: body });
 }
