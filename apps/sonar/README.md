@@ -142,6 +142,8 @@ requests | summarize n = count() by bin(timestamp, 1h), resultCode | render time
 requests | where success == false | summarize count() by name | render barchart
 ```
 
+In Fleet's window (`fleet gui`) the chart is drawn as a real one in its place, with the values under the pointer.
+
 ### Asking Claude
 
 `w` on a problem (or `/why`) sends its latest occurrence, end to end, to

@@ -79,10 +79,15 @@ button { font: inherit; color: inherit; }
 
 .screen { position: relative; flex: 1; overflow: hidden; background: var(--screen-bg); color: var(--screen-fg); font-family: var(--mono); font-size: var(--font-size); cursor: text; }
 .screen.mouse { cursor: default; }
-.screen .rows { position: absolute; left: 8px; top: 6px; }
+.screen .rows { position: absolute; left: 8px; top: 6px; z-index: 1; }
+/* The apps' native views (GuiView), under their text. */
+.screen .views { position: absolute; left: 8px; top: 6px; z-index: 0; }
+.view { position: absolute; overflow: hidden; }
+.view svg { display: block; }
+.tip { position: absolute; z-index: 3; max-width: 260px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: 12px/1.45 var(--ui); pointer-events: none; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); }
 .row { position: absolute; left: 0; height: var(--ch); width: 100%; white-space: pre; }
 .r { position: absolute; top: 0; height: var(--ch); line-height: var(--ch); left: calc(var(--x) * var(--cw)); width: calc(var(--w) * var(--cw)); overflow: hidden; white-space: pre; font-kerning: none; font-variant-ligatures: none; }
-.cursor { position: absolute; width: var(--cw); height: var(--ch); background: var(--screen-fg); mix-blend-mode: difference; pointer-events: none; animation: blink 1.1s steps(1) infinite; }
+.cursor { position: absolute; z-index: 2; width: var(--cw); height: var(--ch); background: var(--screen-fg); mix-blend-mode: difference; pointer-events: none; animation: blink 1.1s steps(1) infinite; }
 .pane:not(.active) .cursor, body.blurred .cursor { animation: none; background: transparent; outline: 1px solid var(--muted); mix-blend-mode: normal; }
 @keyframes blink { 50% { opacity: 0; } }
 

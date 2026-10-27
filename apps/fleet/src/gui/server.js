@@ -32,7 +32,7 @@ export const LOGOS = {
   locker: 'locker/assets/logo.svg',
 };
 
-export const CLIENT_FILES = ['index.html', 'style.css', 'app.js', 'keymap.js', 'sgr.js', 'boxes.js'];
+export const CLIENT_FILES = ['index.html', 'style.css', 'app.js', 'keymap.js', 'sgr.js', 'boxes.js', 'views.js'];
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
 const typeOf = (name) => TYPES[name.slice(name.lastIndexOf('.'))] ?? 'application/octet-stream';

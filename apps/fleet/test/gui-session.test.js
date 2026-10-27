@@ -90,6 +90,24 @@ test("a hand-off shows the app it's for and types the line once it reads keys; t
   await until(() => events.some((e) => e.type === 'copy' && e.text === 'copied') && events.some((e) => e.type === 'bell' && e.id === 'two'), 'the copy and the bell');
 });
 
+test("an app's native views reach the window, are kept for windows opening later, and go when it exits", async () => {
+  const { session, events } = start({ env: quietEnv({ FLEET_GUI: '1' }) });
+  session.show(['one']);
+  await until(() => session.space('one').ready, 'one reads keys');
+  session.input('one', 'G');
+  await until(() => events.some((e) => e.type === 'view' && e.id === 'one' && e.key === 'k1' && e.view?.kind === 'chart'), 'the view');
+  assert.deepEqual(session.snapshot().views.one.k1.rect, { x: 1, y: 3, width: 30, height: 8 });
+  session.input('one', 'g');
+  await until(() => events.some((e) => e.type === 'view' && e.key === 'k1' && e.view === null), 'taken away');
+  assert.deepEqual(session.snapshot().views.one, {});
+  session.input('one', 'G');
+  await until(() => session.space('one').views.size === 1, 'shown again');
+  session.input('one', 'X');
+  await until(() => session.space('one').state === 'exited', 'exited');
+  assert.equal(session.space('one').views.size, 0);
+  assert.ok(events.some((e) => e.type === 'views' && e.id === 'one'));
+});
+
 test('mouse reports reach only an app that asked for them', async () => {
   const { session, screen } = start();
   session.show(['one']);

@@ -45,7 +45,7 @@ import { API_LANGUAGES, API_SYSTEM, apiFileName, apiLanguage, apiPrompt, apiRequ
 import { copyRefusal, copyScript, foreignKeysFrom, insertOrder, insertedRows, keyTuples, maskRows, parentSql, parseCopyRowsArgs, rowKey, rowsSql, selfOrder, tupleKey } from './copyrows.js';
 import { rehearsalRefusal, rehearsalSteps, rehearsalText, rowsAffected } from './rehearse.js';
 import { locksText } from './transactions.js';
-import { chartTitle, drawChart, planChart } from './chart.js';
+import { chartTitle, drawChart, planChart, windowChart } from './chart.js';
 import { toXlsx } from './xlsx.js';
 import { diagramGraph, drawDiagram, mermaidDiagram, parseDiagramArgs } from './diagram.js';
 import { theme } from './theme.js';
@@ -1996,7 +1996,8 @@ export function chart(ctx, rest = '') {
     const { lines, about } = drawChart(set, plan, { width, height: Math.max(5, height - 3), colors });
     return [...lines, '', ...wrap(about, Math.max(10, width)).slice(0, 2).map((l) => [{ text: l, color: theme.dim }])];
   };
-  ctx.showText(`${CHART_NAMES[plan.type]}: ${chartTitle(set, plan)}`, '', { draw, hint: plan.picked ? '/chart <type> <x> <y…> picks another' : '' });
+  // In Fleet's window the same chart is drawn natively, with a read-out under the pointer.
+  ctx.showText(`${CHART_NAMES[plan.type]}: ${chartTitle(set, plan)}`, '', { draw, gui: { kind: 'chart', data: windowChart(set, plan) }, hint: plan.picked ? '/chart <type> <x> <y…> picks another' : '' });
 }
 
 const EXPORTS = { '.csv': toCsv, '.json': toJson, '.md': toMarkdown, '.markdown': toMarkdown };

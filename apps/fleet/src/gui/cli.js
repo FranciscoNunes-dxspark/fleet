@@ -13,19 +13,20 @@ import { SPACES, spaceNamed } from '../spaces.js';
 import { GuiSession } from './session.js';
 import { guiServer, loadClient } from './server.js';
 
-export const GUI_USAGE = `fleet gui [app] [--port <n>] [--no-open] [--print-url]
+export const GUI_USAGE = `fleet gui [--port <n>] [--no-open] [--print-url] [app [its arguments…]]
 
   The fleet in a window: every app as in the terminal, drawn in a browser window (an app window of
   Chrome, Edge or Chromium when one is installed) with Fleet's tools around them. It listens on
   127.0.0.1 only, and the address it prints carries the key to it.
 
-  app          the app to show first (Splice by default)
+  app          the app to show first (Splice by default); what follows it is that app's own
+               arguments (fleet gui sonar --demo)
   --port <n>   the port (a free one by default)
   --no-open    print the address, don't open it
   --print-url  print only the address, as one line (for Fleet Desktop)`;
 
 export function parseGuiArgs(argv) {
-  const out = { port: 0, open: true, printUrl: false, first: null, help: false };
+  const out = { port: 0, open: true, printUrl: false, first: null, args: {}, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') out.port = Number(argv[++i]) || 0;
@@ -35,7 +36,11 @@ export function parseGuiArgs(argv) {
       out.printUrl = true;
       out.open = false;
     } else if (a === '-h' || a === '--help') out.help = true;
-    else if (spaceNamed(a)) out.first = spaceNamed(a).id;
+    else if (spaceNamed(a)) {
+      out.first = spaceNamed(a).id;
+      out.args = { [out.first]: argv.slice(i + 1) };
+      break;
+    }
     else throw new Error(`fleet gui: what's ${a}? (fleet gui --help)`);
   }
   return out;
@@ -83,7 +88,7 @@ export async function runGui(argv, { env = process.env, out = process.stdout } =
     return;
   }
   // Nothing in a window is a terminal's, so the apps get full colour whatever this terminal has.
-  const session = new GuiSession({ spawn: appSpawner({ compiled: COMPILED, depth: 24, env: { ...env, FLEET_GUI: '1' } }), spaces: SPACES });
+  const session = new GuiSession({ spawn: appSpawner({ compiled: COMPILED, depth: 24, env: { ...env, FLEET_GUI: '1' } }), spaces: SPACES, args: opts.args });
   session.start();
   const server = guiServer(session, { files: await loadClient(), env });
   const url = await server.listen(opts.port);

@@ -32,7 +32,7 @@ after(async () => {
 
 test('the window: keys in, the screen drawn, side by side, and an exited app started again', { skip: !chromium && 'Playwright is not installed here' }, async () => {
   const family = mkdtempSync(join(tmpdir(), 'fleet-gui-browser-'));
-  const session = new GuiSession({ spawn: appSpawner({ env: quietEnv(), command: (id, args) => [process.execPath, [FAKE, id, ...args]] }), spaces: SPACES, familyHome: family });
+  const session = new GuiSession({ spawn: appSpawner({ env: quietEnv({ FLEET_GUI: '1' }), command: (id, args) => [process.execPath, [FAKE, id, ...args]] }), spaces: SPACES, familyHome: family });
   const server = guiServer(session, { files: await loadClient() });
   const url = await server.listen(0);
   const browser = await chromium.launch();
@@ -58,13 +58,24 @@ test('the window: keys in, the screen drawn, side by side, and an exited app sta
   await page.keyboard.press('ArrowUp');
   await page.waitForFunction(() => [...document.querySelectorAll('.pane .row')].some((r) => r.textContent.includes('\\u001b[A')));
 
+  // A native view the app asks for is drawn under its text, with a read-out under the pointer.
+  await page.keyboard.type('G');
+  await page.locator('.view svg rect[data-i="1"]').waitFor();
+  const bar = await page.locator('.view svg rect[data-i="1"]').boundingBox();
+  await page.mouse.move(bar.x + bar.width / 2, bar.y + 2);
+  await page.waitForFunction(() => !document.querySelector('.tip').hidden && /5/.test(document.querySelector('.tip').textContent));
+  await page.keyboard.type('g');
+  await page.locator('.view').waitFor({ state: 'detached' });
+
   // ctrl+] | puts the other app beside it, at half the width each.
   await page.keyboard.press('Control+]');
   await page.keyboard.press('|');
   await page.waitForFunction(() => document.querySelectorAll('.pane').length === 2);
-  await page.waitForFunction(() => [...document.querySelectorAll('.pane')].every((p) => /^\w+ \d+x\d+$/.test(p.querySelector('.row')?.textContent ?? '')));
-  const widths = await page.$$eval('.pane .row:first-child', (rows) => rows.map((r) => Number(/ (\d+)x/.exec(r.textContent)[1])));
-  assert.ok(Math.abs(widths[0] - widths[1]) <= 2, `halves: ${widths}`);
+  // Each app redraws at its half once the window has measured its pane and told it.
+  await page.waitForFunction(() => {
+    const widths = [...document.querySelectorAll('.pane')].map((p) => Number(/^\w+ (\d+)x\d+$/.exec(p.querySelector('.row')?.textContent ?? '')?.[1]));
+    return widths.length === 2 && widths.every(Boolean) && Math.abs(widths[0] - widths[1]) <= 2;
+  });
   await pane('Two').locator('.screen').click();
   await page.waitForFunction(() => document.querySelector('.pane.active header b')?.textContent === 'Two');
   await page.keyboard.type('x');

@@ -2,15 +2,17 @@ import React, { useMemo, useState } from 'react';
 import { useInput } from 'ink';
 import { theme } from '../theme.js';
 import { useMouse } from '@fleet/kit/ui/hooks.js';
+import { GuiView } from '@fleet/kit/ui/GuiView.jsx';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /**
  * Full-height scrollable text: /describe, a record, the last output, help. `pageOnly`: a question
  * below has the other keys, so only page up/down scroll this. `keys` maps a letter to an action of
  * this text's own, which `hint` names. `draw` ((width, height) => lines of segments, or strings) draws
- * coloured lines in place of the text, at the room there is, while drawing (a chart, a diagram).
+ * coloured lines in place of the text, at the room there is, while drawing (a chart, a diagram). `gui`
+ * ({ kind, data }) is what Fleet's window draws natively in its place (the kit's GuiView).
  */
-export function TextViewer({ title, text, draw, loading, keys, hint, ctx, width, height, active, pageOnly = false, onClose }) {
+export function TextViewer({ title, text, draw, gui, loading, keys, hint, ctx, width, height, active, pageOnly = false, onClose }) {
   const innerH = height - 2;
   const plain = useMemo(() => (text ?? '').replace(/\n$/, '').split('\n'), [text]);
   const lines = draw ? draw(width - 2, innerH) : plain;
@@ -44,7 +46,9 @@ export function TextViewer({ title, text, draw, loading, keys, hint, ctx, width,
       {loading ? (
         <Row pointer={false} width={width - 2} segments={[{ text: 'Loading…', color: theme.dim }]} />
       ) : (
-        lines.slice(offset, offset + innerH).map((l, i) => <Row key={offset + i} pointer={false} width={width - 2} segments={typeof l === 'string' ? [{ text: l }] : l} />)
+        <GuiView kind={gui?.kind} data={gui?.data} window={Boolean(gui?.data)} width={width - 2} height={Math.min(innerH, lines.length)}>
+          {lines.slice(offset, offset + innerH).map((l, i) => <Row key={offset + i} pointer={false} width={width - 2} segments={typeof l === 'string' ? [{ text: l }] : l} />)}
+        </GuiView>
       )}
     </Panel>
   );

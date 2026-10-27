@@ -98,3 +98,35 @@ test("a virtual terminal's row as runs: by style, wide characters on their own, 
   assert.equal(paintsBlank('38;2;40;41;42'), false);
   assert.deepEqual(rowRuns([' ', ' '], ['', '']), []);
 });
+
+test("native charts: round scales, round times, a layout per type, SVG, and what's under the pointer", async () => {
+  const { bins, chartLayout, chartSvg, niceScale, pointAt, shortNumber, timeTicks } = await import('../gui/views.js');
+  assert.deepEqual(niceScale(0, 27).ticks, [0, 10, 20, 30]);
+  assert.deepEqual(niceScale(3, 3).ticks.length > 1, true);
+  assert.equal(shortNumber(12345), '12.3k');
+  assert.equal(shortNumber(0.256), '0.256');
+  const hour = 3_600_000;
+  const day0 = new Date(2026, 9, 27, 0, 0, 0).getTime();
+  const ticks = timeTicks(day0 + 13 * 60_000, day0 + 24 * hour, 6);
+  assert.ok(ticks.length >= 3 && ticks.every((t) => new Date(t).getMinutes() === 0), 'on the hour');
+  assert.deepEqual(bins([1, 2, 2, 3, 9], 4).map((b) => b.count), [3, 1, 0, 1]);
+
+  const line = { type: 'line', x: { kind: 'time', values: [day0, day0 + hour, day0 + 2 * hour] }, series: [{ name: 'n', values: [1, null, 3] }, { name: 'm', values: [2, 2, 2] }] };
+  const L = chartLayout(line, 600, 300);
+  assert.equal(L.type, 'line');
+  assert.equal(L.lines[0].points[1], null, 'a gap stays a gap');
+  const svg = chartSvg(line, 600, 300);
+  assert.match(svg, /^<svg /);
+  assert.equal((svg.match(/<path /g) ?? []).length, 2);
+  assert.match(svg, />m</, 'a legend with two series');
+  const hit = pointAt(line, 600, 300, L.lines[1].points[2][0], 100);
+  assert.deepEqual(hit.lines.slice(1), ['n: 3', 'm: 2']);
+
+  const bars = { type: 'bars', labels: ['a', 'b'], series: [{ name: 'n', values: [3, 5] }], share: true };
+  const B = chartLayout(bars, 400, 200);
+  assert.equal(B.bars.length, 2);
+  assert.deepEqual(pointAt(bars, 400, 200, B.bars[1].x + 1, 50).lines, ['b', '5 (62.5%)']);
+  assert.equal(chartLayout({ type: 'histogram', values: [1, 2, 3, 4] }, 400, 200).type, 'histogram');
+  assert.equal(chartLayout({ type: 'scatter', points: [[1, 2], [3, 4]] }, 400, 200).dots.length, 2);
+  assert.equal(chartLayout(line, 30, 20), null, 'too small to draw');
+});

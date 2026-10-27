@@ -175,3 +175,25 @@ test('b in Results charts the rows on screen, esc goes back to the grid, and /ch
   await until(() => frame().includes('No column named Nope'), 'the error');
   app.unmount();
 });
+
+test("Fleet's window draws /chart natively from the same plan", async () => {
+  const { windowChart } = await import('../src/chart.js');
+  const set = {
+    columns: [{ name: 'PlayedOn' }, { name: 'Club' }, { name: 'Goals' }, { name: 'Shots' }],
+    rows: [
+      [d('2026-03-01'), 'b', 2, 9],
+      [d('2026-02-01'), 'a', 1, 5],
+      [d('2026-04-01'), 'a', 4, 7],
+    ],
+  };
+  const line = windowChart(set, planChart(set, ['line', 'PlayedOn', 'Goals']));
+  assert.equal(line.type, 'line');
+  assert.equal(line.x.kind, 'time');
+  assert.deepEqual(line.x.values, [d('2026-02-01').getTime(), d('2026-03-01').getTime(), d('2026-04-01').getTime()]);
+  assert.deepEqual(line.series, [{ name: 'Goals', values: [1, 2, 4] }]);
+  const bars = windowChart(set, planChart(set, ['bars', 'Club', 'Goals']));
+  assert.deepEqual(bars.labels, ['a', 'b'], 'added up by label, biggest first');
+  assert.deepEqual(bars.series, [{ name: 'Goals', values: [5, 2] }]);
+  assert.deepEqual(windowChart(set, planChart(set, ['scatter', 'Goals', 'Shots'])).points, [[2, 9], [1, 5], [4, 7]]);
+  assert.deepEqual(windowChart(set, planChart(set, ['histogram', 'Goals'])).values, [2, 1, 4]);
+});

@@ -56,6 +56,8 @@ export class GuiSession {
       vt: new VirtualTerminal(size.columns, size.rows),
       filter: new OutputFilter(),
       sent: [],
+      // The native views the app asked for (the kit's ui/GuiView.jsx), by key.
+      views: new Map(),
     }));
     this.listeners = new Set();
     this.family = familyReader(familyHome);
@@ -113,6 +115,7 @@ export class GuiSession {
       shown: this.shown,
       spaces: this.spaces.map((s) => this.describe(s)),
       frames: this.spaces.filter((s) => s.state !== 'idle').map((s) => this.frameOf(s, { whole: true })),
+      views: Object.fromEntries(this.spaces.map((s) => [s.id, Object.fromEntries(s.views)])),
     };
   }
 
@@ -195,6 +198,7 @@ export class GuiSession {
     Object.assign(s, { state: 'running', code: null, filter, ready: false, stderr: '', restarting: false, moving: false });
     // A fresh screen: the app's alternate screen, which would clear it, is the host's to drop.
     s.vt.reset();
+    this.dropViews(s);
     s.sent = [];
     try {
       child = this.spawnApp(s.id, { ...s.size, args: this.args[s.id] ?? [], cwd: this.cwd });
@@ -267,6 +271,27 @@ export class GuiSession {
     if (m.handoff) this.handoff(s, m);
     if (m.update) this.onUpdate();
     if (typeof m.move === 'string' && m.move.trim()) this.emit({ type: 'ask-move', from: s.title, folder: m.move });
+    if (m.view && typeof m.view.key === 'string') this.view(s, m.view);
+  }
+
+  /** A native view shown, moved or taken away (the kit's GuiView): kept for windows that open later. */
+  view(s, v) {
+    if (v.gone) {
+      if (!s.views.delete(v.key)) return;
+      return this.emit({ type: 'view', id: s.id, key: v.key, view: null });
+    }
+    const r = v.rect ?? {};
+    const rect = { x: Number(r.x) || 0, y: Number(r.y) || 0, width: Number(r.width) || 0, height: Number(r.height) || 0 };
+    const view = { kind: String(v.kind ?? ''), data: v.data ?? null, rect };
+    s.views.set(v.key, view);
+    this.emit({ type: 'view', id: s.id, key: v.key, view });
+  }
+
+  /** An app's views all gone (it started again, or exited). */
+  dropViews(s) {
+    if (!s.views.size) return;
+    s.views.clear();
+    this.emit({ type: 'views', id: s.id, views: {} });
   }
 
   handoff(from, m) {
@@ -318,6 +343,7 @@ export class GuiSession {
   exited(s, child, code) {
     if (child && s.child !== child) return;
     Object.assign(s, { state: 'exited', code, child: null, ready: false, paste: null });
+    this.dropViews(s);
     if (this.stopped) return;
     if (s.restarting || s.moving) return this.launch(s);
     this.spacesChanged();

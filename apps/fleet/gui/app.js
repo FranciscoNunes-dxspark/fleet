@@ -6,6 +6,7 @@
 import { BOX_CLASSES, splitBoxes } from './boxes.js';
 import { keyBytes, mouseBytes } from './keymap.js';
 import { styleCss } from './sgr.js';
+import { chartSvg, pointAt } from './views.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -18,6 +19,7 @@ const state = {
   cwd: '',
   screens: new Map(), // id → { columns, height, rows: [runs], cursor }
   panes: new Map(), // id → { el, screen, rowsEl, rowEls: [], cursorEl, size }
+  views: new Map(), // id → Map(key → { kind, data, rect }): the native views each app asked for
   prefix: false,
   drawer: null,
   runbookOpen: null,
@@ -80,6 +82,7 @@ function handle(e) {
       state.screens.clear();
       takeSpaces(e);
       for (const f of e.frames) applyFrame(f);
+      state.views = new Map(Object.entries(e.views ?? {}).map(([id, vs]) => [id, new Map(Object.entries(vs))]));
       if (!state.shown.length) show(savedShown() ?? [state.spaces[0].id]);
       else renderStage();
       break;
@@ -88,6 +91,18 @@ function handle(e) {
       break;
     case 'frame':
       applyFrame(e);
+      break;
+    case 'view': {
+      const vs = state.views.get(e.id) ?? new Map();
+      if (e.view) vs.set(e.key, e.view);
+      else vs.delete(e.key);
+      state.views.set(e.id, vs);
+      drawViews(e.id);
+      break;
+    }
+    case 'views':
+      state.views.set(e.id, new Map());
+      drawViews(e.id);
       break;
     case 'focus':
       if (state.shown.includes(e.id)) {
@@ -239,9 +254,9 @@ function makePane(id) {
   el.innerHTML = `<header><img src="logo/${id}.svg" alt=""><b>${esc(s.title)}</b><span class="state"></span><span class="grow"></span>
     <button type="button" data-act="restart" title="Start ${esc(s.title)} again">↻</button>
     <button type="button" data-act="close" title="Show only the other app">✕</button></header>
-    <div class="screen"><div class="rows"></div><div class="cursor" hidden></div></div>`;
+    <div class="screen"><div class="views"></div><div class="rows"></div><div class="cursor" hidden></div><div class="tip" hidden></div></div>`;
   const screen = $('.screen', el);
-  const pane = { id, el, screen, rowsEl: $('.rows', el), rowEls: [], cursorEl: $('.cursor', el), size: null, observer: null };
+  const pane = { id, el, screen, rowsEl: $('.rows', el), viewsEl: $('.views', el), tipEl: $('.tip', el), rowEls: [], cursorEl: $('.cursor', el), size: null, observer: null };
   el.addEventListener('mousedown', () => {
     if (state.active !== id) show([id, ...state.shown.filter((x) => x !== id)]);
   });
@@ -257,6 +272,7 @@ function makePane(id) {
   // Draw what's kept of its screen at once, then let the server repaint it at this size.
   const kept = state.screens.get(id);
   if (kept) kept.rows.forEach((runs, y) => drawRow(pane, y, runs));
+  drawViews(id, pane);
   return pane;
 }
 
@@ -370,6 +386,55 @@ function drawCursor(id) {
   pane.cursorEl.hidden = false;
   pane.cursorEl.style.left = `calc(8px + ${c.x} * var(--cw))`;
   pane.cursorEl.style.top = `calc(6px + ${c.y} * var(--ch))`;
+}
+
+// ---- native views (the kit's GuiView: a chart where the app would draw one in text) ----------------
+
+const VIEWS = {
+  chart: (data, w, h) => chartSvg(data, w, h),
+};
+
+/** Draws a pane's native views, under its text: each at its cells, at the size those cells are now. */
+function drawViews(id, pane = state.panes.get(id)) {
+  if (!pane) return;
+  const views = state.views.get(id) ?? new Map();
+  let html = '';
+  for (const [key, v] of views) {
+    const draw = VIEWS[v.kind];
+    if (!draw) continue;
+    const w = Math.round(v.rect.width * cell.w);
+    const h = Math.round(v.rect.height * cell.h);
+    html += `<div class="view" data-key="${esc(key)}" style="left:calc(${v.rect.x} * var(--cw));top:calc(${v.rect.y} * var(--ch));width:${w}px;height:${h}px">${draw(v.data, w, h)}</div>`;
+  }
+  pane.viewsEl.innerHTML = html;
+  pane.tipEl.hidden = true;
+}
+
+/** The read-out of the view under the pointer, if it has one there. */
+function hoverViews(pane, ev) {
+  const r = pane.viewsEl.getBoundingClientRect();
+  const px = ev.clientX - r.left;
+  const py = ev.clientY - r.top;
+  for (const [key, v] of state.views.get(pane.id) ?? []) {
+    if (v.kind !== 'chart') continue;
+    const x0 = v.rect.x * cell.w;
+    const y0 = v.rect.y * cell.h;
+    const w = Math.round(v.rect.width * cell.w);
+    const h = Math.round(v.rect.height * cell.h);
+    if (px < x0 || py < y0 || px > x0 + w || py > y0 + h) continue;
+    const hit = pointAt(v.data, w, h, px - x0, py - y0);
+    if (!hit) break;
+    pane.tipEl.hidden = false;
+    pane.tipEl.innerHTML = hit.lines.map((l, i) => (i ? esc(l) : `<b>${esc(l)}</b>`)).join('<br>');
+    // Beside the point, on whichever side has room in the pane.
+    const room = pane.screen.getBoundingClientRect().width;
+    const left = 8 + x0 + hit.x + 14;
+    pane.tipEl.style.left = `${left + 240 > room ? Math.max(4, left - 270) : left}px`;
+    pane.tipEl.style.top = `${6 + y0 + Math.max(0, hit.y - 10)}px`;
+    pane.hoverKey = key;
+    return;
+  }
+  pane.tipEl.hidden = true;
 }
 
 // ---- keys -------------------------------------------------------------------------------------------
@@ -514,6 +579,7 @@ function wireMouse(pane) {
     focusKeys();
   });
   pane.screen.addEventListener('mousemove', (ev) => {
+    hoverViews(pane, ev);
     if (!wants() || held == null) return;
     const { x, y } = at(ev);
     const key = `${x},${y}`;
@@ -537,6 +603,9 @@ function wireMouse(pane) {
     },
     { passive: false },
   );
+  pane.screen.addEventListener('mouseleave', () => {
+    pane.tipEl.hidden = true;
+  });
   pane.screen.addEventListener('contextmenu', (ev) => {
     if (wants()) ev.preventDefault();
   });
@@ -873,7 +942,10 @@ window.fleetDesktop?.onCommand(({ name, arg }) => {
 });
 
 window.addEventListener('resize', () => {
-  for (const pane of state.panes.values()) fit(pane);
+  for (const pane of state.panes.values()) {
+    fit(pane);
+    drawViews(pane.id, pane);
+  }
 });
 
 (document.fonts?.ready ?? Promise.resolve()).then(() => {

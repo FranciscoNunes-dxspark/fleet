@@ -270,6 +270,8 @@ A long value is cut short in the grid. `v` (or `/cell`) shows the whole of the c
 
 Columns that look like keys (`Id`, `ClubId`) are left out of the picking when there are other numbers. `/chart [bars|line|histogram|scatter] [x] [y…]` names the kind and the columns: `/chart bars Name Goals`, `/chart line PlayedOn HomeGoals AwayGoals`, `/chart histogram Goals`. The axes are labelled with real values (the lowest and highest, and the middle where there's room; dates as `2026-03-12`, with the time when they have one), and the chart fits the window. It's drawn from the rows Trawl has, and the line under it says how many, whether the row limit cut them off (`m` fetches more), and how many had no value to draw. The query doesn't run again.
 
+In Fleet's window (`fleet gui`) `/chart` draws a real chart in the viewer instead, with the values under the pointer.
+
 ### Comparing results
 
 To see what a change did, pin a result first: `p` in Results (or `/pin`) keeps the result set on screen. Run the query again (after an update, say, or on another database), and `c` (or `/compare`) shows the difference as a result set of its own: a `change` column first, `~` for a row whose values changed (with the new values, and a `was` column at the end saying `Goals: 3 → 4`), `+` for a row that's new and `−` for one that's gone, and a line under it counting them and the rows that are the same. When the pinned rows are one table's with its primary key (as for editing, below), rows are matched by the key, so a changed row shows as changed; otherwise whole rows are compared, so it shows as one removed and one added. Both results need the same columns, in any order. The pin stays until you pin another.
