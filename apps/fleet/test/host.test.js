@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { logActivity } from '@fleet/kit/family.js';
+import { traceLine } from '../src/trace.js';
 import { alive, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
 
 after(stopAll);
@@ -130,14 +132,14 @@ test("the active app's mouse comes back with it, and a click on a tab switches",
   await done;
 });
 
-/** A folder for a test's panels: the start folder, Fleet's home and the family's. */
+/** A folder for a test's panels: the start folder, Fleet's home, the family's and Bosun's. */
 function toolsIn(files = {}) {
   const tmp = mkdtempSync(join(tmpdir(), 'fleet-host-'));
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(join(tmp, path, '..'), { recursive: true });
     writeFileSync(join(tmp, path), text);
   }
-  return { cwd: join(tmp, 'project'), env: { FLEET_HOME: join(tmp, 'home') }, familyDir: join(tmp, 'family') };
+  return { cwd: join(tmp, 'project'), env: { FLEET_HOME: join(tmp, 'home') }, familyDir: join(tmp, 'family'), bosun: join(tmp, 'bosun'), takers: ['two'] };
 }
 
 test("a runbook's step is handed to its app as a hand-off, and ctrl+] r comes back to the runbook", async () => {
@@ -166,6 +168,33 @@ test("a runbook's step is handed to its app as a hand-off, and ctrl+] r comes ba
   keys('ln');
   await until(() => /^Drafted \.fleet.runbooks.\d{4}-\d\d-\d\d-draft\.md/.test(host.noticeText) && term.text().includes('› Draft of'), 'the draft, listed', { term });
   keys('\x1b');
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('following a request types its /take line into each running app that reads log lines, off screen', async () => {
+  const tools = toolsIn();
+  logActivity('hail', { text: 'Sent GET /orders, request req-42abc' }, { dir: tools.familyDir });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 200, rows: 16 });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 200x15', 'the app', { term });
+  keys(`${PREFIX}2`);
+  await until(() => screen.row(0) === 'two 200x15', 'the other app, started', { term });
+  await until(() => host.space('two').ready, 'it reads keys');
+  keys(`${PREFIX}1`);
+  await until(() => screen.row(0) === 'one 200x15', 'back', { term });
+  host.lastRequestId = 'req-41';
+  keys(`${PREFIX}f`);
+  await until(() => term.text().includes('Follow a request') && term.text().includes('> req-41'), 'asked, the last id offered', { term });
+  keys('\x7fx\x7f2abc\r');
+  await until(() => term.text().includes('Following req-42abc') && term.text().includes('↵ goes there'), 'the trace', { term });
+  assert.match(term.text(), /hail +activity +Sent GET \/orders, request req-42abc/);
+  // One isn't asked (it doesn't read log lines here), and the screen stays where it was.
+  assert.equal(host.active, 'one');
+  assert.doesNotMatch(term.text(), /One +↵/);
+  keys('\r');
+  await until(() => screen.row(0) === 'two 200x15' && screen.row(1) === `keys: ${JSON.stringify(traceLine('req-42abc'))}`, 'the line in the app, found by ↵', { term });
   keys(`${PREFIX}q`);
   keys('y');
   await done;

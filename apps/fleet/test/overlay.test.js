@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stringWidth } from '@fleet/kit/text.js';
-import { boxRows, boxSize, pickerLines, runbookLines, scrollFor } from '../src/overlay.js';
+import { boxRows, boxSize, pickerLines, runbookLines, scrollFor, traceAskLines, traceLines } from '../src/overlay.js';
 import { panelKeys } from '../src/panels.js';
 import { SPACES } from '../src/spaces.js';
 
@@ -68,6 +68,19 @@ test("the picker's rows, and what it says when there's no runbook", () => {
   assert.match(empty, /No runbooks yet/);
   assert.match(empty, / {2}\/home\/me\/\.fleet\/runbooks/);
   assert.match(empty, /n drafts one/);
+});
+
+test('the trace panel: the field, then the apps asked and the timeline', () => {
+  assert.match(texts(traceAskLines({ input: 'abc' }).lines).join('\n'), /> abc▏/);
+  const at = new Date(2026, 9, 27, 9, 5, 7).getTime();
+  const view = traceLines({ id: 'r-1', asked: ['hail', 'bosun'], cursor: 1, timeline: [{ at, app: 'bosun', source: 'shop api', text: 'GET r-1\tok' }], spaces: SPACES });
+  const t = texts(view.lines);
+  assert.equal(t[0], 'Following r-1');
+  assert.equal(t[3], '   Hail  ');
+  assert.equal(t[4], '›  Bosun   ↵ goes there');
+  assert.deepEqual(view.focus, [4, 4]);
+  assert.equal(t.at(-1), '09:05:07  Bosun  shop api  GET r-1 ok');
+  assert.match(texts(traceLines({ id: 'x', spaces: SPACES }).lines).join('\n'), /No app that reads log lines[\s\S]*Nothing in the activity log/);
 });
 
 test('keys in a panel: arrows, ↵, esc and typing, one at a time, the mouse left out', () => {

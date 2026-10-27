@@ -21,6 +21,7 @@ import { readKeys, takeBarClicks } from './keys.js';
 import { Panels } from './panels.js';
 import { HOST_MOUSE, MOUSE_MODES, OutputFilter } from './screen.js';
 import { SPACES } from './spaces.js';
+import { requestIdOfLine } from './trace.js';
 
 /** What the host writes to take the screen, and to give it back as it found it. */
 export const ENTER = `\x1b[?1049h\x1b[22;0t\x1b[2J\x1b[H${HOST_MOUSE}`;
@@ -43,6 +44,7 @@ export const HELP = [
   ['ctrl+] p', 'previous space'],
   ['ctrl+] ctrl+]', 'send ctrl+] to the app'],
   ['ctrl+] r', 'runbooks: steps handed to the apps'],
+  ['ctrl+] f', 'follow a request across the apps'],
   ['ctrl+] q', 'quit Fleet and every app'],
   ['ctrl+] ?', 'this help'],
   ['', ''],
@@ -72,6 +74,7 @@ export class Host {
     // A panel over the app (panels.js: the runbooks, a request followed): it has the keys while it's open.
     this.overlay = null;
     this.panels = new Panels(this, tools);
+    this.lastRequestId = null;
     this.confirming = false;
     this.quitting = false;
     this.noticeText = '';
@@ -153,6 +156,7 @@ export class Host {
       else if (a.type === 'quit') this.askQuit();
       else if (a.type === 'help') this.showHelp();
       else if (a.type === 'runbooks') this.panels.runbooks();
+      else if (a.type === 'trace') this.panels.trace();
     }
   }
 
@@ -334,6 +338,8 @@ export class Host {
   }
 
   handoff(from, m) {
+    // The request a hand-off names is what ctrl+] f offers to follow.
+    this.lastRequestId = requestIdOfLine(m.line) ?? this.lastRequestId;
     const route = routeHandoff(m, { from: from.id, running: (id) => Boolean(this.space(id)?.child), ids: this.spaces.map((s) => s.id) });
     if (route.to) this.sendLine(route.to, route.line);
   }
@@ -346,6 +352,15 @@ export class Host {
     this.switchTo(to.id);
     this.notice(`Handed to ${to.title}: ↵ runs it`);
     if (to.child && to.ready) this.setTimer(() => this.typePaste(to), SWITCH_DELAY);
+  }
+
+  /** Types `line` into app `id`'s prompt without putting it on screen: now if it reads keys, else once it does. */
+  typeInto(id, line) {
+    const space = this.space(id);
+    if (!space?.child) return false;
+    space.paste = pasteFor(line);
+    if (space.ready) this.typePaste(space);
+    return true;
   }
 
   typePaste(space) {

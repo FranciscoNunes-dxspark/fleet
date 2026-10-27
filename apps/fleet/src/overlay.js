@@ -1,4 +1,4 @@
-// The host's panels over an app (the runbooks), drawn as a box,
+// The host's panels over an app (the runbooks, a request followed across the apps), drawn as a box,
 // pure: each panel's rows as segments ({ text, sgr }), the box around them scrolled to what has the
 // cursor, every width through the kit's text.js. The host writes the box over the app's screen and
 // holds the app's drawing back while it's open, as it does for the help.
@@ -120,5 +120,51 @@ export function runbookLines(runbook, { done = new Set(), cursor = 0, width = 80
     if (here) focus = [from, lines.length - 1];
   });
   if (runbook.outro) lines.push([], ...prose(runbook.outro, width - 1));
+  return { lines, focus };
+}
+
+const clock = (ms) => new Date(ms).toTimeString().slice(0, 8);
+
+/** The trace panel asking for the id: the field, with the cursor at its end. */
+export function traceAskLines({ input = '', width = 80 } = {}) {
+  return {
+    lines: [
+      ...prose('Fleet asks every running app that reads log lines (Sonar, Hail, Bosun, Wharf) to find this request, and reads the activity log and Bosun\'s recordings for it.', width - 1),
+      [],
+      [{ text: 'Request, operation or trace id:' }],
+      [{ text: '> ', sgr: BOLD }, { text: input, sgr: YELLOW }, { text: '▏' }],
+    ],
+    focus: [3, 3],
+  };
+}
+
+/**
+ * The trace panel once asked: the apps asked (a row each, the cursor on one: ↵ goes there), then the
+ * timeline Fleet read itself, oldest first, each line with its app and where it came from.
+ */
+export function traceLines({ id, asked = [], timeline = [], cursor = 0, width = 80, spaces = [], truecolor = true } = {}) {
+  const lines = [[{ text: 'Following ', sgr: DIM }, { text: id, sgr: `${BOLD}${YELLOW}` }], []];
+  let focus = [0, 0];
+  if (!asked.length) lines.push(...prose('No app that reads log lines (Sonar, Hail, Bosun, Wharf) is running: start one, then ctrl+] f again.', width - 1));
+  else lines.push([{ text: 'Asked, the line typed into each prompt (↵ there runs it):', sgr: DIM }]);
+  const tagW = Math.max(0, ...asked.map((a) => stringWidth(titleOf(spaces, a))), ...timeline.map((e) => stringWidth(titleOf(spaces, e.app))));
+  asked.forEach((app, i) => {
+    const here = i === cursor;
+    if (here) focus = [lines.length, lines.length];
+    lines.push([
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: ` ${titleOf(spaces, app).padEnd(tagW)} `, sgr: `${accentOf(spaces, app, truecolor)}${here ? BOLD : ''}` },
+      { text: here ? '  ↵ goes there' : '', sgr: DIM },
+    ]);
+  });
+  lines.push([], [{ text: timeline.length ? `What Fleet found itself, ${plural(timeline.length, 'line')}:` : 'Nothing in the activity log or Bosun\'s recordings names it.', sgr: DIM }]);
+  for (const e of timeline) {
+    lines.push([
+      { text: `${clock(e.at)} `, sgr: DIM },
+      { text: ` ${titleOf(spaces, e.app).padEnd(tagW)} `, sgr: accentOf(spaces, e.app, truecolor) },
+      { text: ` ${e.source} `, sgr: DIM },
+      { text: ` ${String(e.text).replace(/\s+/g, ' ')}` },
+    ]);
+  }
   return { lines, focus };
 }

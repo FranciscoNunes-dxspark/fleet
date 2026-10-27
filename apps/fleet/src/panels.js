@@ -1,15 +1,18 @@
-// The host's panels over the apps: the runbooks (ctrl+] r: a picker, then a runbook whose steps are
-// handed to their apps one ↵ at a time). A panel is an object with `render(size)` (the box, as ANSI
-// text placed on screen) and `keys(text)`; the host shows one at a time (Host.showOverlay) and gives
-// it every key while it's open. What it does to the apps goes back through the host: `sendLine` (a
-// hand-off).
+// The host's two panels over the apps: the runbooks (ctrl+] r: a picker, then a runbook whose steps
+// are handed to their apps one ↵ at a time) and following a request (ctrl+] f: an id, asked of every
+// running app that reads log lines, and a timeline of what Fleet finds itself). Each is an object with
+// `render(size)` (the box, as ANSI text placed on screen) and `keys(text)`; the host shows one at a
+// time (Host.showOverlay) and gives it every key while it's open. What they do to the apps goes back
+// through the host: `sendLine` (a hand-off), `typeInto` (a line into a prompt, off screen), `switchTo`.
 import { join, relative } from 'node:path';
-import { familyDir as kitFamilyDir, readActivity } from '@fleet/kit/family.js';
+import { familyDir as kitFamilyDir, readActivity, TAKEN_BY } from '@fleet/kit/family.js';
 import { keyLength } from './keys.js';
-import { boxRows, boxSize, pickerLines, placeBox, runbookLines } from './overlay.js';
+import { boxRows, boxSize, pickerLines, placeBox, runbookLines, traceAskLines, traceLines } from './overlay.js';
 import { draftRunbook, listRunbooks, runbookDirs, writeDraft } from './runbooks.js';
+import { bosunHome, traceLine, traceTimeline } from './trace.js';
 
 const HOUR = 60 * 60_000;
+const DAY = 24 * HOUR;
 
 /** The keys of `text`, one at a time (an escape sequence whole), as the panels name them. */
 export function panelKeys(text) {
@@ -38,14 +41,20 @@ const moveIn = (key, at, count, page = 10) => {
 };
 
 export class Panels {
-  constructor(host, { cwd = process.cwd(), env = process.env, familyDir = kitFamilyDir(env), now = () => Date.now() } = {}) {
-    Object.assign(this, { host, cwd, env, familyDir, now });
+  constructor(host, { cwd = process.cwd(), env = process.env, takers = TAKEN_BY.logline, familyDir = kitFamilyDir(env), bosun = bosunHome(env), now = () => Date.now() } = {}) {
+    Object.assign(this, { host, cwd, env, takers, familyDir, bosun, now });
     this.runbookPanel = new RunbookPanel(this);
+    this.tracePanel = new TracePanel(this);
   }
 
   /** ctrl+] r: the runbook you were in, else the picker. */
   runbooks() {
     this.runbookPanel.open();
+  }
+
+  /** ctrl+] f: ask for the request to follow. */
+  trace() {
+    this.tracePanel.open();
   }
 
   ids() {
@@ -151,5 +160,60 @@ class RunbookPanel {
     this.load();
     this.cursor = Math.max(0, this.list.findIndex((rb) => rb.file === file));
     this.host.notice(`Drafted ${relative(this.panels.cwd, file) || file}: edit it to add steps`);
+  }
+}
+
+class TracePanel {
+  constructor(panels) {
+    this.panels = panels;
+    this.host = panels.host;
+    this.asking = true;
+    this.input = '';
+  }
+
+  open() {
+    this.asking = true;
+    this.input = this.host.lastRequestId ?? this.id ?? '';
+    this.host.showOverlay(this);
+  }
+
+  render(size) {
+    const width = this.panels.inner(size);
+    if (this.asking) return this.panels.box({ title: 'Follow a request', hint: '↵ follow · esc close', ...traceAskLines({ input: this.input, width }) }, size);
+    const view = traceLines({ id: this.id, asked: this.asked, timeline: this.timeline, cursor: this.cursor, width, spaces: this.host.spaces, truecolor: this.host.truecolor });
+    return this.panels.box({ title: `Following ${this.id}`, hint: `${this.asked.length ? '↵ go there · j k move · ' : ''}f another · esc close`, ...view }, size);
+  }
+
+  keys(text) {
+    for (const key of panelKeys(text)) {
+      if (key === 'esc') return this.host.closeOverlay();
+      if (this.asking) {
+        if (key === 'enter') {
+          if (this.input.trim()) this.follow(this.input.trim());
+        } else if (key === 'backspace') this.input = [...this.input].slice(0, -1).join('');
+        else if (key === 'clear') this.input = '';
+        // A character typed or pasted; the named keys are words, never one character.
+        else if ([...key].length === 1) this.input += key;
+        continue;
+      }
+      const to = moveIn(key, this.cursor, this.asked.length);
+      if (to != null) this.cursor = to;
+      else if (key === 'f') this.asking = true;
+      else if (key === 'enter' && this.asked[this.cursor]) return this.host.switchTo(this.asked[this.cursor]);
+    }
+    this.host.showOverlay(this);
+  }
+
+  /** Types the request's /take line into every running app that reads log lines, and reads the timeline. */
+  follow(id) {
+    const { takers, familyDir, bosun } = this.panels;
+    this.id = id;
+    this.host.lastRequestId = id;
+    const line = traceLine(id);
+    this.asked = this.host.spaces.filter((s) => s.child && takers.includes(s.id)).map((s) => s.id);
+    for (const app of this.asked) this.host.typeInto(app, line);
+    this.timeline = traceTimeline(id, { familyDir, bosun, since: this.panels.now() - DAY });
+    this.cursor = 0;
+    this.asking = false;
   }
 }

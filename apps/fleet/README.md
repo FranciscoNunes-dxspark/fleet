@@ -70,6 +70,7 @@ Only `ctrl+]` is Fleet's, and the key after it:
 | `ctrl+]` `p` | The previous space |
 | `ctrl+]` `ctrl+]` | Send `ctrl+]` to the app |
 | `ctrl+]` `r` | The runbooks: the one you were in, else the list ([Runbooks](#runbooks)) |
+| `ctrl+]` `f` | Follow a request across the apps ([Following a request](#following-a-request)) |
 | `ctrl+]` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+]` `?` | The keys |
 
@@ -132,6 +133,21 @@ each runbook's progress until it quits.
 the last hour (the family's activity log: pushes, restarts, writes to a database, crashes). The log says
 what happened in words, not the commands that did it, so the draft lists what happened and leaves an
 empty step for you to fill in.
+
+## Following a request
+
+`ctrl+]` `f` asks for a request, operation or trace id (offering the last one a hand-off carried, as
+Bosun's `t` copies a log line with its request), then asks every running app that reads log lines
+(Sonar, Hail, Bosun and Wharf) to look for it: Fleet types a `/take` of a log line carrying the id into
+each one's prompt, without switching to it. The panel lists the apps it asked; `↵` on one switches
+there, and `↵` in its prompt runs the search (Sonar in Application Insights, Hail in its history, Bosun
+in its crew's logs, Wharf in the running containers'). Fleet never presses `↵` for an app: one might
+have a question open that a stray `↵` would answer.
+
+Below them, the panel shows what Fleet finds itself, oldest first: the family's activity log entries
+that mention the id, and the lines of Bosun's recorded sessions of the last day (`~/.bosun/sessions`,
+`BOSUN_HOME` moves it) that do, each with its app and where it came from. `f` asks for another id,
+`esc` closes.
 
 ## Notes
 
