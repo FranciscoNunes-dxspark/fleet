@@ -27,6 +27,21 @@ test('the prefix and a key switch, move, quit and help', () => {
   assert.deepEqual(prefixAction('?'), { type: 'help' });
 });
 
+test('the prefix and | or \\ split the screen, x puts it back, tab or an arrow goes to the other pane', () => {
+  assert.deepEqual(prefixAction('|'), { type: 'split' });
+  assert.deepEqual(prefixAction('\\'), { type: 'split' });
+  assert.deepEqual(prefixAction('x'), { type: 'unsplit' });
+  for (const key of ['\t', '\x1b[C', '\x1b[D', '\x1bOC']) assert.deepEqual(prefixAction(key), { type: 'pane' });
+  // The arrow is read whole after the prefix: nothing of it reaches the app.
+  assert.deepEqual(run(`${PREFIX}\x1b[Cz`).actions, [{ type: 'prefix', on: true }, { type: 'prefix', on: false }, { type: 'pane' }, { type: 'send', data: 'z' }]);
+  assert.equal(prefixAction('\x1b[A'), null);
+});
+
+test('the prefix and m ask for a folder to move the fleet to', () => {
+  assert.deepEqual(prefixAction('m'), { type: 'folder' });
+  assert.deepEqual(prefixAction('M'), { type: 'folder' });
+});
+
 test('the prefix twice sends it, and anything else after it is dropped whole', () => {
   assert.equal(sent(run(`a${PREFIX}${PREFIX}b`).actions), `a${PREFIX}b`);
   // An arrow after the prefix cancels it; its bytes never reach the app as "[A".

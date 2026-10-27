@@ -2,12 +2,12 @@
 // are) as real processes, driven through its input and read from the screen it draws.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { logActivity } from '@fleet/kit/family.js';
 import { traceLine } from '../src/trace.js';
-import { alive, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
+import { alive, familyHome, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
 
 after(stopAll);
 
@@ -127,6 +127,157 @@ test("the active app's mouse comes back with it, and a click on a tab switches",
   // Clicks elsewhere are the app's, when it asked for them.
   keys('\x1b[<0;3;2M');
   await until(() => screen.row(1) === 'keys: "M\\u001b[<0;3;2M"', 'the click passed on', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('a worried app off screen gets a badge and rings the bell once; looking at it clears it', async () => {
+  const family = familyHome();
+  const { term, keys, done } = startHost({ spaces: SPACES, family });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 70x13', 'the app', { term });
+  // A mood from before Fleet started is old news: no badge for it.
+  writeFileSync(join(family, 'two.mood.json'), JSON.stringify({ app: 'two', mood: 'worried', reason: 'stale', at: Date.now() - 60_000 }));
+  await new Promise((r) => setTimeout(r, 300));
+  assert.match(screen.row(-1), /2 Two ○ {2}/);
+  writeFileSync(join(family, 'two.mood.json'), JSON.stringify({ app: 'two', mood: 'worried', reason: 'api crashed', at: Date.now() }));
+  await until(() => / 2 Two ○ ! /.test(screen.row(-1)) && screen.row(-1).includes('Two: api crashed'), 'the badge and its reason', { term });
+  assert.equal(term.written.split('\x07').length - 1, 1);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(term.written.split('\x07').length - 1, 1, 'one bell only');
+  keys(`${PREFIX}w`);
+  await until(() => screen.row(0) === 'two 70x13' && !screen.row(-1).includes('!'), 'the badge gone', { term });
+  // An alert the app on screen logs never badges; one from the app off screen counts.
+  const log = (app, kind) => appendFileSync(join(family, 'activity.jsonl'), `${JSON.stringify({ at: Date.now(), app, kind, text: `${app} ${kind}` })}\n`);
+  log('two', 'alert');
+  log('one', 'info');
+  log('one', 'error');
+  log('one', 'alert');
+  await until(() => / 1 One ● 2 /.test(screen.row(-1)), 'the count', { term });
+  assert.match(screen.row(-1), /2 Two ● {2}/);
+  keys(`${PREFIX}o`);
+  await until(() => screen.row(0) === 'one 70x13' && / 1 One ● {2}/.test(screen.row(-1)), 'cleared by looking', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('split, two apps are drawn side by side at half the width each, keys going to the focused one', async () => {
+  const spaces = [...SPACES, { id: 'three', title: 'Three', letter: 'e', accent: '#e8445a' }];
+  const { host, term, keys, done } = startHost({ spaces, env: quietEnv({ FAKE_HANDOFF: 'one' }) });
+  const { screen } = term;
+  // 70 columns: 34 for the left pane, the divider, 35 for the right.
+  const left = (y) => screen.row(y).slice(0, 34).trimEnd();
+  const right = (y) => screen.row(y).slice(35);
+  await until(() => screen.row(0) === 'one 70x13', 'the first app', { term });
+  keys(`${PREFIX}w`);
+  await until(() => screen.row(0) === 'two 70x13', 'the second app', { term });
+  // The previous app goes beside the one on screen, which keeps the keys.
+  keys(`${PREFIX}|`);
+  await until(() => left(0) === 'two 34x13' && right(0) === 'one 35x13' && screen.row(0)[34] === '│', 'both apps at half the width', { term });
+  assert.equal(screen.row(12)[34], '│');
+  assert.match(screen.row(-1), /1 One ● {2}2 Two ●/);
+  keys('ab');
+  await until(() => left(1) === 'keys: "ab"', 'keys in the left pane', { term });
+  assert.equal(right(1), 'keys: ""');
+
+  // The other pane takes the keys; another app put in it takes the place of the one there.
+  keys(`${PREFIX}\t`);
+  keys('c');
+  await until(() => right(1) === 'keys: "c"', 'keys in the right pane', { term });
+  assert.equal(left(1), 'keys: "ab"');
+  keys(`${PREFIX}e`);
+  await until(() => right(0) === 'three 35x13' && left(0) === 'two 34x13', 'the third app in the right pane', { term });
+
+  // The help over both, then both drawn again from what the host keeps.
+  keys(`${PREFIX}?`);
+  await until(() => term.text().includes('this help'), 'the help', { term });
+  keys('z');
+  await until(() => !term.text().includes('this help') && left(1) === 'keys: "ab"' && right(0) === 'three 35x13', 'the panes back', { term });
+
+  // A click in the left pane focuses it; its app has no mouse, so the click goes no further.
+  keys('\x1b[<0;3;3M\x1b[<0;3;3m');
+  keys('d');
+  await until(() => left(1) === 'keys: "abd"', 'the left pane focused by a click', { term });
+  assert.equal(right(1), 'keys: ""');
+  // Its app turns the mouse on: a click there reaches it, in its own columns; one in the other pane is translated too.
+  keys('M');
+  await until(() => left(1) === 'keys: "abdM"', 'the mouse on', { term });
+  keys('\x1b[<0;5;3M');
+  await until(() => left(1) === 'keys: "abdM\\u001b[<0;5;3M"', 'the click in the pane\'s columns', { term });
+
+  // A hand-off to an app in neither pane puts it in the other one, and focuses it.
+  keys('H');
+  await until(() => right(0) === 'one 35x13' && right(1).startsWith('keys: "c/take family'), 'the line in the other pane', { term });
+  assert.equal(left(0), 'two 34x13');
+  assert.equal(host.active, 'one');
+
+  // An exit says so in its pane, and ↵ starts it again there.
+  keys('X');
+  await until(() => term.text().includes('One exited with 3'), 'the exit in the pane', { term });
+  assert.equal(left(0), 'two 34x13');
+  keys('\r');
+  await until(() => right(0) === 'one 35x13' && right(1) === 'keys: ""', 'started again in its pane', { term });
+
+  // Too narrow, the screen goes back whole.
+  term.resize(38, 10);
+  // (The bar has no room for the notice at this width.)
+  await until(() => screen.row(0) === 'one 38x9' && host.noticeText.startsWith('Too narrow to stay split'), 'unsplit when too narrow', { term });
+  keys(`${PREFIX}|`);
+  await until(() => host.noticeText.startsWith('Too narrow to split') && !host.split, 'refused', { term });
+  term.resize(70, 14);
+  await until(() => screen.row(0) === 'one 70x13', 'whole again', { term });
+  keys(`${PREFIX}|`);
+  await until(() => left(0) === 'one 34x13' && right(0).endsWith('35x13'), 'split again', { term });
+  keys(`${PREFIX}x`);
+  await until(() => screen.row(0) === 'one 70x13' && screen.row(1) === 'keys: ""', 'unsplit', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('ctrl+] m moves the fleet: the running apps start again in the folder given, the rest start there later', async () => {
+  const root = realpathSync(familyHome());
+  const start = join(root, 'start');
+  const there = join(root, 'there');
+  for (const dir of [start, join(there, 'sub-one'), join(there, 'sub-two')]) mkdirSync(dir, { recursive: true });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, cwd: start, columns: 100, env: quietEnv({ FAKE_MOVE: there }) });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 100x13', 'the app', { term });
+  keys('P');
+  await until(() => screen.row(1) === `keys: ${JSON.stringify(`[${start}]`)}`, 'its folder', { term });
+
+  // The bar asks, with the fleet's folder filled in.
+  keys(`${PREFIX}m`);
+  await until(() => screen.row(-1).includes(`Move the fleet to ${start}`), 'the question', { term });
+  // A folder that isn't there is said so, and the question stays.
+  keys('/nope\r');
+  await until(() => screen.row(-1).includes('no such folder'), 'no such folder', { term });
+  // Tab completes as far as the folders agree, then whole.
+  keys(`\x15${there}/s\t`);
+  await until(() => screen.row(-1).includes(`${there}/sub-`) && screen.row(-1).includes('sub-one  sub-two'), 'completed as far as they agree', { term });
+  keys('t\t');
+  await until(() => screen.row(-1).includes(`${there}/sub-two/`), 'completed whole', { term });
+  const before = host.space('one').child.pid;
+  keys('\r');
+  await until(() => screen.row(-1).includes('Moving the fleet to') && host.space('one').child && host.space('one').child.pid !== before, 'started again', { term });
+  await until(() => screen.row(1) === 'keys: ""', 'drawn anew', { term });
+  keys('P');
+  await until(() => screen.row(1) === `keys: ${JSON.stringify(`[${join(there, 'sub-two')}]`)}`, 'in the new folder', { term });
+  assert.equal(host.cwd, join(there, 'sub-two'));
+  // One not started yet starts there too.
+  keys(`${PREFIX}w`);
+  await until(() => screen.row(0) === 'two 100x13', 'the second app', { term });
+  keys('P');
+  await until(() => screen.row(1) === `keys: ${JSON.stringify(`[${join(there, 'sub-two')}]`)}`, 'the second app in the new folder', { term });
+
+  // An app asks for a move: the bar asks with its folder filled in; esc keeps the fleet where it is.
+  keys('V');
+  await until(() => screen.row(-1).includes(`Two asks to move the fleet to ${there}`), "the app's question", { term });
+  keys('\x1b');
+  await until(() => screen.row(-1).includes('2 Two ●') && !screen.row(-1).includes('asks'), 'cancelled', { term });
+  assert.equal(host.cwd, join(there, 'sub-two'));
   keys(`${PREFIX}q`);
   keys('y');
   await done;

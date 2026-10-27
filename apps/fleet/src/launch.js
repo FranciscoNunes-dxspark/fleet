@@ -38,15 +38,17 @@ export function killTree(pid, { force = false, platform = process.platform } = {
 }
 
 /**
- * A `spawn` for Host: starts app `id` with `args` at `columns`×`rows` in `cwd`, and returns it as the
- * host uses it ({ pid, stdin, stdout, stderr, control, on, kill(force) }).
+ * A `spawn` for Host: starts app `id` with `args` at `columns`×`rows` in `cwd` (the host's folder,
+ * where the fleet was moved to, else the one it was made with), and returns it as the host uses it
+ * ({ pid, stdin, stdout, stderr, control, on, kill(force) }).
  */
 export function appSpawner({ compiled, cwd = process.cwd(), env = process.env, depth = 24, command = launchCommand } = {}) {
-  return (id, { columns, rows, args = [] }) => {
+  return (id, { columns, rows, args = [], cwd: where = cwd }) => {
     const [file, argv] = command(id, args, { compiled });
+    // PWD too: a shell the app starts says the folder it was started in, not the host's.
     const child = spawn(file, argv, {
-      cwd,
-      env: appEnv({ env, columns, rows, depth }),
+      cwd: where,
+      env: { ...appEnv({ env, columns, rows, depth }), PWD: where },
       stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
       windowsHide: true,
       detached: process.platform !== 'win32',

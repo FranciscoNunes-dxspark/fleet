@@ -26,7 +26,11 @@ fleet alone opens the one you used last.
 
   ctrl+] 1-7 or s t o b h k w switch (o is Sonar)
   ctrl+] ] / n / p            next, previous
-  ctrl+] ctrl+]               send ctrl+] to the app
+  ctrl+] | / tab / x          split in two, the other pane, one again
+  ctrl+] m                    move every app to another folder
+  ctrl+] r                    runbooks: steps handed to the apps
+  ctrl+] f                    follow a request across the apps
+  ctrl+] ctrl+]            send ctrl+] to the app
   ctrl+] q                    quit, stopping every app
   ctrl+] ?                    the keys
 
@@ -67,6 +71,8 @@ const host = new Host({
   spawn: appSpawner({ compiled: COMPILED, depth }),
   args: named ? { [named.id]: args.slice(1) } : {},
   truecolor: depth >= 24,
+  // The bell when a tab gets a badge: FLEET_NO_BELL=1, or "bell": false in host.json, keeps it quiet.
+  bell: process.env.FLEET_NO_BELL !== '1' && state.bell !== false,
   onSwitch: (id) => saveState({ last: id }),
   onUpdate: () => updateFleet(true),
 });

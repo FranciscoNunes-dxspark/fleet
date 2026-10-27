@@ -30,12 +30,18 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 120, prefix: true })), /1-7 s t o b h k w · n p · r f · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 160, prefix: true })), /1-7 s t o b h k w · n p · \| split · m move · r f · q quit · \? help $/);
+  // Split, the other pane and putting it back.
+  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 170, prefix: true })), /tab pane · x unsplit · m move · r f · q quit/);
   // With little room the prefix's keys win over the names.
-  const tight = barLayout({ spaces, active: 'splice', width: 92, prefix: true });
-  assert.equal(width(tight), 92);
+  const tight = barLayout({ spaces, active: 'splice', width: 110, prefix: true });
+  assert.equal(width(tight), 110);
   assert.match(text(tight), / 1 S ● .*q quit/);
   assert.match(text(barLayout({ spaces, active: 'splice', width: 120, notice: 'Handed to Trawl' })), /Handed to Trawl $/);
+  // A notice too long beside the names has the names shrink to letters while it shows.
+  const told = barLayout({ spaces, active: 'splice', width: 100, notice: 'Moving the fleet to /a/long/folder: Splice and Hail start again there' });
+  assert.equal(width(told), 100);
+  assert.match(text(told), /^ 1 S ● .*Moving the fleet to/);
 });
 
 test("a click finds its tab by column, wide characters counted as the terminal does", () => {
@@ -54,4 +60,22 @@ test('the active tab in its accent, as 24-bit colour or the nearest of 256', () 
   assert.equal(ansi256('#ffffff'), 231);
   const line = renderBar(barLayout({ spaces, active: 'splice', width: 120 }), spaces);
   assert.ok(line.includes('\x1b[48;2;95;215;135m\x1b[38;5;16m\x1b[1m 1 Splice ● '));
+});
+
+test('a badge follows the state of a tab off screen, in a warning colour, and stays when names shrink', () => {
+  const badged = spaces.map((s) => (s.id === 'bosun' ? { ...s, badge: { alert: true, count: 2 } } : s.id === 'trawl' ? { ...s, badge: { alert: false, count: 1 } } : s));
+  const wide = barLayout({ spaces: badged, active: 'splice', width: 130 });
+  assert.equal(width(wide), 130);
+  assert.match(text(wide), / 2 Trawl ○ 1 {2}3 Sonar ✕1 {2}4 Bosun ○ !2 /);
+  const letters = barLayout({ spaces: badged, active: 'splice', width: 60 });
+  assert.equal(width(letters), 60);
+  assert.match(text(letters), / 2 T ○ 1 {2}3 O ✕1 {2}4 B ○ !2 /);
+  const line = renderBar(wide, badged);
+  assert.ok(line.includes('4 Bosun ○ \x1b[1m\x1b[38;5;214m!2'));
+});
+
+test("split, the other pane's tab is underlined in its accent", () => {
+  const layout = barLayout({ spaces, active: 'splice', shown: 'hail', width: 120 });
+  assert.equal(layout.segments.find((s) => s.role === 'shown').id, 'hail');
+  assert.ok(renderBar(layout, spaces).includes('\x1b[38;2;232;68;90m\x1b[1m\x1b[4m 5 Hail ● '));
 });

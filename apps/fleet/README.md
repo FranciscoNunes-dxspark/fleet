@@ -15,6 +15,18 @@ tmux does with its windows. A bar at the bottom shows them all.
 `●` runs, `○` hasn't started yet, `✕` and a number exited with that code. The app on screen has its
 tab in its own colour.
 
+A tab off screen gets a badge when its app needs you: `!` when it has become worried or sad since you
+last looked at it (Bosun's process crashed or gave up, Hail's checks failed, Wharf's container exited
+with an error, Sonar ran into trouble), and a count of the alerts it logged since (Sonar's watches going
+over their threshold, Bosun's crashes). The bar says why for a moment and the terminal's bell rings once
+as a badge appears; looking at the space clears it. Fleet reads what the apps tell each other (their
+moods and the family's activity log, in `~/.family` or `FAMILY_HOME`) every few seconds, so an app
+whose moods are turned off in its settings never gets a `!`.
+
+```
+ 1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Keel ○  7 Wharf ○   Bosun: api crashed
+```
+
 ## Install
 
 **On Windows**, download `fleet-windows-x64-setup.exe` from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
@@ -64,10 +76,14 @@ Only `ctrl+]` is Fleet's, and the key after it:
 | Keys | What they do |
 | --- | --- |
 | `alt+1`–`alt+7` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
-| `ctrl+]` `1`–`6` | Switch to that space |
+| `ctrl+]` `1`–`7` | Switch to that space |
 | `ctrl+]` `s` `t` `o` `b` `h` `k` `w` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf |
 | `ctrl+]` `]` or `n` | The next space |
 | `ctrl+]` `p` | The previous space |
+| `ctrl+]` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |
+| `ctrl+]` `tab`, `←` or `→` | Split, the other pane |
+| `ctrl+]` `x` | Split, back to one app on screen: the one with the keys |
+| `ctrl+]` `m` | Move the fleet to another folder: every running app starts again there |
 | `ctrl+]` `ctrl+]` | Send `ctrl+]` to the app |
 | `ctrl+]` `r` | The runbooks: the one you were in, else the list ([Runbooks](#runbooks)) |
 | `ctrl+]` `f` | Follow a request across the apps ([Following a request](#following-a-request)) |
@@ -75,6 +91,32 @@ Only `ctrl+]` is Fleet's, and the key after it:
 | `ctrl+]` `?` | The keys |
 
 Any other key after `ctrl+]` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
+
+## Split
+
+`ctrl+] |` shows two apps side by side, each in half the width (less a column for the divider between
+them): the app on screen on the left, and the one you were in before it on the right (the next one
+when there was none). Each draws as it would on a screen of that size. The keys go to one of them, the
+pane with the divider in its colour and its tab filled in the bar; the other's tab is underlined.
+`ctrl+] tab` (or `←`, `→`) or a click in the other pane moves the keys there, and the mouse works in
+either pane for an app that uses it. Switching to an app while split (`ctrl+] 3`, a click on its tab)
+puts it in the pane with the keys, or moves the keys to it when it's in the other one already; a line
+handed to an app in neither pane opens it in the other pane, so the one it came from stays in sight.
+`ctrl+] x` (or `|` again) goes back to the app with the keys on the whole screen.
+
+The screen splits only when it's at least 40 columns wide, and goes back whole when it's made narrower
+than that.
+
+## Moving the fleet
+
+The apps start in the folder you started Fleet in. `ctrl+] m` moves them all to another one: the bar
+asks for it, with the folder they're in filled in (`tab` completes a folder's name, `~` is your home
+folder, and a relative path is from the folder they're in now). On `↵` every app that runs is stopped,
+as its own `q` would, and started again in the new folder; the ones that haven't started yet start
+there when they do, and an exited one when you press `↵` in it. `esc` leaves everything where it is.
+An app can ask for a move too (the kit's `askHostToMove`): the bar then asks the same question with
+that app's folder filled in, and nothing moves until you press `↵`. Fleet doesn't keep the folder: the
+next `fleet` starts where you start it.
 
 ## Hand-offs
 
@@ -193,7 +235,8 @@ It reads for the folder Claude Code starts it in; `fleet mcp --project <dir>` na
 ## Notes
 
 - Fleet keeps the app it opened last in `~/.fleet/host.json` (`FLEET_HOME` moves the folder).
-  `FLEET_NO_UPDATE_CHECK=1` turns the update check off.
+  `FLEET_NO_UPDATE_CHECK=1` turns the update check off. `FLEET_NO_BELL=1` (or `"bell": false` in
+  `host.json`) keeps the bell quiet when a badge appears.
 - Each app keeps its settings where it always does (`~/.splice`, `~/.trawl`, …), so they're the same
   inside Fleet and out.
 - Colours follow your terminal's: 24-bit where it has them, else the nearest of 256.
