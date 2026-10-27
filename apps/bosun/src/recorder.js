@@ -40,19 +40,34 @@ export const toPrune = (names, keep = KEEP_SESSIONS) =>
 /** What the recorder keeps of a process's state: a change in any of these is an event. */
 export const stateOf = (p) => ({ status: p.status, code: p.code ?? null, portOpen: p.portOpen ?? null, health: p.health ?? null, restartAt: p.restartAt ?? null, gaveUp: Boolean(p.gaveUp), tests: p.tests?.state ?? null, failed: p.tests?.failed ?? null });
 
+/**
+ * A short hash of the settings a process read from its env files, so a restore can say they changed
+ * since: the values themselves are never recorded. Null when it reads none.
+ */
+export function envHash(fileEnv) {
+  const entries = Object.entries(fileEnv ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  if (!entries.length) return null;
+  return createHash('sha1').update(JSON.stringify(entries)).digest('hex').slice(0, 12);
+}
+
 /** The crew as a session's header and `procs` events list it. */
 export const crewOf = (procs) => procs.map((p) => ({ name: p.name, port: p.port ?? p.spec?.port ?? null, run: p.spec?.run ?? p.run ?? '' }));
 
 /**
- * One session's recording. `line`, `state` and `procs` take events; they're written a moment later
- * (`flush`, which `close` does at once). `fs` is for the tests.
+ * One session's recording. `line`, `state`, `procs`, `started` and `profile` take events; they're
+ * written a moment later (`flush`, which `close` does at once). `profile` is the one in use at the
+ * start; `readGit` says the checkout's { branch, commit } (githead.js), asked at the start and at each
+ * process's start, and recorded when it changed, so a restore can say what was checked out. `fs` is
+ * for the tests.
  */
 export class Recorder {
-  constructor({ dir, project, procs = [], now = Date.now(), maxBytes = MAX_BYTES, keep = KEEP_SESSIONS, every = 250, fs = { appendFileSync, mkdirSync, readdirSync, rmSync, statSync } }) {
-    Object.assign(this, { dir, project, maxBytes, keep, every, fs });
+  constructor({ dir, project, procs = [], profile = null, readGit = null, now = Date.now(), maxBytes = MAX_BYTES, keep = KEEP_SESSIONS, every = 250, fs = { appendFileSync, mkdirSync, readdirSync, rmSync, statSync } }) {
+    Object.assign(this, { dir, project, maxBytes, keep, every, fs, readGit });
     this.start = now;
     this.file = join(dir, sessionFile(now));
-    this.pending = [JSON.stringify({ type: 'session', v: 1, project, start: now, procs: crewOf(procs) })];
+    const git = this.git();
+    this.gitKey = JSON.stringify(git);
+    this.pending = [JSON.stringify({ type: 'session', v: 1, project, start: now, procs: crewOf(procs), profile, ...(git ? { git } : {}) })];
     this.opened = false;
     this.bytes = 0;
     this.cut = false;
@@ -79,6 +94,32 @@ export class Recorder {
 
   procs(list, at = Date.now()) {
     this.push({ t: at, type: 'procs', procs: crewOf(list) });
+  }
+
+  /** A process starting: the hash of what its env files said (`envHash`), and the checkout when it moved. */
+  started(name, { env = null } = {}, at = Date.now()) {
+    const git = this.git();
+    const key = JSON.stringify(git);
+    if (key !== this.gitKey) {
+      this.gitKey = key;
+      if (git) this.push({ t: at, type: 'git', branch: git.branch, commit: git.commit });
+    }
+    this.push({ t: at, type: 'start', p: name, env });
+  }
+
+  /** Another profile picked (null: none). */
+  profile(name, at = Date.now()) {
+    this.push({ t: at, type: 'profile', profile: name ?? null });
+  }
+
+  /** The checkout as `readGit` says it, or null (no git, or reading it failed). */
+  git() {
+    try {
+      const g = this.readGit?.();
+      return g?.commit ? { branch: g.branch ?? null, commit: g.commit } : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Writes what's waiting (once the session has said something), keeping it under maxBytes. */

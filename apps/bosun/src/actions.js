@@ -15,6 +15,8 @@ import { troubleContext } from './share.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine, trawlLine } from '@fleet/kit/family.js';
 import { checkLine, runChecks, summary } from './preflight.js';
 import { clock, parseSession } from './replay.js';
+import { planLines, restorePlan } from './restore.js';
+import { branchTip, gitHead } from './githead.js';
 import { installHint } from './tunnel.js';
 import { afterTree, namedProcs, treeLine } from './groups.js';
 import { levelTone, shownText, structuredOf, troubled } from './structured.js';
@@ -547,6 +549,45 @@ export function replay(ctx) {
       ctx.showReplay(session, new Date(it.start).toLocaleString());
     },
   });
+}
+
+/**
+ * r in /replay: the crew as it was at `then` ({ t, procs, profile, git }, from the Replayer), as far as
+ * it can be: the profile, then the processes that weren't running stopped and the ones that were
+ * started. The checkout is Splice's to change: its /checkout line is copied for it. Asks first.
+ */
+export async function restore(ctx, then) {
+  const sup = ctx.crew;
+  if (!sup) return ctx.note('There is no crew here to restore.', 'error');
+  const plan = restorePlan(then, {
+    procs: sup.list(),
+    profile: ctx.data?.profile ?? null,
+    profiles: Object.keys(ctx.data?.profiles ?? {}),
+    git: gitHead(ctx.dir),
+    tipOf: (branch) => branchTip(ctx.dir, branch),
+  });
+  const when = new Date(then.t).toLocaleTimeString();
+  const handGit = plan.git && !plan.git.same;
+  if (plan.nothing && !handGit) return ctx.note([`The crew is as it was at ${when}.`, ...plan.warnings].join('\n'));
+  // The confirm's detail is one line: what it does goes there, what it can't put back above it.
+  if (plan.warnings.length) ctx.note(plan.warnings.join('\n'), plan.envChanged.length || plan.missing.length ? 'error' : undefined);
+  const ok = await ctx.confirm({
+    title: `Restore the crew as it was at ${when}?`,
+    detail: planLines({ ...plan, warnings: [] }).join(' · '),
+    danger: plan.stop.length > 0,
+    options: YES_NO('Yes, restore it'),
+  });
+  if (!ok) return false;
+  ctx.closeOverlays();
+  ctx.setView('crew');
+  if (!plan.nothing) ctx.activity(`Restored the crew as it was at ${when}${plan.start.length ? `: started ${plan.start.join(', ')}` : ''}${plan.stop.length ? `${plan.start.length ? ';' : ':'} stopped ${plan.stop.join(', ')}` : ''}`);
+  if (plan.profile !== undefined) await ctx.setProfile(plan.profile);
+  await Promise.all(plan.stop.map((n) => sup.stop(n)));
+  if (handGit) {
+    ctx.copy(plan.git.line, 'the line for Splice');
+    ctx.note(copiedNote('splice', plan.git.line), 'ok');
+  }
+  if (plan.start.length) await sup.startAll({ only: plan.start });
 }
 
 const size = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);

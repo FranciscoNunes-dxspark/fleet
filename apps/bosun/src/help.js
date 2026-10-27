@@ -108,6 +108,7 @@ export const HELP = [
       ['space', 'Play or pause'],
       ['+ -', 'Faster, slower (1× to 64×)'],
       ['j k  a', 'The process whose log shows; every log at once'],
+      ['r', 'Restore the crew as it was then: its profile, what ran (asks first); the checkout is copied for Splice'],
       ['esc', 'Back to the recordings'],
       'On the timeline: ✗ a crash, ! a line that read as trouble, ● where it is. A click on it goes there.',
     ],

@@ -31,6 +31,7 @@ import { exitNews, worthNotifying } from '../notify.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { Recorder, sessionsDir } from '../recorder.js';
+import { gitHead } from '../githead.js';
 import { listeningPorts } from '../ports.js';
 import { hailTest, testOutcome } from '../hailcheck.js';
 import { checkLine, gatherFacts, runChecks, summary } from '../preflight.js';
@@ -397,8 +398,10 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
       const first = !supRef.current;
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
-      // Each run of a project's crew is recorded for /replay, unless the setting is off.
-      const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs }) : null;
+      // Each run of a project's crew is recorded for /replay, unless the setting is off, with the
+      // profile and the checkout's branch and commit, so /replay's r can say what to put back.
+      const project = dirRef.current;
+      const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs, profile: profileRef.current, readGit: () => gitHead(project) }) : null;
       if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
       else supRef.current.setCrew(procs);
       publish();
@@ -443,6 +446,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   };
   const setProfile = (name) => {
     profileRef.current = name;
+    supRef.current?.recorder?.profile(name);
     note(name ? `Profile ${name}` : 'No profile');
     return reload({ restartChanged: true });
   };
@@ -669,6 +673,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     overlay: () => overlayRef.current,
     // Settings change through App's copy, the only one written to disk (ctx.config reads it).
     setConfig,
+    // Every overlay, and the pickers they came from (/replay's restore, back to the crew).
+    closeOverlays: () => setOverlay(null),
     closeOverlay: () => {
       const closing = overlayRef.current;
       // As a function, so a picker going back to another picker isn't given this one to return to.
