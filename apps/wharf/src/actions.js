@@ -8,6 +8,7 @@ import { dockerProblem } from './docker.js';
 import { copiedNote, describeContext, contextIn, notMine, takeLine } from '@fleet/kit/family.js';
 import { latestTrouble, loglineData, matchIn, needleOf } from './share.js';
 import * as k from './kubeactions.js';
+import { dockerShell } from './shell.js';
 
 const containers = (ctx) => ctx.data?.containers ?? [];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -113,6 +114,21 @@ export async function exec(ctx, rest) {
   const r = await ctx.task(`exec ${c.name} ${command}`, async (signal) => ({ stdout: await ctx.provider.exec(c.id, command, { signal }).catch((e) => Promise.reject(explain(e))) }), { label: 'Running' });
   if (r.ok && r.out.split('\n').length > 3) ctx.showText(`exec ${c.name} ${command}`, r.out);
   return r.ok;
+}
+
+/**
+ * e or /shell: a shell inside a running container (bash where it has it, else sh), or in a pod when
+ * the name is one of the Pods view's (`container` then picks one of a pod's containers).
+ */
+export function shell(ctx, rest) {
+  const [name, container] = String(rest ?? '').trim().split(/\s+/);
+  if (!name) return ctx.note('/shell <container|pod> [container of the pod]', 'error') ?? false;
+  if (!findContainer(containers(ctx), name) && ctx.kubeData?.pods?.some((p) => p.name.startsWith(name) || `${p.namespace}/${p.name}`.startsWith(name))) return k.shell(ctx, name, container);
+  const c = pick(ctx, name);
+  if (!c) return false;
+  if (c.state !== 'running') return ctx.note(`${c.name} isn't running: s starts it.`, 'error') ?? false;
+  ctx.openShell({ title: c.name, make: (tty) => dockerShell(c.id, { tty }) });
+  return true;
 }
 
 /** ↵ or /logs: a container's log, following it. */

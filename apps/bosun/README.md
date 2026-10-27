@@ -265,7 +265,16 @@ and under it the crew and the log of the one under the cursor as they were at th
 | `+` `-` | Faster, slower (1× up to 64×) |
 | `j` `k` | The process whose log shows |
 | `a` | Every process's log at once |
+| `r` | Restore the crew as it was at that moment (asks first) |
 | `esc` | Back to the list of recordings |
+
+`r` puts back what Bosun can: the profile that was in use, and the processes that were running then
+(the ones that weren't are stopped, the ones that were are started, each after the one it waits for).
+It says what it can't: a process that isn't in the crew any more, and one whose env files changed
+since then (a recording keeps a hash of what they said at each start, never the values). When the
+project is a git checkout, the recording knows its branch and commit too; if another is checked out
+now, Bosun copies Splice's `/checkout <branch or commit>` for you to run there, and never switches it
+itself.
 
 A click on the timeline goes to that moment. The recordings are kept in `~/.bosun/sessions`, a folder
 per project, the newest 10 of each; one stops recording at 20 MB. A recording starts with the first

@@ -65,8 +65,8 @@ export function demoKube() {
       for (const [i, p] of state.pods.entries()) if (p.status === 'Running') out.set(`${p.namespace}/${p.name}`, { cpu: 5 + i * 11, mem: (30 + i * 17) * 1024 * 1024 });
       return out;
     },
-    async logs(p) {
-      return LOG(find(p).name, 40);
+    async logs(p, { container } = {}) {
+      return LOG(container ? `${find(p).name}/${container}` : find(p).name, 40);
     },
     async describe(p) {
       return `Name:         ${find(p).name}\nNamespace:    ${p.namespace}\nStatus:       ${find(p).status}\n`;

@@ -162,7 +162,8 @@ test('slash suggestions: command names, then ref completion', () => {
   assert.deepEqual(suggestionsFor('/checkout main', { data }).map((s) => s.label), ['main', 'origin/main']);
   assert.equal(suggestionsFor('/commit ', { data }).length, 0);
   assert.equal(findCommand('co'), null, 'ambiguous: commit, continue, checkout');
-  assert.equal(findCommand('chec').name, 'checkout');
+  assert.equal(findCommand('checko').name, 'checkout');
+  assert.equal(findCommand('chec'), null, 'ambiguous: checkout, checks');
 });
 
 test('/find: plain text, -S and -G, with their flags offered while typing', () => {

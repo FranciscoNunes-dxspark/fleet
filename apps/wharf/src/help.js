@@ -30,6 +30,7 @@ export const HELP = [
     views: ['containers'],
     rows: [
       ['↵ / l', 'Its log, following it'],
+      ['e', 'A shell inside it (bash, else sh); inside Fleet, line by line'],
       ['s', 'Stop it, or start it'],
       ['r', 'Restart it'],
       ['x', 'Remove it (asks first; a running one is stopped)'],
@@ -59,6 +60,8 @@ export const HELP = [
     views: ['pods'],
     rows: [
       ['↵ / l', 'Its log (every container of it), following it'],
+      ['c', 'One container\'s log (asks which, when it has several)'],
+      ['e', 'A shell inside it (asks which container, when it has several); inside Fleet, line by line'],
       ['x', 'Delete it (asks first); its controller starts another'],
       ['r', 'Restart the deployment it belongs to, pod by pod (asks first)'],
       ['i', 'kubectl describe, events included'],
@@ -66,6 +69,19 @@ export const HELP = [
       ['/namespace', 'One namespace, or all of them'],
       ['/context', 'Another cluster from kubeconfig (asks: kubectl itself switches)'],
       'In the list: ● green running and ready · yellow starting, terminating or not all ready · red crash-looping, failing to pull, killed · grey completed. CPU and memory show when the cluster has a metrics server.',
+    ],
+  },
+  {
+    title: 'Shell',
+    about: 'e inside Fleet, where there is no terminal to hand over: the shell runs without one, a line at a time',
+    rows: [
+      ['↵', 'Send the line (a paste of several lines sends each)'],
+      ['↑ ↓', 'The lines sent before'],
+      ['pgup pgdn  wheel', 'Scroll the output'],
+      ['ctrl+c', 'Clear the line; on an empty one send ^C, and again within 2 seconds stop the shell'],
+      ['ctrl+u ctrl+w ctrl+l', 'Clear the line, the word before, the output'],
+      ['esc / ctrl+d', 'Close it, stopping the shell'],
+      'No prompt, colours or full-screen programs (vim, top): they need a terminal. Outside Fleet, e hands the terminal over and none of this applies.',
     ],
   },
   {
