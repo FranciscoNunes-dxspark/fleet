@@ -60,7 +60,7 @@ Every push to main (except Markdown-only ones) runs `release.yml`, which release
 1. The version: the newest release in this repository whose tag starts `<app>-v`, with the patch raised, or the app's package.json version when that's higher (bump it there for a minor or major version). Nothing is committed back, so package.json on main lags behind the releases.
 2. The app's tests on ubuntu.
 3. The executables with Bun 1.4.2, from the app's folder (`bun ../../packages/kit/scripts/build.js <targets>`): the Windows one on windows-latest (only there does Bun embed the icon), Linux and macOS on ubuntu. The build reads the app's package.json (`version`, and an optional `"fleet"` section: Keel's `entry` is `cli/cli.jsx`, `app` `cli/app.js`, `out` `release`, and `compile` turns off Bun's .env and bunfig loading; Fleet's `includes` lists the apps built into it, whose versions are defined too, each from its own package.json) and names the files `<app>-windows-x64.exe`, `<app>-linux-x64`, `-linux-arm64`, `<app>-macos-x64`, `-macos-arm64` (`buildTargets` in the kit's `update.js`, which the updater uses too).
-4. `gh release create <app>-v<version>` with the files (Fleet's also `fleet-windows-x64-setup.exe`, its Windows installer: `apps/fleet/installer`) and `SHA256SUMS.txt`, its notes starting from the app's previous release.
+4. `gh release create <app>-v<version>` with the files (Fleet's also `fleet-windows-x64-setup.exe`, its Windows installer: `apps/fleet/installer`, and `fleet.ico`, its shortcuts' icon, which an updating Fleet replaces beside itself) and `SHA256SUMS.txt`, its notes starting from the app's previous release.
 
 Keel's Android app is released by hand (`release-keel-android.yml`) as `keel-android-v<run number + 100>`, not marked latest.
 

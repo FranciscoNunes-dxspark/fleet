@@ -266,6 +266,22 @@ function versionOf(exe) {
 /** The prefix of the download folders next to the executable: ".splice-update-". */
 const workPrefix = () => `.${app().name}-update-`;
 
+/** Replaces `dir`/`file` with the release's copy of it, when there is one there, the release has it and it matches `sums`; never throws. */
+async function refreshBeside(file, { version, dir, work, sums, download, signal }) {
+  try {
+    const target = join(dir, file);
+    const want = sums.get(file);
+    if (!want || !(await stat(target).catch(() => null))) return;
+    await download(version, [file], work, { signal });
+    const got = createHash('sha256')
+      .update(await readFile(join(work, file)))
+      .digest('hex');
+    if (got === want) await rename(join(work, file), target);
+  } catch {
+    // The executable is what matters; the file stays as it was.
+  }
+}
+
 /**
  * Replaces the executable `exe` with release `version`, which then runs from the next start. The
  * download goes into a folder next to `exe` (the same disk, so the swap is a rename) and must match the
@@ -274,10 +290,14 @@ const workPrefix = () => `.${app().name}-update-`;
  * Resolves with "installed", or "already" if `exe` is that version already (another window of the app
  * got there first). Throws, with `exe` as it was, if anything goes wrong: a folder it can't write to,
  * no download, a checksum that doesn't match.
+ *
+ * `extras` names other files of the release that live beside `exe` (Fleet's icon, which the installer's
+ * shortcuts show): each is replaced after the swap, but only where one is already there (an install put
+ * it), and only if it matches the checksums. A failure there never undoes or fails the update.
  */
 export async function installUpdate(
   version,
-  { exe = process.execPath, platform = process.platform, arch = process.arch, signal, download = downloadAssets, installed = versionOf } = {},
+  { exe = process.execPath, platform = process.platform, arch = process.arch, signal, download = downloadAssets, installed = versionOf, extras = [] } = {},
 ) {
   const name = assetName(platform, arch);
   if (!name) throw new Error(`there's no release build for ${platform} ${arch}`);
@@ -285,7 +305,8 @@ export async function installUpdate(
   const work = await mkdtemp(join(dirname(exe), workPrefix()));
   try {
     await download(version, [name, CHECKSUMS], work, { signal });
-    const want = parseChecksums(await readFile(join(work, CHECKSUMS), 'utf8')).get(name);
+    const sums = parseChecksums(await readFile(join(work, CHECKSUMS), 'utf8'));
+    const want = sums.get(name);
     if (!want) throw new Error(`the release has no checksum for ${name}`);
     const file = join(work, name);
     const got = createHash('sha256')
@@ -306,6 +327,7 @@ export async function installUpdate(
         throw e;
       }
     }
+    for (const extra of extras) await refreshBeside(extra, { version, dir: dirname(exe), work, sums, download, signal });
     return 'installed';
   } finally {
     await rm(work, { recursive: true, force: true }).catch(() => {});

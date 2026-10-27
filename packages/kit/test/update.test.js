@@ -204,6 +204,49 @@ test('installing an update swaps the executable, only with a matching checksum, 
   }
 });
 
+test('an update also replaces the files beside the executable it names, where they are, and never fails over them', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kit-extras-'));
+  const sha = (s) => createHash('sha256').update(s).digest('hex');
+  // The release has the build and the icon, both in its checksums, unless a test says the icon is bad or missing.
+  const release = ({ icon = 'new icon', iconSum = sha(icon), listed = true, broken = false } = {}) => async (version, names, into) => {
+    for (const n of names) {
+      if (n === 'SHA256SUMS.txt') writeFileSync(join(into, n), `${sha('new build')}  splice-windows-x64.exe\n${listed ? `${iconSum}  splice.ico\n` : ''}`);
+      else if (n === 'splice.ico') {
+        if (broken) throw new Error('GitHub answered 404');
+        writeFileSync(join(into, n), icon);
+      } else writeFileSync(join(into, n), 'new build');
+    }
+  };
+  try {
+    const exe = join(dir, 'splice.exe');
+    const win = { exe, platform: 'win32', arch: 'x64', installed: async () => '0.2.0', extras: ['splice.ico'] };
+    const fresh = () => {
+      writeFileSync(exe, 'old build');
+      writeFileSync(join(dir, 'splice.ico'), 'old icon');
+    };
+    // The icon an install put there is replaced.
+    fresh();
+    assert.equal(await installUpdate('0.3.0', { ...win, download: release() }), 'installed');
+    assert.equal(readFileSync(join(dir, 'splice.ico'), 'utf8'), 'new icon');
+    // A copy that doesn't match its checksum, a release without it, or a failed download: the icon stays, the update still happens.
+    for (const options of [{ iconSum: sha('other') }, { listed: false }, { broken: true }]) {
+      fresh();
+      assert.equal(await installUpdate('0.3.0', { ...win, download: release(options) }), 'installed');
+      assert.equal(readFileSync(exe, 'utf8'), 'new build');
+      assert.equal(readFileSync(join(dir, 'splice.ico'), 'utf8'), 'old icon');
+    }
+    // No icon beside it (not an installed copy): none is created, and nothing is downloaded for it.
+    fresh();
+    rmSync(join(dir, 'splice.ico'));
+    const asked = [];
+    await installUpdate('0.3.0', { ...win, download: async (v, names, into, o) => (asked.push(names), release()(v, names, into, o)) });
+    assert.ok(!readdirSync(dir).includes('splice.ico'));
+    assert.deepEqual(asked, [['splice-windows-x64.exe', 'SHA256SUMS.txt']]);
+  } finally {
+    removeTemp(dir);
+  }
+});
+
 test('old executables and abandoned downloads are removed, but not a download still going', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'kit-old-'));
   try {

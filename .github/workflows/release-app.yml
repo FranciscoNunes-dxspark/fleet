@@ -104,6 +104,11 @@ jobs:
         run: |
           choco install innosetup --no-progress -y
           ./installer/build.ps1 -Version ${{ needs.version.outputs.version }}
+      # The icon the installer's shortcuts use, beside the executable: an updating Fleet replaces the one it has.
+      - name: Fleet's icon
+        if: inputs.app == 'fleet' && matrix.os == 'windows-latest'
+        shell: bash
+        run: cp assets/logo.ico "${{ steps.out.outputs.dir }}/fleet.ico"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.app }}-${{ matrix.os }}
