@@ -402,7 +402,7 @@ On PostgreSQL it checks what has an equivalent there: tables without a primary k
 
 Type `/` and the menu narrows as you type. `tab` completes, `↑`/`↓` picks, `↵` runs. `/connect` and `/copy-rows` complete connection names, `/use` database names, `/describe`, `/generate` and `/scaffold` tables and views, and `/script` and `/uses` everything in the database.
 
-`/import datagrip [folder]` `/import-csv <file.csv> <table> [--run]` `/connect <name>` `/add …` `/forget <name>` `/folder <connection> [folder]` `/password [connection]` `/azure-sql <server> [database] …` `/firewall [connection]` `/disconnect` `/use <database>` `/open <file.sql>` `/snippet [name]` `/snippets` `/console` `/tab …` `/new` `/format` `/search <text>` `/save <file.sql>` `/describe <table>` `/script <name>` `/grep <text>` `/uses <object>` `/diagram [table] [--depth n] [--mermaid]` `/find [text]` `/export <file.csv|file.xlsx|file.json|file.md>` `/chart [type] [x] [y…]` `/filter [text]` `/cell` `/data` `/follow` `/pin` `/compare` `/copy [tsv|csv|json|md|insert]` `/limit [rows]` `/watch <seconds> [sql] [--until <condition>]` `/writes` `/tx [auto|manual]` `/commit` `/rollback` `/undo-write` `/ask <question>` `/why` `/explain` `/ai [connection] [level]` `/update` `/settings` `/stats [on|off]` `/plan [actual] [sql]` `/more` `/diff <connection> [database]` `/health` `/sizes` `/deadlocks` `/fanout <folder> [sql]` `/activity` `/jobs` `/top-queries` `/kill <session>` `/backup [file]` `/restore <file> [--as <database>]` `/script-all <folder>` `/migrations [run] <folder>` `/generate <table> [rows] [--seed n]` `/scaffold <table> [csharp|ef|ts|python]` `/api [language]` `/timeline` `/wiring` `/last` `/refresh` `/help` `/quit`
+`/import datagrip [folder]` `/import-csv <file.csv> <table> [--run]` `/connect <name>` `/add …` `/forget <name>` `/folder <connection> [folder]` `/password [connection]` `/azure-sql <server> [database] …` `/firewall [connection]` `/disconnect` `/use <database>` `/open <file.sql>` `/snippet [name]` `/snippets` `/console` `/tab …` `/new` `/format` `/search <text>` `/save <file.sql>` `/describe <table>` `/script <name>` `/grep <text>` `/uses <object>` `/diagram [table] [--depth n] [--mermaid]` `/find [text]` `/export <file.csv|file.xlsx|file.json|file.md>` `/chart [type] [x] [y…]` `/filter [text]` `/cell` `/data` `/follow` `/pin` `/compare` `/copy [tsv|csv|json|md|insert]` `/limit [rows]` `/watch <seconds> [sql] [--until <condition>]` `/writes` `/tx [auto|manual]` `/commit` `/rollback` `/undo-write` `/ask <question>` `/why` `/explain` `/explain-slow [family:v1:…|sql]` `/ai [connection] [level]` `/update` `/settings` `/stats [on|off]` `/plan [actual] [sql]` `/more` `/diff <connection> [database]` `/health` `/sizes` `/deadlocks` `/fanout <folder> [sql]` `/activity` `/jobs` `/top-queries` `/kill <session>` `/backup [file]` `/restore <file> [--as <database>]` `/script-all <folder>` `/migrations [run] <folder>` `/generate <table> [rows] [--seed n]` `/scaffold <table> [csharp|ef|ts|python]` `/api [language]` `/timeline` `/wiring` `/last` `/refresh` `/help` `/quit`
 
 ### The command palette
 
@@ -469,6 +469,33 @@ After a run the server turned down, the log line under the error says `/why asks
 
 On a plan (`p` or `alt+p` in the console, or `/plan`), `a` asks Claude to explain it, and `/explain` does the same for the last plan shown: what the plan does step by step, what is likely to cost the most (scans, lookups, sorts, conversions, a missing index) and what might help, with a `CREATE INDEX` when one would, and on an actual plan, where the estimates were far off. Claude gets the query and its plan text, never rows, so a connection at the `schema` level can ask; one at `off` can't. The answer opens in the viewer, and `/last` shows it again.
 
+### A slow query, explained
+
+`/explain-slow` is for a statement your application runs slowly. [Sonar](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/sonar)'s
+`/slow-sql` (`alt+q` in its Problems) lists the app's SQL calls from Application Insights, slowest
+first, and copies one for Trawl's prompt with what was measured: how many calls, the average and 95th
+percentile duration, over which span, in which app. Taking it (`/take`, or the bare `family:v1:…`, or
+`/explain-slow family:v1:…`) connects to the saved connection to that server and database, as any query
+taken does; `/explain-slow <sql>`, or `/explain-slow` alone on the console's selection or statement under
+the cursor, uses the connection you're on.
+
+**Nothing runs it.** Trawl asks for the estimated plan (`SHOWPLAN_TEXT`, or `EXPLAIN` on PostgreSQL and
+MySQL), with the statement's parameters (`@customerId`, an ORM's `@__p_0`) `DECLARE`d first, without a
+value, so the optimizer plans for an unknown one as it does for a parameter it hasn't sniffed. Each
+gets the type of the column it's compared with (`o.CustomerId = @customerId` is that column's type),
+else one guessed from its name (`…Id` an `int`, `…At` a `datetime2`, `is…` a `bit`), else
+`nvarchar(4000)`, and the log says which were guesses. On PostgreSQL (`$1`) and MySQL (`?`) they're
+`NULL`. The plan shows in the viewer, under what was measured (an estimated plan has no actual rows,
+so no ▲/▼ marks: `P` in the console gives those, by running it); `a` there is `/explain`.
+
+Then Claude is asked which indexes would help: it gets the statement, its parameters and their types,
+the plan, the columns of the tables it names, the indexes they already have, and the durations, never a
+row, so a connection at the `schema` level can ask (one at `off` stops at the plan). Its answer opens
+in the viewer, and a console tab of its own (`slow`) holds what was measured and Claude's reasoning as
+comments, its `CREATE INDEX` as text, and the statement as planned, `DECLARE`s and all: change a
+parameter's type there and `/explain-slow` again. **The DDL never runs by itself**: select it and
+`alt+r` when you want it, through the usual checks.
+
 ### A query as an API
 
 `/api` asks Claude for an HTTP endpoint that runs the console's statement (the selection, or the one under the cursor): its parameters (`@clubId`) become route or query parameters, it runs the SQL with them as parameters (never pasted into the text), and returns the rows as JSON. It's written in the project's language: a C# minimal API when the project has a `*.csproj`, Node with Express when it has a `package.json`, otherwise the one you name (`/api csharp`, `node`, `python`, `go`), and otherwise Trawl asks. A language you name comes first. Claude gets the SQL, the kind of database and its parameters, never rows, so a connection at the `schema` level can ask.
@@ -497,7 +524,7 @@ claude mcp add --scope user trawl -- trawl mcp
 
 Trawl has siblings, built the same way: Splice (git), Sonar (Azure), Bosun (the project's processes) and Hail (HTTP requests). They never start each other: what one hands another is a command line it copies, for you to paste into the other's prompt. The log says `Copied for Hail: paste it into Hail's prompt` and what the line holds. A plain command where the other app has one (`/open`, `/move`), else `/take family:v1:…`, a thing under the cursor in one word. Nothing secret is ever in one.
 
-- `/take <family:v1:…>` takes what a sibling copied for Trawl: a query goes into a console tab of its own (`take`), and Trawl connects to the saved connection to the server and database it was for (or says which it was for, when none is); rows become an `INSERT … VALUES` script in a tab of their own (`rows`). Pasting the bare `family:v1:…` at the prompt works too. What's for another app (a request, a commit, an exception) says whose it is.
+- `/take <family:v1:…>` takes what a sibling copied for Trawl: a query goes into a console tab of its own (`take`), and Trawl connects to the saved connection to the server and database it was for (or says which it was for, when none is); a query Sonar's `/slow-sql` found slow, with its durations, is planned and explained as `/explain-slow` does (see [A slow query, explained](#a-slow-query-explained)); rows become an `INSERT … VALUES` script in a tab of their own (`rows`). Pasting the bare `family:v1:…` at the prompt works too. What's for another app (a request, a commit, an exception) says whose it is.
 - `/share`, or `t` in the console and Results, copies one: the console's statement as a query (for another Trawl), or in Results the row under the cursor, as rows (for Hail to send as a request's body, or another Trawl to insert); `/share all` copies every row of the result set. Columns that look like they hold a secret (a password, a hash, a token) are left out of it, and the log says which.
 - `/family` lists what this project offers the others: the repository, for Splice (`/open <repo>`); its processes, for Bosun (`/move <folder>`), when it has something to run; each `.http` file, for Hail (`/open <file>`). `↵` copies the line. The project is the folder Trawl started in, or the checkout of the script you opened.
 - `/timeline` shows what the six apps did that changed something, newest first, from the family's activity log (`activity.jsonl` in `~/.family`, or `FAMILY_HOME`): Splice's pushes, Bosun's restarts, Trawl's writes, and so on, each with when, which app and what. It opens on this project's (the folder Trawl started in, or the open script's checkout), and `p` switches to every project's and back; `↵` shows an entry whole. Trawl adds a line for every write that takes effect (each statement's kind and the table it changes, such as `UPDATE dbo.Players`, the connection and database, and the rows the server said it changed, never the SQL's values), for a `COMMIT` or `ROLLBACK` of an open transaction (with the writes it held), and for `/copy-rows`, `/backup` and `/restore`. A write inside an open transaction waits for its `COMMIT`, so what's rolled back never shows as done.
