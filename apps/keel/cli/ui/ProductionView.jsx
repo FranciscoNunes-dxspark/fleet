@@ -37,6 +37,7 @@ export function ProductionView({ failed, production, version, filter, ctx, width
     if (nav.handle(input, key) || !m) return;
     if (key.return) ctx.showMonitorFull(m, target(m));
     else if (input === 'S') a.sonar(ctx, m);
+    else if (input === 'K') a.compareInSonar(ctx, m);
   };
   useInput(keys, { isActive: active });
   // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).

@@ -219,6 +219,9 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       mergeFailureMessage: r.mergeFailureMessage || null,
       sourceBranch: stripRef(r.sourceRefName),
       targetBranch: stripRef(r.targetRefName),
+      // The tip of its branch, and the merge (of a completed one, what landed): what /take commit matches.
+      sourceCommit: r.lastMergeSourceCommit?.commitId || null,
+      mergeCommit: r.lastMergeCommit?.commitId || null,
       reviewers: (r.reviewers || []).map((rv) => ({
         ...ident(rv),
         vote: rv.vote || 0,

@@ -148,6 +148,16 @@ export function createMultiService(entries) {
         people: uniquePeople(parts.map((p) => p.value.people)),
       };
     },
+    // A commit can be in any organization's repos: each one is asked, and their answers put together.
+    async commitUsage(hash, opts) {
+      const parts = await each((s) => s.commitUsage(hash, opts));
+      const at = (x) => Date.parse(x.closedAt || x.queuedAt || x.startedAt || x.createdAt) || 0;
+      return {
+        hash: parts[0]?.value.hash ?? hash,
+        prs: parts.flatMap(({ org, value }) => tagAll(org, value.prs)).sort((a, b) => at(b) - at(a)),
+        runs: parts.flatMap(({ org, value }) => tagAll(org, value.runs)).sort((a, b) => at(b) - at(a)),
+      };
+    },
     async closedPullRequests(days) {
       const parts = await each((s) => s.closedPullRequests(days));
       return {

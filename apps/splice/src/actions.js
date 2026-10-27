@@ -69,7 +69,7 @@ import { changedOutside, leavingFolders, sparseText } from './sparse.js';
 import { NOTES_REFSPEC, noteArgs, notePrefill, notesArgs, withKeptNote } from './notes.js';
 import { COMMIT_HOOKS, PUSH_HOOKS, hookArgs, hookRows, hookRunArgs } from './githooks.js';
 import { CODEOWNERS_PATHS, changedOwnersText, ownersOfFiles, ownersText, reviewerNames } from './codeowners.js';
-import { TAKES, exceptionFrames, framesInRepo, pathAndLine } from './take.js';
+import { TAKES, branchRefs, exceptionFrames, framesInRepo, pathAndLine, shortRef } from './take.js';
 import { APP_NAMES, FAMILY, TAKEN_BY, contextIn, copiedNote, describeContext, familyDir, logActivity, matchFrameFile, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine } from '@fleet/kit/family.js';
 import { DEFAULT_ACCENT, applyTheme, isColour, setAccent, theme } from './theme.js';
 import { CHECKS_FILE, checkLine, checksFileText, checksOn, checksSummary, duration, failedText, hailCommand, lookAround, runChecks, setChecksOn } from './checks.js';
@@ -4211,7 +4211,7 @@ export function family(ctx) {
 
 /**
  * /timeline: what the family's apps did (family.js's activity log: pushes, writes to a database, restarts),
- * newest first, from all six. p shows this repository's alone (with what names no project), or everything
+ * newest first, from all of them. p shows this repository's alone (with what names no project), or everything
  * again; ↵ shows an entry whole.
  */
 export function timeline(ctx, { mine = false, replace = false } = {}) {
@@ -4270,7 +4270,7 @@ export function wiring(ctx) {
 // The siblings that take a kind of context, Splice aside (it takes some itself).
 const othersTaking = (kind) => TAKEN_BY[kind].filter((a) => a !== 'splice');
 
-/** Y on a commit in the graph: `/take commit` for Sonar, which finds the deployments that carry it. */
+/** Y on a commit in the graph: `/take commit` for Sonar or Keel, which find the deployments, and the pull requests and runs, that carry it. */
 export function shareCommit(ctx, c) {
   const data = { repo: ctx.data.name, hash: c.hash, subject: c.subject };
   copyFor(ctx, othersTaking('commit'), takeLine('commit', data));
@@ -4604,7 +4604,7 @@ const trackedFiles = async (ctx) => (await ctx.git(['ls-files', '-z'])).split('\
  * /take <context>: what a sibling app copied for Splice (family.js). An exception opens blame at the first
  * of its frames that's a file of this repository (a list of them when several are, top frame first); a
  * file, blame at its line (its history without one); a commit, its diff (offering to fetch it when it isn't
- * here). Other kinds say which app they're for.
+ * here); a pull request (from Keel), what its branch adds to its target. Other kinds say which app they're for.
  */
 export async function take(ctx, text) {
   const raw = String(text ?? '').trim();
@@ -4616,6 +4616,7 @@ export async function take(ctx, text) {
   const { kind, data } = got;
   ctx.note(`Taking ${describeContext(got)}`);
   if (kind === 'commit') return takeCommit(ctx, data);
+  if (kind === 'pullrequest') return takePullRequest(ctx, data);
   let files;
   try {
     files = await trackedFiles(ctx);
@@ -4654,6 +4655,41 @@ export async function take(ctx, text) {
     })),
     onPick: open,
   });
+}
+
+/**
+ * /take pullrequest (from Keel): what its source branch adds to its target, as /compare shows it (the diff
+ * from where they forked). A branch that isn't here is offered a fetch from the remote, then looked for again.
+ */
+async function takePullRequest(ctx, data) {
+  const { sourceBranch, targetBranch } = data;
+  if (!sourceBranch || !targetBranch) return ctx.note('That pull request has no branches to compare.', 'error');
+  const label = `!${data.id ?? '?'}${data.title ? ` "${data.title}"` : ''}`;
+  const from = data.repo && data.repo.toLowerCase() !== String(ctx.data.name).toLowerCase() ? ` (it's in ${data.repo})` : '';
+  const find = async (branch) => {
+    for (const ref of branchRefs(branch, ctx.data.remotes)) {
+      if (await ctx.git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).then((s) => Boolean(s.trim()), () => false)) return shortRef(ref);
+    }
+    return null;
+  };
+  const both = async () => [await find(sourceBranch), await find(targetBranch)];
+  let [source, target] = await both();
+  if (!source || !target) {
+    const missing = [!source && sourceBranch, !target && targetBranch].filter(Boolean).join(' and ');
+    if (!ctx.data.remotes.length) return ctx.note(`${missing} ${missing.includes(' and ') ? "aren't" : "isn't"} in ${ctx.data.name}${from}, and it has no remote to fetch from.`, 'error');
+    const remote = ctx.data.remotes.includes('origin') ? 'origin' : ctx.data.remotes[0];
+    const ok = await ctx.confirm({
+      title: `${label}: ${missing} ${missing.includes(' and ') ? "aren't" : "isn't"} in ${ctx.data.name}${from}. Fetch from ${remote} and look again?`,
+      detail: `git fetch ${remote}, which brings its branches up to date (nothing of yours changes).`,
+      options: YES_NO('Yes, fetch'),
+    });
+    if (!ok) return;
+    await ctx.exec(['fetch', remote, '--prune'], { label: 'Fetching' });
+    [source, target] = await both();
+    if (!source || !target) return ctx.note(`${[!source && sourceBranch, !target && targetBranch].filter(Boolean).join(' and ')} isn't on ${remote} either${from}: the pull request may be in another repository, or its branch deleted.`, 'error');
+  }
+  ctx.note(`${label}: what ${source} adds to ${target}.`);
+  ctx.showCompare(source, target);
 }
 
 /** /take commit: its diff when the repository has it; otherwise offers to fetch, then looks again. */

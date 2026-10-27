@@ -196,16 +196,18 @@ kept in `config.json` under `"watches"`.
 
 ### From the other apps
 
-Splice, Trawl, Bosun and Hail copy things for Sonar as a line for its prompt, `/take family:v1:…`
+Splice, Trawl, Bosun, Hail and Keel copy things for Sonar as a line for its prompt, `/take family:v1:…`
 (the `family:v1:…` part alone, pasted or typed at the prompt, does the same):
 
 | What | What Sonar does with it |
 | --- | --- |
-| A commit (from Splice) | Reads the deployments of every app and slot in the subscription and lists those that shipped it, by its hash in their id or message; `↵` shows one's log |
+| A commit (from Splice, or from Keel: `alt+s` on a pipeline that deploys) | Reads the deployments of every app and slot in the subscription and lists those that shipped it, by its hash in their id or message; `↵` shows one's log |
 | An exception | Problems, showing only those of its type (or with its message), about its app when it's one in the subscription; `x` there shows them all again |
 | A log line with a request or operation id (from Bosun) | Everything that request did, in Logs: its request, dependencies, exceptions and traces, in order |
 
-Anything else (a request, rows, a query, a file) is for another app, and Sonar says which.
+Keel also copies a plain command for Sonar: `alt+k` on a production monitor whose failures went up after a deploy copies `/compare-window <time of that deploy>`, to run with the monitor's app picked: what changed across that deploy, as `alt+k` in Problems says it.
+
+Anything else (a request, rows, a query, a file, a pull request, a pipeline) is for another app, and Sonar says which.
 
 Whatever Sonar copies for another app works the same way: a line for that app's prompt, said in the
 activity lines as "Copied for Splice: paste it into Splice's prompt" with what it holds. Nothing secret
@@ -218,7 +220,7 @@ the prompt rather than being taken as keys, to run with `↵`.
 Azure SQL server signing in with Entra, else `/add` with its port, its login and `--trust-cert` when the
 connection string trusts the server's certificate, but never the password). `↵` copies one.
 
-`/timeline` shows what the six apps did that changed something, newest first, from the family's
+`/timeline` shows what the family's apps did that changed something, newest first, from the family's
 activity log in `~/.family`: Splice's pushes, Trawl's writes, Bosun's crashes, Hail's sends, and Sonar's
 own changes. Sonar adds one whenever it changes Azure (a restart, stop, start or swap, settings saved, a
 firewall rule, a scale, a route, a function turned off or on or invoked, dead letters resubmitted or
@@ -232,7 +234,7 @@ passwords and keys masked.
 
 Ping tells the others how it feels (worried after something went wrong, busy, pleased, or just
 watching) and why, in a small file in `~/.family` (`FAMILY_HOME` moves it), and reads theirs every
-30 seconds: when Twig, Glim, Squawk or Hoot has been worried, sad or happy in the last 15 minutes, Ping
+30 seconds: when Twig, Glim, Squawk, Hoot, Bark or Pinch has been worried, sad or happy in the last 15 minutes, Ping
 says so once, in a line above the activity lines ("Twig says: PR #12 merged"), until `esc`. **Family
 moods** in the settings turns both off.
 

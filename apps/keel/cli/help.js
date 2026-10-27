@@ -53,6 +53,7 @@ export const HELP = [
       ['↵', 'The full pull request'],
       ['/comment <text>', 'Comment'],
       ['f', 'Everything, waiting on your review, yours (/show all|review|mine)'],
+      ['alt+y', 'Copy /take pullrequest for Splice, which shows what its branch adds to the one it goes into'],
     ],
   },
   {
@@ -64,6 +65,8 @@ export const HELP = [
       ['c', 'Cancel the run that\'s queued or running (asks first)'],
       ['l', 'The run in full: stages, jobs and steps, each failed step\'s errors and the end of its log, tests, the commits it built (/logs <number> for an older run)'],
       ['↵', 'Latest runs, full height'],
+      ['alt+y', 'Copy its latest run for Splice: /take file at the file and line its failure names (blame there), else /take commit of what it built'],
+      ['alt+s', 'On a pipeline that deploys: copy /take commit of its latest run for Sonar, which finds the deployments that carry it'],
     ],
   },
   {
@@ -91,6 +94,7 @@ export const HELP = [
       ['↵', 'Everything about it: issues, what fails most, deploys, and all that\'s waiting to ship to its environment (pull requests, commits, work items, coming next)'],
       ['o', 'Open the site'],
       ['alt+s', 'Sonar, the Azure console, on the app behind it, at its problems: in a new tab in Windows Terminal, else the command is copied to run'],
+      ['alt+k', 'Copy Sonar\'s /compare-window at the deploy its "failures up since …" issue names (else its latest deploy): what changed across it'],
     ],
   },
   {
@@ -130,6 +134,18 @@ export const HELP = [
       ['↵', 'Their open work items, in Work items'],
       ['p', 'Their pull requests, in Pull requests'],
       ['/find <name>', 'Someone, or a team'],
+    ],
+  },
+  {
+    title: 'The family',
+    about: 'Splice, Trawl, Sonar, Bosun, Hail and Wharf: what one hands another is a line for its prompt (inside Fleet, Fleet takes it there)',
+    rows: [
+      ['/take <family:v1:…>', 'What another app copied for Keel: a commit (Splice\'s alt+y) lists the pull requests and pipeline runs that carry it, ↵ opens one; a pull request or a pipeline opens in its tab. /take alone still takes the work item'],
+      ['paste', 'A /command or a family:v1:… line pasted while a tab has the keys goes into the prompt, to run with ↵'],
+      ['/timeline [here]', 'What the family\'s apps changed, newest first (Keel adds its votes, completes, runs, cancels, approvals, releases and work item changes); here: the folder Keel started in'],
+      ['/family', 'What the folder Keel started in is to the others (its checkout, processes, .http files, databases): pick one to copy its line'],
+      ['/wiring', 'What that folder points at: addresses, hosts, ports and connection strings, by file, secrets masked'],
+      ['moods', 'Pinch tells the others how it feels (worried when production is down or a pipeline starts failing, busy, pleased when your pull request merges), and says once when one of them has been worried, sad or happy lately (esc puts it away); Family moods in Settings turns it off'],
     ],
   },
   {

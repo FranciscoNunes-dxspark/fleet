@@ -2976,7 +2976,7 @@ async function loadWithTool(ctx, { args, conn, kind }) {
 // The family's activity log and a project's wiring.
 
 /**
- * /timeline: what the six apps did that changed something (family.js readActivity), newest first;
+ * /timeline: what the family's apps did that changed something (family.js readActivity), newest first;
  * `p` switches between this project's and everything, ↵ shows an entry whole.
  */
 export function timeline(ctx, { all = false } = {}) {

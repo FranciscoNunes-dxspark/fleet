@@ -311,7 +311,7 @@ there; it never holds a password or a token.
   say it open in the viewer. Anything else is another app's, and Bosun says whose.
 - Pasting a `/command` or a `family:v1:` line while a view has the keys opens the prompt with it, to
   run with `↵`.
-- `/timeline` shows what the six apps did, newest first, from the log they all add to: Bosun adds a
+- `/timeline` shows what the family's apps did, newest first, from the log they all add to: Bosun adds a
   process crashing (once, not each time it's restarted) or giving up, your restarts and stops (of a
   process, a group or the crew), tunnels opened and closed, and `/move`; the siblings add their own
   (a push, a write to a database…). It starts with this project's (and what names no project); `p`

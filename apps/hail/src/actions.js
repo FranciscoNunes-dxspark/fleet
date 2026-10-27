@@ -1007,7 +1007,7 @@ export function activity(ctx, text, kind = 'info') {
 }
 
 /**
- * /timeline: what the family's apps did, newest first, from all six; p shows this project's alone (and
+ * /timeline: what the family's apps did, newest first, from all of them; p shows this project's alone (and
  * what names none), or everything again; ↵ shows an entry whole, y copies it.
  */
 export function timeline(ctx, { mine = false, replace = false } = {}) {

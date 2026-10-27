@@ -51,7 +51,7 @@ export const HELP = [
       ['alt+b', 'Bisect: mark it bad or good (or skip); git checks out the commit halfway, to try\nWith both marked, /bisect run <command> tests each commit for you: exit 0 good, 125 skip, 1-127 bad'],
       ['/note [text]', 'The commit\'s note (git notes, shown in the commit pane): text adds or replaces it (\\n for a new line); alone, the note goes in the prompt to edit; /note -d removes it (asks); /note --undo puts back the last one replaced or removed; /notes push [remote] pushes them'],
       ['/verify [range]', 'The signatures of the commits a push would send (or of a range, main..feature): the unsigned and bad ones first'],
-      ['alt+y', 'Copy /take commit for Sonar, which finds the deployments that carry it'],
+      ['alt+y', 'Copy /take commit for Sonar or Keel: Sonar finds the deployments that carry it, Keel the pull requests and pipeline runs'],
       ['w', 'Run it: a worktree of its own at the commit (../<repo>-at-<hash>, /run-at [commit]), and Bosun\'s /move to it copied, to paste there; /cleanup removes it'],
       ['e  alt+r', 'Claude explains it · Claude reviews it (alt+r on the working tree: your changes)'],
     ],

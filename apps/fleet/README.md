@@ -79,10 +79,11 @@ Any other key after `ctrl+]` cancels it. A click on a tab in the bar switches to
 ## Hand-offs
 
 The apps hand each other things as a line to paste into the other's prompt: Sonar's `T` copies a
-`/azure-sql …` line for Trawl, Splice's `Y` a `/take …` for Sonar, and so on. Inside Fleet that's one
+`/azure-sql …` line for Trawl, Splice's `Y` a `/take …` for Sonar or Keel, Keel's `Y` a pull request or a
+failed run for Splice, and so on. Inside Fleet that's one
 step: Fleet switches to the app the line is for (starting it if it isn't running), and types the line
 into its prompt. Press `↵` to run it. The line is still copied too. A line that several apps could take
-(a log line, which Sonar, Hail and Bosun all read) goes to the first of them that's running, else
+(a log line, which Sonar, Hail and Bosun all read; a commit, for Sonar or Keel) goes to the first of them that's running, else
 stays on the clipboard only.
 
 ## Runbooks

@@ -1431,7 +1431,7 @@ export function requestForHail(ctx, row) {
  */
 export async function take(ctx, text) {
   const c = contextIn(text);
-  if (!c) return ctx.note("That isn't a line one of the other apps copied: /take takes the family:v1:… that Splice, Trawl, Bosun or Hail copies for Sonar.", 'error');
+  if (!c) return ctx.note("That isn't a line one of the other apps copied: /take takes the family:v1:… that Splice, Trawl, Bosun, Hail or Keel copies for Sonar.", 'error');
   if (c.kind === 'commit') return deploymentsOfCommit(ctx, c.data);
   if (c.kind === 'exception') return problemsLike(ctx, c.data);
   if (c.kind === 'logline') return requestOfLogLine(ctx, c.data);

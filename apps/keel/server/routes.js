@@ -195,6 +195,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   r.get('/epics', async (req, res) => res.json(await req.ctx.service.epics({ includeClosed: req.query.closed === '1' })));
   r.get('/pipelines', async (req, res) => res.json(await req.ctx.service.pipelines()));
   r.get('/pipelines/:projectId/:definitionId/runs', async (req, res) => res.json(await req.ctx.service.pipelineRuns(req.params.projectId, req.params.definitionId)));
+  r.get('/commits/:hash/carriers', async (req, res) => res.json(await req.ctx.service.commitUsage(req.params.hash, { repo: req.query.repo ? String(req.query.repo) : undefined })));
   r.get('/builds/:projectId/:buildId', async (req, res) => res.json(await req.ctx.service.runDetails(req.params.projectId, req.params.buildId)));
   r.get('/tests/flaky', async (req, res) => res.json(await req.ctx.service.flakyTests()));
   r.post('/pipelines/cancel', need('pipelines.run'), async (req, res) => {
