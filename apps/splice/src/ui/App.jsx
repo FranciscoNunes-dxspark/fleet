@@ -39,6 +39,7 @@ import { decodeContext, pastedLine, readMoods, writeMood } from '@fleet/kit/fami
 import { droppedPaths } from '../drop.js';
 import { ownersLine, ownersOf } from '../codeowners.js';
 import { familyMood, moodsToShow, reactionText } from '../siblings.js';
+import { runCheckCommand } from '../checks.js';
 
 // Overlays with a text box: capitals typed there are text, not shortcuts.
 const TYPING_OVERLAYS = ['palette', 'help'];
@@ -161,7 +162,9 @@ const DOUBLE_CLICK_MS = 400;
 // tests, nothing is said. `familyHome` is the family's folder for the mascots' moods (family.js's familyDir,
 // from cli.jsx): without it, as in most tests, Twig neither tells the siblings its mood nor reads theirs;
 // `moodEvery` is how often theirs are read. It's also where Splice logs what it did, for the family's /timeline.
-export function App({ initialPath, reopenLast = false, config: initialConfig, checkUpdate, installUpdate, askClaude, setTitle, makeHost = hostFor, mouse, copy, notify, familyHome = null, moodEvery = 30_000 }) {
+// `runCheck(check, { cwd, signal })` runs one of the checks before a push and `findHail()` finds Hail for
+// them (checks.js's; tests pass fakes).
+export function App({ initialPath, reopenLast = false, config: initialConfig, checkUpdate, installUpdate, askClaude, setTitle, makeHost = hostFor, mouse, copy, notify, familyHome = null, moodEvery = 30_000, runCheck = runCheckCommand, findHail }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -319,6 +322,8 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     return load;
   };
 
+  // The running task's line in the activity log, for what it says as it goes (ctx.taskProgress).
+  const taskEntry = useRef(null);
   // One command at a time, with the spinner, esc to cancel, and a line in the activity log.
   // `start(signal)` resolves with { stdout, stderr }.
   const task = async (title, start, { label = 'Working', refresh = true, quiet = false, quietError = false } = {}) => {
@@ -332,6 +337,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     busyRef.current = b;
     setBusy(b);
     const id = quiet ? null : addEntry({ title, status: 'running' });
+    taskEntry.current = id;
     setWelcome(false);
     // A long run that ends says so, for when you've looked away (Settings' "Notify when done"). Claude's
     // answers run quietly, with no line of their own, so theirs just says it's done.
@@ -354,6 +360,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
       return { ok: false, error };
     } finally {
       busyRef.current = null;
+      taskEntry.current = null;
       setBusy(null);
       if (refresh && repo) await reload();
     }
@@ -453,6 +460,12 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
   Object.assign(ctx, {
     exec,
     task,
+    // Lines under the running task's, while it runs (the checks before a push, one by one).
+    taskProgress: (lines) => taskEntry.current && updateEntry(taskEntry.current, { lines }),
+    // One check of the checks before a push (checks.js's runCheckCommand; tests pass a fake), and how
+    // Hail is found for them (on the PATH unless a test says).
+    runCheck,
+    findHail,
     // A read that doesn't show in the activity lines or block other commands. `opts.signal` cancels it.
     git: (args, opts) => git(repoRef.current.root, args, opts),
     // The PR host (GitHub, Azure DevOps or GitLab) of the open repository, kept while the remotes (and the
