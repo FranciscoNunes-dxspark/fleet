@@ -3,7 +3,7 @@ import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { isTrouble } from '../crew.js';
 import { KEEP_LINES, seconds } from '../supervisor.js';
-import { markRanges, matcher } from '../search.js';
+import { markRanges, matcher } from '@fleet/kit/search.js';
 import { theme } from '../theme.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';

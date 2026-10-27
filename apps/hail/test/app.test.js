@@ -98,6 +98,26 @@ test('sending requests, a response used by the next, the full view, curl, enviro
     await until(() => frame().includes('Copied the body'), 'the body copied');
     assert.equal(JSON.parse(copied.at(-1)).path, '/me');
 
+    // d opens the body in the data viewer: a tree to query, esc back to the response.
+    app.stdin.write('d');
+    await until(() => frame().includes('/ query') && frame().includes('"/me"'), 'the data viewer');
+    app.stdin.write('/');
+    await type(app.stdin, '.path');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('1 match'), 'the query answered');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('1 match'), 'the query cleared');
+    app.stdin.write('q');
+    await until(() => frame().includes('h headers'), 'the Response view again');
+    // The same through the command.
+    // / searches the response here; : opens the command prompt.
+    await type(app.stdin, ':data');
+    app.stdin.write(KEYS.enter);
+    await until(() => frame().includes('/ query') && frame().includes('"/me"'), 'the data viewer through /data');
+    await new Promise((r) => setTimeout(r, 200));
+    app.stdin.write('q');
+    await until(() => frame().includes('h headers'), 'the Response view once more');
+
     // Another environment: a host with nothing on it.
     app.stdin.write('1');
     await until(() => frame().includes('╭─ api.http'), 'Requests again');

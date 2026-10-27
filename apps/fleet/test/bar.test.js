@@ -4,21 +4,21 @@ import { stringWidth } from '@fleet/kit/text.js';
 import { ansi256, barLayout, colour, renderBar, stateMark, tabAt } from '../src/bar.js';
 import { SPACES } from '../src/spaces.js';
 
-const spaces = SPACES.map((s, i) => ({ ...s, state: ['running', 'idle', 'exited', 'idle', 'running', 'idle'][i], code: i === 2 ? 1 : null }));
+const spaces = SPACES.map((s, i) => ({ ...s, state: ['running', 'idle', 'exited', 'idle', 'running', 'idle', 'idle'][i], code: i === 2 ? 1 : null }));
 const width = (layout) => layout.segments.reduce((n, s) => n + stringWidth(s.text), 0);
 const text = (layout) => layout.segments.map((s) => s.text).join('');
 
 test('a tab per space with its key, name and state, the hint at the right, exactly as wide as the screen', () => {
   const layout = barLayout({ spaces, active: 'hail', width: 120 });
   assert.equal(width(layout), 120);
-  assert.match(text(layout), /^ 1 Splice ● {2}2 Trawl ○ {2}3 Sonar ✕1 {2}4 Bosun ○ {2}5 Hail ● {2}6 Keel ○ +ctrl\+\] \? help $/);
+  assert.match(text(layout), /^ 1 Splice ● {2}2 Trawl ○ {2}3 Sonar ✕1 {2}4 Bosun ○ {2}5 Hail ● {2}6 Keel ○ {2}7 Wharf ○ +ctrl\+\] \? help $/);
   assert.equal(layout.segments.find((s) => s.role === 'active').id, 'hail');
   assert.deepEqual(stateMark({ state: 'exited', code: 0 }), '✕0');
 });
 
 test('narrower, the hint goes, then the names shrink to letters, then it is cut', () => {
-  const noHint = barLayout({ spaces, active: 'splice', width: 70 });
-  assert.equal(width(noHint), 70);
+  const noHint = barLayout({ spaces, active: 'splice', width: 90 });
+  assert.equal(width(noHint), 90);
   assert.ok(!text(noHint).includes('help'));
   assert.ok(text(noHint).includes('Splice'));
   const letters = barLayout({ spaces, active: 'splice', width: 40 });
@@ -30,10 +30,10 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 120, prefix: true })), /1-6 s t o b h k · n p · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 120, prefix: true })), /1-7 s t o b h k w · n p · q quit · \? help $/);
   // With little room the prefix's keys win over the names.
-  const tight = barLayout({ spaces, active: 'splice', width: 80, prefix: true });
-  assert.equal(width(tight), 80);
+  const tight = barLayout({ spaces, active: 'splice', width: 92, prefix: true });
+  assert.equal(width(tight), 92);
   assert.match(text(tight), / 1 S ● .*q quit/);
   assert.match(text(barLayout({ spaces, active: 'splice', width: 120, notice: 'Handed to Trawl' })), /Handed to Trawl $/);
 });

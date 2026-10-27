@@ -1,4 +1,4 @@
-// What Sonar itself does with the family (family.js, shared by all five apps, has the rest: the names,
+// What Sonar itself does with the family (family.js, shared by all six apps, has the rest: the names,
 // who takes what, the paste rule, the copied note and Trawl's lines): what /family offers, and Ping's
 // mood in the family's words and its word on theirs. Pure.
 import { relative } from 'node:path';

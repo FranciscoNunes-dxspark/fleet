@@ -2,7 +2,7 @@
 // and what Squawk says when a sibling's mascot is worried, sad or happy. Pure.
 import { PET } from './pet.js';
 
-const APPS = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail' };
+const APPS = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf' };
 export const appName = (app) => APPS[app] ?? app;
 const names = (ps) => (ps.length <= 3 ? ps.map((p) => p.name).join(', ') : `${ps.slice(0, 2).map((p) => p.name).join(', ')} and ${ps.length - 2} more`);
 

@@ -1,15 +1,15 @@
-<p align="center"><img src="assets/logo.svg" width="120" alt="A ship's wheel with six handles, one per app"></p>
+<p align="center"><img src="assets/logo.svg" width="120" alt="A ship's wheel with seven handles, one per app"></p>
 
 # Fleet
 
 The family's terminal apps in one terminal: [Splice](../splice) (git), [Trawl](../trawl) (SQL),
 [Sonar](../sonar) (Azure), [Bosun](../bosun) (a project's processes), [Hail](../hail) (HTTP) and
-[Keel](../keel)'s terminal app (Azure DevOps). Each runs exactly as it does by itself, with its own
+[Keel](../keel)'s terminal app (Azure DevOps) and [Wharf](../wharf) (containers). Each runs exactly as it does by itself, with its own
 settings, sign-ins and keys; Fleet shows one at a time and switches between them with `ctrl+]`, as
 tmux does with its windows. A bar at the bottom shows them all.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Keel ○                ctrl+] ? help
+ 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Keel ○  7 Wharf ○      ctrl+] ? help
 ```
 
 `●` runs, `○` hasn't started yet, `✕` and a number exited with that code. The app on screen has its
@@ -29,7 +29,7 @@ Started some other way on Windows, as the bare `fleet-windows-x64.exe` opens in 
 whose one font lacks many of the apps' characters: Fleet draws lookalikes in their place there.
 
 **Elsewhere**, or for the bare executable, download `fleet` for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
-and put it on your PATH. It is one executable with all six apps inside, so it's the only download you
+and put it on your PATH. It is one executable with all seven apps inside, so it's the only download you
 need. It checks for a new version once a day and installs it by itself; the new version starts the
 next time you open Fleet. (The apps inside don't update themselves: Fleet updates them together. `/update` in any of them asks Fleet to look for a new version now and install it.)
 
@@ -63,9 +63,9 @@ Only `ctrl+]` is Fleet's, and the key after it:
 
 | Keys | What they do |
 | --- | --- |
-| `alt+1`–`alt+6` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
+| `alt+1`–`alt+7` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
 | `ctrl+]` `1`–`6` | Switch to that space |
-| `ctrl+]` `s` `t` `o` `b` `h` `k` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel |
+| `ctrl+]` `s` `t` `o` `b` `h` `k` `w` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf |
 | `ctrl+]` `]` or `n` | The next space |
 | `ctrl+]` `p` | The previous space |
 | `ctrl+]` `ctrl+]` | Send `ctrl+]` to the app |

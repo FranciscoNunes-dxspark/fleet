@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Fleet is the family of keyboard-driven terminal apps in one repository: Splice (git), Trawl (SQL), Sonar (Azure), Bosun (a project's processes), Hail (HTTP) and Keel (Azure DevOps: a web app, a terminal app and an Android app), the kit they share, and Fleet the host (`apps/fleet`), which runs all six in one terminal. Each app keeps its own CLAUDE.md (read it before changing the app: it has the app's architecture, tests and rules) and README (the user-facing spec: when behaviour changes, update it too). This file is what holds across them.
+Fleet is the family of keyboard-driven terminal apps in one repository: Splice (git), Trawl (SQL), Sonar (Azure), Bosun (a project's processes), Hail (HTTP), Keel (Azure DevOps: a web app, a terminal app and an Android app) and Wharf (containers), the kit they share, and Fleet the host (`apps/fleet`), which runs all seven in one terminal. Each app keeps its own CLAUDE.md (read it before changing the app: it has the app's architecture, tests and rules) and README (the user-facing spec: when behaviour changes, update it too). This file is what holds across them.
 
 ## Layout
 
@@ -11,8 +11,8 @@ package.json            private root: npm workspaces ["packages/*", "apps/*"], N
 package-lock.json       the one lockfile
 patches/                patch-package's patches, applied to the root node_modules on install (scripts/postinstall.js)
 packages/kit/           @fleet/kit: the shared files and their tests
-apps/<app>/             splice, trawl, sonar, bosun, hail, keel: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
-apps/fleet/             the host (@fleet/host, binary fleet): the six apps in one terminal, each its own process in hosted mode
+apps/<app>/             splice, trawl, sonar, bosun, hail, keel, wharf: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
+apps/fleet/             the host (@fleet/host, binary fleet): the seven apps in one terminal, each its own process in hosted mode
 .github/workflows/      test.yml, release.yml (+ release-app.yml), release-keel-android.yml
 .github/scripts/        changed.mjs: which apps a change touches
 ```
@@ -33,7 +33,7 @@ Inside an app, its own CLAUDE.md lists the rest (one test file, a name pattern, 
 
 ## The kit (`packages/kit`, `@fleet/kit`)
 
-What the apps used to copy between them (and checked with a `shared-check.js` script) is one package now: `text.js`, `ui/parts.jsx`, `ui/hooks.js`, `ui/HelpView.jsx`, `ui/Palette.jsx`, `mouse.js`, `selection.js`, `clipboard.js` (also ctrl+v's paste where the terminal sends it on as a key), `glyphs.js` (in Windows' own console, characters its font lacks swapped for ones it has), `jsx-hooks.js` and `register.js` (the `.jsx` loader), `help-layout.js`, `keymap.js`, `usercommands.js`, `palette.js`, `run.js`, `credentials.js`, `claude-cli.js`, `family.js`, `update.js` (the updater), `theme.js` (the colour object the kit's parts draw with), `app.js` and `version.js`, `hosted.js` (hosted mode, below), and `scripts/build.js` (the Bun build). Apps import them by path, `@fleet/kit/text.js`, each listed in the kit's package.json `exports`. Its tests are in `packages/kit/test` (`npm run test:kit`).
+What the apps used to copy between them (and checked with a `shared-check.js` script) is one package now: `text.js`, `ui/parts.jsx`, `ui/hooks.js`, `ui/HelpView.jsx`, `ui/Palette.jsx`, `mouse.js`, `selection.js`, `search.js` (a viewer's search), `datatree.js` and `ui/DataViewer.jsx` (a JSON or CSV body or result set as a tree or table, with a path query: Hail's `d` and Trawl's `w`), `clipboard.js` (also ctrl+v's paste where the terminal sends it on as a key), `glyphs.js` (in Windows' own console, characters its font lacks swapped for ones it has), `jsx-hooks.js` and `register.js` (the `.jsx` loader), `help-layout.js`, `keymap.js`, `usercommands.js`, `palette.js`, `run.js`, `credentials.js`, `claude-cli.js`, `family.js`, `update.js` (the updater), `theme.js` (the colour object the kit's parts draw with), `app.js` and `version.js`, `hosted.js` (hosted mode, below), and `scripts/build.js` (the Bun build). Apps import them by path, `@fleet/kit/text.js`, each listed in the kit's package.json `exports`. Its tests are in `packages/kit/test` (`npm run test:kit`).
 
 Rules:
 

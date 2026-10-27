@@ -4086,7 +4086,7 @@ export function family(ctx) {
 
 /**
  * /timeline: what the family's apps did (family.js's activity log: pushes, writes to a database, restarts),
- * newest first, from all five. p shows this repository's alone (with what names no project), or everything
+ * newest first, from all six. p shows this repository's alone (with what names no project), or everything
  * again; ↵ shows an entry whole.
  */
 export function timeline(ctx, { mine = false, replace = false } = {}) {

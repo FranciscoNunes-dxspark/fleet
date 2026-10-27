@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Fleet (`apps/fleet`, package `@fleet/host`, binary and releases `fleet`, tags `fleet-v…`) is the host: one terminal program that runs the family's six apps (Splice, Trawl, Sonar, Bosun, Hail, Keel's terminal app) and switches between them with a prefix, `ctrl+]`, like tmux. Plain JavaScript ES modules; the host itself draws with escape sequences, not Ink. The README is the user-facing spec; when behaviour changes, update it too. The root CLAUDE.md has the repository's rules (the kit, CI, releases).
+Fleet (`apps/fleet`, package `@fleet/host`, binary and releases `fleet`, tags `fleet-v…`) is the host: one terminal program that runs the family's seven apps (Splice, Trawl, Sonar, Bosun, Hail, Keel's terminal app, Wharf) and switches between them with a prefix, `ctrl+]`, like tmux. Plain JavaScript ES modules; the host itself draws with escape sequences, not Ink. The README is the user-facing spec; when behaviour changes, update it too. The root CLAUDE.md has the repository's rules (the kit, CI, releases).
 
 ## Commands
 
@@ -10,7 +10,7 @@ Fleet (`apps/fleet`, package `@fleet/host`, binary and releases `fleet`, tags `f
 npm test                                                       # here; npm run test:fleet at the root
 node --import @fleet/kit/register.js --import ./src/app.js --test test/keys.test.js     # one file
 npm start                                                      # run from the checkout (needs a real TTY): node bin/fleet.js [app] [args…]
-npm run build                                                  # Bun-compiled executable for this machine → dist/fleet-<platform>, all six apps inside
+npm run build                                                  # Bun-compiled executable for this machine → dist/fleet-<platform>, all seven apps inside
 node scripts/logo.js                                           # regenerate assets/ (the ship's wheel, its handles in src/spaces.js's accents)
 powershell -File installer\build.ps1 [-Version 1.2.3]        # Windows, after npm run build: dist\fleet-windows-x64-setup.exe (needs Inno Setup 6)
 ```
@@ -31,7 +31,7 @@ powershell -File installer\build.ps1 [-Version 1.2.3]        # Windows, after np
 
 - **`src/main.js`**: the entry point (bin/fleet.js from a checkout, the build's `entry`). It imports nothing up front, because `fleet --run <app> [args]` makes the process that app: it takes `--run <app>` out of `process.argv` and imports the app's cli (`../../<app>/src/cli.jsx`, Keel's `cli/cli.jsx`), which must be the first to call `configureApp`. Anything else imports `cli.js`, the host.
 - **`src/cli.js`**: the host's command line (`fleet [app] [args…]`, `-v`, `-h`), the TTY check, raw mode, the kit's `plainOutput` (in Windows' own console the characters its font lacks are swapped as everything, the apps' output too, goes out), the first space (named, else `host.json`'s last, else Splice), cleanup (every app stopped and the terminal given back however the host ends: `exit`, `SIGTERM`, `SIGHUP`, an uncaught error), and its own update check (compiled only, the kit's `update.js` under the name `fleet`).
-- **`src/spaces.js`**: the six spaces (`id`, `title`, `letter`, `accent` from each app's theme) and `launchCommand`: from a checkout `node apps/<app>/bin/<app>.js`, as the app's `npm start`; compiled, the executable itself with `--run <app>`.
+- **`src/spaces.js`**: the seven spaces (`id`, `title`, `letter`, `accent` from each app's theme) and `launchCommand`: from a checkout `node apps/<app>/bin/<app>.js`, as the app's `npm start`; compiled, the executable itself with `--run <app>`.
 - **`src/launch.js`**: `appSpawner` starts an app with stdio `pipe` ×4 (stderr kept for the exited screen, fd 3 the control pipe), in its own process group off Windows, with `appEnv` (hosted mode, the size, and `FORCE_COLOR` from the terminal's colour depth, since colour libraries see a pipe). `killTree`: SIGTERM, or SIGKILL to the group; `taskkill /T /F` on Windows.
 - **`src/keys.js`** (pure): `readKeys(state, input)` → `{ state, actions }`: `send` (everything but the prefix and its key, unchanged), `switch`, `move`, `quit`, `help`, `prefix`. The key after the prefix is a whole escape sequence where it is one, so an arrow can't leak `[A` to the app. `takeBarClicks` takes SGR mouse reports on the bar's row out of what goes to the app.
 - **`src/bar.js`** (pure): `barLayout` (tabs, state marks, the hint or the prefix's keys or a notice; widths through the kit's `text.js`; names shrink to letters, then the line is cut), `tabAt` for clicks, `renderBar` (the accent in 24-bit colour, else the nearest of 256).
@@ -43,7 +43,7 @@ powershell -File installer\build.ps1 [-Version 1.2.3]        # Windows, after np
 
 ## Version and build
 
-The kit's `scripts/build.js` reads `"fleet"` in package.json: `entry` `src/main.js`, `compile` off Bun's `.env` and bunfig loading (Keel's server code is inside), and `includes`, the six apps' folders: each one's `process.env.<APP>_VERSION` is defined from its own package.json, as each app's `src/app.js` reads it, beside `FLEET_VERSION`. So inside the build every app is `COMPILED` with its own version (Keel keeps its data in `~/.keel` as its own build does), and none updates itself, since each cli turns updates off in hosted mode. Releases are `fleet-v…`, made whenever any app, the kit or Fleet changes (`.github/scripts/changed.mjs` adds Fleet to any app's change).
+The kit's `scripts/build.js` reads `"fleet"` in package.json: `entry` `src/main.js`, `compile` off Bun's `.env` and bunfig loading (Keel's server code is inside), and `includes`, the seven apps' folders: each one's `process.env.<APP>_VERSION` is defined from its own package.json, as each app's `src/app.js` reads it, beside `FLEET_VERSION`. So inside the build every app is `COMPILED` with its own version (Keel keeps its data in `~/.keel` as its own build does), and none updates itself, since each cli turns updates off in hosted mode. Releases are `fleet-v…`, made whenever any app, the kit or Fleet changes (`.github/scripts/changed.mjs` adds Fleet to any app's change).
 
 ## The Windows installer
 

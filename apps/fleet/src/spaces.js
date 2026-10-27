@@ -1,4 +1,4 @@
-// The six spaces: one per app of the family, in the order of their keys (ctrl+] 1 to 6), each with the
+// The seven spaces: one per app of the family, in the order of their keys (ctrl+] 1 to 7), each with the
 // letter that also switches to it and the accent its own theme.js comes with (the bar marks the
 // active tab in it). Sonar's letter is o: s is Splice's.
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ export const SPACES = [
   { id: 'bosun', title: 'Bosun', letter: 'b', accent: '#ff6b6b' },
   { id: 'hail', title: 'Hail', letter: 'h', accent: '#e8445a' },
   { id: 'keel', title: 'Keel', letter: 'k', accent: '#ff8a65' },
+  { id: 'wharf', title: 'Wharf', letter: 'w', accent: '#3fb8b0' },
 ];
 
 export const IDS = SPACES.map((s) => s.id);
@@ -22,7 +23,7 @@ export function spaceNamed(name) {
 }
 
 // Each app's entry point in the checkout, relative to apps/: what its own `npm start` runs.
-const ENTRIES = { splice: 'splice/bin/splice.js', trawl: 'trawl/bin/trawl.js', sonar: 'sonar/bin/sonar.js', bosun: 'bosun/bin/bosun.js', hail: 'hail/bin/hail.js', keel: 'keel/bin/keel.js' };
+const ENTRIES = { splice: 'splice/bin/splice.js', trawl: 'trawl/bin/trawl.js', sonar: 'sonar/bin/sonar.js', bosun: 'bosun/bin/bosun.js', hail: 'hail/bin/hail.js', keel: 'keel/bin/keel.js', wharf: 'wharf/bin/wharf.js' };
 
 /** apps/ in the checkout this file is in. */
 export const APPS_DIR = fileURLToPath(new URL('../../', import.meta.url));

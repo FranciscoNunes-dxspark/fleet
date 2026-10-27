@@ -1,6 +1,6 @@
 // How diff lines are coloured in the views and the viewer.
 import { theme } from '../theme.js';
-import { markRanges } from '../search.js';
+import { markRanges } from '@fleet/kit/search.js';
 import { clean } from '@fleet/kit/text.js';
 
 /** A diff line coloured by its prefix. */
@@ -14,7 +14,7 @@ export function diffSegment(line) {
   return { text };
 }
 
-/** A diff line as segments, with the words it changed (`ranges`, from search.js's wordChanges) picked out. */
+/** A diff line as segments, with the words it changed (`ranges`, from wordchanges.js's wordChanges) picked out. */
 export function diffSegments(line, ranges) {
   const seg = diffSegment(line);
   if (!ranges) return [seg];

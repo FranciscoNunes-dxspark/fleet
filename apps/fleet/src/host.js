@@ -35,9 +35,9 @@ const STOP_GRACE = 3000;
 const NOTICE_MS = 4000;
 
 export const HELP = [
-  ['alt+1-6', 'switch to that space'],
-  ['ctrl+] 1-6', 'switch to that space'],
-  ['ctrl+] s t o b h k', 'Splice, Trawl, Sonar, Bosun, Hail, Keel'],
+  ['alt+1-7', 'switch to that space'],
+  ['ctrl+] 1-7', 'switch to that space'],
+  ['ctrl+] s t o b h k w', 'Splice, Trawl, Sonar, Bosun, Hail, Keel, Wharf'],
   ['ctrl+] ] or n', 'next space'],
   ['ctrl+] p', 'previous space'],
   ['ctrl+] ctrl+]', 'send ctrl+] to the app'],

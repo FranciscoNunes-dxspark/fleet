@@ -37,6 +37,7 @@ import { QueryView } from './QueryView.jsx';
 import { ResultsView } from './ResultsView.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
+import { DataViewer } from '@fleet/kit/ui/DataViewer.jsx';
 import { Picker } from './Picker.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Glim.jsx';
 import { FACES, moodFor } from '../glim.js';
@@ -1280,6 +1281,8 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
     askClaude,
     findDataSources,
     showText: (title, text, extra = {}) => setOverlay({ title, text, ...extra }),
+    // JSON text or rows over the view, as a tree or a table to open and query (the kit's DataViewer): `data` is { text } or { rows }.
+    showData: (title, data) => setOverlay({ title, data }),
     // A list to pick from (Picker.jsx): { title, hint, items, keys, empty }.
     showPicker: (picker) => setOverlay({ picker }),
     closeOverlay: () => setOverlay(null),
@@ -1690,6 +1693,8 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
     main = <Palette items={paletteList} query={overlay.palette.query} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onPick={runPicked} onClose={closeOnKey} />;
   } else if (overlay?.picker) {
     main = <Picker {...overlay.picker} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={closeOnKey} />;
+  } else if (overlay?.data) {
+    main = <DataViewer key={overlay.title} title={overlay.title} text={overlay.data.text} rows={overlay.data.rows} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={closeOnKey} />;
   } else if (overlay) {
     main = <TextViewer key={overlay.title} {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && (!confirmReq || confirmReq.scrollsOverlay)} pageOnly={Boolean(confirmReq)} onClose={closeOnKey} />;
   } else if (view === 'connections') {
@@ -1744,6 +1749,8 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
           ? 'type to filter · ↑↓ pick · ↵ run it (a key in the view; a command that takes more goes into the prompt) · esc close'
           : overlay?.picker
           ? `j/k move · ${overlay.picker.hint} · esc close`
+          : overlay?.data
+          ? 'j/k move · →← open · y copy · / query · t table or tree · esc close'
           : overlay
           ? 'j/k scroll · space page · esc close'
           : view === 'query' && queryMode === 'console'

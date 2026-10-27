@@ -7,6 +7,7 @@ export const COMMANDS = [
   { name: 'load', args: '[request] [count] [concurrency]', desc: 'Send a request many times, so many at once (200, 10 at a time, unless said), and report its latency, statuses and errors; esc stops it', complete: 'requests', run: (ctx, s) => a.load(ctx, s) },
   { name: 'env', args: '[name]', desc: 'The environment the variables come from (a list to pick from if none is named)', complete: 'environments', run: (ctx, s) => a.chooseEnvironment(ctx, s) },
   { name: 'curl', args: '[request]', desc: 'Copy a request, filled in, as a curl command', complete: 'requests', run: (ctx, s) => a.copyCurl(ctx, s) },
+  { name: 'data', desc: "The response body (JSON, JSON lines or CSV) as a tree or table to open and query with a path like .items[0].name (d in Response)", run: (ctx) => a.showData(ctx) },
   { name: 'import-curl', args: '<curl command>', desc: 'Add a request to the file from a curl command (a browser\'s Copy as cURL, from any shell)', run: (ctx, s) => a.importCurl(ctx, s) },
   { name: 'import', args: '<file> [--new]', desc: 'Add requests from a Postman collection (or environment), a HAR recording, or an OpenAPI or Swagger document; --new writes them to a file of their own', run: (ctx, s) => a.importFrom(ctx, s) },
   { name: 'mock', args: '[port|off]', desc: 'Serve the responses kept for this file\'s requests (and the contract\'s examples) on http://127.0.0.1:4010, or stop it', run: (ctx, s) => a.mock(ctx, s) },

@@ -269,6 +269,9 @@ export function ResultsView({ results, changes, setIndex, view, ctx, width, heig
     else if (input === 'v') {
       ctx.cellOnScreen = cellAt(row, cur);
       a.showCell(ctx);
+    } else if (input === 'w') {
+      ctx.cellOnScreen = cellAt(row, cur);
+      a.showData(ctx);
     } else if (input === 'F') isNew(row) ? ctx.note('This row is new: it refers to nothing until it is saved.', 'error') : a.followKey(ctx, { row, col: cur });
     else if (input === 'e' || input === 'i') startEditing(row, cur);
     else if (input === 'n') {

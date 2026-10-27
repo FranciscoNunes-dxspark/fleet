@@ -1,4 +1,4 @@
-// Draws Fleet's logo into assets/: a ship's wheel with six handles in the family's accents, one per
+// Draws Fleet's logo into assets/: a ship's wheel with a handle for each space (seven) in the family's accents, one per
 // space in the bar, clockwise from the top in the order of their keys, on the dark rounded square the
 // siblings' icons use. It's pixel art on a 32-pixel grid, lit from the top left. logo.svg (README),
 // logo.png (512 px) and logo.ico (the Windows executable's icon, which the kit's scripts/build.js
@@ -51,7 +51,7 @@ function wheel(x, y) {
     return lit > 0.3 ? WOOD : lit < -0.3 ? WOOD_DARK : mix(WOOD, WOOD_DARK, 0.4);
   }
   for (const [i, space] of SPACES.entries()) {
-    const a = ((-90 + 60 * i) * Math.PI) / 180;
+    const a = ((-90 + (360 / SPACES.length) * i) * Math.PI) / 180;
     const ax = Math.cos(a);
     const ay = Math.sin(a);
     const t = dx * ax + dy * ay; // along the spoke

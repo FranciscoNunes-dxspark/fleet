@@ -24,7 +24,7 @@ Each runs as it does by itself, one on screen at a time; the bar at the bottom
 shows them all. fleet <app> opens that one (and starts it with args…);
 fleet alone opens the one you used last.
 
-  ctrl+] 1-6 or s t o b h k   switch (o is Sonar)
+  ctrl+] 1-7 or s t o b h k w switch (o is Sonar)
   ctrl+] ] / n / p            next, previous
   ctrl+] ctrl+]               send ctrl+] to the app
   ctrl+] q                    quit, stopping every app

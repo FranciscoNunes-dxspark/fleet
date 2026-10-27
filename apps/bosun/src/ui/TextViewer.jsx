@@ -3,7 +3,7 @@ import { useInput } from 'ink';
 import { theme } from '../theme.js';
 import { wrap } from '@fleet/kit/text.js';
 import { isTrouble } from '../crew.js';
-import { lineText, markRanges, matcher } from '../search.js';
+import { lineText, markRanges, matcher } from '@fleet/kit/search.js';
 import { useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 

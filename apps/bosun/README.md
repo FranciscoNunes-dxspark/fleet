@@ -174,7 +174,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `f` | Free its port: stop whatever else is holding it (asks first) |
 | `p` | Profiles |
 | `y` | Copy its command |
-| `t` | Copy its latest trouble line for Sonar or Hail, to paste into their prompt (see The family) |
+| `t` | Copy its latest trouble line for Sonar, Hail or Wharf, to paste into their prompt (see The family) |
 | `alt+t` | Open its port to the internet, or close its tunnel (see Tunnels) |
 
 Beside each running process, when the list has room, is what it uses: its CPU (as a % of one core, so
@@ -295,14 +295,14 @@ there; it never holds a password or a token.
   copies one.
 - `t` in Crew copies the process's latest trouble line as `/take family:v1:logline:…`, with the
   request id it names (`x-request-id`, `requestId`, `request_id`, `traceparent`'s trace id,
-  `operation_Id`), for Sonar or Hail to find that request. Anything that looks like a password or token
+  `operation_Id`), for Sonar, Hail or Wharf to find that request. Anything that looks like a password or token
   in the line is blanked.
 - `/take <line>` takes what a sibling copied (the `family:v1:…` part alone works too): a log line or an
   exception is looked for in the crew's logs, by its request id and then its text, and the lines that
   say it open in the viewer. Anything else is another app's, and Bosun says whose.
 - Pasting a `/command` or a `family:v1:` line while a view has the keys opens the prompt with it, to
   run with `↵`.
-- `/timeline` shows what the five apps did, newest first, from the log they all add to: Bosun adds a
+- `/timeline` shows what the six apps did, newest first, from the log they all add to: Bosun adds a
   process crashing (once, not each time it's restarted) or giving up, your restarts and stops (of a
   process, a group or the crew), tunnels opened and closed, and `/move`; the siblings add their own
   (a push, a write to a database…). It starts with this project's (and what names no project); `p`

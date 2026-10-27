@@ -6,7 +6,7 @@ import { promptMessage } from '../message.js';
 import { hunkPicks, isChange, parseDiff } from '../patch.js';
 import { changeDiff } from '../repo.js';
 import { ownersLine, ownersOf } from '../codeowners.js';
-import { wordChanges } from '../search.js';
+import { wordChanges } from '../wordchanges.js';
 import { SPLIT_WIDTH, rowLines, splitView } from '../split.js';
 import { codeColor, theme } from '../theme.js';
 import { clean, fitSegments } from '@fleet/kit/text.js';

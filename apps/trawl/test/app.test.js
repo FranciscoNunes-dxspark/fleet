@@ -799,6 +799,36 @@ test('Results: v shows the whole value of a cell, JSON and XML laid out', async 
   app.unmount();
 });
 
+test('Results: w opens a JSON cell as a tree to query, and /data the result set as a table', async () => {
+  const app = start();
+  await until(() => frame().includes('Clubs'), 'the explorer');
+  await type(app.stdin, `!SELECT N'{"club":"A","players":[1,2]}' AS Doc, 7 AS N`);
+  app.stdin.write(KEYS.enter);
+  await until(() => frame().includes('1 row ·'), 'the results');
+  app.stdin.write('w');
+  await until(() => frame().includes('Doc · row 1 of 1') && frame().includes('club: "A"'), 'the tree');
+  app.stdin.write('/');
+  await type(app.stdin, '.players[]');
+  app.stdin.write(KEYS.enter);
+  await until(() => frame().includes('2 matches'), 'the query answered');
+  app.stdin.write(KEYS.esc);
+  await until(() => !frame().includes('2 matches'), 'the query cleared');
+  app.stdin.write(KEYS.esc);
+  await until(() => !frame().includes('club: "A"'), 'the viewer closed');
+  app.stdin.write('l');
+  await new Promise((r) => setTimeout(r, 50));
+  app.stdin.write('w');
+  await until(() => frame().includes('Result set · 1 row') && /Doc\s+N/.test(frame()), 'the table');
+  // The same through the command.
+  app.stdin.write('q');
+  await until(() => !frame().includes('Result set · 1 row'), 'the table closed');
+  await type(app.stdin, '/data');
+  app.stdin.write(KEYS.enter);
+  // The cursor is back on the Doc cell, which holds JSON, so /data opens it as a tree, as w does.
+  await until(() => frame().includes('Doc · row 1 of 1') && frame().includes('club: "A"'), 'the cell through /data');
+  app.unmount();
+});
+
 test('/export to .md and /copy md give the result set as a Markdown table', async () => {
   const copied = [];
   const app = start('demo', { clipboard: async (text) => (copied.push(text), 'system') });

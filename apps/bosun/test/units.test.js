@@ -17,7 +17,7 @@ import { nextTheme } from '../src/settings.js';
 import { exitNews, notification, worthNotifying } from '../src/notify.js';
 import { run } from '@fleet/kit/run.js';
 import { expand, parseDotenv } from '../src/dotenv.js';
-import { markRanges, matcher } from '../src/search.js';
+import { markRanges, matcher } from '@fleet/kit/search.js';
 import { parseYaml, scalar } from '../src/yaml.js';
 import { globRegex, skipsFolder, watchMatcher, watchRoots } from '../src/watch.js';
 
