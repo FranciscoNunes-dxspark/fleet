@@ -5,6 +5,19 @@ Terminal. A GUI version should add what a window does better (real pixels for gr
 notifications, drag and drop, many panes at once, no font quirks) without forking what each app knows.
 This plan gets there in steps, each of which ships on its own.
 
+## Where it stands
+
+- **Phases 0 and 2, done another way.** `fleet gui` (apps/fleet/src/gui, apps/fleet/gui) runs every app as the
+  terminal host does and draws each one's screen in the window as HTML, from a virtual terminal Fleet
+  keeps per app: real fonts, CSS-drawn borders and pixel art, selectable text, the window's own rail,
+  split, drawers and palette. That needed no change to any app and no second renderer for Ink, so phase 1
+  (moving state out of the `App.jsx` components) is no longer in the way of a window; it's still worth
+  doing for phase 3's richer views.
+- **Fleet Desktop** (desktop/): Electron around `fleet gui`, with the fleet executable inside, released by
+  hand (`release-desktop.yml`). Electron was the choice, as recommended below.
+- **Phase 3, started.** The kit's `ui/GuiView.jsx` lets an app hand the window a region to draw natively;
+  Sonar's KQL charts and Trawl's `/chart` are the first. Next candidates are the table below's.
+
 ## What we already have to build on
 
 - **The domain code is already apart from the screens.** Each app's `src/*.js` (Splice's `git.js`,

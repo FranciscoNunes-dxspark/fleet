@@ -192,6 +192,59 @@ that mention the id, and the lines of Bosun's recorded sessions of the last day 
 `BOSUN_HOME` moves it) that do, each with its app and where it came from. `f` asks for another id,
 `esc` closes.
 
+## In a window: fleet gui
+
+```bash
+fleet gui                  # the fleet in a window, Splice first
+fleet gui sonar --demo     # Sonar first, with its own arguments
+fleet gui --no-open        # print the address, don't open it
+```
+
+`fleet gui` runs every app exactly as in the terminal, each its own process, but draws them in a
+window: an app window of Chrome, Edge or Chromium when one is installed (without tabs or an address
+bar, so the apps get ctrl+w and ctrl+t too), else the default browser. Each app draws into a screen
+Fleet keeps for it, and the window draws that screen as text in your font, at your window's size:
+panels with really round corners, the mascots' pixel art without gaps, selectable text. Keys, pastes
+and the mouse reach the app as a terminal would send them, so every key in every app's README works
+here too.
+
+Around the apps, Fleet's tools are the window's own:
+
+- **The rail** on the left: each app with its logo, whether it runs, and its badge (the same `!` and
+  counts as the bar's); the window's title counts the badges, and with notifications on (the window
+  offers once) an app that needs you says so even with the window in the background.
+- **Two apps side by side**: Split in the rail, `ctrl+]` `|`, or ctrl-click an app; a click on a pane
+  gives it the keys, and ✕ in its header shows the other alone.
+- **Runbooks** and **Follow** as drawers on the right, with a button per step; **Commands**
+  (`ctrl+shift+p`) for everything, apps included; the folder at the bottom of the rail moves the
+  fleet, with tab completing a folder's name.
+- An app that exits says so in its pane, with the end of what it wrote to stderr, and a button to
+  start it again.
+- What an app copies (OSC 52) goes to the clipboard; its notifications become the system's.
+
+Fleet's keys are the terminal's: `alt+1`–`alt+8`, and `ctrl+]` then the same keys as in the
+[table above](#keys) (`space` opens Commands there). An app with the mouse off leaves it to the
+window, where dragging selects text (`ctrl+shift+c` copies it).
+
+**Native views.** Where an app draws a chart in text, the window draws a real one in its place, with
+a read-out of the values under the pointer: Sonar's charts in Logs (`| render timechart`, `v`) and
+Trawl's `/chart`. The text version stays what the terminal shows.
+
+**Safety.** It listens on `127.0.0.1` only, on a free port (`--port` picks one). The address it prints
+carries a key, which the window keeps as a cookie: nothing is served without it, nothing changes
+without a header no other site can send, and a request under another host name is turned away, so a
+web page can't reach the apps. `ctrl+c` where `fleet gui` runs stops every app.
+
+### Fleet Desktop
+
+[Fleet Desktop](../../desktop) is the same window as an application of its own: a Start menu entry,
+dock icon and menu, the badges' count on its icon, every key for the apps, and **File → Open Folder**
+to run the fleet in another folder (**New Window** for a second fleet beside it). It runs `fleet gui`
+for each window and keeps nothing of its own but the folder and the window's size. Its builds come
+from the **Release Fleet Desktop** workflow, run by hand (`fleet-desktop-v…`: a Windows setup, a
+macOS disk image, a Linux AppImage and .deb), with the `fleet` executable inside. They aren't signed
+yet: Windows asks once, and macOS needs right-click → Open the first time.
+
 ## Claude Code reads the whole fleet (MCP)
 
 `fleet mcp` runs Fleet as an MCP server, so Claude Code, working in a repository, can see what the
