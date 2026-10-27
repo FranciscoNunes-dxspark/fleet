@@ -1,4 +1,4 @@
-// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf, keel) share about each other: what one copies
+// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf, keel, locker) share about each other: what one copies
 // for another, the project a folder is and what it points at, the mascots' moods, and what each app
 // did. The same file in every app (scripts/shared-check.js), so it names no app as "this".
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync } from 'node:fs';
@@ -6,10 +6,10 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { handOff } from './hosted.js';
 
-export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf', 'keel'];
+export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf', 'keel', 'locker'];
 
 /** What each app is for, in a picker's words. */
-export const ROLES = { splice: 'git', trawl: 'SQL', sonar: 'Azure', bosun: 'processes', hail: 'HTTP', wharf: 'containers', keel: 'Azure DevOps' };
+export const ROLES = { splice: 'git', trawl: 'SQL', sonar: 'Azure', bosun: 'processes', hail: 'HTTP', wharf: 'containers', keel: 'Azure DevOps', locker: 'secrets' };
 
 // ---------------------------------------------------------------------------------------------------
 // Sharing: what one app hands another is a command line, copied for you to paste into the other app's
@@ -52,8 +52,8 @@ export const takeLine = (kind, data) => shareLine('take', [encodeContext(kind, d
 export const contextIn = (line) => decodeContext(String(line ?? '').trim().replace(/^\/?take\s+/, ''));
 
 /** The apps' names as they're written, and their mascots'. */
-export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf', keel: 'Keel' };
-export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark', keel: 'Pinch' };
+export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf', keel: 'Keel', locker: 'Locker' };
+export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark', keel: 'Pinch', locker: 'Hush' };
 
 /** Which apps take each kind of context with /take. */
 export const TAKEN_BY = {
@@ -66,6 +66,7 @@ export const TAKEN_BY = {
   logline: ['sonar', 'hail', 'bosun', 'wharf'],
   pullrequest: ['splice', 'keel'],
   pipeline: ['keel'],
+  site: ['locker'],
 };
 
 const either = (apps) => apps.map((a) => APP_NAMES[a] ?? a).join(' or ');
@@ -128,9 +129,10 @@ export function trawlLine(db, name) {
 //   logline   { project?, process, text, time?, requestId? }
 //   pullrequest { org?, project?, repo, id, title?, sourceBranch, targetBranch, url? }   branches without refs/heads/
 //   pipeline  { org?, project?, definitionId?, definition, runId?, run?, branch?, commit?, step?, test?, url? }   run: its number (20261027.3)
+//   site      { name, slot?, resourceGroup?, subscription?, id? }   an App Service app or slot
 
 const PREFIX = 'family:v1:';
-export const CONTEXT_KINDS = ['exception', 'request', 'rows', 'query', 'commit', 'file', 'logline', 'pullrequest', 'pipeline'];
+export const CONTEXT_KINDS = ['exception', 'request', 'rows', 'query', 'commit', 'file', 'logline', 'pullrequest', 'pipeline', 'site'];
 
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64url = (s) => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
@@ -166,6 +168,7 @@ export function describeContext({ kind, data }) {
     case 'logline': return `${data.process ?? 'log'}: ${data.text ?? ''}`;
     case 'pullrequest': return `pull request !${data.id ?? '?'}${data.title ? ` ${data.title}` : ''}${data.sourceBranch && data.targetBranch ? ` (${data.sourceBranch} → ${data.targetBranch})` : ''}`;
     case 'pipeline': return `pipeline ${data.definition ?? data.definitionId ?? ''}${data.run ? ` ${data.run}` : ''}${data.step ? `, failed at ${data.step}` : ''}${data.test ? ` (${data.test})` : ''}`;
+    case 'site': return `app ${data.name ?? ''}${data.slot ? `/${data.slot}` : ''}`;
     default: return kind;
   }
 }

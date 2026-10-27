@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Fleet is the family of keyboard-driven terminal apps in one repository: Splice (git), Trawl (SQL), Sonar (Azure), Bosun (a project's processes), Hail (HTTP), Keel (Azure DevOps: a web app, a terminal app and an Android app) and Wharf (containers), the kit they share, and Fleet the host (`apps/fleet`), which runs all seven in one terminal. Each app keeps its own CLAUDE.md (read it before changing the app: it has the app's architecture, tests and rules) and README (the user-facing spec: when behaviour changes, update it too). This file is what holds across them.
+Fleet is the family of keyboard-driven terminal apps in one repository: Splice (git), Trawl (SQL), Sonar (Azure), Bosun (a project's processes), Hail (HTTP), Keel (Azure DevOps: a web app, a terminal app and an Android app), Wharf (containers) and Locker (secrets and configuration), the kit they share, and Fleet the host (`apps/fleet`), which runs them in one terminal. Each app keeps its own CLAUDE.md (read it before changing the app: it has the app's architecture, tests and rules) and README (the user-facing spec: when behaviour changes, update it too). This file is what holds across them.
 
 ## Layout
 
@@ -11,8 +11,8 @@ package.json            private root: npm workspaces ["packages/*", "apps/*"], N
 package-lock.json       the one lockfile
 patches/                patch-package's patches, applied to the root node_modules on install (scripts/postinstall.js)
 packages/kit/           @fleet/kit: the shared files and their tests
-apps/<app>/             splice, trawl, sonar, bosun, hail, keel, wharf: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
-apps/fleet/             the host (@fleet/host, binary fleet): the seven apps in one terminal, each its own process in hosted mode
+apps/<app>/             splice, trawl, sonar, bosun, hail, keel, wharf, locker: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
+apps/fleet/             the host (@fleet/host, binary fleet): the apps in one terminal, each its own process in hosted mode
 .github/workflows/      test.yml, release.yml (+ release-app.yml), release-keel-android.yml
 .github/scripts/        changed.mjs: which apps a change touches
 ```
@@ -40,7 +40,7 @@ Rules:
 - **No copies.** A shared file exists once, in the kit; an app never keeps its own version of one, and never imports another app's files (Fleet is the one exception: its `src/main.js` imports each app's cli to run it, and its `src/mcp/`, `fleet mcp`, reads each app's world through that app's own modules). What only one app needs lives in that app (Splice's `ui/diffstyle.js`, Keel's `cli/ui/wrap.js`). A change to a kit file changes every app: run every suite (`npm test`), and keep the kit's API backward compatible or change every caller in the same commit. Prefer an option with the old behaviour as its default (`Spinner`'s `hint`, `PromptBox`'s `bang`) to a fork.
 - **The app's name.** A few things carry it: the credential store's entries (`Trawl:<name>`, service `Trawl`: changing it loses saved passwords), the version baked into a build (`TRAWL_VERSION`), the release files (`trawl-linux-x64`) and tags (`trawl-v1.2.3`), the update's work folder and messages. The kit learns it once: each app's `src/app.js` (Keel: `cli/app.js`) calls `configureApp({ name, title, version: process.env.<APP>_VERSION, packageUrl })` and exports `APP`, `VERSION` and `COMPILED`. The entry point (`cli.jsx`) imports it first, everything that wants the version imports it from there, and the test scripts preload it (`--import ./src/app.js`), so it has always run before the kit asks (`app()` throws if not). `version` must be written as that literal `process.env` expression: the build defines it. Each app's `test/names.test.js` checks its names.
 - **Colours.** The kit's parts read `theme` from `@fleet/kit/theme.js`; each app's own `theme.js` fills that same object (`Object.assign(kitTheme, DARK, …)`) and exports it, so the app and the kit always draw with the same palette. Read colours while drawing, never copied at import.
-- **The family.** `family.js` is the protocol between the apps (contexts, moods, activity): shared, and never edited for one app's convenience.
+- **The family.** `family.js` is the protocol between the apps (contexts, moods, activity): shared, and never edited for one app's convenience. Every app is in `FAMILY`, `ROLES`, `APP_NAMES` and `PET_NAMES`; a new kind of context goes in `CONTEXT_KINDS`, `TAKEN_BY` and `describeContext` together (`site`, an App Service app or slot, is Locker's). Nothing secret goes in a context, a mood or the activity log: Locker logs which secret it set or copied, never its value.
 - **Hosted mode.** Fleet (`apps/fleet`) runs each app as a child process with pipes, not a terminal, and `FLEET_HOSTED=1`. Every app's cli must keep working there: it takes its streams from the kit's `appTerminal()` (`hosted.js`: process.stdin/stdout outside the host, made to look like a terminal inside it; either way ctrl+v pastes, and outside it Windows' own console gets `glyphs.js`'s characters) and gives them to its TTY check, `terminalMouse` and Ink's `render({ stdin, stdout })`, and turns its self-update off when `hosted` (Fleet updates as one). It draws full-screen on the alternate screen, as now, and writes nothing to the real terminal any other way. Hand-offs to a sibling go through `family.js` `copiedNote`, which tells the host. `apps/fleet/CLAUDE.md` has the protocol.
 
 ## Installing, and Keel on Hostinger
