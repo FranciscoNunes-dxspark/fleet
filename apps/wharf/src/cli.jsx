@@ -8,13 +8,14 @@ import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
 import { createDocker } from './docker.js';
 import { createKube } from './kube.js';
-import { demoDocker } from './demo.js';
+import { demoDocker, demoShell } from './demo.js';
 import { demoKube } from './demokube.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
 import { terminalMouse } from '@fleet/kit/mouse.js';
 import { appTerminal } from '@fleet/kit/hosted.js';
-import { spawn } from 'node:child_process';
+import { MOUSE_OFF, MOUSE_ON } from '@fleet/kit/mouse.js';
+import { spawn, spawnSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
 
@@ -77,8 +78,32 @@ if (updates) removeOldExecutables();
 const mouse = await terminalMouse(stdin, stdout);
 // y copies: to the system clipboard, or through the terminal (OSC 52) over SSH or when that fails.
 const copy = (text) => copyToClipboard(text);
+
+// e, a shell in a container or pod: the terminal is handed over to it and taken back when it ends.
+// spawnSync, because while it blocks Node reads nothing from the terminal, so every key goes to the
+// shell (a paused stream would still read ahead and take some). Ink is left as it is, and draws its
+// whole frame again on the 'resize' afterwards. Inside Fleet there's no terminal to hand over: App
+// runs the shell in its line-mode pane instead. The demo has nothing to go into, so it's a pretend
+// shell in that pane.
+const demo = args.includes('--demo');
+const runInTerminal =
+  hosted || demo
+    ? undefined
+    : (command, cmdArgs, { mouse: mouseOn = false } = {}) => {
+        const mouseWasOn = mouseOn && Boolean(mouse);
+        if (mouseWasOn) stdout.write(MOUSE_OFF);
+        stdin.setRawMode?.(false);
+        // Off the alternate screen, the cursor shown, to the terminal's own screen and settings.
+        stdout.write('\x1b[?25h\x1b[?1049l');
+        const r = spawnSync(command, cmdArgs, { stdio: 'inherit', windowsHide: false });
+        stdout.write('\x1b[?1049h\x1b[H\x1b[2J\x1b[?25l');
+        stdin.setRawMode?.(true);
+        if (mouseWasOn) stdout.write(MOUSE_ON);
+        stdout.emit('resize');
+        return r;
+      };
 const app = render(
-  <App config={config} provider={args.includes('--demo') ? demoDocker() : createDocker()} kube={args.includes('--demo') ? demoKube() : createKube()} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} provider={demo ? demoDocker() : createDocker()} kube={demo ? demoKube() : createKube()} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} runInTerminal={runInTerminal} {...(demo ? { spawnShell: demoShell() } : {})} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
 );

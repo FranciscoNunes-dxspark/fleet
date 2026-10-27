@@ -1,6 +1,7 @@
 // The Kubernetes operations, written once like actions.js's: keys and slash commands call these with `ctx`.
 import { findPod } from './rows.js';
 import { kubeProblem } from './kube.js';
+import { kubeShell } from './shell.js';
 
 const pods = (ctx) => ctx.kubeData?.pods ?? [];
 
@@ -22,6 +23,42 @@ export function showLogs(ctx, text) {
   const p = pick(ctx, text);
   if (!p) return false;
   ctx.showPodLogs(p);
+  return true;
+}
+
+/**
+ * Which of a pod's containers: `name` when it is one, the only one, or the one picked when it has
+ * several. Resolves null when there's none to act on (said) or the question was put away.
+ */
+async function containerOf(ctx, p, name, what) {
+  const all = p.containers ?? [];
+  if (name) {
+    if (all.includes(name)) return name;
+    ctx.note(`${p.name} has no container called ${name}${all.length ? ` (it has ${all.join(', ')})` : ''}.`, 'error');
+    return null;
+  }
+  if (all.length <= 1) return all[0] ?? null;
+  return ctx.confirm({ title: `${what}: which of ${p.name}'s containers?`, options: all.map((c) => ({ label: c, value: c })) });
+}
+
+/** c on a pod: one container's log (the one picked, when it has several), following it. */
+export async function containerLogs(ctx, text, container) {
+  const p = pick(ctx, text);
+  if (!p) return false;
+  const c = await containerOf(ctx, p, container, 'Its log');
+  if (!c) return false;
+  ctx.showPodLogs(p, { container: c });
+  return true;
+}
+
+/** e or /shell on a pod: a shell in one of its containers (the one picked, when it has several). */
+export async function shell(ctx, text, container) {
+  const p = pick(ctx, text);
+  if (!p) return false;
+  if (p.status !== 'Running') return ctx.note(`${p.name} isn't running (${p.status}).`, 'error') ?? false;
+  const c = await containerOf(ctx, p, container, 'A shell');
+  if ((p.containers ?? []).length > 1 && !c) return false;
+  ctx.openShell({ title: c && p.containers.length > 1 ? `${p.name}/${c}` : p.name, make: (tty) => kubeShell(p, c, { tty }) });
   return true;
 }
 

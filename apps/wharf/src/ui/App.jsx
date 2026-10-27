@@ -21,6 +21,9 @@ import { ImagesView } from './ImagesView.jsx';
 import { PodsView } from './PodsView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
+import { ShellPane } from './ShellPane.jsx';
+import { commandLine } from '../shell.js';
+import { spawn } from 'node:child_process';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
@@ -34,9 +37,9 @@ const VIEWS = [
 ];
 
 const HINTS = {
-  containers: '↵ log · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause',
+  containers: '↵ log · e shell · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause',
   images: 'x remove · p prune unused · y copy id',
-  pods: '↵ log · x delete · r restart deployment · i describe · y copy name · /namespace /context',
+  pods: '↵ log · c a container\'s log · e shell · x delete · r restart deployment · i describe · y copy name',
   log: '↵ all its output · y copy it',
 };
 
@@ -109,7 +112,9 @@ const viewerKey = (overlay) => {
 // again in ms (0: never, for the tests). `copy` puts text on the clipboard (cli.jsx's; tests pass a stub),
 // `openUrl` opens the browser, `notify` is called when a long command ends. `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, provider = createDocker(), kube = createKube(), pollEvery = 3000, moodEvery = 30_000, openUrl, setTitle, mouse, copy, checkUpdate, installUpdate }) {
+// `runInTerminal(command, args)` hands the terminal to a program and takes it back (cli.jsx's, only
+// outside Fleet); without it a shell (e) runs in the line-mode pane, started by `spawnShell`.
+export function App({ config: initialConfig, provider = createDocker(), kube = createKube(), pollEvery = 3000, moodEvery = 30_000, openUrl, setTitle, mouse, copy, checkUpdate, installUpdate, runInTerminal, spawnShell = spawn }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -404,8 +409,19 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     showText: (title, text) => setOverlay({ title, text }),
     // A container's log, followed: read again every moment while it's open.
     showLogs: (c, opts = {}) => setOverlay({ kind: 'logs', title: `${c.name} · log`, process: c.name, project: c.workingDir ?? undefined, source: () => provider.logs(c.id, { tail: 500 }), ...opts }),
-    showPodLogs: (p, opts = {}) => setOverlay({ kind: 'logs', title: `${p.name} · log`, process: p.name, source: () => kube.logs(p, { tail: 500 }), ...opts }),
+    // One container's (`container`), or every one of the pod's.
+    showPodLogs: (p, { container, ...opts } = {}) => setOverlay({ kind: 'logs', title: `${p.name}${container ? `/${container}` : ''} · log`, process: p.name, source: () => kube.logs(p, { tail: 500, container }), ...opts }),
     shareTrouble: (what) => a.shareTrouble(ctx, what),
+    // e: a shell, `make(tty)` saying the command ({ command, args }). With a terminal to hand over it
+    // runs there until it ends; inside Fleet (no terminal) in the line-mode pane.
+    openShell: ({ title, make }) => {
+      if (!runInTerminal) return setOverlay({ kind: 'shell', title, shell: make(false) });
+      const sh = make(true);
+      const r = runInTerminal(sh.command, sh.args, { mouse: configRef.current.mouse !== false });
+      if (r?.error) return note(/ENOENT/.test(r.error.message) ? `${sh.command} isn't installed (or isn't on the PATH).` : `Couldn't start ${commandLine(sh)}: ${firstLine(r.error.message)}`, 'error');
+      // 130 is the shell's own ctrl+c on the way out; anything else but 0 is worth a word.
+      note(r?.status && r.status !== 130 ? `${title}'s shell ended with ${r.status}.` : `Back from ${title}'s shell.`, r?.status && r.status !== 130 ? 'error' : 'info');
+    },
     closeOverlay: () => setOverlay(null),
     showHelp: () => setOverlay({ kind: 'help', start: sectionFor(HELP_SECTIONS, view) }),
     showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('No command has run yet.')),
@@ -503,7 +519,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
 
   // Uppercase shortcuts are alt+letter (caps lock can't fire them); typing in a prompt or a confirm is left alone.
   const sendKey = useKeyTranslation((input) => {
-    if (focusRef.current === 'view' && !confirmRef.current && overlayRef.current?.kind !== 'help') return shortcutKey(input);
+    // The help's search and the shell pane take letters as they are typed.
+    if (focusRef.current === 'view' && !confirmRef.current && !['help', 'shell'].includes(overlayRef.current?.kind)) return shortcutKey(input);
     return input;
   });
   void sendKey;
@@ -587,7 +604,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     // Ink calls the handlers for a key in no fixed order. When a view's ran first and opened the prompt,
     // this same key mustn't then be typed into it.
     if (focusRef.current === 'prompt' && !confirmRef.current) return prefillKey.current === keySeq.current ? undefined : promptKeys(input, key);
-    if (key.ctrl && input === 'c') return nothingToCopy();
+    // In the shell pane ctrl+c is the shell's.
+    if (key.ctrl && input === 'c' && overlayRef.current?.kind !== 'shell') return nothingToCopy();
     if (confirmRef.current || overlayRef.current || answerKey.current === keySeq.current) return;
     globalKeys(input, key);
   });
@@ -692,6 +710,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
   let main;
   if (overlay?.kind === 'help') {
     main = <HelpView sections={HELP_SECTIONS} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
+  } else if (overlay?.kind === 'shell') {
+    main = <ShellPane key={viewerKey(overlay)} title={overlay.title} shell={overlay.shell} spawnShell={spawnShell} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay) {
     main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} source={overlay.source} log={overlay.kind === 'logs'} process={overlay.process} project={overlay.project} search={overlay.search} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (view === 'log') {
@@ -716,10 +736,12 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
+        : overlay?.kind === 'shell'
+          ? '↵ send · ↑↓ history · pgup pgdn scroll · ctrl+c twice stop · esc close'
         : overlay
           ? 'j/k scroll · space page · y copy · esc close'
           : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+  const right = focus === 'prompt' || overlay?.kind === 'shell' ? '' : '  / commands · ! shell · , settings · ? help';
 
   return (
     <Box flexDirection="column" width={W} height={H}>

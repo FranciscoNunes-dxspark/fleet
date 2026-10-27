@@ -14,6 +14,7 @@ export const COMMANDS = [
   { name: 'up', args: '<project>', desc: 'docker compose up -d for a compose project, where its files are', complete: 'projects', run: (ctx, s) => a.compose(ctx, 'up', s) },
   { name: 'down', args: '<project>', desc: 'docker compose down for a compose project: its containers and network are removed (asks first)', complete: 'projects', run: (ctx, s) => a.compose(ctx, 'down', s) },
   { name: 'exec', args: '<name> <command>', desc: 'Run one command inside a running container (no terminal: nothing interactive)', complete: 'containers', run: (ctx, s) => a.exec(ctx, s) },
+  { name: 'shell', args: '<name> [container]', desc: 'A shell inside a running container or pod (bash where it has it, else sh); a pod\'s container by name. Inside Fleet it is line by line', complete: 'containers', run: (ctx, s) => a.shell(ctx, s) },
   { name: 'pods', desc: 'The pods of the cluster kubectl is set to: the Pods view', run: (ctx) => ctx.setView('pods') },
   { name: 'namespace', args: '[name|all]', desc: 'Which namespace the Pods view lists', complete: 'namespaces', run: (ctx, s) => k.namespace(ctx, s) },
   { name: 'context', args: '[name]', desc: 'Which cluster kubectl talks to (asks before switching: it is kubectl itself that changes)', complete: 'contexts', run: (ctx, s) => k.useContext(ctx, s) },

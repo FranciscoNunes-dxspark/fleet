@@ -42,6 +42,7 @@ export function ContainersView({ containers, stats, onlyRunning, ctx, width, hei
     else if (input === 'o') a.open(ctx, sel.id);
     else if (input === 'p') a.change(ctx, sel.state === 'paused' ? 'unpause' : 'pause', sel.id);
     else if (input === 'y') a.copyId(ctx, sel);
+    else if (input === 'e') a.shell(ctx, sel.id);
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {
