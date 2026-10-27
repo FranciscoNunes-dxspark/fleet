@@ -5,7 +5,7 @@ import { stringWidth } from '../text.js';
 
 test("characters Consolas lacks become ones it has, each as wide as the one it replaces", () => {
   assert.equal(plainGlyphs('❯ main ✓ ↵ open ╭─╯ ◌'), '> main √ ┘ open ┌─┘ ○');
-  for (const ch of '‖↵⏎↻⇄⇅⊘⎇⎿⏺┏╭╮╯╰▁▂▃▅▆▇▉▊▋▍▎▏△▶▸▾◀◂◆◉◌◐◔⚠✓✔✕✗✢✳✶✻✽❚❤❯') {
+  for (const ch of '‖↵⏎↻⇄⇅⊘⎇⎿⏺┏╭╮╯╰▁▂▃▅▆▇▉▊▋▍▎▏△▶▸▾◀◂◆◉◌◐◔⚠✓✔✕✗✢✱✳✶✻✽❚❤❯') {
     assert.equal(stringWidth(plainGlyphs(ch)), stringWidth(ch), ch);
   }
   assert.equal(plainGlyphs('\x1b[32m● plain text\x1b[0m'), '\x1b[32m● plain text\x1b[0m');
