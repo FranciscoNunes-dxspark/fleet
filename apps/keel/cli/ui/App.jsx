@@ -6,6 +6,9 @@ import { WI_VIEW_IDS, monitorFullText, pipelineDetail, prFullText, wiFullText } 
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
 import { askHostToUpdate } from '@fleet/kit/hosted.js';
+import { copyToClipboard } from '@fleet/kit/clipboard.js';
+import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
+import { familyMood, mineGone, moodKey, newlyFailing, reactionLine, reactionTo } from '../kin.js';
 import { logText } from '../log.js';
 import path from 'node:path';
 import { COMPILED, VERSION, openUrl as openInBrowser } from '../open.js';
@@ -16,7 +19,7 @@ import { FACES, moodFor } from '../pinch.js';
 import { githubFullText, isGithubRelease, releaseFullText } from '../releases.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
-import { mouseOn } from '../settings.js';
+import { familyMoodsOn, mouseOn } from '../settings.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
@@ -50,10 +53,10 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 
 const HINTS = {
   inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
-  prs: 'p publish · a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter',
-  pipelines: 'n run · c cancel the run · l the run in full, with logs · ↵ all runs · o browser',
+  prs: 'p publish · a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter · alt+y for Splice',
+  pipelines: 'n run · c cancel the run · l the run in full, with logs · ↵ all runs · alt+y for Splice · alt+s for Sonar · o browser',
   workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
-  production: '↵ everything, and all that is waiting to ship · o open the site',
+  production: '↵ everything, and all that is waiting to ship · o open the site · alt+s Sonar · alt+k compare in Sonar',
   releases: 'n new release · d deploy to a stage · a/x approve or reject · alt+d download a GitHub release file · ↵ everything · o browser',
   board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',
   team: '↵ their work items · p their pull requests · /find a name',
@@ -154,8 +157,12 @@ function activityRows(entries) {
  * it always, for /update.
  * `envFile` is the .env this Keel reads, where Settings saves this computer's choices. `mouse` is
  * mouse.js's terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
+ * `copy` puts a line on the clipboard (the kit's; tests pass a recorder). `familyHome` is the family's
+ * folder (family.js familyDir()), where Pinch's mood and Keel's activity go and the siblings' moods are read
+ * every `familyEvery` ms: cli.jsx passes it, and without it (tests, the web terminal) Keel keeps to itself.
+ * `cwd` is the folder /family and /wiring look at.
  */
-export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, poll = true, checkUpdate, installUpdate, updater, envFile = path.join(ROOT, '.env'), mouse }) {
+export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, poll = true, checkUpdate, installUpdate, updater, envFile = path.join(ROOT, '.env'), mouse, copy = copyToClipboard, familyHome, familyEvery = 30_000, cwd = process.cwd() }) {
   const { service, orgs, signIn, live } = keel;
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
@@ -198,6 +205,36 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     const t = setTimeout(() => setMoodTick((n) => n + 1), 8100);
     return () => clearTimeout(t);
   }, [entries]);
+
+  // Pinch's mood goes to the family whenever it changes, and the siblings' are read every `familyEvery`
+  // ms: a worried, sad or happy one from the last 15 minutes is said once, above the activity lines, until
+  // esc (or two minutes). Family moods in Settings (KEEL_FAMILY_MOODS) turns both off.
+  const [alarm, setAlarm] = useState(null);
+  const [merged, setMerged] = useState(null);
+  const familyOn = Boolean(familyHome) && familyMoodsOn(local.env);
+  const said = familyMood({ data, busy, alarm: alarm?.reason, merged: merged?.reason });
+  useEffect(() => {
+    if (familyOn) writeMood('keel', said, { dir: familyHome });
+  }, [said.mood, said.reason, familyOn]);
+  const [reaction, setReaction] = useState(null);
+  const seenMoods = useRef(new Set());
+  useEffect(() => {
+    if (!familyOn) return setReaction(null);
+    const look = () => {
+      const m = reactionTo(readMoods('keel', { dir: familyHome }), seenMoods.current);
+      if (!m) return;
+      seenMoods.current.add(moodKey(m));
+      setReaction(m);
+    };
+    look();
+    const t = setInterval(look, familyEvery);
+    return () => clearInterval(t);
+  }, [familyOn, familyEvery]);
+  useEffect(() => {
+    if (!reaction) return;
+    const t = setTimeout(() => setReaction(null), 120_000);
+    return () => clearTimeout(t);
+  }, [reaction]);
 
   // Async actions read the latest state through refs, not through stale closures.
   const metaRef = useRef(null);
@@ -252,10 +289,35 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     addEntry({ title, status, lines });
   };
 
+  // What Pinch tells the family about (kin.js familyMood): a pipeline that started failing since the read
+  // before, or your pull request that merged, each for 15 minutes.
+  const noticeChanges = (before, now) => {
+    if (!familyHome) return;
+    const failing = newlyFailing(before.pipelines, now.pipelines);
+    if (failing.length) setAlarm({ reason: `${failing[0].definition.name} started failing${failing.length > 1 ? ` (and ${failing.length - 1} more)` : ''}`, at: Date.now() });
+    // Gone from the active list is completed or abandoned: the closed list says which.
+    const gone = mineGone(before.prs, now.prs);
+    if (gone.length) {
+      service.closedPullRequests(7).then(({ prs: closed }) => {
+        const done = gone.find((p) => closed.some((c) => c.id === p.id && c.repoId === p.repoId && c.status === 'completed'));
+        if (done) setMerged({ reason: `your pull request !${done.id} ${done.title} merged`, at: Date.now() });
+      }, () => {});
+    }
+  };
+  useEffect(() => {
+    if (!alarm && !merged) return;
+    const t = setTimeout(() => {
+      setAlarm(null);
+      setMerged(null);
+    }, 15 * 60_000);
+    return () => clearTimeout(t);
+  }, [alarm, merged]);
+
   // Everything the tabs show, read together. Several callers at once share one read.
   const load = () => {
     loading.current ??= Promise.all([service.attention(), service.pullRequests(), service.pipelines(), service.workItems(), service.production()])
       .then(([attention, prs, pipelines, workItems, production]) => {
+        noticeChanges(dataRef.current, { prs: prs.prs, pipelines });
         setData({ attention, prs: prs.prs, pipelines, workItems, production });
         setPollError(null);
       })
@@ -413,6 +475,17 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     openUrl,
     openSonar,
     quit,
+    // A line for a sibling (actions.js copyFor), said in the bottom line as "Copied <what>".
+    copy: (text, what = 'it') => {
+      Promise.resolve(copy(text)).catch(() => note("Couldn't copy to the clipboard.", 'error'));
+      setFlash({ text: `Copied ${what}` });
+    },
+    familyHome,
+    cwd: () => cwd,
+    // What Keel changed, for the family's /timeline; nothing when it keeps to itself.
+    logActivity: (text, kind) => {
+      if (familyHome) logActivity('keel', { text, kind }, { dir: familyHome });
+    },
     select: (patch) => Object.assign(selection.current, patch),
     // ↵ on an Inbox item: its pull request or pipeline in its own tab, when it's in the list.
     showPr: (target, org) => {
@@ -550,6 +623,8 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     if (!text) return;
     history.current = [text, ...history.current.filter((h) => h !== text)].slice(0, 100);
     try {
+      // A sibling's line on its own (the family:v1:… without /take) is taken as /take would.
+      if (decodeContext(text)) return await a.take(ctx, text);
       const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
       const cmd = findCommand(name);
       if (!cmd) return note(`Unknown command: /${name}. Type / to see them all.`, 'error');
@@ -707,6 +782,7 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
       else {
         setEntries([]);
         setWelcome(false);
+        setReaction(null);
       }
       return;
     }
@@ -730,7 +806,17 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
   // switch on with the next render would let fast typing (or a paste) after "/" leak into the view.
   // Uppercase shortcuts are alt+letter (caps lock can't fire them): where a view has the keys, alt+letter
   // is the capital the handlers match and a bare capital is dropped.
-  useKeyTranslation((input) => (focusRef.current === 'view' && !confirmRef.current && !overlayRef.current?.help && !overlayRef.current?.settings ? shortcutKey(input) : input));
+  // A command or a sibling's line pasted (or typed in by Fleet) while a view has the keys goes into the
+  // prompt, to run with ↵, before Ink splits it into keys; not over ?, whose / searches.
+  useKeyTranslation((input) => {
+    if (focusRef.current !== 'view' || confirmRef.current) return input;
+    const pasted = !overlayRef.current?.help && pastedLine(input);
+    if (pasted) {
+      prefill(pasted);
+      return null;
+    }
+    return !overlayRef.current?.help && !overlayRef.current?.settings ? shortcutKey(input) : input;
+  });
 
   useInput((input, key) => {
     if (focusRef.current === 'prompt' && !confirmRef.current) return promptKeys(input, key);
@@ -803,7 +889,7 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
   // Layout: everything is sized to the terminal, one row short of it so Ink never clears the screen.
   const W = columns;
   const H = Math.max(12, rows - 1);
-  const act = activityRows(entries);
+  const act = [...(reaction ? [[{ text: `${FACES.idle} `, color: theme.accent }, { text: reactionLine(reaction), color: theme.dim }]] : []), ...activityRows(entries)];
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
   const mood = moodFor({ attention: data.attention, busy, lastEntry: entries.at(-1), pollError });
   // The welcome box only appears when the terminal has room for it next to a useful view.

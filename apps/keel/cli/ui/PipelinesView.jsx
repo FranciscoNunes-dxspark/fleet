@@ -56,6 +56,8 @@ export function PipelinesView({ failed, pipelines, version, filter, jump, ctx, w
     else if (input === 'n') a.runPipeline(ctx, row);
     else if (input === 'c') a.cancelRun(ctx, row);
     else if (input === 'l') a.showRun(ctx, row);
+    else if (input === 'Y') a.runForSpliceKey(ctx, row);
+    else if (input === 'S') a.runForSonar(ctx, row);
   };
   useInput(keys, { isActive: active });
   // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).

@@ -23,6 +23,7 @@ const HINTS = {
   addOrg: () => '↵ /addorg <address>',
   updates: () => 'space next choice',
   mouse: (r) => (r.available ? 'space on or off' : ''),
+  familyMoods: () => 'space on or off',
   info: () => '',
 };
 
@@ -113,6 +114,8 @@ export function SettingsView({ version, orgs, local, filter, ctx, width, height,
         return a.setUpdateMode(ctx, cycle(UPDATE_MODES, r.mode));
       case 'mouse':
         return r.available ? a.setMouse(ctx, !r.on) : ctx.note(r.why);
+      case 'familyMoods':
+        return a.setFamilyMoods(ctx, !r.on);
       case 'addOrg':
         return ctx.prefill('/addorg ');
       case 'refresh':
@@ -193,6 +196,8 @@ export function SettingsView({ version, orgs, local, filter, ctx, width, height,
         return r.available
           ? [box(r.on), { text: 'Mouse: click, double-click, scroll, drag to copy' }, { text: r.on ? '' : "  off: the terminal's own selection", color: theme.dim }]
           : [{ text: 'Mouse               ', color: theme.dim }, { text: r.why, color: theme.dim }];
+      case 'familyMoods':
+        return [box(r.on), { text: 'Family moods: Pinch tells the other apps how it feels, and says how they do' }];
       case 'info':
         return [{ text: `${r.label.padEnd(20)}`, color: theme.dim }, { text: r.text }];
       default:

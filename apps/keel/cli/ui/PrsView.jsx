@@ -70,6 +70,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
     else if (input === 'c') a.complete(ctx, pr);
     else if (input === 'm') a.autoComplete(ctx, pr);
     else if (input === 'p') a.publish(ctx, pr);
+    else if (input === 'Y') a.prForSplice(ctx, pr);
   };
   useInput(keys, { isActive: active });
   // A click picks a row, a double-click is ↵, and the wheel scrolls the list (the pane beside it takes neither).
