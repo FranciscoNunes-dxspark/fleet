@@ -80,7 +80,7 @@ export const HELP = [
       ['s', 'Save the query under a name; /queries runs it again, /export <file> saves the grid (.csv, .json, .md)'],
       ['h l / ← →', 'Across the columns'],
       ['y  alt+y', 'Copy the row (JSON) · every row (tab-separated)'],
-      ['alt+h', 'Copy a request row for Hail\'s prompt (/take request), to send it again there'],
+      ['alt+h', 'Copy a request row for Hail\'s prompt (/take request), to send it again there, with its status and time for Hail\'s /replay to compare'],
       ['alt+f', 'Copy a request row as the text of a request in a .http file'],
       ['c', 'Which Application Insights to look in (the selected app\'s own by default), or a Log Analytics workspace to query directly'],
     ],
@@ -170,7 +170,7 @@ export const HELP = [
     rows: [
       ['alt+y', 'Copy the exception, with its stack, for Splice\'s prompt'],
       ['alt+t', 'Its failing SQL: ↵ copies one as a query for Trawl\'s prompt, a its server\'s /azure-sql line'],
-      ['alt+h', 'Copy the failing request for Hail\'s prompt'],
+      ['alt+h', 'Copy the failing request for Hail\'s prompt, with its status and time (Hail\'s /replay compares a local run with them)'],
       ['w', 'Ask Claude for a draft write-up in Markdown (summary, impact, timeline, likely cause, next steps)'],
       ['s', 'Save the write-up (or the incident, before one) to a Markdown file; /incident save <file> too'],
     ],

@@ -118,7 +118,7 @@ export function trawlLine(db, name) {
 
 // Contexts, each one word:
 //   exception { app, message, type, frames: [{ file, line, method }], operationId, time, request? }
-//   request   { method, url, headers: { name: value }, body, name? }
+//   request   { method, url, headers: { name: value }, body, name?, app?, response?: { status, ms?, at?, headers?, body? } }
 //   rows      { server?, database?, table?, columns: [name], rows: [[value]] }
 //   query     { sql, server?, database? }
 //   commit    { repo?, hash, subject? }

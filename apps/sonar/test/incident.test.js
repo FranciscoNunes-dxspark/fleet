@@ -160,6 +160,10 @@ test('incident parts: frames from details or text, deployments before, files in 
   assert.deepEqual(sqlTarget('srv'), { server: 'srv', database: null });
   assert.deepEqual(requestContext({ name: 'POST /api/orders', url: 'https://x/api/orders' }), { method: 'POST', url: 'https://x/api/orders', headers: {}, body: '', name: 'POST /api/orders' });
   assert.equal(requestContext({ name: 'a trace' }), null);
+  // What production answered goes with it, from an operation's row (detail) or a Logs row (resultCode).
+  assert.deepEqual(requestContext({ itemType: 'request', name: 'GET /api/cart', url: 'https://x/api/cart', detail: '500', duration: 4210.6, timestamp: '2026-10-20T10:00:00Z', cloud_RoleName: 'shop' }), { method: 'GET', url: 'https://x/api/cart', headers: {}, body: '', name: 'GET /api/cart', app: 'shop', response: { status: 500, ms: 4211, at: '2026-10-20T10:00:00Z' } });
+  assert.deepEqual(requestContext({ name: 'GET /a', url: 'https://x/a', resultCode: '200' }).response, { status: 200 });
+  assert.equal(requestContext({ name: 'GET /a', url: 'https://x/a', resultCode: '0', duration: 3 }).response, undefined);
 
   const md = incidentMarkdown({ problem: { type: 'T', message: 'm', role: 'app', first: '2026-10-20T10:00:00Z', last: '2026-10-20T11:00:00Z', count: 3, users: 1, problemId: 'T at x' }, span: { label: '24h' }, deploys: { within: [], latest: null }, rows: [], frames: [], sql: [], repo: null }, now);
   assert.match(md, /- \*\*Count:\*\* 3 in the last 24h, 1 user/);

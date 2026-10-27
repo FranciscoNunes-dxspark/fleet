@@ -163,7 +163,7 @@ files in its stack in the 14 days before it was first seen. Outside a checkout t
 | --- | --- |
 | `alt+y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice)'s prompt |
 | `alt+t` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's line for Trawl (`/azure-sql` for Azure SQL) (through `alt+t`'s checks when the server is in the subscription) |
-| `alt+h` | Copy the failing request for Hail's prompt |
+| `alt+h` | Copy the failing request for Hail's prompt, with what it answered (its status and time), so Hail's `/replay` can send it to a local run and compare |
 | `w` | Ask Claude for a draft write-up in Markdown: summary, impact, timeline, likely cause, next steps (it may read the code, as `w` in Problems does) |
 | `s` | Save the write-up (or the incident itself, before there's one) to a Markdown file; `/incident save <file>` does it too |
 | `y` | Copy the incident as Markdown |
@@ -315,7 +315,7 @@ accounts show their details only.
 | `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `alt+y` | Copy the row as JSON · every row, tab-separated |
-| `alt+h` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there |
+| `alt+h` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there, with its status and time when the row has them (for Hail's `/replay` to compare against) |
 | `alt+f` | Copy a request row as the text of a request in a `.http` file |
 | `c` | Which Application Insights (or Log Analytics workspace) to look in |
 
