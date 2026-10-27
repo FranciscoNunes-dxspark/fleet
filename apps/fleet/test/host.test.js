@@ -159,3 +159,77 @@ test('a worried app off screen gets a badge and rings the bell once; looking at 
   keys('y');
   await done;
 });
+
+test('split, two apps are drawn side by side at half the width each, keys going to the focused one', async () => {
+  const spaces = [...SPACES, { id: 'three', title: 'Three', letter: 'e', accent: '#e8445a' }];
+  const { host, term, keys, done } = startHost({ spaces, env: quietEnv({ FAKE_HANDOFF: 'one' }) });
+  const { screen } = term;
+  // 70 columns: 34 for the left pane, the divider, 35 for the right.
+  const left = (y) => screen.row(y).slice(0, 34).trimEnd();
+  const right = (y) => screen.row(y).slice(35);
+  await until(() => screen.row(0) === 'one 70x13', 'the first app', { term });
+  keys(`${PREFIX}w`);
+  await until(() => screen.row(0) === 'two 70x13', 'the second app', { term });
+  // The previous app goes beside the one on screen, which keeps the keys.
+  keys(`${PREFIX}|`);
+  await until(() => left(0) === 'two 34x13' && right(0) === 'one 35x13' && screen.row(0)[34] === '│', 'both apps at half the width', { term });
+  assert.equal(screen.row(12)[34], '│');
+  assert.match(screen.row(-1), /1 One ● {2}2 Two ●/);
+  keys('ab');
+  await until(() => left(1) === 'keys: "ab"', 'keys in the left pane', { term });
+  assert.equal(right(1), 'keys: ""');
+
+  // The other pane takes the keys; another app put in it takes the place of the one there.
+  keys(`${PREFIX}\t`);
+  keys('c');
+  await until(() => right(1) === 'keys: "c"', 'keys in the right pane', { term });
+  assert.equal(left(1), 'keys: "ab"');
+  keys(`${PREFIX}e`);
+  await until(() => right(0) === 'three 35x13' && left(0) === 'two 34x13', 'the third app in the right pane', { term });
+
+  // The help over both, then both drawn again from what the host keeps.
+  keys(`${PREFIX}?`);
+  await until(() => term.text().includes('this help'), 'the help', { term });
+  keys('z');
+  await until(() => !term.text().includes('this help') && left(1) === 'keys: "ab"' && right(0) === 'three 35x13', 'the panes back', { term });
+
+  // A click in the left pane focuses it; its app has no mouse, so the click goes no further.
+  keys('\x1b[<0;3;3M\x1b[<0;3;3m');
+  keys('d');
+  await until(() => left(1) === 'keys: "abd"', 'the left pane focused by a click', { term });
+  assert.equal(right(1), 'keys: ""');
+  // Its app turns the mouse on: a click there reaches it, in its own columns; one in the other pane is translated too.
+  keys('M');
+  await until(() => left(1) === 'keys: "abdM"', 'the mouse on', { term });
+  keys('\x1b[<0;5;3M');
+  await until(() => left(1) === 'keys: "abdM\\u001b[<0;5;3M"', 'the click in the pane\'s columns', { term });
+
+  // A hand-off to an app in neither pane puts it in the other one, and focuses it.
+  keys('H');
+  await until(() => right(0) === 'one 35x13' && right(1).startsWith('keys: "c/take family'), 'the line in the other pane', { term });
+  assert.equal(left(0), 'two 34x13');
+  assert.equal(host.active, 'one');
+
+  // An exit says so in its pane, and ↵ starts it again there.
+  keys('X');
+  await until(() => term.text().includes('One exited with 3'), 'the exit in the pane', { term });
+  assert.equal(left(0), 'two 34x13');
+  keys('\r');
+  await until(() => right(0) === 'one 35x13' && right(1) === 'keys: ""', 'started again in its pane', { term });
+
+  // Too narrow, the screen goes back whole.
+  term.resize(38, 10);
+  // (The bar has no room for the notice at this width.)
+  await until(() => screen.row(0) === 'one 38x9' && host.noticeText.startsWith('Too narrow to stay split'), 'unsplit when too narrow', { term });
+  keys(`${PREFIX}|`);
+  await until(() => host.noticeText.startsWith('Too narrow to split') && !host.split, 'refused', { term });
+  term.resize(70, 14);
+  await until(() => screen.row(0) === 'one 70x13', 'whole again', { term });
+  keys(`${PREFIX}|`);
+  await until(() => left(0) === 'one 34x13' && right(0).endsWith('35x13'), 'split again', { term });
+  keys(`${PREFIX}x`);
+  await until(() => screen.row(0) === 'one 70x13' && screen.row(1) === 'keys: ""', 'unsplit', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});

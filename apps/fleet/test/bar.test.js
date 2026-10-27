@@ -30,10 +30,12 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 120, prefix: true })), /1-7 s t o b h k w · n p · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 140, prefix: true })), /1-7 s t o b h k w · n p · \| split · q quit · \? help $/);
+  // Split, the other pane and putting it back.
+  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 160, prefix: true })), /tab pane · x unsplit · q quit/);
   // With little room the prefix's keys win over the names.
-  const tight = barLayout({ spaces, active: 'splice', width: 92, prefix: true });
-  assert.equal(width(tight), 92);
+  const tight = barLayout({ spaces, active: 'splice', width: 102, prefix: true });
+  assert.equal(width(tight), 102);
   assert.match(text(tight), / 1 S ● .*q quit/);
   assert.match(text(barLayout({ spaces, active: 'splice', width: 120, notice: 'Handed to Trawl' })), /Handed to Trawl $/);
 });
@@ -66,4 +68,10 @@ test('a badge follows the state of a tab off screen, in a warning colour, and st
   assert.match(text(letters), / 2 T ○ 1 {2}3 O ✕1 {2}4 B ○ !2 /);
   const line = renderBar(wide, badged);
   assert.ok(line.includes('4 Bosun ○ \x1b[1m\x1b[38;5;214m!2'));
+});
+
+test("split, the other pane's tab is underlined in its accent", () => {
+  const layout = barLayout({ spaces, active: 'splice', shown: 'hail', width: 120 });
+  assert.equal(layout.segments.find((s) => s.role === 'shown').id, 'hail');
+  assert.ok(renderBar(layout, spaces).includes('\x1b[38;2;232;68;90m\x1b[1m\x1b[4m 5 Hail ● '));
 });

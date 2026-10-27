@@ -26,7 +26,8 @@ fleet alone opens the one you used last.
 
   ctrl+] 1-7 or s t o b h k w switch (o is Sonar)
   ctrl+] ] / n / p            next, previous
-  ctrl+] ctrl+]               send ctrl+] to the app
+  ctrl+] | / tab / x          split in two, the other pane, one again
+  ctrl+] ctrl+]            send ctrl+] to the app
   ctrl+] q                    quit, stopping every app
   ctrl+] ?                    the keys
 

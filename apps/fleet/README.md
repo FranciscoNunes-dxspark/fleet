@@ -80,11 +80,29 @@ Only `ctrl+]` is Fleet's, and the key after it:
 | `ctrl+]` `s` `t` `o` `b` `h` `k` `w` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf |
 | `ctrl+]` `]` or `n` | The next space |
 | `ctrl+]` `p` | The previous space |
+| `ctrl+]` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |
+| `ctrl+]` `tab`, `←` or `→` | Split, the other pane |
+| `ctrl+]` `x` | Split, back to one app on screen: the one with the keys |
 | `ctrl+]` `ctrl+]` | Send `ctrl+]` to the app |
 | `ctrl+]` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+]` `?` | The keys |
 
 Any other key after `ctrl+]` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
+
+## Split
+
+`ctrl+] |` shows two apps side by side, each in half the width (less a column for the divider between
+them): the app on screen on the left, and the one you were in before it on the right (the next one
+when there was none). Each draws as it would on a screen of that size. The keys go to one of them, the
+pane with the divider in its colour and its tab filled in the bar; the other's tab is underlined.
+`ctrl+] tab` (or `←`, `→`) or a click in the other pane moves the keys there, and the mouse works in
+either pane for an app that uses it. Switching to an app while split (`ctrl+] 3`, a click on its tab)
+puts it in the pane with the keys, or moves the keys to it when it's in the other one already; a line
+handed to an app in neither pane opens it in the other pane, so the one it came from stays in sight.
+`ctrl+] x` (or `|` again) goes back to the app with the keys on the whole screen.
+
+The screen splits only when it's at least 40 columns wide, and goes back whole when it's made narrower
+than that.
 
 ## Hand-offs
 

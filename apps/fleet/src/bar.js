@@ -13,22 +13,22 @@ const MARK = { idle: '○', running: '●', starting: '●' };
 export const stateMark = (space) => (space.state === 'exited' ? `✕${space.code ?? ''}` : (MARK[space.state] ?? '○'));
 
 /** The hint at the right: the prefix's keys while it waits for one, else how to get them. */
-export function hintFor({ prefix, notice }) {
-  if (prefix) return '1-7 s t o b h k w · n p · q quit · ? help';
+export function hintFor({ prefix, notice, split = false }) {
+  if (prefix) return `1-7 s t o b h k w · n p · ${split ? 'tab pane · x unsplit' : '| split'} · q quit · ? help`;
   return notice || 'ctrl+] ? help';
 }
 
 /**
  * The bar's layout for `spaces` ({ id, title, letter, state, code }) at `width` columns:
- * { segments, tabs }. `segments` are { text, role } in order ('tab', 'active', 'fill', 'hint',
- * 'prefix', 'notice'), together exactly `width` wide; `tabs` are { id, from, to } (columns, `to`
- * exclusive), for clicks.
+ * { segments, tabs }. `segments` are { text, role } in order ('tab', 'active', 'shown', 'fill',
+ * 'hint', 'prefix', 'notice'), together exactly `width` wide; `tabs` are { id, from, to } (columns,
+ * `to` exclusive), for clicks. With the screen split, `shown` is the space in the other pane.
  */
-export function barLayout({ spaces, active, width, prefix = false, notice = '' }) {
+export function barLayout({ spaces, active, shown = null, width, prefix = false, notice = '' }) {
   if (width <= 0) return { segments: [], tabs: [] };
   const badges = spaces.map((s) => badgeText(s.badge));
   const labels = (short) => spaces.map((s, i) => ` ${i + 1} ${short ? s.letter.toUpperCase() : s.title} ${stateMark(s)}${badges[i] ? ` ${badges[i]}` : ''} `);
-  const hint = ` ${hintFor({ prefix, notice })} `;
+  const hint = ` ${hintFor({ prefix, notice, split: Boolean(shown) })} `;
   const total = (ls) => ls.reduce((n, l) => n + stringWidth(l), 0);
   let tabs = labels(false);
   let showHint = total(tabs) + stringWidth(hint) <= width;
@@ -45,7 +45,7 @@ export function barLayout({ spaces, active, width, prefix = false, notice = '' }
     const left = width - col;
     if (left <= 0) break;
     const text = stringWidth(tabs[i]) <= left ? tabs[i] : fit(tabs[i], left);
-    segments.push({ text, role: s.id === active ? 'active' : 'tab', id: s.id, state: s.state, ...(badges[i] ? { badge: badges[i] } : {}) });
+    segments.push({ text, role: s.id === active ? 'active' : s.id === shown ? 'shown' : 'tab', id: s.id, state: s.state, ...(badges[i] ? { badge: badges[i] } : {}) });
     where.push({ id: s.id, from: col, to: col + stringWidth(text) });
     col += stringWidth(text);
   }
@@ -96,6 +96,8 @@ export function renderBar(layout, spaces, { truecolor = true } = {}) {
       continue;
     }
     if (seg.role === 'active') out += `${colour(space.accent, { background: true, truecolor })}\x1b[38;5;16m\x1b[1m${seg.text}${BAR}`;
+    // The other pane's app is on screen too: its accent, underlined, not filled as the focused one's.
+    else if (seg.role === 'shown') out += `${colour(space.accent, { truecolor })}\x1b[1m\x1b[4m${seg.text}${BAR}`;
     else if (seg.role === 'tab') out += seg.state === 'idle' ? `\x1b[38;5;244m${seg.text}${BAR}` : `${colour(space.accent, { truecolor })}${seg.text}${BAR}`;
     else if (seg.role === 'prefix') out += `\x1b[1m\x1b[38;5;229m${seg.text}${BAR}`;
     else if (seg.role === 'notice') out += `\x1b[38;5;229m${seg.text}${BAR}`;
