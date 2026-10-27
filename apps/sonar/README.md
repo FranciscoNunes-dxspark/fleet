@@ -163,7 +163,7 @@ files in its stack in the 14 days before it was first seen. Outside a checkout t
 | --- | --- |
 | `alt+y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice)'s prompt |
 | `alt+t` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's line for Trawl (`/azure-sql` for Azure SQL) (through `alt+t`'s checks when the server is in the subscription) |
-| `alt+h` | Copy the failing request for Hail's prompt |
+| `alt+h` | Copy the failing request for Hail's prompt, with what it answered (its status and time), so Hail's `/replay` can send it to a local run and compare |
 | `w` | Ask Claude for a draft write-up in Markdown: summary, impact, timeline, likely cause, next steps (it may read the code, as `w` in Problems does) |
 | `s` | Save the write-up (or the incident itself, before there's one) to a Markdown file; `/incident save <file>` does it too |
 | `y` | Copy the incident as Markdown |
@@ -176,6 +176,21 @@ whose 95th percentile duration moved by a tenth or more; operations whose rate o
 The point is the latest successful deployment of the app in scope, or without one the middle of the
 time span; `/compare-window 2026-10-20T14:00Z` puts it at a time of yours, and `/compare-window deploy`
 insists on the deployment. Each window is as long as the time since the point, up to seven days.
+
+### The slowest SQL
+
+`alt+q` in Problems (or `/slow-sql`) lists the SQL the app in scope ran over the time span, from
+Application Insights' dependencies, slowest first by its 95th percentile duration: each command with
+its average, how many calls, and the server and database it went to. Only commands whose text
+Application Insights kept are listed (the .NET SDK keeps it once `EnableSqlCommandTextInstrumentation`
+is on); how many more there were without it is said in the activity lines.
+
+`↵` copies one for [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl)'s
+prompt as a query, with what was measured (calls, average and p95, the span and the app): Trawl
+connects to its saved connection to that server and database, asks for the estimated plan (it never
+runs the statement) and asks Claude for indexes that would help, given the plan, the tables, their
+indexes and those durations (Trawl's `/explain-slow`). `a` copies the server's own line for Trawl, as
+in an incident, and `y` the SQL.
 
 ### Watches
 
@@ -317,7 +332,7 @@ accounts show their details only.
 | `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `alt+y` | Copy the row as JSON · every row, tab-separated |
-| `alt+h` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there |
+| `alt+h` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there, with its status and time when the row has them (for Hail's `/replay` to compare against) |
 | `alt+f` | Copy a request row as the text of a request in a `.http` file |
 | `c` | Which Application Insights (or Log Analytics workspace) to look in |
 
@@ -341,6 +356,7 @@ accounts show their details only.
 | `w` | Ask Claude why it happens |
 | `alt+i` | The incident: the problem told whole (below) |
 | `alt+k` | Before and after: what changed across the app's latest deployment (below) |
+| `alt+q` | The slowest SQL of the app in scope, for Trawl to explain (below) |
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
 | `alt+y` | Copy its latest exception, with its stack and the request it failed, for Splice's prompt |
@@ -421,6 +437,7 @@ and Trawl.
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
 | `/portal [app]` | Open one in the Azure portal |
+| `/slow-sql` | The slowest SQL of the app in scope over the span; `↵` copies one for Trawl's `/explain-slow` (above) |
 | `/compare-window [deploy\|<time>]` | What changed across the latest deployment of the app in scope, or a time: exceptions, dependencies, failing operations |
 | `/watch <name> <threshold> <kql>` | Pin a query whose first value is a number; going over the threshold says so (above) |
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |

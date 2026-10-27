@@ -1,6 +1,6 @@
 import React from 'react';
 import { useInput } from 'ink';
-import { compareWindow, exceptionForSplice, incident, showOperation, why } from '../actions.js';
+import { compareWindow, exceptionForSplice, incident, showOperation, slowSql, why } from '../actions.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
@@ -27,6 +27,7 @@ export function ProblemsView({ problems, filter, scope, ctx, width, height, acti
     if (nav.handle(input, key)) return;
     if (input === 'c') return ctx.chooseComponent();
     if (input === 'K') return compareWindow(ctx);
+    if (input === 'Q') return slowSql(ctx);
     if (input === 'x' && filter) return ctx.setProblemFilter(null);
     if (!sel) return;
     if (key.return) return showOperation(ctx, sel);

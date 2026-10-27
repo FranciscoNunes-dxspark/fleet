@@ -69,6 +69,7 @@ export const COMMANDS = [
   { name: 'top-queries', desc: 'The queries that cost the most: Query Store, else the plan cache; o sorts (alt+q in Activity)', run: (ctx) => a.showActivityList(ctx, 'queries') },
   { name: 'kill', args: '<session>', desc: 'End another session (KILL), after asking; read-only connections refuse it', run: (ctx, s) => a.killSession(ctx, s) },
   { name: 'why', desc: 'Claude explains the last error and puts a corrected statement in the console (nothing runs)', run: (ctx) => a.why(ctx) },
+  { name: 'explain-slow', args: '[family:v1:…|sql]', desc: 'A statement slow in production (Sonar\'s /slow-sql hands one over), or the console\'s: its estimated plan (never run), then Claude on indexes, its DDL left in a console tab as text', run: (ctx, s) => a.explainSlow(ctx, s) },
   { name: 'explain', desc: 'Claude explains the last plan (p): what it does, what costs most, what might help', run: (ctx) => a.explainPlan(ctx) },
   { name: 'api', args: '[csharp|node|python|go]', desc: "Claude writes an HTTP endpoint that runs the console's statement, in the project's language (s saves it); copies a request for Hail", run: (ctx, s) => a.api(ctx, s) },
   { name: 'copy-rows', args: '<target> [table] [--where <condition>] [--no-mask]', desc: 'Copy rows (and the rows they refer to) to another connection, personal data made up; the script shows first (alt+c in Results and the Explorer)', complete: 'connections', run: (ctx, s) => a.copyRowsTo(ctx, s) },

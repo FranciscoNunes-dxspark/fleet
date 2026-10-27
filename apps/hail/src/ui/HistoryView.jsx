@@ -1,6 +1,6 @@
 import React from 'react';
 import { useInput } from 'ink';
-import { clearHistory, diffEntry, showEntry } from '../actions.js';
+import { clearHistory, diffEntry, replay, showEntry } from '../actions.js';
 import { formatSize } from '../send.js';
 import { theme } from '../theme.js';
 import { fit, relTime } from '@fleet/kit/text.js';
@@ -23,6 +23,8 @@ export function HistoryView({ entries, data, focus = null, ctx, width, height, a
   // `focus` ({ entry, n }): an entry to put the cursor on (/take logline found it).
   const nav = useListNav(list.length, innerH, { resetKey: `${data?.path}#${focus?.n ?? 0}`, start: Math.max(0, focus ? list.indexOf(focus.entry) : 0) });
   const sel = list[nav.index];
+  // /replay replays the response under the cursor while History is on screen.
+  ctx.historyCursor = sel ?? null;
   const labelW = Math.min(36, Math.max(10, ...list.map((e) => e.label.length)));
 
   const keys = (input, key) => {
@@ -32,6 +34,7 @@ export function HistoryView({ entries, data, focus = null, ctx, width, height, a
     if (!sel) return;
     if (key.return) showEntry(ctx, sel);
     else if (input === 'd') diffEntry(ctx, sel);
+    else if (input === 'R') replay(ctx, '', { entry: sel });
     else if (input === 'y') ctx.copy(sel.response.body, 'the body');
   };
   useInput(keys, { isActive: active });

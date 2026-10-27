@@ -120,9 +120,9 @@ export function trawlLine(db, name) {
 
 // Contexts, each one word:
 //   exception { app, message, type, frames: [{ file, line, method }], operationId, time, request? }
-//   request   { method, url, headers: { name: value }, body, name? }
+//   request   { method, url, headers: { name: value }, body, name?, app?, response?: { status, ms?, at?, headers?, body? } }
 //   rows      { server?, database?, table?, columns: [name], rows: [[value]] }
-//   query     { sql, server?, database? }
+//   query     { sql, server?, database?, slow?: { calls, avg, p95, failed?, span?, app? } }
 //   commit    { repo?, hash, subject? }
 //   file      { path, line? }
 //   logline   { project?, process, text, time?, requestId? }
