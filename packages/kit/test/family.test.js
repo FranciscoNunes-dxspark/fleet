@@ -171,3 +171,14 @@ test('request ids, as logs name them', async () => {
   assert.equal(requestIdIn('traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'), '4bf92f3577b34da6a3ce929d0e0e4736');
   assert.equal(requestIdIn('Error: nothing to see'), null);
 });
+
+test('an App Service app or slot is a site context, which Locker takes', () => {
+  const line = takeLine('site', { name: 'shop-api', slot: 'staging', resourceGroup: 'shop' });
+  const c = contextIn(line);
+  assert.equal(c.kind, 'site');
+  assert.equal(describeContext(c), 'app shop-api/staging');
+  assert.equal(describeContext({ kind: 'site', data: { name: 'shop-api' } }), 'app shop-api');
+  assert.deepEqual(TAKEN_BY.site, ['locker']);
+  assert.equal(APP_NAMES.locker, 'Locker');
+  assert.equal(notMine('sonar', c), "That's app shop-api/staging, for Locker: paste it into its prompt instead.");
+});
