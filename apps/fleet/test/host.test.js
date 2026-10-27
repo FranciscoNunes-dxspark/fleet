@@ -2,7 +2,7 @@
 // are) as real processes, driven through its input and read from the screen it draws.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { alive, familyHome, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
 
@@ -229,6 +229,52 @@ test('split, two apps are drawn side by side at half the width each, keys going 
   await until(() => left(0) === 'one 34x13' && right(0).endsWith('35x13'), 'split again', { term });
   keys(`${PREFIX}x`);
   await until(() => screen.row(0) === 'one 70x13' && screen.row(1) === 'keys: ""', 'unsplit', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('ctrl+] m moves the fleet: the running apps start again in the folder given, the rest start there later', async () => {
+  const root = realpathSync(familyHome());
+  const start = join(root, 'start');
+  const there = join(root, 'there');
+  for (const dir of [start, join(there, 'sub-one'), join(there, 'sub-two')]) mkdirSync(dir, { recursive: true });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, cwd: start, columns: 100, env: quietEnv({ FAKE_MOVE: there }) });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 100x13', 'the app', { term });
+  keys('P');
+  await until(() => screen.row(1) === `keys: ${JSON.stringify(`[${start}]`)}`, 'its folder', { term });
+
+  // The bar asks, with the fleet's folder filled in.
+  keys(`${PREFIX}m`);
+  await until(() => screen.row(-1).includes(`Move the fleet to ${start}`), 'the question', { term });
+  // A folder that isn't there is said so, and the question stays.
+  keys('/nope\r');
+  await until(() => screen.row(-1).includes('no such folder'), 'no such folder', { term });
+  // Tab completes as far as the folders agree, then whole.
+  keys(`\x15${there}/s\t`);
+  await until(() => screen.row(-1).includes(`${there}/sub-`) && screen.row(-1).includes('sub-one  sub-two'), 'completed as far as they agree', { term });
+  keys('t\t');
+  await until(() => screen.row(-1).includes(`${there}/sub-two/`), 'completed whole', { term });
+  const before = host.space('one').child.pid;
+  keys('\r');
+  await until(() => screen.row(-1).includes('Moving the fleet to') && host.space('one').child && host.space('one').child.pid !== before, 'started again', { term });
+  await until(() => screen.row(1) === 'keys: ""', 'drawn anew', { term });
+  keys('P');
+  await until(() => screen.row(1) === `keys: ${JSON.stringify(`[${join(there, 'sub-two')}]`)}`, 'in the new folder', { term });
+  assert.equal(host.cwd, join(there, 'sub-two'));
+  // One not started yet starts there too.
+  keys(`${PREFIX}w`);
+  await until(() => screen.row(0) === 'two 100x13', 'the second app', { term });
+  keys('P');
+  await until(() => screen.row(1) === `keys: ${JSON.stringify(`[${join(there, 'sub-two')}]`)}`, 'the second app in the new folder', { term });
+
+  // An app asks for a move: the bar asks with its folder filled in; esc keeps the fleet where it is.
+  keys('V');
+  await until(() => screen.row(-1).includes(`Two asks to move the fleet to ${there}`), "the app's question", { term });
+  keys('\x1b');
+  await until(() => screen.row(-1).includes('2 Two ●') && !screen.row(-1).includes('asks'), 'cancelled', { term });
+  assert.equal(host.cwd, join(there, 'sub-two'));
   keys(`${PREFIX}q`);
   keys('y');
   await done;

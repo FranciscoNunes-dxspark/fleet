@@ -10,6 +10,9 @@
 // each frame: inside the frame's synchronized update when it has one, from a saved cursor, so the
 // terminal never shows a frame without it and the app's cursor and colours are as it left them.
 //
+// ctrl+] m (or an app's { move } message) moves the whole fleet to another folder: every running
+// app is started again there, and the ones not started yet start there later.
+//
 // A space off screen whose app needs you gets a badge in its tab (attention.js), from the family's
 // moods and activity, read every few seconds; the bell rings when one appears.
 //
@@ -21,6 +24,7 @@ import { familyDir } from '@fleet/kit/family.js';
 import { encodeMessage, messageReader } from '@fleet/kit/hosted.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { badgeFor, badgeText, familyReader } from './attention.js';
+import { completeFolder, editLine, isFolder, lineOf, renderAsk, resolveFolder, shortFolder } from './folder.js';
 import { barLayout, colour, renderBar, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { readKeys, takeBarClicks } from './keys.js';
@@ -56,6 +60,7 @@ export const HELP = [
   ['ctrl+] | or \\', 'split: this app and the previous side by side'],
   ['ctrl+] tab ← →', 'the other pane'],
   ['ctrl+] x or |', 'one app on screen again'],
+  ['ctrl+] m', 'move every app to another folder'],
   ['', ''],
   ['a click on a tab', 'switches to it'],
   ['! or 2 in a tab', 'that app needs you (worried, alerts)'],
@@ -78,8 +83,10 @@ export class Host {
     familyHome = familyDir(),
     attentionEvery = ATTENTION_MS,
     bell = true,
+    cwd = process.cwd(),
+    home,
   }) {
-    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell });
+    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home });
     this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '', badge: null }));
     this.family = familyReader(familyHome);
     // When each space was last on screen: what an app said before that is old news. Fleet starting
@@ -95,6 +102,8 @@ export class Host {
     this.keys = { prefix: false };
     this.help = false;
     this.confirming = false;
+    // The bar asking for a folder to move the fleet to: { line, from, hint }, else null.
+    this.asking = null;
     this.quitting = false;
     this.noticeText = '';
     this.noticeTimer = null;
@@ -136,6 +145,11 @@ export class Host {
       const names = this.spaces.filter((s) => s.child).map((s) => s.title);
       const text = ` Quit Fleet? ${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} running and will stop.  y quits · any other key stays `;
       return `\x1b[0m\x1b[48;5;236m\x1b[1m\x1b[38;5;229m${fit(text, columns)}\x1b[0m`;
+    }
+    if (this.asking) {
+      const { line, from, hint } = this.asking;
+      const label = from ? `${from} asks to move the fleet to` : 'Move the fleet to';
+      return renderAsk({ label, line, hint: hint || '↵ moves every app there · tab completes · esc cancels', keep: Boolean(hint), width: columns });
     }
     const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
     this.layout = barLayout({ spaces: this.spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText });
@@ -215,6 +229,7 @@ export class Host {
 
   handleInput(text) {
     if (!text || this.quitting) return;
+    if (this.asking) return this.editFolder(text);
     const { state, actions } = readKeys(this.keys, text, this.spaces);
     this.keys = state;
     for (const a of actions) {
@@ -226,6 +241,7 @@ export class Host {
       else if (a.type === 'split') this.toggleSplit();
       else if (a.type === 'unsplit') this.unsplit();
       else if (a.type === 'pane') this.otherPane();
+      else if (a.type === 'folder') this.askFolder();
       else if (a.type === 'quit') this.askQuit();
       else if (a.type === 'help') this.showHelp();
     }
@@ -563,7 +579,7 @@ export class Host {
       this.flushPane(pane);
     }
     try {
-      child = this.spawnApp(space.id, { ...this.sizeFor(space), args: this.args[space.id] ?? [] });
+      child = this.spawnApp(space.id, { ...this.sizeFor(space), args: this.args[space.id] ?? [], cwd: this.cwd });
     } catch (e) {
       space.stderr = e.message;
       return this.exited(space, null, 'error');
@@ -604,6 +620,7 @@ export class Host {
     }
     if (m.handoff) this.handoff(space, m);
     if (m.update) this.onUpdate();
+    if (typeof m.move === 'string' && m.move.trim()) this.askFolder({ text: m.move, from: space.title });
   }
 
   handoff(from, m) {
@@ -630,6 +647,11 @@ export class Host {
     if (child && space.child !== child) return;
     Object.assign(space, { state: 'exited', code, child: null, ready: false, paste: null });
     if (this.quitting) return this.checkQuit();
+    // Stopped for a move: started again at once, in the new folder.
+    if (space.moving) {
+      space.moving = false;
+      return this.launch(space);
+    }
     if (this.confirming && !this.spaces.some((s) => s.child)) this.confirming = false;
     const pane = this.paneOf(space.id);
     if (pane) {
@@ -641,6 +663,62 @@ export class Host {
       this.output.write(CLEAR + new OutputFilter().restoreModes());
       this.drawExited(space);
     } else this.drawBar();
+  }
+
+  // ---- moving the fleet ---------------------------------------------------------------------------
+
+  /** The bar asks for a folder, the fleet's own to start with (or what an app asked for, `from` its title). */
+  askFolder({ text, from } = {}) {
+    const start = text ? resolveFolder(text, { cwd: this.cwd, home: this.home }) : this.cwd;
+    this.asking = { line: lineOf(start), from, hint: '' };
+    this.drawBar();
+  }
+
+  editFolder(input) {
+    const { line, done } = editLine(this.asking.line, input);
+    this.asking.line = line;
+    this.asking.hint = '';
+    if (done === 'cancel') {
+      this.asking = null;
+      return this.drawBar();
+    }
+    if (done === 'complete') {
+      const { text, matches } = completeFolder(line.text.slice(0, line.cursor), { cwd: this.cwd, home: this.home });
+      this.asking.line = { text: text + line.text.slice(line.cursor), cursor: text.length };
+      if (!matches.length) this.asking.hint = 'no folder there starts so';
+      else if (matches.length > 1) this.asking.hint = matches.slice(0, 6).join('  ') + (matches.length > 6 ? '  …' : '');
+    }
+    if (done === 'submit') {
+      const dir = resolveFolder(line.text, { cwd: this.cwd, home: this.home });
+      if (!line.text.trim() || !isFolder(dir)) this.asking.hint = 'no such folder';
+      else {
+        this.asking = null;
+        return this.moveTo(dir);
+      }
+    }
+    this.drawBar();
+  }
+
+  /** Moves the fleet to `dir`: every running app is stopped and started again there; the rest start there when they start. */
+  moveTo(dir) {
+    const where = shortFolder(dir, this.home);
+    if (dir === this.cwd) return this.notice(`The fleet is in ${where} already`);
+    this.cwd = dir;
+    const running = this.spaces.filter((s) => s.child);
+    for (const s of running) {
+      const child = s.child;
+      s.moving = true;
+      // As quitting does: the end of the control pipe asks the app to quit, and it's killed if it doesn't.
+      try {
+        child.control.end();
+      } catch {
+        // Gone already; its exit starts it again.
+      }
+      this.setTimer(() => {
+        if (s.child === child) child.kill(true);
+      }, STOP_GRACE);
+    }
+    this.notice(running.length ? `Moving the fleet to ${where}: ${running.map((s) => s.title).join(', ')} start again there` : `The fleet is in ${where}: the apps start there`);
   }
 
   // ---- quitting ---------------------------------------------------------------------------------

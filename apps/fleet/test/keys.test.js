@@ -37,6 +37,11 @@ test('the prefix and | or \\ split the screen, x puts it back, tab or an arrow g
   assert.equal(prefixAction('\x1b[A'), null);
 });
 
+test('the prefix and m ask for a folder to move the fleet to', () => {
+  assert.deepEqual(prefixAction('m'), { type: 'folder' });
+  assert.deepEqual(prefixAction('M'), { type: 'folder' });
+});
+
 test('the prefix twice sends it, and anything else after it is dropped whole', () => {
   assert.equal(sent(run(`a${PREFIX}${PREFIX}b`).actions), `a${PREFIX}b`);
   // An arrow after the prefix cancels it; its bytes never reach the app as "[A".

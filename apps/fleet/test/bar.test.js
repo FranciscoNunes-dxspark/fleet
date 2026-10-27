@@ -30,14 +30,18 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 140, prefix: true })), /1-7 s t o b h k w · n p · \| split · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 150, prefix: true })), /1-7 s t o b h k w · n p · \| split · m move · q quit · \? help $/);
   // Split, the other pane and putting it back.
-  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 160, prefix: true })), /tab pane · x unsplit · q quit/);
+  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 160, prefix: true })), /tab pane · x unsplit · m move · q quit/);
   // With little room the prefix's keys win over the names.
-  const tight = barLayout({ spaces, active: 'splice', width: 102, prefix: true });
-  assert.equal(width(tight), 102);
+  const tight = barLayout({ spaces, active: 'splice', width: 110, prefix: true });
+  assert.equal(width(tight), 110);
   assert.match(text(tight), / 1 S ● .*q quit/);
   assert.match(text(barLayout({ spaces, active: 'splice', width: 120, notice: 'Handed to Trawl' })), /Handed to Trawl $/);
+  // A notice too long beside the names has the names shrink to letters while it shows.
+  const told = barLayout({ spaces, active: 'splice', width: 100, notice: 'Moving the fleet to /a/long/folder: Splice and Hail start again there' });
+  assert.equal(width(told), 100);
+  assert.match(text(told), /^ 1 S ● .*Moving the fleet to/);
 });
 
 test("a click finds its tab by column, wide characters counted as the terminal does", () => {

@@ -76,13 +76,14 @@ Only `ctrl+]` is Fleet's, and the key after it:
 | Keys | What they do |
 | --- | --- |
 | `alt+1`–`alt+7` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
-| `ctrl+]` `1`–`6` | Switch to that space |
+| `ctrl+]` `1`–`7` | Switch to that space |
 | `ctrl+]` `s` `t` `o` `b` `h` `k` `w` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf |
 | `ctrl+]` `]` or `n` | The next space |
 | `ctrl+]` `p` | The previous space |
 | `ctrl+]` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |
 | `ctrl+]` `tab`, `←` or `→` | Split, the other pane |
 | `ctrl+]` `x` | Split, back to one app on screen: the one with the keys |
+| `ctrl+]` `m` | Move the fleet to another folder: every running app starts again there |
 | `ctrl+]` `ctrl+]` | Send `ctrl+]` to the app |
 | `ctrl+]` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+]` `?` | The keys |
@@ -103,6 +104,17 @@ handed to an app in neither pane opens it in the other pane, so the one it came 
 
 The screen splits only when it's at least 40 columns wide, and goes back whole when it's made narrower
 than that.
+
+## Moving the fleet
+
+The apps start in the folder you started Fleet in. `ctrl+] m` moves them all to another one: the bar
+asks for it, with the folder they're in filled in (`tab` completes a folder's name, `~` is your home
+folder, and a relative path is from the folder they're in now). On `↵` every app that runs is stopped,
+as its own `q` would, and started again in the new folder; the ones that haven't started yet start
+there when they do, and an exited one when you press `↵` in it. `esc` leaves everything where it is.
+An app can ask for a move too (the kit's `askHostToMove`): the bar then asks the same question with
+that app's folder filled in, and nothing moves until you press `↵`. Fleet doesn't keep the folder: the
+next `fleet` starts where you start it.
 
 ## Hand-offs
 

@@ -76,7 +76,7 @@ export function startHost({ spaces, first = spaces[0].id, command = (id, args) =
   const term = new Terminal(columns, rows);
   const input = new PassThrough();
   const spawn = appSpawner({ env, cwd, command: (id, args) => command(id, args) });
-  const host = new Host({ input, output: term, spawn, spaces, familyHome: family, attentionEvery, bell });
+  const host = new Host({ input, output: term, spawn, spaces, familyHome: family, attentionEvery, bell, ...(cwd ? { cwd } : {}) });
   hosts.push(host);
   const done = host.start(first);
   return { host, term, input, done, keys: (text) => input.write(text) };

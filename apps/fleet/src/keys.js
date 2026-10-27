@@ -1,7 +1,8 @@
 // What the host does with the bytes typed into it, pure. Everything goes to the active app as it came
 // (keys, pastes, mouse reports) except after the prefix, ctrl+] (0x1d), whose next key is the host's:
 // 1–7 or an app's letter switches, ] or n the next space and p the one before, | or \ splits the
-// screen in two (| again, or x, puts it back), tab or an arrow left or right goes to the other pane, q
+// screen in two (| again, or x, puts it back), tab or an arrow left or right goes to the other pane, m
+// asks for a folder to move every app to, q
 // quits, ? helps, ctrl+] again sends a literal 0x1d; any other key cancels the prefix and is dropped. Without it,
 // alt+1 to alt+7 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
 import { SPACES } from './spaces.js';
@@ -35,6 +36,7 @@ export function prefixAction(key, spaces = SPACES) {
   if (key === '|' || key === '\\') return { type: 'split' };
   if (k === 'x') return { type: 'unsplit' };
   if (PANE_KEYS.has(key)) return { type: 'pane' };
+  if (k === 'm') return { type: 'folder' };
   if (k === 'q') return { type: 'quit' };
   if (key === '?') return { type: 'help' };
   return null;
