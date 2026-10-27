@@ -1,76 +1,85 @@
-// Draws Fleet's logo into assets/: a ship's wheel with a handle for each space (seven) in the family's accents, one per
-// space in the bar, clockwise from the top in the order of their keys, on the dark rounded square the
-// siblings' icons use. It's pixel art on a 32-pixel grid, lit from the top left. logo.svg (README),
-// logo.png (512 px) and logo.ico (the Windows executable's icon, which the kit's scripts/build.js
-// embeds). Don't edit assets/ by hand: run
+// Draws Fleet's logo into assets/: a container ship, its bridge at the stern and a stack of boxes
+// forward, the one ship that carries many loads, as Fleet carries the apps. The boxes are steel, one
+// orange, and never one per app, so the drawing stays the same however many apps there are. It's pixel
+// art on a 32-pixel grid, lit from the top left, on the dark rounded square the siblings' icons use.
+// logo.svg (README), logo.png (512 px) and logo.ico (the Windows executable's icon, which the kit's
+// scripts/build.js embeds). Don't edit assets/ by hand: run
 //   node scripts/logo.js
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
-import { SPACES } from '../src/spaces.js';
 
 const BACKGROUND = '#1c1b22';
 const UNITS = 32; // the drawing's grid; every size is drawn from it
 const RADIUS = 6;
-const CENTRE = UNITS / 2;
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
-const WOOD = rgb('#a8784a');
-const WOOD_LIGHT = rgb('#d4a46e');
-const WOOD_DARK = rgb('#6b4a2e');
-const BRASS = rgb('#f2c14e');
-const BOLT = rgb('#2a2733');
+const WHITE = rgb('#f4f4f0');
+const WHITE_DARK = rgb('#c8ccd4');
+const GLASS = rgb('#2b3a55');
+const GLASS_LIGHT = rgb('#7ec8ff');
+const NAVY = rgb('#22304f');
+const NAVY_LIGHT = rgb('#3a5080');
+const RED = rgb('#d64545');
+const BLACK = rgb('#121218');
+const WATER = rgb('#3a6b8a');
+const WATER_LIGHT = rgb('#5fafd7');
+const STEEL = '#5f7a99';
+const GREY = '#8a96a3';
+const ORANGE = '#e07b39';
 
-// The wheel's measures, in grid units from the centre.
-const BOLT_R = 1.4;
-const HUB_R = 3.2;
-const RIM_IN = 6.6;
-const RIM_OUT = 8.8;
-const SPOKE = 0.9; // half a spoke's width
-const NECK_TO = 10; // where a handle's wooden neck meets its knob
-const KNOB = { at: 12.3, length: 2.5, width: 2.5 }; // an ellipse along the spoke: centre, half-length, half-width
+// The ship's measures, in grid pixels; it faces right.
+const BRIDGE = { left: 4, right: 8, top: 5 }; // its roof; the wings stick out a pixel either side
+const DECK = 17; // the hull's top row, which the bridge and the boxes stand on
+const KEEL = 22;
+const HULL = { stern: 2, bow: 29 };
+const BOX = { left: 10, width: 5, height: 3 }; // a pixel's gap between boxes across, none down
+// The stack, bottom row first.
+const BOXES = [
+  [STEEL, ORANGE, STEEL],
+  [GREY, STEEL, GREY],
+  [STEEL, GREY, STEEL],
+];
+const WAVES = 25;
 
-/** How much a surface facing (vx, vy) is lit, from -1 to 1. */
-const litOf = (vx, vy) => {
-  const n = Math.hypot(vx, vy);
-  return n ? -(vx + vy) / (n * Math.SQRT2) : 0;
-};
-const shade = (colour, lit) => (lit > 0.35 ? mix(colour, [255, 255, 255], 0.3) : lit < -0.35 ? mix(colour, [0, 0, 0], 0.3) : colour);
+/** A container's pixel: ribbed sides, every other column a shade darker, a lit top, the door end in shadow. */
+function box(colour, x, y) {
+  const c = rgb(colour);
+  if (y === 0) return mix(c, WHITE, 0.25);
+  if (x === BOX.width - 1) return mix(c, BLACK, 0.35);
+  return x % 2 ? mix(c, BLACK, 0.15) : c;
+}
 
-/** The wheel's colour at grid pixel (x, y), [r, g, b], or null where the background shows. */
-function wheel(x, y) {
-  const dx = x + 0.5 - CENTRE;
-  const dy = y + 0.5 - CENTRE;
-  const r = Math.hypot(dx, dy);
-  if (r <= BOLT_R) return BOLT;
-  if (r <= HUB_R) return shade(BRASS, litOf(dx, dy));
-  if (r >= RIM_IN && r <= RIM_OUT) {
-    const lit = litOf(dx, dy);
-    if (r > RIM_OUT - 0.9) return lit > -0.3 ? WOOD_LIGHT : WOOD;
-    if (r < RIM_IN + 0.9) return lit > 0.3 ? WOOD : WOOD_DARK;
-    return lit > 0.3 ? WOOD : lit < -0.3 ? WOOD_DARK : mix(WOOD, WOOD_DARK, 0.4);
+/** The ship's colour at grid pixel (x, y), [r, g, b], or null where the background shows. */
+function ship(x, y) {
+  const { left, right, top } = BRIDGE;
+  // The funnel behind the bridge, red with a black top.
+  if (x >= left + 1 && x <= left + 2 && y >= top - 3 && y < top) return y === top - 3 ? BLACK : RED;
+  if (y === top && x >= left - 1 && x <= right + 1) return WHITE_DARK;
+  if (y === top + 1 && x >= left && x <= right) return x === right ? GLASS_LIGHT : GLASS; // the bridge's windows
+  if (y > top + 1 && y < DECK && x >= left && x <= right) {
+    if ((y - top) % 3 === 1 && x > left && x < right) return mix(WHITE_DARK, GLASS, 0.4); // a deck's portholes
+    return x === left ? WHITE_DARK : WHITE;
   }
-  for (const [i, space] of SPACES.entries()) {
-    const a = ((-90 + (360 / SPACES.length) * i) * Math.PI) / 180;
-    const ax = Math.cos(a);
-    const ay = Math.sin(a);
-    const t = dx * ax + dy * ay; // along the spoke
-    const s = -dx * ay + dy * ax; // across it
-    if (t <= 0) continue;
-    if (t < RIM_IN && Math.abs(s) < SPOKE) return WOOD_LIGHT;
-    if (t > RIM_OUT && t < NECK_TO && Math.abs(s) < SPOKE) return WOOD;
-    const u = (t - KNOB.at) / KNOB.length;
-    const v = s / KNOB.width;
-    if (u * u + v * v <= 1) {
-      const colour = rgb(space.accent);
-      // The knob's middle is its own colour, its rim lit or in shadow as its surface faces.
-      return u * u + v * v < 0.35 ? colour : shade(colour, litOf(u * ax - v * ay, u * ay + v * ax));
+  if (y < DECK && x >= BOX.left) {
+    const row = Math.floor((DECK - 1 - y) / BOX.height);
+    const column = Math.floor((x - BOX.left) / (BOX.width + 1));
+    const bx = (x - BOX.left) % (BOX.width + 1);
+    const colour = BOXES[row]?.[column];
+    if (colour && bx < BOX.width) return box(colour, bx, (y - (DECK - (row + 1) * BOX.height)));
+  }
+  if (y >= DECK && y <= KEEL) {
+    // The bow raked forward at the top, the stern a little under.
+    const k = (y - DECK) / (KEEL - DECK);
+    if (x >= HULL.stern + Math.round(k * 1.5) && x <= HULL.bow - Math.round(k * k * 5)) {
+      return y === DECK ? NAVY_LIGHT : y >= KEEL - 1 ? RED : NAVY;
     }
   }
+  if (y === WAVES && x >= 3 && x <= 28 && x % 4 !== 3) return x % 4 === 0 ? WATER_LIGHT : WATER;
   return null;
 }
 
-const PIXELS = Array.from({ length: UNITS }, (_, y) => Array.from({ length: UNITS }, (_, x) => wheel(x, y)));
+const PIXELS = Array.from({ length: UNITS }, (_, y) => Array.from({ length: UNITS }, (_, x) => ship(x, y)));
 
 /** The colour at unit coordinates (u, v), [r, g, b, a]. */
 function at(u, v) {
@@ -87,7 +96,7 @@ function at(u, v) {
  * RGBA rows of the logo at `size` px. At a multiple of the grid's 32 every pixel is one colour of the
  * drawing, sampled at its centre; at the sizes in between (the .ico's 16, 24 and 48, which Windows
  * shows in lists and the taskbar) a pixel would fall across the drawing's, and one sample would drop
- * a spoke or thicken a handle, so each is the average of a grid of samples inside it.
+ * a line of windows or thicken a gap, so each is the average of a grid of samples inside it.
  */
 function canvas(size) {
   const n = size % UNITS === 0 ? 1 : 8;

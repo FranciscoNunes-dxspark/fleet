@@ -11,7 +11,7 @@ npm test                                                       # here; npm run t
 node --import @fleet/kit/register.js --import ./src/app.js --test test/keys.test.js     # one file
 npm start                                                      # run from the checkout (needs a real TTY): node bin/fleet.js [app] [args…]
 npm run build                                                  # Bun-compiled executable for this machine → dist/fleet-<platform>, all seven apps inside
-node scripts/logo.js                                           # regenerate assets/ (the ship's wheel, its handles in src/spaces.js's accents)
+node scripts/logo.js                                           # regenerate assets/ (the container ship)
 powershell -File installer\build.ps1 [-Version 1.2.3]        # Windows, after npm run build: dist\fleet-windows-x64-setup.exe (needs Inno Setup 6)
 ```
 
