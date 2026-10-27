@@ -1,6 +1,7 @@
 // What the host does with the bytes typed into it, pure. Everything goes to the active app as it came
 // (keys, pastes, mouse reports) except after the prefix, ctrl+] (0x1d), whose next key is the host's:
 // 1–7 or an app's letter switches, ] or n the next space and p the one before, q quits, ? helps,
+// r opens the runbooks and f follows a request (panels.js),
 // ctrl+] again sends a literal 0x1d; any other key cancels the prefix and is dropped. Without it,
 // alt+1 to alt+7 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
 import { SPACES } from './spaces.js';
@@ -30,6 +31,8 @@ export function prefixAction(key, spaces = SPACES) {
   if (k === 'p') return { type: 'move', by: -1 };
   if (k === 'q') return { type: 'quit' };
   if (key === '?') return { type: 'help' };
+  if (k === 'r') return { type: 'runbooks' };
+  if (k === 'f') return { type: 'trace' };
   return null;
 }
 

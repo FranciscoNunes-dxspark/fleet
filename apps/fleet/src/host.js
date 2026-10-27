@@ -18,8 +18,10 @@ import { fit, stringWidth } from '@fleet/kit/text.js';
 import { barLayout, renderBar, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { readKeys, takeBarClicks } from './keys.js';
+import { Panels } from './panels.js';
 import { HOST_MOUSE, MOUSE_MODES, OutputFilter } from './screen.js';
 import { SPACES } from './spaces.js';
+import { requestIdOfLine } from './trace.js';
 
 /** What the host writes to take the screen, and to give it back as it found it. */
 export const ENTER = `\x1b[?1049h\x1b[22;0t\x1b[2J\x1b[H${HOST_MOUSE}`;
@@ -41,6 +43,8 @@ export const HELP = [
   ['ctrl+] ] or n', 'next space'],
   ['ctrl+] p', 'previous space'],
   ['ctrl+] ctrl+]', 'send ctrl+] to the app'],
+  ['ctrl+] r', 'runbooks: steps handed to the apps'],
+  ['ctrl+] f', 'follow a request across the apps'],
   ['ctrl+] q', 'quit Fleet and every app'],
   ['ctrl+] ?', 'this help'],
   ['', ''],
@@ -60,12 +64,17 @@ export class Host {
     onUpdate = () => {},
     setTimer = (fn, ms) => setTimeout(fn, ms),
     clearTimer = (t) => clearTimeout(t),
+    tools = {},
   }) {
     Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer });
     this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '' }));
     this.active = null;
     this.keys = { prefix: false };
     this.help = false;
+    // A panel over the app (panels.js: the runbooks, a request followed): it has the keys while it's open.
+    this.overlay = null;
+    this.panels = new Panels(this, tools);
+    this.lastRequestId = null;
     this.confirming = false;
     this.quitting = false;
     this.noticeText = '';
@@ -146,6 +155,8 @@ export class Host {
       else if (a.type === 'move') this.move(a.by);
       else if (a.type === 'quit') this.askQuit();
       else if (a.type === 'help') this.showHelp();
+      else if (a.type === 'runbooks') this.panels.runbooks();
+      else if (a.type === 'trace') this.panels.trace();
     }
   }
 
@@ -161,6 +172,7 @@ export class Host {
       if (rest && !/^(\x1b\[<[\d;]+[Mm])+$/.test(rest)) this.closeHelp();
       return;
     }
+    if (this.overlay) return this.overlay.keys(rest.replace(/\x1b\[<[\d;]+[Mm]/g, ''));
     const space = this.space(this.active);
     // The mouse is on for the bar's sake; an app that didn't ask for it gets no reports.
     const forApp = space.child && !space.filter.wantsMouse() ? rest.replace(/\x1b\[<[\d;]+[Mm]/g, '') : rest;
@@ -181,6 +193,7 @@ export class Host {
     const space = this.space(id);
     if (!space) return;
     this.help = false;
+    this.overlay = null;
     this.active = id;
     this.onSwitch(id);
     if (space.state === 'idle') this.launch(space);
@@ -191,6 +204,7 @@ export class Host {
   redraw() {
     const space = this.space(this.active);
     this.output.write(CLEAR + space.filter.restoreModes());
+    if (this.overlay) return this.showOverlay(this.overlay);
     if (space.child) {
       this.drawBar();
       // The same size again: Ink redraws the whole frame (the kit's hosted.js).
@@ -237,6 +251,19 @@ export class Host {
     at(body.length + 1, `└${'─'.repeat(width)}┘`);
     this.output.write(out);
     this.drawBar();
+  }
+
+  /** Puts `panel` (panels.js) over the app on screen, or draws it again; the app's drawing waits until it closes. */
+  showOverlay(panel) {
+    this.overlay = panel;
+    if (this.help) return;
+    this.output.write(`\x1b[0m\x1b[?25l${panel.render(this.appSize())}`);
+    this.drawBar();
+  }
+
+  closeOverlay() {
+    this.overlay = null;
+    this.redraw();
   }
 
   closeHelp() {
@@ -295,7 +322,7 @@ export class Host {
 
   fromApp(space, child, text) {
     if (space.child !== child || !text) return;
-    const active = space.id === this.active && !this.help;
+    const active = space.id === this.active && !this.help && !this.overlay;
     const out = space.filter.push(text, { active, bar: active ? this.barString() : '' });
     if (out) this.output.write(out);
   }
@@ -311,13 +338,29 @@ export class Host {
   }
 
   handoff(from, m) {
+    // The request a hand-off names is what ctrl+] f offers to follow.
+    this.lastRequestId = requestIdOfLine(m.line) ?? this.lastRequestId;
     const route = routeHandoff(m, { from: from.id, running: (id) => Boolean(this.space(id)?.child), ids: this.spaces.map((s) => s.id) });
-    if (!route.to) return;
-    const to = this.space(route.to);
-    to.paste = pasteFor(route.line);
+    if (route.to) this.sendLine(route.to, route.line);
+  }
+
+  /** Hands `line` to app `id`: on screen, started if need be, and typed into its prompt once it reads keys. */
+  sendLine(id, line) {
+    const to = this.space(id);
+    if (!to) return;
+    to.paste = pasteFor(line);
     this.switchTo(to.id);
     this.notice(`Handed to ${to.title}: ↵ runs it`);
     if (to.child && to.ready) this.setTimer(() => this.typePaste(to), SWITCH_DELAY);
+  }
+
+  /** Types `line` into app `id`'s prompt without putting it on screen: now if it reads keys, else once it does. */
+  typeInto(id, line) {
+    const space = this.space(id);
+    if (!space?.child) return false;
+    space.paste = pasteFor(line);
+    if (space.ready) this.typePaste(space);
+    return true;
   }
 
   typePaste(space) {
@@ -332,7 +375,7 @@ export class Host {
     Object.assign(space, { state: 'exited', code, child: null, ready: false, paste: null });
     if (this.quitting) return this.checkQuit();
     if (this.confirming && !this.spaces.some((s) => s.child)) this.confirming = false;
-    if (space.id === this.active && !this.help) {
+    if (space.id === this.active && !this.help && !this.overlay) {
       this.output.write(CLEAR + new OutputFilter().restoreModes());
       this.drawExited(space);
     } else this.drawBar();

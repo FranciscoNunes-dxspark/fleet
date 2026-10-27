@@ -53,13 +53,13 @@ export function quietEnv(extra = {}) {
 
 /**
  * The host on a Terminal, its apps started by `command(id, args)` ([file, args]; the fake app by
- * default, named after its space) with `env`. Returns { host, term, keys(text), done }.
+ * default, named after its space) with `env`, and `tools` for its panels (panels.js). Returns { host, term, keys(text), done }.
  */
-export function startHost({ spaces, first = spaces[0].id, command = (id, args) => [process.execPath, [FAKE, id, ...args]], env = quietEnv(), columns, rows, cwd } = {}) {
+export function startHost({ spaces, first = spaces[0].id, command = (id, args) => [process.execPath, [FAKE, id, ...args]], env = quietEnv(), columns, rows, cwd, tools } = {}) {
   const term = new Terminal(columns, rows);
   const input = new PassThrough();
   const spawn = appSpawner({ env, cwd, command: (id, args) => command(id, args) });
-  const host = new Host({ input, output: term, spawn, spaces });
+  const host = new Host({ input, output: term, spawn, spaces, tools });
   hosts.push(host);
   const done = host.start(first);
   return { host, term, input, done, keys: (text) => input.write(text) };
