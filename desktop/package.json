@@ -1,0 +1,77 @@
+{
+  "name": "fleet-desktop",
+  "productName": "Fleet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fleet in a window of its own: the family's apps, drawn by fleet gui",
+  "type": "module",
+  "main": "main.js",
+  "desktopName": "fleet-desktop.desktop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FranciscoNunes-dxspark/fleet.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "com.dxspark.fleet",
+    "productName": "Fleet",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "state.js",
+      "menu.js"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": ".",
+        "filter": [
+          "fleet",
+          "fleet.exe"
+        ]
+      }
+    ],
+    "artifactName": "fleet-desktop-${os}-${arch}.${ext}",
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "../apps/fleet/assets/logo.png"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "../apps/fleet/assets/logo.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "icon": "../apps/fleet/assets/logo.png",
+      "maintainer": "dxspark",
+      "syncDesktopName": true
+    },
+    "publish": null
+  }
+}
