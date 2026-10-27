@@ -1,8 +1,11 @@
 // The bar: the host's one line at the bottom of the screen, a tab per space and a hint, pure. A tab
 // says the space's key, its name and its state (○ not started, ● running, ✕ and the code once it has
-// exited); the active one is drawn in its app's accent. When the line is too narrow, the hint goes
-// first, then the names shrink to their letters.
+// exited); the active one is drawn in its app's accent. A space off screen that needs you has a
+// badge after its state (attention.js: `!` for a worried app, a count of alerts), in a warning colour.
+// When the line is too narrow, the hint goes first, then the names shrink to their letters (the
+// badges stay), then the line is cut.
 import { fit, stringWidth } from '@fleet/kit/text.js';
+import { badgeText } from './attention.js';
 
 const MARK = { idle: '○', running: '●', starting: '●' };
 
@@ -23,7 +26,8 @@ export function hintFor({ prefix, notice }) {
  */
 export function barLayout({ spaces, active, width, prefix = false, notice = '' }) {
   if (width <= 0) return { segments: [], tabs: [] };
-  const labels = (short) => spaces.map((s, i) => ` ${i + 1} ${short ? s.letter.toUpperCase() : s.title} ${stateMark(s)} `);
+  const badges = spaces.map((s) => badgeText(s.badge));
+  const labels = (short) => spaces.map((s, i) => ` ${i + 1} ${short ? s.letter.toUpperCase() : s.title} ${stateMark(s)}${badges[i] ? ` ${badges[i]}` : ''} `);
   const hint = ` ${hintFor({ prefix, notice })} `;
   const total = (ls) => ls.reduce((n, l) => n + stringWidth(l), 0);
   let tabs = labels(false);
@@ -41,7 +45,7 @@ export function barLayout({ spaces, active, width, prefix = false, notice = '' }
     const left = width - col;
     if (left <= 0) break;
     const text = stringWidth(tabs[i]) <= left ? tabs[i] : fit(tabs[i], left);
-    segments.push({ text, role: s.id === active ? 'active' : 'tab', id: s.id, state: s.state });
+    segments.push({ text, role: s.id === active ? 'active' : 'tab', id: s.id, state: s.state, ...(badges[i] ? { badge: badges[i] } : {}) });
     where.push({ id: s.id, from: col, to: col + stringWidth(text) });
     col += stringWidth(text);
   }
@@ -75,12 +79,22 @@ export function colour(hex, { background = false, truecolor = true } = {}) {
   return truecolor ? `\x1b[${base};2;${rgb(hex).join(';')}m` : `\x1b[${base};5;${ansi256(hex)}m`;
 }
 
+/** A badge's colour: a warm orange, bold, that reads on the bar's grey whatever the tab's accent. */
+const BADGE = '\x1b[1m\x1b[38;5;214m';
+
 /** The bar as one line of ANSI text, `width` columns wide, for `spaces` (with their accents). */
 export function renderBar(layout, spaces, { truecolor = true } = {}) {
   const BAR = '\x1b[0m\x1b[48;5;236m\x1b[38;5;250m';
   let out = BAR;
   for (const seg of layout.segments) {
     const space = spaces.find((s) => s.id === seg.id);
+    // A badge cut off by a narrow line is left as the tab's text.
+    const end = ` ${seg.badge} `;
+    if (seg.role === 'tab' && seg.badge && seg.text.endsWith(end)) {
+      const head = seg.text.slice(0, -end.length);
+      out += `${seg.state === 'idle' ? '\x1b[38;5;244m' : colour(space.accent, { truecolor })}${head} ${BADGE}${seg.badge}${BAR} `;
+      continue;
+    }
     if (seg.role === 'active') out += `${colour(space.accent, { background: true, truecolor })}\x1b[38;5;16m\x1b[1m${seg.text}${BAR}`;
     else if (seg.role === 'tab') out += seg.state === 'idle' ? `\x1b[38;5;244m${seg.text}${BAR}` : `${colour(space.accent, { truecolor })}${seg.text}${BAR}`;
     else if (seg.role === 'prefix') out += `\x1b[1m\x1b[38;5;229m${seg.text}${BAR}`;

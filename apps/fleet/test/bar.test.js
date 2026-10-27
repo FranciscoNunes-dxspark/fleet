@@ -55,3 +55,15 @@ test('the active tab in its accent, as 24-bit colour or the nearest of 256', () 
   const line = renderBar(barLayout({ spaces, active: 'splice', width: 120 }), spaces);
   assert.ok(line.includes('\x1b[48;2;95;215;135m\x1b[38;5;16m\x1b[1m 1 Splice ● '));
 });
+
+test('a badge follows the state of a tab off screen, in a warning colour, and stays when names shrink', () => {
+  const badged = spaces.map((s) => (s.id === 'bosun' ? { ...s, badge: { alert: true, count: 2 } } : s.id === 'trawl' ? { ...s, badge: { alert: false, count: 1 } } : s));
+  const wide = barLayout({ spaces: badged, active: 'splice', width: 130 });
+  assert.equal(width(wide), 130);
+  assert.match(text(wide), / 2 Trawl ○ 1 {2}3 Sonar ✕1 {2}4 Bosun ○ !2 /);
+  const letters = barLayout({ spaces: badged, active: 'splice', width: 60 });
+  assert.equal(width(letters), 60);
+  assert.match(text(letters), / 2 T ○ 1 {2}3 O ✕1 {2}4 B ○ !2 /);
+  const line = renderBar(wide, badged);
+  assert.ok(line.includes('4 Bosun ○ \x1b[1m\x1b[38;5;214m!2'));
+});

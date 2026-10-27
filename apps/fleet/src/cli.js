@@ -64,6 +64,8 @@ const host = new Host({
   spawn: appSpawner({ compiled: COMPILED, depth }),
   args: named ? { [named.id]: args.slice(1) } : {},
   truecolor: depth >= 24,
+  // The bell when a tab gets a badge: FLEET_NO_BELL=1, or "bell": false in host.json, keeps it quiet.
+  bell: process.env.FLEET_NO_BELL !== '1' && state.bell !== false,
   onSwitch: (id) => saveState({ last: id }),
   onUpdate: () => updateFleet(true),
 });

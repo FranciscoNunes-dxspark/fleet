@@ -10,11 +10,17 @@
 // each frame: inside the frame's synchronized update when it has one, from a saved cursor, so the
 // terminal never shows a frame without it and the app's cursor and colours are as it left them.
 //
+// A space off screen whose app needs you gets a badge in its tab (attention.js), from the family's
+// moods and activity, read every few seconds; the bell rings when one appears.
+//
 // Everything outside is injected: the terminal (`input`, `output` with columns, rows and 'resize'),
-// starting an app (`spawn`), timers, so tests drive it with streams and small fake apps.
+// starting an app (`spawn`), timers, the clock and the family's folder, so tests drive it with
+// streams and small fake apps.
 import { StringDecoder } from 'node:string_decoder';
+import { familyDir } from '@fleet/kit/family.js';
 import { encodeMessage, messageReader } from '@fleet/kit/hosted.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
+import { badgeFor, badgeText, familyReader } from './attention.js';
 import { barLayout, renderBar, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { readKeys, takeBarClicks } from './keys.js';
@@ -33,6 +39,8 @@ const SWITCH_DELAY = 100;
 // How long a stopped app gets to finish before it's killed, with what it started.
 const STOP_GRACE = 3000;
 const NOTICE_MS = 4000;
+// How often the family's moods and activity are read for the badges.
+const ATTENTION_MS = 3000;
 
 export const HELP = [
   ['alt+1-7', 'switch to that space'],
@@ -45,6 +53,7 @@ export const HELP = [
   ['ctrl+] ?', 'this help'],
   ['', ''],
   ['a click on a tab', 'switches to it'],
+  ['! or 2 in a tab', 'that app needs you (worried, alerts)'],
   ['copied "for Trawl"', 'goes to Trawl, typed into its prompt'],
 ];
 
@@ -60,9 +69,19 @@ export class Host {
     onUpdate = () => {},
     setTimer = (fn, ms) => setTimeout(fn, ms),
     clearTimer = (t) => clearTimeout(t),
+    now = () => Date.now(),
+    familyHome = familyDir(),
+    attentionEvery = ATTENTION_MS,
+    bell = true,
   }) {
-    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer });
-    this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '' }));
+    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell });
+    this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '', badge: null }));
+    this.family = familyReader(familyHome);
+    // When each space was last on screen: what an app said before that is old news. Fleet starting
+    // counts as a look at every space, so moods from before it never badge.
+    const started = now();
+    this.seen = Object.fromEntries(this.spaces.map((s) => [s.id, started]));
+    this.attentionTimer = null;
     this.active = null;
     this.keys = { prefix: false };
     this.help = false;
@@ -96,6 +115,7 @@ export class Host {
     this.input.on('data', this.onInput);
     this.output.on?.('resize', this.onResize);
     this.switchTo(id);
+    this.watchAttention();
     return this.done;
   }
 
@@ -130,6 +150,55 @@ export class Host {
       this.drawBar();
     }, NOTICE_MS);
     this.drawBar();
+  }
+
+  // ---- attention --------------------------------------------------------------------------------
+
+  /** The spaces on screen now, which never carry a badge. */
+  onScreen() {
+    return [this.active];
+  }
+
+  watchAttention() {
+    if (!this.attentionEvery || this.quitting) return;
+    this.attentionTimer = this.setTimer(() => {
+      this.attentionTimer = null;
+      this.checkAttention();
+      this.watchAttention();
+    }, this.attentionEvery);
+  }
+
+  /** Reads the family's folder and gives each space off screen its badge; the bell and a notice for a new one. */
+  checkAttention() {
+    if (this.quitting) return;
+    const { moods, activity } = this.family.read(this.spaces.map((s) => s.id));
+    const now = this.now();
+    const shown = new Set(this.onScreen());
+    let changed = false;
+    let news = null;
+    for (const s of this.spaces) {
+      if (shown.has(s.id)) {
+        this.seen[s.id] = now;
+        changed ||= Boolean(s.badge);
+        s.badge = null;
+        continue;
+      }
+      const badge = badgeFor(s.id, { mood: moods[s.id], activity, seen: this.seen[s.id] });
+      if (badge && !s.badge) news ??= { space: s, badge };
+      changed ||= badgeText(badge) !== badgeText(s.badge);
+      s.badge = badge;
+    }
+    if (!news) return changed && this.drawBar();
+    // Once as it appears: the badge stays until you look, the bell doesn't.
+    if (this.bell) this.output.write('\x07');
+    this.notice(`${news.space.title}${news.badge.reason ? `: ${news.badge.reason}` : ' needs you'}`);
+  }
+
+  /** You looked at space `id`: its badge goes, and what it said so far is old news. */
+  looked(id) {
+    const space = this.space(id);
+    this.seen[id] = this.now();
+    if (space) space.badge = null;
   }
 
   // ---- keys -------------------------------------------------------------------------------------
@@ -181,7 +250,10 @@ export class Host {
     const space = this.space(id);
     if (!space) return;
     this.help = false;
+    // Whatever the one going off screen said so far, you saw.
+    for (const shown of this.onScreen()) if (shown) this.looked(shown);
     this.active = id;
+    this.looked(id);
     this.onSwitch(id);
     if (space.state === 'idle') this.launch(space);
     else this.redraw();
@@ -357,6 +429,7 @@ export class Host {
     if (this.quitting) return this.done;
     this.quitting = true;
     if (this.noticeTimer) this.clearTimer(this.noticeTimer);
+    if (this.attentionTimer) this.clearTimer(this.attentionTimer);
     for (const s of this.spaces) {
       if (!s.child) continue;
       const child = s.child;

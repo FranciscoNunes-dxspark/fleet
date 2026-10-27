@@ -15,6 +15,18 @@ tmux does with its windows. A bar at the bottom shows them all.
 `●` runs, `○` hasn't started yet, `✕` and a number exited with that code. The app on screen has its
 tab in its own colour.
 
+A tab off screen gets a badge when its app needs you: `!` when it has become worried or sad since you
+last looked at it (Bosun's process crashed or gave up, Hail's checks failed, Wharf's container exited
+with an error, Sonar ran into trouble), and a count of the alerts it logged since (Sonar's watches going
+over their threshold, Bosun's crashes). The bar says why for a moment and the terminal's bell rings once
+as a badge appears; looking at the space clears it. Fleet reads what the apps tell each other (their
+moods and the family's activity log, in `~/.family` or `FAMILY_HOME`) every few seconds, so an app
+whose moods are turned off in its settings never gets a `!`.
+
+```
+ 1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Keel ○  7 Wharf ○   Bosun: api crashed
+```
+
 ## Install
 
 **On Windows**, download `fleet-windows-x64-setup.exe` from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
@@ -86,7 +98,8 @@ stays on the clipboard only.
 ## Notes
 
 - Fleet keeps the app it opened last in `~/.fleet/host.json` (`FLEET_HOME` moves the folder).
-  `FLEET_NO_UPDATE_CHECK=1` turns the update check off.
+  `FLEET_NO_UPDATE_CHECK=1` turns the update check off. `FLEET_NO_BELL=1` (or `"bell": false` in
+  `host.json`) keeps the bell quiet when a badge appears.
 - Each app keeps its settings where it always does (`~/.splice`, `~/.trawl`, …), so they're the same
   inside Fleet and out.
 - Colours follow your terminal's: 24-bit where it has them, else the nearest of 256.

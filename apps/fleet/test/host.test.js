@@ -2,7 +2,9 @@
 // are) as real processes, driven through its input and read from the screen it draws.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alive, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
+import { appendFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { alive, familyHome, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
 
 after(stopAll);
 
@@ -122,6 +124,37 @@ test("the active app's mouse comes back with it, and a click on a tab switches",
   // Clicks elsewhere are the app's, when it asked for them.
   keys('\x1b[<0;3;2M');
   await until(() => screen.row(1) === 'keys: "M\\u001b[<0;3;2M"', 'the click passed on', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('a worried app off screen gets a badge and rings the bell once; looking at it clears it', async () => {
+  const family = familyHome();
+  const { term, keys, done } = startHost({ spaces: SPACES, family });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 70x13', 'the app', { term });
+  // A mood from before Fleet started is old news: no badge for it.
+  writeFileSync(join(family, 'two.mood.json'), JSON.stringify({ app: 'two', mood: 'worried', reason: 'stale', at: Date.now() - 60_000 }));
+  await new Promise((r) => setTimeout(r, 300));
+  assert.match(screen.row(-1), /2 Two ○ {2}/);
+  writeFileSync(join(family, 'two.mood.json'), JSON.stringify({ app: 'two', mood: 'worried', reason: 'api crashed', at: Date.now() }));
+  await until(() => / 2 Two ○ ! /.test(screen.row(-1)) && screen.row(-1).includes('Two: api crashed'), 'the badge and its reason', { term });
+  assert.equal(term.written.split('\x07').length - 1, 1);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(term.written.split('\x07').length - 1, 1, 'one bell only');
+  keys(`${PREFIX}w`);
+  await until(() => screen.row(0) === 'two 70x13' && !screen.row(-1).includes('!'), 'the badge gone', { term });
+  // An alert the app on screen logs never badges; one from the app off screen counts.
+  const log = (app, kind) => appendFileSync(join(family, 'activity.jsonl'), `${JSON.stringify({ at: Date.now(), app, kind, text: `${app} ${kind}` })}\n`);
+  log('two', 'alert');
+  log('one', 'info');
+  log('one', 'error');
+  log('one', 'alert');
+  await until(() => / 1 One ● 2 /.test(screen.row(-1)), 'the count', { term });
+  assert.match(screen.row(-1), /2 Two ● {2}/);
+  keys(`${PREFIX}o`);
+  await until(() => screen.row(0) === 'one 70x13' && / 1 One ● {2}/.test(screen.row(-1)), 'cleared by looking', { term });
   keys(`${PREFIX}q`);
   keys('y');
   await done;
