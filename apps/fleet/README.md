@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo.svg" width="120" alt="A ship's wheel with seven handles, one per app"></p>
+<p align="center"><img src="assets/logo.svg" width="120" alt="A container ship, its bridge at the stern and a stack of steel boxes forward"></p>
 
 # Fleet
 
