@@ -34,6 +34,7 @@
     "./claude-cli.js": "./claude-cli.js",
     "./family.js": "./family.js",
     "./hosted.js": "./hosted.js",
+    "./mcp.js": "./mcp.js",
     "./update.js": "./update.js",
     "./scripts/build.js": "./scripts/build.js",
     "./package.json": "./package.json"
