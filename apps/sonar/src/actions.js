@@ -229,6 +229,15 @@ export async function compareSettings(ctx, which, other) {
 
 const DEPLOY_COLOUR = { get succeeded() { return theme.add; }, get failed() { return theme.del; } };
 
+/** K and /locker: an app or slot for Locker, which compares its settings with the folder's and its key vault. */
+export function toLocker(ctx, which) {
+  const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!target) return;
+  if (target.type) return ctx.note(`Locker compares the settings of web and function apps; ${target.name} is a ${typeLabel(target)}.`, 'error');
+  const site = { name: target.name, ...(target.slot ? { slot: target.slot } : {}), ...(target.resourceGroup ? { resourceGroup: target.resourceGroup } : {}), subscription: ctx.data.subscription.id, ...(target.id ? { id: target.id } : {}) };
+  copyFor(ctx, 'locker', takeLine('site', site));
+}
+
 /** D and /deployments: an app's or slot's deployments, newest first; ↵ shows one's log. */
 export function deployments(ctx, which) {
   const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));

@@ -38,6 +38,7 @@ export const HELP = [
       ['alt+s', 'Stop it, or start it if it is stopped'],
       ['alt+w', 'Swap a slot into production (on an app, pick the slot)'],
       ['alt+d', 'Its deployments: who, when, through what, how it went, which is active; ↵ shows one\'s log'],
+      ['alt+k', 'Copy it for Locker, which compares its settings with this folder\'s and its key vault'],
       ['f', 'A function app\'s functions: trigger, on or off, runs and failures over the span; ↵ its runs in Logs, i invokes one (a body for HTTP, else the admin endpoint; asks first), d turns it off or on (its AzureWebJobs.<name>.Disabled setting), y copies its name'],
       ['l  p', 'Its logs · its problems'],
       ['alt+l', 'Its log as it\'s written, in Live'],

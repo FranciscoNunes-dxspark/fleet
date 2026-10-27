@@ -95,7 +95,7 @@ Your own commands and keys go in the settings file, as in the siblings: `"comman
 Locker is one of the apps that hand each other what is under their cursor, as lines to paste into the other's prompt, and never a secret.
 
 - `t` copies the app for Sonar as `/appsettings <app>`; Sonar shows its settings, logs and problems. In Fleet, the other app opens with it in its prompt.
-- `/take <line>` takes an app or slot a sibling copied (a `site` context): Locker compares its settings in the drift view.
+- `/take <line>` takes an app or slot a sibling copied (a `site` context; Sonar's `alt+k` on an app in Resources copies one): Locker compares its settings in the drift view.
 - `/family` lists what the folder is to the other apps (its checkout for Splice, what Bosun runs, Hail's `.http` files, the databases its settings name for Trawl, the app for Sonar), `↵` copying the line for one's prompt. `/wiring` lists what the folder points at (addresses, hosts, ports, connection strings), secrets masked. `/timeline` shows what the family's apps changed, newest first.
 - What Locker sets, disables, adds to `.env` or copies goes in the family's activity log, by name and never with the value. Hush writes its mood (worried when something expires soon, a reference is broken or the sources differ) for the others to remark on, and remarks on theirs; `"familyMoods": false` turns both off.
 

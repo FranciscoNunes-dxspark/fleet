@@ -225,6 +225,7 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
     if (input === 'p') return ctx.problemsFor(sel);
     if (input === 'L') return ctx.liveFor(sel);
     if (input === 'D') return a.deployments(ctx, sel);
+    if (input === 'K') return a.toLocker(ctx, sel);
     if (input === 'f') return a.functions(ctx, sel);
     if (input === 'b') return a.browse(ctx, sel);
   };

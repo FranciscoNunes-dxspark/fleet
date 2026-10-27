@@ -276,6 +276,7 @@ moods** in the settings turns both off.
 | `alt+s` | Stop it, or start it if it's stopped |
 | `alt+w` | Swap a slot into production (on an app, pick the slot) |
 | `alt+d` | Its deployments: who, when, through what, how it went, which is active; `↵` shows one's log |
+| `alt+k` | Copy it for [Locker](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/locker)'s prompt (`/take`), which compares its settings with the folder's and its key vault (`/locker [app]` too) |
 | `f` | A function app's functions (below) |
 | `l` `p` | Its logs · its problems |
 | `alt+l` | Its log as it's written, in Live |
@@ -434,6 +435,7 @@ and Trawl.
 | `/route <app> <slot> <percent>` | Send a share of an app's production traffic to a slot; `0` stops it (above) |
 | `/scale [app] <instances\|tier>` | Scale the App Service plan an app runs on (above) |
 | `/deployments [app]` | An app's or slot's deployments, and their logs |
+| `/locker [app]` | Copy an app or slot for Locker, to compare its settings with the folder's and its key vault |
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
 | `/portal [app]` | Open one in the Azure portal |

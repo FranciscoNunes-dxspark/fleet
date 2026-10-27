@@ -515,3 +515,23 @@ test('ctrl+c never quits: with nothing selected it says how to copy, and the app
     app.unmount();
   }
 });
+
+test('resources: alt+k copies the app under the cursor for Locker, as a site', async () => {
+  const copied = [];
+  const app = start({ copy: (t) => copied.push(t) });
+  const frame = () => app.lastFrame() ?? '';
+  try {
+    await until(() => /❯ ● contoso-web/.test(frame()), 'the first app under the cursor');
+    app.stdin.write(KEYS.esc);
+    await new Promise((r) => setTimeout(r, 100));
+    app.stdin.write('\x1bk');
+    await until(() => frame().includes("Copied for Locker: paste it into Locker's prompt"), 'the app for Locker');
+    const { kind, data } = contextIn(copied.at(-1));
+    assert.equal(kind, 'site');
+    assert.equal(data.name, 'contoso-web');
+    assert.equal(data.slot, undefined);
+    assert.ok(data.resourceGroup && data.subscription);
+  } finally {
+    app.unmount();
+  }
+});
