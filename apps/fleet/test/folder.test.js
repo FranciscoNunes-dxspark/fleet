@@ -26,11 +26,13 @@ test('the line editor: typing, moving, deleting, and ↵, esc and tab said', () 
 });
 
 test('folders resolve from the fleet\'s folder, ~ the home folder, and read back from ~', () => {
-  assert.equal(resolveFolder('sub', { cwd: '/work', home: '/home/me' }), resolve('/work/sub'));
-  assert.equal(resolveFolder('~/code', { cwd: '/work', home: '/home/me' }), resolve(join('/home/me', 'code')));
-  assert.equal(expandHome('~', '/home/me'), '/home/me');
-  assert.equal(shortFolder(join('/home/me', 'code'), '/home/me'), `~${sep}code`);
-  assert.equal(shortFolder('/elsewhere', '/home/me'), '/elsewhere');
+  // The home folder as the system gives it: with a drive and backslashes on Windows.
+  const home = resolve('/home/me');
+  assert.equal(resolveFolder('sub', { cwd: '/work', home }), resolve('/work/sub'));
+  assert.equal(resolveFolder('~/code', { cwd: '/work', home }), join(home, 'code'));
+  assert.equal(expandHome('~', home), home);
+  assert.equal(shortFolder(join(home, 'code'), home), `~${sep}code`);
+  assert.equal(shortFolder(resolve('/elsewhere'), home), resolve('/elsewhere'));
 });
 
 test('tab completes one folder whole, several as far as they agree, hidden ones only when asked', () => {
