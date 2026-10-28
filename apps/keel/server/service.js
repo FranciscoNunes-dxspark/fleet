@@ -14,7 +14,7 @@ import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
-import { comingNext, commitRefs, landedAt, mergeCommits, waitingChanges } from './domain/commits.js';
+import { comingNext, commitCarriers, commitRefs, landedAt, mergeCommits, reposNamed, sameCommit, waitingChanges } from './domain/commits.js';
 import { deployMarkers, deployNote, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { buildSummary, weekRange } from './domain/summary.js';
@@ -1393,6 +1393,27 @@ export function createService({
       if (!p) throw Object.assign(new Error('Unknown project'), { status: 400 });
       await provider.deployReleaseStage(p.name, releaseId, environmentId, comment);
       cache.invalidate('builds');
+    },
+
+    /**
+     * What carries a commit (the terminal app's /take commit, from Splice): the runs of tracked pipelines
+     * that built it (within the pipeline health look-back), and the pull requests, active or closed in the
+     * last 30 days, that brought or merged it. `repo` (a checkout's folder name) narrows it to that repo
+     * when one is tracked by that name. A pull request's commit list is read for the newest 40 of them,
+     * so a commit deep in an older branch may be missed.
+     */
+    async commitUsage(hash, { repo } = {}) {
+      const h = String(hash ?? '').trim().toLowerCase();
+      if (!/^[0-9a-f]{7,64}$/.test(h)) throw Object.assign(new Error('A commit is 7 to 64 hex characters'), { status: 400 });
+      const [builds, repoList, active, closed] = await Promise.all([rawBuilds(), repos(), activePRs(), closedPRs(30)]);
+      const ids = new Set(reposNamed(repoList, repo).map((r) => r.id));
+      const prs = [...active, ...closed].filter((p) => ids.has(p.repoId));
+      const direct = new Set(prs.filter((p) => sameCommit(p.sourceCommit, h) || sameCommit(p.mergeCommit, h)).map((p) => p.key));
+      const rest = prs.filter((p) => !direct.has(p.key)).sort((a, b) => (Date.parse(b.closedAt || b.createdAt) || 0) - (Date.parse(a.closedAt || a.createdAt) || 0)).slice(0, 40);
+      // A closed pull request's commits never change; an active one's do as people push.
+      const lists = await Promise.all(rest.map((p) => cached(`prcommits:${p.key}`, () => provider.getPullRequestCommitIds(p.projectId, p.repoId, p.id).catch(() => []), p.status === 'active' ? 2 * MIN : 60 * MIN)));
+      const prCommits = new Map(rest.map((p, i) => [p.key, lists[i]]));
+      return { hash: h, ...commitCarriers({ hash: h, builds: (await inTrackedRepos(builds)).filter((b) => !b.repoId || ids.has(b.repoId)), prs, prCommits }) };
     },
 
     /** One pipeline: its health row and its latest runs (any branch). */

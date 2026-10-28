@@ -182,6 +182,40 @@ export function drawChart(set, plan, { width, height, colors = {} }) {
   return grid(set, plan, kept, skipped, w, h, c);
 }
 
+/**
+ * The chart as Fleet's window draws it natively (the kit's GuiView, kind 'chart'), from the same rows
+ * and plan: bars added up by label (biggest first), a line along its dates or numbers, a scatter's
+ * points, a histogram's values (the window bins them). Null when no row has a value.
+ */
+export function windowChart(set, plan) {
+  const { kept } = pointsOf(set, plan);
+  if (!kept.length) return null;
+  const name = (i) => set.columns[i].name;
+  // The viewer's frame says what the chart is: no title of its own here.
+  const title = undefined;
+  if (plan.type === 'histogram') return { type: 'histogram', title, name: name(plan.x), values: kept.map((p) => p.x) };
+  if (plan.type === 'scatter') return { type: 'scatter', title, xName: name(plan.x), yName: name(plan.y[0]), points: kept.map((p) => [p.x, p.y[0]]) };
+  if (plan.type === 'bars') {
+    const byLabel = new Map();
+    for (const p of kept) {
+      const key = p.x instanceof Date ? p.x.toISOString().slice(0, 10) : String(p.x);
+      const sums = byLabel.get(key) ?? plan.y.map(() => null);
+      p.y.forEach((v, k) => v != null && (sums[k] = (sums[k] ?? 0) + v));
+      byLabel.set(key, sums);
+    }
+    const items = [...byLabel].sort((a, b) => (b[1][0] ?? -Infinity) - (a[1][0] ?? -Infinity)).slice(0, 200);
+    return { type: 'bars', title, labels: items.map(([l]) => l), series: plan.y.map((i, k) => ({ name: name(i), values: items.map(([, ys]) => ys[k]) })) };
+  }
+  const time = columnKinds(set)[plan.x] === 'date';
+  const sorted = [...kept].sort((a, b) => +a.x - +b.x);
+  return {
+    type: 'line',
+    title,
+    x: { kind: time ? 'time' : 'number', values: sorted.map((p) => +p.x) },
+    series: plan.y.map((i, k) => ({ name: name(i), values: sorted.map((p) => p.y[k]) })),
+  };
+}
+
 function legend(set, plan, c) {
   if (plan.y.length < 2) return [];
   const out = [];

@@ -1,0 +1,29 @@
+{
+  "name": "locker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Secrets and configuration in the terminal: a project's .env and appsettings, App Service settings and Key Vault side by side, what drifted, and what expires",
+  "type": "module",
+  "bin": {
+    "locker": "bin/locker.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bin/locker.js",
+    "demo": "node bin/locker.js --demo",
+    "test": "node --import @fleet/kit/register.js --import ./src/app.js --test --test-concurrency=3 test/*.test.js",
+    "build": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js",
+    "build:all": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js --all"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fleet/kit": "file:../../packages/kit",
+    "ink": "^6.8.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "ink-testing-library": "^4.0.0"
+  }
+}

@@ -39,6 +39,15 @@ test('Hail in hosted mode draws above the bar, takes keys, and is drawn again af
   await until(() => shown('Keyboard shortcuts') && shown('Welcome to Hail'), 'Hail drawn again', { term, ms: 20_000 });
   assert.match(screen.row(-1), /^ 1 Hail ● {2}2 Two ●/);
 
+  // Split, Ink's frames drawn through the host's virtual terminal land in Hail's own columns.
+  keys('\x1b');
+  keys(`${PREFIX}|`);
+  const left = () => Array.from({ length: 29 }, (_, y) => screen.row(y).slice(0, 49)).join('\n');
+  await until(() => screen.row(0).slice(50) === 'two 50x29' && left().includes('Hail') && left().includes('api.http'), 'Hail in the left pane', { term, ms: 20_000 });
+  assert.ok(Array.from({ length: 29 }, (_, y) => screen.row(y)[49]).every((c) => c === '│'), 'the divider whole');
+  keys(`${PREFIX}x`);
+  await until(() => shown('api.http') && !shown('two 50x29') && screen.row(2).length > 90, 'Hail whole again', { term, ms: 20_000 });
+
   const pid = host.space('hail').child.pid;
   keys(`${PREFIX}q`);
   await until(() => screen.row(-1).includes('Quit Fleet?'), 'the question', { term });

@@ -83,3 +83,13 @@ test('Logs draws a rendered result as a chart; v shows the grid and back, /chart
     app.unmount();
   }
 });
+
+test("Fleet's window draws the same chart natively: a time series as lines, bars and a pie as bars", async () => {
+  const { windowChart } = await import('../src/chart.js');
+  const time = { type: 'time', stamps: ['2026-10-27T10:00:00Z', '2026-10-27T11:00:00Z'], series: [{ name: '200', values: [3, 4] }] };
+  assert.deepEqual(windowChart(time), { type: 'line', x: { kind: 'time', values: time.stamps }, series: time.series });
+  const pie = { type: 'bars', pie: true, bars: [{ label: 'a', value: 1 }, { label: 'b', value: 3 }] };
+  assert.deepEqual(windowChart(pie), { type: 'bars', labels: ['a', 'b'], series: [{ name: 'value', values: [1, 3] }], share: true });
+  assert.equal(windowChart({ error: 'nothing' }), null);
+  assert.equal(windowChart(null), null);
+});

@@ -95,6 +95,14 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       action: 'toggle',
     },
     {
+      id: 'checksBeforePush',
+      label: 'Checks before push',
+      value: config.checksBeforePush === true ? 'on' : 'off',
+      note: config.checksBeforePush === true ? 'only where /checks on says' : 'run the checks (/checks) before every push, unless /checks off there',
+      action: 'toggle',
+      off: true,
+    },
+    {
       id: 'familyMoods',
       label: 'Family moods',
       value: isOn(config.familyMoods) ? 'on' : 'off',

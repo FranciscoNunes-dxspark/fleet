@@ -84,6 +84,7 @@ export const HELP = [
     rows: [
       ['↵', 'The request as sent and what came back'],
       ['d', 'How it differs from the response before it to the same request'],
+      ['alt+r', 'Replay it elsewhere (/replay): to an environment\'s {{host}}, a port Bosun runs or an address, and compare the answers'],
       ['y', 'Copy the body'],
       ['alt+d', 'Forget them all (/history clear)'],
     ],
@@ -160,6 +161,7 @@ export const HELP = [
     about: 'Splice, Trawl, Sonar and Bosun hand Hail command lines to paste into the prompt, and Hail hands them some',
     rows: [
       ['/take family:v1:…', 'What a sibling copied (/take is optional): a request from Sonar is added as ### replay <METHOD> <path>,\nto the environment\'s {{host}} or to where it came from, and picked to send\nrows from Trawl become a JSON body: a new POST to {{host}}/<table>, or the body of the request under the cursor (ctrl+z in Edit undoes it)\na log line from Bosun: the response in History whose headers carry its request id (X-Request-Id, traceparent…)'],
+      ['/replay', '/replay [environment|base-url]: the request last taken from Sonar (or the response under the cursor in History, or the request picked) sent again\nto an environment\'s {{host}}, a port in bosun.json or an address, then compared with what it answered there (status, headers, body)\ncredential headers stay behind: the environment\'s token or key variables give their own'],
       ['paste', 'A line starting with / (or a family:v1: context) pasted while a view has the keys opens the prompt with it, for ↵'],
       ['/family', 'What this project offers the others, ↵ copies it: Splice /open <checkout> · Bosun /move <folder>\nTrawl /azure-sql or /add for each database in appsettings*.json and .env (never a password)'],
       ['/timeline', "The family's activity log, newest first: p this project only (or all again) · ↵ an entry whole · y copy it\nHail adds /load runs, /send all that failed, the mock starting and stopping, OAuth sign-ins and imports (never a secret)"],

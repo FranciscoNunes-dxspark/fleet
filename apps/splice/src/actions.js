@@ -69,9 +69,12 @@ import { changedOutside, leavingFolders, sparseText } from './sparse.js';
 import { NOTES_REFSPEC, noteArgs, notePrefill, notesArgs, withKeptNote } from './notes.js';
 import { COMMIT_HOOKS, PUSH_HOOKS, hookArgs, hookRows, hookRunArgs } from './githooks.js';
 import { CODEOWNERS_PATHS, changedOwnersText, ownersOfFiles, ownersText, reviewerNames } from './codeowners.js';
-import { TAKES, exceptionFrames, framesInRepo, pathAndLine } from './take.js';
+import { TAKES, branchRefs, exceptionFrames, framesInRepo, pathAndLine, shortRef } from './take.js';
 import { APP_NAMES, FAMILY, TAKEN_BY, contextIn, copiedNote, describeContext, familyDir, logActivity, matchFrameFile, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine } from '@fleet/kit/family.js';
 import { DEFAULT_ACCENT, applyTheme, isColour, setAccent, theme } from './theme.js';
+import { CHECKS_FILE, checkLine, checksFileText, checksOn, checksSummary, duration, failedText, hailCommand, lookAround, runChecks, setChecksOn } from './checks.js';
+import { COMPILED } from './app.js';
+import { HOSTED_VARIABLE } from '@fleet/kit/hosted.js';
 import {
   REFLOG_FORMAT,
   captureDiscard,
@@ -222,22 +225,26 @@ export async function push(ctx, args = []) {
       if (!ok) return;
     }
     const range = pushRange({ upstream: branch.upstream, remote: named });
-    if (!(await beforePush(ctx, range))) return { ok: false };
+    const before = await beforePush(ctx, range);
+    if (!before) return { ok: false };
     const extra = await pushQuestion(ctx, range);
     if (!extra) return { ok: false };
     const n = await pushCount(ctx, range);
     // Only a branch without an upstream starts tracking the remote it was pushed to.
     const r = await ctx.exec(['push', ...flags, ...extra, ...(branch.upstream ? [] : ['-u']), named, branch.head], { label: 'Pushing' });
+    pastChecks(ctx, r, before, branch.head);
     return activity(ctx, r, `${flags.includes('--force-with-lease') ? 'force-pushed' : 'pushed'} ${branch.head} to ${named}${commitsText(n)}`, 'push');
   }
   if (!branch.upstream) {
     const remote = remotes.includes('origin') ? 'origin' : remotes[0];
     if (!remote) return ctx.note('This repository has no remote. Add one with: !remote add origin <url>', 'error');
-    if (!(await beforePush(ctx, pushRange()))) return { ok: false };
+    const before = await beforePush(ctx, pushRange());
+    if (!before) return { ok: false };
     const extra = await pushQuestion(ctx, pushRange());
     if (!extra) return { ok: false };
     const n = await pushCount(ctx, pushRange());
     const r = await ctx.exec(['push', ...flags, ...extra, '-u', remote, branch.head], { label: 'Pushing' });
+    pastChecks(ctx, r, before, branch.head);
     return activity(ctx, r, `pushed ${branch.head} to ${remote}, a new branch there${commitsText(n)}`, 'push');
   }
   if (flags.includes('--force-with-lease')) {
@@ -249,12 +256,14 @@ export async function push(ctx, args = []) {
     });
     if (!ok) return;
   }
-  if (!(await beforePush(ctx, pushRange({ upstream: branch.upstream })))) return { ok: false };
+  const before = await beforePush(ctx, pushRange({ upstream: branch.upstream }));
+  if (!before) return { ok: false };
   const extra = await pushQuestion(ctx, pushRange({ upstream: branch.upstream }));
   if (!extra) return { ok: false };
   const force = flags.includes('--force-with-lease');
   const n = force ? 0 : branch.ahead;
   const r = await ctx.exec(['push', ...flags, ...extra], { label: 'Pushing' });
+  pastChecks(ctx, r, before, branch.head);
   return activity(ctx, r, `${force ? 'force-pushed' : 'pushed'} ${branch.head} to ${branch.upstream.split('/')[0]}${commitsText(n)}`, 'push');
 }
 
@@ -356,8 +365,124 @@ export async function verify(ctx, text) {
   ctx.showText(`Signatures: ${bad ? `${bad} not signed or bad` : 'all signed'} (${list.length})`, verifyText(list, what));
 }
 
-/** Both checks before a push: big files and secrets, then the risk score. True to push. */
-const beforePush = async (ctx, range) => (await checkBeforePush(ctx, range)) && (await riskBeforePush(ctx, range));
+/**
+ * Everything before a push: big files and secrets, the risk score, then the repository's own checks.
+ * False to stop; else { failed }, the checks that failed and were pushed past anyway.
+ */
+const beforePush = async (ctx, range) => (await checkBeforePush(ctx, range)) && (await riskBeforePush(ctx, range)) && checksBeforePush(ctx);
+
+/** A push made past failing checks goes in the family's activity log too, saying which. */
+const pastChecks = (ctx, r, before, branch) => (before?.failed?.length ? activity(ctx, r, `pushed ${branch} though its checks failed (${before.failed.join(', ')})`, 'push') : r);
+
+/** The checks of the open repository (checks.js): { checks, from, problems }. */
+function checksHere(ctx) {
+  // Hail on the PATH, else inside Fleet's own build, the Hail it carries.
+  const hail = hailCommand({ findHail: ctx.findHail, hosted: process.env[HOSTED_VARIABLE] === '1', compiled: COMPILED });
+  return lookAround(ctx.data.root, { hail });
+}
+
+/**
+ * Runs `checks` in the repository's folder as one task, each one's ✓ or ✗ and how long it took in its
+ * activity line as they go. Resolves runChecks' outcome, or null when it couldn't start (something else
+ * was running).
+ */
+async function runRepoChecks(ctx, checks, title) {
+  const root = ctx.data.root;
+  let outcome = null;
+  await ctx.task(
+    title,
+    async (signal) => {
+      outcome = await runChecks(checks, { signal, runOne: (c, s) => ctx.runCheck(c, { cwd: root, signal: s }), onUpdate: (results) => ctx.taskProgress?.(results.map(checkLine)) });
+      const text = [checksSummary(outcome), ...outcome.results.map(checkLine)].join('\n');
+      if (outcome.cancelled) throw Object.assign(new Error('Cancelled'), { cancelled: true });
+      if (!outcome.ok) throw new Error(text);
+      return { stdout: text, stderr: '' };
+    },
+    { label: 'Running the checks', refresh: false },
+  );
+  return outcome;
+}
+
+/**
+ * Before a push, with checks on for the repository (/checks on, or the setting): they run, and when one
+ * fails its output shows and Splice asks whether to push anyway (no, unless you say so). False to stop,
+ * else { failed }: the names of the checks pushed past.
+ */
+async function checksBeforePush(ctx) {
+  if (!checksOn(ctx.config, ctx.data.root, samePath)) return { failed: [] };
+  const found = checksHere(ctx);
+  if (found.problems.length) ctx.note([`Some checks were left out:`, ...found.problems].join('\n'), 'error');
+  if (!found.checks.length) return { failed: [] };
+  const outcome = await runRepoChecks(ctx, found.checks, 'Checks before push');
+  if (!outcome || outcome.cancelled) return false;
+  if (outcome.ok) return { failed: [] };
+  ctx.showText(`Before pushing: ${checksSummary(outcome)}`, failedText(outcome.failed));
+  const ok = await ctx.confirm({
+    title: `Push anyway? ${checksSummary(outcome)}.`,
+    detail: 'Their output, above. No keeps the commits here to fix first; /checks off stops checking here.',
+    options: [
+      { label: 'No', value: false },
+      { label: 'Yes, push anyway', value: true },
+    ],
+    danger: true,
+  });
+  ctx.closeOverlay();
+  return ok ? { failed: outcome.failed.map((r) => r.name) } : false;
+}
+
+/**
+ * /checks: the checks before a push here (alone: a list, ↵ runs one, r all of them), and `on`, `off`,
+ * `run` (all of them, without pushing) and `edit` (writes .splice/checks.json from what was worked out,
+ * to change in your editor).
+ */
+export async function checks(ctx, text) {
+  if (!needRepo(ctx)) return;
+  const word = String(text ?? '').trim().toLowerCase();
+  const root = ctx.data.root;
+  if (word === 'on' || word === 'off') {
+    ctx.setConfig((c) => setChecksOn(c, root, word === 'on', samePath));
+    const n = checksHere(ctx).checks.length;
+    return ctx.note(word === 'on' ? `Checks run before each push here${n ? ` (${n})` : ", once there are some: /checks edit writes them"}.` : 'Checks no longer run before a push here.', 'ok');
+  }
+  const found = checksHere(ctx);
+  if (found.problems.length) ctx.note([`Some checks were left out:`, ...found.problems].join('\n'), 'error');
+  if (word === 'edit') {
+    const file = join(root, CHECKS_FILE);
+    if (found.from !== 'file') {
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, checksFileText(found.checks));
+      return ctx.note(`Wrote ${CHECKS_FILE.replace(/\\/g, '/')} with ${found.checks.length ? `the ${found.checks.length} worked out` : 'no checks yet'}: edit it in your editor ("checks": commands, or { "name", "run" }). Splice reads it before each push.`, 'ok');
+    }
+    return ctx.note(`The checks are in ${file}: edit it in your editor. Splice reads it before each push.`);
+  }
+  if (word === 'run') return showChecksRun(ctx, found.checks);
+  if (word) return ctx.note('/checks [on|off|run|edit]', 'error');
+  const on = checksOn(ctx.config, root, samePath);
+  ctx.showPicker({
+    title: `Checks before push: ${on ? 'on' : 'off'} here · ${found.from === 'file' ? CHECKS_FILE.replace(/\\/g, '/') : 'worked out'}`,
+    hint: `↵ runs one · r all · ${on ? '/checks off' : '/checks on'} · /checks edit`,
+    empty: 'No checks: no test or lint script, .sln or .http file here. /checks edit writes a file to put some in.',
+    items: found.checks.map((c) => ({ ...c, segments: [{ text: c.name, strong: true }, { text: c.name === c.run ? '' : `  ${c.run}`, color: theme.dim }] })),
+    onPick: (c) => {
+      ctx.closeOverlay();
+      return showChecksRun(ctx, [c]);
+    },
+    keys: {
+      r: () => {
+        ctx.closeOverlay();
+        return showChecksRun(ctx, found.checks);
+      },
+    },
+  });
+}
+
+/** Runs checks without pushing, the failing ones' output in the viewer. */
+async function showChecksRun(ctx, list) {
+  if (!list.length) return ctx.note('No checks to run here. /checks edit writes a file to put some in.');
+  const outcome = await runRepoChecks(ctx, list, list.length === 1 ? `Check: ${list[0].name}` : 'Checks');
+  if (!outcome || outcome.cancelled || outcome.ok) return;
+  ctx.showText(checksSummary(outcome), failedText(outcome.failed));
+}
 
 /** The risk of pushing the commits in `range` (risk.js): three gits, whatever the size of the push. Null when there's nothing to push. */
 async function readRisk(ctx, range, signal) {
@@ -4086,7 +4211,7 @@ export function family(ctx) {
 
 /**
  * /timeline: what the family's apps did (family.js's activity log: pushes, writes to a database, restarts),
- * newest first, from all six. p shows this repository's alone (with what names no project), or everything
+ * newest first, from all of them. p shows this repository's alone (with what names no project), or everything
  * again; ↵ shows an entry whole.
  */
 export function timeline(ctx, { mine = false, replace = false } = {}) {
@@ -4145,7 +4270,7 @@ export function wiring(ctx) {
 // The siblings that take a kind of context, Splice aside (it takes some itself).
 const othersTaking = (kind) => TAKEN_BY[kind].filter((a) => a !== 'splice');
 
-/** Y on a commit in the graph: `/take commit` for Sonar, which finds the deployments that carry it. */
+/** Y on a commit in the graph: `/take commit` for Sonar or Keel, which find the deployments, and the pull requests and runs, that carry it. */
 export function shareCommit(ctx, c) {
   const data = { repo: ctx.data.name, hash: c.hash, subject: c.subject };
   copyFor(ctx, othersTaking('commit'), takeLine('commit', data));
@@ -4479,7 +4604,7 @@ const trackedFiles = async (ctx) => (await ctx.git(['ls-files', '-z'])).split('\
  * /take <context>: what a sibling app copied for Splice (family.js). An exception opens blame at the first
  * of its frames that's a file of this repository (a list of them when several are, top frame first); a
  * file, blame at its line (its history without one); a commit, its diff (offering to fetch it when it isn't
- * here). Other kinds say which app they're for.
+ * here); a pull request (from Keel), what its branch adds to its target. Other kinds say which app they're for.
  */
 export async function take(ctx, text) {
   const raw = String(text ?? '').trim();
@@ -4491,6 +4616,7 @@ export async function take(ctx, text) {
   const { kind, data } = got;
   ctx.note(`Taking ${describeContext(got)}`);
   if (kind === 'commit') return takeCommit(ctx, data);
+  if (kind === 'pullrequest') return takePullRequest(ctx, data);
   let files;
   try {
     files = await trackedFiles(ctx);
@@ -4529,6 +4655,41 @@ export async function take(ctx, text) {
     })),
     onPick: open,
   });
+}
+
+/**
+ * /take pullrequest (from Keel): what its source branch adds to its target, as /compare shows it (the diff
+ * from where they forked). A branch that isn't here is offered a fetch from the remote, then looked for again.
+ */
+async function takePullRequest(ctx, data) {
+  const { sourceBranch, targetBranch } = data;
+  if (!sourceBranch || !targetBranch) return ctx.note('That pull request has no branches to compare.', 'error');
+  const label = `!${data.id ?? '?'}${data.title ? ` "${data.title}"` : ''}`;
+  const from = data.repo && data.repo.toLowerCase() !== String(ctx.data.name).toLowerCase() ? ` (it's in ${data.repo})` : '';
+  const find = async (branch) => {
+    for (const ref of branchRefs(branch, ctx.data.remotes)) {
+      if (await ctx.git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).then((s) => Boolean(s.trim()), () => false)) return shortRef(ref);
+    }
+    return null;
+  };
+  const both = async () => [await find(sourceBranch), await find(targetBranch)];
+  let [source, target] = await both();
+  if (!source || !target) {
+    const missing = [!source && sourceBranch, !target && targetBranch].filter(Boolean).join(' and ');
+    if (!ctx.data.remotes.length) return ctx.note(`${missing} ${missing.includes(' and ') ? "aren't" : "isn't"} in ${ctx.data.name}${from}, and it has no remote to fetch from.`, 'error');
+    const remote = ctx.data.remotes.includes('origin') ? 'origin' : ctx.data.remotes[0];
+    const ok = await ctx.confirm({
+      title: `${label}: ${missing} ${missing.includes(' and ') ? "aren't" : "isn't"} in ${ctx.data.name}${from}. Fetch from ${remote} and look again?`,
+      detail: `git fetch ${remote}, which brings its branches up to date (nothing of yours changes).`,
+      options: YES_NO('Yes, fetch'),
+    });
+    if (!ok) return;
+    await ctx.exec(['fetch', remote, '--prune'], { label: 'Fetching' });
+    [source, target] = await both();
+    if (!source || !target) return ctx.note(`${[!source && sourceBranch, !target && targetBranch].filter(Boolean).join(' and ')} isn't on ${remote} either${from}: the pull request may be in another repository, or its branch deleted.`, 'error');
+  }
+  ctx.note(`${label}: what ${source} adds to ${target}.`);
+  ctx.showCompare(source, target);
 }
 
 /** /take commit: its diff when the repository has it; otherwise offers to fetch, then looks again. */

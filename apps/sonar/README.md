@@ -142,6 +142,8 @@ requests | summarize n = count() by bin(timestamp, 1h), resultCode | render time
 requests | where success == false | summarize count() by name | render barchart
 ```
 
+In Fleet's window (`fleet gui`) the chart is drawn as a real one in its place, with the values under the pointer.
+
 ### Asking Claude
 
 `w` on a problem (or `/why`) sends its latest occurrence, end to end, to
@@ -163,7 +165,7 @@ files in its stack in the 14 days before it was first seen. Outside a checkout t
 | --- | --- |
 | `alt+y` | Copy the exception, with its stack and request, for [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice)'s prompt |
 | `alt+t` | Its failing SQL: `↵` copies one as a query for Trawl's prompt, `a` its server's line for Trawl (`/azure-sql` for Azure SQL) (through `alt+t`'s checks when the server is in the subscription) |
-| `alt+h` | Copy the failing request for Hail's prompt |
+| `alt+h` | Copy the failing request for Hail's prompt, with what it answered (its status and time), so Hail's `/replay` can send it to a local run and compare |
 | `w` | Ask Claude for a draft write-up in Markdown: summary, impact, timeline, likely cause, next steps (it may read the code, as `w` in Problems does) |
 | `s` | Save the write-up (or the incident itself, before there's one) to a Markdown file; `/incident save <file>` does it too |
 | `y` | Copy the incident as Markdown |
@@ -176,6 +178,21 @@ whose 95th percentile duration moved by a tenth or more; operations whose rate o
 The point is the latest successful deployment of the app in scope, or without one the middle of the
 time span; `/compare-window 2026-10-20T14:00Z` puts it at a time of yours, and `/compare-window deploy`
 insists on the deployment. Each window is as long as the time since the point, up to seven days.
+
+### The slowest SQL
+
+`alt+q` in Problems (or `/slow-sql`) lists the SQL the app in scope ran over the time span, from
+Application Insights' dependencies, slowest first by its 95th percentile duration: each command with
+its average, how many calls, and the server and database it went to. Only commands whose text
+Application Insights kept are listed (the .NET SDK keeps it once `EnableSqlCommandTextInstrumentation`
+is on); how many more there were without it is said in the activity lines.
+
+`↵` copies one for [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl)'s
+prompt as a query, with what was measured (calls, average and p95, the span and the app): Trawl
+connects to its saved connection to that server and database, asks for the estimated plan (it never
+runs the statement) and asks Claude for indexes that would help, given the plan, the tables, their
+indexes and those durations (Trawl's `/explain-slow`). `a` copies the server's own line for Trawl, as
+in an incident, and `y` the SQL.
 
 ### Watches
 
@@ -196,16 +213,18 @@ kept in `config.json` under `"watches"`.
 
 ### From the other apps
 
-Splice, Trawl, Bosun and Hail copy things for Sonar as a line for its prompt, `/take family:v1:…`
+Splice, Trawl, Bosun, Hail and Keel copy things for Sonar as a line for its prompt, `/take family:v1:…`
 (the `family:v1:…` part alone, pasted or typed at the prompt, does the same):
 
 | What | What Sonar does with it |
 | --- | --- |
-| A commit (from Splice) | Reads the deployments of every app and slot in the subscription and lists those that shipped it, by its hash in their id or message; `↵` shows one's log |
+| A commit (from Splice, or from Keel: `alt+s` on a pipeline that deploys) | Reads the deployments of every app and slot in the subscription and lists those that shipped it, by its hash in their id or message; `↵` shows one's log |
 | An exception | Problems, showing only those of its type (or with its message), about its app when it's one in the subscription; `x` there shows them all again |
 | A log line with a request or operation id (from Bosun) | Everything that request did, in Logs: its request, dependencies, exceptions and traces, in order |
 
-Anything else (a request, rows, a query, a file) is for another app, and Sonar says which.
+Keel also copies a plain command for Sonar: `alt+k` on a production monitor whose failures went up after a deploy copies `/compare-window <time of that deploy>`, to run with the monitor's app picked: what changed across that deploy, as `alt+k` in Problems says it.
+
+Anything else (a request, rows, a query, a file, a pull request, a pipeline) is for another app, and Sonar says which.
 
 Whatever Sonar copies for another app works the same way: a line for that app's prompt, said in the
 activity lines as "Copied for Splice: paste it into Splice's prompt" with what it holds. Nothing secret
@@ -218,7 +237,7 @@ the prompt rather than being taken as keys, to run with `↵`.
 Azure SQL server signing in with Entra, else `/add` with its port, its login and `--trust-cert` when the
 connection string trusts the server's certificate, but never the password). `↵` copies one.
 
-`/timeline` shows what the six apps did that changed something, newest first, from the family's
+`/timeline` shows what the family's apps did that changed something, newest first, from the family's
 activity log in `~/.family`: Splice's pushes, Trawl's writes, Bosun's crashes, Hail's sends, and Sonar's
 own changes. Sonar adds one whenever it changes Azure (a restart, stop, start or swap, settings saved, a
 firewall rule, a scale, a route, a function turned off or on or invoked, dead letters resubmitted or
@@ -232,7 +251,7 @@ passwords and keys masked.
 
 Ping tells the others how it feels (worried after something went wrong, busy, pleased, or just
 watching) and why, in a small file in `~/.family` (`FAMILY_HOME` moves it), and reads theirs every
-30 seconds: when Twig, Glim, Squawk or Hoot has been worried, sad or happy in the last 15 minutes, Ping
+30 seconds: when Twig, Glim, Squawk, Hoot, Bark or Pinch has been worried, sad or happy in the last 15 minutes, Ping
 says so once, in a line above the activity lines ("Twig says: PR #12 merged"), until `esc`. **Family
 moods** in the settings turns both off.
 
@@ -259,6 +278,7 @@ moods** in the settings turns both off.
 | `alt+s` | Stop it, or start it if it's stopped |
 | `alt+w` | Swap a slot into production (on an app, pick the slot) |
 | `alt+d` | Its deployments: who, when, through what, how it went, which is active; `↵` shows one's log |
+| `alt+k` | Copy it for [Locker](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/locker)'s prompt (`/take`), which compares its settings with the folder's and its key vault (`/locker [app]` too) |
 | `f` | A function app's functions (below) |
 | `l` `p` | Its logs · its problems |
 | `alt+l` | Its log as it's written, in Live |
@@ -315,7 +335,7 @@ accounts show their details only.
 | `s` | Save the query under a name, for `/queries` |
 | `h` `l` / `←` `→` | Across the columns |
 | `y` `alt+y` | Copy the row as JSON · every row, tab-separated |
-| `alt+h` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there |
+| `alt+h` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there, with its status and time when the row has them (for Hail's `/replay` to compare against) |
 | `alt+f` | Copy a request row as the text of a request in a `.http` file |
 | `c` | Which Application Insights (or Log Analytics workspace) to look in |
 
@@ -339,6 +359,7 @@ accounts show their details only.
 | `w` | Ask Claude why it happens |
 | `alt+i` | The incident: the problem told whole (below) |
 | `alt+k` | Before and after: what changed across the app's latest deployment (below) |
+| `alt+q` | The slowest SQL of the app in scope, for Trawl to explain (below) |
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
 | `alt+y` | Copy its latest exception, with its stack and the request it failed, for Splice's prompt |
@@ -416,9 +437,11 @@ and Trawl.
 | `/route <app> <slot> <percent>` | Send a share of an app's production traffic to a slot; `0` stops it (above) |
 | `/scale [app] <instances\|tier>` | Scale the App Service plan an app runs on (above) |
 | `/deployments [app]` | An app's or slot's deployments, and their logs |
+| `/locker [app]` | Copy an app or slot for Locker, to compare its settings with the folder's and its key vault |
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
 | `/portal [app]` | Open one in the Azure portal |
+| `/slow-sql` | The slowest SQL of the app in scope over the span; `↵` copies one for Trawl's `/explain-slow` (above) |
 | `/compare-window [deploy\|<time>]` | What changed across the latest deployment of the app in scope, or a time: exceptions, dependencies, failing operations |
 | `/watch <name> <threshold> <kql>` | Pin a query whose first value is a number; going over the threshold says so (above) |
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |

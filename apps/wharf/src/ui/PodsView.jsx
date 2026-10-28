@@ -30,6 +30,8 @@ export function PodsView({ kube, ctx, width, height, active }) {
     else if (input === 'r') k.rollout(ctx, id);
     else if (input === 'i') k.describe(ctx, id);
     else if (input === 'y') ctx.copy(sel.name, `${sel.name}`);
+    else if (input === 'e') k.shell(ctx, id);
+    else if (input === 'c') k.containerLogs(ctx, id);
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {

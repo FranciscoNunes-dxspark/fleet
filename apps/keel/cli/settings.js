@@ -18,6 +18,9 @@ export function updateMode(env = process.env) {
 /** Whether the mouse is on: it is unless KEEL_MOUSE turns it off. */
 export const mouseOn = (env = process.env) => !/^(0|false|no|off)$/i.test(env.KEEL_MOUSE || '');
 
+/** Whether Pinch tells the family how it feels and says how they do: it does unless KEEL_FAMILY_MOODS turns it off. */
+export const familyMoodsOn = (env = process.env) => !/^(0|false|no|off)$/i.test(env.KEEL_FAMILY_MOODS || '');
+
 /** The .env lines for an update mode (both keys, so an earlier choice never lingers). */
 export const updateLines = (mode) => [`KEEL_CHECK_UPDATES=${mode === 'off' ? 0 : 1}`, `KEEL_AUTO_UPDATE=${mode === 'install' ? 1 : 0}`];
 
@@ -132,6 +135,7 @@ export function settingsRows({ view, orgs = [], options = {}, open = new Set(), 
   add({ kind: 'info', label: 'Settings file', text: local.envFile || '' });
   add({ kind: 'info', label: 'Signed in with', text: signInText(local) });
   add({ kind: 'mouse', on: mouseOn(local.env), available: !!local.mouseAvailable, why: local.mouseAvailable ? '' : "this terminal can't report it (on Windows it needs Node 22.17 or later, or the downloaded app)" });
+  add({ kind: 'familyMoods', on: familyMoodsOn(local.env) });
   if (local.compiled) add({ kind: 'updates', mode: updateMode(local.env) });
   else add({ kind: 'info', label: 'Updates', text: 'from a checkout: git pull' });
   return rows;

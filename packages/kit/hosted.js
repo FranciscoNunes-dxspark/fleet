@@ -15,8 +15,11 @@
 //                        again unchanged on a switch, to draw the whole frame again (repaint)
 // app → host:            { "ready": true }                            Ink is reading keys
 //                        { "handoff": "trawl" | ["sonar", "hail"], "line": "/take …" }   copied for a sibling
+//                        { "update": true }                           /update: the host updates the fleet
+//                        { "move": "/abs/folder" }                    the whole fleet to that folder (asked first)
 import fs from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
 import { pasteOnCtrlV } from './clipboard.js';
 import { plainOutput } from './glyphs.js';
 
@@ -255,4 +258,30 @@ export function handOff(apps, line) {
 export function askHostToUpdate() {
   if (!current?.hosted) return false;
   return current.send({ update: true });
+}
+
+/**
+ * Asks the host to move the whole fleet to folder `dir` (made absolute from this app's folder): the host
+ * asks in its bar, with the folder filled in, and on ↵ starts every running app again there. Does
+ * nothing outside the host, or before the app asked for its terminal. Returns whether the host was told.
+ */
+export function askHostToMove(dir) {
+  if (!current?.hosted || !dir) return false;
+  return current.send({ move: path.resolve(String(dir)) });
+}
+
+/** The environment variable `fleet gui` starts its apps with: they're drawn in a window, not a terminal. */
+export const WINDOW_VARIABLE = 'FLEET_GUI';
+
+/** Whether this app is drawn in Fleet's window (`fleet gui`), where a region can be a native view. */
+export const inWindow = (env = process.env) => env[WINDOW_VARIABLE] === '1' && Boolean(current?.hosted);
+
+/**
+ * Tells Fleet's window about a native view (ui/GuiView.jsx): `{ key, kind, data, rect }` to show or
+ * move one, `{ key, gone: true }` to take it away. Does nothing outside the window. Returns whether
+ * the window was told.
+ */
+export function showInWindow(view) {
+  if (!inWindow() || !view?.key) return false;
+  return current.send({ view });
 }

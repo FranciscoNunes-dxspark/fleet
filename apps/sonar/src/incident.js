@@ -78,11 +78,19 @@ export function sqlTarget(target) {
 /** The failing request of an occurrence (its rows from operationQuery): the request row, or null. */
 export const requestOf = (rows) => rows.find((r) => r.itemType === 'request' && r.url) ?? null;
 
-/** A request as Hail's `/take request` context: the method from its name ("GET /api/cart"), else GET. */
+/**
+ * A request as Hail's `/take request` context: the method from its name ("GET /api/cart"), else GET.
+ * What it answered goes with it as `response` ({ status, ms }, and when it was `at`), so Hail's
+ * /replay can compare a local run with it; Application Insights keeps no headers or body of either.
+ */
 export function requestContext(row) {
   if (!row?.url) return null;
   const method = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s/i.exec(row.name ?? '')?.[1]?.toUpperCase() ?? 'GET';
-  return { method, url: row.url, headers: {}, body: '', name: row.name ?? `${method} ${row.url}` };
+  // An operation's rows carry the result code as `detail`; Logs' rows from requests have it as is.
+  const status = Number(row.resultCode ?? (row.itemType === 'request' ? row.detail : undefined));
+  const ms = Number(row.duration);
+  const response = Number.isInteger(status) && status >= 100 && status < 600 ? { status, ...(Number.isFinite(ms) ? { ms: Math.round(ms) } : {}), ...(row.timestamp ? { at: row.timestamp } : {}) } : null;
+  return { method, url: row.url, headers: {}, body: '', name: row.name ?? `${method} ${row.url}`, ...(row.cloud_RoleName ? { app: row.cloud_RoleName } : {}), ...(response ? { response } : {}) };
 }
 
 /** A problem's latest exception as Splice's `/take exception` context, with its frames and request when known. */

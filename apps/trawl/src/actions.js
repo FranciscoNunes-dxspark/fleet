@@ -39,12 +39,13 @@ import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, absoluteOnServer, backupPath, backupRe
 import { relTime } from '@fleet/kit/text.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, familyDir, notMine, pathArg as familyPath, projectAt, projectWiring, quoteArg, readActivity, takeLine } from '@fleet/kit/family.js';
 import { timelineItems, wiringText } from './timeline.js';
+import { SLOW_SYSTEM, declaredTypes, indexText, measuredText, prepareStatement, slowConsoleText, slowPrompt, splitSuggestion, tablesIn } from './slow.js';
 import { connectionForQuery, familyOffers, newDatabases, placeText, projectLine, queryContext, rowsContext, rowsScript } from './siblings.js';
 import { API_LANGUAGES, API_SYSTEM, apiFileName, apiLanguage, apiPrompt, apiRequest, parseApi, projectLanguage } from './api.js';
 import { copyRefusal, copyScript, foreignKeysFrom, insertOrder, insertedRows, keyTuples, maskRows, parentSql, parseCopyRowsArgs, rowKey, rowsSql, selfOrder, tupleKey } from './copyrows.js';
 import { rehearsalRefusal, rehearsalSteps, rehearsalText, rowsAffected } from './rehearse.js';
 import { locksText } from './transactions.js';
-import { chartTitle, drawChart, planChart } from './chart.js';
+import { chartTitle, drawChart, planChart, windowChart } from './chart.js';
 import { toXlsx } from './xlsx.js';
 import { diagramGraph, drawDiagram, mermaidDiagram, parseDiagramArgs } from './diagram.js';
 import { theme } from './theme.js';
@@ -791,6 +792,27 @@ export async function setStats(ctx, mode) {
 }
 
 /**
+ * The estimated plan of `text` as text: SHOWPLAN_TEXT on SQL Server (off again whatever happens, or the
+ * session would answer every query with a plan), EXPLAIN elsewhere. Nothing in `text` runs.
+ */
+async function estimatedPlan(session, text, signal) {
+  const dialect = dialectOf(session);
+  if (dialect.explain) {
+    // EXPLAIN only plans (not EXPLAIN ANALYZE), so nothing runs here either.
+    const res = await session.run(dialect.explain(text), { signal, limit: 10_000 });
+    return res.sets.map((s) => [s.columns.map((c) => c.name).join(' | '), ...s.rows.map((r) => r.map((v) => String(v ?? '')).join(' | '))].join('\n')).join('\n\n');
+  }
+  await session.run('SET SHOWPLAN_TEXT ON;', { signal });
+  try {
+    const res = await session.run(text, { limit: 10_000 });
+    // Each statement gives two sets: its text, then its plan's rows.
+    return res.sets.map((s) => s.rows.map((r) => String(r[0] ?? '').replace(/\s+$/, '')).join('\n')).join('\n\n');
+  } finally {
+    await session.run('SET SHOWPLAN_TEXT OFF;');
+  }
+}
+
+/**
  * /plan [sql] and p in the console: the estimated plan, as text (SHOWPLAN_TEXT), of the SQL given,
  * the selection, or the statement under the cursor. Nothing runs. SHOWPLAN goes off again whatever
  * happens, or the session would answer every query with a plan.
@@ -807,20 +829,7 @@ export async function showPlan(ctx, sql) {
   await ctx.task(
     title,
     async (signal) => {
-      if (dialect.explain) {
-        // EXPLAIN only plans (not EXPLAIN ANALYZE), so nothing runs here either.
-        const res = await session.run(dialect.explain(text), { signal, limit: 10_000 });
-        plan = res.sets.map((s) => [s.columns.map((c) => c.name).join(' | '), ...s.rows.map((r) => r.map((v) => String(v ?? '')).join(' | '))].join('\n')).join('\n\n');
-        return ['The plan is on screen (esc closes it). Nothing ran.'];
-      }
-      await session.run('SET SHOWPLAN_TEXT ON;', { signal });
-      try {
-        const res = await session.run(text, { limit: 10_000 });
-        // Each statement gives two sets: its text, then its plan's rows.
-        plan = res.sets.map((s) => s.rows.map((r) => String(r[0] ?? '').replace(/\s+$/, '')).join('\n')).join('\n\n');
-      } finally {
-        await session.run('SET SHOWPLAN_TEXT OFF;');
-      }
+      plan = await estimatedPlan(session, text, signal);
       return ['The plan is on screen (esc closes it). Nothing ran.'];
     },
     { label: 'Asking for the plan' },
@@ -910,6 +919,101 @@ function consolePick(ctx) {
   if (sel?.text.trim()) return { text: sel.text, lineBase: sel.row + 1 };
   const st = statementAt(splitStatements(ed.toText(e)), e.row + 1);
   return st ? { text: st.text, lineBase: st.line } : null;
+}
+
+/**
+ * /explain-slow [family:v1:… | sql], and a query Sonar's /slow-sql handed over: a statement the app runs
+ * slowly, planned and never run, then Claude asked which indexes would help. A context says where (its
+ * server and database: Trawl connects to its saved connection, as /take does) and what was measured;
+ * SQL typed after it, or else the console's selection or statement under the cursor, is planned on the
+ * connection you're on. Its parameters are DECLAREd with the types slow.js works out (the console's own
+ * DECLAREs win). Claude gets the statement, the plan, its tables' columns and indexes and the durations,
+ * never rows, and only on a connection that lets it see the schema; its DDL lands in a console tab as
+ * text, for you to read and run yourself.
+ */
+export async function explainSlow(ctx, rest) {
+  const arg = String(rest ?? '').trim();
+  const c = arg ? contextIn(arg) : null;
+  if (c && c.kind !== 'query') return ctx.note(notMine('trawl', c), 'error');
+  if (c) return explainSlowQuery(ctx, c.data);
+  if (arg) return explainSlowQuery(ctx, { sql: arg });
+  if (!needSession(ctx)) return;
+  const pick = consolePick(ctx);
+  if (!pick?.text?.trim()) return ctx.note('Nothing to explain: give the SQL (/explain-slow SELECT …) or put the cursor on a statement in the console.', 'error');
+  return explainSlowQuery(ctx, { sql: pick.text }, { declared: declaredTypes(ed.toText(ctx.console)) });
+}
+
+async function explainSlowQuery(ctx, data, { declared = {} } = {}) {
+  const sql = withoutLeadingComments(String(data.sql ?? '')).trim();
+  if (!sql) return ctx.note('That query came without any SQL.', 'error');
+  if (data.server) {
+    const conn = connectionForQuery(ctx.config.connections, data);
+    if (!conn) {
+      const tab = consoleTabWith(ctx, 'slow', `-- Slow in production on ${placeText(data)}${data.slow ? `: ${measuredText(data.slow)}` : ''}. Nothing has run.\n${sql}\n`);
+      return ctx.note(`The statement is in the console tab ${tab}. It was for ${placeText(data)}, which no saved connection is to: /azure-sql or /add one, connect, then /explain-slow with the cursor on it.`, 'error');
+    }
+    const s = ctx.session;
+    const there = s && !s.closed && s.conn.name === conn.name && (!data.database || s.database?.toLowerCase() === data.database.toLowerCase());
+    if (!there) {
+      ctx.note(`It was for ${placeText(data)}: connecting to ${conn.name}.`);
+      if (!(await connect(ctx, conn.name, { database: data.database && data.database !== conn.database ? data.database : undefined }))) return;
+    }
+  }
+  if (!(await liveSession(ctx))) return;
+  const session = ctx.session;
+  const dialect = dialectOf(session);
+  const prep = prepareStatement(sql, { schema: ctx.schema, kind: dialect.kind, declared });
+  const tables = ctx.schema ? tablesIn(sql, ctx.schema) : [];
+  const where = `${session.conn.name}/${session.database}`;
+  const how = dialect.explain ? 'EXPLAIN' : 'SHOWPLAN_TEXT';
+  const short = oneLine(sql);
+  let plan = null;
+  let indexes = '';
+  const r = await ctx.task(
+    `Plan of the slow ${short}`,
+    async (signal) => {
+      plan = await estimatedPlan(session, prep.script, signal);
+      // The indexes of the tables it touches, so Claude doesn't suggest one that's there.
+      if (tables.length) {
+        try {
+          indexes = indexText(tables, buildTableExtras((await session.run(EXTRAS_SQL[dialect.kind], { signal, limit: 1_000_000 })).sets).indexes);
+        } catch (e) {
+          if (e.cancelled) throw e;
+          indexes = `(couldn't read them: ${firstLine(e.message)})`;
+        }
+      }
+      return [`Planned, never run${prep.note ? `. ${prep.note}` : ''}`];
+    },
+    { label: 'Asking for the plan' },
+  );
+  if (!r.ok || plan == null) return;
+  const title = `Slow: ${short}`;
+  ctx.lastPlan = { sql: prep.script, plan, conn: session.conn.name, database: session.database, label: dialect.label, how };
+  const measured = data.slow ? `${measuredText(data.slow)}\n\n` : '';
+  ctx.showText(title, `${measured}${plan}`, { keys: { a: () => explainPlan(ctx) }, hint: 'a Claude explains it' });
+  ctx.rememberOutput(title, `${measured}${plan}`);
+  const leave = (suggestion = {}) => consoleTabWith(ctx, 'slow', slowConsoleText({ where: data.server ? placeText(data) : where, slow: data.slow, ...suggestion, script: prep.script, paramsNote: prep.note }));
+  if (!canSeeSchema(session.conn)) {
+    const tab = leave();
+    return ctx.note(`${session.conn.name} is closed to Claude, so the plan is all: the statement is in the console tab ${tab}. /ai schema lets Claude see its queries, plans and tables (never rows).`);
+  }
+  let answer = null;
+  const asked = await ctx.task(
+    `ask Claude about indexes for ${short}`,
+    async (signal) => {
+      const prompt = slowPrompt({ sql, script: prep.script, plan, database: session.database, label: dialect.label, how, slow: data.slow, tables, indexes, params: prep.params });
+      answer = String(await ctx.askClaude({ prompt, system: SLOW_SYSTEM, signal })).trim();
+      return [answer ? "Claude's suggestion is on screen and in a console tab: nothing has run." : 'Claude gave no answer.'];
+    },
+    { label: 'Asking Claude about indexes' },
+  );
+  if (!asked.ok || !answer) return void leave();
+  const suggestion = splitSuggestion(answer);
+  const tab = leave(suggestion);
+  const shown = `${answer}\n\n── The plan ──\n${measured}${plan}`;
+  ctx.showText(`Claude on the slow ${short}`, shown);
+  ctx.rememberOutput(`Claude on the slow ${short}`, shown);
+  ctx.note(`${suggestion.ddl.length ? `${suggestion.ddl.length === 1 ? 'Its CREATE INDEX is' : `Its ${suggestion.ddl.length} statements are`} in the console tab ${tab}, as text: read it, then run it yourself if you want it.` : `Claude's answer is in the console tab ${tab}, as comments.`}`, 'ok');
 }
 
 /**
@@ -1892,7 +1996,8 @@ export function chart(ctx, rest = '') {
     const { lines, about } = drawChart(set, plan, { width, height: Math.max(5, height - 3), colors });
     return [...lines, '', ...wrap(about, Math.max(10, width)).slice(0, 2).map((l) => [{ text: l, color: theme.dim }])];
   };
-  ctx.showText(`${CHART_NAMES[plan.type]}: ${chartTitle(set, plan)}`, '', { draw, hint: plan.picked ? '/chart <type> <x> <y…> picks another' : '' });
+  // In Fleet's window the same chart is drawn natively, with a read-out under the pointer.
+  ctx.showText(`${CHART_NAMES[plan.type]}: ${chartTitle(set, plan)}`, '', { draw, gui: { kind: 'chart', data: windowChart(set, plan) }, hint: plan.picked ? '/chart <type> <x> <y…> picks another' : '' });
 }
 
 const EXPORTS = { '.csv': toCsv, '.json': toJson, '.md': toMarkdown, '.markdown': toMarkdown };
@@ -2310,6 +2415,8 @@ export async function take(ctx, rest) {
   if (!String(rest ?? '').trim()) return ctx.prefill('/take ');
   const c = contextIn(rest);
   if (!c) return ctx.note("That isn't a line one of the family copied: /take takes the family:v1:… that Splice, Sonar, Bosun or Hail puts on the clipboard.", 'error');
+  // A query Sonar found slow, with what it measured: planned and explained rather than only opened.
+  if (c.kind === 'query' && c.data.slow) return explainSlow(ctx, rest);
   if (c.kind === 'query') return takeQuery(ctx, c.data);
   if (c.kind === 'rows') return takeRows(ctx, c.data);
   ctx.note(notMine('trawl', c), 'error');
@@ -2976,7 +3083,7 @@ async function loadWithTool(ctx, { args, conn, kind }) {
 // The family's activity log and a project's wiring.
 
 /**
- * /timeline: what the six apps did that changed something (family.js readActivity), newest first;
+ * /timeline: what the family's apps did that changed something (family.js readActivity), newest first;
  * `p` switches between this project's and everything, ↵ shows an entry whole.
  */
 export function timeline(ctx, { all = false } = {}) {

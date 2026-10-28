@@ -1,8 +1,10 @@
 // What the host does with the bytes typed into it, pure. Everything goes to the active app as it came
 // (keys, pastes, mouse reports) except after the prefix, ctrl+] (0x1d), whose next key is the host's:
-// 1–7 or an app's letter switches, ] or n the next space and p the one before, q quits, ? helps,
-// ctrl+] again sends a literal 0x1d; any other key cancels the prefix and is dropped. Without it,
-// alt+1 to alt+7 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
+// 1–8 or an app's letter switches, ] or n the next space and p the one before, | or \ splits the
+// screen in two (| again, or x, puts it back), tab or an arrow left or right goes to the other pane, m
+// asks for a folder to move every app to, r opens the runbooks and f follows a request (panels.js), q
+// quits, ? helps, ctrl+] again sends a literal 0x1d; any other key cancels the prefix and is dropped. Without it,
+// alt+1 to alt+8 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
 import { SPACES } from './spaces.js';
 
 export const PREFIX = '\x1d';
@@ -19,6 +21,9 @@ export function keyLength(s, i) {
   return i + 1 < s.length ? 2 : 1;
 }
 
+// Tab, and the arrows left and right (CSI and SS3 forms): the other pane.
+const PANE_KEYS = new Set(['\t', '\x1b[C', '\x1b[D', '\x1bOC', '\x1bOD']);
+
 /** The action a key after the prefix stands for, or null (it cancels the prefix). */
 export function prefixAction(key, spaces = SPACES) {
   if (key === PREFIX) return { type: 'send', data: PREFIX };
@@ -28,8 +33,14 @@ export function prefixAction(key, spaces = SPACES) {
   if (space) return { type: 'switch', id: space.id };
   if (key === ']' || k === 'n') return { type: 'move', by: 1 };
   if (k === 'p') return { type: 'move', by: -1 };
+  if (key === '|' || key === '\\') return { type: 'split' };
+  if (k === 'x') return { type: 'unsplit' };
+  if (PANE_KEYS.has(key)) return { type: 'pane' };
+  if (k === 'm') return { type: 'folder' };
   if (k === 'q') return { type: 'quit' };
   if (key === '?') return { type: 'help' };
+  if (k === 'r') return { type: 'runbooks' };
+  if (k === 'f') return { type: 'trace' };
   return null;
 }
 

@@ -1,0 +1,123 @@
+# Releases Fleet Desktop (desktop/) by hand: the Electron window around `fleet gui`, with the fleet
+# executable for its platform inside (built here with Bun, as release-app.yml builds it). Published as
+# fleet-desktop-v<version>, not marked latest: the newest fleet-desktop-v… with the patch raised, or
+# desktop/package.json's version when that's higher. The builds aren't signed: Windows SmartScreen
+# asks once, and macOS needs the app opened with right-click → Open the first time.
+name: Release Fleet Desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      previous: ${{ steps.next.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Next version
+        id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 1000 --exclude-drafts --json tagName --jq '.[].tagName' > tags.txt
+          node -e '
+            const fs = require("fs");
+            const parse = (v) => (/^(\d+)\.(\d+)\.(\d+)$/.exec(v) || []).slice(1).map(Number);
+            const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+            const prefix = "fleet-desktop-v";
+            const mine = fs.readFileSync("tags.txt", "utf8").split("\n").filter((t) => t.startsWith(prefix)).map((t) => parse(t.slice(prefix.length))).filter((v) => v.length === 3).sort(cmp);
+            const latest = mine.at(-1);
+            const pkg = parse(require("./desktop/package.json").version);
+            const next = !latest || cmp(pkg, latest) > 0 ? pkg : [latest[0], latest[1], latest[2] + 1];
+            console.log(`Latest release ${latest ? prefix + latest.join(".") : "none"}; releasing ${prefix}${next.join(".")}.`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${next.join(".")}\nprevious=${latest ? prefix + latest.join(".") : ""}\n`);
+          '
+
+  build:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            bun: bun-windows-x64
+            fleet: fleet-windows-x64.exe
+            inside: fleet.exe
+            builder: --win --x64
+          - os: ubuntu-latest
+            bun: bun-linux-x64
+            fleet: fleet-linux-x64
+            inside: fleet
+            builder: --linux --x64
+          - os: macos-latest
+            bun: bun-darwin-arm64
+            fleet: fleet-macos-arm64
+            inside: fleet
+            builder: --mac --arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test -w apps/fleet
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # The fleet inside: the same executable a fleet-v… release has, for this platform.
+      - name: The fleet executable
+        working-directory: apps/fleet
+        run: |
+          bun ../../packages/kit/scripts/build.js ${{ matrix.bun }}
+          mkdir -p ../../desktop/resources
+          cp "dist/${{ matrix.fleet }}" "../../desktop/resources/${{ matrix.inside }}"
+          chmod +x "../../desktop/resources/${{ matrix.inside }}"
+      # desktop/ isn't one of the root's workspaces (Electron would weigh down every other install), so it
+      # installs its own two pinned tools here, with no lockfile of its own.
+      - name: Fleet Desktop
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          node -e 'const f="package.json",p=JSON.parse(require("fs").readFileSync(f));p.version=process.argv[1];require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "${{ needs.version.outputs.version }}"
+          npm install --no-package-lock --no-audit --no-fund
+          npx electron-builder ${{ matrix.builder }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.dmg
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        working-directory: out
+        run: sha256sum * > SHA256SUMS.txt
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+        run: |
+          gh release create "fleet-desktop-v$VERSION" out/* --target "$GITHUB_SHA" --title "Fleet Desktop v$VERSION" \
+            --latest=false --generate-notes ${PREVIOUS:+--notes-start-tag "$PREVIOUS"}

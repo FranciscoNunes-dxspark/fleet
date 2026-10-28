@@ -30,8 +30,8 @@ const RUNNING = new Set(['starting', 'running', 'stopping']);
 /**
  * The crew at a moment of a session, worked out forward from the last moment asked for (back in time
  * starts over): `at(t)` returns [{ name, status, code, port, portOpen, health, restartAt, gaveUp,
- * tests, lines, trouble, child }], shaped as the supervisor's processes are so the Crew view's pieces
- * draw them. `keep` lines per process.
+ * tests, lines, trouble, child, env }], shaped as the supervisor's processes are so the Crew view's
+ * pieces draw them, and leaves `profile` and `git` as they were then. `keep` lines per process.
  */
 export class Replayer {
   constructor(session, { keep = 3000 } = {}) {
@@ -43,6 +43,9 @@ export class Replayer {
   reset() {
     this.index = 0;
     this.t = -Infinity;
+    // The profile in use and the checkout ({ branch, commit }) at the moment asked for, when recorded.
+    this.profile = this.session.header?.profile ?? null;
+    this.git = this.session.header?.git ?? null;
     this.procs = new Map();
     for (const p of this.session.header?.procs ?? []) this.add(p);
   }
@@ -65,7 +68,11 @@ export class Replayer {
       for (const p of e.procs ?? []) Object.assign(this.add(p), { port: p.port, spec: { run: p.run, port: p.port } });
       return;
     }
+    if (e.type === 'profile') return void (this.profile = e.profile ?? null);
+    if (e.type === 'git') return void (this.git = { branch: e.branch ?? null, commit: e.commit });
     const p = this.add({ name: e.p });
+    // What its env files said when it last started, as a hash (`env`; undefined in older recordings).
+    if (e.type === 'start') return void (p.env = e.env ?? null);
     if (e.type === 'line') {
       const text = String(e.text ?? '');
       p.lines.push({ at: e.t, text, err: Boolean(e.err) });

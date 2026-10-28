@@ -19,12 +19,29 @@ test('the prefix and a key switch, move, quit and help', () => {
   assert.deepEqual(prefixAction('6'), { type: 'switch', id: 'keel' });
   assert.deepEqual(prefixAction('7'), { type: 'switch', id: 'wharf' });
   assert.deepEqual(prefixAction('W'), { type: 'switch', id: 'wharf' });
-  assert.equal(prefixAction('8'), null);
+  assert.deepEqual(prefixAction('8'), { type: 'switch', id: 'locker' });
+  assert.deepEqual(prefixAction('l'), { type: 'switch', id: 'locker' });
+  assert.equal(prefixAction('9'), null);
   assert.deepEqual(prefixAction(']'), { type: 'move', by: 1 });
   assert.deepEqual(prefixAction('n'), { type: 'move', by: 1 });
   assert.deepEqual(prefixAction('p'), { type: 'move', by: -1 });
   assert.deepEqual(prefixAction('q'), { type: 'quit' });
   assert.deepEqual(prefixAction('?'), { type: 'help' });
+});
+
+test('the prefix and | or \\ split the screen, x puts it back, tab or an arrow goes to the other pane', () => {
+  assert.deepEqual(prefixAction('|'), { type: 'split' });
+  assert.deepEqual(prefixAction('\\'), { type: 'split' });
+  assert.deepEqual(prefixAction('x'), { type: 'unsplit' });
+  for (const key of ['\t', '\x1b[C', '\x1b[D', '\x1bOC']) assert.deepEqual(prefixAction(key), { type: 'pane' });
+  // The arrow is read whole after the prefix: nothing of it reaches the app.
+  assert.deepEqual(run(`${PREFIX}\x1b[Cz`).actions, [{ type: 'prefix', on: true }, { type: 'prefix', on: false }, { type: 'pane' }, { type: 'send', data: 'z' }]);
+  assert.equal(prefixAction('\x1b[A'), null);
+});
+
+test('the prefix and m ask for a folder to move the fleet to', () => {
+  assert.deepEqual(prefixAction('m'), { type: 'folder' });
+  assert.deepEqual(prefixAction('M'), { type: 'folder' });
 });
 
 test('the prefix twice sends it, and anything else after it is dropped whole', () => {

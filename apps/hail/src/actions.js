@@ -29,6 +29,7 @@ import { checkLines, contractLines, statusColour } from './ui/response.js';
 import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, shareLine, trawlLine } from '@fleet/kit/family.js';
 import { fit, relTime } from '@fleet/kit/text.js';
 import { findByRequestId, hostVariable, idsIn, replayBlock, startsWithVariable, rowsJson, rowsRequestBlock, tablePath } from './takes.js';
+import { compareResponses, lastResponseTo, normaliseBase, rebaseUrl, replayHeaders, replayTargets, statusLine, targetNamed } from './replay.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -681,6 +682,8 @@ const environmentHost = (ctx) => hostVariable(ctx.data?.environments.vars(ctx.en
 async function takeRequest(ctx, data) {
   if (!ctx.data) return ctx.note(NO_FILE, 'error');
   if (!data?.url) return ctx.note('That request has no URL.', 'error');
+  // Kept for /replay, which sends it elsewhere and compares the answers.
+  ctx.takenRequest = data;
   const hostVar = environmentHost(ctx);
   const add = (useHost) => {
     const { block, dropped } = replayBlock(data, { hostVar: useHost ? hostVar : null });
@@ -688,7 +691,7 @@ async function takeRequest(ctx, data) {
     if (at < 0) return;
     ctx.goToRequest(at);
     const title = block.split('\n')[0].replace(/^###\s*/, '');
-    ctx.note(`Added ${title} to ${ctx.data.name}: ↵ sends it${dropped.length ? `\nLeft out ${dropped.join(', ')}: credentials don't travel between apps` : ''}`, 'ok');
+    ctx.note(`Added ${title} to ${ctx.data.name}: ↵ sends it, /replay sends it elsewhere and compares the answers${dropped.length ? `\nLeft out ${dropped.join(', ')}: credentials don't travel between apps` : ''}`, 'ok');
   };
   if (!hostVar || startsWithVariable(data.url)) return add(false);
   const env = ctx.environment();
@@ -704,12 +707,157 @@ async function takeRequest(ctx, data) {
     items: [
       { useHost: true, segments: [{ text: `To ${env ?? 'the environment'}`, strong: true }, { text: `  {{${hostVar}}} = ${ctx.data.environments.vars(env)[hostVar]}`, color: theme.dim }] },
       { useHost: false, segments: [{ text: 'As it came', strong: true }, { text: `  ${origin}`, color: theme.dim }] },
+      { replay: true, segments: [{ text: 'Replay it elsewhere and compare', strong: true }, { text: `  with what it answered${data.response?.status ? ` (${statusLine(data.response)})` : ''}, /replay`, color: theme.dim }] },
     ],
     onPick: (it) => {
       ctx.closeOverlay();
+      if (it.replay) return replay(ctx, '', { request: data });
       add(it.useHost);
     },
   });
+}
+
+/** bosun.json in the open file's folder or its checkout, parsed, or null: its processes' ports are where /replay can send. */
+function bosunSpec(dir) {
+  for (const d of [dir, repoRoot(dir)].filter(Boolean)) {
+    try {
+      return JSON.parse(readFileSync(join(d, 'bosun.json'), 'utf8'));
+    } catch {}
+  }
+  return null;
+}
+
+/**
+ * What /replay sends again, and what it answered: `entry` (a kept response: alt+r in History, or the
+ * one under History's cursor), else the request last taken from a sibling (/take request: Sonar's from
+ * production, with its status and time), else the newest response kept for the request picked in
+ * Requests. { request: { method, url, headers, body }, before, where, entry? } or null.
+ */
+function replaySource(ctx, { entry = null, request = null } = {}) {
+  const fromEntry = (e) => ({ request: e.request, before: e.response, where: `kept ${ago(e.at)}`, entry: e });
+  if (entry) return fromEntry(entry);
+  if (request) return { request, before: request.response ?? null, where: request.app ? `${request.app}, where it came from` : 'where it came from' };
+  if (ctx.view() === 'history' && ctx.historyCursor) return fromEntry(ctx.historyCursor);
+  if (ctx.takenRequest) return replaySource(ctx, { request: ctx.takenRequest });
+  const sel = ctx.selectedRequest();
+  const kept = sel ? ctx.history().filter((e) => e.label === sel.label).at(-1) : null;
+  return kept ? fromEntry(kept) : null;
+}
+
+/**
+ * /replay [environment|base-url], alt+r in History, and "Replay it elsewhere" on a taken request: the
+ * request (replaySource) sent to another address with its method, path, query, headers and body, and
+ * what came back compared with what it answered where it came from. Credential headers never go along
+ * (a production token stays there): the environment's variables give their own, when they have one.
+ * The replay's response isn't kept in History: it belongs to no request of the file.
+ */
+export async function replay(ctx, arg = '', from = {}) {
+  const src = replaySource(ctx, from);
+  if (!src) return ctx.note('Nothing to replay: /take a request from Sonar, pick a response in History (alt+r there), or send the request under the cursor first.', 'error');
+  const d = ctx.data;
+  const envs = d?.environments ?? null;
+  const a = String(arg ?? '').trim();
+  if (a) {
+    const target = targetNamed(a, { envs });
+    if (!target) return ctx.note(`${a} is neither an environment of ${d?.name ?? 'this file'} nor an address (http://localhost:5000, :5000).`, 'error');
+    if (target.error) return ctx.note(target.error, 'error');
+    return replayTo(ctx, src, target);
+  }
+  const targets = replayTargets({ envs, bosun: d ? bosunSpec(d.dir) : null });
+  const what = `${String(src.request.method ?? 'GET').toUpperCase()} ${src.request.url}`;
+  if (!targets.length) return ctx.prefill('/replay http://localhost:');
+  ctx.showPicker({
+    title: `Replay ${what} to`,
+    hint: '↵ send it there and compare',
+    items: [
+      ...targets.map((t) => ({ t, segments: [{ text: `${t.label}  `, strong: true }, { text: t.shown, color: theme.dim }] })),
+      { other: true, segments: [{ text: 'Another address', strong: true }, { text: '  /replay <base url>', color: theme.dim }] },
+    ],
+    onPick: (it) => {
+      ctx.closeOverlay();
+      if (it.other) return ctx.prefill('/replay http://localhost:');
+      replayTo(ctx, src, it.t);
+    },
+  });
+}
+
+/** When something was kept, in words: "3m ago", "just now". */
+const ago = (at) => (relTime(at) === 'now' ? 'just now' : `${relTime(at)} ago`);
+
+/** A URL's path and query, for a title. */
+const pathOfUrl = (url) => {
+  try {
+    const u = new URL(url);
+    return `${u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
+};
+
+/** Sends `src`'s request to `target` ({ env, hostVar } or { base }) and shows how the answers compare. */
+async function replayTo(ctx, src, target) {
+  const d = ctx.data;
+  const envName = target.env ?? ctx.environment();
+  const vars = d ? d.environments.vars(envName ?? null) : {};
+  const scope = { ...ctx.scope(), environment: vars };
+  let base = target.base;
+  if (!base) {
+    const r = await fill(`{{${target.hostVar}}}`, scope).catch(() => ({ text: '' }));
+    base = normaliseBase(r.text);
+    if (!base) return ctx.note(`{{${target.hostVar}}} in ${envName} isn't an address to send to.`, 'error');
+  }
+  const { headers, dropped, added } = replayHeaders(src.request.headers, vars);
+  const body = src.request.body == null ? '' : typeof src.request.body === 'object' ? JSON.stringify(src.request.body) : String(src.request.body);
+  const method = String(src.request.method ?? 'GET').toUpperCase();
+  let req;
+  try {
+    req = await prepare({ method, url: rebaseUrl(src.request.url, base), headers, body, options: {} }, scope, { dir: d?.dir });
+  } catch (e) {
+    return failed(ctx, e);
+  }
+  if (req.missing.length) return ctx.note(missingText(ctx, req.missing), 'error');
+  const insecure = Boolean(d?.environments.options?.(envName ?? null)?.insecure);
+  let after;
+  const r = await ctx.task(
+    `Replay ${method} ${req.url}`,
+    async (signal) => {
+      after = await sendRequest(req, { signal, insecure });
+      return { stdout: `${statusLine(after)} here, against ${statusLine(src.before)} ${src.where}` };
+    },
+    { label: 'Replaying' },
+  );
+  if (!r?.ok || !after) return r;
+  const bodyFrom = src.before?.body ? null : lastResponseTo(ctx.history(), { method, url: src.request.url }, { not: src.entry });
+  const lines = replayLines({ src, after, base, dropped, added, bodyFrom });
+  ctx.showText(`Replayed ${method} ${pathOfUrl(req.url)}: ${target.label}`, lines.map((l) => l.map((s) => s.text).join('')).join('\n'), { lines });
+  return r;
+}
+
+/** The replay as the viewer's lines: where each answer came from and what it was, then how they differ. */
+function replayLines({ src, after, base, dropped, added, bodyFrom }) {
+  const dim = (text) => ({ text, color: theme.dim });
+  const status = (res) => ({ text: statusLine(res), bold: true, color: res?.status ? statusColour(res.status) : theme.dim });
+  const lines = [
+    [dim('before  '), status(src.before), dim(`  ${src.where}`)],
+    [dim('now     '), status(after), dim(`  ${base}`)],
+  ];
+  if (dropped.length) lines.push([dim(`Left out ${dropped.join(', ')}${added.length ? `; ${added.join(', ')} from the environment instead` : ''}: credentials never travel from where it came from`)]);
+  lines.push([]);
+  if (!src.before?.status) {
+    lines.push([dim(`Nothing to compare it with: it came without its answer.`)], []);
+    lines.push(...after.headers.map(([k, v]) => [dim(`${k}: `), { text: v }]), [], ...prettyBody(after).split('\n').map((l) => [{ text: l }]));
+    return lines;
+  }
+  const c = compareResponses(src.before, after, { bodyFrom: bodyFrom?.response ?? null });
+  if (c.compared === 'status') lines.push([dim(`Only the status is compared: no body was kept ${src.where}, and History has no response to ${pathOfUrl(src.request.url)}.`)]);
+  else if (bodyFrom && !src.before.body) lines.push([dim(`The body is compared with the one kept ${ago(bodyFrom.at)}: none was kept ${src.where}.`)]);
+  if (c.same) {
+    lines.push([{ text: c.compared === 'status' ? 'The same status.' : 'The same status, headers and body.', color: theme.add }]);
+    return lines;
+  }
+  const colour = { '-': theme.del, '+': theme.add, '…': theme.dim };
+  lines.push([dim('- before   + now')], ...c.diff.map(([m, l]) => [{ text: m === '…' ? '…' : `${m} ${l}`, color: colour[m] }]));
+  return lines;
 }
 
 /**
@@ -1007,7 +1155,7 @@ export function activity(ctx, text, kind = 'info') {
 }
 
 /**
- * /timeline: what the family's apps did, newest first, from all six; p shows this project's alone (and
+ * /timeline: what the family's apps did, newest first, from all of them; p shows this project's alone (and
  * what names none), or everything again; ↵ shows an entry whole, y copies it.
  */
 export function timeline(ctx, { mine = false, replace = false } = {}) {

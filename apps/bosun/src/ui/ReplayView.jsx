@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { isTrouble } from '../crew.js';
+import { restore } from '../actions.js';
 import { Replayer, SPEEDS, clock, marksOf, nextMark, timeline } from '../replay.js';
 import { theme } from '../theme.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
@@ -16,7 +17,7 @@ const TICK = 100;
  * A recorded session played back (/replay): the timeline with its crashes (✗) and trouble (!) on top,
  * and under it the crew and the log of the one under the cursor (or all, with a) as they were at
  * that moment. ← → step a second (shift: ten), [ ] jump to the crash or trouble before or after,
- * space plays and pauses, + - change the speed, esc closes.
+ * space plays and pauses, + - change the speed, r restores the crew as it was then, esc closes.
  */
 export function ReplayView({ session, title, ctx, width, height, active, onClose }) {
   const replayer = useMemo(() => new Replayer(session), [session]);
@@ -76,6 +77,10 @@ export function ReplayView({ session, title, ctx, width, height, active, onClose
     if (input === '+' || input === '=') return setSpeed((s) => SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(s) + 1)]);
     if (input === '-' || input === '_') return setSpeed((s) => SPEEDS[Math.max(0, SPEEDS.indexOf(s) - 1)]);
     if (input === 'a') return setMerged((m) => !m);
+    if (input === 'r') {
+      setPlaying(false);
+      return restore(ctx, { t: tRef.current, procs: replayer.at(tRef.current), profile: replayer.profile, git: replayer.git });
+    }
     nav.handle(input, key);
   };
   useInput(keys, { isActive: active });

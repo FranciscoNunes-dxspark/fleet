@@ -85,3 +85,45 @@ export function mergeCommits(perRepo, { limit = 2000, github = false } = {}) {
     .sort((a, b) => (Date.parse(b.author?.date) || 0) - (Date.parse(a.author?.date) || 0))
     .slice(0, limit);
 }
+
+/**
+ * Whether commit `id` is the one `hash` names: the same, or one starting with the other when either is
+ * abbreviated (at least 7 characters, as git abbreviates them), any case.
+ */
+export function sameCommit(id, hash) {
+  const a = String(id ?? '').trim().toLowerCase();
+  const b = String(hash ?? '').trim().toLowerCase();
+  if (a.length < 7 || b.length < 7) return false;
+  return a.length >= b.length ? a.startsWith(b) : b.startsWith(a);
+}
+
+/** The tracked repos a repo name (as a sibling app gives it: a checkout's folder name) is, any case; every one when none is. */
+export function reposNamed(repos, name) {
+  const n = String(name ?? '').trim().toLowerCase().replace(/\.git$/, '');
+  const found = n ? repos.filter((r) => String(r.name ?? '').toLowerCase() === n) : [];
+  return found.length ? found : repos;
+}
+
+/**
+ * What carries commit `hash` (/take commit in the terminal app): the pipeline runs that built it, and the
+ * pull requests whose source or merge commit it is, or whose commits (`prCommits`, ids by PR key) include
+ * it. Each list newest first, with only what the terminal app shows.
+ */
+export function commitCarriers({ hash, builds = [], prs = [], prCommits = new Map() }) {
+  const runs = builds
+    .filter((b) => sameCommit(b.commit, hash))
+    .sort((a, b) => (Date.parse(b.queuedAt || b.startedAt) || 0) - (Date.parse(a.queuedAt || a.startedAt) || 0));
+  const carriers = prs
+    .filter((p) => sameCommit(p.sourceCommit, hash) || sameCommit(p.mergeCommit, hash) || (prCommits.get(p.key) ?? []).some((c) => sameCommit(c, hash)))
+    .sort((a, b) => (Date.parse(b.closedAt || b.createdAt) || 0) - (Date.parse(a.closedAt || a.createdAt) || 0));
+  return {
+    runs: runs.map((b) => ({
+      id: b.id, projectId: b.projectId, projectName: b.projectName, definition: b.definition, buildNumber: b.buildNumber, status: b.status, result: b.result,
+      reason: b.reason, sourceBranch: b.sourceBranch, repoName: b.repoName, commit: b.commit, queuedAt: b.queuedAt, startedAt: b.startedAt, finishedAt: b.finishedAt, webUrl: b.webUrl,
+    })),
+    prs: carriers.map((p) => ({
+      key: p.key, id: p.id, title: p.title, status: p.status, projectId: p.projectId, projectName: p.projectName, repoId: p.repoId, repoName: p.repoName,
+      sourceBranch: p.sourceBranch, targetBranch: p.targetBranch, author: p.author, createdAt: p.createdAt, closedAt: p.closedAt, webUrl: p.webUrl,
+    })),
+  };
+}

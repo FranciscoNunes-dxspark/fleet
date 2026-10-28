@@ -171,3 +171,43 @@ test('request ids, as logs name them', async () => {
   assert.equal(requestIdIn('traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'), '4bf92f3577b34da6a3ce929d0e0e4736');
   assert.equal(requestIdIn('Error: nothing to see'), null);
 });
+
+test('Keel in the family: pull requests and pipelines as contexts, and who takes them', async () => {
+  const { FAMILY, ROLES, PET_NAMES } = await import('../family.js');
+  assert.ok(FAMILY.includes('keel'));
+  assert.equal(ROLES.keel, 'Azure DevOps');
+  assert.equal(APP_NAMES.keel, 'Keel');
+  assert.equal(PET_NAMES.keel, 'Pinch');
+  const pr = { org: 'contoso', project: 'Shop', repo: 'shop-api', id: 817, title: 'Refunds', sourceBranch: 'feature/refunds', targetBranch: 'main' };
+  const line = takeLine('pullrequest', pr);
+  assert.deepEqual(contextIn(line), { kind: 'pullrequest', data: pr });
+  assert.equal(describeContext(contextIn(line)), 'pull request !817 Refunds (feature/refunds → main)');
+  const run = { definition: 'shop-ci', run: '20261027.3', step: 'Run tests', commit: 'abc' };
+  assert.equal(describeContext({ kind: 'pipeline', data: run }), 'pipeline shop-ci 20261027.3, failed at Run tests');
+  assert.deepEqual(TAKEN_BY.commit, ['splice', 'sonar', 'keel']);
+  assert.equal(notMine('sonar', { kind: 'pullrequest', data: pr }), "That's pull request !817 Refunds (feature/refunds → main), for Splice or Keel: paste it into one's prompt instead.");
+  assert.equal(notMine('splice', { kind: 'pipeline', data: run }), "That's pipeline shop-ci 20261027.3, failed at Run tests, for Keel: paste it into its prompt instead.");
+  assert.equal(copiedNote('keel', takeLine('commit', { hash: 'abcdef1234567' })), "Copied for Keel: paste it into Keel's prompt. commit abcdef1234");
+});
+
+test("Keel's mood is read like the others'", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'family-'));
+  try {
+    writeMood('keel', { mood: 'worried', reason: 'shop-ci started failing' }, { dir, now: 1000 });
+    assert.deepEqual(readMoods('sonar', { dir, now: 2000, maxAge: 1e15 }).map((m) => [m.app, m.reason]), [['keel', 'shop-ci started failing']]);
+    assert.deepEqual(readMoods('keel', { dir, now: 2000, maxAge: 1e15 }), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an App Service app or slot is a site context, which Locker takes', () => {
+  const line = takeLine('site', { name: 'shop-api', slot: 'staging', resourceGroup: 'shop' });
+  const c = contextIn(line);
+  assert.equal(c.kind, 'site');
+  assert.equal(describeContext(c), 'app shop-api/staging');
+  assert.equal(describeContext({ kind: 'site', data: { name: 'shop-api' } }), 'app shop-api');
+  assert.deepEqual(TAKEN_BY.site, ['locker']);
+  assert.equal(APP_NAMES.locker, 'Locker');
+  assert.equal(notMine('sonar', c), "That's app shop-api/staging, for Locker: paste it into its prompt instead.");
+});

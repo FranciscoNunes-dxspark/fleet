@@ -8,7 +8,7 @@ import { resolve } from 'node:path';
 import { portInUse, stripAnsi } from './crew.js';
 import { skipsFolder, tidy, watchMatcher, watchRoots } from './watch.js';
 import { walksTree, watchTree } from './treewatch.js';
-import { crewOf, stateOf } from './recorder.js';
+import { crewOf, envHash, stateOf } from './recorder.js';
 import { troubleText } from './structured.js';
 import { tunnelArgs, tunnelProblem, tunnelUrl } from './tunnel.js';
 import { httpsPort, startHttpsProxy } from './https.js';
@@ -229,6 +229,7 @@ export class Supervisor {
     p.tests = null;
     p.startedAt = Date.now();
     p.endedAt = null;
+    this.recorder?.started?.(p.name, { env: envHash(p.spec.fileEnv) });
     this.push(p, `── ${run}`, false);
     const child = this.spawnImpl(run, {
       cwd: resolve(this.dir, cwd ?? '.'),

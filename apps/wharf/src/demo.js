@@ -1,6 +1,8 @@
 // An in-memory Docker with the interface of docker.js's provider, for --demo and the tests: a compose
 // project, a few standalone containers (one that crashed, one unhealthy) and some images. A new
 // operation in the provider needs one here too.
+import { EventEmitter } from 'node:events';
+import { PassThrough, Writable } from 'node:stream';
 
 const box = (id, name, image, state, extra = {}) => ({
   id,
@@ -144,5 +146,51 @@ export function demoDocker() {
       state.containers = state.containers.filter((c) => c.state !== 'exited');
       return `Deleted Containers:\n${gone.map((c) => c.id).join('\n')}\n\nTotal reclaimed space: ${gone.length}B`;
     },
+  };
+}
+
+/**
+ * A pretend shell for --demo and the tests, shaped as child_process.spawn's child (stdin, stdout,
+ * stderr, kill, 'close'): it answers pwd, ls, echo and exit, and says it's the demo for anything else.
+ * `spawned` records each start's command and arguments.
+ */
+export function demoShell(spawned = []) {
+  return (command, args) => {
+    spawned.push([command, ...args]);
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    let ended = false;
+    const end = (code) => {
+      if (ended) return;
+      ended = true;
+      child.stdout.end();
+      child.stderr.end();
+      setImmediate(() => child.emit('close', code));
+    };
+    const answer = (line) => {
+      const [word, ...rest] = line.trim().split(/\s+/);
+      if (!word) return;
+      if (word === 'exit') return end(Number(rest[0]) || 0);
+      if (word === 'pwd') return child.stdout.write('/app\n');
+      if (word === 'ls') return child.stdout.write('package.json\nserver.js\nnode_modules\n');
+      if (word === 'echo') return child.stdout.write(`${rest.join(' ')}\n`);
+      child.stderr.write(`sh: ${word}: not found (this is the demo: nothing runs)\n`);
+    };
+    let held = '';
+    child.stdin = new Writable({
+      write(chunk, _enc, done) {
+        const parts = (held + chunk.toString()).split('\n');
+        held = parts.pop();
+        for (const line of parts) if (!ended) answer(line);
+        done();
+      },
+      final(done) {
+        end(0);
+        done();
+      },
+    });
+    child.kill = () => end(null);
+    return child;
   };
 }

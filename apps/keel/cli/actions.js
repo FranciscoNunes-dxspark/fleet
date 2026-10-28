@@ -7,10 +7,17 @@ import { approvalsFor, deployChoices, downloadChoices, isGithubRelease, stageSta
 import { runText } from './runs.js';
 import { doneChanges } from './board.js';
 import { closedText, commitsText, flakyText, insightsText, totalsText } from './reports.js';
+import { compareForSonar, deploys, familyChoices, prContext, runForSplice, timelineText } from './kin.js';
+import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity, takeLine } from '@fleet/kit/family.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const prName = (pr) => `!${pr.id} ${short(pr.title)}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// What Keel changed in Azure DevOps goes into the family's activity log (family.js logActivity, through
+// App's ctx), for /timeline here and in the other apps: what and where, never a comment or a token.
+const did = (ctx, text, kind) => ctx.logActivity?.(text, kind);
+const inRepo = (pr) => (pr.repoName ? ` in ${pr.repoName}` : '');
 
 const MERGE_STRATEGY = { squash: 'squash merge', noFastForward: 'merge commit', rebase: 'rebase', rebaseMerge: 'rebase with a merge commit' };
 
@@ -74,6 +81,7 @@ export async function vote(ctx, pr = ctx.current().pr, value) {
   }
   await ctx.task(`${VOTE_TITLE[value]} ${prName(pr)}`, async () => {
     await ctx.service.prAction(pr.projectId, pr.repoId, pr.id, { type: 'vote', vote: value });
+    did(ctx, `${VOTE_TITLE[value]} ${prName(pr)}${inRepo(pr)}`, 'review');
     await ctx.reload();
     return [value === 10 ? 'Approved.' : value === 0 ? 'Your vote is cleared.' : 'Vote recorded.'];
   }, { label: 'Voting' });
@@ -101,6 +109,7 @@ export async function complete(ctx, pr = ctx.current().pr) {
   if (!ok) return;
   await ctx.task(`Complete ${prName(pr)}`, async () => {
     await ctx.service.prAction(pr.projectId, pr.repoId, pr.id, { type: 'complete', mergeStrategy: ac.mergeStrategy, deleteSourceBranch: !!ac.deleteSourceBranch, transitionWorkItems: !!ac.transitionWorkItems });
+    did(ctx, `Completed ${prName(pr)} into ${branch(pr.targetBranch)}${inRepo(pr)}`, 'merge');
     await ctx.reload();
     return [`Completed into ${branch(pr.targetBranch)}.`];
   }, { label: 'Completing' });
@@ -112,6 +121,7 @@ export async function publish(ctx, pr = ctx.current().pr) {
   if (!pr.isDraft) return ctx.note(`${prName(pr)} isn't a draft: it's already up for review.`);
   await ctx.task(`Publish ${prName(pr)}`, async () => {
     await ctx.service.prAction(pr.projectId, pr.repoId, pr.id, { type: 'publish' });
+    did(ctx, `Published ${prName(pr)}${inRepo(pr)} for review`, 'review');
     await ctx.reload();
     return ['Published: its reviewers are asked to review it now.'];
   }, { label: 'Publishing' });
@@ -122,6 +132,7 @@ export async function autoComplete(ctx, pr = ctx.current().pr) {
   const enabled = !pr.autoComplete;
   await ctx.task(`${enabled ? 'Set' : 'Cancel'} auto-complete on ${prName(pr)}`, async () => {
     await ctx.service.prAction(pr.projectId, pr.repoId, pr.id, { type: 'autoComplete', enabled });
+    did(ctx, `${enabled ? 'Set' : 'Cancelled'} auto-complete on ${prName(pr)}${inRepo(pr)}`, 'review');
     await ctx.reload();
     return [enabled ? 'It completes by itself once policies pass.' : 'Auto-complete is off.'];
   }, { label: 'Saving' });
@@ -149,6 +160,7 @@ export async function runPipeline(ctx, row = ctx.current().pipeline, text = '') 
   if (!ok) return;
   await ctx.task(`Run ${row.definition.name}${on ? ` on ${on}` : ''}`, async () => {
     const run = await ctx.service.queueBuild(row.projectId, row.definition.id, on || undefined);
+    did(ctx, `Ran ${row.definition.name}${on ? ` on ${on}` : ''}${run?.id ? ` (run ${run.id})` : ''}`, 'pipeline');
     await ctx.reload();
     return [`${run?.id ? `Queued run ${run.id}` : 'Queued'}. It shows under Latest runs once Azure DevOps starts it.`];
   }, { label: 'Queuing' });
@@ -166,6 +178,7 @@ export async function cancelRun(ctx, row = ctx.current().pipeline) {
   if (!ok) return;
   await ctx.task(`Cancel ${row.definition.name} ${run.buildNumber}`, async () => {
     await ctx.service.cancelBuild(row.projectId, run.id);
+    did(ctx, `Cancelled ${row.definition.name} ${run.buildNumber}`, 'pipeline');
     await ctx.reload();
     return ['Canceled.'];
   }, { label: 'Canceling' });
@@ -187,6 +200,7 @@ export async function decide(ctx, item = ctx.current().item, status, text = '') 
     const a = pending.find((x) => x.key === item.target.key && (!item.org || !x.org || x.org === item.org));
     if (!a) throw new Error('That approval is no longer pending. It may have been handled already.');
     await ctx.service.decideApproval(a.kind, a.id, { status, comment: text.trim() || undefined }, a.org);
+    did(ctx, `${approve ? 'Approved' : 'Rejected'} ${short(item.title.replace(/^Approve /, ''))}`, 'deploy');
     await ctx.reload();
     return [approve ? 'Approved: the deployment carries on.' : 'Rejected: the deployment stops there.'];
   }, { label: approve ? 'Approving' : 'Rejecting' });
@@ -237,6 +251,14 @@ export async function setMouse(ctx, on) {
   await ctx.task(`Mouse ${on ? 'on' : 'off'}`, async () => {
     ctx.saveEnv([`KEEL_MOUSE=${on ? 1 : 0}`]);
     return [on ? 'Click, double-click, scroll, and drag to copy.' : "Off: the terminal selects and copies by itself again. Saved in this computer's .env."];
+  }, { label: 'Saving' });
+}
+
+/** Family moods on or off on this computer (KEEL_FAMILY_MOODS in its .env), at once. */
+export async function setFamilyMoods(ctx, on) {
+  await ctx.task(`Family moods ${on ? 'on' : 'off'}`, async () => {
+    ctx.saveEnv([`KEEL_FAMILY_MOODS=${on ? 1 : 0}`]);
+    return [on ? 'Pinch tells the other apps how it feels, and says when one of them is worried or pleased.' : "Off: Pinch keeps its mood to itself and doesn't read theirs. Saved in this computer's .env."];
   }, { label: 'Saving' });
 }
 
@@ -305,6 +327,7 @@ const wiName = (w) => `${w.type} ${w.id} "${short(w.title, 50)}"`;
 async function updateWorkItem(ctx, w, title, changes, done, label = 'Saving') {
   await ctx.task(title, async () => {
     await ctx.service.workItemAction(w.id, { type: 'update', changes }, w.org);
+    did(ctx, `${title}${w.title ? ` "${short(w.title, 50)}"` : ''}`, 'workitem');
     await ctx.reload();
     return [done];
   }, { label });
@@ -412,6 +435,7 @@ export async function newWorkItem(ctx, text = '') {
     const created = await ctx.service.createWorkItem({ projectId: project.id, type, title: title.trim(), teamId: team?.id, iteration: where });
     await ctx.reload();
     const id = created?.id ?? created;
+    did(ctx, `Created ${type} ${id ?? ''} "${short(title.trim(), 50)}" in ${project.name}`, 'workitem');
     if (id) ctx.showWorkItem(id, project.org);
     return [`${type} ${id ?? ''} created${where === 'sprint' ? ` in ${sprint}` : ' in the backlog'}.`];
   }, { label: 'Creating' });
@@ -444,6 +468,7 @@ export async function createRelease(ctx, def = ctx.current().release, text = '')
   if (!ok) return;
   await ctx.task(`Create a release of ${def.name}`, async () => {
     const r = await ctx.service.createRelease(def.projectId, def.id, text.trim() || undefined);
+    did(ctx, `Created ${r?.name ?? 'a release'} of ${def.name}`, 'deploy');
     await ctx.reload();
     return [`${r?.name ?? 'A release'} created. d deploys it to a stage.`];
   }, { label: 'Creating' });
@@ -479,6 +504,7 @@ export async function deployStage(ctx, def = ctx.current().release, name = '') {
   const verb = def.releases.find((r) => r.id === pick.release.id)?.stages.find((s) => s.id === pick.environmentId)?.status === 'succeeded' ? 'Redeploy' : 'Deploy';
   await ctx.task(`${verb} ${pick.release.name} to ${stage.name}`, async () => {
     await ctx.service.deployReleaseStage(def.projectId, pick.release.id, pick.environmentId);
+    did(ctx, `${verb}ed ${pick.release.name} of ${def.name} to ${stage.name}`, 'deploy');
     await ctx.reload();
     return [`${pick.release.name} is deploying to ${stage.name}. Its approvals, if any, show up here and in the Inbox.`];
   }, { label: 'Deploying' });
@@ -527,6 +553,7 @@ export async function decideRelease(ctx, def = ctx.current().release, status, te
   if (!ok) return;
   await ctx.task(`${approve ? 'Approve' : 'Reject'} ${what}`, async () => {
     await ctx.service.decideApproval(a.kind, a.id, { status, comment: text.trim() || undefined }, a.org);
+    did(ctx, `${approve ? 'Approved' : 'Rejected'} ${what} of ${def.name}`, 'deploy');
     await ctx.reload();
     return [approve ? 'Approved: the deployment carries on.' : 'Rejected: the deployment stops there.'];
   }, { label: approve ? 'Approving' : 'Rejecting' });
@@ -565,6 +592,7 @@ export async function moveCard(ctx, w, column) {
   const changes = column.changesFor(w);
   await ctx.task(`${w.type} ${w.id} → ${column.label}`, async () => {
     await ctx.service.workItemAction(w.id, { type: 'update', changes }, w.org);
+    did(ctx, `${w.type} ${w.id} "${short(w.title, 50)}" → ${column.label}${changes.state ? `, ${changes.state}` : ''}`, 'workitem');
     await ctx.reload();
     return [`${short(w.title)} is in ${column.label}${changes.state ? `, ${changes.state}` : ''}.`];
   }, { label: 'Moving' });
@@ -679,4 +707,174 @@ export async function pickFilter(ctx) {
   });
   if (picked == null) return;
   ctx.find(withField(current, src.tab, key, picked || null));
+}
+
+// ---- The family (the kit's family.js; Keel's own part in kin.js)
+
+/** Copies `line`, a command for a sibling app or apps, saying which and where to paste it (inside Fleet, Fleet takes it there). */
+export function copyFor(ctx, apps, line) {
+  ctx.copy(line, `a line for ${[].concat(apps).map((x) => APP_NAMES[x]).join(' or ')}`);
+  ctx.note(copiedNote(apps, line), 'ok');
+}
+
+/** alt+y on a pull request: `/take pullrequest` for Splice, which shows what its branch adds to the one it goes into. */
+export function prForSplice(ctx, pr = ctx.current().pr) {
+  if (!pr) return ctx.note('Pick a pull request first.', 'error');
+  copyFor(ctx, 'splice', takeLine('pullrequest', prContext(pr)));
+}
+
+/** The run a hand-off is about: the latest that finished, else the latest. */
+const lastRunOf = (row) => row.lastRun ?? row.latest ?? null;
+
+/**
+ * alt+y on a pipeline: its latest run for Splice. A failure that names a file and line (a stack frame, an
+ * error's path:line) goes as `/take file` there, else the commit it built as `/take commit`.
+ */
+export async function runForSpliceKey(ctx, row = ctx.current().pipeline) {
+  if (!row) return ctx.note('Pick a pipeline first.', 'error');
+  const run = lastRunOf(row);
+  if (!run) return ctx.note(`${row.definition.name} hasn't run yet: nothing to hand to Splice.`, 'error');
+  let details;
+  try {
+    details = await ctx.service.runDetails(row.projectId, run.id);
+  } catch (e) {
+    return ctx.note(`Couldn't read ${row.definition.name} ${run.buildNumber}: ${e.message.split('\n')[0]}`, 'error');
+  }
+  const got = runForSplice(row, run, details);
+  if (!got) return ctx.note(`${row.definition.name} ${run.buildNumber} names no file and built no commit Keel knows of: nothing to hand to Splice.`, 'error');
+  copyFor(ctx, 'splice', got.line);
+  if (got.failure?.message) ctx.note(`It failed at ${got.failure.step}: ${got.failure.message}`);
+}
+
+/** alt+s on a pipeline that deploys: the commit its latest run built, as `/take commit` for Sonar, which finds the deployments that carry it. */
+export function runForSonar(ctx, row = ctx.current().pipeline) {
+  if (!row) return ctx.note('Pick a pipeline first.', 'error');
+  if (!deploys(row, ctx.data.production?.monitors)) return ctx.note(`${row.definition.name} doesn't deploy anywhere Keel knows of (no production monitor is linked to it): alt+y hands its run to Splice instead.`, 'error');
+  const run = lastRunOf(row);
+  if (!run?.commit) return ctx.note(`${row.definition.name} has no run with a commit to look for.`, 'error');
+  copyFor(ctx, 'sonar', takeLine('commit', { ...(row.repoName ? { repo: row.repoName } : {}), hash: run.commit, subject: `${row.definition.name} ${run.buildNumber}` }));
+}
+
+/** alt+k on a production monitor: Sonar's `/compare-window` at the deploy its "failures up since …" issue names (else its latest deploy). */
+export function compareInSonar(ctx, m = ctx.current().monitor) {
+  if (!m) return ctx.note('Pick a production monitor first.', 'error');
+  const got = compareForSonar(m);
+  if (!got) return ctx.note(`${m.name} has no deploy Keel knows of to compare around.`, 'error');
+  copyFor(ctx, 'sonar', got.line);
+  if (!got.issue) ctx.note(`No failures went up after a deploy of ${m.name}: that compares around its latest, ${got.deploy.label}. In Sonar, pick its app first.`);
+  else ctx.note(`Around ${got.deploy.label}. In Sonar, pick ${m.name}'s app first.`);
+}
+
+/**
+ * /take <context> (or a family:v1:… line on its own at the prompt): what a sibling copied for Keel. A
+ * commit lists the pull requests and pipeline runs that carry it; a pull request or a pipeline opens in
+ * its tab. Anything else is said to be for the app that takes it.
+ */
+export async function take(ctx, text) {
+  const c = contextIn(text);
+  if (!c) return ctx.note("That isn't a line one of the other apps copied: /take takes the family:v1:… that Splice copies for Keel (alt+y on a commit). /take on its own takes the work item.", 'error');
+  if (c.kind === 'commit') return carriersOf(ctx, c.data);
+  if (c.kind === 'pullrequest') return takePr(ctx, c.data);
+  if (c.kind === 'pipeline') return takePipeline(ctx, c.data);
+  return ctx.note(notMine('keel', c), 'error');
+}
+
+const RUN_ICON = { succeeded: '✓', failed: '✗', canceled: '⊘', declined: '⊘', partiallySucceeded: '◐' };
+
+/** /take commit: the pull requests and runs that carry it, in a list; picking one opens it here (or in the browser). */
+async function carriersOf(ctx, { hash, repo, subject }) {
+  if (!/^[0-9a-f]{7,64}$/i.test(String(hash ?? ''))) return ctx.note(`${hash || 'That'} isn't a commit hash Keel can look for (7 characters at least).`, 'error');
+  const shortHash = String(hash).slice(0, 10);
+  const what = `${shortHash}${subject ? ` ${short(subject, 50)}` : ''}`;
+  let found;
+  const r = await ctx.task(`Pull requests and runs with ${what}`, async () => {
+    try {
+      found = await ctx.service.commitUsage(hash, { repo });
+    } catch (e) {
+      if (ctx.server && e.status === 404) throw new Error(`Your team's Keel at ${ctx.server} can't look a commit up yet: it's older than this terminal. Once it's updated, /take commit works.`);
+      throw e;
+    }
+    if (!found.prs.length && !found.runs.length) return [`No pull request (active, or closed in the last 30 days) or pipeline run in your tracked repos has it.`];
+    return [`${plural(found.prs.length, 'pull request')} and ${plural(found.runs.length, 'run')} carry it.`];
+  }, { label: 'Looking for the commit' });
+  if (!r.ok || !(found?.prs.length || found?.runs.length)) return;
+  const prOptions = found.prs.slice(0, 8).map((p) => ({ label: `!${p.id} ${short(p.title, 50)} · ${p.status === 'completed' ? 'merged' : p.status} · ${p.repoName} (${branch(p.sourceBranch)} → ${branch(p.targetBranch)})`, value: { pr: p } }));
+  const runOptions = found.runs.slice(0, 8).map((b) => ({ label: `${RUN_ICON[b.result] ?? '●'} ${b.definition.name} ${b.buildNumber} · ${b.status === 'completed' ? b.result : b.status} · ${branch(b.sourceBranch)}`, value: { run: b } }));
+  const pick = await ctx.confirm({
+    title: what,
+    detail: "Pick one to open it: an active pull request or a tracked pipeline's run here, the rest in the browser.",
+    options: [...prOptions, ...runOptions, { label: 'Leave it', value: null }],
+  });
+  if (!pick) return;
+  if (pick.pr) {
+    const p = pick.pr;
+    if (p.status === 'active' && ctx.showPr({ projectId: p.projectId, repoId: p.repoId, id: p.id }, p.org)) return;
+    return open(ctx, p.webUrl);
+  }
+  const b = pick.run;
+  const row = ctx.data.pipelines?.find((x) => x.projectId === b.projectId && x.definition.id === b.definition.id && (!b.org || !x.org || x.org === b.org));
+  if (!row) return open(ctx, b.webUrl);
+  ctx.showPipeline(row.key, row.org);
+  return showRun(ctx, row, String(b.id));
+}
+
+/** /take pullrequest: it, in Pull requests, when it's active in a tracked repo; else in the browser. */
+function takePr(ctx, data) {
+  const pr = ctx.data.prs?.find((p) => p.id === Number(data.id) && (!data.repo || p.repoName === data.repo) && (!data.org || !p.org || p.org === data.org));
+  if (pr && ctx.showPr(pr, pr.org)) return ctx.note(`Taking ${describeContext({ kind: 'pullrequest', data })}`);
+  if (data.url) return open(ctx, data.url);
+  ctx.note(`!${data.id} isn't an active pull request in your tracked repos.`, 'error');
+}
+
+/** /take pipeline: it, in Pipelines, and its run in full when it names one. */
+function takePipeline(ctx, data) {
+  const row = ctx.data.pipelines?.find((r) => (data.definitionId ? r.definition.id === Number(data.definitionId) : r.definition.name === data.definition) && (!data.project || r.projectName === data.project) && (!data.org || !r.org || r.org === data.org));
+  if (!row) return data.url ? open(ctx, data.url) : ctx.note(`${data.definition ?? 'That pipeline'} isn't one of your tracked pipelines.`, 'error');
+  ctx.showPipeline(row.key, row.org);
+  if (data.runId || data.run) return showRun(ctx, row, String(data.runId ?? data.run));
+}
+
+/** /family: what the folder Keel was started in is to the other apps, each a line for one's prompt; picking one copies it. */
+export async function family(ctx) {
+  const project = projectAt(ctx.cwd());
+  const choices = familyChoices(project);
+  if (!choices.length) return ctx.note(`${project.dir} is nothing the other apps open: no git checkout, nothing for Bosun to run, no .http files, no databases in appsettings*.json or .env.`);
+  const pick = await ctx.confirm({
+    title: `What ${project.dir} is to the other apps`,
+    detail: "Pick one to copy its line for that app's prompt.",
+    options: [...choices.map((c) => ({ label: `${APP_NAMES[c.app].padEnd(7)}${c.line}  ${c.what}`, value: c })), { label: 'Leave it', value: null }],
+  });
+  if (pick) copyFor(ctx, pick.app, pick.line);
+}
+
+/**
+ * /timeline [here]: what the family's apps did that changed something (family.js readActivity: Splice's
+ * pushes, Trawl's writes, Keel's votes and runs…), newest first, in the viewer; `here` keeps the folder
+ * Keel was started in (and what names no folder).
+ */
+export function timeline(ctx, text = '') {
+  if (!ctx.familyHome) return ctx.note("The family's activity log isn't kept here.", 'error');
+  const here = /^here$/i.test(text.trim());
+  const list = readActivity({ dir: ctx.familyHome, project: here ? ctx.cwd() : undefined, limit: 500 });
+  ctx.showText(`Timeline${here ? ` of ${ctx.cwd()}` : ': the family'} (${list.length})`, timelineText(list));
+}
+
+/** /wiring: what the folder Keel was started in points at (family.js projectWiring: addresses, hosts, ports, connection strings, secrets masked), by file. */
+export function wiring(ctx) {
+  const dir = ctx.cwd();
+  const found = projectWiring(dir);
+  if (!found.length) return ctx.note(`Nothing in ${dir} points anywhere Keel can see: no addresses, hosts, ports or connection strings in appsettings*.json, .env files or http-client env files.`);
+  const bySource = new Map();
+  for (const w of found) {
+    if (!bySource.has(w.source)) bySource.set(w.source, []);
+    bySource.get(w.source).push(w);
+  }
+  const out = [];
+  for (const [source, list] of bySource) {
+    const keyW = Math.min(40, Math.max(...list.map((w) => w.key.length)));
+    if (out.length) out.push('');
+    out.push(source);
+    for (const w of list) out.push(`  ${w.key.padEnd(keyW)}  ${w.value}`);
+  }
+  ctx.showText(`What ${dir} points at (${found.length})`, out.join('\n'));
 }

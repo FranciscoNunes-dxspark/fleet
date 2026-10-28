@@ -9,6 +9,7 @@ import { mapLimited, sqlByLabel } from './tree.js';
 import { clip } from '@fleet/kit/claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, compareQueries, compareWindows, componentFor, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround, workspaceStarter } from './insights.js';
+import { slowSqlContext, slowSqlQuery, slowestSql } from './slowsql.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, takeLine, trawlLine } from '@fleet/kit/family.js';
 import { familyChoices } from './kin.js';
@@ -227,6 +228,15 @@ export async function compareSettings(ctx, which, other) {
 }
 
 const DEPLOY_COLOUR = { get succeeded() { return theme.add; }, get failed() { return theme.del; } };
+
+/** K and /locker: an app or slot for Locker, which compares its settings with the folder's and its key vault. */
+export function toLocker(ctx, which) {
+  const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!target) return;
+  if (target.type) return ctx.note(`Locker compares the settings of web and function apps; ${target.name} is a ${typeLabel(target)}.`, 'error');
+  const site = { name: target.name, ...(target.slot ? { slot: target.slot } : {}), ...(target.resourceGroup ? { resourceGroup: target.resourceGroup } : {}), subscription: ctx.data.subscription.id, ...(target.id ? { id: target.id } : {}) };
+  copyFor(ctx, 'locker', takeLine('site', site));
+}
 
 /** D and /deployments: an app's or slot's deployments, newest first; ↵ shows one's log. */
 export function deployments(ctx, which) {
@@ -1225,17 +1235,63 @@ function sqlForTrawl(ctx, inc) {
       copyFor(ctx, 'trawl', takeLine('query', { sql: it.s.data ?? '', ...(server ? { server } : {}), ...(database ? { database } : {}) }));
     },
     keys: {
-      a: (it) => {
-        const { server, database } = sqlTarget(it.s.target);
-        if (!server) return ctx.note(`${it.s.target} names no server.`, 'error');
-        // A server in this subscription goes through T's checks (the firewall, the login an app uses).
-        const known = (ctx.data?.sqlServers ?? []).find((x) => x.fqdn?.toLowerCase() === server.toLowerCase() || x.name.toLowerCase() === server.toLowerCase());
-        const db = known && database ? (known.databases ?? []).find((d) => d.name.toLowerCase() === database.toLowerCase()) : null;
-        if (known) return openInTrawl(ctx, db ?? known);
-        copyFor(ctx, 'trawl', trawlLine({ kind: 'sqlserver', server, database }, [server.split('.')[0], database].filter(Boolean).join('-')));
-      },
+      a: (it) => serverForTrawl(ctx, it.s.target),
     },
   });
+}
+
+/** a on a SQL call: its server's line for Trawl, through T's checks (the firewall, the login an app uses) when the server is in this subscription. */
+function serverForTrawl(ctx, target) {
+  const { server, database } = sqlTarget(target);
+  if (!server) return ctx.note(`${target} names no server.`, 'error');
+  const known = (ctx.data?.sqlServers ?? []).find((x) => x.fqdn?.toLowerCase() === server.toLowerCase() || x.name.toLowerCase() === server.toLowerCase());
+  const db = known && database ? (known.databases ?? []).find((d) => d.name.toLowerCase() === database.toLowerCase()) : null;
+  if (known) return openInTrawl(ctx, db ?? known);
+  copyFor(ctx, 'trawl', trawlLine({ kind: 'sqlserver', server, database }, [server.split('.')[0], database].filter(Boolean).join('-')));
+}
+
+/**
+ * Q in Problems and /slow-sql: the SQL calls of the app in scope over the span, slowest (95th
+ * percentile) first, from Application Insights' dependencies; ↵ copies one for Trawl's prompt with what
+ * was measured, where /explain-slow plans it (never running it) and asks Claude about indexes.
+ */
+export async function slowSql(ctx) {
+  const scope = await ctx.scope();
+  if (!scope.component) return ctx.note(scope.why, 'error');
+  const span = ctx.timespan();
+  let found;
+  const r = await ctx.task(
+    `${scope.component.name}${scope.role ? ` · ${scope.role}` : ''}: the slowest SQL over the last ${span.label}`,
+    async (signal) => {
+      found = slowestSql(records(await ctx.provider.query(scope.component, slowSqlQuery(scope.role), { timespan: span.iso, signal })));
+      const n = found.list.length;
+      const hidden = found.withoutText ? `; ${found.withoutText} more without their command text (the SDK keeps it only when told to)` : '';
+      return { stdout: n ? `${n} SQL command${n === 1 ? '' : 's'}, the slowest ${Math.round(found.list[0].p95)} ms at p95${hidden}` : `No SQL calls with their command text in the span${hidden}` };
+    },
+    { label: 'Reading the SQL calls' },
+  );
+  if (!r.ok || !found.list.length) return r;
+  const ms = (n) => (n == null ? '—' : `${Math.round(n).toLocaleString('en')} ms`);
+  ctx.showPicker({
+    title: `The slowest SQL${scope.role ? ` of ${scope.role}` : ''}, last ${span.label}`,
+    hint: "↵ copy it for Trawl's /explain-slow · a its server's line for Trawl · y copy the SQL",
+    items: found.list.map((s) => ({
+      s,
+      segments: [
+        { text: fit(`p95 ${ms(s.p95)}`, 14), color: theme.del, bold: true },
+        { text: fit(`avg ${ms(s.avg)}`, 14), color: theme.warn },
+        { text: fit(`${s.calls}×`, 8), color: theme.dim },
+        { text: `${s.target}  `, color: theme.info },
+        { text: s.sql.replace(/\s+/g, ' ') },
+      ],
+    })),
+    onPick: (it) => copyFor(ctx, 'trawl', takeLine('query', slowSqlContext(it.s, { span: span.label, app: scope.role }))),
+    keys: {
+      a: (it) => serverForTrawl(ctx, it.s.target),
+      y: (it) => ctx.copy(it.s.sql, 'the SQL'),
+    },
+  });
+  return r;
 }
 
 /** w in an incident: Claude's draft write-up, in Markdown, in the viewer (s saves it). */
@@ -1431,7 +1487,7 @@ export function requestForHail(ctx, row) {
  */
 export async function take(ctx, text) {
   const c = contextIn(text);
-  if (!c) return ctx.note("That isn't a line one of the other apps copied: /take takes the family:v1:… that Splice, Trawl, Bosun or Hail copies for Sonar.", 'error');
+  if (!c) return ctx.note("That isn't a line one of the other apps copied: /take takes the family:v1:… that Splice, Trawl, Bosun, Hail or Keel copies for Sonar.", 'error');
   if (c.kind === 'commit') return deploymentsOfCommit(ctx, c.data);
   if (c.kind === 'exception') return problemsLike(ctx, c.data);
   if (c.kind === 'logline') return requestOfLogLine(ctx, c.data);
