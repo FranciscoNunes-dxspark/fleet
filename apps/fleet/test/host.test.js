@@ -256,9 +256,10 @@ test('ctrl+] m moves the fleet: the running apps start again in the folder given
   await until(() => screen.row(-1).includes('no such folder'), 'no such folder', { term });
   // Tab completes as far as the folders agree, then whole.
   keys(`\x15${there}/s\t`);
-  await until(() => screen.row(-1).includes(`${there}/sub-`) && screen.row(-1).includes('sub-one  sub-two'), 'completed as far as they agree', { term });
+  // The line itself, not the bar: a long folder (Windows' temp folder) is cut short there.
+  await until(() => host.asking?.line.text === `${there}/sub-` && screen.row(-1).includes('sub-one  sub-two'), 'completed as far as they agree', { term });
   keys('t\t');
-  await until(() => screen.row(-1).includes(`${there}/sub-two/`), 'completed whole', { term });
+  await until(() => host.asking?.line.text === `${there}/sub-two/`, 'completed whole', { term });
   const before = host.space('one').child.pid;
   keys('\r');
   await until(() => screen.row(-1).includes('Moving the fleet to') && host.space('one').child && host.space('one').child.pid !== before, 'started again', { term });

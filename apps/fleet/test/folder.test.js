@@ -27,7 +27,7 @@ test('the line editor: typing, moving, deleting, and ↵, esc and tab said', () 
 
 test('folders resolve from the fleet\'s folder, ~ the home folder, and read back from ~', () => {
   assert.equal(resolveFolder('sub', { cwd: '/work', home: '/home/me' }), resolve('/work/sub'));
-  assert.equal(resolveFolder('~/code', { cwd: '/work', home: '/home/me' }), join('/home/me', 'code'));
+  assert.equal(resolveFolder('~/code', { cwd: '/work', home: '/home/me' }), resolve(join('/home/me', 'code')));
   assert.equal(expandHome('~', '/home/me'), '/home/me');
   assert.equal(shortFolder(join('/home/me', 'code'), '/home/me'), `~${sep}code`);
   assert.equal(shortFolder('/elsewhere', '/home/me'), '/elsewhere');
