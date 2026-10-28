@@ -1,7 +1,7 @@
 // Every user-facing operation, written once: keys in the views and slash commands both call
 // these with `ctx` (built in ui/App.jsx). Questions before anything that can't be undone live here.
 import { sonarArgs } from './sonar.js';
-import { branch, isGithubPr, summaryText, summaryWeek } from './format.js';
+import { branch, diffText, isGithubPr, summaryText, summaryWeek } from './format.js';
 import { fieldValues, filterFields, splitFilter, withField } from './filters.js';
 import { approvalsFor, deployChoices, downloadChoices, isGithubRelease, stageStatus } from './releases.js';
 import { runText } from './runs.js';
@@ -304,6 +304,26 @@ export async function logout(ctx) {
     return ['Signed out.'];
   }, { label: 'Signing out' });
   if (done.ok) ctx.quit();
+}
+
+/** d in Pull requests: pick one of its changed files and read what changed in it, without the browser. */
+export async function prChanges(ctx, pr = ctx.current().pr) {
+  if (!pr) return;
+  const full = await ctx.task(`Files of ${prName(pr)}`, async () => ({ files: (await ctx.service.pullRequest(pr.projectId, pr.repoId, pr.id)).files }), { label: 'Reading the files', quiet: true });
+  const files = full.value?.files?.items ?? [];
+  if (!full.ok) return;
+  if (!files.length) return ctx.note(`${prName(pr)} has no file changes${full.value?.files?.error ? `: ${full.value.files.error}` : ''}.`, 'error');
+  const file = await ctx.confirm({
+    title: `Which file of ${prName(pr)}?`,
+    detail: `${plural(files.length, 'file')} changed${full.value.files.truncated ? ' (the first ones)' : ''}.`,
+    options: [...files.map((f) => ({ label: `${(f.kind ?? '').slice(0, 1).toUpperCase()} ${f.path}`, value: f })), { label: 'Leave it', value: null }],
+  });
+  if (!file) return;
+  await ctx.task(`Changes in ${file.path}`, async () => {
+    const d = await ctx.service.prFileDiff(pr.projectId, pr.repoId, pr.id, file);
+    ctx.showText(`${prName(pr)}: ${file.path.split('/').pop()}`, diffText(file, d), { diff: true });
+    return [];
+  }, { label: 'Reading the changes', quiet: true });
 }
 
 /** /summary [last|-N|YYYY-MM-DD]: one week's summary, as the web app's, in the viewer. */

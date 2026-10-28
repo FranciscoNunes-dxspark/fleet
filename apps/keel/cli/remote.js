@@ -139,6 +139,7 @@ export function remoteService({ call }) {
     clearSnoozes: () => call('/attention/clear-snoozes', { method: 'POST', body: {} }),
     pullRequests: () => call('/prs'),
     pullRequest: (projectId, repoId, id) => call(pr(projectId, repoId, id)),
+    prFileDiff: (projectId, repoId, id, { path, originalPath }) => call(`${pr(projectId, repoId, id)}/diff?path=${e(path)}${originalPath ? `&from=${e(originalPath)}` : ''}`),
     prAction: (projectId, repoId, id, body) => call(`${pr(projectId, repoId, id)}/actions`, { method: 'POST', body }),
     pipelines: () => call('/pipelines'),
     pipelineRuns: (projectId, definitionId) => call(`/pipelines/${e(projectId)}/${e(definitionId)}/runs`),

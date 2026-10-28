@@ -31,9 +31,13 @@ export function wrapIndented(line, width) {
  * Full-height scrollable text: a pull request in full, the last output, the log, help. `pageOnly`: a question
  * below has the other keys, so only page up/down scroll this.
  */
-export function TextViewer({ title, text, loading, ctx, width, height, active, pageOnly = false, onClose }) {
+export function TextViewer({ title, text, loading, ctx, width, height, active, pageOnly = false, diff = false, onClose }) {
   // Long lines wrap, so nothing is cut off at the edge (a log line, an error, a description).
-  const lines = useMemo(() => (text ?? '').replace(/\n$/, '').split('\n').flatMap((l) => wrapIndented(l, width - 2)), [text, width]);
+  // A diff's lines keep their colour when they wrap: `+` green, `-` red, `@@` blue.
+  const lines = useMemo(() => (text ?? '').replace(/\n$/, '').split('\n').flatMap((l) => {
+    const color = !diff ? undefined : l.startsWith('@@') ? theme.info : /^\+(?!\d)/.test(l) ? theme.ok : l[0] === '-' ? theme.del : undefined;
+    return wrapIndented(l, width - 2).map((part) => ({ text: part, color }));
+  }), [text, width, diff]);
   const [offset, setOffset] = useState(0);
   const innerH = height - 2;
   const max = Math.max(0, lines.length - innerH);
@@ -60,7 +64,7 @@ export function TextViewer({ title, text, loading, ctx, width, height, active, p
       {loading ? (
         <Row pointer={false} width={width - 2} segments={[{ text: 'Loading…', color: theme.dim }]} />
       ) : (
-        lines.slice(offset, offset + innerH).map((l, i) => <Row key={offset + i} pointer={false} width={width - 2} segments={[{ text: l }]} />)
+        lines.slice(offset, offset + innerH).map((l, i) => <Row key={offset + i} pointer={false} width={width - 2} segments={[l]} />)
       )}
     </Panel>
   );

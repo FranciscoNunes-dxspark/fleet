@@ -1515,3 +1515,19 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
   45% { transform: translate(1.5px, -0.5px); filter: drop-shadow(-1px 0 0 #ff3b6b) drop-shadow(1px 0 0 #2ee6d6); opacity: 0.6; }
   70% { transform: translate(0, 1px); clip-path: inset(30% 0 35% 0); opacity: 1; }
 }
+
+/* A file's diff, opened from the file lists of a pull request and a commit */
+.file-toggle { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.file-toggle::before { content: '▸'; display: inline-block; width: 12px; color: var(--muted); }
+.file-toggle[aria-expanded="true"]::before { content: '▾'; }
+.file-ext { margin-left: auto; text-decoration: none; flex: none; }
+.file-diff { margin: 4px 0 8px 28px; border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; font-family: var(--mono); font-size: 12px; }
+.file-diff-stat { padding: 3px 8px; border-bottom: 1px solid var(--line); }
+.file-diff table { border-collapse: collapse; width: 100%; }
+.file-diff td { padding: 0 6px; white-space: pre; vertical-align: top; }
+.file-diff .diff-no { color: var(--muted); text-align: right; user-select: none; width: 1%; min-width: 36px; }
+.file-diff .diff-text span { display: inline-block; width: 1.5ch; color: var(--muted); user-select: none; }
+.file-diff .diff-add { background: var(--ok-soft); }
+.file-diff .diff-del { background: var(--bad-soft); }
+.file-diff .diff-hunk td { color: var(--muted); background: var(--line); padding: 2px 8px; }
+.file-diff-note { margin: 4px 0 8px 28px; }

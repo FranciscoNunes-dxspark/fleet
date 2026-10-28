@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { api, prPath } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, REVIEW_STATE, VOTES } from '../format.js';
@@ -50,39 +50,79 @@ const prFileHref = (webUrl, path) => `${webUrl}?_a=files&path=${encodeURICompone
 // GitHub: the pull request's Files changed tab.
 export const githubPrFileHref = (webUrl) => `${webUrl}/files`;
 
-function FileRow({ f, webUrl, fileHref = prFileHref, github = false }) {
+function FileRow({ f, webUrl, fileHref = prFileHref, github = false, diffPath }) {
   const kind = FILE_KIND[f.kind] || FILE_KIND.edited;
+  const [open, setOpen] = useState(false);
+  const external = github ? t('Open the diff for {path} on GitHub', { path: f.path }) : t('Open the diff for {path} in Azure DevOps', { path: f.path });
   return (
-    <li className="file-row">
-      <span className={`file-kind chip chip-${kind.tone}`} title={kind.label} aria-label={kind.label}>{kind.letter}</span>
-      <a className="file-name" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={github ? t('Open the diff for {path} on GitHub', { path: f.path }) : t('Open the diff for {path} in Azure DevOps', { path: f.path })}>{f.name}</a>
-      {f.originalPath && <span className="muted small file-from" title={f.originalPath}>{t('from {name}', { name: f.originalPath.split('/').pop() })}</span>}
+    <li>
+      <div className="file-row">
+        <span className={`file-kind chip chip-${kind.tone}`} title={kind.label} aria-label={kind.label}>{kind.letter}</span>
+        {diffPath
+          ? <button type="button" className="file-name file-toggle" aria-expanded={open} onClick={() => setOpen(!open)} title={t('Show what changed in {path}', { path: f.path })}>{f.name}</button>
+          : <a className="file-name" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={external}>{f.name}</a>}
+        {f.originalPath && <span className="muted small file-from" title={f.originalPath}>{t('from {name}', { name: f.originalPath.split('/').pop() })}</span>}
+        {diffPath && <a className="file-ext muted small" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={external} aria-label={external}>↗</a>}
+      </div>
+      {open && diffPath && <FileDiff url={diffPath(f)} />}
     </li>
   );
 }
 
-function Folder({ node, webUrl, depth, fileHref, github }) {
+/** The query that names a file (and the one it was renamed from) for the diff routes. */
+export const diffQuery = (f) => `?path=${encodeURIComponent(f.path)}${f.originalPath ? `&from=${encodeURIComponent(f.originalPath)}` : ''}`;
+
+/** One file's hunks, loaded when its row is opened. */
+function FileDiff({ url }) {
+  const { data: d, error, reload } = useApi(url);
+  if (!d) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
+  if (d.skipped) return <p className="muted small file-diff-note">{d.skipped === 'binary' ? t('A binary file: there is no text to compare.') : t('Too large to show here: open it in the browser instead.')}</p>;
+  if (!d.hunks.length) return <p className="muted small file-diff-note">{t('No lines changed (the file was moved or its mode changed).')}</p>;
+  return (
+    <div className="file-diff" role="region" aria-label={t('Changes')}>
+      <div className="file-diff-stat small"><span className="text-ok">+{d.added}</span> <span className="text-bad">−{d.removed}</span></div>
+      <table>
+        <tbody>
+          {d.hunks.map((h, i) => (
+            <Fragment key={i}>
+              <tr className="diff-hunk"><td colSpan={3}>{h.header}</td></tr>
+              {h.lines.map((l, j) => (
+                <tr key={j} className={`diff-${l.t === '+' ? 'add' : l.t === '-' ? 'del' : 'ctx'}`}>
+                  <td className="diff-no">{l.a ?? ''}</td>
+                  <td className="diff-no">{l.b ?? ''}</td>
+                  <td className="diff-text"><span aria-hidden="true">{l.t === ' ' ? ' ' : l.t}</span>{l.text}</td>
+                </tr>
+              ))}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Folder({ node, webUrl, depth, fileHref, github, diffPath }) {
   return (
     <li>
       <details open={depth < 3 || node.count <= 8}>
         <summary className="folder-row"><span className="folder-name">{node.name}/</span><span className="muted small">{node.count}</span></summary>
-        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} github={github} />
+        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} github={github} diffPath={diffPath} />
       </details>
     </li>
   );
 }
 
-function FolderBody({ node, webUrl, depth, fileHref, github }) {
+function FolderBody({ node, webUrl, depth, fileHref, github, diffPath }) {
   return (
     <ul className="file-tree">
-      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} github={github} />)}
-      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} github={github} />)}
+      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} github={github} diffPath={diffPath} />)}
+      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} github={github} diffPath={diffPath} />)}
     </ul>
   );
 }
 
 /** Changed files as a folder tree; also used by the commit panel (CommitDetail.jsx). */
-export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.'), github = false }) {
+export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.'), github = false, diffPath }) {
   const counts = Object.entries(FILE_KIND)
     .map(([k, v]) => [v.count, files.items.filter((f) => f.kind === k).length])
     .filter(([, n]) => n)
@@ -93,7 +133,7 @@ export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file chang
       <h3>{t('Files changed')} <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span></h3>
       {files.error && <p className="text-bad small">{t("Couldn't load the file list: {error}", { error: tx(files.error) })}</p>}
       {!files.error && !files.items.length && <p className="muted small">{empty}</p>}
-      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} github={github} />
+      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} github={github} diffPath={diffPath} />
       {files.truncated && <p className="muted small">{github ? t('GitHub returned the first 3,000 files only.') : t('Azure DevOps returned the first 2,000 files only.')}</p>}
     </section>
   );
@@ -311,7 +351,7 @@ export default function PrDetail({ target }) {
         </section>
       )}
 
-      {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} github={github} fileHref={github ? githubPrFileHref : undefined} />}
+      {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} github={github} diffPath={(f) => `${prPath(pr)}/diff${diffQuery(f)}`} fileHref={github ? githubPrFileHref : undefined} />}
 
       <section className="detail-section">
         <h3>{t('Discussion')} <span className="muted small">{t(pr.threads.total === 1 ? '{open} open of {total} thread' : '{open} open of {total} threads', { open: pr.threads.active, total: pr.threads.total })}</span></h3>

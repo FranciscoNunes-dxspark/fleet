@@ -798,6 +798,23 @@ const strip = ({ _description, _acceptance, _comments, _prs, _board, _attachment
 // Team members taken out of a team ("projectId:teamId:memberId"), until the server restarts.
 const removedMembers = new Set();
 const stripPR = ({ _workItemIds, _threads, _buildOk, _files, _description, ...rest }) => ({ ...rest, reviewers: rest.reviewers.map((r) => ({ ...r })) });
+// A made-up source file for the demo, and the same file after a change: the diff views have something to show.
+function demoSource(path, kind) {
+  const name = path.split('/').pop().replace(/\.\w+$/, '').replace(/\W/g, '') || 'demo';
+  const before = [
+    `// ${path}`, '', `export function ${name}(input) {`, '  const items = input.items ?? [];', '  let total = 0;',
+    '  for (const item of items) {', '    total += item.price * item.qty;', '  }', '  return total;', '}', '',
+    `export function ${name}Label(total) {`, '  return `Total: ${total}`;', '}', '',
+    `export const ${name}Version = 1;`,
+  ];
+  const after = [...before];
+  after.splice(15, 1, `export const ${name}Version = 2;`, `export const ${name}Currency = 'EUR';`);
+  after.splice(12, 1, '  return `Total: ${total.toFixed(2)}`;');
+  after.splice(6, 1, '    total += item.price * item.qty * (1 - (item.discount ?? 0));');
+  after.splice(4, 0, '  if (!items.length) return 0;');
+  return { before: kind === 'added' ? '' : before.join('\n'), after: kind === 'deleted' ? '' : after.join('\n') };
+}
+
 const delay = (v) => new Promise((r) => setTimeout(() => r(v), 40 + Math.random() * 120));
 const notFound = (what) => Object.assign(new Error(`${what} not found`), { status: 404 });
 
@@ -1032,6 +1049,13 @@ export function createMockProvider() {
       const c = commitsById.get(String(commitId).toLowerCase());
       if (!c || !c.webUrl.includes(`/_git/${repo.name}/`)) throw notFound(`Commit ${commitId}`);
       return delay({ ...stripCommit(c), parents: [], files: c._files.map((f) => ({ ...f })) });
+    },
+
+    getFileDiff(projectId, repoId, { prId, commitId, path }) {
+      const files = prId ? getPR(projectId, repoId, prId)._files : commitsById.get(String(commitId).toLowerCase())?._files;
+      const f = files?.find((x) => x.path === path);
+      if (!f) throw notFound('File');
+      return delay(demoSource(f.path, f.kind));
     },
 
     compareBranches(projectId, repoId, source, target) {

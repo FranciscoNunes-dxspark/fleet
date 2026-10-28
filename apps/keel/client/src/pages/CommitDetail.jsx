@@ -3,7 +3,7 @@ import { dateTime } from '../format.js';
 import { Chip, ErrorBox, ExternalLink, Loading, Person } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
-import { ChangedFiles } from './PrDetail.jsx';
+import { ChangedFiles, diffQuery } from './PrDetail.jsx';
 
 const enc = encodeURIComponent;
 // A file's change within this commit, in Azure DevOps; GitHub shows the whole commit.
@@ -47,7 +47,7 @@ export default function CommitDetail({ target }) {
         </section>
       )}
 
-      <ChangedFiles files={{ total: c.files.length, items: c.files }} webUrl={c.webUrl} fileHref={commitFileHref} empty={t('No file changes in this commit.')} />
+      <ChangedFiles files={{ total: c.files.length, items: c.files }} webUrl={c.webUrl} fileHref={commitFileHref} diffPath={(f) => `/commits/${enc(target.projectId)}/${enc(target.repoId)}/${enc(target.id)}/diff${diffQuery(f)}`} empty={t('No file changes in this commit.')} />
 
       <section className="detail-actions">
         <ExternalLink href={c.webUrl} />

@@ -550,4 +550,10 @@ export default {
   "Couldn't refresh the branches: {error}": 'Não foi possível atualizar os branches: {error}',
   'Refresh branches: pick up branches pushed since this page opened': 'Atualizar branches: mostrar os branches enviados desde que esta página abriu',
   'Refresh branches': 'Atualizar branches',
+  // pages/PrDetail.jsx: a file's diff
+  'Show what changed in {path}': 'Mostrar o que mudou em {path}',
+  'A binary file: there is no text to compare.': 'Um ficheiro binário: não há texto para comparar.',
+  'Too large to show here: open it in the browser instead.': 'Demasiado grande para mostrar aqui: abra-o no browser.',
+  'No lines changed (the file was moved or its mode changed).': 'Nenhuma linha alterada (o ficheiro foi movido ou o seu modo mudou).',
+  'Changes': 'Alterações',
 };

@@ -312,6 +312,15 @@ export function createGithubProvider({ org, token, client } = {}) {
       return { ...normalizeCommit(c), parents: (c.parents || []).map((p) => p.sha), files: (c.files || []).map(fileOf) };
     },
 
+    /** One file's unified patch, from the pull request's files or the commit's. No patch: a binary or very large file. */
+    async getFileDiff(_projectId, repoId, { prId, commitId, path }) {
+      const name = path.replace(/^\//, '');
+      const files = prId ? await listAll(`${repoPath(repoId)}/pulls/${Number(prId)}/files`, { max: 3000 }) : (await api(`${repoPath(repoId)}/commits/${seg(commitId)}`)).files || [];
+      const f = files.find((x) => x.filename === name);
+      if (!f) throw err('That file is not part of it.', 404);
+      return { patch: f.patch ?? null, empty: !f.changes };
+    },
+
     async compareBranches(_projectId, repoId, source, target) {
       const templates = ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md', 'pull_request_template.md'];
       const [diff, existing, found] = await Promise.all([

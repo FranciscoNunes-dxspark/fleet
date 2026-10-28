@@ -616,6 +616,36 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       };
     },
 
+    /**
+     * The two versions of one file of a PR (its latest iteration against the merge base, the Files
+     * tab's diff) or of a commit (against its first parent). A side that doesn't exist is ''.
+     */
+    async getFileDiff(projectId, repoId, { prId, commitId, path, originalPath }) {
+      const repo = `${seg(projectId)}/_apis/git/repositories/${seg(repoId)}`;
+      let base;
+      let head;
+      if (prId) {
+        const latest = ((await api(`${repo}/pullrequests/${prId}/iterations`)).value || []).at(-1);
+        base = latest?.commonRefCommit?.commitId;
+        head = latest?.sourceRefCommit?.commitId;
+      } else {
+        const c = await api(`${repo}/commits/${seg(commitId)}`);
+        head = c.commitId;
+        base = c.parents?.[0];
+      }
+      const read = async (p, sha) => {
+        if (!p || !sha) return '';
+        try {
+          return await apiText(`${repo}/items`, { query: { path: p, 'versionDescriptor.version': sha, 'versionDescriptor.versionType': 'commit', $format: 'text' } });
+        } catch (err) {
+          if (err.status === 404) return '';
+          throw err;
+        }
+      };
+      const [before, after] = await Promise.all([read(originalPath || path, base), read(path, head)]);
+      return { before, after };
+    },
+
     /** What a PR from `source` into `target` would contain. */
     async compareBranches(projectId, repoId, source, target) {
       const base = `${seg(projectId)}/_apis/git/repositories/${seg(repoId)}`;

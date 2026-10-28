@@ -4,6 +4,25 @@
 // actions (reviews, merges, runs, deployment reviews) really change what it answers.
 import { createGithubProvider } from '../github/provider.js';
 
+// What GitHub sends for a changed file: a unified patch of it, which the demo makes up.
+const withPatch = (f) => (f.patch || f.status === 'removed' ? f : {
+  ...f,
+  patch: f.status === 'added'
+    ? `@@ -0,0 +1,3 @@
++// ${f.filename}
++export const ready = true;
++export default ready;`
+    : `@@ -1,5 +1,6 @@ export function main() {
+ import { log } from './log.js';
+ 
+-export const name = 'demo';
++export const name = 'keel demo';
++export const version = 2;
+ 
+ export function main() {
+   log(name);`,
+});
+
 const NOW = Date.now();
 const H = 3_600_000;
 const D = 24 * H;
@@ -210,7 +229,7 @@ export function createDemoApi(owner) {
     ['GET', /^user$/, () => ({ login: ME.login, name: ME.name })],
     ['GET', /^users\/([^/]+)$/, () => ({ login: owner, type: 'Organization' })],
     ['GET', /^orgs\/[^/]+\/repos$/, () => db.repos],
-    ['GET', /^repos\/[^/]+\/([^/]+)\/pulls\/(\d+)\/files$/, ([, r, n]) => prOf(r, n).files],
+    ['GET', /^repos\/[^/]+\/([^/]+)\/pulls\/(\d+)\/files$/, ([, r, n]) => prOf(r, n).files.map(withPatch)],
     ['GET', /^repos\/[^/]+\/([^/]+)\/pulls\/(\d+)\/commits$/, ([, r, n]) => [{ sha: prOf(r, n).headSha }]],
     ['GET', /^repos\/[^/]+\/([^/]+)\/pulls\/(\d+)$/, ([, r, n]) => {
       const p = prOf(r, n);
@@ -273,7 +292,7 @@ export function createDemoApi(owner) {
       const h = db.history[r] || [];
       const i = h.findIndex((c) => c.sha === s);
       if (i < 0) throw notFound(`commit ${s}`);
-      return { ...restCommit(r, h[i]), parents: h[i + 1] ? [{ sha: h[i + 1].sha }] : [], files: [{ filename: 'src/index.js', status: 'modified' }] };
+      return { ...restCommit(r, h[i]), parents: h[i + 1] ? [{ sha: h[i + 1].sha }] : [], files: [withPatch({ filename: 'src/index.js', status: 'modified' })] };
     }],
     ['GET', /^repos\/[^/]+\/([^/]+)\/compare\/([^.]+)\.\.\.(.+)$/, ([, r, base, head]) => compare(r, decodeURIComponent(base), decodeURIComponent(head))],
     ['GET', /^repos\/[^/]+\/([^/]+)\/releases$/, ([, r], { query }) => db.releases.filter((x) => x.repo === repoOf(r).name).slice(0, Number(query.per_page) || 30)

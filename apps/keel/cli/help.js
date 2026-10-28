@@ -51,6 +51,7 @@ export const HELP = [
       ['c', 'Complete (asks first; merge settings from Keel\'s Settings)'],
       ['m', 'Auto-complete on or off'],
       ['↵', 'The full pull request'],
+      ['d', 'What changed: pick one of its files and read its diff, + and - lines in colour'],
       ['/comment <text>', 'Comment'],
       ['f', 'Everything, waiting on your review, yours (/show all|review|mine)'],
       ['alt+y', 'Copy /take pullrequest for Splice, which shows what its branch adds to the one it goes into'],
