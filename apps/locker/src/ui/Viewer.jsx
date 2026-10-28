@@ -8,9 +8,9 @@ import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
  * Text over the view (ctx.showText): a key's sources, a secret's details or value, a command's output.
  * `lines` are rows of coloured segments to draw instead of `text` (which y still copies). Scrolls; esc or
  * q closes it, and with it whatever value it showed. With `secret`, y copies through ctx.copySecret,
- * which clears the clipboard again.
+ * which clears the clipboard again. `onKey(input)` sees a key first and returns true when it took it.
  */
-export function Viewer({ title, text = '', lines: given, secret = false, ctx, width, height, active, onClose }) {
+export function Viewer({ title, text = '', lines: given, secret = false, onKey, ctx, width, height, active, onClose }) {
   const innerW = width - 4;
   const innerH = height - 2;
   const lines = given
@@ -40,6 +40,8 @@ export function Viewer({ title, text = '', lines: given, secret = false, ctx, wi
     if (input === 'b' || key.pageUp || (key.ctrl && input === 'u')) return setTop(here - innerH + 1);
     if (input === 'g') return setTop(0);
     if (input === 'G') return setTop(max);
+    // The one showing it may act on keys of its own (a secret's details: v, y, e, x).
+    if (onKey?.(input)) return;
     const copy = secret ? ctx.copySecret : ctx.copy;
     if (input === 'y') return copy(plain(lines.slice(here, here + innerH)), 'what is on screen');
     if (input === 'Y') return copy(String(text), `${String(text).split('\n').length} lines`);

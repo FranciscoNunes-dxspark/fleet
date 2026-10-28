@@ -890,7 +890,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), cw
   } else if (overlay?.kind === 'picker') {
     main = <Picker key={viewerKey(overlay)} picker={overlay.picker} ctx={ctx} width={W} height={mainH} active={overlayActive} />;
   } else if (overlay) {
-    main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} lines={overlay.lines} secret={overlay.secret} ctx={ctx} width={W} height={mainH} active={overlayActive} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
+    main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} lines={overlay.lines} secret={overlay.secret} onKey={overlay.onKey} ctx={ctx} width={W} height={mainH} active={overlayActive} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'vault') {

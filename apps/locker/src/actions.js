@@ -273,8 +273,19 @@ export function showSecret(ctx, vault, s) {
   ];
   const usedBy = ctx.data.matrix.rows.filter((r) => r.cells.some((c, i) => ctx.data.columns[i].kind === 'vault' && c.key === s.name)).map((r) => r.key);
   const text = [`${s.name} in ${vault.name}`, '', ...rows.map(([k, v]) => `${k.padEnd(11)}${v}`), ...(usedBy.length ? ['', `In the drift view as ${usedBy.join(', ')}`] : [])];
+  const isSecret = s.kind === 'secret';
+  // The overlay has the keys, so the keys its hint names are its own: each acts on this secret and replaces the overlay.
+  const onKey = isSecret
+    ? (input) => {
+        const act = { v: revealSecret, y: copySecret, e: (c, vlt, sec) => setSecret(c, sec.name), x: (c, vlt, sec) => toggleSecret(c, sec) }[input];
+        if (!act) return false;
+        act(ctx, vault, s);
+        return true;
+      }
+    : undefined;
   ctx.showText(s.name, text.join('\n'), {
-    lines: [[{ text: `${s.name} in ${vault.name}`, bold: true }], [], ...rows.map(([k, v]) => [{ text: k.padEnd(11), color: theme.dim }, { text: v, color: k === 'expires' && s.expires ? theme[/expired|today/.test(v) ? 'del' : 'warn'] : undefined }]), ...(usedBy.length ? [[], [{ text: `In the drift view as ${usedBy.join(', ')}`, color: theme.dim }]] : []), [], [{ text: 'v shows its value · y copies it · e sets a new one · x disables it', color: theme.dim }]],
+    onKey,
+    lines: [[{ text: `${s.name} in ${vault.name}`, bold: true }], [], ...rows.map(([k, v]) => [{ text: k.padEnd(11), color: theme.dim }, { text: v, color: k === 'expires' && s.expires ? theme[/expired|today/.test(v) ? 'del' : 'warn'] : undefined }]), ...(usedBy.length ? [[], [{ text: `In the drift view as ${usedBy.join(', ')}`, color: theme.dim }]] : []), ...(isSecret ? [[], [{ text: 'v shows its value · y copies it · e sets a new one · x disables it', color: theme.dim }]] : [])],
   });
 }
 
