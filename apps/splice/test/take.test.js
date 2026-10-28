@@ -108,7 +108,8 @@ test('/take: an exception opens blame at its frame, a file at its line, a commit
     const one = { app: 'shop-api', type: 'TypeError', message: 'x is undefined', frames: [{ file: '/srv/app/node_modules/express/router.js', line: 1 }, { file: '/srv/app/src/orders.js', line: 3, method: 'place' }] };
     await command(app, takeLine('exception', one));
     await until(() => frame().includes('Blame src/orders.js, line 3'), 'blame at the frame');
-    assert.match(frame(), /❯.*3 │ three, better/);
+    // Blame reads git after its panel opens ("Loading…" first, longer on Windows).
+    await until(() => /❯.*3 │ three, better/.test(frame()), 'blame read, the cursor on its line');
     await esc('Blame src/orders.js');
 
     // Two: a list, top frame first; ↵ blames the picked one.
@@ -119,7 +120,7 @@ test('/take: an exception opens blame at its frame, a file at its line, a commit
     assert.match(frame(), /2 src\/orders\.js:3\s+place/);
     app.stdin.write('\r');
     await until(() => frame().includes('Blame src/pay.js, line 2'), 'blame of the picked frame');
-    assert.match(frame(), /❯.*2 │ pay two/);
+    await until(() => /❯.*2 │ pay two/.test(frame()), 'blame read, the cursor on its line');
     await esc('Blame src/pay.js');
     await esc('TypeError');
 
@@ -145,7 +146,7 @@ test('/take: an exception opens blame at its frame, a file at its line, a commit
     // /blame with a line.
     await command(app, 'blame src/orders.js:4');
     await until(() => frame().includes('Blame src/orders.js, line 4'), '/blame path:line');
-    assert.match(frame(), /❯.*4 │ four/);
+    await until(() => /❯.*4 │ four/.test(frame()), 'blame read, the cursor on line 4');
 
     // Y hands the line on, and in the graph the commit (for Sonar).
     app.stdin.write('\x1by');
