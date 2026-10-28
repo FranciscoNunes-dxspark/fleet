@@ -123,7 +123,8 @@ test('/note: shown in the commit pane, added, edited from the prompt, removed an
     app.stdin.write('\r');
     await until(() => noteOf(first) === 'Reviewed by Ana\nand Bo', 'the note changed');
     await until(() => frame().includes('and Bo'), 'the pane shows it');
-    assert.match(frame(), /The old note on .{7} is kept: \/note --undo puts it back/);
+    // The log line comes after the pane on a slow machine (Windows).
+    await until(() => /The old note on .{7} is kept: \/note --undo puts it back/.test(frame()), 'the old note kept');
 
     // -d asks, and keeps a copy that --undo puts back.
     await command(app, 'note -d');
