@@ -98,6 +98,19 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     if (!/^[0-9a-f]{7,40}$/i.test(commitId)) return res.status(400).json({ error: 'Invalid commit id' });
     return res.json(await req.ctx.service.commit(projectId, repoId, commitId.toLowerCase()));
   });
+  // One file's change as hunks: the path (and, for a rename, the old one) come from the file lists.
+  const fileOf = (req) => ({ path: String(req.query.path || ''), originalPath: req.query.from ? String(req.query.from) : undefined });
+  r.get('/commits/:projectId/:repoId/:commitId/diff', async (req, res) => {
+    const { projectId, repoId, commitId } = req.params;
+    if (!/^[0-9a-f]{7,40}$/i.test(commitId)) return res.status(400).json({ error: 'Invalid commit id' });
+    if (!req.query.path) return res.status(400).json({ error: 'path is required' });
+    return res.json(await req.ctx.service.commitFileDiff(projectId, repoId, commitId.toLowerCase(), fileOf(req)));
+  });
+  r.get('/prs/:projectId/:repoId/:id/diff', async (req, res) => {
+    const { projectId, repoId, id } = req.params;
+    if (!req.query.path) return res.status(400).json({ error: 'path is required' });
+    return res.json(await req.ctx.service.prFileDiff(projectId, repoId, num(id), fileOf(req)));
+  });
   r.get('/prs/:projectId/:repoId/:id', async (req, res) => {
     const { projectId, repoId, id } = req.params;
     res.json(await req.ctx.service.pullRequest(projectId, repoId, num(id)));

@@ -238,6 +238,18 @@ export const countLabel = (n, word, extra) => `${plural(n, word)}${extra ? ` · 
 
 const POLICY = { approved: '✓', rejected: '✗', running: '●', queued: '○', broken: '✗' };
 
+/** One file's change (service.prFileDiff) as the viewer's text: a `+`, `-` or space before each line, `@@` lines between hunks. */
+export function diffText(file, d) {
+  const out = [`${file.path}${file.originalPath ? ` (was ${file.originalPath})` : ''}`, ''];
+  if (d.skipped) out.push(d.skipped === 'binary' ? '(A binary file: there is no text to compare.)' : '(Too large to show here: o opens the pull request in the browser.)');
+  else if (!d.hunks.length) out.push('(No lines changed: the file was moved or its mode changed.)');
+  else {
+    out.push(`+${d.added} -${d.removed}`);
+    for (const h of d.hunks) out.push('', h.header, ...h.lines.map((l) => `${l.t}${l.text}`));
+  }
+  return out.join('\n');
+}
+
 /** A pull request in full (service.pullRequest), as plain text for the viewer. */
 export function prFullText(pr, now = Date.now()) {
   const out = [

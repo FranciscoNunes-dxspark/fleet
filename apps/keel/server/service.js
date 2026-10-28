@@ -21,8 +21,12 @@ import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
 import { changedFolders, suggestReviewers } from './domain/reviewers.js';
 import { findFlakyTests } from './domain/tests.js';
+import { buildDiff, parsePatch } from './domain/filediff.js';
 
 const MIN = 60_000;
+
+// A provider gives a file's two versions or its patch; the clients get the same hunks either way.
+const toDiff = (raw) => (raw.patch !== undefined ? parsePatch(raw.patch, { empty: raw.empty }) : buildDiff(raw.before, raw.after));
 // Classic release stages that are production by their name; monitors can point at any stage or pipeline.
 const PROD_STAGE = /\b(prod|production|prd|live)\b/i;
 // Lead time is measured over this many recent deploys per environment (each costs one commits call, then cached).
@@ -979,6 +983,17 @@ export function createService({
       await assertTrackedRepo(repoId);
       const c = await cached(`commit:${repoId}:${commitId}`, () => provider.getCommit(projectId, repoId, commitId), 60 * MIN);
       return { ...c, ...commitRefs(c.message, { github }) };
+    },
+
+    /** One file's change in a pull request (cached briefly: a push changes it) or a commit (never changes), as hunks of lines. */
+    async prFileDiff(projectId, repoId, id, file) {
+      await assertTrackedRepo(repoId);
+      return cached(`prdiff:${repoId}:${id}:${file.path}`, async () => toDiff(await provider.getFileDiff(projectId, repoId, { prId: id, ...file })), 60 * 1000);
+    },
+
+    async commitFileDiff(projectId, repoId, commitId, file) {
+      await assertTrackedRepo(repoId);
+      return cached(`cdiff:${repoId}:${commitId}:${file.path}`, async () => toDiff(await provider.getFileDiff(projectId, repoId, { commitId, ...file })), 60 * MIN);
     },
 
     async createPullRequest(input) {

@@ -186,6 +186,8 @@ export function createMultiService(entries) {
       };
     },
     commit: viaProject('commit'),
+    prFileDiff: viaProject('prFileDiff'),
+    commitFileDiff: viaProject('commitFileDiff'),
     deployChanges: viaProject('deployChanges'),
     async undeployed() {
       return { targets: (await each((s) => s.undeployed())).flatMap(({ org, value }) => tagAll(org, value.targets)) };

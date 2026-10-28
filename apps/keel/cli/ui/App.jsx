@@ -53,7 +53,7 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 
 const HINTS = {
   inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
-  prs: 'p publish · a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter · alt+y for Splice',
+  prs: 'p publish · a approve · w wait · x reject · c complete · m auto-complete · d what changed · ↵ more · f filter · alt+y for Splice',
   pipelines: 'n run · c cancel the run · l the run in full, with logs · ↵ all runs · alt+y for Splice · alt+s for Sonar · o browser',
   workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
   production: '↵ everything, and all that is waiting to ship · o open the site · alt+s Sonar · alt+k compare in Sonar',
@@ -552,7 +552,7 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     },
     showGroup: (value) => ctx.showView(viewRef.current === 'workitems' ? 'workitems' : 'prs', value),
     viewHasKeys: () => focusRef.current === 'view' && !overlayRef.current && !confirmRef.current,
-    showText: (title, text) => setOverlay({ title, text }),
+    showText: (title, text, opts) => setOverlay({ title, text, ...opts }),
     showPrFull: async (pr) => {
       setOverlay({ title: `!${pr.id} ${pr.title}`, loading: true });
       try {

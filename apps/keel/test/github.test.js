@@ -297,3 +297,19 @@ test('a token without read:org still lists pull requests, without requested team
   await provider.listPullRequests();
   assert.deepEqual(asked, [true, false, false]); // asks once with teams, then never again
 });
+
+test('file diffs: a GitHub pull request gives its patch, the Azure DevOps demo builds one from two versions', async () => {
+  const gh = await service.pullRequest(P, 'api', 85);
+  const file = gh.files.items[0];
+  const d = await service.prFileDiff(P, 'api', 85, { path: file.path });
+  assert.ok(d.hunks.length && d.added >= 0, 'a patch from GitHub');
+  await assert.rejects(service.prFileDiff(P, 'api', 85, { path: '/nope.js' }), /not part of it/);
+
+  const az = (await service.pullRequests()).prs.find((p) => p.org !== P);
+  const full = await service.pullRequest(az.projectId, az.repoId, az.id);
+  const edited = full.files.items.find((f) => f.kind === 'edited');
+  const e = await service.prFileDiff(az.projectId, az.repoId, az.id, { path: edited.path });
+  assert.ok(e.added > 0 && e.removed > 0);
+  const added = full.files.items.find((f) => f.kind === 'added');
+  if (added) assert.equal((await service.prFileDiff(az.projectId, az.repoId, az.id, { path: added.path })).removed, 0);
+});
