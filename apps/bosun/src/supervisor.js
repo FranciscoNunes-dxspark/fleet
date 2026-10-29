@@ -4,6 +4,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { statSync, watch as fsWatch } from 'node:fs';
 import { connect } from 'node:net';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { resolve } from 'node:path';
 import { portInUse, stripAnsi } from './crew.js';
 import { skipsFolder, tidy, watchMatcher, watchRoots } from './watch.js';
@@ -12,6 +14,8 @@ import { crewOf, envHash, stateOf } from './recorder.js';
 import { troubleText } from './structured.js';
 import { tunnelArgs, tunnelProblem, tunnelUrl } from './tunnel.js';
 import { httpsPort, startHttpsProxy } from './https.js';
+import { IisChild, iisControl } from './iis.js';
+import { tailLogs } from './tail.js';
 
 // A folder that's still there: Windows reports one whose files changed as changed itself, and the files
 // it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
@@ -59,6 +63,27 @@ export function portOpen(port, { host = '127.0.0.1', timeout = 800 } = {}) {
 }
 
 /**
+ * The status a page answers with, as fetch would say it ({ status }), for the health checks: `host`
+ * goes in the Host header (a site bound to a host name answers nothing else), and https takes any
+ * certificate (IIS's own, a development one).
+ */
+export function httpStatus(url, { signal, headers = {} } = {}) {
+  return new Promise((done, fail) => {
+    const u = new URL(url);
+    const send = u.protocol === 'https:' ? httpsRequest : httpRequest;
+    const req = send(u, { method: 'GET', headers, signal, rejectUnauthorized: false, servername: headers.host?.replace(/:\d+$/, '') || undefined }, (res) => {
+      res.resume();
+      done({ status: res.statusCode });
+    });
+    req.on('error', fail);
+    req.end();
+  });
+}
+
+/** Process ids nothing may stop: 0 and 4, Windows' own (System holds http.sys's ports, IIS's among them). */
+export const SYSTEM_PIDS = new Set([0, 4]);
+
+/**
  * How restarts wait: the first after `first` ms, each one after twice as long as the one before, up
  * to `max`; a process that stayed up `stable` ms starts counting again. One that ends within `quick`
  * ms of starting, `giveUpAfter` times in a row, isn't started again. Supervisor's `restartTimes`
@@ -94,8 +119,14 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs } = {}) {
     this.dir = dir;
+    // "iis" processes: iis.js's iisControl (made when the first one starts; tests pass a fake), and
+    // how often their pool and event log are looked at (`every`, `eventsEvery`).
+    this.iis = iis;
+    this.iisTimes = iisTimes;
+    // "logs": tail.js's tailLogs (tests pass their own `every` through it).
+    this.tail = tail;
     this.debounce = debounce;
     this.watchImpl = watchImpl;
     // A folder and everything in it watched a folder at a time (treewatch.js), where Node's recursive
@@ -173,7 +204,8 @@ export class Supervisor {
         had.spec = p;
         if (had.child) this.watch(had);
       }
-      next.set(p.name, had ? Object.assign(had, { spec: p, port: p.port }) : { name: p.name, spec: p, status: 'stopped', pid: null, startedAt: null, endedAt: null, code: null, lines: [], trouble: null, port: p.port, portOpen: null, health: null });
+      // An IIS site without a "port" keeps the one its binding said.
+      next.set(p.name, had ? Object.assign(had, { spec: p, port: p.port ?? (p.iis ? had.port : null) }) : { name: p.name, spec: p, status: 'stopped', pid: null, startedAt: null, endedAt: null, code: null, lines: [], trouble: null, port: p.port, portOpen: null, health: null });
     }
     // One no longer in the crew is stopped, and one waiting to restart doesn't.
     for (const [name, had] of this.procs) {
@@ -222,7 +254,9 @@ export class Supervisor {
     if (!auto) Object.assign(p, { attempt: 0, quick: 0 });
     p.gaveUp = false;
     if (!p.watchers) this.watch(p);
-    const { run, cwd, env } = p.spec;
+    const { cwd, env, build } = p.spec;
+    // "build" runs first, each start: the process starts only when it passed.
+    const run = build && !p.spec.iis ? `${build} && ${p.spec.run}` : p.spec.run;
     p.status = 'starting';
     p.code = null;
     p.trouble = null;
@@ -230,19 +264,24 @@ export class Supervisor {
     p.startedAt = Date.now();
     p.endedAt = null;
     this.recorder?.started?.(p.name, { env: envHash(p.spec.fileEnv) });
-    this.push(p, `── ${run}`, false);
-    const child = this.spawnImpl(run, {
-      cwd: resolve(this.dir, cwd ?? '.'),
-      shell: true,
-      windowsHide: true,
-      detached: !WIN,
-      // FORCE_COLOR off: colours would be stripped anyway, and some tools write less without them.
-      // The terminal's, then the env files', then bosun.json's own.
-      env: { ...this.env, ...p.spec.fileEnv, ...env, FORCE_COLOR: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // The command as bosun.json gives it (what /replay knows a start by), its build said before it.
+    if (build && !p.spec.iis) this.push(p, `── build: ${build}`, false);
+    this.push(p, `── ${p.spec.run}`, false);
+    const child = p.spec.iis
+      ? this.iisChild(p)
+      : this.spawnImpl(run, {
+          cwd: resolve(this.dir, cwd ?? '.'),
+          shell: true,
+          windowsHide: true,
+          detached: !WIN,
+          // FORCE_COLOR off: colours would be stripped anyway, and some tools write less without them.
+          // The terminal's, then the env files', then bosun.json's own.
+          env: { ...this.env, ...p.spec.fileEnv, ...env, FORCE_COLOR: '0' },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
     p.child = child;
     p.pid = child.pid ?? null;
+    if (p.spec.logs?.length) this.tailFor(p, child);
     let buffered = { out: '', err: '' };
     const take = (which, err) => (d) => {
       buffered[which] += d;
@@ -272,6 +311,8 @@ export class Supervisor {
       const stopping = p.status === 'stopping';
       p.child = null;
       p.pid = null;
+      p.tails?.close();
+      p.tails = null;
       p.endedAt = Date.now();
       p.code = code;
       p.status = stopping ? 'stopped' : code === 0 ? 'exited' : 'crashed';
@@ -287,6 +328,46 @@ export class Supervisor {
       this.onChange();
     });
     this.onChange();
+  }
+
+  /**
+   * `p`'s IIS site as its child (iis.js's IisChild): its worker's pid as `p.pid`, and its binding as
+   * the port (when bosun.json gives none) and the host its health page is asked for.
+   */
+  iisChild(p) {
+    this.iis ??= iisControl({ env: this.env });
+    const child = new IisChild(p.spec, { control: this.iis, dir: this.dir, env: this.env, spawnImpl: this.spawnImpl, ...this.iisTimes });
+    child.on('pid', (pid) => {
+      if (p.child !== child) return;
+      p.pid = pid;
+      this.onChange();
+    });
+    child.on('site', ({ binding, physicalPath }) => {
+      if (p.child !== child) return;
+      p.site = binding ? { physicalPath, scheme: binding.scheme, host: binding.host, ip: binding.ip, port: binding.port } : { physicalPath };
+      if (binding) p.port ??= binding.port;
+      this.onChange();
+    });
+    return child;
+  }
+
+  /** Follows `p`'s "logs" into its log while `child` runs. */
+  tailFor(p, child) {
+    try {
+      p.tails = this.tail(p.spec.logs, {
+        cwd: resolve(this.dir, p.spec.cwd ?? '.'),
+        env: { ...this.env, ...p.spec.fileEnv, ...p.spec.env },
+        onLine: (text) => {
+          if (p.child !== child) return;
+          const { status, trouble } = p;
+          this.push(p, text);
+          if (p.status === 'starting') p.status = 'running';
+          this.onChange(p.status === status && p.trouble === trouble ? p : undefined);
+        },
+      });
+    } catch (e) {
+      this.push(p, `── can't follow its logs: ${e.message}`, true);
+    }
   }
 
   /**
@@ -422,7 +503,9 @@ export class Supervisor {
     this.onChange();
     const gone = new Promise((r) => (p.waiters ??= []).push(r));
     const pid = p.pid;
-    if (WIN) killTreeNow(pid);
+    // An IIS site is stopped through IIS: its worker is IIS's, not Bosun's to kill.
+    if (p.child.stop) p.child.stop();
+    else if (WIN) killTreeNow(pid);
     else {
       try {
         process.kill(-pid, 'SIGTERM');
@@ -443,10 +526,23 @@ export class Supervisor {
 
   async restart(name, { keepWatching = true } = {}) {
     const p = this.procs.get(name);
+    // An IIS site running is recycled (built again first, with "build"), not stopped and started.
+    if (p?.child?.recycle && p.status !== 'stopping') return this.recycle(p);
     if (p) p.keepTunnel = true;
     await this.stop(name, { keepWatching });
     if (p) p.keepTunnel = false;
     this.start(name);
+  }
+
+  /** Recycles `p`'s IIS site: a start of its own, as far as the list, its tests and its uptime go. */
+  async recycle(p) {
+    const child = p.child;
+    Object.assign(p, { status: 'starting', startedAt: Date.now(), trouble: null, tests: null, portOpen: null, health: null });
+    this.push(p, '── recycling');
+    this.onChange();
+    await child.recycle();
+    if (p.child === child && p.status === 'starting') p.status = 'running';
+    this.onChange();
   }
 
   /**
@@ -568,23 +664,30 @@ export class Supervisor {
     for (const p of this.procs.values()) {
       this.clearRestart(p);
       this.unwatch(p);
-      if (p.pid) killTreeNow(p.pid);
+      if (p.child?.stopNow) p.child.stopNow();
+      else if (p.pid) killTreeNow(p.pid);
+      p.tails?.close();
       if (p.tunnel) this.closeTunnel(p.name);
       this.stopHttps(p);
     }
   }
 
   /** Checks each running process's port, and its health page when it has one: { open, status } on each. */
-  async checkPorts({ fetchImpl = globalThis.fetch } = {}) {
+  async checkPorts({ fetchImpl = httpStatus } = {}) {
     let changed = false;
     await Promise.all(
       [...this.procs.values()].map(async (p) => {
         if (!p.port || !p.child) return;
-        const open = await portOpen(p.port);
+        // An IIS site bound to one address answers only there; one bound to a host name, only to it.
+        const ip = p.site?.port === p.port && p.site.ip ? p.site.ip : '127.0.0.1';
+        const host = p.spec.host ?? (p.site?.port === p.port ? p.site.host : null);
+        const scheme = p.site?.port === p.port && p.site.scheme === 'https' ? 'https' : 'http';
+        const open = await portOpen(p.port, { host: ip });
         let health = null;
         if (open && p.spec.health) {
           try {
-            const res = await fetchImpl(`http://127.0.0.1:${p.port}${p.spec.health.startsWith('/') ? '' : '/'}${p.spec.health}`, { signal: AbortSignal.timeout(2000) });
+            const at = ip.includes(':') ? `[${ip}]` : ip;
+            const res = await fetchImpl(`${scheme}://${at}:${p.port}${p.spec.health.startsWith('/') ? '' : '/'}${p.spec.health}`, { signal: AbortSignal.timeout(2000), headers: host ? { host: `${host}:${p.port}` } : {} });
             health = res.status;
           } catch {
             health = 0;
@@ -644,6 +747,7 @@ export function pidsOnPort(port, { run = spawnSync } = {}) {
 /** Stops the processes in `pids` (a port's holders, from /free). */
 export function killPids(pids) {
   for (const pid of pids) {
+    if (SYSTEM_PIDS.has(pid)) continue;
     try {
       if (WIN) spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
       else process.kill(pid, 'SIGTERM');
