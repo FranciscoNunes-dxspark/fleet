@@ -198,6 +198,8 @@ export function hostedStreams({ stdin, stdout, control = controlPipe(), env = pr
   });
   // The host's repaint: everything on the app's screen, drawn again in one synchronized update.
   const repaint = () => {
+    // Whoever paints over the screen itself (the mouse's selection) starts again from this frame.
+    stdout.emit('repaint');
     if (kept.screen) write.call(stdout, `\x1b[?2026h${kept.screen}\x1b[?2026l`);
   };
   control.onData(
