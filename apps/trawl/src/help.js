@@ -32,7 +32,8 @@ export const HELP = [
     about: 'the server\'s databases; the current one\'s tables, views and routines',
     views: ['explorer'],
     rows: [
-      ['↵', 'First rows (SELECT TOP (limit) *); on another database, switch to it (/use)'],
+      ['↵', 'First rows (SELECT TOP (limit) *); on another database, switch to it (/use); on a folder or the current database, fold it up or open it'],
+      ['space / ← →', 'Fold up or open a folder (Tables, Views, Procedures, Functions) or the current database; ← on an object goes to its folder'],
       ['d', 'Describe: columns, types, keys'],
       ['s', 'Start a query on it in the console'],
       ['c', 'Its CREATE script, into the console (a table\'s from the catalog; others\' from the server)'],

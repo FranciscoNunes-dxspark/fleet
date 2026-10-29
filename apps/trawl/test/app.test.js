@@ -62,13 +62,13 @@ test("the Explorer lists the server's databases, the current one opened up, and 
   await until(() => frame().includes('Translations'), 'the explorer');
   // The cursor starts on the first table; the server's own databases come last.
   assert.match(frame(), /─ demo ─.*6 objects · 3 databases/);
-  assert.match(frame(), /▾ ClubA +current[\s\S]*❯ T Clubs[\s\S]*Translations[\s\S]*▸ ClubB[\s\S]*▸ master/);
+  assert.match(frame(), /▾ ClubA +current[\s\S]*❯ +T Clubs[\s\S]*Translations[\s\S]*▸ ClubB[\s\S]*▸ master/);
   app.stdin.write('\x1bg');
   await until(() => /❯ master/.test(frame()) && frame().includes('↵ switch to it'), 'the cursor on master');
   app.stdin.write('k');
   await until(() => /❯ ClubB/.test(frame()), 'the cursor on ClubB');
   app.stdin.write(KEYS.enter);
-  await until(() => frame().includes('demo/ClubB') && /▾ ClubB +current/.test(frame()) && /❯ T Clubs/.test(frame()), 'ClubB, opened up');
+  await until(() => frame().includes('demo/ClubB') && /▾ ClubB +current/.test(frame()) && /❯ +T Clubs/.test(frame()), 'ClubB, opened up');
   assert.match(frame(), /▸ ClubA/);
   app.unmount();
 });

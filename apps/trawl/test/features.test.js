@@ -125,7 +125,7 @@ test('F on a foreign key cell opens the row it refers to, and on a key others re
   const app = start();
   await until(() => frame().includes('Clubs'), 'the explorer');
   app.stdin.write('j');
-  await until(() => /❯ T Players/.test(frame()), 'the cursor on Players');
+  await until(() => /❯ +T Players/.test(frame()), 'the cursor on Players');
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('Rui Costa'), 'the players');
   app.stdin.write('l');
@@ -433,7 +433,7 @@ test('on Postgres, Results are edited and saved too: a DO block in a savepoint, 
   const server = new FakePgServer();
   const shop = { name: 'shop', kind: 'postgres', server: 'db', database: 'shop', user: 'app', commit: 'manual' };
   const app = start('shop', { open: async (conn) => postgresSession(conn, server, { database: 'shop' }) }, { connections: [shop] });
-  await until(() => /❯ T clubs/.test(frame()), 'the explorer');
+  await until(() => /❯ +T clubs/.test(frame()), 'the explorer');
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('Club A'), 'the rows of clubs');
   assert.ok(server.sent.includes('SELECT * FROM "public"."clubs" LIMIT 500'));

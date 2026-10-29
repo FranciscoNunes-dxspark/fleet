@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { qualified } from '../sql.js';
@@ -16,6 +16,9 @@ const KIND = {
   other: { mark: '?', get color() { return theme.dim; } },
 };
 
+// Folders under a database, in the order SSMS lists them.
+const FOLDERS = [['table', 'Tables'], ['view', 'Views'], ['procedure', 'Procedures'], ['function', 'Functions'], ['other', 'Other']];
+
 const count = (n) => (n == null ? '' : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : String(n));
 
 // The server's own databases go after the others, dimmed, as SSMS keeps them in a folder of their own.
@@ -27,25 +30,39 @@ const isSystem = (db) => SYSTEM.has(String(db).toLowerCase());
  * in opened up to its schemas and objects. ↵ on another database switches to it (as /use does).
  */
 export function ExplorerView({ schema, ctx, width, height, active, filter }) {
+  // What's folded away, by key ("db:<name>", "kind:<kind>"); a filter opens everything it matches.
+  const [folded, setFolded] = useState(() => new Set());
   const rows = useMemo(() => {
     const q = filter.toLowerCase();
     const shown = schema.objects.filter((o) => !q || `${o.schema}.${o.name}`.toLowerCase().includes(q));
     const objects = [];
-    let last = null;
-    for (const o of shown) {
-      if (o.schema !== last) objects.push({ header: o.schema, count: shown.filter((x) => x.schema === o.schema).length });
-      last = o.schema;
-      objects.push({ obj: o });
+    for (const [kind, label] of FOLDERS) {
+      const of = shown.filter((o) => (KIND[o.kind] ? o.kind : 'other') === kind);
+      if (!of.length) continue;
+      const key = `kind:${kind}`;
+      const open = Boolean(q) || !folded.has(key);
+      objects.push({ folder: kind, label, key, open, count: of.length });
+      if (open) for (const o of of) objects.push({ obj: o });
     }
     if (!objects.length) objects.push({ empty: filter ? `Nothing matches "${filter}". /find with no text clears it.` : 'No tables, views or routines here.' });
     const all = schema.databases?.includes(schema.database) ? schema.databases : [schema.database, ...(schema.databases ?? [])];
     const out = [];
     for (const db of [...all.filter((d) => !isSystem(d)), ...all.filter(isSystem)]) {
-      out.push({ database: db, current: db === schema.database });
-      if (db === schema.database) out.push(...objects);
+      const current = db === schema.database;
+      const key = `db:${db}`;
+      const open = current && !folded.has(key);
+      out.push({ database: db, current, key, open });
+      if (open) out.push(...objects);
     }
     return out;
-  }, [schema, filter]);
+  }, [schema, filter, folded]);
+
+  const toggle = (key, open) => setFolded((f) => {
+    const n = new Set(f);
+    if (open) n.add(key);
+    else n.delete(key);
+    return n;
+  });
 
   const split = width >= 90;
   const listW = split ? Math.floor(width * 0.5) : width;
@@ -53,21 +70,33 @@ export function ExplorerView({ schema, ctx, width, height, active, filter }) {
   const innerH = height - 2;
   const innerW = listW - 2;
   const nav = useListNav(rows.length, innerH, {
-    selectable: (i) => Boolean(rows[i]?.obj || (rows[i]?.database && !rows[i].current)),
+    selectable: (i) => Boolean(rows[i] && !rows[i].empty),
     resetKey: `${schema.database}|${filter}`,
     // On the first object, not on a database above it.
     start: Math.max(0, rows.findIndex((r) => r.obj)),
   });
   const obj = rows[nav.index]?.obj;
   const db = rows[nav.index]?.database;
-  const nameW = Math.max(8, innerW - 14);
+  const nameW = Math.max(20, innerW - 14);
   const databases = rows.filter((r) => r.database).length;
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
     if (nav.handle(input, key)) return;
     // The row as of now, which a click may have just moved to.
-    const { obj, database: db } = rows[nav.current()] ?? {};
+    const at = nav.current();
+    const { obj, database: db, folder } = rows[at] ?? {};
+    const row = rows[at];
+    // ←/→ fold and unfold; ↵ or space does either on a folder or the current database.
+    if (row?.key) {
+      if (key.leftArrow && row.open) return toggle(row.key, true);
+      if (key.rightArrow && !row.open && (folder || row.current)) return toggle(row.key, false);
+      if ((key.return || input === ' ') && (folder || row.current)) return toggle(row.key, row.open);
+    }
+    if (obj && key.leftArrow) {
+      // Back to the folder the object is in.
+      for (let i = at - 1; i >= 0; i--) if (rows[i].folder) return nav.pick(i);
+    }
     if (db && key.return) return a.use(ctx, db);
     if (!obj) return;
     if (key.return) a.browse(ctx, obj);
@@ -93,8 +122,10 @@ export function ExplorerView({ schema, ctx, width, height, active, filter }) {
     ? [
         [{ text: `A database on ${server ?? 'this server'}${isSystem(db) ? ', one of its own' : ''}.`, color: theme.dim }],
         '',
-        [{ text: `↵ switches to it, reconnecting as /use ${db} does (asking first if a transaction is open).`, color: theme.dim }],
+        [{ text: rows[nav.index].current ? '↵ or space folds it up or opens it.' : `↵ switches to it, reconnecting as /use ${db} does (asking first if a transaction is open).`, color: theme.dim }],
       ]
+    : rows[nav.index]?.folder
+    ? [[{ text: `${rows[nav.index].count} ${rows[nav.index].label.toLowerCase()}. ↵, space or ←/→ folds the list.`, color: theme.dim }]]
     : obj
     ? obj.columns.length
       ? obj.columns.map((c) => [
@@ -129,7 +160,7 @@ export function ExplorerView({ schema, ctx, width, height, active, filter }) {
                 selected={on}
                 focused={active}
                 segments={[
-                  { text: on ? '❯ ' : row.current ? '▾ ' : '▸ ', color: theme.accent, bold: true },
+                  { text: on ? '❯ ' : row.open ? '▾ ' : '▸ ', color: theme.accent, bold: true },
                   { text: fit(row.database, Math.max(4, innerW - 2 - tag.length)), bold: row.current, strong: true, color: isSystem(row.database) && !row.current ? theme.dim : undefined },
                   { text: tag, color: theme.dim },
                 ]}
@@ -137,10 +168,23 @@ export function ExplorerView({ schema, ctx, width, height, active, filter }) {
             );
           }
           if (row.empty) return <Row key="empty" width={innerW} pointer={false} segments={[{ text: `    ${row.empty}`, color: theme.dim }]} />;
-          if (row.header) {
-            return <Row key={`h${row.header}`} width={innerW} pointer={false} segments={[{ text: `  ${row.header}`, color: theme.schema, bold: true }, { text: ` (${row.count})`, color: theme.dim }]} />;
+          if (row.folder) {
+            return (
+              <Row
+                key={row.key}
+                width={innerW}
+                pointer={false}
+                selected={idx === nav.index}
+                focused={active}
+                segments={[
+                  { text: `  ${row.open ? '▾' : '▸'} `, color: theme.accent },
+                  { text: row.label, color: KIND[row.folder].color, bold: true },
+                  { text: ` (${row.count})`, color: theme.dim },
+                ]}
+              />
+            );
           }
-          const k = KIND[row.obj.kind];
+          const k = KIND[row.obj.kind] ?? KIND.other;
           return (
             <Row
               key={`${row.obj.kind}:${row.obj.schema}.${row.obj.name}`}
@@ -148,8 +192,9 @@ export function ExplorerView({ schema, ctx, width, height, active, filter }) {
               selected={idx === nav.index}
               focused={active}
               segments={[
-                { text: `${k.mark} `, color: k.color, bold: true },
-                { text: fit(row.obj.name, nameW), strong: true },
+                { text: `    ${k.mark} `, color: k.color, bold: true },
+                { text: fit(row.obj.name, nameW - 16), strong: true },
+                { text: fit(row.obj.schema, 12), color: theme.schema },
                 { text: fit(count(row.obj.rows), 8, 'right'), color: theme.dim },
               ]}
             />
@@ -157,7 +202,7 @@ export function ExplorerView({ schema, ctx, width, height, active, filter }) {
         })}
       </Panel>
       {split ? (
-        <Panel title={db ?? (obj ? `${obj.schema}.${obj.name}` : 'Columns')} hint={db ? '↵ switch to it' : obj ? '↵ rows · d describe · s query' : ''} width={sideW} height={height}>
+        <Panel title={db ?? (obj ? `${obj.schema}.${obj.name}` : 'Columns')} hint={db ? (rows[nav.index].current ? '↵ fold' : '↵ switch to it') : obj ? '↵ rows · d describe · s query' : ''} width={sideW} height={height}>
           <Lines width={sideW - 2} height={innerH} lines={side} />
         </Panel>
       ) : null}

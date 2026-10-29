@@ -90,17 +90,11 @@ test('clicks pick rows, cells and tabs, double-clicks do what ↵ does (but neve
     await until(() => frame().includes('Translations'), 'the explorer');
     assert.deepEqual(mouse.enabled, [true]);
 
-    // A click puts the cursor on the row and only moves it; a schema's heading takes no cursor.
+    // A click puts the cursor on the row and only moves it; a database or folder row takes it too, and a double-click folds the folder.
     let p = at('T Players');
     mouse.click(p.x, p.y);
-    await until(() => /❯ T Players/.test(frame()), 'the cursor on Players');
+    await until(() => /❯ +T Players/.test(frame()), 'the cursor on Players');
     assert.doesNotMatch(frame(), /Rui Costa/);
-    p = at('i18n');
-    mouse.click(p.x, p.y);
-    p = at('▾ ClubA');
-    mouse.click(p.x, p.y);
-    await new Promise((r) => setTimeout(r, 100));
-    assert.match(frame(), /❯ T Players/);
 
     // Clicking it again quickly is a double-click: its first rows, as ↵ shows them.
     p = at('T Players');
@@ -186,9 +180,9 @@ test('the wheel scrolls a list or the grid and leaves the cursor where it was; s
     resize(app, 40, 22);
     p = at('1 Explorer');
     mouse.click(p.x, p.y);
-    await until(() => /❯ T Clubs/.test(frame()), 'the explorer again');
+    await until(() => /❯ +T Clubs/.test(frame()), 'the explorer again');
     app.stdin.write('j');
-    await until(() => /❯ T Players/.test(frame()), 'on Players');
+    await until(() => /❯ +T Players/.test(frame()), 'on Players');
     app.stdin.write('\r');
     const header = () => frame().split('\n')[3];
     await until(() => frame().includes('Rui Costa') && /^│\s+Id │/.test(header()), 'the rows of Players, not all columns');
