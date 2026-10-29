@@ -142,7 +142,7 @@ test('/copy-rows copies the rows on screen and the clubs they refer to, masked, 
   const app = start('demo', { open });
   await until(() => frame().includes('Clubs'), 'the explorer');
   app.stdin.write(KEYS.down);
-  await until(() => /❯ T Players/.test(frame()), 'the cursor on Players');
+  await until(() => /❯ +T Players/.test(frame()), 'the cursor on Players');
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('Rui Costa'), 'the players');
   await command(app, 'copy-rows dev');

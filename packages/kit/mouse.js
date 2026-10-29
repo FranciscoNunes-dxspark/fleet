@@ -200,6 +200,14 @@ export function mouseSession(stdin, stdout, { copy = (text) => copyToClipboard(t
     sel = null;
     press = null;
   });
+  // The host drew this app's screen again (a switch back to it): a selection painted before is gone
+  // from what the terminal shows or comes back stale, and a press whose release went elsewhere is over.
+  stdout.on?.('repaint', () => {
+    clear();
+    press = null;
+    claimed = false;
+    dragged = false;
+  });
 
   return {
     stdout: inkStdout,

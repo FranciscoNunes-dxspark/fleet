@@ -199,3 +199,32 @@ test('a drag the app claims goes to it, move by move, and nothing is painted or 
   t.sgr(0, 3, 2, 'm');
   assert.deepEqual(t.copied, ['more']);
 });
+
+test("a host's repaint takes a selection painted before it away, and leaves the next click to count", () => {
+  const queue = [];
+  const stdin = { read: () => (queue.length ? queue.shift() : null) };
+  const written = [];
+  const handlers = {};
+  const stdout = { write: (d) => (written.push(d), true), on: (name, fn) => (handlers[name] = fn), columns: 40, rows: 10 };
+  const mouse = mouseSession(stdin, stdout, { copy: () => {} });
+  const heard = [];
+  mouse.subscribe((e) => heard.push(e));
+  mouse.enable(true);
+  const sgr = (code, x, y, end = 'M') => {
+    queue.push(`\x1b[<${code};${x + 1};${y + 1}${end}`);
+    drain(stdin);
+  };
+  mouse.stdout.write('\x1b[2K\x1b[Gheader\nsome text here\nmore\n');
+  sgr(0, 5, 1);
+  sgr(32, 8, 1);
+  assert.match(written.at(-1), /\x1b\[7mtext/);
+
+  // The button is still down when the app goes off screen; the host draws it again on the way back.
+  handlers.repaint();
+  assert.doesNotMatch(written.at(-1), /\x1b\[7m/);
+  sgr(0, 2, 1, 'm');
+  assert.equal(heard.length, 0);
+  sgr(0, 2, 1);
+  sgr(0, 2, 1, 'm');
+  assert.deepEqual([heard[0].button, heard[0].x, heard[0].y], ['left', 2, 1]);
+});

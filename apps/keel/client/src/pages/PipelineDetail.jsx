@@ -57,6 +57,7 @@ export default function PipelineDetail({ target }) {
   const { data, error, reload } = useApi(`/pipelines/${encodeURIComponent(projectId)}/${encodeURIComponent(definitionId)}/runs`);
   const { meta, can, toast, refresh } = useApp();
   const [scheduling, setScheduling] = useState(false);
+  const [runningOn, setRunningOn] = useState(false);
   const [openId, setOpenId] = useState(target.buildId || null);
   const projectLabel = useProjectLabel();
 
@@ -116,16 +117,17 @@ export default function PipelineDetail({ target }) {
     }
   };
 
-  const queue = async () => {
+  const queueOn = async (on) => {
     try {
-      await api('/pipelines/queue', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch } });
-      toast(t('Run queued on {branch}', { branch }));
+      await api('/pipelines/queue', { method: 'POST', body: { projectId, definitionId: Number(definitionId), branch: on } });
+      toast(t('Run queued on {branch}', { branch: on }));
       refresh();
       reload();
     } catch (e) {
       toast(e.message, 'bad');
     }
   };
+  const queue = () => queueOn(branch);
 
   return (
     <div className="detail pipeline-detail">
@@ -177,6 +179,7 @@ export default function PipelineDetail({ target }) {
         </section>
       )}
 
+      {runningOn && <ScheduleRunForm now projectId={projectId} repoId={p?.repoId} branch={branch} onCancel={() => setRunningOn(false)} onSchedule={async ({ branch: on }) => { await queueOn(on); setRunningOn(false); }} />}
       {scheduling && <ScheduleRunForm projectId={projectId} repoId={p?.repoId} branch={branch} onCancel={() => setScheduling(false)} onSchedule={scheduleRun} />}
 
       <section className="detail-section">
@@ -220,7 +223,8 @@ export default function PipelineDetail({ target }) {
         {can('pipelines.run') && branch && (
           <Confirm text={t('Run on {branch}?', { branch })} onConfirm={queue} className="btn btn-small btn-primary">{t('Run')}</Confirm>
         )}
-        {can('pipelines.run') && !scheduling && <button type="button" className="btn btn-small" onClick={() => setScheduling(true)}>{t('Run at…')}</button>}
+        {can('pipelines.run') && !runningOn && <button type="button" className="btn btn-small" onClick={() => { setRunningOn(true); setScheduling(false); }}>{t('Run on…')}</button>}
+        {can('pipelines.run') && !scheduling && <button type="button" className="btn btn-small" onClick={() => { setScheduling(true); setRunningOn(false); }}>{t('Run at…')}</button>}
         {/* The pipeline's own page, in whichever organization it belongs to. */}
         <ExternalLink href={p?.webUrl || `${meta.orgUrl}/${encodeURIComponent(projectName || projectId)}/_build?definitionId=${definitionId}`} />
       </section>
@@ -229,7 +233,7 @@ export default function PipelineDetail({ target }) {
 }
 
 /** Run once at a set time: the branch (the pipeline's own by default) and when. */
-function ScheduleRunForm({ projectId, repoId, branch: home, onCancel, onSchedule }) {
+function ScheduleRunForm({ projectId, repoId, branch: home, now, onCancel, onSchedule }) {
   const { data: branches } = useApi(repoId ? `/repos/${encodeURIComponent(projectId)}/${encodeURIComponent(repoId)}/branches` : null);
   const [branch, setBranch] = useState(home || '');
   const [at, setAt] = useState(() => defaultAt());
@@ -243,23 +247,23 @@ function ScheduleRunForm({ projectId, repoId, branch: home, onCancel, onSchedule
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    await onSchedule({ branch: branch.trim(), at: new Date(at).toISOString() });
+    await onSchedule({ branch: branch.trim(), at: now ? undefined : new Date(at).toISOString() });
     setBusy(false);
   };
   return (
-    <form className="detail-section complete-form" aria-label={t('Run at a set time')} ref={ref} onSubmit={submit}>
-      <h3>{t('Run at a set time')}</h3>
-      <p className="muted small">{t('Keel starts one run then, as you, on the branch you pick. For runs that repeat (every night, say), use a schedule in the pipeline itself.')}</p>
+    <form className="detail-section complete-form" aria-label={now ? t('Run on a branch') : t('Run at a set time')} ref={ref} onSubmit={submit}>
+      <h3>{now ? t('Run on a branch') : t('Run at a set time')}</h3>
+      <p className="muted small">{now ? t('Keel starts one run now, as you, on the branch you pick.') : t('Keel starts one run then, as you, on the branch you pick. For runs that repeat (every night, say), use a schedule in the pipeline itself.')}</p>
       <label className="field">{t('Branch')}
         <input className="input mono" list="schedule-run-branches" value={branch} onChange={(e) => setBranch(e.target.value)} spellCheck={false} required />
         <datalist id="schedule-run-branches">{(branches || []).map((b) => <option key={b.name} value={b.name} />)}</datalist>
       </label>
-      <label className="field">{t('When')}
+      {!now && <label className="field">{t('When')}
         <input className="input" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} required aria-describedby="run-at-zone" />
         {localZone() && <span className="muted small" id="run-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
-      </label>
+      </label>}
       <div className="complete-actions">
-        <button type="submit" className="btn btn-small btn-primary" disabled={busy || !branch.trim() || !at}>{busy ? t('Scheduling…') : t('Schedule run')}</button>
+        <button type="submit" className="btn btn-small btn-primary" disabled={busy || !branch.trim() || (!now && !at)}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</button>
         <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>{t('Cancel')}</button>
       </div>
     </form>
