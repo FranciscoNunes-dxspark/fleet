@@ -21,6 +21,7 @@ export const COMMANDS = [
   { name: 'assign', args: '<person>', desc: 'Assign the work item to someone (me, or nobody, too)', complete: 'people', run: (ctx, s) => a.assign(ctx, undefined, s) },
   { name: 'unassign', desc: 'Leave the work item unassigned', run: (ctx) => a.assign(ctx, undefined, 'nobody') },
   { name: 'blocked', desc: 'Tag the work item blocked, or take the tag off', run: (ctx) => a.toggleBlocked(ctx) },
+  { name: 'points', args: '<n|none>', desc: "Set the work item's story points", run: (ctx, s) => a.setPoints(ctx, undefined, s) },
   { name: 'priority', args: '<1-4>', desc: "Set the work item's priority", run: (ctx, s) => a.setPriority(ctx, undefined, s) },
   { name: 'new', args: '<type> <title>', desc: "Create a work item in the selected one's project", complete: 'types', run: (ctx, s) => a.newWorkItem(ctx, s) },
   { name: 'wi', args: '<id>', desc: 'Go to a work item by number', complete: 'workitems', run: (ctx, s) => (s ? a.showWorkItem(ctx, s) : ctx.prefill('/wi ')) },

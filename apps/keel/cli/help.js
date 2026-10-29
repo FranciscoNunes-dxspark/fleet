@@ -80,6 +80,7 @@ export const HELP = [
       ['/assign <person>', 'Assign it to someone else (/unassign: to no one)'],
       ['b', 'Blocked tag on or off'],
       ['/priority <1-4>', 'Set its priority'],
+      ['/points <n|none>', 'Set its story points (none clears them)'],
       ['↵', 'The full work item: description, children, pull requests, comments'],
       ['f', 'Next view: all open, current sprint, bugs, blocked, no update in N days, unassigned, mine (/show <view>)'],
       ['/comment <text>', 'Comment'],

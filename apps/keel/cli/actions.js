@@ -417,6 +417,17 @@ export async function setPriority(ctx, w = ctx.current().workItem, text = '') {
   await updateWorkItem(ctx, w, `${w.type} ${w.id}: priority ${n}`, { priority: n }, `Priority ${n}.`);
 }
 
+/** /points <n>, or /points none to clear them. */
+export async function setPoints(ctx, w = ctx.current().workItem, text = '') {
+  if (!w) return ctx.note('Pick a work item first.', 'error');
+  if (w.type === 'Task') return ctx.note("A Task has remaining work, not points: points go on the story or bug it belongs to.", 'error');
+  const q = text.trim().toLowerCase();
+  const n = q === 'none' || q === 'clear' ? null : Number(q);
+  if (!q || (n !== null && !(n >= 0))) return ctx.note('Points are a number, or none to clear them: /points 5.', 'error');
+  if (n === (w.storyPoints ?? null)) return ctx.note(`${wiName(w)} already has ${n === null ? 'no points' : `${n} points`}.`);
+  await updateWorkItem(ctx, w, `${w.type} ${w.id}: ${n === null ? 'no points' : `${n} points`}`, { storyPoints: n }, n === null ? 'Points cleared.' : `${n} points.`);
+}
+
 /** /comment on a work item. */
 export async function commentWorkItem(ctx, w, text) {
   await ctx.task(`Comment on ${w.type} ${w.id}`, async () => {

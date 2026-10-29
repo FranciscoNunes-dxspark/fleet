@@ -1273,6 +1273,7 @@ export function createMockProvider() {
       if (changes.priority !== undefined) w.priority = Number(changes.priority);
       if (changes.iterationPath !== undefined) w.iterationPath = changes.iterationPath;
       if (changes.tags !== undefined) w.tags = changes.tags;
+      if (changes.storyPoints !== undefined) w.storyPoints = changes.storyPoints === null || changes.storyPoints === '' ? null : Number(changes.storyPoints);
       if (changes.fields) {
         const b = (w._board ||= {});
         if ('Mock_Kanban.Column' in changes.fields) b.column = changes.fields['Mock_Kanban.Column'];

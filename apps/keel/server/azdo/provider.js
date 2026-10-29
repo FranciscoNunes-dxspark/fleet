@@ -8,6 +8,8 @@ import { stageSummary } from '../domain/releases.js';
 
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
 
+const POINTS_FIELDS = ['Microsoft.VSTS.Scheduling.StoryPoints', 'Microsoft.VSTS.Scheduling.Effort', 'Microsoft.VSTS.Scheduling.Size'];
+
 const WI_FIELDS = [
   'System.Id', 'System.Rev', 'System.TeamProject', 'System.WorkItemType', 'System.Title', 'System.State', 'System.Reason',
   'System.AssignedTo', 'System.CreatedBy', 'System.IterationPath', 'System.AreaPath', 'System.Tags', 'System.CreatedDate',
@@ -290,7 +292,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
         tags: f['System.Tags'] ? f['System.Tags'].split(';').map((t) => t.trim()).filter(Boolean) : [],
         priority: f['Microsoft.VSTS.Common.Priority'] ?? null,
         severity: f['Microsoft.VSTS.Common.Severity'] ?? null,
-        storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] ?? f['Microsoft.VSTS.Scheduling.Effort'] ?? f['Microsoft.VSTS.Scheduling.Size'] ?? null,
+        storyPoints: POINTS_FIELDS.map((p) => f[p]).find((v) => v != null) ?? null,
         remainingWork: f['Microsoft.VSTS.Scheduling.RemainingWork'] ?? null,
         blocked: f['Microsoft.VSTS.CMMI.Blocked'] === 'Yes',
         parentId: f['System.Parent'] ?? null,
@@ -1004,8 +1006,25 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       if (changes.tags !== undefined) set('System.Tags', changes.tags.join('; '));
       // Board column / done / lane fields (validated by the service).
       for (const [field, value] of Object.entries(changes.fields || {})) set(field, value);
+      const patch = (body) => api(`_apis/wit/workitems/${id}`, { method: 'PATCH', body, contentType: 'application/json-patch+json' });
+      if (changes.storyPoints !== undefined) {
+        // The points field depends on the process (Agile StoryPoints, Scrum and Basic Effort, CMMI Size): use the one the item has already filled in, else try each until one is on its type.
+        const points = changes.storyPoints === null || changes.storyPoints === '' ? null : Number(changes.storyPoints);
+        const value = points === null ? '' : points;
+        const current = await api(`_apis/wit/workitems/${id}`, { query: { fields: POINTS_FIELDS.join(',') } });
+        const known = POINTS_FIELDS.find((f) => current.fields?.[f] != null);
+        const candidates = known ? [known] : POINTS_FIELDS;
+        for (let i = 0; i < candidates.length; i++) {
+          try {
+            await patch([...ops, { op: 'add', path: `/fields/${candidates[i]}`, value }]);
+            return;
+          } catch (err) {
+            if (i === candidates.length - 1 || err.status !== 400) throw err;
+          }
+        }
+      }
       if (!ops.length) return;
-      await api(`_apis/wit/workitems/${id}`, { method: 'PATCH', body: ops, contentType: 'application/json-patch+json' });
+      await patch(ops);
     },
 
     /** Posts a Markdown comment (as HTML where the organization doesn't take Markdown). */
