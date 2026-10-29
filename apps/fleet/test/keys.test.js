@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keyLength, prefixAction, readKeys, takeBarClicks, PREFIX } from '../src/keys.js';
+import { DEFAULT_PREFIX, keyLength, prefixAction, prefixByte, prefixName, prefixesFor, readKeys, takeBarClicks, PREFIX } from '../src/keys.js';
 
 const run = (input, state = { prefix: false }) => readKeys(state, input);
 const sent = (actions) => actions.filter((a) => a.type === 'send').map((a) => a.data).join('');
@@ -54,7 +54,7 @@ test('the prefix twice sends it, and anything else after it is dropped whole', (
 
 test('the prefix waits across reads, and keys before and after it keep their order', () => {
   const first = run(`ab${PREFIX}`);
-  assert.deepEqual(first.state, { prefix: true });
+  assert.deepEqual(first.state, { prefix: PREFIX });
   assert.equal(sent(first.actions), 'ab');
   const second = readKeys(first.state, 'hcd');
   assert.deepEqual(second.actions, [{ type: 'prefix', on: false }, { type: 'switch', id: 'hail' }, { type: 'send', data: 'cd' }]);
@@ -85,4 +85,30 @@ test('alt+1 to alt+6 switch without the prefix, and the keys around them still g
     { type: 'switch', id: 'sonar' },
     { type: 'send', data: 'b\x1b9' },
   ]);
+});
+
+test('the prefix: ctrl+b unless host.json names another, ctrl+] always, and twice is the key itself', () => {
+  assert.equal(DEFAULT_PREFIX, 'ctrl+b');
+  assert.equal(prefixByte('ctrl+b'), '\x02');
+  assert.equal(prefixByte('Ctrl+A'), '\x01');
+  assert.equal(prefixByte('C-g'), '\x07');
+  assert.equal(prefixByte('ctrl+]'), '\x1d');
+  assert.equal(prefixByte('ctrl+\\'), '\x1c');
+  assert.equal(prefixByte('ctrl+space'), '\x00');
+  for (const bad of ['ctrl+c', 'ctrl+m', 'ctrl+s', 'ctrl+q', 'ctrl+z', 'alt+b', 'b', '', null, 'ctrl+bb']) assert.equal(prefixByte(bad), null, String(bad));
+  assert.equal(prefixName('\x02'), 'ctrl+b');
+  assert.equal(prefixName('\x1d'), 'ctrl+]');
+  assert.equal(prefixName('\x00'), 'ctrl+space');
+  assert.deepEqual(prefixesFor(), ['\x02', '\x1d']);
+  assert.deepEqual(prefixesFor('\x1d'), ['\x1d']);
+  const sent = (actions) => actions.filter((a) => a.type === 'send').map((a) => a.data).join('');
+  const b = readKeys({ prefix: false }, '\x02h');
+  assert.deepEqual(b.actions.at(-1), { type: 'switch', id: 'hail' });
+  assert.equal(sent(readKeys({ prefix: false }, 'a\x02\x02b').actions), 'a\x02b');
+  // ctrl+] after ctrl+b isn't a literal: it cancels, as any other key would.
+  assert.equal(sent(readKeys({ prefix: false }, '\x02\x1db').actions), 'b');
+  // Another prefix: ctrl+b is the app's again.
+  const a = readKeys({ prefix: false }, '\x02\x01k', undefined, prefixesFor('\x01'));
+  assert.equal(sent(a.actions), '\x02');
+  assert.deepEqual(a.actions.at(-1), { type: 'switch', id: 'keel' });
 });

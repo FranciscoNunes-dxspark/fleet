@@ -75,6 +75,8 @@ test('a space shown starts its app, and its screen comes as frames of runs', asy
   const hello = session.snapshot();
   assert.equal(hello.type, 'hello');
   assert.equal(hello.frames.length, 1);
+  // The window's keys follow Fleet's prefix.
+  assert.equal(hello.prefix, 'ctrl+b');
   assert.ok(hello.frames[0].rows.some(([, runs]) => runs.some(([, t]) => t === 'one 50x8')));
 });
 
@@ -194,6 +196,11 @@ test("the server: the run's key, the loopback host, the x-fleet header, then the
     await until(() => screen('one')[1] === 'keys: "zz"', 'keys through the server');
     const moved = await (await post('move', { folder: '/no/such/folder/anywhere' })).json();
     assert.equal(moved.ok, false);
+    // The move's list: the folders beside the fleet's (its own not among them).
+    const listed = await (await post('folder-list', {})).json();
+    assert.equal(listed.cwd, session.cwd);
+    assert.ok(Array.isArray(listed.folders) && listed.folders.every((f) => f.path && f.name && 'recent' in f && 'has' in f));
+    assert.ok(!listed.folders.some((f) => f.path === session.cwd));
     assert.equal((await post('nonsense', {})).status, 404);
     // The events stream starts with everything a window needs.
     const ac = new AbortController();

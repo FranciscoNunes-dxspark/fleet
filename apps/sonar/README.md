@@ -11,7 +11,7 @@ A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/
 [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl) and [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail):
 the same prompt, help window, mouse, settings and self-updating builds.
 
-Sonar also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]`; a line Sonar copies for a sibling goes straight to that app's prompt there.
+Sonar also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+b`; a line Sonar copies for a sibling goes straight to that app's prompt there.
 
 ## Install
 

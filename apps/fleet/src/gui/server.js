@@ -11,7 +11,7 @@ import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readActivity, TAKEN_BY } from '@fleet/kit/family.js';
-import { completeFolder, isFolder, resolveFolder } from '../folder.js';
+import { completeFolder, folderPicks, isFolder, resolveFolder } from '../folder.js';
 import { draftRunbook, listRunbooks, runbookDirs, writeDraft } from '../runbooks.js';
 import { bosunHome, traceLine, traceTimeline } from '../trace.js';
 
@@ -124,6 +124,8 @@ export function guiServer(session, { files, token = randomBytes(24).toString('he
       const done = completeFolder(typed, { cwd: session.cwd });
       return { text: done.text, choices: done.matches.slice(0, 50) };
     },
+    // The move's list: the folders moved to lately, then the ones beside this one.
+    'folder-list': () => ({ cwd: session.cwd, folders: folderPicks(session.cwd, session.folders).map(({ path, name, recent, has }) => ({ path, name, recent, has })) }),
     move: ({ folder }) => {
       const dir = resolveFolder(String(folder ?? ''), { cwd: session.cwd });
       if (!isFolder(dir)) return { ok: false, error: `No such folder: ${dir}` };

@@ -164,6 +164,8 @@ table.timeline td.t { font-family: var(--mono); color: var(--muted); white-space
 .choice.sel, .choice:hover { background: var(--panel-2); }
 .choice .grow { flex: 1; }
 .choice .k { color: var(--muted); font: 11px var(--mono); }
+.folders { display: flex; flex-direction: column; overflow-y: auto; max-height: 40vh; margin-top: 8px; }
+.folders .strong { font-weight: 600; }
 table.keys { border-collapse: collapse; width: 100%; }
 table.keys td { padding: 5px 6px; border-top: 1px solid var(--line); }
 table.keys td:first-child { font-family: var(--mono); white-space: nowrap; color: var(--accent); }

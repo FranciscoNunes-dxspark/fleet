@@ -5,11 +5,11 @@
 The family's terminal apps in one terminal: [Splice](../splice) (git), [Trawl](../trawl) (SQL),
 [Sonar](../sonar) (Azure), [Bosun](../bosun) (a project's processes), [Hail](../hail) (HTTP),
 [Keel](../keel)'s terminal app (Azure DevOps), [Wharf](../wharf) (containers) and [Locker](../locker) (secrets and configuration). Each runs exactly as it does by itself, with its own
-settings, sign-ins and keys; Fleet shows one at a time and switches between them with `ctrl+]`, as
+settings, sign-ins and keys; Fleet shows one at a time and switches between them with `ctrl+b`, as
 tmux does with its windows. A bar at the bottom shows them all.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Keel ○  7 Wharf ○  8 Locker ○   ctrl+] ? help
+ 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Keel ○  7 Wharf ○  8 Locker ○   ctrl+b ? help
 ```
 
 `●` runs, `○` hasn't started yet, `✕` and a number exited with that code. The app on screen has its
@@ -71,52 +71,63 @@ it again.
 ## Keys
 
 Everything you type goes to the app on screen, as it would by itself: keys, pastes and the mouse.
-Only `ctrl+]` is Fleet's, and the key after it:
+Only Fleet's prefix is Fleet's, `ctrl+b` (as tmux's), and the key after it. `ctrl+]`, the prefix
+Fleet had first, works as well: it's hard to type on many keyboards (`AltGr`+`9` and more on a
+Portuguese one), hence `ctrl+b`. Another key can be the prefix: `"prefix": "ctrl+a"` in
+`~/.fleet/host.json`, or `FLEET_PREFIX=ctrl+a`; any `ctrl` and a letter but those a terminal keeps for
+itself (`c`, `h`, `i`, `j`, `m`, `q`, `s`, `z`), or `ctrl+]`, `ctrl+\`, `ctrl+^`, `ctrl+_`,
+`ctrl+space`. One Fleet can't use is said in the bar, and `ctrl+b` is the prefix. The tables below
+say `ctrl+b`; read yours there.
 
 | Keys | What they do |
 | --- | --- |
 | `alt+1`–`alt+8` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
-| `ctrl+]` `1`–`8` | Switch to that space |
-| `ctrl+]` `s` `t` `o` `b` `h` `k` `w` `l` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf, Locker |
-| `ctrl+]` `]` or `n` | The next space |
-| `ctrl+]` `p` | The previous space |
-| `ctrl+]` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |
-| `ctrl+]` `tab`, `←` or `→` | Split, the other pane |
-| `ctrl+]` `x` | Split, back to one app on screen: the one with the keys |
-| `ctrl+]` `m` | Move the fleet to another folder: every running app starts again there |
-| `ctrl+]` `ctrl+]` | Send `ctrl+]` to the app |
-| `ctrl+]` `r` | The runbooks: the one you were in, else the list ([Runbooks](#runbooks)) |
-| `ctrl+]` `f` | Follow a request across the apps ([Following a request](#following-a-request)) |
-| `ctrl+]` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
-| `ctrl+]` `?` | The keys |
+| `ctrl+b` `1`–`8` | Switch to that space |
+| `ctrl+b` `s` `t` `o` `b` `h` `k` `w` `l` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf, Locker |
+| `ctrl+b` `]` or `n` | The next space |
+| `ctrl+b` `p` | The previous space |
+| `ctrl+b` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |
+| `ctrl+b` `tab`, `←` or `→` | Split, the other pane |
+| `ctrl+b` `x` | Split, back to one app on screen: the one with the keys |
+| `ctrl+b` `m` | Move the fleet to another folder: a list of the ones moved to lately and those beside this one, or one typed; every running app starts again there |
+| `ctrl+b` `ctrl+b` | Send `ctrl+b` to the app (the prefix twice is the prefix for the app; `ctrl+]` `ctrl+]` sends `ctrl+]`) |
+| `ctrl+b` `r` | The runbooks: the one you were in, else the list ([Runbooks](#runbooks)) |
+| `ctrl+b` `f` | Follow a request across the apps ([Following a request](#following-a-request)) |
+| `ctrl+b` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
+| `ctrl+b` `?` | The keys |
 
-Any other key after `ctrl+]` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
+Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
 
 ## Split
 
-`ctrl+] |` shows two apps side by side, each in half the width (less a column for the divider between
+`ctrl+b |` shows two apps side by side, each in half the width (less a column for the divider between
 them): the app on screen on the left, and the one you were in before it on the right (the next one
 when there was none). Each draws as it would on a screen of that size. The keys go to one of them, the
 pane with the divider in its colour and its tab filled in the bar; the other's tab is underlined.
-`ctrl+] tab` (or `←`, `→`) or a click in the other pane moves the keys there, and the mouse works in
-either pane for an app that uses it. Switching to an app while split (`ctrl+] 3`, a click on its tab)
+`ctrl+b tab` (or `←`, `→`) or a click in the other pane moves the keys there, and the mouse works in
+either pane for an app that uses it. Switching to an app while split (`ctrl+b 3`, a click on its tab)
 puts it in the pane with the keys, or moves the keys to it when it's in the other one already; a line
 handed to an app in neither pane opens it in the other pane, so the one it came from stays in sight.
-`ctrl+] x` (or `|` again) goes back to the app with the keys on the whole screen.
+`ctrl+b x` (or `|` again) goes back to the app with the keys on the whole screen.
 
 The screen splits only when it's at least 40 columns wide, and goes back whole when it's made narrower
 than that.
 
 ## Moving the fleet
 
-The apps start in the folder you started Fleet in. `ctrl+] m` moves them all to another one: the bar
-asks for it, with the folder they're in filled in (`tab` completes a folder's name, `~` is your home
-folder, and a relative path is from the folder they're in now). On `↵` every app that runs is stopped,
+The apps start in the folder you started Fleet in. `ctrl+b m` moves them all to another one: a list
+of the folders the fleet moved to lately (marked `lately`, the newest under the cursor) and then the
+ones beside this one, those that look like projects (a git checkout, a `package.json`, a solution, a
+`.http` file…) in bold; `j` `k` move, `↵` moves there. Its first row, **Type a folder…**, asks for one
+in the bar instead, with the folder they're in filled in (`tab` completes a folder's name, `~` is your
+home folder, and a relative path is from the folder they're in now). On `↵` every app that runs is stopped,
 as its own `q` would, and started again in the new folder; the ones that haven't started yet start
 there when they do, and an exited one when you press `↵` in it. `esc` leaves everything where it is.
 An app can ask for a move too (the kit's `askHostToMove`): the bar then asks the same question with
-that app's folder filled in, and nothing moves until you press `↵`. Fleet doesn't keep the folder: the
-next `fleet` starts where you start it.
+that app's folder filled in, and nothing moves until you press `↵`. Fleet keeps the last eight folders
+for the list (`"folders"` in `~/.fleet/host.json`), but not where it was: the next `fleet` starts
+where you start it. The window (`fleet gui`) has the same list in its Move dialog, a click on one
+moving there.
 
 ## Hand-offs
 
@@ -157,11 +168,11 @@ Ask its health page, then look for the last hour's failed requests in Applicatio
 ````
 
 Fleet reads them from `.fleet/runbooks/*.md` in the folder you started it in and in that folder's git
-checkout, and from `~/.fleet/runbooks/` (`FLEET_HOME` moves it). `ctrl+]` `r` lists them (over the app
+checkout, and from `~/.fleet/runbooks/` (`FLEET_HOME` moves it). `ctrl+b` `r` lists them (over the app
 on screen, which carries on behind it); `↵` opens one: its steps with their text, the cursor on the
 next one. `↵` hands that step to its app as a [hand-off](#hand-offs): Fleet switches to the app, starting
 it if need be, and types the line into its prompt, where `↵` runs it. The step is marked `✓`, and
-`ctrl+]` `r` brings you back to the runbook where you left it, the cursor on the next step; Fleet keeps
+`ctrl+b` `r` brings you back to the runbook where you left it, the cursor on the next step; Fleet keeps
 each runbook's progress until it quits.
 
 | Keys | In the runbooks |
@@ -179,7 +190,7 @@ empty step for you to fill in.
 
 ## Following a request
 
-`ctrl+]` `f` asks for a request, operation or trace id (offering the last one a hand-off carried, as
+`ctrl+b` `f` asks for a request, operation or trace id (offering the last one a hand-off carried, as
 Bosun's `t` copies a log line with its request), then asks every running app that reads log lines
 (Sonar, Hail, Bosun and Wharf) to look for it: Fleet types a `/take` of a log line carrying the id into
 each one's prompt, without switching to it. The panel lists the apps it asked; `↵` on one switches
@@ -213,7 +224,7 @@ Around the apps, Fleet's tools are the window's own:
 - **The rail** on the left: each app with its logo, whether it runs, and its badge (the same `!` and
   counts as the bar's); the window's title counts the badges, and with notifications on (the window
   offers once) an app that needs you says so even with the window in the background.
-- **Two apps side by side**: Split in the rail, `ctrl+]` `|`, or ctrl-click an app; a click on a pane
+- **Two apps side by side**: Split in the rail, `ctrl+b` `|`, or ctrl-click an app; a click on a pane
   gives it the keys, and ✕ in its header shows the other alone.
 - **Runbooks** and **Follow** as drawers on the right, with a button per step; **Commands**
   (`ctrl+shift+p`) for everything, apps included; the folder at the bottom of the rail moves the
@@ -222,7 +233,7 @@ Around the apps, Fleet's tools are the window's own:
   start it again.
 - What an app copies (OSC 52) goes to the clipboard; its notifications become the system's.
 
-Fleet's keys are the terminal's: `alt+1`–`alt+8`, and `ctrl+]` then the same keys as in the
+Fleet's keys are the terminal's: `alt+1`–`alt+8`, and `ctrl+b` then the same keys as in the
 [table above](#keys) (`space` opens Commands there). An app with the mouse off leaves it to the
 window, where dragging selects text (`ctrl+shift+c` copies it).
 

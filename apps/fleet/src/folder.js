@@ -1,11 +1,29 @@
-// Moving the fleet to another folder (ctrl+] m, or an app's { move } message): the bar becomes a
-// small line editor for the folder, with tab completing folder names, pure but for listing a folder,
-// which comes in as `readdir`. The host then starts every running app again there (host.js `moveTo`).
+// Moving the fleet to another folder (the prefix and m, or an app's { move } message): a list of the
+// folders moved to lately and the ones beside this one (panels.js's folder panel, from `folderPicks`),
+// or the bar as a small line editor for the folder, with tab completing folder names, pure but for
+// listing a folder, which comes in as `readdir`. The host then starts every running app again there
+// (host.js `moveTo`).
 import { readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { keyLength } from './keys.js';
+import { folderChoices } from '@fleet/kit/folders.js';
+
+// What makes a folder a project the apps have something to do with: a checkout, something to run or build.
+const PROJECT = /^(\.git|package\.json|bosun\.json|Procfile|compose\.ya?ml|docker-compose\.ya?ml|.+\.(sln|csproj|http))$/i;
+
+/** Whether `dir` looks like a project: a git checkout, a package.json, a solution, a .http file… */
+export function isProject(dir) {
+  try {
+    return readdirSync(dir).some((f) => PROJECT.test(f));
+  } catch {
+    return false;
+  }
+}
+
+/** The move's list: the folders moved to lately (`recent`, still there), then the ones beside `cwd`; projects marked. */
+export const folderPicks = (cwd, recent = [], has = isProject) => folderChoices(cwd, recent, { has });
 
 /** A line being edited: { text, cursor } (the cursor an index into text, at most its length). */
 export const lineOf = (text = '') => ({ text, cursor: text.length });

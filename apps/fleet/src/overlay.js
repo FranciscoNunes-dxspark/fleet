@@ -123,6 +123,22 @@ export function runbookLines(runbook, { done = new Set(), cursor = 0, width = 80
   return { lines, focus };
 }
 
+/** The move's list (folder.js folderPicks): typing a path first, then each folder, the ones moved to lately marked. */
+export function folderLines(items, { cursor = 0, width = 80, short = (p) => p } = {}) {
+  const rows = [{ name: 'Type a folder…', path: 'a path, completed with tab', typed: true }, ...items];
+  const nameW = Math.min(30, Math.max(...rows.map((r) => stringWidth(r.name))));
+  const lines = rows.map((r, i) => {
+    const here = i === cursor;
+    return [
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: r.name.padEnd(nameW), sgr: here ? `${BOLD}${YELLOW}` : r.has ? BOLD : '' },
+      { text: `  ${r.typed ? r.path : short(r.path)}`, sgr: DIM },
+      { text: r.recent ? '  lately' : '', sgr: GREEN },
+    ];
+  });
+  return { lines, focus: [cursor, cursor] };
+}
+
 const clock = (ms) => new Date(ms).toTimeString().slice(0, 8);
 
 /** The trace panel asking for the id: the field, with the cursor at its end. */
@@ -142,10 +158,10 @@ export function traceAskLines({ input = '', width = 80 } = {}) {
  * The trace panel once asked: the apps asked (a row each, the cursor on one: ↵ goes there), then the
  * timeline Fleet read itself, oldest first, each line with its app and where it came from.
  */
-export function traceLines({ id, asked = [], timeline = [], cursor = 0, width = 80, spaces = [], truecolor = true } = {}) {
+export function traceLines({ id, asked = [], timeline = [], cursor = 0, width = 80, spaces = [], truecolor = true, prefix = 'ctrl+b' } = {}) {
   const lines = [[{ text: 'Following ', sgr: DIM }, { text: id, sgr: `${BOLD}${YELLOW}` }], []];
   let focus = [0, 0];
-  if (!asked.length) lines.push(...prose('No app that reads log lines (Sonar, Hail, Bosun, Wharf) is running: start one, then ctrl+] f again.', width - 1));
+  if (!asked.length) lines.push(...prose(`No app that reads log lines (Sonar, Hail, Bosun, Wharf) is running: start one, then ${prefix} f again.`, width - 1));
   else lines.push([{ text: 'Asked, the line typed into each prompt (↵ there runs it):', sgr: DIM }]);
   const tagW = Math.max(0, ...asked.map((a) => stringWidth(titleOf(spaces, a))), ...timeline.map((e) => stringWidth(titleOf(spaces, e.app))));
   asked.forEach((app, i) => {

@@ -58,3 +58,23 @@ export function mouseBytes({ kind, button = 0, x, y, deltaY = 0, shiftKey = fals
   code += (shiftKey ? 4 : 0) + (altKey ? 8 : 0) + (ctrlKey ? 16 : 0);
   return `\x1b[<${code};${x + 1};${y + 1}${kind === 'up' ? 'm' : 'M'}`;
 }
+
+// The prefixes' keys as a keydown names them: ctrl+b → 'b', ctrl+space → ' '; and the byte each sends.
+const PREFIX_BYTES = { ']': '\x1d', '\\': '\x1c', '^': '\x1e', '_': '\x1f', ' ': '\x00' };
+const prefixKeyOf = (name) => {
+  const k = String(name).replace(/^ctrl\+/i, '').toLowerCase();
+  return k === 'space' ? ' ' : k;
+};
+
+/**
+ * The prefix byte a keydown is (Fleet's prefix, or ctrl+]), else null. AltGr reaches the page as
+ * ctrl+alt, so a ] typed with AltGr (as on a Portuguese keyboard) still counts; a letter needs ctrl alone.
+ */
+export function prefixOf(e, name = 'ctrl+b') {
+  if (!e.ctrlKey || e.metaKey) return null;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (k === ']') return '\x1d';
+  if (k !== prefixKeyOf(name)) return null;
+  if (/^[a-z]$/.test(k)) return e.altKey ? null : String.fromCharCode(k.charCodeAt(0) - 96);
+  return PREFIX_BYTES[k] ?? null;
+}

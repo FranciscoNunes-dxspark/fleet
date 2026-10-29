@@ -12,6 +12,8 @@
 // family's folder), so the tests drive it with small fake apps and no window.
 import { StringDecoder } from 'node:string_decoder';
 import { familyDir } from '@fleet/kit/family.js';
+import { remember } from '@fleet/kit/folders.js';
+import { DEFAULT_PREFIX } from '../keys.js';
 import { encodeMessage, messageReader } from '@fleet/kit/hosted.js';
 import { badgeFor, badgeText, familyReader } from '../attention.js';
 import { pasteFor, routeHandoff } from '../handoff.js';
@@ -41,8 +43,13 @@ export class GuiSession {
     familyHome = familyDir(),
     attentionEvery = ATTENTION_MS,
     onUpdate = () => {},
+    // The prefix as it's named (keys.js prefixName: host.json's, else ctrl+b), for the window's keys.
+    prefix = DEFAULT_PREFIX,
+    // The folders moved to lately (host.json's "folders"), newest first, and keeping them.
+    folders = [],
+    onFolders = () => {},
   }) {
-    Object.assign(this, { spawnApp: spawn, args, cwd, setTimer, clearTimer, now, attentionEvery, onUpdate });
+    Object.assign(this, { spawnApp: spawn, args, cwd, setTimer, clearTimer, now, attentionEvery, onUpdate, prefix, folders, onFolders });
     this.spaces = spaces.map((s) => ({
       ...s,
       state: 'idle',
@@ -111,6 +118,7 @@ export class GuiSession {
     return {
       type: 'hello',
       cwd: this.cwd,
+      prefix: this.prefix,
       active: this.active,
       shown: this.shown,
       spaces: this.spaces.map((s) => this.describe(s)),
@@ -366,6 +374,8 @@ export class GuiSession {
   /** Every app started again in `dir`; those not started yet will start there. */
   moveTo(dir) {
     this.cwd = dir;
+    this.folders = remember(this.folders, dir);
+    this.onFolders(this.folders);
     for (const s of this.spaces) {
       if (!s.child) continue;
       s.moving = true;

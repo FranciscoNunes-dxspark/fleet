@@ -7,7 +7,8 @@
 import { join, relative } from 'node:path';
 import { familyDir as kitFamilyDir, readActivity, TAKEN_BY } from '@fleet/kit/family.js';
 import { keyLength } from './keys.js';
-import { boxRows, boxSize, pickerLines, placeBox, runbookLines, traceAskLines, traceLines } from './overlay.js';
+import { boxRows, boxSize, folderLines, pickerLines, placeBox, runbookLines, traceAskLines, traceLines } from './overlay.js';
+import { folderPicks, shortFolder } from './folder.js';
 import { draftRunbook, listRunbooks, runbookDirs, writeDraft } from './runbooks.js';
 import { bosunHome, traceLine, traceTimeline } from './trace.js';
 
@@ -45,6 +46,12 @@ export class Panels {
     Object.assign(this, { host, cwd, env, takers, familyDir, bosun, now });
     this.runbookPanel = new RunbookPanel(this);
     this.tracePanel = new TracePanel(this);
+    this.folderPanel = new FolderPanel(this);
+  }
+
+  /** The prefix and m: the folders to move the fleet to. */
+  folders() {
+    this.folderPanel.open();
   }
 
   /** ctrl+] r: the runbook you were in, else the picker. */
@@ -68,6 +75,43 @@ export class Panels {
 
   inner(size) {
     return boxSize(size).inner - 1;
+  }
+}
+
+/** Where to move the fleet: typing a path (the bar's editor), or a folder moved to lately or beside this one. */
+class FolderPanel {
+  constructor(panels) {
+    this.panels = panels;
+    this.host = panels.host;
+    this.items = [];
+    this.cursor = 0;
+  }
+
+  open() {
+    this.items = folderPicks(this.host.cwd, this.host.folders);
+    // The newest folder moved to (not this one) first under the cursor, else typing one.
+    this.cursor = this.items.length ? 1 : 0;
+    this.host.showOverlay(this);
+  }
+
+  render(size) {
+    const width = this.panels.inner(size);
+    const { lines, focus } = folderLines(this.items, { cursor: this.cursor, width, short: (p) => shortFolder(p, this.host.home) });
+    return this.panels.box({ title: `Move the fleet from ${shortFolder(this.host.cwd, this.host.home)}`, hint: '↵ every app starts again there · j k move · esc close', lines, focus }, size);
+  }
+
+  keys(text) {
+    for (const key of panelKeys(text)) {
+      if (key === 'esc') return this.host.closeOverlay();
+      const to = moveIn(key, this.cursor, this.items.length + 1);
+      if (to != null) this.cursor = to;
+      else if (key === 'enter') {
+        this.host.closeOverlay();
+        if (this.cursor === 0) return this.host.askFolder();
+        return this.host.moveTo(this.items[this.cursor - 1].path);
+      }
+    }
+    this.host.showOverlay(this);
   }
 }
 
@@ -180,7 +224,7 @@ class TracePanel {
   render(size) {
     const width = this.panels.inner(size);
     if (this.asking) return this.panels.box({ title: 'Follow a request', hint: '↵ follow · esc close', ...traceAskLines({ input: this.input, width }) }, size);
-    const view = traceLines({ id: this.id, asked: this.asked, timeline: this.timeline, cursor: this.cursor, width, spaces: this.host.spaces, truecolor: this.host.truecolor });
+    const view = traceLines({ id: this.id, asked: this.asked, timeline: this.timeline, cursor: this.cursor, width, spaces: this.host.spaces, truecolor: this.host.truecolor, prefix: this.host.prefixLabel });
     return this.panels.box({ title: `Following ${this.id}`, hint: `${this.asked.length ? '↵ go there · j k move · ' : ''}f another · esc close`, ...view }, size);
   }
 
