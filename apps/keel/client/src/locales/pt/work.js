@@ -107,6 +107,7 @@ export default {
   'Assignee updated': 'Responsável atualizado',
   'Priority': 'Prioridade',
   'Priority updated': 'Prioridade atualizada',
+  'Points updated': 'Pontos atualizados',
   'Remove blocked tag': 'Remover a tag de bloqueado',
   'Mark as blocked': 'Marcar como bloqueado',
   'Hierarchy': 'Hierarquia',

@@ -55,7 +55,7 @@ const HINTS = {
   inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
   prs: 'p publish · a approve · w wait · x reject · c complete · m auto-complete · ↵ more · f filter · alt+y for Splice',
   pipelines: 'n run · c cancel the run · l the run in full, with logs · ↵ all runs · alt+y for Splice · alt+s for Sonar · o browser',
-  workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /comment /new',
+  workitems: 's state · i take it · b blocked · ↵ more · f next view · /assign /priority /points /comment /new',
   production: '↵ everything, and all that is waiting to ship · o open the site · alt+s Sonar · alt+k compare in Sonar',
   releases: 'n new release · d deploy to a stage · a/x approve or reject · alt+d download a GitHub release file · ↵ everything · o browser',
   board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',

@@ -89,6 +89,23 @@ export default function WorkItemDetail({ id, org }) {
               {[1, 2, 3, 4].map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </label>
+          {w.type !== 'Task' && <label>{t('Points')}
+            <input
+              key={w.storyPoints ?? ''}
+              className="input"
+              type="number"
+              min="0"
+              step="any"
+              defaultValue={w.storyPoints ?? ''}
+              disabled={busy}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v === String(w.storyPoints ?? '') || (v !== '' && !(Number(v) >= 0))) return;
+                act({ type: 'update', changes: { storyPoints: v === '' ? null : Number(v) } }, t('Points updated'));
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            />
+          </label>}
           {!hasBlockedState && <div className="form-grid-action">
             <button type="button" className="btn btn-small" disabled={busy} onClick={toggleBlocked}>{blocked ? t('Remove blocked tag') : t('Mark as blocked')}</button>
           </div>}
