@@ -63,7 +63,7 @@ const HINTS = {
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
 // Whether a process runs differently now (its command or its settings), so /reload restarts it.
-const changedSpec = (had, now) => had.run !== now.run || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
+const changedSpec = (had, now) => had.run !== now.run || had.build !== now.build || JSON.stringify(had.iis ?? null) !== JSON.stringify(now.iis ?? null) || JSON.stringify(had.logs ?? []) !== JSON.stringify(now.logs ?? []) || Boolean(had.trace) !== Boolean(now.trace) || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
 
 function Header({ data, width, loading, mood }) {
   const segs = [
@@ -408,7 +408,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       // A project with something to run is remembered, for /move and for starting where there's nothing.
       if (crew.procs.length) setConfig((c) => ({ ...c, projects: remember(c.projects, dirRef.current) }));
       if (crew.problems.length) note([`Some of ${crew.from} was left out:`, ...crew.problems].join('\n'), 'error');
-      if (!crew.procs.length && first) note('Nothing to run here: no bosun.json, Procfile or compose file, and no dev or start script in package.json. /init writes a bosun.json to fill in.');
+      if (!crew.procs.length && first) note('Nothing to run here: no bosun.json, Procfile, compose file or .NET web project, and no dev or start script in package.json. /init writes a bosun.json to fill in.');
       const sup = supRef.current;
       if (first) {
         if (!autostart) return;

@@ -21,6 +21,8 @@ import { installHint } from './tunnel.js';
 import { afterTree, namedProcs, treeLine } from './groups.js';
 import { levelTone, shownText, structuredOf, troubled } from './structured.js';
 import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
+import { SYSTEM_PIDS } from './supervisor.js';
+import { bindingUrl } from './iis.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -312,8 +314,20 @@ export function wiring(ctx) {
 export async function free(ctx, port) {
   const n = Number(String(port ?? '').trim().replace(/^:/, ''));
   if (!Number.isInteger(n) || n < 1 || n > 65535) return ctx.note('Name a port: /free 3000', 'error');
-  const pids = ctx.pidsOnPort(n);
-  if (!pids.length) return ctx.note(`Nothing is listening on port ${n} (or this machine won't say what is).`);
+  const all = ctx.pidsOnPort(n);
+  if (!all.length) return ctx.note(`Nothing is listening on port ${n} (or this machine won't say what is).`);
+  // Windows' System process holds the ports of http.sys, which IIS (and other servers) listen through:
+  // never Bosun's to stop.
+  const pids = all.filter((pid) => !SYSTEM_PIDS.has(pid));
+  if (!pids.length) {
+    const site = (ctx.crew?.list() ?? []).find((p) => p.spec.iis && p.port === n);
+    return ctx.note(
+      site
+        ? `Port ${n} is ${site.name}'s, IIS site ${site.spec.iis.site}, through http.sys: s stops it.`
+        : `Port ${n} is held by http.sys (the System process): an IIS site, IIS Express or another HTTP.sys server binds it. Stop that site in IIS (appcmd list site shows their bindings); Bosun won't stop System.`,
+      'error',
+    );
+  }
   const ok = await ctx.confirm({ title: `Stop ${pids.length === 1 ? `process ${pids[0]}` : `processes ${pids.join(', ')}`}, which ${pids.length === 1 ? 'holds' : 'hold'} port ${n}?`, danger: true, options: YES_NO('Yes, stop it') });
   if (!ok) return false;
   ctx.killPids(pids);
@@ -349,13 +363,19 @@ export function ports(ctx, { replace = false } = {}) {
           await new Promise((r) => setTimeout(r, 300));
           ports(ctx, { replace: true });
         },
-        o: (it) => ctx.openUrl(`http://localhost:${it.port}`),
+        o: (it) => openPort(ctx, it),
       },
-      onPick: (it) => ctx.openUrl(`http://localhost:${it.port}`),
+      onPick: (it) => openPort(ctx, it),
     },
     { replace },
   );
 }
+
+// A port of /ports in the browser: the crew's process's own address when it's one of them (an IIS site's host name).
+const openPort = (ctx, it) => {
+  const p = it.proc && ctx.crew?.get(it.proc);
+  ctx.openUrl(p?.port === it.port ? procUrl(p) : `http://localhost:${it.port}`);
+};
 
 /** /preflight: the checks run before the crew starts, again now, as a checklist in the viewer. */
 export async function preflight(ctx) {
@@ -441,18 +461,30 @@ export async function tunnel(ctx, name) {
   if (ctx.crew.openTunnel(p.name, found)) ctx.note(`Opening a tunnel to ${p.name}'s port ${p.port} through ${found.tool}…`);
 }
 
+/** The address o opens: its https port's, else its host name's (an IIS site's binding, "host"), else localhost's. */
+export function procUrl(p) {
+  if (p.https) return `https://localhost:${p.https.port}`;
+  const site = p.site?.port === p.port ? p.site : null;
+  const host = p.spec.host ?? site?.host;
+  const scheme = site?.scheme ?? 'http';
+  if (host || site) return bindingUrl({ scheme, host, ip: site?.ip ?? null, port: p.port });
+  return `http://localhost:${p.port}`;
+}
+
 /** o and /open: the process's port in the browser. */
 export function openProc(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
   if (!p.port) return ctx.note(`${p.name} has no port: give it one in bosun.json ("port": 3000).`, 'error');
-  ctx.openUrl(p.https ? `https://localhost:${p.https.port}` : `http://localhost:${p.port}`);
+  ctx.openUrl(procUrl(p));
 }
 
 /** The question for w and /why: what the process is and what it said last. */
 export function whyPrompt(p) {
   return [
-    `"${p.name}" is one of the processes of the project in the current folder, started with: ${p.spec.run}`,
+    p.spec.iis
+      ? `"${p.name}" is one of the processes of the project in the current folder: IIS site "${p.spec.iis.site}", which IIS runs (Bosun starts, recycles and stops it through appcmd). Its log holds what Bosun did, the site's ASP.NET Core stdout log, its W3C request log and the Windows event log's entries for it, as JSON lines`
+      : `"${p.name}" is one of the processes of the project in the current folder, started with: ${p.spec.run}${p.spec.build ? `, after building with: ${p.spec.build}` : ''}`,
     p.status === 'crashed' ? `It stopped with exit code ${p.code}.` : `It is ${p.status}.`,
     'Its output is on stdin, the newest last. Say in a few sentences why it failed or what is wrong, and what to do about it. Read the project\'s files if that helps. Plain text, no headings.',
   ].join(' ');

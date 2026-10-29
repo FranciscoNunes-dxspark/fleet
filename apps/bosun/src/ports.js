@@ -88,7 +88,8 @@ export function listeningPorts({ run = spawnSync, platform = process.platform } 
   if (platform === 'win32') {
     const list = parseNetstat(out('netstat', ['-ano']) ?? '');
     const names = parseTasklist(out('tasklist', ['/fo', 'csv', '/nh']) ?? '');
-    return tidyPorts(list.map((e) => ({ ...e, name: names.get(e.pid) ?? null })));
+    // System's ports are http.sys's: IIS's sites, IIS Express and other HTTP.sys servers.
+    return tidyPorts(list.map((e) => ({ ...e, name: e.pid === 4 ? 'http.sys (System)' : (names.get(e.pid) ?? null) })));
   }
   if (platform === 'linux') {
     const ss = out('ss', ['-ltnp']);

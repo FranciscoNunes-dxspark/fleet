@@ -149,7 +149,7 @@ const OPS = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a >
 
 /**
  * The log's filter from what was typed: `level>=warn` (and <=, >, <, =, !=), `field=value`,
- * `field!=value`, `field~part` (case doesn't matter), and words the line must hold (smart case:
+ * `field!=value`, `field~part` (case doesn't matter), `field>=500` (and <=, >, <: numbers), and words the line must hold (smart case:
  * any capital makes it exact). Terms are separated by spaces, all must hold; "quotes" keep spaces in.
  * Returns { text, terms, problems }.
  */
@@ -166,7 +166,11 @@ export function parseFilter(input) {
       else problems.push(`${lvl[3]} isn't a level (${LEVELS.join(', ')})`);
       continue;
     }
-    const field = /^([A-Za-z_@$][\w.@$-]*)(!=|=|~)(.*)$/.exec(token);
+    const field = /^([A-Za-z_@$][\w.@$-]*)(>=|<=|!=|=|~|>|<)(.*)$/.exec(token);
+    if (field && /^[<>]/.test(field[2]) && !Number.isFinite(Number(field[3]))) {
+      problems.push(`${field[1]}${field[2]} compares numbers: ${field[1]}${field[2]}500`);
+      continue;
+    }
     if (field) {
       terms.push({ type: 'field', key: field[1], op: field[2], value: field[3] });
       continue;
@@ -189,6 +193,11 @@ export function passes(filter, line) {
       if (level == null || !OPS[t.op](RANK[level], RANK[t.level])) return false;
     } else {
       if (!s) return false;
+      if (/^[<>]/.test(t.op)) {
+        const n = Number(fieldOf(s, t.key));
+        if (fieldOf(s, t.key) == null || !Number.isFinite(n) || !OPS[t.op](n, Number(t.value))) return false;
+        continue;
+      }
       const v = valueText(fieldOf(s, t.key)).toLowerCase();
       const want = t.value.toLowerCase();
       if (t.op === '~' ? !v.includes(want) : t.op === '=' ? v !== want : v === want) return false;

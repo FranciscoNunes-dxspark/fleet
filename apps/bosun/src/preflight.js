@@ -8,6 +8,8 @@ import { parseDotenv } from './dotenv.js';
 import { projectAt } from '@fleet/kit/family.js';
 import { run as runShell } from '@fleet/kit/run.js';
 import { portOpen as portAnswers, pidsOnPort as holders } from './supervisor.js';
+import { appcmdProblem, expandEnv, frameworkCovers, frameworkOfRelease, iisControl, webConfigFacts } from './iis.js';
+import { findOnPath } from './which.js';
 
 // ---------------------------------------------------------------------------------------------------
 // Node versions, as .nvmrc, .node-version and engines.node give them.
@@ -94,7 +96,9 @@ export function checkDocker(docker) {
 export function checkPorts(ports = []) {
   return ports.map((p) =>
     p.taken
-      ? bad(`${p.proc}'s port ${p.port} is taken${p.pids?.length ? ` by ${p.pids.length === 1 ? `process ${p.pids[0]}` : `processes ${p.pids.join(', ')}`}` : ''}`, `/free ${p.port} (or f on ${p.proc}) stops what holds it`)
+      ? p.pids?.includes(4)
+        ? bad(`${p.proc}'s port ${p.port} is taken by http.sys`, `an IIS site or IIS Express binds it (appcmd list site shows the bindings): stop that site, or give ${p.proc} another port`)
+        : bad(`${p.proc}'s port ${p.port} is taken${p.pids?.length ? ` by ${p.pids.length === 1 ? `process ${p.pids[0]}` : `processes ${p.pids.join(', ')}`}` : ''}`, `/free ${p.port} (or f on ${p.proc}) stops what holds it`)
       : ok(`${p.proc}'s port ${p.port} is free`),
   );
 }
@@ -128,8 +132,51 @@ export function checkModules(m) {
   return [ok('node_modules is installed')];
 }
 
+/** IIS, for the crew's "iis" sites: Windows, an administrator, the service, each site and pool, and what its web.config needs. */
+export function checkIis(iis) {
+  if (!iis?.sites?.length) return [];
+  if (iis.platform !== 'win32') return [bad('IIS sites run only on Windows', "open this project's crew in Bosun on the Windows machine that hosts them")];
+  const out = [];
+  if (iis.service === 'missing') return [bad("IIS isn't installed", 'turn on Internet Information Services in Windows Features (with ASP.NET 4.8 for a .NET Framework site)')];
+  if (iis.service) out.push(iis.service === 'RUNNING' ? ok('IIS (W3SVC) is running') : bad(`IIS (W3SVC) is ${iis.service.toLowerCase().replace(/_/g, ' ')}`, 'net start w3svc, as an administrator'));
+  if (iis.admin != null) out.push(iis.admin ? ok("The terminal is an administrator's (IIS needs one)") : bad("The terminal isn't an administrator's", 'IIS starts and stops sites only for an administrator: start the terminal as administrator, or run Bosun through gsudo'));
+  for (const s of iis.sites) {
+    if (s.error) {
+      out.push(bad(`${s.proc}: couldn't read IIS site ${s.site}`, s.error));
+      continue;
+    }
+    if (!s.exists) {
+      out.push(bad(`IIS has no site "${s.site}" (${s.proc})`, 'add it in IIS Manager, or fix its "site" in bosun.json'));
+      continue;
+    }
+    if (!s.poolExists) {
+      out.push(bad(`IIS has no application pool "${s.pool}" (${s.proc})`, 'add it in IIS Manager, or fix its "pool" in bosun.json'));
+      continue;
+    }
+    out.push(ok(`IIS site ${s.site} (pool ${s.pool}) serves ${s.physicalPath ?? 'a folder'}`));
+    if (s.core) out.push(s.hostingBundle ? ok('The ASP.NET Core Hosting Bundle is installed') : bad(`The ASP.NET Core Hosting Bundle isn't installed, and ${s.site} runs through the ASP.NET Core module`, 'install the bundle for the .NET it targets (winget install Microsoft.DotNet.HostingBundle.8), then net stop was /y and net start w3svc'));
+    if (s.framework) {
+      if (!/^v4/.test(s.runtime ?? '')) out.push(bad(`${s.pool} loads ${s.runtime ? `.NET CLR ${s.runtime}` : 'no .NET CLR'}, and ${s.site} is ASP.NET on .NET Framework ${s.framework}`, `appcmd set apppool "${s.pool}" /managedRuntimeVersion:v4.0`));
+      if (s.installed && !frameworkCovers(s.installed, s.framework)) out.push(bad(`.NET Framework ${s.installed} is installed, and ${s.site} targets ${s.framework}`, `install .NET Framework ${s.framework} (its Developer Pack too, to build)`));
+      else if (s.installed) out.push(ok(`.NET Framework ${s.installed} runs ${s.site} (it targets ${s.framework})`));
+    }
+  }
+  return out;
+}
+
+/** The tools the crew's commands name: the .NET SDK, MSBuild, IIS Express. */
+export function checkTools(tools = []) {
+  const hint = {
+    dotnet: 'install the .NET SDK the project targets (winget install Microsoft.DotNet.SDK.8, or https://dot.net)',
+    msbuild: 'install Visual Studio or its Build Tools (winget install Microsoft.VisualStudio.2022.BuildTools, with the web workload for an ASP.NET site), or run Bosun from a Developer PowerShell',
+    iisexpress: 'install IIS Express (winget install Microsoft.IISExpress)',
+  };
+  const name = { dotnet: 'The .NET SDK (dotnet)', msbuild: 'MSBuild', iisexpress: 'IIS Express' };
+  return tools.map((t) => (t.found ? ok(`${name[t.tool]} is there (${list(t.procs)})`) : bad(`${name[t.tool]} isn't there, and ${list(t.procs)} ${t.procs.length === 1 ? 'needs' : 'need'} it`, hint[t.tool])));
+}
+
 /** Every check, in the order they're shown. */
-export const runChecks = (facts) => [...checkNode(facts.node), ...checkDocker(facts.docker), ...checkPorts(facts.ports), ...checkEnv(facts.env), ...checkDatabases(facts.databases), ...checkModules(facts.modules)];
+export const runChecks = (facts) => [...checkNode(facts.node), ...checkDocker(facts.docker), ...checkPorts(facts.ports), ...checkIis(facts.iis), ...checkTools(facts.tools), ...checkEnv(facts.env), ...checkDatabases(facts.databases), ...checkModules(facts.modules)];
 
 /** One line a check: ✓ or ✗, what, and for a problem the hint after a dash. */
 export const checkLine = (c) => `${c.ok ? '✓' : '✗'} ${c.title}${c.ok ? '' : ` — ${c.hint}`}`;
@@ -185,15 +232,77 @@ const mtime = (f) => {
 /** Whether the crew runs compose services (docker must answer). */
 export const needsDocker = (crew) => /compose/i.test(crew.from ?? '') || (crew.procs ?? []).some((p) => /^\s*docker(-compose|\s+compose)\b/.test(p.run ?? ''));
 
+/** Which of dotnet, msbuild and iisexpress the crew's commands run, and whether each is there: [{ tool, procs, found }]. */
+export function toolsOf(procs, { platform = process.platform, env = process.env, exists = existsSync, which } = {}) {
+  const wants = new Map();
+  const want = (tool, proc) => wants.set(tool, [...(wants.get(tool) ?? []), proc]);
+  for (const p of procs) {
+    const lines = [p.iis ? null : p.run, p.build, p.iis?.build].filter(Boolean);
+    if (lines.some((l) => /^\s*"?dotnet(\.exe)?"?\s/i.test(l))) want('dotnet', p.name);
+    if (lines.some((l) => /^\s*"?msbuild(\.exe)?"?\s/i.test(l))) want('msbuild', p.name);
+    if (platform === 'win32' && lines.some((l) => /iisexpress(\.exe)?"?\s/i.test(l))) want('iisexpress', p.name);
+  }
+  return [...wants].map(([tool, names]) => ({
+    tool,
+    procs: names,
+    found: tool === 'iisexpress' ? exists(expandEnv('%ProgramFiles%\\IIS Express\\iisexpress.exe', env)) : Boolean(which(tool)),
+  }));
+}
+
+/**
+ * IIS's facts for the crew's `sites` (processes with "iis"): { platform, admin, service, sites:
+ * [{ proc, site, exists, pool, poolExists, runtime, physicalPath, core, hostingBundle, framework,
+ * installed }] }. `iis` is iis.js's iisControl (tests pass a fake).
+ */
+export async function gatherIis(sites, { platform = process.platform, run = runShell, iis = null, env = process.env, exists = existsSync, read: readText = read } = {}) {
+  const facts = { platform, admin: null, service: null, sites: sites.map((p) => ({ proc: p.name, site: p.iis.site })) };
+  if (platform !== 'win32') return facts;
+  const out = (line) => run(line, { signal: AbortSignal.timeout(10_000) }).then((r) => r.stdout ?? '');
+  const service = await out('sc query W3SVC').catch((e) => (/1060|does not exist/i.test(`${e.stdout ?? ''}${e.message}`) ? 'missing' : ''));
+  facts.service = service === 'missing' ? 'missing' : (/STATE\s*:\s*\d+\s+(\w+)/.exec(service)?.[1] ?? null);
+  if (facts.service === 'missing') return facts;
+  facts.admin = await out('net session').then(
+    () => true,
+    () => false,
+  );
+  const release = /Release\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(await out('reg query "HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full" /v Release').catch(() => ''))?.[1];
+  const installed = release ? frameworkOfRelease(Number.parseInt(release, 16)) : null;
+  const control = iis ?? iisControl({ env });
+  const windir = env.windir ?? env.WINDIR ?? 'C:\\Windows';
+  const bundle = [join(windir, 'System32', 'inetsrv', 'aspnetcorev2.dll'), expandEnv('%ProgramFiles%\\IIS\\Asp.Net Core Module\\V2\\aspnetcorev2.dll', env)];
+  for (const [i, p] of sites.entries()) {
+    const s = facts.sites[i];
+    try {
+      const site = await control.site(p.iis.site);
+      s.exists = Boolean(site);
+      if (!site) continue;
+      s.physicalPath = site.physicalPath;
+      s.pool = p.iis.pool ?? (await control.poolOf(p.iis.site)) ?? 'DefaultAppPool';
+      const pool = await control.pool(s.pool);
+      s.poolExists = Boolean(pool);
+      s.runtime = pool?.runtime ?? null;
+      const config = site.physicalPath ? webConfigFacts(readText(join(site.physicalPath, 'web.config'))) : null;
+      s.core = Boolean(config?.core);
+      s.hostingBundle = s.core ? bundle.some((f) => exists(f)) : null;
+      s.framework = config?.framework ?? null;
+      s.installed = s.framework ? installed : null;
+    } catch (e) {
+      s.error = appcmdProblem(e);
+    }
+  }
+  return facts;
+}
+
 /**
  * The facts the checks read, for the crew of the project in `dir`. `part` is 'ports' (only the ports,
  * fast: before starting), 'rest' (everything else) or 'all'. `running` names processes up already,
  * whose ports aren't checked.
  */
-export async function gatherFacts(dir, crew, { part = 'all', running = [], portOpen = portAnswers, pidsOnPort = holders, run = runShell, tcp = tcpAnswers, version = process.version } = {}) {
+export async function gatherFacts(dir, crew, { part = 'all', running = [], portOpen = portAnswers, pidsOnPort = holders, run = runShell, tcp = tcpAnswers, version = process.version, platform = process.platform, iis = null, env = process.env, exists = existsSync, which = (name) => findOnPath(name, { env, platform }) } = {}) {
   const facts = {};
   if (part !== 'rest') {
-    const procs = (crew.procs ?? []).filter((p) => p.port && !running.includes(p.name));
+    // An IIS site's port is IIS's, held for every site bound to it: not a conflict of its own.
+    const procs = (crew.procs ?? []).filter((p) => p.port && !p.iis && !running.includes(p.name));
     facts.ports = await Promise.all(
       procs.map(async (p) => {
         const taken = await portOpen(p.port, { timeout: 500 });
@@ -233,6 +342,11 @@ export async function gatherFacts(dir, crew, { part = 'all', running = [], portO
   facts.modules = { packageJson: Boolean(pkg), needed, tool: lock?.[1] ?? 'npm', lockName: lock?.[0] ?? null, lock: lock ? mtime(join(dir, lock[0])) : null, modules: existsSync(modulesDir) ? (marker ?? mtime(modulesDir)) : null };
 
   const jobs = [];
+  // IIS, for the crew's sites.
+  const sites = (crew.procs ?? []).filter((p) => p.iis);
+  if (sites.length) jobs.push(gatherIis(sites, { platform, run, iis, env, exists, read }).then((got) => (facts.iis = got)));
+  // The tools the commands name.
+  facts.tools = toolsOf(crew.procs ?? [], { platform, env, exists, which });
   // Docker, when compose services are in the crew.
   facts.docker = { needed: needsDocker(crew), ok: null };
   if (facts.docker.needed) {
