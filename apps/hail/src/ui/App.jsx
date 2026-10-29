@@ -440,7 +440,7 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
     folderRef.current = dir;
     setConfig((c) => ({ ...c, folders: remember(c.folders, dir) }));
     const found = findHttpFiles(dir);
-    if (!found.length) return note(`Hail is in ${dir} now, which has no .http files: /new writes one, /import brings some in.`);
+    if (!found.length) return note(`Hail is in ${basename(dir)} now, which has no .http files: /new writes one, /import brings some in.`);
     await openFile(resolve(dir, found[0]));
     if (found.length > 1) note(`${found.length} .http files in ${basename(dir)}: /open picks another.`);
   };
