@@ -22,7 +22,9 @@ import { afterTree, namedProcs, treeLine } from './groups.js';
 import { levelTone, shownText, structuredOf, troubled } from './structured.js';
 import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
 import { SYSTEM_PIDS } from './supervisor.js';
-import { bindingUrl } from './iis.js';
+import { appcmdProblem, bindingUrl, poolRows } from './iis.js';
+import { crewFolders, webConfigDatabases } from './webconfig.js';
+import { hostsNames, withHosts } from './hosts.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -232,7 +234,9 @@ export function familyOffers(found) {
 
 /** /family: a picker of what this project offers the siblings; ↵ copies the line to paste into that app. */
 export function family(ctx) {
-  const offers = familyOffers(projectAt(ctx.dir));
+  const found = projectAt(ctx.dir);
+  // A .NET Framework project's databases are in its web.config: Trawl takes those too.
+  const offers = familyOffers({ ...found, databases: [...found.databases, ...webConfigDatabases(ctx.dir, crewFolders({ procs: (ctx.crew?.list() ?? []).map((p) => p.spec) }))] });
   if (!offers.length) return ctx.note('Nothing here for the siblings: no git checkout, .http files or databases in the settings.');
   ctx.showPicker({
     title: 'For the family',
@@ -377,6 +381,92 @@ const openPort = (ctx, it) => {
   ctx.openUrl(p?.port === it.port ? procUrl(p) : `http://localhost:${it.port}`);
 };
 
+/**
+ * /iis [name]: an IIS site's application pool settings (the crew's site named, or its only one, or
+ * one picked), ↵ setting the one under the cursor to its value for development (or back).
+ */
+export async function iis(ctx, name, { replace = false } = {}) {
+  const sites = (ctx.crew?.list() ?? []).filter((p) => p.spec.iis);
+  if (!sites.length) return ctx.note('The crew has no IIS site: give a process "iis" in bosun.json.');
+  const p = name?.trim() ? sites.find((s) => s.name === name.trim()) : sites.length === 1 ? sites[0] : null;
+  if (name?.trim() && !p) return ctx.note(`${name.trim()} isn't one of the crew's IIS sites: ${sites.map((s) => s.name).join(', ')}.`, 'error');
+  if (!p) {
+    return ctx.showPicker({
+      title: 'Which IIS site?',
+      items: sites.map((s) => ({ name: s.name, segments: [{ text: s.name, strong: true }, { text: `  ${s.spec.iis.site}`, color: theme.dim }] })),
+      onPick: (it) => iis(ctx, it.name, { replace: true }),
+    });
+  }
+  const control = ctx.crew.iisControl();
+  let pool = p.child?.pool ?? p.spec.iis.pool;
+  ctx.showPicker(
+    {
+      title: `${p.spec.iis.site}'s application pool`,
+      hint: '↵ sets it for development, or back · it applies when the pool next recycles (r)',
+      empty: "IIS didn't say.",
+      load: async () => {
+        try {
+          pool ??= (await control.poolOf(p.spec.iis.site)) ?? 'DefaultAppPool';
+          const rows = poolRows(await control.poolSettings(pool));
+          const labelW = Math.max(...rows.map((r) => r.label.length));
+          return rows.map((r) => ({
+            ...r,
+            segments: [
+              { text: `${r.label.padEnd(labelW)}  `, strong: true },
+              { text: `${(r.value || '(none)').padEnd(12)}`, color: r.next != null ? theme.accent : undefined },
+              { text: `  ${r.about}`, color: theme.dim },
+            ],
+          }));
+        } catch (e) {
+          throw new Error(appcmdProblem(e));
+        }
+      },
+      onPick: async (it) => {
+        if (it.next == null) return ctx.note(`${it.label} is only shown here: IIS Manager changes it.`);
+        try {
+          await control.setPool(pool, it.key, it.next);
+        } catch (e) {
+          return ctx.note(`Couldn't set ${it.label}: ${appcmdProblem(e)}`, 'error');
+        }
+        ctx.note(`${pool}'s ${it.label.toLowerCase()} is ${it.next || '(none)'} now.`, 'ok');
+        iis(ctx, p.name, { replace: true });
+      },
+    },
+    { replace },
+  );
+}
+
+/**
+ * /hosts: the host names the crew answers to ("host", IIS sites' bindings) that this machine can't
+ * find, added to the hosts file as 127.0.0.1 after asking. Writing it takes an administrator (sudo).
+ */
+export async function hosts(ctx) {
+  if (!ctx.data) return ctx.note('Nothing read yet.');
+  let facts = null;
+  const r = await ctx.task('Hosts', async () => ({ stdout: String((facts = await ctx.gatherFacts({ part: 'hosts' })).hosts.length) }), { label: 'Looking up the crew\'s host names' });
+  if (!r.ok) return r;
+  const { path, read, write } = ctx.hostsFile;
+  let text = '';
+  try {
+    text = read(path);
+  } catch {
+    // No hosts file yet: one is written.
+  }
+  const listed = hostsNames(text);
+  const missing = facts.hosts.filter((h) => !h.found && !listed.has(h.host.toLowerCase())).map((h) => h.host);
+  if (!facts.hosts.length) return ctx.note('The crew answers to no host name of its own: give a process "host", or bind an IIS site to one.');
+  if (!missing.length) return ctx.note(`This machine finds every host name the crew answers to: ${facts.hosts.map((h) => h.host).join(', ')}.`, 'ok');
+  const yes = await ctx.confirm({ title: `Add ${missing.join(', ')} to ${path}, as 127.0.0.1?`, options: YES_NO('Yes, add them') });
+  if (!yes) return false;
+  try {
+    write(path, withHosts(text, missing));
+  } catch (e) {
+    const denied = e.code === 'EACCES' || e.code === 'EPERM';
+    return ctx.note(denied ? `Writing ${path} takes an administrator: start the terminal as administrator (sudo bosun elsewhere), or add the line yourself: 127.0.0.1 ${missing.join(' ')}` : `Couldn't write ${path}: ${e.message}`, 'error');
+  }
+  ctx.note(`Added ${missing.join(', ')} to ${path}.`, 'ok');
+}
+
 /** /preflight: the checks run before the crew starts, again now, as a checklist in the viewer. */
 export async function preflight(ctx) {
   if (!ctx.data) return ctx.note('Nothing read yet.');
@@ -484,8 +574,11 @@ export function whyPrompt(p) {
   return [
     p.spec.iis
       ? `"${p.name}" is one of the processes of the project in the current folder: IIS site "${p.spec.iis.site}", which IIS runs (Bosun starts, recycles and stops it through appcmd). Its log holds what Bosun did, the site's ASP.NET Core stdout log, its W3C request log and the Windows event log's entries for it, as JSON lines`
-      : `"${p.name}" is one of the processes of the project in the current folder, started with: ${p.spec.run}${p.spec.build ? `, after building with: ${p.spec.build}` : ''}`,
+      : p.spec.service
+        ? `"${p.name}" is one of the processes of the project in the current folder: Windows service "${p.spec.service}", which Windows runs (Bosun starts and stops it through sc). Its log holds what Bosun did and the Windows event log's entries for it, as JSON lines`
+        : `"${p.name}" is one of the processes of the project in the current folder, started with: ${p.spec.run}${p.spec.build ? `, after building with: ${p.spec.build}` : ''}`,
     p.status === 'crashed' ? `It stopped with exit code ${p.code}.` : `It is ${p.status}.`,
+    ...(p.dumps?.length ? [`A crash dump of it was written to ${p.dumps.at(-1)}: you can't read it, but say what to run on it (dotnet-dump analyze, then clrstack and pe; or WinDbg's !analyze -v) if the log doesn't say enough.`] : []),
     'Its output is on stdin, the newest last. Say in a few sentences why it failed or what is wrong, and what to do about it. Read the project\'s files if that helps. Plain text, no headings.',
   ].join(' ');
 }

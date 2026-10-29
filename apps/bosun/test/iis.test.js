@@ -44,7 +44,7 @@ test('appcmd: its list lines, bindings, a site\'s config and what it says when i
     <application path="/admin" applicationPool="Admin"><virtualDirectory path="/" physicalPath="C:\\admin" /></application>
     <application path="/" applicationPool="Shop"><virtualDirectory path="/" physicalPath="%SystemDrive%\\src\\shop" /></application>
     <logFile directory="D:\\logs" /></site>`);
-  assert.deepEqual(config, { id: 2, name: 'Shop', physicalPath: '%SystemDrive%\\src\\shop', logDir: 'D:\\logs' });
+  assert.deepEqual(config, { id: 2, name: 'Shop', physicalPath: '%SystemDrive%\\src\\shop', logDir: 'D:\\logs', freb: { enabled: false, directory: null } });
   assert.equal(appcmdProblem({ stdout: 'ERROR ( hresult:80070005, message:Command execution failed.\nAccess is denied. )' }), 'IIS needs an administrator: start the terminal as administrator (or run Bosun through gsudo)');
   assert.match(appcmdProblem({ code: 'ENOENT' }), /IIS isn't installed/);
   assert.equal(appcmdProblem({ stdout: 'ERROR ( message:Cannot find SITE object with identifier "Nope". )' }), 'Cannot find SITE object with identifier "Nope".');
@@ -70,7 +70,7 @@ test('the iis control runs appcmd with the right words, and reads what it says',
   };
   const iis = iisControl({ exec, env: { SystemDrive: 'C:', windir: 'C:\\Windows' } });
   const site = await iis.site('Shop');
-  assert.deepEqual(site, { name: 'Shop', id: 2, state: 'Started', bindings: [{ scheme: 'http', ip: null, port: 8080, host: null }], physicalPath: 'C:\\shop', logDir: 'C:\\inetpub\\logs\\LogFiles' });
+  assert.deepEqual(site, { name: 'Shop', id: 2, state: 'Started', bindings: [{ scheme: 'http', ip: null, port: 8080, host: null }], physicalPath: 'C:\\shop', logDir: 'C:\\inetpub\\logs\\LogFiles', freb: { enabled: false, directory: 'C:\\inetpub\\logs\\FailedReqLogFiles' } });
   assert.equal(await iis.site('Nope'), null);
   assert.deepEqual(await iis.pool('Shop'), { name: 'Shop', state: 'Started', runtime: '', mode: 'Integrated' });
   await assert.rejects(iis.pool('Locked'), (e) => /Access is denied/.test(e.stdout));
@@ -95,8 +95,8 @@ test('web.config, the .NET Framework installed, and bosun.json\'s "iis"', () => 
   assert.equal(frameworkCovers('4.8', '4.7.2'), true);
   assert.equal(frameworkCovers('4.7.2', '4.8'), false);
   assert.equal(frameworkCovers('4.8', '4.8'), true);
-  assert.deepEqual(iisSpec('Shop'), { site: 'Shop', pool: null, build: null, offline: true });
-  assert.deepEqual(iisSpec({ site: 'Shop', pool: 'ShopPool', build: 'msbuild', offline: false }), { site: 'Shop', pool: 'ShopPool', build: 'msbuild', offline: false });
+  assert.deepEqual(iisSpec('Shop'), { site: 'Shop', pool: null, build: null, offline: true, failedRequests: false });
+  assert.deepEqual(iisSpec({ site: 'Shop', pool: 'ShopPool', build: 'msbuild', offline: false }), { site: 'Shop', pool: 'ShopPool', build: 'msbuild', offline: false, failedRequests: false });
   assert.equal(iisSpec({ pool: 'x' }), null);
   assert.equal(iisSpec(''), null);
 
@@ -114,7 +114,7 @@ test('web.config, the .NET Framework installed, and bosun.json\'s "iis"', () => 
   });
   assert.deepEqual(problems, [
     '"both": it has "iis" and "run": IIS runs the site, so it has no command of its own',
-    '"bad": "iis" is a site\'s name, or { "site": "Shop", "pool": "ShopPool", "build": "msbuild" }',
+    '"bad": "iis" is a site\'s name, or { "site": "Shop", "pool": "ShopPool", "build": "msbuild", "failedRequests": true }',
     '"built": an IIS site\'s "build" goes in "iis" ({ "site": "X", "build": "…" })',
     '"host": "host" is a host name, as "shop.local"',
     '"logs": "logs" is a log file\'s path or glob, or a list of them',
@@ -409,7 +409,7 @@ test('pre-flight: Windows, an administrator, the service, the site, its pool and
     return { stdout: '' };
   };
   const facts = await gatherIis([{ name: 'shop', iis: { site: 'Shop', pool: null } }, { name: 'gone', iis: { site: 'Gone', pool: null } }], { platform: 'win32', run, iis: fake.control, exists: () => false });
-  assert.deepEqual(facts.sites[0], { proc: 'shop', site: 'Shop', exists: true, physicalPath: site, pool: 'ShopPool', poolExists: true, runtime: '', core: false, hostingBundle: null, framework: '4.8', installed: '4.7.2' });
+  assert.deepEqual(facts.sites[0], { proc: 'shop', site: 'Shop', exists: true, physicalPath: site, bindings: [{ scheme: 'http', ip: null, port: 8080, host: 'shop.local' }], pool: 'ShopPool', poolExists: true, runtime: '', core: false, hostingBundle: null, framework: '4.8', installed: '4.7.2' });
   assert.deepEqual(checkIis(facts).map(checkLine), [
     '✓ IIS (W3SVC) is running',
     "✗ The terminal isn't an administrator's — IIS starts and stops sites only for an administrator: start the terminal as administrator, or run Bosun through gsudo",

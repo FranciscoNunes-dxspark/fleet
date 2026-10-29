@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { basename, resolve } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { hostsPath } from '../hosts.js';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
@@ -31,6 +33,7 @@ import { exitNews, worthNotifying } from '../notify.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { Recorder, sessionsDir } from '../recorder.js';
+import { dumpsDir } from '../dumps.js';
 import { gitHead } from '../githead.js';
 import { listeningPorts } from '../ports.js';
 import { hailTest, testOutcome } from '../hailcheck.js';
@@ -63,7 +66,7 @@ const HINTS = {
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
 // Whether a process runs differently now (its command or its settings), so /reload restarts it.
-const changedSpec = (had, now) => had.run !== now.run || had.build !== now.build || JSON.stringify(had.iis ?? null) !== JSON.stringify(now.iis ?? null) || JSON.stringify(had.logs ?? []) !== JSON.stringify(now.logs ?? []) || Boolean(had.trace) !== Boolean(now.trace) || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
+const changedSpec = (had, now) => had.run !== now.run || had.build !== now.build || JSON.stringify(had.iis ?? null) !== JSON.stringify(now.iis ?? null) || JSON.stringify(had.logs ?? []) !== JSON.stringify(now.logs ?? []) || Boolean(had.trace) !== Boolean(now.trace) || had.service !== now.service || Boolean(had.dump) !== Boolean(now.dump) || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
 
 function Header({ data, width, loading, mood }) {
   const segs = [
@@ -143,7 +146,7 @@ const viewerKey = (overlay) => {
 // `ensureCert(opts)` makes or reads the certificate "https" serves with (https.js's; tests pass their own).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, ensureCert: certFor = ensureCert, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, ensureCert: certFor = ensureCert, hostsFile = { path: hostsPath(), read: (f) => readFileSync(f, 'utf8'), write: (f, t) => writeFileSync(f, t) }, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -402,7 +405,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       // profile and the checkout's branch and commit, so /replay's r can say what to put back.
       const project = dirRef.current;
       const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs, profile: profileRef.current, readGit: () => gitHead(project) }) : null;
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), dumpDir: dumpsDir(dirRef.current), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
@@ -611,7 +614,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     // /ports: what's listening on this machine (ports.js; tests pass a stub).
     listPorts: async () => listPorts(),
     // /preflight: the facts the checks read (preflight.js; tests pass their own gatherFacts), and the report.
-    gatherFacts: () => gather(dirRef.current, { ...crewRef.current, procs: withProfile(crewRef.current?.procs ?? [], crewRef.current?.profiles ?? {}, profileRef.current) }, { running: (supRef.current?.list() ?? []).filter((p) => p.child).map((p) => p.name) }),
+    gatherFacts: (opts = {}) => gather(dirRef.current, { ...crewRef.current, procs: withProfile(crewRef.current?.procs ?? [], crewRef.current?.profiles ?? {}, profileRef.current) }, { running: (supRef.current?.list() ?? []).filter((p) => p.child).map((p) => p.name), ...opts }),
+    // /hosts: the hosts file (hosts.js's path; tests pass their own).
+    hostsFile,
     preflightReport: (facts) => preflightReport(facts),
     killPids: stopPids,
     // T and /tunnel: cloudflared or ngrok, whichever is on the PATH (or the one bosun.json names).

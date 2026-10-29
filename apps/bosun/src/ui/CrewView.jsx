@@ -60,6 +60,8 @@ export function statusSegment(p, now = Date.now()) {
 export function afterStatus(p, now = Date.now()) {
   if (p.restartAt) return { text: '' };
   if (p.gaveUp && !p.child) return { text: ' gave up', color: theme.del };
+  // A site that took well over its usual time to answer after a start or recycle says so.
+  if (p.child && p.startedAt && p.warm?.slow) return { text: ` ${uptime(p.startedAt, now)} slow ${(p.warm.ms / 1000).toFixed(1)}s`, color: theme.warn };
   if (p.child && p.startedAt) return { text: ` ${uptime(p.startedAt, now)}`, color: theme.dim };
   if (p.code != null && p.status === 'crashed') return { text: ` code ${p.code}`, color: theme.dim };
   return { text: '' };

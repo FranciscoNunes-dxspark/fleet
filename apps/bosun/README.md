@@ -74,6 +74,8 @@ npm start
 | `logs` | Log files to follow into its log, as the app writes them: a path, or a folder and a glob for the name (`"App_Data/logs/*.log"`, whose newest file is followed), or a list. `%VAR%` and `${VAR}` are put in |
 | `host` | The host name its health page is asked for, and `o` opens (`"shop.local"`): for a server that answers only for its own name |
 | `iis` | An IIS site to run instead of a command (Windows): see IIS sites |
+| `service` | A Windows service to run instead of a command (`"MSSQL$SQLEXPRESS"`): see Windows services |
+| `dump` | `true` keeps a crash dump when it crashes: see Crash dumps |
 | `trace` | `true` hears what it (and everything it started, or an IIS site's workers) writes with `Trace.WriteLine`, `Debug.WriteLine` or `OutputDebugString` (Windows): see .NET Framework |
 
 `"envFile"` at the top level (from the project's folder) is read for every process, before each one's
@@ -152,10 +154,12 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | Docker | `docker info` answers, when the crew has compose services |
 | Ports | Each process's port is free (a running one's is its own, and isn't checked) |
 | `.env` keys | Every key of a `.env.example` is in the env file beside it that the crew reads (the project's `.env` when none is named) |
-| Databases | Each database the project's `appsettings*.json` connection strings or `.env` `DATABASE_URL`-style lines name answers on its port (1433, 5432 or 3306 unless given), within 2 seconds |
+| Databases | Each database the project's `appsettings*.json` connection strings, `.env` `DATABASE_URL`-style lines, or `web.config` and `app.config` `<connectionStrings>` (the project's and each process's folder; an Entity Framework string's inner one) name answers on its port (1433, 5432 or 3306 unless given), within 2 seconds. A named instance (`.\SQLEXPRESS`) or LocalDB isn't checked |
 | `node_modules` | It's there, and newer than the lock file (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`) |
 | IIS | For the crew's IIS sites: Windows, IIS installed and running, an administrator's terminal, each site and its pool there, the ASP.NET Core Hosting Bundle for a site that runs through the ASP.NET Core module, and for a .NET Framework site a pool that loads CLR v4.0 and the .NET Framework its web.config targets installed |
-| Tools | The .NET SDK, MSBuild and IIS Express, when a process's command or build runs them |
+| Services | For the crew's Windows services: Windows, an administrator's terminal, each service there and not disabled |
+| Host names | Each host name the crew answers to (a process's `host`, an IIS site's bindings) is found by this machine; `/hosts` adds the missing ones to the hosts file |
+| Tools | The .NET SDK, MSBuild and IIS Express, when a process's command or build runs them, and ProcDump for `dump` on an IIS site or a service |
 
 ## Keys
 
@@ -224,11 +228,12 @@ A process with `"iis"` is a site of this machine's IIS rather than a command: II
 }
 ```
 
-`"iis"` is the site's name, or `{ "site", "pool", "build", "offline" }`: `pool` when it isn't the
-site's own (its root application's), `build` a command run before it starts and before each restart
-(MSBuild, `dotnet publish -o <the site's folder>`), with `app_offline.htm` in the site's folder
-meanwhile so IIS lets go of its files and shows a page saying so (`"offline": false` leaves it out;
-one that was there already stays).
+`"iis"` is the site's name, or `{ "site", "pool", "build", "offline", "failedRequests" }`: `pool`
+when it isn't the site's own (its root application's), `build` a command run before it starts and
+before each restart (MSBuild, `dotnet publish -o <the site's folder>`), with `app_offline.htm` in the
+site's folder meanwhile so IIS lets go of its files and shows a page saying so (`"offline": false`
+leaves it out; one that was there already stays), `failedRequests` (`true`) Failed Request Tracing
+while it runs (below).
 
 - **Starting** starts its pool and the site. One that was running already is used as it is, and left
   running when Bosun quits; one Bosun started is stopped when it quits.
@@ -240,7 +245,13 @@ one that was there already stays).
   it's recycled (`recycled: worker 4120 → 5532`), when it ends idle, and when the pool stops by itself
   (rapid-fail protection), which is a crash.
 - **Its port** is its binding's (plain http first) unless `port` says otherwise, and its health page
-  is asked for with the binding's host name; `o` opens the binding's address.
+  is asked for with the binding's host name; `o` opens the binding's address. A host name this machine
+  can't find (no line in the hosts file) is a pre-flight problem, and `/hosts` adds it.
+- **Warm-up.** As soon as it starts or recycles, Bosun asks for its health page (or `/`) until it
+  answers below 500, so the first request you make isn't the one that waits, and says how long that
+  took (`ready 4.2s after it recycled`). One that takes well over its usual time (half as long again,
+  and a second more) says so in the log and in the list (`slow 9.8s`): a change that made starting
+  slower shows straight away.
 - **Its log** is what IIS keeps of it: the ASP.NET Core module's stdout log (when its web.config has
   `stdoutLogEnabled="true"`; Bosun says when it hasn't), its W3C request log, a line a request (`GET
   /orders 500 812ms`, an error at 5xx and a warning at 4xx, filtered with `status>=500` or `ms>1000`),
@@ -250,7 +261,28 @@ one that was there already stays).
   can hear it: name its own log files (log4net, NLog, Serilog's) in `"logs"`.
 - **`env` and env files** reach its build and, for a .NET Framework site, its appSettings file (see
   .NET Framework); IIS gives the worker no other settings of Bosun's.
+- **Failed Request Tracing.** With `"failedRequests": true`, Bosun turns on IIS's Failed Request
+  Tracing for the site with a rule for 5xx on every path, and reads each trace IIS writes into the
+  log: `failed request GET /orders 500.19 in 16ms: IIS Web Core (BEGIN_REQUEST) Internal Server
+  Error`, with the error code's meaning and the warnings on the way. That's the module that failed
+  the request and how far it got, for the 500s that leave nothing else behind. It turns tracing off
+  again when the site stops, or when Bosun quits, unless it was on before. It needs IIS's Tracing
+  feature (Windows Features, Internet Information Services, World Wide Web Services, Health and
+  Diagnostics, Tracing).
 
+`/iis` (or `/iis <name>`) shows the site's application pool settings, and `↵` sets the one under
+the cursor to its value for development, or back to IIS's default:
+
+| Setting | For development |
+| --- | --- |
+| Idle timeout | `00:00:00`: the worker never shuts down after 20 idle minutes, so the next request doesn't wait for it to start again |
+| Start mode | `AlwaysRunning`: the worker starts with IIS, not on the first request |
+| Recycle every | `00:00:00`: no recycle every 29 hours, in the middle of your work |
+| Rapid-fail protection | `false`: a site that keeps crashing isn't stopped after 5 crashes in 5 minutes |
+| 32-bit | Either: `true` for 32-bit native DLLs |
+
+It also shows the .NET CLR, the pipeline mode, the identity and the number of workers. A change
+applies when the pool next recycles (`r`).
 `f` and `/free` never stop Windows' System process, which holds the ports of http.sys, the HTTP
 server inside Windows that IIS and IIS Express listen through: they say which site it is when it's the
 crew's, and how to find it when it isn't. `/ports` names it `http.sys (System)`.
@@ -283,6 +315,35 @@ own in Bosun:
 Its errors are in the log too: the yellow screen's exception and stack when its health page fails (with
 `customErrors` on, Bosun says to set `mode="RemoteOnly"`, as it asks from this machine), ASP.NET's
 event log entries, and its request log.
+
+### Windows services
+
+A process with `"service"` is a Windows service rather than a command: SQL Server Express, MSMQ, a
+TopShelf service of the project's own. Windows runs it, so Bosun drives it through `sc`, which needs
+an administrator's terminal.
+
+```json
+{ "procs": { "sql": { "service": "MSSQL$SQLEXPRESS", "port": 1433 }, "api": { "run": "dotnet run", "after": "sql" } } }
+```
+
+Starting starts it and waits for it to be running; one that was running already is used as it is, and
+left running when Bosun quits, while one Bosun started is stopped when it quits. `s` stops it (and
+waits for it to stop), `r` stops it and starts it again. Its process is the list's (its CPU and
+memory); one that stops by itself is a crash, with its exit code. Its log has what Bosun did and the
+event log's entries from it, and the service manager's about it (why it didn't start, among them).
+`after` waits for it as for any process: for its `port` to answer, when it has one.
+
+### Crash dumps
+
+A process with `"dump": true` keeps a full dump when it crashes, in Bosun's folder for the project
+(`~/.bosun/dumps/<project>`), and its log says where (`crash dump written: …\api.dotnet.4120.….dmp
+(312 MB)`), so `w` can tell Claude what to run on it. A .NET (Core) process writes its own: Bosun
+sets `DOTNET_DbgEnableMiniDump` and its friends for it, on any platform. An IIS site's worker and a
+Windows service's process aren't Bosun's children, so Bosun attaches
+[ProcDump](https://learn.microsoft.com/sysinternals/downloads/procdump) to each (again to a new worker
+after a recycle), which writes one when an unhandled exception ends it; it must be on your PATH
+(`winget install Microsoft.Sysinternals.ProcDump`). Open a dump with `dotnet-dump analyze`, WinDbg or
+Visual Studio.
 
 ### Local HTTPS
 
@@ -456,8 +517,10 @@ Trawl.
 | `/open <name>` | Open a process's port in the browser |
 | `/tunnel <name>` | Open a process's port to the internet through cloudflared or ngrok (asks first; the address is copied), or close its tunnel |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
-| `/preflight` | Check what the crew needs (Node version, Docker, free ports, `.env` keys, databases, `node_modules`), as a checklist |
+| `/preflight` | Check what the crew needs (Node version, Docker, free ports, `.env` keys, databases, `node_modules`, IIS, services, host names, tools), as a checklist |
 | `/top` | Every process's CPU and memory (with what it started), the busiest first, and a sparkline of the last minute of each; `↵` shows its log |
+| `/iis [name]` | An IIS site's application pool settings (idle timeout, start mode, recycling, rapid-fail protection, 32-bit); `↵` sets one for development, or back (see IIS sites) |
+| `/hosts` | Add the host names the crew answers to that this machine can't find (a process's `host`, an IIS site's bindings) to the hosts file, as 127.0.0.1 (asks first; it takes an administrator) |
 | `/ports` | Every TCP port listening on this machine, with the process holding it (pid and name); the crew's are marked. `f` frees one (asks first), `o` or `↵` opens it in the browser |
 | `/profile [name\|none]` | Run the crew with a profile |
 | `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |

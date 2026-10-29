@@ -95,6 +95,14 @@ export const HELP = [
     ],
   },
   {
+    title: 'IIS',
+    about: '/iis: an IIS site\'s application pool settings',
+    rows: [
+      ['↵', 'Set it for development (idle timeout off, AlwaysRunning, no scheduled recycle, no rapid-fail protection), or back; it applies when the pool next recycles (r)'],
+      ['/hosts', 'Add the host names the crew answers to that this machine can\'t find to the hosts file (asks first)'],
+    ],
+  },
+  {
     title: 'Top',
     about: '/top: every process\'s CPU and memory, with what it started, the busiest first; redrawn every 2 seconds',
     rows: [['↵', 'Its whole log']],
