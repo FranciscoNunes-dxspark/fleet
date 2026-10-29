@@ -16,6 +16,9 @@ import { tunnelArgs, tunnelProblem, tunnelUrl } from './tunnel.js';
 import { httpsPort, startHttpsProxy } from './https.js';
 import { IisChild, iisControl } from './iis.js';
 import { tailLogs } from './tail.js';
+import { fromTree, sharedDebugOutput } from './dbwin.js';
+import { appSettingsNote, writeAppSettings } from './appsettings.js';
+import { errorPage } from './errorpage.js';
 
 // A folder that's still there: Windows reports one whose files changed as changed itself, and the files
 // it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
@@ -62,18 +65,32 @@ export function portOpen(port, { host = '127.0.0.1', timeout = 800 } = {}) {
   });
 }
 
+// The most of an error page kept, to read what it says.
+const PAGE_BYTES = 256 * 1024;
+
 /**
- * The status a page answers with, as fetch would say it ({ status }), for the health checks: `host`
- * goes in the Host header (a site bound to a host name answers nothing else), and https takes any
- * certificate (IIS's own, a development one).
+ * The status a page answers with, as fetch would say it ({ status, text() }), for the health checks:
+ * `host` goes in the Host header (a site bound to a host name answers nothing else), and https takes
+ * any certificate (IIS's own, a development one). The page's text is kept only when it's an error (5xx).
  */
 export function httpStatus(url, { signal, headers = {} } = {}) {
   return new Promise((done, fail) => {
     const u = new URL(url);
     const send = u.protocol === 'https:' ? httpsRequest : httpRequest;
     const req = send(u, { method: 'GET', headers, signal, rejectUnauthorized: false, servername: headers.host?.replace(/:\d+$/, '') || undefined }, (res) => {
-      res.resume();
-      done({ status: res.statusCode });
+      if (res.statusCode < 500) {
+        res.resume();
+        return done({ status: res.statusCode, text: async () => '' });
+      }
+      const chunks = [];
+      let size = 0;
+      res.on('data', (d) => {
+        if (size < PAGE_BYTES) chunks.push(d);
+        size += d.length;
+      });
+      const finish = () => done({ status: res.statusCode, text: async () => Buffer.concat(chunks).toString('utf8') });
+      res.on('end', finish);
+      res.on('error', finish);
     });
     req.on('error', fail);
     req.end();
@@ -119,7 +136,7 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs, debugOutput, appSettings = writeAppSettings } = {}) {
     this.dir = dir;
     // "iis" processes: iis.js's iisControl (made when the first one starts; tests pass a fake), and
     // how often their pool and event log are looked at (`every`, `eventsEvery`).
@@ -127,6 +144,10 @@ export class Supervisor {
     this.iisTimes = iisTimes;
     // "logs": tail.js's tailLogs (tests pass their own `every` through it).
     this.tail = tail;
+    // "trace": dbwin.js's DebugOutput, Windows' only (null elsewhere); made when first wanted.
+    this.debugOutput = debugOutput === undefined ? (process.platform === 'win32' ? sharedDebugOutput : null) : () => debugOutput;
+    // A .NET Framework web.config's appSettings file, written from the process's settings (appsettings.js).
+    this.appSettings = appSettings;
     this.debounce = debounce;
     this.watchImpl = watchImpl;
     // A folder and everything in it watched a folder at a time (treewatch.js), where Node's recursive
@@ -267,6 +288,8 @@ export class Supervisor {
     // The command as bosun.json gives it (what /replay knows a start by), its build said before it.
     if (build && !p.spec.iis) this.push(p, `── build: ${build}`, false);
     this.push(p, `── ${p.spec.run}`, false);
+    // IIS Express and the like read their settings from web.config: its appSettings file gets them.
+    if (!p.spec.iis) this.writeSettings(p, resolve(this.dir, cwd ?? '.'));
     const child = p.spec.iis
       ? this.iisChild(p)
       : this.spawnImpl(run, {
@@ -282,6 +305,7 @@ export class Supervisor {
     p.child = child;
     p.pid = child.pid ?? null;
     if (p.spec.logs?.length) this.tailFor(p, child);
+    if (p.spec.trace) this.traceFor(p, child);
     let buffered = { out: '', err: '' };
     const take = (which, err) => (d) => {
       buffered[which] += d;
@@ -313,6 +337,8 @@ export class Supervisor {
       p.pid = null;
       p.tails?.close();
       p.tails = null;
+      p.untrace?.();
+      p.untrace = null;
       p.endedAt = Date.now();
       p.code = code;
       p.status = stopping ? 'stopped' : code === 0 ? 'exited' : 'crashed';
@@ -336,7 +362,7 @@ export class Supervisor {
    */
   iisChild(p) {
     this.iis ??= iisControl({ env: this.env });
-    const child = new IisChild(p.spec, { control: this.iis, dir: this.dir, env: this.env, spawnImpl: this.spawnImpl, ...this.iisTimes });
+    const child = new IisChild(p.spec, { control: this.iis, dir: this.dir, env: this.env, spawnImpl: this.spawnImpl, settings: (folder) => this.writeSettings(p, folder), ...this.iisTimes });
     child.on('pid', (pid) => {
       if (p.child !== child) return;
       p.pid = pid;
@@ -349,6 +375,43 @@ export class Supervisor {
       this.onChange();
     });
     return child;
+  }
+
+  /**
+   * Writes `p`'s settings to the appSettings file the web.config in `folder` names, and says so when
+   * they changed (or couldn't be written). Returns whether they changed.
+   */
+  writeSettings(p, folder) {
+    if (!this.appSettings || !folder) return false;
+    try {
+      const r = this.appSettings(folder, { ...p.spec.fileEnv, ...p.spec.env });
+      if (r && (r.changed || !r.written)) this.push(p, appSettingsNote(r), !r.written);
+      return Boolean(r?.changed);
+    } catch (e) {
+      this.push(p, `── appSettings: ${e.message}`, true);
+      return false;
+    }
+  }
+
+  /** Hears what `p`'s process tree (an IIS site's workers) says through OutputDebugString while `child` runs. */
+  traceFor(p, child) {
+    const output = this.debugOutput?.();
+    if (!output) return this.push(p, '── "trace" hears Windows\' debug output: there is none here', true);
+    const roots = () => (p.child !== child ? [] : child.seen ? [...child.seen] : [p.pid]);
+    p.untrace = output.subscribe({
+      wants: (entry) => fromTree(entry, roots()),
+      line: (entry) => {
+        if (p.child !== child) return;
+        const { status, trouble } = p;
+        this.push(p, entry.text);
+        this.onChange(p.status === status && p.trouble === trouble ? p : undefined);
+      },
+      problem: (text) => {
+        if (p.child !== child) return;
+        this.push(p, `── trace: ${text}`, true);
+        this.onChange();
+      },
+    });
   }
 
   /** Follows `p`'s "logs" into its log while `child` runs. */
@@ -537,6 +600,9 @@ export class Supervisor {
   /** Recycles `p`'s IIS site: a start of its own, as far as the list, its tests and its uptime go. */
   async recycle(p) {
     const child = p.child;
+    // bosun.json read again since it started: its build and settings as they are now.
+    child.spec = p.spec;
+    child.iis = p.spec.iis;
     Object.assign(p, { status: 'starting', startedAt: Date.now(), trouble: null, tests: null, portOpen: null, health: null });
     this.push(p, '── recycling');
     this.onChange();
@@ -667,6 +733,8 @@ export class Supervisor {
       if (p.child?.stopNow) p.child.stopNow();
       else if (p.pid) killTreeNow(p.pid);
       p.tails?.close();
+      p.untrace?.();
+      p.untrace = null;
       if (p.tunnel) this.closeTunnel(p.name);
       this.stopHttps(p);
     }
@@ -689,6 +757,17 @@ export class Supervisor {
             const at = ip.includes(':') ? `[${ip}]` : ip;
             const res = await fetchImpl(`${scheme}://${at}:${p.port}${p.spec.health.startsWith('/') ? '' : '/'}${p.spec.health}`, { signal: AbortSignal.timeout(2000), headers: host ? { host: `${host}:${p.port}` } : {} });
             health = res.status;
+            // A server error: what its page says goes in the log, once a start and status.
+            const key = `${p.startedAt}:${health}`;
+            if (health >= 500 && p.errorPageFor !== key) {
+              p.errorPageFor = key;
+              const page = errorPage(await res.text?.().catch(() => ''));
+              if (page) {
+                this.push(p, JSON.stringify({ level: 'error', msg: `${p.spec.health} answered ${health}: ${page.headline}`, source: 'health page' }));
+                for (const line of page.lines) this.push(p, `    ${line}`);
+                changed = true;
+              }
+            }
           } catch {
             health = 0;
           }

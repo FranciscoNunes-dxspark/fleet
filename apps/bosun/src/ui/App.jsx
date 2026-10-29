@@ -63,7 +63,7 @@ const HINTS = {
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
 // Whether a process runs differently now (its command or its settings), so /reload restarts it.
-const changedSpec = (had, now) => had.run !== now.run || had.build !== now.build || JSON.stringify(had.iis ?? null) !== JSON.stringify(now.iis ?? null) || JSON.stringify(had.logs ?? []) !== JSON.stringify(now.logs ?? []) || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
+const changedSpec = (had, now) => had.run !== now.run || had.build !== now.build || JSON.stringify(had.iis ?? null) !== JSON.stringify(now.iis ?? null) || JSON.stringify(had.logs ?? []) !== JSON.stringify(now.logs ?? []) || Boolean(had.trace) !== Boolean(now.trace) || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
 
 function Header({ data, width, loading, mood }) {
   const segs = [

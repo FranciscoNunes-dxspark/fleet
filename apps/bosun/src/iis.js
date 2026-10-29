@@ -323,9 +323,10 @@ const OFFLINE = '<!doctype html><title>Building</title><p>Bosun is building this
  * 'site' says the binding (port, host, scheme) once the site has been read.
  */
 export class IisChild extends EventEmitter {
-  constructor(spec, { control, dir, env = process.env, spawnImpl = spawn, every = 2000, eventsEvery = 10_000, tailEvery = 1000, tail = tailLogs, now = Date.now, readFile = (f) => readFileSync(f, 'utf8') }) {
+  constructor(spec, { control, dir, env = process.env, spawnImpl = spawn, every = 2000, eventsEvery = 10_000, tailEvery = 1000, tail = tailLogs, now = Date.now, readFile = (f) => readFileSync(f, 'utf8'), settings = () => {} }) {
     super();
-    Object.assign(this, { spec, iis: spec.iis, control, dir, env, spawnImpl, every, eventsEvery, tailEvery, tail, now, readFile });
+    // `settings(folder)` writes the site's appSettings file from its settings (the supervisor's writeSettings).
+    Object.assign(this, { spec, iis: spec.iis, control, dir, env, spawnImpl, every, eventsEvery, tailEvery, tail, now, readFile, settings });
     this.stdout = new PassThrough();
     this.stderr = new PassThrough();
     this.pid = null;
@@ -357,6 +358,8 @@ export class IisChild extends EventEmitter {
       if (this.stopping) return this.end(null);
       this.adopted = site.state === 'Started' && pool.state === 'Started';
       if (this.iis.build && !(await this.build())) return this.end(1);
+      // A site already running reads its appSettings file again only when its pool recycles.
+      if (this.settings(site.physicalPath) && this.adopted) await this.control.recycle(this.pool).catch(() => {});
       if (this.stopping) return this.end(null);
       if (this.adopted) this.say(`── ${name} was already running in IIS (pool ${this.pool}): Bosun leaves it running when it quits`);
       else {
@@ -495,6 +498,7 @@ export class IisChild extends EventEmitter {
     const built = this.iis.build ? await this.build() : true;
     if (this.closed || this.stopping) return built;
     if (!built) this.warn('── the site still runs what was built before');
+    this.settings(this.site?.physicalPath);
     try {
       await this.control.recycle(this.pool);
       this.say(`── recycled ${this.pool}${this.shared ? ' (it runs other sites too: they restarted with it)' : ''}`);

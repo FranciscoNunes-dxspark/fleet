@@ -81,6 +81,17 @@ export function within(outer, inner, win = process.platform === 'win32') {
 export const msbuildLine = (msbuild, file) => `"${msbuild}" "${basename(file)}" /restore /p:RestorePackagesConfig=true /nologo /v:m`;
 
 /**
+ * A .NET Framework project published to `to` (a folder from the project's): MSBuild's file-system
+ * publish, which applies its Web.<configuration>.config transform to the web.config it writes there,
+ * as Visual Studio's publish does (a site serving the project's own folder runs its web.config as it is).
+ */
+export const msbuildPublishLine = (msbuild, file, to, configuration = 'Debug') =>
+  `${msbuildLine(msbuild, file)} /p:Configuration=${configuration} /p:DeployOnBuild=true /p:WebPublishMethod=FileSystem /p:PublishUrl="${to}" /p:DeleteExistingFiles=false`;
+
+/** Debug when the folder says so (bin\Debug\…, publish-debug), else Release. */
+const configurationOf = (path) => (/(^|[\\/._-])debug([\\/._-]|$)/i.test(path) ? 'Debug' : 'Release');
+
+/**
  * The crew of .NET web projects under `dir`, or null with none: { from, procs }. `iisSites()` gives
  * IIS's sites' root folders ([{ site, physicalPath }]), `msbuild()` MSBuild's path; both are asked
  * only when a project needs them.
@@ -117,7 +128,10 @@ export function dotnetCrew(dir, { read = (f) => readFileSync(f, 'utf8'), list, i
     const site = sites.find((s) => s.physicalPath && within(folder, resolve(s.physicalPath), win));
     if (site) {
       const pp = resolve(site.physicalPath);
-      const build = kind === 'framework' ? msbuildLine(tool(), file) : samePath(pp, folder, win) ? null : `dotnet publish -c ${/[\\/]debug[\\/]/i.test(pp) ? 'Debug' : 'Release'} -o "${relative(folder, pp) || '.'}"`;
+      // Served from the project's own folder: built in place. From a folder inside it: published
+      // there, Web.<configuration>.config applied (.NET Framework) or `dotnet publish` (ASP.NET Core).
+      const to = relative(folder, pp);
+      const build = samePath(pp, folder, win) ? (kind === 'framework' ? msbuildLine(tool(), file) : null) : kind === 'framework' ? msbuildPublishLine(tool(), file, to, configurationOf(to)) : `dotnet publish -c ${configurationOf(to)} -o "${to}"`;
       procs.push({ ...base, name: named(site.site), run: `appcmd start site "${site.site}"`, iis: { site: site.site, pool: null, build, offline: true } });
       continue;
     }

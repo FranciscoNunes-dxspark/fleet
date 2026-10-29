@@ -60,7 +60,7 @@ npm start
 | `cwd` | Where it runs, from the project's folder |
 | `port` | The port it listens on: shown with ✓ once it answers, `o` opens it |
 | `https` | A port to serve it on with TLS too (`4443`), or `true` for the one after `port`: see Local HTTPS |
-| `health` | A page on that port that answers 2xx or 3xx when it's well; ✗ otherwise |
+| `health` | A page on that port that answers 2xx or 3xx when it's well; ✗ otherwise. When it answers 5xx, what its page says goes in the log, once a start: the exception and its stack from ASP.NET's yellow screen or ASP.NET Core's developer page, IIS's detailed error (500.19, 500.30…), a problem details JSON, or its title |
 | `env` | Settings for it, on top of the terminal's and its env files' |
 | `envFile` | A `.env` file (or a list of them) to read settings from, from its `cwd` |
 | `group` | A name it's listed under, with the others of that group (`"backend"`); `/start`, `/stop` and `/restart` take it |
@@ -74,6 +74,7 @@ npm start
 | `logs` | Log files to follow into its log, as the app writes them: a path, or a folder and a glob for the name (`"App_Data/logs/*.log"`, whose newest file is followed), or a list. `%VAR%` and `${VAR}` are put in |
 | `host` | The host name its health page is asked for, and `o` opens (`"shop.local"`): for a server that answers only for its own name |
 | `iis` | An IIS site to run instead of a command (Windows): see IIS sites |
+| `trace` | `true` hears what it (and everything it started, or an IIS site's workers) writes with `Trace.WriteLine`, `Debug.WriteLine` or `OutputDebugString` (Windows): see .NET Framework |
 
 `"envFile"` at the top level (from the project's folder) is read for every process, before each one's
 own. The files are in the usual dotenv format: `NAME=value` lines, `#` comments, `export ` in front,
@@ -128,7 +129,8 @@ Without a `bosun.json`, Bosun works out what to run from the first of these it f
    or a publish folder inside it) runs as that site, built first: MSBuild for a .NET Framework one,
    `dotnet publish` to the site's folder for an ASP.NET Core one. An ASP.NET project on .NET
    Framework that no site serves runs in IIS Express on its `<IISUrl>` port, built with MSBuild
-   first (found through Visual Studio's vswhere, restoring its packages, packages.config's too). An
+   first (found through Visual Studio's vswhere, restoring its packages, packages.config's too); one
+   an IIS site serves from a folder inside the project is published there, its web.config transformed. An
    ASP.NET Core one runs with `dotnet run --launch-profile` its first `Project` launch profile, on
    that profile's http port. Finding the IIS sites needs an administrator's terminal; without one,
    the projects run as if no site served them.
@@ -246,11 +248,41 @@ one that was there already stays).
   worker's), which say why a site fails to start. IIS writes its request log a minute late, so Bosun
   asks it to write it out every 10 seconds. A site on .NET Framework writes nothing else where Bosun
   can hear it: name its own log files (log4net, NLog, Serilog's) in `"logs"`.
-- **`env` and env files** reach its build, not the site: IIS gives the worker its own settings.
+- **`env` and env files** reach its build and, for a .NET Framework site, its appSettings file (see
+  .NET Framework); IIS gives the worker no other settings of Bosun's.
 
 `f` and `/free` never stop Windows' System process, which holds the ports of http.sys, the HTTP
 server inside Windows that IIS and IIS Express listen through: they say which site it is when it's the
 crew's, and how to find it when it isn't. `/ports` names it `http.sys (System)`.
+
+### .NET Framework
+
+An ASP.NET site on .NET Framework (in IIS, or in IIS Express from its project) has three things of its
+own in Bosun:
+
+- **Its settings.** It reads `ConfigurationManager.AppSettings`, never the environment, so `env` and
+  env files can't reach it as they reach other processes. But when its web.config's `<appSettings
+  file="…">` names a file, Bosun writes the process's settings there (each one as an `<add key value>`)
+  before each start and restart, and an IIS site that was already running is recycled when they
+  changed, so profiles and `.env` files reach the site as they reach the rest of the crew. Its entries
+  win over the web.config's own. Bosun writes only a file that isn't there, or that it wrote itself
+  (it says so at its top): one of yours is left alone, and the log says so.
+- **Its trace output.** `Trace.WriteLine` (and `Debug.WriteLine` in a Debug build) goes to
+  `OutputDebugString`, which on Windows reaches only a debugger or a reader like DebugView. A process
+  with `"trace": true` hears it in its log: Bosun runs one reader for all of them (a small C# program
+  Windows PowerShell compiles on the spot), and gives each process the lines of its own process tree,
+  or for an IIS site its workers'. IIS's workers run in session 0, which only an administrator's
+  terminal can hear. Only one reader can listen at a time: with DebugView open, Bosun says it can't.
+  A process with a debugger attached (Visual Studio) says it to the debugger instead.
+- **Its web.config transforms.** A site served from the project's own folder runs its web.config as it
+  is, as Visual Studio's F5 does. One served from a folder inside the project (`publish`,
+  `bin\Release\publish`) is published there with MSBuild when Bosun works the crew out, which applies
+  `Web.Release.config` (or `Web.Debug.config` when the folder's name says Debug) to the web.config it
+  writes there.
+
+Its errors are in the log too: the yellow screen's exception and stack when its health page fails (with
+`customErrors` on, Bosun says to set `mode="RemoteOnly"`, as it asks from this machine), ASP.NET's
+event log entries, and its request log.
 
 ### Local HTTPS
 
