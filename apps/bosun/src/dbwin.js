@@ -96,13 +96,16 @@ public static class BosunDbwin {
 }
 `;
 
-/** The PowerShell that runs the reader for Bosun's process `pid`. */
-export const dbwinScript = (pid) => `$ErrorActionPreference = 'Stop'
+/** The PowerShell that compiles the reader (alone, the tests' check that it still compiles). */
+export const dbwinCompile = () => `$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 Add-Type -ReferencedAssemblies System.Core, System.Management -TypeDefinition @'
 ${READER.trim()}
 '@
-[BosunDbwin]::Run(${Number(pid)})
+`;
+
+/** The PowerShell that runs the reader for Bosun's process `pid`. */
+export const dbwinScript = (pid) => `${dbwinCompile()}[BosunDbwin]::Run(${Number(pid)})
 `;
 
 /** The helper's command: Windows PowerShell (5.1, which has the access-control overloads it needs), the script encoded so nothing in it needs quoting. */

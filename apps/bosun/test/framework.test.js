@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MARK, appSettingsFile, appSettingsNote, appSettingsXml, writeAppSettings } from '../src/appsettings.js';
 import { errorPage, htmlText } from '../src/errorpage.js';
-import { DebugOutput, dbwinCommand, fromTree, parseDbwin, problemNote } from '../src/dbwin.js';
+import { DebugOutput, dbwinCommand, dbwinCompile, fromTree, parseDbwin, problemNote } from '../src/dbwin.js';
+import { execFileSync } from 'node:child_process';
 import { dotnetCrew, msbuildPublishLine } from '../src/dotnet.js';
 import { readSpec, specFor } from '../src/crew.js';
 import { Supervisor } from '../src/supervisor.js';
@@ -209,6 +210,12 @@ test('debug output: the helper\'s lines read and handed to the process whose tre
   assert.equal(child.killed, false);
   offB();
   assert.equal(child.killed, true, 'gone with the last one');
+});
+
+test("debug output: the reader's C# compiles in Windows PowerShell", { skip: process.platform !== 'win32' && 'Windows PowerShell is Windows\' only' }, () => {
+  const script = `${dbwinCompile()}[BosunDbwin].FullName\n`;
+  const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 120_000 });
+  assert.match(out, /BosunDbwin/);
 });
 
 test('"trace": a process hears its tree\'s debug output; off Windows it says there is none', async () => {
