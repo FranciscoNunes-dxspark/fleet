@@ -3,6 +3,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
+import { folderChoices, resolveFolder, samePath } from '@fleet/kit/folders.js';
 import { clip, draftPrompt, parseDraft } from './claude.js';
 import { configFile } from './config.js';
 import { driftSummary, loadContract } from './contract.js';
@@ -11,7 +12,7 @@ import { KIND_NAMES, importText } from './importers.js';
 import { DEFAULT_PORT, routesFor, startMock } from './mock.js';
 import { changedOnly, lineDiff } from './diff.js';
 import { parseData } from '@fleet/kit/datatree.js';
-import { pathArg, writeExample } from './files.js';
+import { findHttpFiles, pathArg, writeExample } from './files.js';
 import { previousOf } from './history.js';
 import { run } from '@fleet/kit/run.js';
 import { checkSummary } from './checks.js';
@@ -588,15 +589,43 @@ export function chooseEnvironment(ctx, name) {
   });
 }
 
-/** /open: another .http file. */
+/** /open: another .http file, from the folder Hail is in. */
 export async function open(ctx, path) {
   if (!path.trim()) return ctx.prefill('/open ');
-  return ctx.openFile(resolve(pathArg(path)));
+  return ctx.openFile(resolve(ctx.folder?.() ?? '.', pathArg(path)));
+}
+
+/** Whether `dir` has .http (or .rest) files, in it or the folder below. */
+const hasHttpFiles = (dir) => findHttpFiles(dir, 1).length > 0;
+
+/**
+ * /move [folder]: Hail works in another folder, opening its first .http file: a path, or a folder
+ * beside this one or inside it; without one, a list of the folders used lately and the ones beside this one.
+ */
+export function move(ctx, folder) {
+  const dir = ctx.folder();
+  if (!folder?.trim()) {
+    const items = folderChoices(dir, ctx.config.folders ?? [], { has: hasHttpFiles });
+    if (!items.length) return ctx.note('There are no other folders beside this one: /move <path>.');
+    return ctx.showPicker({
+      title: 'Move to',
+      hint: 'the folders used lately first · ↵ opens its first .http file',
+      items: items.map((it) => ({ ...it, segments: [{ text: it.name, strong: it.has }, { text: it.has ? '' : '  (no .http files)', color: theme.dim }] })),
+      onPick: (it) => {
+        ctx.closeOverlay();
+        move(ctx, it.path);
+      },
+    });
+  }
+  const target = resolveFolder(dir, folder);
+  if (!target) return ctx.note(`There's no folder ${folder.trim()} here or beside ${basename(dir)}.`, 'error');
+  if (samePath(target, dir)) return ctx.note(`Hail is in ${basename(target)} already: /open picks another of its files.`);
+  return ctx.moveTo(target);
 }
 
 /** /new: writes an example .http file (requests.http unless named) and opens it. */
 export async function newFile(ctx, path) {
-  const file = resolve(path.trim() || 'requests.http');
+  const file = resolve(ctx.folder?.() ?? '.', path.trim() || 'requests.http');
   if (!writeExample(file)) return ctx.note(`${basename(file)} is there already; /open ${path.trim() || 'requests.http'} opens it.`, 'error');
   ctx.note(`Wrote ${basename(file)}, an example to start from`, 'ok');
   return ctx.openFile(file);

@@ -11,6 +11,7 @@ export const HELP = [
       ['!', 'Run a shell command, e.g.  !az keyvault list -o table'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
       ['ctrl+r', 'Read the folder, the app and the vault again'],
+      ['/move', 'Read another folder\'s settings: a path, or one beside this one; alone, a list of the folders read lately and the ones beside'],
       [',', 'Settings'],
       ['?', 'This help'],
       ['q', 'Quit'],

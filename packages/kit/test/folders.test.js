@@ -1,0 +1,32 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { KEEP, folderChoices, remember, resolveFolder, samePath, siblings } from '../folders.js';
+
+test('folders: what a name means, the ones beside, the choices and the remembered list', () => {
+  const root = mkdtempSync(join(tmpdir(), 'kit-folders-'));
+  for (const name of ['shop', 'Admin', 'blog', '.hidden', 'shop/web']) mkdirSync(join(root, name), { recursive: true });
+  writeFileSync(join(root, 'notes.txt'), '');
+  writeFileSync(join(root, 'blog', 'marker'), '');
+  const shop = join(root, 'shop');
+  assert.deepEqual(siblings(shop).map((p) => p.slice(root.length + 1)), ['Admin', 'blog', 'shop']);
+  assert.equal(resolveFolder(shop, 'blog'), join(root, 'blog'));
+  assert.equal(resolveFolder(shop, 'web'), join(shop, 'web'));
+  assert.equal(resolveFolder(shop, '"../Admin"'), join(root, 'Admin'));
+  assert.equal(resolveFolder(shop, root), root);
+  assert.equal(resolveFolder(shop, '~/blog', { home: root }), join(root, 'blog'));
+  assert.equal(resolveFolder(shop, 'nope'), null);
+  assert.equal(resolveFolder(shop, ' '), null);
+  const gone = join(root, 'gone');
+  const choices = folderChoices(shop, [join(root, 'blog'), gone, shop], { has: (p) => p.endsWith('blog') });
+  assert.deepEqual(choices.map((c) => [c.name, c.recent, c.has]), [['blog', true, true], ['Admin', false, false]]);
+  assert.equal(samePath('/a/b', '/a/b/'), true);
+  assert.equal(samePath('C:\\A', 'c:\\a', true), true);
+  assert.equal(samePath('/A', '/a', false), false);
+  const many = Array.from({ length: 10 }, (_, i) => `/p${i}`);
+  assert.deepEqual(remember(many, '/p3').slice(0, 2), ['/p3', '/p0']);
+  assert.equal(remember(many, '/new').length, KEEP);
+  assert.deepEqual(remember(undefined, '/x'), ['/x']);
+});

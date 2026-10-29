@@ -1,5 +1,7 @@
 import * as a from './actions.js';
 import { label } from './azure/arm.js';
+import { basename } from 'node:path';
+import { siblings } from '@fleet/kit/folders.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -20,6 +22,7 @@ export const COMMANDS = [
   { name: 'timeline', desc: "What the family's apps did that changed something, newest first: p this project only or all", run: (ctx) => a.timeline(ctx) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
+  { name: 'move', args: '[folder]', desc: 'Read another folder\'s settings instead: a path, or a folder beside this one (completed as you type); alone, the folders read lately and the ones beside this one', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },
   { name: 'refresh', desc: 'Read the folder, the app and the vault again', run: (ctx) => ctx.refresh() },
   { name: 'settings', desc: 'App, vault, expiry, clipboard, theme, accent colour, mouse, updates', run: (ctx) => a.settings(ctx) },
   { name: 'theme', args: '[dark|light|auto]', desc: 'Change the theme', complete: 'themes', run: (ctx, s) => a.setTheme(ctx, s) },
@@ -48,6 +51,8 @@ function completions(kind, data) {
   if (kind === 'filters') return ['all', 'diff', 'missing'];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];
+  // The folders beside this one, by name, as /move takes them.
+  if (kind === 'folders') return data?.dir ? siblings(data.dir).map((d) => basename(d)).filter((n) => n !== basename(data.dir)) : [];
   return [];
 }
 

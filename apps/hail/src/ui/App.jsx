@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import { readFileSync, watch, writeFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
+import { remember, siblings } from '@fleet/kit/folders.js';
 import * as a from '../actions.js';
 import { azToken as azCli } from '../azure.js';
 import { osCredentials } from '@fleet/kit/credentials.js';
@@ -141,7 +142,8 @@ const DOUBLE_CLICK_MS = 400;
 // desktop notification); tests pass a recorder or nothing. `familyEvery` is how often (ms) the sibling
 // apps' moods are read (family.js; FAMILY_HOME moves them, which tests do). `openUrl` opens a page in
 // the browser (an OAuth sign-in; cli.jsx's browser.js), which tests stub.
-export function App({ config: initialConfig, initialFile, load = loadHttpFile, azToken = azCli, credentials = osCredentials, askClaude, checkUpdate, installUpdate, setTitle, mouse, copy, notify, openUrl, familyEvery = 30_000 }) {
+// `cwd` is the folder Hail works in: where /open looks for .http files, and what /move changes.
+export function App({ config: initialConfig, initialFile, cwd = process.cwd(), load = loadHttpFile, azToken = azCli, credentials = osCredentials, askClaude, checkUpdate, installUpdate, setTitle, mouse, copy, notify, openUrl, familyEvery = 30_000 }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -430,6 +432,19 @@ export function App({ config: initialConfig, initialFile, load = loadHttpFile, a
     setContractTick((n) => n + 1);
   };
 
+  // /move: another folder; its first .http file is opened, as on starting there.
+  const folderRef = useRef(cwd);
+  // The folder Hail started in, first in /move's list.
+  useEffect(() => setConfig((c) => ({ ...c, folders: remember(c.folders, folderRef.current) })), []);
+  const moveTo = async (dir) => {
+    folderRef.current = dir;
+    setConfig((c) => ({ ...c, folders: remember(c.folders, dir) }));
+    const found = findHttpFiles(dir);
+    if (!found.length) return note(`Hail is in ${dir} now, which has no .http files: /new writes one, /import brings some in.`);
+    await openFile(resolve(dir, found[0]));
+    if (found.length > 1) note(`${found.length} .http files in ${basename(dir)}: /open picks another.`);
+  };
+
   const openFile = async (file) => {
     saveEditor();
     fileRef.current = file;
@@ -570,6 +585,8 @@ export function App({ config: initialConfig, initialFile, load = loadHttpFile, a
     task,
     setBusyLabel,
     openFile,
+    moveTo,
+    folder: () => folderRef.current,
     environment,
     setEnvironment: (name) => {
       const path = dataRef.current?.path;
@@ -998,15 +1015,16 @@ export function App({ config: initialConfig, initialFile, load = loadHttpFile, a
     setTitle?.(title);
   }, [title]);
 
-  // .http files to /open, looked for while that's being typed.
-  const files = focus === 'prompt' && prompt.value.startsWith('/open ') ? findHttpFiles(process.cwd()) : [];
+  // .http files to /open (or folders to /move to), looked for while that's being typed.
+  const argsFor = (value) => (value.startsWith('/open ') ? findHttpFiles(folderRef.current) : value.startsWith('/move ') ? siblings(folderRef.current).map((d) => basename(d)).filter((n) => n !== basename(folderRef.current)) : []);
+  const files = focus === 'prompt' ? argsFor(prompt.value) : [];
   const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, files, environment: environment() }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, files: value.startsWith('/open ') ? findHttpFiles(process.cwd()) : [], environment: environment() });
+    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, files: argsFor(value), environment: environment() });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);

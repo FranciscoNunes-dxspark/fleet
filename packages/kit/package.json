@@ -34,6 +34,7 @@
     "./credentials.js": "./credentials.js",
     "./claude-cli.js": "./claude-cli.js",
     "./family.js": "./family.js",
+    "./folders.js": "./folders.js",
     "./hosted.js": "./hosted.js",
     "./mcp.js": "./mcp.js",
     "./update.js": "./update.js",

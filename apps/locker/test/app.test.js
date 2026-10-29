@@ -266,3 +266,33 @@ test('without Azure the folder is still compared, and the header says why', asyn
   await until(shows(app, 'run az login'), 'the vault view says so');
   app.unmount();
 });
+
+test('/move reads another folder: a picker of the ones beside it, then its settings in this one\'s place', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { createLocal } = await import('../src/local.js');
+  const root = mkdtempSync(join(tmpdir(), 'locker-move-'));
+  for (const [name, env] of [['shop', 'SHOP_ONLY=1\n'], ['blog', 'BLOG_ONLY=1\n'], ['empty', null]]) {
+    mkdirSync(join(root, name));
+    if (env) writeFileSync(join(root, name, '.env'), env);
+  }
+  const app = start({ local: createLocal({ dir: join(root, 'shop') }), makeLocal: (dir) => createLocal({ dir }) });
+  const has = (t) => app.lastFrame().includes(t);
+  await until(() => has('SHOP_ONLY'), 'the first folder');
+  await type(app.stdin, '/move');
+  app.stdin.write(KEYS.enter);
+  await until(() => has('Move to') && has('blog') && has('(no settings found)'), 'the picker');
+  // blog comes before empty: by name, after the folders read lately (only this one so far).
+  app.stdin.write(KEYS.enter);
+  await until(() => has('BLOG_ONLY') && !has('SHOP_ONLY'), 'the other folder read');
+  assert.ok(app.lastFrame().split('\n')[0].includes('blog'), 'the header names the folder');
+  await type(app.stdin, '/move nope');
+  app.stdin.write(KEYS.enter);
+  await until(() => has("There's no folder nope"), 'the missing folder');
+  await type(app.stdin, '/move shop');
+  app.stdin.write(KEYS.enter);
+  await until(() => has('SHOP_ONLY'), 'back again');
+  const { loadConfig } = await import('../src/config.js');
+  await until(() => (loadConfig().projects ?? [])[0]?.endsWith('shop'), 'remembered');
+  app.unmount();
+});

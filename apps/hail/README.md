@@ -10,7 +10,7 @@ A sibling of [Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/
 [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl): the same prompt, help window, mouse,
 settings and self-updating builds.
 
-Hail also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]`; a line Hail copies for a sibling goes straight to that app's prompt there.
+Hail also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+b`; a line Hail copies for a sibling goes straight to that app's prompt there.
 
 ## Install
 
@@ -612,6 +612,7 @@ and Trawl.
 | `/import <file> [--new]` | Add the requests in a Postman collection, a HAR recording or an OpenAPI or Swagger document (or a Postman environment, to `http-client.env.json`); `--new` writes them to a file of their own |
 | `/import-curl <command>` | Add a request to the end of the file from a curl command, and pick it |
 | `/open <file.http>` | Open another file |
+| `/move [folder]` | Work in another folder and open its first `.http` file: a path, or a folder beside this one (completed as you type); alone, a list of the folders used lately, then the ones beside this one (those with `.http` files in bold). `/open` and `/new` work from it |
 | `/mock [port\|off]` | Serve the responses kept for this file's requests (and the contract's examples) on `http://127.0.0.1:4010`, or stop it |
 | `/contract [file\|url\|off]` | Check every response against an OpenAPI or Swagger document, remembered for the file (`off` forgets it) |
 | `/find <text>` | Find text in the file, in Edit (`n` and `alt+n` go on to the next and the one before) |

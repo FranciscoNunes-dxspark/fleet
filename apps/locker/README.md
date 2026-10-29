@@ -17,7 +17,10 @@ Azure is read with the Azure CLI's sign-in (`az login`; Locker asks it for token
 
 ## Sources
 
-From the folder Locker started in:
+From the folder Locker started in (the header names it; `/move` reads another one: a path, or a
+folder beside this one, completed as you type; alone, a list of the folders read lately, then the
+ones beside this one, those with settings in bold. Its sources take this folder's place, and the App
+Service app named as the new folder, when there is one, becomes the one compared):
 
 - `.env`, `.env.local`, `.env.development` … (`.env.example`, `.sample`, `.template` say which keys a project expects: their values are only examples, so the matrix says `● set` there and never compares them)
 - `appsettings.json` and each `appsettings.<Environment>.json`, flattened as .NET reads them: `Logging:LogLevel:Default`, `ConnectionStrings:Default`, `Hosts:0`
@@ -86,7 +89,7 @@ What Locker read, with how many keys each has and where it is. `↵` lists a sou
 
 ## Slash commands
 
-`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/disable <secret>` disables or enables one. `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/disable <secret>` disables or enables one. `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 Your own commands and keys go in the settings file, as in the siblings: `"commands": { "prod": "/app shop-api" }`, `"keys": { "drift": { "ctrl+o": "/app" } }`.
 

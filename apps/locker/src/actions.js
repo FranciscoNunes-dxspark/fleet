@@ -3,6 +3,9 @@
 // (`ctx.confirm`). A value is never put in a note, a task's output, the activity log or a hand-off:
 // it goes only to the screen on an explicit reveal, to the clipboard, or into the file it was asked into.
 import { run } from '@fleet/kit/run.js';
+import { readdirSync } from 'node:fs';
+import { basename } from 'node:path';
+import { folderChoices, resolveFolder, samePath } from '@fleet/kit/folders.js';
 import { fit, relTime } from '@fleet/kit/text.js';
 import { APP_NAMES, FAMILY, MASK, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity } from '@fleet/kit/family.js';
 import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
@@ -409,6 +412,40 @@ export function showSource(ctx, source) {
   const w = Math.min(48, Math.max(8, ...source.entries.map((e) => e.key.length)));
   const lines = source.entries.map((e) => `${fit(e.key, w)}  ${e.value === '' ? '(empty)' : isReference(e.value) ? e.value : MASK}`);
   ctx.showText(`${source.label} · ${plural(source.entries.length, 'key')}`, [`${source.file}`, '', ...lines].join('\n'));
+}
+
+/** Whether `dir` has settings Locker reads: .env files, appsettings*.json, a .csproj (user secrets) or Hail's env files. */
+export function hasSettings(dir) {
+  try {
+    return readdirSync(dir).some((f) => /^\.env(\..+)?$|^appsettings(\.[\w-]+)?\.json$|\.csproj$|^http-client(\.private)?\.env\.json$/i.test(f));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * /move [folder]: Locker reads another folder's settings: a path, or a folder beside this one or inside
+ * it; without one, a list of the folders read lately and the ones beside this one.
+ */
+export function move(ctx, folder) {
+  const dir = ctx.cwd();
+  if (!folder?.trim()) {
+    const items = folderChoices(dir, ctx.config.projects ?? [], { has: hasSettings });
+    if (!items.length) return ctx.note('There are no other folders beside this one: /move <path>.');
+    return ctx.showPicker({
+      title: 'Move to',
+      hint: 'the folders read lately first · ↵ reads its settings',
+      items: items.map((it) => ({ ...it, segments: [{ text: it.name, strong: it.has }, { text: it.has ? '' : '  (no settings found)', color: theme.dim }] })),
+      onPick: (it) => {
+        ctx.closeOverlay();
+        move(ctx, it.path);
+      },
+    });
+  }
+  const target = resolveFolder(dir, folder);
+  if (!target) return ctx.note(`There's no folder ${folder.trim()} here or beside ${basename(dir)}.`, 'error');
+  if (samePath(target, dir)) return ctx.note(`Locker is in ${basename(target)} already.`);
+  return ctx.moveTo(target);
 }
 
 /** /family: what the folder Locker started in offers the other apps, a line for one's prompt each; ↵ copies it. */
