@@ -11,6 +11,8 @@ import { COMPILED } from '../app.js';
 import { appSpawner } from '../launch.js';
 import { SPACES, spaceNamed } from '../spaces.js';
 import { GuiSession } from './session.js';
+import { DEFAULT_PREFIX, prefixByte, prefixName } from '../keys.js';
+import { loadState, saveState } from '../state.js';
 import { guiServer, loadClient } from './server.js';
 
 export const GUI_USAGE = `fleet gui [--port <n>] [--no-open] [--print-url] [app [its arguments…]]
@@ -88,7 +90,12 @@ export async function runGui(argv, { env = process.env, out = process.stdout } =
     return;
   }
   // Nothing in a window is a terminal's, so the apps get full colour whatever this terminal has.
-  const session = new GuiSession({ spawn: appSpawner({ compiled: COMPILED, depth: 24, env: { ...env, FLEET_GUI: '1' } }), spaces: SPACES, args: opts.args });
+  // host.json: the prefix (FLEET_PREFIX first) and the folders moved to lately, as the terminal's host has them.
+  const state = loadState(env);
+  const prefixWanted = env.FLEET_PREFIX || state.prefix;
+  const prefix = prefixName(prefixByte(prefixWanted ?? DEFAULT_PREFIX) ?? prefixByte(DEFAULT_PREFIX));
+  const folders = Array.isArray(state.folders) ? state.folders.filter((f) => typeof f === 'string') : [];
+  const session = new GuiSession({ spawn: appSpawner({ compiled: COMPILED, depth: 24, env: { ...env, FLEET_GUI: '1' } }), spaces: SPACES, args: opts.args, prefix, folders, onFolders: (list) => saveState({ folders: list }, env) });
   session.start();
   const server = guiServer(session, { files: await loadClient(), env });
   const url = await server.listen(opts.port);

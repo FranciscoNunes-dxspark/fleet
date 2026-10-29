@@ -29,6 +29,8 @@ import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@f
 import { familyMood, reactionTo } from '../moods.js';
 import { label } from '../azure/arm.js';
 import { azProblem } from '../azure/az.js';
+import { basename } from 'node:path';
+import { remember } from '@fleet/kit/folders.js';
 import { driftColumns, pickTarget, loadSubscription, loadTarget, loadVault, referencedVaults, vaultMap } from '../load.js';
 import { driftMatrix } from '../drift.js';
 import { expiring, expiryNotice } from '../expiry.js';
@@ -64,6 +66,7 @@ function Header({ data, width, loading, mood, problem, demo }) {
     { text: 'Locker', bold: true },
   ];
   if (demo) segs.push({ text: '  demo', color: theme.warn });
+  if (data.dir) segs.push({ text: '  │  ', color: theme.border }, { text: basename(data.dir), bold: true });
   segs.push({ text: '  │  ', color: theme.border }, { text: data.target ? label(data.target) : 'no app', color: data.target ? theme.info : theme.dim });
   segs.push({ text: ' · ', color: theme.border }, { text: data.vault ? data.vault.name : 'no vault', color: data.vault ? theme.accent : theme.dim });
   if (data.trouble.expiring.length) segs.push({ text: `  ${data.trouble.expiring.length} expiring`, color: theme.del, bold: true });
@@ -145,11 +148,12 @@ function derive(store, config) {
 // `notify` raises the terminal's notification (an expiry on start), `openUrl` opens the browser. `checkUpdate`
 // and `installUpdate` come only in the downloaded builds, so tests and checkouts never go online or replace anything.
 // `onConfig` hears every change of the settings (cli.jsx's guard reads clearClipboard from them).
-export function App({ config: initialConfig, provider, local = createLocal(), cwd, guard, copy, notify, openUrl, setTitle, mouse, checkUpdate, installUpdate, onConfig, moodEvery = 30_000, demo = false }) {
+// `makeLocal(dir)` reads another folder (/move): createLocal's, null in the demo, which has one folder.
+export function App({ config: initialConfig, provider, local = createLocal(), makeLocal: readerFor, cwd, guard, copy, notify, openUrl, setTitle, mouse, checkUpdate, installUpdate, onConfig, moodEvery = 30_000, demo = false }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
-  const [store, setStoreState] = useState(EMPTY);
+  const [store, setStoreState] = useState(() => ({ ...EMPTY, dir: cwd ?? local.dir }));
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('drift');
   const [filter, setFilterState] = useState('all');
@@ -208,7 +212,10 @@ export function App({ config: initialConfig, provider, local = createLocal(), cw
   const pendingKey = useRef(null);
 
   // Async actions read the latest state through refs, not through stale closures.
-  const storeRef = useRef(EMPTY);
+  // The folder read (/move changes it): its local.js reader, and `store.dir`.
+  const localRef = useRef(local);
+  const makeLocal = readerFor !== undefined ? readerFor : demo ? null : (dir) => createLocal({ dir });
+  const storeRef = useRef({ ...EMPTY, dir: cwd ?? local.dir });
   const busyRef = useRef(null);
   const configRef = useRef(config);
   const promptRef = useRef(prompt);
@@ -293,11 +300,24 @@ export function App({ config: initialConfig, provider, local = createLocal(), cw
   // apps and vaults, the app's settings, a vault's secrets.
   const readLocal = async () => {
     try {
-      const sources = await local.sources();
-      if (alive.current) updateStore({ local: sources });
+      const reader = localRef.current;
+      const sources = await reader.sources();
+      if (alive.current && localRef.current === reader) updateStore({ local: sources });
     } catch (e) {
-      if (alive.current) note(`Couldn't read ${local.dir}: ${firstLine(e.message)}`, 'error');
+      if (alive.current) note(`Couldn't read ${localRef.current.dir}: ${firstLine(e.message)}`, 'error');
     }
+  };
+  // /move: another folder's settings read in this one's place, remembered for the picker; the app
+  // named as the folder (or the only one) is compared when there is one.
+  const moveTo = async (dir) => {
+    if (!makeLocal) return note('The demo has one folder: start Locker in a project to move between folders.');
+    localRef.current = makeLocal(dir);
+    updateStore({ dir, local: [] });
+    setConfig((c) => ({ ...c, projects: remember(c.projects, dir) }));
+    note(`Reading ${dir}`);
+    await readLocal();
+    const site = pickTarget(storeRef.current.azure?.sites ?? [], { dir });
+    if (site && site.id !== storeRef.current.target?.id) await chooseTarget(site);
   };
   const readVault = async (name) => {
     const v = storeRef.current.azure?.vaults?.find((x) => x.name.toLowerCase() === String(name).toLowerCase());
@@ -462,7 +482,8 @@ export function App({ config: initialConfig, provider, local = createLocal(), cw
   const ctx = ctxRef.current;
   Object.assign(ctx, {
     provider,
-    local,
+    local: localRef.current,
+    moveTo,
     task,
     note,
     confirm,
@@ -470,7 +491,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), cw
     askText: async (req) => (await confirm({ ...req, secret: true, plain: true, options: [] }))?.value ?? null,
     askSecret: async (req) => (await confirm({ ...req, secret: true, options: [] }))?.value ?? null,
     prefill,
-    cwd: () => cwd ?? local.dir ?? process.cwd(),
+    cwd: () => storeRef.current.dir ?? process.cwd(),
     refresh: () => readAll(),
     setConfig,
     setView,
@@ -623,6 +644,8 @@ export function App({ config: initialConfig, provider, local = createLocal(), cw
   // Read everything on opening; then say what runs out soon (once), and look for a newer release.
   const told = useRef(false);
   useEffect(() => {
+    // The folder Locker opened in, first in /move's list.
+    if (makeLocal) setConfig((c) => ({ ...c, projects: remember(c.projects, storeRef.current.dir) }));
     (async () => {
       await readAll();
       if (!alive.current) return;

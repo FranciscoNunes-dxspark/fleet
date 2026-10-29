@@ -7,7 +7,7 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { execFile, spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tailLogs } from './tail.js';
 
@@ -15,16 +15,18 @@ import { tailLogs } from './tail.js';
 // bosun.json's "iis".
 
 /**
- * bosun.json's "iis" read: "Shop" or { site, pool, build, offline } as { site, pool, build, offline },
- * or null when it's neither. `pool` is the site's own when not given; `build` runs before a start and
- * each restart with app_offline.htm in the site's folder (unless `offline` is false).
+ * bosun.json's "iis" read: "Shop" or { site, pool, build, offline, failedRequests } as { site, pool,
+ * build, offline, failedRequests }, or null when it's neither. `pool` is the site's own when not
+ * given; `build` runs before a start and each restart with app_offline.htm in the site's folder
+ * (unless `offline` is false); `failedRequests` turns on IIS's Failed Request Tracing for 5xx while it runs.
  */
 export function iisSpec(v) {
-  if (typeof v === 'string' && v.trim()) return { site: v.trim(), pool: null, build: null, offline: true };
+  if (typeof v === 'string' && v.trim()) return { site: v.trim(), pool: null, build: null, offline: true, failedRequests: false };
   if (!v || typeof v !== 'object' || Array.isArray(v) || typeof v.site !== 'string' || !v.site.trim()) return null;
   if (v.pool != null && typeof v.pool !== 'string') return null;
   if (v.build != null && typeof v.build !== 'string') return null;
-  return { site: v.site.trim(), pool: v.pool?.trim() || null, build: v.build || null, offline: v.offline !== false };
+  if (v.failedRequests != null && typeof v.failedRequests !== 'boolean') return null;
+  return { site: v.site.trim(), pool: v.pool?.trim() || null, build: v.build || null, offline: v.offline !== false, failedRequests: v.failedRequests === true };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -81,9 +83,103 @@ export function parseSiteConfig(xml) {
   const root = /<application\b[^>]*\bpath="\/"[^>]*>([\s\S]*?)<\/application>/i.exec(text)?.[1] ?? text;
   const vdir = /<virtualDirectory\b[^>]*\bpath="\/"[^>]*>/i.exec(root)?.[0] ?? '';
   const log = /<logFile\b[^>]*>/i.exec(text)?.[0] ?? '';
+  const freb = /<traceFailedRequestsLogging\b[^>]*>/i.exec(text)?.[0] ?? '';
   const id = attr(site, 'id');
-  return { id: id != null ? Number(id) : null, name: attr(site, 'name'), physicalPath: attr(vdir, 'physicalPath'), logDir: attr(log, 'directory') };
+  return { id: id != null ? Number(id) : null, name: attr(site, 'name'), physicalPath: attr(vdir, 'physicalPath'), logDir: attr(log, 'directory'), freb: { enabled: /^true$/i.test(attr(freb, 'enabled') ?? ''), directory: attr(freb, 'directory') } };
 }
+
+// ---------------------------------------------------------------------------------------------------
+// An application pool's settings (/iis).
+
+/**
+ * `appcmd list apppool "X" /text:*` as a flat object: `startMode`, `processModel.idleTimeout`,
+ * `recycling.periodicRestart.time`… (the nesting of its [sections], under [add]).
+ */
+export function parsePoolSettings(text) {
+  const out = {};
+  const stack = [];
+  for (const line of String(text ?? '').split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const indent = line.length - line.trimStart().length;
+    while (stack.length && stack.at(-1).indent >= indent) stack.pop();
+    const section = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+    if (section) {
+      stack.push({ indent, name: section[1] });
+      continue;
+    }
+    const m = /^\s*([\w.]+):"(.*)"\s*$/.exec(line);
+    if (!m || !stack.length) continue;
+    out[[...stack.map((s) => s.name).filter((n) => n !== 'add'), m[1]].join('.')] = m[2];
+  }
+  return out;
+}
+
+/**
+ * The pool settings /iis shows: [{ key, label, value, about, next }], `next` the value ↵ sets (the
+ * one for development when it's the default, back again when it isn't), absent for one only shown.
+ */
+export function poolRows(s) {
+  const toggle = (key, a, b) => (s[key] === a ? b : a);
+  const rows = [
+    { key: 'processModel.idleTimeout', label: 'Idle timeout', about: 'the worker shuts down after this long without a request, and the next one waits for it to start (00:00:00: never)', next: toggle('processModel.idleTimeout', '00:00:00', '00:20:00') },
+    { key: 'startMode', label: 'Start mode', about: 'AlwaysRunning starts the worker with IIS, not on the first request', next: toggle('startMode', 'AlwaysRunning', 'OnDemand') },
+    { key: 'recycling.periodicRestart.time', label: 'Recycle every', about: 'IIS recycles it on this schedule (1.05:00:00, 29 hours, by default; 00:00:00: never)', next: toggle('recycling.periodicRestart.time', '00:00:00', '1.05:00:00') },
+    { key: 'failure.rapidFailProtection', label: 'Rapid-fail protection', about: 'stops the pool after 5 crashes in 5 minutes, until it is started again', next: toggle('failure.rapidFailProtection', 'false', 'true') },
+    { key: 'enable32BitAppOnWin64', label: '32-bit', about: 'runs the worker as a 32-bit process (for 32-bit native DLLs)', next: toggle('enable32BitAppOnWin64', 'true', 'false') },
+    { key: 'managedRuntimeVersion', label: '.NET CLR', about: 'v4.0 for .NET Framework, empty (No Managed Code) for ASP.NET Core' },
+    { key: 'managedPipelineMode', label: 'Pipeline', about: 'Integrated, or Classic for old ASP.NET' },
+    { key: 'processModel.identityType', label: 'Identity', about: 'the account the worker runs as: its files and databases must let it in' },
+    { key: 'processModel.maxProcesses', label: 'Workers', about: 'more than 1 is a web garden: in-memory state isn\'t shared between them' },
+  ];
+  return rows.filter((r) => s[r.key] != null).map((r) => ({ ...r, value: s[r.key] }));
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Failed Request Tracing: a file per request that failed, saying which module failed it.
+
+/**
+ * A Failed Request Tracing file (fr000012.xml) as { time, url, verb, status, ms, module, notification,
+ * reason, error, warnings }: the request, the module that set the error status and why, and the
+ * other warnings and errors on the way (their opcodes, once each). Null for one not written out yet.
+ */
+export function parseFreb(xml) {
+  const text = String(xml ?? '');
+  const root = /<failedRequest\b([^>]*)>/i.exec(text)?.[1];
+  if (!root || !/<\/failedRequest>/i.test(text)) return null;
+  const attr = (s, name) => new RegExp(`\\b${name}="([^"]*)"`, 'i').exec(s)?.[1] ?? null;
+  const events = [...text.matchAll(/<Event\b[\s\S]*?<\/Event>/gi)].map(([e]) => {
+    const data = Object.fromEntries([...e.matchAll(/<Data Name="([^"]+)">([\s\S]*?)<\/Data>/gi)].map((m) => [m[1], htmlish(m[2])]));
+    const described = Object.fromEntries([...e.matchAll(/<freb:Description Data="([^"]+)">([\s\S]*?)<\/freb:Description>/gi)].map((m) => [m[1], htmlish(m[2])]));
+    return { level: Number(/<Level>(\d+)<\/Level>/i.exec(e)?.[1] ?? 4), opcode: /<RenderingInfo[^>]*>[\s\S]*?<Opcode>([^<]*)<\/Opcode>/i.exec(e)?.[1] ?? '', time: /<TimeCreated SystemTime="([^"]+)"/i.exec(e)?.[1] ?? null, data, described };
+  });
+  const failed = events.filter((e) => e.opcode === 'MODULE_SET_RESPONSE_ERROR_STATUS').at(-1);
+  const warnings = [...new Set(events.filter((e) => e.level <= 3 && e !== failed).map((e) => [e.opcode, e.data.ErrorMessage ?? e.data.Message ?? e.data.ExceptionMessage].filter(Boolean).join(': ')))].slice(0, 6);
+  const url = attr(root, 'url');
+  return {
+    time: Date.parse(events[0]?.time ?? '') || null,
+    url,
+    path: url ? url.replace(/^\w+:\/\/[^/]+/, '') || '/' : null,
+    verb: attr(root, 'verb'),
+    status: attr(root, 'statusCode'),
+    ms: Number(attr(root, 'timeTaken')) || 0,
+    module: failed?.data.ModuleName ?? null,
+    notification: failed?.described.Notification ?? null,
+    reason: failed?.data.HttpReason ?? null,
+    error: failed?.described.ErrorCode ?? null,
+    warnings,
+  };
+}
+
+const htmlish = (s) =>
+  String(s)
+    .replace(/&#x([0-9a-f]+);|&#(\d+);/gi, (m, hex, dec) => String.fromCodePoint(hex ? Number.parseInt(hex, 16) : Number(dec)))
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** A failed request as a structured line's JSON. */
+export const frebJson = (f, file) =>
+  JSON.stringify({ time: f.time ?? undefined, level: 'error', msg: `failed request ${f.verb ?? ''} ${f.path ?? f.url ?? ''} ${f.status ?? ''}${f.ms ? ` in ${f.ms}ms` : ''}${f.module ? `: ${f.module}${f.notification ? ` (${f.notification})` : ''}` : ''}${f.reason ? ` ${f.reason}` : ''}`.replace(/\s+/g, ' ').trim(), error: f.error && !/completed successfully/i.test(f.error) ? f.error : undefined, warnings: f.warnings.length ? f.warnings : undefined, source: 'failed request tracing', file });
 
 /** `%SystemDrive%\inetpub` with this machine's settings put in (as cmd does, any case). */
 export const expandEnv = (path, env = process.env) => {
@@ -267,7 +363,7 @@ export function iisControl({ exec, execSync, powershell, env = process.env } = {
       const s = await one(['site', name]);
       if (!s) return null;
       const config = parseSiteConfig(await exec(['list', 'site', name, '/config']).catch(() => ''));
-      return { name: s.name, id: Number(s.attrs.id) || config.id, state: s.attrs.state ?? null, bindings: parseBindings(s.attrs.bindings), physicalPath: config.physicalPath ? expandEnv(config.physicalPath, env) : null, logDir: expandEnv(config.logDir ?? '%SystemDrive%\\inetpub\\logs\\LogFiles', env) };
+      return { name: s.name, id: Number(s.attrs.id) || config.id, state: s.attrs.state ?? null, bindings: parseBindings(s.attrs.bindings), physicalPath: config.physicalPath ? expandEnv(config.physicalPath, env) : null, logDir: expandEnv(config.logDir ?? '%SystemDrive%\\inetpub\\logs\\LogFiles', env), freb: { enabled: config.freb.enabled, directory: expandEnv(config.freb.directory ?? '%SystemDrive%\\inetpub\\logs\\FailedReqLogFiles', env) } };
     },
     async pool(name) {
       const p = await one(['apppool', name]);
@@ -296,6 +392,25 @@ export function iisControl({ exec, execSync, powershell, env = process.env } = {
     startPool: (name) => act(['start', 'apppool', name]),
     stopPool: (name) => act(['stop', 'apppool', name]),
     recycle: (name) => exec(['recycle', 'apppool', name]),
+    /** The pool's settings, as parsePoolSettings reads them. */
+    async poolSettings(name) {
+      return parsePoolSettings(await exec(['list', 'apppool', name, '/text:*']));
+    },
+    /** Sets one of the pool's settings (`processModel.idleTimeout`, `startMode`…). */
+    setPool: (name, key, value) => exec(['set', 'apppool', name, `/${key}:${value}`]),
+    /** Failed Request Tracing for the site on (with a rule for 5xx on every path) or off. */
+    async failedRequests(site, on) {
+      if (!on) return act(['configure', 'trace', `${site}/`, '/disablesite']);
+      await act(['configure', 'trace', `${site}/`, '/enablesite']);
+      try {
+        await exec(['configure', 'trace', `${site}/`, '/enable', '/path:*', '/statuscodes:500-599']);
+      } catch (e) {
+        // The rule's there from before.
+        if (!/already|exists|duplicate/i.test(e.stdout ?? '')) throw e;
+      }
+    },
+    /** Failed Request Tracing off at once: Bosun is exiting. */
+    failedRequestsOffNow: (site) => execSync(['configure', 'trace', `${site}/`, '/disablesite']),
     /** Stops the site (and its pool, unless `site` only) at once: Bosun is exiting. */
     stopNow(site, pool) {
       execSync(['stop', 'site', site]);
@@ -368,6 +483,7 @@ export class IisChild extends EventEmitter {
         this.say(`── started ${name} in IIS (pool ${this.pool}${this.shared ? ', shared with other sites' : ''})${binding ? `: ${bindingUrl(binding)}` : ''}`);
       }
       this.started = this.now();
+      if (this.iis.failedRequests) await this.traceFailures(site);
       // Stopped while it was starting: stopped now that there's something to stop.
       if (this.stopping) {
         this.stopping = false;
@@ -409,10 +525,49 @@ export class IisChild extends EventEmitter {
     this.tails = this.tail(patterns, { cwd: folder ?? this.dir, env: this.env, every: this.tailEvery, onLine: (text) => this.say(text) });
   }
 
+  /** Failed Request Tracing on for 5xx (off again when it stops, when Bosun turned it on), and its folder followed. */
+  async traceFailures(site) {
+    try {
+      await this.control.failedRequests(this.iis.site, true);
+      this.frebOn = !site.freb?.enabled;
+      this.frebDir = join(site.freb?.directory ?? 'C:\\inetpub\\logs\\FailedReqLogFiles', `W3SVC${site.id}`);
+      this.frebSeen = new Set(this.frebFiles());
+      this.say(`── Failed Request Tracing is on for 5xx: each one's trace is read into this log (${this.frebDir})`);
+    } catch (e) {
+      this.warn(`── couldn't turn on Failed Request Tracing: ${appcmdProblem(e)} (it needs IIS's Tracing feature: Windows Features, Internet Information Services, World Wide Web Services, Health and Diagnostics, Tracing)`);
+    }
+  }
+
+  frebFiles() {
+    try {
+      return readdirSync(this.frebDir).filter((f) => /^fr\d+\.xml$/i.test(f)).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  /** The traces written since the last look, into the log; one not finished yet waits for the next. */
+  readFreb() {
+    if (!this.frebDir) return;
+    for (const file of this.frebFiles()) {
+      if (this.frebSeen.has(file)) continue;
+      let f = null;
+      try {
+        f = parseFreb(this.readFile(join(this.frebDir, file)));
+      } catch {
+        // Being written: the next look.
+      }
+      if (!f) continue;
+      this.frebSeen.add(file);
+      this.say(frebJson(f, file));
+    }
+  }
+
   async poll() {
     if (this.closed || this.stopping || this.polling) return;
     this.polling = true;
     try {
+      this.readFreb();
       const [pool, site] = await Promise.all([this.control.pool(this.pool), this.control.site(this.iis.site)]);
       if (this.closed || this.stopping) return;
       if (!pool || pool.state === 'Stopped') {
@@ -515,6 +670,7 @@ export class IisChild extends EventEmitter {
     this.building?.kill();
     if (!this.started) return; // begin() ends it at its next step.
     try {
+      if (this.frebOn) await this.control.failedRequests(this.iis.site, false);
       await this.control.stopSite(this.iis.site);
       if (!this.shared) await this.control.stopPool(this.pool);
     } catch (e) {
@@ -527,6 +683,14 @@ export class IisChild extends EventEmitter {
   stopNow() {
     if (this.closed) return;
     this.building?.kill();
+    // Tracing Bosun turned on goes off, even on a site it leaves running.
+    if (this.frebOn) {
+      try {
+        this.control.failedRequestsOffNow(this.iis.site);
+      } catch {
+        // Exiting all the same.
+      }
+    }
     if (this.started && !this.adopted) {
       try {
         this.control.stopNow(this.iis.site, this.shared ? null : this.pool);

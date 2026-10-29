@@ -4,7 +4,7 @@
 // a terminal. Around them, Fleet's own tools are the page's: the rail of apps with their badges, two
 // apps side by side, runbooks, following a request, moving the fleet, the command palette.
 import { BOX_CLASSES, splitBoxes } from './boxes.js';
-import { keyBytes, mouseBytes } from './keymap.js';
+import { keyBytes, mouseBytes, prefixOf as prefixByteOf } from './keymap.js';
 import { styleCss } from './sgr.js';
 import { chartSvg, pointAt } from './views.js';
 
@@ -21,6 +21,8 @@ const state = {
   panes: new Map(), // id → { el, screen, rowsEl, rowEls: [], cursorEl, size }
   views: new Map(), // id → Map(key → { kind, data, rect }): the native views each app asked for
   prefix: false,
+  // Fleet's prefix as it's named (host.json's, else ctrl+b; the hello says), ctrl+] taken too.
+  prefixName: 'ctrl+b',
   drawer: null,
   runbookOpen: null,
   connected: false,
@@ -80,6 +82,9 @@ function handle(e) {
   switch (e.type) {
     case 'hello':
       state.screens.clear();
+      state.prefixName = e.prefix ?? 'ctrl+b';
+      // The tools' titles name the prefix's keys: written with the one in use.
+      document.querySelectorAll('[data-tool]').forEach((el) => (el.title = el.title.replace(/ctrl\+(\]|[a-z]|space|\\|\^|_)(?= )/g, state.prefixName)));
       takeSpaces(e);
       for (const f of e.frames) applyFrame(f);
       state.views = new Map(Object.entries(e.views ?? {}).map(([id, vs]) => [id, new Map(Object.entries(vs))]));
@@ -146,7 +151,7 @@ function takeSpaces(e) {
   if (before !== state.shown.join(',')) renderStage();
   else for (const id of state.shown) renderCover(id);
   $('#folder-name').textContent = shortPath(state.cwd);
-  $('#folder').title = `${state.cwd}: click to move every app (ctrl+] m)`;
+  $('#folder').title = `${state.cwd}: click to move every app (${state.prefixName} m)`;
   const count = state.spaces.filter((s) => s.badge).length;
   document.title = `${count ? `(${count}) ` : ''}Fleet · ${shortPath(state.cwd)}`;
 }
@@ -451,15 +456,16 @@ function setPrefix(on) {
   state.prefix = on;
   const hint = $('#hint');
   hint.hidden = !on;
-  hint.textContent = on ? `ctrl+]  ${PREFIX_HINT}` : '';
+  hint.textContent = on ? `${state.prefixName}  ${PREFIX_HINT}` : '';
 }
 
-/** Fleet's own keys, after ctrl+] (the same as in the terminal). True when the key was one. */
+/** Fleet's own keys, after the prefix (the same as in the terminal). True when the key was one. */
 function prefixKey(e) {
   setPrefix(false);
   const k = e.key;
-  if (e.ctrlKey && k === ']') {
-    send(state.active, '\x1d');
+  const again = prefixByteOf(e, state.prefixName);
+  if (again) {
+    send(state.active, again);
     return true;
   }
   const i = Number(k);
@@ -506,7 +512,7 @@ document.addEventListener('keydown', (e) => {
     prefixKey(e);
     return;
   }
-  if (e.ctrlKey && !e.altKey && e.key === ']') {
+  if (prefixByteOf(e, state.prefixName)) {
     e.preventDefault();
     setPrefix(true);
     return;
@@ -805,12 +811,24 @@ $('#modal').addEventListener('mousedown', (e) => {
 });
 
 function openMove(folder = state.cwd, title = 'Move the fleet') {
-  const box = openModal(`<h2>${esc(title)}</h2><div class="body"><p class="muted">Every running app starts again in the folder; the others will start there. Tab completes a folder's name.</p>
-    <form><input class="field" name="folder" value="${esc(folder)}"></form><div class="choices"></div></div>`);
+  const box = openModal(`<h2>${esc(title)}</h2><div class="body"><p class="muted">Every running app starts again in the folder; the others will start there. Pick one, or type one (tab completes a folder's name).</p>
+    <form><input class="field" name="folder" value="${esc(folder)}"></form><div class="choices"></div><div class="folders"></div></div>`);
   const form = $('form', box);
   const input = form.elements.folder;
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
+  // The folders moved to lately, then the ones beside this one: a click moves there.
+  const moveTo = async (dir) => {
+    const r = await post('move', { folder: dir });
+    if (!r.ok) return toast(r.error);
+    closeModal();
+  };
+  post('folder-list', {}).then((r) => {
+    const list = $('.folders', box);
+    if (!list || !r.folders?.length) return;
+    list.innerHTML = r.folders.map((f, i) => `<div class="choice" data-i="${i}" title="${esc(f.path)}"><span class="${f.has ? 'strong' : ''}">${esc(f.name)}</span> <span class="muted mono">${esc(shortPath(f.path))}</span>${f.recent ? ' <span class="muted">· lately</span>' : ''}</div>`).join('');
+    list.querySelectorAll('.choice').forEach((el) => el.addEventListener('click', () => moveTo(r.folders[Number(el.dataset.i)].path)));
+  });
   input.addEventListener('keydown', async (e) => {
     if (e.key === 'Escape') return closeModal();
     if (e.key !== 'Tab') return;
@@ -821,23 +839,21 @@ function openMove(folder = state.cwd, title = 'Move the fleet') {
   });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const r = await post('move', { folder: input.value });
-    if (!r.ok) return toast(r.error);
-    closeModal();
+    await moveTo(input.value);
   });
 }
 
 function commands() {
   const list = state.spaces.map((s, i) => ({ name: `${s.title}`, hint: `alt+${i + 1}`, app: s, run: () => switchTo(s.id) }));
   list.push(
-    { name: state.shown.length === 2 ? 'One app on screen' : 'Split: two apps side by side', hint: 'ctrl+] |', run: toggleSplit },
+    { name: state.shown.length === 2 ? 'One app on screen' : 'Split: two apps side by side', hint: `${state.prefixName} |`, run: toggleSplit },
     ...state.spaces.filter((s) => !state.shown.includes(s.id)).map((s) => ({ name: `Split with ${s.title}`, run: () => show([state.active, s.id]) })),
-    { name: 'Runbooks', hint: 'ctrl+] r', run: () => openDrawer('runbooks') },
-    { name: 'Follow a request across the apps', hint: 'ctrl+] f', run: () => openDrawer('trace') },
-    { name: 'Move the fleet to another folder', hint: 'ctrl+] m', run: () => openMove() },
+    { name: 'Runbooks', hint: `${state.prefixName} r`, run: () => openDrawer('runbooks') },
+    { name: 'Follow a request across the apps', hint: `${state.prefixName} f`, run: () => openDrawer('trace') },
+    { name: 'Move the fleet to another folder', hint: `${state.prefixName} m`, run: () => openMove() },
     { name: `Start ${byId(state.active)?.title ?? 'the app'} again`, run: () => post('restart', { id: state.active }) },
     { name: 'Turn on notifications', run: () => 'Notification' in window && Notification.requestPermission() },
-    { name: 'Keys', hint: 'ctrl+] ?', run: openHelp },
+    { name: 'Keys', hint: `${state.prefixName} ?`, run: openHelp },
   );
   return list;
 }
@@ -881,18 +897,20 @@ function openPalette() {
 }
 
 function openHelp() {
+  const P = state.prefixName;
   const rows = [
     ['alt+1 … alt+8', 'Switch to that app'],
-    ['ctrl+] then 1-8 or a letter', 'Switch to that app (s t o b h k w l)'],
-    ['ctrl+] |', 'Two apps side by side, or one again'],
-    ['ctrl+] tab', 'The other pane'],
-    ['ctrl+] x', 'One app on screen'],
-    ['ctrl+] n / p', 'The next app, the one before'],
-    ['ctrl+] m', 'Move the fleet to another folder'],
-    ['ctrl+] r', 'Runbooks'],
-    ['ctrl+] f', 'Follow a request across the apps'],
+    [`${P} then 1-8 or a letter`, 'Switch to that app (s t o b h k w l)'],
+    [`${P} |`, 'Two apps side by side, or one again'],
+    [`${P} tab`, 'The other pane'],
+    [`${P} x`, 'One app on screen'],
+    [`${P} n / p`, 'The next app, the one before'],
+    [`${P} m`, 'Move the fleet to another folder'],
+    [`${P} r`, 'Runbooks'],
+    [`${P} f`, 'Follow a request across the apps'],
     ['ctrl+shift+p', 'Everything Fleet does'],
-    ['ctrl+] ctrl+]', 'Send ctrl+] to the app'],
+    [`${P} ${P}`, `Send ${P} to the app`],
+    ...(P === 'ctrl+]' ? [] : [['ctrl+]', `Works as ${P} does`]]),
     ['everything else', 'Goes to the app with the keys, as in a terminal: the apps\' own ? lists theirs'],
     ['the mouse', 'An app with the mouse on gets clicks, drags and the wheel; in one without, dragging selects text (ctrl+shift+c copies it)'],
   ];

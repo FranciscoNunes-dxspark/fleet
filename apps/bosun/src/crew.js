@@ -8,6 +8,7 @@ import { testSpec } from './hailcheck.js';
 import { TUNNEL_TOOLS } from './tunnel.js';
 import { httpsProblem } from './https.js';
 import { iisSpec } from './iis.js';
+import { serviceSpec } from './service.js';
 import { dotnetCrew } from './dotnet.js';
 
 const tunnelProblem = (where, v) => (v != null && !TUNNEL_TOOLS.includes(v) ? `${where}"tunnel" is ${TUNNEL_TOOLS.map((t) => `"${t}"`).join(' or ')}` : null);
@@ -69,10 +70,14 @@ export function readSpec(spec) {
   for (const [name, p] of Object.entries(spec?.procs ?? {})) {
     const proc = typeof p === 'string' ? { run: p } : p;
     const iis = proc?.iis != null ? iisSpec(proc.iis) : null;
+    const service = proc?.service != null ? serviceSpec(proc.service) : null;
     if (!NAME.test(name)) problems.push(`"${name}": a name is letters, digits, dots, dashes and underscores`);
-    else if (proc?.iis != null && !iis) problems.push(`"${name}": "iis" is a site's name, or { "site": "Shop", "pool": "ShopPool", "build": "msbuild" }`);
+    else if (proc?.service != null && !service) problems.push(`"${name}": "service" is a Windows service's name, as sc query shows it ("MSSQL$SQLEXPRESS")`);
+    else if (service && (proc.run != null || proc.iis != null || proc.build != null)) problems.push(`"${name}": it has "service" and "${proc.run != null ? 'run' : proc.iis != null ? 'iis' : 'build'}": Windows runs the service, so it has no command of its own`);
+    else if (proc.dump != null && typeof proc.dump !== 'boolean') problems.push(`"${name}": "dump" is true or false`);
+    else if (proc?.iis != null && !iis) problems.push(`"${name}": "iis" is a site's name, or { "site": "Shop", "pool": "ShopPool", "build": "msbuild", "failedRequests": true }`);
     else if (iis && proc.run != null) problems.push(`"${name}": it has "iis" and "run": IIS runs the site, so it has no command of its own`);
-    else if (!iis && (!proc?.run || typeof proc.run !== 'string')) problems.push(`"${name}": it needs "run", the command to start it (or "iis", an IIS site)`);
+    else if (!iis && !service && (!proc?.run || typeof proc.run !== 'string')) problems.push(`"${name}": it needs "run", the command to start it (or "iis", an IIS site, or "service", a Windows service)`);
     else if (proc.build != null && (typeof proc.build !== 'string' || iis)) problems.push(iis ? `"${name}": an IIS site's "build" goes in "iis" ({ "site": "${iis.site}", "build": "…" })` : `"${name}": "build" is a command`);
     else if (proc.host != null && (typeof proc.host !== 'string' || !/^[\w.-]+$/.test(proc.host))) problems.push(`"${name}": "host" is a host name, as "shop.local"`);
     else if (!fileList(proc.logs)) problems.push(`"${name}": "logs" is a log file's path or glob, or a list of them`);
@@ -86,7 +91,7 @@ export function readSpec(spec) {
     else if (proc.group != null && (typeof proc.group !== 'string' || !NAME.test(proc.group))) problems.push(`"${name}": "group" is a name: letters, digits, dots, dashes and underscores`);
     else if (httpsProblem(proc)) problems.push(`"${name}": ${httpsProblem(proc)}`);
     else if (tunnelProblem('', proc.tunnel)) problems.push(`"${name}": ${tunnelProblem('', proc.tunnel)}`);
-    else procs.push({ name, run: iis ? `appcmd start site "${iis.site}"` : proc.run, iis, build: proc.build ?? null, host: proc.host ?? null, logs: fileList(proc.logs), trace: proc.trace === true, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, envFile: fileList(proc.envFile), watch: fileList(proc.watch), ignore: fileList(proc.ignore), after: proc.after ?? null, restart: proc.restart ?? 'no', test: proc.test != null ? testSpec(proc.test) : null, tunnel: proc.tunnel ?? null, https: proc.https || null, group: proc.group ?? null });
+    else procs.push({ name, run: iis ? `appcmd start site "${iis.site}"` : service ? `sc start "${service}"` : proc.run, iis, service, dump: proc.dump === true, build: proc.build ?? null, host: proc.host ?? null, logs: fileList(proc.logs), trace: proc.trace === true, cwd: proc.cwd ?? '.', port: proc.port ?? null, health: proc.health ?? null, env: proc.env ?? {}, envFile: fileList(proc.envFile), watch: fileList(proc.watch), ignore: fileList(proc.ignore), after: proc.after ?? null, restart: proc.restart ?? 'no', test: proc.test != null ? testSpec(proc.test) : null, tunnel: proc.tunnel ?? null, https: proc.https || null, group: proc.group ?? null });
   }
   let envFile = fileList(spec?.envFile);
   if (!envFile) {
@@ -268,13 +273,13 @@ export function withProfile(procs, profiles, name) {
 
 /** bosun.json for a crew, to start one from what was worked out (/init). */
 export function specFor(crew) {
-  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.iis ? undefined : p.run, iis: p.iis ? iisSpecOut(p.iis) : undefined, build: p.build ?? undefined, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, env: Object.keys(p.env ?? {}).length ? p.env : undefined, envFile: p.envFile?.length ? (p.envFile.length === 1 ? p.envFile[0] : p.envFile) : undefined, watch: p.watch?.length ? p.watch : undefined, ignore: p.ignore?.length ? p.ignore : undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined, test: p.test ? (p.test.env ? p.test : p.test.file) : undefined, tunnel: p.tunnel ?? undefined, https: p.https ?? undefined, group: p.group ?? undefined, host: p.host ?? undefined, trace: p.trace ? true : undefined, logs: p.logs?.length ? (p.logs.length === 1 ? p.logs[0] : p.logs) : undefined }).filter(([, v]) => v !== undefined))]));
+  const procs = Object.fromEntries(crew.procs.map((p) => [p.name, Object.fromEntries(Object.entries({ run: p.iis || p.service ? undefined : p.run, iis: p.iis ? iisSpecOut(p.iis) : undefined, service: p.service ?? undefined, dump: p.dump ? true : undefined, build: p.build ?? undefined, cwd: p.cwd !== '.' ? p.cwd : undefined, port: p.port ?? undefined, health: p.health ?? undefined, env: Object.keys(p.env ?? {}).length ? p.env : undefined, envFile: p.envFile?.length ? (p.envFile.length === 1 ? p.envFile[0] : p.envFile) : undefined, watch: p.watch?.length ? p.watch : undefined, ignore: p.ignore?.length ? p.ignore : undefined, after: p.after ?? undefined, restart: p.restart && p.restart !== 'no' ? p.restart : undefined, test: p.test ? (p.test.env ? p.test : p.test.file) : undefined, tunnel: p.tunnel ?? undefined, https: p.https ?? undefined, group: p.group ?? undefined, host: p.host ?? undefined, trace: p.trace ? true : undefined, logs: p.logs?.length ? (p.logs.length === 1 ? p.logs[0] : p.logs) : undefined }).filter(([, v]) => v !== undefined))]));
   const envFile = crew.envFile?.length ? { envFile: crew.envFile.length === 1 ? crew.envFile[0] : crew.envFile } : {};
   return { ...envFile, ...(crew.tunnel ? { tunnel: crew.tunnel } : {}), procs, ...(Object.keys(crew.profiles).length ? { profiles: crew.profiles } : {}) };
 }
 
 /** An "iis" as bosun.json writes it: the site's name alone when that's all there is. */
-const iisSpecOut = (iis) => (iis.pool || iis.build || iis.offline === false ? Object.fromEntries(Object.entries({ site: iis.site, pool: iis.pool ?? undefined, build: iis.build ?? undefined, offline: iis.offline === false ? false : undefined }).filter(([, v]) => v !== undefined)) : iis.site);
+const iisSpecOut = (iis) => (iis.pool || iis.build || iis.offline === false || iis.failedRequests ? Object.fromEntries(Object.entries({ site: iis.site, pool: iis.pool ?? undefined, build: iis.build ?? undefined, offline: iis.offline === false ? false : undefined, failedRequests: iis.failedRequests || undefined }).filter(([, v]) => v !== undefined)) : iis.site);
 
 /** Writes bosun.json in `dir` unless there's one already; returns whether it did. */
 export function writeSpec(dir, spec) {

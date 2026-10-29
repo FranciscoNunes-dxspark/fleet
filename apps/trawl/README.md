@@ -21,7 +21,7 @@ A keyboard-driven SQL Server client for the terminal, built the same way as [Til
   dbo.Players
 ```
 
-Trawl also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]`; a line Trawl copies for a sibling goes straight to that app's prompt there.
+Trawl also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+b`; a line Trawl copies for a sibling goes straight to that app's prompt there.
 
 ## Install
 

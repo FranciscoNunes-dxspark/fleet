@@ -20,7 +20,7 @@ test('switching starts an app the first time, sends it the keys, repaints it on 
   const { host, term, keys, done } = startHost({ spaces: SPACES, columns: 70, rows: 14 });
   const { screen } = term;
   await until(() => screen.row(0) === 'one 70x13', 'the first app at the size above the bar', { term });
-  assert.match(screen.row(-1), /^ 1 One ● {2}2 Two ○ +ctrl\+\] \? help$/);
+  assert.match(screen.row(-1), /^ 1 One ● {2}2 Two ○ +ctrl\+b \? help$/);
   keys('ab');
   await until(() => screen.row(1) === 'keys: "ab"', 'keys reaching the app', { term });
 
@@ -32,8 +32,12 @@ test('switching starts an app the first time, sends it the keys, repaints it on 
   keys(`x${PREFIX}${PREFIX}y`);
   await until(() => screen.row(1) === 'keys: "x\\u001dy"', 'the literal prefix', { term });
 
+  // ctrl+b is the prefix too (the default), and twice is a ctrl+b for the app.
+  keys('\x02\x02z');
+  await until(() => screen.row(1) === 'keys: "x\\u001dy\\u0002z"', 'the literal ctrl+b', { term });
+
   // Back to the first: drawn again whole, as it was, though it drew nothing new.
-  keys(`${PREFIX}o`);
+  keys('\x02o');
   await until(() => screen.row(0) === 'one 70x13' && screen.row(1) === 'keys: "ab"', 'the first app repainted', { term });
   assert.equal(screen.text().includes('two'), false);
   // ] goes to the next space, p to the one before.
@@ -51,10 +55,10 @@ test('switching starts an app the first time, sends it the keys, repaints it on 
 
   // Help, closed by any key, which goes no further.
   keys(`${PREFIX}?`);
-  await until(() => term.text().includes('ctrl+] ctrl+]') && term.text().includes('send ctrl+] to the app'), 'the help', { term });
+  await until(() => term.text().includes('ctrl+b ctrl+b') && term.text().includes('send ctrl+b to the app'), 'the help', { term });
   keys('z');
   await until(() => screen.row(0) === 'two 60x9' && !term.text().includes('this help'), 'the help closed', { term });
-  assert.equal(screen.row(1), 'keys: "x\\u001dy"');
+  assert.equal(screen.row(1), 'keys: "x\\u001dy\\u0002z"');
 
   // q asks while apps run; anything but y stays.
   keys(`${PREFIX}q`);
@@ -237,7 +241,7 @@ test('split, two apps are drawn side by side at half the width each, keys going 
   await done;
 });
 
-test('ctrl+] m moves the fleet: the running apps start again in the folder given, the rest start there later', async () => {
+test('the prefix and m moves the fleet: from its list or a folder typed, the running apps start again there, the rest start there later', async () => {
   const root = realpathSync(familyHome());
   const start = join(root, 'start');
   const there = join(root, 'there');
@@ -248,8 +252,11 @@ test('ctrl+] m moves the fleet: the running apps start again in the folder given
   keys('P');
   await until(() => screen.row(1) === `keys: ${JSON.stringify(`[${start}]`)}`, 'its folder', { term });
 
-  // The bar asks, with the fleet's folder filled in.
-  keys(`${PREFIX}m`);
+  // A list: typing a folder first, then the ones beside this one; k and ↵ on typing one, and the bar
+  // asks, with the fleet's folder filled in.
+  keys('\x02m');
+  await until(() => term.text().includes('Type a folder…') && term.text().includes('there'), 'the list', { term });
+  keys('k\r');
   await until(() => screen.row(-1).includes(`Move the fleet to ${start}`), 'the question', { term });
   // A folder that isn't there is said so, and the question stays.
   keys('/nope\r');
@@ -279,6 +286,13 @@ test('ctrl+] m moves the fleet: the running apps start again in the folder given
   keys('\x1b');
   await until(() => screen.row(-1).includes('2 Two ●') && !screen.row(-1).includes('asks'), 'cancelled', { term });
   assert.equal(host.cwd, join(there, 'sub-two'));
+
+  // The list again: the folder it started in, moved from lately, under the cursor; ↵ goes back there.
+  assert.deepEqual(host.folders.slice(0, 2), [join(there, 'sub-two'), start]);
+  keys(`${PREFIX}m`);
+  await until(() => term.text().includes('lately') && term.text().includes('› start'), 'the list with the folder moved from', { term });
+  keys('\r');
+  await until(() => host.cwd === start, 'back in the first folder', { term });
   keys(`${PREFIX}q`);
   keys('y');
   await done;

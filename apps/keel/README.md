@@ -74,7 +74,7 @@ Thresholds, the blocked tag, auto-complete defaults and the refresh interval are
 
 `npm run cli` opens Keel in the terminal (or run `npm link` once, then `keel` from any folder). It works like Tiller and Trawl: titled panels, a prompt with slash commands, and Pinch the crab keeping an eye on things. `npm run cli:demo` (`keel --demo`) opens the demo organization, no credentials needed.
 
-The terminal app also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]` (`fleet keel --demo` opens the demo there).
+The terminal app also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+b` (`fleet keel --demo` opens the demo there).
 
 It works in one of two ways: through your team's Keel, signed in with your Keel account, or straight with Azure DevOps, reading the same `.env` and data folder as the web app in local mode, so tracked projects, snoozes and settings are shared.
 

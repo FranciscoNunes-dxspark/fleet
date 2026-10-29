@@ -11,7 +11,7 @@ const text = (layout) => layout.segments.map((s) => s.text).join('');
 test('a tab per space with its key, name and state, the hint at the right, exactly as wide as the screen', () => {
   const layout = barLayout({ spaces, active: 'hail', width: 120 });
   assert.equal(width(layout), 120);
-  assert.match(text(layout), /^ 1 Splice ● {2}2 Trawl ○ {2}3 Sonar ✕1 {2}4 Bosun ○ {2}5 Hail ● {2}6 Keel ○ {2}7 Wharf ○ {2}8 Locker ○ +ctrl\+\] \? help $/);
+  assert.match(text(layout), /^ 1 Splice ● {2}2 Trawl ○ {2}3 Sonar ✕1 {2}4 Bosun ○ {2}5 Hail ● {2}6 Keel ○ {2}7 Wharf ○ {2}8 Locker ○ +ctrl\+b \? help $/);
   assert.equal(layout.segments.find((s) => s.role === 'active').id, 'hail');
   assert.deepEqual(stateMark({ state: 'exited', code: 0 }), '✕0');
 });

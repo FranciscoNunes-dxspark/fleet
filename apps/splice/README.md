@@ -28,7 +28,7 @@ Splice used to be called Tiller. Your recent repositories and settings in `~/.ti
   feature/totals
 ```
 
-Splice also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+]`; a line Splice copies for a sibling goes straight to that app's prompt there.
+Splice also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+b`; a line Splice copies for a sibling goes straight to that app's prompt there.
 
 ## Install
 

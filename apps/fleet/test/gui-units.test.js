@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isBox, splitBoxes } from '../gui/boxes.js';
-import { keyBytes, mouseBytes } from '../gui/keymap.js';
+import { keyBytes, mouseBytes, prefixOf } from '../gui/keymap.js';
 import { colour256, parseStyle, styleCss } from '../gui/sgr.js';
 import { paintsBlank, rowRuns } from '../src/gui/frames.js';
 import { VirtualTerminal } from '../src/vt.js';
@@ -129,4 +129,19 @@ test("native charts: round scales, round times, a layout per type, SVG, and what
   assert.equal(chartLayout({ type: 'histogram', values: [1, 2, 3, 4] }, 400, 200).type, 'histogram');
   assert.equal(chartLayout({ type: 'scatter', points: [[1, 2], [3, 4]] }, 400, 200).dots.length, 2);
   assert.equal(chartLayout(line, 30, 20), null, 'too small to draw');
+});
+
+test("the prefix's keys in the window: ctrl+b (or the one named), and ctrl+] with or without AltGr", () => {
+  const ev = (k, mods = {}) => ({ key: k, ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, ...mods });
+  assert.equal(prefixOf(ev('b')), '\x02');
+  assert.equal(prefixOf(ev('B', { shiftKey: true })), '\x02');
+  assert.equal(prefixOf(ev('b', { altKey: true })), null);
+  assert.equal(prefixOf(ev('b', { ctrlKey: false })), null);
+  assert.equal(prefixOf(ev(']')), '\x1d');
+  // AltGr+9 on a Portuguese keyboard: the page sees ctrl and alt.
+  assert.equal(prefixOf(ev(']', { altKey: true })), '\x1d');
+  assert.equal(prefixOf(ev('a'), 'ctrl+a'), '\x01');
+  assert.equal(prefixOf(ev('b'), 'ctrl+a'), null);
+  assert.equal(prefixOf(ev(' '), 'ctrl+space'), '\x00');
+  assert.equal(prefixOf(ev('b', { metaKey: true })), null);
 });

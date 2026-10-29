@@ -2,7 +2,7 @@
 // is a process of its own in hosted mode (the kit's hosted.js), drawing into a pipe the host reads;
 // the active one's drawing goes on to the terminal (screen.js keeps it off the bar and the host's
 // screen modes), the others' is dropped while they keep running. What's typed goes to the active app
-// as it came (keys.js), but for the prefix, ctrl+], and its key.
+// as it came (keys.js), but for the prefix (ctrl+b, or host.json's; ctrl+] too) and its key.
 //
 // The bar is the screen's last row, the apps get the rows above it. Ink redraws whole frames (an app
 // fills its screen, so every frame begins by clearing the terminal, the bar with it), so rather than
@@ -10,7 +10,8 @@
 // each frame: inside the frame's synchronized update when it has one, from a saved cursor, so the
 // terminal never shows a frame without it and the app's cursor and colours are as it left them.
 //
-// ctrl+] m (or an app's { move } message) moves the whole fleet to another folder: every running
+// The prefix and m (a list of the folders moved to lately and those beside this one, or a path typed
+// in the bar) or an app's { move } message moves the whole fleet to another folder: every running
 // app is started again there, and the ones not started yet start there later.
 //
 // A space off screen whose app needs you gets a badge in its tab (attention.js), from the family's
@@ -23,11 +24,12 @@ import { StringDecoder } from 'node:string_decoder';
 import { familyDir } from '@fleet/kit/family.js';
 import { encodeMessage, messageReader } from '@fleet/kit/hosted.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
+import { remember } from '@fleet/kit/folders.js';
 import { badgeFor, badgeText, familyReader } from './attention.js';
 import { completeFolder, editLine, isFolder, lineOf, renderAsk, resolveFolder, shortFolder } from './folder.js';
 import { barLayout, colour, renderBar, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
-import { readKeys, takeBarClicks } from './keys.js';
+import { DEFAULT_PREFIX, prefixByte, prefixName, prefixesFor, readKeys, takeBarClicks } from './keys.js';
 import { Panels } from './panels.js';
 import { HOST_MOUSE, MOUSE_MODES, OutputFilter } from './screen.js';
 import { SPACES } from './spaces.js';
@@ -50,26 +52,30 @@ const NOTICE_MS = 4000;
 // How often the family's moods and activity are read for the badges.
 const ATTENTION_MS = 3000;
 
-export const HELP = [
+/** The help's rows, with the prefix as it's named (`ctrl+b`, host.json's own). */
+export const helpRows = (p = DEFAULT_PREFIX) => [
   ['alt+1-8', 'switch to that space'],
-  ['ctrl+] 1-8', 'switch to that space'],
-  ['ctrl+] s t o b h k w', 'Splice, Trawl, Sonar, Bosun, Hail, Keel, Wharf'],
-  ['ctrl+] ] or n', 'next space'],
-  ['ctrl+] p', 'previous space'],
-  ['ctrl+] ctrl+]', 'send ctrl+] to the app'],
-  ['ctrl+] r', 'runbooks: steps handed to the apps'],
-  ['ctrl+] f', 'follow a request across the apps'],
-  ['ctrl+] q', 'quit Fleet and every app'],
-  ['ctrl+] ?', 'this help'],
-  ['ctrl+] | or \\', 'split: this app and the previous side by side'],
-  ['ctrl+] tab ← →', 'the other pane'],
-  ['ctrl+] x or |', 'one app on screen again'],
-  ['ctrl+] m', 'move every app to another folder'],
+  [`${p} 1-8`, 'switch to that space'],
+  [`${p} s t o b h k w l`, 'Splice, Trawl, Sonar, Bosun, Hail, Keel, Wharf, Locker'],
+  [`${p} ] or n`, 'next space'],
+  [`${p} p`, 'previous space'],
+  [`${p} ${p}`, `send ${p} to the app`],
+  [`${p} r`, 'runbooks: steps handed to the apps'],
+  [`${p} f`, 'follow a request across the apps'],
+  [`${p} q`, 'quit Fleet and every app'],
+  [`${p} ?`, 'this help'],
+  [`${p} | or \\`, 'split: this app and the previous side by side'],
+  [`${p} tab ← →`, 'the other pane'],
+  [`${p} x or |`, 'one app on screen again'],
+  [`${p} m`, 'move every app to another folder'],
+  ...(p === 'ctrl+]' ? [] : [['ctrl+]', `works as ${p} does (host.json's "prefix" changes ${p})`]]),
   ['', ''],
   ['a click on a tab', 'switches to it'],
   ['! or 2 in a tab', 'that app needs you (worried, alerts)'],
   ['copied "for Trawl"', 'goes to Trawl, typed into its prompt'],
 ];
+
+export const HELP = helpRows();
 
 export class Host {
   constructor({
@@ -90,8 +96,15 @@ export class Host {
     bell = true,
     cwd = process.cwd(),
     home,
+    // The prefix's byte (keys.js prefixByte: host.json's "prefix", else ctrl+b); ctrl+] is taken too.
+    prefix = prefixByte(DEFAULT_PREFIX),
+    // The folders the fleet moved to lately, newest first (host.json's "folders"), and keeping them.
+    folders = [],
+    onFolders = () => {},
   }) {
-    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home });
+    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders });
+    this.prefixes = prefixesFor(prefix);
+    this.prefixLabel = prefixName(prefix);
     this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '', badge: null }));
     this.family = familyReader(familyHome);
     // When each space was last on screen: what an app said before that is old news. Fleet starting
@@ -138,6 +151,11 @@ export class Host {
 
   /** Takes the screen and opens space `id`. Resolves `done` once the host has quit. */
   start(id = this.spaces[0].id) {
+    // The folder it starts in is the first of the move's list next time.
+    if (!this.folders[0] || this.folders[0] !== this.cwd) {
+      this.folders = remember(this.folders, this.cwd);
+      this.onFolders(this.folders);
+    }
     this.output.write(ENTER);
     this.input.on('data', this.onInput);
     this.output.on?.('resize', this.onResize);
@@ -161,7 +179,7 @@ export class Host {
       return renderAsk({ label, line, hint: hint || '↵ moves every app there · tab completes · esc cancels', keep: Boolean(hint), width: columns });
     }
     const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
-    this.layout = barLayout({ spaces: this.spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText });
+    this.layout = barLayout({ spaces: this.spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel });
     return renderBar(this.layout, this.spaces, { truecolor: this.truecolor });
   }
 
@@ -239,7 +257,7 @@ export class Host {
   handleInput(text) {
     if (!text || this.quitting) return;
     if (this.asking) return this.editFolder(text);
-    const { state, actions } = readKeys(this.keys, text, this.spaces);
+    const { state, actions } = readKeys(this.keys, text, this.spaces, this.prefixes);
     this.keys = state;
     for (const a of actions) {
       if (a.type === 'prefix') this.drawBar();
@@ -250,7 +268,7 @@ export class Host {
       else if (a.type === 'split') this.toggleSplit();
       else if (a.type === 'unsplit') this.unsplit();
       else if (a.type === 'pane') this.otherPane();
-      else if (a.type === 'folder') this.askFolder();
+      else if (a.type === 'folder') this.panels.folders();
       else if (a.type === 'quit') this.askQuit();
       else if (a.type === 'help') this.showHelp();
       else if (a.type === 'runbooks') this.panels.runbooks();
@@ -330,7 +348,7 @@ export class Host {
   /** What an exited app's space shows, `columns`×`rows` from the top left corner: that it exited, and the end of its stderr. */
   exitedScreen(space, columns, rows) {
     const said = `${space.title} exited${space.code && space.code !== 0 ? ` with ${space.code}` : ''} — ↵ to start again`;
-    const lines = [said, '', 'ctrl+] q quits Fleet · ctrl+] ? shows the keys'];
+    const lines = [said, '', `${this.prefixLabel} q quits Fleet · ${this.prefixLabel} ? shows the keys`];
     const errors = space.stderr.replace(/\x1b\[[\d;?]*[A-Za-z]/g, '').split(/\r?\n/).filter((l) => l.trim());
     const room = Math.max(0, rows - lines.length - 4);
     const tail = errors.slice(-room);
@@ -350,9 +368,10 @@ export class Host {
     this.help = true;
     const { columns } = this.size();
     const { rows } = this.appSize();
-    const keyW = Math.max(...HELP.map(([k]) => stringWidth(k)));
-    const inner = Math.min(columns - 4, keyW + 3 + Math.max(...HELP.map(([, d]) => stringWidth(d))));
-    const body = [' Fleet: the family in one terminal', '', ...HELP.map(([k, d]) => (k ? ` ${fit(k, keyW)}  ${d}` : '')), '', ' any key closes this'];
+    const help = helpRows(this.prefixLabel);
+    const keyW = Math.max(...help.map(([k]) => stringWidth(k)));
+    const inner = Math.min(columns - 4, keyW + 3 + Math.max(...help.map(([, d]) => stringWidth(d))));
+    const body = [' Fleet: the family in one terminal', '', ...help.map(([k, d]) => (k ? ` ${fit(k, keyW)}  ${d}` : '')), '', ' any key closes this'];
     const width = Math.max(10, inner + 2);
     const left = Math.max(0, Math.floor((columns - width - 2) / 2));
     const top = Math.max(0, Math.floor((rows - body.length - 2) / 2));
@@ -755,6 +774,8 @@ export class Host {
     const where = shortFolder(dir, this.home);
     if (dir === this.cwd) return this.notice(`The fleet is in ${where} already`);
     this.cwd = dir;
+    this.folders = remember(this.folders, dir);
+    this.onFolders(this.folders);
     const running = this.spaces.filter((s) => s.child);
     for (const s of running) {
       const child = s.child;

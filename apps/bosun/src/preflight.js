@@ -9,7 +9,11 @@ import { projectAt } from '@fleet/kit/family.js';
 import { run as runShell } from '@fleet/kit/run.js';
 import { portOpen as portAnswers, pidsOnPort as holders } from './supervisor.js';
 import { appcmdProblem, expandEnv, frameworkCovers, frameworkOfRelease, iisControl, webConfigFacts } from './iis.js';
+import { PROCDUMP_HINT } from './dumps.js';
 import { findOnPath } from './which.js';
+import { crewFolders, webConfigDatabases } from './webconfig.js';
+import { crewHosts, resolves } from './hosts.js';
+import { scProblem, serviceControl } from './service.js';
 
 // ---------------------------------------------------------------------------------------------------
 // Node versions, as .nvmrc, .node-version and engines.node give them.
@@ -164,19 +168,40 @@ export function checkIis(iis) {
   return out;
 }
 
+/** The crew's Windows services: Windows, there, not disabled; an administrator, unless IIS's check said so already. */
+export function checkServices(services, { adminSaid = false } = {}) {
+  if (!services?.list?.length) return [];
+  if (services.platform !== 'win32') return [bad('Windows services run only on Windows', `${list(services.list.map((s) => s.proc))} can't start here`)];
+  const out = [];
+  if (services.admin === false && !adminSaid) out.push(bad("The terminal isn't an administrator's", 'Windows starts and stops services only for an administrator: start the terminal as administrator, or run Bosun through gsudo'));
+  for (const s of services.list) {
+    if (s.error) out.push(bad(`${s.proc}: couldn't read service ${s.service}`, s.error));
+    else if (!s.exists) out.push(bad(`There's no service "${s.service}" (${s.proc})`, 'install it, or fix its "service" in bosun.json (sc query lists them)'));
+    else if (s.startType === 'DISABLED') out.push(bad(`${s.displayName ?? s.service} is disabled (${s.proc})`, `sc config "${s.service}" start= demand`));
+    else out.push(ok(`${s.displayName ?? s.service} is there (${s.state?.toLowerCase().replace(/_/g, ' ') ?? 'state unknown'})`));
+  }
+  return out;
+}
+
+/** The host names the crew answers to, found by this machine. */
+export function checkHosts(hosts = []) {
+  return hosts.map((h) => (h.found ? ok(`${h.host} is found (${h.proc} answers to it)`) : bad(`${h.host} isn't found, and ${h.proc} answers to it`, '/hosts adds it to the hosts file (as an administrator)')));
+}
+
 /** The tools the crew's commands name: the .NET SDK, MSBuild, IIS Express. */
 export function checkTools(tools = []) {
   const hint = {
     dotnet: 'install the .NET SDK the project targets (winget install Microsoft.DotNet.SDK.8, or https://dot.net)',
     msbuild: 'install Visual Studio or its Build Tools (winget install Microsoft.VisualStudio.2022.BuildTools, with the web workload for an ASP.NET site), or run Bosun from a Developer PowerShell',
     iisexpress: 'install IIS Express (winget install Microsoft.IISExpress)',
+    procdump: `"dump" on an IIS site or a service attaches it: ${PROCDUMP_HINT}`,
   };
-  const name = { dotnet: 'The .NET SDK (dotnet)', msbuild: 'MSBuild', iisexpress: 'IIS Express' };
+  const name = { dotnet: 'The .NET SDK (dotnet)', msbuild: 'MSBuild', iisexpress: 'IIS Express', procdump: 'ProcDump' };
   return tools.map((t) => (t.found ? ok(`${name[t.tool]} is there (${list(t.procs)})`) : bad(`${name[t.tool]} isn't there, and ${list(t.procs)} ${t.procs.length === 1 ? 'needs' : 'need'} it`, hint[t.tool])));
 }
 
 /** Every check, in the order they're shown. */
-export const runChecks = (facts) => [...checkNode(facts.node), ...checkDocker(facts.docker), ...checkPorts(facts.ports), ...checkIis(facts.iis), ...checkTools(facts.tools), ...checkEnv(facts.env), ...checkDatabases(facts.databases), ...checkModules(facts.modules)];
+export const runChecks = (facts) => [...checkNode(facts.node), ...checkDocker(facts.docker), ...checkPorts(facts.ports), ...checkIis(facts.iis), ...checkServices(facts.services, { adminSaid: facts.iis?.admin != null }), ...checkHosts(facts.hosts), ...checkTools(facts.tools), ...checkEnv(facts.env), ...checkDatabases(facts.databases), ...checkModules(facts.modules)];
 
 /** One line a check: ✓ or ✗, what, and for a problem the hint after a dash. */
 export const checkLine = (c) => `${c.ok ? '✓' : '✗'} ${c.title}${c.ok ? '' : ` — ${c.hint}`}`;
@@ -237,16 +262,42 @@ export function toolsOf(procs, { platform = process.platform, env = process.env,
   const wants = new Map();
   const want = (tool, proc) => wants.set(tool, [...(wants.get(tool) ?? []), proc]);
   for (const p of procs) {
-    const lines = [p.iis ? null : p.run, p.build, p.iis?.build].filter(Boolean);
+    const lines = [p.iis || p.service ? null : p.run, p.build, p.iis?.build].filter(Boolean);
     if (lines.some((l) => /^\s*"?dotnet(\.exe)?"?\s/i.test(l))) want('dotnet', p.name);
     if (lines.some((l) => /^\s*"?msbuild(\.exe)?"?\s/i.test(l))) want('msbuild', p.name);
     if (platform === 'win32' && lines.some((l) => /iisexpress(\.exe)?"?\s/i.test(l))) want('iisexpress', p.name);
+    if (platform === 'win32' && p.dump && (p.iis || p.service)) want('procdump', p.name);
   }
   return [...wants].map(([tool, names]) => ({
     tool,
     procs: names,
-    found: tool === 'iisexpress' ? exists(expandEnv('%ProgramFiles%\\IIS Express\\iisexpress.exe', env)) : Boolean(which(tool)),
+    found: tool === 'iisexpress' ? exists(expandEnv('%ProgramFiles%\\IIS Express\\iisexpress.exe', env)) : tool === 'procdump' ? Boolean(which('procdump64') ?? which('procdump')) : Boolean(which(tool)),
   }));
+}
+
+/** The crew's services' facts: { platform, admin, list: [{ proc, service, exists, displayName, startType, state, error }] }. `services` is service.js's serviceControl (tests pass a fake). */
+export async function gatherServices(procs, { platform = process.platform, run = runShell, services = null } = {}) {
+  const facts = { platform, admin: null, list: procs.map((p) => ({ proc: p.name, service: p.service })) };
+  if (platform !== 'win32') return facts;
+  facts.admin = await run('net session', { signal: AbortSignal.timeout(10_000) }).then(
+    () => true,
+    () => false,
+  );
+  const control = services ?? serviceControl();
+  for (const s of facts.list) {
+    try {
+      const q = await control.query(s.service);
+      s.exists = Boolean(q);
+      if (!q) continue;
+      s.state = q.state;
+      const c = await control.config(s.service);
+      s.displayName = c.displayName;
+      s.startType = c.startType;
+    } catch (e) {
+      s.error = scProblem(e);
+    }
+  }
+  return facts;
 }
 
 /**
@@ -277,6 +328,7 @@ export async function gatherIis(sites, { platform = process.platform, run = runS
       s.exists = Boolean(site);
       if (!site) continue;
       s.physicalPath = site.physicalPath;
+      s.bindings = site.bindings;
       s.pool = p.iis.pool ?? (await control.poolOf(p.iis.site)) ?? 'DefaultAppPool';
       const pool = await control.pool(s.pool);
       s.poolExists = Boolean(pool);
@@ -298,8 +350,20 @@ export async function gatherIis(sites, { platform = process.platform, run = runS
  * fast: before starting), 'rest' (everything else) or 'all'. `running` names processes up already,
  * whose ports aren't checked.
  */
-export async function gatherFacts(dir, crew, { part = 'all', running = [], portOpen = portAnswers, pidsOnPort = holders, run = runShell, tcp = tcpAnswers, version = process.version, platform = process.platform, iis = null, env = process.env, exists = existsSync, which = (name) => findOnPath(name, { env, platform }) } = {}) {
+export async function gatherFacts(dir, crew, { part = 'all', running = [], portOpen = portAnswers, pidsOnPort = holders, run = runShell, tcp = tcpAnswers, version = process.version, platform = process.platform, iis = null, services = null, env = process.env, exists = existsSync, which = (name) => findOnPath(name, { env, platform }), resolveHost = (host) => resolves(host) } = {}) {
   const facts = {};
+  // The host names: "host" and the IIS sites' bindings, each looked up (part 'hosts' is /hosts's).
+  const lookHosts = async (sites) => {
+    const bound = new Map((sites ?? []).map((s) => [s.proc, s.bindings ?? []]));
+    const hosts = crewHosts(crew.procs ?? [], (p) => bound.get(p.name));
+    await Promise.all(hosts.map(async (h) => (h.found = await resolveHost(h.host))));
+    return hosts;
+  };
+  if (part === 'hosts') {
+    const sites = (crew.procs ?? []).filter((p) => p.iis);
+    const iisFacts = sites.length ? await gatherIis(sites, { platform, run, iis, env, exists, read }) : null;
+    return { hosts: await lookHosts(iisFacts?.sites) };
+  }
   if (part !== 'rest') {
     // An IIS site's port is IIS's, held for every site bound to it: not a conflict of its own.
     const procs = (crew.procs ?? []).filter((p) => p.port && !p.iis && !running.includes(p.name));
@@ -345,6 +409,9 @@ export async function gatherFacts(dir, crew, { part = 'all', running = [], portO
   // IIS, for the crew's sites.
   const sites = (crew.procs ?? []).filter((p) => p.iis);
   if (sites.length) jobs.push(gatherIis(sites, { platform, run, iis, env, exists, read }).then((got) => (facts.iis = got)));
+  // Windows services, for the crew's "service" processes.
+  const servicesWanted = (crew.procs ?? []).filter((p) => p.service);
+  if (servicesWanted.length) jobs.push(gatherServices(servicesWanted, { platform, run, services }).then((got) => (facts.services = got)));
   // The tools the commands name.
   facts.tools = toolsOf(crew.procs ?? [], { platform, env, exists, which });
   // Docker, when compose services are in the crew.
@@ -358,11 +425,13 @@ export async function gatherFacts(dir, crew, { part = 'all', running = [], portO
     );
   }
   // The databases the project's settings name (a named instance, or a server that isn't a host, is left out).
-  facts.databases = projectAt(dir).databases.map((d) => ({ name: d.name, source: d.source, kind: d.kind, server: d.server, port: d.port ?? DEFAULT_PORTS[d.kind], reachable: null }));
+  // appsettings*.json's and .env files' (the family's), then the web.config's and app.config's (.NET Framework).
+  facts.databases = [...projectAt(dir).databases, ...webConfigDatabases(dir, crewFolders(crew))].map((d) => ({ name: d.name, source: d.source, kind: d.kind, server: d.server, port: d.port ?? DEFAULT_PORTS[d.kind], reachable: null }));
   for (const d of facts.databases) {
     if (/[\\()]/.test(d.server) || d.server === '.' || !d.port) continue;
     jobs.push(tcp(d.server, d.port, 2000).then((yes) => (d.reachable = yes)));
   }
   await Promise.all(jobs);
+  facts.hosts = await lookHosts(facts.iis?.sites);
   return facts;
 }

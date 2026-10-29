@@ -14,6 +14,7 @@ export const COMMANDS = [
   { name: 'contract', args: '[openapi file|url|off]', desc: 'Check every response against an OpenAPI or Swagger document (remembered for the file; off forgets it, nothing says which)', run: (ctx, s) => a.contract(ctx, s) },
   { name: 'find', args: '<text>', desc: 'Find text in the file, in the Edit view (n and alt+n go on to the next and the one before)', run: (ctx, s) => ctx.findInEditor(s) },
   { name: 'open', args: '<file.http>', desc: 'Open another .http file', complete: 'files', run: (ctx, s) => a.open(ctx, s) },
+  { name: 'move', args: '[folder]', desc: 'Work in another folder, opening its first .http file: a path, or a folder beside this one; alone, the folders used lately and the ones beside this one', complete: 'files', run: (ctx, s) => a.move(ctx, s) },
   { name: 'new', args: '[file.http]', desc: 'Write an example .http file to start from (requests.http) and open it', run: (ctx, s) => a.newFile(ctx, s) },
   { name: 'auth', args: '[id|clear]', desc: 'OAuth sign-ins of the environment and how each stands (↵ signs in again, x forgets); an id signs in with it; clear forgets them', complete: 'auths', run: (ctx, s) => a.auth(ctx, s) },
   { name: 'secret', args: '[name]', desc: 'Save a secret in the system\'s store for {{$secret name}} (the saved ones, to replace or forget, if none is named)', run: (ctx, s) => a.secret(ctx, s) },

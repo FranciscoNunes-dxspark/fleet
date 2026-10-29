@@ -11,7 +11,7 @@ The family of keyboard-driven terminal apps, in one repository:
 | [Hail](apps/hail) | An HTTP client over `.http` files |
 | [Keel](apps/keel) | A tech lead's console for Azure DevOps: a web app, a terminal app and an Android app |
 | [Wharf](apps/wharf) | Containers: what's running, CPU and memory, live logs, start, stop and remove |
-| [Fleet](apps/fleet) | All seven in one terminal, switched with `ctrl+]` like tmux, in one download |
+| [Fleet](apps/fleet) | All seven in one terminal, switched with `ctrl+b` like tmux, in one download |
 
 Each app keeps its own folder, README and history. They share one kit, [`packages/kit`](packages/kit) (`@fleet/kit`): text, the Ink parts and hooks, the mouse, the clipboard, the palette, your own keys and commands, the family, the updater and the build.
 

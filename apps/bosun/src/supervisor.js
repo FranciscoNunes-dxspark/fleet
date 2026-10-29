@@ -2,11 +2,12 @@
 // in its own process group (taskkill's tree on Windows), so stopping one stops what it started too.
 // Nothing here draws: App subscribes and redraws.
 import { spawn, spawnSync } from 'node:child_process';
-import { statSync, watch as fsWatch } from 'node:fs';
+import { mkdirSync, readdirSync, statSync, watch as fsWatch } from 'node:fs';
 import { connect } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { portInUse, stripAnsi } from './crew.js';
 import { skipsFolder, tidy, watchMatcher, watchRoots } from './watch.js';
 import { walksTree, watchTree } from './treewatch.js';
@@ -19,6 +20,9 @@ import { tailLogs } from './tail.js';
 import { fromTree, sharedDebugOutput } from './dbwin.js';
 import { appSettingsNote, writeAppSettings } from './appsettings.js';
 import { errorPage } from './errorpage.js';
+import { ServiceChild, serviceControl } from './service.js';
+import { PROCDUMP_HINT, dumpEnv, dumpNote, isDumpOf, procdumpArgs, procdumpSays } from './dumps.js';
+import { findOnPath } from './which.js';
 
 // A folder that's still there: Windows reports one whose files changed as changed itself, and the files
 // it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
@@ -136,8 +140,19 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs, debugOutput, appSettings = writeAppSettings } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs, debugOutput, appSettings = writeAppSettings, services = null, fetchImpl = httpStatus, warmWait = 90_000, dumpDir = join(tmpdir(), 'bosun-dumps'), dumpEvery = 3000, procdumpSpawn = spawn, findTool = findOnPath } = {}) {
     this.dir = dir;
+    // "service" processes: service.js's serviceControl (made when the first one starts; tests pass a fake).
+    this.services = services;
+    // The health checks' and warm-ups' requests (httpStatus; tests may pass their own), and how long a warm-up waits.
+    this.fetchImpl = fetchImpl;
+    this.warmWait = warmWait;
+    // "dump": where dumps go (App gives the project's own, dumps.js's dumpsDir), how often it looks for
+    // new ones, and ProcDump (started through `procdumpSpawn`, found with `findTool`).
+    this.dumpDir = dumpDir;
+    this.dumpEvery = dumpEvery;
+    this.procdumpSpawn = procdumpSpawn;
+    this.findTool = findTool;
     // "iis" processes: iis.js's iisControl (made when the first one starts; tests pass a fake), and
     // how often their pool and event log are looked at (`every`, `eventsEvery`).
     this.iis = iis;
@@ -276,8 +291,10 @@ export class Supervisor {
     p.gaveUp = false;
     if (!p.watchers) this.watch(p);
     const { cwd, env, build } = p.spec;
+    // An IIS site or a Windows service isn't a command Bosun runs.
+    const kind = p.spec.iis ? 'iis' : p.spec.service ? 'service' : 'command';
     // "build" runs first, each start: the process starts only when it passed.
-    const run = build && !p.spec.iis ? `${build} && ${p.spec.run}` : p.spec.run;
+    const run = build && kind === 'command' ? `${build} && ${p.spec.run}` : p.spec.run;
     p.status = 'starting';
     p.code = null;
     p.trouble = null;
@@ -286,24 +303,30 @@ export class Supervisor {
     p.endedAt = null;
     this.recorder?.started?.(p.name, { env: envHash(p.spec.fileEnv) });
     // The command as bosun.json gives it (what /replay knows a start by), its build said before it.
-    if (build && !p.spec.iis) this.push(p, `── build: ${build}`, false);
+    if (build && kind === 'command') this.push(p, `── build: ${build}`, false);
     this.push(p, `── ${p.spec.run}`, false);
     // IIS Express and the like read their settings from web.config: its appSettings file gets them.
-    if (!p.spec.iis) this.writeSettings(p, resolve(this.dir, cwd ?? '.'));
-    const child = p.spec.iis
-      ? this.iisChild(p)
-      : this.spawnImpl(run, {
+    if (kind === 'command') this.writeSettings(p, resolve(this.dir, cwd ?? '.'));
+    const dumps = p.spec.dump ? this.dumpsFolder(p) : null;
+    const child =
+      kind === 'iis'
+        ? this.iisChild(p)
+        : kind === 'service'
+          ? this.serviceChild(p)
+          : this.spawnImpl(run, {
           cwd: resolve(this.dir, cwd ?? '.'),
           shell: true,
           windowsHide: true,
           detached: !WIN,
           // FORCE_COLOR off: colours would be stripped anyway, and some tools write less without them.
           // The terminal's, then the env files', then bosun.json's own.
-          env: { ...this.env, ...p.spec.fileEnv, ...env, FORCE_COLOR: '0' },
+          // "dump": a .NET runtime writes its own when it crashes.
+          env: { ...this.env, ...p.spec.fileEnv, ...env, ...(dumps ? dumpEnv(dumps, p.name) : {}), FORCE_COLOR: '0' },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
     p.child = child;
     p.pid = child.pid ?? null;
+    if (dumps) this.watchDumps(p, child, dumps);
     if (p.spec.logs?.length) this.tailFor(p, child);
     if (p.spec.trace) this.traceFor(p, child);
     let buffered = { out: '', err: '' };
@@ -339,6 +362,8 @@ export class Supervisor {
       p.tails = null;
       p.untrace?.();
       p.untrace = null;
+      this.unwatchDumps(p);
+      p.warmAbort?.abort();
       p.endedAt = Date.now();
       p.code = code;
       p.status = stopping ? 'stopped' : code === 0 ? 'exited' : 'crashed';
@@ -361,13 +386,10 @@ export class Supervisor {
    * the port (when bosun.json gives none) and the host its health page is asked for.
    */
   iisChild(p) {
-    this.iis ??= iisControl({ env: this.env });
-    const child = new IisChild(p.spec, { control: this.iis, dir: this.dir, env: this.env, spawnImpl: this.spawnImpl, settings: (folder) => this.writeSettings(p, folder), ...this.iisTimes });
-    child.on('pid', (pid) => {
-      if (p.child !== child) return;
-      p.pid = pid;
-      this.onChange();
-    });
+    const child = new IisChild(p.spec, { control: this.iisControl(), dir: this.dir, env: this.env, spawnImpl: this.spawnImpl, settings: (folder) => this.writeSettings(p, folder), ...this.iisTimes });
+    this.followPid(p, child);
+    // Started: asked for at once, so the first request isn't the one that waits.
+    child.once('spawn', () => this.warmUp(p, child, 'started'));
     child.on('site', ({ binding, physicalPath }) => {
       if (p.child !== child) return;
       p.site = binding ? { physicalPath, scheme: binding.scheme, host: binding.host, ip: binding.ip, port: binding.port } : { physicalPath };
@@ -412,6 +434,167 @@ export class Supervisor {
         this.onChange();
       },
     });
+  }
+
+  /** IIS through appcmd (iis.js), made when first wanted: /iis's too. */
+  iisControl() {
+    return (this.iis ??= iisControl({ env: this.env }));
+  }
+
+  /** `p`'s Windows service as its child (service.js's ServiceChild): its process as `p.pid`. */
+  serviceChild(p) {
+    this.services ??= serviceControl();
+    const child = new ServiceChild(p.spec.service, { control: this.services, ...this.iisTimes });
+    this.followPid(p, child);
+    return child;
+  }
+
+  /** A child whose process changes (an IIS site's worker, a service's process): `p.pid`, and ProcDump on it for "dump". */
+  followPid(p, child) {
+    child.on('pid', (pid) => {
+      if (p.child !== child) return;
+      p.pid = pid;
+      if (p.spec.dump) this.attachProcdump(p, pid);
+      this.onChange();
+    });
+  }
+
+  /**
+   * Where a process's page is asked for: { url, headers, ip }, its binding's address and host name for
+   * an IIS site (one bound to an address answers only there, one bound to a host name only to it).
+   */
+  pageUrl(p, path) {
+    const site = p.site?.port === p.port ? p.site : null;
+    const ip = site?.ip ?? '127.0.0.1';
+    const host = p.spec.host ?? site?.host ?? null;
+    const scheme = site?.scheme === 'https' ? 'https' : 'http';
+    const at = ip.includes(':') ? `[${ip}]` : ip;
+    return { ip, url: `${scheme}://${at}:${p.port}${path.startsWith('/') ? '' : '/'}${path}`, headers: host ? { host: `${host}:${p.port}` } : {} };
+  }
+
+  /**
+   * After an IIS site starts or recycles: its health page (or /) asked for until it answers below
+   * 500, and how long that took said, with a word when it's well over what it took before.
+   */
+  async warmUp(p, child, what) {
+    if (!p.port) return;
+    const { url, headers } = this.pageUrl(p, p.spec.health ?? '/');
+    const from = Date.now();
+    let status = null;
+    // Called off when the site stops, so no request outlives it.
+    p.warmAbort?.abort();
+    const stop = (p.warmAbort = new AbortController());
+    while (p.child === child && !stop.signal.aborted && Date.now() - from < this.warmWait) {
+      try {
+        status = (await this.fetchImpl(url, { signal: AbortSignal.any([stop.signal, AbortSignal.timeout(Math.max(1000, Math.min(15_000, this.warmWait - (Date.now() - from))))]), headers })).status;
+        if (status < 500) break;
+      } catch {
+        status = null;
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (p.child !== child) return;
+    const ms = Date.now() - from;
+    if (status == null || status >= 500) {
+      this.push(p, `── not ready ${seconds(ms)} after it ${what}${status ? `: ${p.spec.health ?? '/'} answers ${status}` : ''}`, true);
+      return this.onChange();
+    }
+    const before = [...(p.warmups ?? [])].sort((a, b) => a - b);
+    const usual = before.length ? before[Math.floor(before.length / 2)] : null;
+    const slow = usual != null && ms > usual * 1.5 && ms - usual > 1000;
+    p.warmups = [...(p.warmups ?? []), ms].slice(-10);
+    p.warm = { ms, slow };
+    this.push(p, `── ready ${(ms / 1000).toFixed(1)}s after it ${what} (${p.spec.health ?? '/'} ${status})${slow ? `: slower than its usual ${(usual / 1000).toFixed(1)}s` : ''}`, slow);
+    this.onChange();
+  }
+
+  /** The folder `p`'s dumps go to, made when it isn't there. */
+  dumpsFolder(p) {
+    try {
+      mkdirSync(this.dumpDir, { recursive: true });
+      return this.dumpDir;
+    } catch (e) {
+      this.push(p, `── no dumps: couldn't make ${this.dumpDir}: ${e.message}`, true);
+      return null;
+    }
+  }
+
+  /** Looks for `p`'s new dumps in `folder` while `child` runs (and once more when it ends). */
+  watchDumps(p, child, folder) {
+    const mine = () => {
+      try {
+        return readdirSync(folder).filter((f) => isDumpOf(f, p.name));
+      } catch {
+        return [];
+      }
+    };
+    const seen = new Set(mine());
+    const look = () => {
+      for (const f of mine()) {
+        if (seen.has(f)) continue;
+        seen.add(f);
+        const path = join(folder, f);
+        let size = 0;
+        try {
+          size = statSync(path).size;
+        } catch {}
+        p.dumps = [...(p.dumps ?? []), path].slice(-5);
+        this.push(p, dumpNote(path, size), true);
+        this.onChange();
+      }
+    };
+    p.dumpWatch = { look, timer: setInterval(look, this.dumpEvery), folder };
+    p.dumpWatch.timer.unref?.();
+  }
+
+  unwatchDumps(p) {
+    if (!p.dumpWatch) return;
+    clearInterval(p.dumpWatch.timer);
+    // A dump written as it crashed: a moment later, it's there.
+    const { look } = p.dumpWatch;
+    setTimeout(look, 1500).unref?.();
+    p.dumpWatch = null;
+    this.detachProcdump(p);
+  }
+
+  /** ProcDump on `pid` (an IIS worker, a service's process) for `p`'s "dump"; the one on its last process goes. */
+  attachProcdump(p, pid) {
+    this.detachProcdump(p);
+    if (!pid || !p.dumpWatch) return;
+    const tool = this.findTool('procdump64') ?? this.findTool('procdump');
+    if (!tool) {
+      if (!p.procdumpMissing) this.push(p, `── "dump" needs ProcDump on the PATH for ${p.spec.iis ? 'an IIS site' : 'a service'}: ${PROCDUMP_HINT}`, true);
+      p.procdumpMissing = true;
+      return;
+    }
+    let child;
+    try {
+      child = this.procdumpSpawn(tool, procdumpArgs(pid, p.dumpWatch.folder, p.name), { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      return this.push(p, `── ProcDump couldn't start: ${e.message}`, true);
+    }
+    p.procdump = child;
+    this.push(p, `── ProcDump watches process ${pid}: a crash writes a dump`);
+    let rest = '';
+    const heard = (d) => {
+      const lines = `${rest}${d}`.split(/\r?\n/);
+      rest = lines.pop();
+      for (const l of lines) if (procdumpSays(l)) this.push(p, `── procdump: ${l.trim()}`);
+      this.onChange(p);
+    };
+    child.stdout?.setEncoding('utf8').on('data', heard);
+    child.stderr?.setEncoding('utf8').on('data', heard);
+    child.on('error', (e) => this.push(p, `── ProcDump couldn't start: ${e.message}`, true));
+    child.on('close', () => {
+      if (p.procdump === child) p.procdump = null;
+    });
+  }
+
+  detachProcdump(p) {
+    const child = p.procdump;
+    p.procdump = null;
+    if (child?.pid) killTreeNow(child.pid);
+    else child?.kill?.();
   }
 
   /** Follows `p`'s "logs" into its log while `child` runs. */
@@ -603,12 +786,14 @@ export class Supervisor {
     // bosun.json read again since it started: its build and settings as they are now.
     child.spec = p.spec;
     child.iis = p.spec.iis;
-    Object.assign(p, { status: 'starting', startedAt: Date.now(), trouble: null, tests: null, portOpen: null, health: null });
+    Object.assign(p, { status: 'starting', startedAt: Date.now(), trouble: null, tests: null, portOpen: null, health: null, warm: null });
     this.push(p, '── recycling');
     this.onChange();
     await child.recycle();
     if (p.child === child && p.status === 'starting') p.status = 'running';
     this.onChange();
+    // In the background: r is done when the pool has recycled, not when the site answers.
+    this.warmUp(p, child, 'recycled');
   }
 
   /**
@@ -735,27 +920,26 @@ export class Supervisor {
       p.tails?.close();
       p.untrace?.();
       p.untrace = null;
+      if (p.dumpWatch) clearInterval(p.dumpWatch.timer);
+      this.detachProcdump(p);
+      p.warmAbort?.abort();
       if (p.tunnel) this.closeTunnel(p.name);
       this.stopHttps(p);
     }
   }
 
   /** Checks each running process's port, and its health page when it has one: { open, status } on each. */
-  async checkPorts({ fetchImpl = httpStatus } = {}) {
+  async checkPorts({ fetchImpl = this.fetchImpl } = {}) {
     let changed = false;
     await Promise.all(
       [...this.procs.values()].map(async (p) => {
         if (!p.port || !p.child) return;
-        // An IIS site bound to one address answers only there; one bound to a host name, only to it.
-        const ip = p.site?.port === p.port && p.site.ip ? p.site.ip : '127.0.0.1';
-        const host = p.spec.host ?? (p.site?.port === p.port ? p.site.host : null);
-        const scheme = p.site?.port === p.port && p.site.scheme === 'https' ? 'https' : 'http';
+        const { ip, url, headers } = this.pageUrl(p, p.spec.health ?? '/');
         const open = await portOpen(p.port, { host: ip });
         let health = null;
         if (open && p.spec.health) {
           try {
-            const at = ip.includes(':') ? `[${ip}]` : ip;
-            const res = await fetchImpl(`${scheme}://${at}:${p.port}${p.spec.health.startsWith('/') ? '' : '/'}${p.spec.health}`, { signal: AbortSignal.timeout(2000), headers: host ? { host: `${host}:${p.port}` } : {} });
+            const res = await fetchImpl(url, { signal: AbortSignal.timeout(2000), headers });
             health = res.status;
             // A server error: what its page says goes in the log, once a start and status.
             const key = `${p.startedAt}:${health}`;

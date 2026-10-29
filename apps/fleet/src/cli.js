@@ -5,6 +5,7 @@ import { checkForUpdate, checksDisabled, installUpdate, removeOldExecutables } f
 import { keepVtInput } from '@fleet/kit/mouse.js';
 import { plainOutput } from '@fleet/kit/glyphs.js';
 import { Host, LEAVE } from './host.js';
+import { DEFAULT_PREFIX, prefixByte } from './keys.js';
 import { appSpawner } from './launch.js';
 import { SPACES, spaceNamed } from './spaces.js';
 import { loadState, saveState } from './state.js';
@@ -24,15 +25,19 @@ Each runs as it does by itself, one on screen at a time; the bar at the bottom
 shows them all. fleet <app> opens that one (and starts it with args…);
 fleet alone opens the one you used last.
 
-  ctrl+] 1-8 or s t o b h k w l switch (o is Sonar)
-  ctrl+] ] / n / p            next, previous
-  ctrl+] | / tab / x          split in two, the other pane, one again
-  ctrl+] m                    move every app to another folder
-  ctrl+] r                    runbooks: steps handed to the apps
-  ctrl+] f                    follow a request across the apps
-  ctrl+] ctrl+]            send ctrl+] to the app
-  ctrl+] q                    quit, stopping every app
-  ctrl+] ?                    the keys
+  ctrl+b 1-8 or s t o b h k w l switch (o is Sonar)
+  ctrl+b ] / n / p            next, previous
+  ctrl+b | / tab / x          split in two, the other pane, one again
+  ctrl+b m                    move every app to another folder
+  ctrl+b r                    runbooks: steps handed to the apps
+  ctrl+b f                    follow a request across the apps
+  ctrl+b ctrl+b               send ctrl+b to the app
+  ctrl+b q                    quit, stopping every app
+  ctrl+b ?                    the keys
+
+ctrl+] works as ctrl+b does. "prefix": "ctrl+a" in ~/.fleet/host.json (or
+FLEET_PREFIX=ctrl+a) makes another key the prefix: ctrl and a letter, or
+ctrl+], ctrl+\, ctrl+^, ctrl+_, ctrl+space.
 
 An app starts the first time you switch to it. A line an app copies "for
 Trawl" (or any sibling) goes straight to that app's prompt.
@@ -54,6 +59,9 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
 }
 
 const state = loadState();
+// The prefix: FLEET_PREFIX, else host.json's "prefix", else ctrl+b (one Fleet can't use is said, and ctrl+b taken).
+const prefixWanted = process.env.FLEET_PREFIX || state.prefix;
+const prefix = prefixByte(prefixWanted ?? DEFAULT_PREFIX) ?? prefixByte(DEFAULT_PREFIX);
 const first = named ?? spaceNamed(state.last) ?? SPACES[0];
 const depth = process.stdout.getColorDepth?.() ?? 24;
 
@@ -74,6 +82,10 @@ const host = new Host({
   // The bell when a tab gets a badge: FLEET_NO_BELL=1, or "bell": false in host.json, keeps it quiet.
   bell: process.env.FLEET_NO_BELL !== '1' && state.bell !== false,
   onSwitch: (id) => saveState({ last: id }),
+  prefix,
+  // The folders moved to lately, for the move's list (newest first).
+  folders: Array.isArray(state.folders) ? state.folders.filter((f) => typeof f === 'string') : [],
+  onFolders: (folders) => saveState({ folders }),
   onUpdate: () => updateFleet(true),
 });
 
@@ -125,7 +137,9 @@ async function updateFleet(asked) {
 if (COMPILED) removeOldExecutables();
 updateFleet(false);
 
-await host.start(first.id);
+const running = host.start(first.id);
+if (prefixWanted && !prefixByte(prefixWanted)) host.notice(`"${prefixWanted}" can't be Fleet's prefix: ctrl+b is (see fleet -h)`);
+await running;
 left = true;
 process.stdin.setRawMode(false);
 process.exit(0);
