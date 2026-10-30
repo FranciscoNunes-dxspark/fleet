@@ -7,7 +7,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } fro
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { appcmdProblem, bindingUrl, eventIsSite, frameworkCovers, frameworkOfRelease, iisControl, iisSpec, mainBinding, parseAppcmd, parseBindings, parseEvents, parseSiteConfig, w3cFields, w3cJson, webConfigFacts } from '../src/iis.js';
+import { appcmdProblem, bindingUrl, eventIsSite, frameworkCovers, frameworkOfRelease, iisControl, iisSpec, mainBinding, newBinding, poolRuntime, parseAppcmd, parseBindings, parseEvents, parseSiteConfig, w3cFields, w3cJson, webConfigFacts } from '../src/iis.js';
 import { cutLines, logPattern, newest, tailLogs } from '../src/tail.js';
 import { loadCrew, readSpec, specFor } from '../src/crew.js';
 import { Supervisor, httpStatus } from '../src/supervisor.js';
@@ -95,8 +95,16 @@ test('web.config, the .NET Framework installed, and bosun.json\'s "iis"', () => 
   assert.equal(frameworkCovers('4.8', '4.7.2'), true);
   assert.equal(frameworkCovers('4.7.2', '4.8'), false);
   assert.equal(frameworkCovers('4.8', '4.8'), true);
-  assert.deepEqual(iisSpec('Shop'), { site: 'Shop', pool: null, build: null, offline: true, failedRequests: false });
-  assert.deepEqual(iisSpec({ site: 'Shop', pool: 'ShopPool', build: 'msbuild', offline: false }), { site: 'Shop', pool: 'ShopPool', build: 'msbuild', offline: false, failedRequests: false });
+  assert.deepEqual(iisSpec('Shop'), { site: 'Shop', pool: null, build: null, offline: true, failedRequests: false, path: null, runtime: null });
+  assert.deepEqual(iisSpec({ site: 'Shop', pool: 'ShopPool', build: 'msbuild', offline: false }), { site: 'Shop', pool: 'ShopPool', build: 'msbuild', offline: false, failedRequests: false, path: null, runtime: null });
+  assert.deepEqual(iisSpec({ site: "Shop", path: "src/Shop", runtime: "" }), { site: "Shop", pool: null, build: null, offline: true, failedRequests: false, path: "src/Shop", runtime: "" });
+  assert.equal(iisSpec({ site: "Shop", path: 3 }), null);
+  assert.equal(newBinding({ host: "shop.local", port: 8080 }), "http/*:8080:shop.local");
+  assert.equal(newBinding({ host: null, port: null }), "http/*:80:");
+  assert.equal(poolRuntime({ runtime: null }, "<configuration><system.webServer><aspNetCore processPath=\"dotnet\" /></system.webServer></configuration>"), "");
+  assert.equal(poolRuntime({ runtime: null }, "<configuration />"), "v4.0");
+  assert.equal(poolRuntime({ runtime: "v2.0" }, ""), "v2.0");
+  assert.equal(iisSpec({ pool: "x" }), null);
   assert.equal(iisSpec({ pool: 'x' }), null);
   assert.equal(iisSpec(''), null);
 
@@ -114,7 +122,7 @@ test('web.config, the .NET Framework installed, and bosun.json\'s "iis"', () => 
   });
   assert.deepEqual(problems, [
     '"both": it has "iis" and "run": IIS runs the site, so it has no command of its own',
-    '"bad": "iis" is a site\'s name, or { "site": "Shop", "pool": "ShopPool", "build": "msbuild", "failedRequests": true }',
+    '"bad": "iis" is a site\'s name, or { "site": "Shop", "pool": "ShopPool", "build": "msbuild", "failedRequests": true, "path": "src/Shop", "runtime": "v4.0" }',
     '"built": an IIS site\'s "build" goes in "iis" ({ "site": "X", "build": "…" })',
     '"host": "host" is a host name, as "shop.local"',
     '"logs": "logs" is a log file\'s path or glob, or a list of them',

@@ -17,6 +17,7 @@ export const COMMANDS = [
   { name: 'free', args: '<port>', desc: 'Stop whatever holds a port on this machine (asks first)', run: (ctx, s) => a.free(ctx, s) },
   { name: 'preflight', desc: 'Check what the crew needs: Node version, Docker, free ports, .env keys, databases, node_modules, IIS, services, host names, tools', run: (ctx) => a.preflight(ctx) },
   { name: 'iis', args: '[name]', desc: 'An IIS site\'s application pool: idle timeout, start mode, recycling, rapid-fail protection, 32-bit; ↵ sets one for development', complete: 'procs', run: (ctx, s) => a.iis(ctx, s) },
+  { name: 'register', desc: 'Create the crew\'s IIS sites that IIS doesn\'t have yet (pool, site, binding from "host" and "port"), then add their host names to the hosts file (asks first)', run: (ctx) => a.register(ctx) },
   { name: 'hosts', desc: 'Add the host names the crew answers to ("host", IIS bindings) that this machine can\'t find to the hosts file (asks first)', run: (ctx) => a.hosts(ctx) },
   { name: 'ports', desc: 'The TCP ports listening on this machine, with what holds each (this crew\'s marked): f frees one, o opens it', run: (ctx) => a.ports(ctx) },
   { name: 'graph', desc: 'Who starts after whom ("after" in bosun.json), as a tree', run: (ctx) => a.graph(ctx) },

@@ -22,7 +22,7 @@ import { afterTree, namedProcs, treeLine } from './groups.js';
 import { levelTone, shownText, structuredOf, troubled } from './structured.js';
 import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
 import { SYSTEM_PIDS } from './supervisor.js';
-import { appcmdProblem, bindingUrl, poolRows } from './iis.js';
+import { appcmdProblem, bindingUrl, newBinding, poolRows, poolRuntime } from './iis.js';
 import { crewFolders, webConfigDatabases } from './webconfig.js';
 import { hostsNames, withHosts } from './hosts.js';
 
@@ -434,6 +434,69 @@ export async function iis(ctx, name, { replace = false } = {}) {
     },
     { replace },
   );
+}
+
+/**
+ * /register: the crew's IIS sites that IIS doesn't have yet, created (an application pool, and a site
+ * bound to the process's "host" and "port", serving the iis "path" or the process's folder), after
+ * asking; then /hosts for the names they answer to. Creating them takes an administrator.
+ */
+export async function register(ctx) {
+  const sites = (ctx.crew?.list() ?? []).filter((p) => p.spec.iis);
+  if (!sites.length) return ctx.note('The crew has no IIS site: give a process "iis" in bosun.json.');
+  const control = ctx.crew.iisControl();
+  const plan = [];
+  const r = await ctx.task(
+    'Register',
+    async () => {
+      for (const p of sites) {
+        const { iis: spec, host, port, cwd } = p.spec;
+        try {
+          if (await control.site(spec.site)) continue;
+          const folder = resolve(ctx.dir, cwd ?? '.', spec.path ?? '.');
+          if (!existsSync(folder)) {
+            plan.push({ p, problem: `${folder} isn't a folder` });
+            continue;
+          }
+          let webConfig = '';
+          try {
+            webConfig = readFileSync(resolve(folder, 'web.config'), 'utf8');
+          } catch {
+            // No web.config: a site without one is still a site.
+          }
+          const pool = spec.pool ?? `${spec.site}Pool`;
+          plan.push({ p, spec, folder, pool, binding: newBinding({ host, port }), runtime: poolRuntime(spec, webConfig), poolThere: !!(await control.pool(pool)) });
+        } catch (e) {
+          throw new Error(appcmdProblem(e));
+        }
+      }
+      return { stdout: String(plan.length) };
+    },
+    { label: 'Looking at IIS' },
+  );
+  if (!r.ok) return r;
+  for (const x of plan.filter((x) => x.problem)) ctx.note(`${x.p.name}: ${x.problem}`, 'error');
+  const todo = plan.filter((x) => !x.problem);
+  if (!todo.length) {
+    if (!plan.length) ctx.note(`IIS has every site the crew runs: ${sites.map((p) => p.spec.iis.site).join(', ')}.`, 'ok');
+    return hosts(ctx);
+  }
+  const yes = await ctx.confirm({
+    title: `Create ${todo.map((x) => x.spec.site).join(', ')} in IIS?`,
+    detail: todo.map((x) => `${x.spec.site}: ${x.binding} serving ${x.folder}, pool ${x.pool}${x.poolThere ? '' : ` (new, ${x.runtime || 'no managed code'})`}`).join('\n'),
+    options: YES_NO('Yes, create them'),
+  });
+  if (!yes) return false;
+  for (const x of todo) {
+    try {
+      if (!x.poolThere) await control.createPool(x.pool, x.runtime);
+      await control.createSite(x.spec.site, x.folder, x.binding, x.pool);
+    } catch (e) {
+      return ctx.note(`Couldn't create ${x.spec.site}: ${appcmdProblem(e)}`, 'error');
+    }
+    ctx.note(`Created ${x.spec.site} in IIS (${x.binding}).`, 'ok');
+  }
+  return hosts(ctx);
 }
 
 /**
