@@ -16,12 +16,27 @@ Mooring is one of the fleet's apps: it needs Node 22 or newer from a checkout (`
 
 ## Signing in
 
-Mooring runs `ssh` without a terminal, so it can't show ssh's own prompts. It signs in one of two ways, and the host must already be in `known_hosts` either way (connect once with plain `ssh` to trust it):
+Mooring runs `ssh` without a terminal, so it can't show ssh's own prompts. It signs in one of two ways:
 
 - **A key or your ssh agent** (the default): `/add … key=<file>`, or a key `ssh-add` has loaded. A key with a passphrase needs the agent, as Mooring can't ask for the passphrase.
 - **A password**, for a host saved with the word `password`: `/add web me@web password`. Mooring asks for it, masked, **every time it connects** (`/connect`, `↵` in Hosts). It is never saved: the settings file records only that the host asks for one. It is handed to ssh through that ssh's environment (OpenSSH's `SSH_ASKPASS` with a two-line helper script Mooring writes to a private temporary folder and removes on exit), never on a command line, and it is let go of when you disconnect. OpenSSH 8.4 or newer is needed (Windows 10 and 11, current Macs and Linux have it). A wrong password fails once with ssh's own message, not three times.
 
 When sign-in fails, ssh's own words come back with what to do.
+
+### A host ssh doesn't know yet
+
+The first time you connect to a host that has no entry in `known_hosts`, Mooring asks the question ssh would, since it can't be answered inside ssh here: it looks up the key the host offers (`ssh-keyscan`), shows its fingerprint, and asks whether to trust it.
+
+```
+ssh doesn't know ci@build.example.com yet. Trust its key (compare the fingerprint)?
+ED25519 SHA256:Z0AF8IP8Iwiqv46UQIMY2Y/QRWSt/Wwz+rOsPbRaK9Y
+  1. Trust it and connect
+  2. Cancel
+```
+
+**Compare that fingerprint with one you already know** (from the server's administrator, the provider's panel, or `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server): a key fetched over the network can't vouch for itself, and trusting a wrong one is how a machine in the middle gets in. On a yes, exactly the key you saw is added to the `known_hosts` file ssh reads (`ssh -G` says which; `~/.ssh/known_hosts` as a rule), the trust is noted in the Log and the family's activity log (host and fingerprint, which are public), and the connection goes on. On a no, nothing is written.
+
+A host whose key has *changed* is never offered: that is ssh's `REMOTE HOST IDENTIFICATION HAS CHANGED`, shown as it is. Find out why before you replace the old entry yourself (`ssh-keygen -R <host>`). If the lookup can't be made (no `ssh-keyscan`, or the host doesn't answer) nothing is asked and ssh's own error comes back. The same goes for password hosts and key hosts.
 
 ## Hosts
 

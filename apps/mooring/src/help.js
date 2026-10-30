@@ -16,7 +16,7 @@ export const HELP = [
       ['?', 'This help'],
       ['q', 'Quit'],
       ['mouse', 'Click a tab, a pane or a row · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go (ctrl+c copies it again; it never quits) · ctrl+v pastes'],
-      "Mooring runs ssh without a terminal: it signs in with a key or your ssh agent, or with a password for a host saved with /add … password (asked for, masked, every time it connects, and never saved). The host must be in known_hosts: ssh to it once yourself.",
+      "Mooring runs ssh without a terminal: it signs in with a key or your ssh agent, or with a password for a host saved with /add … password (asked for, masked, every time it connects, and never saved). A host ssh doesn't know yet is offered for trust (its fingerprint shown: compare it with one you know); a changed key is never offered.",
     ],
   },
   {
