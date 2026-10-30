@@ -18,7 +18,8 @@ test('the prefix and a key switch, move, quit and help', () => {
   assert.deepEqual(prefixAction('6'), { type: 'switch', id: 'locker' });
   assert.deepEqual(prefixAction('8'), { type: 'switch', id: 'bilge' });
   assert.deepEqual(prefixAction('g'), { type: 'switch', id: 'bilge' });
-  assert.equal(prefixAction('9'), null);
+  assert.deepEqual(prefixAction('9'), { type: 'switch', id: 'chart' });
+  assert.deepEqual(prefixAction('c'), { type: 'switch', id: 'chart' });
   assert.deepEqual(prefixAction('l'), { type: 'switch', id: 'locker' });
   assert.deepEqual(prefixAction('7'), { type: 'switch', id: 'mooring' });
   assert.deepEqual(prefixAction('U'), { type: 'switch', id: 'mooring' });
