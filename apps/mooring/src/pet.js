@@ -5,10 +5,10 @@
 /** Who the pet is; the welcome box, the mood lines and the logo's title all say it from here. */
 export const PET = { name: 'Tug', kind: 'sea otter' };
 
-// The accent (teal) for the outline, as the siblings' pets have, brown fur with a cream muzzle, and a
+// The accent (pink) for the outline, as the siblings' pets have, brown fur with a cream muzzle, and a
 // rope in the one warm colour that reads at 16 pixels.
 export const PALETTE = {
-  G: '#3fb8af', // outline, the accent
+  G: '#f78fb3', // outline, the accent
   B: '#8b5a3c', // the fur
   L: '#e8d3b0', // the muzzle
   N: '#2a1a14', // the nose

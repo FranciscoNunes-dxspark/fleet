@@ -4,7 +4,7 @@
 // colours is a function or getters, never values copied at import), so applyTheme repaints the next frame.
 import { theme as kitTheme } from '@fleet/kit/theme.js';
 export const DARK = {
-  accent: '#3fb8af', // DEFAULT_ACCENT, below
+  accent: '#f78fb3', // DEFAULT_ACCENT, below
   border: '#5f5f5f',
   dim: '#8a8a8a',
   selBg: '#303030',
@@ -22,7 +22,7 @@ export const DARK = {
 // For a white (or pale) background: darker inks, pale backgrounds behind matches, white on the
 // coloured bars.
 export const LIGHT = {
-  accent: '#1d7f78', // LIGHT_ACCENT, below
+  accent: '#b8366b', // LIGHT_ACCENT, below
   border: '#a8a8a8',
   dim: '#6c6c6c',
   selBg: '#e4e4e4',
@@ -42,9 +42,9 @@ export const theme = Object.assign(kitTheme, DARK, { mode: 'dark' });
 // Windows terminals draw ⏺ as a wide emoji, so use the plain circle there (as Claude Code does).
 export const BULLET = process.platform === 'win32' ? '●' : '⏺';
 
-export const DEFAULT_ACCENT = '#3fb8af';
+export const DEFAULT_ACCENT = '#f78fb3';
 // The default accent on a light background: the same teal, darker.
-export const LIGHT_ACCENT = '#1d7f78';
+export const LIGHT_ACCENT = '#b8366b';
 
 export const THEMES = ['dark', 'light', 'auto'];
 

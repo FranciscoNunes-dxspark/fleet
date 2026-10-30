@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { PALETTE, PET, petPixels } from '../src/pet.js';
 
-const BG = '#0f2224';
+const BG = '#241a20';
 // Trim the empty columns, so the otter sits in the middle.
 const full = petPixels('idle');
 const used = [...full[0]].map((_, x) => full.some((row) => row[x] !== '.'));
@@ -16,8 +16,8 @@ const px = full.map((row) => row.slice(first, last + 1));
 
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), 255];
 
-// The badge: "SSH" in white on dark slate, a rounded tag, as Trawl's "SQL" and Wharf's "BOX"; darker
-// than the otter, so the tag reads against its brown and the teal outline. It's drawn at twice the
+// The badge: "SSH" in white on plum, a rounded tag, as Trawl's "SQL" and Wharf's "BOX"; darker
+// than the otter, so the tag reads against its brown and the pink outline. It's drawn at twice the
 // pet's resolution, the coarsest the letters still read at.
 const BADGE = [
   '.bbbbbbbbbbbbb.',
@@ -31,7 +31,7 @@ const BADGE = [
   '.bbbbbbbbbbbbb.',
 ];
 // Letters of their own, so the badge's colours never change the pet's.
-const COLOURS = { ...PALETTE, b: '#20444a', t: '#ffffff' };
+const COLOURS = { ...PALETTE, b: '#5a2a40', t: '#ffffff' };
 
 // The pet at the badge's resolution: every pixel doubled.
 const px2 = px.flatMap((row) => {

@@ -21,7 +21,9 @@ test('the prefix and a key switch, move, quit and help', () => {
   assert.deepEqual(prefixAction('W'), { type: 'switch', id: 'wharf' });
   assert.deepEqual(prefixAction('8'), { type: 'switch', id: 'locker' });
   assert.deepEqual(prefixAction('l'), { type: 'switch', id: 'locker' });
-  assert.equal(prefixAction('9'), null);
+  assert.deepEqual(prefixAction('9'), { type: 'switch', id: 'mooring' });
+  assert.deepEqual(prefixAction('U'), { type: 'switch', id: 'mooring' });
+  assert.equal(prefixAction('0'), null);
   assert.deepEqual(prefixAction(']'), { type: 'move', by: 1 });
   assert.deepEqual(prefixAction('n'), { type: 'move', by: 1 });
   assert.deepEqual(prefixAction('p'), { type: 'move', by: -1 });
@@ -78,12 +80,12 @@ test("clicks on the bar's row are the host's; the rest stay for the app", () => 
   assert.deepEqual(clicks, [11]);
 });
 
-test('alt+1 to alt+6 switch without the prefix, and the keys around them still go to the app', () => {
-  const { actions } = run('a\x1b3b\x1b9');
+test('alt+1 to alt+9 switch without the prefix, and the keys around them still go to the app', () => {
+  const { actions } = run('a\x1b3b\x1b0');
   assert.deepEqual(actions, [
     { type: 'send', data: 'a' },
     { type: 'switch', id: 'sonar' },
-    { type: 'send', data: 'b\x1b9' },
+    { type: 'send', data: 'b\x1b0' },
   ]);
 });
 
