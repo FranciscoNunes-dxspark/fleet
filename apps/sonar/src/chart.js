@@ -70,16 +70,6 @@ export function chartOf(table, kind = null) {
   return { type: 'bars', pie: kind === 'pie', bars: bars.slice(0, MAX_BARS), more: Math.max(0, bars.length - MAX_BARS), total: bars.reduce((n, b) => n + b.value, 0) };
 }
 
-/**
- * A chart (chartOf's) as Fleet's window draws it natively (the kit's GuiView, kind 'chart'): a time
- * series as lines, bars as bars, a pie as bars with each one's share. Null for none (an error).
- */
-export function windowChart(chart) {
-  if (!chart || chart.error) return null;
-  if (chart.type === 'time') return { type: 'line', x: { kind: 'time', values: chart.stamps }, series: chart.series };
-  return { type: 'bars', labels: chart.bars.map((b) => b.label), series: [{ name: 'value', values: chart.bars.map((b) => b.value) }], share: Boolean(chart.pie) };
-}
-
 /** A number short: 12, 3.46, 1.2k, 4.5M. */
 export function short(v) {
   if (v == null || !Number.isFinite(v)) return '—';

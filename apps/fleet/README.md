@@ -4,27 +4,27 @@
 
 The family's terminal apps in one terminal: [Splice](../splice) (git), [Trawl](../trawl) (SQL),
 [Sonar](../sonar) (Azure), [Bosun](../bosun) (a project's processes), [Hail](../hail) (HTTP),
-[Keel](../keel)'s terminal app (Azure DevOps), [Wharf](../wharf) (containers) [Locker](../locker) (secrets and configuration) and [Mooring](../mooring) (files and commands on a server over SSH). Each runs exactly as it does by itself, with its own
+[Locker](../locker) (secrets and configuration) and [Mooring](../mooring) (files and commands on a server over SSH). Each runs exactly as it does by itself, with its own
 settings, sign-ins and keys; Fleet shows one at a time and switches between them with `ctrl+b`, as
 tmux does with its windows. A bar at the bottom shows them all.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Keel ○  7 Wharf ○  8 Locker ○  9 Mooring ○   ctrl+b ? help
+ 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Locker ○  7 Mooring ○   ctrl+b ? help
 ```
 
 `●` runs, `○` hasn't started yet, `✕` and a number exited with that code. The app on screen has its
 tab in its own colour.
 
 A tab off screen gets a badge when its app needs you: `!` when it has become worried or sad since you
-last looked at it (Bosun's process crashed or gave up, Hail's checks failed, Wharf's container exited
-with an error, Sonar ran into trouble), and a count of the alerts it logged since (Sonar's watches going
+last looked at it (Bosun's process crashed or gave up, Hail's checks failed,
+Sonar ran into trouble), and a count of the alerts it logged since (Sonar's watches going
 over their threshold, Bosun's crashes). The bar says why for a moment and the terminal's bell rings once
 as a badge appears; looking at the space clears it. Fleet reads what the apps tell each other (their
 moods and the family's activity log, in `~/.family` or `FAMILY_HOME`) every few seconds, so an app
 whose moods are turned off in its settings never gets a `!`.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Keel ○  7 Wharf ○  8 Locker ○  9 Mooring ○   Bosun: api crashed
+ 1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Locker ○  7 Mooring ○   Bosun: api crashed
 ```
 
 ## Install
@@ -41,7 +41,7 @@ Started some other way on Windows, as the bare `fleet-windows-x64.exe` opens in 
 whose one font lacks many of the apps' characters: Fleet draws lookalikes in their place there.
 
 **Elsewhere**, or for the bare executable, download `fleet` for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
-and put it on your PATH. It is one executable with all nine apps inside, so it's the only download you
+and put it on your PATH. It is one executable with all seven apps inside, so it's the only download you
 need. It checks for a new version once a day and installs it by itself; the new version starts the
 next time you open Fleet. (The apps inside don't update themselves: Fleet updates them together. `/update` in any of them asks Fleet to look for a new version now and install it.)
 
@@ -60,7 +60,7 @@ From a checkout, Fleet runs each app from its own folder in the checkout.
 ```bash
 fleet               # opens the app you used last (Splice the first time)
 fleet trawl         # opens Trawl
-fleet keel --demo   # opens Keel, started with --demo
+fleet hail --demo   # opens Hail, started with --demo
 fleet hail api.http # anything after the app's name is that app's own arguments
 fleet query.sql     # a file opens in the app for it: .sql in Trawl, .http in Hail
 ```
@@ -87,7 +87,7 @@ say `ctrl+b`; read yours there.
 | --- | --- |
 | `alt+1`–`alt+9` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
 | `ctrl+b` `1`–`8` | Switch to that space |
-| `ctrl+b` `s` `t` `o` `b` `h` `k` `w` `l` `u` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf, Locker, Mooring (u) |
+| `ctrl+b` `s` `t` `o` `b` `h` `l` `u` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Locker, Mooring (u) |
 | `ctrl+b` `]` or `n` | The next space |
 | `ctrl+b` `p` | The previous space |
 | `ctrl+b` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |
@@ -130,24 +130,22 @@ there when they do, and an exited one when you press `↵` in it. `esc` leaves e
 An app can ask for a move too (the kit's `askHostToMove`): the bar then asks the same question with
 that app's folder filled in, and nothing moves until you press `↵`. Fleet keeps the last eight folders
 for the list (`"folders"` in `~/.fleet/host.json`), but not where it was: the next `fleet` starts
-where you start it. The window (`fleet gui`) has the same list in its Move dialog, a click on one
-moving there.
+where you start it.
 
 ## Hand-offs
 
 The apps hand each other things as a line to paste into the other's prompt: Sonar's `T` copies a
-`/azure-sql …` line for Trawl, Splice's `Y` a `/take …` for Sonar or Keel, Keel's `Y` a pull request or a
-failed run for Splice, and so on. Inside Fleet that's one
+`/azure-sql …` line for Trawl, Splice's `Y` a `/take …` for Sonar, and so on. Inside Fleet that's one
 step: Fleet switches to the app the line is for (starting it if it isn't running), and types the line
 into its prompt. Press `↵` to run it. The line is still copied too. A line that several apps could take
-(a log line, which Sonar, Hail and Bosun all read; a commit, for Sonar or Keel) goes to the first of them that's running, else
+(a log line, which Sonar, Hail and Bosun all read; a commit, for Sonar) goes to the first of them that's running, else
 stays on the clipboard only.
 
 ## Runbooks
 
 A runbook is a Markdown file whose steps run in the apps: each step is a line for one app's prompt (a
 slash command, or a `family:v1:` line an app copied), in a fenced code block named after the app:
-` ```trawl `, ` ```sonar `, ` ```hail `, ` ```bosun `, ` ```splice `, ` ```wharf `, ` ```keel `, ` ```locker ` or ` ```mooring `. Each
+` ```trawl `, ` ```sonar `, ` ```hail `, ` ```bosun `, ` ```splice `, ` ```locker ` or ` ```mooring `. Each
 line in the block is a step of its own. The text before a block explains its first step; the first
 `#` heading is the runbook's title (else its file name). Other code blocks are just text.
 
@@ -196,69 +194,16 @@ empty step for you to fill in.
 
 `ctrl+b` `f` asks for a request, operation or trace id (offering the last one a hand-off carried, as
 Bosun's `t` copies a log line with its request), then asks every running app that reads log lines
-(Sonar, Hail, Bosun and Wharf) to look for it: Fleet types a `/take` of a log line carrying the id into
+(Sonar, Hail and Bosun) to look for it: Fleet types a `/take` of a log line carrying the id into
 each one's prompt, without switching to it. The panel lists the apps it asked; `↵` on one switches
 there, and `↵` in its prompt runs the search (Sonar in Application Insights, Hail in its history, Bosun
-in its crew's logs, Wharf in the running containers'). Fleet never presses `↵` for an app: one might
+in its crew's logs). Fleet never presses `↵` for an app: one might
 have a question open that a stray `↵` would answer.
 
 Below them, the panel shows what Fleet finds itself, oldest first: the family's activity log entries
 that mention the id, and the lines of Bosun's recorded sessions of the last day (`~/.bosun/sessions`,
 `BOSUN_HOME` moves it) that do, each with its app and where it came from. `f` asks for another id,
 `esc` closes.
-
-## In a window: fleet gui
-
-```bash
-fleet gui                  # the fleet in a window, Splice first
-fleet gui sonar --demo     # Sonar first, with its own arguments
-fleet gui --no-open        # print the address, don't open it
-```
-
-`fleet gui` runs every app exactly as in the terminal, each its own process, but draws them in a
-window: an app window of Chrome, Edge or Chromium when one is installed (without tabs or an address
-bar, so the apps get ctrl+w and ctrl+t too), else the default browser. Each app draws into a screen
-Fleet keeps for it, and the window draws that screen as text in your font, at your window's size:
-panels with really round corners, the mascots' pixel art without gaps, selectable text. Keys, pastes
-and the mouse reach the app as a terminal would send them, so every key in every app's README works
-here too.
-
-Around the apps, Fleet's tools are the window's own:
-
-- **The rail** on the left: each app with its logo, whether it runs, and its badge (the same `!` and
-  counts as the bar's); the window's title counts the badges, and with notifications on (the window
-  offers once) an app that needs you says so even with the window in the background.
-- **Two apps side by side**: Split in the rail, `ctrl+b` `|`, or ctrl-click an app; a click on a pane
-  gives it the keys, and ✕ in its header shows the other alone.
-- **Runbooks** and **Follow** as drawers on the right, with a button per step; **Commands**
-  (`ctrl+shift+p`) for everything, apps included; the folder at the bottom of the rail moves the
-  fleet, with tab completing a folder's name.
-- An app that exits says so in its pane, with the end of what it wrote to stderr, and a button to
-  start it again.
-- What an app copies (OSC 52) goes to the clipboard; its notifications become the system's.
-
-Fleet's keys are the terminal's: `alt+1`–`alt+9`, and `ctrl+b` then the same keys as in the
-[table above](#keys) (`space` opens Commands there). An app with the mouse off leaves it to the
-window, where dragging selects text (`ctrl+shift+c` copies it).
-
-**Native views.** Where an app draws a chart in text, the window draws a real one in its place, with
-a read-out of the values under the pointer: Sonar's charts in Logs (`| render timechart`, `v`) and
-Trawl's `/chart`. The text version stays what the terminal shows.
-
-**Safety.** It listens on `127.0.0.1` only, on a free port (`--port` picks one). The address it prints
-carries a key, which the window keeps as a cookie: nothing is served without it, nothing changes
-without a header no other site can send, and a request under another host name is turned away, so a
-web page can't reach the apps. `ctrl+c` where `fleet gui` runs stops every app.
-
-### Fleet Desktop
-
-[Fleet Desktop](../../desktop) is the same window as an application of its own: a Start menu entry,
-dock icon and menu, the badges' count on its icon, every key for the apps, and **File → Open Folder**
-to run the fleet in another folder (**New Window** for a second fleet beside it). It runs `fleet gui`
-for each window and keeps nothing of its own but the folder and the window's size. Its builds come
-from the **Release Fleet Desktop** workflow, run by hand (`fleet-desktop-v…`: a Windows setup, a
-macOS disk image, a Linux AppImage and .deb), with the `fleet` executable inside. They aren't signed
-yet: Windows asks once, and macOS needs right-click → Open the first time.
 
 ## Claude Code reads the whole fleet (MCP)
 
@@ -280,8 +225,6 @@ It reads for the folder Claude Code starts it in; `fleet mcp --project <dir>` na
 | `bosun_crew`, `bosun_log`, `bosun_search` | The project's processes as Bosun ran them, from its recordings (`~/.bosun/sessions`; the run going on now is recorded as it happens): each one's state, port, health and trouble, the last lines of one, lines by text or by request id |
 | `hail_requests`, `hail_history` | The requests in the project's `.http` files, their `{{variables}}` left as written, and the responses Hail kept for them |
 | `sonar_components`, `sonar_problems`, `sonar_incident`, `sonar_query` | Application Insights, through your `az login`, in Sonar's last subscription: the problems, one told whole (its stack, its operation, the SQL that failed), and any KQL query |
-| `keel_inbox`, `keel_prs`, `keel_pipelines`, `keel_pipeline_runs` | Azure DevOps (and GitHub) through Keel, as it's set up on this computer: the Inbox, active pull requests, pipelines and their health, one pipeline's runs |
-| `wharf_containers`, `wharf_container_logs`, `wharf_pods`, `wharf_pod_logs` | Docker's containers and kubectl's pods, and the end of their logs |
 | `trawl_list_connections`, `trawl_list_tables`, `trawl_describe_table`, `trawl_run_query` | Trawl's own MCP tools (`trawl mcp`, below the surface), with every rule they have: your saved connections, each one's Claude access level, writes refused, every query rolled back, all of it in Trawl's History |
 | `family_timeline`, `family_moods`, `family_wiring` | What the apps did that changed something (this project's, or every project's), how their mascots feel and why (a quick read of what's wrong now), and what the project points at (addresses and connection strings, masked) |
 
@@ -294,11 +237,11 @@ It reads for the folder Claude Code starts it in; `fleet mcp --project <dir>` na
   secrets a request used or the headers that carry credentials.
 - Answers are bounded (40,000 characters at most, less by default for diffs and logs); a cut one
   says so, and how to ask for less.
-- Sonar and Keel sign in as they do themselves, with nothing to configure here. When they can't (no
-  `az login`, Keel not set up on this computer), the tool says what to do: usually, open the app once.
-- Keel's tools run in a process of Fleet's own, and Trawl's are `trawl mcp` itself, started by Fleet
+- Sonar signs in as it does itself, with nothing to configure here. When it can't (no
+  `az login`), the tool says what to do: usually, open the app once.
+- Trawl's tools are `trawl mcp` itself, started by Fleet
   when Claude first lists or calls them; when Trawl can't start, its tools are left out.
-- `fleet mcp --demo` puts Sonar, Keel, Wharf and Trawl on their demo data, to try it.
+- `fleet mcp --demo` puts Sonar and Trawl on their demo data, to try it.
 
 ## Notes
 

@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useInput } from 'ink';
 import { requestForHail, runQuery, saveQuery, toggleChart } from '../actions.js';
-import { chartLines, chartOf, windowChart } from '../chart.js';
+import { chartLines, chartOf } from '../chart.js';
 import { cellText, completeQuery, hailRequest, records } from '../insights.js';
 import { theme } from '../theme.js';
 import { clean, fit } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
-import { GuiView } from '@fleet/kit/ui/GuiView.jsx';
 import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { Grid, columnWidths } from './Grid.jsx';
 
@@ -116,8 +115,6 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
   // The result as a chart (a query ending in render, or v): worked out once per result and width.
   const charted = useMemo(() => (result?.chart ? chartOf(table, result.kind) : null), [result]);
   const chart = useMemo(() => (charted ? chartLines(charted, width - 4) : null), [charted, width]);
-  // In Fleet's window the same chart is drawn natively, with a read-out under the pointer.
-  const native = useMemo(() => windowChart(charted), [charted]);
   return (
     <Panel title="Logs" hint={`${where} · ${status}`} width={width} height={height} focused={active}>
       <Row
@@ -134,9 +131,7 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
       ))}
       <Row pointer={false} width={width - 2} segments={[{ text: '─'.repeat(width - 2), color: theme.border }]} />
       {chart ? (
-        <GuiView kind="chart" data={native} window={Boolean(native)} width={width - 2} height={innerH + 2}>
-          <Lines lines={chart.map((segs) => [{ text: ' ' }, ...segs])} width={width - 2} height={innerH + 2} />
-        </GuiView>
+        <Lines lines={chart.map((segs) => [{ text: ' ' }, ...segs])} width={width - 2} height={innerH + 2} />
       ) : result ? (
         table.rows.length ? (
           <Grid table={table} widths={widths} width={width - 2} height={innerH} offset={nav.offset} index={nav.index} col={col} active={active && !edit} />

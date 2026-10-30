@@ -175,7 +175,7 @@ test('request ids, as logs name them', async () => {
 test('Keel in the family: pull requests and pipelines as contexts, and who takes them', async () => {
   const { FAMILY, ROLES, PET_NAMES } = await import('../family.js');
   assert.ok(FAMILY.includes('keel'));
-  assert.equal(ROLES.keel, 'Azure DevOps');
+  assert.equal(ROLES.keel, 'DEVOPS');
   assert.equal(APP_NAMES.keel, 'Keel');
   assert.equal(PET_NAMES.keel, 'Pinch');
   const pr = { org: 'contoso', project: 'Shop', repo: 'shop-api', id: 817, title: 'Refunds', sourceBranch: 'feature/refunds', targetBranch: 'main' };

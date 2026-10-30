@@ -25,9 +25,9 @@ test("Fleet's names: version variable, release files and tags", () => {
 });
 
 test('each app starts from its own entry point in a checkout, and as fleet --run in the build', () => {
-  const [file, args] = launchCommand('keel', ['--demo'], { execPath: 'node' });
+  const [file, args] = launchCommand('hail', ['--demo'], { execPath: 'node' });
   assert.equal(file, 'node');
-  assert.deepEqual(args, [join(APPS_DIR, 'keel/bin/keel.js'), '--demo']);
+  assert.deepEqual(args, [join(APPS_DIR, 'hail/bin/hail.js'), '--demo']);
   for (const { id } of SPACES) assert.ok(readFileSync(launchCommand(id, [])[1][0], 'utf8').includes('cli.jsx'), id);
   assert.deepEqual(launchCommand('splice', ['.'], { compiled: true, execPath: '/opt/fleet' }), ['/opt/fleet', ['--run', 'splice', '.']]);
   assert.throws(() => launchCommand('notepad'));

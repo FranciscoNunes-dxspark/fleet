@@ -9,7 +9,7 @@ import { handOff } from './hosted.js';
 export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf', 'keel', 'locker', 'mooring'];
 
 /** What each app is for, in a picker's words. */
-export const ROLES = { splice: 'git', trawl: 'SQL', sonar: 'Azure', bosun: 'processes', hail: 'HTTP', wharf: 'containers', keel: 'Azure DevOps', locker: 'secrets', mooring: 'files' };
+export const ROLES = { splice: 'GIT', trawl: 'SQL', sonar: 'AZURE', bosun: 'PROCS', hail: 'HTTP', wharf: 'DOCKER', keel: 'DEVOPS', locker: 'VAULT', mooring: 'SSH' };
 
 // ---------------------------------------------------------------------------------------------------
 // Sharing: what one app hands another is a command line, copied for you to paste into the other app's

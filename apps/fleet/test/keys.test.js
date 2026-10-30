@@ -15,13 +15,10 @@ test('keys go to the app as they came, pastes and mouse reports too', () => {
 test('the prefix and a key switch, move, quit and help', () => {
   assert.deepEqual(run(`${PREFIX}2`).actions, [{ type: 'prefix', on: true }, { type: 'prefix', on: false }, { type: 'switch', id: 'trawl' }]);
   assert.deepEqual(prefixAction('o'), { type: 'switch', id: 'sonar' });
-  assert.deepEqual(prefixAction('K'), { type: 'switch', id: 'keel' });
-  assert.deepEqual(prefixAction('6'), { type: 'switch', id: 'keel' });
-  assert.deepEqual(prefixAction('7'), { type: 'switch', id: 'wharf' });
-  assert.deepEqual(prefixAction('W'), { type: 'switch', id: 'wharf' });
-  assert.deepEqual(prefixAction('8'), { type: 'switch', id: 'locker' });
+  assert.deepEqual(prefixAction('6'), { type: 'switch', id: 'locker' });
+  assert.equal(prefixAction('8'), null);
   assert.deepEqual(prefixAction('l'), { type: 'switch', id: 'locker' });
-  assert.deepEqual(prefixAction('9'), { type: 'switch', id: 'mooring' });
+  assert.deepEqual(prefixAction('7'), { type: 'switch', id: 'mooring' });
   assert.deepEqual(prefixAction('U'), { type: 'switch', id: 'mooring' });
   assert.equal(prefixAction('0'), null);
   assert.deepEqual(prefixAction(']'), { type: 'move', by: 1 });
@@ -110,7 +107,7 @@ test('the prefix: ctrl+b unless host.json names another, ctrl+] always, and twic
   // ctrl+] after ctrl+b isn't a literal: it cancels, as any other key would.
   assert.equal(sent(readKeys({ prefix: false }, '\x02\x1db').actions), 'b');
   // Another prefix: ctrl+b is the app's again.
-  const a = readKeys({ prefix: false }, '\x02\x01k', undefined, prefixesFor('\x01'));
+  const a = readKeys({ prefix: false }, '\x02\x01h', undefined, prefixesFor('\x01'));
   assert.equal(sent(a.actions), '\x02');
-  assert.deepEqual(a.actions.at(-1), { type: 'switch', id: 'keel' });
+  assert.deepEqual(a.actions.at(-1), { type: 'switch', id: 'hail' });
 });
