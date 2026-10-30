@@ -10,12 +10,14 @@ const expandHome = (path) => (/^~[/\\]/.test(path) ? `${homedir()}${path.slice(1
 const target = (host) => `${host.user ? `${host.user}@` : ''}${host.host}`;
 
 // With a `password`, ssh may ask for it (BatchMode off, through the helper askpass.js sets up) and tries nothing but
-// a password, once: a wrong one fails instead of being asked for three times.
+// a password, once: a wrong one fails instead of being asked for three times. A host it does not know is refused
+// at once (StrictHostKeyChecking=yes): with BatchMode off ssh would ask "continue connecting?" through the helper,
+// which answers with the password, and wait for a good answer that never comes.
 const common = (host, { password } = {}) => [
   '-o', `BatchMode=${password ? 'no' : 'yes'}`,
   '-o', 'ConnectTimeout=15',
   '-o', 'ServerAliveInterval=30',
-  ...(password ? ['-o', 'PreferredAuthentications=password,keyboard-interactive', '-o', 'NumberOfPasswordPrompts=1'] : []),
+  ...(password ? ['-o', 'PreferredAuthentications=password,keyboard-interactive', '-o', 'NumberOfPasswordPrompts=1', '-o', 'StrictHostKeyChecking=yes'] : []),
   ...(host.port ? ['-p', String(host.port)] : []),
   ...(host.key ? ['-i', expandHome(host.key)] : []),
 ];
@@ -67,7 +69,7 @@ export function sortEntries(entries) {
  * What went wrong in ssh's stderr, in its own last words plus, for the usual causes, what to do
  * (Mooring has no terminal to ask in, so a key, the agent and a known host are the way in).
  */
-export function problemFrom(stderr, { command = 'ssh', password = false } = {}) {
+export function problemFrom(stderr, { command = 'ssh', password = false, host } = {}) {
   const words = String(stderr)
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -82,7 +84,9 @@ export function problemFrom(stderr, { command = 'ssh', password = false } = {}) 
     return `${said}\nMooring runs ${command} without a terminal (BatchMode): it signs in with a key or your ssh agent only. Give the host a key (/add … key=<file>), or ssh-add it.`;
   }
   if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(said)) {
-    return `${said}\nThe host must already be in known_hosts and unchanged: connect to it once with plain ssh yourself.`;
+    // The command that does it, for this host: its answer to the fingerprint question is the one that counts.
+    const how = host ? ` (${command === 'ssh' ? 'ssh' : command} ${host.port ? `-p ${host.port} ` : ''}${host.user ? `${host.user}@` : ''}${host.host})` : '';
+    return `${said}\nThe host must already be in known_hosts and unchanged: connect to it once with plain ssh yourself${how}, compare the fingerprint it shows and answer yes.`;
   }
   if (/subsystem request failed/i.test(said)) {
     return `${said}\nThe server has no SFTP subsystem turned on, so there are no files to show. The console still works.`;
