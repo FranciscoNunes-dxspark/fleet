@@ -1,7 +1,8 @@
-// A made-up host for --demo and the tests: the same interface as session.js over an in-memory tree.
-// `state.calls` records what was asked (a name and its arguments), `state.tree` is the files.
-import { baseName, parentOf } from './sftp.js';
-import { SessionError } from './session.js';
+// A made-up host and a made-up machine for --demo and the tests: the same interfaces as session.js and
+// local.js over in-memory trees. `state.calls` records what was asked (a name and its arguments), `state.tree` is the files.
+import { posix } from 'node:path';
+import { baseName, parentOf, sortEntries } from './sftp.js';
+import { SessionError } from './errors.js';
 
 const T = Date.UTC(2026, 9, 28, 9, 0);
 
@@ -107,5 +108,72 @@ export function demoSession({ host = { name: 'demo', host: 'demo.example.com', u
       }
       return { code: 127, stdout: '', stderr: `bash: ${cmd}: command not found\n` };
     },
+  };
+}
+
+const localSeed = () =>
+  new Map([
+    ['/', { kind: 'dir' }],
+    ['/demo', { kind: 'dir' }],
+    ['/demo/Documents', { kind: 'dir' }],
+    ['/demo/Documents/report.pdf', { kind: 'file', size: 482113 }],
+    ['/demo/Documents/budget.xlsx', { kind: 'file', size: 31220 }],
+    ['/demo/Downloads', { kind: 'dir' }],
+    ['/demo/Downloads/installer.zip', { kind: 'file', size: 73400320 }],
+    ['/demo/site', { kind: 'dir' }],
+    ['/demo/site/index.html', { kind: 'file', size: 2310 }],
+    ['/demo/site/app.css', { kind: 'file', size: 9400 }],
+    ['/demo/todo.txt', { kind: 'file', size: 120 }],
+  ]);
+
+/** The demo's own machine: the same shape as local.js's `createLocal`, over an in-memory tree with `/` paths. */
+export function demoLocal({ dir = '/demo', tree = localSeed() } = {}) {
+  const state = { calls: [], tree };
+  const say = (...call) => state.calls.push(call);
+  const need = (path) => {
+    if (!tree.has(path)) throw new Error(`${path}: no such file or directory`);
+    return tree.get(path);
+  };
+  return {
+    kind: 'local',
+    dir,
+    state,
+    sep: '/',
+    join: posix.join,
+    parent: (d) => posix.dirname(d),
+    resolve: (d, path) => posix.resolve(d, path.replace(/^~(?=\/|$)/, '/demo')),
+    home: async () => '/demo',
+    async list(d) {
+      if (need(d).kind !== 'dir') throw new Error(`${d}: not a directory`);
+      return sortEntries(
+        [...tree.keys()]
+          .filter((p) => p !== '/' && posix.dirname(p) === d)
+          .map((p) => ({ name: posix.basename(p), kind: tree.get(p).kind, size: tree.get(p).size ?? 0, mode: tree.get(p).kind === 'dir' ? 'rwxr-xr-x' : 'rw-r--r--', modified: T })),
+      );
+    },
+    async mkdir(d) {
+      say('mkdir', d);
+      if (tree.has(d)) throw new Error(`${d}: file exists`);
+      need(posix.dirname(d));
+      tree.set(d, { kind: 'dir' });
+    },
+    async rename(from, to) {
+      say('rename', from, to);
+      need(from);
+      for (const p of [...tree.keys()]) {
+        if (p === from || p.startsWith(`${from}/`)) {
+          tree.set(to + p.slice(from.length), tree.get(p));
+          tree.delete(p);
+        }
+      }
+    },
+    async remove(path) {
+      say('remove', path);
+      need(path);
+      for (const p of [...tree.keys()]) if (p === path || p.startsWith(`${path}/`)) tree.delete(p);
+    },
+    exists: async (path) => tree.has(path),
+    /** The size of a file, for queueing an upload. */
+    size: async (path) => need(path).size ?? 0,
   };
 }
