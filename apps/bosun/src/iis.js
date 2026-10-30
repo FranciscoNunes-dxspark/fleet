@@ -357,6 +357,8 @@ export function iisControl({ exec, execSync, powershell, env = process.env } = {
       return (await list(args))[0] ?? null;
     } catch (e) {
       if (/cannot find|not found/i.test(e.stdout ?? '') && !needsAdmin(e.stdout)) return null;
+      // Some IIS versions exit 1 without a word for a name that matches nothing.
+      if (e.code !== 'ENOENT' && !e.killed && !String(e.stdout ?? '').trim()) return null;
       throw e;
     }
   };
