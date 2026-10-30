@@ -16,7 +16,7 @@ on:
         description: The app to release
         type: choice
         default: all
-        options: [all, splice, trawl, sonar, bosun, hail, keel, wharf, locker, mooring, fleet]
+        options: [all, splice, trawl, sonar, bosun, hail, keel, wharf, locker, mooring, bilge, fleet]
 
 permissions:
   contents: write
