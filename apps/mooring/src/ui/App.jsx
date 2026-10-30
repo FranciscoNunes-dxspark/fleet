@@ -131,8 +131,9 @@ const NO_CONN = { host: null, session: null, status: 'none', problem: null };
 // demo's host). `copy` puts plain text on the clipboard. `openUrl` is unused for now; `checkUpdate` and
 // `installUpdate` come only in the downloaded builds, so tests and checkouts never go online or replace
 // anything. `connectTo` is a host (or the name of a saved one) to open at start. `persist` is whether
-// settings are written to the config file (not in the demo).
-export function App({ config: initialConfig, local, makeSession, connectTo, copy, setTitle, mouse, checkUpdate, installUpdate, onConfig, persist = true, moodEvery = 30_000, demo = false }) {
+// settings are written to the config file (not in the demo). `hostKeys` is hostkeys.js's (undefined in the demo and
+// the tests that don't try it): how a host ssh doesn't know yet is offered for trust.
+export function App({ config: initialConfig, local, makeSession, connectTo, copy, setTitle, mouse, checkUpdate, installUpdate, onConfig, persist = true, moodEvery = 30_000, hostKeys, demo = false }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -388,10 +389,50 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     }
   };
 
+  // A host ssh doesn't know yet: ssh's own question can't be answered (no terminal), so Mooring asks it,
+  // showing the key's fingerprint, and on a yes adds exactly that key to known_hosts. A key that has changed
+  // is not offered: that stays ssh's error. Resolves whether to go on and connect.
+  const trustHost = async (host) => {
+    if (busyRef.current) return true;
+    const looking = { label: `Looking up ${host.name}'s host key`, started: Date.now(), abort: () => {} };
+    busyRef.current = looking;
+    setBusy(looking);
+    let verdict;
+    try {
+      verdict = await hostKeys.inspect(host);
+    } catch {
+      verdict = { skip: true };
+    } finally {
+      busyRef.current = null;
+      setBusy(null);
+    }
+    // Known already, or no way to look (ssh's own words will say what is wrong).
+    if (verdict.known || verdict.skip) return true;
+    const key = verdict.keys[0];
+    const more = verdict.keys.length - 1;
+    const yes = await confirm({
+      title: `ssh doesn't know ${hostText(host)} yet. Trust its key (compare the fingerprint)?`,
+      detail: `${key.type} ${key.fingerprint}${more ? ` (and ${more} other${more === 1 ? '' : 's'})` : ''}`,
+      danger: true,
+      options: [
+        { label: 'Trust it and connect', value: true },
+        { label: 'Cancel', value: false },
+      ],
+    });
+    if (!yes) return note(`Not connecting to ${host.name}: its key isn't trusted.`) ?? false;
+    const r = await task(
+      `Trusting ${host.name}'s host key`,
+      async () => ({ stdout: `${key.type} ${key.fingerprint}, added to ${await hostKeys.trust(host, key)}` }),
+      { label: 'Trusting the host key', activity: `trusted ${host.name}'s host key (${key.type} ${key.fingerprint})` },
+    );
+    return r.ok;
+  };
+
   // Opens `host`: its home (or the host's `folder`) on the right.
   const connect = async (host) => {
     if (connRef.current.status === 'connecting') return note('Already connecting: esc cancels it.', 'error') ?? false;
     if (connRef.current.host) disconnect();
+    if (hostKeys && !(await trustHost(host))) return false;
     // A host that signs in with a password asks for it each time, masked; it goes to the session and nowhere else.
     let password;
     if (host.password) {
