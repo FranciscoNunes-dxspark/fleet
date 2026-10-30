@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { backupPath, backupRefusal, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp } from '../src/backup.js';
+import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp } from '../src/backup.js';
 import * as a from '../src/actions.js';
 import { App } from '../src/ui/App.jsx';
 
@@ -249,4 +249,19 @@ test('production and Azure SQL Database are refused', async () => {
   await command(app, '/backup');
   await until(() => frame().includes('demo-prod is production: /backup and /restore only work'), 'the refusal');
   app.unmount();
+});
+
+test('.bacpac: refusals, and SqlPackage command lines', () => {
+  const conn = { name: 'dev', server: 'localhost,1433', user: 'sa' };
+  assert.equal(bacpacRefusal({ ...conn, prod: true }, 'sqlserver'), null);
+  assert.match(bacpacRefusal({ ...conn, prod: true }, 'sqlserver', { importing: true }), /production/);
+  assert.match(bacpacRefusal(conn, 'postgres'), /SQL Server's/);
+  assert.match(bacpacRefusal({ ...conn, ssh: 'host' }, 'sqlserver'), /SSH tunnel/);
+  assert.deepEqual(parseBackupArgs(['a.bacpac', '--as', 'x'], { restore: true, command: 'import-bacpac' }), { file: 'a.bacpac', as: 'x' });
+  assert.match(parseBackupArgs([], { restore: true, command: 'import-bacpac' }).reason, /\.bacpac\? \/import-bacpac <file>/);
+  const out = sqlpackageCommand({ ...conn, trustCert: true }, { database: 'Club', file: '/tmp/c.bacpac', password: 'pw' }, 'linux');
+  assert.equal(out.command, "sqlpackage /Action:Export /SourceServerName:'localhost,1433' /SourceDatabaseName:Club /SourceUser:sa /SourcePassword:pw /SourceEncryptConnection:True /SourceTrustServerCertificate:True /TargetFile:/tmp/c.bacpac");
+  const imp = sqlpackageCommand({ name: 'az', server: 'x.database.windows.net', auth: 'azure-cli' }, { importing: true, database: 'New', file: '/tmp/c.bacpac' }, 'linux');
+  assert.match(imp.command, /^sqlpackage \/Action:Import \/SourceFile:\/tmp\/c\.bacpac \/TargetConnectionString:'Data Source=x\.database\.windows\.net;Initial Catalog=New;Authentication=Active Directory Default;Encrypt=True'$/);
+  assert.doesNotMatch(imp.command, /Password/);
 });

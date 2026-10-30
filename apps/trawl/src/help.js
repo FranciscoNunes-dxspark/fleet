@@ -153,6 +153,8 @@ export const HELP = [
     about: 'connections that are neither production nor read-only',
     rows: [
       ['/backup [file]', 'SQL Server: BACKUP DATABASE … WITH COPY_ONLY to the server\'s default backup folder (or a whole path on the server), and says where it went; Postgres: pg_dump -Fc, MySQL: mysqldump, to a file here (~/.trawl/backups unless named). esc cancels'],
+      ['/export-bacpac [file]', 'SQL Server and Azure SQL Database: the database as a .bacpac (schema and data) through SqlPackage, into Trawl\'s backups folder unless a path says otherwise; fine on production, it only reads'],
+      ['/import-bacpac <file> [--as <database>]', 'A .bacpac as a new database (SqlPackage never imports over one that\'s there); not on production or read-only connections'],
       ['/restore <file> [--as <database>]', 'The backup into the database it was of, or --as another: made new, or replaced after asking (SQL Server puts its other sessions out; files moved to the server\'s data folders); pg_restore and mysql for the others. Azure SQL Database has neither: export a .bacpac from the portal'],
     ],
   },
