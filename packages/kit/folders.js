@@ -2,6 +2,7 @@
 // folders beside this one, what the picker offers (the ones used lately first) and the list the app's
 // config remembers. Pure apart from looking at folders.
 import { readdirSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathArg } from './family.js';
 
@@ -40,6 +41,31 @@ export function siblings(dir) {
       .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
       .map((e) => join(parent, e.name))
       .sort((a, b) => basename(a).localeCompare(basename(b), undefined, { sensitivity: 'base' }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * What /move completes the argument typed so far to: the folders beside `dir` by name, and once a
+ * path is being typed (a separator, `~`, a drive) the folders in the one it has reached, each as the
+ * whole argument with a separator after it, so picking one goes a level deeper.
+ */
+export function folderCompletions(dir, typed = '', { home = homedir() } = {}) {
+  const text = String(typed);
+  const cut = Math.max(text.lastIndexOf('/'), text.lastIndexOf('\\'));
+  const drive = /^[A-Za-z]:$/.test(text);
+  if (cut < 0 && text !== '~' && !drive) return siblings(dir).map((d) => basename(d)).filter((n) => n !== basename(dir));
+  const sep = text.includes('\\') && !text.includes('/') ? '\\' : drive ? '\\' : '/';
+  const head = drive || text === '~' ? text + sep : text.slice(0, cut + 1);
+  const expanded = /^~[\\/]$/.test(head) ? home : /^~[\\/]/.test(head) ? join(home, head.slice(2)) : head;
+  const parent = isAbsolute(expanded) ? expanded : [resolve(dirname(dir), expanded), resolve(dir, expanded)].find(isFolder) ?? resolve(dir, expanded);
+  const typedName = text.slice(head.length);
+  try {
+    return readdirSync(parent, { withFileTypes: true })
+      .filter((e) => (e.isDirectory() || (e.isSymbolicLink() && isFolder(join(parent, e.name)))) && (typedName.startsWith('.') || !e.name.startsWith('.')))
+      .map((e) => `${head}${e.name}${sep}`)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   } catch {
     return [];
   }

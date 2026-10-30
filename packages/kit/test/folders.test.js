@@ -30,3 +30,17 @@ test('folders: what a name means, the ones beside, the choices and the remembere
   assert.equal(remember(many, '/new').length, KEEP);
   assert.deepEqual(remember(undefined, '/x'), ['/x']);
 });
+
+test('folderCompletions: names beside, then the folders of a typed path', async () => {
+  const { mkdtempSync, mkdirSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { folderCompletions } = await import('../folders.js');
+  const root = mkdtempSync(join(tmpdir(), 'comp-'));
+  for (const d of ['a', 'b/inner', '.hidden']) mkdirSync(join(root, d), { recursive: true });
+  assert.deepEqual(folderCompletions(join(root, 'a'), ''), ['b']);
+  const fwd = root.split(String.fromCharCode(92)).join('/');
+  assert.deepEqual(folderCompletions(join(root, 'a'), `${fwd}/`), [`${fwd}/a/`, `${fwd}/b/`]);
+  assert.deepEqual(folderCompletions(join(root, 'a'), '../b/'), ['../b/inner/']);
+  assert.deepEqual(folderCompletions(join(root, 'a'), '~/', { home: root }), ['~/a/', '~/b/']);
+});
