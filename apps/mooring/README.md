@@ -16,15 +16,21 @@ Mooring is one of the fleet's apps: it needs Node 22 or newer from a checkout (`
 
 ## Signing in
 
-Mooring runs `ssh` without a terminal (it can't draw a password prompt inside its own screen), so it signs in with **a key or your ssh agent**, and the host must already be in `known_hosts`. When that isn't so, ssh's own words come back with what to do: give the host a key (`/add … key=<file>`), `ssh-add` it, or connect once with plain `ssh` to trust the host. Nothing secret is kept: the settings file holds where each host is and which key file signs in to it, never a password or a passphrase.
+Mooring runs `ssh` without a terminal, so it can't show ssh's own prompts. It signs in one of two ways, and the host must already be in `known_hosts` either way (connect once with plain `ssh` to trust it):
+
+- **A key or your ssh agent** (the default): `/add … key=<file>`, or a key `ssh-add` has loaded. A key with a passphrase needs the agent, as Mooring can't ask for the passphrase.
+- **A password**, for a host saved with the word `password`: `/add web me@web password`. Mooring asks for it, masked, **every time it connects** (`/connect`, `↵` in Hosts). It is never saved: the settings file records only that the host asks for one. It is handed to ssh through that ssh's environment (OpenSSH's `SSH_ASKPASS` with a two-line helper script Mooring writes to a private temporary folder and removes on exit), never on a command line, and it is let go of when you disconnect. OpenSSH 8.4 or newer is needed (Windows 10 and 11, current Macs and Linux have it). A wrong password fails once with ssh's own message, not three times.
+
+When sign-in fails, ssh's own words come back with what to do.
 
 ## Hosts
 
-`/add <name> <user@host[:port]> [key=<file>] [folder=<remote folder>]` saves a host (and changes the one of that name); `/forget <host>` takes it out, asking first; `/connect <host>` opens it (a list to pick from without a name), `/disconnect` closes it. The Hosts view (`4`) does the same with keys: `↵` connects, `a` adds, `e` changes the one under the cursor, `x` forgets it. A host's `folder` is where the right pane starts; without one it starts in the home folder.
+`/add <name> <user@host[:port]> [key=<file>] [folder=<remote folder>] [password]` saves a host (and changes the one of that name); `/forget <host>` takes it out, asking first; `/connect <host>` opens it (a list to pick from without a name), `/disconnect` closes it. The Hosts view (`4`) does the same with keys: `↵` connects, `a` adds, `e` changes the one under the cursor, `x` forgets it. A host's `folder` is where the right pane starts; without one it starts in the home folder.
 
 ```
 /add web me@web.example.com key=~/.ssh/id_web folder=/var/www
 /add build ci@10.0.0.7:2222
+/add old admin@192.168.1.5 password
 ```
 
 The files go over one SFTP connection that stays open: there is one sign-in for the whole session, the right pane and the queue use it at once, and a cancelled transfer leaves it as it was. If the connection drops, the next thing you do opens it again (a call cut off in the middle fails rather than being repeated: it may have been done). Commands run through `ssh` once each.
@@ -104,7 +110,7 @@ Your own commands and keys (`"commands"` and `"keys"` in the settings file) work
 
 ## Settings
 
-`~/.mooring/config.json` (`MOORING_HOME` names another folder): the saved hosts, `showHidden`, `transfers` (how many run at once, 2), `theme` (`dark`, `light`, `auto`), `accent` (`#rrggbb`), `mouse`, `checkForUpdates`, `autoUpdate`, `familyMoods`, your `commands` and `keys`. `/settings` shows them; `/theme`, `/accent`, `/mouse` and `/hidden` change them.
+`~/.mooring/config.json` (`MOORING_HOME` names another folder): the saved hosts (where each is, the key file or that it asks for a password: never a password or passphrase), `showHidden`, `transfers` (how many run at once, 2), `theme` (`dark`, `light`, `auto`), `accent` (`#rrggbb`), `mouse`, `checkForUpdates`, `autoUpdate`, `familyMoods`, your `commands` and `keys`. `/settings` shows them; `/theme`, `/accent`, `/mouse` and `/hidden` change them.
 
 ## In the fleet
 

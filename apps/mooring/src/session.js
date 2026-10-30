@@ -6,6 +6,7 @@
 import { spawn as spawnProcess } from 'node:child_process';
 import { SessionError } from './errors.js';
 import { openClient } from './sftp-client.js';
+import { askpassEnv } from './askpass.js';
 import { joinRemote, missingProgram, problemFrom, sftpServerArgs, sortEntries, sshArgs } from './sftp.js';
 import { download, upload } from './transfer.js';
 
@@ -61,15 +62,19 @@ function run({ command, args, signal, spawn, onData }) {
 
 /**
  * The session for `host` ({ user, host, port, key }). `sshCommand` names ssh; `argsFor`, `sshArgsFor`
- * and `spawn` stand in for it in the tests.
+ * and `spawn` stand in for it in the tests. With a `password` every ssh it starts signs in with that
+ * (askpass.js: through the environment, not a command line); it is kept only in this session, and
+ * `close()` lets go of it.
  */
-export function createSession(host, { sshCommand = 'ssh', argsFor = sftpServerArgs, sshArgsFor = sshArgs, spawn = spawnProcess } = {}) {
+export function createSession(host, { password, sshCommand = 'ssh', argsFor = sftpServerArgs, sshArgsFor = sshArgs, spawn: spawnBase = spawnProcess } = {}) {
+  let secret = password || undefined;
+  const spawn = (command, args, options) => (secret ? spawnBase(command, args, { ...options, env: { ...(options?.env ?? process.env), ...askpassEnv(secret, options?.env ?? process.env) } }) : spawnBase(command, args, options));
   let client = null;
   let connecting = null;
   // The open connection, or a new one (one at a time: calls made meanwhile share it).
   const connection = async () => {
     if (client && !client.closed) return client;
-    connecting ??= openClient(host, { command: sshCommand, argsFor, spawn }).then(
+    connecting ??= openClient(host, { command: sshCommand, argsFor: (h) => argsFor(h, { password: Boolean(secret) }), spawn, password: Boolean(secret) }).then(
       (c) => ((connecting = null), (client = c)),
       (e) => ((connecting = null), Promise.reject(e)),
     );
@@ -111,14 +116,15 @@ export function createSession(host, { sshCommand = 'ssh', argsFor = sftpServerAr
      * command's own (the console shows it); ssh's own 255 is a failure to reach or sign in.
      */
     async exec(line, { signal, onData } = {}) {
-      const r = await run({ command: sshCommand, args: sshArgsFor(host, line), signal, spawn, onData });
-      if (r.code === 255) throw new SessionError(problemFrom(r.stderr, { command: sshCommand }), { code: 255 });
+      const r = await run({ command: sshCommand, args: sshArgsFor(host, line, { password: Boolean(secret) }), signal, spawn, onData });
+      if (r.code === 255) throw new SessionError(problemFrom(r.stderr, { command: sshCommand, password: Boolean(secret) }), { code: 255 });
       return r;
     },
     /** Ends the connection (the next call opens another). */
     close() {
       client?.close();
       client = null;
+      secret = undefined;
     },
   };
 }

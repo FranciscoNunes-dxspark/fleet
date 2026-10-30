@@ -22,13 +22,14 @@ export function parseTarget(text) {
 }
 
 /**
- * The words after `/add`: `<name> <user@host[:port]> [key file] [folder]`, as a host to save or an
- * { error }. The key and the folder may be given as `key=<path>` and `folder=<path>` in any order.
+ * The words after `/add`: `<name> <user@host[:port]> [key=<file>] [folder=<folder>] [password]`, as a host to
+ * save or an { error }, the options in any order. `password` says to ask for one on every connect: only
+ * that it is asked for is saved, never the password.
  */
 export function parseAdd(rest) {
   const words = splitArgs(String(rest ?? ''));
   const [name, target, ...more] = words;
-  if (!name || !target) return { error: 'Usage: /add <name> <user@host[:port]> [key=<file>] [folder=<remote folder>]' };
+  if (!name || !target) return { error: 'Usage: /add <name> <user@host[:port]> [key=<file>] [folder=<remote folder>] [password]' };
   if (!isHostName(name)) return { error: `"${name}" isn't a name: letters, digits, dots, dashes and underscores.` };
   const t = parseTarget(target);
   if (t.error) return t;
@@ -36,8 +37,12 @@ export function parseAdd(rest) {
   if (t.user) host.user = t.user;
   if (t.port) host.port = t.port;
   for (const word of more) {
+    if (word === 'password') {
+      host.password = true;
+      continue;
+    }
     const m = word.match(/^(key|folder)=(.+)$/);
-    if (!m) return { error: `"${word}" isn't key=<file> or folder=<remote folder>.` };
+    if (!m) return { error: `"${word}" isn't key=<file>, folder=<remote folder> or password.` };
     host[m[1]] = m[2];
   }
   return host;

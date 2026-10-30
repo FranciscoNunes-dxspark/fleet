@@ -17,7 +17,7 @@ export function HostsView({ hosts, conn, ctx, width, height, active }) {
     if (input === 'a') return ctx.prefill('/add ');
     if (!sel) return;
     if (key.return || input === 'c') return ctx.connect(sel);
-    if (input === 'e') return ctx.prefill(`/add ${sel.name} ${sel.user ? `${sel.user}@` : ''}${sel.host}${sel.port ? `:${sel.port}` : ''}${sel.key ? ` key=${sel.key}` : ''}${sel.folder ? ` folder=${sel.folder}` : ''}`);
+    if (input === 'e') return ctx.prefill(`/add ${sel.name} ${sel.user ? `${sel.user}@` : ''}${sel.host}${sel.port ? `:${sel.port}` : ''}${sel.key ? ` key=${sel.key}` : ''}${sel.folder ? ` folder=${sel.folder}` : ''}${sel.password ? ' password' : ''}`);
     if (input === 'x' || input === 'd') return a.forgetHost(ctx, sel.name);
   };
   useInput(keys, { isActive: active });

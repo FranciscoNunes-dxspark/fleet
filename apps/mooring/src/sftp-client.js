@@ -342,7 +342,7 @@ let exitHook = false;
  * Starts ssh for `host` and returns a connected SftpClient, or rejects with ssh's own words (a
  * missing key, an unknown host, a server without SFTP). `command`, `argsFor` and `spawn` are for the tests.
  */
-export async function openClient(host, { command = 'ssh', argsFor = sftpServerArgs, spawn = spawnProcess, timeout = 30000 } = {}) {
+export async function openClient(host, { command = 'ssh', argsFor = sftpServerArgs, spawn = spawnProcess, timeout = 30000, password = false } = {}) {
   let said = '';
   const child = spawn(command, argsFor(host), { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   const client = new SftpClient({
@@ -364,8 +364,8 @@ export async function openClient(host, { command = 'ssh', argsFor = sftpServerAr
   child.stdout?.on('data', (chunk) => client.receive(chunk));
   child.stdin?.on('error', () => {});
   child.once('error', (e) => client.fail(new SessionError(missingProgram(command, e))));
-  child.once('close', () => client.fail(new SessionError(said.trim() ? problemFrom(said, { command }) : 'The connection closed.')));
-  const timer = setTimeout(() => client.fail(new SessionError(`${command} didn't open an SFTP connection within ${Math.round(timeout / 1000)} seconds${said.trim() ? `: ${problemFrom(said, { command })}` : '.'}`)), timeout);
+  child.once('close', () => client.fail(new SessionError(said.trim() ? problemFrom(said, { command, password }) : 'The connection closed.')));
+  const timer = setTimeout(() => client.fail(new SessionError(`${command} didn't open an SFTP connection within ${Math.round(timeout / 1000)} seconds${said.trim() ? `: ${problemFrom(said, { command, password })}` : '.'}`)), timeout);
   try {
     await client.start();
   } finally {

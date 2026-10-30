@@ -9,19 +9,22 @@ const expandHome = (path) => (/^~[/\\]/.test(path) ? `${homedir()}${path.slice(1
 
 const target = (host) => `${host.user ? `${host.user}@` : ''}${host.host}`;
 
-const common = (host) => [
-  '-o', 'BatchMode=yes',
+// With a `password`, ssh may ask for it (BatchMode off, through the helper askpass.js sets up) and tries nothing but
+// a password, once: a wrong one fails instead of being asked for three times.
+const common = (host, { password } = {}) => [
+  '-o', `BatchMode=${password ? 'no' : 'yes'}`,
   '-o', 'ConnectTimeout=15',
   '-o', 'ServerAliveInterval=30',
+  ...(password ? ['-o', 'PreferredAuthentications=password,keyboard-interactive', '-o', 'NumberOfPasswordPrompts=1'] : []),
   ...(host.port ? ['-p', String(host.port)] : []),
   ...(host.key ? ['-i', expandHome(host.key)] : []),
 ];
 
 /** ssh's arguments for the SFTP subsystem on `host` ({ user, host, port, key }): the protocol on stdin and stdout. */
-export const sftpServerArgs = (host) => ['-s', ...common(host), target(host), 'sftp'];
+export const sftpServerArgs = (host, options) => ['-s', ...common(host, options), target(host), 'sftp'];
 
 /** ssh's arguments to run `command` on `host` with no terminal (the console). */
-export const sshArgs = (host, command) => ['-T', ...common(host), target(host), command];
+export const sshArgs = (host, command, options) => ['-T', ...common(host, options), target(host), command];
 
 // ---------------------------------------------------------------------------------------------------
 // A server's paths: `/` separated, whatever the machine Mooring runs on.
@@ -64,7 +67,7 @@ export function sortEntries(entries) {
  * What went wrong in ssh's stderr, in its own last words plus, for the usual causes, what to do
  * (Mooring has no terminal to ask in, so a key, the agent and a known host are the way in).
  */
-export function problemFrom(stderr, { command = 'ssh' } = {}) {
+export function problemFrom(stderr, { command = 'ssh', password = false } = {}) {
   const words = String(stderr)
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -72,6 +75,9 @@ export function problemFrom(stderr, { command = 'ssh' } = {}) {
     .slice(-3)
     .join(' ');
   const said = words || 'It said nothing.';
+  if (password && /Permission denied/i.test(said)) {
+    return `${said}\nThe server refused the password, or has password sign-in turned off (then use a key: /add … key=<file>).`;
+  }
   if (/Permission denied|passphrase|no such identity/i.test(said)) {
     return `${said}\nMooring runs ${command} without a terminal (BatchMode): it signs in with a key or your ssh agent only. Give the host a key (/add … key=<file>), or ssh-add it.`;
   }
