@@ -171,6 +171,20 @@ test('platform totals: Fetch all fetches the sites one after another, then not a
     assert.equal(asked.length, 2);
     assert.throws(() => monitoring.fetchAllTotalsNow(), /less than 10 minutes/);
     assert.throws(() => monitoring.fetchAllTotalsNow([saved[2].id]), /No site has a totals key/, 'only the sites asked for');
+
+    // A queue left by a process that stopped: another copy picks it up when the totals are read.
+    const file = path.join(dir, 'monitor-totals.json');
+    const store = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const s of saved.slice(0, 2)) Object.assign(store[s.id], { queuedAt: Date.now(), lastAttemptAt: null });
+    fs.writeFileSync(file, JSON.stringify(store));
+    const other = createMonitoring({ dataDir: dir, mock: false });
+    for (let i = 0; i < 100 && asked.length < 4; i++) {
+      other.totals();
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.equal(asked.length, 4, 'the stalled queue is fetched');
+    assert.equal(most, 1, 'still one site at a time');
+    assert.equal(other.totals().filter((s) => s.queued).length, 0);
   } finally {
     site.close();
     fs.rmSync(dir, { recursive: true, force: true });

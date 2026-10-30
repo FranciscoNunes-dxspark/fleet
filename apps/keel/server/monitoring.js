@@ -302,12 +302,14 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
     return readTotals(res.status, body);
   }
 
-  async function fetchTotals(m) {
-    if (fetching.has(m.id)) return;
-    fetching.add(m.id);
-    totalsStore.update((all) => {
-      all[m.id] = { history: [], ...all[m.id], fetchingSince: Date.now(), queuedAt: null };
-    });
+  async function fetchTotals(m, claimed = false) {
+    if (!claimed) {
+      if (fetching.has(m.id)) return;
+      fetching.add(m.id);
+      totalsStore.update((all) => {
+        all[m.id] = { history: [], ...all[m.id], fetchingSince: Date.now(), queuedAt: null };
+      });
+    }
     let result;
     try {
       result = await requestTotals(m);
@@ -331,6 +333,42 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
 
   const isFetching = (id, e, now = Date.now()) => fetching.has(id) || !!(e?.fetchingSince && now - e.fetchingSince < TOTALS_TIMEOUT_MS + MIN);
   const isQueued = (e, now = Date.now()) => !!(e?.queuedAt && now - e.queuedAt < QUEUE_STALE);
+
+  // "Fetch all" queues sites in the shared file, not in memory, so the queue
+  // outlives the process that took the click: a host can run several copies
+  // and stop any of them. Whichever process drains it claims one site at a time.
+  function claimNext() {
+    const now = Date.now();
+    return totalsStore.update((all) => {
+      const sites = sync().filter((m) => hasTotals(m));
+      // Removed since, or its key taken away: no longer waiting.
+      for (const [id, e] of Object.entries(all)) if (e?.queuedAt && !sites.some((m) => m.id === id)) e.queuedAt = null;
+      const next = sites.filter((m) => isQueued(all[m.id], now) && !isFetching(m.id, all[m.id], now))
+        .sort((a, b) => all[a.id].queuedAt - all[b.id].queuedAt)[0];
+      if (!next) return null;
+      all[next.id] = { ...all[next.id], fetchingSince: now, queuedAt: null };
+      fetching.add(next.id);
+      return next;
+    });
+  }
+
+  let draining = false;
+  async function drainQueue() {
+    if (draining) return;
+    draining = true;
+    try {
+      for (let m = claimNext(); m; m = claimNext()) await fetchTotals(m, true);
+    } finally {
+      draining = false;
+    }
+  }
+
+  // Sites queued while no site is being fetched anywhere: whoever was draining stopped.
+  const queueStalled = (all = totalsStore.get(), now = Date.now()) =>
+    Object.values(all).some((e) => isQueued(e, now)) && !Object.entries(all).some(([id, e]) => isFetching(id, e, now));
+  const resumeQueue = () => {
+    if (!draining && queueStalled()) drainQueue().catch((err) => console.warn(`[monitoring] totals: ${err.message}`));
+  };
 
   const totalsDue = (m, e, now = Date.now()) => {
     if (!hasTotals(m)) return false;
@@ -380,8 +418,12 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
   guarded(runAi)();
   const t1 = setInterval(guarded(runChecks), CHECK_EVERY);
   const t2 = setInterval(guarded(runAi), AI_EVERY);
-  const t3 = setInterval(guarded(runTotals), TOTALS_TICK);
+  const t3 = setInterval(() => {
+    guarded(runTotals)();
+    resumeQueue();
+  }, TOTALS_TICK);
   guarded(runTotals)();
+  resumeQueue();
   t1.unref?.();
   t2.unref?.();
   t3.unref?.();
@@ -499,6 +541,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
       return readCatalogue(dataDir);
     },
     totals() {
+      resumeQueue();
       const all = totalsStore.get();
       return sync().filter((m) => hasTotals(m) || all[m.id]?.latest).map((m) => {
         const e = all[m.id] || {};
@@ -515,6 +558,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
 
     /** One site's totals: the latest figures with months, and their history this season. */
     totalsFor(id) {
+      resumeQueue();
       const m = sync().find((x) => x.id === id);
       const e = totalsStore.get()[id];
       if (!m) throw Object.assign(new Error('No such monitor.'), { status: 404 });
@@ -559,20 +603,7 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
       totalsStore.update((store) => {
         for (const m of due) store[m.id] = { history: [], ...store[m.id], queuedAt: now };
       });
-      (async () => {
-        for (const { id } of due) {
-          const m = sync().find((x) => x.id === id);
-          const e = totalsStore.get()[id];
-          // Removed or changed since, or fetched meanwhile (its own Fetch now, or the schedule elsewhere): not now.
-          if (!m || !hasTotals(m) || isFetching(id, e) || (e?.lastAttemptAt && Date.now() - e.lastAttemptAt < TOTALS_AGAIN)) {
-            totalsStore.update((store) => {
-              if (store[id]) store[id].queuedAt = null;
-            });
-            continue;
-          }
-          await fetchTotals(m).catch((err) => console.warn(`[monitoring] totals: ${err.message}`));
-        }
-      })();
+      drainQueue().catch((err) => console.warn(`[monitoring] totals: ${err.message}`));
       return { started: due.length, skipped: sites.length - due.length };
     },
 
