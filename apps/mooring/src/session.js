@@ -117,7 +117,7 @@ export function createSession(host, { password, sshCommand = 'ssh', argsFor = sf
      */
     async exec(line, { signal, onData } = {}) {
       const r = await run({ command: sshCommand, args: sshArgsFor(host, line, { password: Boolean(secret) }), signal, spawn, onData });
-      if (r.code === 255) throw new SessionError(problemFrom(r.stderr, { command: sshCommand, password: Boolean(secret) }), { code: 255 });
+      if (r.code === 255) throw new SessionError(problemFrom(r.stderr, { command: sshCommand, password: Boolean(secret), host }), { code: 255 });
       return r;
     },
     /** Ends the connection (the next call opens another). */

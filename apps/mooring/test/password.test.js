@@ -27,6 +27,9 @@ test('ssh arguments with a password: BatchMode off, a password only, once; witho
     assert.ok(!args.includes('BatchMode=yes'));
     assert.ok(args.includes('PreferredAuthentications=password,keyboard-interactive'));
     assert.ok(args.includes('NumberOfPasswordPrompts=1'));
+    // An unknown host is refused at once: ssh's "continue connecting?" would go to the helper, which answers with the
+    // password, and the connection would sit there until the timeout.
+    assert.ok(args.includes('StrictHostKeyChecking=yes'));
   }
   for (const args of [sftpServerArgs(host), sshArgs(host, 'ls'), sftpServerArgs(host, { password: false })]) {
     assert.ok(args.includes('BatchMode=yes'));
@@ -37,6 +40,13 @@ test('ssh arguments with a password: BatchMode off, a password only, once; witho
 test('a refused password says so, with the way out; a refused key keeps its own advice', () => {
   assert.match(problemFrom('me@h: Permission denied (password).', { password: true }), /refused the password.*use a key/s);
   assert.match(problemFrom('me@h: Permission denied (publickey).'), /ssh-add/);
+});
+
+test('an unknown host says what to run, for this host', () => {
+  const said = 'No ED25519 host key is known for [h]:2222 and you have requested strict checking.\nHost key verification failed.';
+  assert.match(problemFrom(said, { host: { host: 'h', user: 'me', port: 2222 } }), /plain ssh yourself \(ssh -p 2222 me@h\), compare the fingerprint/);
+  assert.match(problemFrom(said, { host: { host: 'h' } }), /\(ssh h\)/);
+  assert.match(problemFrom(said), /plain ssh yourself, compare/);
 });
 
 test('/add takes `password` as a word, in any order, and saves only that it is asked for', () => {
