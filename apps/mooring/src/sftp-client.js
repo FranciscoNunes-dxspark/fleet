@@ -364,8 +364,8 @@ export async function openClient(host, { command = 'ssh', argsFor = sftpServerAr
   child.stdout?.on('data', (chunk) => client.receive(chunk));
   child.stdin?.on('error', () => {});
   child.once('error', (e) => client.fail(new SessionError(missingProgram(command, e))));
-  child.once('close', () => client.fail(new SessionError(said.trim() ? problemFrom(said, { command, password }) : 'The connection closed.')));
-  const timer = setTimeout(() => client.fail(new SessionError(`${command} didn't open an SFTP connection within ${Math.round(timeout / 1000)} seconds${said.trim() ? `: ${problemFrom(said, { command, password })}` : '.'}`)), timeout);
+  child.once('close', () => client.fail(new SessionError(said.trim() ? problemFrom(said, { command, password, host }) : 'The connection closed.')));
+  const timer = setTimeout(() => client.fail(new SessionError(`${command} didn't open an SFTP connection within ${Math.round(timeout / 1000)} seconds${said.trim() ? `: ${problemFrom(said, { command, password, host })}` : '.'}`)), timeout);
   try {
     await client.start();
   } finally {
