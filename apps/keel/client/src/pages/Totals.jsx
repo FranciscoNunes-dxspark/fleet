@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
@@ -10,6 +10,15 @@ import { Chip, Empty, ErrorBox, Loading, PageHeader, ProductionTabs } from '../u
 import { downloadText } from './ReleaseNotes.jsx';
 
 // Platform totals (a site's /totals): what each site holds, fetched on a schedule.
+
+/** Refetch every few seconds while a fetch is under way: nothing else says when it ends. */
+function useWhileBusy(busy, reload) {
+  useEffect(() => {
+    if (!busy) return undefined;
+    const timer = setInterval(() => document.visibilityState === 'visible' && reload(), 5000);
+    return () => clearInterval(timer);
+  }, [busy, reload]);
+}
 
 const num = (n) => (n == null ? '—' : n.toLocaleString(locale()));
 const signed = (d) => `${d > 0 ? '+' : d < 0 ? '−' : '±'}${Math.abs(d).toLocaleString(locale())}`;
@@ -111,6 +120,7 @@ function TotalsOverview() {
   // "key" = the key figures; otherwise an area's figures.
   const [view, setView] = useSticky('totals.view', 'key');
   const [pickedMonth, setMonth] = useSticky('totals.month', 0);
+  useWhileBusy(!!data?.some((s) => s.fetching || s.queued), reload);
 
   const types = useMemo(() => {
     const seen = new Map();
@@ -245,6 +255,7 @@ function SiteTotals({ id }) {
   const { can, toast, refresh } = useApp();
   const [starting, setStarting] = useState(false);
   const [pickedMonth, setMonth] = useSticky('totals.month', 0);
+  useWhileBusy(!!(data?.fetching || data?.queued), reload);
 
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
   const latest = data.latest;
