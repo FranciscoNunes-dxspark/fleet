@@ -23,12 +23,22 @@ const seed = () =>
     ['/var/log/syslog', { kind: 'file', size: 183422 }],
   ]);
 
-export function demoSession({ host = { name: 'demo', host: 'demo.example.com', user: 'demo' }, tree = seed() } = {}) {
+// `tick` is awaited between a transfer's `chunks` progress reports, so a test can stop one half way.
+export function demoSession({ host = { name: 'demo', host: 'demo.example.com', user: 'demo' }, tree = seed(), chunks = 4, tick = async () => {} } = {}) {
   const state = { calls: [], tree };
   const say = (...call) => state.calls.push(call);
   const need = (path) => {
     if (!tree.has(path)) throw new SessionError(`${path}: No such file or directory`);
     return tree.get(path);
+  };
+  // A transfer in `chunks` steps, stopping at the signal.
+  const transferring = async (total, file, signal, onProgress) => {
+    onProgress?.({ bytes: 0, total, file });
+    for (let i = 1; i <= chunks; i++) {
+      await tick();
+      if (signal?.aborted) throw new SessionError('Cancelled', { cancelled: true });
+      onProgress?.({ bytes: Math.round((total * i) / chunks), total, file });
+    }
   };
   const childrenOf = (dir) => [...tree.keys()].filter((p) => p !== '/' && parentOf(p) === dir);
   return {
@@ -72,14 +82,16 @@ export function demoSession({ host = { name: 'demo', host: 'demo.example.com', u
       if (childrenOf(dir).length) throw new SessionError(`${dir}: Failure`);
       tree.delete(dir);
     },
-    async get(remote, local, { recursive } = {}) {
+    async get(remote, local, { recursive, signal, onProgress } = {}) {
       say('get', remote, local, { recursive: !!recursive });
-      need(remote);
+      const size = need(remote).size ?? 0;
+      await transferring(size, remote, signal, onProgress);
     },
     // `size` is for the demo only: the real sftp reads the file.
-    async put(local, remote, { recursive, size = 1024 } = {}) {
+    async put(local, remote, { recursive, size = 1024, signal, onProgress } = {}) {
       say('put', local, remote, { recursive: !!recursive });
       need(parentOf(remote));
+      await transferring(size, local, signal, onProgress);
       tree.set(remote, recursive ? { kind: 'dir' } : { kind: 'file', size });
     },
     async exec(line) {
