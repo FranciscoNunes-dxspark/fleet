@@ -1,4 +1,4 @@
-// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf, keel, locker, mooring, bilge) share about each other: what one copies
+// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf, keel, locker, mooring, bilge, chart) share about each other: what one copies
 // for another, the project a folder is and what it points at, the mascots' moods, and what each app
 // did. The same file in every app (scripts/shared-check.js), so it names no app as "this".
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync } from 'node:fs';
@@ -6,10 +6,10 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { handOff } from './hosted.js';
 
-export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf', 'keel', 'locker', 'mooring', 'bilge'];
+export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf', 'keel', 'locker', 'mooring', 'bilge', 'chart'];
 
 /** What each app is for, in a picker's words. */
-export const ROLES = { splice: 'GIT', trawl: 'SQL', sonar: 'AZURE', bosun: 'PROCS', hail: 'HTTP', wharf: 'DOCKER', keel: 'DEVOPS', locker: 'VAULT', mooring: 'SSH', bilge: 'DEPS' };
+export const ROLES = { splice: 'GIT', trawl: 'SQL', sonar: 'AZURE', bosun: 'PROCS', hail: 'HTTP', wharf: 'DOCKER', keel: 'DEVOPS', locker: 'VAULT', mooring: 'SSH', bilge: 'DEPS', chart: 'IAC' };
 
 // ---------------------------------------------------------------------------------------------------
 // Sharing: what one app hands another is a command line, copied for you to paste into the other app's
@@ -52,8 +52,8 @@ export const takeLine = (kind, data) => shareLine('take', [encodeContext(kind, d
 export const contextIn = (line) => decodeContext(String(line ?? '').trim().replace(/^\/?take\s+/, ''));
 
 /** The apps' names as they're written, and their mascots'. */
-export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf', keel: 'Keel', locker: 'Locker', mooring: 'Mooring', bilge: 'Bilge' };
-export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark', keel: 'Pinch', locker: 'Hush', mooring: 'Tug', bilge: 'Nibs' };
+export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf', keel: 'Keel', locker: 'Locker', mooring: 'Mooring', bilge: 'Bilge', chart: 'Chart' };
+export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark', keel: 'Pinch', locker: 'Hush', mooring: 'Tug', bilge: 'Nibs', chart: 'Plot' };
 
 /** Which apps take each kind of context with /take. */
 export const TAKEN_BY = {
