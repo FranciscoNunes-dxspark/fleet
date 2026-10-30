@@ -108,7 +108,7 @@ export function FilesView({ panes, side, conn, hidden, ctx, width, height, activ
     }
   });
 
-  const remoteStatus = conn.status === 'connecting' ? `Connecting to ${conn.host?.name}…` : conn.session ? null : conn.problem ? conn.problem.split('\n')[0] : 'Not connected: ↵ on a host in 3, or /connect <host>';
+  const remoteStatus = conn.status === 'connecting' ? `Connecting to ${conn.host?.name}…` : conn.session ? null : conn.problem ? conn.problem.split('\n')[0] : 'Not connected: ↵ on a host in 4, or /connect <host>';
   const status = (s) => (s === 'remote' && remoteStatus ? remoteStatus : panes[s].problem ? panes[s].problem.split('\n')[0] : panes[s].loading && !panes[s].entries.length ? 'Reading…' : !vis[s].length && !panes[s].loading ? 'Empty' : null);
   const hint = (s) => {
     const marked = panes[s].marks.size;

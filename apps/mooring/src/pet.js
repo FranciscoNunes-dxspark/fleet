@@ -104,6 +104,6 @@ export function moodLine(mood, { loaded, connected, host, trouble, running = 0, 
   if (trouble?.failed.length) return `${few(trouble.failed)} didn't copy: 2 shows why, r tries again.`;
   if (running) return `${running} transfer${running === 1 ? ' is' : 's are'} moving: 2 shows how far.`;
   if (mood === 'worried') return 'Something went wrong: the line below says what.';
-  if (!connected) return hosts ? 'Not connected: 3 lists your hosts, ↵ opens one.' : 'No hosts yet: /add <name> <user@host> saves one.';
+  if (!connected) return hosts ? 'Not connected: 4 lists your hosts, ↵ opens one.' : 'No hosts yet: /add <name> <user@host> saves one.';
   return `Connected to ${host}: space marks, c copies to the other pane, $ runs a command there.`;
 }
