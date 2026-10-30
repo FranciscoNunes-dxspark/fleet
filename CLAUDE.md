@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Fleet is the family of keyboard-driven terminal apps in one repository: Splice (git), Trawl (SQL), Sonar (Azure), Bosun (a project's processes), Hail (HTTP), Keel (Azure DevOps: a web app, a terminal app and an Android app), Wharf (containers), Locker (secrets and configuration), Mooring (files and commands on a server over SSH) and Bilge (a project's dependencies: known vulnerabilities, licences, what's out of date), the kit they share, and Fleet the host (`apps/fleet`), which runs them in one terminal. Each app keeps its own CLAUDE.md (read it before changing the app: it has the app's architecture, tests and rules) and README (the user-facing spec: when behaviour changes, update it too). This file is what holds across them.
+Fleet is the family of keyboard-driven terminal apps in one repository: Splice (git), Trawl (SQL), Sonar (Azure), Bosun (a project's processes), Hail (HTTP), Keel (Azure DevOps: a web app, a terminal app and an Android app), Wharf (containers), Locker (secrets and configuration), Mooring (files and commands on a server over SSH), Bilge (a project's dependencies: known vulnerabilities, licences, what's out of date) and Chart (infrastructure as code: what a Terraform plan or a Bicep what-if would change, and drift), the kit they share, and Fleet the host (`apps/fleet`), which runs them in one terminal. Each app keeps its own CLAUDE.md (read it before changing the app: it has the app's architecture, tests and rules) and README (the user-facing spec: when behaviour changes, update it too). This file is what holds across them.
 
 ## Layout
 
@@ -11,7 +11,7 @@ package.json            private root: npm workspaces ["packages/*", "apps/*"], N
 package-lock.json       the one lockfile
 patches/                patch-package's patches, applied to the root node_modules on install (scripts/postinstall.js)
 packages/kit/           @fleet/kit: the shared files and their tests
-apps/<app>/             splice, trawl, sonar, bosun, hail, keel, wharf, locker, mooring, bilge: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
+apps/<app>/             splice, trawl, sonar, bosun, hail, keel, wharf, locker, mooring, bilge, chart: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
 apps/fleet/             the host (@fleet/host, binary fleet): the apps in one terminal, each its own process in hosted mode
 .github/workflows/      test.yml, release.yml (+ release-app.yml), release-keel-android.yml
 .github/scripts/        changed.mjs: which apps a change touches
