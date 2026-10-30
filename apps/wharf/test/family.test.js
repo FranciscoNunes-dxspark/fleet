@@ -18,7 +18,7 @@ const LOG = ['2026-10-27T09:00:00.123456789Z INFO started', '2026-10-27T09:00:07
 
 test('Wharf is in the family, takes log lines, and has its names', () => {
   assert.ok(FAMILY.includes('wharf'));
-  assert.deepEqual([APP_NAMES.wharf, PET_NAMES.wharf, ROLES.wharf, TAKEN_BY.logline.includes('wharf')], ['Wharf', 'Bark', 'containers', true]);
+  assert.deepEqual([APP_NAMES.wharf, PET_NAMES.wharf, ROLES.wharf, TAKEN_BY.logline.includes('wharf')], ['Wharf', 'Bark', 'DOCKER', true]);
 });
 
 test('a log line becomes a logline context, with its time, and is found again in a log', () => {

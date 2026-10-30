@@ -10,13 +10,12 @@ test('a hand-off goes to its app, or to the first of several that runs', () => {
   assert.equal(routeHandoff({ handoff: ['sonar', 'hail'], line: 'x' }, { running }).to, null);
 });
 
-test("Keel's hand-offs, and the family's to Keel, route like any app's", async () => {
+test("an app the host doesn't run (Keel) is no choice for a hand-off", async () => {
   const { TAKEN_BY } = await import('@fleet/kit/family.js');
-  assert.deepEqual(routeHandoff({ handoff: 'splice', line: '/take family:v1:pullrequest:e30' }, { from: 'keel' }), { to: 'splice', line: '/take family:v1:pullrequest:e30' });
-  // Splice's commit is for Sonar or Keel: whichever runs.
+  // Splice's commit is for Sonar or Keel: only Sonar is here.
   const others = TAKEN_BY.commit.filter((a) => a !== 'splice');
-  assert.deepEqual(others, ['sonar', 'keel']);
-  assert.deepEqual(routeHandoff({ handoff: others, line: 'x' }, { from: 'splice', running: (id) => id === 'keel' }), { to: 'keel', line: 'x' });
+  assert.deepEqual(routeHandoff({ handoff: others, line: 'x' }, { from: 'splice', running: (id) => id === 'keel' }), { to: 'sonar', line: 'x' });
+  assert.equal(routeHandoff({ handoff: 'keel', line: 'x' }, { from: 'splice' }).to, null);
 });
 
 test("nothing to route: no line, an app the host hasn't, or the app itself", () => {

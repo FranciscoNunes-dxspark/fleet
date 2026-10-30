@@ -18,7 +18,6 @@
     "./ui/HelpView.jsx": "./ui/HelpView.jsx",
     "./ui/Palette.jsx": "./ui/Palette.jsx",
     "./ui/DataViewer.jsx": "./ui/DataViewer.jsx",
-    "./ui/GuiView.jsx": "./ui/GuiView.jsx",
     "./datatree.js": "./datatree.js",
     "./mouse.js": "./mouse.js",
     "./selection.js": "./selection.js",

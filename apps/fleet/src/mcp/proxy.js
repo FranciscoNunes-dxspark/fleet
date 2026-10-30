@@ -7,11 +7,6 @@ import { createInterface } from 'node:readline';
 import { ToolError } from '@fleet/kit/mcp.js';
 import { APPS_DIR, launchCommand } from '../spaces.js';
 
-/** How to start app `id`'s MCP worker: the executable itself compiled, else this checkout's fleet. */
-export function workerCommand(id, args = [], { compiled, execPath = process.execPath, appsDir = APPS_DIR } = {}) {
-  return compiled ? [execPath, ['--mcp-worker', id, ...args]] : [execPath, [join(appsDir, 'fleet/bin/fleet.js'), '--mcp-worker', id, ...args]];
-}
-
 /** How to start Trawl's own MCP server, `trawl mcp`, as Fleet starts Trawl. */
 export const trawlCommand = (args = [], { compiled } = {}) => launchCommand('trawl', ['mcp', ...args], { compiled });
 

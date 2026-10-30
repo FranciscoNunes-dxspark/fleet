@@ -27,7 +27,7 @@ const sites = [
 
 test('Locker is in the family, takes an app, and has its names', () => {
   assert.ok(FAMILY.includes('locker'));
-  assert.deepEqual([APP_NAMES.locker, PET_NAMES.locker, ROLES.locker, TAKEN_BY.site], ['Locker', 'Hush', 'secrets', ['locker']]);
+  assert.deepEqual([APP_NAMES.locker, PET_NAMES.locker, ROLES.locker, TAKEN_BY.site], ['Locker', 'Hush', 'VAULT', ['locker']]);
   const line = encodeContext('site', siteData(sites[1], 's1'));
   assert.deepEqual(decodeContext(line), { kind: 'site', data: { name: 'shop-api', slot: 'staging', resourceGroup: 'shop', subscription: 's1', id: '/s/rg/a/shop-api/slots/staging' } });
   assert.equal(describeContext(decodeContext(line)), 'app shop-api/staging');

@@ -26,7 +26,7 @@ test('Hail in hosted mode draws above the bar, takes keys, and is drawn again af
   const { screen } = term;
   const shown = (text) => term.text().includes(text);
   await until(() => shown('Welcome to Hail') && shown('1 request in api.http'), 'Hail', { term, ms: 60_000 });
-  assert.match(screen.row(-1), /^ 1 Hail ● {2}2 Two ○/);
+  assert.match(screen.row(-1), /^ 1 Hail HTTP ● {2}2 Two ○/);
   // Its frame stays above the bar: the row above it is Hail's.
   assert.ok(screen.row(-2).length < 100);
   keys('?');
@@ -37,7 +37,7 @@ test('Hail in hosted mode draws above the bar, takes keys, and is drawn again af
   assert.ok(!shown('Keyboard shortcuts'));
   keys(`${PREFIX}h`);
   await until(() => shown('Keyboard shortcuts') && shown('Welcome to Hail'), 'Hail drawn again', { term, ms: 20_000 });
-  assert.match(screen.row(-1), /^ 1 Hail ● {2}2 Two ●/);
+  assert.match(screen.row(-1), /^ 1 Hail HTTP ● {2}2 Two ●/);
 
   // Split, Ink's frames drawn through the host's virtual terminal land in Hail's own columns.
   keys('\x1b');

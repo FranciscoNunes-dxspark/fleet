@@ -1,6 +1,6 @@
 // `fleet mcp`: the bounds and masks every answer goes through, the tools in-process over a temporary
-// git repository, family folder, Bosun recording and Hail history (Sonar and Wharf on their demos),
-// and the whole server spawned as Claude Code starts it, Trawl's and Keel's tools through their
+// git repository, family folder, Bosun recording and Hail history (Sonar on its demo),
+// and the whole server spawned as Claude Code starts it, Trawl's tools through its
 // own processes.
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +13,6 @@ import { fileURLToPath } from 'node:url';
 import { logActivity, writeMood } from '@fleet/kit/family.js';
 import { MAX_TEXT, clip, count, finish, sinceOf, tail } from '../src/mcp/bound.js';
 import { createFleetServer } from '../src/mcp/server.js';
-import { workerCommand } from '../src/mcp/proxy.js';
 
 const BIN = fileURLToPath(new URL('../bin/fleet.js', import.meta.url));
 const base = mkdtempSync(join(tmpdir(), 'fleet-mcp-'));
@@ -100,15 +99,7 @@ test('answers are bounded at a line and masked', () => {
   assert.equal(sinceOf(''), 0);
 });
 
-test('the worker starts from the checkout, or as the executable itself', () => {
-  assert.deepEqual(workerCommand('keel', ['--demo'], { compiled: true, execPath: '/x/fleet' }), ['/x/fleet', ['--mcp-worker', 'keel', '--demo']]);
-  const [file, args] = workerCommand('keel', [], { compiled: false, execPath: 'node', appsDir: '/apps' });
-  assert.equal(file, 'node');
-  assert.deepEqual(args.slice(1), ['--mcp-worker', 'keel']);
-  assert.match(args[0].replaceAll('\\', '/'), /\/apps\/fleet\/bin\/fleet\.js$/);
-});
-
-const server = () => createFleetServer({ project: repo, demo: true, trawl: false, keel: false });
+const server = () => createFleetServer({ project: repo, demo: true, trawl: false });
 const call = async (s, name, args = {}) => {
   const res = await s.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
   return { text: res.result.content[0].text, error: Boolean(res.result.isError) };
@@ -121,7 +112,7 @@ test('initialize and tools/list: every tool read-only, with a schema', async () 
   assert.match(init.result.instructions, /read-only/);
   const { tools } = (await s.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).result;
   const names = tools.map((t) => t.name);
-  for (const n of ['git_status', 'git_log', 'git_show', 'git_diff', 'git_blame', 'git_branches', 'bosun_crew', 'bosun_log', 'bosun_search', 'hail_requests', 'hail_history', 'sonar_components', 'sonar_problems', 'sonar_incident', 'sonar_query', 'wharf_containers', 'wharf_container_logs', 'wharf_pods', 'wharf_pod_logs', 'family_timeline', 'family_moods', 'family_wiring'])
+  for (const n of ['git_status', 'git_log', 'git_show', 'git_diff', 'git_blame', 'git_branches', 'bosun_crew', 'bosun_log', 'bosun_search', 'hail_requests', 'hail_history', 'sonar_components', 'sonar_problems', 'sonar_incident', 'sonar_query', 'family_timeline', 'family_moods', 'family_wiring'])
     assert.ok(names.includes(n), n);
   for (const t of tools) {
     assert.equal(t.annotations.readOnlyHint, true, t.name);
@@ -213,7 +204,7 @@ test('hail: the requests with variables unresolved and masked, and the kept resp
   assert.match((await call(s, 'hail_history', { request: 'Create' })).text, /No kept response for "Create"/);
 });
 
-test('sonar and wharf on their demos', async () => {
+test('sonar on its demo', async () => {
   const s = server();
   assert.match((await call(s, 'sonar_components')).text, /contoso-prod-ai/);
   const problems = await call(s, 'sonar_problems', { component: 'contoso-prod-ai' });
@@ -225,13 +216,9 @@ test('sonar and wharf on their demos', async () => {
   const q = await call(s, 'sonar_query', { component: 'contoso-prod-ai', kql: 'exceptions | take 3', max_rows: 2 });
   assert.ok(!q.error, q.text);
   assert.match((await call(s, 'sonar_query', { kql: '.drop table x' })).text, /Control commands are refused/);
-  assert.match((await call(s, 'wharf_containers', { running: true })).text, /shop-api-1 {2}running/);
-  assert.ok((await call(s, 'wharf_container_logs', { container: 'shop-api-1', lines: 5 })).text.length > 0);
-  assert.match((await call(s, 'wharf_pods')).text, /CrashLoopBackOff/);
-  assert.match((await call(s, 'wharf_container_logs', { container: 'nope' })).text, /No one container called nope/);
 });
 
-test('fleet mcp from the checkout: initialize, tools/list, family, git, Trawl and Keel through their processes', { timeout: 120_000 }, async () => {
+test('fleet mcp from the checkout: initialize, tools/list, family, git and Trawl through its process', { timeout: 120_000 }, async () => {
   const env = { ...process.env, ...homes };
   const child = spawn(process.execPath, [BIN, 'mcp', '--project', repo, '--demo'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
   let stderr = '';
@@ -253,13 +240,10 @@ test('fleet mcp from the checkout: initialize, tools/list, family, git, Trawl an
     assert.equal(init.result.serverInfo.name, 'fleet', stderr);
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const names = (await req('tools/list')).result.tools.map((t) => t.name);
-    for (const n of ['git_log', 'family_timeline', 'keel_inbox', 'trawl_list_connections', 'trawl_run_query']) assert.ok(names.includes(n), `${n} in ${names.join(' ')}\n${stderr}`);
+    for (const n of ['git_log', 'family_timeline', 'trawl_list_connections', 'trawl_run_query']) assert.ok(names.includes(n), `${n} in ${names.join(' ')}\n${stderr}`);
     assert.match((await tool('git_log', { n: 1 })).content[0].text, /Change b/);
     assert.match((await tool('family_timeline')).content[0].text, /Pushed main to origin/);
     assert.match((await tool('trawl_list_connections')).content[0].text, /demo-prod: .*production/);
-    const keel = await tool('keel_pipelines', { failing: true, limit: 1 });
-    assert.ok(!keel.isError, keel.content[0].text);
-    assert.match(keel.content[0].text, /failing/);
   } finally {
     child.stdin.end();
   }

@@ -271,19 +271,3 @@ export function askHostToMove(dir) {
   if (!current?.hosted || !dir) return false;
   return current.send({ move: path.resolve(String(dir)) });
 }
-
-/** The environment variable `fleet gui` starts its apps with: they're drawn in a window, not a terminal. */
-export const WINDOW_VARIABLE = 'FLEET_GUI';
-
-/** Whether this app is drawn in Fleet's window (`fleet gui`), where a region can be a native view. */
-export const inWindow = (env = process.env) => env[WINDOW_VARIABLE] === '1' && Boolean(current?.hosted);
-
-/**
- * Tells Fleet's window about a native view (ui/GuiView.jsx): `{ key, kind, data, rect }` to show or
- * move one, `{ key, gone: true }` to take it away. Does nothing outside the window. Returns whether
- * the window was told.
- */
-export function showInWindow(view) {
-  if (!inWindow() || !view?.key) return false;
-  return current.send({ view });
-}

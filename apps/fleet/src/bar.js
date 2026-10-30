@@ -1,10 +1,11 @@
 // The bar: the host's one line at the bottom of the screen, a tab per space and a hint, pure. A tab
 // says the space's key, its name and its state (○ not started, ● running, ✕ and the code once it has
-// exited); the active one is drawn in its app's accent. A space off screen that needs you has a
+// exited), and what the app is for beside its name (ROLES, in capitals) where there's room; the active one is drawn in its app's accent. A space off screen that needs you has a
 // badge after its state (attention.js: `!` for a worried app, a count of alerts), in a warning colour.
 // When the line is too narrow, the hint goes first, then the names shrink to their letters (the
 // badges stay), then the line is cut.
 import { fit, stringWidth } from '@fleet/kit/text.js';
+import { ROLES } from '@fleet/kit/family.js';
 import { badgeText } from './attention.js';
 
 const MARK = { idle: '○', running: '●', starting: '●' };
@@ -14,7 +15,7 @@ export const stateMark = (space) => (space.state === 'exited' ? `✕${space.code
 
 /** The hint at the right: the prefix's keys while it waits for one, else how to get them. */
 export function hintFor({ prefix, notice, split = false, prefixLabel = 'ctrl+b' }) {
-  if (prefix) return `1-9 s t o b h k w l u · n p · ${split ? 'tab pane · x unsplit' : '| split'} · m move · r f · q quit · ? help`;
+  if (prefix) return `1-7 s t o b h l u · n p · ${split ? 'tab pane · x unsplit' : '| split'} · m move · r f · q quit · ? help`;
   return notice || `${prefixLabel} ? help`;
 }
 
@@ -27,10 +28,13 @@ export function hintFor({ prefix, notice, split = false, prefixLabel = 'ctrl+b' 
 export function barLayout({ spaces, active, shown = null, width, prefix = false, notice = '', prefixLabel }) {
   if (width <= 0) return { segments: [], tabs: [] };
   const badges = spaces.map((s) => badgeText(s.badge));
-  const labels = (short) => spaces.map((s, i) => ` ${i + 1} ${short ? s.letter.toUpperCase() : s.title} ${stateMark(s)}${badges[i] ? ` ${badges[i]}` : ''} `);
+  const labels = (short, roles = false) => spaces.map((s, i) => ` ${i + 1} ${short ? s.letter.toUpperCase() : roles && ROLES[s.id] ? `${s.title} ${ROLES[s.id]}` : s.title} ${stateMark(s)}${badges[i] ? ` ${badges[i]}` : ''} `);
   const hint = ` ${hintFor({ prefix, notice, split: Boolean(shown), prefixLabel })} `;
   const total = (ls) => ls.reduce((n, l) => n + stringWidth(l), 0);
   let tabs = labels(false);
+  // The roles only when it all fits, the hint too: they're the first thing to give way.
+  const withRoles = labels(false, true);
+  if (total(withRoles) + stringWidth(hint) <= width) tabs = withRoles;
   let showHint = total(tabs) + stringWidth(hint) <= width;
   if (!showHint && total(tabs) > width) tabs = labels(true);
   // With the prefix waiting, its keys matter more than the names; so does a notice, for the moment it shows.
