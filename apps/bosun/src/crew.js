@@ -75,7 +75,7 @@ export function readSpec(spec) {
     else if (proc?.service != null && !service) problems.push(`"${name}": "service" is a Windows service's name, as sc query shows it ("MSSQL$SQLEXPRESS")`);
     else if (service && (proc.run != null || proc.iis != null || proc.build != null)) problems.push(`"${name}": it has "service" and "${proc.run != null ? 'run' : proc.iis != null ? 'iis' : 'build'}": Windows runs the service, so it has no command of its own`);
     else if (proc.dump != null && typeof proc.dump !== 'boolean') problems.push(`"${name}": "dump" is true or false`);
-    else if (proc?.iis != null && !iis) problems.push(`"${name}": "iis" is a site's name, or { "site": "Shop", "pool": "ShopPool", "build": "msbuild", "failedRequests": true }`);
+    else if (proc?.iis != null && !iis) problems.push(`"${name}": "iis" is a site's name, or { "site": "Shop", "pool": "ShopPool", "build": "msbuild", "failedRequests": true, "path": "src/Shop", "runtime": "v4.0" }`);
     else if (iis && proc.run != null) problems.push(`"${name}": it has "iis" and "run": IIS runs the site, so it has no command of its own`);
     else if (!iis && !service && (!proc?.run || typeof proc.run !== 'string')) problems.push(`"${name}": it needs "run", the command to start it (or "iis", an IIS site, or "service", a Windows service)`);
     else if (proc.build != null && (typeof proc.build !== 'string' || iis)) problems.push(iis ? `"${name}": an IIS site's "build" goes in "iis" ({ "site": "${iis.site}", "build": "…" })` : `"${name}": "build" is a command`);
@@ -279,7 +279,7 @@ export function specFor(crew) {
 }
 
 /** An "iis" as bosun.json writes it: the site's name alone when that's all there is. */
-const iisSpecOut = (iis) => (iis.pool || iis.build || iis.offline === false || iis.failedRequests ? Object.fromEntries(Object.entries({ site: iis.site, pool: iis.pool ?? undefined, build: iis.build ?? undefined, offline: iis.offline === false ? false : undefined, failedRequests: iis.failedRequests || undefined }).filter(([, v]) => v !== undefined)) : iis.site);
+const iisSpecOut = (iis) => (iis.pool || iis.build || iis.offline === false || iis.failedRequests || iis.path || iis.runtime != null ? Object.fromEntries(Object.entries({ site: iis.site, pool: iis.pool ?? undefined, build: iis.build ?? undefined, offline: iis.offline === false ? false : undefined, failedRequests: iis.failedRequests || undefined, path: iis.path ?? undefined, runtime: iis.runtime ?? undefined }).filter(([, v]) => v !== undefined)) : iis.site);
 
 /** Writes bosun.json in `dir` unless there's one already; returns whether it did. */
 export function writeSpec(dir, spec) {

@@ -15,19 +15,29 @@ import { tailLogs } from './tail.js';
 // bosun.json's "iis".
 
 /**
- * bosun.json's "iis" read: "Shop" or { site, pool, build, offline, failedRequests } as { site, pool,
- * build, offline, failedRequests }, or null when it's neither. `pool` is the site's own when not
- * given; `build` runs before a start and each restart with app_offline.htm in the site's folder
- * (unless `offline` is false); `failedRequests` turns on IIS's Failed Request Tracing for 5xx while it runs.
+ * bosun.json's "iis" read: "Shop" or { site, pool, build, offline, failedRequests, path, runtime } as
+ * { site, pool, build, offline, failedRequests, path, runtime }, or null when it's neither. `pool` is
+ * the site's own when not given; `build` runs before a start and each restart with app_offline.htm in
+ * the site's folder (unless `offline` is false); `failedRequests` turns on IIS's Failed Request Tracing
+ * for 5xx while it runs. `path` (the site's folder, from the process's cwd) and `runtime` (the pool's
+ * .NET CLR version, "" for none) only matter to /register, which creates a site IIS doesn't have yet.
  */
 export function iisSpec(v) {
-  if (typeof v === 'string' && v.trim()) return { site: v.trim(), pool: null, build: null, offline: true, failedRequests: false };
+  if (typeof v === 'string' && v.trim()) return { site: v.trim(), pool: null, build: null, offline: true, failedRequests: false, path: null, runtime: null };
   if (!v || typeof v !== 'object' || Array.isArray(v) || typeof v.site !== 'string' || !v.site.trim()) return null;
   if (v.pool != null && typeof v.pool !== 'string') return null;
   if (v.build != null && typeof v.build !== 'string') return null;
   if (v.failedRequests != null && typeof v.failedRequests !== 'boolean') return null;
-  return { site: v.site.trim(), pool: v.pool?.trim() || null, build: v.build || null, offline: v.offline !== false, failedRequests: v.failedRequests === true };
+  if (v.path != null && typeof v.path !== 'string') return null;
+  if (v.runtime != null && typeof v.runtime !== 'string') return null;
+  return { site: v.site.trim(), pool: v.pool?.trim() || null, build: v.build || null, offline: v.offline !== false, failedRequests: v.failedRequests === true, path: v.path?.trim() || null, runtime: v.runtime ?? null };
 }
+
+/** The binding /register gives a new site: `http/*:<port>:<host>` (port 80 when none). */
+export const newBinding = ({ host, port }) => `http/*:${port || 80}:${host ?? ''}`;
+
+/** The CLR version a new pool gets: none for ASP.NET Core (it runs out of process or in the module), else v4.0. */
+export const poolRuntime = (spec, webConfig) => spec.runtime ?? (webConfigFacts(webConfig).core ? '' : 'v4.0');
 
 // ---------------------------------------------------------------------------------------------------
 // appcmd's output.
@@ -386,6 +396,13 @@ export function iisControl({ exec, execSync, powershell, env = process.env } = {
     /** Every site's folders: [{ site, path, physicalPath }] (`appcmd list vdir`). */
     async vdirs() {
       return (await list(['vdir'])).map((v) => ({ site: v.name.split('/')[0], path: v.name.slice(v.name.indexOf('/')), physicalPath: expandEnv(v.attrs.physicalPath ?? '', env) }));
+    },
+    /** Adds an application pool (`runtime` the CLR version, "" for no managed code). */
+    createPool: (name, runtime) => exec(['add', 'apppool', `/name:${name}`, `/managedRuntimeVersion:${runtime}`]),
+    /** Adds a site on `binding` (`http/*:80:shop.local`) serving `physicalPath`, its root application in `pool`. */
+    async createSite(name, physicalPath, binding, pool) {
+      await exec(['add', 'site', `/name:${name}`, `/bindings:${binding}`, `/physicalPath:${physicalPath}`]);
+      await exec(['set', 'app', `${name}/`, `/applicationPool:${pool}`]);
     },
     startSite: (name) => act(['start', 'site', name]),
     stopSite: (name) => act(['stop', 'site', name]),

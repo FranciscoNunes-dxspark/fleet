@@ -99,6 +99,7 @@ export const HELP = [
     about: '/iis: an IIS site\'s application pool settings',
     rows: [
       ['↵', 'Set it for development (idle timeout off, AlwaysRunning, no scheduled recycle, no rapid-fail protection), or back; it applies when the pool next recycles (r)'],
+      ['/register', 'Create the crew\'s IIS sites IIS doesn\'t have yet (pool, site, binding from "host" and "port"), then their host names in the hosts file (asks first)'],
       ['/hosts', 'Add the host names the crew answers to that this machine can\'t find to the hosts file (asks first)'],
     ],
   },

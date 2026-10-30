@@ -228,12 +228,12 @@ A process with `"iis"` is a site of this machine's IIS rather than a command: II
 }
 ```
 
-`"iis"` is the site's name, or `{ "site", "pool", "build", "offline", "failedRequests" }`: `pool`
+`"iis"` is the site's name, or `{ "site", "pool", "build", "offline", "failedRequests", "path", "runtime" }`: `pool`
 when it isn't the site's own (its root application's), `build` a command run before it starts and
 before each restart (MSBuild, `dotnet publish -o <the site's folder>`), with `app_offline.htm` in the
 site's folder meanwhile so IIS lets go of its files and shows a page saying so (`"offline": false`
 leaves it out; one that was there already stays), `failedRequests` (`true`) Failed Request Tracing
-while it runs (below).
+while it runs (below). `path` and `runtime` are for `/register` (below).
 
 - **Starting** starts its pool and the site. One that was running already is used as it is, and left
   running when Bosun quits; one Bosun started is stopped when it quits.
@@ -269,6 +269,12 @@ while it runs (below).
   again when the site stops, or when Bosun quits, unless it was on before. It needs IIS's Tracing
   feature (Windows Features, Internet Information Services, World Wide Web Services, Health and
   Diagnostics, Tracing).
+
+`/register` creates the crew's sites IIS doesn't have yet, then does what `/hosts` does for their names. For each one it adds an application pool
+(`<site>Pool`, or `pool`; no managed code for an ASP.NET Core web.config, else `v4.0`, or `runtime`) and a site
+bound to `http/*:<port>:<host>` (the process's `port`, 80 when it has none, and `host`) serving `path` (from the
+process's `cwd`, which is the project's folder when neither is given). It lists what it will create and asks
+first; IIS needs an administrator, as does the hosts file.
 
 `/iis` (or `/iis <name>`) shows the site's application pool settings, and `↵` sets the one under
 the cursor to its value for development, or back to IIS's default:
@@ -520,6 +526,7 @@ Trawl.
 | `/preflight` | Check what the crew needs (Node version, Docker, free ports, `.env` keys, databases, `node_modules`, IIS, services, host names, tools), as a checklist |
 | `/top` | Every process's CPU and memory (with what it started), the busiest first, and a sparkline of the last minute of each; `↵` shows its log |
 | `/iis [name]` | An IIS site's application pool settings (idle timeout, start mode, recycling, rapid-fail protection, 32-bit); `↵` sets one for development, or back (see IIS sites) |
+| `/register` | Create the crew's IIS sites IIS doesn't have yet (an application pool and a site bound to the process's `host` and `port`), then add their host names to the hosts file (asks first; it takes an administrator) |
 | `/hosts` | Add the host names the crew answers to that this machine can't find (a process's `host`, an IIS site's bindings) to the hosts file, as 127.0.0.1 (asks first; it takes an administrator) |
 | `/ports` | Every TCP port listening on this machine, with the process holding it (pid and name); the crew's are marked. `f` frees one (asks first), `o` or `↵` opens it in the browser |
 | `/profile [name\|none]` | Run the crew with a profile |
