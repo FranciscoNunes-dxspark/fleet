@@ -87,3 +87,6 @@ export function problemFrom(stderr, { command = 'ssh' } = {}) {
 /** The message for a program that can't be started. */
 export const missingProgram = (command, error) =>
   error?.code === 'ENOENT' ? `${command} isn't installed, or isn't on the PATH: Mooring uses the system's ${command}.` : `Couldn't start ${command}: ${error?.message ?? error}`;
+
+/** `text` as one word for a POSIX shell: single quoted, with a `'` in it closed, escaped and opened again. */
+export const shellQuote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;

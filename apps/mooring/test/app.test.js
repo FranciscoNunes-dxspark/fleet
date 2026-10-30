@@ -137,7 +137,7 @@ test('/cd and /lcd go to typed paths', async () => {
 test('Hosts lists the saved ones with the open one marked; /add saves another and /forget asks', async () => {
   const app = start();
   await until(shows(app, 'notes.txt'), 'connected');
-  app.stdin.write('3');
+  app.stdin.write('4');
   await until(shows(app, 'ci@build.example.com'), 'the hosts');
   assert.match(full(app, 'demo@demo.example.com'), /●/);
   assert.match(full(app, 'build.example.com'), /~\/\.ssh\/ci/);

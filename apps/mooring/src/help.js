@@ -5,10 +5,11 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-4 / tab', 'Files, Transfers, Hosts, Log (shift+tab goes back)'],
+      ['1-5 / tab', 'Files, Transfers, Console, Hosts, Log (shift+tab goes back)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['ctrl+p', "The command palette: every command and this view's keys, filtered as you type"],
       ['!', 'Run a shell command on this machine, e.g.  !ssh-add -l'],
+      ['$', 'Run a command on the server, in the folder the right pane shows, e.g.  $ ls -l  (the output is in Console)'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
       ['ctrl+r', 'Read both folders again'],
       [',', 'Settings'],
@@ -55,6 +56,18 @@ export const HELP = [
       ['r', 'Try a failed or cancelled one again'],
       ['d', 'Take it off the list'],
       ['c', 'Clear the ones that are done'],
+    ],
+  },
+  {
+    title: 'Console',
+    about: 'commands run on the server with $ (or /ssh): each in the folder the right pane shows, output as it arrives. No terminal: nothing full-screen (vim, top) or interactive (sudo asking for a password) works here',
+    views: ['console'],
+    rows: [
+      ['↵ $ i', 'Type a command (the prompt opens with $)'],
+      ['x', 'Cancel the command that is running'],
+      ['y', "Copy the output of the command under the cursor"],
+      ['c', 'Clear the console'],
+      ['cd <folder>', 'Moves the right pane instead (a command run alone could not stay there)'],
     ],
   },
   {

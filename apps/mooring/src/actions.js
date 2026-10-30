@@ -108,7 +108,7 @@ export async function mkdir(ctx, side, name) {
   if (!asked) return false;
   if (/[\\/]/.test(asked)) return ctx.note('A folder name has no slash in it: go there first (/cd), then make it.', 'error') ?? false;
   const path = side === 'local' ? ctx.local.join(dir, asked) : joinRemote(dir, asked);
-  const r = await ctx.task(`Creating ${asked}`, async () => (side === 'local' ? ctx.local.mkdir(path) : ctx.session.mkdir(path)), { label: 'Creating' });
+  const r = await ctx.task(`Creating ${asked}`, async () => (side === 'local' ? ctx.local.mkdir(path) : ctx.session.mkdir(path)), { label: 'Creating', activity: `created folder ${asked} on ${side === 'local' ? 'this machine' : (ctx.conn.host?.name ?? 'the server')}` });
   if (r.ok) await ctx.loadPane(side, dir, { select: asked });
   return r.ok;
 }
@@ -121,7 +121,7 @@ export async function rename(ctx, side, entry) {
   if (!asked || asked === entry.name) return false;
   if (/[\\/]/.test(asked)) return ctx.note('A name has no slash in it: this renames, it does not move.', 'error') ?? false;
   const [from, to] = side === 'local' ? [ctx.local.join(dir, entry.name), ctx.local.join(dir, asked)] : [joinRemote(dir, entry.name), joinRemote(dir, asked)];
-  const r = await ctx.task(`Renaming ${entry.name} to ${asked}`, async () => (side === 'local' ? ctx.local.rename(from, to) : ctx.session.rename(from, to)), { label: 'Renaming' });
+  const r = await ctx.task(`Renaming ${entry.name} to ${asked}`, async () => (side === 'local' ? ctx.local.rename(from, to) : ctx.session.rename(from, to)), { label: 'Renaming', activity: `renamed ${entry.name} to ${asked} on ${side === 'local' ? 'this machine' : (ctx.conn.host?.name ?? 'the server')}` });
   if (r.ok) await ctx.loadPane(side, dir, { select: asked });
   return r.ok;
 }

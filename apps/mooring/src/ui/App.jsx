@@ -16,7 +16,10 @@ import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
 import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
-import { pastedLine } from '@fleet/kit/family.js';
+import { logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
+import { FACES, moodFor, troubles } from '../pet.js';
+import { familyMood, reactionTo } from '../moods.js';
+import { shellQuote } from '../sftp.js';
 import { hostText } from '../hosts.js';
 import { SessionError } from '../errors.js';
 import { createQueue } from '../queue.js';
@@ -26,10 +29,13 @@ import { HostsView } from './HostsView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { Picker } from './Picker.jsx';
+import { ConsoleView } from './ConsoleView.jsx';
+import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 
 const VIEWS = [
   { id: 'files', label: 'Files' },
   { id: 'transfers', label: 'Transfers' },
+  { id: 'console', label: 'Console' },
   { id: 'hosts', label: 'Hosts' },
   { id: 'log', label: 'Log' },
 ];
@@ -38,6 +44,7 @@ const VIEW_LABELS = Object.fromEntries(VIEWS.map((v) => [v.id, v.label]));
 const HINTS = {
   files: '← → pane · ↵ open · space mark · c copy over · m mkdir · r rename · d delete · . hidden',
   transfers: '↵ details · x cancel · r retry · d remove · c clear done',
+  console: '↵ or $ type a command · x cancel · c clear · y copy its output',
   hosts: '↵ connect · a add · e change · x forget',
   log: '↵ all its output · y copy it',
 };
@@ -52,8 +59,8 @@ const abortable = (promise, signal) =>
   Promise.race([promise, new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { cancelled: true })), { once: true }))]);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Header({ conn, transfers, width, loading, demo }) {
-  const segs = [{ text: 'Mooring', bold: true, color: theme.accent }];
+function Header({ conn, transfers, width, loading, demo, mood }) {
+  const segs = [{ text: `${FACES[mood]} `, color: theme.accent, bold: true }, { text: 'Mooring', bold: true }];
   if (demo) segs.push({ text: '  demo', color: theme.warn });
   segs.push({ text: '  │  ', color: theme.border });
   if (conn.status === 'connecting') segs.push({ text: `connecting to ${conn.host?.name}…`, color: theme.dim });
@@ -125,7 +132,7 @@ const NO_CONN = { host: null, session: null, status: 'none', problem: null };
 // `installUpdate` come only in the downloaded builds, so tests and checkouts never go online or replace
 // anything. `connectTo` is a host (or the name of a saved one) to open at start. `persist` is whether
 // settings are written to the config file (not in the demo).
-export function App({ config: initialConfig, local, makeSession, connectTo, copy, setTitle, mouse, checkUpdate, installUpdate, onConfig, persist = true, demo = false }) {
+export function App({ config: initialConfig, local, makeSession, connectTo, copy, setTitle, mouse, checkUpdate, installUpdate, onConfig, persist = true, moodEvery = 30_000, demo = false }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -142,6 +149,32 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
   const [update, setUpdate] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [welcome, setWelcome] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  // The pet looks happy (or worried) for a few seconds after a result; re-render when that wears off.
+  const [, setMoodTick] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setMoodTick((n) => n + 1), 8100);
+    return () => clearTimeout(t);
+  }, [entries]);
+  // A sibling's mood Tug reacts to (family.js's readMoods, every `moodEvery` ms): one line until esc.
+  const [reaction, setReaction] = useState(null);
+  const reactionRef = useRef(null);
+  reactionRef.current = reaction;
+  const seenMoods = useRef(new Set());
+  useEffect(() => {
+    if (config.familyMoods === false || !moodEvery) return setReaction(null);
+    const look = () => {
+      const r = reactionTo(readMoods('mooring'), seenMoods.current);
+      if (!r) return;
+      seenMoods.current.add(r.key);
+      setReaction(r);
+    };
+    look();
+    const t = setInterval(look, moodEvery);
+    return () => clearInterval(t);
+  }, [config.familyMoods, moodEvery]);
   // A word in the bottom line for a moment ("Copied 3 lines"), where it moves nothing on screen.
   const [flash, setFlash] = useState(null);
   const nothingToCopy = () => setFlash({ text: 'Drag over text to copy it · q quits' });
@@ -300,6 +333,11 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
           const done = items.filter((i) => i.status === 'done').length;
           const bad = items.filter((i) => i.status === 'failed').length;
           if (done || bad) note(`Transfers finished: ${done} done${bad ? `, ${bad} failed` : ''}`, bad ? 'error' : 'ok');
+          const sent = items.filter((i) => i.kind === 'upload' && i.status === 'done' && !seenDone.current.has(`u${i.id}`));
+          for (const i of sent) seenDone.current.add(`u${i.id}`);
+          if (sent.length && configRef.current.familyMoods !== false) {
+            logActivity('mooring', { text: `uploaded ${sent.length === 1 ? sent[0].name : `${sent.length} items`} to ${connRef.current.host?.name ?? 'a host'}`, kind: 'change', project: panesRef.current.local.dir });
+          }
         }
         wasBusy.current = open;
       },
@@ -319,7 +357,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     if (was) note(`Disconnected from ${was.name}`);
   };
 
-  const task = async (title, start, { label: what = 'Working' } = {}) => {
+  const task = async (title, start, { label: what = 'Working', activity, kind = 'change' } = {}) => {
     if (busyRef.current) {
       note(`Wait for "${busyRef.current.label}" to finish (esc cancels it).`, 'error');
       return { ok: false, error: new Error('busy') };
@@ -329,12 +367,15 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     busyRef.current = b;
     setBusy(b);
     const id = addEntry({ title, status: 'running' });
+    setWelcome(false);
     try {
       const result = await start(controller.signal);
       const { stdout = '', stderr = '' } = result ?? {};
       const out = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
       lastOutput.current = { title, text: out || '(no output)' };
       updateEntry(id, { status: 'ok', lines: out ? out.split('\n') : ['Done'] });
+      // What changed something goes in the family's activity log: what, never a command's text.
+      if (activity && configRef.current.familyMoods !== false) logActivity('mooring', { text: activity, kind, project: panesRef.current.local.dir });
       return { ok: true, out, result };
     } catch (error) {
       errorCount.current++;
@@ -407,6 +448,44 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     prefillKey.current = keySeq.current;
   };
 
+  // $ <command>: runs it on the server in the folder the right pane shows, its output in Console as it
+  // arrives. `cd` moves that pane instead, as a command run alone could not. One at a time.
+  const remoteRun = useRef(null);
+  const runRemote = async (command) => {
+    const session = sessionRef.current;
+    if (!session) return note('Not connected: /connect <host>', 'error') ?? false;
+    if (!command) return note('Type a command after $, e.g. $ ls -l', 'error') ?? false;
+    if (remoteRun.current) return note('A command is running on the server: x in Console cancels it.', 'error') ?? false;
+    const cd = command.match(/^cd(?:\s+(.*))?$/);
+    if (cd) return a.cd(ctx, 'remote', cd[1]?.trim() || '~');
+    const dir = panesRef.current.remote.dir;
+    const id = nextId.current++;
+    const controller = new AbortController();
+    remoteRun.current = { id, abort: () => controller.abort() };
+    const patch = (p) => setHistory((list) => list.map((h) => (h.id === id ? { ...h, ...p } : h)));
+    setHistory((list) => [...list.slice(-49), { id, host: connRef.current.host.name, dir, command, status: 'running', out: '', err: '', code: null }]);
+    setWelcome(false);
+    setView('console');
+    let out = '';
+    try {
+      const r = await session.exec(`cd ${shellQuote(dir)} && ${command}`, {
+        signal: controller.signal,
+        onData: (d) => {
+          out = (out + d).slice(-200_000);
+          patch({ out });
+        },
+      });
+      patch({ status: r.code === 0 ? 'done' : 'failed', code: r.code, out: r.stdout.slice(-200_000), err: r.stderr });
+      return r.code === 0;
+    } catch (e) {
+      patch({ status: e.cancelled ? 'cancelled' : 'failed', err: e.cancelled ? '' : e.message, code: null });
+      if (!e.cancelled) errorCount.current++;
+      return false;
+    } finally {
+      remoteRun.current = null;
+    }
+  };
+
   const ctxRef = useRef(null);
   if (!ctxRef.current) ctxRef.current = { get config() { return configRef.current; }, get panes() { return panesRef.current; }, get conn() { return connRef.current; }, get session() { return sessionRef.current; }, mouseHandlers: [] };
   const ctx = ctxRef.current;
@@ -421,6 +500,9 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     prefill,
     connect,
     disconnect,
+    runRemote,
+    cancelRemote: () => (remoteRun.current ? remoteRun.current.abort() : note('Nothing is running on the server.')),
+    clearConsole: () => setHistory((list) => list.filter((h) => h.status === 'running')),
     loadPane,
     side: () => sideRef.current,
     setSide,
@@ -500,6 +582,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     try {
       let r;
       if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1).trim());
+      else if (text.startsWith('$')) r = await runRemote(text.slice(1).trim());
       else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
         const cmd = findCommand(name, customRef.current.commands);
@@ -569,6 +652,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     (async () => {
       await loadPane('local', local.dir);
       if (!alive.current) return;
+      setLoaded(true);
       if (custom.problems.length) note(`Your settings file has ${plural(custom.problems.length, 'problem')}:\n${custom.problems.join('\n')}`, 'error');
       if (connectTo) {
         const host = typeof connectTo === 'string' ? (configRef.current.hosts ?? []).find((h) => h.name === connectTo) : connectTo;
@@ -698,7 +782,11 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const globalKeys = (input, key) => {
     if (key.escape) {
       if (busyRef.current) busyRef.current.abort();
-      else setEntries((list) => list.map((e) => ({ ...e, shown: false })));
+      else if (reactionRef.current) setReaction(null);
+      else {
+        setEntries((list) => list.map((e) => ({ ...e, shown: false })));
+        setWelcome(false);
+      }
       return;
     }
     if (key.ctrl && input === 'r') return readAll();
@@ -707,6 +795,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     if (pasted) return prefill(pasted);
     if (input === '/' || input === ':') return prefill('/');
     if (input === '!') return prefill('!');
+    if (input === '$') return prefill('$ ');
     if (input === '?') return ctx.showHelp();
     if (input === ',') return a.settings(ctx);
     if (input === 'q') return exit();
@@ -796,12 +885,23 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
-  const mainH = Math.max(6, H - 2 - act.length - (busy ? 1 : 0) - bottom - 1);
+  const trouble = troubles({ transfers, conn });
+  const moving = transfers.filter((t) => t.status === 'running').length;
+  const working = moving > 0 || history.some((h) => h.status === 'running');
+  const mood = moodFor({ loaded, connected: Boolean(conn.session), busy, running: working, lastEntry: entries.at(-1), trouble });
+  // How Tug feels, for the siblings (family.js's writeMood), whenever that changes.
+  const said = familyMood({ mood, trouble, lastEntry: entries.at(-1), busy, host: conn.host?.name });
+  useEffect(() => {
+    if (config.familyMoods !== false) writeMood('mooring', said);
+  }, [said.mood, said.reason, config.familyMoods]);
+  const showWelcome = welcome && H >= 28;
+  const reacting = reaction ? 1 : 0;
+  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
     mainTop: 2,
     mainH,
-    promptTop: 2 + mainH + act.length + (busy ? 1 : 0),
+    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
     tabs: tabLabels(entries, transfers),
   };
@@ -825,6 +925,8 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} lines={overlay.lines} onKey={overlay.onKey} ctx={ctx} width={W} height={mainH} active={overlayActive} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'console') {
+    main = <ConsoleView history={history} conn={conn} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'hosts') {
     main = <HostsView hosts={config.hosts ?? []} conn={conn} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'transfers') {
@@ -848,11 +950,23 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header conn={conn} transfers={transfers} width={W} loading={loading} demo={demo} />
+      <Header conn={conn} transfers={transfers} width={W} loading={loading} demo={demo} mood={mood} />
       <Tabs view={view} entries={entries} transfers={transfers} width={W} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
+      {showWelcome ? <Welcome mood={mood} info={{ loaded, connected: Boolean(conn.session), host: conn.host?.name, trouble, running: moving, hosts: (config.hosts ?? []).length }} width={W} update={update} /> : null}
+      {reaction ? (
+        <Row
+          pointer={false}
+          width={W}
+          segments={[
+            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
+            { text: reaction.text },
+            { text: '  esc', color: theme.dim },
+          ]}
+        />
+      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}

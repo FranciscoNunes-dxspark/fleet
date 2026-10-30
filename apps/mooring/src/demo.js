@@ -97,12 +97,16 @@ export function demoSession({ host = { name: 'demo', host: 'demo.example.com', u
     },
     async exec(line) {
       say('exec', line);
+      // The console runs everything as `cd '<folder>' && <command>`.
+      let cwd = '/home/demo';
+      const lead = line.match(/^cd '((?:[^']|'\\'')*)' && ([\s\S]*)$/);
+      if (lead) [cwd, line] = [lead[1].replaceAll("'\\''", "'"), lead[2]];
       const [cmd, ...rest] = line.trim().split(/\s+/);
       if (cmd === 'uptime') return { code: 0, stdout: ' 09:00:00 up 41 days,  3:12,  1 user,  load average: 0.08, 0.03, 0.01\n', stderr: '' };
       if (cmd === 'echo') return { code: 0, stdout: `${rest.join(' ')}\n`, stderr: '' };
-      if (cmd === 'pwd') return { code: 0, stdout: '/home/demo\n', stderr: '' };
+      if (cmd === 'pwd') return { code: 0, stdout: `${cwd}\n`, stderr: '' };
       if (cmd === 'ls') {
-        const dir = rest.find((a) => !a.startsWith('-')) ?? '/home/demo';
+        const dir = rest.find((a) => !a.startsWith('-')) ?? cwd;
         const names = tree.has(dir) ? childrenOf(dir).map(baseName) : null;
         return names ? { code: 0, stdout: `${names.join('\n')}\n`, stderr: '' } : { code: 2, stdout: '', stderr: `ls: cannot access '${dir}': No such file or directory\n` };
       }

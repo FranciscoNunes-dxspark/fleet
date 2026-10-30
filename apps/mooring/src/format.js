@@ -37,3 +37,14 @@ export function dateText(ms, now = Date.now()) {
 
 /** A percentage 0–100 from bytes over total; null when the total isn't known. */
 export const percentOf = (bytes, total) => (total > 0 ? Math.min(100, Math.floor((bytes / total) * 100)) : total === 0 ? 100 : null);
+
+// What a program on a server can put in its output besides text: colours and cursor moves (CSI), titles
+// and links (OSC, up to BEL or ESC \), and the two-character escapes.
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+const ESCAPES = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]|${ESC}\\][^${BEL}${ESC}]*(?:${BEL}|${ESC}\\\\)?|${ESC}[@-Z\\\\-_]`, 'g');
+
+/** Output made safe to draw: escape sequences gone, then tabs as spaces and other control characters dropped (a \r from CRLF too). */
+export function plainText(text) {
+  return String(text).replace(ESCAPES, '').replace(/\t/g, '    ').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+}
