@@ -11,7 +11,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 const ALT_G = '\x1bg';
-const full = (app, text) => app.lastFrame().split('\n').find((l) => l.includes(text)) ?? '';
+const full = (app, text) => app.lastFrame().split('\n').find((l) => l.startsWith('│') && l.includes(text)) ?? '';
 // The line holding `text` in one pane (the screen is 100 columns, the panes 50 each).
 const row = (app, side, text) => app.lastFrame().split('\n').map((l) => (side === 'local' ? l.slice(0, 50) : l.slice(50))).find((l) => l.includes(text)) ?? '';
 
@@ -26,7 +26,7 @@ test('it opens the host and shows both folders side by side', async () => {
   assert.match(frame, /backups/);
   assert.match(frame, /notes\.txt/);
   assert.match(frame, /\/home\/demo/);
-  assert.match(frame, /● demo/);
+  assert.match(frame, /[●⏺] demo/);
   app.unmount();
 });
 

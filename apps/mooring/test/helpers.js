@@ -31,6 +31,9 @@ export const fakeSession = (root, env) => ({
 });
 
 let lastApp = null;
+// Every app started, unmounted by the cleanup tempHome returns: one a failing test left mounted would keep
+// its timers running, and the test process would never exit.
+const started = [];
 
 /** A home folder of its own, so the settings a test saves never reach the real one; returns the cleanup. */
 export function tempHome() {
@@ -38,7 +41,10 @@ export function tempHome() {
   process.env.MOORING_HOME = dir;
   // The family's moods and activity too (family.js), never the real ~/.family.
   process.env.FAMILY_HOME = join(dir, 'family');
-  return () => rmSync(dir, { recursive: true, force: true });
+  return () => {
+    for (const app of started.splice(0)) app.unmount();
+    rmSync(dir, { recursive: true, force: true });
+  };
 }
 
 /**
@@ -61,6 +67,7 @@ export function start(props = {}) {
       ...props,
     }),
   );
+  started.push(lastApp);
   return Object.assign(lastApp, { host, local, copied });
 }
 
