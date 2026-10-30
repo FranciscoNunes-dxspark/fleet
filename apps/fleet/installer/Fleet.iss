@@ -31,6 +31,7 @@ SetupIconFile=..\assets\logo.ico
 UninstallDisplayIcon={app}\fleet.ico
 UninstallDisplayName=Fleet
 WizardStyle=modern
+ChangesAssociations=yes
 OutputDir=..\dist
 OutputBaseFilename=fleet-windows-x64-setup
 
@@ -39,6 +40,20 @@ FinishedLabel=Fleet is installed. Open it from the Start menu: Splice, Trawl, So
 
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
+
+Name: fileassoc; Description: "Offer Fleet in ""Open with"" for .sql files (Trawl) and .http files (Hail)"
+
+[Registry]
+; Under "Open with", never the default: Windows keeps that the person's to choose. Fleet opens the file
+; in the app for it (fleet <file>), in the terminal's Fleet profile.
+Root: HKCU; Subkey: "Software\Classes\Fleet.sql"; ValueType: string; ValueData: "SQL file (Trawl)"; Flags: uninsdeletekey; Tasks: fileassoc
+Root: HKCU; Subkey: "Software\Classes\Fleet.sql\DefaultIcon"; ValueType: string; ValueData: "{app}\fleet.ico"; Tasks: fileassoc
+Root: HKCU; Subkey: "Software\Classes\Fleet.sql\shell\open\command"; ValueType: string; ValueData: """{app}\terminal\WindowsTerminal.exe"" -p Fleet ""{app}\fleet.exe"" ""%1"""; Tasks: fileassoc
+Root: HKCU; Subkey: "Software\Classes\.sql\OpenWithProgids"; ValueType: string; ValueName: "Fleet.sql"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc
+Root: HKCU; Subkey: "Software\Classes\Fleet.http"; ValueType: string; ValueData: "HTTP file (Hail)"; Flags: uninsdeletekey; Tasks: fileassoc
+Root: HKCU; Subkey: "Software\Classes\Fleet.http\DefaultIcon"; ValueType: string; ValueData: "{app}\fleet.ico"; Tasks: fileassoc
+Root: HKCU; Subkey: "Software\Classes\Fleet.http\shell\open\command"; ValueType: string; ValueData: """{app}\terminal\WindowsTerminal.exe"" -p Fleet ""{app}\fleet.exe"" ""%1"""; Tasks: fileassoc
+Root: HKCU; Subkey: "Software\Classes\.http\OpenWithProgids"; ValueType: string; ValueName: "Fleet.http"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassoc
 
 [Files]
 Source: "..\dist\fleet-windows-x64.exe"; DestDir: "{app}"; DestName: "fleet.exe"; Flags: ignoreversion

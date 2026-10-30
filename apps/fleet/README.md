@@ -62,7 +62,11 @@ fleet               # opens the app you used last (Splice the first time)
 fleet trawl         # opens Trawl
 fleet keel --demo   # opens Keel, started with --demo
 fleet hail api.http # anything after the app's name is that app's own arguments
+fleet query.sql     # a file opens in the app for it: .sql in Trawl, .http in Hail
 ```
+
+The Windows setup can add Fleet to Explorer's "Open with" for `.sql` and `.http` files (a task,
+ticked by default); it runs `fleet <file>` in Fleet's terminal.
 
 An app starts the first time you switch to it, in the folder you started Fleet in, and keeps running
 when you switch away. Quitting one (its own `q`) leaves its space saying so: `↵` starts

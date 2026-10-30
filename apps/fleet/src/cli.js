@@ -1,13 +1,15 @@
 // The host's command line: `fleet [app] [args…]`. First, so the kit knows this process is Fleet.
 import './app.js';
 import { COMPILED, VERSION } from './app.js';
+import { existsSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { checkForUpdate, checksDisabled, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { keepVtInput } from '@fleet/kit/mouse.js';
 import { plainOutput } from '@fleet/kit/glyphs.js';
 import { Host, LEAVE } from './host.js';
 import { DEFAULT_PREFIX, prefixByte } from './keys.js';
 import { appSpawner } from './launch.js';
-import { SPACES, spaceNamed } from './spaces.js';
+import { SPACES, spaceForFile, spaceNamed } from './spaces.js';
 import { loadState, saveState } from './state.js';
 
 const args = process.argv.slice(2);
@@ -23,7 +25,8 @@ if (args[0] === '-h' || args[0] === '--help') {
 The family's apps in one terminal: ${SPACES.map((s) => s.title).join(', ')}.
 Each runs as it does by itself, one on screen at a time; the bar at the bottom
 shows them all. fleet <app> opens that one (and starts it with args…);
-fleet alone opens the one you used last.
+fleet alone opens the one you used last. fleet <file> opens a file in the app
+for it: .sql in Trawl, .http in Hail.
 
   ctrl+b 1-8 or s t o b h k w l switch (o is Sonar)
   ctrl+b ] / n / p            next, previous
@@ -47,7 +50,13 @@ reads every app's world through it, read-only (claude mcp add fleet -- fleet mcp
   process.exit(0);
 }
 
-const named = args[0] && !args[0].startsWith('-') ? spaceNamed(args[0]) : undefined;
+let named = args[0] && !args[0].startsWith('-') ? spaceNamed(args[0]) : undefined;
+// fleet <file>: the app that opens that kind of file, given its path (what Explorer's "Open with" runs).
+let appArgs = args.slice(1);
+if (args[0] && !args[0].startsWith('-') && !named && existsSync(args[0]) && statSync(args[0]).isFile()) {
+  named = spaceForFile(args[0]);
+  appArgs = [resolve(args[0]), ...args.slice(1)];
+}
 if (args[0] && !args[0].startsWith('-') && !named) {
   console.error(`fleet: there's no app called ${args[0]}; the apps are ${SPACES.map((s) => s.id).join(', ')}.`);
   process.exit(1);
@@ -77,7 +86,7 @@ const host = new Host({
   input: process.stdin,
   output: process.stdout,
   spawn: appSpawner({ compiled: COMPILED, depth }),
-  args: named ? { [named.id]: args.slice(1) } : {},
+  args: named ? { [named.id]: appArgs } : {},
   truecolor: depth >= 24,
   // The bell when a tab gets a badge: FLEET_NO_BELL=1, or "bell": false in host.json, keeps it quiet.
   bell: process.env.FLEET_NO_BELL !== '1' && state.bell !== false,

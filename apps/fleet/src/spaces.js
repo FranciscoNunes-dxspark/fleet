@@ -23,6 +23,14 @@ export function spaceNamed(name) {
   return SPACES.find((s) => s.id === n || s.letter === n);
 }
 
+// The app that opens a file, by its extension: what `fleet query.sql` and the file association use.
+const FILE_APPS = { '.sql': 'trawl', '.http': 'hail' };
+
+export function spaceForFile(file) {
+  const dot = String(file ?? '').lastIndexOf('.');
+  return dot < 0 ? undefined : spaceNamed(FILE_APPS[file.slice(dot).toLowerCase()]);
+}
+
 // Each app's entry point in the checkout, relative to apps/: what its own `npm start` runs.
 const ENTRIES = { splice: 'splice/bin/splice.js', trawl: 'trawl/bin/trawl.js', sonar: 'sonar/bin/sonar.js', bosun: 'bosun/bin/bosun.js', hail: 'hail/bin/hail.js', keel: 'keel/bin/keel.js', wharf: 'wharf/bin/wharf.js', locker: 'locker/bin/locker.js' };
 
