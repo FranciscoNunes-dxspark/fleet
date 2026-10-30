@@ -39,7 +39,7 @@ export const hostSegments = (h, connected) => [
   { text: connected?.name === h.name ? '● ' : '  ', color: theme.accent, bold: true },
   { text: fit(h.name, 16), strong: true },
   { text: ` ${fit(hostText(h), 36)}`, color: theme.info },
-  { text: ` ${h.key ?? 'agent'}`, color: theme.dim },
+  { text: ` ${h.password ? 'password' : (h.key ?? 'agent')}`, color: theme.dim },
   ...(h.folder ? [{ text: `  ${h.folder}`, color: theme.dim }] : []),
 ];
 

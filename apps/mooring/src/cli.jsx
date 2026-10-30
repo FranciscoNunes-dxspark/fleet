@@ -68,7 +68,7 @@ const app = render(
   <App
     config={config}
     local={demo ? demoLocal() : createLocal({ dir: process.cwd() })}
-    makeSession={demo ? () => demoSession() : (host) => createSession(host)}
+    makeSession={demo ? () => demoSession() : (host, options) => createSession(host, options)}
     connectTo={demo ? 'demo' : named}
     persist={!demo}
     demo={demo}

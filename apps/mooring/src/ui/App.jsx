@@ -392,7 +392,14 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const connect = async (host) => {
     if (connRef.current.status === 'connecting') return note('Already connecting: esc cancels it.', 'error') ?? false;
     if (connRef.current.host) disconnect();
-    const session = makeSession(host);
+    // A host that signs in with a password asks for it each time, masked; it goes to the session and nowhere else.
+    let password;
+    if (host.password) {
+      password = await ctx.askSecret({ title: `Password for ${hostText(host)}`, detail: 'asked every time, never saved · ↵ connect · esc cancel' });
+      if (!password) return note(`Not connecting to ${host.name}: no password given.`) ?? false;
+    }
+    const session = makeSession(host, { password });
+    password = undefined;
     setConn({ host, session: null, status: 'connecting', problem: null });
     const r = await task(
       `Connecting to ${host.name}`,
@@ -495,6 +502,8 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     task,
     note,
     confirm,
+    // A masked field in the confirm's place: resolves the text (or null on esc).
+    askSecret: async (req) => (await confirm({ ...req, secret: true, options: [] }))?.value ?? null,
     // A plain field in the confirm's place: resolves the text (or null on esc).
     askText: async (req) => (await confirm({ ...req, secret: true, plain: true, options: [] }))?.value ?? null,
     prefill,

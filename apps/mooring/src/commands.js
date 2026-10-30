@@ -6,7 +6,7 @@ export const COMMANDS = [
   { name: 'connect', args: '[host]', desc: 'Open a saved host: its files on the right (a list to pick from if none is named)', complete: 'hosts', run: (ctx, s) => a.connect(ctx, s) },
   { name: 'ssh', args: '<command>', desc: 'Run a command on the server (as $ does), in the folder the right pane shows; the output is in Console', run: (ctx, s) => ctx.runRemote(s) },
   { name: 'disconnect', desc: 'Close the connection (transfers still running are cancelled)', run: (ctx) => a.disconnect(ctx) },
-  { name: 'add', args: '<name> <user@host[:port]> [key=<file>] [folder=<remote folder>]', desc: 'Save a host, or change the one of that name. It signs in with the key or your ssh agent: no password is kept or asked for', run: (ctx, s) => a.addHost(ctx, s) },
+  { name: 'add', args: '<name> <user@host[:port]> [key=<file>] [folder=<remote folder>] [password]', desc: 'Save a host, or change the one of that name. It signs in with the key or your ssh agent; with `password` it asks for one every time it connects (never saved)', run: (ctx, s) => a.addHost(ctx, s) },
   { name: 'forget', args: '<host>', desc: 'Take a saved host out of the list (asks first)', complete: 'hosts', run: (ctx, s) => a.forgetHost(ctx, s) },
   { name: 'cd', args: '<folder>', desc: "Go to a folder on the server: a path, .. or ~", run: (ctx, s) => a.cd(ctx, 'remote', s) },
   { name: 'lcd', args: '<folder>', desc: 'Go to a folder on this machine: a path, .. or ~', run: (ctx, s) => a.cd(ctx, 'local', s) },
