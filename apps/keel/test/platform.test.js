@@ -46,6 +46,14 @@ test('platform totals: 404 means the key, 503 and 400 carry the check message, n
   assert.equal(readTotals(400, env({ status: 'down', data: null, checks: [{ name: 'season', status: 'down', message: 'Unknown season.' }] })).error, 'Unknown season.');
   assert.match(readTotals(502, null).error, /HTTP 502/);
   assert.match(readTotals(200, env({ kind: 'health', data: null })).error, /"health" response/);
+  // Each way a 200 can fail to be totals says which.
+  assert.match(readTotals(200, '<!doctype html><html></html>').error, /HTTP 200\): it sent an HTML page/);
+  assert.match(readTotals(200, '').error, /an empty body/);
+  assert.match(readTotals(200, { totals: [] }).error, /without a "schema" field \(expected "platform\/v1"\)/);
+  assert.match(readTotals(200, env({ schema: 'acme/v1' })).error, /schema "acme\/v1" instead of "platform\/v1"/);
+  assert.match(readTotals(200, env({ status: 'healthy' })).error, /status "healthy"/);
+  // A status enum serialized by name still reads.
+  assert.equal(readTotals(200, env({ status: 'Ok' })).snapshot.status, 'ok');
 });
 
 test('platform health verdicts: envelope down at once, no envelope after 3 polls, degraded flagged', () => {

@@ -18,8 +18,20 @@ const STATUSES = ['ok', 'degraded', 'down'];
 /** The envelope, or null when the body isn't one (an App Service error page, another app). */
 export function asEnvelope(body) {
   if (!body || typeof body !== 'object' || body.schema !== SCHEMA) return null;
-  if (!STATUSES.includes(body.status)) return null;
-  return body;
+  // A site serializing its status enum by name ("Ok", "Degraded") still counts.
+  const status = typeof body.status === 'string' ? body.status.toLowerCase() : body.status;
+  if (!STATUSES.includes(status)) return null;
+  return status === body.status ? body : { ...body, status };
+}
+
+/** Why a body isn't an envelope, in words a person can act on (the body is JSON, or the raw text when it wasn't). */
+export function envelopeProblem(body) {
+  if (body == null || body === '') return 'an empty body';
+  if (typeof body === 'string') return /^\s*</.test(body) ? 'an HTML page, not JSON' : 'text that is not JSON';
+  if (typeof body !== 'object' || Array.isArray(body)) return 'JSON that is not an object';
+  if (body.schema === undefined) return `JSON without a "schema" field (expected "${SCHEMA}")`;
+  if (body.schema !== SCHEMA) return `schema "${String(body.schema).slice(0, 60)}" instead of "${SCHEMA}"`;
+  return `status "${String(body.status).slice(0, 30)}", which is not ok, degraded or down`;
 }
 
 /** What a health check keeps from the envelope (never the raw body). */
@@ -46,12 +58,12 @@ const int = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v
 
 /**
  * A /totals answer turned into a snapshot to store, or an error to show.
- * status: the HTTP status; body: parsed JSON or null.
+ * status: the HTTP status; body: parsed JSON, or the raw text when it wasn't JSON.
  */
 export function readTotals(status, body, at = new Date().toISOString()) {
   if (status === 404) return { error: 'The site answered 404 to /totals: check the totals key, or that the site has one configured.' };
   const env = asEnvelope(body);
-  if (!env) return { error: `The site did not answer with platform totals (HTTP ${status}).` };
+  if (!env) return { error: `The site did not answer with platform totals (HTTP ${status}): it sent ${envelopeProblem(body)}.` };
   if (env.kind !== 'totals') return { error: `The site answered a "${env.kind}" response instead of totals.` };
   if (env.status === 'down' || !env.data) {
     const info = platformInfo(env);
