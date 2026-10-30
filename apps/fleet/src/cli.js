@@ -28,7 +28,7 @@ shows them all. fleet <app> opens that one (and starts it with args…);
 fleet alone opens the one you used last. fleet <file> opens a file in the app
 for it: .sql in Trawl, .http in Hail.
 
-  ctrl+b 1-8 or s t o b h k w l switch (o is Sonar)
+  ctrl+b 1-9 or s t o b h k w l u switch (o is Sonar, u Mooring)
   ctrl+b ] / n / p            next, previous
   ctrl+b | / tab / x          split in two, the other pane, one again
   ctrl+b m                    move every app to another folder

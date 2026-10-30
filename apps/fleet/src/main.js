@@ -13,6 +13,7 @@ const RUN = {
   keel: () => import('../../keel/cli/cli.jsx'),
   wharf: () => import('../../wharf/src/cli.jsx'),
   locker: () => import('../../locker/src/cli.jsx'),
+  mooring: () => import('../../mooring/src/cli.jsx'),
 };
 
 if (process.argv[2] === '--run') {

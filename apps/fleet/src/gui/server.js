@@ -30,6 +30,7 @@ export const LOGOS = {
   keel: 'keel/assets/pinch.svg',
   wharf: 'wharf/assets/logo.svg',
   locker: 'locker/assets/logo.svg',
+  mooring: 'mooring/assets/logo.svg',
 };
 
 export const CLIENT_FILES = ['index.html', 'style.css', 'app.js', 'keymap.js', 'sgr.js', 'boxes.js', 'views.js'];

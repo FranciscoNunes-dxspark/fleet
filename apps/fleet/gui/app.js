@@ -450,7 +450,7 @@ function focusKeys() {
   if (!state.drawer && $('#modal').hidden && !window.getSelection()?.toString()) keys.focus({ preventScroll: true });
 }
 
-const PREFIX_HINT = '1-8 or s t o b h k w l switch · | split · tab other pane · x one app · m move · r runbooks · f follow · space commands · ? keys';
+const PREFIX_HINT = '1-9 or s t o b h k w l u switch · | split · tab other pane · x one app · m move · r runbooks · f follow · space commands · ? keys';
 
 function setPrefix(on) {
   state.prefix = on;
@@ -900,7 +900,7 @@ function openHelp() {
   const P = state.prefixName;
   const rows = [
     ['alt+1 … alt+8', 'Switch to that app'],
-    [`${P} then 1-8 or a letter`, 'Switch to that app (s t o b h k w l)'],
+    [`${P} then 1-9 or a letter`, 'Switch to that app (s t o b h k w l u)'],
     [`${P} |`, 'Two apps side by side, or one again'],
     [`${P} tab`, 'The other pane'],
     [`${P} x`, 'One app on screen'],

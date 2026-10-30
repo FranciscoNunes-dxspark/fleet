@@ -4,12 +4,12 @@
 
 The family's terminal apps in one terminal: [Splice](../splice) (git), [Trawl](../trawl) (SQL),
 [Sonar](../sonar) (Azure), [Bosun](../bosun) (a project's processes), [Hail](../hail) (HTTP),
-[Keel](../keel)'s terminal app (Azure DevOps), [Wharf](../wharf) (containers) and [Locker](../locker) (secrets and configuration). Each runs exactly as it does by itself, with its own
+[Keel](../keel)'s terminal app (Azure DevOps), [Wharf](../wharf) (containers) [Locker](../locker) (secrets and configuration) and [Mooring](../mooring) (files and commands on a server over SSH). Each runs exactly as it does by itself, with its own
 settings, sign-ins and keys; Fleet shows one at a time and switches between them with `ctrl+b`, as
 tmux does with its windows. A bar at the bottom shows them all.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Keel ○  7 Wharf ○  8 Locker ○   ctrl+b ? help
+ 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Keel ○  7 Wharf ○  8 Locker ○  9 Mooring ○   ctrl+b ? help
 ```
 
 `●` runs, `○` hasn't started yet, `✕` and a number exited with that code. The app on screen has its
@@ -24,7 +24,7 @@ moods and the family's activity log, in `~/.family` or `FAMILY_HOME`) every few 
 whose moods are turned off in its settings never gets a `!`.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Keel ○  7 Wharf ○  8 Locker ○   Bosun: api crashed
+ 1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Keel ○  7 Wharf ○  8 Locker ○  9 Mooring ○   Bosun: api crashed
 ```
 
 ## Install
@@ -41,7 +41,7 @@ Started some other way on Windows, as the bare `fleet-windows-x64.exe` opens in 
 whose one font lacks many of the apps' characters: Fleet draws lookalikes in their place there.
 
 **Elsewhere**, or for the bare executable, download `fleet` for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
-and put it on your PATH. It is one executable with all eight apps inside, so it's the only download you
+and put it on your PATH. It is one executable with all nine apps inside, so it's the only download you
 need. It checks for a new version once a day and installs it by itself; the new version starts the
 next time you open Fleet. (The apps inside don't update themselves: Fleet updates them together. `/update` in any of them asks Fleet to look for a new version now and install it.)
 
@@ -85,9 +85,9 @@ say `ctrl+b`; read yours there.
 
 | Keys | What they do |
 | --- | --- |
-| `alt+1`–`alt+8` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
+| `alt+1`–`alt+9` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
 | `ctrl+b` `1`–`8` | Switch to that space |
-| `ctrl+b` `s` `t` `o` `b` `h` `k` `w` `l` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf, Locker |
+| `ctrl+b` `s` `t` `o` `b` `h` `k` `w` `l` `u` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Keel, Wharf, Locker, Mooring (u) |
 | `ctrl+b` `]` or `n` | The next space |
 | `ctrl+b` `p` | The previous space |
 | `ctrl+b` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |
@@ -147,7 +147,7 @@ stays on the clipboard only.
 
 A runbook is a Markdown file whose steps run in the apps: each step is a line for one app's prompt (a
 slash command, or a `family:v1:` line an app copied), in a fenced code block named after the app:
-` ```trawl `, ` ```sonar `, ` ```hail `, ` ```bosun `, ` ```splice `, ` ```wharf `, ` ```keel ` or ` ```locker `. Each
+` ```trawl `, ` ```sonar `, ` ```hail `, ` ```bosun `, ` ```splice `, ` ```wharf `, ` ```keel `, ` ```locker ` or ` ```mooring `. Each
 line in the block is a step of its own. The text before a block explains its first step; the first
 `#` heading is the runbook's title (else its file name). Other code blocks are just text.
 
@@ -237,7 +237,7 @@ Around the apps, Fleet's tools are the window's own:
   start it again.
 - What an app copies (OSC 52) goes to the clipboard; its notifications become the system's.
 
-Fleet's keys are the terminal's: `alt+1`–`alt+8`, and `ctrl+b` then the same keys as in the
+Fleet's keys are the terminal's: `alt+1`–`alt+9`, and `ctrl+b` then the same keys as in the
 [table above](#keys) (`space` opens Commands there). An app with the mouse off leaves it to the
 window, where dragging selects text (`ctrl+shift+c` copies it).
 
