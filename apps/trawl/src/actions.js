@@ -35,7 +35,7 @@ import { LANGUAGE_NAMES, LANGUAGES, languageOf, scaffold } from './scaffold.js';
 import { UNDO_ROWS, reverseScript, snapshotOf, snapshotRows, snapshotSummary, undoPlan, withSnapshot } from './undo.js';
 import { configDir, loadUndo, saveUndo } from './config.js';
 import { hostname } from 'node:os';
-import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, absoluteOnServer, backupPath, backupRefusal, backupSql, dumpCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, toolsFor } from './backup.js';
+import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, toolsFor } from './backup.js';
 import { relTime } from '@fleet/kit/text.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, familyDir, notMine, pathArg as familyPath, projectAt, projectWiring, quoteArg, readActivity, takeLine } from '@fleet/kit/family.js';
 import { timelineItems, wiringText } from './timeline.js';
@@ -2999,7 +2999,7 @@ const fileSize = (p) => {
 };
 
 async function runTool(ctx, tool, kind, command, env, { title, label, cwd }) {
-  const tools = toolsFor(kind);
+  const from = toolsFor(kind)?.from ?? SQLPACKAGE_FROM;
   return ctx.task(
     title,
     async (signal) => {
@@ -3007,7 +3007,7 @@ async function runTool(ctx, tool, kind, command, env, { title, label, cwd }) {
         await ctx.runProgram(command, { signal, env, cwd });
       } catch (e) {
         if (e.cancelled) throw e;
-        if (notInstalled(e)) throw new Error(`${tool} isn't installed, or isn't on PATH: it comes with ${tools.from}.`);
+        if (notInstalled(e)) throw new Error(`${tool} isn't installed, or isn't on PATH: it comes with ${from}.`);
         throw new Error(`${tool}: ${firstLine(e.message)}`);
       }
       return [];
@@ -3074,6 +3074,77 @@ async function loadWithTool(ctx, { args, conn, kind }) {
   if (r.ok) {
     ctx.note(`Restored ${basename(full)} into ${target}.`, 'ok');
     ctx.logActivity?.(`${tools.load} into ${target} on ${conn.name}${replace ? ', over what was there' : ''}`, { kind: 'restore' });
+  }
+  ctx.refresh();
+  return r;
+}
+
+/** Where it stands before an export or an import of a .bacpac: { args, conn }, or null after saying why not. */
+function bacpacTarget(ctx, rest, importing) {
+  const words = [...String(rest ?? '').matchAll(/"(?:[^"\\]|\\.)*"|\S+/g)].map((m) => familyPath(m[0]));
+  const args = parseBackupArgs(words, { restore: importing, command: importing ? 'import-bacpac' : 'export-bacpac' });
+  if (args.reason) return void ctx.note(args.reason, 'error');
+  const { conn } = ctx.session;
+  const refusal = bacpacRefusal(conn, dialectOf(ctx.session).kind, { importing });
+  if (refusal) return void ctx.note(refusal, 'error');
+  return { args, conn };
+}
+
+/** /export-bacpac [file]: the database you're in as a .bacpac (schema and data), through SqlPackage; Azure SQL Database too. */
+export async function exportBacpac(ctx, rest = '') {
+  if (!(await liveSession(ctx))) return;
+  const t = bacpacTarget(ctx, rest, false);
+  if (!t) return;
+  const { conn } = t;
+  const database = ctx.session.database;
+  const full = t.args.file ? resolve(pathArg(t.args.file)) : join(configDir(), 'backups', `${fileSafe(conn.name)}-${fileSafe(database)}-${stamp()}.bacpac`);
+  const password = await toolPassword(ctx, conn);
+  if (password === undefined) return;
+  try {
+    mkdirSync(dirname(full), { recursive: true });
+  } catch (e) {
+    return ctx.note(`Couldn't make ${dirname(full)}: ${firstLine(e.message)}`, 'error');
+  }
+  const { command, env } = sqlpackageCommand(conn, { database, file: full, password });
+  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Export ${database} on ${conn.name} to a .bacpac`, label: `Exporting ${database} with SqlPackage`, cwd: dirname(full) });
+  if (!r.ok) {
+    // Half an export is no bacpac.
+    try {
+      unlinkSync(full);
+    } catch {}
+    return r;
+  }
+  const size = fileSize(full);
+  ctx.note(`Exported ${database} to ${full}${size ? ` (${size})` : ''}.\n/import-bacpac ${typedPath(full)} makes it a database (--as <database>).`, 'ok');
+  ctx.logActivity?.(`sqlpackage export ${database} on ${conn.name}`, { kind: 'backup' });
+  return r;
+}
+
+/** /import-bacpac <file> [--as <database>]: a .bacpac into a new database (SqlPackage never imports over one that's there). */
+export async function importBacpac(ctx, rest = '') {
+  if (!(await liveSession(ctx))) return;
+  const t = bacpacTarget(ctx, rest, true);
+  if (!t) return;
+  const { args, conn } = t;
+  const full = resolve(pathArg(args.file));
+  try {
+    statSync(full);
+  } catch {
+    return ctx.note(`No file ${full}.`, 'error');
+  }
+  const target = args.as ?? fileSafe(basename(full).replace(/\.bacpac$/i, ''));
+  if ((ctx.schema?.databases ?? []).some((x) => x.toLowerCase() === target.toLowerCase())) {
+    return ctx.note(`${target} is already on ${conn.name}, and an import only makes a new database: --as another name, or drop ${target} first.`, 'error');
+  }
+  const ok = await ctx.confirm({ title: `Make the database ${target} on ${conn.name} from ${basename(full)}?`, detail: `With SqlPackage, from ${full}.`, options: YES_NO('Yes, import it') });
+  if (!ok) return;
+  const password = await toolPassword(ctx, conn);
+  if (password === undefined) return;
+  const { command, env } = sqlpackageCommand(conn, { importing: true, database: target, file: full, password });
+  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Import ${basename(full)} as ${target} on ${conn.name}`, label: `Importing ${target} with SqlPackage`, cwd: dirname(full) });
+  if (r.ok) {
+    ctx.note(`Imported ${basename(full)} as ${target}. /use ${target} to open it.`, 'ok');
+    ctx.logActivity?.(`sqlpackage import ${target} on ${conn.name}`, { kind: 'restore' });
   }
   ctx.refresh();
   return r;

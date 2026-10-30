@@ -146,18 +146,60 @@ export function onThisMachine(conn, machine, hostname) {
   return Boolean(me) && (host === me || host.split('.')[0] === me || String(machine ?? '').toLowerCase() === me);
 }
 
-/** /backup's and /restore's arguments: { file, as } or { reason }. */
-export function parseBackupArgs(words, { restore = false } = {}) {
+/** /backup's and /restore's arguments (and /export's and /import's, by `command`): { file, as } or { reason }. */
+export function parseBackupArgs(words, { restore = false, command = restore ? 'restore' : 'backup' } = {}) {
   const out = { file: null, as: null };
+  const usage = restore ? `/${command} <file> [--as <database>]` : `/${command} [file]`;
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
     if (restore && w === '--as') {
       out.as = words[++i] ?? null;
       if (!out.as) return { reason: '--as names the database to restore into.' };
-    } else if (w.startsWith('--')) return { reason: `${restore ? '/restore <file> [--as <database>]' : '/backup [file]'} doesn't take ${w}.` };
+    } else if (w.startsWith('--')) return { reason: `${usage} doesn't take ${w}.` };
     else if (out.file) return { reason: `One file: ${out.file}, then ${w}? Put a path with spaces in quotes.` };
     else out.file = w;
   }
-  if (restore && !out.file) return { reason: 'Which backup? /restore <file> [--as <database>]' };
+  if (restore && !out.file) return { reason: `Which ${command === 'import-bacpac' ? '.bacpac' : 'backup'}? ${usage}` };
   return out;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// .bacpac (/export-bacpac and /import-bacpac): schema and data in one file, through SqlPackage on this machine. It
+// works on Azure SQL Database too, which has no BACKUP to a file.
+
+/** Why /export-bacpac or /import-bacpac won't run on `conn`, or null. An export only reads, so production is fine; an import makes a database. */
+export function bacpacRefusal(conn, kind, { importing = false } = {}) {
+  if (kind !== 'sqlserver') return `.bacpac is SQL Server's: ${kind === 'postgres' ? '/backup (pg_dump)' : '/backup (mysqldump)'} is ${kind === 'postgres' ? "PostgreSQL's" : "MySQL's"} copy to a file.`;
+  if (conn.ssh) return `${conn.name} goes through an SSH tunnel, which SqlPackage can't use: run it on ${conn.ssh} instead.`;
+  if (importing && conn.prod) return `${conn.name} is production: /import-bacpac only works on a connection that is neither production nor read-only, such as a dev server.`;
+  if (importing && isReadOnly(conn)) return `${conn.name} is read-only: /import-bacpac only works on a connection that is neither production nor read-only, such as a dev server.`;
+  return null;
+}
+
+export const SQLPACKAGE_FROM = 'SqlPackage (https://aka.ms/sqlpackage, or `dotnet tool install -g microsoft.sqlpackage`)';
+
+/**
+ * SqlPackage's command line: { command, env }. `side` is Source for an export, Target for an import.
+ * An Entra login (azure-cli) goes through the connection string's "Active Directory Default", which
+ * uses the az sign-in: no secret at all. SqlPackage has no environment variable or stdin for a SQL
+ * login's password, so that one is on the command line (visible to this machine's other users).
+ */
+export function sqlpackageCommand(conn, { importing = false, database, file, password }, platform = process.platform) {
+  const q = (s) => shellArg(s, platform);
+  const side = importing ? 'Target' : 'Source';
+  const trust = conn.trustCert ? ['True'] : [];
+  const encrypt = String(conn.encrypt ?? true) === 'false' ? 'False' : 'True';
+  const where =
+    conn.auth === 'azure-cli'
+      ? [`/${side}ConnectionString:${q(`Data Source=${conn.server};Initial Catalog=${database};Authentication=Active Directory Default;Encrypt=${encrypt}${trust.length ? ';TrustServerCertificate=True' : ''}`)}`]
+      : [
+          `/${side}ServerName:${q(conn.server)}`,
+          `/${side}DatabaseName:${q(database)}`,
+          ...(conn.user ? [`/${side}User:${q(conn.auth === 'ntlm' && conn.domain ? `${conn.domain}\\${conn.user}` : conn.user)}`] : []),
+          ...(conn.user && password != null ? [`/${side}Password:${q(password)}`] : []),
+          `/${side}EncryptConnection:${encrypt}`,
+          ...(trust.length ? [`/${side}TrustServerCertificate:True`] : []),
+        ];
+  const parts = importing ? ['sqlpackage', '/Action:Import', `/SourceFile:${q(file)}`, ...where] : ['sqlpackage', '/Action:Export', ...where, `/TargetFile:${q(file)}`];
+  return { command: parts.join(' '), env: {} };
 }
