@@ -1,12 +1,12 @@
 // What the host does with the bytes typed into it, pure. Everything goes to the active app as it came
 // (keys, pastes, mouse reports) except after the prefix, ctrl+b (0x02) unless host.json's "prefix"
-// names another, whose next key is the host's: 1–7 or an app's letter switches, ] or n the next space
+// names another, whose next key is the host's: 1–8 or an app's letter switches, ] or n the next space
 // and p the one before, | or \ splits the screen in two (| again, or x, puts it back), tab or an arrow
 // left or right goes to the other pane, m asks for a folder to move every app to, r opens the
 // runbooks and f follows a request (panels.js), q quits, ? helps, the prefix again sends it to the
 // app; any other key cancels the prefix and is dropped. ctrl+] (0x1d), the prefix Fleet had first,
 // works too: it's hard to type on many keyboards (AltGr+9 on a Portuguese one), hence ctrl+b. Without
-// either, alt+1 to alt+7 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
+// either, alt+1 to alt+8 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
 import { SPACES } from './spaces.js';
 
 /** ctrl+]: the prefix Fleet had first, still taken whatever the prefix is. */

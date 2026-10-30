@@ -1,5 +1,5 @@
 // The entry point, from a checkout (bin/fleet.js) and in the compiled build. It imports nothing up
-// front: `fleet --run <app> [args]`, which is how the compiled build starts an app (it holds all seven),
+// front: `fleet --run <app> [args]`, which is how the compiled build starts an app (it holds all eight),
 // makes this process that app, and the app's cli must be the first to say which app the process is
 // (the kit's configureApp). `fleet mcp` is the MCP server for Claude Code (mcp/server.js). Anything else is the host (cli.js).
 const RUN = {
@@ -10,6 +10,7 @@ const RUN = {
   hail: () => import('../../hail/src/cli.jsx'),
   locker: () => import('../../locker/src/cli.jsx'),
   mooring: () => import('../../mooring/src/cli.jsx'),
+  bilge: () => import('../../bilge/src/cli.jsx'),
 };
 
 if (process.argv[2] === '--run') {

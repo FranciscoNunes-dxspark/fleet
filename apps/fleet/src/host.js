@@ -54,9 +54,9 @@ const ATTENTION_MS = 3000;
 
 /** The help's rows, with the prefix as it's named (`ctrl+b`, host.json's own). */
 export const helpRows = (p = DEFAULT_PREFIX) => [
-  ['alt+1-7', 'switch to that space'],
-  [`${p} 1-7`, 'switch to that space'],
-  [`${p} s t o b h l u`, 'Splice, Trawl, Sonar, Bosun, Hail, Locker, Mooring'],
+  ['alt+1-8', 'switch to that space'],
+  [`${p} 1-8`, 'switch to that space'],
+  [`${p} s t o b h l u g`, 'Splice, Trawl, Sonar, Bosun, Hail, Locker, Mooring, Bilge'],
   [`${p} ] or n`, 'next space'],
   [`${p} p`, 'previous space'],
   [`${p} ${p}`, `send ${p} to the app`],

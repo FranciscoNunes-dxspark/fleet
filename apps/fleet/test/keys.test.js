@@ -16,7 +16,9 @@ test('the prefix and a key switch, move, quit and help', () => {
   assert.deepEqual(run(`${PREFIX}2`).actions, [{ type: 'prefix', on: true }, { type: 'prefix', on: false }, { type: 'switch', id: 'trawl' }]);
   assert.deepEqual(prefixAction('o'), { type: 'switch', id: 'sonar' });
   assert.deepEqual(prefixAction('6'), { type: 'switch', id: 'locker' });
-  assert.equal(prefixAction('8'), null);
+  assert.deepEqual(prefixAction('8'), { type: 'switch', id: 'bilge' });
+  assert.deepEqual(prefixAction('g'), { type: 'switch', id: 'bilge' });
+  assert.equal(prefixAction('9'), null);
   assert.deepEqual(prefixAction('l'), { type: 'switch', id: 'locker' });
   assert.deepEqual(prefixAction('7'), { type: 'switch', id: 'mooring' });
   assert.deepEqual(prefixAction('U'), { type: 'switch', id: 'mooring' });
