@@ -295,7 +295,11 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
       return { error: timeout ? 'The totals took longer than 5 minutes; the site may be busy.' : err.message };
     }
     if (res.status >= 300 && res.status < 400) return { error: `The site redirected /totals (HTTP ${res.status}); use the address it redirects to.` };
-    return readTotals(res.status, await res.json().catch(() => null));
+    // The text first, so a body that isn't JSON (an HTML page at 200) can be described.
+    const text = await res.text().catch(() => '');
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+    return readTotals(res.status, body);
   }
 
   async function fetchTotals(m) {
