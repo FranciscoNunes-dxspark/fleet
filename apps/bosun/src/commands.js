@@ -1,6 +1,5 @@
-import { basename } from 'node:path';
 import * as a from './actions.js';
-import { siblings } from './projects.js';
+import { folderCompletions } from '@fleet/kit/folders.js';
 import { groupsOf } from './groups.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
@@ -50,12 +49,12 @@ export function findCommand(name, user = []) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, data) {
+function completions(kind, data, typed = '') {
   if (kind === 'procs') return [...(data?.procs ?? []).map((p) => p.name), 'all'];
   if (kind === 'targets') return [...(data?.procs ?? []).map((p) => p.name), ...groupsOf(data?.procs ?? []).filter((g) => !(data?.procs ?? []).some((p) => p.name === g)), 'all'];
   if (kind === 'profiles') return [...Object.keys(data?.profiles ?? {}), 'none'];
   // The projects beside this one, by name, as /move takes them.
-  if (kind === 'folders') return data?.dir ? siblings(data.dir).map((d) => basename(d)).filter((n) => n !== basename(data.dir)) : [];
+  if (kind === 'folders') return data?.dir ? folderCompletions(data.dir, typed) : [];
   return [];
 }
 
@@ -86,7 +85,7 @@ export function suggestionsFor(value, { data, user = [] } = {}) {
   const cmd = findCommand(value.slice(1, space), user);
   const rest = value.slice(space + 1);
   if (!cmd?.complete) return [];
-  const names = ranked(completions(cmd.complete, data), rest);
+  const names = ranked(completions(cmd.complete, data, rest), rest);
   if (names.length === 1 && names[0] === rest) return [];
-  return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
+  return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: !(cmd.complete === 'folders' && /[\\/]$/.test(n)) }));
 }

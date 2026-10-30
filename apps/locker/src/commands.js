@@ -1,7 +1,6 @@
 import * as a from './actions.js';
 import { label } from './azure/arm.js';
-import { basename } from 'node:path';
-import { siblings } from '@fleet/kit/folders.js';
+import { folderCompletions } from '@fleet/kit/folders.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -43,7 +42,7 @@ export function findCommand(name, user = []) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, data) {
+function completions(kind, data, typed = '') {
   if (kind === 'sites') return [...(data?.azure?.sites ?? []).map(label), 'none'];
   if (kind === 'vaults') return [...(data?.azure?.vaults ?? []).map((v) => v.name), 'none'];
   if (kind === 'subscriptions') return (data?.azure?.subscriptions ?? []).map((s) => s.name);
@@ -52,7 +51,7 @@ function completions(kind, data) {
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];
   // The folders beside this one, by name, as /move takes them.
-  if (kind === 'folders') return data?.dir ? siblings(data.dir).map((d) => basename(d)).filter((n) => n !== basename(data.dir)) : [];
+  if (kind === 'folders') return data?.dir ? folderCompletions(data.dir, typed) : [];
   return [];
 }
 
@@ -83,7 +82,7 @@ export function suggestionsFor(value, { data, user = [] } = {}) {
   const cmd = findCommand(value.slice(1, space), user);
   const rest = value.slice(space + 1);
   if (!cmd?.complete) return [];
-  const names = ranked([...new Set(completions(cmd.complete, data))], rest);
+  const names = ranked([...new Set(completions(cmd.complete, data, rest))], rest);
   if (names.length === 1 && names[0] === rest) return [];
-  return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
+  return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: !(cmd.complete === 'folders' && /[\\/]$/.test(n)) }));
 }
