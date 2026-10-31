@@ -14,9 +14,10 @@ import { parseAny, parseTerraformPlan, parseTerraformState, parseWhatIf } from '
 const SKIP = new Set(['.terraform', '.git', 'node_modules', 'bin', 'obj', 'dist']);
 export const BINARIES = ['terraform', 'tofu'];
 
-// A path, a resource group, a location: letters, digits and the punctuation paths have, no quotes, no
+// A path, a resource group, a location: letters, digits and the punctuation paths have (~ too: Windows'
+// short names, C:\Users\RUNNER~1, and between double quotes no shell expands it), no quotes, no
 // shell's own characters.
-const SAFE = /^[\w\\/:. ()@+-]+$/;
+const SAFE = /^[\w\\/:. ()@+~-]+$/;
 
 /** Whether `value` can go into a command line between double quotes. */
 export const safeArg = (value) => SAFE.test(String(value ?? '')) && !/\$|`|"/.test(String(value));

@@ -52,6 +52,7 @@ test("a what-if: az's command for a resource group or the subscription, everythi
   await assert.rejects(chart.whatIf('/srv', { file: 'main.bicep' }), /needs a resource group/);
   await assert.rejects(chart.whatIf('/srv', { file: 'main.bicep', resourceGroup: 'rg"; rm -rf ~; "' }), /won't put in a command line/);
   assert.equal(safeArg('C:\\infra\\main.bicep'), true);
+  assert.equal(safeArg('C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\chart-1.tfplan'), true);
   assert.equal(safeArg('$(whoami)'), false);
   assert.match(explain(new Error('az: command not found'), 'az').message, /az isn't installed/);
   assert.match(explain(new Error('Error: Backend initialization required, please run "terraform init"'), 'terraform').message, /needs init first/);
