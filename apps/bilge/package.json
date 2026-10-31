@@ -1,0 +1,29 @@
+{
+  "name": "bilge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "What a project depends on, in the terminal: known vulnerabilities from OSV, licences, what is out of date, and an SBOM, for npm and NuGet",
+  "type": "module",
+  "bin": {
+    "bilge": "bin/bilge.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bin/bilge.js",
+    "demo": "node bin/bilge.js --demo",
+    "test": "node --import @fleet/kit/register.js --import ./src/app.js --test --test-concurrency=3 test/*.test.js",
+    "build": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js",
+    "build:all": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js --all"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fleet/kit": "file:../../packages/kit",
+    "ink": "^6.8.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "ink-testing-library": "^4.0.0"
+  }
+}

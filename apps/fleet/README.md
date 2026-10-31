@@ -4,12 +4,12 @@
 
 The family's terminal apps in one terminal: [Splice](../splice) (git), [Trawl](../trawl) (SQL),
 [Sonar](../sonar) (Azure), [Bosun](../bosun) (a project's processes), [Hail](../hail) (HTTP),
-[Locker](../locker) (secrets and configuration) and [Mooring](../mooring) (files and commands on a server over SSH). Each runs exactly as it does by itself, with its own
+[Locker](../locker) (secrets and configuration), [Mooring](../mooring) (files and commands on a server over SSH), [Bilge](../bilge) (a project's dependencies: advisories, licences, what's behind) and [Chart](../chart) (infrastructure as code: a Terraform plan or a Bicep what-if, drift, state). Each runs exactly as it does by itself, with its own
 settings, sign-ins and keys; Fleet shows one at a time and switches between them with `ctrl+b`, as
 tmux does with its windows. A bar at the bottom shows them all.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Locker ○  7 Mooring ○   ctrl+b ? help
+ 1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   ctrl+b ? help
 ```
 
 `●` runs, `○` hasn't started yet, `✕` and a number exited with that code. The app on screen has its
@@ -24,7 +24,7 @@ moods and the family's activity log, in `~/.family` or `FAMILY_HOME`) every few 
 whose moods are turned off in its settings never gets a `!`.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Locker ○  7 Mooring ○   Bosun: api crashed
+ 1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   Bosun: api crashed
 ```
 
 ## Install
@@ -41,7 +41,7 @@ Started some other way on Windows, as the bare `fleet-windows-x64.exe` opens in 
 whose one font lacks many of the apps' characters: Fleet draws lookalikes in their place there.
 
 **Elsewhere**, or for the bare executable, download `fleet` for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
-and put it on your PATH. It is one executable with all seven apps inside, so it's the only download you
+and put it on your PATH. It is one executable with all nine apps inside, so it's the only download you
 need. It checks for a new version once a day and installs it by itself; the new version starts the
 next time you open Fleet. (The apps inside don't update themselves: Fleet updates them together. `/update` in any of them asks Fleet to look for a new version now and install it.)
 
@@ -87,7 +87,7 @@ say `ctrl+b`; read yours there.
 | --- | --- |
 | `alt+1`–`alt+9` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
 | `ctrl+b` `1`–`8` | Switch to that space |
-| `ctrl+b` `s` `t` `o` `b` `h` `l` `u` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Locker, Mooring (u) |
+| `ctrl+b` `s` `t` `o` `b` `h` `l` `u` `g` `c` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Locker, Mooring (u), Bilge (g), Chart (c) |
 | `ctrl+b` `]` or `n` | The next space |
 | `ctrl+b` `p` | The previous space |
 | `ctrl+b` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |

@@ -1,0 +1,29 @@
+{
+  "name": "chart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Infrastructure as code in the terminal: a Terraform or OpenTofu plan and a Bicep what-if as a list of changes, drift, state, and a check for a pipeline",
+  "type": "module",
+  "bin": {
+    "chart": "bin/chart.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bin/chart.js",
+    "demo": "node bin/chart.js --demo",
+    "test": "node --import @fleet/kit/register.js --import ./src/app.js --test --test-concurrency=3 test/*.test.js",
+    "build": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js",
+    "build:all": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js --all"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fleet/kit": "file:../../packages/kit",
+    "ink": "^6.8.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "ink-testing-library": "^4.0.0"
+  }
+}
