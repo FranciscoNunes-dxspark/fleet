@@ -144,4 +144,5 @@ export default {
   'Sort by': 'Ordenar por',
   'Ascending': 'Ascendente',
   'Descending': 'Descendente',
+  'All pages': 'Todas as páginas',
 };

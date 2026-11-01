@@ -649,3 +649,10 @@ button.tile-hit { cursor: pointer; }
   .page > .segmented[role="tablist"] { display: flex; flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; margin-bottom: 10px; }
   .page > .segmented[role="tablist"] button { flex: none; }
 }
+
+/* The menu's All pages: every page the stages hold, straight to it, with its stage beside it. */
+.line-menu-pop { max-height: calc(100vh - var(--chrome-h) - 24px); overflow-y: auto; overscroll-behavior: contain; }
+.line-menu-all { margin-bottom: 6px; }
+.line-menu-h { padding: 4px 10px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.line-menu-stage { margin-left: auto; font-size: 11px; color: var(--muted); }
+@media (max-width: 900px) { .line-menu-pop { max-height: calc(100vh - var(--chrome-h) - var(--bottom-h) - 16px); } }

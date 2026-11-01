@@ -275,6 +275,13 @@ function Menu({ spinning, setSpinning }) {
     }
   };
 
+  // Every page the stages hold, straight to it, each with the stage it sits in (names.js stagePages).
+  const linePages = [
+    ['/work', t('Work items'), 'workItems', 'planned'], ['/board', t('Board'), 'board', 'building'],
+    ['/prs', t('Pull requests'), 'pullRequests', 'review'], ['/commits', t('Commits'), 'pullRequests', 'review'],
+    ['/ship', t('Waiting to ship'), 'totals', 'merged'], ['/pipelines', t('Pipelines'), 'pipelines', 'deploying'],
+    ['/production', t('Production'), 'production', 'live'],
+  ];
   const pages = [
     ['/inbox', t('Inbox'), 'inbox'], ['/summary', t('Weekly summary'), 'summary'],
     ['/people', t('Team'), 'team'], ['/insights', t('Insights'), 'insights'], ['/settings', t('Settings'), 'settings'],
@@ -287,6 +294,14 @@ function Menu({ spinning, setSpinning }) {
       </button>
       {open && (
         <div className="line-menu-pop">
+          <nav className="line-menu-pages line-menu-all" aria-label={t('All pages')}>
+            <span className="line-menu-h">{t('All pages')}</span>
+            {linePages.map(([to, label, icon, stage]) => (
+              <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'on' : '')}>
+                <Icon name={icon} size={15} /> {label}<span className="line-menu-stage">{stageName(stage)}</span>
+              </NavLink>
+            ))}
+          </nav>
           <nav className="line-menu-pages" aria-label={t('Menu')}>
             {pages.map(([to, label, icon]) => (
               <NavLink key={to} to={to} className={({ isActive }) => (isActive || (to === '/people' && /^\/(team|users)(\/|$)/.test(pathname)) ? 'on' : '')}><Icon name={icon} size={15} /> {label}</NavLink>

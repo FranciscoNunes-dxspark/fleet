@@ -64,7 +64,7 @@ The line stays along the top of every page, slim, as Keel's navigation. A statio
 | **Deploying** | Pipelines (approvals waiting at the top; Releases and Flaky tests as its tabs) |
 | **Live** | Monitors (Production), Platform totals |
 
-The top bar holds **Needs you** (it opens the Inbox; beside it, your approvals, reviews, production issues and red pipelines, each a shortcut to its stage), search (Ctrl+K), the live status, and the menu: the pages beside the line (Inbox, Weekly summary, Team, Insights, Settings), **Refresh from Azure DevOps**, when Keel last checked, and who you're signed in as.
+The top bar holds **Needs you** (it opens the Inbox; beside it, your approvals, reviews, production issues and red pipelines, each a shortcut to its stage), search (Ctrl+K), the live status, and the menu: **All pages** (Work items, Board, Pull requests, Commits, Waiting to ship, Pipelines and Production, straight to them, each with the stage it sits in), then the pages beside the line (Inbox, Weekly summary, Team, Insights, Settings), **Refresh from Azure DevOps**, when Keel last checked, and who you're signed in as.
 
 **Three views** of the same work sit side by side in the top bar:
 
