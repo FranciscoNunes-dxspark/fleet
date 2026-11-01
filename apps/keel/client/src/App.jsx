@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api.js';
 import { AppContext, useApi, useApp } from './context.js';
-import { Drawer, ErrorBox, Loading, Logo, pinchLine } from './ui.jsx';
+import { Avatar, Drawer, ErrorBox, Loading, Logo, pinchLine } from './ui.jsx';
 import { pinchMood } from './pinch.js';
 import { loadPrefs, showDesktop } from './notify.js';
 import Inbox from './pages/Inbox.jsx';
@@ -491,14 +491,20 @@ function Shell() {
             {/* The terminal app in the browser, on a page of its own (no menu); not on touch screens, which have no keys for it. */}
             <NavLink to="/cli" className="nav-link nav-terminal" title={t('Below deck: Keel in the terminal, here in the browser')} aria-label={collapsed ? t('Below deck') : undefined}><span className="nav-label"><Icon name="terminal" /><span className="nav-text">{t('Below deck')}</span></span></NavLink>
             <NavLink to="/settings" className="nav-link" title={tip(t('Settings'))} aria-label={collapsed ? t('Settings') : undefined}><span className="nav-label"><Icon name="settings" /><span className="nav-text">{t('Settings')}</span></span></NavLink>
-            <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning} title={tip(t('Refresh from Azure DevOps'))} aria-label={collapsed ? t('Refresh from Azure DevOps') : undefined}>
-              <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span> <span className="nav-text">{t('Refresh from Azure DevOps')}</span>
-            </button>
-            <LiveStatus />
-            {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut} title={tip(t('Sign out'))} aria-label={collapsed ? t('Sign out') : undefined}><Icon name="signOut" size={14} /> <span className="nav-text">{t('Sign out')}</span></button>}
-            <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
-              {t('Signed in as {name}', { name: meta.account?.name || meta.me.displayName })}
-              {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
+            {/* How fresh the data is, with the button that fetches it again beside it. */}
+            <div className="sidebar-status">
+              <LiveStatus />
+              <button type="button" className="btn btn-ghost btn-small refresh-btn" onClick={hardRefresh} disabled={spinning} title={t('Refresh from Azure DevOps')} aria-label={t('Refresh from Azure DevOps')}>
+                <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={14} /></span>
+              </button>
+            </div>
+            <div className="account">
+              <Avatar person={{ displayName: meta.account?.name || meta.me.displayName, uniqueName: meta.me.uniqueName }} size={30} title={meta.account?.name || meta.me.displayName} />
+              <div className="me truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
+                {t('Signed in as {name}', { name: meta.account?.name || meta.me.displayName })}
+                {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
+              </div>
+              {authMode === 'login' && <button type="button" className="btn btn-ghost btn-small signout-btn" onClick={signOut} title={t('Sign out')} aria-label={t('Sign out')}><Icon name="signOut" size={14} /></button>}
             </div>
           </div>
         </div>

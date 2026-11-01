@@ -6,6 +6,7 @@ import { useApp } from './context.js';
 import { useSourceName } from './orgs.js';
 import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
+import { Icon } from './icons.jsx';
 import { BG, PALETTE, pinchPixels } from './pinch.js';
 
 // One rect per run of same-coloured pixels, for each mood. Built once each: the drawing never changes.
@@ -145,7 +146,21 @@ export function Empty({ title, mood, children }) {
  * on a frosted backdrop; once it's pinned (the marker before it has scrolled
  * away) it gets a hairline and a shadow.
  */
+// Which menu entry and group a page belongs to, for the icon and the line above its title.
+// Longest prefix first, so /release-notes isn't taken for something shorter.
+const SECTIONS = [
+  ['/inbox', 'inbox', 'today'], ['/summary', 'summary', 'today'],
+  ['/work', 'workItems', 'work'], ['/epics', 'workItems', 'work'], ['/board', 'board', 'work'],
+  ['/prs', 'pullRequests', 'code'], ['/commits', 'pullRequests', 'code'], ['/release-notes', 'pullRequests', 'code'],
+  ['/pipelines', 'pipelines', 'code'], ['/production', 'production', 'code'], ['/ship', 'production', 'code'], ['/totals', 'production', 'code'],
+  ['/team', 'team', 'people'], ['/users', 'team', 'people'], ['/insights', 'insights', 'people'],
+  ['/settings', 'settings', null],
+];
+const groupName = (g) => ({ today: t('Today'), work: t('Work'), code: t('Code and delivery'), people: t('People') })[g];
+
 export function PageHeader({ title, sub, children }) {
+  const { pathname } = useLocation();
+  const section = SECTIONS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   const marker = useRef(null);
   const [stuck, setStuck] = useState(false);
   useEffect(() => {
@@ -158,9 +173,13 @@ export function PageHeader({ title, sub, children }) {
     <>
       <div ref={marker} className="page-header-marker" aria-hidden="true" />
       <header className={`page-header${stuck ? ' page-header-stuck' : ''}`}>
-        <div>
-          <h1>{title}</h1>
-          {sub && <p className="page-sub">{sub}</p>}
+        <div className="page-title">
+          {section && <span className="page-icon" aria-hidden="true"><Icon name={section[1]} size={20} /></span>}
+          <div className="page-title-text">
+            {section?.[2] && <div className="page-eyebrow">{groupName(section[2])}</div>}
+            <h1>{title}</h1>
+            {sub && <p className="page-sub">{sub}</p>}
+          </div>
         </div>
         {children && <div className="page-actions">{children}</div>}
       </header>

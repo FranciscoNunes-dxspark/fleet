@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, hours, pct, REVIEW_STATE } from '../format.js';
@@ -77,6 +77,11 @@ export default function Dashboard() {
   const greeting = t(hour < 12 ? 'Good morning, {name}' : hour < 18 ? 'Good afternoon, {name}' : 'Good evening, {name}', { name: first });
   const shown = layout.filter((l) => l.visible);
   const hidden = layout.filter((l) => !l.visible);
+  // Widgets are dealt across the columns in turn (so the first row reads left to right in your order)
+  // and each column stacks its own, so a tall widget never leaves a hole beside a short one.
+  const gridRef = useRef(null);
+  const count = useColumnCount(gridRef);
+  const columns = Array.from({ length: count }, (_, c) => shown.filter((_, i) => i % count === c));
 
   return (
     <div className="page page-wide">
@@ -101,30 +106,50 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="widget-grid">
-        {shown.map((l) => {
-          const def = WIDGETS.find((w) => w.id === l.id);
-          const i = layout.findIndex((x) => x.id === l.id);
-          const title = t(def.title);
-          return (
-            <section key={l.id} className={`widget widget-${l.id}`} aria-label={title}>
-              <header className="widget-head">
-                <h2>{title}</h2>
-                {editing ? (
-                  <span className="widget-edit">
-                    <button type="button" className="btn btn-ghost btn-small" onClick={() => move(i, -1)} aria-label={t('Move {widget} earlier', { widget: title })}>↑</button>
-                    <button type="button" className="btn btn-ghost btn-small" onClick={() => move(i, 1)} aria-label={t('Move {widget} later', { widget: title })}>↓</button>
-                    <button type="button" className="btn btn-ghost btn-small" onClick={() => setVisible(l.id, false)}>{t('Hide')}</button>
-                  </span>
-                ) : <Link to={def.link} className="small">{t(def.linkText)}</Link>}
-              </header>
-              <WidgetBody id={l.id} />
-            </section>
-          );
-        })}
+      <div className="widget-grid" ref={gridRef}>
+        {columns.map((col, c) => (
+          <div key={c} className="widget-col">
+            {col.map((l) => {
+              const def = WIDGETS.find((w) => w.id === l.id);
+              const i = layout.findIndex((x) => x.id === l.id);
+              const title = t(def.title);
+              return (
+                <section key={l.id} className={`widget widget-${l.id}`} aria-label={title}>
+                  <header className="widget-head">
+                    <h2>{title}</h2>
+                    {editing ? (
+                      <span className="widget-edit">
+                        <button type="button" className="btn btn-ghost btn-small" onClick={() => move(i, -1)} aria-label={t('Move {widget} earlier', { widget: title })}>↑</button>
+                        <button type="button" className="btn btn-ghost btn-small" onClick={() => move(i, 1)} aria-label={t('Move {widget} later', { widget: title })}>↓</button>
+                        <button type="button" className="btn btn-ghost btn-small" onClick={() => setVisible(l.id, false)}>{t('Hide')}</button>
+                      </span>
+                    ) : <Link to={def.link} className="small">{t(def.linkText)}</Link>}
+                  </header>
+                  <WidgetBody id={l.id} />
+                </section>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );
+}
+
+/** How many widget columns fit the grid's width: one on a phone, up to three on a wide screen. */
+function useColumnCount(ref) {
+  const [count, setCount] = useState(3);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      setCount(w >= 1080 ? 3 : w >= 680 ? 2 : 1);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return count;
 }
 
 /**

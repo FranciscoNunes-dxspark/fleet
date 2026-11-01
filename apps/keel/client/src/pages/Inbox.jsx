@@ -87,56 +87,63 @@ export default function Inbox() {
         {loading && <span className="spinner" aria-label={t('Refreshing')} />}
       </PageHeader>
 
-      <div className="segmented" role="tablist" aria-label={t('Filter inbox')}>
-        {KINDS.map((k) => (
-          <button key={k.id} type="button" role="tab" aria-selected={kind === k.id} className={kind === k.id ? 'on' : ''} onClick={() => setKind(k.id)} disabled={k.id !== 'all' && !counts[k.id]}>
-            {k.label}<span className="seg-count">{counts[k.id]}</span>
-          </button>
-        ))}
+      {/* Wide screens: the filters are a rail beside the list, and stay in view while it scrolls. */}
+      <div className="inbox-layout">
+        <aside className="inbox-rail">
+          <div className="segmented inbox-filters" role="tablist" aria-label={t('Filter inbox')}>
+            {KINDS.map((k) => (
+              <button key={k.id} type="button" role="tab" aria-selected={kind === k.id} className={kind === k.id ? 'on' : ''} onClick={() => setKind(k.id)} disabled={k.id !== 'all' && !counts[k.id]}>
+                {k.label}<span className="seg-count">{counts[k.id]}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="inbox-list">
+          {!items.length && (
+            <Empty title={data.items.length ? t('Nothing in this filter.') : t('Inbox zero.')} mood={data.items.length ? undefined : 'sleep'}>
+              {data.items.length ? t('Pick another filter above.') : `${t('Nothing needs you, so Pinch is having a nap.')} ${t('Reviews, red pipelines, blocked items and stale PRs will show up here as they happen.')}`}
+            </Empty>
+          )}
+
+          {['high', 'medium', 'low'].map((sev) => {
+            const group = items.filter((i) => i.severity === sev);
+            if (!group.length) return null;
+            return (
+              <section key={sev} className="strip-group" aria-label={SEVERITY[sev]}>
+                <h2 className={`group-title sev-text-${sev}`}>{SEVERITY[sev]} <span className="muted">{group.length}</span></h2>
+                <ol className="strips">
+                  {group.map((item) => (
+                    <li key={item.key} className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}`} style={item.workItemType ? typeColor(item.workItemType, item.workItemTypeColor) : undefined}>
+                      <div className="strip-main">
+                        <button type="button" className="strip-title" onClick={() => open(item)}>{itemTitle(item)}</button>
+                        <div className="strip-context">{tx(item.context)}</div>
+                        <ul className="reasons">
+                          {item.reasons.map((r) => <li key={r.code + r.text} className={`reason reason-${r.severity}`}>{tx(r.text)}</li>)}
+                        </ul>
+                      </div>
+                      <div className="strip-side">
+                        {item.at && <span className="strip-age" title={new Date(item.at).toLocaleString()}>{age(item.at)}</span>}
+                        <div className="strip-actions">
+                          <ExternalLink href={item.webUrl}>{sourceName(item.webUrl)}</ExternalLink>
+                          <SnoozeMenu onPick={(d) => snooze(item, d)} />
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            );
+          })}
+
+          {data.snoozedCount > 0 && (
+            <p className="muted small snoozed-note">
+              {t(data.snoozedCount === 1 ? '{n} snoozed item hidden.' : '{n} snoozed items hidden.', { n: data.snoozedCount })}{' '}
+              <button type="button" className="link-btn" onClick={clearSnoozes}>{t('Show them again')}</button>
+            </p>
+          )}
+        </div>
       </div>
-
-      {!items.length && (
-        <Empty title={data.items.length ? t('Nothing in this filter.') : t('Inbox zero.')} mood={data.items.length ? undefined : 'sleep'}>
-          {data.items.length ? t('Pick another filter above.') : `${t('Nothing needs you, so Pinch is having a nap.')} ${t('Reviews, red pipelines, blocked items and stale PRs will show up here as they happen.')}`}
-        </Empty>
-      )}
-
-      {['high', 'medium', 'low'].map((sev) => {
-        const group = items.filter((i) => i.severity === sev);
-        if (!group.length) return null;
-        return (
-          <section key={sev} className="strip-group" aria-label={SEVERITY[sev]}>
-            <h2 className={`group-title sev-text-${sev}`}>{SEVERITY[sev]} <span className="muted">{group.length}</span></h2>
-            <ol className="strips">
-              {group.map((item) => (
-                <li key={item.key} className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}`} style={item.workItemType ? typeColor(item.workItemType, item.workItemTypeColor) : undefined}>
-                  <div className="strip-main">
-                    <button type="button" className="strip-title" onClick={() => open(item)}>{itemTitle(item)}</button>
-                    <div className="strip-context">{tx(item.context)}</div>
-                    <ul className="reasons">
-                      {item.reasons.map((r) => <li key={r.code + r.text} className={`reason reason-${r.severity}`}>{tx(r.text)}</li>)}
-                    </ul>
-                  </div>
-                  <div className="strip-side">
-                    {item.at && <span className="strip-age" title={new Date(item.at).toLocaleString()}>{age(item.at)}</span>}
-                    <div className="strip-actions">
-                      <ExternalLink href={item.webUrl}>{sourceName(item.webUrl)}</ExternalLink>
-                      <SnoozeMenu onPick={(d) => snooze(item, d)} />
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </section>
-        );
-      })}
-
-      {data.snoozedCount > 0 && (
-        <p className="muted small snoozed-note">
-          {t(data.snoozedCount === 1 ? '{n} snoozed item hidden.' : '{n} snoozed items hidden.', { n: data.snoozedCount })}{' '}
-          <button type="button" className="link-btn" onClick={clearSnoozes}>{t('Show them again')}</button>
-        </p>
-      )}
     </div>
   );
 }
