@@ -14,15 +14,17 @@
   --tc-violet: #9085e9;
   --tc-red: #e66767;
   --tc-gray: #8b9099;
-  --bg: #121314;
-  --sidebar: #17181a;
-  --surface: #1e1f22;
-  --surface-2: #27292c;
-  --ink: #e9eaec;
-  --ink-2: #b8bbc0;
-  --muted: #8b8f96;
-  --line: #2f3134;
-  --line-strong: #404348;
+  /* Neutrals lean a little cool (slate, not grey), with wider steps between the planes
+     so the page, the sidebar and the cards read as three layers. */
+  --bg: #0e1014;
+  --sidebar: #13161b;
+  --surface: #191c22;
+  --surface-2: #22262e;
+  --ink: #e8eaef;
+  --ink-2: #b5bac4;
+  --muted: #868d99;
+  --line: #2a2e37;
+  --line-strong: #3b404b;
   --accent: #3ec486;
   --accent-soft: #1b3127;
   --accent-ink: #74dcaa;
@@ -38,19 +40,21 @@
   --info-soft: #1c2a36;
   --sev-low: #6c7077;
 
-  --radius: 8px;
-  --radius-sm: 5px;
+  --radius: 10px;
+  --radius-sm: 6px;
   --shadow-drawer: -12px 0 40px rgba(0, 0, 0, 0.55);
   --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-up: 0 -10px 18px -10px rgba(0, 0, 0, 0.6);
   /* Depth: cards rest on the page (elev-1) and rise when they can be clicked (elev-2).
      In dark mode a faint top edge catches the light, as raised things do. */
-  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  /* How strongly the accent glows behind the page and under primary buttons. */
+  --glow: 10%;
   --elev-1: var(--edge), 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.22);
   --elev-2: var(--edge), 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 28px rgba(0, 0, 0, 0.34);
-  --card-border: #2a2c30;
-  --header-glass: rgba(18, 19, 20, 0.9);
+  --card-border: #252932;
+  --header-glass: rgba(14, 16, 20, 0.82);
   --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   color-scheme: dark;
@@ -70,15 +74,15 @@
   --tc-violet: #6250d6;
   --tc-red: #e34948;
   --tc-gray: #8a8f98;
-  --bg: #eef0f3;
-  --sidebar: #f8f9fa;
+  --bg: #eceff4;
+  --sidebar: #f7f8fb;
   --surface: #ffffff;
-  --surface-2: #edeff1;
+  --surface-2: #eef1f5;
   --ink: #1a1c1f;
   --ink-2: #454a52;
   --muted: #687079;
-  --line: #dde1e5;
-  --line-strong: #c5cad1;
+  --line: #dde2e8;
+  --line-strong: #c4cad3;
   --accent: #1f8f5a;
   --accent-soft: #e1f3e9;
   --accent-ink: #17734a;
@@ -99,8 +103,9 @@
   --edge: inset 0 0 0 0 transparent;
   --elev-1: 0 1px 2px rgba(16, 24, 40, 0.06), 0 2px 8px rgba(16, 24, 40, 0.05);
   --elev-2: 0 2px 4px rgba(16, 24, 40, 0.08), 0 12px 28px rgba(16, 24, 40, 0.11);
-  --card-border: #e1e4e8;
-  --header-glass: rgba(238, 240, 243, 0.92);
+  --card-border: #dfe3e9;
+  --header-glass: rgba(236, 239, 244, 0.82);
+  --glow: 14%;
   color-scheme: light;
 }
 :root[data-accent='blue'] { --accent: #5b9cf5; --accent-soft: #1a2740; --accent-ink: #93bdf9; --on-accent: #0b1526; }
@@ -1531,3 +1536,117 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 .file-diff .diff-del { background: var(--bad-soft); }
 .file-diff .diff-hunk td { color: var(--muted); background: var(--line); padding: 2px 8px; }
 .file-diff-note { margin: 4px 0 8px 28px; }
+
+/* =================================================================== refresh
+   Colour and structure on top of the planes above: a soft glow of the accent
+   behind the page, cards with a header band, figures on tinted tiles, tables
+   with a proper header row. Tones come from the same tokens, so every accent
+   and both modes follow. */
+body {
+  background:
+    radial-gradient(900px 420px at 92% -8%, color-mix(in srgb, var(--accent) var(--glow), transparent), transparent 70%),
+    radial-gradient(700px 380px at 18% -12%, color-mix(in srgb, var(--info) calc(var(--glow) * 0.6), transparent), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+}
+h1, h2, h3 { letter-spacing: -0.015em; }
+.page-header h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.025em; }
+
+/* Sidebar: section labels as small caps, the current page as an accent pill fading out. */
+.sidebar { background: linear-gradient(180deg, var(--sidebar), color-mix(in srgb, var(--sidebar) 70%, var(--bg))); }
+.nav-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: color-mix(in srgb, var(--muted) 85%, transparent); }
+.nav-link { transition: background 0.12s, color 0.12s; }
+.nav-link.active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, transparent), color-mix(in srgb, var(--accent) 6%, transparent));
+  box-shadow: inset 3px 0 var(--accent);
+}
+.nav-count { box-shadow: 0 0 0 2px var(--sidebar); }
+
+/* Buttons: the primary one carries a faint highlight and glows in its own colour. */
+.btn-primary {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 6px 16px -6px color-mix(in srgb, var(--accent) 70%, transparent) !important;
+}
+.btn:not(.btn-ghost):not(.btn-primary):not(.btn-danger) { background: var(--surface); }
+.btn:not(.btn-ghost):not(.btn-primary):not(.btn-danger):hover:not(:disabled) { background: var(--surface-2); }
+
+/* Filters and tabs */
+.toggle { transition: background 0.12s, border-color 0.12s, color 0.12s; }
+.toggle:hover:not(.on) { border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); color: var(--ink); }
+.toggle.on { box-shadow: 0 4px 12px -6px color-mix(in srgb, var(--accent) 80%, transparent); }
+.segmented { background: color-mix(in srgb, var(--surface-2) 80%, transparent); box-shadow: inset 0 0 0 1px var(--line); }
+.segmented button { transition: color 0.12s, background 0.12s; }
+.segmented button:hover:not(.on):not(:disabled) { color: var(--ink); }
+.segmented button.on { background: var(--surface); box-shadow: var(--elev-1); }
+.input { background: color-mix(in srgb, var(--surface) 70%, var(--bg)); transition: border-color 0.12s; }
+.input:hover { border-color: color-mix(in srgb, var(--ink-2) 40%, var(--line-strong)); }
+
+/* Chips get a hairline of their own colour, so they hold their shape on any surface. */
+.chip { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent); }
+
+/* Cards: the dashboard's widgets open with a header band over a hairline. */
+.widget { padding: 0 18px 18px; }
+.widget-head {
+  align-items: center; margin: 0 -18px 16px; padding: 13px 18px 12px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 55%, transparent), transparent);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.widget-head h2 { font-size: 14.5px; font-weight: 600; }
+.panel, .chart { padding: 18px 20px; }
+.chart-title { font-size: 14px; }
+
+/* Figures as tiles washed in their tone, a bar in that tone down the side. */
+/* Each tile is as wide as its label, and a row's tiles share out what's left. */
+.stat-row { gap: 8px; }
+.stat {
+  --tone: var(--muted); flex: 1 1 auto; min-width: 0;
+  padding: 9px 12px 10px; border-left: 3px solid var(--tone); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--tone) 9%, var(--surface));
+  transition: background 0.12s, transform 0.12s;
+}
+.stat-ok { --tone: var(--ok); }
+.stat-warn { --tone: var(--warn); }
+.stat-bad { --tone: var(--bad); }
+.stat-accent { --tone: var(--accent); }
+.stat-info { --tone: var(--info); }
+a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); transform: translateY(-1px); }
+.stat-value { font-size: 26px; }
+.stat-label { font-size: 12px; }
+.fact dd:nth-of-type(1) { font-size: 28px; }
+.fact { transition: background 0.12s; }
+
+/* Tables: the header row on its own band (not small caps: wider headings would squeeze the columns);
+   hovered rows take a hint of the accent. */
+.table th { font-weight: 600; background: color-mix(in srgb, var(--surface-2) 70%, var(--surface)); padding: 10px 12px; }
+.table td { padding: 11px 12px; }
+.table tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+
+/* Inbox strips: rest on the page like cards, lift on hover, the urgent ones washed in their tone. */
+.strips { gap: 8px; }
+.strip {
+  border-color: var(--card-border); box-shadow: var(--elev-1);
+  transition: box-shadow 0.12s, transform 0.12s, border-color 0.12s;
+}
+.strip:hover { box-shadow: var(--elev-2); border-color: var(--line-strong); }
+.strip.sev-high { background: linear-gradient(90deg, color-mix(in srgb, var(--bad) 8%, var(--surface)), var(--surface) 320px); }
+.strip.sev-medium { background: linear-gradient(90deg, color-mix(in srgb, var(--warn) 7%, var(--surface)), var(--surface) 320px); }
+.group-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Board columns sit a step below their cards. */
+.column { background: color-mix(in srgb, var(--surface-2) 60%, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); }
+
+/* Dashboard hero: a deeper accent wash with a glow in its corner. */
+.hero {
+  position: relative; overflow: hidden; border-radius: 14px;
+  background:
+    radial-gradient(420px 220px at 0% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+    linear-gradient(120deg, var(--accent-soft), var(--surface) 65%);
+}
+.hero h1 { font-size: 28px; }
+.hero-figure { background: color-mix(in srgb, var(--surface) 88%, transparent); }
+
+/* Drawers and pops: a hairline at the edge so they don't melt into the page in dark mode. */
+.drawer { border-left: 1px solid var(--line); }
+.menu, .confirm-pop, .tooltip { border-color: var(--line-strong); box-shadow: var(--edge), var(--shadow-pop); }
+.demo-banner { background: linear-gradient(90deg, var(--accent-soft), color-mix(in srgb, var(--accent-soft) 40%, transparent)); }
