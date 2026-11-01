@@ -42,7 +42,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     const role = req.ctx.role || 'admin';
     res.json({ ...(await req.ctx.service.meta()), typeColors: typeColors.get(), account: req.ctx.user || null, role, permissions: PERMISSIONS[role] || [] });
   });
-  // Preferences that follow you across devices (theme, notifications, dashboard layout).
+  // Preferences that follow you across devices (theme, notifications, language, saved views).
   r.put('/prefs', async (req, res) => res.json(await req.ctx.service.savePrefs(req.body || {})));
   // Live updates (Server-Sent Events): 'changed', 'notify' and 'status' events.
   r.get('/events', (req, res) => req.ctx.watcher.attach(req, res));

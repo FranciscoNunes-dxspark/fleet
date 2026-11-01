@@ -38,7 +38,7 @@ export function Logo({ size = 28, mood = 'idle', title }) {
   );
 }
 
-/** Pinch on its own, `width` pixels wide, for the Dashboard, empty states, loading and errors. */
+/** Pinch on its own, `width` pixels wide, for empty states, loading and errors. */
 export function Pinch({ mood = 'idle', width = 64, title }) {
   return (
     <svg className={`pinch pinch-${mood}`} width={width} height={(width * 10) / 16} viewBox="0 0 16 10" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
@@ -48,7 +48,7 @@ export function Pinch({ mood = 'idle', width = 64, title }) {
   );
 }
 
-/** What Pinch has to say about its mood (see pinchMood), for the logo's tooltip and the Dashboard. */
+/** What Pinch has to say about its mood (see pinchMood), for the logo's tooltip. */
 export function pinchLine(mood, { attention, live } = {}) {
   if (mood === 'worried') return t("Pinch can't reach Azure DevOps: {error}", { error: tx(live?.error || '') });
   if (mood === 'look') return t('Pinch is checking Azure DevOps…');

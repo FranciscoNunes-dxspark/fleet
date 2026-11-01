@@ -241,7 +241,7 @@ function Menu({ spinning, setSpinning }) {
   };
 
   const pages = [
-    ['/inbox', t('Inbox'), 'inbox'], ['/summary', t('Weekly summary'), 'summary'], ['/dashboard', t('Dashboard'), 'dashboard'],
+    ['/inbox', t('Inbox'), 'inbox'], ['/summary', t('Weekly summary'), 'summary'],
     ['/team', t('Team'), 'team'], ['/insights', t('Insights'), 'insights'], ['/settings', t('Settings'), 'settings'],
   ];
   const name = meta.account?.name || meta.me.displayName;

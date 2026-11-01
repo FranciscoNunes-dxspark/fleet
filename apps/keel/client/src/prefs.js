@@ -1,12 +1,11 @@
 // Preferences that follow your account across devices: theme, notification
-// choices, dashboard layout and saved views. The browser keeps a local copy (so pages load
+// choices, language, saved views and Production's layout. The browser keeps a local copy (so pages load
 // instantly and work offline); the server copy wins when the app starts.
 import { api } from './api.js';
 
 export const PREF_KEYS = {
   theme: 'keel.theme.v1',
   notifications: 'keel.notifications.v1',
-  dashboard: 'keel.dashboard.v1',
   language: 'keel.language.v1',
   views: 'keel.views.v1',
   production: 'keel.production.v1',

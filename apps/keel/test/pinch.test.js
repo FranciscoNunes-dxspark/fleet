@@ -1,4 +1,4 @@
-// Pinch's mood in the web app (client/src/pinch.js): what the sidebar logo and the Dashboard show.
+// Pinch's mood in the web app (client/src/pinch.js): what the logo in the top bar shows.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pinchMood, pinchPixels } from '../client/src/pinch.js';

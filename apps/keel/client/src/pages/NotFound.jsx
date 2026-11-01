@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Pinch } from '../ui.jsx';
 import { t } from '../i18n.js';
 
-/** An address Keel doesn't have (an old link, a typo): say so, instead of quietly showing the Dashboard. */
+/** An address Keel doesn't have (an old link, a typo): say so, instead of quietly going home. */
 export default function NotFound() {
   const { pathname } = useLocation();
   return (

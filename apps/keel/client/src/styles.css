@@ -168,7 +168,6 @@ button { font: inherit; color: inherit; }
 
 .icon { flex: none; display: block; }
 
-
 .spin { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -635,50 +634,17 @@ button.tree-caret:hover { background: var(--surface-2); color: var(--ink); }
 .progress-empty { min-width: 278px; }
 .epic-project + .epic-project { margin-top: 8px; }
 
-/* ------------------------------------------------------------ dashboard */
-.widget-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; align-items: start; }
-.widget { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px 16px; min-width: 0; }
-.widget-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 12px; }
-.widget-head h2 { font-size: 14px; }
-.widget-edit { display: flex; gap: 2px; }
-.widget-loading { display: grid; place-items: center; min-height: 120px; }
-.customize { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.customize p { margin: 0; flex-basis: 100%; }
-.stat-row { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-bottom: 12px; }
-.stat { display: grid; color: inherit; text-decoration: none; }
-a.stat:hover { text-decoration: none; }
-a.stat:hover .stat-label { color: var(--accent-ink); }
-.stat-value { font-size: 24px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--ink); }
-.stat-label { font-size: 12.5px; color: var(--muted); }
 .text-ok { color: var(--ok); }
 .text-accent { color: var(--accent-ink); }
 .mini-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .mini-list li { display: grid; gap: 1px; min-width: 0; }
 .mini-title { font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.mini-sev { padding-left: 10px; border-left: 3px solid var(--sev-low); }
-.mini-sev.sev-high { border-left-color: var(--bad); }
-.mini-sev.sev-medium { border-left-color: var(--warn); }
-.stack-bar { display: flex; gap: 2px; height: 12px; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
-.seg-doing { background: var(--accent); }
-.seg-resolved { background: var(--info); }
-.seg-todo { background: var(--line-strong); }
-.seg-review { background: var(--warn); }
+
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 0; padding: 0; color: var(--ink-2); }
 .legend > li, .legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
-.load-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
-.load-list > li:not(.legend) { display: grid; grid-template-columns: minmax(110px, 170px) 1fr auto; gap: 10px; align-items: center; }
-.load-track { display: flex; gap: 2px; height: 10px; }
-.load-track > span { border-radius: 0 3px 3px 0; min-width: 2px; }
-.load-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.mini-columns { display: flex; align-items: flex-end; gap: 6px; height: 90px; padding-top: 16px; }
-.mini-col { position: relative; flex: 1; height: 100%; display: flex; align-items: flex-end; }
-.mini-col-bar { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; }
-.mini-col-label { position: absolute; left: 0; right: 0; text-align: center; top: -16px; font-size: 11px; color: var(--muted); }
-.mini-col-bar + .mini-col-label { top: auto; bottom: calc(100% - 0px); }
-.epic-mini { display: flex; align-items: center; gap: 8px; }
+
 @media (max-width: 860px) {
-  .widget-grid { grid-template-columns: 1fr; }
   .tree-row { flex-wrap: wrap; }
   .tree-row .type { width: auto; }
   .tree-meta { flex-wrap: wrap; width: 100%; padding-left: 32px; }
@@ -1284,16 +1250,6 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .avatar-hued { background: hsl(var(--av-h) 42% 25%); color: hsl(var(--av-h) 75% 84%); }
 :root[data-mode='light'] .avatar-hued { background: hsl(var(--av-h) 72% 91%); color: hsl(var(--av-h) 55% 28%); }
 
-/* Key figures: bigger, each with a mark in its tone. */
-.stat-row { gap: 10px 20px; }
-.stat { padding: 2px 10px 2px 11px; border-left: 3px solid var(--line-strong); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; transition: background 0.1s; }
-a.stat:hover { background: var(--surface-2); text-decoration: none; }
-.stat-value { font-size: 28px; letter-spacing: -0.02em; }
-.stat-ok { border-left-color: var(--ok); }
-.stat-warn { border-left-color: var(--warn); }
-.stat-bad { border-left-color: var(--bad); }
-.stat-accent { border-left-color: var(--accent); }
-.stat-info { border-left-color: var(--info); }
 .fact dd:nth-of-type(1) { font-size: 26px; letter-spacing: -0.02em; }
 
 /* Chart fills: bars fade towards their base, lines carry a soft area. */
@@ -1305,42 +1261,6 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 .chart-svg .grid { stroke-opacity: 0.6; }
 .barlist-bar { background: linear-gradient(90deg, var(--accent), var(--accent-ink)); }
 .text-info { color: var(--info); }
-
-/* Dashboard: the greeting and today's three numbers, on a soft accent wash. */
-.hero {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 16px 28px; align-items: center;
-  margin: 0 0 18px; padding: 20px 24px; border: 1px solid var(--card-border); border-radius: 12px;
-  background: linear-gradient(120deg, var(--accent-soft), var(--surface) 62%); box-shadow: var(--elev-1);
-}
-.hero h1 { font-size: 26px; line-height: 1.2; letter-spacing: -0.02em; }
-.hero-text { display: flex; gap: 18px; align-items: center; min-width: 0; }
-.hero-text > div { min-width: 0; }
-.hero-pinch { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
-.hero-figures { display: flex; gap: 8px; }
-.hero-figure {
-  display: grid; gap: 2px; min-width: 104px; padding: 10px 14px; border-radius: var(--radius);
-  background: var(--surface); border: 1px solid var(--card-border); color: var(--ink); text-decoration: none;
-  box-shadow: var(--shadow-sm); transition: box-shadow 0.12s, transform 0.12s;
-}
-.hero-figure:hover { text-decoration: none; box-shadow: var(--elev-2); transform: translateY(-1px); }
-.hero-n { font-size: 30px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.hero-label { font-size: 12.5px; color: var(--muted); }
-.hero-bad .hero-n { color: var(--bad); }
-.hero-accent .hero-n { color: var(--accent-ink); }
-.hero-bad { box-shadow: inset 0 3px var(--bad), var(--shadow-sm); }
-.hero-accent { box-shadow: inset 0 3px var(--accent), var(--shadow-sm); }
-@media (max-width: 1000px) {
-  .hero { grid-template-columns: minmax(0, 1fr) auto; }
-  .hero-figures { grid-column: 1 / -1; grid-row: 2; }
-}
-@media (max-width: 560px) {
-  .hero { padding: 16px; }
-  .hero-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .hero-figure { min-width: 0; padding: 8px 10px; }
-  .hero-n { font-size: 24px; }
-}
-.hero-bad:hover { box-shadow: inset 0 3px var(--bad), var(--elev-2); }
-.hero-accent:hover { box-shadow: inset 0 3px var(--accent), var(--elev-2); }
 
 /* The page header pins to the top while you scroll, on a frosted backdrop. */
 .page-header-marker { height: 0; }
@@ -1417,9 +1337,8 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
 
 /* =================================================================== refresh
    Colour and structure on top of the planes above: a soft glow of the accent
-   behind the page, cards with a header band, figures on tinted tiles, tables
-   with a proper header row. Tones come from the same tokens, so every accent
-   and both modes follow. */
+   behind the page, tables with a proper header row. Tones come from the same
+   tokens, so every accent and both modes follow. */
 h1, h2, h3 { letter-spacing: -0.015em; }
 .page-header h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.025em; }
 
@@ -1447,35 +1366,9 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 /* Chips get a hairline of their own colour, so they hold their shape on any surface. */
 .chip { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent); }
 
-/* Cards: the dashboard's widgets open with a header band over a hairline. */
-.widget { padding: 0 18px 18px; }
-.widget-head {
-  align-items: center; margin: 0 -18px 16px; padding: 13px 18px 12px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 55%, transparent), transparent);
-  border-radius: var(--radius) var(--radius) 0 0;
-}
-.widget-head h2 { font-size: 14.5px; font-weight: 600; }
 .panel, .chart { padding: 18px 20px; }
 .chart-title { font-size: 14px; }
 
-/* Figures as tiles washed in their tone, a bar in that tone down the side. */
-/* Each tile is as wide as its label, and a row's tiles share out what's left. */
-.stat-row { gap: 8px; }
-.stat {
-  --tone: var(--muted); flex: 1 1 auto; min-width: 0;
-  padding: 9px 12px 10px; border-left: 3px solid var(--tone); border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--tone) 9%, var(--surface));
-  transition: background 0.12s, transform 0.12s;
-}
-.stat-ok { --tone: var(--ok); }
-.stat-warn { --tone: var(--warn); }
-.stat-bad { --tone: var(--bad); }
-.stat-accent { --tone: var(--accent); }
-.stat-info { --tone: var(--info); }
-a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); transform: translateY(-1px); }
-.stat-value { font-size: 26px; }
-.stat-label { font-size: 12px; }
 .fact dd:nth-of-type(1) { font-size: 28px; }
 .fact { transition: background 0.12s; }
 
@@ -1498,16 +1391,6 @@ a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); 
 
 /* Board columns sit a step below their cards. */
 .column { background: color-mix(in srgb, var(--surface-2) 60%, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); }
-
-/* Dashboard hero: a deeper accent wash with a glow in its corner. */
-.hero {
-  position: relative; overflow: hidden; border-radius: 14px;
-  background:
-    radial-gradient(420px 220px at 0% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
-    linear-gradient(120deg, var(--accent-soft), var(--surface) 65%);
-}
-.hero h1 { font-size: 28px; }
-.hero-figure { background: color-mix(in srgb, var(--surface) 88%, transparent); }
 
 /* Drawers and pops: a hairline at the edge so they don't melt into the page in dark mode. */
 .drawer { border-left: 1px solid var(--line); }
@@ -1559,12 +1442,6 @@ a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); 
   .inbox-filters button.on { box-shadow: inset 3px 0 var(--accent), var(--elev-1); }
 }
 
-/* Dashboard: columns that each stack their widgets (Dashboard.jsx deals them out). */
-.widget-grid { display: flex; gap: 16px; align-items: flex-start; }
-.widget-col { flex: 1 1 0; min-width: 0; display: grid; gap: 16px; }
-.widget-grid .widget { min-width: 0; }
-.hero { padding: 26px 28px; }
-
 @media (max-width: 860px) {
   .page-icon { width: 36px; height: 36px; border-radius: 10px; }
   .page-header h1 { font-size: 22px; }
@@ -1597,33 +1474,6 @@ a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); 
   box-shadow: inset 0 -1px 0 var(--line-strong);
 }
 @media (pointer: coarse) { .key-hints { display: none; } }
-
-/* Dashboard: Next up, the most urgent few as a numbered queue of cards. */
-.next-up { margin: 0 0 20px; }
-.next-up-head { display: flex; justify-content: space-between; align-items: baseline; margin: 0 2px 10px; }
-.next-up-head h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-.next-up-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-.next-up-list > li { min-width: 0; }
-.next-card {
-  width: 100%; height: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center;
-  padding: 14px 16px; text-align: left; color: var(--ink); cursor: pointer;
-  border: 1px solid var(--card-border); border-radius: var(--radius);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--bad) 9%, var(--surface)), var(--surface) 65%);
-  box-shadow: var(--elev-1); transition: box-shadow 0.12s, transform 0.12s, border-color 0.12s;
-}
-.next-card:hover { box-shadow: var(--elev-2); transform: translateY(-1px); border-color: color-mix(in srgb, var(--bad) 40%, var(--line-strong)); }
-.next-rank {
-  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
-  font-weight: 700; font-variant-numeric: tabular-nums; color: var(--bad);
-  background: color-mix(in srgb, var(--bad) 16%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad) 30%, transparent);
-}
-.next-body { display: grid; gap: 2px; min-width: 0; }
-.next-kind { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-.next-title, .next-reason { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.next-title { font-weight: 600; }
-.next-reason { font-size: 12.5px; color: var(--ink-2); }
-.next-go { color: var(--muted); font-size: 18px; transition: transform 0.12s, color 0.12s; }
-.next-card:hover .next-go { transform: translateX(3px); color: var(--accent-ink); }
 
 /* The row whose details the docked panel shows. */
 .table tbody tr.row-open, .table tbody tr.row-open:hover { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }

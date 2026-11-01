@@ -18,7 +18,6 @@ import NewWorkItem from './pages/NewWorkItem.jsx';
 import NewPr from './pages/NewPr.jsx';
 import Board from './pages/Board.jsx';
 import Epics from './pages/Epics.jsx';
-import Dashboard from './pages/Dashboard.jsx';
 import NotFound from './pages/NotFound.jsx';
 import Pipelines from './pages/Pipelines.jsx';
 import Production from './pages/Production.jsx';
@@ -310,7 +309,8 @@ function Console({ authMode, onSignedOut }) {
           <Route path="/line/:stage" element={<StageCards />} />
           <Route path="/desk" element={<Desk />} />
           <Route path="/control" element={<Control />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          {/* The Dashboard's widgets became the Line; old links to it go home. */}
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/summary" element={<Summary />} />
           <Route path="/prs" element={<PullRequests />} />
