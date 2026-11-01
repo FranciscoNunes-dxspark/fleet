@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { approvalPath } from '../orgs.js';
 import { age } from '../format.js';
-import { Avatar, Confirm, sameTarget, useTypeColor } from '../ui.jsx';
+import { Avatar, Confirm, sameTarget, useMedia, useTypeColor } from '../ui.jsx';
 import { Icon } from '../icons.jsx';
 import { t } from '../i18n.js';
 import { STAGES } from './stages.js';
@@ -47,15 +47,24 @@ export function LineHome() {
   const open = useOpenCard();
   const typeColor = useTypeColor();
   const delivery = useApi('/delivery');
+  // A phone lists the stages one under another, so each shows its three most stuck.
+  const shownPer = useMedia('(max-width: 900px)') ? 3 : SHOWN;
   return (
     <div className="line-home">
       <SinceLastLook stages={stages} loading={loading} />
       <div className="line-stages">
         {stages.map((stage) => {
-          const shown = stage.cards.slice(0, SHOWN);
+          const shown = stage.cards.slice(0, shownPer);
           const more = stage.cards.length - shown.length;
           return (
-            <section key={stage.id} className="stage" aria-label={stageName(stage.id)}>
+            <section key={stage.id} className={`stage stage-${stage.tone || 'ok'}`} aria-label={stageName(stage.id)}>
+              {/* Phones: the stages are a list, each under its own heading (the slim line above is only a guide). */}
+              <Link to={`/line/${stage.id}`} className="stage-title">
+                <span className="stage-title-name">{stageName(stage.id)}</span>
+                <span className="stage-title-n">{stage.count}</span>
+                {stage.stuck.bad + stage.stuck.warn > 0 && <span className="stage-title-stuck">{t(stage.stuck.bad + stage.stuck.warn === 1 ? '1 stuck' : '{n} stuck', { n: stage.stuck.bad + stage.stuck.warn })}</span>}
+                <span className="stage-title-go" aria-hidden="true">→</span>
+              </Link>
               {!stage.cards.length && <p className="stage-empty">{loading ? t('Loading') : t('Nothing here')}</p>}
               <ol className="cards">
                 {shown.map((card) => <Card key={card.key} card={card} onOpen={open} drawer={drawer} typeColor={typeColor} />)}

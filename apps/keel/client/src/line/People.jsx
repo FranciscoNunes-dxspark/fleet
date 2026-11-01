@@ -3,7 +3,7 @@
 // cards under the table. Where one person holds most of a jammed stage is where to help.
 import { useMemo, useState } from 'react';
 import { useApi, useApp } from '../context.js';
-import { Avatar, Loading, PageHeader, TeamTabs, useTypeColor } from '../ui.jsx';
+import { Avatar, Loading, PageHeader, TeamTabs, useMedia, useTypeColor } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { STAGES } from './stages.js';
 import { stageName } from './names.js';
@@ -19,6 +19,8 @@ export default function People() {
   const typeColor = useTypeColor();
   const [teamKey, setTeamKey] = useState('');
   const [picked, setPicked] = useState(null); // { key, stage } or { key, stage: 'reviews' }
+  // A phone has no room for the table: a card per person, with the same cells as buttons.
+  const phone = useMedia('(max-width: 900px)');
 
   // Teams from the Team page's people, to look at one team's slice.
   const members = team.data?.rows?.map((r) => r.person) || [];
@@ -48,7 +50,40 @@ export default function People() {
       </PageHeader>
       <TeamTabs />
 
-      <div className="table-wrap">
+      {phone && (
+        <ol className="people-cards-list">
+          {rows.map((r) => (
+            <li key={r.key || 'nobody'} className={`person-card${r.stuck ? ' has-stuck' : ''}`}>
+              <div className="person-card-head">
+                <Avatar person={r.person} size={28} />
+                <strong className="truncate">{r.person?.displayName || t('Nobody')}</strong>
+                {r.stuck > 0 && <span className="person-card-stuck">{t(r.stuck === 1 ? '1 stuck' : '{n} stuck', { n: r.stuck })}</span>}
+              </div>
+              <div className="person-card-cells">
+                {[...['planned', 'building', 'review'].map((id) => [id, stageName(id), r.stages[id].cards.length, r.stages[id].stuck]), ['reviews', t('Reviews owed'), r.reviews.length, 0]].map(([id, label, n, stuck]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`person-cell${stuck ? (stuck * 2 >= n ? ' bad' : ' warn') : ''}${picked?.key === r.key && picked.stage === id ? ' on' : ''}`}
+                    disabled={!n}
+                    onClick={() => setPicked(picked?.key === r.key && picked.stage === id ? null : { key: r.key, stage: id })}
+                  >
+                    <span className="person-cell-n">{n}</span>
+                    <span className="person-cell-label">{label}</span>
+                  </button>
+                ))}
+              </div>
+              {picked?.key === r.key && (
+                <ol className="cards">
+                  {pickedCards.map((card) => <Card key={card.key} card={card} onOpen={open} drawer={drawer} typeColor={typeColor} />)}
+                </ol>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {!phone && <div className="table-wrap">
         <table className="table people-line">
           <thead>
             <tr>
@@ -97,9 +132,9 @@ export default function People() {
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
 
-      {pickedRow && (
+      {pickedRow && !phone && (
         <section className="people-cards" aria-label={pickedRow.person?.displayName || t('Nobody')}>
           <h2 className="section-title">
             {pickedRow.person?.displayName || t('Nobody')} · {picked.stage === 'reviews' ? t('Reviews owed') : stageName(picked.stage)}

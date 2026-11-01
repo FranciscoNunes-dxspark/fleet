@@ -500,3 +500,112 @@ button.tile-hit { cursor: pointer; }
 .trace-bad .trace-text { color: var(--bad); }
 .trace-stage { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .trace-text { min-width: 0; }
+
+/* ===================================================================== phones
+   A frame of its own: one row along the top (Keel, search, live, menu), the slim line pinned
+   under it as the way around, the stages as a list on home, and the views and the Inbox in a
+   bar at the bottom, within reach of a thumb. Wider screens don't draw these parts at all. */
+.bottom-bar, .stage-title { display: none; }
+.demo-banner-mock { display: flex; align-items: flex-start; gap: 10px; }
+.demo-banner-text { flex: 1; min-width: 0; }
+.demo-banner-x { flex: none; border: 0; background: none; color: inherit; opacity: 0.7; cursor: pointer; font: inherit; padding: 0 2px; }
+.demo-banner-x:hover { opacity: 1; }
+
+@media (max-width: 900px) {
+  .ls { --chrome-h: 52px; --bottom-h: calc(58px + env(safe-area-inset-bottom, 0px)); }
+  .line-top { flex-wrap: nowrap; gap: 8px; min-height: var(--chrome-h); padding: 6px 12px; }
+  .line-needs, .line-top .views, .line-brand-text > span { display: none; }
+  .line-tools { margin-left: auto; gap: 6px; }
+
+  /* One line, never wrapped: the dismiss button is a tap away. */
+  .demo-banner-mock { align-items: center; padding: 6px 12px; font-size: 12.5px; }
+  .demo-banner-mock .demo-banner-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* The line: all six stations across the width, pinned under the top bar. */
+  .line-rail-compact {
+    --node: 14px; --track: 3px;
+    position: sticky; top: var(--chrome-h); z-index: 7;
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow: visible; padding: 8px 4px 6px;
+    background: var(--header-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .line-rail-compact .station { flex-direction: column; align-items: center; gap: 0; padding: calc(var(--node) + 5px) 0 2px; min-width: 0; }
+  .line-rail-compact .station-name { font-size: 9px; letter-spacing: 0.02em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .line-rail-compact .station-count { font-size: 14px; line-height: 1.2; }
+  .line-rail-compact .station-stuck { display: none; }
+  .line-rail-compact .station.on { border-radius: 8px; }
+  .stage-tabs { gap: 16px; padding: 0 12px; margin-top: 0; }
+  .stage-tabs a { font-size: 13px; padding: 9px 0 10px; }
+
+  /* Page headers: smaller, as the line above already says which stage this is. */
+  .ls .page { padding: 14px 12px 0; }
+  .ls .page-header { margin: 0 -12px 12px; padding: 14px 12px 12px; }
+  .page-header .page-eyebrow { display: none; }
+  .page-header h1 { font-size: 20px; }
+  .page-icon { width: 34px; height: 34px; border-radius: 10px; }
+  .page-title { gap: 10px; }
+
+  /* Home: the stages one under another, each under its heading with its three most stuck. */
+  .line-stages { flex-direction: column; align-items: stretch; overflow: visible; padding: 4px 12px 12px; gap: 14px; }
+  .stage { min-width: 0; padding: 8px; }
+  .stage-title {
+    display: flex; align-items: baseline; gap: 8px; padding: 2px 4px 4px; color: var(--ink);
+  }
+  .stage-title:hover { text-decoration: none; }
+  .stage-title-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-2); }
+  .stage-title-n { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .stage-title-stuck { font-size: 12.5px; color: var(--muted); }
+  .stage-warn .stage-title-stuck { color: var(--warn); }
+  .stage-bad .stage-title-stuck { color: var(--bad); }
+  .stage-title-go { margin-left: auto; color: var(--muted); }
+  .stage-warn { box-shadow: inset 3px 0 var(--warn), inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); }
+  .stage-bad { box-shadow: inset 3px 0 var(--bad), inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent); }
+  .since { margin: 8px 12px 6px; padding: 10px 12px; }
+  .since-head h2 { flex-basis: 100%; }
+  .line-moving, .line-over-time { margin: 4px 12px 14px; }
+  .over-row { grid-template-columns: 72px minmax(0, 1fr) 28px; gap: 8px; }
+  .over-axis { margin: 6px 36px 0 80px; }
+
+  /* The bar at the bottom. */
+  .ls-main { padding-bottom: calc(var(--bottom-h) + 24px); }
+  .ls-desk .ls-main { padding-bottom: calc(var(--bottom-h) + 8px); }
+  .toasts { bottom: calc(var(--bottom-h) + 12px); }
+  .save-bar { bottom: calc(var(--bottom-h) + 12px); }
+  .bottom-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); height: var(--bottom-h); padding: 0 4px env(safe-area-inset-bottom, 0px);
+    background: var(--header-glass); -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+    border-top: 1px solid var(--line);
+  }
+  html.inspector-open .bottom-bar { right: 0; }
+  .bottom-bar a {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0;
+    color: var(--muted); font-size: 11px; font-weight: 500; -webkit-tap-highlight-color: transparent;
+  }
+  .bottom-bar a > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bottom-bar a:hover { text-decoration: none; }
+  .bottom-bar a.on { color: var(--accent-ink); }
+  .bottom-bar a.on .icon { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 60%, transparent)); }
+  .bottom-icon { position: relative; display: inline-flex; }
+  .bottom-n { position: absolute; top: -5px; left: 12px; min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 10.5px; line-height: 16px; text-align: center; background: var(--bad); color: var(--on-accent); border: 2px solid var(--canvas); }
+
+  /* Team → On the line: a card per person. */
+  .people-cards-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .person-card { padding: 12px; border: 1px solid var(--card-border); border-radius: 12px; background: var(--surface); box-shadow: var(--elev-1); display: grid; gap: 10px; }
+  .person-card.has-stuck { box-shadow: inset 3px 0 var(--bad), var(--elev-1); }
+  .person-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .person-card-head strong { flex: 1; }
+  .person-card-stuck { font-size: 12.5px; color: var(--bad); white-space: nowrap; }
+  .person-card-cells { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .person-cell {
+    --tone: var(--accent);
+    display: grid; justify-items: center; gap: 1px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 9px;
+    background: color-mix(in srgb, var(--tone) 7%, var(--surface)); color: var(--ink); font: inherit; cursor: pointer; min-width: 0;
+  }
+  .person-cell.warn { --tone: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+  .person-cell.bad { --tone: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+  .person-cell.on { border-color: var(--accent); }
+  .person-cell:disabled { opacity: 0.4; cursor: default; }
+  .person-cell-n { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .person-cell-label { font-size: 10.5px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

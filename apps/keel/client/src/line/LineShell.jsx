@@ -7,7 +7,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { Avatar, Logo, pinchLine } from '../ui.jsx';
+import { Avatar, Logo, pinchLine, useMedia } from '../ui.jsx';
 import { Icon } from '../icons.jsx';
 import { pinchMood } from '../pinch.js';
 import { t, tj, tx } from '../i18n.js';
@@ -17,6 +17,8 @@ import { stageHint, stageName, stageOfPath, stagePages } from './names.js';
 import './line.css';
 
 const LineData = createContext(null);
+// The demo banner, once dismissed in this browser.
+const DEMO_KEY = 'keel.demoBanner.hidden';
 // Before the line loads: every stage, empty, so the stations are drawn from the start.
 const EMPTY = STAGES.map((id) => ({ id, cards: [], count: 0, stuck: { warn: 0, bad: 0 }, tone: null }));
 /** The line's stages and the shell's shared choices, for the pages that draw them (Line.jsx). */
@@ -51,6 +53,10 @@ export default function LineShell({ children }) {
   useStableHeight(mainRef, refreshKey);
   const [spinning, setSpinning] = useState(false);
   const [onlyMine, setOnlyMine] = useState(false);
+  // A phone gets its own frame: one row along the top, the slim line pinned under it, the views at the bottom.
+  const phone = useMedia('(max-width: 900px)');
+  const [demoHidden, setDemoHidden] = useState(() => { try { return localStorage.getItem(DEMO_KEY) === '1'; } catch { return false; } });
+  const hideDemo = () => { setDemoHidden(true); try { localStorage.setItem(DEMO_KEY, '1'); } catch { /* storage blocked: it comes back next time */ } };
 
   // The shell stays mounted from page to page, so these load once and follow refreshes.
   // The server builds the line (server/line.js), with each project's limits and levels and its history.
@@ -107,7 +113,7 @@ export default function LineShell({ children }) {
 
           <nav className="views" aria-label={t('Views')}>
             <NavLink to="/" className={() => (view === 'line' ? 'on' : '')} title={t('Where change is stuck')}><Icon name="line" size={15} /><span>{t('Line')}</span></NavLink>
-            <NavLink to="/desk" className={() => (view === 'desk' ? 'on' : '')} title={t('What to do next')}><Icon name="inbox" size={15} /><span>{t('Desk')}</span></NavLink>
+            <NavLink to="/desk" className={() => (view === 'desk' ? 'on' : '')} title={t('What to do next')}><Icon name="workItems" size={15} /><span>{t('Desk')}</span></NavLink>
             <NavLink to="/control" className={() => (view === 'control' ? 'on' : '')} title={t("What's happening now")}><Icon name="production" size={15} /><span>{t('Control room')}</span></NavLink>
           </nav>
 
@@ -137,11 +143,14 @@ export default function LineShell({ children }) {
             <button type="button" className="btn btn-small btn-primary" onClick={updateNow}>{t('Update')}</button>
           </div>
         )}
-        {meta.mock && (
-          <div className="demo-banner">
-            {tj("You're looking at demo data ({reason}). Add {orgUrl} and {pat} to {env} and restart to connect your organization.", {
-              reason: tx(meta.mockReason), orgUrl: <code>AZDO_ORG_URL</code>, pat: <code>AZDO_PAT</code>, env: <code>.env</code>,
-            })}
+        {meta.mock && !demoHidden && (
+          <div className="demo-banner demo-banner-mock">
+            <span className="demo-banner-text">
+              {tj("You're looking at demo data ({reason}). Add {orgUrl} and {pat} to {env} and restart to connect your organization.", {
+                reason: tx(meta.mockReason), orgUrl: <code>AZDO_ORG_URL</code>, pat: <code>AZDO_PAT</code>, env: <code>.env</code>,
+              })}
+            </span>
+            <button type="button" className="demo-banner-x" onClick={hideDemo} aria-label={t('Dismiss')} title={t('Dismiss')}>✕</button>
           </div>
         )}
         {!meta.trackedProjects.length && (
@@ -150,7 +159,7 @@ export default function LineShell({ children }) {
           </div>
         )}
 
-        {view === 'line' && <Rail stages={stages} tracks={line.tracks} history={line.history} here={here} compact={!home} loading={loading} />}
+        {view === 'line' && <Rail stages={stages} tracks={line.tracks} history={line.history} here={here} compact={!home || phone} loading={loading} />}
         {view === 'line' && here && (
           <nav className="stage-tabs" aria-label={stageName(here)}>
             {stagePages(here).map(([label, to]) => (
@@ -160,6 +169,17 @@ export default function LineShell({ children }) {
         )}
 
         <main className="ls-main" ref={mainRef}>{children}</main>
+
+        {/* Phones: the three views and the Inbox at the bottom, within reach of a thumb. */}
+        <nav className="bottom-bar" aria-label={t('Views')}>
+          <NavLink to="/" className={() => (view === 'line' && !pathname.startsWith('/inbox') ? 'on' : '')}><Icon name="line" /><span>{t('Line')}</span></NavLink>
+          <NavLink to="/desk" className={() => (view === 'desk' ? 'on' : '')}><Icon name="workItems" /><span>{t('Desk')}</span></NavLink>
+          <NavLink to="/control" className={() => (view === 'control' ? 'on' : '')}><Icon name="production" /><span>{t('Control room')}</span></NavLink>
+          <NavLink to="/inbox" className={({ isActive }) => (isActive ? 'on' : '')}>
+            <span className="bottom-icon"><Icon name="inbox" />{s?.high ? <span className="bottom-n">{s.high}</span> : null}</span>
+            <span>{t('Inbox')}</span>
+          </NavLink>
+        </nav>
       </div>
     </LineData.Provider>
   );
