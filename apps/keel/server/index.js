@@ -67,7 +67,7 @@ if (config.authMode === 'login') {
     }));
     const service = createMultiService(entries);
     // Local mode: the one person using it is the admin.
-    ctx = { service, watcher: createWatcher(service), role: 'admin', user: null, sig: orgStore.signature() };
+    ctx = { service, watcher: createWatcher(service, { scope: 'local' }), role: 'admin', user: null, sig: orgStore.signature() };
     return ctx;
   };
   app.get('/api/auth/status', (req, res) => res.json({ mode: 'local', signedIn: true, orgUrl: orgStore.primary()?.url }));

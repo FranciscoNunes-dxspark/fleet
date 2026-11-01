@@ -4,12 +4,24 @@
 //   notify  — specific events worth telling the lead about
 // Nobody watching means no polling, so an idle console costs no API quota.
 import { diffSnapshots, fingerprint } from './domain/changes.js';
+import { lineOf, remember } from './line.js';
+
+// Server-sent sentences: whole, so they translate (client/src/locales/pt/server.js).
+const RED_TITLE = {
+  planned: 'Planned turned red on the Line',
+  building: 'Building turned red on the Line',
+  review: 'In review turned red on the Line',
+  merged: 'Merged turned red on the Line',
+  deploying: 'Deploying turned red on the Line',
+  live: 'Live turned red on the Line',
+};
 
 export const MIN_INTERVAL = 15;
 export const MAX_INTERVAL = 600;
 const clamp = (n) => Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, Number(n) || 60));
 
-export function createWatcher(service) {
+/** `scope`: whose line history the polls keep (their account id, or "local" for the one person of local mode). */
+export function createWatcher(service, { scope = 'local' } = {}) {
   const clients = new Set();
   let timer = null;
   let prev = null;
@@ -44,6 +56,7 @@ export function createWatcher(service) {
       const snap = await service.snapshot();
       const fp = fingerprint(snap);
       const notes = diffSnapshots(prev, snap);
+      notes.push(...await lineNotes());
       prev = snap;
       lastPollAt = new Date().toISOString();
       lastError = null;
@@ -60,6 +73,27 @@ export function createWatcher(service) {
       busy = false;
       await schedule();
       broadcast('status', status());
+    }
+  }
+
+  // The Line, looked at on every poll: today's entry in this person's history, and a note for
+  // each stage that has just turned red. A failure here never stops the other updates.
+  async function lineNotes() {
+    try {
+      const { stages } = await lineOf(service);
+      const { red } = remember(scope, stages);
+      const day = new Date().toISOString().slice(0, 10);
+      return red.map((id) => {
+        const s = stages.find((x) => x.id === id);
+        return {
+          key: `line:${id}:${day}`, category: 'line', severity: 'high',
+          title: RED_TITLE[id], body: `${s.stuck.bad + s.stuck.warn} of ${s.count} stuck`,
+          target: { type: 'line', stage: id },
+        };
+      });
+    } catch (err) {
+      console.warn(`[watcher] the Line: ${err.message}`);
+      return [];
     }
   }
 

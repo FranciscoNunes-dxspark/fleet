@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { historyView, lineOf, remember } from './line.js';
 import express from 'express';
 import { PERMISSIONS, can } from './accounts.js';
 import { createOrgStore } from './orgs.js';
@@ -53,6 +54,12 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   });
 
   r.get('/attention', async (req, res) => res.json(await req.ctx.service.attention()));
+  // The Line (server/line.js), with this person's history of it; looking counts as today's entry.
+  r.get('/line', async (req, res) => {
+    const line = await lineOf(req.ctx.service);
+    const { entries } = remember(req.ctx.user?.id || 'local', line.stages);
+    res.json({ ...line, history: historyView(entries) });
+  });
   r.post('/attention/snooze', async (req, res) => {
     const { key, days } = req.body || {};
     if (typeof key !== 'string' || !key) return res.status(400).json({ error: 'key required' });

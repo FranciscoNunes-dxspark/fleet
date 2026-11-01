@@ -150,7 +150,7 @@ export function createAuth({ monitoring = null, schedules = null } = {}) {
           service: createService({ provider: providerOf(accounts.tokenOf(user.id, org.key), org), settings, monitoring: org.primary ? monitoring : null, org, schedules, owner: user.id }),
         }));
       const service = createMultiService(entries);
-      ctx = { service, watcher: createWatcher(service), lastUsed: Date.now(), sig };
+      ctx = { service, watcher: createWatcher(service, { scope: user.id }), lastUsed: Date.now(), sig };
       contexts.set(user.id, ctx);
     }
     ctx.lastUsed = Date.now();

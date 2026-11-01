@@ -12,11 +12,13 @@ import { Icon } from '../icons.jsx';
 import { pinchMood } from '../pinch.js';
 import { t, tj, tx } from '../i18n.js';
 import { updateNow, useNewVersion } from '../version.js';
-import { buildLine, trackTones } from './stages.js';
+import { STAGES, trackTones } from './stages.js';
 import { stageHint, stageName, stageOfPath, stagePages } from './names.js';
 import './line.css';
 
 const LineData = createContext(null);
+// Before the line loads: every stage, empty, so the stations are drawn from the start.
+const EMPTY = STAGES.map((id) => ({ id, cards: [], count: 0, stuck: { warn: 0, bad: 0 }, tone: null }));
 /** The line's stages and the shell's shared choices, for the pages that draw them (Line.jsx). */
 export const useLine = () => useContext(LineData);
 
@@ -51,24 +53,22 @@ export default function LineShell({ children }) {
   const [onlyMine, setOnlyMine] = useState(false);
 
   // The shell stays mounted from page to page, so these load once and follow refreshes.
-  const workitems = useApi('/workitems');
-  const prs = useApi('/prs');
+  // The server builds the line (server/line.js), with each project's limits and levels and its history.
+  const lineApi = useApi('/line');
   const pending = useApi('/deploys/pending');
   const pipelines = useApi('/pipelines');
   const approvals = useApi('/approvals');
   const production = useApi('/production');
   const attention = useApi('/attention');
-  const stages = useMemo(() => buildLine({
-    workitems: workitems.data, prs: prs.data, pending: pending.data,
-    pipelines: pipelines.data, approvals: approvals.data, production: production.data,
-  }), [workitems.data, prs.data, pending.data, pipelines.data, approvals.data, production.data]);
-  const loading = [workitems, prs, pending, pipelines, approvals, production].some((r) => !r.data && !r.error);
+  const stages = useMemo(() => lineApi.data?.stages || EMPTY, [lineApi.data]);
+  const loading = !lineApi.data && !lineApi.error;
   // The raw answers too, for the Desk and the Control room, which read them their own way.
   const data = useMemo(() => ({
-    workitems: workitems.data, prs: prs.data, pending: pending.data, pipelines: pipelines.data,
-    approvals: approvals.data, production: production.data, attention: attention.data,
-  }), [workitems.data, prs.data, pending.data, pipelines.data, approvals.data, production.data, attention.data]);
-  const line = useMemo(() => ({ stages, tracks: trackTones(stages), loading, onlyMine, setOnlyMine, data }), [stages, loading, onlyMine, data]);
+    pending: pending.data, pipelines: pipelines.data, approvals: approvals.data, production: production.data, attention: attention.data,
+  }), [pending.data, pipelines.data, approvals.data, production.data, attention.data]);
+  const line = useMemo(() => ({
+    stages, tracks: lineApi.data?.tracks || trackTones(stages), history: lineApi.data?.history || null, loading, onlyMine, setOnlyMine, data,
+  }), [stages, lineApi.data, loading, onlyMine, data]);
 
   const s = attention.data?.summary;
   // Browser tab title carries the "act now" count, so it shows on a background tab.
@@ -150,7 +150,7 @@ export default function LineShell({ children }) {
           </div>
         )}
 
-        {view === 'line' && <Rail stages={stages} tracks={line.tracks} here={here} compact={!home} loading={loading} />}
+        {view === 'line' && <Rail stages={stages} tracks={line.tracks} history={line.history} here={here} compact={!home} loading={loading} />}
         {view === 'line' && here && (
           <nav className="stage-tabs" aria-label={stageName(here)}>
             {stagePages(here).map(([label, to]) => (
@@ -166,7 +166,7 @@ export default function LineShell({ children }) {
 }
 
 /** The stations: the whole line on the home page, a slim one over every other page. */
-function Rail({ stages, tracks, here, compact, loading }) {
+function Rail({ stages, tracks, history, here, compact, loading }) {
   return (
     <nav className={`line-rail${compact ? ' line-rail-compact' : ''}`} aria-label={t('The Line')}>
       {stages.map((stage, i) => {
@@ -188,12 +188,27 @@ function Rail({ stages, tracks, here, compact, loading }) {
             {(stuck > 0 || !compact) && (
               <span className="station-stuck">
                 {stuck ? t(stuck === 1 ? '1 stuck' : '{n} stuck', { n: stuck }) : stageHint(stage.id)}
+                {/* Red for days on end is worth more than red today (server/domain/linehistory.js). */}
+                {history?.redFor?.[stage.id] > 1 && <span className="station-red-for"> · {t('red for {n} days', { n: history.redFor[stage.id] })}</span>}
               </span>
             )}
+            {!compact && history?.days?.length > 1 && <ToneStrip days={history.days.slice(-30)} id={stage.id} />}
           </NavLink>
         );
       })}
     </nav>
+  );
+}
+
+/** A stage's last days, a square each, in the tone it had (hover for the day and its count). */
+function ToneStrip({ days, id }) {
+  return (
+    <span className="tone-strip" aria-hidden="true">
+      {days.map((d) => {
+        const s = d.stages[id];
+        return <span key={d.day} className={`tone-day tone-${s?.tone || (s ? 'ok' : 'none')}`} title={s ? `${d.day}: ${s.count} · ${t(s.bad + s.warn === 1 ? '1 stuck' : '{n} stuck', { n: s.bad + s.warn })}` : d.day} />;
+      })}
+    </span>
   );
 }
 

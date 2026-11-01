@@ -19,10 +19,16 @@ const THRESHOLDS = [
   ['prNoReviewHours', 'Flag a PR with no approvals after', 'hours'],
   ['stalePrDays', 'Call a PR stale after', 'days'],
   ['itemStuckDays', 'Flag an in-progress item with no updates after', 'days'],
+  ['p1WaitDays', 'Call a P1 stuck when it has not started after', 'days'],
+  ['shipWarnDays', 'Turn merged changes waiting to ship amber after', 'days'],
+  ['shipBadDays', 'Turn them red after', 'days'],
   ['buildLookbackDays', 'Judge pipeline health over the last', 'days'],
   ['maxInProgressPerPerson', 'Flag a person with more items in progress than', 'items'],
   ['maxPendingReviewsPerPerson', 'Flag a person owing more reviews than', 'reviews'],
 ];
+
+// What a project can set for itself on the Line (stages.js limitsFor); empty means the defaults above.
+const LINE_LIMITS = ['stalePrDays', 'itemStuckDays', 'p1WaitDays', 'shipWarnDays', 'shipBadDays'];
 
 const MERGE = [
   ['squash', 'Squash commit'],
@@ -167,6 +173,26 @@ export default function Settings() {
                         </div>
                         <label className="check"><input type="checkbox" disabled={!teamsOf(cfg).length} checked={!!cfg.scopeToTeamArea} onChange={(e) => setProject(p.id, { scopeToTeamArea: e.target.checked })} /> {t("Only work items in these teams' area paths")}</label>
                       </fieldset>}
+                      <fieldset className="repo-pick line-limits">
+                        <legend>{t('When this project counts as stuck on the Line')} <span className="muted small">{t('Empty uses the defaults under When to flag things.')}</span></legend>
+                        <div className="line-limits-grid">
+                          {LINE_LIMITS.map((k) => {
+                            const [, label, unit] = THRESHOLDS.find(([key]) => key === k);
+                            return (
+                              <label key={k}>
+                                <span>{t(label)}</span>
+                                <span className="threshold-input">
+                                  <input
+                                    type="number" min={1} className="input" placeholder={String(draft.thresholds[k] ?? '')}
+                                    value={cfg.line?.[k] ?? ''}
+                                    onChange={(e) => setProject(p.id, { line: { ...(cfg.line || {}), [k]: e.target.value ? Number(e.target.value) : null } })}
+                                  /> {t(unit)}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
                       <div className="repo-pick">
                         <div className="repo-group">
                           <label className="check"><input type="radio" name={`repos-${p.id}`} checked={cfg.repos === 'all' || !Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: 'all' })} /> {t('All repos ({n})', { n: opt.repos.length })}</label>

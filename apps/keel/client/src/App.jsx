@@ -161,6 +161,7 @@ function Console({ authMode, onSignedOut }) {
     else if (target.type === 'pipeline' || target.type === 'approval') navigate('/pipelines');
     else if (target.type === 'person') navigate('/team');
     else if (target.type === 'production') navigate('/production');
+    else if (target.type === 'line') navigate(`/line/${target.stage}`);
   }, [navigate]);
 
   // A tapped push notification (public/sw.js) leads to a page, with ?open= naming the PR or work item to show.

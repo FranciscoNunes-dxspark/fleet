@@ -63,7 +63,7 @@ function useOpenCard() {
 
 /** Home: every stage side by side, each with its most stuck cards, then how the line moves. */
 export function LineHome() {
-  const { stages, loading } = useLine();
+  const { stages, loading, history } = useLine();
   const { drawer } = useApp();
   const open = useOpenCard();
   const typeColor = useTypeColor();
@@ -86,7 +86,48 @@ export function LineHome() {
         })}
       </div>
       <Moving delivery={delivery.data} />
+      <OverTime history={history} />
     </div>
+  );
+}
+
+/**
+ * The line over the days Keel has seen it (server/line.js keeps a day per person): a row per
+ * stage, a bar per day as tall as what the stage held, in the tone it had. Where a stage stays
+ * red day after day is where the team's process is jammed, not just its week.
+ */
+function OverTime({ history }) {
+  const days = history?.days?.slice(-60) || [];
+  if (days.length < 2) return null;
+  return (
+    <section className="line-over-time" aria-label={t('The line over time')}>
+      <h2>{t('The line over the last {n} days', { n: days.length })}</h2>
+      <div className="over-rows">
+        {STAGES.map((id) => {
+          const max = Math.max(1, ...days.map((d) => d.stages[id]?.count || 0));
+          return (
+            <div key={id} className="over-row">
+              <span className="over-name">{stageName(id)}</span>
+              <span className="over-bars">
+                {days.map((d) => {
+                  const s = d.stages[id];
+                  return (
+                    <span
+                      key={d.day}
+                      className={`over-bar tone-${s?.tone || 'ok'}`}
+                      style={{ height: `${Math.max(6, ((s?.count || 0) / max) * 100)}%` }}
+                      title={s ? `${d.day}: ${s.count} · ${t(s.bad + s.warn === 1 ? '1 stuck' : '{n} stuck', { n: s.bad + s.warn })}` : d.day}
+                    />
+                  );
+                })}
+              </span>
+              <span className="over-now">{days.at(-1).stages[id]?.count ?? '—'}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="over-axis"><span>{days[0].day}</span><span>{days.at(-1).day}</span></p>
+    </section>
   );
 }
 

@@ -1478,3 +1478,8 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 /* The row whose details the docked panel shows. */
 .table tbody tr.row-open, .table tbody tr.row-open:hover { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
 .table tbody tr.row-open td:first-child { box-shadow: inset 3px 0 var(--accent); }
+
+/* Settings: a project's own limits on the Line, beside the defaults. */
+.line-limits-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 18px; }
+.line-limits-grid label { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+.line-limits-grid .input { width: 80px; }

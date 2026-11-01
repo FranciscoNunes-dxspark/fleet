@@ -84,4 +84,13 @@ export default {
   'Nothing has happened yet today.': 'Ainda não aconteceu nada hoje.',
   'Deploying {label}': 'A implementar {label}',
   '{label}, {age}': '{label}, {age}',
+  'The line over time': 'A linha ao longo do tempo',
+  'The line over the last {n} days': 'A linha nos últimos {n} dias',
+  'red for {n} days': 'a vermelho há {n} dias',
+  'A stage of the Line turning red': 'Uma fase da Linha a ficar vermelha',
+  'When this project counts as stuck on the Line': 'Quando este projeto conta como parado na Linha',
+  'Empty uses the defaults under When to flag things.': 'Vazio usa os valores de Quando dar alertas.',
+  'Call a P1 stuck when it has not started after': 'Considerar parado um P1 que não começou ao fim de',
+  'Turn merged changes waiting to ship amber after': 'Pôr a âmbar alterações à espera de implementação ao fim de',
+  'Turn them red after': 'E a vermelho ao fim de',
 };

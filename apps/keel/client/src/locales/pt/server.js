@@ -348,4 +348,12 @@ export default {
   // server/terminals.js and auth.js: signing in the terminal app
   "That code isn't one Keel is waiting for. Check it against your terminal, or run keel login again: codes last 10 minutes.": 'Esse código não é um dos que o Keel está à espera. Compare-o com o do seu terminal, ou volte a correr keel login: os códigos duram 10 minutos.',
   'No such terminal sign-in.': 'Essa sessão de terminal não existe.',
+  // The Line turning red (server/watcher.js)
+  'Planned turned red on the Line': 'Planeado ficou a vermelho na Linha',
+  'Building turned red on the Line': 'Em curso ficou a vermelho na Linha',
+  'In review turned red on the Line': 'Em revisão ficou a vermelho na Linha',
+  'Merged turned red on the Line': 'Com merge ficou a vermelho na Linha',
+  'Deploying turned red on the Line': 'A fazer deploy ficou a vermelho na Linha',
+  'Live turned red on the Line': 'Em produção ficou a vermelho na Linha',
+  '{n} of {count} stuck': '{n} de {count} parados',
 };

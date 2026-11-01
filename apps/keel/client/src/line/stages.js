@@ -9,81 +9,104 @@ const DAY = 24 * HOUR;
 /** The stages in the order change moves through them. */
 export const STAGES = ['planned', 'building', 'review', 'merged', 'deploying', 'live'];
 
-// Prototype stand-in: the Board learns a team's task and portfolio levels from its
-// process settings; until the Line does too, it leaves out the server's default task
-// type and the usual portfolio levels, which aren't pieces of change themselves.
+/** How long things may sit before they count as stuck (Settings → When to flag things). */
+export const DEFAULT_LIMITS = { stalePrDays: 5, itemStuckDays: 5, p1WaitDays: 2, shipWarnDays: 3, shipBadDays: 7 };
+
+// What's on the line is each project's requirement level (stories, backlog items, and bugs
+// where the process keeps them there), as its team's backlog settings say (`levels`). Without
+// them (a project with no team), it falls back to leaving out the server's default task type and
+// the usual portfolio levels, which aren't pieces of change themselves.
 const OFF_LINE_TYPES = ['Task', 'Epic', 'Feature'];
+const onLine = (w, levels) => {
+  const types = levels?.[w.projectId];
+  return types?.length ? types.includes(w.type) : !OFF_LINE_TYPES.includes(w.type);
+};
 
 const since = (iso, now) => (iso ? Math.max(0, now - Date.parse(iso)) : 0);
 const rank = { bad: 0, warn: 1, null: 2 };
 // Most stuck first, then what needs you, then the oldest.
 const byUrgency = (a, b) => rank[a.stuck] - rank[b.stuck] || Number(b.mine) - Number(a.mine) || b.age - a.age;
 
-function workCard(w, stage, now) {
+function workCard(w, stage, now, limits) {
   const age = since(stage === 'planned' ? w.createdAt : (w.activatedAt || w.stateChangedAt || w.createdAt), now);
   const quiet = since(w.changedAt, now);
   let stuck = null;
   let reason = null;
-  if (stage === 'planned' && w.priority === 1 && age > 2 * DAY) { stuck = 'bad'; reason = { code: 'p1-waiting', days: Math.floor(age / DAY) }; }
+  if (stage === 'planned' && w.priority === 1 && age > limits.p1WaitDays * DAY) { stuck = 'bad'; reason = { code: 'p1-waiting', days: Math.floor(age / DAY) }; }
   if (stage === 'building' && w.blocked) { stuck = 'bad'; reason = { code: 'blocked' }; }
-  else if (stage === 'building' && quiet > 5 * DAY) { stuck = 'warn'; reason = { code: 'quiet', days: Math.floor(quiet / DAY) }; }
+  else if (stage === 'building' && quiet > limits.itemStuckDays * DAY) { stuck = 'warn'; reason = { code: 'quiet', days: Math.floor(quiet / DAY) }; }
   return {
     key: `wi:${w.org || ''}:${w.id}`, stage, kind: 'workitem', title: w.title,
     sub: `${w.type} ${w.id} · ${w.projectName}`, type: w.type, typeColor: w.typeColor,
-    person: w.assignedTo || null, age, stuck, reason, mine: false, state: w.state,
+    person: w.assignedTo || null, projectId: w.projectId, age, stuck, reason, mine: false, state: w.state,
     open: { type: 'workitem', id: w.id, org: w.org },
   };
 }
 
-function prCard(p, now) {
+function prCard(p, now, limits) {
   const age = since(p.createdAt, now);
   let stuck = null;
   let reason = { code: `pr-${p.reviewState}` };
   if (p.hasConflicts) { stuck = 'bad'; reason = { code: 'conflicts' }; }
   else if (p.reviewState === 'rejected') stuck = 'bad';
-  else if (age > 5 * DAY) { stuck = 'warn'; reason = { code: 'stale', days: Math.floor(age / DAY) }; }
+  else if (age > limits.stalePrDays * DAY) { stuck = 'warn'; reason = { code: 'stale', days: Math.floor(age / DAY) }; }
   return {
     key: `pr:${p.key}`, stage: 'review', kind: 'pr', title: p.title,
-    sub: `${p.repoName} · !${p.id}`, person: p.author || null, age, stuck, reason,
-    mine: !!p.needsMyReview, draft: !!p.isDraft, reviewState: p.reviewState,
+    sub: `${p.repoName} · !${p.id}`, person: p.author || null, projectId: p.projectId, age, stuck, reason,
+    // Who it waits on: reviewers who haven't voted, for the per-person line (people.js).
+    waitingOn: (p.reviewers || []).filter((r) => !r.isContainer && !r.vote).map(({ id, displayName, uniqueName }) => ({ id, displayName, uniqueName })),
+    mine: !!p.needsMyReview, draft: !!p.isDraft, reviewState: p.reviewState, readyToMerge: !!p.readyToMerge, autoComplete: !!p.autoComplete,
     open: { type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id },
   };
 }
 
-function shipCard(t, now) {
+function shipCard(t, now, limits) {
   const age = since(t.oldestAt, now);
   return {
-    key: `ship:${t.key}`, stage: 'merged', kind: 'ship', title: t.name,
+    key: `ship:${t.key}`, stage: 'merged', kind: 'ship', title: t.name, projectId: t.projectId,
     sub: t.lastDeploy ? t.lastDeploy.label : t.projectName, count: t.waiting, age,
-    stuck: age > 7 * DAY ? 'bad' : age > 3 * DAY ? 'warn' : null,
+    stuck: age > limits.shipBadDays * DAY ? 'bad' : age > limits.shipWarnDays * DAY ? 'warn' : null,
     reason: { code: 'waiting-changes', n: t.waiting, days: Math.floor(age / DAY) },
     mine: false, link: '/ship',
   };
 }
 
+/** A project's limits: its own where Settings sets them, the defaults for the rest. */
+export function limitsFor(projectId, limits = {}) {
+  const own = limits.projects?.[projectId] || {};
+  const merged = { ...DEFAULT_LIMITS, ...(limits.default || {}) };
+  for (const [k, v] of Object.entries(own)) if (Number(v) > 0) merged[k] = Number(v);
+  return merged;
+}
+
 /**
  * The Line's stages from the API's answers (any may be missing while it loads).
  * Each stage: { id, cards, count, stuck: { warn, bad }, tone }.
+ * `options.limits` = { default, projects: { [projectId]: own limits } }; `options.levels` =
+ * { [projectId]: work item types on the line } (the server knows both; see server/line.js).
  */
-export function buildLine({ workitems, prs, pending, pipelines, approvals, production } = {}, now = Date.now()) {
+export function buildLine({ workitems, prs, pending, pipelines, approvals, production } = {}, now = Date.now(), { limits = {}, levels = null } = {}) {
   const cards = Object.fromEntries(STAGES.map((s) => [s, []]));
+  const lim = (projectId) => limitsFor(projectId, limits);
 
   for (const w of workitems?.items || []) {
-    if (OFF_LINE_TYPES.includes(w.type)) continue;
-    if (w.stateCategory === 'Proposed') cards.planned.push(workCard(w, 'planned', now));
-    else if (w.stateCategory === 'InProgress' || w.stateCategory === 'Resolved') cards.building.push(workCard(w, 'building', now));
+    if (!onLine(w, levels)) continue;
+    if (w.stateCategory === 'Proposed') cards.planned.push(workCard(w, 'planned', now, lim(w.projectId)));
+    else if (w.stateCategory === 'InProgress' || w.stateCategory === 'Resolved') cards.building.push(workCard(w, 'building', now, lim(w.projectId)));
   }
 
-  for (const p of prs?.prs || []) if (p.status === 'active') cards.review.push(prCard(p, now));
+  for (const p of prs?.prs || []) if (p.status === 'active') cards.review.push(prCard(p, now, lim(p.projectId)));
 
-  for (const t of pending?.targets || []) if (t.waiting > 0) cards.merged.push(shipCard(t, now));
+  for (const t of pending?.targets || []) if (t.waiting > 0) cards.merged.push(shipCard(t, now, lim(t.projectId)));
 
   // Deploying: decisions waiting on someone, deploys under way, and red pipelines, which hold the line up.
   for (const a of approvals || []) {
     cards.deploying.push({
       key: `appr:${a.key}`, stage: 'deploying', kind: 'approval', title: `${a.pipeline} → ${a.stage}`,
       sub: a.run?.name || a.projectName, age: since(a.createdOn, now), stuck: 'warn',
-      reason: { code: a.canDecide ? 'approval-yours' : 'approval' }, mine: !!a.canDecide, link: '/pipelines',
+      reason: { code: a.canDecide ? 'approval-yours' : 'approval' }, mine: !!a.canDecide, link: '/pipelines', projectId: a.projectId,
+      // What deciding it from the card needs (orgs.js approvalPath).
+      approval: { kind: a.kind, id: a.id, org: a.org, canDecide: !!a.canDecide },
     });
   }
   for (const t of pending?.targets || []) {
@@ -103,7 +126,9 @@ export function buildLine({ workitems, prs, pending, pipelines, approvals, produ
       stuck: p.health === 'failing' ? 'bad' : null,
       reason: p.health === 'failing' ? { code: 'red', n: p.failStreak } : { code: 'running' },
       runs: (p.recent || []).slice(0, 10).map((r) => r.result || r.status),
-      mine: false, open: { type: 'pipeline', key: p.key },
+      mine: false, open: { type: 'pipeline', key: p.key }, projectId: p.projectId,
+      // Running it again from the card, on the branch it's judged on.
+      rerun: p.health === 'failing' && !running && p.definition.id != null ? { projectId: p.projectId, definitionId: p.definition.id, branch: p.branch } : null,
     });
   }
 

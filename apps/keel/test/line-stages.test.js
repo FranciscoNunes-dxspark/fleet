@@ -94,3 +94,30 @@ test('each track takes the tone of the stage it leads into, and an empty stage l
   ];
   assert.deepEqual(trackTones(stages), ['ok', 'idle', 'warn']);
 });
+
+test("a project's own limits win over the defaults, which win over Keel's", () => {
+  const prs = { prs: [pr({ key: 'a', id: 1, projectId: 'p1', createdAt: daysAgo(4) }), pr({ key: 'b', id: 2, projectId: 'p2', createdAt: daysAgo(4) })] };
+  const line = buildLine({ prs }, NOW, { limits: { default: { stalePrDays: 3 }, projects: { p2: { stalePrDays: 10, shipBadDays: null } } } });
+  const byId = Object.fromEntries(stage(line, 'review').cards.map((c) => [c.open.id, c.stuck]));
+  assert.deepEqual(byId, { 1: 'warn', 2: null });
+});
+
+test("a project's backlog level decides which work items are on the line", () => {
+  const items = [
+    wi({ id: 1, type: 'Product Backlog Item', projectId: 'p' }), wi({ id: 2, type: 'Bug', projectId: 'p' }),
+    wi({ id: 3, type: 'Issue', projectId: 'p' }), wi({ id: 4, type: 'Task', projectId: 'q' }), wi({ id: 5, type: 'Issue', projectId: 'q' }),
+  ];
+  const line = buildLine({ workitems: { items } }, NOW, { levels: { p: ['Product Backlog Item', 'Bug'] } });
+  // p by its level; q (no level known) by the fallback, which only leaves out tasks and portfolio items.
+  assert.deepEqual(stage(line, 'planned').cards.map((c) => c.open.id).sort(), [1, 2, 5]);
+});
+
+test('approval and red pipeline cards carry what acting on them needs', () => {
+  const line = buildLine({
+    approvals: [{ key: 'k', kind: 'release', id: 9, pipeline: 'Shop', stage: 'Prod', createdOn: daysAgo(0.1), canDecide: true }],
+    pipelines: [{ key: 'p', projectId: 'pp', definition: { id: 4, name: 'ci' }, branch: 'main', health: 'failing', failStreak: 2, running: [], recent: [] }],
+  }, NOW);
+  const cards = stage(line, 'deploying').cards;
+  assert.deepEqual(cards.find((c) => c.kind === 'approval').approval, { kind: 'release', id: 9, org: undefined, canDecide: true });
+  assert.deepEqual(cards.find((c) => c.kind === 'pipeline').rerun, { projectId: 'pp', definitionId: 4, branch: 'main' });
+});
