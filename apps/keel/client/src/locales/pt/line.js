@@ -96,4 +96,11 @@ export default {
   'Approve {name}?': 'Aprovar {name}?',
   'Reject {name}?': 'Rejeitar {name}?',
   'Run again': 'Executar de novo',
+  'What each person holds on the Line, and how much of it is stuck.': 'O que cada pessoa tem na Linha, e quanto disso está parado.',
+  'All teams': 'Todas as equipas',
+  'Stuck': 'Parados',
+  'Nobody': 'Ninguém',
+  '{name}: {n} in {stage}': '{name}: {n} em {stage}',
+  'On the line': 'Na linha',
+  'Workload': 'Carga de trabalho',
 };

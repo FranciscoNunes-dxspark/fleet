@@ -445,3 +445,20 @@ button.tile-hit { cursor: pointer; }
 /* Acting from a card: its buttons sit along its foot, under the part that opens it. */
 .lc-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px 13px; margin-top: -2px; }
 .lc-actions .btn-small { padding: 3px 10px; font-size: 12.5px; }
+
+/* Team → On the line: a cell per person and stage, filled to how much they hold, in the tone of what's stuck. */
+.people-line td { vertical-align: middle; }
+.people-cell {
+  --tone: var(--accent);
+  position: relative; display: inline-flex; flex-direction: column; align-items: flex-end; min-width: 76px; padding: 4px 8px; overflow: hidden;
+  border: 1px solid transparent; border-radius: 8px; background: none; color: var(--ink); font: inherit; cursor: pointer;
+}
+.people-cell::before { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--fill); background: color-mix(in srgb, var(--tone) 14%, transparent); z-index: 0; }
+.people-cell > * { position: relative; }
+.people-cell.warn { --tone: var(--warn); }
+.people-cell.bad { --tone: var(--bad); }
+.people-cell:hover { border-color: var(--line-strong); }
+.people-cell.on { border-color: var(--accent); }
+.people-n { font-weight: 600; font-variant-numeric: tabular-nums; }
+.people-stuck { font-size: 11px; color: var(--tone); }
+.people-cards { margin-top: 18px; }

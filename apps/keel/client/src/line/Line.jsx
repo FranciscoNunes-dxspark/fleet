@@ -55,7 +55,7 @@ function reasonText(r) {
 }
 
 /** Opens a card: in the details panel where Keel has one for it, else on the page that holds it. */
-function useOpenCard() {
+export function useOpenCard() {
   const { openDrawer } = useApp();
   const navigate = useNavigate();
   return (card) => {
@@ -173,7 +173,8 @@ export function StageCards() {
   );
 }
 
-function Card({ card, onOpen, drawer, typeColor }) {
+/** One card on the line: what it is, why it's stuck, how long it has sat there, and what you can do from it. */
+export function Card({ card, onOpen, drawer, typeColor }) {
   const fill = Math.min(1, card.age / PATIENCE[card.stage]);
   const open = !!card.open && sameTarget(card.open, drawer);
   return (

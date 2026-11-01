@@ -153,7 +153,7 @@ const ICONS = [
   ['/inbox', 'inbox'], ['/summary', 'summary'], ['/work', 'workItems'], ['/epics', 'workItems'], ['/board', 'board'],
   ['/prs', 'pullRequests'], ['/commits', 'pullRequests'], ['/release-notes', 'pullRequests'],
   ['/pipelines', 'pipelines'], ['/production', 'production'], ['/ship', 'production'], ['/totals', 'production'],
-  ['/team', 'team'], ['/users', 'team'], ['/insights', 'insights'], ['/settings', 'settings'],
+  ['/team', 'team'], ['/users', 'team'], ['/people', 'team'], ['/insights', 'insights'], ['/settings', 'settings'],
 ];
 
 export function PageHeader({ title, sub, children }) {
@@ -229,11 +229,12 @@ export function PageTabs({ label, tabs }) {
 export const CodeTabs = () => null;
 export const ProductionTabs = () => null;
 export const WorkTabs = () => null;
-/** Team, and Users for Admins of a Keel with accounts; nothing to switch to otherwise. */
+/** Team: the Line person by person, each person's workload, and Users for Admins of a Keel with accounts. */
 export function TeamTabs() {
   const { authMode, can } = useApp();
-  if (authMode !== 'login' || !can('users.manage')) return null;
-  return <PageTabs label={t('Team')} tabs={[{ to: '/team', label: t('Team') }, { to: '/users', label: t('Users') }]} />;
+  const tabs = [{ to: '/people', label: t('On the line') }, { to: '/team', label: t('Workload') }];
+  if (authMode === 'login' && can('users.manage')) tabs.push({ to: '/users', label: t('Users') });
+  return <PageTabs label={t('Team')} tabs={tabs} />;
 }
 
 /**

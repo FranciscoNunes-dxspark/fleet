@@ -32,6 +32,7 @@ import LineShell from './line/LineShell.jsx';
 import { LineHome, StageCards } from './line/Line.jsx';
 import Desk from './line/Desk.jsx';
 import Control from './line/Control.jsx';
+import People from './line/People.jsx';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
 import TerminalSignIn from './pages/TerminalSignIn.jsx';
@@ -327,6 +328,7 @@ function Console({ authMode, onSignedOut }) {
           <Route path="/totals" element={<Totals />} />
           <Route path="/totals/:id" element={<Totals />} />
           <Route path="/team" element={<Team />} />
+          <Route path="/people" element={<People />} />
           <Route path="/insights" element={<Insights />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />

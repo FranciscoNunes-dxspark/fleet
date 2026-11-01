@@ -257,7 +257,7 @@ function Menu({ spinning, setSpinning }) {
 
   const pages = [
     ['/inbox', t('Inbox'), 'inbox'], ['/summary', t('Weekly summary'), 'summary'],
-    ['/team', t('Team'), 'team'], ['/insights', t('Insights'), 'insights'], ['/settings', t('Settings'), 'settings'],
+    ['/people', t('Team'), 'team'], ['/insights', t('Insights'), 'insights'], ['/settings', t('Settings'), 'settings'],
   ];
   const name = meta.account?.name || meta.me.displayName;
   return (
@@ -269,7 +269,7 @@ function Menu({ spinning, setSpinning }) {
         <div className="line-menu-pop">
           <nav className="line-menu-pages" aria-label={t('Menu')}>
             {pages.map(([to, label, icon]) => (
-              <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'on' : '')}><Icon name={icon} size={15} /> {label}</NavLink>
+              <NavLink key={to} to={to} className={({ isActive }) => (isActive || (to === '/people' && /^\/(team|users)(\/|$)/.test(pathname)) ? 'on' : '')}><Icon name={icon} size={15} /> {label}</NavLink>
             ))}
             {/* The terminal app in the browser; not on touch screens, which have no keys for it. */}
             <NavLink to="/cli" className="nav-terminal" title={t('Below deck: Keel in the terminal, here in the browser')}><Icon name="terminal" size={15} /> {t('Below deck')}</NavLink>
