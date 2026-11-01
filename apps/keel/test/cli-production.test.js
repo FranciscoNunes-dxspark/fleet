@@ -58,9 +58,9 @@ test("the side pane says what's waiting to ship, or why it can't", () => {
 
 test('the Production tab lists the monitors with what is waiting to ship; ↵ shows it all; o opens the site', async () => {
   const opened = [];
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: (u) => opened.push(u) }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: (u) => opened.push(u) }));
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  lastApp.stdin.write('5');
+  lastApp.stdin.write('7');
   await until(() => frame().includes('Storefront (production)'), 'the monitors');
   // Move to a monitor linked to what deploys it, and wait for its environment's changes.
   for (let i = 0; i < 8 && !frame().includes('Waiting to ship'); i++) {
@@ -82,9 +82,9 @@ test('the Production tab lists the monitors with what is waiting to ship; ↵ sh
 
 test('S opens Sonar on the monitor: its address, its Application Insights, at its problems', async () => {
   const sonarCalls = [];
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {}, openSonar: async (args) => (sonarCalls.push(args), { how: 'copied', command: `sonar ${args.join(' ')}` }) }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {}, openSonar: async (args) => (sonarCalls.push(args), { how: 'copied', command: `sonar ${args.join(' ')}` }) }));
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  lastApp.stdin.write('5');
+  lastApp.stdin.write('7');
   await until(() => frame().includes('Storefront (production)'), 'the monitors');
   lastApp.stdin.write('\x1bs');
   await until(() => frame().includes('Run it in another terminal'), 'the command copied');

@@ -6,7 +6,8 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-8 / tab', 'Inbox, Pull requests, Pipelines, Work items, Production, Releases, Board, Team (shift+tab goes back)'],
+      ['1-9 0 / tab', 'Line, Inbox, Control room, Pull requests, Pipelines, Work items, Production, Releases, Board, Team (shift+tab goes back; in Pull requests 0 clears your vote instead)'],
+      ['/line /desk /control', 'The web app\'s three views of the same work: the Line, the Inbox (its Desk) and the Control room'],
       [',', 'Settings, over the current tab (esc closes it; /settings too)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['o', 'Open the selection in the browser (Azure DevOps or GitHub)'],
@@ -28,8 +29,31 @@ export const HELP = [
     ],
   },
   {
+    title: 'Line',
+    about: 'where change stands, from planned to live: six stations with how much each holds and how much is stuck there, and the selected one\'s cards, most stuck first',
+    views: ['line'],
+    rows: [
+      ['h l / ← →', 'Station: Planned, Building, In review, Merged, Deploying, Live'],
+      ['j k / ↑ ↓', 'Card'],
+      ['↵', 'Open it in its tab: a pull request, work item or pipeline; an approval in the Inbox; what waits to ship, and what\'s live, in Production'],
+      ['o', 'Open it in the browser'],
+      ['/approve /state …', 'The slash commands act on the card\'s pull request or work item, as in their own tabs'],
+    ],
+  },
+  {
+    title: 'Control room',
+    about: 'a live status wall: every production service, and what happened in the last 24 hours, newest first',
+    views: ['control'],
+    rows: [
+      ['h l / ← →', 'Services, or the timeline'],
+      ['j k / ↑ ↓', 'Move'],
+      ['↵', 'A service in full, as in Production; an event\'s pull request or pipeline in its tab, else the tab that has it'],
+      ['alt+s', 'Sonar, the Azure console, on the service, as in Production'],
+    ],
+  },
+  {
     title: 'Inbox',
-    about: 'what needs you, most urgent first; the same rules as the web app\'s Inbox',
+    about: 'what needs you, most urgent first: the web app\'s Desk, with the same rules as its Inbox',
     views: ['inbox'],
     rows: [
       ['↵', 'A pull request, work item, pipeline or monitor opens in its tab; anything else in the browser'],

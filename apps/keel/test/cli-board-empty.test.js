@@ -35,11 +35,11 @@ async function until(check, what, ms = 10000) {
 test('with no tracked project that has a team, the Board tab says so instead of drawing columns', async () => {
   // What service.board() answers then (server/service.js): no project, nothing to pick.
   const empty = { ...keel, service: { ...keel.service, board: async () => ({ project: null, options: [] }) } };
-  lastApp = render(React.createElement(App, { keel: empty, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel: empty, poll: false, openUrl: () => {} }));
   const app = lastApp;
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-    app.stdin.write('7');
+    app.stdin.write('9');
     await until(() => frame().includes('No boards here: none of your tracked projects has a team'), 'the note');
     assert.doesNotMatch(frame(), /Nothing here/);
     // Keys on an empty board do nothing, and break nothing.

@@ -41,7 +41,7 @@ const type = async (stdin, text) => {
   }
 };
 function start() {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   return lastApp;
 }
 /** The work item the cursor is on, by the number in the side panel's title. */
@@ -94,7 +94,7 @@ test('images in descriptions and comments read as [image: name], not their addre
 test('the Work items tab lists open items; f goes round the views; ↵ shows one in full', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  app.stdin.write('4');
+  app.stdin.write('6');
   await until(() => frame().includes('all open') && selectedId() > 0, 'the Work items tab');
   app.stdin.write('f');
   await until(() => frame().includes('current sprint'), 'the next view');
@@ -107,7 +107,7 @@ test('the Work items tab lists open items; f goes round the views; ↵ shows one
 test('s moves a work item to a state picked from its list; i takes it; b tags it blocked', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  app.stdin.write('4');
+  app.stdin.write('6');
   await until(() => selectedId() > 0, 'the Work items tab');
   const id = selectedId();
   const before = (await keel.service.workItems()).items.find((w) => w.id === id);
@@ -168,7 +168,7 @@ test('/wi jumps to a work item, /priority and /comment act on it, /assign finds 
 test('/new creates a work item in the selected one\'s project, in the sprint', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  app.stdin.write('4');
+  app.stdin.write('6');
   await until(() => selectedId() > 0, 'the Work items tab');
   await type(app.stdin, '/new bug Totals wrong on the terminal');
   app.stdin.write(KEYS.enter);

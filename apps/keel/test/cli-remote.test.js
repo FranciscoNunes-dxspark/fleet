@@ -107,13 +107,13 @@ test('signed in through the browser, the app shows the Inbox as you, votes throu
 
   const keel = await remote.connectKeel({ server: url, token });
   assert.equal(keel.signIn, 'keel');
-  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  const app = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const frame = () => app.lastFrame() ?? '';
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox', frame);
   assert.match(frame(), /Ana Lead · 127\.0\.0\.1/);
 
   // Approve the first pull request waiting on review, through the server's /api.
-  app.stdin.write('2');
+  app.stdin.write('4');
   await until(() => frame().includes('Waiting on your review'), 'the Pull requests tab', frame);
   app.stdin.write('a');
   await until(() => frame().includes('Approved.'), 'the vote', frame);

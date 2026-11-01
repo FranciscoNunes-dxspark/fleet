@@ -79,11 +79,11 @@ test('F sets one field at a time, quoted when it has spaces, and "any" takes it 
 });
 
 test('F on the Board narrows the cards to a person, picked from those on it; /find with nothing clears it', async () => {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const app = lastApp;
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-    app.stdin.write('7');
+    app.stdin.write('9');
     await until(() => frame().includes('Commerce Team · Stories'), 'the board');
     const before = (frame().match(/■ \d+/g) ?? []).length;
     app.stdin.write('\x1bf');
@@ -106,11 +106,11 @@ test('F on the Board narrows the cards to a person, picked from those on it; /fi
 });
 
 test('/find who:none on Work items leaves only the unassigned', async () => {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const app = lastApp;
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-    app.stdin.write('4');
+    app.stdin.write('6');
     await until(() => frame().includes('╭─ Work items'), 'the Work items tab');
     app.stdin.write('/');
     await type(app.stdin, 'find who:none');
