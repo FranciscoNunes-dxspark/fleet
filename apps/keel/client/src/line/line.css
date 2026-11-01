@@ -462,3 +462,26 @@ button.tile-hit { cursor: pointer; }
 .people-n { font-weight: 600; font-variant-numeric: tabular-nums; }
 .people-stuck { font-size: 11px; color: var(--tone); }
 .people-cards { margin-top: 18px; }
+
+/* Home: since you last looked, a strip above the stages. */
+.since { margin: 0 24px 10px; padding: 12px 16px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--surface); box-shadow: var(--elev-1); }
+.since-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.since-head h2 { font-size: 14px; }
+.since-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.since-chip {
+  --tone: var(--accent);
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent); background: color-mix(in srgb, var(--tone) 10%, var(--surface));
+  color: var(--ink-2); font: inherit; font-size: 13px;
+}
+.since-chip strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.since-chip:disabled { opacity: 0.45; cursor: default; }
+.since-chip.on { border-color: var(--tone); color: var(--ink); }
+.since-left { --tone: var(--ok); }
+.since-arrived { --tone: var(--info); }
+.since-newlyStuck { --tone: var(--bad); }
+.since-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
+.since-list { list-style: none; margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 20px; }
+.since-list li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; min-width: 0; }
+@media (max-width: 900px) { .since { margin: 0 12px 10px; } .since-actions { margin-left: 0; } }
+.since-list li > .muted { flex: none; white-space: nowrap; }

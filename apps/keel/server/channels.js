@@ -3,6 +3,7 @@
 // - inbox entries of the kinds a channel wants, when they're new and urgent
 //   (an outage, a red default branch, a deployment waiting on approval…)
 // - the weekly summary, on the weekday and hour the channel asks for
+// - the Line's daily digest, on weekday mornings at the hour it asks for
 // It runs whether or not anyone has Keel open. Azure DevOps is read with the
 // token of the person who set the channel up (with sign-in) or the server's
 // own (locally), for the projects the channel picked (none picked: the ones
@@ -15,7 +16,8 @@ import { decrypt, encrypt, getKey } from './secrets.js';
 import { runnerLock, sharedJson } from './jsonfile.js';
 import { assertPublicUrl } from './monitoring.js';
 import { translator } from './i18n.js';
-import { CHANNEL_EVENTS, CHANNEL_KINDS, DEFAULT_EVENTS, burstMessage, channelEvents, eventMessage, payloadFor, summaryMessage } from './domain/messages.js';
+import { CHANNEL_EVENTS, CHANNEL_KINDS, DEFAULT_EVENTS, burstMessage, channelEvents, digestCounts, eventMessage, lineDigestMessage, payloadFor, summaryMessage } from './domain/messages.js';
+import { lineOf } from './line.js';
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -45,6 +47,14 @@ export function weeklyDue(channel, lastWeekly, ms) {
   if (!w?.enabled) return null;
   const now = localTime(ms, channel.timeZone);
   return now.weekday === w.weekday && now.hour >= w.hour && lastWeekly !== now.date ? now.date : null;
+}
+
+/** Is the Line's daily digest due now: a weekday, at or after the hour, and not sent yet today. */
+export function dailyDue(channel, lastDaily, ms) {
+  const d = channel.daily;
+  if (!d?.enabled) return null;
+  const now = localTime(ms, channel.timeZone);
+  return now.weekday <= 5 && now.hour >= d.hour && lastDaily !== now.date ? now.date : null;
 }
 
 export function createChannels({
@@ -151,6 +161,17 @@ export function createChannels({
             if (announce.length > MAX_POSTS) await deliver(c, burstMessage(announce, tr, keelUrl));
             else for (const item of announce) await deliver(c, eventMessage(item, tr, keelUrl));
           }
+          const daily = dailyDue(c, s.lastDaily, ms);
+          if (daily) {
+            note(c.id, { lastDaily: daily }); // once per day, even if posting fails
+            try {
+              const { stages } = await lineOf(viewFor(service, c));
+              await deliver(c, lineDigestMessage(stages, s.lastDigest || null, translator(c.language), { keelUrl }));
+              note(c.id, { lastDigest: digestCounts(stages) });
+            } catch (err) {
+              note(c.id, { lastError: `The Line's digest: ${err.message}`, lastErrorAt: new Date().toISOString() });
+            }
+          }
           const due = weeklyDue(c, s.lastWeekly, ms);
           if (due) {
             note(c.id, { lastWeekly: due }); // once per day, even if posting fails
@@ -196,6 +217,7 @@ export function createChannels({
     }
     if (!url) throw bad(`Paste the webhook address for ${name}.`);
     const weekly = input.weekly || {};
+    const daily = input.daily || {};
     return {
       id: existing?.id || crypto.randomUUID(),
       name,
@@ -206,6 +228,10 @@ export function createChannels({
         enabled: !!weekly.enabled,
         weekday: Math.min(7, Math.max(1, Math.round(Number(weekly.weekday) || 1))),
         hour: Math.min(23, Math.max(0, Math.round(Number(weekly.hour ?? 9)))),
+      },
+      daily: {
+        enabled: !!daily.enabled,
+        hour: Math.min(23, Math.max(0, Math.round(Number(daily.hour ?? 9)))),
       },
       timeZone: validZone(input.timeZone) ? input.timeZone : existing?.timeZone || 'UTC',
       language: input.language === 'pt' ? 'pt' : 'en',
@@ -257,6 +283,16 @@ export function createChannels({
         sections: [{ lines: [t('This channel will get the updates chosen in Keel.')] }],
         links: keelUrl ? [{ label: t('Open in Keel'), url: keelUrl }] : [],
       }));
+      return { ok: true };
+    },
+
+    /** Post the Line's digest now (Admins checking how it looks), as sendWeekly does. Doesn't move the daily comparison on. */
+    async sendDaily(id, fallback) {
+      const c = all().find((x) => x.id === id);
+      if (!c) throw Object.assign(new Error('Unknown channel'), { status: 404 });
+      const service = (await Promise.resolve(resolveService(c.ownerId || null)).catch(() => null)) || fallback;
+      const { stages } = await lineOf(viewFor(service, c));
+      await post(c, lineDigestMessage(stages, (state.get()[c.id] || {}).lastDigest || null, translator(c.language), { keelUrl }));
       return { ok: true };
     },
 

@@ -1,15 +1,18 @@
 // The Line's own pages: home (every stage, its most stuck cards under its station) and one
 // stage's cards (/line/review), most stuck first. The stages come from the shell (LineShell.jsx).
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { approvalPath } from '../orgs.js';
+import { age } from '../format.js';
 import { Avatar, Confirm, sameTarget, useTypeColor } from '../ui.jsx';
 import { Icon } from '../icons.jsx';
 import { t } from '../i18n.js';
 import { STAGES } from './stages.js';
 import { stageHint, stageName, stagePages } from './names.js';
+import { reasonText as sharedReason } from './reasons.js';
+import { lookAt, sinceLastLook } from './digest.js';
 import { useLine } from './LineShell.jsx';
 import NotFound from '../pages/NotFound.jsx';
 
@@ -25,34 +28,7 @@ const ago = (ms) => {
   return `${Math.floor(ms / DAY)}d`;
 };
 
-function reasonText(r) {
-  if (!r) return '';
-  switch (r.code) {
-    case 'p1-waiting': return t('P1, not started for {n} days', { n: r.days });
-    case 'blocked': return t('Blocked');
-    case 'quiet': return t('No update for {n} days', { n: r.days });
-    case 'conflicts': return t('Merge conflicts');
-    case 'stale': return t('Open {n} days', { n: r.days });
-    case 'pr-in-review': return t('In review');
-    case 'pr-approved': return t('Approved');
-    case 'pr-waiting-author': return t('Waiting on author');
-    case 'pr-rejected': return t('Rejected');
-    case 'pr-draft': return t('Draft');
-    case 'pr-no-reviewers': return t('No reviewers');
-    case 'waiting-changes': return t(r.n === 1 ? '1 change waiting' : '{n} changes waiting', { n: r.n });
-    case 'approval-yours': return t('Waiting for your approval');
-    case 'approval': return t('Waiting for approval');
-    case 'deploying': return t('Deploying');
-    case 'red': return t(r.n === 1 ? 'Red on its last run' : 'Red, {n} runs in a row', { n: r.n });
-    case 'running': return t('Running');
-    case 'monitor-up': return t('Up');
-    case 'monitor-down': return t('Down');
-    case 'monitor-degraded': return t('Degraded');
-    case 'monitor-deploying': return t('Deploying');
-    case 'monitor-settling': return t('Just deployed');
-    default: return '';
-  }
-}
+const reasonText = (r) => sharedReason(r, t);
 
 /** Opens a card: in the details panel where Keel has one for it, else on the page that holds it. */
 export function useOpenCard() {
@@ -73,6 +49,7 @@ export function LineHome() {
   const delivery = useApi('/delivery');
   return (
     <div className="line-home">
+      <SinceLastLook stages={stages} loading={loading} />
       <div className="line-stages">
         {stages.map((stage) => {
           const shown = stage.cards.slice(0, SHOWN);
@@ -91,6 +68,59 @@ export function LineHome() {
       <Moving delivery={delivery.data} />
       <OverTime history={history} />
     </div>
+  );
+}
+
+// The last look at the line, in this browser: what "since you last looked" compares with.
+const SEEN_KEY = 'keel.line.seen.v1';
+const readSeen = () => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || 'null'); } catch { return null; } };
+const writeSeen = (look) => { try { localStorage.setItem(SEEN_KEY, JSON.stringify(look)); } catch { /* storage blocked: every visit is a first one */ } };
+
+/**
+ * What changed on the line since you last looked at it (line/digest.js): what moved on, what left
+ * it (finished, merged, deployed), what's new and what's newly stuck. Leaving home, or Got it,
+ * counts as looking; the first visit only remembers.
+ */
+function SinceLastLook({ stages, loading }) {
+  const [before, setBefore] = useState(readSeen);
+  const [open, setOpen] = useState(null);
+  const latest = useRef(null);
+  latest.current = loading ? null : stages;
+  useEffect(() => () => { if (latest.current) writeSeen(lookAt(latest.current)); }, []);
+  const diff = useMemo(() => (loading ? null : sinceLastLook(before, stages)), [before, stages, loading]);
+  if (!diff) return null;
+  const groups = [
+    ['movedOn', t('Moved on'), diff.movedOn.map(({ card, from }) => ({ key: card.key, title: card.title, note: `${stageName(from)} → ${stageName(card.stage)}` }))],
+    ['left', t('Left the line'), diff.left.map((c) => ({ key: c.key, title: c.title, note: stageName(c.stage) }))],
+    ['arrived', t('New on the line'), diff.arrived.map((c) => ({ key: c.key, title: c.title, note: stageName(c.stage) }))],
+    ['newlyStuck', t('Newly stuck'), diff.newlyStuck.map((c) => ({ key: c.key, title: c.title, note: reasonText(c.reason) }))],
+  ];
+  if (groups.every(([, , list]) => !list.length)) return null;
+  const gotIt = () => { const look = lookAt(stages); writeSeen(look); setBefore(look); setOpen(null); };
+  return (
+    <section className="since" aria-label={t('Since you last looked')}>
+      <div className="since-head">
+        <h2>{t('Since you last looked')} <span className="muted small">{age(before.at)}</span></h2>
+        <div className="since-chips">
+          {groups.map(([id, label, list]) => (
+            <button key={id} type="button" className={`since-chip since-${id}${open === id ? ' on' : ''}`} disabled={!list.length} onClick={() => setOpen(open === id ? null : id)}>
+              <strong>{list.length}</strong> {label}
+            </button>
+          ))}
+        </div>
+        <span className="since-actions">
+          <Link to="/summary" className="small">{t('Weekly summary')} →</Link>
+          <button type="button" className="btn btn-small" onClick={gotIt}>{t('Got it')}</button>
+        </span>
+      </div>
+      {open && (
+        <ul className="since-list">
+          {groups.find(([id]) => id === open)[2].slice(0, 30).map((x) => (
+            <li key={x.key}><span className="truncate">{x.title}</span><span className="muted small">{x.note}</span></li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

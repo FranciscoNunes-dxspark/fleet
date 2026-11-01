@@ -27,7 +27,7 @@ const zone = () => {
     return 'UTC';
   }
 };
-const blank = () => ({ key: Math.random(), id: null, name: '', kind: 'teams', url: '', hasUrl: false, events: ['production', 'pipeline', 'approval'], projects: [], weekly: { enabled: true, weekday: 1, hour: 9 }, timeZone: zone(), language: getLanguage() });
+const blank = () => ({ key: Math.random(), id: null, name: '', kind: 'teams', url: '', hasUrl: false, events: ['production', 'pipeline', 'approval'], projects: [], weekly: { enabled: true, weekday: 1, hour: 9 }, daily: { enabled: false, hour: 9 }, timeZone: zone(), language: getLanguage() });
 const snapshot = (rows) => JSON.stringify((rows || []).map(({ key, lastPostAt, lastError, lastErrorAt, lastWeekly, ...rest }) => rest));
 // Monday first, in the current language.
 const weekdays = () => [1, 2, 3, 4, 5, 6, 7].map((d) => ({ d, label: new Date(Date.UTC(2024, 0, d)).toLocaleDateString(locale(), { weekday: 'long', timeZone: 'UTC' }) }));
@@ -50,7 +50,7 @@ export default function ChannelSettings() {
   const projectLabel = useProjectLabel();
 
   const adopt = (res) => {
-    const loaded = res.channels.map((c) => ({ ...c, projects: c.projects || [], key: c.id, url: undefined }));
+    const loaded = res.channels.map((c) => ({ ...c, projects: c.projects || [], daily: c.daily || { enabled: false, hour: 9 }, key: c.id, url: undefined }));
     setRows(loaded);
     setInfo(res);
     setBaseline(snapshot(loaded));
@@ -82,7 +82,7 @@ export default function ChannelSettings() {
     try {
       adopt(await api('/channels', {
         method: 'PUT',
-        body: { channels: rows.map(({ id, name, kind, url, events, projects: picked, weekly, timeZone, language }) => ({ id, name, kind, url: url || undefined, events, projects: picked, weekly, timeZone, language })) },
+        body: { channels: rows.map(({ id, name, kind, url, events, projects: picked, weekly, daily, timeZone, language }) => ({ id, name, kind, url: url || undefined, events, projects: picked, weekly, daily, timeZone, language })) },
       }));
       setOpen(new Set());
       toast(t('Channels saved'));
@@ -96,9 +96,10 @@ export default function ChannelSettings() {
   const run = async (r, what) => {
     setTests((ts) => ({ ...ts, [r.key]: { running: what } }));
     try {
-      if (what === 'weekly') await api(`/channels/${encodeURIComponent(r.id)}/weekly`, { method: 'POST' });
+      if (what === 'weekly' || what === 'daily') await api(`/channels/${encodeURIComponent(r.id)}/${what}`, { method: 'POST' });
       else await api('/channels/test', { method: 'POST', body: { id: r.id, kind: r.kind, url: r.url || undefined, language: r.language } });
-      setTests((ts) => ({ ...ts, [r.key]: { ok: what === 'weekly' ? t("Last week's summary was posted.") : t('Test message posted. Check the channel.') } }));
+      const done = { weekly: t("Last week's summary was posted."), daily: t("The Line's digest was posted.") }[what] || t('Test message posted. Check the channel.');
+      setTests((ts) => ({ ...ts, [r.key]: { ok: done } }));
     } catch (e) {
       setTests((ts) => ({ ...ts, [r.key]: { error: e.message } }));
     }
@@ -133,6 +134,7 @@ export default function ChannelSettings() {
                   {r.events.length > 0 && <Chip>{t(r.events.length === 1 ? '{n} kind of update' : '{n} kinds of update', { n: r.events.length })}</Chip>}
                   {r.projects.length > 0 && <Chip>{r.projects.length === 1 ? projectLabel(projects.find((p) => p.id === r.projects[0])?.name || '…', projects.find((p) => p.id === r.projects[0])?.org) : t('{n} projects', { n: r.projects.length })}</Chip>}
                   {r.weekly.enabled && <Chip tone="info">{t('Weekly summary')}</Chip>}
+                  {r.daily?.enabled && <Chip tone="info">{t("The Line's daily digest")}</Chip>}
                   {r.ownerName && authMode === 'login' && <Chip>{t('as {name}', { name: r.ownerName })}</Chip>}
                 </div>
                 <div className="monitor-line-actions">
@@ -205,8 +207,18 @@ export default function ChannelSettings() {
                     </label>
                     <label>{t('Time zone')}<input className="input" value={r.timeZone} onChange={(e) => set(r.key, { timeZone: e.target.value })} placeholder="Europe/Lisbon" /></label>
                   </fieldset>
+                  <fieldset className="monitor-group">
+                    <legend>{t("The Line's daily digest")}</legend>
+                    <label className="check"><input type="checkbox" checked={r.daily.enabled} onChange={(e) => set(r.key, { daily: { ...r.daily, enabled: e.target.checked } })} /> {t('Post the Line each weekday: every stage, what moved since the day before, and what is stuck the longest')}</label>
+                    <label>{t('Time')}
+                      <select className="input" value={r.daily.hour} disabled={!r.daily.enabled} onChange={(e) => set(r.key, { daily: { ...r.daily, hour: Number(e.target.value) } })}>
+                        {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{`${String(h).padStart(2, '0')}:00`}</option>)}
+                      </select>
+                    </label>
+                  </fieldset>
                   <div className="monitor-editor-foot">
                     {r.id && <button type="button" className="btn btn-small btn-ghost" onClick={() => run(r, 'weekly')} disabled={!!result?.running || dirty}>{result?.running === 'weekly' ? t('Sending…') : t('Post the summary now')}</button>}
+                    {r.id && <button type="button" className="btn btn-small btn-ghost" onClick={() => run(r, 'daily')} disabled={!!result?.running || dirty}>{result?.running === 'daily' ? t('Sending…') : t('Post the digest now')}</button>}
                     <button type="button" className="btn btn-small btn-ghost text-bad" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>{t('Remove channel')}</button>
                   </div>
                 </div>
