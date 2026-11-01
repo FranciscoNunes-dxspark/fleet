@@ -8,6 +8,7 @@ import { t, tj, tx } from '../i18n.js';
 import { useOrgKind, useProjectLabel } from '../orgs.js';
 import MergeStatus from './MergeStatus.jsx';
 import { SuggestedReviewers } from './NewPr.jsx';
+import Trace from '../line/Trace.jsx';
 
 // Labels are getters so they follow the current language.
 const FILE_KIND = {
@@ -248,6 +249,8 @@ export default function PrDetail({ target }) {
       </p>
 
       {pr.schedule && <ScheduleNote s={pr.schedule} busy={busy === 'unschedule'} onCancel={writable ? cancelSchedule : null} />}
+
+      <Trace pr={pr} />
 
       {pr.status === 'active' && pr.mergeStatus !== 'succeeded' && (
         <MergeStatus pr={pr} target={target} writable={writable} busy={busy} github={github} onRefresh={reload} onRestart={() => act({ type: 'restartMerge' }, t('Merge restarted'))} />

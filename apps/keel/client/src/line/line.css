@@ -485,3 +485,18 @@ button.tile-hit { cursor: pointer; }
 .since-list li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; min-width: 0; }
 @media (max-width: 900px) { .since { margin: 0 12px 10px; } .since-actions { margin-left: 0; } }
 .since-list li > .muted { flex: none; white-space: nowrap; }
+
+/* A change's path to production, in its panel (Trace.jsx): a step per row along a thin track. */
+.trace-steps { list-style: none; margin: 0; padding: 0; position: relative; display: grid; gap: 2px; }
+.trace-steps::before { content: ''; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+.trace-step { --tone: var(--muted); position: relative; display: grid; grid-template-columns: 12px 92px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 4px 0; font-size: 13px; }
+.trace-done { --tone: var(--ok); }
+.trace-now { --tone: var(--accent); }
+.trace-bad { --tone: var(--bad); }
+.trace-dot { position: relative; z-index: 1; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 3px solid var(--tone); transform: translateY(2px); }
+.trace-now .trace-dot { background: var(--tone); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 25%, transparent); }
+.trace-todo .trace-dot { border-style: dashed; }
+.trace-todo .trace-text { color: var(--muted); }
+.trace-bad .trace-text { color: var(--bad); }
+.trace-stage { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.trace-text { min-width: 0; }
