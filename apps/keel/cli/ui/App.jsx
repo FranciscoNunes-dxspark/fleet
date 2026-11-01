@@ -171,7 +171,7 @@ function activityRows(entries) {
  * mouse.js's terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
  * `copy` puts a line on the clipboard (the kit's; tests pass a recorder). `familyHome` is the family's
  * folder (family.js familyDir()), where Pinch's mood and Keel's activity go and the siblings' moods are read
- * every `familyEvery` ms: cli.jsx passes it, and without it (tests, the web terminal) Keel keeps to itself.
+ * every `familyEvery` ms: cli.jsx passes it, and without it (tests) Keel keeps to itself.
  * `cwd` is the folder /family and /wiring look at. `home` is the tab Keel opens on: the Line (tests of
  * the other tabs start on the Inbox, as Keel once did).
  */

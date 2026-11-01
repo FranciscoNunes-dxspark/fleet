@@ -64,7 +64,7 @@ The line stays along the top of every page, slim, as Keel's navigation. A statio
 | **Deploying** | Pipelines (approvals waiting at the top; Releases and Flaky tests as its tabs) |
 | **Live** | Monitors (Production), Platform totals |
 
-The top bar holds **Needs you** (it opens the Inbox; beside it, your approvals, reviews, production issues and red pipelines, each a shortcut to its stage), search (Ctrl+K), the live status, and the menu: the pages beside the line (Inbox, Weekly summary, Team, Insights, Settings, Below deck), **Refresh from Azure DevOps**, when Keel last checked, and who you're signed in as.
+The top bar holds **Needs you** (it opens the Inbox; beside it, your approvals, reviews, production issues and red pipelines, each a shortcut to its stage), search (Ctrl+K), the live status, and the menu: the pages beside the line (Inbox, Weekly summary, Team, Insights, Settings), **Refresh from Azure DevOps**, when Keel last checked, and who you're signed in as.
 
 **Three views** of the same work sit side by side in the top bar:
 
@@ -167,15 +167,13 @@ Anything else (an exception, a request, rows, a log line) is for another app, an
 
 Keel adds what it changes in Azure DevOps to the family's activity log in `~/.family` (`FAMILY_HOME` moves it): votes, publishing, completing and auto-complete, pipeline runs and cancels, approvals and rejections of deployments, releases created and deployed, and work items created, moved, assigned or tagged (what and where, never a comment). `/timeline` shows what every app did, newest first (`/timeline here`: what names the folder Keel was started in, and what names none); `/family` lists what that folder is to the others (its checkout for Splice, its processes for Bosun, `.http` files for Hail, databases for Trawl, never a password), and picking one copies its line; `/wiring` shows what it points at (addresses, hosts, ports and connection strings, by file, secrets masked).
 
-Pinch tells the others how it feels: worried while a production monitor is down or for a while after a pipeline started failing, busy while Keel reads or acts, pleased for a while after your pull request merged, and otherwise watching. It reads theirs every 30 seconds, and when Twig, Glim, Ping, Squawk, Hoot or Bark has been worried, sad or happy in the last 15 minutes, Pinch says so once, above the activity lines ("Twig says: PR #12 merged"), until **esc**. **Family moods** in Settings (This computer) turns both off. The web app's terminal (Below deck) keeps to itself.
+Pinch tells the others how it feels: worried while a production monitor is down or for a while after a pipeline started failing, busy while Keel reads or acts, pleased for a while after your pull request merged, and otherwise watching. It reads theirs every 30 seconds, and when Twig, Glim, Ping, Squawk, Hoot or Bark has been worried, sad or happy in the last 15 minutes, Pinch says so once, above the activity lines ("Twig says: PR #12 merged"), until **esc**. **Family moods** in Settings (This computer) turns both off.
 
 **Mouse.** A click on a tab opens it, on a row picks it, on the prompt or a suggestion types there; a double-click does what ↵ does, and the wheel scrolls the list or the viewer under the pointer (leaving the cursor where it was until a key moves it). Asking for the mouse stops the terminal selecting text by itself, so Keel does it: drag to select what's on screen, and it's copied when you let go (the system clipboard, or through the terminal over SSH); the bottom line says what was copied. Hold Shift while dragging for the terminal's own selection, or turn the mouse off in Settings. On Windows it needs the downloaded app, or Node 22.17 or later from a checkout. Everything still works from the keyboard. It's the same mouse support as Trawl's and Splice's.
 
 Teams and area paths are still picked in the web app.
 
 Not in the terminal yet: epics, new pull requests and release notes (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
-
-**In the browser (a test build).** **Below deck**, in the web app's menu (not on touch screens), opens `/cli`: the same terminal app filling the whole window, without the menu, in [xterm.js](https://xtermjs.org): Ink and the app are bundled for the browser (`client/src/cli/`, with stand-ins for what they import from Node), and reach the server's `/api` with the page's own sign-in, as `keel login` does, live updates included. Keys, the mouse and copying work as in a terminal; **q** goes back to the Line. Settings for this computer (the `.env` ones) aren't kept there. The page loads its own bundle, so the rest of the web app doesn't carry it.
 
 ## Production monitoring
 

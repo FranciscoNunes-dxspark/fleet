@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api.js';
 import { AppContext } from './context.js';
@@ -36,8 +36,6 @@ import People from './line/People.jsx';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
 import TerminalSignIn from './pages/TerminalSignIn.jsx';
-// Ink and xterm.js load only when the page opens.
-const WebTerminal = lazy(() => import('./pages/WebTerminal.jsx'));
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
 import { applyTheme } from './theme.js';
 import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
@@ -293,15 +291,6 @@ function Console({ authMode, onSignedOut }) {
       </AppContext.Provider>
     );
   }
-  // The terminal app in the browser: the whole window, as a terminal is, without the menu (q goes back home, to the Line).
-  if (here === '/cli') {
-    return (
-      <AppContext.Provider value={ctx}>
-        <Suspense fallback={<div className="boot"><Loading /></div>}><WebTerminal /></Suspense>
-      </AppContext.Provider>
-    );
-  }
-
   return (
     <AppContext.Provider value={ctx}>
       <LineShell>

@@ -219,9 +219,6 @@ export default {
   'Open in GitHub': 'Abrir no GitHub',
 
   'Terminal app': 'App de terminal',
-  'Below deck': 'Sob o convés',
-  'Below deck: Keel in the terminal, here in the browser': 'Sob o convés: o Keel no terminal, aqui no navegador',
-  "The terminal app couldn't start: {reason}": 'Não foi possível iniciar a app de terminal: {reason}',
   // Inbox triage keys and the Dashboard's queue
   'Keyboard': 'Teclado',
   'Move': 'Mover',

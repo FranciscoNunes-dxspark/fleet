@@ -271,8 +271,6 @@ function Menu({ spinning, setSpinning }) {
             {pages.map(([to, label, icon]) => (
               <NavLink key={to} to={to} className={({ isActive }) => (isActive || (to === '/people' && /^\/(team|users)(\/|$)/.test(pathname)) ? 'on' : '')}><Icon name={icon} size={15} /> {label}</NavLink>
             ))}
-            {/* The terminal app in the browser; not on touch screens, which have no keys for it. */}
-            <NavLink to="/cli" className="nav-terminal" title={t('Below deck: Keel in the terminal, here in the browser')}><Icon name="terminal" size={15} /> {t('Below deck')}</NavLink>
           </nav>
           <div className="line-menu-foot">
             <button type="button" className="line-menu-row" onClick={hardRefresh} disabled={spinning}>

@@ -170,7 +170,7 @@ test('Keel logs what it changes for /timeline, writes its mood, and says once ho
   }
 });
 
-test('without the family folder (the web terminal, other tests) Keel keeps to itself', async () => {
+test('without the family folder (as in tests) Keel keeps to itself', async () => {
   const quiet = join(base, 'quiet');
   start({ familyHome: undefined });
   try {
