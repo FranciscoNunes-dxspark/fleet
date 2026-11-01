@@ -156,6 +156,7 @@ export function remoteService({ call }) {
     production: () => call('/production'),
     undeployed: () => call('/deploys/pending'),
     approvals: () => call('/approvals'),
+    lineSetup: () => call('/line/setup'),
     releases: () => call('/releases'),
     repoReleases: () => call('/repo-releases'),
     team: () => call('/team'),

@@ -54,6 +54,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   });
 
   r.get('/attention', async (req, res) => res.json(await req.ctx.service.attention()));
+  // What the Line is built with (limits, backlog levels): the terminal app builds its own line with it.
+  r.get('/line/setup', async (req, res) => res.json(await req.ctx.service.lineSetup()));
   // The Line (server/line.js), with this person's history of it; looking counts as today's entry.
   r.get('/line', async (req, res) => {
     const line = await lineOf(req.ctx.service);

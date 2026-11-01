@@ -29,7 +29,9 @@ export function useLineExtras(ctx, version) {
   return useAsync(`line:${version}`, () => Promise.all([
     ctx.service.undeployed().catch(() => null),
     ctx.service.approvals().catch(() => []),
-  ]).then(([pending, approvals]) => ({ pending, approvals })), 60);
+    // Each project's limits and backlog levels, as the web app's line has them (service.lineSetup).
+    ctx.service.lineSetup?.().catch(() => undefined),
+  ]).then(([pending, approvals, setup]) => ({ pending, approvals, setup })), 60);
 }
 
 /** The station to start on: the most jammed, else the first with anything in it. */
@@ -49,7 +51,7 @@ export function LineView({ failed, data, version, ctx, width, height, active }) 
   const now = Date.now();
   const loaded = Boolean(data.workItems || data.prs || data.pipelines || data.production);
   const stages = useMemo(
-    () => buildLine({ workitems: data.workItems, prs: { prs: data.prs ?? [] }, pipelines: data.pipelines, production: data.production, pending: extras.value?.pending, approvals: extras.value?.approvals }, now),
+    () => buildLine({ workitems: data.workItems, prs: { prs: data.prs ?? [] }, pipelines: data.pipelines, production: data.production, pending: extras.value?.pending, approvals: extras.value?.approvals }, now, extras.value?.setup),
     [data, extras.value],
   );
   const tracks = trackTones(stages);
