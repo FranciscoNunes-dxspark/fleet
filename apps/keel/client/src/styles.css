@@ -15,10 +15,9 @@
   --tc-red: #e66767;
   --tc-gray: #8b9099;
   /* Neutrals lean a little cool (slate, not grey), with wider steps between the planes
-     so the page, the sidebar and the cards read as three layers. */
+     so the window, the canvas and the cards read as three layers. */
   --bg: #0b0d11;
-  --sidebar: #0b0d11;
-  /* The canvas: the rounded sheet the pages sit on, a step up from the window around it. */
+  /* The canvas: what the pages sit on (line/line.css), a step up from the window. */
   --canvas: #111419;
   --surface: #191c22;
   --surface-2: #22262e;
@@ -78,7 +77,6 @@
   --tc-red: #e34948;
   --tc-gray: #8a8f98;
   --bg: #e3e7ed;
-  --sidebar: #e3e7ed;
   --canvas: #f5f7fa;
   --surface: #ffffff;
   --surface-2: #eef1f5;
@@ -158,13 +156,7 @@ button { font: inherit; color: inherit; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---------------------------------------------------------------- shell */
-.shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100%; }
-.sidebar {
-  position: sticky; top: 0; height: 100vh;
-  display: flex; flex-direction: column; gap: 18px;
-  padding: 18px 12px; background: var(--surface); border-right: 1px solid var(--line);
-}
-.brand { display: flex; gap: 10px; align-items: center; padding: 0 8px; }
+
 .brand-mark { flex: none; display: block; border-radius: 7px; }
 /* Pinch, Keel's crab (pinch.js): pixel art with sharp edges, drawn at whole multiples of its 16 pixels. */
 .pinch { flex: none; display: block; shape-rendering: crispEdges; }
@@ -173,36 +165,13 @@ button { font: inherit; color: inherit; }
 .pinch-frame-b { animation: pinch-glance-b 0.9s linear infinite; }
 @keyframes pinch-glance-a { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @keyframes pinch-glance-b { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
-.brand-name { font-weight: 600; }
-.brand-org { font-size: 12px; color: var(--muted); max-width: 160px; }
-.nav-groups { display: grid; gap: 14px; min-height: 0; overflow-y: auto; }
-.nav-group-label { padding: 0 10px 4px; font-size: 12px; font-weight: 500; color: var(--muted); }
-.nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.nav-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+
 .icon { flex: none; display: block; }
-.nav-link .icon { color: var(--muted); }
-.nav-link:hover .icon, .nav-link.active .icon { color: inherit; }
-.nav-link {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
-  padding: 7px 10px; border-radius: var(--radius-sm); color: var(--ink-2); font-weight: 500;
-}
-.nav-link:hover { background: var(--surface-2); text-decoration: none; color: var(--ink); }
-.nav-link.active { background: var(--accent-soft); color: var(--accent-ink); }
-.nav-count { min-width: 22px; padding: 0 6px; border-radius: 10px; font-size: 12px; text-align: center; font-weight: 600; }
-.nav-count-bad { background: var(--bad); color: var(--on-accent); }
-.nav-count-accent { background: var(--accent); color: var(--on-accent); }
-.sidebar-foot { margin-top: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-/* Longer labels (Portuguese) wrap instead of running past the sidebar. */
-.sidebar-foot .btn { white-space: normal; text-align: left; line-height: 1.3; }
-.sidebar-foot .me { white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
-.sidebar-foot .live { min-width: 0; overflow-wrap: anywhere; }
-.refresh-btn { justify-content: flex-start; gap: 8px; }
-.refresh-btn .spin { display: inline-flex; }
-.me { font-size: 12px; color: var(--muted); padding: 0 10px; }
+
+
 .spin { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.main { min-width: 0; padding: 0 0 48px; }
 .page { max-width: 1280px; padding: 26px 32px 0; }
 .demo-banner {
   padding: 9px 32px; background: var(--accent-soft); color: var(--accent-ink);
@@ -575,11 +544,6 @@ tr.saving { opacity: 0.55; }
   .release-out, .sprint-progress { grid-template-columns: 1fr; }
 }
 @media (max-width: 860px) {
-  /* The header keeps its own height; the page takes the rest (a short page, like one still
-     loading, used to stretch the header to fill the screen). */
-  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
-  .sidebar { min-width: 0; }
-  .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
   .page { padding: 18px 16px 0; }
   .demo-banner { padding: 9px 16px; }
   .strip { grid-template-columns: 1fr; }
@@ -834,9 +798,7 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .toast-action { border: 0; background: var(--accent); color: var(--on-accent); border-radius: var(--radius-sm); padding: 3px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; flex: none; }
 .toast-close { border: 0; background: none; color: inherit; opacity: 0.6; cursor: pointer; padding: 0 2px; flex: none; }
 .toast-close:hover { opacity: 1; }
-@media (max-width: 860px) {
-  .sidebar-foot .live { display: none; }
-}
+
 .notify-grid { display: grid; gap: 8px; margin: 10px 0 14px; }
 .notify-h { margin: 6px 0 8px; color: var(--ink-2); }
 .notify-cats { display: grid; gap: 6px; margin-bottom: 12px; }
@@ -866,9 +828,14 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .signin { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
 .signin-card { width: min(460px, 100%); display: grid; gap: 14px; padding: 26px 28px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .signin-card .brand { padding: 0; }
-.signin-pinch { display: grid; justify-items: center; gap: 10px; text-align: center; padding-bottom: 4px; }
+.brand { display: flex; gap: 10px; align-items: center; padding: 0 8px; }
+.brand-name { font-weight: 600; }
+.brand-org { font-size: 12px; color: var(--muted); max-width: 160px; }
 .signin-pinch .brand-name { font-size: 18px; }
 .signin-pinch .brand-org { max-width: none; }
+
+.signin-pinch { display: grid; justify-items: center; gap: 10px; text-align: center; padding-bottom: 4px; }
+
 .signin-card h1 { font-size: 22px; margin-top: 6px; }
 .signin-lead { margin: 0; color: var(--ink-2); }
 .signin-card .field { display: grid; gap: 6px; font-size: 13px; color: var(--ink-2); }
@@ -881,14 +848,14 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 /* /terminal is a .signin screen of its own, without the menu (App.jsx). */
 .terminal-signin-form { display: grid; gap: 14px; }
 .terminal-signin .field .input { letter-spacing: 0.12em; font-size: 18px; text-transform: uppercase; }
-.signout-btn { justify-content: flex-start; gap: 8px; }
 
 /* Loading states sit in the middle of the space they're holding. */
 .loading { justify-content: center; text-align: center; }
 /* A whole page or panel still loading: the loader sits in the middle of the screen (or the
    panel), not just under the header. The panel's close button stays clickable through it. */
-.main:has(> .loading) { display: flex; flex-direction: column; }
-.main > .loading { flex: 1; }
+.ls-main:has(> .loading) { display: flex; flex-direction: column; }
+.ls-main > .loading { flex: 1; }
+
 /* Pinch glances about where a whole page is loading (and while Keel starts); everywhere
    else, in widgets and panels, a plain spinner keeps it quiet. */
 .loading .pinch { display: none; }
@@ -1144,35 +1111,6 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 }
 
 /* ------------------------------------------------------ collapsible menu */
-.brand { position: relative; }
-.brand-text { min-width: 0; }
-.sidebar-toggle {
-  order: 3; margin-left: auto; display: grid; place-items: center; width: 28px; height: 28px; flex: none;
-  border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); cursor: pointer;
-}
-.sidebar-toggle:hover { background: var(--surface-2); color: var(--ink); }
-.shell { transition: grid-template-columns 0.15s ease-out; }
-@media (prefers-reduced-motion: reduce) { .shell { transition: none; } }
-@media (min-width: 861px) {
-  .shell-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
-  .shell-collapsed .sidebar { padding: 18px 8px; }
-  .shell-collapsed .brand { flex-direction: column; padding: 0; gap: 10px; }
-  .shell-collapsed .sidebar-toggle { order: 0; margin: 0; }
-  .shell-collapsed .brand-text,
-  .shell-collapsed .nav-text,
-  .shell-collapsed .nav-group-label,
-  .shell-collapsed .live-text,
-  .shell-collapsed .sidebar-foot .me { display: none; }
-  /* Groups are separated by a line instead of their names. */
-  .shell-collapsed .nav-groups { gap: 8px; }
-  .shell-collapsed .nav-group + .nav-group { border-top: 1px solid var(--line); padding-top: 8px; }
-  .shell-collapsed .nav-link { justify-content: center; padding: 8px; position: relative; }
-  .shell-collapsed .nav-label { gap: 0; }
-  .shell-collapsed .nav-count { position: absolute; top: 1px; right: 1px; min-width: 16px; padding: 0 4px; font-size: 10px; line-height: 16px; }
-  .shell-collapsed .refresh-btn, .shell-collapsed .signout-btn { justify-content: center; padding: 6px; gap: 0; }
-  .shell-collapsed .live { justify-content: center; padding: 0; }
-}
-@media (max-width: 860px) { .sidebar-toggle { display: none; } }
 
 /* Projects and repositories: one line per project, like the monitor list. */
 .project-list { gap: 0; border: 1px solid var(--line); border-radius: var(--radius); }
@@ -1239,56 +1177,6 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .deploy-row-label { font-size: 13.5px; font-weight: 500; color: var(--accent-ink); }
 .deploy-row-go { color: var(--muted); }
 
-/* Phones: a tab bar at the bottom (the places you check most, then More), and
-   More opens the whole menu as a sheet above it. Desktop never shows either:
-   the sheet's wrapper is just the sidebar's contents there. */
-.sidebar-menu { display: contents; }
-.sheet-head, .menu-scrim, .tabbar { display: none; }
-@media (max-width: 860px) {
-  :root { --tabbar-h: 58px; --tabbar-space: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
-  .search-btn { margin-left: auto; }
-  .main { padding-bottom: calc(var(--tabbar-space) + 32px); }
-  .save-bar { bottom: calc(var(--tabbar-space) + 12px); }
-  .toasts { bottom: calc(var(--tabbar-space) + 12px); }
-
-  .tabbar {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 19;
-    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-    padding: 0 4px env(safe-area-inset-bottom, 0px);
-    background: var(--sidebar); border-top: 1px solid var(--line);
-  }
-  .tab {
-    display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px;
-    min-height: var(--tabbar-h); padding: 7px 2px 6px; border: 0; background: none; cursor: pointer;
-    color: var(--muted); font: inherit; font-size: 11px; font-weight: 500; line-height: 1.2; text-align: center;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .tab:hover { color: var(--ink); text-decoration: none; }
-  .tab.active { color: var(--accent-ink); }
-  .tab-icon { position: relative; display: grid; place-items: center; width: 48px; height: 28px; border-radius: 14px; transition: background 0.15s ease-out; }
-  .tab.active .tab-icon { background: var(--accent-soft); }
-  .tab-icon .nav-count { position: absolute; top: -3px; left: 28px; min-width: 17px; padding: 0 4px; font-size: 10px; line-height: 17px; box-shadow: 0 0 0 2px var(--sidebar); }
-  /* Long names (Portuguese "Caixa de entrada") take two lines rather than overflow. */
-  .tab-label { max-width: 100%; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-
-  .sidebar .sidebar-menu { display: none; }
-  .menu-scrim { display: block; position: fixed; inset: 0; z-index: 17; background: rgba(0, 0, 0, 0.45); animation: fade 0.15s ease-out; }
-  .menu-open .sidebar .sidebar-menu {
-    position: fixed; left: 0; right: 0; bottom: var(--tabbar-space); z-index: 18;
-    display: grid; gap: 14px; align-content: start;
-    max-height: calc(100dvh - var(--tabbar-space) - 56px); overflow-y: auto; overscroll-behavior: contain;
-    padding: 6px 16px 16px; background: var(--surface); border-radius: 16px 16px 0 0; box-shadow: var(--shadow-pop);
-    outline: none; animation: sheet-up 0.18s ease-out;
-  }
-  .sheet-head { display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1; padding: 8px 0; background: var(--surface); }
-  .sheet-head .drawer-close { position: static; float: none; }
-  .menu-open .nav-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 10px; overflow: visible; }
-  .menu-open .nav-link { padding: 10px; white-space: normal; }
-  .menu-open .sidebar-foot { margin: 0; padding-top: 12px; border-top: 1px solid var(--line); }
-  .menu-open .sidebar-foot .live { display: flex; }
-}
-@keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } }
-
 /* Page tabs (links to sibling pages) look like the segmented tabs. */
 .segmented a {
   display: inline-flex; gap: 7px; align-items: center; padding: 5px 12px; border-radius: var(--radius-sm);
@@ -1313,20 +1201,9 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .sprint-list h4 { margin: 0 0 6px; display: flex; gap: 6px; align-items: center; color: var(--ink-2); }
 
 /* ------------------------------------------------------- command palette */
-.search-btn {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm);
-  background: var(--bg); color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; text-align: left;
-}
-.search-btn:hover { color: var(--ink); border-color: var(--line-strong); }
+
 .search-btn kbd, .palette kbd { margin-left: auto; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--surface); }
-@media (min-width: 861px) {
-  .shell-collapsed .search-btn { justify-content: center; padding: 8px; }
-}
-@media (max-width: 860px) {
-  .search-btn { width: auto; padding: 6px 9px; }
-  .search-btn .nav-text { display: none; }
-}
-@media (max-width: 480px) { .brand-org { max-width: 110px; } }
+
 .palette-layer { position: fixed; inset: 0; z-index: 30; display: grid; justify-items: center; align-items: start; padding: 12vh 16px 16px; }
 .palette {
   position: relative; width: min(640px, 100%); max-height: 70vh; display: flex; flex-direction: column;
@@ -1379,10 +1256,8 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .saved-view-form .input { width: 200px; }
 
 /* ===================================================================== depth
-   Three planes: the page (darkest), the sidebar, and cards that rest on the
-   page with a soft shadow. Things you can click rise a little on hover. */
-.sidebar { background: var(--sidebar); }
-.nav-link.active { box-shadow: inset 3px 0 var(--accent); }
+   Three planes: the window (darkest), the canvas, and cards that rest on it
+   with a soft shadow. Things you can click rise a little on hover. */
 .panel, .widget, .table-wrap, .chart, .fact-row, .commit-list, .card {
   border-color: var(--card-border);
   box-shadow: var(--elev-1);
@@ -1408,7 +1283,6 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 /* People get their own steady colour (hue from ui.jsx); groups and "unassigned" stay neutral. */
 .avatar-hued { background: hsl(var(--av-h) 42% 25%); color: hsl(var(--av-h) 75% 84%); }
 :root[data-mode='light'] .avatar-hued { background: hsl(var(--av-h) 72% 91%); color: hsl(var(--av-h) 55% 28%); }
-
 
 /* Key figures: bigger, each with a mark in its tone. */
 .stat-row { gap: 10px 20px; }
@@ -1550,13 +1424,6 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .page-header h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.025em; }
 
 /* Sidebar: section labels as small caps, the current page as an accent pill fading out. */
-.nav-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: color-mix(in srgb, var(--muted) 85%, transparent); }
-.nav-link { transition: background 0.12s, color 0.12s; }
-.nav-link.active {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, transparent), color-mix(in srgb, var(--accent) 6%, transparent));
-  box-shadow: inset 3px 0 var(--accent);
-}
-.nav-count { box-shadow: 0 0 0 2px var(--sidebar); }
 
 /* Buttons: the primary one carries a faint highlight and glows in its own colour. */
 .btn-primary {
@@ -1648,38 +1515,12 @@ a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); 
 .demo-banner { background: linear-gradient(90deg, var(--accent-soft), color-mix(in srgb, var(--accent-soft) 40%, transparent)); }
 
 /* ==================================================================== layout
-   The window is a frame: the menu sits straight on it, and the pages on a
-   rounded canvas inset from its edges. Desktop only; phones keep the full
-   width (the block at the end). The document still scrolls (useStableHeight
-   and the scroll handlers rely on it), so the canvas scrolls with the page
-   and a strip of the frame, fixed along the top, keeps its edge clean. */
-@media (min-width: 861px) {
-  .shell { grid-template-columns: 248px minmax(0, 1fr); }
-  .shell-collapsed { grid-template-columns: 68px minmax(0, 1fr); }
-  .sidebar { background: transparent; border-right: 0; padding: 20px 12px 16px 14px; }
-  .main {
-    position: relative; margin: var(--frame) var(--frame) var(--frame) 0; min-height: calc(100vh - 2 * var(--frame));
-    border: 1px solid var(--card-border); border-radius: 18px; overflow: clip;
-    background:
-      radial-gradient(900px 380px at 100% 0%, color-mix(in srgb, var(--accent) var(--glow), transparent), transparent 70%),
-      radial-gradient(640px 320px at 0% 0%, color-mix(in srgb, var(--info) calc(var(--glow) * 0.5), transparent), transparent 70%),
-      var(--canvas);
-    box-shadow: var(--elev-1);
-  }
-  .main::before {
-    content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--frame); z-index: 9;
-    background: var(--bg); pointer-events: none;
-  }
-  .page { max-width: none; padding: 28px 36px 0; }
-  /* A page that opens with its header lets the header's band reach the canvas's top edge. */
-  .page:has(> .page-header-marker:first-child) { padding-top: 0; }
-  /* The header spans the canvas edge to edge; stuck, it takes over the canvas's rounded top. */
-  .page-header { top: var(--frame); margin: 0 -36px 22px; padding: 24px 36px 18px; border-bottom: 1px solid var(--line); }
-  .page-header-stuck { border-radius: 17px 17px 0 0; padding-top: 14px; padding-bottom: 12px; }
+   Pages sit in the Line's frame (line/line.css), which places them and pins their headers.
+   Pinned, a header shrinks to its icon, title and buttons. */
+@media (min-width: 901px) {
   .page-header-stuck .page-sub, .page-header-stuck .page-eyebrow { display: none; }
   .page-header-stuck .page-icon { width: 32px; height: 32px; border-radius: 9px; }
   .page-header-stuck h1 { font-size: 20px; }
-  .demo-banner { padding: 9px 36px; }
 }
 
 /* Page masthead: the section's icon on a tile in the accent, the menu group above the title. */
@@ -1709,23 +1550,6 @@ a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); 
 .page-tabs a.on { color: var(--ink); }
 .page-tabs a.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
 
-/* Sidebar foot: freshness and refresh on one line, then who you are, on a card. */
-.sidebar-status { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-right: 2px; }
-.sidebar-status .live { padding: 0 10px; }
-.sidebar-status .refresh-btn { padding: 5px 7px; color: var(--muted); }
-.sidebar-status .refresh-btn:hover:not(:disabled) { color: var(--ink); }
-.account {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 70%, transparent); border: 1px solid var(--card-border);
-}
-.account .me { padding: 0; color: var(--ink-2); flex: 1; }
-.account .signout-btn { padding: 5px 7px; color: var(--muted); }
-.brand-name { font-size: 15px; letter-spacing: -0.01em; }
-@media (min-width: 861px) {
-  .shell-collapsed .sidebar-status { flex-direction: column; padding: 0; }
-  .shell-collapsed .account { justify-content: center; padding: 6px 0; background: none; border-color: transparent; }
-}
-
 /* Inbox: on a wide screen the filters become a rail beside the list, kept in view. */
 @media (min-width: 1180px) {
   .inbox-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 28px; align-items: start; }
@@ -1747,15 +1571,13 @@ a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); 
   .page-header { border-bottom: 1px solid var(--line); margin-bottom: 16px; }
   .segmented.page-tabs { overflow-x: auto; flex-wrap: nowrap; gap: 18px; }
   .page-tabs a { white-space: nowrap; }
-  .main { background: var(--canvas); }
 }
 
 /* ================================================================= inspector
    On a wide screen the details panel docks beside the page (ui.jsx Drawer, docked):
-   a second canvas on the right, and the page narrows to make room instead of being covered. */
+   a second canvas on the right, and the frame narrows to make room (line/line.css). */
 :root { --inspector-w: clamp(440px, 32vw, 600px); }
-.shell { transition: padding-right 0.2s ease-out; }
-html.inspector-open .shell { padding-right: calc(var(--inspector-w) + var(--frame)); }
+
 .drawer.drawer-docked {
   position: fixed; top: var(--frame); right: var(--frame); bottom: var(--frame); left: auto; z-index: 10;
   width: var(--inspector-w); border: 1px solid var(--card-border); border-radius: 18px;

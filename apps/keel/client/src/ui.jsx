@@ -7,6 +7,7 @@ import { useSourceName } from './orgs.js';
 import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
 import { Icon } from './icons.jsx';
+import { stageName, stageOfPath } from './line/names.js';
 import { BG, PALETTE, pinchPixels } from './pinch.js';
 
 // One rect per run of same-coloured pixels, for each mood. Built once each: the drawing never changes.
@@ -146,21 +147,19 @@ export function Empty({ title, mood, children }) {
  * on a frosted backdrop; once it's pinned (the marker before it has scrolled
  * away) it gets a hairline and a shadow.
  */
-// Which menu entry and group a page belongs to, for the icon and the line above its title.
-// Longest prefix first, so /release-notes isn't taken for something shorter.
-const SECTIONS = [
-  ['/inbox', 'inbox', 'today'], ['/summary', 'summary', 'today'],
-  ['/work', 'workItems', 'work'], ['/epics', 'workItems', 'work'], ['/board', 'board', 'work'],
-  ['/prs', 'pullRequests', 'code'], ['/commits', 'pullRequests', 'code'], ['/release-notes', 'pullRequests', 'code'],
-  ['/pipelines', 'pipelines', 'code'], ['/production', 'production', 'code'], ['/ship', 'production', 'code'], ['/totals', 'production', 'code'],
-  ['/team', 'team', 'people'], ['/users', 'team', 'people'], ['/insights', 'insights', 'people'],
-  ['/settings', 'settings', null],
+// Each page's icon, and the line above its title: the stage of the Line it belongs to
+// (line/names.js), or nothing for a page beside the line.
+const ICONS = [
+  ['/inbox', 'inbox'], ['/summary', 'summary'], ['/work', 'workItems'], ['/epics', 'workItems'], ['/board', 'board'],
+  ['/prs', 'pullRequests'], ['/commits', 'pullRequests'], ['/release-notes', 'pullRequests'],
+  ['/pipelines', 'pipelines'], ['/production', 'production'], ['/ship', 'production'], ['/totals', 'production'],
+  ['/team', 'team'], ['/users', 'team'], ['/insights', 'insights'], ['/settings', 'settings'],
 ];
-const groupName = (g) => ({ today: t('Today'), work: t('Work'), code: t('Code and delivery'), people: t('People') })[g];
 
 export function PageHeader({ title, sub, children }) {
   const { pathname } = useLocation();
-  const section = SECTIONS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  const icon = ICONS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`))?.[1];
+  const stage = stageOfPath(pathname);
   const marker = useRef(null);
   const [stuck, setStuck] = useState(false);
   useEffect(() => {
@@ -174,9 +173,9 @@ export function PageHeader({ title, sub, children }) {
       <div ref={marker} className="page-header-marker" aria-hidden="true" />
       <header className={`page-header${stuck ? ' page-header-stuck' : ''}`}>
         <div className="page-title">
-          {section && <span className="page-icon" aria-hidden="true"><Icon name={section[1]} size={20} /></span>}
+          {icon && <span className="page-icon" aria-hidden="true"><Icon name={icon} size={20} /></span>}
           <div className="page-title-text">
-            {section?.[2] && <div className="page-eyebrow">{groupName(section[2])}</div>}
+            {stage && <div className="page-eyebrow">{stageName(stage)}</div>}
             <h1>{title}</h1>
             {sub && <p className="page-sub">{sub}</p>}
           </div>
@@ -224,11 +223,12 @@ export function PageTabs({ label, tabs }) {
   );
 }
 
-// Pages that share one menu entry (see App.jsx): Pull requests, Commits and Release notes; Production, Waiting to ship and
-// Platform totals; Work items and Epics; Team and Users.
-export const CodeTabs = () => <PageTabs label={t('Code')} tabs={[{ to: '/prs', label: t('Pull requests') }, { to: '/commits', label: t('Commits') }, { to: '/release-notes', label: t('Release notes') }]} />;
-export const ProductionTabs = () => <PageTabs label={t('Production')} tabs={[{ to: '/production', label: t('Monitors') }, { to: '/ship', label: t('Waiting to ship') }, { to: '/totals', label: t('Platform totals') }]} />;
-export const WorkTabs = () => <PageTabs label={t('Work items')} tabs={[{ to: '/work', label: t('Work items') }, { to: '/epics', label: t('Epics') }]} />;
+// Pages that share a stage of the Line (Pull requests, Commits and Release notes; Monitors, Waiting to ship and
+// Platform totals; Work items and Epics) are its tabs now, in the frame (line/LineShell.jsx), so the pages
+// draw none of their own. Kept as names so the pages need no change.
+export const CodeTabs = () => null;
+export const ProductionTabs = () => null;
+export const WorkTabs = () => null;
 /** Team, and Users for Admins of a Keel with accounts; nothing to switch to otherwise. */
 export function TeamTabs() {
   const { authMode, can } = useApp();

@@ -36,4 +36,8 @@ export default {
   'Deploys a week': 'Implementações por semana',
   'How the line moves': 'Como a linha avança',
   'How the line moves, last {n} days': 'Como a linha avança, últimos {n} dias',
+  'Go to the Line': 'Ir para a Linha',
+  'Stuck first': 'Parados primeiro',
+  '1 on the line': '1 na linha',
+  '{n} on the line': '{n} na linha',
 };

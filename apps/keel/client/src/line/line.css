@@ -1,31 +1,41 @@
-/* The Line (prototype). A transit map of change: stations along a track, the track
-   flowing where work moves and standing still, in amber or red, where it piles up.
-   Built on the same tokens as the rest of Keel (styles.css), so themes and accents follow. */
+/* Keel's frame, the Line: a top bar, the line of stations (Keel's main navigation), a stage's
+   tabs, then the page. A transit map of change: the track flows where work moves and stands
+   still, in amber or red, where it piles up. Built on the tokens in styles.css, so themes and
+   accents follow. */
 
-.line {
+.ls {
   --track: 4px;
+  --node: 28px;
+  --chrome-h: 57px; /* the top bar's height: what sticky page headers sit under */
   min-height: 100vh; display: flex; flex-direction: column;
   background:
     radial-gradient(1100px 420px at 85% -10%, color-mix(in srgb, var(--accent) var(--glow), transparent), transparent 70%),
     radial-gradient(800px 380px at 5% -15%, color-mix(in srgb, var(--info) calc(var(--glow) * 0.6), transparent), transparent 70%),
-    var(--bg);
+    var(--canvas);
   transition: padding-right 0.2s ease-out;
 }
-html.inspector-open .line { padding-right: calc(var(--inspector-w) + var(--frame)); }
+/* The details panel, docked (ui.jsx Drawer): the whole frame makes room for it. */
+html.inspector-open .ls { padding-right: calc(var(--inspector-w) + var(--frame)); }
+.ls-main { flex: 1; min-width: 0; padding-bottom: 48px; }
 
 /* ------------------------------------------------------------------ top bar */
 .line-top {
   position: sticky; top: 0; z-index: 8; display: flex; align-items: center; gap: 18px;
-  padding: 10px 24px; border-bottom: 1px solid var(--line);
+  min-height: var(--chrome-h); padding: 8px 24px; border-bottom: 1px solid var(--line);
   background: var(--header-glass); -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
 }
-.line-brand { display: flex; align-items: center; gap: 10px; color: var(--ink); min-width: 0; }
+.line-brand { display: flex; align-items: center; gap: 10px; color: var(--ink); min-width: 0; max-width: 240px; }
 .line-brand:hover { text-decoration: none; }
-.line-brand-text { display: grid; line-height: 1.15; }
+.line-brand-text { display: grid; line-height: 1.2; min-width: 0; }
 .line-brand-text strong { font-size: 15px; }
-.line-brand-text span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent-ink); }
+.line-brand-text span { font-size: 11.5px; color: var(--muted); }
 .line-needs { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.line-needs-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.line-needs-label {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: var(--ink-2);
+}
+.line-needs-label:hover, .line-needs-label.on { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+.line-needs-n { min-width: 20px; padding: 0 6px; border-radius: 10px; font-size: 11.5px; text-align: center; background: var(--bad); color: var(--on-accent); }
 .line-need {
   --tone: var(--accent);
   display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 10px; border-radius: 999px; white-space: nowrap;
@@ -38,37 +48,51 @@ html.inspector-open .line { padding-right: calc(var(--inspector-w) + var(--frame
 .line-need-warn { --tone: var(--warn); }
 .line-need-ok { --tone: var(--ok); cursor: default; }
 .line-tools { display: flex; align-items: center; gap: 8px; }
-.line-mine { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; cursor: pointer; }
-.line-mine input { accent-color: var(--accent); }
 .line-tool {
   display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; cursor: pointer;
   border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2);
 }
 .line-tool:hover { color: var(--ink); background: var(--surface-2); }
+.line-search { display: flex; gap: 8px; width: auto; padding: 0 8px 0 10px; }
+.line-search kbd { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .line-live { width: 9px; height: 9px; margin: 0 4px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .line-live-warn { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
 .line-live-bad { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+
+/* The menu: the pages beside the line, then refresh, live status and who you are. */
 .line-menu { position: relative; }
 .line-menu-pop {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 12; display: grid; min-width: 190px; padding: 6px;
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--edge), var(--shadow-pop);
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 12; display: grid; width: 280px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--edge), var(--shadow-pop);
 }
-.line-menu-pop a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--ink-2); font-size: 13.5px; }
-.line-menu-pop a:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+.line-menu-pages { display: grid; gap: 1px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.line-menu-pages a, .line-menu-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--ink-2); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
+}
+.line-menu-pages a:hover, .line-menu-row:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+.line-menu-pages a.on { background: var(--accent-soft); color: var(--accent-ink); }
+.line-menu-row .spin { display: inline-flex; }
+.line-menu-foot { display: grid; gap: 2px; padding-top: 6px; }
+.line-menu-live { display: flex; align-items: center; gap: 8px; padding: 4px 10px 8px; font-size: 12px; color: var(--muted); }
+.line-menu-live.live-bad { color: var(--bad); }
+.line-menu-me { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius); background: var(--surface-2); font-size: 12.5px; color: var(--ink-2); }
+.line-menu-me > .truncate { flex: 1; }
 
 /* --------------------------------------------------------------------- rail */
-.line-rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); padding: 28px 24px 14px; }
+.line-rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); padding: 28px 24px 16px; }
 .station {
   --tone: var(--accent);
-  position: relative; display: grid; justify-items: center; gap: 2px; padding: 0 6px 8px;
-  border: 0; background: none; color: var(--ink); cursor: pointer; text-align: center; font: inherit;
+  position: relative; display: grid; justify-items: center; align-content: start; gap: 2px; padding: 0 6px 8px;
+  color: var(--ink); text-align: center;
 }
+.station:hover { text-decoration: none; }
 .station-warn { --tone: var(--warn); }
 .station-bad { --tone: var(--bad); }
 /* The track: each station draws its half of the segment on either side. The segment takes the
-   tone of the hand-off (stages.js trackTones); a moving one flows, a stuck one stands still. */
+   tone of the stage it leads into (stages.js trackTones); a moving one flows, a stuck one stands still. */
 .station[data-in]::before, .station[data-out]::after {
-  content: ''; position: absolute; top: calc(14px - var(--track) / 2); height: var(--track); z-index: 0;
+  content: ''; position: absolute; top: calc(var(--node) / 2 - var(--track) / 2); height: var(--track); z-index: 0;
   background: var(--line-strong);
 }
 .station[data-in]::before { left: 0; right: 50%; }
@@ -81,9 +105,9 @@ html.inspector-open .line { padding-right: calc(var(--inspector-w) + var(--frame
 .station[data-in='bad']::before, .station[data-out='bad']::after { background: var(--bad); }
 @keyframes line-flow { to { background-position: 40px 0; } }
 .station-node {
-  position: relative; z-index: 1; width: 28px; height: 28px; border-radius: 50%;
-  background: var(--bg); border: 4px solid var(--tone);
-  box-shadow: 0 0 0 4px var(--bg), 0 0 18px color-mix(in srgb, var(--tone) 45%, transparent);
+  position: relative; z-index: 1; width: var(--node); height: var(--node); border-radius: 50%;
+  background: var(--canvas); border: calc(var(--node) / 7) solid var(--tone);
+  box-shadow: 0 0 0 4px var(--canvas), 0 0 18px color-mix(in srgb, var(--tone) 45%, transparent);
   transition: transform 0.15s, background 0.15s;
 }
 .station:hover .station-node { transform: scale(1.12); }
@@ -97,33 +121,51 @@ html.inspector-open .line { padding-right: calc(var(--inspector-w) + var(--frame
 .station:focus-visible { outline: none; }
 .station:focus-visible .station-node { outline: 2px solid var(--accent); outline-offset: 4px; }
 
-/* ------------------------------------------------------------------- stages */
+/* Over every page but home, the same line, slim: name and count beside each other under the node. */
+.line-rail-compact { --node: 18px; --track: 3px; padding: 16px 24px 4px; }
+.line-rail-compact .station { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 2px 7px; padding-top: calc(var(--node) + 7px); }
+.line-rail-compact .station-node { position: absolute; top: 0; left: 50%; transform: translateX(-50%); box-shadow: 0 0 0 3px var(--canvas), 0 0 12px color-mix(in srgb, var(--tone) 40%, transparent); }
+.line-rail-compact .station:hover .station-node { transform: translateX(-50%) scale(1.15); }
+.line-rail-compact .station-name { margin: 0; font-size: 11px; }
+.line-rail-compact .station-count { font-size: 15px; letter-spacing: -0.01em; color: var(--ink-2); }
+.line-rail-compact .station.on .station-count { color: var(--ink); }
+.line-rail-compact .station-stuck { font-size: 11.5px; }
+/* The station you're in gets a lit floor, so the stage's tabs below read as its own. */
+.line-rail-compact .station.on { background: linear-gradient(to bottom, transparent 40%, color-mix(in srgb, var(--tone) 12%, transparent)); border-radius: 0 0 10px 10px; }
+
+/* A stage's pages, as its tabs: underlined, on a hairline across the frame. */
+.stage-tabs { display: flex; gap: 24px; padding: 0 36px; margin-top: 8px; box-shadow: inset 0 -1px var(--line); overflow-x: auto; scrollbar-width: none; }
+.stage-tabs a { position: relative; padding: 10px 0 11px; color: var(--muted); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+.stage-tabs a:hover { color: var(--ink); text-decoration: none; }
+.stage-tabs a.on { color: var(--ink); }
+.stage-tabs a.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
+
+/* Pages in the frame: their headers pin under the top bar, edge to edge. */
+.ls .page { max-width: none; padding: 28px 36px 0; }
+.ls .page:has(> .page-header-marker:first-child) { padding-top: 0; }
+.ls .page-header { top: var(--chrome-h); margin: 0 -36px 22px; padding: 24px 36px 18px; border-bottom: 1px solid var(--line); }
+.ls .page-header-stuck { border-radius: 0; padding-top: 12px; padding-bottom: 12px; }
+.ls .demo-banner { padding: 9px 24px; }
+
+/* -------------------------------------------------------------- home stages */
 .line-stages { display: flex; gap: 12px; align-items: flex-start; padding: 6px 24px 20px; overflow-x: auto; }
 .stage {
   flex: 1 1 0; min-width: 190px; display: grid; gap: 8px; padding: 8px; border-radius: 14px;
   background: color-mix(in srgb, var(--surface-2) 30%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
 }
-.stage-focused { flex: 1 1 auto; padding: 16px; }
-.stage-head { display: flex; align-items: baseline; gap: 12px; padding: 0 4px 6px; }
-.stage-head h1 { font-size: 22px; letter-spacing: -0.02em; }
 .stage-empty { margin: 8px 4px; color: var(--muted); font-size: 13px; }
-.stage-more { border: 0; background: none; color: var(--accent-ink); font: inherit; font-size: 13px; font-weight: 500; padding: 6px; border-radius: var(--radius-sm); cursor: pointer; }
-.stage-more:hover { background: var(--surface-2); }
-/* A stage out of focus folds to a strip with its count and name, still one click away. */
-.stage-folded { flex: 0 0 58px; min-width: 58px; padding: 0; }
-.stage-fold {
-  width: 100%; min-height: 62vh; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 14px 0;
-  border: 0; border-radius: 14px; background: none; color: var(--ink-2); cursor: pointer; font: inherit;
-  border-top: 3px solid var(--accent);
-}
-.stage-folded.stage-warn .stage-fold { border-top-color: var(--warn); }
-.stage-folded.stage-bad .stage-fold { border-top-color: var(--bad); }
-.stage-fold:hover { background: var(--surface-2); color: var(--ink); }
-.stage-fold-count { font-size: 18px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
-.stage-fold-name { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; }
+.stage-more { display: block; text-align: center; color: var(--accent-ink); font-size: 13px; font-weight: 500; padding: 6px; border-radius: var(--radius-sm); }
+.stage-more:hover { background: var(--surface-2); text-decoration: none; }
+
+/* A stage's own page (/line/review): its cards in a grid, most stuck first. */
+.stage-page { padding-top: 24px; }
+.stage-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.stage-head h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.025em; }
+.line-mine { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.line-mine input { accent-color: var(--accent); }
 
 .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.stage-focused .cards { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+.cards-grid { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
 
 /* -------------------------------------------------------------------- cards */
 .lc {
@@ -183,21 +225,25 @@ html.inspector-open .line { padding-right: calc(var(--inspector-w) + var(--frame
 .line-moving dt { font-size: 12px; color: var(--muted); }
 .line-moving dd { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .line-moving > a { margin-left: auto; }
-.line-note { margin: 0 24px 24px; font-size: 12px; color: var(--muted); }
 
 /* ------------------------------------------------------------------ phones */
 @media (max-width: 900px) {
-  .line-top { flex-wrap: wrap; gap: 10px; padding: 10px 16px; }
+  .ls { --chrome-h: 100px; }
+  .line-top { flex-wrap: wrap; gap: 8px 10px; padding: 8px 16px; }
   .line-needs { order: 3; flex-basis: 100%; justify-content: flex-start; }
   .line-tools { margin-left: auto; }
-  .line-mine span { display: none; }
+  .line-search kbd { display: none; }
+  .line-search { width: 34px; padding: 0; justify-content: center; }
   .line-rail { display: flex; overflow-x: auto; padding: 22px 8px 10px; scrollbar-width: none; }
-  .station { flex: 0 0 112px; }
+  .line-rail .station { flex: 0 0 112px; }
+  .line-rail-compact { padding: 14px 8px 4px; }
+  .line-rail-compact .station { flex-basis: 104px; }
+  .stage-tabs { padding: 0 16px; gap: 18px; }
+  .ls .page { padding: 18px 16px 0; }
+  .ls .page-header { top: auto; position: static; margin: 0 -16px 16px; padding: 16px; }
   .line-stages { padding: 6px 12px 16px; }
-  .line-focused .stage-folded { display: none; }
-  .stage-focused { padding: 12px 8px; }
-  .stage-focused .cards { grid-template-columns: 1fr; }
+  .stage { min-width: 260px; }
+  .cards-grid { grid-template-columns: 1fr; }
   .line-moving { margin: 4px 12px 12px; }
   .line-moving > a { margin-left: 0; }
-  .line-note { margin: 0 16px 20px; }
 }
