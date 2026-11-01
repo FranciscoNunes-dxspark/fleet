@@ -93,4 +93,7 @@ export default {
   'Call a P1 stuck when it has not started after': 'Considerar parado um P1 que não começou ao fim de',
   'Turn merged changes waiting to ship amber after': 'Pôr a âmbar alterações à espera de implementação ao fim de',
   'Turn them red after': 'E a vermelho ao fim de',
+  'Approve {name}?': 'Aprovar {name}?',
+  'Reject {name}?': 'Rejeitar {name}?',
+  'Run again': 'Executar de novo',
 };

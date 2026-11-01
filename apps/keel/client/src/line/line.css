@@ -441,3 +441,7 @@ button.tile-hit { cursor: pointer; }
   .over-row { grid-template-columns: 80px minmax(0, 1fr) 32px; }
   .over-axis { margin: 6px 40px 0 92px; }
 }
+
+/* Acting from a card: its buttons sit along its foot, under the part that opens it. */
+.lc-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px 13px; margin-top: -2px; }
+.lc-actions .btn-small { padding: 3px 10px; font-size: 12.5px; }

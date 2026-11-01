@@ -1,8 +1,11 @@
 // The Line's own pages: home (every stage, its most stuck cards under its station) and one
 // stage's cards (/line/review), most stuck first. The stages come from the shell (LineShell.jsx).
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { Avatar, sameTarget, useTypeColor } from '../ui.jsx';
+import { approvalPath } from '../orgs.js';
+import { Avatar, Confirm, sameTarget, useTypeColor } from '../ui.jsx';
 import { Icon } from '../icons.jsx';
 import { t } from '../i18n.js';
 import { STAGES } from './stages.js';
@@ -206,8 +209,53 @@ function Card({ card, onOpen, drawer, typeColor }) {
           )}
         </span>
       </button>
+      <CardActions card={card} />
     </li>
   );
+}
+
+/**
+ * What can be done right from a card, without opening it: decide an approval waiting on you,
+ * approve a pull request waiting on your review, turn on auto-complete for an approved one, run a
+ * red pipeline again. Each only where your role allows it; the rest open the card as before.
+ */
+function CardActions({ card }) {
+  const { can, refresh, toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const run = async (path, body, done) => {
+    setBusy(true);
+    try {
+      await api(path, { method: 'POST', body });
+      toast(done);
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const actions = [];
+  const pr = card.kind === 'pr' ? card.open : null;
+  const prPath = pr && `/prs/${encodeURIComponent(pr.projectId)}/${encodeURIComponent(pr.repoId)}/${pr.id}/actions`;
+
+  if (card.kind === 'approval' && card.approval?.canDecide && can('approvals.decide')) {
+    actions.push(
+      <Confirm key="approve" text={t('Approve {name}?', { name: card.title })} className="btn btn-small btn-primary" onConfirm={() => run(approvalPath(card.approval), { status: 'approved', comment: '' }, t('Approved: {name}', { name: card.title }))}>{t('Approve')}</Confirm>,
+      <Confirm key="reject" text={t('Reject {name}?', { name: card.title })} className="btn btn-small btn-ghost" onConfirm={() => run(approvalPath(card.approval), { status: 'rejected', comment: '' }, t('Rejected: {name}', { name: card.title }))}>{t('Reject')}</Confirm>,
+    );
+  }
+  if (pr && card.mine && can('prs.write')) {
+    actions.push(<button key="vote" type="button" className="btn btn-small btn-primary" disabled={busy} onClick={() => run(prPath, { type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{t('Approve')}</button>);
+  }
+  if (pr && card.reviewState === 'approved' && !card.autoComplete && !card.draft && can('prs.write')) {
+    actions.push(<button key="auto" type="button" className="btn btn-small" disabled={busy} onClick={() => run(prPath, { type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</button>);
+  }
+  if (card.rerun && can('pipelines.run')) {
+    const { branch } = card.rerun;
+    actions.push(<Confirm key="rerun" text={t('Run on {branch}?', { branch })} className="btn btn-small" onConfirm={() => run('/pipelines/queue', card.rerun, t('Queued {name} on {branch}', { name: card.title, branch }))}>{t('Run again')}</Confirm>);
+  }
+  if (!actions.length) return null;
+  return <div className="lc-actions">{actions}</div>;
 }
 
 /** How the line moves: the delivery measures for the last 30 days, under it. */
