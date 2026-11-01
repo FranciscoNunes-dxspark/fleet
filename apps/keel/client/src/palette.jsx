@@ -52,6 +52,8 @@ function pages(can, authMode) {
     p('/line/deploying', `${t('The Line')} · ${t('Deploying')}`, ['approvals', 'releases', 'red pipelines']),
     p('/line/live', `${t('The Line')} · ${t('Live')}`, ['production', 'monitors']),
     p('/dashboard', t('Dashboard'), ['widgets']),
+    p('/desk', t('Desk'), ['triage', 'queue', 'inbox', 'keyboard']),
+    p('/control', t('Control room'), ['wall', 'status', 'timeline', 'live', 'tv']),
     p('/inbox', t('Inbox'), ['attention', 'needs me', 'triage']),
     p('/summary', t('Weekly summary'), ['week', 'report']),
     p('/work', t('Work items'), ['backlog', 'tickets']),

@@ -31,6 +31,8 @@ import Settings from './pages/Settings.jsx';
 import { CommandPalette } from './palette.jsx';
 import LineShell from './line/LineShell.jsx';
 import { LineHome, StageCards } from './line/Line.jsx';
+import Desk from './line/Desk.jsx';
+import Control from './line/Control.jsx';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
 import Users from './pages/Users.jsx';
 import TerminalSignIn from './pages/TerminalSignIn.jsx';
@@ -306,6 +308,8 @@ function Console({ authMode, onSignedOut }) {
           <Route path="/" element={<LineHome />} />
           <Route path="/line" element={<Navigate to="/" replace />} />
           <Route path="/line/:stage" element={<StageCards />} />
+          <Route path="/desk" element={<Desk />} />
+          <Route path="/control" element={<Control />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/summary" element={<Summary />} />

@@ -63,7 +63,12 @@ export default function LineShell({ children }) {
     pipelines: pipelines.data, approvals: approvals.data, production: production.data,
   }), [workitems.data, prs.data, pending.data, pipelines.data, approvals.data, production.data]);
   const loading = [workitems, prs, pending, pipelines, approvals, production].some((r) => !r.data && !r.error);
-  const line = useMemo(() => ({ stages, tracks: trackTones(stages), loading, onlyMine, setOnlyMine }), [stages, loading, onlyMine]);
+  // The raw answers too, for the Desk and the Control room, which read them their own way.
+  const data = useMemo(() => ({
+    workitems: workitems.data, prs: prs.data, pending: pending.data, pipelines: pipelines.data,
+    approvals: approvals.data, production: production.data, attention: attention.data,
+  }), [workitems.data, prs.data, pending.data, pipelines.data, approvals.data, production.data, attention.data]);
+  const line = useMemo(() => ({ stages, tracks: trackTones(stages), loading, onlyMine, setOnlyMine, data }), [stages, loading, onlyMine, data]);
 
   const s = attention.data?.summary;
   // Browser tab title carries the "act now" count, so it shows on a background tab.
@@ -75,6 +80,10 @@ export default function LineShell({ children }) {
 
   const home = pathname === '/';
   const here = stageOfPath(pathname);
+  // Three ways to look at the same work: the Line (where is change stuck?), the Desk (what do I do
+  // next?) and the Control room (what's happening right now?). The line of stations is the Line's
+  // own navigation, so the other two leave it out and take the whole window.
+  const view = pathname === '/desk' || pathname.startsWith('/desk/') ? 'desk' : pathname === '/control' ? 'control' : 'line';
   const needs = [
     s?.approvals && { label: t(s.approvals === 1 ? '1 approval' : '{n} approvals', { n: s.approvals }), stage: 'deploying', tone: 'warn', mine: true },
     s?.myReviews && { label: t(s.myReviews === 1 ? '1 review' : '{n} reviews', { n: s.myReviews }), stage: 'review', tone: 'accent', mine: true },
@@ -84,7 +93,7 @@ export default function LineShell({ children }) {
 
   return (
     <LineData.Provider value={line}>
-      <div className={`ls${home ? ' ls-home' : ''}${onlyMine ? ' line-only-mine' : ''}`}>
+      <div className={`ls ls-${view}${home ? ' ls-home' : ''}${onlyMine ? ' line-only-mine' : ''}`}>
         <header className="line-top">
           <Link to="/" className="line-brand" title={pinchLine(mood, { attention: attention.data, live })}>
             <Logo mood={mood} size={30} />
@@ -95,6 +104,12 @@ export default function LineShell({ children }) {
               </span>
             </span>
           </Link>
+
+          <nav className="views" aria-label={t('Views')}>
+            <NavLink to="/" className={() => (view === 'line' ? 'on' : '')} title={t('Where change is stuck')}><Icon name="line" size={15} /><span>{t('Line')}</span></NavLink>
+            <NavLink to="/desk" className={() => (view === 'desk' ? 'on' : '')} title={t('What to do next')}><Icon name="inbox" size={15} /><span>{t('Desk')}</span></NavLink>
+            <NavLink to="/control" className={() => (view === 'control' ? 'on' : '')} title={t("What's happening now")}><Icon name="production" size={15} /><span>{t('Control room')}</span></NavLink>
+          </nav>
 
           <div className="line-needs" role="group" aria-label={t('Needs you')}>
             <NavLink to="/inbox" className={({ isActive }) => `line-needs-label${isActive ? ' on' : ''}`}>
@@ -135,8 +150,8 @@ export default function LineShell({ children }) {
           </div>
         )}
 
-        <Rail stages={stages} tracks={line.tracks} here={here} compact={!home} loading={loading} />
-        {here && (
+        {view === 'line' && <Rail stages={stages} tracks={line.tracks} here={here} compact={!home} loading={loading} />}
+        {view === 'line' && here && (
           <nav className="stage-tabs" aria-label={stageName(here)}>
             {stagePages(here).map(([label, to]) => (
               <NavLink key={to} to={to} end className={({ isActive }) => (isActive || (to === '/totals' && pathname.startsWith('/totals/')) ? 'on' : '')}>{label}</NavLink>

@@ -60,6 +60,12 @@ The line stays along the top of every page, slim, as Keel's navigation. A statio
 
 The top bar holds **Needs you** (it opens the Inbox; beside it, your approvals, reviews, production issues and red pipelines, each a shortcut to its stage), search (Ctrl+K), the live status, and the menu: the pages beside the line (Inbox, Weekly summary, Dashboard, Team, Insights, Settings, Below deck), **Refresh from Azure DevOps**, when Keel last checked, and who you're signed in as.
 
+**Three views** of the same work sit side by side in the top bar:
+
+- **Line** (`/`): where change is stuck, as above.
+- **Desk** (`/desk`): what to do next, like a mail client. Queues on the left (**Act now**, Your reviews, Approvals, **Broken** for production and pipelines together, Pull requests, Work items, Team load, Everything), one list in the middle with every kind of entry, and the selected entry in full on the right, where you act on it: vote on a pull request, move a work item, approve or reject a deployment, read a pipeline run. From the keyboard, **j** and **k** (or the arrows) move and the right pane follows, **1**–**8** pick a queue, **s** snoozes for a day and **o** opens it in Azure DevOps or GitHub. Under 1100 pixels wide an entry opens in the details panel instead.
+- **Control room** (`/control`): what's happening right now, made to stay open on a second screen or a TV (**Full screen**). The time, whether every service is up, and today's deploys, merges and failed runs; a tile per production service (state, response time, 24-hour uptime, the day's checks as a line with failures marked, its latest deploy or the one under way, and how many changes wait to ship to it), every pipeline's recent runs, red ones first, and down the side the last 24 hours: runs passing and failing, deploys reaching production, apps going down, failures rising after a deploy, approvals starting to wait and pull requests merging. It follows Keel's live updates; click anything to open it.
+
 What each page does:
 
 | Page | For |
