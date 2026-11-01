@@ -283,19 +283,25 @@ export function Drawer({ open, onClose, children, label, docked = false }) {
   );
 }
 
-/** Whether the details panel docks beside the page: only where the page keeps enough room beside it. */
-export function useDocked() {
-  const query = '(min-width: 1500px)';
-  const [docked, setDocked] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
+/** Whether a media query matches, following it as the window changes. */
+export function useMedia(query) {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
   useEffect(() => {
     const mq = window.matchMedia?.(query);
     if (!mq) return undefined;
-    const on = () => setDocked(mq.matches);
+    const on = () => setMatches(mq.matches);
+    on();
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
-  }, []);
-  return docked;
+  }, [query]);
+  return matches;
 }
+
+/**
+ * Whether the details panel docks beside the page: only where the page keeps enough room beside it
+ * (1500px with the menu; the Line, which has no menu down the side, asks from 1200px).
+ */
+export const useDocked = (minWidth = 1500) => useMedia(`(min-width: ${minWidth}px)`);
 
 /** Whether two drawer targets name the same thing (the row a list marks as open). */
 export function sameTarget(a, b) {

@@ -37,6 +37,8 @@ import Users from './pages/Users.jsx';
 import TerminalSignIn from './pages/TerminalSignIn.jsx';
 // Ink and xterm.js load only when the page opens.
 const WebTerminal = lazy(() => import('./pages/WebTerminal.jsx'));
+// The Line: a prototype of Keel organised around the path change takes (line/LineApp.jsx).
+const LineApp = lazy(() => import('./line/LineApp.jsx'));
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
 import { applyTheme } from './theme.js';
 import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
@@ -261,7 +263,8 @@ function Console({ authMode, onSignedOut }) {
   const can = useCallback((perm) => !meta || (meta.permissions || []).includes(perm), [meta]);
 
   // Wide screens dock the details panel beside the page; lists mark the row it shows (`drawer`).
-  const docked = useDocked();
+  const onLine = here === '/line' || here.startsWith('/line/');
+  const docked = useDocked(onLine ? 1200 : 1500);
   const ctx = useMemo(() => ({ meta, refreshKey, refresh: bump, openDrawer: setDrawer, drawer, docked, openTarget, toast, live, authMode, signOut, can }), [meta, refreshKey, bump, drawer, docked, toast, live, openTarget, authMode, signOut, can]);
 
   if (metaError && !meta) {
@@ -302,7 +305,7 @@ function Console({ authMode, onSignedOut }) {
 
   return (
     <AppContext.Provider value={ctx}>
-      <Shell />
+      {onLine ? <Suspense fallback={<div className="boot"><Loading /></div>}><LineApp /></Suspense> : <Shell />}
       <CommandPalette />
       <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')} docked={docked}>
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
@@ -490,6 +493,8 @@ function Shell() {
             ))}
           </div>
           <div className="sidebar-foot">
+            {/* The Line: the prototype of a Keel organised around the path change takes (line/LineApp.jsx). */}
+            <NavLink to="/line" className="nav-link" title={tip(t('The Line'))} aria-label={collapsed ? t('The Line') : undefined}><span className="nav-label"><Icon name="line" /><span className="nav-text">{t('The Line')}</span></span></NavLink>
             {/* The terminal app in the browser, on a page of its own (no menu); not on touch screens, which have no keys for it. */}
             <NavLink to="/cli" className="nav-link nav-terminal" title={t('Below deck: Keel in the terminal, here in the browser')} aria-label={collapsed ? t('Below deck') : undefined}><span className="nav-label"><Icon name="terminal" /><span className="nav-text">{t('Below deck')}</span></span></NavLink>
             <NavLink to="/settings" className="nav-link" title={tip(t('Settings'))} aria-label={collapsed ? t('Settings') : undefined}><span className="nav-label"><Icon name="settings" /><span className="nav-text">{t('Settings')}</span></span></NavLink>

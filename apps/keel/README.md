@@ -70,6 +70,12 @@ npm start               # serves UI + API on http://127.0.0.1:4280
 
 Thresholds, the blocked tag, auto-complete defaults and the refresh interval are set in **Settings**. Click a section's title to fold it away; folded sections stay folded in this browser, and a link to one (from Waiting to ship, say) opens it. Settings are saved to `data/settings.json`.
 
+### The Line (preview)
+
+A first look at a Keel organised around the path a change takes rather than around Azure DevOps's kinds of thing. **The Line** in the menu (or `/line`) shows six stations along a track: **Planned** (work items not started), **Building** (in progress or resolved), **In review** (open pull requests), **Merged** (changes merged and not deployed yet, per production target), **Deploying** (approvals waiting, deploys under way and red pipelines, which hold everything behind them up) and **Live** (the production monitors). Each station shows how much it holds and how much is stuck there: a P1 not started after two days, a blocked item or one with no update for five, a pull request with conflicts, rejected or open more than five days, changes waiting more than three days to ship, a red pipeline, an app down or degraded. A stage turns amber when a quarter of it is stuck and red from half (production on any one app), and the track into it turns with it: a moving track flows, a stuck one stands still.
+
+Under each station are its cards, most stuck first, with how long each has been there. Click a station to give it the screen (the others fold to a strip; the address, `/line/review`, can be shared), and a card to open it in the details panel, docked beside the line from 1200 pixels wide. Along the top, **Needs you** counts your approvals, reviews, production issues and red pipelines, each a shortcut to its stage, and **Only what needs me** fades the rest. Under the line, the delivery measures of the last 30 days. Everything else (Dashboard, Inbox, Board, Team, Insights, Settings) is under **Menu**, as the Line is a preview.
+
 ## In the terminal
 
 `npm run cli` opens Keel in the terminal (or run `npm link` once, then `keel` from any folder). It works like Tiller and Trawl: titled panels, a prompt with slash commands, and Pinch the crab keeping an eye on things. `npm run cli:demo` (`keel --demo`) opens the demo organization, no credentials needed.
