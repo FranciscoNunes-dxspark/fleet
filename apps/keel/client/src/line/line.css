@@ -611,3 +611,41 @@ button.tile-hit { cursor: pointer; }
   .person-cell-n { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .person-cell-label { font-size: 10.5px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* ---------------------------------------------------------------- list cards
+   Pull requests and work items on a phone (PullRequests.jsx, WorkItems.jsx): a card per row, its
+   filters folded behind one button (ui.jsx FilterFold) with a sort menu inside. */
+.filter-fold-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.filter-fold-bar .segmented { margin: 0; }
+.filter-fold-btn { margin-left: auto; }
+.filter-fold-btn.on { border-color: var(--accent); }
+.filter-fold-n { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 17px; text-align: center; background: var(--accent); color: var(--on-accent); }
+.filter-fold { padding: 10px; margin-bottom: 12px; border: 1px solid var(--card-border); border-radius: 12px; background: var(--surface); }
+.filter-fold .filters { margin-bottom: 8px; }
+.filter-fold .filters > * { flex: 1 1 100%; max-width: none; }
+.filter-fold .toggles { margin-bottom: 4px; }
+.sort-pick { display: flex; gap: 6px; }
+.sort-pick .input { flex: 1; }
+
+.list-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.list-card {
+  border: 1px solid var(--card-border); border-radius: 12px; background: var(--surface); box-shadow: var(--elev-1); overflow: hidden;
+}
+.list-card-mine { border-color: color-mix(in srgb, var(--accent) 60%, var(--card-border)); }
+.list-card-bad { box-shadow: inset 3px 0 var(--bad), var(--elev-1); }
+.list-card-open { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.list-card-hit { width: 100%; display: grid; gap: 6px; padding: 11px 12px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.list-card-top { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); min-width: 0; }
+.list-card-top > :first-child { min-width: 0; }
+.list-card-top .type { display: inline; }
+.list-card-title { font-size: 14.5px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.list-card-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); min-width: 0; }
+.list-card-meta .person { min-width: 0; }
+.list-card-edit { display: flex; gap: 8px; padding: 0 12px 11px; }
+.list-card-edit .input-inline { flex: 1 1 0; max-width: none; min-width: 0; border-color: var(--line-strong); background: var(--surface-2); padding: 6px 8px; font-size: 13px; }
+
+/* Work items' views (All open, Current sprint…) scroll sideways on a phone rather than wrapping into a block. */
+@media (max-width: 900px) {
+  .page > .segmented[role="tablist"] { display: flex; flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; margin-bottom: 10px; }
+  .page > .segmented[role="tablist"] button { flex: none; }
+}

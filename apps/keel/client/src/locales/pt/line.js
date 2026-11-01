@@ -140,4 +140,8 @@ export default {
   'Its path to production': 'O seu caminho até produção',
   'now: {stage}': 'agora: {stage}',
   'Built by {pipeline} since (its runs from then are no longer listed)': 'Compilado por {pipeline} desde então (as execuções dessa altura já não aparecem)',
+  'Filters': 'Filtros',
+  'Sort by': 'Ordenar por',
+  'Ascending': 'Ascendente',
+  'Descending': 'Descendente',
 };

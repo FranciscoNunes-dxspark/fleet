@@ -3,7 +3,7 @@ import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, isBlocked, shortIteration } from '../format.js';
-import { Chip, Empty, ErrorBox, Loading, PageHeader, sameTarget, Th, useSort, TypeLabel, WorkTabs } from '../ui.jsx';
+import { Chip, Empty, ErrorBox, FilterFold, Loading, PageHeader, sameTarget, SortPick, Th, useMedia, useSort, TypeLabel, WorkTabs } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
@@ -41,6 +41,8 @@ export default function WorkItems() {
     { id: 'mine', label: t('Mine'), test: (w) => w.assignedTo?.id === data.me.id },
   ] : [];
 
+  // Phones: the filters fold behind a button, and the list is cards that keep the state and assignee menus.
+  const phone = useMedia('(max-width: 900px)');
   const { sort, setSort, apply } = useSort({ key: 'priority', dir: 1 }, {
     id: (w) => w.id,
     title: (w) => w.title.toLowerCase(),
@@ -117,7 +119,15 @@ export default function WorkItems() {
         ))}
       </div>
 
+      <FilterFold active={[q, project, type, assignee].filter(Boolean).length}>
       <div className="filters">
+        {phone && (
+          <SortPick
+            sort={sort}
+            setSort={setSort}
+            options={[['priority', t('Priority')], ['changed', t('Updated')], ['state', t('State')], ['title', t('Title')], ['assignee', t('Assigned to')], ['id', 'ID']]}
+          />
+        )}
         <input type="search" className="input" placeholder={t('Search title, ID, tag, person')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search work items')} />
         <select className="input" value={project} onChange={(e) => setProject(e.target.value)} aria-label={t('Project')}>
           <option value="">{t('All projects')}</option>
@@ -133,8 +143,21 @@ export default function WorkItems() {
         </select>
       </div>
       <SavedViews page="work" filters={filters} apply={applyFilters} />
+      </FilterFold>
 
-      {!rows.length ? (
+      {rows.length > 0 && phone ? (
+        <ol className="list-cards">
+          {apply(rows).map((w) => (
+            <WorkCard
+              key={w.id} w={w} states={data.states[w.projectId]?.[w.type] || []} people={data.people}
+              editable={editable} saving={saving === w.id} blocked={blocked(w)} stuck={stuck(w)} blockedTag={blockedTag}
+              open={sameTarget(drawer, { type: 'workitem', id: w.id, org: w.org })}
+              onOpen={() => openDrawer({ type: 'workitem', id: w.id, org: w.org })}
+              onUpdate={update}
+            />
+          ))}
+        </ol>
+      ) : !rows.length ? (
         <Empty title={t('No work items match.')}>{t('Try another view or clear the filters.')}</Empty>
       ) : (
         <div className="table-wrap">
@@ -201,5 +224,52 @@ export default function WorkItems() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A work item as a card (phones): its type and number, title, where it sits, and the same state and
+ * assignee menus as the table's row, so it can be moved on without opening it.
+ */
+function WorkCard({ w, states, people, editable, saving, blocked, stuck, blockedTag, open, onOpen, onUpdate }) {
+  return (
+    <li className={`list-card${blocked ? ' list-card-bad' : ''}${open ? ' list-card-open' : ''}${saving ? ' saving' : ''}`}>
+      <button type="button" className="list-card-hit" onClick={onOpen} aria-current={open || undefined}>
+        <span className="list-card-top">
+          <span className="truncate"><TypeLabel type={w.type} color={w.typeColor} /> <span className="mono">{w.id}</span> · {w.projectName}</span>
+          <span className={stuck ? 'text-warn' : ''}>{age(w.changedAt)}</span>
+        </span>
+        <span className="list-card-title">{w.title}</span>
+        {(blocked || w.priority === 1 || w.tags.length > 0) && (
+          <span className="chips">
+            {w.priority === 1 && <Chip tone="bad">P1</Chip>}
+            {blocked && <Chip tone="bad">{t('Blocked')}</Chip>}
+            {w.tags.filter((tag) => tag.toLowerCase() !== blockedTag).slice(0, 3).map((tag) => <Chip key={tag}>{tag}</Chip>)}
+          </span>
+        )}
+      </button>
+      <div className="list-card-edit">
+        <select
+          className={`input input-inline state-${w.stateCategory}`}
+          value={w.state}
+          disabled={!editable || saving}
+          onChange={(e) => onUpdate(w, { state: e.target.value }, t('{id} moved to {place}', { id: w.id, place: e.target.value }))}
+          aria-label={t('State of {id}', { id: w.id })}
+        >
+          {(states.length ? states : [{ name: w.state }]).map((s) => <option key={s.name}>{s.name}</option>)}
+        </select>
+        <select
+          className="input input-inline"
+          value={w.assignedTo?.uniqueName || ''}
+          disabled={!editable || saving}
+          onChange={(e) => onUpdate(w, { assignedTo: e.target.value }, t(e.target.value ? '{id} assigned' : '{id} unassigned', { id: w.id }))}
+          aria-label={t('Assignee of {id}', { id: w.id })}
+        >
+          <option value="">{t('Unassigned')}</option>
+          {w.assignedTo && !people.some((p) => p.uniqueName === w.assignedTo.uniqueName) && <option value={w.assignedTo.uniqueName}>{w.assignedTo.displayName}</option>}
+          {people.map((p) => <option key={p.id} value={p.uniqueName}>{p.displayName}</option>)}
+        </select>
+      </div>
+    </li>
   );
 }

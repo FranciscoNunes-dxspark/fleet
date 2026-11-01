@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSticky, useStickyParams } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, REVIEW_STATE } from '../format.js';
-import { Avatar, Chip, CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person, sameTarget, Th, Toggle, useSort } from '../ui.jsx';
+import { Avatar, Chip, CodeTabs, Empty, ErrorBox, FilterFold, Loading, PageHeader, Person, sameTarget, SortPick, Th, Toggle, useMedia, useSort } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { SavedViews } from '../views.jsx';
@@ -45,6 +45,8 @@ export default function PullRequests() {
   // Newest first; the open time is how long it was in review.
   const closedSort = useSort({ key: 'closed', dir: -1 }, { ...getters, closed: (p) => Date.parse(p.closedAt), open: (p) => Date.parse(p.closedAt) - Date.parse(p.createdAt) });
   const { sort, setSort, apply } = closed ? closedSort : activeSort;
+  // Phones: the filters fold behind a button, and the list is cards (no columns to sort by, so a menu).
+  const phone = useMedia('(max-width: 900px)');
 
   const setParam = (k, v) => {
     const next = new URLSearchParams(params);
@@ -138,8 +140,21 @@ export default function PullRequests() {
       </PageHeader>
       <CodeTabs />
 
+      <FilterFold
+        lead={viewTabs}
+        active={[q, project, repo, author, reviewer, outcome, closed && String(days) !== '30' ? days : ''].filter(Boolean).length + Object.entries(flags).filter(([k, v]) => v && (!closed || k === 'mine')).length}
+      >
       <div className="filters">
-        {viewTabs}
+        {!phone && viewTabs}
+        {phone && (
+          <SortPick
+            sort={sort}
+            setSort={setSort}
+            options={closed
+              ? [['closed', t('Closed')], ['open', t('Open for')], ['title', t('Title')], ['author', t('Author')]]
+              : [['age', t('Age')], ['approvals', t('Reviewers')], ['title', t('Title')], ['author', t('Author')]]}
+          />
+        )}
         {closed && (
           <select className="input" value={days} onChange={(e) => setParam('days', e.target.value === '30' ? '' : e.target.value)} aria-label={t('Closed in the last')}>
             {DAYS.map((d) => <option key={d} value={d}>{t('Closed in the last {n} days', { n: d })}</option>)}
@@ -177,8 +192,13 @@ export default function PullRequests() {
         </div>
       )}
       <SavedViews page="prs" filters={filters} apply={applyFilters} />
+      </FilterFold>
 
-      {!rows.length ? (
+      {rows.length > 0 && phone ? (
+        <ol className="list-cards">
+          {apply(rows).map((p) => <PrCard key={p.key} p={p} closed={closed} open={isOpen(p)} staleHours={staleHours} onOpen={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })} />)}
+        </ol>
+      ) : !rows.length ? (
         <Empty title={t('No pull requests match.')}>{closed && !data.prs.length ? t('None were completed or abandoned in this period.') : t('Clear a filter to see more.')}</Empty>
       ) : closed ? (
         <div className="table-wrap">
@@ -280,5 +300,32 @@ export default function PullRequests() {
         </div>
       )}
     </div>
+  );
+}
+
+/** A pull request as a card (phones): where it is, its title, who wrote it, its reviewers and its state. */
+function PrCard({ p, closed, open, staleHours, onOpen }) {
+  const state = closed ? OUTCOME[p.status] : REVIEW_STATE[p.reviewState];
+  return (
+    <li className={`list-card${p.needsMyReview && !closed ? ' list-card-mine' : ''}${p.hasConflicts && !closed ? ' list-card-bad' : ''}${open ? ' list-card-open' : ''}`}>
+      <button type="button" className="list-card-hit" onClick={onOpen} aria-current={open || undefined}>
+        <span className="list-card-top">
+          <span className="truncate">{p.repoName} · <span className="mono">!{p.id}</span></span>
+          <span className={!closed && !p.isDraft && p.ageHours >= staleHours ? 'text-warn' : ''}>{closed ? t('{age} ago', { age: age(p.closedAt) }) : age(p.createdAt)}</span>
+        </span>
+        <span className="list-card-title">{p.title}</span>
+        <span className="list-card-meta">
+          <Person person={p.author} />
+          <span className="avatars">{p.reviewers.slice(0, 5).map((r) => <Avatar key={r.id} person={r} vote={r.vote} size={20} />)}</span>
+        </span>
+        <span className="chips">
+          {state && <Chip tone={state.tone || 'muted'}>{closed ? t(state.label) : state.label}</Chip>}
+          {!closed && p.needsMyReview && <Chip tone="accent">{t('Your review')}</Chip>}
+          {!closed && p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}
+          {!closed && p.checks === 'failed' && <Chip tone="bad">{t('Checks failed')}</Chip>}
+          {!closed && p.autoComplete && <Chip tone="ok">{t('Auto-complete')}</Chip>}
+        </span>
+      </button>
+    </li>
   );
 }

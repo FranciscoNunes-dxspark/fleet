@@ -318,6 +318,41 @@ export function ExternalLink({ href, children, className = 'btn btn-ghost btn-sm
   return <a className={className} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
 }
 
+/**
+ * Phones: a page's filters fold behind one button that says how many are on; `lead` (the page's
+ * own view switch, say Active | Closed) stays beside it. Wider screens show the filters as they are.
+ */
+export function FilterFold({ active = 0, lead = null, children }) {
+  const phone = useMedia('(max-width: 900px)');
+  const [open, setOpen] = useState(false);
+  if (!phone) return children;
+  return (
+    <>
+      <div className="filter-fold-bar">
+        {lead}
+        <button type="button" className={`btn btn-small filter-fold-btn${active ? ' on' : ''}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <Icon name="search" size={14} /> {t('Filters')}{active > 0 && <span className="filter-fold-n">{active}</span>}
+        </button>
+      </div>
+      {open && <div className="filter-fold">{children}</div>}
+    </>
+  );
+}
+
+/** A list's sort as a menu, where there are no column headings to tap (phones). `options`: [[key, label]]. */
+export function SortPick({ sort, setSort, options }) {
+  return (
+    <span className="sort-pick">
+      <select className="input" value={sort.key} onChange={(e) => setSort({ key: e.target.value, dir: sort.dir })} aria-label={t('Sort by')}>
+        {options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+      <button type="button" className="btn btn-small" onClick={() => setSort({ key: sort.key, dir: -sort.dir })} aria-label={sort.dir === 1 ? t('Ascending') : t('Descending')} title={sort.dir === 1 ? t('Ascending') : t('Descending')}>
+        {sort.dir === 1 ? '↑' : '↓'}
+      </button>
+    </span>
+  );
+}
+
 /** Sortable table header cell. */
 export function Th({ id, sort, setSort, children, className }) {
   const active = sort.key === id;
