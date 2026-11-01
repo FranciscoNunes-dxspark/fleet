@@ -16,8 +16,10 @@
   --tc-gray: #8b9099;
   /* Neutrals lean a little cool (slate, not grey), with wider steps between the planes
      so the page, the sidebar and the cards read as three layers. */
-  --bg: #0e1014;
-  --sidebar: #13161b;
+  --bg: #0b0d11;
+  --sidebar: #0b0d11;
+  /* The canvas: the rounded sheet the pages sit on, a step up from the window around it. */
+  --canvas: #111419;
   --surface: #191c22;
   --surface-2: #22262e;
   --ink: #e8eaef;
@@ -54,7 +56,8 @@
   --elev-1: var(--edge), 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.22);
   --elev-2: var(--edge), 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 28px rgba(0, 0, 0, 0.34);
   --card-border: #252932;
-  --header-glass: rgba(14, 16, 20, 0.82);
+  --header-glass: rgba(17, 20, 25, 0.84);
+  --frame: 10px;
   --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   color-scheme: dark;
@@ -74,8 +77,9 @@
   --tc-violet: #6250d6;
   --tc-red: #e34948;
   --tc-gray: #8a8f98;
-  --bg: #eceff4;
-  --sidebar: #f7f8fb;
+  --bg: #e3e7ed;
+  --sidebar: #e3e7ed;
+  --canvas: #f5f7fa;
   --surface: #ffffff;
   --surface-2: #eef1f5;
   --ink: #1a1c1f;
@@ -104,7 +108,7 @@
   --elev-1: 0 1px 2px rgba(16, 24, 40, 0.06), 0 2px 8px rgba(16, 24, 40, 0.05);
   --elev-2: 0 2px 4px rgba(16, 24, 40, 0.08), 0 12px 28px rgba(16, 24, 40, 0.11);
   --card-border: #dfe3e9;
-  --header-glass: rgba(236, 239, 244, 0.82);
+  --header-glass: rgba(245, 247, 250, 0.84);
   --glow: 14%;
   color-scheme: light;
 }
@@ -1542,18 +1546,10 @@ a.stat:hover { background: var(--surface-2); text-decoration: none; }
    behind the page, cards with a header band, figures on tinted tiles, tables
    with a proper header row. Tones come from the same tokens, so every accent
    and both modes follow. */
-body {
-  background:
-    radial-gradient(900px 420px at 92% -8%, color-mix(in srgb, var(--accent) var(--glow), transparent), transparent 70%),
-    radial-gradient(700px 380px at 18% -12%, color-mix(in srgb, var(--info) calc(var(--glow) * 0.6), transparent), transparent 70%),
-    var(--bg);
-  background-attachment: fixed;
-}
 h1, h2, h3 { letter-spacing: -0.015em; }
 .page-header h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.025em; }
 
 /* Sidebar: section labels as small caps, the current page as an accent pill fading out. */
-.sidebar { background: linear-gradient(180deg, var(--sidebar), color-mix(in srgb, var(--sidebar) 70%, var(--bg))); }
 .nav-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: color-mix(in srgb, var(--muted) 85%, transparent); }
 .nav-link { transition: background 0.12s, color 0.12s; }
 .nav-link.active {
@@ -1650,3 +1646,106 @@ a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); 
 .drawer { border-left: 1px solid var(--line); }
 .menu, .confirm-pop, .tooltip { border-color: var(--line-strong); box-shadow: var(--edge), var(--shadow-pop); }
 .demo-banner { background: linear-gradient(90deg, var(--accent-soft), color-mix(in srgb, var(--accent-soft) 40%, transparent)); }
+
+/* ==================================================================== layout
+   The window is a frame: the menu sits straight on it, and the pages on a
+   rounded canvas inset from its edges. Desktop only; phones keep the full
+   width (the block at the end). The document still scrolls (useStableHeight
+   and the scroll handlers rely on it), so the canvas scrolls with the page
+   and a strip of the frame, fixed along the top, keeps its edge clean. */
+@media (min-width: 861px) {
+  .shell { grid-template-columns: 248px minmax(0, 1fr); }
+  .shell-collapsed { grid-template-columns: 68px minmax(0, 1fr); }
+  .sidebar { background: transparent; border-right: 0; padding: 20px 12px 16px 14px; }
+  .main {
+    position: relative; margin: var(--frame) var(--frame) var(--frame) 0; min-height: calc(100vh - 2 * var(--frame));
+    border: 1px solid var(--card-border); border-radius: 18px; overflow: clip;
+    background:
+      radial-gradient(900px 380px at 100% 0%, color-mix(in srgb, var(--accent) var(--glow), transparent), transparent 70%),
+      radial-gradient(640px 320px at 0% 0%, color-mix(in srgb, var(--info) calc(var(--glow) * 0.5), transparent), transparent 70%),
+      var(--canvas);
+    box-shadow: var(--elev-1);
+  }
+  .main::before {
+    content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--frame); z-index: 9;
+    background: var(--bg); pointer-events: none;
+  }
+  .page { max-width: none; padding: 28px 36px 0; }
+  /* A page that opens with its header lets the header's band reach the canvas's top edge. */
+  .page:has(> .page-header-marker:first-child) { padding-top: 0; }
+  /* The header spans the canvas edge to edge; stuck, it takes over the canvas's rounded top. */
+  .page-header { top: var(--frame); margin: 0 -36px 22px; padding: 24px 36px 18px; border-bottom: 1px solid var(--line); }
+  .page-header-stuck { border-radius: 17px 17px 0 0; padding-top: 14px; padding-bottom: 12px; }
+  .page-header-stuck .page-sub, .page-header-stuck .page-eyebrow { display: none; }
+  .page-header-stuck .page-icon { width: 32px; height: 32px; border-radius: 9px; }
+  .page-header-stuck h1 { font-size: 20px; }
+  .demo-banner { padding: 9px 36px; }
+}
+
+/* Page masthead: the section's icon on a tile in the accent, the menu group above the title. */
+.page-title { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.page-title-text { min-width: 0; }
+.page-icon {
+  flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px;
+  color: var(--accent-ink);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 26%, var(--surface)), color-mix(in srgb, var(--accent) 8%, var(--surface)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), var(--shadow-sm);
+  transition: width 0.15s, height 0.15s, border-radius 0.15s;
+}
+.page-eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent-ink); margin-bottom: 2px; }
+.page-header h1 { transition: font-size 0.15s; }
+.page-header { align-items: center; }
+
+/* A page's own tabs (Pull requests | Commits | Release notes): underlined, on a hairline across the page. */
+.segmented.page-tabs {
+  display: flex; width: auto; gap: 22px; padding: 0; margin: -6px 0 22px; border-radius: 0;
+  background: none; box-shadow: inset 0 -1px var(--line);
+}
+.page-tabs a {
+  position: relative; padding: 4px 0 11px; color: var(--muted); font-size: 13.5px; font-weight: 500; text-decoration: none;
+  transition: color 0.12s;
+}
+.page-tabs a:hover { color: var(--ink); text-decoration: none; }
+.page-tabs a.on { color: var(--ink); }
+.page-tabs a.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
+
+/* Sidebar foot: freshness and refresh on one line, then who you are, on a card. */
+.sidebar-status { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-right: 2px; }
+.sidebar-status .live { padding: 0 10px; }
+.sidebar-status .refresh-btn { padding: 5px 7px; color: var(--muted); }
+.sidebar-status .refresh-btn:hover:not(:disabled) { color: var(--ink); }
+.account {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 70%, transparent); border: 1px solid var(--card-border);
+}
+.account .me { padding: 0; color: var(--ink-2); flex: 1; }
+.account .signout-btn { padding: 5px 7px; color: var(--muted); }
+.brand-name { font-size: 15px; letter-spacing: -0.01em; }
+@media (min-width: 861px) {
+  .shell-collapsed .sidebar-status { flex-direction: column; padding: 0; }
+  .shell-collapsed .account { justify-content: center; padding: 6px 0; background: none; border-color: transparent; }
+}
+
+/* Inbox: on a wide screen the filters become a rail beside the list, kept in view. */
+@media (min-width: 1180px) {
+  .inbox-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .inbox-rail { position: sticky; top: 104px; }
+  .inbox-filters { display: grid; gap: 2px; width: 100%; margin: 0; padding: 6px; }
+  .inbox-filters button { justify-content: space-between; padding: 8px 12px; font-size: 13.5px; text-align: left; }
+  .inbox-filters button.on { box-shadow: inset 3px 0 var(--accent), var(--elev-1); }
+}
+
+/* Dashboard: columns that each stack their widgets (Dashboard.jsx deals them out). */
+.widget-grid { display: flex; gap: 16px; align-items: flex-start; }
+.widget-col { flex: 1 1 0; min-width: 0; display: grid; gap: 16px; }
+.widget-grid .widget { min-width: 0; }
+.hero { padding: 26px 28px; }
+
+@media (max-width: 860px) {
+  .page-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .page-header h1 { font-size: 22px; }
+  .page-header { border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+  .segmented.page-tabs { overflow-x: auto; flex-wrap: nowrap; gap: 18px; }
+  .page-tabs a { white-space: nowrap; }
+  .main { background: var(--canvas); }
+}
