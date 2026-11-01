@@ -529,7 +529,9 @@ button.tile-hit { cursor: pointer; }
     background: var(--header-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--line);
   }
-  .line-rail-compact .station { flex-direction: column; align-items: center; gap: 0; padding: calc(var(--node) + 5px) 0 2px; min-width: 0; }
+  /* No wrapping: a wrapping column is laid out as one strip at the station's left edge, and the
+     name and count would sit off their node instead of under it. */
+  .line-rail-compact .station { flex-direction: column; flex-wrap: nowrap; align-items: center; gap: 0; padding: calc(var(--node) + 5px) 0 2px; min-width: 0; }
   .line-rail-compact .station-name { font-size: 9px; letter-spacing: 0.02em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .line-rail-compact .station-count { font-size: 14px; line-height: 1.2; }
   .line-rail-compact .station-stuck { display: none; }
