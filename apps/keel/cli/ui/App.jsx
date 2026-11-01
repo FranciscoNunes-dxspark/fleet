@@ -24,6 +24,8 @@ import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
 import { InboxView } from './InboxView.jsx';
+import { LineView } from './LineView.jsx';
+import { ControlView } from './ControlView.jsx';
 import { PipelinesView, pipelineId } from './PipelinesView.jsx';
 import { PrsView, prId } from './PrsView.jsx';
 import { ProductionView } from './ProductionView.jsx';
@@ -37,13 +39,17 @@ import { WorkItemsView, wiId } from './WorkItemsView.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pinch.jsx';
 
 // `short` is what a tab says when the row of tabs doesn't fit the terminal (the widest go short first).
+// The first three are the web app's three views of the same work: the Line (home), the Desk (the
+// Inbox here) and the Control room; the rest look at one kind of thing in depth. 1-9 pick them, 0 the tenth.
 const VIEWS = [
+  { id: 'line', label: 'Line' },
   { id: 'inbox', label: 'Inbox' },
+  { id: 'control', label: 'Control room', short: 'Control' },
   { id: 'prs', label: 'Pull requests', short: 'PRs' },
-  { id: 'pipelines', label: 'Pipelines' },
+  { id: 'pipelines', label: 'Pipelines', short: 'Pipes' },
   { id: 'workitems', label: 'Work items', short: 'Work' },
   { id: 'production', label: 'Production', short: 'Prod' },
-  { id: 'releases', label: 'Releases' },
+  { id: 'releases', label: 'Releases', short: 'Rel' },
   { id: 'board', label: 'Board' },
   { id: 'team', label: 'Team' },
 ];
@@ -52,6 +58,8 @@ const VIEWS = [
 const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 
 const HINTS = {
+  line: 'h/l station · j/k card · ↵ open it in its tab · o browser · /approve /state and the rest act on the card',
+  control: 'h/l services or timeline · ↵ a service in full, or what happened · o browser · alt+s Sonar',
   inbox: '↵ open · s snooze · a/x approve or reject a deployment · o browser',
   prs: 'p publish · a approve · w wait · x reject · c complete · m auto-complete · d what changed · ↵ more · f filter · alt+y for Splice',
   pipelines: 'n run · c cancel the run · l the run in full, with logs · ↵ all runs · alt+y for Splice · alt+s for Sonar · o browser',
@@ -100,13 +108,17 @@ function tabLabels(data, width = Infinity) {
     production: data.production?.monitors.filter((m) => m.state === 'down' || m.state === 'degraded').length || null,
   };
   const names = VIEWS.map((v) => v.label);
-  const labelOf = (i) => ` ${i + 1} ${names[i]}${counts[VIEWS[i].id] ? ` ${counts[VIEWS[i].id]}` : ''} `;
+  let withCounts = true;
+  const countOf = (i) => (withCounts || VIEWS[i].id === 'inbox' ? counts[VIEWS[i].id] : null);
+  const labelOf = (i) => ` ${(i + 1) % 10} ${names[i]}${countOf(i) ? ` ${countOf(i)}` : ''} `;
   const total = () => names.reduce((sum, _, i) => sum + stringWidth(labelOf(i)) + 1, 0);
   const widest = VIEWS.map((v, i) => i).filter((i) => VIEWS[i].short).sort((p, q) => VIEWS[q].label.length - VIEWS[p].label.length);
   for (const i of widest) {
     if (total() <= width) break;
     names[i] = VIEWS[i].short;
   }
+  // Still too wide: the counts go, but the Inbox's.
+  if (total() > width) withCounts = false;
   let x = 0;
   return VIEWS.map((v, i) => {
     const label = labelOf(i);
@@ -159,17 +171,18 @@ function activityRows(entries) {
  * mouse.js's terminalMouse() from cli.jsx (missing where the terminal can't report it); tests pass their own.
  * `copy` puts a line on the clipboard (the kit's; tests pass a recorder). `familyHome` is the family's
  * folder (family.js familyDir()), where Pinch's mood and Keel's activity go and the siblings' moods are read
- * every `familyEvery` ms: cli.jsx passes it, and without it (tests, the web terminal) Keel keeps to itself.
- * `cwd` is the folder /family and /wiring look at.
+ * every `familyEvery` ms: cli.jsx passes it, and without it (tests) Keel keeps to itself.
+ * `cwd` is the folder /family and /wiring look at. `home` is the tab Keel opens on: the Line (tests of
+ * the other tabs start on the Inbox, as Keel once did).
  */
-export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, poll = true, checkUpdate, installUpdate, updater, envFile = path.join(ROOT, '.env'), mouse, copy = copyToClipboard, familyHome, familyEvery = 30_000, cwd = process.cwd() }) {
+export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = openSonarApp, poll = true, checkUpdate, installUpdate, updater, envFile = path.join(ROOT, '.env'), mouse, copy = copyToClipboard, familyHome, familyEvery = 30_000, cwd = process.cwd() }) {
   const { service, orgs, signIn, live } = keel;
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [meta, setMetaState] = useState(null);
   const [data, setDataState] = useState({ attention: null, prs: null, pipelines: null, workItems: null, production: null, version: 0 });
   const [pollError, setPollError] = useState(null);
-  const [view, setViewState] = useState('inbox');
+  const [view, setViewState] = useState(home);
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
   const [sugIndex, setSugIndex] = useState(0);
@@ -177,7 +190,7 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
   const [confirmReq, setConfirmReq] = useState(null);
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [filters, setFilters] = useState({ inbox: '', prs: '', pipelines: '', workitems: '', production: '', releases: '', board: '', team: '', settings: '' });
+  const [filters, setFilters] = useState({ line: '', control: '', inbox: '', prs: '', pipelines: '', workitems: '', production: '', releases: '', board: '', team: '', settings: '' });
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   // What Settings shows about this computer; `envTick` moves when its .env changes.
@@ -239,7 +252,7 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
   // Async actions read the latest state through refs, not through stale closures.
   const metaRef = useRef(null);
   const dataRef = useRef(data);
-  const viewRef = useRef('inbox');
+  const viewRef = useRef(home);
   const busyRef = useRef(null);
   const promptRef = useRef(prompt);
   const confirmRef = useRef(null);
@@ -426,6 +439,11 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     // A card is a work item: /state, /assign, /comment and the rest act on it.
     if (v === 'board') return { workItem: sel.workItem, webUrl: sel.workItem?.webUrl };
     if (v === 'team') return { person: sel.person };
+    // A card or an event acts as the pull request, work item, pipeline or monitor behind it.
+    if (v === 'line' || v === 'control') {
+      const webUrl = sel.pr?.webUrl ?? sel.workItem?.webUrl ?? sel.pipeline?.lastRun?.webUrl ?? sel.pipeline?.latest?.webUrl ?? sel.monitor?.url?.replace(/\/health\/?$/i, '') ?? undefined;
+      return { card: sel.card, event: sel.event, pr: sel.pr, workItem: sel.workItem, pipeline: sel.pipeline, monitor: sel.monitor, webUrl };
+    }
     const item = sel.item;
     const t = item?.target ?? {};
     const sameOrg = (x) => !item.org || !x.org || x.org === item.org;
@@ -793,8 +811,10 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     if (input === 'q') return quit();
     if (input === 'o') return a.open(ctx);
     if (input === ',') return ctx.showSettings();
+    // 0 is the tenth tab, but in Pull requests, where it clears your vote.
+    if (input === '0' && VIEWS.length >= 10 && viewRef.current !== 'prs') return setView(VIEWS[9].id);
     const n = Number(input);
-    if (n >= 1 && n <= VIEWS.length) return setView(VIEWS[n - 1].id);
+    if (n >= 1 && n <= Math.min(9, VIEWS.length)) return setView(VIEWS[n - 1].id);
     if (key.tab) {
       const i = VIEWS.findIndex((v) => v.id === viewRef.current);
       return setView(VIEWS[(i + (key.shift ? VIEWS.length - 1 : 1)) % VIEWS.length].id);
@@ -911,6 +931,10 @@ export function App({ keel, openUrl = openInBrowser, openSonar = openSonarApp, p
     main = <HelpView sections={HELP_SECTIONS} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
   } else if (overlay) {
     main = <TextViewer {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
+  } else if (view === 'line') {
+    main = <LineView failed={Boolean(pollError)} data={data} version={data.version} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'control') {
+    main = <ControlView failed={Boolean(pollError)} data={data} version={data.version} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'prs') {
     main = <PrsView failed={Boolean(pollError)} prs={data.prs} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'workitems') {

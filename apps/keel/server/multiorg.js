@@ -338,6 +338,16 @@ export function createMultiService(entries) {
       throw last;
     },
 
+    // The Line's setup over every organization: one settings file holds the limits, each organization knows its projects' levels.
+    async lineSetup() {
+      const parts = await each((s) => s.lineSetup());
+      const first = parts[0]?.value || { limits: { default: {}, projects: {} }, levels: {} };
+      return {
+        limits: { default: first.limits.default, projects: Object.assign({}, ...parts.map((p) => p.value.limits.projects)) },
+        levels: Object.assign({}, ...parts.map((p) => p.value.levels)),
+      };
+    },
+
     // Production monitors are shared by the server; the primary organization owns them.
     production: () => primary.service.production(),
     monitors: () => primary.service.monitors(),

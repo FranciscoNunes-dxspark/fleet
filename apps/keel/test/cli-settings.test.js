@@ -81,7 +81,7 @@ test("sections: projects, when to flag things (the web app's thresholds), mergin
 
 test('tab goes to the next section; + raises a threshold, saved with the web app\'s settings', async () => {
   const keel = openKeel();
-  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {}, envFile: join(dataDir, '.env') }));
+  const app = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {}, envFile: join(dataDir, '.env') }));
   try {
     await until(app, (f) => f.includes('Implement refund endpoint'), 'the Inbox');
     app.stdin.write(',');
@@ -114,7 +114,7 @@ async function until(app, check, what, ms = 10000) {
 test('the overlay opens over the tabs, stops tracking a project, picks its repos and closes with esc', async () => {
   const envFile = join(dataDir, '.env');
   const keel = openKeel();
-  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {}, envFile }));
+  const app = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {}, envFile }));
   try {
     await until(app, (f) => f.includes('Implement refund endpoint'), 'the Inbox');
     app.stdin.write(',');
@@ -135,7 +135,7 @@ test('the overlay opens over the tabs, stops tracking a project, picks its repos
     await until(app, (f) => /\d+ of \d+ repos/.test(f), 'a repo left out');
     assert.ok(Array.isArray((await keel.service.settingsView()).settings.projects['p-commerce'].repos));
     app.stdin.write('\x1b');
-    await until(app, (f) => !f.includes('Projects and repositories') && f.includes('1 Inbox'), 'back to the Inbox');
+    await until(app, (f) => !f.includes('Projects and repositories') && f.includes('2 Inbox'), 'back to the Inbox');
     // /addorg: a GitHub owner, there from the next start.
     for (const ch of '/addorg https://github.com/octo-demo') {
       app.stdin.write(ch);

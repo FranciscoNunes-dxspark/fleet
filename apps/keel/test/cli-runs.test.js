@@ -81,11 +81,11 @@ test('long lines in the viewer wrap under their own text', () => {
 });
 
 test('l on a failing pipeline opens its latest run in full; /logs <number> opens an older one', async () => {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const app = lastApp;
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-    app.stdin.write('3');
+    app.stdin.write('5');
     await until(() => /❯ ✗ \S/.test(frame()), 'a failing pipeline first');
     const name = frame().match(/❯ ✗ (\S+)/)[1];
     app.stdin.write('l');

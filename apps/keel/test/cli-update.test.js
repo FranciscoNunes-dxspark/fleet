@@ -35,7 +35,7 @@ async function until(check, what, ms = 10000) {
 
 /** Opens the app with `updater`, types /update and waits for `what` to show. */
 async function runUpdate(updater, done, what) {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {}, updater }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {}, updater }));
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
   for (const ch of '/update') {
     lastApp.stdin.write(ch);

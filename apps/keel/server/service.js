@@ -1382,6 +1382,31 @@ export function createService({
       return repoReleases();
     },
 
+    /**
+     * What the Line needs besides the data (client/src/line/stages.js): how long things may sit before
+     * they're stuck, the defaults and each project's own (Settings), and the work item types that are on
+     * the line, each project's requirement level as its first team's backlog settings say.
+     */
+    async lineSetup() {
+      const [settings, projects] = await Promise.all([store.load(), workProjects()]);
+      const levels = {};
+      await Promise.all(projects.map(async (p) => {
+        const cfg = p.teams[0] ? await teamBoards(p.id, p.teams[0].id) : null;
+        const requirement = cfg?.boards?.find((b) => b.isRequirement);
+        if (requirement?.types?.length) levels[p.id] = requirement.types;
+      }));
+      const th = settings.thresholds;
+      const own = {};
+      for (const [id, c] of Object.entries(settings.projects || {})) if (c?.tracked !== false && c?.line && Object.keys(c.line).length) own[id] = c.line;
+      return {
+        limits: {
+          default: { stalePrDays: th.stalePrDays, itemStuckDays: th.itemStuckDays, p1WaitDays: th.p1WaitDays, shipWarnDays: th.shipWarnDays, shipBadDays: th.shipBadDays },
+          projects: own,
+        },
+        levels,
+      };
+    },
+
     async approvals() {
       return approvals();
     },
@@ -1574,7 +1599,7 @@ export function createService({
 
     /** Per-account UI preferences, merged key by key (small, known keys only). */
     async savePrefs(patch) {
-      const allowed = ['theme', 'notifications', 'dashboard', 'language', 'views', 'production'];
+      const allowed = ['theme', 'notifications', 'language', 'views', 'production'];
       const clean = Object.fromEntries(Object.entries(patch).filter(([k, v]) => allowed.includes(k) && v && typeof v === 'object'));
       if (JSON.stringify(clean).length > 20_000) throw Object.assign(new Error('Preferences are too large'), { status: 413 });
       const current = (await store.load()).prefs || {};

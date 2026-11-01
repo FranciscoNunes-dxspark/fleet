@@ -9,6 +9,7 @@ import ClaudeStart from './ClaudeStart.jsx';
 import { Markdown, MarkdownInput } from '../markdown.jsx';
 import { attachUploadPath, attachmentUrl, wiActionsPath, wiPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
+import Trace from '../line/Trace.jsx';
 
 // What "Add child" creates by default under each type (the form lets you change it).
 const CHILD_TYPE = { Epic: 'Feature', Feature: 'User Story', 'User Story': 'Task', 'Product Backlog Item': 'Task', Requirement: 'Task', Issue: 'Task', Bug: 'Task' };
@@ -134,6 +135,8 @@ export default function WorkItemDetail({ id, org }) {
           </ul>
         </section>
       )}
+
+      <Trace workItem={w} />
 
       {w.pullRequests.length > 0 && (
         <section className="detail-section">

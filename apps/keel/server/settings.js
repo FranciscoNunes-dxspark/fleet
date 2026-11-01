@@ -3,7 +3,8 @@ import path from 'node:path';
 import { config } from './config.js';
 
 export const DEFAULT_SETTINGS = {
-  // projectId -> { name, tracked, repos: 'all' | [repoId], teams: [{ id, name }], scopeToTeamArea }
+  // projectId -> { name, tracked, repos: 'all' | [repoId], teams: [{ id, name }], scopeToTeamArea,
+  //   line: { stalePrDays, itemStuckDays, p1WaitDays, shipWarnDays, shipBadDays } (this project's own limits on the Line) }
   projects: {},
   thresholds: {
     prNoReviewHours: 24, // no approval yet after this long
@@ -13,6 +14,10 @@ export const DEFAULT_SETTINGS = {
     buildLookbackDays: 14,
     maxInProgressPerPerson: 3,
     maxPendingReviewsPerPerson: 5,
+    // The Line (client/src/line/stages.js) also uses stalePrDays and itemStuckDays above.
+    p1WaitDays: 2, // a P1 not started after this long is stuck in Planned
+    shipWarnDays: 3, // merged changes waiting this long to ship are amber
+    shipBadDays: 7, // ... and red after this long
   },
   blockedTag: 'Blocked',
   autoComplete: { mergeStrategy: 'noFastForward', deleteSourceBranch: false, transitionWorkItems: true },

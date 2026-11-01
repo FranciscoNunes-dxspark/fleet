@@ -67,18 +67,18 @@ test("the pane lists their flags, numbers, work items, pull requests and the rev
 });
 
 test('the Team tab lists who carries what; ↵ shows their work items, p their pull requests', async () => {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const app = lastApp;
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-    app.stdin.write('8');
+    app.stdin.write('0');
     await until(() => frame().includes('╭─ Team') && /❯ ⚠ \S/.test(frame()), 'the Team tab');
     const name = frame().match(/❯ ⚠ (\S+ \S+)/)[1];
     assert.match(frame(), /Their work items/);
     app.stdin.write('\r');
     // Filtered by their name: the first is theirs (the hint saying so may not fit 100 columns).
     await until(() => frame().includes('╭─ Work items') && frame().includes(`Assigned to ${name}`), 'their work items');
-    app.stdin.write('8');
+    app.stdin.write('0');
     await until(() => frame().includes('╭─ Team'), 'the Team tab again');
     app.stdin.write('p');
     await until(() => frame().includes('╭─ Pull requests') && frame().includes(`${name} opened it`), 'their pull requests');

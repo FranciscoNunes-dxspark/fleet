@@ -44,7 +44,15 @@ const KIND = {
 function pages(can, authMode) {
   const p = (to, title, keywords = []) => ({ key: `page:${to}`, kind: 'page', title, sub: to, keywords, to, boost: 1 });
   return [
-    p('/', t('Dashboard'), ['home', 'widgets']),
+    p('/', t('The Line'), ['home', 'flow', 'stuck', 'stages']),
+    p('/line/planned', `${t('The Line')} · ${t('Planned')}`, ['backlog', 'not started']),
+    p('/line/building', `${t('The Line')} · ${t('Building')}`, ['in progress', 'active']),
+    p('/line/review', `${t('The Line')} · ${t('In review')}`, ['pull requests', 'reviews']),
+    p('/line/merged', `${t('The Line')} · ${t('Merged')}`, ['waiting to ship', 'undeployed']),
+    p('/line/deploying', `${t('The Line')} · ${t('Deploying')}`, ['approvals', 'releases', 'red pipelines']),
+    p('/line/live', `${t('The Line')} · ${t('Live')}`, ['production', 'monitors']),
+    p('/desk', t('Desk'), ['triage', 'queue', 'inbox', 'keyboard']),
+    p('/control', t('Control room'), ['wall', 'status', 'timeline', 'live', 'tv']),
     p('/inbox', t('Inbox'), ['attention', 'needs me', 'triage']),
     p('/summary', t('Weekly summary'), ['week', 'report']),
     p('/work', t('Work items'), ['backlog', 'tickets']),
@@ -65,6 +73,7 @@ function pages(can, authMode) {
     p('/ship', t('Waiting to ship'), ['undeployed', 'pending', 'not deployed']),
     p('/totals', t('Platform totals'), ['platform']),
     p('/team', t('Team'), ['people', 'load']),
+    p('/people', `${t('Team')} · ${t('On the line')}`, ['people', 'who holds what', 'per person']),
     p('/insights', `${t('Insights')} · ${t('Delivery to production')}`, ['dora', 'metrics']),
     p('/insights?tab=review', `${t('Insights')} · ${t('Code review and merging')}`, ['metrics']),
     p('/insights?tab=flow', `${t('Insights')} · ${t('Work item flow')}`, ['cycle time', 'throughput', 'aging', 'sprint scope']),

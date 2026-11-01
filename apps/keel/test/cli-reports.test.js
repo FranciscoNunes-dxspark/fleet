@@ -113,7 +113,7 @@ test('/totals: the key figures first, with the change since the fetch before, th
 });
 
 test('/insights opens in the viewer on the demo organization', async () => {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const app = lastApp;
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');

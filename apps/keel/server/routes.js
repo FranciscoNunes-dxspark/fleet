@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { historyView, lineOf, remember } from './line.js';
 import express from 'express';
 import { PERMISSIONS, can } from './accounts.js';
 import { createOrgStore } from './orgs.js';
@@ -42,7 +43,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     const role = req.ctx.role || 'admin';
     res.json({ ...(await req.ctx.service.meta()), typeColors: typeColors.get(), account: req.ctx.user || null, role, permissions: PERMISSIONS[role] || [] });
   });
-  // Preferences that follow you across devices (theme, notifications, dashboard layout).
+  // Preferences that follow you across devices (theme, notifications, language, saved views).
   r.put('/prefs', async (req, res) => res.json(await req.ctx.service.savePrefs(req.body || {})));
   // Live updates (Server-Sent Events): 'changed', 'notify' and 'status' events.
   r.get('/events', (req, res) => req.ctx.watcher.attach(req, res));
@@ -53,6 +54,14 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   });
 
   r.get('/attention', async (req, res) => res.json(await req.ctx.service.attention()));
+  // What the Line is built with (limits, backlog levels): the terminal app builds its own line with it.
+  r.get('/line/setup', async (req, res) => res.json(await req.ctx.service.lineSetup()));
+  // The Line (server/line.js), with this person's history of it; looking counts as today's entry.
+  r.get('/line', async (req, res) => {
+    const line = await lineOf(req.ctx.service);
+    const { entries } = remember(req.ctx.user?.id || 'local', line.stages);
+    res.json({ ...line, history: historyView(entries) });
+  });
   r.post('/attention/snooze', async (req, res) => {
     const { key, days } = req.body || {};
     if (typeof key !== 'string' || !key) return res.status(400).json({ error: 'key required' });
@@ -254,6 +263,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   r.put('/channels', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().save(req.body?.channels, req.ctx.user ? { id: req.ctx.user.id, name: req.ctx.user.name } : null)));
   r.post('/channels/test', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().test(req.body || {})));
   r.post('/channels/:id/weekly', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendWeekly(req.params.id, req.ctx.service)));
+  r.post('/channels/:id/daily', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendDaily(req.params.id, req.ctx.service)));
   // Team page: hide someone from your own view, or take them out of a team in Azure DevOps.
   r.post('/team/hidden', async (req, res) => res.json(await req.ctx.service.setHidden(req.body?.person, !!req.body?.hidden)));
   r.post('/team/remove', need('team.manage'), async (req, res) => {

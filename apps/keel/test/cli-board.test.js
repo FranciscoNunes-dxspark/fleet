@@ -99,11 +99,11 @@ test("a card's lines: number and title, then who has it, points, tasks, lane and
 });
 
 test('the Board tab draws the columns; > moves a card on and the cursor goes with it; t picks another team', async () => {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const app = lastApp;
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-    app.stdin.write('7');
+    app.stdin.write('9');
     await until(() => frame().includes('Commerce Team · Stories') && frame().includes('╭─ New'), 'the board');
     assert.match(frame(), /Active \d\/4/);
 

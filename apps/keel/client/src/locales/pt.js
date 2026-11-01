@@ -17,8 +17,9 @@ import assist from './pt/assist.js';
 import tests from './pt/tests.js';
 import notes from './pt/notes.js';
 import views from './pt/views.js';
+import line from './pt/line.js';
 
-export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow, ...palette, ...channels, ...assist, ...tests, ...notes, ...views };
+export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow, ...palette, ...channels, ...assist, ...tests, ...notes, ...views, ...line };
 
 // Text the server sends: its templates are the only ones tx() matches against.
 export { server as serverText };

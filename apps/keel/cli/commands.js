@@ -48,6 +48,10 @@ export const COMMANDS = [
   { name: 'timeline', args: '[here]', desc: "What the family's apps changed (pushes, writes, restarts, Keel's votes and runs…), newest first; here: this folder's only", run: (ctx, s) => a.timeline(ctx, s) },
   { name: 'family', desc: 'What the folder Keel started in is to the other apps (its checkout, processes, .http files, databases): pick one to copy its line', run: (ctx) => a.family(ctx) },
   { name: 'wiring', desc: 'What the folder Keel started in points at: addresses, hosts, ports and connection strings, by file (secrets masked)', run: (ctx) => a.wiring(ctx) },
+  // The web app's three views of the same work, which are the first three tabs.
+  { name: 'line', desc: 'The Line: where change stands, from planned to live, stuck first', run: (ctx) => ctx.showTab('line') },
+  { name: 'desk', desc: "The Inbox, the web app's Desk: what needs you, most urgent first", run: (ctx) => ctx.showTab('inbox') },
+  { name: 'control', desc: 'The Control room: production services and the last 24 hours', run: (ctx) => ctx.showTab('control') },
   { name: 'settings', desc: 'Projects and repos to follow, merge defaults, organizations, updates', run: (ctx) => ctx.showSettings() },
   { name: 'addorg', args: '<address> [--github]', desc: 'Add an Azure DevOps organization or a GitHub owner', run: (ctx, s) => a.addOrg(ctx, s) },
   { name: 'logout', desc: 'Sign this terminal out of your Keel server', run: (ctx) => a.logout(ctx) },

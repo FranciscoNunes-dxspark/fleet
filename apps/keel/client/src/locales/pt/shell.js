@@ -215,12 +215,13 @@ export default {
   'Nothing urgent right now.': 'Nada urgente neste momento.',
   "There's no page here.": 'Não há nenhuma página aqui.',
   'Keel has nothing at {path}. The link may be old, or the page may have moved.': 'O Keel não tem nada em {path}. A ligação pode ser antiga, ou a página pode ter mudado de sítio.',
-  'Go to the Dashboard': 'Ir para o Painel',
 
   'Open in GitHub': 'Abrir no GitHub',
 
   'Terminal app': 'App de terminal',
-  'Below deck': 'Sob o convés',
-  'Below deck: Keel in the terminal, here in the browser': 'Sob o convés: o Keel no terminal, aqui no navegador',
-  "The terminal app couldn't start: {reason}": 'Não foi possível iniciar a app de terminal: {reason}',
+  // Inbox triage keys and the Dashboard's queue
+  'Keyboard': 'Teclado',
+  'Move': 'Mover',
+  'Snooze a day': 'Adiar um dia',
+  'Next up': 'A seguir',
 };

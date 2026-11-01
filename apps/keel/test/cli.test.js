@@ -43,12 +43,12 @@ const type = async (stdin, text) => {
 
 function start(props = {}) {
   const opened = [];
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: (u) => opened.push(u), ...props }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: (u) => opened.push(u), ...props }));
   lastApp.opened = opened;
   return lastApp;
 }
 
-test('opens on the Inbox of the demo organization, with Pinch saying what needs you', async () => {
+test('the Inbox of the demo organization, with Pinch saying what needs you', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
   assert.match(frame(), /Keel/);
@@ -72,7 +72,7 @@ test('↵ on a pull request in the Inbox opens it in the Pull requests tab', asy
 test('approving a pull request records the vote and says so', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  app.stdin.write('2');
+  app.stdin.write('4');
   await until(() => frame().includes('Waiting on your review'), 'the Pull requests tab');
   app.stdin.write('a');
   await until(() => /Approve !\d+/.test(frame()) && frame().includes('Approved.'), 'the vote');
@@ -86,7 +86,7 @@ test('approving a pull request records the vote and says so', async () => {
 test('rejecting asks first, and No leaves the vote alone', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  app.stdin.write('2');
+  app.stdin.write('4');
   await until(() => frame().includes('Waiting on your review'), 'the Pull requests tab');
   app.stdin.write('x');
   await until(() => /Reject !\d+ .*\?/.test(frame()), 'the question');
@@ -99,7 +99,7 @@ test('rejecting asks first, and No leaves the vote alone', async () => {
 test('a pull request shows its step (publish → approval → complete), and p publishes a draft', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  app.stdin.write('2');
+  app.stdin.write('4');
   await until(() => frame().includes('Waiting on your review') && /● Approval|● Complete/.test(frame()), 'the steps in the pane');
   const { prs } = await keel.service.pullRequests();
   const draft = prs.find((p) => p.isDraft);
@@ -115,7 +115,7 @@ test('a pull request shows its step (publish → approval → complete), and p p
 test('the Pipelines tab lists failing pipelines first, with their latest runs', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  app.stdin.write('3');
+  app.stdin.write('5');
   await until(() => frame().includes('Latest runs') && /\d{8}\.\d/.test(frame()), 'the runs of the first pipeline');
   assert.match(frame(), /✗ failing/);
   app.unmount();
@@ -124,7 +124,7 @@ test('the Pipelines tab lists failing pipelines first, with their latest runs', 
 test('/run asks first, then queues a run of the selected pipeline', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-  app.stdin.write('3');
+  app.stdin.write('5');
   await until(() => frame().includes('Latest runs'), 'the Pipelines tab');
   await type(app.stdin, '/run');
   app.stdin.write(KEYS.enter);
@@ -172,5 +172,45 @@ test('? shows the shortcuts, on the section for the view on screen; / searches t
   await until(() => !frame().includes('Matches for'), 'the search cleared');
   app.stdin.write(KEYS.esc);
   await until(() => !frame().includes('Keyboard shortcuts'), 'the help to close');
+  app.unmount();
+});
+
+test('opens on the Line: six stations with their counts, the cards of one stage most stuck first; ↵ opens a card in its tab', async () => {
+  // Without a home of its own, Keel opens on the Line.
+  const app = start({ home: undefined });
+  await until(() => frame().includes('Planned') && frame().includes('Live') && /\d+ · \d+ stuck/.test(frame()), 'the stations');
+  for (const name of ['Planned', 'Building', 'In review', 'Merged', 'Deploying', 'Live']) assert.match(frame(), new RegExp(name));
+  assert.match(frame(), / 1 Line /);
+  // To the first station, then two along: In review, the pull requests.
+  for (let i = 0; i < 6; i++) app.stdin.write('h');
+  await until(() => frame().includes('Planned: not started yet'), 'Planned');
+  app.stdin.write('l');
+  app.stdin.write('l');
+  await until(() => frame().includes('In review: pull requests open'), 'In review');
+  // Most stuck first: the first card is marked stuck.
+  const first = frame().split('\n').find((l) => l.includes('❯'));
+  assert.match(first, /❯ [✗!] /);
+  // Its number is in the pane beside the list (the row may be cut short).
+  const id = frame().split('\n').map((l) => l.split('││')[1] ?? '').find((l) => /· !\d+/.test(l)).match(/!(\d+)/)[1];
+  app.stdin.write(KEYS.enter);
+  await until(() => frame().includes('╭─ Pull requests') && frame().split('\n').some((l) => l.includes('❯') && l.includes(`!${id} `)), 'the pull request in its tab');
+  app.unmount();
+});
+
+test('the Control room shows the production services and the last 24 hours; ↵ shows a service in full', async () => {
+  const app = start();
+  await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
+  await type(app.stdin, '/control');
+  app.stdin.write(KEYS.enter);
+  await until(() => frame().includes('╭─ Services') && frame().includes('Last 24 hours') && frame().includes('Storefront') && / events /.test(frame()), 'the Control room');
+  assert.match(frame(), /\d+ms · [\d.]+% up/);
+  assert.match(frame(), /\d\d:\d\d ● /);
+  app.stdin.write(KEYS.enter);
+  await until(() => frame().includes('esc close') && frame().includes('/health'), 'the service in full');
+  app.stdin.write(KEYS.esc);
+  await until(() => frame().includes('╭─ Services'), 'the viewer to close');
+  // 1 goes back to the Line.
+  app.stdin.write('1');
+  await until(() => frame().includes('Deploying') && frame().includes('In review'), 'the Line');
   app.unmount();
 });

@@ -64,7 +64,7 @@ test('the summary reads as the web app\'s "Copy as text"', () => {
 });
 
 test('/summary shows this week, /summary last the one before', async () => {
-  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  const app = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const frame = () => app.lastFrame() ?? '';
   const until = async (check, what) => {
     const end = Date.now() + 10000;

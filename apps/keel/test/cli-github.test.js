@@ -33,11 +33,11 @@ async function until(app, check, what, ms = 10000) {
 
 test('a GitHub owner\'s pull requests and workflows are in the terminal app, and o opens them on GitHub', async () => {
   const opened = [];
-  const app = render(React.createElement(App, { keel: openKeel(), poll: false, openUrl: (u) => opened.push(u) }));
+  const app = render(React.createElement(App, { home: 'inbox', keel: openKeel(), poll: false, openUrl: (u) => opened.push(u) }));
   await until(app, (f) => f.includes('Dark mode toggle in settings'), 'the GitHub review in the Inbox');
-  app.stdin.write('2');
+  app.stdin.write('4');
   await until(app, (f) => f.includes('Rate limit the search endpoint'), 'the GitHub pull requests');
-  app.stdin.write('3');
+  app.stdin.write('5');
   await until(app, (f) => f.includes('Terraform plan'), 'the GitHub workflows');
   app.stdin.write('o');
   await until(app, () => opened.length > 0, 'a link opened');
@@ -47,7 +47,7 @@ test('a GitHub owner\'s pull requests and workflows are in the terminal app, and
 
 test("GitHub: a can't approve your own pull request, and a branch that needs no review skips approval", async () => {
   const keel = openKeel();
-  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  const app = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const type = async (text) => {
     for (const ch of text) {
       app.stdin.write(ch);
@@ -72,7 +72,7 @@ test("GitHub: a can't approve your own pull request, and a branch that needs no 
 
 test('GitHub: a pull request is held while its checks run: the pane says so, and c waits for them', async () => {
   const keel = openKeel();
-  const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  const app = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   await until(app, (f) => f.includes('Dark mode toggle in settings'), 'the Inbox');
   for (const ch of '/pr 87') {
     app.stdin.write(ch);
@@ -91,9 +91,9 @@ test('GitHub: a pull request is held while its checks run: the pane says so, and
 
 test('GitHub releases are below the release pipelines; D downloads a file of one in the browser, n says they are made on GitHub', async () => {
   const opened = [];
-  const app = render(React.createElement(App, { keel: openKeel(), poll: false, openUrl: (u) => opened.push(u) }));
+  const app = render(React.createElement(App, { home: 'inbox', keel: openKeel(), poll: false, openUrl: (u) => opened.push(u) }));
   await until(app, (f) => f.includes('Dark mode toggle in settings'), 'the Inbox');
-  app.stdin.write('6');
+  app.stdin.write('8');
   await until(app, (f) => /↓ api\s+v2\.4\.0 · 4 files · 6d ago\s+v2\.5\.0/.test(f), 'the api repo with its latest release, and the newer pre-release');
   // The repo released most lately first, so web-app is last.
   app.stdin.write('\x1bg');

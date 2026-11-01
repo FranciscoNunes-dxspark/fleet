@@ -48,7 +48,7 @@ test('the app installs a newer release in the background, says when it can\'t, a
   const keel = openKeel();
   const checkUpdate = async () => ({ checked: { at: 5, latest: '9.9.9', url: 'https://example.com/latest' }, newer: true });
   const open = async (installUpdate, check, what) => {
-    const app = render(React.createElement(App, { keel, poll: false, openUrl: () => {}, checkUpdate, installUpdate }));
+    const app = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {}, checkUpdate, installUpdate }));
     try {
       const end = Date.now() + 10000;
       while (!check(app.lastFrame() ?? '')) {

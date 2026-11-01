@@ -64,7 +64,7 @@ const rowOf = (text) => frame().split('\n').map((l) => l.split('││')[0]).fin
 
 function start() {
   const mouse = fakeMouse();
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {}, mouse }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {}, mouse }));
   lastApp.mouse = mouse;
   return lastApp;
 }
@@ -75,7 +75,7 @@ test('a click on a tab opens it; a click on a row picks it, a double-click opens
   assert.deepEqual(mouse.enabled, [true], 'the mouse is on unless Settings turned it off');
 
   // The tab's label goes short when the row of tabs doesn't fit.
-  const tab = at(frame().includes('2 Pull requests') ? '2 Pull requests' : '2 PRs');
+  const tab = at(frame().includes('4 Pull requests') ? '4 Pull requests' : '4 PRs');
   mouse.click(tab.x + 2, tab.y);
   await until(() => frame().includes('Waiting on your review'), 'the Pull requests tab');
 
@@ -112,9 +112,9 @@ test('the wheel scrolls a list and the viewer, leaving the cursor where it was',
   const list = at('Anywhere');
   mouse.wheel(list.x, list.y, 1);
   await until(() => frame().includes('❯ Pull requests'), 'the next section');
-  // A section further down (one the tab row doesn't also name).
-  const settingsRow = at('Settings');
-  mouse.click(settingsRow.x, settingsRow.y);
+  // A section further down (one the tab row doesn't also name), in the list rather than the pane beside it.
+  const settingsRow = at('│  Settings ');
+  mouse.click(settingsRow.x + 3, settingsRow.y);
   await until(() => frame().includes('❯ Settings') && frame().includes('Track a project or not'), 'the Settings section');
   lastApp.unmount();
 });

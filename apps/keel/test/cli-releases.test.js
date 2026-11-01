@@ -123,11 +123,11 @@ test('D picks from the releases with files, then their files', () => {
 });
 
 test('the Releases tab lists the release pipelines; d deploys a release to a stage, a approves what one waits on', async () => {
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: () => {} }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const app = lastApp;
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-    app.stdin.write('6');
+    app.stdin.write('8');
     await until(() => frame().includes('Storefront release') && frame().includes('waits for approval'), 'the Releases tab');
     assert.match(frame(), /╭─ Releases/);
     assert.match(frame(), /Checkout API release/);

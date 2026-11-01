@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSticky } from '../sticky.js';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age } from '../format.js';
-import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, typeSlug, useTypeColor } from '../ui.jsx';
+import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, sameTarget, typeSlug, useTypeColor } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useSourceName } from '../orgs.js';
 
@@ -29,30 +29,83 @@ const SEVERITY = {
 // Keel writes the titles of these kinds; the others (pull requests, work items) carry the
 // Azure DevOps title, shown as is so templates can't rewrite e.g. a PR titled "Site is down".
 const KEEL_TITLES = ['production', 'approval', 'pipeline', 'team'];
-const itemTitle = (i) => (KEEL_TITLES.includes(i.kind) ? tx(i.title) : i.title);
+export const itemTitle = (i) => (KEEL_TITLES.includes(i.kind) ? tx(i.title) : i.title);
+/** The name of an inbox entry's kind (Production, Your reviews…), for a label beside it. */
+export const kindLabel = (kind) => KINDS.find((k) => k.id === kind)?.label || '';
+
+/** Where an inbox entry leads: pull requests and work items open in the details panel, the rest on their page. */
+export function openInboxItem(item, openDrawer, navigate) {
+  const target = item.target;
+  if (target.type === 'pr' || target.type === 'workitem') openDrawer(target);
+  else if (target.type === 'pipeline' || target.type === 'approval') navigate('/pipelines');
+  else if (target.type === 'release') navigate('/pipelines?tab=releases');
+  else if (target.type === 'production') navigate('/production');
+  else if (target.type === 'person') navigate('/team');
+}
+const inPanel = (item) => item.target.type === 'pr' || item.target.type === 'workitem';
+
+// Typing somewhere, or holding a modifier, means the keys aren't for the list.
+const typing = (e) => e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented
+  || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable || !!e.target.closest?.('[role="dialog"]');
 
 export default function Inbox() {
   const { data, error, loading, reload } = useApi('/attention');
-  const { openDrawer, refresh, toast } = useApp();
+  const { openDrawer, drawer, docked, refresh, toast } = useApp();
   const typeColor = useTypeColor();
   const sourceName = useSourceName();
   const navigate = useNavigate();
   const [kind, setKind] = useSticky('inbox.kind', 'all');
+  // The keyboard's place in the list, by entry key (so it survives a refresh that reorders).
+  const [cursor, setCursor] = useState(null);
+  const listRef = useRef(null);
+
+  const items = data ? data.items.filter((i) => kind === 'all' || i.kind === kind) : [];
+  // The order on screen: by severity group, as the sections below draw them.
+  const ordered = ['high', 'medium', 'low'].flatMap((sev) => items.filter((i) => i.severity === sev));
+  const at = Math.max(0, ordered.findIndex((i) => i.key === cursor));
+
+  const open = (item) => {
+    setCursor(item.key);
+    openInboxItem(item, openDrawer, navigate);
+  };
+
+  // Triage from the keyboard: j and k walk the list, Enter (or o) opens, s snoozes for a day.
+  // With the panel docked beside the list, it follows the cursor, like a mail client's preview.
+  const keys = useRef(null);
+  keys.current = (e) => {
+    if (typing(e) || !ordered.length) return;
+    const step = e.key === 'j' ? 1 : e.key === 'k' ? -1 : 0;
+    if (step) {
+      e.preventDefault();
+      const next = ordered[Math.min(ordered.length - 1, Math.max(0, (cursor === null ? -1 : at) + (cursor === null && step < 0 ? 1 : step)))];
+      setCursor(next.key);
+      if (docked && drawer && inPanel(next)) openDrawer(next.target);
+    } else if (e.key === 'Enter' || e.key === 'o') {
+      if (cursor === null || e.target.closest?.('button, a')) return;
+      e.preventDefault();
+      open(ordered[at]);
+    } else if (e.key === 's' && cursor !== null) {
+      e.preventDefault();
+      const after = ordered[at + 1] || ordered[at - 1];
+      snooze(ordered[at], 1);
+      setCursor(after?.key ?? null);
+    }
+  };
+  useEffect(() => {
+    const onKey = (e) => keys.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // Keep the cursor's entry in view (scroll-margin on .strip leaves room for the pinned header).
+  useEffect(() => {
+    if (cursor === null) return;
+    listRef.current?.querySelector('.strip-cursor')?.scrollIntoView({ block: 'nearest' });
+  }, [cursor]);
 
   if (!data) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 
   const counts = Object.fromEntries(KINDS.map((k) => [k.id, k.id === 'all' ? data.items.length : data.items.filter((i) => i.kind === k.id).length]));
-  const items = data.items.filter((i) => kind === 'all' || i.kind === kind);
   const s = data.summary;
-
-  const open = (item) => {
-    const target = item.target;
-    if (target.type === 'pr' || target.type === 'workitem') openDrawer(target);
-    else if (target.type === 'pipeline' || target.type === 'approval') navigate('/pipelines');
-    else if (target.type === 'release') navigate('/pipelines?tab=releases');
-    else if (target.type === 'production') navigate('/production');
-    else if (target.type === 'person') navigate('/team');
-  };
 
   const snooze = async (item, days) => {
     try {
@@ -97,9 +150,14 @@ export default function Inbox() {
               </button>
             ))}
           </div>
+          <p className="key-hints" aria-label={t('Keyboard')}>
+            <span><kbd>j</kbd><kbd>k</kbd> {t('Move')}</span>
+            <span><kbd>↵</kbd> {t('Open')}</span>
+            <span><kbd>s</kbd> {t('Snooze a day')}</span>
+          </p>
         </aside>
 
-        <div className="inbox-list">
+        <div className="inbox-list" ref={listRef}>
           {!items.length && (
             <Empty title={data.items.length ? t('Nothing in this filter.') : t('Inbox zero.')} mood={data.items.length ? undefined : 'sleep'}>
               {data.items.length ? t('Pick another filter above.') : `${t('Nothing needs you, so Pinch is having a nap.')} ${t('Reviews, red pipelines, blocked items and stale PRs will show up here as they happen.')}`}
@@ -114,7 +172,13 @@ export default function Inbox() {
                 <h2 className={`group-title sev-text-${sev}`}>{SEVERITY[sev]} <span className="muted">{group.length}</span></h2>
                 <ol className="strips">
                   {group.map((item) => (
-                    <li key={item.key} className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}`} style={item.workItemType ? typeColor(item.workItemType, item.workItemTypeColor) : undefined}>
+                    <li
+                      key={item.key}
+                      className={`strip sev-${item.severity}${item.workItemType ? ` wi-strip wi-${typeSlug(item.workItemType)}` : ''}${item.key === cursor ? ' strip-cursor' : ''}${sameTarget(item.target, drawer) ? ' strip-open' : ''}`}
+                      style={item.workItemType ? typeColor(item.workItemType, item.workItemTypeColor) : undefined}
+                      aria-current={sameTarget(item.target, drawer) || undefined}
+                      onMouseDown={() => setCursor(item.key)}
+                    >
                       <div className="strip-main">
                         <button type="button" className="strip-title" onClick={() => open(item)}>{itemTitle(item)}</button>
                         <div className="strip-context">{tx(item.context)}</div>

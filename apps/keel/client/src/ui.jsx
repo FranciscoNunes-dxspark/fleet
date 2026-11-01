@@ -7,6 +7,7 @@ import { useSourceName } from './orgs.js';
 import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
 import { Icon } from './icons.jsx';
+import { stageName, stageOfPath } from './line/names.js';
 import { BG, PALETTE, pinchPixels } from './pinch.js';
 
 // One rect per run of same-coloured pixels, for each mood. Built once each: the drawing never changes.
@@ -37,7 +38,7 @@ export function Logo({ size = 28, mood = 'idle', title }) {
   );
 }
 
-/** Pinch on its own, `width` pixels wide, for the Dashboard, empty states, loading and errors. */
+/** Pinch on its own, `width` pixels wide, for empty states, loading and errors. */
 export function Pinch({ mood = 'idle', width = 64, title }) {
   return (
     <svg className={`pinch pinch-${mood}`} width={width} height={(width * 10) / 16} viewBox="0 0 16 10" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
@@ -47,7 +48,7 @@ export function Pinch({ mood = 'idle', width = 64, title }) {
   );
 }
 
-/** What Pinch has to say about its mood (see pinchMood), for the logo's tooltip and the Dashboard. */
+/** What Pinch has to say about its mood (see pinchMood), for the logo's tooltip. */
 export function pinchLine(mood, { attention, live } = {}) {
   if (mood === 'worried') return t("Pinch can't reach Azure DevOps: {error}", { error: tx(live?.error || '') });
   if (mood === 'look') return t('Pinch is checking Azure DevOps…');
@@ -146,21 +147,19 @@ export function Empty({ title, mood, children }) {
  * on a frosted backdrop; once it's pinned (the marker before it has scrolled
  * away) it gets a hairline and a shadow.
  */
-// Which menu entry and group a page belongs to, for the icon and the line above its title.
-// Longest prefix first, so /release-notes isn't taken for something shorter.
-const SECTIONS = [
-  ['/inbox', 'inbox', 'today'], ['/summary', 'summary', 'today'],
-  ['/work', 'workItems', 'work'], ['/epics', 'workItems', 'work'], ['/board', 'board', 'work'],
-  ['/prs', 'pullRequests', 'code'], ['/commits', 'pullRequests', 'code'], ['/release-notes', 'pullRequests', 'code'],
-  ['/pipelines', 'pipelines', 'code'], ['/production', 'production', 'code'], ['/ship', 'production', 'code'], ['/totals', 'production', 'code'],
-  ['/team', 'team', 'people'], ['/users', 'team', 'people'], ['/insights', 'insights', 'people'],
-  ['/settings', 'settings', null],
+// Each page's icon, and the line above its title: the stage of the Line it belongs to
+// (line/names.js), or nothing for a page beside the line.
+const ICONS = [
+  ['/inbox', 'inbox'], ['/summary', 'summary'], ['/work', 'workItems'], ['/epics', 'workItems'], ['/board', 'board'],
+  ['/prs', 'pullRequests'], ['/commits', 'pullRequests'], ['/release-notes', 'pullRequests'],
+  ['/pipelines', 'pipelines'], ['/production', 'production'], ['/ship', 'production'], ['/totals', 'production'],
+  ['/team', 'team'], ['/users', 'team'], ['/people', 'team'], ['/insights', 'insights'], ['/settings', 'settings'],
 ];
-const groupName = (g) => ({ today: t('Today'), work: t('Work'), code: t('Code and delivery'), people: t('People') })[g];
 
 export function PageHeader({ title, sub, children }) {
   const { pathname } = useLocation();
-  const section = SECTIONS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  const icon = ICONS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`))?.[1];
+  const stage = stageOfPath(pathname);
   const marker = useRef(null);
   const [stuck, setStuck] = useState(false);
   useEffect(() => {
@@ -174,9 +173,9 @@ export function PageHeader({ title, sub, children }) {
       <div ref={marker} className="page-header-marker" aria-hidden="true" />
       <header className={`page-header${stuck ? ' page-header-stuck' : ''}`}>
         <div className="page-title">
-          {section && <span className="page-icon" aria-hidden="true"><Icon name={section[1]} size={20} /></span>}
+          {icon && <span className="page-icon" aria-hidden="true"><Icon name={icon} size={20} /></span>}
           <div className="page-title-text">
-            {section?.[2] && <div className="page-eyebrow">{groupName(section[2])}</div>}
+            {stage && <div className="page-eyebrow">{stageName(stage)}</div>}
             <h1>{title}</h1>
             {sub && <p className="page-sub">{sub}</p>}
           </div>
@@ -224,19 +223,27 @@ export function PageTabs({ label, tabs }) {
   );
 }
 
-// Pages that share one menu entry (see App.jsx): Pull requests, Commits and Release notes; Production, Waiting to ship and
-// Platform totals; Work items and Epics; Team and Users.
-export const CodeTabs = () => <PageTabs label={t('Code')} tabs={[{ to: '/prs', label: t('Pull requests') }, { to: '/commits', label: t('Commits') }, { to: '/release-notes', label: t('Release notes') }]} />;
-export const ProductionTabs = () => <PageTabs label={t('Production')} tabs={[{ to: '/production', label: t('Monitors') }, { to: '/ship', label: t('Waiting to ship') }, { to: '/totals', label: t('Platform totals') }]} />;
-export const WorkTabs = () => <PageTabs label={t('Work items')} tabs={[{ to: '/work', label: t('Work items') }, { to: '/epics', label: t('Epics') }]} />;
-/** Team, and Users for Admins of a Keel with accounts; nothing to switch to otherwise. */
+// Pages that share a stage of the Line (Pull requests, Commits and Release notes; Monitors, Waiting to ship and
+// Platform totals; Work items and Epics) are its tabs now, in the frame (line/LineShell.jsx), so the pages
+// draw none of their own. Kept as names so the pages need no change.
+export const CodeTabs = () => null;
+export const ProductionTabs = () => null;
+export const WorkTabs = () => null;
+/** Team: the Line person by person, each person's workload, and Users for Admins of a Keel with accounts. */
 export function TeamTabs() {
   const { authMode, can } = useApp();
-  if (authMode !== 'login' || !can('users.manage')) return null;
-  return <PageTabs label={t('Team')} tabs={[{ to: '/team', label: t('Team') }, { to: '/users', label: t('Users') }]} />;
+  const tabs = [{ to: '/people', label: t('On the line') }, { to: '/team', label: t('Workload') }];
+  if (authMode === 'login' && can('users.manage')) tabs.push({ to: '/users', label: t('Users') });
+  return <PageTabs label={t('Team')} tabs={tabs} />;
 }
 
-export function Drawer({ open, onClose, children, label }) {
+/**
+ * The details panel. Modal by default: it slides over the page behind a scrim and takes the focus.
+ * Docked (wide screens, see useDocked), it is an inspector beside the page instead: no scrim, the
+ * page keeps scrolling and stays clickable, and the focus stays where it was, so a list can be
+ * walked with the keyboard while the panel follows.
+ */
+export function Drawer({ open, onClose, children, label, docked = false }) {
   const ref = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -246,24 +253,62 @@ export function Drawer({ open, onClose, children, label }) {
     if (!open) return undefined;
     const onKey = (e) => e.key === 'Escape' && closeRef.current();
     window.addEventListener('keydown', onKey);
-    ref.current?.focus({ preventScroll: true });
     // The page behind stays put while the panel is open: one scrollbar, the panel's.
-    document.documentElement.classList.add('drawer-open');
+    // Docked, the page makes room for the panel instead.
+    const cls = docked ? 'inspector-open' : 'drawer-open';
+    if (!docked) ref.current?.focus({ preventScroll: true });
+    document.documentElement.classList.add(cls);
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.documentElement.classList.remove('drawer-open');
+      document.documentElement.classList.remove(cls);
     };
-  }, [open]);
+  }, [open, docked]);
   if (!open) return null;
+  const close = <button type="button" className="drawer-close" onClick={onClose} aria-label={t('Close panel')}>✕</button>;
+  if (docked) {
+    return (
+      <aside className="drawer drawer-docked" aria-label={label} tabIndex={-1} ref={ref}>
+        {close}
+        {children}
+      </aside>
+    );
+  }
   return (
     <div className="drawer-layer">
       <div className="drawer-scrim" onClick={onClose} aria-hidden="true" />
       <aside className="drawer" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={ref}>
-        <button type="button" className="drawer-close" onClick={onClose} aria-label={t('Close panel')}>✕</button>
+        {close}
         {children}
       </aside>
     </div>
   );
+}
+
+/** Whether a media query matches, following it as the window changes. */
+export function useMedia(query) {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return undefined;
+    const on = () => setMatches(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, [query]);
+  return matches;
+}
+
+/**
+ * Whether the details panel docks beside the page: only where the page keeps enough room beside it
+ * (1500px with the menu; the Line, which has no menu down the side, asks from 1200px).
+ */
+export const useDocked = (minWidth = 1500) => useMedia(`(min-width: ${minWidth}px)`);
+
+/** Whether two drawer targets name the same thing (the row a list marks as open). */
+export function sameTarget(a, b) {
+  if (!a || !b || a.type !== b.type) return false;
+  return String(a.id ?? '') === String(b.id ?? '') && String(a.key ?? '') === String(b.key ?? '')
+    && String(a.repoId ?? '') === String(b.repoId ?? '') && (a.org || '') === (b.org || '');
 }
 
 export function ExternalLink({ href, children, className = 'btn btn-ghost btn-small' }) {
@@ -271,6 +316,41 @@ export function ExternalLink({ href, children, className = 'btn btn-ghost btn-sm
   if (!href) return null;
   children ??= sourceName(href) === 'GitHub' ? t('Open in GitHub') : t('Open in Azure DevOps');
   return <a className={className} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
+}
+
+/**
+ * Phones: a page's filters fold behind one button that says how many are on; `lead` (the page's
+ * own view switch, say Active | Closed) stays beside it. Wider screens show the filters as they are.
+ */
+export function FilterFold({ active = 0, lead = null, children }) {
+  const phone = useMedia('(max-width: 900px)');
+  const [open, setOpen] = useState(false);
+  if (!phone) return children;
+  return (
+    <>
+      <div className="filter-fold-bar">
+        {lead}
+        <button type="button" className={`btn btn-small filter-fold-btn${active ? ' on' : ''}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <Icon name="search" size={14} /> {t('Filters')}{active > 0 && <span className="filter-fold-n">{active}</span>}
+        </button>
+      </div>
+      {open && <div className="filter-fold">{children}</div>}
+    </>
+  );
+}
+
+/** A list's sort as a menu, where there are no column headings to tap (phones). `options`: [[key, label]]. */
+export function SortPick({ sort, setSort, options }) {
+  return (
+    <span className="sort-pick">
+      <select className="input" value={sort.key} onChange={(e) => setSort({ key: e.target.value, dir: sort.dir })} aria-label={t('Sort by')}>
+        {options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+      <button type="button" className="btn btn-small" onClick={() => setSort({ key: sort.key, dir: -sort.dir })} aria-label={sort.dir === 1 ? t('Ascending') : t('Descending')} title={sort.dir === 1 ? t('Ascending') : t('Descending')}>
+        {sort.dir === 1 ? '↑' : '↓'}
+      </button>
+    </span>
+  );
 }
 
 /** Sortable table header cell. */

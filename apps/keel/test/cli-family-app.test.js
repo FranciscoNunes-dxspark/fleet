@@ -57,7 +57,7 @@ async function command(text) {
 function start(props = {}) {
   const copied = [];
   const opened = [];
-  lastApp = render(React.createElement(App, { keel, poll: false, openUrl: (u) => opened.push(u), copy: (t) => copied.push(t), familyHome, familyEvery: 100, cwd: project, ...props }));
+  lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: (u) => opened.push(u), copy: (t) => copied.push(t), familyHome, familyEvery: 100, cwd: project, ...props }));
   return { copied, opened };
 }
 
@@ -65,7 +65,7 @@ test('alt+y hands a pull request and a run to Splice; alt+s a deploying run and 
   const { copied } = start();
   try {
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
-    lastApp.stdin.write('2');
+    lastApp.stdin.write('4');
     await until(() => frame().includes('╭─ Pull requests'), 'the pull requests');
     lastApp.stdin.write('\x1by');
     await until(() => copied.length === 1, 'the pull request copied');
@@ -75,7 +75,7 @@ test('alt+y hands a pull request and a run to Splice; alt+s a deploying run and 
     await until(() => flat().includes("Copied for Splice: paste it into Splice's prompt. pull request !"), 'the note');
 
     // The first pipeline is a failing nightly: its run goes to Splice, as a file when the failure names one, else its commit.
-    lastApp.stdin.write('3');
+    lastApp.stdin.write('5');
     await until(() => frame().includes('╭─ Pipelines'), 'the pipelines');
     const [row] = (await keel.service.pipelines()).filter((r) => r.health === 'failing');
     await until(() => frame().includes(`❯ ✗ ${row.definition.name}`) || frame().includes(row.definition.name), 'the failing pipeline');
@@ -91,7 +91,7 @@ test('alt+y hands a pull request and a run to Splice; alt+s a deploying run and 
     // The monitor whose failures went up after a deploy: Sonar's /compare-window at that deploy.
     const m = (await keel.service.production()).monitors.find((x) => x.issues?.some((i) => i.code === 'deploy-regression'));
     // The demo's monitors go down and up with the clock, and those that are down sort first: find this one in Production itself.
-    lastApp.stdin.write('5');
+    lastApp.stdin.write('7');
     await until(() => frame().includes('╭─ Production'), 'Production');
     await command(`find ${m.name}`);
     await until(() => frame().split('\n').some((l) => l.includes('❯') && l.includes(m.name)), 'the monitor under the cursor');
@@ -170,7 +170,7 @@ test('Keel logs what it changes for /timeline, writes its mood, and says once ho
   }
 });
 
-test('without the family folder (the web terminal, other tests) Keel keeps to itself', async () => {
+test('without the family folder (as in tests) Keel keeps to itself', async () => {
   const quiet = join(base, 'quiet');
   start({ familyHome: undefined });
   try {

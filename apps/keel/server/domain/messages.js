@@ -1,4 +1,5 @@
 import { FAILED } from './delivery.js';
+import { STAGE_NAMES, reasonText } from '../../client/src/line/reasons.js';
 
 // Posts for Microsoft Teams and Slack channels: which inbox entries are worth
 // a post, and how a post is written for each kind of webhook. Pure, so the
@@ -103,6 +104,37 @@ export function summaryMessage(s, { t, locale }, { timeZone, keelUrl = null } = 
     links: keelUrl ? [{ label: t('Weekly summary'), url: `${keelUrl}/summary?week=${s.week}` }] : [],
   };
 }
+
+/**
+ * The Line's daily digest (a channel's choice, Settings → Teams and Slack): each stage now, with
+ * how it moved since the last digest, and the cards stuck the longest. `before`: the counts the
+ * last digest posted ({ [stage]: { count, stuck } }), or null for the first one.
+ */
+export function lineDigestMessage(stages, before, { t }, { keelUrl = null } = {}) {
+  const diff = (n, was) => (was == null || n === was ? '' : ` (${n > was ? '+' : '−'}${Math.abs(n - was)})`);
+  const lines = stages.map((s) => {
+    const stuck = s.stuck.bad + s.stuck.warn;
+    const mark = s.tone === 'bad' ? '🔴' : s.tone === 'warn' ? '🟠' : '🟢';
+    return `${mark} ${t(STAGE_NAMES[s.id])}: ${s.count}${diff(s.count, before?.[s.id]?.count)}${stuck ? ` · ${t(stuck === 1 ? '1 stuck' : '{n} stuck', { n: stuck })}${diff(stuck, before?.[s.id]?.stuck)}` : ''}`;
+  });
+  const rank = { bad: 0, warn: 1 };
+  const stuck = stages.flatMap((s) => s.cards.filter((c) => c.stuck).map((c) => ({ ...c, stageId: s.id })))
+    .sort((a, b) => rank[a.stuck] - rank[b.stuck] || b.age - a.age)
+    .slice(0, 6)
+    .map((c) => `${c.title} (${t(STAGE_NAMES[c.stageId])}): ${reasonText(c.reason, t)}`);
+  const red = stages.filter((s) => s.tone === 'bad');
+  return {
+    title: red.length
+      ? t(red.length === 1 ? 'The Line today: {stage} is jammed' : 'The Line today: {n} stages are jammed', { stage: t(STAGE_NAMES[red[0].id]), n: red.length })
+      : t('The Line today'),
+    tone: red.length ? 'bad' : stages.some((s) => s.tone === 'warn') ? 'warn' : 'ok',
+    sections: [{ lines }, ...(stuck.length ? [{ heading: t('Stuck the longest'), lines: stuck }] : [])],
+    links: keelUrl ? [{ label: t('Open the Line'), url: `${keelUrl}/` }, { label: t('Weekly summary'), url: `${keelUrl}/summary` }] : [],
+  };
+}
+
+/** What a digest remembers for the next one to compare with. */
+export const digestCounts = (stages) => Object.fromEntries(stages.map((s) => [s.id, { count: s.count, stuck: s.stuck.bad + s.stuck.warn }]));
 
 const clip = (lines) => (lines.length > MAX_LINES ? [...lines.slice(0, MAX_LINES - 1), `… +${lines.length - MAX_LINES + 1}`] : lines);
 const slackEscape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
