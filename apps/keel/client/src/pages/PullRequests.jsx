@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSticky, useStickyParams } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, REVIEW_STATE } from '../format.js';
-import { Avatar, Chip, CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person, Th, Toggle, useSort } from '../ui.jsx';
+import { Avatar, Chip, CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person, sameTarget, Th, Toggle, useSort } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { SavedViews } from '../views.jsx';
@@ -11,7 +11,9 @@ const DAYS = [7, 30, 90];
 const OUTCOME = { completed: { tone: 'ok', label: 'Completed' }, abandoned: { tone: 'muted', label: 'Abandoned' } };
 
 export default function PullRequests() {
-  const { meta, openDrawer, can } = useApp();
+  const { meta, openDrawer, drawer, can } = useApp();
+  // The row the details panel shows, lit while it's docked beside the list.
+  const isOpen = (p) => sameTarget(drawer, { type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id });
   const projectLabel = useProjectLabel();
   const [params, setParams] = useStickyParams('prs', ['author', 'reviewer', 'state', 'days']);
   // Active pull requests, or the history: those completed or abandoned in the last 7, 30 or 90 days.
@@ -193,7 +195,7 @@ export default function PullRequests() {
             </thead>
             <tbody>
               {apply(rows).map((p) => (
-                <tr key={p.key} className="clickable" onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>
+                <tr key={p.key} className={`clickable${isOpen(p) ? ' row-open' : ''}`} aria-current={isOpen(p) || undefined} onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>
                   <td className="cell-title">
                     <button type="button" className="row-link" onClick={(e) => { e.stopPropagation(); openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id }); }}>
                       {p.title}
@@ -240,7 +242,7 @@ export default function PullRequests() {
             </thead>
             <tbody>
               {apply(rows).map((p) => (
-                <tr key={p.key} className={`clickable ${p.needsMyReview ? 'row-mine' : ''}`} onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>
+                <tr key={p.key} className={`clickable ${p.needsMyReview ? 'row-mine' : ''}${isOpen(p) ? ' row-open' : ''}`} aria-current={isOpen(p) || undefined} onClick={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })}>
                   <td className="cell-title">
                     <button type="button" className="row-link" onClick={(e) => { e.stopPropagation(); openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id }); }}>
                       {p.title}

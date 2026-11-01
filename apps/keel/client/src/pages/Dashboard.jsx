@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, hours, pct, REVIEW_STATE } from '../format.js';
 import { Avatar, Chip, ErrorBox, Pinch, pinchLine } from '../ui.jsx';
 import { PREF_KEYS, pushPref } from '../prefs.js';
 import { locale, t, tj, tx } from '../i18n.js';
 import { byWaiting, uncounted, waitTone } from './Shipping.jsx';
+import { itemTitle, kindLabel, openInboxItem } from './Inbox.jsx';
 import { pinchMood } from '../pinch.js';
 
 // WIDGETS title / linkText stay English here; they are translated with t() at render
@@ -25,10 +26,6 @@ const WIDGETS = [
   { id: 'epics', title: 'Epic progress', link: '/epics', linkText: 'All epics' },
   { id: 'mine', title: 'My work', link: '/work?view=mine', linkText: 'My items' },
 ];
-// Keel writes the titles of these kinds; the others (pull requests, work items) carry the
-// Azure DevOps title, shown as is so templates can't rewrite e.g. a PR titled "Site is down".
-const KEEL_TITLES = ['production', 'approval', 'pipeline', 'team'];
-const itemTitle = (i) => (KEEL_TITLES.includes(i.kind) ? tx(i.title) : i.title);
 const DEFAULT_LAYOUT = WIDGETS.map((w) => ({ id: w.id, visible: w.id !== 'mine' }));
 const STORAGE_KEY = PREF_KEYS.dashboard;
 const LEGACY_KEY = 'leadConsole.dashboard.v1'; // before the rename to Shipdeck
@@ -91,6 +88,8 @@ export default function Dashboard() {
         </button>
       </Hero>
 
+      <NextUp />
+
       {editing && (
         <div className="panel customize">
           <p className="small muted">{t("Use the arrows on each widget to reorder it, or hide what you don't need. Your layout is saved in this browser.")}</p>
@@ -133,6 +132,41 @@ export default function Dashboard() {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * Next up: the few things that most need you, as cards to work through, before the widgets.
+ * The Inbox's own order (most urgent, then oldest), so the first card is the one to do first.
+ */
+function NextUp() {
+  const { data } = useApi('/attention');
+  const { openDrawer } = useApp();
+  const navigate = useNavigate();
+  const items = (data?.items || []).filter((i) => i.severity === 'high').slice(0, 3);
+  if (!items.length) return null;
+  return (
+    <section className="next-up" aria-labelledby="next-up-title">
+      <div className="next-up-head">
+        <h2 id="next-up-title">{t('Next up')}</h2>
+        <Link to="/inbox" className="small">{t('Open inbox')}</Link>
+      </div>
+      <ol className="next-up-list">
+        {items.map((item, i) => (
+          <li key={item.key}>
+            <button type="button" className={`next-card sev-${item.severity}`} onClick={() => openInboxItem(item, openDrawer, navigate)}>
+              <span className="next-rank" aria-hidden="true">{i + 1}</span>
+              <span className="next-body">
+                <span className="next-kind">{kindLabel(item.kind)}{item.at && <> · {age(item.at)}</>}</span>
+                <span className="next-title">{itemTitle(item)}</span>
+                {item.reasons[0] && <span className="next-reason">{tx(item.reasons[0].text)}</span>}
+              </span>
+              <span className="next-go" aria-hidden="true">→</span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

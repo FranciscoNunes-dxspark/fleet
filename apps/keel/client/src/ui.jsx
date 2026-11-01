@@ -236,7 +236,13 @@ export function TeamTabs() {
   return <PageTabs label={t('Team')} tabs={[{ to: '/team', label: t('Team') }, { to: '/users', label: t('Users') }]} />;
 }
 
-export function Drawer({ open, onClose, children, label }) {
+/**
+ * The details panel. Modal by default: it slides over the page behind a scrim and takes the focus.
+ * Docked (wide screens, see useDocked), it is an inspector beside the page instead: no scrim, the
+ * page keeps scrolling and stays clickable, and the focus stays where it was, so a list can be
+ * walked with the keyboard while the panel follows.
+ */
+export function Drawer({ open, onClose, children, label, docked = false }) {
   const ref = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -246,24 +252,56 @@ export function Drawer({ open, onClose, children, label }) {
     if (!open) return undefined;
     const onKey = (e) => e.key === 'Escape' && closeRef.current();
     window.addEventListener('keydown', onKey);
-    ref.current?.focus({ preventScroll: true });
     // The page behind stays put while the panel is open: one scrollbar, the panel's.
-    document.documentElement.classList.add('drawer-open');
+    // Docked, the page makes room for the panel instead.
+    const cls = docked ? 'inspector-open' : 'drawer-open';
+    if (!docked) ref.current?.focus({ preventScroll: true });
+    document.documentElement.classList.add(cls);
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.documentElement.classList.remove('drawer-open');
+      document.documentElement.classList.remove(cls);
     };
-  }, [open]);
+  }, [open, docked]);
   if (!open) return null;
+  const close = <button type="button" className="drawer-close" onClick={onClose} aria-label={t('Close panel')}>✕</button>;
+  if (docked) {
+    return (
+      <aside className="drawer drawer-docked" aria-label={label} tabIndex={-1} ref={ref}>
+        {close}
+        {children}
+      </aside>
+    );
+  }
   return (
     <div className="drawer-layer">
       <div className="drawer-scrim" onClick={onClose} aria-hidden="true" />
       <aside className="drawer" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={ref}>
-        <button type="button" className="drawer-close" onClick={onClose} aria-label={t('Close panel')}>✕</button>
+        {close}
         {children}
       </aside>
     </div>
   );
+}
+
+/** Whether the details panel docks beside the page: only where the page keeps enough room beside it. */
+export function useDocked() {
+  const query = '(min-width: 1500px)';
+  const [docked, setDocked] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return undefined;
+    const on = () => setDocked(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return docked;
+}
+
+/** Whether two drawer targets name the same thing (the row a list marks as open). */
+export function sameTarget(a, b) {
+  if (!a || !b || a.type !== b.type) return false;
+  return String(a.id ?? '') === String(b.id ?? '') && String(a.key ?? '') === String(b.key ?? '')
+    && String(a.repoId ?? '') === String(b.repoId ?? '') && (a.org || '') === (b.org || '');
 }
 
 export function ExternalLink({ href, children, className = 'btn btn-ghost btn-small' }) {

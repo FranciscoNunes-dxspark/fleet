@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api.js';
 import { AppContext, useApi, useApp } from './context.js';
-import { Avatar, Drawer, ErrorBox, Loading, Logo, pinchLine } from './ui.jsx';
+import { Avatar, Drawer, ErrorBox, Loading, Logo, pinchLine, useDocked } from './ui.jsx';
 import { pinchMood } from './pinch.js';
 import { loadPrefs, showDesktop } from './notify.js';
 import Inbox from './pages/Inbox.jsx';
@@ -260,7 +260,9 @@ function Console({ authMode, onSignedOut }) {
   // What this person's role allows (the server enforces the same rules).
   const can = useCallback((perm) => !meta || (meta.permissions || []).includes(perm), [meta]);
 
-  const ctx = useMemo(() => ({ meta, refreshKey, refresh: bump, openDrawer: setDrawer, openTarget, toast, live, authMode, signOut, can }), [meta, refreshKey, bump, toast, live, openTarget, authMode, signOut, can]);
+  // Wide screens dock the details panel beside the page; lists mark the row it shows (`drawer`).
+  const docked = useDocked();
+  const ctx = useMemo(() => ({ meta, refreshKey, refresh: bump, openDrawer: setDrawer, drawer, docked, openTarget, toast, live, authMode, signOut, can }), [meta, refreshKey, bump, drawer, docked, toast, live, openTarget, authMode, signOut, can]);
 
   if (metaError && !meta) {
     // The installed app opened with no connection: say so, and connect when it's back (below).
@@ -302,7 +304,7 @@ function Console({ authMode, onSignedOut }) {
     <AppContext.Provider value={ctx}>
       <Shell />
       <CommandPalette />
-      <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')}>
+      <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')} docked={docked}>
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
         {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
         {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}

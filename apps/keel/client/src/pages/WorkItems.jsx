@@ -3,7 +3,7 @@ import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, isBlocked, shortIteration } from '../format.js';
-import { Chip, Empty, ErrorBox, Loading, PageHeader, Th, useSort, TypeLabel, WorkTabs } from '../ui.jsx';
+import { Chip, Empty, ErrorBox, Loading, PageHeader, sameTarget, Th, useSort, TypeLabel, WorkTabs } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
@@ -15,7 +15,7 @@ export const CATEGORY_TONE = { Proposed: 'muted', InProgress: 'info', Resolved: 
 
 export default function WorkItems() {
   const { data, error, reload } = useApi('/workitems');
-  const { meta, openDrawer, refresh, toast, can } = useApp();
+  const { meta, openDrawer, drawer, refresh, toast, can } = useApp();
   const editable = can('workitems.write');
   const projectLabel = useProjectLabel();
   const [params, setParams] = useStickyParams('work', ['view', 'assignee']);
@@ -153,7 +153,7 @@ export default function WorkItems() {
               {apply(rows).map((w) => {
                 const states = data.states[w.projectId]?.[w.type] || [];
                 return (
-                  <tr key={w.id} className={saving === w.id ? 'saving' : ''}>
+                  <tr key={w.id} className={`${saving === w.id ? 'saving' : ''}${sameTarget(drawer, { type: 'workitem', id: w.id, org: w.org }) ? ' row-open' : ''}`}>
                     <td className="num mono muted">{w.id}</td>
                     <td className="cell-title">
                       <button type="button" className="row-link" onClick={() => openDrawer({ type: 'workitem', id: w.id, org: w.org })}>{w.title}</button>

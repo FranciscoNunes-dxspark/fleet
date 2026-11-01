@@ -1563,8 +1563,8 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 6px 16px -6px color-mix(in srgb, var(--accent) 70%, transparent) !important;
 }
-.btn:not(.btn-ghost):not(.btn-primary):not(.btn-danger) { background: var(--surface); }
-.btn:not(.btn-ghost):not(.btn-primary):not(.btn-danger):hover:not(:disabled) { background: var(--surface-2); }
+/* :where keeps this at a plain .btn's weight, so a chosen vote's fill (.vote-btn.selected…) still wins. */
+.btn:where(:not(.btn-ghost, .btn-primary, .btn-danger, .selected)):hover:not(:disabled) { background: var(--surface-2); }
 
 /* Filters and tabs */
 .toggle { transition: background 0.12s, border-color 0.12s, color 0.12s; }
@@ -1749,3 +1749,60 @@ a.stat:hover { background: color-mix(in srgb, var(--tone) 16%, var(--surface)); 
   .page-tabs a { white-space: nowrap; }
   .main { background: var(--canvas); }
 }
+
+/* ================================================================= inspector
+   On a wide screen the details panel docks beside the page (ui.jsx Drawer, docked):
+   a second canvas on the right, and the page narrows to make room instead of being covered. */
+:root { --inspector-w: clamp(440px, 32vw, 600px); }
+.shell { transition: padding-right 0.2s ease-out; }
+html.inspector-open .shell { padding-right: calc(var(--inspector-w) + var(--frame)); }
+.drawer.drawer-docked {
+  position: fixed; top: var(--frame); right: var(--frame); bottom: var(--frame); left: auto; z-index: 10;
+  width: var(--inspector-w); border: 1px solid var(--card-border); border-radius: 18px;
+  background: var(--surface); box-shadow: var(--elev-2);
+}
+.drawer-docked:focus { outline: none; }
+
+/* Inbox triage: the keyboard's cursor is a ring, the entry the panel shows is lit in the accent. */
+.strip { scroll-margin: 132px 0 24px; }
+.strip-cursor { outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent); outline-offset: 2px; }
+.strip.strip-open { border-color: color-mix(in srgb, var(--accent) 60%, var(--card-border)); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.key-hints { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 6px 14px; font-size: 12px; color: var(--muted); }
+.key-hints > span { display: inline-flex; align-items: center; gap: 4px; }
+.key-hints kbd {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 5px;
+  font: 600 11px/1 var(--mono); color: var(--ink-2); background: var(--surface); border: 1px solid var(--line-strong);
+  box-shadow: inset 0 -1px 0 var(--line-strong);
+}
+@media (pointer: coarse) { .key-hints { display: none; } }
+
+/* Dashboard: Next up, the most urgent few as a numbered queue of cards. */
+.next-up { margin: 0 0 20px; }
+.next-up-head { display: flex; justify-content: space-between; align-items: baseline; margin: 0 2px 10px; }
+.next-up-head h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.next-up-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.next-up-list > li { min-width: 0; }
+.next-card {
+  width: 100%; height: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center;
+  padding: 14px 16px; text-align: left; color: var(--ink); cursor: pointer;
+  border: 1px solid var(--card-border); border-radius: var(--radius);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--bad) 9%, var(--surface)), var(--surface) 65%);
+  box-shadow: var(--elev-1); transition: box-shadow 0.12s, transform 0.12s, border-color 0.12s;
+}
+.next-card:hover { box-shadow: var(--elev-2); transform: translateY(-1px); border-color: color-mix(in srgb, var(--bad) 40%, var(--line-strong)); }
+.next-rank {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  font-weight: 700; font-variant-numeric: tabular-nums; color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 16%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad) 30%, transparent);
+}
+.next-body { display: grid; gap: 2px; min-width: 0; }
+.next-kind { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.next-title, .next-reason { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.next-title { font-weight: 600; }
+.next-reason { font-size: 12.5px; color: var(--ink-2); }
+.next-go { color: var(--muted); font-size: 18px; transition: transform 0.12s, color 0.12s; }
+.next-card:hover .next-go { transform: translateX(3px); color: var(--accent-ink); }
+
+/* The row whose details the docked panel shows. */
+.table tbody tr.row-open, .table tbody tr.row-open:hover { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+.table tbody tr.row-open td:first-child { box-shadow: inset 3px 0 var(--accent); }
