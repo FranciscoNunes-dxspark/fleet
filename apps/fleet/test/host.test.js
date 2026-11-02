@@ -2,11 +2,12 @@
 // are) as real processes, driven through its input and read from the screen it draws.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { currentEnvironment } from '@fleet/kit/environments.js';
 import { logActivity } from '@fleet/kit/family.js';
+import { recordCommand, recordingState } from '@fleet/kit/recording.js';
 import { traceLine } from '../src/trace.js';
 import { alive, familyHome, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
 
@@ -409,6 +410,38 @@ test('with no .fleet/project.json the environment panel says how to write one', 
   await until(() => term.screen.row(0) === 'one 100x23', 'the app', { term });
   keys(`${PREFIX}e`);
   await until(() => term.text().includes('No environments here.') && term.text().includes('"default": "dev",') && term.text().includes('"prod": { "prod": true'), 'the example', { term });
+  keys('\x1b');
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('the prefix and R records what the apps run as a runbook, opened when it stops; nothing recorded writes nothing', async () => {
+  const tools = toolsIn({ 'project/readme.txt': 'x' });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 80, rows: 20 });
+  const { screen } = term;
+  const dir = join(tools.cwd, '.fleet', 'runbooks');
+  await until(() => screen.row(0) === 'one 80x19', 'the app', { term });
+  keys(`${PREFIX}R`);
+  await until(() => /● REC/.test(screen.row(-1)), 'REC in the bar', { term });
+  keys(`${PREFIX}R`);
+  await until(() => !/● REC/.test(screen.row(-1)) && /nothing was recorded/.test(host.noticeText), 'stopped, nothing written', { term });
+  assert.equal(existsSync(dir), false);
+  keys(`${PREFIX}R`);
+  await until(() => recordingState({ home: tools.familyDir })?.project === tools.cwd, 'recording again');
+  // What each app's recordCommand keeps, as they run their commands.
+  recordCommand('two', '/hello two', { home: tools.familyDir });
+  recordCommand('two', '/again', { home: tools.familyDir });
+  recordCommand('one', '/bye', { home: tools.familyDir });
+  recordCommand('one', '!rm -rf build', { home: tools.familyDir });
+  keys(`${PREFIX}R`);
+  await until(() => /› +1 {2}Two {2}\/hello two/.test(term.text()) && /3 {2}One {2}\/bye/.test(term.text()), 'the runbook, open', { term });
+  const [name] = readdirSync(dir);
+  assert.match(name, /^\d{4}-\d\d-\d\d-\d{4}-recorded\.md$/);
+  const text = readFileSync(join(dir, name), 'utf8');
+  assert.match(text, /^# Recorded \d{4}-\d\d-\d\d \d\d:\d\d\n/);
+  assert.match(text, /At \d\d:\d\d:\d\d, in Two:\n\n```two\n\/hello two\n\/again\n```\n\nAt \d\d:\d\d:\d\d, in One:\n\n```one\n\/bye\n```\n$/);
+  assert.match(host.noticeText, /^Recorded 3 steps in \.fleet.runbooks.\d{4}/);
   keys('\x1b');
   keys(`${PREFIX}q`);
   keys('y');

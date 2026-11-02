@@ -33,6 +33,7 @@ for it: .sql in Trawl, .http in Hail.
   ctrl+b | / tab / x          split in two, the other pane, one again
   ctrl+b m                    move every app to another folder
   ctrl+b r                    runbooks: steps handed to the apps
+  ctrl+b R                    record a runbook from what the apps run (again: stop)
   ctrl+b f                    follow a request across the apps
   ctrl+b e                    the project's environment (.fleet/project.json)
   ctrl+b ctrl+b               send ctrl+b to the app

@@ -41,8 +41,11 @@ test('the prefix and | or \\ split the screen, x puts it back, tab or an arrow g
   assert.equal(prefixAction('\x1b[A'), null);
 });
 
-test('the prefix and e: the environment', () => {
+test('the prefix and e and R: the environment, recording', () => {
   assert.deepEqual(prefixAction('e'), { type: 'environment' });
+  // R is its own key: r stays the runbooks.
+  assert.deepEqual(prefixAction('R'), { type: 'record' });
+  assert.deepEqual(prefixAction('r'), { type: 'runbooks' });
 });
 
 test('the prefix and m ask for a folder to move the fleet to', () => {

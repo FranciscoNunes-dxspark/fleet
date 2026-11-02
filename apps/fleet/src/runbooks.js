@@ -3,10 +3,11 @@
 // app's prompt, a slash command or a family:v1: context, handed over as a hand-off is. The prose before
 // a block explains its first step. Runbooks live in .fleet/runbooks/ of the folder Fleet started in
 // and of its checkout, and in ~/.fleet/runbooks (FLEET_HOME moves it). Reading and parsing are here,
-// the folders injected, so the tests use their own; drafting one from the family's activity log too.
+// the folders injected, so the tests use their own; drafting one from the family's activity log too,
+// and writing one from what was recorded (the prefix and R: the kit's recording.js).
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
-import { repoRoot } from '@fleet/kit/family.js';
+import { APP_NAMES, repoRoot } from '@fleet/kit/family.js';
 import { fleetHome } from './state.js';
 import { IDS, SPACES } from './spaces.js';
 
@@ -149,6 +150,42 @@ export function draftRunbook(entries, { now = Date.now(), ids = IDS } = {}) {
 export function writeDraft(dir, text, { now = Date.now() } = {}) {
   mkdirSync(dir, { recursive: true });
   const stem = `${dateOf(now)}-draft`;
+  let file = join(dir, `${stem}.md`);
+  for (let n = 2; existsSync(file); n++) file = join(dir, `${stem}-${n}.md`);
+  writeFileSync(file, text);
+  return file;
+}
+
+const secondsOf = (ms) => `${timeOf(ms)}:${pad2(new Date(ms).getSeconds())}`;
+
+/**
+ * A runbook from what was recorded (recording.js's lines, [{ at, app, line }], oldest first): a title,
+ * then the steps, each run of lines one app ran in a row as one block named after that app, with a
+ * line before it saying when it ran. `since` is when the recording started; `title(id)` names an app
+ * (the host's spaces'). Only slash commands are ever recorded, so no line can close its block.
+ */
+export function recordedRunbook(lines, { now = Date.now(), since = lines[0]?.at ?? now, title = (id) => APP_NAMES[id] ?? titleOf(id) } = {}) {
+  const out = [`# Recorded ${dateOf(since)} ${timeOf(since)}`, '', `Recorded by Fleet from ${timeOf(since)} to ${timeOf(now)}: the commands the apps ran, in order. Edit it to say what each step is for.`];
+  let block = null;
+  const close = () => block && out.push('```');
+  for (const l of lines) {
+    const line = String(l.line ?? '').replace(/[\r\n]+/g, ' ').trim();
+    if (!line) continue;
+    if (block !== l.app) {
+      close();
+      block = l.app;
+      out.push('', `At ${secondsOf(l.at)}, in ${title(l.app)}:`, '', `\`\`\`${l.app}`);
+    }
+    out.push(line);
+  }
+  close();
+  return `${out.join('\n')}\n`;
+}
+
+/** Writes `text` as `<yyyy-mm-dd-hhmm>-recorded.md` in `dir` (made if need be), never over another: the path written. */
+export function writeRecorded(dir, text, { now = Date.now() } = {}) {
+  mkdirSync(dir, { recursive: true });
+  const stem = `${dateOf(now)}-${timeOf(now).replace(':', '')}-recorded`;
   let file = join(dir, `${stem}.md`);
   for (let n = 2; existsSync(file); n++) file = join(dir, `${stem}-${n}.md`);
   writeFileSync(file, text);

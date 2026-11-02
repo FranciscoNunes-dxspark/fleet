@@ -28,12 +28,13 @@ whose moods are turned off in its settings never gets a `!`.
  1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   Bosun: api crashed
 ```
 
-At the right of the bar, before the hint, Fleet says what it's doing itself: the project's
-environment, white on red when it's production ([Environments](#environments)). The tabs give way to it
-on a narrow screen.
+At the right of the bar, before the hint, Fleet says what it's doing itself: a red `● REC` while a
+runbook is being recorded ([Recording a runbook](#recording-a-runbook)), and the project's environment,
+white on red when it's production ([Environments](#environments)). The tabs give way to it on a narrow
+screen.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ●  4 Bosun ●  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   prod ctrl+b ? help
+ 1 Splice ●  2 Trawl ●  3 Sonar ●  4 Bosun ●  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   ● REC prod ctrl+b ? help
 ```
 
 ## Install
@@ -105,12 +106,13 @@ say `ctrl+b`; read yours there.
 | `ctrl+b` `m` | Move the fleet to another folder: a list of the ones moved to lately and those beside this one, or one typed; every running app starts again there |
 | `ctrl+b` `ctrl+b` | Send `ctrl+b` to the app (the prefix twice is the prefix for the app; `ctrl+]` `ctrl+]` sends `ctrl+]`) |
 | `ctrl+b` `r` | The runbooks: the one you were in, else the list ([Runbooks](#runbooks)) |
+| `ctrl+b` `R` | Start recording a runbook from what the apps run; again, stop and open it ([Recording a runbook](#recording-a-runbook)) |
 | `ctrl+b` `f` | Follow a request across the apps ([Following a request](#following-a-request)) |
 | `ctrl+b` `e` | The project's environment, for every app at once ([Environments](#environments)) |
 | `ctrl+b` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+b` `?` | The keys |
 
-Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
+`R` is a capital: `r` is the runbooks. Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
 
 ## Split
 
@@ -199,6 +201,34 @@ each runbook's progress until it quits.
 the last hour (the family's activity log: pushes, restarts, writes to a database, crashes). The log says
 what happened in words, not the commands that did it, so the draft lists what happened and leaves an
 empty step for you to fill in.
+
+### Recording a runbook
+
+`ctrl+b` `R` starts recording, and the bar shows a red `● REC`: from then on every app keeps the
+commands you run in it (the slash commands and the `/take` lines it's handed; never a `!` shell, SQL or
+git line, and secrets masked). `ctrl+b` `R` again stops, and writes them as
+`.fleet/runbooks/<yyyy-mm-dd-hhmm>-recorded.md` in the fleet's folder: a title, then the steps, the
+commands one app ran in a row in one block named after it, each block after a line saying when it ran.
+Fleet opens it in the runbooks, ready to run again step by step; edit it to say what each step is for.
+When no app ran anything, Fleet says so and writes nothing.
+
+````markdown
+# Recorded 2026-11-02 14:05
+
+Recorded by Fleet from 14:05 to 14:20: the commands the apps ran, in order. Edit it to say what each step is for.
+
+At 14:05:09, in Bosun:
+
+```bosun
+/start api
+```
+
+At 14:06:30, in Hail:
+
+```hail
+/send health
+```
+````
 
 ## Environments
 

@@ -63,6 +63,13 @@ export class Panels {
     this.envPanel.open();
   }
 
+  /** Opens the runbook in `file` (one just written), the list's cursor on it. */
+  openRunbook(file) {
+    this.runbookPanel.current = file;
+    this.runbookPanel.open();
+    this.runbookPanel.cursor = Math.max(0, this.runbookPanel.list.findIndex((r) => r.file === file));
+  }
+
   /** The prefix and m: the folders to move the fleet to. */
   folders() {
     this.folderPanel.open();

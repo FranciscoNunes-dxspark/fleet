@@ -3,7 +3,31 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { draftRunbook, listRunbooks, parseRunbook, runbookDirs, writeDraft } from '../src/runbooks.js';
+import { draftRunbook, listRunbooks, parseRunbook, recordedRunbook, runbookDirs, writeDraft, writeRecorded } from '../src/runbooks.js';
+
+test('a recording becomes a runbook Fleet reads back: a block per run of one app, each said when; never over another', () => {
+  const at = new Date(2026, 10, 2, 14, 5, 9).getTime();
+  const text = recordedRunbook(
+    [
+      { at, app: 'trawl', line: '/connect Shop' },
+      { at: at + 1000, app: 'trawl', line: '/tables' },
+      { at: at + 60_000, app: 'hail', line: '/send health' },
+      { at: at + 61_000, app: 'trawl', line: '/q select 1' },
+    ],
+    { now: at + 120_000, since: at - 5000 },
+  );
+  assert.match(text, /^# Recorded 2026-11-02 14:05\n/);
+  assert.match(text, /At 14:05:09, in Trawl:\n\n```trawl\n\/connect Shop\n\/tables\n```\n\nAt 14:06:09, in Hail:/);
+  const r = parseRunbook(text, { name: 'x' });
+  assert.equal(r.title, 'Recorded 2026-11-02 14:05');
+  assert.deepEqual(r.steps.map((s) => [s.app, s.line]), [['trawl', '/connect Shop'], ['trawl', '/tables'], ['hail', '/send health'], ['trawl', '/q select 1']]);
+  assert.match(r.steps[2].prose, /At 14:06:09, in Hail:/);
+  const dir = mkdtempSync(join(tmpdir(), 'fleet-recorded-'));
+  const a = writeRecorded(dir, text, { now: at });
+  const b = writeRecorded(dir, text, { now: at });
+  assert.ok(a.endsWith('2026-11-02-1405-recorded.md'));
+  assert.ok(b.endsWith('2026-11-02-1405-recorded-2.md'));
+});
 
 const EXAMPLE = `# Is the API healthy?
 

@@ -3,9 +3,9 @@
 // names another, whose next key is the host's: 1–9 or an app's letter switches, ] or n the next space
 // and p the one before, | or \ splits the screen in two (| again, or x, puts it back), tab or an arrow
 // left or right goes to the other pane, m asks for a folder to move every app to, r opens the
-// runbooks and f follows a request (panels.js), e picks the project's environment, q quits, ? helps,
-// the prefix again sends it to the app; any other key cancels the prefix and is dropped. ctrl+] (0x1d),
-// the prefix Fleet had first,
+// runbooks and f follows a request (panels.js), e picks the project's environment, R starts or stops
+// recording a runbook (a capital, as r is the runbooks), q quits, ? helps, the prefix again sends it
+// to the app; any other key cancels the prefix and is dropped. ctrl+] (0x1d), the prefix Fleet had first,
 // works too: it's hard to type on many keyboards (AltGr+9 on a Portuguese one), hence ctrl+b. Without
 // either, alt+1 to alt+9 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
 import { SPACES } from './spaces.js';
@@ -58,6 +58,8 @@ const PANE_KEYS = new Set(['\t', '\x1b[C', '\x1b[D', '\x1bOC', '\x1bOD']);
 export function prefixAction(key, spaces = SPACES, started = PREFIX) {
   if (key === started) return { type: 'send', data: started };
   if (/^[1-9]$/.test(key) && spaces[Number(key) - 1]) return { type: 'switch', id: spaces[Number(key) - 1].id };
+  // A capital first: lowercased, R would be the runbooks.
+  if (key === 'R') return { type: 'record' };
   const k = key.length === 1 ? key.toLowerCase() : key;
   const space = spaces.find((s) => s.letter === k);
   if (space) return { type: 'switch', id: space.id };

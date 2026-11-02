@@ -17,14 +17,17 @@
 // A space off screen whose app needs you gets a badge in its tab (attention.js), from the family's
 // moods and activity, read every few seconds; the bell rings when one appears. The same reading keeps
 // the bar's own state: the project's environment (the kit's environments.js; the prefix and e picks
-// another).
+// another) and `● REC` while a runbook is recorded (the prefix and R, the kit's recording.js, written
+// as a runbook when it stops).
 //
 // Everything outside is injected: the terminal (`input`, `output` with columns, rows and 'resize'),
 // starting an app (`spawn`), timers, the clock and the family's folder, so tests drive it with
 // streams and small fake apps.
+import { join, relative } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { currentEnvironment } from '@fleet/kit/environments.js';
 import { familyDir } from '@fleet/kit/family.js';
+import { recordingState, startRecording, stopRecording } from '@fleet/kit/recording.js';
 import { encodeMessage, messageReader } from '@fleet/kit/hosted.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { remember } from '@fleet/kit/folders.js';
@@ -34,6 +37,7 @@ import { barLayout, colour, renderBar, statusSegments, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { DEFAULT_PREFIX, prefixByte, prefixName, prefixesFor, readKeys, takeBarClicks } from './keys.js';
 import { Panels } from './panels.js';
+import { recordedRunbook, writeRecorded } from './runbooks.js';
 import { HOST_MOUSE, MOUSE_MODES, OutputFilter } from './screen.js';
 import { SPACES } from './spaces.js';
 import { requestIdOfLine } from './trace.js';
@@ -72,11 +76,12 @@ export const helpRows = (p = DEFAULT_PREFIX) => [
   [`${p} x or |`, 'one app on screen again'],
   [`${p} m`, 'move every app to another folder'],
   [`${p} e`, "the project's environment, for every app"],
+  [`${p} R`, 'record a runbook from what the apps run (again: stop)'],
   ...(p === 'ctrl+]' ? [] : [['ctrl+]', `works as ${p} does (host.json's "prefix" changes ${p})`]]),
   ['', ''],
   ['a click on a tab', 'switches to it'],
   ['! or 2 in a tab', 'that app needs you (worried, alerts; red: errors)'],
-  ['dev in the bar', "the project's environment (red: production)"],
+  ['● REC dev', 'recording, the environment'],
   ['copied "for Trawl"', 'goes to Trawl, typed into its prompt'],
 ];
 
@@ -128,7 +133,7 @@ export class Host {
     this.overlay = null;
     this.panels = new Panels(this, tools);
     // The bar's own state (bar.js statusSegments), read with the badges: refreshStatus.
-    this.status = { env: null };
+    this.status = { env: null, recording: false };
     this.lastRequestId = null;
     this.confirming = false;
     // The bar asking for a folder to move the fleet to: { line, from, hint }, else null.
@@ -257,8 +262,8 @@ export class Host {
   }
 
   /**
-   * Reads the bar's own state again: the project's environment. { changed }: whether the bar says
-   * something else now. `draw` draws the bar when it changed.
+   * Reads the bar's own state again: the project's environment and whether a runbook is being
+   * recorded. { changed }: whether the bar says something else now. `draw` draws the bar when it changed.
    */
   refreshStatus({ draw = true } = {}) {
     const home = this.panels.familyDir;
@@ -268,11 +273,42 @@ export class Host {
     } catch {
       // A project file being written as it's read: the next reading has it.
     }
-    const next = { env: env ? { name: env.name, prod: env.prod } : null };
+    const next = { env: env ? { name: env.name, prod: env.prod } : null, recording: Boolean(recordingState({ home })) };
     const changed = JSON.stringify(next) !== JSON.stringify(this.status);
     this.status = next;
     if (draw && changed) this.drawBar();
     return { changed };
+  }
+
+  /**
+   * The prefix and R: starts recording what the apps run (each app's recordCommand), or stops it and
+   * writes it as a runbook in the fleet's folder, opened in the runbooks panel. Nothing recorded, nothing written.
+   */
+  toggleRecording() {
+    const home = this.panels.familyDir;
+    const cwd = this.panels.cwd;
+    const state = recordingState({ home });
+    if (!state) {
+      try {
+        startRecording(cwd, { home, now: this.now() });
+      } catch (e) {
+        return this.notice(`Couldn't start recording: ${e.message}`);
+      }
+      this.refreshStatus({ draw: false });
+      return this.notice(`Recording a runbook: the commands the apps run · ${this.prefixLabel} R stops`);
+    }
+    const lines = stopRecording({ home });
+    this.refreshStatus({ draw: false });
+    if (!lines.length) return this.notice('Stopped: nothing was recorded (no app ran a command), so no runbook was written');
+    let file;
+    try {
+      const now = this.now();
+      file = writeRecorded(join(cwd, '.fleet', 'runbooks'), recordedRunbook(lines, { now, since: state.since, title: (id) => this.space(id)?.title ?? id }), { now });
+    } catch (e) {
+      return this.notice(`Couldn't write the runbook: ${e.message}`);
+    }
+    this.panels.openRunbook(file);
+    this.notice(`Recorded ${lines.length} step${lines.length === 1 ? '' : 's'} in ${relative(cwd, file) || file}`);
   }
 
   /** You looked at space `id`: its badge goes, and what it said so far is old news. */
@@ -304,6 +340,7 @@ export class Host {
       else if (a.type === 'runbooks') this.panels.runbooks();
       else if (a.type === 'trace') this.panels.trace();
       else if (a.type === 'environment') this.panels.environments();
+      else if (a.type === 'record') this.toggleRecording();
     }
   }
 
