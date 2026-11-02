@@ -3,6 +3,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 import { loadConfig } from '../src/config.js';
+import { demoBilge } from '../src/demo.js';
 
 let cleanup;
 beforeEach(() => {
@@ -55,6 +56,9 @@ test('f asks, runs the fix where the manifest is, then reads and asks again: the
   await until(() => app.provider.state.calls.some((c) => c[0] === 'run'), 'the fix');
   const run = app.provider.state.calls.find((c) => c[0] === 'run');
   assert.equal(run[1], 'npm install lodash@^4.17.21');
+  // What it needs was asked first, and npm ls checks the project once it has run.
+  assert.deepEqual(app.provider.state.calls.find((c) => c[0] === 'needs'), ['needs', 'lodash', '4.17.21']);
+  await until(() => app.provider.state.calls.some((c) => c[0] === 'run' && c[1] === 'npm ls lodash'), 'the check');
   await until(() => !app.lastFrame().includes('lodash@4.17.20'), 'lodash gone');
   assert.match(app.lastFrame(), /3 high/);
   assert.equal(app.provider.state.calls.filter((c) => c[0] === 'audit').length, 2);
@@ -100,6 +104,48 @@ test('the Packages view: a changes what it lists, u asks the registries, outdate
   await type(app.stdin, '/packages flagged');
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'deprecated'), 'a deprecated one');
+  app.unmount();
+});
+
+test("u marks a newest version that won't fit the project; ↵ says why and which one does", async () => {
+  const app = start();
+  await until(shows(app, 'minimist@1.2.5'), 'the findings');
+  app.stdin.write('2');
+  await until(shows(app, '14 packages'), 'the packages');
+  app.stdin.write('u');
+  await until(shows(app, "won't fit"), 'the marks');
+  // Express 5 wants Node 18 (the demo says >=16); SqlClient 6 isn't built for net6.0.
+  assert.match(app.lastFrame(), /2 won't fit/);
+  assert.match(app.lastFrame(), /→ 5\.1\.0 +!/);
+  assert.deepEqual(app.provider.state.calls.filter((c) => c[0] === 'fitting').map((c) => c[1]).sort(), ['Microsoft.Data.SqlClient', 'express']);
+  await type(app.stdin, '/why express');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'Before moving to 5.1.0'), 'why');
+  assert.match(app.lastFrame(), /5\.1\.0 needs Node >= 18; the project says >=16/);
+  assert.match(app.lastFrame(), /Newest that fits: 4\.21\.2/);
+  app.stdin.write(KEYS.esc);
+  await until(() => !app.lastFrame().includes('Found in:'), 'the list again');
+  await type(app.stdin, '/why Microsoft.Data.SqlClient');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'Newest that fits: 5.2.3'), 'the NuGet one');
+  assert.match(app.lastFrame(), /6\.1\.1 is built for net462, net8\.0, net9\.0, not net6\.0/);
+  assert.match(app.lastFrame(), /Project targets: net6\.0/);
+  app.unmount();
+});
+
+test("f says when the fixed version may not fit, and can show why rather than run it", async () => {
+  const provider = demoBilge();
+  // As if SqlClient's fix were built for .NET 8 only, where the demo's project targets .NET 6.
+  provider.needs = async () => ({ frameworks: ['net8.0'] });
+  const app = start({ provider });
+  await until(shows(app, 'minimist@1.2.5'), 'the findings');
+  await type(app.stdin, '/fix Microsoft.Data.SqlClient');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'It may not fit: 1 problem'), 'the question');
+  assert.match(app.lastFrame(), /5\.1\.3 is built for net8\.0, not net6\.0/);
+  app.stdin.write('3');
+  await until(shows(app, 'Moving to 5.1.3 may not fit this project'), 'why');
+  assert.ok(!provider.state.calls.some((c) => c[0] === 'run'));
   app.unmount();
 });
 

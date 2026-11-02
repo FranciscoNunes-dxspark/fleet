@@ -67,3 +67,37 @@ test("a .nuspec's licence: the expression, a file of its own, or what a known li
   assert.equal(nuspecLicence('<licenseUrl>https://aka.ms/deprecateLicenseUrl</licenseUrl>'), null);
   assert.equal(nuspecLicence(null), null);
 });
+
+test("what a version needs: npm's engines and required peers, a NuGet .nuspec's frameworks; the newest that fits", async () => {
+  const nuspec = (...frameworks) => `<package><metadata><dependencies>${frameworks.map((f) => `<group targetFramework="${f}" />`).join('')}</dependencies></metadata></package>`;
+  const flat = 'https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlclient';
+  const fetchImpl = fakeFetch({
+    'GET https://registry.npmjs.org/express/latest': { version: '5.1.0', license: 'MIT', engines: { node: '>= 18' } },
+    'GET https://registry.npmjs.org/express/4.20.0': { version: '4.20.0', engines: { node: '>= 0.10.0' } },
+    'GET https://registry.npmjs.org/react-redux/latest': { version: '9.1.0', peerDependencies: { react: '^18.0', redux: '^5' }, peerDependenciesMeta: { redux: { optional: true } } },
+    'GET https://registry.npmjs.org/express': { versions: { '4.17.1': { version: '4.17.1' }, '4.21.2': { version: '4.21.2', engines: { node: '>= 0.10.0' } }, '5.0.0-beta.1': { version: '5.0.0-beta.1' }, '5.1.0': { version: '5.1.0', engines: { node: '>= 18' } } } },
+    [`GET ${flat}/index.json`]: { versions: ['5.1.1', '5.1.6', '5.2.3', '6.0.2', '6.1.1', '7.0.0-preview1'] },
+    [`GET ${flat}/5.1.1/microsoft.data.sqlclient.nuspec`]: '<package><metadata><license type="expression">MIT</license></metadata></package>',
+    [`GET ${flat}/6.1.1/microsoft.data.sqlclient.nuspec`]: nuspec('.NETFramework4.6.2', 'net8.0', 'net9.0'),
+    [`GET ${flat}/5.2.3/microsoft.data.sqlclient.nuspec`]: nuspec('net462', 'net6.0', 'netstandard2.0'),
+  });
+  const registry = createRegistry({ fetchImpl });
+  const express = pkg('express', '4.17.1');
+  const sql = pkg('Microsoft.Data.SqlClient', '5.1.1', 'NuGet');
+  const out = await registry.latest([express, pkg('react-redux', '8.1.3'), sql]);
+  assert.deepEqual(out.get(express.key).needs, { node: '>= 18' });
+  assert.deepEqual(out.get('npm:react-redux@8.1.3').needs, { peers: { react: '^18.0' } });
+  assert.deepEqual(out.get(sql.key), { latest: '6.1.1', license: 'MIT', needs: { frameworks: ['net462', 'net8.0', 'net9.0'] } });
+  assert.deepEqual(await registry.needs(express, '4.20.0'), { node: '>= 0.10.0' });
+  assert.deepEqual(await registry.needs(sql, '5.2.3'), { frameworks: ['net462', 'net6.0', 'netstandard2.0'] });
+  assert.equal(await registry.needs(express, '9.9.9'), null);
+  // npm's every version in one document: the newest stable one that fits, none older than what's installed.
+  const tried = [];
+  const npmFit = await registry.fitting(express, (v, needs) => tried.push(v) && needs.node !== '>= 18');
+  assert.deepEqual(npmFit, { version: '4.21.2', needs: { node: '>= 0.10.0' } });
+  assert.deepEqual(tried, ['5.1.0', '4.21.2']);
+  // NuGet's: the newest of each major version, down.
+  const nugetFit = await registry.fitting(sql, (v, needs) => needs.frameworks?.includes('net6.0'));
+  assert.deepEqual(nugetFit, { version: '5.2.3', needs: { frameworks: ['net462', 'net6.0', 'netstandard2.0'] } });
+  assert.equal(await registry.fitting(sql, () => false), null);
+});

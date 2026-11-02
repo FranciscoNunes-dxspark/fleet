@@ -29,7 +29,7 @@ export const HELP = [
     views: ['vulns'],
     rows: [
       ['↵ / l', 'Its advisories, where it is, and the fix'],
-      ['f', 'Fix it: npm install, npm update or dotnet add to the version that fixes them (asks first, then reads again)'],
+      ['f', 'Fix it: npm install, npm update or dotnet add to the version that fixes them (asks first, saying what may not fit; then reads again and checks with npm ls or dotnet restore)'],
       ['o', 'Open the advisory in the browser'],
       ['x', 'Ignore its advisories (asks; /unignore puts them back)'],
       ['t', 'Copy where it is in its lock file for Splice, whose blame says who brought it in'],
@@ -43,9 +43,9 @@ export const HELP = [
     about: 'every package in the lock files, the ones asked for directly first',
     views: ['packages'],
     rows: [
-      ['↵ / l', 'Its licence, newest version, advisories and where it is'],
+      ['↵ / l', 'Its licence, newest version (and whether it fits: frameworks, Node, peers), advisories and where it is'],
       ['a', 'All of them, the direct ones, the outdated ones, or the flagged ones (an advisory, a copyleft or denied licence, deprecated)'],
-      ['u', 'Ask the registries for the newest versions and licences (/outdated; /outdated all for every package)'],
+      ['u', 'Ask the registries for the newest versions and licences (/outdated; /outdated all for every package); ! marks one that won\'t fit the project'],
       ['f', 'Fix it, when it has advisories'],
       ['o', 'Its page on npm or NuGet'],
       ['t', 'Copy where it is for Splice\'s blame'],

@@ -15,6 +15,7 @@ import { packageUrl } from './registry.js';
 import { SEVERITY_LABEL, findFinding, findPackage, label, licenceOf, withoutIgnored } from './rows.js';
 import { fileData, markdownReport } from './share.js';
 import { bumpOf } from './versions.js';
+import { nodeOf, problems, targetsOf } from './compat.js';
 import { VERSION } from './app.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -60,7 +61,11 @@ export async function audit(ctx) {
   return r.ok;
 }
 
-/** /outdated [all]: the registries' newest versions of the direct packages (or of all of them), and their licences. */
+/**
+ * /outdated [all]: the registries' newest versions of the direct packages (or of all of them), and
+ * their licences. Where the newest one wouldn't fit the project (a framework it isn't built for, a Node
+ * it doesn't run on, a peer it won't take), the newest that would is asked for too.
+ */
 export async function outdated(ctx, which = '') {
   const all = /^all$/i.test(which.trim());
   const list = packages(ctx).filter((p) => all || p.direct);
@@ -69,10 +74,21 @@ export async function outdated(ctx, which = '') {
     `outdated ${all ? 'all' : 'direct'}: ${plural(list.length, 'package')}`,
     async (signal) => {
       const latest = await ctx.provider.latest(list, { signal, onProgress: (n, of) => ctx.progress(`${n}/${of}`) });
-      ctx.setData((d) => ({ ...d, latest: new Map([...(d.latest ?? []), ...latest]) }));
       const behind = list.filter((p) => bumpOf(p.version, latest.get(p.key)?.latest));
+      const blocked = behind.filter((p) => problems(p, latest.get(p.key).latest, latest.get(p.key).needs, ctx.data).length);
+      let n = 0;
+      for (const p of blocked) {
+        ctx.progress(`newest that fits ${++n}/${blocked.length}`);
+        const fits = (version, needs) => !problems(p, version, needs, ctx.data).length;
+        const found = await ctx.provider.fitting(p, fits, { signal }).catch((e) => {
+          if (e.cancelled || signal.aborted) throw e;
+          return undefined;
+        });
+        if (found !== undefined) latest.set(p.key, { ...latest.get(p.key), fits: found });
+      }
+      ctx.setData((d) => ({ ...d, latest: new Map([...(d.latest ?? []), ...latest]) }));
       const failed = [...latest.values()].filter((x) => x.error).length;
-      return { stdout: `${plural(behind.length, 'package')} behind${failed ? `; ${failed} the registry couldn't answer for` : ''}` };
+      return { stdout: `${plural(behind.length, 'package')} behind${blocked.length ? `, ${blocked.length} whose newest version doesn't fit this project` : ''}${failed ? `; ${failed} the registry couldn't answer for` : ''}` };
     },
     { label: 'Asking the registries' },
   );
@@ -100,6 +116,25 @@ export function showFinding(ctx, f) {
   ].join('\n'));
 }
 
+/** What the project runs on, as a package sees it: its frameworks, or the Node it says. */
+function runsOnLine(ctx, p) {
+  if (p.ecosystem === 'NuGet') {
+    const targets = [...new Set(targetsOf(p, ctx.data).map((t) => t.framework))];
+    return `Project targets: ${targets.join(', ') || 'unknown (no TargetFramework read, so frameworks aren\'t checked)'}`;
+  }
+  const node = nodeOf(p, ctx.data);
+  return `Project's Node: ${node ? `${node.range ?? node.version} (${node.from})` : 'not said (engines.node in package.json or .nvmrc), so Node isn\'t checked'}`;
+}
+
+/** Whether the newest version fits the project, and if not, why, and the newest that does. */
+function fitLines(ctx, p, latest) {
+  if (!latest?.latest || !bumpOf(p.version, latest.latest)) return [];
+  const found = problems(p, latest.latest, latest.needs, ctx.data);
+  if (!found.length) return [`Fits: nothing Bilge checks stands in the way of ${latest.latest}`, runsOnLine(ctx, p)];
+  const instead = latest.fits === undefined ? [] : [latest.fits ? `Newest that fits: ${latest.fits.version}` : 'Newest that fits: none newer than this one'];
+  return [`Before moving to ${latest.latest}:`, ...found.map((x) => `  · ${x}`), ...instead, runsOnLine(ctx, p)];
+}
+
 /** ↵ on a package: what's known about it. */
 export function showPackage(ctx, p) {
   const latest = ctx.data.latest?.get(p.key);
@@ -110,6 +145,7 @@ export function showPackage(ctx, p) {
     `Licence: ${licence ?? 'unknown (/outdated asks the registry)'}${licence ? `  (${licenceKind(licence)})` : ''}`,
     `Newest: ${latest ? (latest.error ? `couldn't ask: ${latest.error}` : `${latest.latest ?? '?'}${bumpOf(p.version, latest.latest) ? `  (${bumpOf(p.version, latest.latest)} behind)` : '  (up to date)'}`) : 'not asked yet (/outdated)'}`,
     ...(latest?.deprecated ? [`Deprecated: ${latest.deprecated}`] : []),
+    ...fitLines(ctx, p, latest),
     `Found in: ${p.where.map((w) => `${w.path}${w.line ? `:${w.line}` : ''}`).join(', ')}`,
     `Registry: ${packageUrl(p)}`,
     '',
@@ -129,15 +165,40 @@ export async function fix(ctx, target) {
   const plan = manifest && fixPlan(f, manifest);
   if (!plan) return ctx.note(`No version of ${f.pkg.name} fixes ${f.advisories.length === 1 ? f.advisories[0].id : 'all of these'} yet.`, 'error') ?? false;
   if (!plan.run) return ctx.showText(`Fixing ${label(f.pkg)}`, plan.text) ?? true;
-  const yes = await ctx.confirm({ title: `Move ${f.pkg.name} from ${f.pkg.version} to ${f.fixed}?`, detail: plan.text, options: [{ label: 'Yes, run it', value: true }, { label: 'Copy the command', value: 'copy' }, { label: 'No', value: false }] });
+  // What the fixed version needs, against the project: said in the question, the whole of it a key away.
+  const warnings = await fixWarnings(ctx, f);
+  const options = [{ label: 'Yes, run it', value: true }, { label: 'Copy the command', value: 'copy' }, ...(warnings.length ? [{ label: 'See why it may not fit', value: 'why' }] : []), { label: 'No', value: false }];
+  const yes = await ctx.confirm({
+    title: `Move ${f.pkg.name} from ${f.pkg.version} to ${f.fixed}?${warnings.length ? ` It may not fit: ${plural(warnings.length, 'problem')}` : ''}`,
+    detail: warnings.length ? warnings.join(' · ') : plan.text,
+    ...(warnings.length ? { danger: true } : {}),
+    options,
+  });
+  if (yes === 'why') return ctx.showText(`Fixing ${label(f.pkg)}`, [`Moving to ${f.fixed} may not fit this project:`, ...warnings.map((w) => `  · ${w}`), '', `The fix: ${plan.text}`, '', 'f again runs it anyway; a newer version may fit (↵ in Packages says).'].join('\n')) ?? false;
   if (yes === 'copy') return ctx.copy(plan.run.command, 'the command') ?? true;
   if (!yes) return false;
   const r = await ctx.task(plan.run.command, (signal) => ctx.provider.run(plan.run.command, { cwd: plan.run.cwd, signal }), {
     label: `Moving ${f.pkg.name}`,
     activity: `Moved ${f.pkg.name} ${f.pkg.version} → ${f.fixed} in ${manifest.path}`,
   });
-  if (r.ok) await scan(ctx, { audit: true });
-  return r.ok;
+  if (!r.ok) return false;
+  await scan(ctx, { audit: true });
+  // Whether the project still holds together: npm ls or dotnet restore, last so /last has what it said.
+  if (plan.check) {
+    const c = await ctx.task(plan.check.command, (signal) => ctx.provider.run(plan.check.command, { cwd: plan.check.cwd, signal }), { label: 'Checking' });
+    if (!c.ok && !c.error?.cancelled) ctx.note(`${plan.check.command} found a problem after moving ${f.pkg.name}: /last says what.`, 'error');
+  }
+  return true;
+}
+
+/** What stands in the way of a fix's version, asked of the registry (a few seconds at most); a failure to ask says so. */
+async function fixWarnings(ctx, f) {
+  try {
+    const needs = await ctx.provider.needs(f.pkg, f.fixed, { signal: AbortSignal.timeout(10000) });
+    return needs ? problems(f.pkg, f.fixed, needs, ctx.data) : [];
+  } catch (e) {
+    return [`Couldn't ask the registry what ${f.fixed} needs: ${String(e.message).split('\n')[0]}`];
+  }
 }
 
 /** x or /ignore: an advisory (or every one of a finding's) left out of the list and the counts, kept in the config. */
