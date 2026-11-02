@@ -6,6 +6,7 @@ import { run } from '@fleet/kit/run.js';
 import { readdirSync } from 'node:fs';
 import { basename } from 'node:path';
 import { folderChoices, resolveFolder, samePath } from '@fleet/kit/folders.js';
+import { describeEnvironments, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 import { fit, relTime } from '@fleet/kit/text.js';
 import { APP_NAMES, FAMILY, MASK, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity } from '@fleet/kit/family.js';
 import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
@@ -30,6 +31,15 @@ export function valueIn(ctx, row, i) {
   if (cell.state !== 'value') return null;
   const e = col.entries.findLast((x) => normKey(x.key) === row.norm);
   return e ? { value: e.value } : null;
+}
+
+/**
+ * In a production environment (the project's .fleet/project.json marks it "prod": true), the kit's
+ * question before `what` changes something, asked on top of Locker's own: true to go on. Elsewhere true.
+ */
+export async function productionOk(ctx, what) {
+  const q = productionQuestion(ctx.env, what);
+  return q ? Boolean(await ctx.confirm(q)) : true;
 }
 
 /** A value, read: what a column holds, or the secret fetched from the vault (only ever on an explicit ask). */
@@ -115,7 +125,7 @@ export async function revealSecret(ctx, vault, secret) {
 async function copyValue(ctx, { what, from, held }) {
   const secs = clearAfter(ctx.config);
   const yes = await ctx.confirm({ title: `Copy ${what}'s value from ${from} to the clipboard?`, detail: secs ? `It is cleared from the clipboard after ${secs} s.` : 'It stays on the clipboard (clearClipboard is 0).' });
-  if (!yes) return false;
+  if (!yes || !(await productionOk(ctx, `Copy ${what}'s value from ${from}`))) return false;
   let value = null;
   const r = await ctx.task(
     `Copying ${what} from ${from}`,
@@ -170,7 +180,7 @@ export function addToEnv(ctx, row) {
   const key = envKey(row.cells.find((c) => c.key)?.key ?? row.key);
   const go = async ({ i, col }) => {
     const yes = await ctx.confirm({ title: `Add ${key} to ${fileLabel}, with the value from ${col.label}?`, detail: `${target ? 'Written at the end of' : 'A new file,'} ${fileLabel} in ${ctx.cwd()}. Keep it out of git.` });
-    if (!yes) return false;
+    if (!yes || !(await productionOk(ctx, `Copy ${key}'s value from ${col.label} into ${fileLabel}`))) return false;
     const held = valueIn(ctx, row, i);
     const r = await ctx.task(
       `Adding ${key} to ${fileLabel}`,
@@ -225,7 +235,7 @@ export async function setSecret(ctx, name, { vault: given } = {}) {
     detail: existing ? `Whatever reads its latest version gets the new value; the old one stays as a version.${existing.expires ? ' The new version has no expiry date.' : ''}` : 'A new secret, enabled, with no expiry date.',
     danger: Boolean(existing),
   });
-  if (!yes) return false;
+  if (!yes || !(await productionOk(ctx, existing ? `Set a new version of ${existing.name} in ${vault.name}` : `Create ${secretName} in ${vault.name}`))) return false;
   const shownName = existing?.name ?? secretName;
   const r = await ctx.task(
     `${existing ? 'Rotating' : 'Creating'} ${shownName} in ${vault.name}`,
@@ -250,7 +260,7 @@ export async function toggleSecret(ctx, secret) {
     detail: enable ? 'Its latest version can be read again.' : `Nothing can read it until it is enabled again${users.length ? `: ${users.map((u) => u.key).slice(0, 3).join(', ')} ${users.length === 1 ? 'refers' : 'refer'} to it` : ''}.`,
     danger: !enable,
   });
-  if (!yes) return false;
+  if (!yes || !(await productionOk(ctx, `${enable ? 'Enable' : 'Disable'} ${secret.name} in ${vault.name}`))) return false;
   const r = await ctx.task(
     `${enable ? 'Enabling' : 'Disabling'} ${secret.name} in ${vault.name}`,
     async (signal) => {
@@ -512,6 +522,18 @@ export function timeline(ctx, { mine = false, replace = false } = {}) {
     },
     { replace },
   );
+  return true;
+}
+
+/**
+ * /env [name]: the project's environments (the kit's environments.js). Alone it says which one is
+ * chosen; with a name it chooses it for every app, and Locker compares what its section names.
+ */
+export function environment(ctx, name) {
+  if (!name?.trim()) return ctx.note(describeEnvironments(ctx.cwd()));
+  const r = setEnvironment(ctx.cwd(), name, { by: 'locker' });
+  if (!r.ok) return ctx.note(r.error, 'error') ?? false;
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production: every change is asked about once more)' : ''}`, 'ok');
   return true;
 }
 

@@ -2,6 +2,7 @@ import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { label } from './azure/arm.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
+import { readProject } from '@fleet/kit/environments.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -13,6 +14,7 @@ export const COMMANDS = [
   { name: 'only', args: '[all|diff|missing]', desc: 'The drift view\'s rows: all, only those that differ or are broken, only those a source lacks', complete: 'filters', run: (ctx, s) => ctx.setFilter(s || 'all') },
   { name: 'set', args: '[secret]', desc: 'Set a secret in the vault, typed hidden (a new version of one there, or a new one); asks first', complete: 'secrets', run: (ctx, s) => a.setSecret(ctx, s) },
   { name: 'disable', args: '<secret>', desc: 'Disable a secret in the vault, or enable a disabled one (asks first)', complete: 'secrets', run: (ctx, s) => a.toggleSecret(ctx, ctx.findSecret(s)) },
+  { name: 'env', args: '[name]', desc: "The project's environment (dev, staging, prod: .fleet/project.json), for every app; alone, which one it is", complete: 'environments', run: (ctx, s) => a.environment(ctx, s) },
   { name: 'expiry', args: '[days]', desc: 'How many days ahead a secret or certificate counts as expiring (30)', run: (ctx, s) => a.setExpiryDays(ctx, s) },
   { name: 'clear-after', args: '[seconds]', desc: 'How long a copied value stays on the clipboard (30; 0 leaves it)', run: (ctx, s) => a.setClearAfter(ctx, s) },
   { name: 'sonar', desc: 'Copy the app for Sonar: /appsettings there', run: (ctx) => a.toSonar(ctx) },
@@ -48,6 +50,7 @@ function completions(kind, data, typed = '') {
   if (kind === 'vaults') return [...(data?.azure?.vaults ?? []).map((v) => v.name), 'none'];
   if (kind === 'subscriptions') return (data?.azure?.subscriptions ?? []).map((s) => s.name);
   if (kind === 'secrets') return (data?.vaultData?.secrets ?? []).map((s) => s.name);
+  if (kind === 'environments') return data?.dir ? readProject(data.dir)?.names ?? [] : [];
   if (kind === 'filters') return ['all', 'diff', 'missing'];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];

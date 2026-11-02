@@ -106,5 +106,27 @@ export function driftColumns({ local = [], choices = {}, target = null, app = nu
   return cols;
 }
 
+/**
+ * What a project environment's Locker section ({ vault, app, slot, resourceGroup }: the kit's
+ * environments.js) picks among what was read: { target, vault, missing }, where `missing` says in
+ * words what it names that the subscription doesn't have. A part it doesn't name is null.
+ */
+export function environmentPicks(azure, env) {
+  const lower = (s) => String(s ?? '').toLowerCase();
+  const missing = [];
+  let target = null;
+  let vault = null;
+  if (env?.app) {
+    const named = (azure?.sites ?? []).filter((s) => lower(s.name) === lower(env.app) && lower(s.slot) === lower(env.slot));
+    target = (env.resourceGroup ? named.find((s) => lower(s.resourceGroup) === lower(env.resourceGroup)) : named[0]) ?? null;
+    if (!target) missing.push(`no app ${env.app}${env.slot ? `/${env.slot}` : ''}${env.resourceGroup ? ` in ${env.resourceGroup}` : ''}`);
+  }
+  if (env?.vault) {
+    vault = (azure?.vaults ?? []).find((v) => lower(v.name) === lower(env.vault)) ?? null;
+    if (!vault) missing.push(`no key vault ${env.vault}`);
+  }
+  return { target, vault, missing };
+}
+
 /** Every vault read so far, by name (lower case), to its secrets: what checkReference looks in. */
 export const vaultMap = (vaults) => new Map([...vaults].filter(([, d]) => d?.secrets).map(([name, d]) => [name.toLowerCase(), d.secrets]));

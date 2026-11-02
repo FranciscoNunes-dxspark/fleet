@@ -89,9 +89,39 @@ What Locker read, with how many keys each has and where it is. `↵` lists a sou
 
 ## Slash commands
 
-`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/disable <secret>` disables or enables one. `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/disable <secret>` disables or enables one. `/env [name]` chooses the project's environment (below). `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 Your own commands and keys go in the settings file, as in the siblings: `"commands": { "prod": "/app shop-api" }`, `"keys": { "drift": { "ctrl+o": "/app" } }`.
+
+## Environments
+
+A project names its environments once, for every app in the family, in `.fleet/project.json` (in its
+folder or one above, up to its checkout's root). `/env` says which one is chosen; `/env <name>`
+chooses another for every app (Fleet's `ctrl+b e` too), and the header names it. Locker's section of
+an environment says what to compare there, by name and never with a value:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev":  { "locker": { "vault": "kv-shop-dev", "app": "shop-api", "slot": "staging" } },
+    "prod": { "prod": true, "locker": { "vault": "kv-shop", "app": "shop-api", "resourceGroup": "rg-shop", "healthPath": "/healthz" } }
+  }
+}
+```
+
+| Field | |
+|---|---|
+| `vault` | The key vault to compare and list |
+| `app`, `slot` | The App Service app (and slot) whose settings are compared |
+| `resourceGroup` | Which `app` is meant when two share a name |
+| `healthPath` | Where `/rotate` checks that a restarted app answers (`/` when it isn't set) |
+
+When the environment changes, here or in another app, Locker picks what its section names. In an
+environment marked `"prod": true` the frames are red, and every change (setting, copying, disabling a
+secret, adding one to `.env`, restarting an app) is asked about once more, after Locker's own question.
+
+While Fleet records a runbook, each slash command Locker's prompt runs (and each `/take`) is added to it.
 
 ## The family
 

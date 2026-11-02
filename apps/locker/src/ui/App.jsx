@@ -9,7 +9,8 @@ import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { recordCommand } from '@fleet/kit/recording.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -31,7 +32,7 @@ import { label } from '../azure/arm.js';
 import { azProblem } from '../azure/az.js';
 import { basename } from 'node:path';
 import { remember } from '@fleet/kit/folders.js';
-import { driftColumns, pickTarget, loadSubscription, loadTarget, loadVault, referencedVaults, vaultMap } from '../load.js';
+import { driftColumns, environmentPicks, pickTarget, loadSubscription, loadTarget, loadVault, referencedVaults, vaultMap } from '../load.js';
 import { driftMatrix } from '../drift.js';
 import { expiring, expiryNotice } from '../expiry.js';
 import { createLocal } from '../local.js';
@@ -60,13 +61,14 @@ const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Header({ data, width, loading, mood, problem, demo }) {
+function Header({ data, width, loading, mood, problem, demo, env }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Locker', bold: true },
   ];
   if (demo) segs.push({ text: '  demo', color: theme.warn });
   if (data.dir) segs.push({ text: '  │  ', color: theme.border }, { text: basename(data.dir), bold: true });
+  if (env) segs.push({ text: `  ${env.name}${env.prod ? ' (production)' : ''}`, color: env.prod ? theme.del : theme.info, bold: env.prod });
   segs.push({ text: '  │  ', color: theme.border }, { text: data.target ? label(data.target) : 'no app', color: data.target ? theme.info : theme.dim });
   segs.push({ text: ' · ', color: theme.border }, { text: data.vault ? data.vault.name : 'no vault', color: data.vault ? theme.accent : theme.dim });
   if (data.trouble.expiring.length) segs.push({ text: `  ${data.trouble.expiring.length} expiring`, color: theme.del, bold: true });
@@ -155,6 +157,11 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
   const [config, setConfigState] = useState(initialConfig);
   const [store, setStoreState] = useState(() => ({ ...EMPTY, dir: cwd ?? local.dir }));
   const [loading, setLoading] = useState(true);
+  // The project's environment (the kit's environments.js): its Locker section names the vault and the
+  // app to compare, and a production one has every change asked about once more.
+  const env = useEnvironment('locker', store.dir);
+  const envRef = useRef(env);
+  envRef.current = env;
   const [view, setView] = useState('drift');
   const [filter, setFilterState] = useState('all');
   const [focus, setFocusState] = useState('view');
@@ -353,14 +360,35 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
       const azure = await loadSubscription(provider, { saved: configRef.current.subscription });
       if (!alive.current) return;
       const saved = configRef.current;
-      const target = pickTarget(azure.sites, { saved: saved.target, dir: ctx.cwd() });
-      const vault = azure.vaults.find((v) => v.name === saved.vault) ?? (azure.vaults.length === 1 ? azure.vaults[0] : null);
+      // The environment's section first, when it names them: it is what this project means now.
+      const picks = environmentPicks(azure, envRef.current);
+      applied.current = envKey(envRef.current, azure);
+      const target = picks.target ?? pickTarget(azure.sites, { saved: saved.target, dir: ctx.cwd() });
+      const vault = picks.vault ?? azure.vaults.find((v) => v.name === saved.vault) ?? (azure.vaults.length === 1 ? azure.vaults[0] : null);
       updateStore({ azure, azureProblem: null, target, app: null, vault, vaults: new Map() });
       await Promise.all([readTarget(), vault ? readVault(vault.name) : null]);
     } catch (e) {
       if (alive.current) updateStore({ azureProblem: azProblem(e.message) ?? firstLine(e.message) });
     }
   };
+  // Which environment's section was last applied, for which subscription: it is applied once, when either changes.
+  const applied = useRef(null);
+  const envKey = (e, azure) => JSON.stringify([e?.name, e?.vault, e?.app, e?.slot, e?.resourceGroup, azure?.subscription?.id]);
+  const applyEnvironment = async () => {
+    const e = envRef.current;
+    const azure = storeRef.current.azure;
+    if (!azure || applied.current === envKey(e, azure)) return;
+    applied.current = envKey(e, azure);
+    if (!e) return;
+    const picks = environmentPicks(azure, e);
+    note(`Environment ${e.name}${e.prod ? ' (production)' : ''}${picks.missing.length ? `: ${picks.missing.join(', ')} in ${azure.subscription.name}` : ''}`, picks.missing.length ? 'error' : 'info');
+    if (picks.vault && picks.vault.name !== storeRef.current.vault?.name) await chooseVault(picks.vault);
+    if (picks.target && picks.target.id !== storeRef.current.target?.id) await chooseTarget(picks.target);
+  };
+  useEffect(() => {
+    applyEnvironment();
+  }, [envKey(env, store.azure)]);
+
   const readAll = async () => {
     setLoading(true);
     await Promise.all([readLocal(), readAzure()]);
@@ -478,7 +506,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
   };
 
   const ctxRef = useRef(null);
-  if (!ctxRef.current) ctxRef.current = { get data() { return dataNow(); }, get config() { return configRef.current; }, mouseHandlers: [] };
+  if (!ctxRef.current) ctxRef.current = { get data() { return dataNow(); }, get config() { return configRef.current; }, get env() { return envRef.current; }, mouseHandlers: [] };
   const ctx = ctxRef.current;
   Object.assign(ctx, {
     provider,
@@ -623,6 +651,8 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
     const history = [text, ...(configRef.current.history ?? []).filter((h) => h !== text)].slice(0, 100);
     setConfig((c) => ({ ...c, history }));
     await runLine(text);
+    // For a runbook Fleet is recording: the line as run (a pasted context is /take's).
+    recordCommand('locker', decodeContext(text) ? `/take ${text}` : text);
   };
 
   // ctrl+p: the palette, over the view, starting from what's typed in the prompt when it's open there.
@@ -942,7 +972,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} width={W} loading={loading} mood={mood} problem={problem} demo={demo} />
+      <Header data={data} width={W} loading={loading} mood={mood} problem={problem} demo={demo} env={env} />
       <Tabs view={view} entries={entries} counts={counts} width={W} />
       <Box height={mainH} width={W}>
         {main}
