@@ -412,14 +412,14 @@ function Menu({ view, inbox, spinning, setSpinning }) {
             <span className="line-menu-h">{t('All pages')}</span>
             {linePages.map(([to, label, icon, stage]) => (
               <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'on' : '')}>
-                <Icon name={icon} size={15} /> {label}<span className="line-menu-stage">{stageName(stage)}</span>
+                <Icon name={icon} size={15} /> <span className="truncate">{label}</span><span className="line-menu-stage">{stageName(stage)}</span>
               </NavLink>
             ))}
           </nav>
           <nav className="line-menu-pages" aria-label={t('Menu')}>
             {pages.map(([to, label, icon]) => (
               <NavLink key={to} to={to} className={({ isActive }) => (isActive || (to === '/people' && /^\/(team|users)(\/|$)/.test(pathname)) ? 'on' : '')}>
-                <Icon name={icon} size={15} /> {label}{to === '/inbox' && inbox ? <span className="line-menu-n">{inbox}</span> : null}
+                <Icon name={icon} size={15} /> <span className="truncate">{label}</span>{to === '/inbox' && inbox ? <span className="line-menu-n">{inbox}</span> : null}
               </NavLink>
             ))}
           </nav>

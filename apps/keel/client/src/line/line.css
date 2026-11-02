@@ -701,3 +701,18 @@ button.tile-hit { cursor: pointer; }
 .line-menu-all { margin-bottom: 6px; }
 .line-menu-h { padding: 4px 10px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
 .line-menu-stage { margin-left: auto; font-size: 11px; color: var(--muted); }
+
+/* Phones' menu: short enough to fit above its button. The pages go two to a row (their stage left
+   out, the line already shows it), the rows are tighter, and nothing scrolls sideways. On a phone
+   too short even for that, it scrolls without drawing a scrollbar, which would take width. */
+.line-menu-fab .line-menu-pop { overflow-x: hidden; scrollbar-width: none; }
+.line-menu-fab .line-menu-pop::-webkit-scrollbar { display: none; }
+.line-menu-fab .line-menu-pages { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
+.line-menu-fab .line-menu-h { grid-column: 1 / -1; }
+.line-menu-fab .line-menu-pages a { min-width: 0; gap: 8px; padding: 7px 8px; font-size: 13px; }
+.line-menu-fab .line-menu-pages a > .icon { flex: none; }
+.line-menu-fab .line-menu-stage { display: none; }
+.line-menu-fab .line-menu-views a { padding: 7px 4px; }
+.line-menu-fab .line-menu-row { padding: 7px 10px; }
+.line-menu-fab .line-menu-live { padding: 2px 10px 6px; }
+.line-menu-fab .line-menu-me { padding: 6px 10px; }
