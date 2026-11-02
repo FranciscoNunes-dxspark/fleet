@@ -110,7 +110,7 @@ Hosts is above. Log is everything the activity lines have said, `↵` for one wh
 
 | | |
 |---|---|
-| `/` or `:` | Command prompt, with completion (host names, and the names in the panes for `/get` and `/put`) |
+| `/` or `:` | Command prompt, with completion (host names, and the names in the panes for `/get` and `/put`); where there is nothing to complete, the command's parameters stay shown under the prompt |
 | `!` | A shell command on this machine, e.g. `!ssh-add -l` (its output is in the activity line; `/last` has all of it) |
 | `$` | A command on the server (above) |
 | `ctrl+p` | The command palette |

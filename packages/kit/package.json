@@ -13,6 +13,7 @@
     "./theme.js": "./theme.js",
     "./text.js": "./text.js",
     "./search.js": "./search.js",
+    "./commandhint.js": "./commandhint.js",
     "./ui/parts.jsx": "./ui/parts.jsx",
     "./ui/hooks.js": "./ui/hooks.js",
     "./ui/HelpView.jsx": "./ui/HelpView.jsx",

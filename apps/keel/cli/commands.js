@@ -1,4 +1,5 @@
 import * as a from './actions.js';
+import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { WI_VIEW_IDS } from './format.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
@@ -92,7 +93,7 @@ function ranked(names, query) {
  * request numbers or groups for commands that complete their argument. `insert` replaces the
  * prompt text; `run` means picking it can run straight away.
  */
-export function suggestionsFor(value, lists) {
+function commandCompletions(value, lists) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   if (space < 0) {
@@ -113,3 +114,6 @@ export function suggestionsFor(value, lists) {
   const more = cmd.complete === 'types';
   return names.slice(0, 7).map((n) => ({ label: n, desc: ['prs', 'workitems'].includes(cmd.complete) ? titles.get(n) : undefined, insert: `/${cmd.name} ${n}${more ? ' ' : ''}`, run: !more }));
 }
+
+/** What to offer under the prompt: names to complete, or else the command's parameters (the kit's `withCommandHint`). */
+export const suggestionsFor = (value, opts) => withCommandHint(commandCompletions(value, opts), value, (n) => findCommand(n));

@@ -1,4 +1,5 @@
 import * as a from './actions.js';
+import { withCommandHint } from '@fleet/kit/commandhint.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -61,7 +62,7 @@ const quoted = (n) => (/\s/.test(n) ? `"${n}"` : n);
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away. `data` has `hosts` and `panes`.
  */
-export function suggestionsFor(value, { data, user = [] } = {}) {
+function commandCompletions(value, { data, user = [] } = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   const all = [...COMMANDS, ...user];
@@ -80,3 +81,6 @@ export function suggestionsFor(value, { data, user = [] } = {}) {
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${quoted(n)}`, run: true }));
 }
+
+/** What to offer under the prompt: names to complete, or else the command's parameters (the kit's `withCommandHint`). */
+export const suggestionsFor = (value, opts) => withCommandHint(commandCompletions(value, opts), value, (n) => findCommand(n, opts?.user ?? []));
