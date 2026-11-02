@@ -28,6 +28,7 @@ if (args.includes('-v') || args.includes('--version')) {
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`chart [folder] [--demo]
 chart check [folder|plan.json] [--fail-on destroy|replace|change|drift|none] [--tofu] [--markdown|--json]
+            [--currency EUR] [--no-costs]
 
 Infrastructure as code: what a Terraform (or OpenTofu) plan would change, resource by resource and
 attribute by attribute, what changed outside Terraform (drift), what its state holds, and what
@@ -38,7 +39,8 @@ through their command lines, signed in as they are; it only plans: nothing is ev
 
 chart check plans a folder (or reads a saved plan: terraform show -json plan.tfplan > plan.json)
 and exits 1 when the plan does what --fail-on names (destroy by default: a delete or a replacement),
-for a pipeline; --markdown prints it for a pull request's comment.
+for a pipeline; --markdown prints it for a pull request's comment. Each change's monthly cost,
+and the total, come from the Azure Retail Prices API (--currency, --no-costs).
 
 Inside: press ? for shortcuts, / for commands, ! to run a shell command.`);
   process.exit(0);

@@ -10,6 +10,7 @@ import { diffLines, valueLines } from './diff.js';
 import { summarize, summaryLine } from './plan.js';
 import { ACTION_WORD, findChange, siteOf } from './rows.js';
 import { markdownReport } from './share.js';
+import { CURRENCIES, costLines, planCosts } from './costs.js';
 import { BINARIES } from './iac.js';
 import { describeEnvironments, markProduction, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 
@@ -70,6 +71,7 @@ export async function plan(ctx, folder = '') {
   );
   if (r.ok) {
     ctx.setView('changes');
+    void price(ctx);
     ctx.logActivity(`Planned ${label(ctx, dir)}${inEnv(ctx)}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
   }
   return r.ok;
@@ -204,6 +206,7 @@ export async function whatIf(ctx, rest = '', typed = {}) {
   }
   if (r.ok) {
     ctx.setView('changes');
+    void price(ctx);
     ctx.logActivity(`What-if ${args.file} ${where}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
   }
   return r.ok;
@@ -271,6 +274,7 @@ export async function open(ctx, file = '') {
     { label: 'Reading' },
   );
   if (r.ok) ctx.setView(r.result.kind === 'state' ? 'state' : 'changes');
+  if (r.ok && r.result.kind === 'plan') void price(ctx);
   return r.ok;
 }
 
@@ -283,15 +287,56 @@ export function again(ctx) {
   return look(ctx);
 }
 
+const currencyOf = (ctx) => ctx.config.currency ?? 'USD';
+
+/** The costs worked out for the plan on screen, or null (none yet, or they were another plan's). */
+export const costsOf = (data) => (data?.costs && data.costs.for === data.plan ? data.costs : null);
+
+/**
+ * What the plan on screen costs a month (costs.js, prices from the Azure Retail Prices API), worked
+ * out beside it: it doesn't hold up the next command, and a newer plan's prices replace it.
+ */
+export async function price(ctx) {
+  const p = ctx.data?.plan;
+  if (!p || ctx.config.costs === false || !ctx.provider.prices) return false;
+  if (!p.changes.some((c) => ['create', 'delete', 'replace', 'update'].includes(c.action))) return false;
+  const currency = currencyOf(ctx);
+  const keep = (costs) => ctx.setData((d) => (d?.plan === p ? { ...d, costs: { ...costs, for: p } } : d));
+  keep({ pending: true, currency });
+  try {
+    const costs = await planCosts(p, { prices: (q) => ctx.provider.prices(q, { currency }), currency });
+    keep(costs);
+    if (costs.failed) ctx.note(`No prices for ${plural(costs.failed, 'resource')}: ${Object.values(costs.byAddress).find((c) => /couldn't be asked/.test(c.note ?? ''))?.note ?? 'the price list failed'}`, 'error');
+    return true;
+  } catch (e) {
+    keep({ error: String(e.message).split('\n')[0], currency });
+    ctx.note(`No prices: ${String(e.message).split('\n')[0]}`, 'error');
+    return false;
+  }
+}
+
+/** /currency [code]: the currency prices are shown in (USD unless set), and the plan on screen priced again in it. */
+export function currency(ctx, value = '') {
+  const v = value.trim().toUpperCase();
+  if (!v) return ctx.note(`Prices are in ${currencyOf(ctx)}. /currency ${CURRENCIES.slice(0, 4).join('|')}… changes it.`);
+  if (!CURRENCIES.includes(v)) return ctx.note(`The Azure price list has ${CURRENCIES.join(', ')}.`, 'error') ?? false;
+  ctx.setConfig((c) => ({ ...c, currency: v }));
+  ctx.note(`Prices in ${v} from now on.`, 'ok');
+  void price(ctx);
+  return true;
+}
+
 /** ↵ on a change: what changes in it, attribute by attribute, and where it's declared. */
 export async function showChange(ctx, c, { drifted = false } = {}) {
   const where = await ctx.provider.locate(ctx.data?.source?.dir ?? ctx.cwd(), c).catch(() => null);
+  const costs = drifted ? null : costsOf(ctx.data);
   const head = [
     `${c.address}  ${drifted ? 'changed outside the code' : ACTION_WORD[c.action]}${c.reason ? `: ${c.reason}` : ''}`,
     ...(c.movedFrom ? [`Moved from ${c.movedFrom}`] : []),
     ...(c.id ? [`Id: ${c.id}`] : []),
     ...(where ? [`Declared in ${where.path}:${where.line} (t copies it for Splice)`] : []),
     ...(siteOf(c) ? ['An App Service app: s copies it for Locker'] : []),
+    ...(costs?.byAddress?.[c.address] ? costLines(costs.byAddress[c.address], costs.currency) : costs?.pending && !drifted ? ['Cost: being priced…'] : []),
     '',
   ];
   const lines = diffLines(c.diff);
@@ -337,7 +382,7 @@ export function show(ctx, text) {
 export function report(ctx) {
   const p = ctx.data?.plan;
   if (!p) return ctx.note('No plan yet: /plan, /whatif or /open first.', 'error') ?? false;
-  ctx.showText('Report (alt+y copies it all)', markdownReport({ ...p, drift: ctx.data.drift ?? p.drift }, { label: ctx.data.source?.label ?? basename(ctx.cwd()) }));
+  ctx.showText('Report (alt+y copies it all)', markdownReport({ ...p, drift: ctx.data.drift ?? p.drift }, { label: ctx.data.source?.label ?? basename(ctx.cwd()), costs: costsOf(ctx.data) }));
   return true;
 }
 
@@ -442,6 +487,7 @@ export function settings(ctx) {
       `Accent colour    ${c.accent ?? 'default'}       /accent #rrggbb`,
       `Mouse            ${on(c.mouse)}       /mouse on|off`,
       `Runs             ${bin(ctx)}       /tool terraform|tofu`,
+      `Prices           ${c.costs === false ? 'off' : `in ${currencyOf(ctx)}, from prices.azure.com`}       /currency <code> · "costs": false in the file turns them off`,
       `Environment      ${envOf(ctx) ? `${envOf(ctx).name}${envOf(ctx).prod ? ' (production)' : ''}: ${envSummary(envOf(ctx))}` : 'none (.fleet/project.json names them)'}       /env [name]`,
       `Last what-if     ${w ? `${w.file} ${w.resourceGroup ? `--rg ${w.resourceGroup}` : `--location ${w.location}`}${w.params ? ` --params ${w.params}` : ''}` : 'none'}`,
       `Update checks    ${on(c.checkForUpdates)}       "checkForUpdates" in the file`,

@@ -105,7 +105,20 @@ function checkTool(bin, { workspace, varFile } = {}) {
 // choosing one in Chart never changes which workspace the folder is on for a terraform run outside it.
 const workspaceEnv = (workspace) => (workspace ? { TF_WORKSPACE: workspace } : undefined);
 
-export function createChart({ run = runCommand } = {}) {
+export const PRICES_URL = 'https://prices.azure.com/api/retail/prices';
+// Enough pages for any one service in one region; a filter that matches more is too broad to be one price.
+const MAX_PRICE_PAGES = 20;
+
+/** The Retail Prices API's $filter for `query` (serviceName, armRegionName, armSkuName, skuName, productName): pay-as-you-go prices only. */
+export function priceFilter(query) {
+  const quote = (v) => `'${String(v).replace(/'/g, "''")}'`;
+  const fields = ['serviceName', 'armRegionName', 'armSkuName', 'skuName', 'productName'].filter((k) => query[k] !== undefined && query[k] !== null);
+  return [...fields.map((k) => `${k} eq ${quote(query[k])}`), "priceType eq 'Consumption'"].join(' and ');
+}
+
+export function createChart({ run = runCommand, fetch: fetchPrices = globalThis.fetch } = {}) {
+  // Prices for the session: each query asked once (its promise kept, so two changes asking together ask once).
+  const priceCache = new Map();
   /** Runs one az deployment command; typed-in `values` go in a temporary parameters file (never the command line, where a process list would show them), removed afterwards. */
   async function az(dir, command, { values, signal } = {}) {
     const names = Object.keys(values ?? {});
@@ -180,6 +193,33 @@ export function createChart({ run = runCommand } = {}) {
       }
       // Outputs can hold secrets, so only their names are kept.
       return { name: json.name ?? null, state: json.properties?.provisioningState ?? 'Succeeded', outputs: Object.keys(json.properties?.outputs ?? {}) };
+    },
+    /** The Azure Retail Prices API's items for `query` (priceFilter's) in `currency`, every page of them; kept for the session. */
+    async prices(query, { currency = 'USD', signal } = {}) {
+      if (!/^[A-Z]{3}$/.test(currency)) throw new Error(`${currency} isn't a currency code (USD, EUR, GBP…).`);
+      const key = JSON.stringify([currency, priceFilter(query)]);
+      if (!priceCache.has(key)) {
+        const ask = (async () => {
+          const items = [];
+          let url = `${PRICES_URL}?currencyCode='${currency}'&$filter=${encodeURIComponent(priceFilter(query))}`;
+          for (let page = 0; url && page < MAX_PRICE_PAGES; page++) {
+            const res = await fetchPrices(url, { signal, headers: { accept: 'application/json' } }).catch((e) => {
+              throw new Error(`Couldn't reach prices.azure.com: ${e.cause?.code ?? e.message}`);
+            });
+            if (!res.ok) throw new Error(`The Azure price list answered ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`);
+            const body = await res.json();
+            items.push(...(body.Items ?? []));
+            url = body.NextPageLink || null;
+          }
+          return items;
+        })();
+        // A failure isn't kept: the next plan asks again.
+        priceCache.set(key, ask.catch((e) => {
+          priceCache.delete(key);
+          throw e;
+        }));
+      }
+      return priceCache.get(key);
     },
     async readFile(path) {
       return parseAny(readFileSync(path, 'utf8'));

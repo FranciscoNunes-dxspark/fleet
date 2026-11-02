@@ -33,7 +33,7 @@ test('/plan lists the changes, what is destroyed first, with the summary and dri
   assert.match(frame, /infra {2}-1 {2}±1 {2}~2 {2}\+2 {2}1 drifted/);
   assert.ok(frame.indexOf('azurerm_mssql_database.reports') < frame.indexOf('azurerm_linux_web_app.admin'));
   assert.ok(frame.indexOf('azurerm_linux_web_app.admin') < frame.indexOf('azurerm_service_plan.main'));
-  assert.match(frame, /± azurerm_linux_web_app\.admin +replace +2 attributes +app +an argument that forces/);
+  assert.match(frame, /± azurerm_linux_web_app\.admin +replace +2 attributes +(on its plan +)?app +an argum/);
   assert.ok(!frame.includes('random_password.db'), 'what does not change is hidden');
   assert.match(frame, /2 unchanged \(a\)/);
   assert.match(frame, /1 Changes 6 {3}2 Drift 1/);

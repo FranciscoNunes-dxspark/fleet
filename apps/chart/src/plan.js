@@ -1,10 +1,11 @@
 // What a plan says, in one shape for every tool: Terraform's (and OpenTofu's) `show -json` of a plan or
 // of the state, and Azure's what-if of a Bicep or ARM deployment. Pure.
 //
-// A change: { address, type, name, module?, mode, provider?, action, reason?, diff, id?, resourceGroup? }
+// A change: { address, type, name, module?, mode, provider?, action, reason?, diff, id?, resourceGroup?, pricing }
 //   action: create | update | replace | delete | read | noop | forget | deploy | ignore | unsupported
 //   diff:   [{ path, kind: add | remove | change | unknown, before?, after?, forces?, sensitive?, noise? }]
 import { attributeDiff } from './diff.js';
+import { pricingSpec } from './costs.js';
 
 /** Terraform's actions as one word: ["delete","create"] (or the other way round) is a replacement. */
 export function actionOf(actions = []) {
@@ -46,6 +47,8 @@ function terraformChange(rc) {
     diff: attributeDiff(c.before, c.after, { unknown: c.after_unknown, beforeSensitive: c.before_sensitive, afterSensitive: c.after_sensitive, forces: c.replace_paths }),
     ...(action === 'create' ? {} : { id: c.before?.id ?? null }),
     ...(c.before?.resource_group_name || c.after?.resource_group_name ? { resourceGroup: c.after?.resource_group_name ?? c.before?.resource_group_name } : {}),
+    // What sets its price, before and after (costs.js): a few named facts, nothing sensitive or unknown.
+    pricing: { before: pricingSpec(rc.type, c.before, { sensitive: c.before_sensitive }), after: pricingSpec(rc.type, c.after, { sensitive: c.after_sensitive, unknown: c.after_unknown }) },
   };
 }
 
@@ -134,7 +137,7 @@ export function parseWhatIf(json) {
     const { type, name, resourceGroup, subscription } = parseResourceId(c.resourceId);
     const action = WHAT_IF[c.changeType] ?? 'unsupported';
     const diff = c.delta?.length ? flattenDelta(c.delta) : action === 'create' ? attributeDiff(null, c.after) : action === 'delete' ? attributeDiff(c.before, null) : [];
-    return { address: `${type}/${name}`, type, name, mode: 'managed', provider: type.split('/')[0], action, ...(c.unsupportedReason ? { reason: c.unsupportedReason } : {}), diff, id: c.resourceId, ...(resourceGroup ? { resourceGroup } : {}), ...(subscription ? { subscription } : {}) };
+    return { address: `${type}/${name}`, type, name, mode: 'managed', provider: type.split('/')[0], action, ...(c.unsupportedReason ? { reason: c.unsupportedReason } : {}), diff, id: c.resourceId, ...(resourceGroup ? { resourceGroup } : {}), ...(subscription ? { subscription } : {}), pricing: { before: pricingSpec(type, c.before), after: pricingSpec(type, c.after) } };
   });
   return { tool: 'bicep', version: null, changes, drift: [], outputs: [], errored: body.status === 'Failed' };
 }

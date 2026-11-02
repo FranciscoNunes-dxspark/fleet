@@ -44,11 +44,29 @@ What the plan does, worst first: `-` destroy and `±` replace in red (with why: 
 
 | Key | |
 |---|---|
-| `↵` or `l` | What changes in it, attribute by attribute: `~ sku_name: "B1" → "P1v3"`, `# forces replacement` on what does, `(known after apply)`, `(sensitive)` for what Terraform marks sensitive (its value is never shown or kept), `# no effect` for a what-if's noise; its id, and where it is declared |
+| `↵` or `l` | What changes in it and what that costs a month (below), attribute by attribute: `~ sku_name: "B1" → "P1v3"`, `# forces replacement` on what does, `(known after apply)`, `(sensitive)` for what Terraform marks sensitive (its value is never shown or kept), `# no effect` for a what-if's noise; its id, and where it is declared |
 | `a` | Show the resources that don't change too, or hide them |
 | `t` | Copy where it is declared (`resource "type" "name"` in the `.tf` files) for Splice, whose blame says who wrote it |
 | `s` | Copy an App Service app (`azurerm_linux_web_app`, `Microsoft.Web/sites`…) for Locker, which shows its settings |
 | `y` | Copy its address |
+
+### What it costs
+
+Once a plan or what-if is on screen, Chart prices what it creates, replaces, destroys or resizes from the [Azure Retail Prices API](https://learn.microsoft.com/rest/api/cost-management/retail-prices/azure-retail-prices) (pay-as-you-go prices, no key, 730 hours a month), beside the list: each change's column says what it adds a month (`+$234/month`, a destroyed one negative `-$15/month`), the panel's title the total (`cost +$219/month`), `↵` what the price is of (`P1v3 × 2 (Linux), westeurope`), and `/report` and `chart check` say both. An update that leaves what sets the price alone costs nothing more and says nothing.
+
+| Resource | Priced by |
+|---|---|
+| App Service plans (`azurerm_service_plan`, `azurerm_app_service_plan`, `Microsoft.Web/serverfarms`) | the sku (`B1`, `S1`, `P1v3`…) × workers, Linux or Windows; `Y1` is usage-priced, `F1` free |
+| Virtual machines (`azurerm_linux_virtual_machine`, `azurerm_windows_virtual_machine`, `azurerm_virtual_machine`, scale sets, `Microsoft.Compute/virtualMachines`) | the size (`Standard_D2s_v3`) × instances, Linux or Windows; never a spot price |
+| AKS (`azurerm_kubernetes_cluster`'s default pool, `azurerm_kubernetes_cluster_node_pool`, `Microsoft.ContainerService/managedClusters`) | `vm_size` × `node_count` (`min_count` when it autoscales): the nodes, not the cluster's tier |
+| Azure SQL databases (`azurerm_mssql_database`, `Microsoft.Sql/servers/databases`) | `sku_name`: DTU (`Basic`, `S0`…, `P1`…) or vCore (`GP_Gen5_2`, `BC_Gen5_4`, `HS_Gen5_2`); compute only. Serverless is usage-priced |
+| PostgreSQL and MySQL flexible servers | `sku_name` (`GP_Standard_D2s_v3`, `B_Standard_B1ms`); compute only, storage is by the GB |
+| Redis (`azurerm_redis_cache`, `Microsoft.Cache/Redis`) | sku, family and capacity (`Standard C1`), × shards for Premium |
+| Storage accounts, Application Insights, Log Analytics workspaces, key vaults | usage-priced: by the GB and the operation, so no figure |
+| Web and function apps, slots | nothing of their own: their App Service plan is priced |
+| Everything else | no price: Chart never guesses one |
+
+The region is the resource's `location`; without one (an Azure SQL database), its parent's (its server) or its resource group's when the plan has them, else no price. When the price list has no item for a sku, or several different ones, that resource has no price either. `/currency EUR` shows prices in another currency (`currency` in the settings, USD by default); prices are asked once a session; `"costs": false` in the settings never asks.
 
 ### Drift
 
@@ -60,7 +78,7 @@ Every resource Terraform keeps track of, the root module's first, then each modu
 
 ## Slash commands
 
-`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/deploy`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/deploy`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/currency [code]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## Environments
 
@@ -88,10 +106,10 @@ The header names the environment (red for production), and a `"prod": true` one 
 ## In a pipeline
 
 ```
-chart check [folder|plan.json] [--fail-on destroy|replace|change|drift|none] [--tofu] [--markdown|--json]
+chart check [folder|plan.json] [--fail-on destroy|replace|change|drift|none] [--tofu] [--markdown|--json] [--currency EUR] [--no-costs]
 ```
 
-A folder is planned now (`--fail-on drift` plans with `-refresh-only`); a file is read. It prints the summary, each change (and what forces each replacement), and the drift, then exits `1` when the plan does what `--fail-on` names (`destroy` by default: a delete or a replacement; `change`: anything at all), `0` otherwise, and `2` when it couldn't run. `--markdown` prints the report for a pull request's comment; `--json` the summary, changes, drift and outputs.
+A folder is planned now (`--fail-on drift` plans with `-refresh-only`); a file is read. It prints the summary, each change (and what forces each replacement, and what it costs a month), the drift and the monthly total, then exits `1` when the plan does what `--fail-on` names (`destroy` by default: a delete or a replacement; `change`: anything at all), `0` otherwise, and `2` when it couldn't run. `--markdown` prints the report for a pull request's comment; `--json` the summary, changes, drift, outputs and `cost`. Prices that can't be had never fail a check (`--no-costs` doesn't ask).
 
 ```yaml
 # after terraform init, with the pipeline's credentials
@@ -108,7 +126,7 @@ Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Dr
 
 ## Settings
 
-`~/.chart/config.json` (`CHART_HOME` moves it): `theme`, `accent`, `mouse`, `terraform` (`terraform` or `tofu`), `whatIf` (the last what-if's file, group or location and parameters), `checkForUpdates`, `autoUpdate`, `familyMoods`. `,` or `/settings` shows them.
+`~/.chart/config.json` (`CHART_HOME` moves it): `theme`, `accent`, `mouse`, `terraform` (`terraform` or `tofu`), `currency` (USD unless set), `costs` (`false` never asks for prices), `whatIf` (the last what-if's file, group or location and parameters), `checkForUpdates`, `autoUpdate`, `familyMoods`. `,` or `/settings` shows them.
 
 ## Updates
 

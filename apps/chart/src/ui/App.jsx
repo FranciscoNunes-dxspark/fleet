@@ -681,7 +681,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   } else {
     const found = data?.found;
     const changesEmpty = data?.plan ? 'Nothing to change: the infrastructure matches.' : !found ? 'Looking at the folder…' : found.tfDirs.length ? '/plan asks terraform what it would change (nothing is applied).' : found.bicep.length ? `/whatif ${found.bicep[0]} --rg <resource group> asks Azure what deploying it would change.` : 'No .tf or .bicep files here: /move to an infrastructure folder, or /open a saved plan.';
-    main = <ChangesView key="changes" changes={data?.plan?.changes ?? []} empty={changesEmpty} hint={data?.plan?.outputs?.length ? `${data.plan.outputs.length} outputs change` : ''} showAll={showAll} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ChangesView key="changes" changes={data?.plan?.changes ?? []} costs={a.costsOf(data)} empty={changesEmpty} hint={data?.plan?.outputs?.length ? `${data.plan.outputs.length} outputs change` : ''} showAll={showAll} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash

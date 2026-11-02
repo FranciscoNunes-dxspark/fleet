@@ -4,15 +4,23 @@ import * as a from '../actions.js';
 import { summarize, summaryLine } from '../plan.js';
 import { ACTION_MARK, ACTION_WORD, actionTone, changeRows, siteOf } from '../rows.js';
 import { theme } from '../theme.js';
+import { costWords, totalWords } from '../costs.js';
 import { fit } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
+
+/** A change's monthly cost in its column: more in yellow, less in green, and what has no figure dim. */
+function costCell(cost, currency, w) {
+  const text = costWords(cost, currency);
+  const color = cost?.status === 'priced' && Math.round(cost.delta * 100) !== 0 ? (cost.delta > 0 ? theme.warn : theme.add) : theme.dim;
+  return { text: ` ${fit(text, w - 1)}`, color };
+}
 
 /**
  * The changes a plan makes, what loses something first: the action's mark, the address, how many
  * attributes change, and why (a replacement's cause). With `drifted`, what changed outside the code.
  */
-export function ChangesView({ changes, drifted = false, empty, hint: extra, showAll, ctx, width, height, active }) {
+export function ChangesView({ changes, drifted = false, costs, empty, hint: extra, showAll, ctx, width, height, active }) {
   const innerH = height - 2;
   const list = drifted ? changes : changeRows(changes, { all: showAll });
   const nav = useListNav(list.length, innerH, { keyOf: (i) => list[i]?.address });
@@ -37,7 +45,10 @@ export function ChangesView({ changes, drifted = false, empty, hint: extra, show
   const inner = width - 4;
   const addrW = Math.max(24, Math.min(56, Math.floor(inner * 0.4)));
   const hidden = drifted ? 0 : changes.length - list.length;
-  const hint = drifted ? `${changes.length} changed outside${extra ? ` · ${extra}` : ''}` : [summaryLine(summarize(changes)) || 'no changes', hidden ? `${hidden} unchanged (a)` : '', extra].filter(Boolean).join(' · ');
+  const total = costs?.pending ? 'pricing…' : costs?.error ? 'no prices' : totalWords(costs, { short: true });
+  const hint = drifted ? `${changes.length} changed outside${extra ? ` · ${extra}` : ''}` : [summaryLine(summarize(changes)) || 'no changes', hidden ? `${hidden} unchanged (a)` : '', total ? `cost ${total}` : '', extra].filter(Boolean).join(' · ');
+  // The cost column only once there are costs, so a plan that isn't priced keeps its room.
+  const costW = costs?.byAddress ? 15 : 0;
   return (
     <Panel title={drifted ? 'Drift' : 'Changes'} hint={hint} width={width} height={height} focused={active}>
       {!list.length ? <Row pointer={false} width={width - 2} segments={[{ text: `  ${empty}`, color: theme.dim }]} /> : null}
@@ -54,6 +65,7 @@ export function ChangesView({ changes, drifted = false, empty, hint: extra, show
               { text: fit(c.address, addrW), strong: true, color: ['noop', 'ignore'].includes(c.action) ? theme.dim : undefined },
               { text: ` ${fit(drifted ? 'drifted' : ACTION_WORD[c.action], 10)}`, color: drifted ? theme.warn : actionTone(c.action) },
               { text: ` ${fit(n ? `${n} attribute${n === 1 ? '' : 's'}` : '', 14)}`, color: theme.dim },
+              ...(costW ? [costCell(costs.byAddress[c.address], costs.currency, costW)] : []),
               ...(siteOf(c) ? [{ text: ' app ', color: theme.info }] : []),
               ...(c.reason ? [{ text: ` ${c.reason}`, color: theme.dim }] : []),
             ]}

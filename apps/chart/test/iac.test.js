@@ -115,7 +115,7 @@ test('chart check: what the plan does, and an exit code by --fail-on; --json; --
   assert.equal(await runHeadless(['check', '--json', '--fail-on', 'replace'], { provider: demoChart(), write }), 1);
   assert.deepEqual(JSON.parse(out.join('')).summary, { delete: 1, replace: 1, update: 2, create: 2, noop: 2 });
   assert.equal(await runHeadless(['check', '--fail-on', 'everything'], { provider: demoChart(), write }), 2);
-  assert.deepEqual(parseArgs(['check', 'plan.json', '--markdown']), { command: 'check', target: 'plan.json', failOn: 'destroy', json: false, markdown: true, bin: 'terraform' });
+  assert.deepEqual(parseArgs(['check', 'plan.json', '--markdown']), { command: 'check', target: 'plan.json', failOn: 'destroy', json: false, markdown: true, bin: 'terraform', currency: 'USD', costs: true });
   const plan = parseTerraformPlan(DEMO_PLAN);
   assert.deepEqual(['destroy', 'replace', 'change', 'drift', 'none'].map((f) => fails(plan, f)), [true, true, true, true, false]);
   assert.equal(fails({ changes: [{ action: 'noop' }], drift: [] }, 'change'), false);
