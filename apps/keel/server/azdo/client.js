@@ -10,6 +10,8 @@ export class AzdoError extends Error {
 }
 
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+// How long to wait before asking again when Azure DevOps turns the token down (see request).
+const REJECTED_RETRY_MS = 400;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -60,7 +62,8 @@ export function createClient({ orgUrl = config.orgUrl, pat, token, maxConcurrenc
   function request(path, { method = 'GET', query, body, contentType = 'application/json', apiVersion, empty = false, timeout = 30_000 } = {}) {
     const url = buildUrl(path, query, apiVersion);
     return limited(async () => {
-      const authHeader = await auth();
+      let authHeader = await auth();
+      let askedAgain = false;
       for (let attempt = 0; ; attempt++) {
         let res;
         try {
@@ -95,6 +98,15 @@ export function createClient({ orgUrl = config.orgUrl, pat, token, maxConcurrenc
         const type = res.headers.get('content-type') || '';
         // A bad/expired PAT often yields 203 + an HTML sign-in page rather than 401.
         if (res.status === 401 || res.status === 203 || (res.ok && res.status !== 204 && !type.includes('json'))) {
+          // Azure DevOps now and then turns down a good token for a moment (a 401 among 200s for the
+          // same call), so ask once more, with the credentials read again, before saying it's rejected.
+          if (!askedAgain) {
+            askedAgain = true;
+            res.body?.cancel().catch(() => {});
+            await sleep(REJECTED_RETRY_MS);
+            authHeader = await auth();
+            continue;
+          }
           throw new AzdoError('Azure DevOps rejected the token: it may have expired, been revoked, or lack the needed scopes.', 401, null, 'token-rejected');
         }
         if (!res.ok) {

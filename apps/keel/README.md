@@ -426,7 +426,7 @@ server/
   index.js       Express: /api + built UI from dist/
   routes.js      HTTP layer; writes require the x-keel header
   service.js     Scopes everything to tracked projects/repos, caching
-  azdo/          REST client (PAT or Azure CLI auth, retries on 429/5xx, paging, concurrency limit) + provider
+  azdo/          REST client (PAT or Azure CLI auth, retries on 429/5xx and once on a 401, paging, concurrency limit) + provider
   github/        A GitHub owner as an organization: REST + GraphQL client (token or gh CLI), provider, mapping
   providers.js   Each organization's provider, by its kind
   mock/          Demo providers with the same interface (Azure DevOps, and a fake GitHub API for github/)
