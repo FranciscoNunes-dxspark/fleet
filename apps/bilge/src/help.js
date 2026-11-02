@@ -48,6 +48,7 @@ export const HELP = [
       ['a', 'All of them, the direct ones, the outdated ones, or the flagged ones (an advisory, a copyleft or denied licence, deprecated)'],
       ['u', 'Ask the registries for the newest versions and licences (/outdated; /outdated all for every package); ! marks one that won\'t fit the project'],
       ['f', 'Fix it, when it has advisories'],
+      ['/upgrade', 'Update every direct package that has a newer version fitting the project (asks first): a branch bilge/updates-<date>, each update, the tests, a commit, and the branch handed to Splice'],
       ['o', 'Its page on npm or NuGet'],
       ['t', 'Copy where it is for Splice\'s blame'],
       ['y', 'Copy name@version'],

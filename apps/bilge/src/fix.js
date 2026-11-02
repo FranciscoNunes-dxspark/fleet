@@ -47,6 +47,18 @@ export function safe(ecosystem, name, version) {
 }
 
 /**
+ * The command that moves `pkg` (a direct one) to exactly `version` in `manifest`, for /upgrade:
+ * { command, cwd }, or null when no command does it safely (no lock file, no plain project file).
+ */
+export function updateCommand(pkg, manifest, version) {
+  if (!safe(pkg.ecosystem, pkg.name, version)) return null;
+  if (pkg.ecosystem === 'npm') return manifest.kind === 'lock' ? { command: TOOLS[toolOf(manifest)].add(pkg.name, version, pkg.dev), cwd: manifest.dir } : null;
+  if (pkg.ecosystem !== 'NuGet') return null;
+  const project = manifest.project ? basename(manifest.project) : null;
+  return project && FILE.test(project) ? { command: `dotnet add "${project}" package ${pkg.name} --version ${version}`, cwd: manifest.dir } : null;
+}
+
+/**
  * How to fix `finding` (audit.js's) in `manifest` (lockfiles.js's, one it was found in), to `version`
  * (the finding's fix by default): { run: { command, cwd }, check: { command, cwd }, text } when a
  * command does it, else { text } saying what to change, or null when nothing fixes it yet. `check` is

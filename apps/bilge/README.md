@@ -103,6 +103,18 @@ NuGet's lock files don't record licences: `/outdated` reads them from each packa
 
 For the newest version that fits, npm's registry gives every version's needs in one answer. NuGet's are tried one at a time: the newest of each major version, at most six. When Bilge can't tell, it doesn't warn. That covers a project that says no Node, a package whose `.nuspec` names no frameworks or one Bilge doesn't know (Xamarin, UWP), and a range it can't read.
 
+### Upgrading
+
+`/upgrade` updates every direct package that has a newer version fitting the project: the newest one, or where that won't fit (as in [Will it fit?](#will-it-fit)), the newest one that does. It takes what the last `/outdated` said, asking it first when it hasn't been asked. One question lists them all; it also offers to copy the commands, or to see them. Then, in order:
+
+1. The git working tree must be clean, or Bilge stops and says so, changing nothing.
+2. A branch of its own: `bilge/updates-<yyyy-mm-dd>` (`-2`, `-3`… when the day's is taken).
+3. Each update's command, with the exact version, in the folder of each manifest that asks for the package: `npm install <name>@<version>` (`yarn add`, `pnpm add`; `--save-dev` or `--dev` for a development one), `dotnet add "<project>" package <Name> --version <version>`.
+4. The project's tests, where it has some: `npm test` (`yarn test`, `pnpm test`) where the package.json has a test script, `dotnet test` on the nearest `.sln` at or above a changed project, else on the project.
+5. A commit, "Update N packages", and a line for Splice that checks the branch out there, to push it and open its pull request.
+
+A window says how each step went. A step that fails stops it there, saying which; the branch stays, uncommitted, for you to finish or drop.
+
 ### Manifests
 
 The lock files and projects found: their ecosystem, kind, how many packages, how many direct, how many vulnerable, and a note where one gives less than everything.
@@ -115,7 +127,7 @@ The lock files and projects found: their ecosystem, kind, how many packages, how
 
 ## Slash commands
 
-`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/upgrade` (above), `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## In a pipeline
 
@@ -138,7 +150,7 @@ What changes a project (a fix) and what an audit found go to the family's activi
 
 ## Environments
 
-A project that names its environments in `.fleet/project.json` (dev, staging, prod: the same file every app of the family reads) shows the chosen one in Bilge's header. `/env` says which it is, `/env <name>` switches every app to another. While a production one (`"prod": true`) is chosen, the frames are red, and a fix asks once more before it changes anything.
+A project that names its environments in `.fleet/project.json` (dev, staging, prod: the same file every app of the family reads) shows the chosen one in Bilge's header. `/env` says which it is, `/env <name>` switches every app to another. While a production one (`"prod": true`) is chosen, the frames are red, and a fix and `/upgrade` ask once more before they change anything.
 
 While Fleet records a runbook, every slash command and `/take` line Bilge's prompt runs goes into it.
 

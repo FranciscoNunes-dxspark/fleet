@@ -1,7 +1,8 @@
 // Everything Bilge reads and does goes through one object with one interface: `scan(dir)` (the lock
 // files, from the disk), `audit(packages, { fresh })` (OSV's advisories, kept between runs), `latest(packages)` (the registries),
 // `needs(pkg, version)` and `fitting(pkg, fits)` (what a version needs to run, and the newest that
-// fits), `run(command, { cwd })` (a fix, through the kit's run.js) and `writeFile` (an SBOM). demo.js's
+// fits), `run(command, { cwd })` (a fix, git and the tests for /upgrade, through the kit's run.js),
+// `tests(manifests, root)` (what tests a project has) and `writeFile` (an SBOM). demo.js's
 // demoBilge() has the same interface for --demo and the tests.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -11,6 +12,7 @@ import { createOsvCache } from './cache.js';
 import { scanFolder } from './lockfiles.js';
 import { createOsv } from './osv.js';
 import { createRegistry } from './registry.js';
+import { testPlan } from './upgrade.js';
 
 // `home` is Bilge's folder (config.js's, read when asked, so BILGE_HOME moves it), where OSV's answers
 // are kept between runs.
@@ -38,6 +40,8 @@ export function createBilge({ fetchImpl = globalThis.fetch, run = runCommand, ho
     needs: (pkg, version, opts) => registry.needs(pkg, version, opts),
     fitting: (pkg, fits, opts) => registry.fitting(pkg, fits, opts),
     run: (command, { cwd, signal } = {}) => run(command, { cwd, signal }),
+    /** The tests to run after /upgrade changed `manifests` (upgrade.js's testPlan, from the disk): [{ command, cwd }]. */
+    tests: async (manifests, root) => testPlan(manifests, root),
     writeFile(path, text) {
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, text);

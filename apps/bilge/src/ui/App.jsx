@@ -38,7 +38,7 @@ const VIEWS = [
 
 const HINTS = {
   vulns: '↵ details · f fix · o advisory · x ignore · t for Splice · d dev packages · y copy ids',
-  packages: '↵ details · a all/direct/outdated/flagged · u newest versions · f fix · o registry · t for Splice · y copy',
+  packages: '↵ details · a all/direct/outdated/flagged · u newest versions · f fix · o registry · t for Splice · y copy · /upgrade',
   manifests: '↵ its packages · t for Splice · y copy path',
   log: '↵ all its output · y copy it',
 };

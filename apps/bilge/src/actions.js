@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { basename, isAbsolute, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { run } from '@fleet/kit/run.js';
-import { contextIn, copiedNote, notMine, takeLine } from '@fleet/kit/family.js';
+import { contextIn, copiedNote, notMine, shareLine, takeLine } from '@fleet/kit/family.js';
 import { resolveFolder, samePath } from '@fleet/kit/folders.js';
 import { describeEnvironments, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
@@ -17,8 +17,10 @@ import { SEVERITY_LABEL, findFinding, findPackage, label, licenceOf, withoutIgno
 import { fileData, markdownReport } from './share.js';
 import { bumpOf } from './versions.js';
 import { nodeOf, problems, targetsOf } from './compat.js';
+import { branchName, folderLabel, upgradeCandidates } from './upgrade.js';
 import { VERSION } from './app.js';
 
+const firstLine = (s) => String(s ?? '').split('\n')[0];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const packages = (ctx) => ctx.data?.packages ?? [];
 const found = (ctx) => ctx.found ?? [];
@@ -200,6 +202,100 @@ export async function fix(ctx, target) {
 }
 
 /**
+ * /upgrade: every direct package with a newer version that fits the project (the newest, else the
+ * newest that fits), from the last /outdated (asked first when it hasn't been). One question lists
+ * them; then, on a clean working tree, a branch of their own (bilge/updates-<date>), each update's
+ * command where its manifest is, the project's tests, and a commit, saying how each step went. A
+ * failed step stops it there, the branch left for the person. Splice gets the branch.
+ */
+export async function upgrade(ctx) {
+  if (!packages(ctx).length) return ctx.note('No packages to update: /scan reads this folder.', 'error') ?? false;
+  const asked = packages(ctx).some((p) => p.direct && ctx.data.latest?.has(p.key));
+  if (!asked && !(await outdated(ctx))) return false;
+  const list = upgradeCandidates(ctx.data);
+  if (!list.length) return ctx.note("Nothing to update: every direct package is at its newest version, or no newer one fits this project (↵ in Packages says why).") ?? true;
+  const root = ctx.cwd();
+  const steps = list.flatMap((u) => u.steps.map((s) => ({ ...s, pkg: u.pkg, to: u.to })));
+  const lines = list.map((u) => `${u.pkg.name} ${u.pkg.version} → ${u.to}${u.capped ? ' (the newest that fits)' : ''}`);
+  const yes = await ctx.confirm({
+    title: `Update ${plural(list.length, 'package')} on a branch of their own, then run the tests?`,
+    detail: lines.join(' · '),
+    options: [{ label: 'Yes, update them', value: true }, { label: 'Copy the commands', value: 'copy' }, { label: 'See the list', value: 'list' }, { label: 'No', value: false }],
+  });
+  if (yes === 'list') return ctx.showText(`Updates that fit (${list.length})`, [...lines, '', 'The commands:', ...steps.map((s) => `  ${s.command}  (in ${folderLabel(root, s.cwd)})`), '', '/upgrade again runs them on a new branch.'].join('\n')) ?? false;
+  if (yes === 'copy') {
+    const byFolder = [...new Set(steps.map((s) => folderLabel(root, s.cwd)))].flatMap((f) => [`# in ${f}`, ...steps.filter((s) => folderLabel(root, s.cwd) === f).map((s) => s.command)]);
+    return ctx.copy(byFolder.join('\n'), 'the commands') ?? true;
+  }
+  if (!yes || !(await productionOk(ctx, `Update ${plural(list.length, 'package')}`))) return false;
+
+  const done = [];
+  const say = (ok, text) => done.push(`${ok ? '✓' : '✗'} ${text}`);
+  const report = (title, tail) => ctx.showText(title, [...done, ...(tail ? ['', ...tail] : [])].join('\n'));
+  const step = (command, cwd, opts) => ctx.task(command, (signal) => ctx.provider.run(command, { cwd, signal }), opts);
+
+  // Only on a clean tree: the commit should hold the updates and nothing else.
+  const status = await step('git status --porcelain', root, { label: 'Checking the working tree' });
+  if (!status.ok) return ctx.note(`/upgrade needs a git repository here: ${firstLine(status.error.message)}`, 'error') ?? false;
+  if (status.out.trim()) return ctx.note('The working tree has changes: commit or stash them first (Splice does both), then /upgrade again. Nothing was changed.', 'error') ?? false;
+  const branch = await newBranch(ctx, root);
+  if (!branch) return false;
+  say(true, `on a new branch, ${branch}`);
+
+  for (const [i, s] of steps.entries()) {
+    const r = await step(s.command, s.cwd, { label: `Updating ${i + 1}/${steps.length}`, activity: `Updated ${s.pkg.name} ${s.pkg.version} → ${s.to} in ${s.manifest.path} on ${branch}` });
+    say(r.ok, `${s.command}  (in ${folderLabel(root, s.cwd)})`);
+    if (!r.ok) {
+      report(`Upgrade stopped at step ${i + 1} of ${steps.length}`, [`${s.command} failed: /last says what it printed.`, `${branch} is left as it is, with the updates before it uncommitted, for you to finish or drop (Splice: /discard, /checkout).`]);
+      return false;
+    }
+  }
+  const tests = await ctx.provider.tests([...new Set(steps.map((s) => s.manifest))], root);
+  for (const t of tests) {
+    const r = await step(t.command, t.cwd, { label: 'Testing' });
+    say(r.ok, `${t.command}  (in ${folderLabel(root, t.cwd)})`);
+    if (!r.ok) {
+      report(`Upgrade stopped: ${t.command} failed`, [`/last says what it printed. The updates are on ${branch}, not committed, for you to look into.`]);
+      return false;
+    }
+  }
+  if (!tests.length) say(true, 'no tests found to run (a test script in package.json, a .sln or a .csproj)');
+  const message = `Update ${plural(list.length, 'package')}`;
+  for (const command of ['git add -A', `git commit -m "${message}"`]) {
+    const r = await step(command, root, { label: 'Committing' });
+    say(r.ok, command);
+    if (!r.ok) {
+      report('Upgrade not committed', [`/last says why. The updates are on ${branch}, tested, for you to commit.`]);
+      return false;
+    }
+  }
+  ctx.logActivity(`${message} on ${branch} in ${basename(root)}`, 'change');
+  await scan(ctx, { audit: true });
+  // Splice pushes it and opens the pull request: the line that checks the branch out there.
+  const line = shareLine('checkout', [branch]);
+  ctx.copy(line, 'a line for Splice');
+  report(`${message} on ${branch}`, [`Committed "${message}". Push it from Splice (/push, then /pr) to open its pull request.`]);
+  ctx.note(copiedNote('splice', line));
+  return true;
+}
+
+/** `git checkout -b` the day's branch, or the day's second, third… when that one's taken. */
+async function newBranch(ctx, root) {
+  const base = branchName();
+  for (let n = 1; n <= 9; n++) {
+    const branch = n === 1 ? base : `${base}-${n}`;
+    const r = await ctx.task(`git checkout -b ${branch}`, (signal) => ctx.provider.run(`git checkout -b ${branch}`, { cwd: root, signal }), { label: 'Making the branch' });
+    if (r.ok) return branch;
+    if (!/already exists/i.test(r.error?.message ?? '')) {
+      ctx.note(`Couldn't make the branch ${branch}: ${firstLine(r.error?.message)}`, 'error');
+      return null;
+    }
+  }
+  ctx.note(`${base} and the next eight are taken: delete some in Splice, then /upgrade again.`, 'error');
+  return null;
+}
+
+/**
  * Whether to go on with `what`, which changes the project: asked once more when the project's
  * environment is production (.fleet/project.json's "prod": true), straight on otherwise.
  */
@@ -213,7 +309,7 @@ export function env(ctx, name = '') {
   if (!name.trim()) return ctx.note(describeEnvironments(ctx.cwd()));
   const r = setEnvironment(ctx.cwd(), name, { by: 'bilge' });
   if (!r.ok) return ctx.note(r.error, 'error') ?? false;
-  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production: a fix asks first)' : ''}, for every app.`, 'ok');
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production: fixes and /upgrade ask first)' : ''}, for every app.`, 'ok');
   return true;
 }
 

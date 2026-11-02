@@ -5,6 +5,7 @@
 // handle: what it holds and `calls`, what was asked of it.
 import { join } from 'node:path';
 import { keyOf, mergePackages } from './lockfiles.js';
+import { testPlan } from './upgrade.js';
 
 const npm = (name, version, extra = {}) => ({ ecosystem: 'npm', name, version, direct: false, dev: false, ...extra });
 const nuget = (name, version, extra = {}) => ({ ecosystem: 'NuGet', name, version, direct: false, dev: false, ...extra });
@@ -160,10 +161,28 @@ export function demoBilge() {
     async run(command, { cwd } = {}) {
       state.calls.push(['run', command, cwd]);
       if (/^(npm ls|yarn why|pnpm why|dotnet restore)\b/.test(command)) return { stdout: `(demo) ${command}: all fits`, stderr: '' };
+      // /upgrade's git and tests: a clean tree unless `state.dirty` says what's changed, a failing step where `state.failing` names it.
+      if (state.failing && command.startsWith(state.failing)) throw Object.assign(new Error(`(demo) ${command} failed: 1 test of 12 failed`), { code: 1 });
+      if (command === 'git status --porcelain') return { stdout: state.dirty ?? '', stderr: '' };
+      const branch = /^git checkout -b (\S+)$/.exec(command);
+      if (branch) {
+        state.branches ??= [];
+        if (state.branches.includes(branch[1])) throw new Error(`fatal: a branch named '${branch[1]}' already exists`);
+        state.branches.push(branch[1]);
+        return { stdout: '', stderr: `Switched to a new branch '${branch[1]}'` };
+      }
+      const commit = /^git commit -m "([^"]*)"$/.exec(command);
+      if (commit) (state.commits ??= []).push(commit[1]);
+      if (/^(git|npm test|yarn test|pnpm test|dotnet test)\b/.test(command)) return { stdout: `(demo) ${command}`, stderr: '' };
       const m = /^(?:npm install|yarn add|pnpm add) (\S+)@\^?(\S+)/.exec(command) ?? /package (\S+) --version (\S+)/.exec(command);
       if (!m) return { stdout: `(demo) ${command}`, stderr: '' };
       for (const man of state.manifests ?? []) for (const p of man.packages) if (p.name.toLowerCase() === m[1].toLowerCase()) p.version = m[2];
       return { stdout: `(demo) changed ${m[1]} to ${m[2]}`, stderr: '' };
+    },
+    /** The demo's tests: the npm project's test script, and dotnet test on the API's project. */
+    async tests(manifests, root) {
+      state.calls.push(['tests', manifests.map((m) => m.path)]);
+      return testPlan(manifests, root, { readJson: () => ({ scripts: { test: 'node --test' } }), list: () => [] });
     },
     writeFile(path, text) {
       state.calls.push(['write', path, text.length]);
