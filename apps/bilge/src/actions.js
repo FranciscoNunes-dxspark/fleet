@@ -31,7 +31,7 @@ export async function scan(ctx, { audit: thenAudit = ctx.config.autoAudit !== fa
       const result = await ctx.provider.scan(dir);
       ctx.setData((d) => ({ ...result, audit: null, latest: d?.root === result.root ? d.latest : null }));
       const n = result.manifests.length;
-      return { stdout: n ? `${plural(result.packages.length, 'package')} in ${plural(n, 'manifest')}` : 'No package-lock.json, packages.lock.json or .NET project here.' };
+      return { stdout: n ? `${plural(result.packages.length, 'package')} in ${plural(n, 'manifest')}` : 'No lock file (package-lock.json, yarn.lock, pnpm-lock.yaml, packages.lock.json) or .NET project here.' };
     },
     { label: 'Reading lock files' },
   );

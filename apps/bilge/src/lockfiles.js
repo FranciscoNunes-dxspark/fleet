@@ -1,10 +1,12 @@
 // Finding a folder's manifests and reading the packages in them: npm's package-lock.json (and
-// npm-shrinkwrap.json), NuGet's packages.lock.json, and a .NET project's PackageReferences when it has
-// no lock file (Directory.Packages.props giving the versions under central package management). The
-// parsers take text and are pure; `scan` is the one that reads the disk.
+// npm-shrinkwrap.json), Yarn's yarn.lock and pnpm's pnpm-lock.yaml (jslocks.js), NuGet's
+// packages.lock.json, and a .NET project's PackageReferences when it has no lock file
+// (Directory.Packages.props giving the versions under central package management). The parsers take
+// text and are pure; `scan` is the one that reads the disk.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { lockFrameworks, projectFrameworks } from './frameworks.js';
+import { parsePnpmLock, parseYarnLock, isBerryLock, pnpmWorkspaces, yarnWorkspaces } from './jslocks.js';
 
 // Folders never worth going into: what installs, builds and editors make.
 const SKIP = new Set(['node_modules', 'bin', 'obj', 'dist', 'build', 'out', 'target', 'vendor', 'coverage', 'TestResults', 'artifacts']);
@@ -188,6 +190,26 @@ function centralFor(dir, root) {
   }
 }
 
+/**
+ * The folders a package.json's `workspaces` names (an array, or Yarn's { packages }): a plain folder,
+ * or every folder in one (`packages/*`, `packages/**` taken as the same). Other patterns are left out.
+ */
+export function workspaceFolders(dir, packageJson) {
+  const w = packageJson?.workspaces;
+  const patterns = Array.isArray(w) ? w : Array.isArray(w?.packages) ? w.packages : [];
+  const out = [];
+  for (const raw of patterns) {
+    const p = String(raw).replace(/^\.\//, '').replace(/\/+$/, '');
+    const star = /^(.*?)\/\*{1,2}$/.exec(p);
+    if (star && !star[1].includes('*')) {
+      try {
+        for (const e of readdirSync(join(dir, ...star[1].split('/')), { withFileTypes: true })) if (e.isDirectory()) out.push(join(dir, ...star[1].split('/'), e.name));
+      } catch {}
+    } else if (p && !p.includes('*')) out.push(join(dir, ...p.split('/')));
+  }
+  return out;
+}
+
 /** The manifest files under `root`, as paths: lock files, and .NET projects without one beside them. */
 export function findManifests(root, { depth = MAX_DEPTH, max = MAX_MANIFESTS } = {}) {
   const found = [];
@@ -200,9 +222,10 @@ export function findManifests(root, { depth = MAX_DEPTH, max = MAX_MANIFESTS } =
       return;
     }
     const names = new Set(entries.filter((e) => e.isFile()).map((e) => e.name));
-    if (names.has('package-lock.json')) found.push(join(dir, 'package-lock.json'));
-    else if (names.has('npm-shrinkwrap.json')) found.push(join(dir, 'npm-shrinkwrap.json'));
-    else if (names.has('package.json') && !names.has('yarn.lock') && !names.has('pnpm-lock.yaml')) found.push(join(dir, 'package.json'));
+    // One lock file a folder: npm's when there are several (it's what Bilge has always read there).
+    const lock = ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml'].find((n) => names.has(n));
+    if (lock) found.push(join(dir, lock));
+    else if (names.has('package.json')) found.push(join(dir, 'package.json'));
     if (names.has('packages.lock.json')) found.push(join(dir, 'packages.lock.json'));
     else for (const n of [...names].filter((n) => PROJECT.test(n)).sort()) found.push(join(dir, n));
     if (level >= depth) return;
@@ -235,6 +258,19 @@ export function readManifest(root, file) {
       const node = projectNode(dirname(file), root, readJson(join(dirname(file), 'package.json')) ?? lock.packages?.[''] ?? null);
       return { ...base, ecosystem: 'npm', kind: 'lock', packages: parseNpmLock(text), workspaces: workspaces.map((w) => join(dirname(file), ...w.split('/'))), ...(node ? { node } : {}) };
     }
+    if (name === 'yarn.lock' || name === 'pnpm-lock.yaml') {
+      const own = readJson(join(dirname(file), 'package.json'));
+      const node = projectNode(dirname(file), root, own);
+      if (name === 'pnpm-lock.yaml') {
+        const workspaces = pnpmWorkspaces(text).filter((w) => w !== '.').map((w) => join(dirname(file), ...w.split('/')));
+        return { ...base, ecosystem: 'npm', kind: 'lock', tool: 'pnpm', packages: parsePnpmLock(text), workspaces, ...(node ? { node } : {}) };
+      }
+      // Yarn 1 doesn't list the workspaces: their package.json files say what each asks for.
+      const berry = isBerryLock(text);
+      const workspaces = berry ? yarnWorkspaces(text).filter((w) => w !== '.').map((w) => join(dirname(file), ...w.split('/'))) : workspaceFolders(dirname(file), own);
+      const packageJsons = [own, ...workspaces.map((w) => readJson(join(w, 'package.json')))];
+      return { ...base, ecosystem: 'npm', kind: 'lock', tool: 'yarn', berry, packages: parseYarnLock(text, packageJsons), workspaces, ...(node ? { node } : {}) };
+    }
     if (name === 'package.json') {
       // A workspace's own package.json is covered by the root's lock file.
       return { ...base, ecosystem: 'npm', kind: 'manifest', packages: [], note: 'no package-lock.json: npm install makes one' };
@@ -249,7 +285,7 @@ export function readManifest(root, file) {
     if (inexact.length) notes.push(`no exact version for ${inexact.slice(0, 3).join(', ')}${inexact.length > 3 ? ` and ${inexact.length - 3} more` : ''}`);
     return { ...base, ecosystem: 'NuGet', kind: 'project', project: file, packages, ...(frameworks.length ? { frameworks } : {}), note: notes.join('; ') };
   } catch (e) {
-    return { ...base, ecosystem: /\.json$/.test(name) && !/packages\.lock/.test(name) ? 'npm' : 'NuGet', kind: 'broken', packages: [], note: `couldn't be read: ${String(e.message).split('\n')[0]}` };
+    return { ...base, ecosystem: /\.json$|^yarn\.lock$|^pnpm-lock\.yaml$/.test(name) && !/packages\.lock/.test(name) ? 'npm' : 'NuGet', kind: 'broken', packages: [], note: `couldn't be read: ${String(e.message).split('\n')[0]}` };
   }
 }
 

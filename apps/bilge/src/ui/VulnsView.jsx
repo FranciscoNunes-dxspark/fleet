@@ -39,7 +39,7 @@ export function VulnsView({ data, found, counts, ignored, showDev, ctx, width, h
   const hint = [countLine(counts) || (data?.audit ? 'nothing known' : 'not audited'), hidden ? `${hidden} dev only hidden (d)` : '', ignored ? `${ignored} ignored` : ''].filter(Boolean).join(' · ');
   let empty = null;
   if (!data) empty = '  Reading the lock files…';
-  else if (!data.manifests.length) empty = '  No package-lock.json, packages.lock.json or .NET project here. /move to a project.';
+  else if (!data.manifests.length) empty = '  No lock file (npm, Yarn, pnpm, NuGet) or .NET project here. /move to a project.';
   else if (!data.audit) empty = '  Not audited yet: /audit asks OSV about these packages (their names and versions only).';
   else if (!list.length) empty = found.length ? '  Only development packages have advisories: d shows them.' : `  Nothing known against these ${data.packages.length} packages.`;
   return (

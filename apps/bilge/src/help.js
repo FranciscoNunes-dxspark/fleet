@@ -29,7 +29,7 @@ export const HELP = [
     views: ['vulns'],
     rows: [
       ['↵ / l', 'Its advisories, where it is, and the fix'],
-      ['f', 'Fix it: npm install, npm update or dotnet add to the version that fixes them (asks first, saying what may not fit; then reads again and checks with npm ls or dotnet restore)'],
+      ['f', 'Fix it: npm install or update (yarn add or up, pnpm add or update) or dotnet add to the version that fixes them (asks first, saying what may not fit; then reads again and checks with npm ls, yarn why, pnpm why or dotnet restore)'],
       ['o', 'Open the advisory in the browser'],
       ['x', 'Ignore its advisories (asks; /unignore puts them back)'],
       ['t', 'Copy where it is in its lock file for Splice, whose blame says who brought it in'],
@@ -61,7 +61,7 @@ export const HELP = [
       ['↵ / l', 'Its packages, in the Packages view'],
       ['t', 'Copy it for Splice, whose history says who changed it'],
       ['y', 'Copy its path'],
-      'A .csproj without a packages.lock.json gives only its own references: set RestorePackagesWithLockFile to true and build to see everything. A package.json without a lock file gives nothing.',
+      'package-lock.json, yarn.lock (1 and 2+), pnpm-lock.yaml and packages.lock.json are read. A .csproj without a packages.lock.json gives only its own references: set RestorePackagesWithLockFile to true and build to see everything. A package.json without a lock file gives nothing.',
     ],
   },
   {

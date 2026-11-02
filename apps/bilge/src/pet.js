@@ -96,7 +96,7 @@ export function moodFor({ data, busy, lastEntry, now = Date.now() }) {
 /** A sentence for the welcome box. */
 export function moodLine(mood, data) {
   if (!data) return `${PET.name} is looking into the bilge.`;
-  if (!data.manifests.length) return 'No package-lock.json, packages.lock.json or .csproj here: /move to a project.';
+  if (!data.manifests.length) return 'No lock file (npm, Yarn, pnpm, NuGet) or .csproj here: /move to a project.';
   if (!data.audit) return `${data.packages.length} packages in ${data.manifests.length} manifest${data.manifests.length === 1 ? '' : 's'}; /audit asks OSV about them.`;
   const line = countLine(data.audit.counts);
   if (!line) return `${PET.name} found nothing known against these ${data.packages.length} packages.`;

@@ -156,11 +156,11 @@ export function demoBilge() {
       }
       return null;
     },
-    /** A fix: npm install name@^v or dotnet add … package Name --version v moves that package on. */
+    /** A fix: npm install (yarn add, pnpm add) name@^v or dotnet add … package Name --version v moves that package on. */
     async run(command, { cwd } = {}) {
       state.calls.push(['run', command, cwd]);
-      if (/^(npm ls|dotnet restore)\b/.test(command)) return { stdout: `(demo) ${command}: all fits`, stderr: '' };
-      const m = /^npm install (\S+)@\^?(\S+)/.exec(command) ?? /package (\S+) --version (\S+)/.exec(command);
+      if (/^(npm ls|yarn why|pnpm why|dotnet restore)\b/.test(command)) return { stdout: `(demo) ${command}: all fits`, stderr: '' };
+      const m = /^(?:npm install|yarn add|pnpm add) (\S+)@\^?(\S+)/.exec(command) ?? /package (\S+) --version (\S+)/.exec(command);
       if (!m) return { stdout: `(demo) ${command}`, stderr: '' };
       for (const man of state.manifests ?? []) for (const p of man.packages) if (p.name.toLowerCase() === m[1].toLowerCase()) p.version = m[2];
       return { stdout: `(demo) changed ${m[1]} to ${m[2]}`, stderr: '' };

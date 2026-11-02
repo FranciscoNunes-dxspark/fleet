@@ -31,9 +31,9 @@ bilge audit [folder] [--fail-on critical|high|medium|low|none] [--json]
 bilge sbom [folder] [-o file]
 bilge report [folder] [-o file]
 
-What a project depends on: the packages in its npm and NuGet lock files (package-lock.json,
-packages.lock.json, a .csproj's PackageReferences), the advisories OSV (osv.dev) knows against
-their versions, their licences, how far behind they are, and a fix for each: the command that moves
+What a project depends on: the packages in its npm, Yarn, pnpm and NuGet lock files
+(package-lock.json, yarn.lock, pnpm-lock.yaml, packages.lock.json, a .csproj's PackageReferences),
+the advisories OSV (osv.dev) knows against their versions, their licences, how far behind they are, and a fix for each: the command that moves
 a package to the version that fixes it, run where its manifest is (asked first).
 
   --demo   run against an in-memory project, to look around (nothing is read, asked or run)

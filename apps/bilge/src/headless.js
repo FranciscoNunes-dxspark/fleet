@@ -35,7 +35,7 @@ export async function runHeadless(args, { provider, config = {}, write = (s) => 
   try {
     const scan = await provider.scan(dir);
     if (!scan.manifests.length) {
-      write(`No package-lock.json, packages.lock.json or .NET project in ${dir}.\n`);
+      write(`No lock file (package-lock.json, yarn.lock, pnpm-lock.yaml, packages.lock.json) or .NET project in ${dir}.\n`);
       return opts.command === 'audit' ? 0 : 2;
     }
     const { ids, details } = await provider.audit(scan.packages);

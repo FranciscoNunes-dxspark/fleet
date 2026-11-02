@@ -34,7 +34,7 @@ export function ManifestsView({ data, found, ctx, width, height, active }) {
   const vulnerable = (m) => found.filter((f) => f.pkg.where.some((w) => w.path === m.path)).length;
   return (
     <Panel title="Manifests" hint={data ? `${list.length} in ${data.root}` : ''} width={width} height={height} focused={active}>
-      {data && !list.length ? <Row pointer={false} width={width - 2} segments={[{ text: '  None here. /move to a folder with a package-lock.json, a packages.lock.json or a .csproj.', color: theme.dim }]} /> : null}
+      {data && !list.length ? <Row pointer={false} width={width - 2} segments={[{ text: '  None here. /move to a folder with a lock file (npm, Yarn, pnpm, NuGet) or a .csproj.', color: theme.dim }]} /> : null}
       {list.slice(nav.offset, nav.offset + innerH).map((m, i) => {
         const v = vulnerable(m);
         return (
