@@ -71,6 +71,7 @@ import { COMMIT_HOOKS, PUSH_HOOKS, hookArgs, hookRows, hookRunArgs } from './git
 import { CODEOWNERS_PATHS, changedOwnersText, ownersOfFiles, ownersText, reviewerNames } from './codeowners.js';
 import { TAKES, branchRefs, exceptionFrames, framesInRepo, pathAndLine, shortRef } from './take.js';
 import { APP_NAMES, FAMILY, TAKEN_BY, contextIn, copiedNote, describeContext, familyDir, logActivity, matchFrameFile, notMine, projectAt, projectWiring, readActivity, shareLine, takeLine } from '@fleet/kit/family.js';
+import { describeEnvironments, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 import { DEFAULT_ACCENT, applyTheme, isColour, setAccent, theme } from './theme.js';
 import { CHECKS_FILE, checkLine, checksFileText, checksOn, checksSummary, duration, failedText, hailCommand, lookAround, runChecks, setChecksOn } from './checks.js';
 import { COMPILED } from './app.js';
@@ -205,6 +206,18 @@ export function pull(ctx, args = []) {
   return ctx.exec(['pull', ...args], { label: 'Pulling' }).then(() => afterConflicts(ctx));
 }
 
+/**
+ * Before a push to `target` (the branch's name on the remote): when the project's environment is
+ * production and Splice's section there names that branch as the one it deploys from ({ "branch":
+ * "main" }, or a list), the kit's productionQuestion. Resolves whether to go on.
+ */
+async function environmentPush(ctx, target) {
+  const env = ctx.environment?.();
+  if (!env?.prod || !target || ![].concat(env.branch ?? []).includes(target)) return true;
+  const q = productionQuestion(env, `Push to ${target}, the branch it deploys from`);
+  return Boolean(await ctx.confirm({ ...q, options: YES_NO(`Yes, push to ${target}`) }));
+}
+
 export async function push(ctx, args = []) {
   if (!needRepo(ctx)) return;
   const { branch } = ctx.data.status;
@@ -214,7 +227,11 @@ export async function push(ctx, args = []) {
   // A remote named among the arguments (/push upstream): the branch goes there, under its own name.
   const named = args.find((a) => remotes.includes(a));
   const flags = args.filter((a) => a !== named).map((a) => (a === '--force' || a === '-f' ? '--force-with-lease' : a));
-  if (named && !(branch.upstream ?? '').startsWith(`${named}/`)) {
+  // Where it lands: the upstream's branch, or one of the same name on a remote it doesn't track yet.
+  const elsewhere = named && !(branch.upstream ?? '').startsWith(`${named}/`);
+  const target = !elsewhere && branch.upstream ? branch.upstream.slice(branch.upstream.indexOf('/') + 1) : branch.head;
+  if (remotes.length && !(await environmentPush(ctx, target))) return { ok: false };
+  if (elsewhere) {
     if (flags.includes('--force-with-lease')) {
       const ok = await ctx.confirm({
         title: `Force-push ${branch.head} to ${named}?`,
@@ -5004,4 +5021,20 @@ export function accent(ctx, text) {
   setAccent(colour);
   ctx.setConfig(({ accent: _, ...rest }) => (colour ? { ...rest, accent: colour } : rest));
   redrawSettings(ctx);
+}
+
+/**
+ * /env: without a name, which environment the project is in (and the others); with one, switches every
+ * app to it. Splice itself has nothing to switch: a production one draws its frames red, and a push to the
+ * branch Splice's section there names asks first.
+ */
+export function env(ctx, name) {
+  const dir = ctx.data?.root ?? process.cwd();
+  // The family's own folder (cli.jsx's); without one (tests), the kit's default.
+  const home = ctx.familyHome ? { home: ctx.familyHome } : {};
+  if (!name?.trim()) return ctx.note(describeEnvironments(dir, home));
+  const r = setEnvironment(dir, name, { by: 'splice', ...home });
+  if (!r.ok) return ctx.note(r.error, 'error');
+  const branch = [].concat(r.env.settings?.splice?.branch ?? []).join(' or ');
+  ctx.note(`Environment ${r.env.name}${r.env.prod ? ' (production)' : ''}, for every app here.${r.env.prod && branch ? ` A push to ${branch} asks first.` : ''}`, 'ok');
 }

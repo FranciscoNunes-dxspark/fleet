@@ -14,7 +14,8 @@ import { discover, eachLimited, summarize } from '../repos.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { environmentFor } from '@fleet/kit/environments.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -77,7 +78,7 @@ const POLL_MS = 3000;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 const showArg = (s) => (/[\s"]/.test(s) || s === '' ? JSON.stringify(s) : s);
 
-function Header({ data, width, loading, mood }) {
+function Header({ data, width, loading, mood, environment }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Splice', bold: true },
@@ -94,6 +95,8 @@ function Header({ data, width, loading, mood }) {
     // Only part of the repository is checked out (/sparse says which).
     if (data.sparse?.on) segs.push({ text: '  sparse', color: theme.hunk, bold: true });
     if (data.state) segs.push({ text: '  ' }, { text: ` ${data.state.toUpperCase()} `, bg: data.state === 'bisecting' ? theme.hunk : theme.del, color: theme.ink, bold: true });
+    // The project's environment (/env), in red when it's production.
+    if (environment) segs.push({ text: '  │  ', color: theme.border }, { text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod });
   } else if (loading) {
     segs.push({ text: '  loading…', color: theme.dim });
   }
@@ -193,6 +196,9 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     return () => clearTimeout(t);
   }, [entries]);
   const [prVersion, setPrVersion] = useState(0);
+  // The project's environment (the kit's environments.js) for the open repository, kept current when it's
+  // switched here or in another app: a production one draws the frames red.
+  const environment = useEnvironment('splice', data?.root ?? initialPath ?? process.cwd());
   // A sibling's mood worth a word ("Ping says: …"), until esc puts it away.
   const [reaction, setReaction] = useState(null);
   // Counts ctx.showInGraph calls, so the graph looks for the commit asked for (ctx.pendingJump).
@@ -494,6 +500,9 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     // The family's folder (cli.jsx's familyDir(); tests a temp one, or none): what Splice did goes into its
     // activity log (/timeline) only when there is one.
     familyHome,
+    // The project's environment as it is now (environmentFor's, or null), read afresh: a push asks about
+    // it, and the hook's copy can be a second behind a switch made in another app.
+    environment: () => environmentFor('splice', dataRef.current?.root ?? initialPath ?? process.cwd()),
     // /update: asks for the latest release now, whatever the daily check last said, and installs it.
     updateNow: () => {
       if (askHostToUpdate()) return note('Asked Fleet to look for a new version of the whole fleet.');
@@ -1147,7 +1156,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} width={W} loading={loading} mood={mood} />
+      <Header data={data} environment={environment} width={W} loading={loading} mood={mood} />
       <Tabs view={view} data={data} width={W} />
       <Box height={mainH} width={W}>
         {main}
