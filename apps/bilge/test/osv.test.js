@@ -1,7 +1,7 @@
 // OSV's and the registries' answers, through a fake fetch: batches, pages, records kept, newest versions and licences.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BATCH, createOsv } from '../src/osv.js';
+import { BATCH, createOsv } from '@fleet/kit/osv.js';
 import { createRegistry, npmPath, nuspecLicence, packageUrl } from '../src/registry.js';
 import { createBilge } from '../src/provider.js';
 import { CACHE_FILE, QUERY_TTL, createOsvCache } from '../src/cache.js';

@@ -4,7 +4,7 @@
 // /<name>/latest and /<name>/<version>, and every version at once in its short form; NuGet's flat
 // container lists every version and keeps each one's .nuspec, whose <license> is the licence and whose
 // dependency groups name the frameworks.
-import { eachLimited, getJson } from './osv.js';
+import { eachLimited, getJson } from '@fleet/kit/osv.js';
 import { compareVersions, isPrerelease, newest, parseVersion } from './versions.js';
 import { nuspecFrameworks } from './frameworks.js';
 import { requiredPeers } from './lockfiles.js';

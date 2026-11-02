@@ -12,7 +12,7 @@ import { run as runCommand } from '@fleet/kit/run.js';
 import { configDir } from './config.js';
 import { createOsvCache } from './cache.js';
 import { scanFolder } from './lockfiles.js';
-import { createOsv } from './osv.js';
+import { createOsv } from '@fleet/kit/osv.js';
 import { createRegistry } from './registry.js';
 import { testPlan } from './upgrade.js';
 import { findUsages } from './breaking.js';

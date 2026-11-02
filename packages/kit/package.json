@@ -38,6 +38,8 @@
     "./folders.js": "./folders.js",
     "./environments.js": "./environments.js",
     "./recording.js": "./recording.js",
+    "./osv.js": "./osv.js",
+    "./lockfiles.js": "./lockfiles.js",
     "./hosted.js": "./hosted.js",
     "./mcp.js": "./mcp.js",
     "./update.js": "./update.js",
