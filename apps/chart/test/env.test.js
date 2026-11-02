@@ -99,16 +99,17 @@ test('while Fleet records a runbook, each slash command and /take line run goes 
   app.unmount();
 });
 
-test('in production, /deploy asks once more after the what-if', async () => {
+test("in production, /deploy wants the environment's name typed, then asks once more", async () => {
   const cwd = project();
   const app = start({ cwd });
   await until(shows(app, '/plan asks terraform'), 'the hint');
   await run(app, '/env prod');
   await until(shows(app, 'Environment: prod'), 'the switch');
   await run(app, '/deploy');
-  await until(shows(app, 'Deploy bicep/main.bicep into shop-prod?'), 'the first question');
-  app.stdin.write('2');
-  await until(shows(app, 'prod is production. Deploy bicep/main.bicep into shop-prod?'), 'the production question');
+  await until(shows(app, 'Type prod to deploy bicep/main.bicep into shop-prod (prod)'), 'the typed question');
+  await type(app.stdin, 'prod');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'prod is production. Deploy bicep/main.bicep into shop-prod (prod)?'), 'the production question');
   app.stdin.write(KEYS.enter);
   await until(() => !app.lastFrame().includes('is production'), 'the answer');
   assert.ok(!app.provider.calls.some((c) => c[0] === 'deploy'), 'a bare ↵ is a No');

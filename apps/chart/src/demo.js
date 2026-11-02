@@ -3,6 +3,7 @@
 // the portal), its state, and a Bicep file's what-if. Nothing is run. `calls` is the tests' handle:
 // what was asked of it.
 import { parseTerraformPlan, parseTerraformState, parseWhatIf } from './plan.js';
+import { explain } from './iac.js';
 
 const RG = '/subscriptions/0000/resourceGroups/shop-prod';
 const rc = (address, type, name, actions, before, after, extra = {}) => ({ address, type, name, mode: 'managed', provider_name: 'registry.terraform.io/hashicorp/azurerm', change: { actions, before, after, after_unknown: {}, before_sensitive: {}, after_sensitive: {}, ...extra.change }, ...extra.rc });
@@ -79,18 +80,47 @@ const LOCATIONS = { 'azurerm_linux_web_app.api': { path: 'app.tf', line: 12 }, '
 
 export function demoChart() {
   const calls = [];
-  return {
+  // The plan files it "saved", which apply takes, as the real provider's.
+  const saved = new Set();
+  let plans = 0;
+  const demo = {
     name: 'demo',
     calls,
+    failApply: null,
     async detect(dir) {
       calls.push(['detect', dir]);
       return { dir, tfDirs: ['.', 'modules/network'], bicep: ['bicep/main.bicep'], params: ['bicep/main.prod.bicepparam'], saved: [] };
     },
-    async plan(dir, { bin = 'terraform', refreshOnly = false, workspace, varFile } = {}) {
+    async plan(dir, { bin = 'terraform', refreshOnly = false, workspace, varFile, keep = false } = {}) {
       // An environment's workspace and var file only when it gives them, so a plain plan's call stays short.
       calls.push(['plan', dir, bin, refreshOnly, ...(workspace || varFile ? [{ workspace, varFile }] : [])]);
       const plan = parseTerraformPlan(DEMO_PLAN);
-      return refreshOnly ? { ...plan, changes: [] } : plan;
+      if (refreshOnly) return { ...plan, changes: [] };
+      if (!keep) return plan;
+      const planFile = `demo-plans/chart-${++plans}.tfplan`;
+      saved.add(planFile);
+      return { ...plan, planFile };
+    },
+    discard(planFile) {
+      calls.push(['discard', planFile]);
+      saved.delete(planFile);
+    },
+    cleanup() {
+      calls.push(['cleanup']);
+      saved.clear();
+    },
+    async workspace(dir, { workspace } = {}) {
+      return workspace ?? 'default';
+    },
+    /** As the real one: only a plan it saved, its output line by line; `failApply` (the tests') makes it fail as Terraform would. */
+    async apply(dir, { bin = 'terraform', planFile, workspace, onLine = () => {} } = {}) {
+      calls.push(['apply', dir, { bin, planFile, workspace }]);
+      if (!saved.has(planFile)) throw new Error('Chart applies only a plan it saved itself: /plan, then /apply.');
+      saved.delete(planFile);
+      if (demo.failApply) throw explain(new Error(demo.failApply), bin);
+      const lines = ['azurerm_mssql_database.reports: Destroying...', 'azurerm_mssql_database.reports: Destruction complete after 12s', 'Apply complete! Resources: 2 added, 3 changed, 2 destroyed.'];
+      for (const l of lines) onLine(l);
+      return { stdout: lines.join('\n'), stderr: '' };
     },
     async state(dir, { bin = 'terraform', workspace } = {}) {
       calls.push(['state', dir, bin, ...(workspace ? [{ workspace }] : [])]);
@@ -122,4 +152,5 @@ export function demoChart() {
       return LOCATIONS[change.address] ?? null;
     },
   };
+  return demo;
 }

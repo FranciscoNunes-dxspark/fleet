@@ -37,7 +37,7 @@ const VIEWS = [
 ];
 
 const HINTS = {
-  changes: '↵ what changes · a unchanged too · t for Splice · s app for Locker · y copy address · ctrl+r plan again',
+  changes: '↵ what changes · a unchanged too · t for Splice · s app for Locker · y copy address · ctrl+r plan again · /apply',
   drift: '↵ what changed · t for Splice · s app for Locker · y copy address · /drift looks again',
   state: '↵ its values · t for Splice · y copy address',
   log: '↵ all its output · y copy it',
@@ -242,6 +242,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   useEffect(
     () => () => {
       alive.current = false;
+      // The plan files kept for /apply go when Chart does.
+      provider.cleanup?.();
     },
     [],
   );
@@ -262,8 +264,16 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     const id = addEntry({ title, status: 'running' });
     // The reading on opening leaves the welcome box up; anything after puts it away.
     if (!starting.current) setWelcome(false);
+    // Output as it comes (an apply's): kept in the task's own entry, the last line beside the spinner.
+    let streamed = [];
+    const line = (l) => {
+      if (!alive.current) return;
+      streamed = [...streamed.slice(-499), l];
+      updateEntry(id, { lines: streamed });
+      if (l.trim()) setProgress(`· ${l.trim().slice(0, 80)}`);
+    };
     try {
-      const result = await start(controller.signal);
+      const result = await start(controller.signal, { line });
       const { stdout = '', stderr = '' } = result;
       const out = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
       lastOutput.current = { title, text: out || '(no output)' };
@@ -327,6 +337,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     moveTo: (dir) => {
       cwdRef.current = dir;
       setCwdState(dir);
+      // Another folder's plan can't be applied from here any more.
+      if (dataRef.current?.plan?.planFile) provider.discard?.(dataRef.current.plan.planFile);
       setData(null);
       setConfig((c) => ({ ...c, recent: remember(c.recent ?? [], dir) }));
     },

@@ -4,7 +4,7 @@
 
 Infrastructure as code, in the terminal. Chart asks Terraform (or OpenTofu) for a plan, or Azure for a Bicep or ARM what-if, and lists what would change: what is destroyed or replaced first, in red, with why, then each resource attribute by attribute, sensitive values never shown. It shows what changed outside Terraform since the last apply (drift), what the state holds, and writes the plan as Markdown for a pull request. `chart check` does the same in a pipeline and fails it when a plan destroys something.
 
-It covers what Terraform Cloud's or Spacelift's plan view, env0 or a drift detector are bought for, for a team that runs Terraform or Bicep itself. It runs `terraform`, `tofu` and `az` through their command lines, signed in and set up as they are; **it only plans: nothing is ever applied.**
+It covers what Terraform Cloud's or Spacelift's plan view, env0 or a drift detector are bought for, for a team that runs Terraform or Bicep itself. It runs `terraform`, `tofu` and `az` through their command lines, signed in and set up as they are; **it plans, and applies only what you have seen**: `/apply` takes nothing but a plan Chart saved itself (or the what-if on screen), shows what it does with the destroys first, and goes ahead once you type the name of the environment or workspace it goes to.
 
 ```
 chart                     # this folder
@@ -22,13 +22,25 @@ Chart is one of the fleet's apps: it needs Node 22 or newer from a checkout (`np
 
 | Command | What runs |
 |---|---|
-| `/plan [folder]` | `terraform plan -input=false -lock=false -out=<a temporary file>`, then `terraform show -json` of it (the file is deleted after). The folder is the first one with `.tf` files unless named |
+| `/plan [folder]` | `terraform plan -input=false -lock=false -out=<a file of its own>`, then `terraform show -json` of it. The file is kept, in a folder only you can read, for `/apply`, and removed when a newer plan replaces it, when it is applied, or when Chart closes. The folder is the first one with `.tf` files unless named |
 | `/drift [folder]` | The same with `-refresh-only`: only what changed outside Terraform |
 | `/state [folder]` | `terraform show -json`: every resource in the state |
 | `/init [folder]` | `terraform init -input=false`, which a folder needs before its first plan (Chart says so when a plan fails for want of it) |
 | `/whatif [file] --rg <group>` or `--location <region>` `[--params <file>]` | `az deployment group what-if` (or `sub what-if`) `--no-pretty-print`. The file is the first `.bicep` found unless named, and a `.bicepparam` or `.parameters.json` beside it is used; alone, `/whatif` runs the last one again. When the template has parameters with no default and no value in a parameters file, Chart asks for each one (masked when the name looks like a secret), once, and runs it again; the values go to Azure through a temporary file that is removed afterwards, and are never saved |
-| `/deploy [file] --rg <group>` or `--location <region>` `[--params <file>]` | `az deployment group create` (or `sub create`) of a Bicep or ARM file, with the same arguments as `/whatif` (and the last ones again). It always runs the what-if first (its changes stay on screen), then asks, naming the file, where it goes and the what-if's summary (the default answer is No); only the deployment's output names are shown, never their values. Terraform is never applied |
+| `/deploy [file] --rg <group>` or `--location <region>` `[--params <file>]` | `az deployment group create` (or `sub create`) of a Bicep or ARM file, with the same arguments as `/whatif` (and the last ones again). It always runs the what-if first (its changes stay on screen), then shows what it will do (the destroys first) and asks you to type where it goes, as `/apply` does; only the deployment's output names are shown, never their values |
 | `/open [file]` | A saved plan or state (`terraform show -json plan.tfplan > plan.json`) or what-if result |
+
+### Applying, deliberately
+
+`/apply` applies the plan on screen, and only one Chart made, with these guardrails:
+
+- **Only a plan Chart saved.** For Terraform, the plan file `/plan` kept (`terraform apply -input=false <that file>`): never a fresh plan, never one opened with `/open`, never the same file twice. What is applied is exactly what you looked at; if the state changed since (someone else applied), Terraform refuses the stale plan and Chart says so: `/plan` again. For a what-if, `az deployment group create` (or `sub create`) of the same file, scope and parameters.
+- **What it does, first.** Before anything runs, the plan is shown grouped by what it loses: destroyed, then replaced, changed, created, each with why and what it costs a month.
+- **A name typed, not a key pressed.** You type the environment's name (`/env`), or with none the Terraform workspace (`terraform workspace show`, `default` most of the time) or the deployment's resource group; anything else, or `esc`, applies nothing.
+- **Production asks again.** In an environment marked `"prod": true`, one more question after the name, No first.
+- **The plan's own environment.** A plan made in `dev` isn't applied after `/env prod`: plan again.
+
+The output comes into the activity lines (and the Log) as it is written, the last line beside the spinner; `esc` stops it (Terraform finishes what it is in the middle of). The family's activity log says what was applied and where (the folder, environment and workspace, and the summary), never a value.
 
 `/tool tofu` runs OpenTofu instead (`/tool terraform` back). `-lock=false` keeps a plan from holding the state's lock while you look. Everything put into a command line (a path, a resource group, a region) is checked first: no quotes, no `$`, nothing but what paths and names have.
 
@@ -78,7 +90,7 @@ Every resource Terraform keeps track of, the root module's first, then each modu
 
 ## Slash commands
 
-`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/deploy`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/currency [code]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/apply`, `/deploy`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/currency [code]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## Environments
 
@@ -134,4 +146,4 @@ The downloaded executable looks for a newer `chart-v…` release once a day and 
 
 ## Not yet
 
-Applying a plan (on purpose, for now); Pulumi and CloudFormation; telling drift apart in a what-if; a graph of what depends on what.
+Applying a plan opened from a file, or a refresh-only one (on purpose: Chart applies only what it planned and showed; `terraform apply` is there for the rest); Pulumi and CloudFormation; telling drift apart in a what-if; a graph of what depends on what.

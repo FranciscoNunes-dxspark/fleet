@@ -33,7 +33,8 @@ chart check [folder|plan.json] [--fail-on destroy|replace|change|drift|none] [--
 Infrastructure as code: what a Terraform (or OpenTofu) plan would change, resource by resource and
 attribute by attribute, what changed outside Terraform (drift), what its state holds, and what
 deploying a Bicep or ARM file would change (az deployment what-if). It runs terraform, tofu and az
-through their command lines, signed in as they are; it only plans: nothing is ever applied.
+through their command lines, signed in as they are. It applies only a plan it saved itself (/apply),
+once the name of where it goes is typed; chart check never applies anything.
 
   --demo   run against an in-memory infrastructure, to look around (nothing is run)
 
@@ -89,8 +90,11 @@ if (updates) removeOldExecutables();
 const mouse = await terminalMouse(stdin, stdout);
 // y copies: to the system clipboard, or through the terminal (OSC 52) over SSH or when that fails.
 const copy = (text) => copyToClipboard(text);
+const provider = demo ? demoChart() : createChart();
+// The plan files kept for /apply never outlive Chart, however it ends.
+process.on('exit', () => provider.cleanup?.());
 const app = render(
-  <App config={config} provider={demo ? demoChart() : createChart()} cwd={resolve(rest[0] ?? '.')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
+  <App config={config} provider={provider} cwd={resolve(rest[0] ?? '.')} openUrl={openUrl} checkUpdate={checkUpdate} installUpdate={updates ? installUpdate : undefined} setTitle={setTitle} mouse={mouse} copy={copy} />,
   // Through the mouse's stdout, which watches the frames to select text from.
   { exitOnCtrlC: false, stdin, stdout: mouse?.stdout ?? stdout },
 );

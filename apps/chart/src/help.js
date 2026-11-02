@@ -25,7 +25,7 @@ export const HELP = [
   },
   {
     title: 'Changes',
-    about: 'what the plan (/plan), what-if (/whatif) or saved plan (/open) would do, what loses something first. Chart only deploys a Bicep or ARM file (/deploy, after asking), never a Terraform plan',
+    about: 'what the plan (/plan), what-if (/whatif) or saved plan (/open) would do, what loses something first. /apply applies a plan Chart saved (or deploys a what-if) once you type the environment\'s or workspace\'s name; a plan opened from a file is never applied',
     views: ['changes'],
     rows: [
       ['↵ / l', 'What changes in it, attribute by attribute (sensitive values never shown), where it is declared, and what it costs a month'],

@@ -7,12 +7,13 @@ import { CURRENCIES } from './costs.js';
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
-  { name: 'plan', args: '[folder]', desc: 'terraform (or tofu) plan: what it would change, and what drifted (nothing is applied)', complete: 'tfdirs', run: (ctx, s) => a.plan(ctx, s) },
+  { name: 'plan', args: '[folder]', desc: 'terraform (or tofu) plan: what it would change, and what drifted (saved, for /apply)', complete: 'tfdirs', run: (ctx, s) => a.plan(ctx, s) },
   { name: 'drift', args: '[folder]', desc: 'A refresh-only plan: what changed outside Terraform since the last apply', complete: 'tfdirs', run: (ctx, s) => a.drift(ctx, s) },
   { name: 'state', args: '[folder]', desc: 'Every resource Terraform keeps track of, by module', complete: 'tfdirs', run: (ctx, s) => a.state(ctx, s) },
   { name: 'init', args: '[folder]', desc: 'terraform init, which a folder needs before its first plan', complete: 'tfdirs', run: (ctx, s) => a.init(ctx, s) },
   { name: 'whatif', args: '[file] [--rg group | --location region] [--params file]', desc: 'What deploying a Bicep or ARM file would change, as az deployment what-if says (the last one again, alone)', complete: 'bicep', run: (ctx, s) => a.whatIf(ctx, s) },
-  { name: 'deploy', args: '[file] [--rg group | --location region] [--params file]', desc: 'A what-if of a Bicep or ARM file, then az deployment create if you approve it (the same arguments as /whatif)', complete: 'bicep', run: (ctx, s) => a.deploy(ctx, s) },
+  { name: 'apply', desc: 'Apply the plan on screen (one Chart saved, or a what-if): what it does first, destroys at the top, then type the environment or workspace name to go ahead', run: (ctx) => a.apply(ctx) },
+  { name: 'deploy', args: '[file] [--rg group | --location region] [--params file]', desc: 'A what-if of a Bicep or ARM file, then az deployment create once you type where it goes (the same arguments as /whatif)', complete: 'bicep', run: (ctx, s) => a.deploy(ctx, s) },
   { name: 'open', args: '[file]', desc: 'A saved plan or state (terraform show -json) or a what-if result', complete: 'saved', run: (ctx, s) => a.open(ctx, s) },
   { name: 'show', args: '<address>', desc: 'A change, attribute by attribute', complete: 'changes', run: (ctx, s) => a.show(ctx, s) },
   { name: 'report', desc: 'The plan as Markdown, to copy into a pull request', run: (ctx) => a.report(ctx) },

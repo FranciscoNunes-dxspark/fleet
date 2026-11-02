@@ -1,5 +1,5 @@
 // Every user-facing operation, written once: keys and slash commands call these with `ctx` (App's).
-// Chart reads and plans; the one thing that changes infrastructure is /deploy (a Bicep or ARM file), and only after a confirmation.
+// Chart reads and plans; what changes infrastructure is /apply (a plan Chart saved, or a what-if) and /deploy, only after the name of where it goes is typed.
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { run } from '@fleet/kit/run.js';
 import { contextIn, copiedNote, notMine, splitArgs, takeLine } from '@fleet/kit/family.js';
@@ -8,9 +8,9 @@ import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
 import { configFile } from './config.js';
 import { diffLines, valueLines } from './diff.js';
 import { summarize, summaryLine } from './plan.js';
-import { ACTION_WORD, findChange, siteOf } from './rows.js';
+import { ACTION_MARK, ACTION_WORD, changeRows, findChange, siteOf } from './rows.js';
 import { markdownReport } from './share.js';
-import { CURRENCIES, costLines, planCosts } from './costs.js';
+import { CURRENCIES, costLines, costWords, planCosts, totalWords } from './costs.js';
 import { BINARIES } from './iac.js';
 import { describeEnvironments, markProduction, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 
@@ -26,6 +26,12 @@ const tfOpts = (ctx) => {
 };
 // " (prod)" after a folder's name in what's said and logged, when an environment is chosen.
 const inEnv = (ctx) => (envOf(ctx) ? ` (${envOf(ctx).name})` : '');
+
+/** The plan on screen is being replaced: the file kept for applying it goes (nothing can apply it any more). */
+function replacePlan(ctx) {
+  const file = ctx.data?.plan?.planFile;
+  if (file) ctx.provider.discard?.(file);
+}
 
 /** What the folder holds: its Terraform folders, Bicep files, parameter files and saved plans. */
 export async function look(ctx) {
@@ -53,7 +59,7 @@ function tfDir(ctx, name) {
 
 const label = (ctx, dir) => (samePath(dir, ctx.cwd()) ? basename(dir) : `${basename(ctx.cwd())}/${dir.slice(ctx.cwd().length + 1).split(/[\\/]/).join('/')}`);
 
-/** /plan [folder]: terraform (or tofu) plan, its changes and what drifted; nothing is applied. */
+/** /plan [folder]: terraform (or tofu) plan, its changes and what drifted; the plan file kept for /apply. */
 export async function plan(ctx, folder = '') {
   const dir = tfDir(ctx, folder);
   const b = bin(ctx);
@@ -62,7 +68,9 @@ export async function plan(ctx, folder = '') {
   const r = await ctx.task(
     `${b} plan ${label(ctx, dir)}${inEnv(ctx)}`,
     async (signal) => {
-      const p = await ctx.provider.plan(dir, { ...opts, signal });
+      // Kept as a plan file, the only thing /apply applies.
+      const p = await ctx.provider.plan(dir, { ...opts, keep: true, signal });
+      replacePlan(ctx);
       // The environment it was made for goes with it: a plan of dev's is never applied to prod.
       ctx.setData((d) => ({ ...d, plan: p, drift: p.drift, source: { kind: 'terraform', dir, label: label(ctx, dir), env: env?.name ?? null, workspace: opts.workspace ?? null, at: Date.now() } }));
       return { stdout: `${summaryLine(summarize(p.changes)) || 'No changes.'}${p.drift.length ? `; ${plural(p.drift.length, 'resource')} changed outside ${toolName(b)}` : ''}` };
@@ -191,6 +199,7 @@ export async function whatIf(ctx, rest = '', typed = {}) {
       `what-if ${args.file} ${where}${inEnv(ctx)}`,
       async (signal) => {
         const p = await ctx.provider.whatIf(ctx.cwd(), { ...args, values: typed.values, signal });
+        replacePlan(ctx);
         ctx.setData((d) => ({ ...d, plan: p, drift: [], source: { kind: 'bicep', label: `${args.file} ${where}`, args, env: env?.name ?? null, at: Date.now() } }));
         return { stdout: summaryLine(summarize(p.changes)) || 'No changes.' };
       },
@@ -219,39 +228,139 @@ async function productionAgrees(ctx, what) {
   return Boolean(await ctx.confirm({ ...q, options: [{ label: 'No, cancel', value: false }, { label: 'Yes, it is meant for production', value: true }] }));
 }
 
-/** /deploy [file] --rg <group> | --location <region> [--params <file>]: runs a what-if of a Bicep or ARM file, then deploys it if the confirmation that follows it is a yes (the same arguments as /whatif). */
+// What an apply or deployment does, in the order it loses things: what's destroyed first.
+const GROUPS = [
+  ['delete', 'Destroyed'],
+  ['replace', 'Replaced (destroyed, then created again)'],
+  ['forget', 'Forgotten (left in place, out of the state)'],
+  ['update', 'Changed in place'],
+  ['deploy', 'Deployed'],
+  ['create', 'Created'],
+];
+
+/** The lines shown before an apply or a deployment: what it does, the destroys first, each with why and what it costs. */
+export function applyLines(plan, { title, costs } = {}) {
+  const total = totalWords(costs);
+  const lines = [title, `${summaryLine(summarize(plan.changes)) || 'No changes.'}${total ? `, ${total}` : ''}`, ''];
+  for (const [action, heading] of GROUPS) {
+    const these = changeRows(plan.changes).filter((c) => c.action === action);
+    if (!these.length) continue;
+    lines.push(`${heading}:`);
+    for (const c of these) {
+      const cost = costWords(costs?.byAddress?.[c.address], costs?.currency);
+      lines.push(`  ${ACTION_MARK[c.action]} ${c.address}${c.reason ? `  (${c.reason})` : ''}${cost ? `  ${cost}` : ''}`);
+    }
+    lines.push('');
+  }
+  return lines;
+}
+
+/**
+ * The typed confirmation an apply or deployment needs: `name` (the environment, workspace or resource
+ * group it goes to) typed exactly, with what it does on screen; then, in production, the kit's question.
+ * Resolves whether to go ahead; anything else typed, or esc, is a no and says so.
+ */
+async function confirmByName(ctx, { name, verb, what, overview }) {
+  ctx.showText(`${verb} · type ${name} to go ahead`, overview.join('\n'));
+  const answer = await ctx.confirm({
+    secret: true,
+    plain: true,
+    danger: true,
+    title: `Type ${name} to ${verb.toLowerCase()} ${what}`,
+    detail: 'What it does is above, what is destroyed first. Anything else, or esc, cancels.',
+  });
+  const ok = answer && answer.value.trim() === name;
+  if (!ok) {
+    ctx.closeOverlay();
+    if (answer) ctx.note(`That isn't ${name}: nothing was ${verb === 'Apply' ? 'applied' : 'deployed'}.`, 'error');
+    return false;
+  }
+  const yes = await productionAgrees(ctx, `${verb} ${what}`);
+  ctx.closeOverlay();
+  return yes;
+}
+
+/** A deployment of `args` (whatIfArgs') after its what-if, which is the plan on screen: the typed name, then az deployment create. */
+async function deployWhatIf(ctx, args, typed = {}) {
+  const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
+  const p = ctx.data.plan;
+  const env = envOf(ctx);
+  const name = env?.name ?? args.resourceGroup ?? args.location;
+  const go = await confirmByName(ctx, { name, verb: 'Deploy', what: `${args.file} ${where}${env ? ` (${env.name})` : ''}`, overview: applyLines(p, { title: `az deployment create of ${args.file} ${where}`, costs: costsOf(ctx.data) }) });
+  if (!go) return false;
+  const attempt = () =>
+    ctx.task(
+      `deploy ${args.file} ${where}${inEnv(ctx)}`,
+      async (signal) => {
+        const d = await ctx.provider.deploy(ctx.cwd(), { ...args, values: typed.values, signal });
+        return { stdout: `${d.state}${d.name ? `: deployment ${d.name}` : ''}${d.outputs.length ? `, outputs ${d.outputs.join(', ')}` : ''}` };
+      },
+      { label: 'Deploying' },
+    );
+  let r = await attempt();
+  // The values a what-if was given by hand are never kept, so a deployment after it asks for them again.
+  if (!r.ok && r.error?.missing?.length && !typed.values) {
+    const values = await askParameters(ctx, r.error.missing);
+    if (!values) return false;
+    typed.values = values;
+    r = await attempt();
+  }
+  if (r.ok) {
+    // The plan on screen was of what has now been done.
+    ctx.setData((d) => ({ ...d, plan: null, source: null }));
+    ctx.logActivity(`Deployed ${args.file} ${where}${inEnv(ctx)}: ${summaryLine(summarize(p.changes)) || 'no changes'}`, 'change');
+  }
+  return r.ok;
+}
+
+/** /deploy [file] --rg <group> | --location <region> [--params <file>]: a what-if of a Bicep or ARM file, then the deployment if the name it goes to is typed (the same arguments as /whatif). */
 export async function deploy(ctx, rest = '') {
   const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found, env: envOf(ctx) });
   if (!args.file) return ctx.note('/deploy needs a .bicep or ARM file: /deploy main.bicep --rg shop-prod', 'error') ?? false;
   if (!args.resourceGroup && !args.location) return ctx.note(`/deploy ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
-  const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
-  // The what-if always runs first, so the changes are on screen behind the question; a failed one stops here.
+  // The what-if always runs first, so its changes are what's confirmed; a failed one stops here.
   const typed = {};
   const planned = await whatIf(ctx, rest, typed);
   if (!planned) return false;
-  const summary = summaryLine(summarize(ctx.data.plan.changes)) || 'no changes';
-  // "No" comes first so that ↵ alone never deploys.
-  const yes = await ctx.confirm({
-    title: `Deploy ${args.file} ${where}?`,
-    detail: `What-if: ${summary}`,
-    danger: true,
-    options: [{ label: 'No, cancel', value: false }, { label: 'Yes, deploy it', value: true }],
-  });
-  if (!yes) return false;
-  if (!(await productionAgrees(ctx, `Deploy ${args.file} ${where}`))) return false;
+  return deployWhatIf(ctx, args, typed);
+}
+
+/**
+ * /apply: the plan on screen, for real, and only one Chart made: a Terraform plan it saved (/plan,
+ * terraform apply of that file), or a what-if (az deployment create of the same file and arguments).
+ * It shows what it does, the destroys first, and goes ahead only once the environment's (or else the
+ * workspace's or resource group's) name is typed; in production the kit asks once more.
+ */
+export async function apply(ctx) {
+  const p = ctx.data?.plan;
+  const s = ctx.data?.source;
+  if (!p || !s) return ctx.note('No plan to apply: /plan (or /whatif) first, then /apply.', 'error') ?? false;
+  const env = envOf(ctx);
+  if ((s.env ?? null) !== (env?.name ?? null)) return ctx.note(`This plan was made for ${s.env ?? 'no environment'}, and the project is on ${env?.name ?? 'none'} now: /plan again, then /apply.`, 'error') ?? false;
+  if (!p.changes.some((c) => !['noop', 'read', 'ignore'].includes(c.action))) return ctx.note('Nothing to apply: the plan changes nothing.') ?? false;
+  if (s.kind === 'bicep') return deployWhatIf(ctx, s.args);
+  if (s.kind !== 'terraform' || !p.planFile) return ctx.note("/apply applies only a plan Chart made and saved itself (/plan). A plan opened from a file isn't one: Terraform's own apply is for that.", 'error') ?? false;
+  const b = bin(ctx);
+  const opts = tfOpts(ctx);
+  const workspace = s.workspace ?? (await ctx.provider.workspace?.(s.dir, opts).catch(() => null)) ?? 'default';
+  const name = env?.name ?? workspace;
+  const where = `${s.label}${env ? ` (${env.name}, workspace ${workspace})` : ` (workspace ${workspace})`}`;
+  const go = await confirmByName(ctx, { name, verb: 'Apply', what: `this plan to ${where}`, overview: applyLines(p, { title: `${b} apply of the plan Chart saved for ${where}`, costs: costsOf(ctx.data) }) });
+  if (!go) return false;
+  const summary = summaryLine(summarize(p.changes)) || 'no changes';
   const r = await ctx.task(
-    `deploy ${args.file} ${where}`,
-    async (signal) => {
-      const d = await ctx.provider.deploy(ctx.cwd(), { ...args, values: typed.values, signal });
-      return { stdout: `${d.state}${d.name ? `: deployment ${d.name}` : ''}${d.outputs.length ? `, outputs ${d.outputs.join(', ')}` : ''}` };
-    },
-    { label: 'Deploying' },
+    `${b} apply ${where}`,
+    (signal, stream) => ctx.provider.apply(s.dir, { bin: b, planFile: p.planFile, ...(opts.workspace ? { workspace: opts.workspace } : {}), onLine: stream?.line, signal }),
+    { label: `Applying (${toolName(b)})` },
   );
-  if (r.ok) {
-    // The plan on screen was of what has now been done.
-    ctx.setData((d) => ({ ...d, plan: null, source: null }));
-    ctx.logActivity(`Deployed ${args.file} ${where}`);
-  }
+  // Applied or refused, the plan file is gone: what's on screen can't be applied again.
+  ctx.setData((d) => {
+    if (d?.plan !== p) return d;
+    if (r.ok) return { ...d, plan: null, source: null };
+    const spent = { ...p, planFile: null };
+    return { ...d, plan: spent, ...(d.costs?.for === p ? { costs: { ...d.costs, for: spent } } : {}) };
+  });
+  if (r.ok) ctx.logActivity(`Applied ${where}: ${summary}`, 'change');
   return r.ok;
 }
 
@@ -268,6 +377,7 @@ export async function open(ctx, file = '') {
         ctx.setData((d) => ({ ...d, state: read }));
         return { stdout: `A state: ${plural(read.resources.length, 'resource')}`, kind: 'state' };
       }
+      replacePlan(ctx);
       ctx.setData((d) => ({ ...d, plan: read, drift: read.drift, source: { kind: 'file', label: name, path, at: Date.now() } }));
       return { stdout: summaryLine(summarize(read.changes)) || 'No changes.', kind: 'plan' };
     },

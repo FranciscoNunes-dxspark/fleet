@@ -1,14 +1,19 @@
 // Everything Chart reads and runs goes through one object with one interface: `detect(dir)` (what the
 // folder holds), `plan` and `state` (terraform or tofu, through their command lines), `whatIf` (az's
 // what-if of a Bicep or ARM file), `init`, `readFile` (a saved plan) and `locate` (where a resource is
-// declared); `deploy` is the one thing that changes anything, and only /deploy calls it, after asking. The command lines run through the kit's run.js, so whatever they're signed in to and set
-// up for is what Chart uses; nothing may wait on a prompt (-input=false). Everything put in a command
-// line is checked first by safeArg(). demo.js's demoChart() has the same interface.
-import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+// declared), `prices` (the Azure Retail Prices API). Two things change anything, and only after the
+// person has typed the name of where they go: `apply` (terraform apply of a plan file this provider
+// saved itself, and no other) and `deploy` (az deployment create). The command lines run through the
+// kit's run.js (apply's through stream.js, the same with its output as it comes), so whatever
+// they're signed in to and set up for is what Chart uses; nothing may wait on a prompt
+// (-input=false). Everything put in a command line is checked first by safeArg(). demo.js's
+// demoChart() has the same interface.
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { run as runCommand } from '@fleet/kit/run.js';
+import { runStreaming } from './stream.js';
 import { parseAny, parseTerraformPlan, parseTerraformState, parseWhatIf } from './plan.js';
 
 const SKIP = new Set(['.terraform', '.git', 'node_modules', 'bin', 'obj', 'dist']);
@@ -81,6 +86,7 @@ export function explain(error, program) {
   const text = String(error.message ?? error);
   if (/not found|not recognized|ENOENT/i.test(text) && text.length < 300) return new Error(`${program} isn't installed (or isn't on the PATH).`);
   if (/Please run "az login"|az login/i.test(text)) return new Error(`az isn't signed in: run az login.\n${text.split('\n')[0]}`);
+  if (/Saved plan is stale/i.test(text)) return new Error(`The plan is stale: the state changed after Chart planned, so ${program} applied nothing. /plan again, then /apply.`);
   if (/terraform init|tofu init|Plugin reinitialization required|Module not installed|Backend initialization required/i.test(text)) return new Error(`The folder needs init first: /init runs it.\n${text.split('\n').find((l) => /Error/.test(l)) ?? text.split('\n')[0]}`);
   return error;
 }
@@ -116,9 +122,14 @@ export function priceFilter(query) {
   return [...fields.map((k) => `${k} eq ${quote(query[k])}`), "priceType eq 'Consumption'"].join(' and ');
 }
 
-export function createChart({ run = runCommand, fetch: fetchPrices = globalThis.fetch } = {}) {
+export function createChart({ run = runCommand, stream = runStreaming, fetch: fetchPrices = globalThis.fetch } = {}) {
   // Prices for the session: each query asked once (its promise kept, so two changes asking together ask once).
   const priceCache = new Map();
+  // The plan files this provider saved, in a folder of its own only this user can read (a plan file
+  // holds the configuration's values, sensitive ones too); apply takes no other.
+  const saved = new Set();
+  let planDir = null;
+  const planFolder = () => (planDir ??= mkdtempSync(join(tmpdir(), 'chart-plans-')));
   /** Runs one az deployment command; typed-in `values` go in a temporary parameters file (never the command line, where a process list would show them), removed afterwards. */
   async function az(dir, command, { values, signal } = {}) {
     const names = Object.keys(values ?? {});
@@ -144,18 +155,64 @@ export function createChart({ run = runCommand, fetch: fetchPrices = globalThis.
     async detect(dir) {
       return detectFolder(dir);
     },
-    /** A plan (or a refresh-only one: what drifted), as plan.js's; `workspace` and `varFile` are the environment's. */
-    async plan(dir, { bin = 'terraform', refreshOnly = false, workspace, varFile, signal } = {}) {
+    /**
+     * A plan (or a refresh-only one: what drifted), as plan.js's; `workspace` and `varFile` are the
+     * environment's. With `keep`, the plan file stays (in the provider's own folder) as the plan's
+     * `planFile`, the one thing `apply` takes; otherwise it is removed once read.
+     */
+    async plan(dir, { bin = 'terraform', refreshOnly = false, workspace, varFile, keep = false, signal } = {}) {
       checkTool(bin, { workspace, varFile });
-      const out = join(tmpdir(), `chart-${randomUUID()}.tfplan`);
+      const keeping = keep && !refreshOnly;
+      const out = join(keeping ? planFolder() : tmpdir(), `chart-${randomUUID()}.tfplan`);
       if (!safeArg(out)) throw new Error(`The temporary folder ${tmpdir()} has characters Chart won't put in a command line.`);
       const env = workspaceEnv(workspace);
+      let done = false;
       try {
         await run(`${bin} plan -input=false -lock=false -no-color${refreshOnly ? ' -refresh-only' : ''}${varFile ? ` -var-file="${varFile}"` : ''} -out="${out}"`, { cwd: dir, signal, env }).catch((e) => Promise.reject(explain(e, bin)));
         const { stdout } = await run(`${bin} show -json "${out}"`, { cwd: dir, signal, env }).catch((e) => Promise.reject(explain(e, bin)));
-        return parseTerraformPlan(stdout);
+        const plan = parseTerraformPlan(stdout);
+        done = true;
+        if (!keeping) return plan;
+        saved.add(out);
+        return { ...plan, planFile: out };
       } finally {
-        rmSync(out, { force: true });
+        if (!keeping || !done) rmSync(out, { force: true });
+      }
+    },
+    /** Removes a plan file `plan` kept (a newer plan replaced it, or it was applied). */
+    discard(planFile) {
+      if (!planFile || !saved.has(planFile)) return;
+      saved.delete(planFile);
+      rmSync(planFile, { force: true });
+    },
+    /** Removes every plan file kept, and their folder: when Chart closes. */
+    cleanup() {
+      saved.clear();
+      if (planDir) rmSync(planDir, { recursive: true, force: true });
+      planDir = null;
+    },
+    /** The workspace terraform runs in: the environment's, or what the folder has selected. */
+    async workspace(dir, { bin = 'terraform', workspace, signal } = {}) {
+      checkTool(bin, { workspace });
+      if (workspace) return workspace;
+      const { stdout } = await run(`${bin} workspace show`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
+      return stdout.trim().split('\n').pop() || 'default';
+    },
+    /**
+     * terraform apply of `planFile`, which must be one `plan` saved (`keep`): nothing else is ever
+     * applied. Terraform itself refuses a plan the state has moved on from (explain() says so).
+     * `onLine` gets the output as it comes.
+     */
+    async apply(dir, { bin = 'terraform', planFile, workspace, onLine, signal } = {}) {
+      checkTool(bin, { workspace });
+      if (!planFile || !saved.has(planFile)) throw new Error('Chart applies only a plan it saved itself: /plan, then /apply.');
+      if (!safeArg(planFile)) throw new Error(`"${planFile}" has characters Chart won't put in a command line.`);
+      try {
+        return await stream(`${bin} apply -input=false -no-color "${planFile}"`, { cwd: dir, signal, env: workspaceEnv(workspace), onLine }).catch((e) => Promise.reject(explain(e, bin)));
+      } finally {
+        // Applied, or refused as stale: either way it can't be applied again.
+        saved.delete(planFile);
+        rmSync(planFile, { force: true });
       }
     },
     async state(dir, { bin = 'terraform', workspace, signal } = {}) {
@@ -177,7 +234,7 @@ export function createChart({ run = runCommand, fetch: fetchPrices = globalThis.
       const { stdout } = await az(dir, command, { values, signal });
       return parseWhatIf(stdout);
     },
-    /** az's deployment of a Bicep or ARM `file`: the same scope and arguments as `whatIf`, for real. Only /deploy calls it, after asking. */
+    /** az's deployment of a Bicep or ARM `file`: the same scope and arguments as `whatIf`, for real. Only /deploy and /apply call it, after a what-if and the typed name. */
     async deploy(dir, { file, resourceGroup, location, params, values, signal } = {}) {
       for (const v of [file, resourceGroup, location, params].filter(Boolean)) if (!safeArg(v)) throw new Error(`"${v}" has characters Chart won't put in a command line.`);
       if (!file) throw new Error('A deployment needs a Bicep or ARM file.');
