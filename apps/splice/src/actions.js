@@ -1302,6 +1302,27 @@ async function foundIt(ctx, hash) {
   ctx.note(`Found it: ${short(hash)} is the first bad commit${subject ? `, "${subject}"` : ''}.\nThe cursor is on it in the graph (↵ shows its diff). /abort ends the bisect and goes back to where you were.`);
 }
 
+const isVerdict = (line) => /^git bisect (good|bad|skip|new|old)\b/.test(line);
+const bisectLogLines = async (ctx) => (await ctx.git(['bisect', 'log']).catch(() => '')).split(/\r?\n/);
+
+// Stopping a run ends the command being tested, and git, finding it ended, can record a verdict for it (on
+// Windows taskkill gives it exit 1: bad) before git is stopped itself. Only the commands that finished count:
+// the log goes back to those, and what git checked out with it.
+async function dropInterruptedVerdict(ctx, before, out) {
+  const finished = Math.max(0, (out.match(/^running /gm) ?? []).length - 1);
+  const keep = before + finished;
+  const lines = await bisectLogLines(ctx);
+  const verdicts = lines.flatMap((l, i) => (isVerdict(l) ? [i] : []));
+  if (verdicts.length <= keep || keep < 1) return;
+  const file = join(ctx.data.gitDir, 'SPLICE_BISECT_LOG');
+  await writeFile(file, `${lines.slice(0, verdicts[keep - 1] + 1).join('\n')}\n`);
+  try {
+    await ctx.git(['bisect', 'replay', file]);
+  } finally {
+    await rm(file, { force: true });
+  }
+}
+
 /**
  * /bisect run <command…>: once a bad and a good commit are marked, git tests the rest itself, running the
  * command on each commit it checks out. Its exit code says how that went: 0 good, 125 skip (can't be
@@ -1318,9 +1339,11 @@ export async function bisectRun(ctx, words) {
   const marks = await bisectMarks(ctx);
   if (!marks.bad || !marks.good) return ctx.note(`Mark a ${marks.bad ? 'good' : 'bad'} commit too (alt+b in the graph), so git knows which commits to test.`, 'error');
   const shown = words.map((w) => (/[\s"]/.test(w) || w === '' ? JSON.stringify(w) : w)).join(' ');
+  const before = (await bisectLogLines(ctx)).filter(isVerdict).length;
   // stdin closed, so a command that reads it doesn't wait for ever.
   const r = await ctx.exec(['bisect', 'run', ...words], { label: 'Testing each commit', input: '', tree: true });
   if (r.error?.cancelled) {
+    await dropInterruptedVerdict(ctx, before, r.error.stdout ?? '');
     return ctx.note('Stopped the bisect run. The bisect stays where it got to, with what was tested so far marked:\n/bisect run again, alt+b on the commit checked out to go on by hand, or /abort to stop.');
   }
   ctx.showText(`git bisect run ${shown}`, r.ok ? r.out : r.error.message);
