@@ -92,8 +92,13 @@ function Header({ data, env, project, width, loading, mood, mock }) {
     if (project) segs.push({ text: '  project ', color: theme.dim }, { text: `${project.name}${project.prod ? ' (production)' : ''}`, color: project.prod ? theme.del : theme.dim, bold: project.prod });
     if (mock) segs.push({ text: '  mock ', color: theme.dim }, { text: `:${mock.port}`, color: theme.accent, bold: true });
   } else if (loading) segs.push({ text: '  loading…', color: theme.dim });
+  // The segments first, whole when they fit: the environments (a production one above all) matter more
+  // than the folder, whose path gives way from its start when the line is short.
+  const shown = fitSegments(segs, width - 1);
+  const room = width - stringWidth(shown.map((x) => x.text).join('')) - 1;
   const path = data?.dir ?? '';
-  return <Row pointer={false} width={width} segments={[...fitSegments(segs, Math.max(20, width - stringWidth(path) - 1)), { text: ' ' }, { text: path, color: theme.dim }]} />;
+  const tail = stringWidth(path) <= room ? path : room > 8 ? `…${path.slice(-(room - 1))}` : '';
+  return <Row pointer={false} width={width} segments={[...shown, { text: ' ' }, { text: tail, color: theme.dim }]} />;
 }
 
 /** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
