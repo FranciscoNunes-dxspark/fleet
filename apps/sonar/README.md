@@ -310,6 +310,9 @@ changes (a restart, stop or start, a swap, settings, a function turned off or in
 a firewall rule, dead letters resubmitted or purged) asks first "prod is production. …?", before
 Sonar's own question (typing the app's name for one that looks like production).
 
+While Fleet records a runbook (`ctrl+b R`), each slash command Sonar runs from its prompt (and each
+`/take`) goes into it as it was typed; a command of your own is recorded as the lines it runs.
+
 ## Keys
 
 | Key | What it does |

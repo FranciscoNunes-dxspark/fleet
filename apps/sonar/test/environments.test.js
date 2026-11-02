@@ -1,9 +1,11 @@
-// The project's environments in Sonar: what its sonar section picks, /env, production asking first.
+// The project's environments in Sonar: what its sonar section picks, /env, production asking first, and
+// the commands that ran recorded for Fleet's runbook.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { theme } from '@fleet/kit/theme.js';
+import { recordedLines, startRecording, stopRecording } from '@fleet/kit/recording.js';
 import { readActivity } from '@fleet/kit/family.js';
 import { environmentPicks, namesSomething } from '../src/environment.js';
 import { loadSubscription } from '../src/load.js';
@@ -42,8 +44,9 @@ test('what a sonar section picks: another subscription, an app, a slot, its Appl
   assert.ok(!namesSomething({ name: 'x', prod: false }));
 });
 
-test('/env says which and switches every app; its section picks the app; production asks first', async () => {
+test('/env says which and switches every app; its section picks the app; production asks first; the commands are recorded', async () => {
   const dir = project('shop');
+  startRecording(dir);
   const a = start({ cwd: dir });
   const frame = () => a.lastFrame() ?? '';
   try {
@@ -82,8 +85,17 @@ test('/env says which and switches every app; its section picks the app; product
     await type(a.stdin, 'contoso-web');
     a.stdin.write(KEYS.enter);
     await until(() => frame().includes('contoso-web/staging is restarting'), 'restarted');
+
+    const lines = recordedLines().map((l) => [l.app, l.line]);
+    assert.deepEqual(lines, [
+      ['sonar', '/env'],
+      ['sonar', '/env prod'],
+      ['sonar', '/restart contoso-web/staging'],
+      ['sonar', '/restart contoso-web/staging'],
+    ]);
   } finally {
     a.unmount();
+    stopRecording();
   }
 });
 

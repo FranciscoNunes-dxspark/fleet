@@ -19,6 +19,7 @@ import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { readProject } from '@fleet/kit/environments.js';
+import { recordCommand } from '@fleet/kit/recording.js';
 import { environmentPicks, namesSomething } from '../environment.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
@@ -827,9 +828,11 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     try {
       let r;
       if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
-      // A context a sibling copied, typed or pasted on its own: /take's.
-      else if (decodeContext(text)) r = await a.take(ctx, text);
-      else {
+      // A context a sibling copied, typed or pasted on its own: /take's, and recorded as one.
+      else if (decodeContext(text)) {
+        r = await a.take(ctx, text);
+        recordCommand('sonar', text.startsWith('/') ? text : `/take ${text}`);
+      } else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
         const cmd = findCommand(name, customRef.current.commands);
         if (!cmd) {
@@ -837,6 +840,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
           return false;
         }
         r = await cmd.run(ctx, rest.trim());
+        // While Fleet records a runbook, the commands that ran go in it; your own are recorded as the
+        // lines they run, which another machine can run without your config.
+        if (COMMANDS.includes(cmd)) recordCommand('sonar', `/${cmd.name}${rest.trim() ? ` ${rest.trim()}` : ''}`);
       }
       return r !== false && r?.ok !== false && errorCount.current === errors && declines.current === declined;
     } catch (e) {
