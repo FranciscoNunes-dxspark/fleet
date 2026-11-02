@@ -11,6 +11,7 @@ import { IGNORE_FILE, checksumCandidates, checksumCommand, differs, ignoreList, 
 import { removeTree } from './session.js';
 import { sizeText } from './format.js';
 import { DEFAULT_KEY_NAME, validKeyName } from './keygen.js';
+import { askFirst } from './environment.js';
 import { DISK_FULL, HEALTH_COMMAND, healthProblems, parseHealth, uptimeText } from './health.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -176,6 +177,8 @@ export async function rename(ctx, side, entry) {
   const asked = await ctx.askText({ title: `Rename ${entry.name}`, detail: 'its new name', label: 'Name', value: entry.name });
   if (!asked || asked === entry.name) return false;
   if (/[\\/]/.test(asked)) return ctx.note('A name has no slash in it: this renames, it does not move.', 'error') ?? false;
+  // Production is the server's: a rename there asks first.
+  if (side === 'remote' && !(await askFirst(ctx, null, `Rename ${entry.name} to ${asked} on ${ctx.conn.host?.name ?? 'the server'}`))) return false;
   const [from, to] = side === 'local' ? [ctx.local.join(dir, entry.name), ctx.local.join(dir, asked)] : [joinRemote(dir, entry.name), joinRemote(dir, asked)];
   const r = await ctx.task(`Renaming ${entry.name} to ${asked}`, async () => (side === 'local' ? ctx.local.rename(from, to) : ctx.session.rename(from, to)), { label: 'Renaming', activity: `renamed ${entry.name} to ${asked} on ${side === 'local' ? 'this machine' : (ctx.conn.host?.name ?? 'the server')}` });
   if (r.ok) await ctx.loadPane(side, dir, { select: asked });
@@ -192,7 +195,7 @@ export async function remove(ctx, side, entries) {
   const folders = entries.filter(isDir).length;
   const title = entries.length === 1 ? `Delete ${entries[0].name} ${where}?` : `Delete ${plural(entries.length, 'item')} ${where}?`;
   const detail = [entries.length > 1 ? entries.slice(0, 3).map((e) => e.name).join(', ') + (entries.length > 3 ? '…' : '') : '', folders ? `${plural(folders, 'folder')} with everything in ${folders === 1 ? 'it' : 'them'}. ` : '', 'This can not be undone.'].filter(Boolean).join(' · ');
-  if (!(await ctx.confirm({ title, detail, danger: true }))) return false;
+  if (!(await (side === 'remote' ? askFirst(ctx, { title, detail, danger: true }) : ctx.confirm({ title, detail, danger: true })))) return false;
   const r = await ctx.task(
     entries.length === 1 ? `Deleting ${entries[0].name}` : `Deleting ${plural(entries.length, 'item')}`,
     async (signal) => {
@@ -227,6 +230,7 @@ export async function copyOver(ctx, side, entries) {
   if (!ctx.session) return ctx.note('Not connected: /connect <host>', 'error') ?? false;
   const picks = entries.filter((e) => e.kind === 'file' || isDir(e));
   if (!picks.length) return ctx.note(entries.length ? 'Only files and folders are copied (not special files).' : 'Nothing to copy.', 'error') ?? false;
+  if (side === 'local' && !(await askFirst(ctx, null, `Upload ${picks.length === 1 ? picks[0].name : plural(picks.length, 'item')} to ${ctx.conn.host.name}`))) return false;
   const other = side === 'local' ? 'remote' : 'local';
   const from = ctx.panes[side];
   const to = ctx.panes[other];
@@ -382,7 +386,9 @@ export async function sync(ctx, rest) {
     ],
   });
   const what = [n.upload && plural(n.upload, 'upload'), n.download && plural(n.download, 'download'), n['delete-local'] && `${n['delete-local']} deleted here`, n['delete-remote'] && `${n['delete-remote']} deleted on ${ctx.conn.host.name}`].filter(Boolean).join(', ');
-  const yes = await ctx.confirm({
+  // Anything going to the server (an upload, a delete there) asks as production does.
+  const ask = n.upload + n['delete-remote'] ? askFirst : (c, req) => c.confirm(req);
+  const yes = await ask(ctx, {
     title: `Sync ${direction === 'both' ? 'both ways' : direction}: ${what}?`,
     detail: [n.conflict ? `${plural(n.conflict, 'conflict')} left alone.` : '', n.extra ? `${plural(n.extra, 'file')} only on one side kept (--delete removes them).` : ''].filter(Boolean).join(' ') || undefined,
     danger: n['delete-local'] + n['delete-remote'] > 0,
@@ -448,7 +454,7 @@ export async function watch(ctx, arg) {
   if (!ctx.session) return ctx.note('Not connected: /connect <host>', 'error') ?? false;
   if (!ctx.local.watch) return ctx.note("Watching a folder isn't available here.", 'error') ?? false;
   const { localRoot, remoteRoot } = syncPair(ctx);
-  const yes = await ctx.confirm({ title: `Upload what changes in ${localRoot} to ${ctx.conn.host.name}:${remoteRoot}, as it changes?`, detail: 'Until /watch off. Deletions are not carried over; the ignore list applies.' });
+  const yes = await askFirst(ctx, { title: `Upload what changes in ${localRoot} to ${ctx.conn.host.name}:${remoteRoot}, as it changes?`, detail: 'Until /watch off. Deletions are not carried over; the ignore list applies.' });
   if (!yes) return false;
   ctx.startWatch({ localRoot, remoteRoot, host: ctx.conn.host.name, patterns: await ignoreOf(ctx, localRoot) });
   ctx.note(`Watching ${localRoot}: changes go up to ${ctx.conn.host.name}:${remoteRoot}. /watch off stops it.`, 'ok');

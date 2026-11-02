@@ -144,6 +144,18 @@ Your own commands and keys (`"commands"` and `"keys"` in the settings file) work
 
 `~/.mooring/config.json` (`MOORING_HOME` names another folder): the saved hosts (where each is, the key file or that it asks for a password: never a password or passphrase), `showHidden`, `transfers` (how many run at once, 2), `theme` (`dark`, `light`, `auto`), `accent` (`#rrggbb`), `mouse`, `checkForUpdates`, `autoUpdate`, `familyMoods`, your `commands` and `keys`. `/settings` shows them; `/theme`, `/accent`, `/mouse` and `/hidden` change them.
 
+## Environments
+
+A project can name its environments (dev, staging, prod) once for every app of the family, in `.fleet/project.json` at its root (or a folder above where Mooring runs, inside the checkout), a section per app for each; nothing secret goes in it. Mooring reads its own section of the one chosen, a saved host's name and a folder on it:
+
+```json
+"prod": { "prod": true, "mooring": { "host": "web", "folder": "/var/www/shop" } }
+```
+
+`/env` says which environment the project is on, and `/env <name>` switches every app to another; Mooring then opens that host at that folder (as it does at start, when no host is named on the command line). A switch made in another app is followed within a second. The header shows the environment's name; in a production one (`"prod": true`) the frames are red and anything that changes the server asks first: an upload (`c`, `/put`), a delete or a rename there, a `/sync` that uploads or deletes there, and `/watch`.
+
+While Fleet records a runbook, each slash command Mooring's prompt runs is kept for it, but never one that runs a command (`/ssh`, `/run`, `$`, `!`): Mooring never keeps a command it ran.
+
 ## In the fleet
 
 Mooring is the ninth space in [Fleet](../fleet) (`alt+9`, `ctrl+b u`). It writes Tug's mood for its siblings (a transfer that failed or a connection that didn't open, worried), and what it changed goes in the family's activity log: *deleted notes.txt on build*, *uploaded site to web*, never a command or a file's contents. Tug answers a worried sibling with a line of its own.
