@@ -11,7 +11,7 @@ import { IGNORE_FILE, checksumCandidates, checksumCommand, differs, ignoreList, 
 import { removeTree } from './session.js';
 import { sizeText } from './format.js';
 import { DEFAULT_KEY_NAME, validKeyName } from './keygen.js';
-import { askFirst } from './environment.js';
+import { askFirst } from '@fleet/kit/environments.js';
 import { DISK_FULL, HEALTH_COMMAND, healthProblems, parseHealth, uptimeText } from './health.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;

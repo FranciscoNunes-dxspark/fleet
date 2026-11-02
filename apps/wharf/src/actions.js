@@ -9,7 +9,7 @@ import { copiedNote, describeContext, contextIn, notMine, takeLine } from '@flee
 import { latestTrouble, loglineData, matchIn, needleOf } from './share.js';
 import * as k from './kubeactions.js';
 import { dockerShell } from './shell.js';
-import { askFirst } from './environment.js';
+import { askFirst } from '@fleet/kit/environments.js';
 
 const containers = (ctx) => ctx.data?.containers ?? [];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;

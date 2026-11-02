@@ -117,3 +117,17 @@ test("a switch in this process reaches its watchers at once; another environment
     p.done();
   }
 });
+
+test("askFirst: an app's own question as it is, and in production with the title saying so", async () => {
+  const { askFirst } = await import('../environments.js');
+  const asked = [];
+  const confirm = async (req) => (asked.push(req), 'yes');
+  assert.equal(await askFirst({ confirm, env: { name: 'dev', prod: false } }, null, 'Restart api'), true);
+  assert.equal(asked.length, 0, 'nothing asked outside production without a question of its own');
+  await askFirst({ confirm, env: { name: 'dev', prod: false } }, { title: 'Restart api?', detail: 'It drops connections.' });
+  assert.deepEqual(asked.at(-1), { title: 'Restart api?', detail: 'It drops connections.' });
+  assert.equal(await askFirst({ confirm, env: { name: 'prod', prod: true } }, { title: 'Restart api?', detail: 'It drops connections.', options: [1] }), 'yes');
+  assert.deepEqual(asked.at(-1), { title: 'prod is production. Restart api?', detail: 'It drops connections. The project marks this environment "prod": true.', danger: true, options: [1] });
+  await askFirst({ confirm, env: { name: 'prod', prod: true } }, null, 'Upload 3 files');
+  assert.equal(asked.at(-1).title, 'prod is production. Upload 3 files?');
+});

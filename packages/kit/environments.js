@@ -164,3 +164,16 @@ export function productionQuestion(env, what) {
   if (!env?.prod) return null;
   return { title: `${env.name} is production. ${what}?`, detail: 'The project marks this environment "prod": true.', danger: true };
 }
+
+/**
+ * Asks before a change through an app's own confirm (`confirm(req)`, resolving the answer), with
+ * `env` the chosen environment (environmentFor's): `req` ({ title, detail, danger, options }) as it
+ * is outside production, and in production with the title saying so and danger on; with no `req`,
+ * only in production, about `what`. Resolves the answer: true to go ahead with no `req` outside
+ * production. An app's ctx, having both, can be passed as it is.
+ */
+export async function askFirst({ confirm, env }, req, what = req?.title?.replace(/\?$/, '')) {
+  const q = productionQuestion(env, what);
+  if (!q) return req ? confirm(req) : true;
+  return confirm(req ? { ...req, title: q.title, detail: [req.detail, q.detail].filter(Boolean).join(' '), danger: true } : q);
+}

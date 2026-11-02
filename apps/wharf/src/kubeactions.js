@@ -2,7 +2,7 @@
 import { findPod } from './rows.js';
 import { kubeProblem, safeName } from './kube.js';
 import { kubeShell } from './shell.js';
-import { askFirst } from './environment.js';
+import { askFirst } from '@fleet/kit/environments.js';
 
 const pods = (ctx) => ctx.kubeData?.pods ?? [];
 
