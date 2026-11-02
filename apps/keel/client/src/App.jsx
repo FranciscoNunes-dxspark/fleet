@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api.js';
 import { AppContext } from './context.js';
-import { Drawer, ErrorBox, Loading, useDocked } from './ui.jsx';
+import { Drawer, ErrorBox, Loading } from './ui.jsx';
 import { loadPrefs, showDesktop } from './notify.js';
 import Inbox from './pages/Inbox.jsx';
 import PullRequests from './pages/PullRequests.jsx';
@@ -259,9 +259,10 @@ function Console({ authMode, onSignedOut }) {
   // What this person's role allows (the server enforces the same rules).
   const can = useCallback((perm) => !meta || (meta.permissions || []).includes(perm), [meta]);
 
-  // Wide screens dock the details panel beside the page; lists mark the row it shows (`drawer`).
-  // With no menu down the side, the page keeps room beside it from 1200px.
-  const docked = useDocked(1200);
+  // The details panel always opens over the page, which stays put behind it: docked beside the
+  // page it pushed the page aside and left two scrollbars side by side. Lists still mark the row
+  // it shows (`drawer`); `docked` stays in the context for the pages that read it.
+  const docked = false;
   const ctx = useMemo(() => ({ meta, refreshKey, refresh: bump, openDrawer: setDrawer, drawer, docked, openTarget, toast, live, authMode, signOut, can }), [meta, refreshKey, bump, drawer, docked, toast, live, openTarget, authMode, signOut, can]);
 
   if (metaError && !meta) {
