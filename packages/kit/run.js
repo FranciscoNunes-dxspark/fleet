@@ -12,15 +12,36 @@ export class RunError extends Error {
 /**
  * Runs `command` through the shell (`/bin/sh`, `cmd.exe` on Windows), resolving with { stdout, stderr }.
  * Throws RunError with the program's own output when it fails; `signal` cancels it (`cancelled` set).
+ * `onLine(line, 'stdout'|'stderr')` hears each line as it's written, for a command that runs for
+ * minutes (a terraform apply) whose log should say what it's doing meanwhile. `binary: true` gives
+ * stdout as a Buffer, for a program that writes bytes rather than text (docker cp's tar stream);
+ * onLine then hears only stderr.
  */
-export function run(command, { cwd = process.cwd(), signal, input, env } = {}) {
+export function run(command, { cwd = process.cwd(), signal, input, env, onLine, binary = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, { cwd, shell: true, windowsHide: true, env: { ...process.env, ...env }, detached: process.platform !== 'win32' });
     let stdout = '';
     let stderr = '';
+    const chunks = [];
     let cancelled = false;
-    child.stdout.setEncoding('utf8').on('data', (d) => (stdout += d));
-    child.stderr.setEncoding('utf8').on('data', (d) => (stderr += d));
+    // What's left of a line not yet ended, per stream, for onLine.
+    const partial = { stdout: '', stderr: '' };
+    const lines = (which, d) => {
+      if (!onLine) return;
+      const parts = (partial[which] + d).split(/\r?\n/);
+      partial[which] = parts.pop();
+      for (const l of parts) onLine(l, which);
+    };
+    if (binary) child.stdout.on('data', (d) => chunks.push(d));
+    else
+      child.stdout.setEncoding('utf8').on('data', (d) => {
+        stdout += d;
+        lines('stdout', d);
+      });
+    child.stderr.setEncoding('utf8').on('data', (d) => {
+      stderr += d;
+      lines('stderr', d);
+    });
     const kill = () => {
       cancelled = true;
       // The shell's children too: a process group off Windows, taskkill's tree on it.
@@ -38,9 +59,11 @@ export function run(command, { cwd = process.cwd(), signal, input, env } = {}) {
     child.on('error', (e) => reject(new RunError(e.message, { stdout, stderr })));
     child.on('close', (code) => {
       signal?.removeEventListener('abort', kill);
+      if (onLine) for (const which of ['stdout', 'stderr']) if (partial[which]) onLine(partial[which], which);
+      if (binary) stdout = Buffer.concat(chunks);
       if (cancelled) return reject(new RunError('Cancelled', { stdout, stderr, cancelled: true }));
       if (code === 0) return resolve({ stdout, stderr });
-      reject(new RunError(stderr.trim() || stdout.trim() || `${command} exited with ${code}`, { code, stdout, stderr }));
+      reject(new RunError(stderr.trim() || (binary ? '' : stdout.trim()) || `${command} exited with ${code}`, { code, stdout, stderr }));
     });
     // A program that exits without reading its input (one that isn't there, say) closes the pipe first.
     child.stdin.on('error', () => {});

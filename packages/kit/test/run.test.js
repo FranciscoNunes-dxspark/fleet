@@ -28,3 +28,17 @@ test('run gives a program its output, and a cancelled one says so', async () => 
   await assert.rejects(p, (e) => e.cancelled === true);
   assert.equal(getEventListeners(c.signal, 'abort').length, 0);
 });
+
+test("run hands each line to onLine as it's written, and gives bytes as a Buffer with binary", async () => {
+  const heard = [];
+  const node = JSON.stringify(process.execPath);
+  const script = "process.stdout.write('one\\ntw'); setTimeout(() => { process.stdout.write('o\\nthree'); process.stderr.write('warn\\n'); }, 50)";
+  const r = await run(`${node} -e ${JSON.stringify(script)}`, { onLine: (line, which) => heard.push([which, line]) });
+  assert.equal(r.stdout, 'one\ntwo\nthree');
+  assert.deepEqual(heard.filter(([w]) => w === 'stdout').map(([, l]) => l), ['one', 'two', 'three']);
+  assert.deepEqual(heard.filter(([w]) => w === 'stderr').map(([, l]) => l), ['warn']);
+  // Bytes that aren't UTF-8 come back as they were written.
+  const bytes = await run(`${node} -e ${JSON.stringify('process.stdout.write(Buffer.from([0xff, 0x00, 0xfe]))')}`, { binary: true });
+  assert.ok(Buffer.isBuffer(bytes.stdout));
+  assert.deepEqual([...bytes.stdout], [0xff, 0x00, 0xfe]);
+});

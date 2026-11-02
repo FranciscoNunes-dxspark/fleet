@@ -70,7 +70,8 @@ export function createBilge({ fetchImpl = globalThis.fetch, run = runCommand, ho
       if (!safeContainerId(id)) throw new Error(`docker create gave no container id: ${made.stdout.trim().slice(0, 200)}`);
       const copy = async (path, follow = false) => {
         try {
-          const { stdout } = await run(`docker cp ${follow ? '-L ' : ''}${id}:${path} -`, { signal });
+          // The tar stream as bytes: read as text, a file that isn't UTF-8 would come out damaged.
+          const { stdout } = await run(`docker cp ${follow ? '-L ' : ''}${id}:${path} -`, { signal, binary: true });
           return tarText(stdout);
         } catch (e) {
           if (e.cancelled || signal?.aborted) throw e;

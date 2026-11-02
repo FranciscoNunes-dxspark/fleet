@@ -26,9 +26,9 @@ function headerOk(buf, at) {
 
 /**
  * The files in a tar stream: [{ name, type, data }] (`type` '0' a file, '5' a folder, '2' a link).
- * Long names (GNU's L, pax's path) are followed. A header that doesn't add up (bytes lost in the
- * text the stream came through) is skipped by looking for the next one, so one damaged entry costs
- * only itself.
+ * Long names (GNU's L, pax's path) are followed. It takes the stream's bytes (run.js's `binary`), or
+ * text from a test; a header that doesn't add up is skipped by looking for the next one, so one
+ * damaged entry costs only itself.
  */
 export function readTar(input) {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input ?? ''), 'utf8');

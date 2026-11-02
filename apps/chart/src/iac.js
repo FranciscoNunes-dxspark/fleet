@@ -4,7 +4,7 @@
 // declared), `prices` (the Azure Retail Prices API). Two things change anything, and only after the
 // person has typed the name of where they go: `apply` (terraform apply of a plan file this provider
 // saved itself, and no other) and `deploy` (az deployment create). The command lines run through the
-// kit's run.js (apply's through stream.js, the same with its output as it comes), so whatever
+// kit's run.js (apply's with its `onLine`, so its output comes as it's written), so whatever
 // they're signed in to and set up for is what Chart uses; nothing may wait on a prompt
 // (-input=false). Everything put in a command line is checked first by safeArg(). demo.js's
 // demoChart() has the same interface.
@@ -13,7 +13,6 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { run as runCommand } from '@fleet/kit/run.js';
-import { runStreaming } from './stream.js';
 import { parseAny, parseTerraformPlan, parseTerraformState, parseWhatIf } from './plan.js';
 
 const SKIP = new Set(['.terraform', '.git', 'node_modules', 'bin', 'obj', 'dist']);
@@ -122,7 +121,7 @@ export function priceFilter(query) {
   return [...fields.map((k) => `${k} eq ${quote(query[k])}`), "priceType eq 'Consumption'"].join(' and ');
 }
 
-export function createChart({ run = runCommand, stream = runStreaming, fetch: fetchPrices = globalThis.fetch } = {}) {
+export function createChart({ run = runCommand, stream = runCommand, fetch: fetchPrices = globalThis.fetch } = {}) {
   // Prices for the session: each query asked once (its promise kept, so two changes asking together ask once).
   const priceCache = new Map();
   // The plan files this provider saved, in a folder of its own only this user can read (a plan file

@@ -6,7 +6,6 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { readActivity } from '@fleet/kit/family.js';
 import { createChart } from '../src/iac.js';
-import { runStreaming } from '../src/stream.js';
 import { DEMO_PLAN } from '../src/demo.js';
 import { KEYS, start, tempHome, type, until } from './helpers.js';
 
@@ -74,14 +73,6 @@ test('the provider keeps a plan it was asked to keep, in a folder of its own, an
   assert.equal(existsSync(r.planFile), false, 'closing removes what was kept');
 });
 
-test('the streaming runner hands over each line as it comes, and fails as run.js does', async () => {
-  const lines = [];
-  const node = JSON.stringify(process.execPath);
-  const r = await runStreaming(`${node} -e "console.log('one'); console.error('two'); process.stdout.write('three')"`, { onLine: (l) => lines.push(l) });
-  assert.deepEqual(lines.sort(), ['one', 'three', 'two']);
-  assert.match(r.stdout, /one\nthree/);
-  await assert.rejects(runStreaming(`${node} -e "console.error('boom'); process.exit(3)"`), (e) => e.code === 3 && /boom/.test(e.message));
-});
 
 test('/apply shows what it does, destroys first, and applies only once the workspace is typed; its output goes to the log', async () => {
   const app = start();

@@ -130,12 +130,15 @@ test("dpkg's versions compared as dpkg does, and a Debian advisory's fix found w
 
 test("the provider reads an image through docker: create, cp of os-release and the database, rm whatever happens; a name that isn't one runs nothing", async () => {
   const calls = [];
-  const fakeRun = (answers) => async (command) => {
+  const asBytes = [];
+  const fakeRun = (answers) => async (command, opts = {}) => {
     calls.push(command);
+    if (opts.binary) asBytes.push(command);
     for (const [re, answer] of answers) {
       if (!re.test(command)) continue;
       if (answer instanceof Error) throw answer;
-      return { stdout: answer, stderr: '' };
+      // As run.js does: bytes when asked for them.
+      return { stdout: opts.binary ? Buffer.from(answer, 'utf8') : answer, stderr: '' };
     }
     throw new Error(`no answer for ${command}`);
   };
@@ -151,6 +154,9 @@ test("the provider reads an image through docker: create, cp of os-release and t
   });
   const m = await alpine.image('nginx:1.27-alpine');
   assert.deepEqual([m.ecosystem, m.packages.map((p) => [p.name, p.version, p.license])], ['Alpine:v3.20', [['musl', '1.2.5-r0', 'MIT']]]);
+  // docker cp's tar is read as bytes, never as text.
+  assert.ok(asBytes.length && asBytes.every((c) => c.startsWith('docker cp ')));
+  assert.ok(calls.filter((c) => c.startsWith('docker cp ')).every((c) => asBytes.includes(c)));
   assert.deepEqual(calls, [
     'docker create nginx:1.27-alpine true',
     `docker cp -L ${id}:/etc/os-release -`,
