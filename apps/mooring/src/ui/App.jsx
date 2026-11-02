@@ -44,7 +44,7 @@ const VIEW_LABELS = Object.fromEntries(VIEWS.map((v) => [v.id, v.label]));
 const HINTS = {
   files: '← → pane · ↵ open · space mark · c copy over · m mkdir · r rename · d delete · . hidden',
   transfers: '↵ details · x cancel · r retry · d remove · c clear done',
-  console: '↵ or $ type a command · x cancel · c clear · y copy its output',
+  console: '↵ type in the shell · ↑↓ look back · y copy the screen',
   hosts: '↵ connect · a add · e change · x forget',
   log: '↵ all its output · y copy it',
 };
@@ -150,7 +150,12 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const [entries, setEntries] = useState([]);
   const [busy, setBusy] = useState(null);
   const [update, setUpdate] = useState(null);
-  const [history, setHistory] = useState([]);
+  // The Console's shell (terminal.js) and how it ended; `shellTick` makes the screen draw again as output comes.
+  const shellRef = useRef(null);
+  const [shell, setShell] = useState(null);
+  const [shellEnded, setShellEnded] = useState(null);
+  const [, setShellTick] = useState(0);
+  const shellSize = useRef({ columns: 80, rows: 24 });
   const [welcome, setWelcome] = useState(true);
   const [loaded, setLoaded] = useState(false);
   // The pet looks happy (or worried) for a few seconds after a result; re-render when that wears off.
@@ -348,6 +353,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
 
   const disconnect = () => {
     queue.cancelAll();
+    closeShell();
     sessionRef.current?.close();
     sessionRef.current = null;
     loadSeq.current.remote++;
@@ -496,42 +502,54 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     prefillKey.current = keySeq.current;
   };
 
-  // $ <command>: runs it on the server in the folder the right pane shows, its output in Console as it
-  // arrives. `cd` moves that pane instead, as a command run alone could not. One at a time.
-  const remoteRun = useRef(null);
-  const runRemote = async (command) => {
+  // The Console's shell: its own ssh with a terminal (terminal.js), as big as the Console is when it opens (the
+  // server is told its size once). Closed with the connection; one that ended stays on screen until ↵ starts another.
+  const closeShell = () => {
+    shellRef.current?.close();
+    shellRef.current = null;
+    setShell(null);
+    setShellEnded(null);
+    if (focusRef.current === 'terminal') setFocus('view');
+  };
+  const openShell = () => {
     const session = sessionRef.current;
-    if (!session) return note('Not connected: /connect <host>', 'error') ?? false;
+    if (!session?.terminal) return null;
+    if (shellRef.current?.alive) return shellRef.current;
+    shellRef.current?.close();
+    setShellEnded(null);
+    const mine = session.terminal({
+      ...shellSize.current,
+      dir: panesRef.current.remote.dir,
+      onChange: () => setShellTick((n) => n + 1),
+      onExit: (info) => {
+        if (shellRef.current !== mine) return;
+        setShellEnded(info);
+        if (focusRef.current === 'terminal') setFocus('view');
+      },
+    });
+    shellRef.current = mine;
+    setShell(mine);
+    return mine;
+  };
+  // Every key goes to the shell from here until ctrl+\ (sendKey below takes them before any view sees them).
+  const enterTerminal = () => {
+    if (!sessionRef.current) return note('Not connected: /connect <host>', 'error') ?? false;
+    if (!openShell()) return note("This host can't open a shell here.", 'error') ?? false;
+    setFocus('terminal');
+    return true;
+  };
+
+  // $ <command>: types it into the Console's shell and goes there, as if you had.
+  const runRemote = async (command) => {
+    if (!sessionRef.current) return note('Not connected: /connect <host>', 'error') ?? false;
     if (!command) return note('Type a command after $, e.g. $ ls -l', 'error') ?? false;
-    if (remoteRun.current) return note('A command is running on the server: x in Console cancels it.', 'error') ?? false;
-    const cd = command.match(/^cd(?:\s+(.*))?$/);
-    if (cd) return a.cd(ctx, 'remote', cd[1]?.trim() || '~');
-    const dir = panesRef.current.remote.dir;
-    const id = nextId.current++;
-    const controller = new AbortController();
-    remoteRun.current = { id, abort: () => controller.abort() };
-    const patch = (p) => setHistory((list) => list.map((h) => (h.id === id ? { ...h, ...p } : h)));
-    setHistory((list) => [...list.slice(-49), { id, host: connRef.current.host.name, dir, command, status: 'running', out: '', err: '', code: null }]);
+    const t = openShell();
+    if (!t) return note("This host can't open a shell here.", 'error') ?? false;
     setWelcome(false);
     setView('console');
-    let out = '';
-    try {
-      const r = await session.exec(`cd ${shellQuote(dir)} && ${command}`, {
-        signal: controller.signal,
-        onData: (d) => {
-          out = (out + d).slice(-200_000);
-          patch({ out });
-        },
-      });
-      patch({ status: r.code === 0 ? 'done' : 'failed', code: r.code, out: r.stdout.slice(-200_000), err: r.stderr });
-      return r.code === 0;
-    } catch (e) {
-      patch({ status: e.cancelled ? 'cancelled' : 'failed', err: e.cancelled ? '' : e.message, code: null });
-      if (!e.cancelled) errorCount.current++;
-      return false;
-    } finally {
-      remoteRun.current = null;
-    }
+    setFocus('terminal');
+    t.write(`${command}\r`);
+    return true;
   };
 
   const ctxRef = useRef(null);
@@ -552,8 +570,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     connect,
     disconnect,
     runRemote,
-    cancelRemote: () => (remoteRun.current ? remoteRun.current.abort() : note('Nothing is running on the server.')),
-    clearConsole: () => setHistory((list) => list.filter((h) => h.status === 'running')),
+    enterTerminal,
     loadPane,
     side: () => sideRef.current,
     setSide,
@@ -760,6 +777,14 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   // over an overlay), a key you mapped becomes the key it stands for, or runs its command line.
   // Uppercase shortcuts are alt+letter (caps lock can't fire them). Then ctrl+p opens the palette.
   const sendKey = useKeyTranslation((input) => {
+    // In the Console's shell every key is the shell's, as it came (ctrl+\ leaves; what came before it is still sent).
+    if (focusRef.current === 'terminal' && !overlayRef.current && !confirmRef.current) {
+      const leave = input.indexOf('\x1c');
+      const typed = leave < 0 ? input : input.slice(0, leave);
+      if (typed) shellRef.current?.write(typed);
+      if (leave >= 0) setFocus('view');
+      return null;
+    }
     let out = input;
     if (focusRef.current === 'view' && !overlayRef.current && !confirmRef.current) {
       const b = translateKey(customRef.current.keymap, viewRef.current, input);
@@ -938,7 +963,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
   const trouble = troubles({ transfers, conn });
   const moving = transfers.filter((t) => t.status === 'running').length;
-  const working = moving > 0 || history.some((h) => h.status === 'running');
+  const working = moving > 0;
   const mood = moodFor({ loaded, connected: Boolean(conn.session), busy, running: working, lastEntry: entries.at(-1), trouble });
   // How Tug feels, for the siblings (family.js's writeMood), whenever that changes.
   const said = familyMood({ mood, trouble, lastEntry: entries.at(-1), busy, host: conn.host?.name });
@@ -949,6 +974,18 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const reacting = reaction ? 1 : 0;
   const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
+  // What the Console's shell opens at: the room the Console has inside its border.
+  shellSize.current = { columns: Math.max(20, W - 2), rows: Math.max(4, mainH - 2) };
+  // A shell open while the Console is showing follows the room it has (terminal.js: the server is told when the size settles).
+  useEffect(() => {
+    if (view === 'console' && shellRef.current?.alive) shellRef.current.resize(shellSize.current.columns, shellSize.current.rows);
+  }, [view, shellSize.current.columns, shellSize.current.rows]);
+  // Showing the Console puts you in its shell (ctrl+\ leaves it): one that ended waits for ↵ instead.
+  useEffect(() => {
+    if (view === 'console' && conn.session && !overlayRef.current && !confirmRef.current && !(shellRef.current && !shellRef.current.alive)) {
+      if (openShell()) setFocus('terminal');
+    } else if (focusRef.current === 'terminal' && view !== 'console') setFocus('view');
+  }, [view, conn.session]);
   layout.current = {
     mainTop: 2,
     mainH,
@@ -977,7 +1014,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'console') {
-    main = <ConsoleView history={history} conn={conn} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ConsoleView terminal={shell} ended={shellEnded} conn={conn} ctx={ctx} width={W} height={mainH} active={viewActive} typing={focus === 'terminal'} />;
   } else if (view === 'hosts') {
     main = <HostsView hosts={config.hosts ?? []} conn={conn} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'transfers') {
@@ -988,7 +1025,9 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
 
   const left = flash
     ? flash.text
-    : focus === 'prompt'
+    : focus === 'terminal'
+      ? 'typing in the shell on the server · ctrl+\\ leaves it'
+      : focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
@@ -997,7 +1036,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
           : overlay
             ? 'j/k scroll · space page · y copy · esc close'
             : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ctrl+p palette · ? help';
+  const right = focus === 'prompt' || focus === 'terminal' ? '' : '  / commands · ctrl+p palette · ? help';
 
   return (
     <Box flexDirection="column" width={W} height={H}>

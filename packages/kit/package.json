@@ -12,6 +12,7 @@
     "./version.js": "./version.js",
     "./theme.js": "./theme.js",
     "./text.js": "./text.js",
+    "./vt.js": "./vt.js",
     "./search.js": "./search.js",
     "./commandhint.js": "./commandhint.js",
     "./ui/parts.jsx": "./ui/parts.jsx",

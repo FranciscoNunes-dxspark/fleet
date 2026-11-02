@@ -7,6 +7,7 @@ import { spawn as spawnProcess } from 'node:child_process';
 import { SessionError } from './errors.js';
 import { openClient } from './sftp-client.js';
 import { askpassEnv } from './askpass.js';
+import { openTerminal } from './terminal.js';
 import { joinRemote, missingProgram, problemFrom, sftpServerArgs, sortEntries, sshArgs } from './sftp.js';
 import { download, upload } from './transfer.js';
 
@@ -120,6 +121,8 @@ export function createSession(host, { password, sshCommand = 'ssh', argsFor = sf
       if (r.code === 255) throw new SessionError(problemFrom(r.stderr, { command: sshCommand, password: Boolean(secret), host }), { code: 255 });
       return r;
     },
+    /** A shell with a terminal on the host (terminal.js): its own ssh, not the SFTP connection's. */
+    terminal: (options) => openTerminal({ host, sshCommand, password: Boolean(secret), spawn, ...options }),
     /** Ends the connection (the next call opens another). */
     close() {
       client?.close();

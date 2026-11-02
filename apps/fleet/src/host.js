@@ -35,7 +35,7 @@ import { HOST_MOUSE, MOUSE_MODES, OutputFilter } from './screen.js';
 import { SPACES } from './spaces.js';
 import { requestIdOfLine } from './trace.js';
 import { MIN_SPLIT_COLUMNS, splitLayout, takePaneMouse } from './split.js';
-import { VirtualTerminal } from './vt.js';
+import { VirtualTerminal } from '@fleet/kit/vt.js';
 
 /** What the host writes to take the screen, and to give it back as it found it. */
 export const ENTER = `\x1b[?1049h\x1b[22;0t\x1b[2J\x1b[H${HOST_MOUSE}`;
