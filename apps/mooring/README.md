@@ -18,7 +18,7 @@ Mooring is one of the fleet's apps: it needs Node 22 or newer from a checkout (`
 
 Mooring runs `ssh` without a terminal, so it can't show ssh's own prompts. It signs in one of two ways:
 
-- **A key or your ssh agent** (the default): `/add … key=<file>`, or a key `ssh-add` has loaded. A key with a passphrase needs the agent, as Mooring can't ask for the passphrase.
+- **A key or your ssh agent** (the default): `/add … key=<file>`, or a key `ssh-add` has loaded. A key with a passphrase needs the agent, as Mooring can't ask for the passphrase. `/keygen [name] [host]` makes one (below).
 - **A password**, for a host saved with the word `password`: `/add web me@web password`. Mooring asks for it, masked, **every time it connects** (`/connect`, `↵` in Hosts). It is never saved: the settings file records only that the host asks for one. It is handed to ssh through that ssh's environment (OpenSSH's `SSH_ASKPASS` with a two-line helper script Mooring writes to a private temporary folder and removes on exit), never on a command line, and it is let go of when you disconnect. OpenSSH 8.4 or newer is needed (Windows 10 and 11, current Macs and Linux have it). A wrong password fails once with ssh's own message, not three times.
 
 When sign-in fails, ssh's own words come back with what to do.
@@ -40,7 +40,7 @@ A host whose key has *changed* is never offered: that is ssh's `REMOTE HOST IDEN
 
 ## Hosts
 
-`/add <name> <user@host[:port]> [key=<file>] [folder=<remote folder>] [password]` saves a host (and changes the one of that name); `/forget <host>` takes it out, asking first; `/connect <host>` opens it (a list to pick from without a name), `/disconnect` closes it. The Hosts view (`4`) does the same with keys: `↵` connects, `a` adds, `e` changes the one under the cursor, `x` forgets it. A host's `folder` is where the right pane starts; without one it starts in the home folder.
+`/add <name> <user@host[:port]> [key=<file>] [folder=<remote folder>] [password]` saves a host (and changes the one of that name); `/keygen [name] [host]` makes an ed25519 key in `~/.ssh` (default name `id_ed25519_mooring`) with OpenSSH's `ssh-keygen`, asking first and never replacing a key that is there. It has **no passphrase** (Mooring can't ask for one, and a passphrase in an argument would be readable by other processes), so keep the file private. The public half is copied and shown with the line to add to the server's `~/.ssh/authorized_keys` (`ssh-copy-id -i <key>.pub user@host`); with a saved host's name, that host is changed to sign in with the new key. Only the key's path is saved. `/forget <host>` takes it out, asking first; `/connect <host>` opens it (a list to pick from without a name), `/disconnect` closes it. The Hosts view (`4`) does the same with keys: `↵` connects, `a` adds, `e` changes the one under the cursor, `x` forgets it. A host's `folder` is where the right pane starts; without one it starts in the home folder.
 
 ```
 /add web me@web.example.com key=~/.ssh/id_web folder=/var/www
@@ -110,7 +110,7 @@ Hosts is above. Log is everything the activity lines have said, `↵` for one wh
 
 | | |
 |---|---|
-| `/` or `:` | Command prompt, with completion (host names, and the names in the panes for `/get` and `/put`) |
+| `/` or `:` | Command prompt, with completion (host names, and the names in the panes for `/get` and `/put`); where there is nothing to complete, the command's parameters stay shown under the prompt |
 | `!` | A shell command on this machine, e.g. `!ssh-add -l` (its output is in the activity line; `/last` has all of it) |
 | `$` | A command on the server (above) |
 | `ctrl+p` | The command palette |

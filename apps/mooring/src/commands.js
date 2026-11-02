@@ -1,4 +1,5 @@
 import * as a from './actions.js';
+import { withCommandHint } from '@fleet/kit/commandhint.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -7,6 +8,7 @@ export const COMMANDS = [
   { name: 'ssh', args: '<command>', desc: 'Run a command on the server (as $ does), in the folder the right pane shows; the output is in Console', run: (ctx, s) => ctx.runRemote(s) },
   { name: 'disconnect', desc: 'Close the connection (transfers still running are cancelled)', run: (ctx) => a.disconnect(ctx) },
   { name: 'add', args: '<name> <user@host[:port]> [key=<file>] [folder=<remote folder>] [password]', desc: 'Save a host, or change the one of that name. It signs in with the key or your ssh agent; with `password` it asks for one every time it connects (never saved)', run: (ctx, s) => a.addHost(ctx, s) },
+  { name: 'keygen', args: '[name] [host]', desc: 'Make an ssh key (ed25519, in ~/.ssh) and copy its public half; with a saved host, that host signs in with it', complete: 'hosts', run: (ctx, s) => a.keygen(ctx, s) },
   { name: 'forget', args: '<host>', desc: 'Take a saved host out of the list (asks first)', complete: 'hosts', run: (ctx, s) => a.forgetHost(ctx, s) },
   { name: 'cd', args: '<folder>', desc: "Go to a folder on the server: a path, .. or ~", run: (ctx, s) => a.cd(ctx, 'remote', s) },
   { name: 'lcd', args: '<folder>', desc: 'Go to a folder on this machine: a path, .. or ~', run: (ctx, s) => a.cd(ctx, 'local', s) },
@@ -60,7 +62,7 @@ const quoted = (n) => (/\s/.test(n) ? `"${n}"` : n);
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away. `data` has `hosts` and `panes`.
  */
-export function suggestionsFor(value, { data, user = [] } = {}) {
+function commandCompletions(value, { data, user = [] } = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   const all = [...COMMANDS, ...user];
@@ -79,3 +81,6 @@ export function suggestionsFor(value, { data, user = [] } = {}) {
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${quoted(n)}`, run: true }));
 }
+
+/** What to offer under the prompt: names to complete, or else the command's parameters (the kit's `withCommandHint`). */
+export const suggestionsFor = (value, opts) => withCommandHint(commandCompletions(value, opts), value, (n) => findCommand(n, opts?.user ?? []));

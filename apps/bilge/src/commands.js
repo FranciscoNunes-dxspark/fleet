@@ -1,4 +1,5 @@
 import * as a from './actions.js';
+import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
 import { FILTERS } from './rows.js';
 
@@ -63,7 +64,7 @@ function ranked(names, query) {
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away.
  */
-export function suggestionsFor(value, state = {}) {
+function commandCompletions(value, state = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   if (space < 0) {
@@ -82,3 +83,6 @@ export function suggestionsFor(value, state = {}) {
   // A folder ending in a separator goes a level deeper rather than running.
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: !(cmd.complete === 'folders' && /[\\/]$/.test(n)) }));
 }
+
+/** What to offer under the prompt: names to complete, or else the command's parameters (the kit's `withCommandHint`). */
+export const suggestionsFor = (value, opts) => withCommandHint(commandCompletions(value, opts), value, (n) => findCommand(n));
