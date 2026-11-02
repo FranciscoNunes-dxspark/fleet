@@ -584,11 +584,14 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
 
     /** Commits reachable from `to` but not from `from` (what a deploy of `to` adds over `from`), newest first. */
     async listCommitsBetween(projectId, repoId, from, to, { top = 300 } = {}) {
+      // The commits `to` has and `from` hasn't. Azure DevOps lists what compareVersion has that
+      // itemVersion hasn't, so `from` is the item and `to` the compare (the other way round lists
+      // what `from` has that `to` hasn't: for a release branch, years of merges never brought back).
       const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/commits`, {
         query: {
-          'searchCriteria.itemVersion.version': to,
+          'searchCriteria.itemVersion.version': from,
           'searchCriteria.itemVersion.versionType': 'commit',
-          'searchCriteria.compareVersion.version': from,
+          'searchCriteria.compareVersion.version': to,
           'searchCriteria.compareVersion.versionType': 'commit',
           'searchCriteria.$top': top,
         },

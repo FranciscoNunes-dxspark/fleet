@@ -47,6 +47,36 @@ export default function Shipping() {
   );
 }
 
+/** The figures behind a Development branch's count (server/service.js betweenBranches), to check it against the repo. */
+function Counted({ env }) {
+  const c = env.counted;
+  const short = (id) => <span className="mono">{String(id).slice(0, 8)}</span>;
+  return (
+    <details className="ship-counted small">
+      <summary>{t('How this was counted')}</summary>
+      <ul>
+        <li>
+          {tj('{dev} is at {devId}, from {devAge} ago; {branch} at {prodId}, from {prodAge} ago.', {
+            dev: env.devBranch, devId: short(c.devTip.id), devAge: age(c.devTip.at),
+            branch: env.branch, prodId: c.prodTip ? short(c.prodTip.id) : '—', prodAge: c.prodTip ? age(c.prodTip.at) : '—',
+          })}
+          {c.prodTip?.id === c.devTip.id && <> {t('The same commit, so nothing can be waiting: check the two branches in Settings → Production monitors.')}</>}
+        </li>
+        <li>{t(c.notOnProduction === 1 ? '{n} commit on {dev} is not on {branch}.' : '{n} commits on {dev} are not on {branch}.', { n: c.notOnProduction, dev: env.devBranch, branch: env.branch })}</li>
+        {c.notOnProduction > 0 && (
+          <li>
+            {env.promotedBy
+              ? tj('{n} of them came after {commit}, the commit of {dev} that {pr} took, and are counted.', { n: c.kept, commit: short(c.promotedCommit), dev: env.devBranch, pr: `!${env.promotedBy.id}` })
+              : env.productionChangedAt
+                ? t('{n} of them reached {dev} after {branch} last changed, and are counted.', { n: c.kept, dev: env.devBranch, branch: env.branch })
+                : t('All of them are counted.')}
+          </li>
+        )}
+      </ul>
+    </details>
+  );
+}
+
 /**
  * Open pull requests into the branch this environment deploys from: what
  * merges next, so the card shows the whole way from PR to production.
@@ -127,7 +157,8 @@ function Environment({ env }) {
           {/* How the Development branch's waiting was counted (server/service.js betweenBranches). */}
           {env.promotedBy && (
             <div className="small muted ship-basis">
-              {tj('Counted from {pr}, which took {dev} into {branch} {age} ago.', {
+              {tj(env.promotedBy.via?.length ? 'Counted from {pr}, which took {dev} into {via} on its way to {branch}, {age} ago.' : 'Counted from {pr}, which took {dev} into {branch} {age} ago.', {
+                via: env.promotedBy.via?.join(' → '),
                 pr: <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'pr', projectId: env.promotedBy.projectId, repoId: env.promotedBy.repoId, id: env.promotedBy.id, org: env.org })} title={env.promotedBy.title}>!{env.promotedBy.id}</button>,
                 dev: env.devBranch, branch: env.branch, age: age(env.promotedBy.closedAt),
               })}
@@ -237,6 +268,7 @@ function Environment({ env }) {
         </details>
       )}
       {env.upcoming?.length > 0 && <ComingNext env={env} />}
+      {env.counted && <Counted env={env} />}
       {last?.webUrl && <div className="ship-foot"><ExternalLink href={last.webUrl}>{t('Last deploy in Azure DevOps')}</ExternalLink></div>}
     </section>
   );
