@@ -160,7 +160,7 @@ test('slash suggestions: command names, then ref completion', () => {
   assert.equal(checkout[0].insert, '/checkout main');
   assert.deepEqual(suggestionsFor('/checkout log', { data }).map((s) => s.label), ['feature/login']);
   assert.deepEqual(suggestionsFor('/checkout main', { data }).map((s) => s.label), ['main', 'origin/main']);
-  assert.equal(suggestionsFor('/commit ', { data }).length, 0);
+  assert.deepEqual(suggestionsFor('/commit ', { data }).map((s) => [s.label, s.hint]), [['/commit', '<message> | --file [path]']], 'a message is typed: the parameters stay in view');
   assert.equal(findCommand('co'), null, 'ambiguous: commit, continue, checkout');
   assert.equal(findCommand('checko').name, 'checkout');
   assert.equal(findCommand('chec'), null, 'ambiguous: checkout, checks');
@@ -184,8 +184,8 @@ test('/find: plain text, -S and -G, with their flags offered while typing', () =
   const flags = suggestionsFor('/find ', { data: null });
   assert.deepEqual(flags.map((s) => s.label), ['-S', '-G']);
   assert.equal(flags[0].insert, '/find -S ');
-  assert.deepEqual(suggestionsFor('/find -G', { data: null }), []);
-  assert.deepEqual(suggestionsFor('/find login', { data: null }), []);
+  assert.deepEqual(suggestionsFor('/find -G', { data: null }).map((s) => s.label), ['/find'], 'nothing to complete: the parameters stay in view');
+  assert.deepEqual(suggestionsFor('/find login', { data: null }).map((s) => s.label), ['/find']);
 });
 
 test('worktrees: main, branch, detached, locked and missing ones, paths with spaces', () => {

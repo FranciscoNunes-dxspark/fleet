@@ -1,4 +1,5 @@
 import * as a from './actions.js';
+import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { splitArgs } from './parse.js';
 import { pathArg } from './drop.js';
 
@@ -173,7 +174,7 @@ function ranked(names, query) {
  * then refs, repos or files for commands that complete their argument. `user` adds your own commands.
  * `insert` replaces the prompt text; `run` means picking it can run straight away.
  */
-export function suggestionsFor(value, { data, repos = [], files = [], user = [] }) {
+function commandCompletions(value, { data, repos = [], files = [], user = [] }) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   const all = [...COMMANDS, ...user];
@@ -198,3 +199,6 @@ export function suggestionsFor(value, { data, repos = [], files = [], user = [] 
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
 }
+
+/** What to offer under the prompt: names to complete, or else the command's parameters (the kit's `withCommandHint`). */
+export const suggestionsFor = (value, opts) => withCommandHint(commandCompletions(value, opts), value, (n) => findCommand(n, opts?.user ?? []));
