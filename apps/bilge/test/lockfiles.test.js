@@ -113,3 +113,31 @@ test('the same package in two manifests is one, direct if either asks for it, fo
   assert.deepEqual([p.direct, p.dev, p.where], [true, false, [{ path: 'a/package-lock.json', line: 3 }, { path: 'b/package-lock.json', line: 9 }]]);
   assert.equal(keyOf({ ecosystem: 'NuGet', name: 'Newtonsoft.Json', version: '13.0.1' }), 'NuGet:newtonsoft.json@13.0.1');
 });
+
+test("what a project runs on: a lock file's and a project's frameworks, the Node it says, and each package's required peers", () => {
+  const root = mkdtempSync(join(tmpdir(), 'bilge-runs-'));
+  try {
+    const put = (path, text) => {
+      mkdirSync(join(root, ...path.split('/').slice(0, -1)), { recursive: true });
+      writeFileSync(join(root, ...path.split('/')), text);
+    };
+    const lock = (extra = {}) => JSON.stringify({ lockfileVersion: 3, packages: { '': { dependencies: { a: '^1.0.0' }, ...extra }, 'node_modules/a': { version: '1.0.0', peerDependencies: { react: '^18', redux: '^5' }, peerDependenciesMeta: { redux: { optional: true } } } } });
+    put('web/package.json', JSON.stringify({ engines: { node: '>=18' } }));
+    put('web/package-lock.json', lock());
+    put('site/package-lock.json', lock());
+    put('.nvmrc', 'v20\n');
+    put('bare/package-lock.json', lock({ engines: { node: '^20.19.0 || >=22' } }));
+    put('Api/Api.csproj', '<Project><PropertyGroup><TargetFrameworks>net8.0;net48</TargetFrameworks></PropertyGroup></Project>');
+    put('Worker/Worker.csproj', '<Project />');
+    put('Worker/packages.lock.json', JSON.stringify({ version: 1, dependencies: { 'net8.0': {}, 'net8.0/win-x64': {}, '.NETFramework,Version=v4.7.2': {} } }));
+    const byPath = Object.fromEntries(scanFolder(root).manifests.map((m) => [m.path, m]));
+    assert.deepEqual(byPath['web/package-lock.json'].node, { range: '>=18', from: 'engines.node in package.json' });
+    assert.deepEqual(byPath['site/package-lock.json'].node, { version: '20', from: '.nvmrc' });
+    assert.deepEqual(byPath['bare/package-lock.json'].node, { range: '^20.19.0 || >=22', from: 'engines.node in package.json' });
+    assert.deepEqual(byPath['Api/Api.csproj'].frameworks, ['net8.0', 'net48']);
+    assert.deepEqual(byPath['Worker/packages.lock.json'].frameworks, ['net8.0', 'net472']);
+    assert.deepEqual(byPath['web/package-lock.json'].packages[0].peers, { react: '^18' });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

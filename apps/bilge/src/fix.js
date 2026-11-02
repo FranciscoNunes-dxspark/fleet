@@ -16,8 +16,11 @@ export function safe(ecosystem, name, version) {
 
 /**
  * How to fix `finding` (audit.js's) in `manifest` (lockfiles.js's, one it was found in), to `version`
- * (the finding's fix by default): { run: { command, cwd }, text } when a command does it, else { text }
- * saying what to change, or null when nothing fixes it yet.
+ * (the finding's fix by default): { run: { command, cwd }, check: { command, cwd }, text } when a
+ * command does it, else { text } saying what to change, or null when nothing fixes it yet. `check` is
+ * what says, once it has run, whether the project still holds together: npm ls on the package (an
+ * invalid peer or range fails it), dotnet restore on the project (a framework the package isn't built
+ * for, NU1202, fails it).
  */
 export function fixPlan(finding, manifest, version = finding.fixed) {
   const { pkg } = finding;
@@ -27,12 +30,13 @@ export function fixPlan(finding, manifest, version = finding.fixed) {
     if (manifest.kind !== 'lock') return { text: `${manifest.path} has no lock file: npm install makes one, then /audit again.` };
     if (pkg.direct) {
       const command = `npm install ${pkg.name}@^${version}${pkg.dev ? ' --save-dev' : ''}`;
-      return { run: { command, cwd: manifest.dir }, text: `${command}  (in ${manifest.path.replace(/\/?[^/]+$/, '') || '.'})` };
+      return { run: { command, cwd: manifest.dir }, check: { command: `npm ls ${pkg.name}`, cwd: manifest.dir }, text: `${command}  (in ${manifest.path.replace(/\/?[^/]+$/, '') || '.'})` };
     }
     // Something else brings it in: npm update moves it within the ranges asked for, and an override
     // where they don't reach.
     return {
       run: { command: `npm update ${pkg.name}`, cwd: manifest.dir },
+      check: { command: `npm ls ${pkg.name}`, cwd: manifest.dir },
       text: `npm update ${pkg.name} moves it within what its parents ask for. If ${version} is outside that, add to package.json:\n  "overrides": { "${pkg.name}": "^${version}" }\nthen npm install.`,
     };
   }
@@ -41,5 +45,5 @@ export function fixPlan(finding, manifest, version = finding.fixed) {
   if (!FILE.test(project)) return { text: `dotnet add "${project}" package ${pkg.name} --version ${version}` };
   const command = `dotnet add "${project}" package ${pkg.name} --version ${version}`;
   // A transitive package is pinned by referencing it directly, which NuGet's own advice is too.
-  return { run: { command, cwd: manifest.dir }, text: `${command}${pkg.direct ? '' : '  (a direct reference pins what another package brings in)'}` };
+  return { run: { command, cwd: manifest.dir }, check: { command: `dotnet restore "${project}"`, cwd: manifest.dir }, text: `${command}${pkg.direct ? '' : '  (a direct reference pins what another package brings in)'}` };
 }
