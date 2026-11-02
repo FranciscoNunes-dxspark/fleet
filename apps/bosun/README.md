@@ -142,6 +142,38 @@ Without a `bosun.json`, Bosun works out what to run from the first of these it f
 
 `--no-start` opens without starting anything (`alt+r` starts them all).
 
+### Environments
+
+A project can name its environments once for every app of the family, in `.fleet/project.json` (in
+the project's folder or one above it, up to its checkout's root): dev, staging, prod, and what each
+means to each app. The one chosen is kept for the project, so `/env staging` here (or in a sibling, or
+`ctrl+b e` in Fleet) switches them all, and a `"prod": true` one draws every frame red. The header
+says which one Bosun is in. Bosun's section says two things, both optional:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev": { "bosun": { "variables": { "API_URL": "http://localhost:4280" } } },
+    "staging": { "bosun": { "profile": "staging", "variables": { "API_URL": "https://api.staging.example" } } },
+    "prod": { "prod": true }
+  }
+}
+```
+
+- `profile`: the profile from `bosun.json` the crew runs with in that environment (`--profile` and
+  `p` still choose another). Moving to an environment without one goes back to no profile, when the
+  profile was the environment's.
+- `variables`: settings added to every process Bosun starts, after the env files and before a
+  process's own `env`. They name things (an address, a mode), never secrets: the file is meant to be
+  committed, so a variable whose name reads as a secret (a password, token, key, secret, connection
+  string) or whose value carries one is left out, and Bosun says so. Those belong in an env file.
+
+Every process Bosun starts also gets `FLEET_ENV`, the environment's name. `/env` says which one the
+project is in; `/env <name>` switches it. A switch takes effect for what starts from then on: the
+processes running keep the old environment until they restart, which Bosun offers to do there and
+then (`/restart all` does it later).
+
 ### Pre-flight
 
 Before the crew starts, Bosun checks what it needs and says what's wrong in the activity lines (and
@@ -461,6 +493,7 @@ you to finish.
 
 ### The family
 
+
 Bosun's siblings ([Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice) for git,
 [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl) for SQL, [Sonar](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/sonar)
 for Azure, [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail) for HTTP) never start each other.
@@ -542,6 +575,7 @@ Trawl.
 | `/hosts` | Add the host names the crew answers to that this machine can't find (a process's `host`, an IIS site's bindings) to the hosts file, as 127.0.0.1 (asks first; it takes an administrator) |
 | `/ports` | Every TCP port listening on this machine, with the process holding it (pid and name); the crew's are marked. `f` frees one (asks first), `o` or `↵` opens it in the browser |
 | `/profile [name\|none]` | Run the crew with a profile |
+| `/env [name]` | The project's environment (`.fleet/project.json`), or switch every app to another: what Bosun starts gets `FLEET_ENV` and Bosun's `profile` and `variables` there (see Environments) |
 | `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |
 | `/move [folder]` | Run another project instead: a path, or a folder beside this one (completed as you type); without one, a list of the projects run lately and the folders beside this one. This one's processes stop first |
 | `/replay` | Play back a recorded run of this project's crew (see Replay) |

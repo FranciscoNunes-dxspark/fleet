@@ -2,6 +2,7 @@ import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
 import { groupsOf } from './groups.js';
+import { readProject } from '@fleet/kit/environments.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -25,6 +26,7 @@ export const COMMANDS = [
   { name: 'graph', desc: 'Who starts after whom ("after" in bosun.json), as a tree', run: (ctx) => a.graph(ctx) },
   { name: 'top', desc: 'Every process\'s CPU and memory (with what it started), the busiest first, and the last minute of each', run: (ctx) => a.top(ctx) },
   { name: 'profile', args: '[name|none]', desc: 'Run the crew with a profile from bosun.json', complete: 'profiles', run: (ctx, s) => a.profiles(ctx, s) },
+  { name: 'env', args: '[name]', desc: 'The project\'s environment (.fleet/project.json), or switch every app to another: what Bosun starts gets FLEET_ENV, and Bosun\'s profile and variables there', complete: 'envs', run: (ctx, s) => a.env(ctx, s) },
   { name: 'reload', desc: 'Read bosun.json and the env files again (what changed restarts)', run: (ctx) => ctx.reload() },
   { name: 'move', args: '[folder]', desc: 'Run another project instead (this one\'s processes stop)', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },
   { name: 'replay', desc: 'Play back a recorded session of this project: the crew and logs as they were, crashes marked', run: (ctx) => a.replay(ctx) },
@@ -56,6 +58,7 @@ function completions(kind, data, typed = '') {
   if (kind === 'procs') return [...(data?.procs ?? []).map((p) => p.name), 'all'];
   if (kind === 'targets') return [...(data?.procs ?? []).map((p) => p.name), ...groupsOf(data?.procs ?? []).filter((g) => !(data?.procs ?? []).some((p) => p.name === g)), 'all'];
   if (kind === 'profiles') return [...Object.keys(data?.profiles ?? {}), 'none'];
+  if (kind === 'envs') return (data?.dir && readProject(data.dir)?.names) || [];
   // The projects beside this one, by name, as /move takes them.
   if (kind === 'folders') return data?.dir ? folderCompletions(data.dir, typed) : [];
   return [];

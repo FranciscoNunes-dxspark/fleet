@@ -16,7 +16,9 @@ import { ask } from '@fleet/kit/claude-cli.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { environmentFor } from '@fleet/kit/environments.js';
+import { environmentKey, environmentProfile, environmentVars } from '../environment.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -68,7 +70,7 @@ const firstLine = (s) => String(s ?? '').split('\n')[0];
 // Whether a process runs differently now (its command or its settings), so /reload restarts it.
 const changedSpec = (had, now) => had.run !== now.run || had.build !== now.build || JSON.stringify(had.iis ?? null) !== JSON.stringify(now.iis ?? null) || JSON.stringify(had.logs ?? []) !== JSON.stringify(now.logs ?? []) || Boolean(had.trace) !== Boolean(now.trace) || had.service !== now.service || Boolean(had.dump) !== Boolean(now.dump) || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
 
-function Header({ data, width, loading, mood }) {
+function Header({ data, width, loading, mood, environment }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Bosun', bold: true },
@@ -81,6 +83,7 @@ function Header({ data, width, loading, mood }) {
     if (crashed) segs.push({ text: `  ${crashed} crashed`, color: theme.del, bold: true });
     if (data.from) segs.push({ text: `  │  ${data.from}`, color: theme.dim });
     if (data.profile) segs.push({ text: `  │  profile ${data.profile}`, color: theme.accent });
+    if (environment) segs.push({ text: '  │  ', color: theme.border }, { text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod });
   }
   else if (loading) segs.push({ text: '  loading…', color: theme.dim });
   return <Row pointer={false} width={width} segments={segs} />;
@@ -291,6 +294,14 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // The project: where Bosun started, until /move takes it to another.
   const dirRef = useRef(dir);
   const profileRef = useRef(initialProfile);
+  // The project's environment (the kit's environments.js), kept current when it's switched here or in
+  // another app; a production one draws the frames red. What the crew was given of it is `applied`
+  // (environment.js's environmentKey), and the profile it chose `envProfile`, so that moving to an
+  // environment without one goes back to none only when it was the environment's.
+  const environment = useEnvironment('bosun', dirRef.current);
+  const applied = useRef(null);
+  const appliedName = useRef(null);
+  const envProfile = useRef(null);
   const [, setTick] = useState(0);
   const redrawSoon = useRef(null);
   const changed = (linesOf) => {
@@ -407,15 +418,26 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     try {
       const crew = await load(dirRef.current);
       crewRef.current = crew;
+      const first = !supRef.current;
+      // Read here rather than from the hook, which hears of a /move's new folder only after this.
+      const firstEnv = first ? environmentFor('bosun', dirRef.current) : null;
+      if (first) {
+        applied.current = environmentKey(firstEnv);
+        appliedName.current = firstEnv?.name ?? null;
+        envProfile.current = null;
+        const chosen = environmentProfile(firstEnv, crew.profiles);
+        if (chosen.problem) note(chosen.problem, 'error');
+        // --profile wins over the environment's.
+        else if (chosen.profile && !profileRef.current) profileRef.current = envProfile.current = chosen.profile;
+      }
       if (profileRef.current && !crew.profiles[profileRef.current]) profileRef.current = null;
       const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
-      const first = !supRef.current;
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
       // Each run of a project's crew is recorded for /replay, unless the setting is off, with the
       // profile and the checkout's branch and commit, so /replay's r can say what to put back.
       const project = dirRef.current;
       const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs, profile: profileRef.current, readGit: () => gitHead(project) }) : null;
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), dumpDir: dumpsDir(dirRef.current), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), dumpDir: dumpsDir(dirRef.current), projectEnv: givenVars(firstEnv), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
@@ -457,6 +479,43 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     if (checks.length) note(text);
     return checks;
   };
+  // FLEET_ENV and the environment's variables, saying which were left out as secrets.
+  const givenVars = (env) => {
+    const { vars, refused } = environmentVars(env);
+    if (refused.length) note([`Left out of ${env.name}'s variables (.fleet/project.json):`, ...refused.map((r) => `${r.name} ${r.why}`)].join('\n'), 'error');
+    return vars;
+  };
+  // The environment switched (here with /env, in a sibling, in Fleet): the processes Bosun starts from
+  // now get its settings and profile; the running ones keep the old until they restart, which is offered.
+  const switchEnvironment = async (env) => {
+    const sup = supRef.current;
+    if (!sup || environmentKey(env) === applied.current) return;
+    const was = appliedName.current;
+    applied.current = environmentKey(env);
+    appliedName.current = env?.name ?? null;
+    sup.projectEnv = givenVars(env);
+    const chosen = environmentProfile(env, crewRef.current?.profiles ?? {});
+    if (chosen.problem) note(chosen.problem, 'error');
+    else {
+      const next = chosen.profile ?? (profileRef.current === envProfile.current ? null : profileRef.current);
+      envProfile.current = chosen.profile;
+      if (next !== profileRef.current) {
+        profileRef.current = next;
+        sup.recorder?.profile(next);
+        await reload();
+      }
+    }
+    const running = sup.list().filter((p) => p.child);
+    const what = env ? `${env.name}${env.prod ? ' (production)' : ''}` : 'none';
+    note(`Environment ${what}: what Bosun starts gets ${env ? `FLEET_ENV=${env.name}` : 'no FLEET_ENV'}${profileRef.current ? `, with profile ${profileRef.current}` : ''}.${running.length ? `\n${running.length === 1 ? `${running[0].name} keeps` : `The ${running.length} running processes keep`} ${was ?? 'what they had'} until restarted.` : ''}`, 'ok');
+    // Asked only when nothing else is: a question of its own mustn't take another's place.
+    if (!running.length || confirmRef.current) return;
+    const yes = await confirm({ title: `Restart ${running.length === 1 ? running[0].name : `the ${running.length} running processes`} in ${what}?`, detail: running.length > 1 ? running.map((p) => p.name).join(', ') : undefined, options: [{ label: 'Yes, restart', value: true }, { label: 'No', value: false }] });
+    if (yes && supRef.current === sup) await Promise.all(running.map((p) => sup.restart(p.name)));
+  };
+  useEffect(() => {
+    switchEnvironment(environment);
+  }, [environmentKey(environment)]);
   const setProfile = (name) => {
     profileRef.current = name;
     supRef.current?.recorder?.profile(name);
@@ -702,6 +761,14 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     // the prompt; both resolve false when it failed.
     runUserCommand: (cmd, rest) => runUserCommand(cmd, rest),
     runLine: (text) => runLine(text),
+    // /env chose an environment: applied now rather than when the hook next looks. False when the
+    // crew has it already.
+    environmentChanged: () => {
+      const env = environmentFor('bosun', dirRef.current);
+      if (environmentKey(env) === applied.current) return false;
+      switchEnvironment(env);
+      return true;
+    },
     openPalette: () => openPalette(),
     showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('No command has run yet.')),
   });
@@ -1098,7 +1165,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} width={W} loading={loading} mood={mood} />
+      <Header environment={environment} data={data} width={W} loading={loading} mood={mood} />
       <Tabs view={view} entries={entries} width={W} />
       <Box height={mainH} width={W}>
         {main}

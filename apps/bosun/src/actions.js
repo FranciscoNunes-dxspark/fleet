@@ -25,6 +25,7 @@ import { SYSTEM_PIDS } from './supervisor.js';
 import { appcmdProblem, bindingUrl, newBinding, poolRows, poolRuntime } from './iis.js';
 import { crewFolders, webConfigDatabases } from './webconfig.js';
 import { hostsNames, withHosts } from './hosts.js';
+import { describeEnvironments, setEnvironment } from '@fleet/kit/environments.js';
 
 const YES_NO = (yes) => [
   { label: yes, value: true },
@@ -870,4 +871,16 @@ async function changeSetting(ctx, row) {
     ctx.setConfig((c) => ({ ...c, [row.id]: [] }));
     redrawSettings(ctx);
   }
+}
+
+/**
+ * /env: without a name, which environment the project is in (and the others); with one, switches
+ * every app to it. App's switchEnvironment then gives the crew its settings and profile, and offers to
+ * restart what runs.
+ */
+export function env(ctx, name) {
+  if (!name?.trim()) return ctx.note(describeEnvironments(ctx.dir));
+  const r = setEnvironment(ctx.dir, name, { by: 'bosun' });
+  if (!r.ok) return ctx.note(r.error, 'error');
+  if (!ctx.environmentChanged()) ctx.note(`Environment ${r.env.name} already.`);
 }

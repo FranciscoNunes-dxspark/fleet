@@ -140,7 +140,7 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs, debugOutput, appSettings = writeAppSettings, services = null, fetchImpl = httpStatus, warmWait = 90_000, dumpDir = join(tmpdir(), 'bosun-dumps'), dumpEvery = 3000, procdumpSpawn = spawn, findTool = findOnPath } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, projectEnv = {}, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs, debugOutput, appSettings = writeAppSettings, services = null, fetchImpl = httpStatus, warmWait = 90_000, dumpDir = join(tmpdir(), 'bosun-dumps'), dumpEvery = 3000, procdumpSpawn = spawn, findTool = findOnPath } = {}) {
     this.dir = dir;
     // "service" processes: service.js's serviceControl (made when the first one starts; tests pass a fake).
     this.services = services;
@@ -185,6 +185,9 @@ export class Supervisor {
     this.tls = tls;
     this.httpsProxy = httpsProxy;
     this.env = env;
+    // The project environment's settings (environment.js's environmentVars: FLEET_ENV and its
+    // variables), for each start from now: a running process keeps what it started with.
+    this.projectEnv = projectEnv;
     this.times = restartTimes;
     this.procs = new Map();
     LIVE.add(this);
@@ -319,9 +322,9 @@ export class Supervisor {
           windowsHide: true,
           detached: !WIN,
           // FORCE_COLOR off: colours would be stripped anyway, and some tools write less without them.
-          // The terminal's, then the env files', then bosun.json's own.
+          // The terminal's, then the env files', the project environment's, then bosun.json's own.
           // "dump": a .NET runtime writes its own when it crashes.
-          env: { ...this.env, ...p.spec.fileEnv, ...env, ...(dumps ? dumpEnv(dumps, p.name) : {}), FORCE_COLOR: '0' },
+          env: { ...this.env, ...p.spec.fileEnv, ...this.projectEnv, ...env, ...(dumps ? dumpEnv(dumps, p.name) : {}), FORCE_COLOR: '0' },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
     p.child = child;
@@ -386,7 +389,7 @@ export class Supervisor {
    * the port (when bosun.json gives none) and the host its health page is asked for.
    */
   iisChild(p) {
-    const child = new IisChild(p.spec, { control: this.iisControl(), dir: this.dir, env: this.env, spawnImpl: this.spawnImpl, settings: (folder) => this.writeSettings(p, folder), ...this.iisTimes });
+    const child = new IisChild(p.spec, { control: this.iisControl(), dir: this.dir, env: { ...this.env, ...this.projectEnv }, spawnImpl: this.spawnImpl, settings: (folder) => this.writeSettings(p, folder), ...this.iisTimes });
     this.followPid(p, child);
     // Started: asked for at once, so the first request isn't the one that waits.
     child.once('spawn', () => this.warmUp(p, child, 'started'));
@@ -406,7 +409,7 @@ export class Supervisor {
   writeSettings(p, folder) {
     if (!this.appSettings || !folder) return false;
     try {
-      const r = this.appSettings(folder, { ...p.spec.fileEnv, ...p.spec.env });
+      const r = this.appSettings(folder, { ...p.spec.fileEnv, ...this.projectEnv, ...p.spec.env });
       if (r && (r.changed || !r.written)) this.push(p, appSettingsNote(r), !r.written);
       return Boolean(r?.changed);
     } catch (e) {
@@ -602,7 +605,7 @@ export class Supervisor {
     try {
       p.tails = this.tail(p.spec.logs, {
         cwd: resolve(this.dir, p.spec.cwd ?? '.'),
-        env: { ...this.env, ...p.spec.fileEnv, ...p.spec.env },
+        env: { ...this.env, ...p.spec.fileEnv, ...this.projectEnv, ...p.spec.env },
         onLine: (text) => {
           if (p.child !== child) return;
           const { status, trouble } = p;
