@@ -1,13 +1,15 @@
-// Keel's frame: the Line. A top bar (what needs you, search, live status, the menu), the line
-// of stations under it (Keel's main navigation: each station is a stage of the path change takes,
-// with the pages that look at that stage as its tabs), then the page. Pages beside the line
-// (Inbox, Weekly summary, Team, Insights, Settings…) are in the menu. The rules that place
-// change on the line are in stages.js; the stage names and their pages in names.js.
+// Keel's frame: the Line. On a wide screen, the sidebar (the three views and every page, by
+// what you're doing, with refresh and who you are at its foot) beside a top bar (what needs you,
+// search, live status), on the home page the line of stations under it (each station a stage of
+// the path change takes), on a stage's pages that stage's tabs, then the page. A phone has no
+// sidebar: its menu, a button in the bottom right corner, holds the views and all the pages.
+// The rules that place change on the line are in stages.js; the stage names and pages in names.js.
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { Avatar, Logo, pinchLine, useMedia } from '../ui.jsx';
+import { useSticky } from '../sticky.js';
 import { Icon } from '../icons.jsx';
 import { pinchMood } from '../pinch.js';
 import { t, tj, tx } from '../i18n.js';
@@ -53,7 +55,8 @@ export default function LineShell({ children }) {
   useStableHeight(mainRef, refreshKey);
   const [spinning, setSpinning] = useState(false);
   const [onlyMine, setOnlyMine] = useState(false);
-  // A phone gets its own frame: one row along the top, the slim line pinned under it, the views at the bottom.
+  const [collapsed, setCollapsed] = useSticky('sidebar.collapsed', false);
+  // A phone gets its own frame: one row along the top, no sidebar, the menu in the bottom right corner.
   const phone = useMedia('(max-width: 900px)');
   const [demoHidden, setDemoHidden] = useState(() => { try { return localStorage.getItem(DEMO_KEY) === '1'; } catch { return false; } });
   const hideDemo = () => { setDemoHidden(true); try { localStorage.setItem(DEMO_KEY, '1'); } catch { /* storage blocked: it comes back next time */ } };
@@ -99,93 +102,88 @@ export default function LineShell({ children }) {
 
   return (
     <LineData.Provider value={line}>
-      <div className={`ls ls-${view}${home ? ' ls-home' : ''}${onlyMine ? ' line-only-mine' : ''}`}>
-        <header className="line-top">
-          <Link to="/" className="line-brand" title={pinchLine(mood, { attention: attention.data, live })}>
-            <Logo mood={mood} size={30} />
-            <span className="line-brand-text">
-              <strong>Keel</strong>
-              <span className="truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>
-                {meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\/(dev\.azure\.com\/)?/, '')}
+      <div className={`ls ls-${view}${home ? ' ls-home' : ''}${onlyMine ? ' line-only-mine' : ''}${collapsed ? ' ls-collapsed' : ''}`}>
+        {!phone && (
+          <Sidebar
+            view={view} summary={s} mood={mood} attention={attention.data}
+            collapsed={collapsed} setCollapsed={setCollapsed} spinning={spinning} setSpinning={setSpinning}
+          />
+        )}
+        <div className="ls-body">
+          <header className="line-top">
+            {/* Wide screens have Keel at the top of the sidebar instead. */}
+            {phone && <Link to="/" className="line-brand" title={pinchLine(mood, { attention: attention.data, live })}>
+              <Logo mood={mood} size={30} />
+              <span className="line-brand-text">
+                <strong>Keel</strong>
+                <span className="truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>
+                  {meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\/(dev\.azure\.com\/)?/, '')}
+                </span>
               </span>
-            </span>
-          </Link>
+            </Link>}
 
-          <nav className="views" aria-label={t('Views')}>
-            <NavLink to="/" className={() => (view === 'line' ? 'on' : '')} title={t('Where change is stuck')}><Icon name="line" size={15} /><span>{t('Line')}</span></NavLink>
-            <NavLink to="/desk" className={() => (view === 'desk' ? 'on' : '')} title={t('What to do next')}><Icon name="workItems" size={15} /><span>{t('Desk')}</span></NavLink>
-            <NavLink to="/control" className={() => (view === 'control' ? 'on' : '')} title={t("What's happening now")}><Icon name="production" size={15} /><span>{t('Control room')}</span></NavLink>
-          </nav>
+            <div className="line-needs" role="group" aria-label={t('Needs you')}>
+              <NavLink to="/inbox" className={({ isActive }) => `line-needs-label${isActive ? ' on' : ''}`}>
+                <Icon name="inbox" size={15} /> {t('Needs you')}{s?.high ? <span className="line-needs-n">{s.high}</span> : null}
+              </NavLink>
+              {needs.length ? needs.map((n) => (
+                <button key={n.label} type="button" className={`line-need line-need-${n.tone}`} onClick={() => { setOnlyMine(!!n.mine); navigate(`/line/${n.stage}`); }}>
+                  {n.label}
+                </button>
+              )) : attention.data && <span className="line-need line-need-ok">{t('All clear')}</span>}
+            </div>
 
-          <div className="line-needs" role="group" aria-label={t('Needs you')}>
-            <NavLink to="/inbox" className={({ isActive }) => `line-needs-label${isActive ? ' on' : ''}`}>
-              <Icon name="inbox" size={15} /> {t('Needs you')}{s?.high ? <span className="line-needs-n">{s.high}</span> : null}
-            </NavLink>
-            {needs.length ? needs.map((n) => (
-              <button key={n.label} type="button" className={`line-need line-need-${n.tone}`} onClick={() => { setOnlyMine(!!n.mine); navigate(`/line/${n.stage}`); }}>
-                {n.label}
+            <div className="line-tools">
+              <button type="button" className="line-tool line-search" onClick={() => window.dispatchEvent(new Event('keel:palette'))} aria-label={t('Search (Ctrl+K)')} title={t('Search (Ctrl+K)')}>
+                <Icon name="search" /><kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>
               </button>
-            )) : attention.data && <span className="line-need line-need-ok">{t('All clear')}</span>}
-          </div>
+              <span className={`line-live line-live-${!live.connected ? 'warn' : live.ok === false && live.error ? 'bad' : 'ok'}`} role="img" aria-label={liveText(live)} title={liveText(live)} />
+            </div>
+          </header>
 
-          <div className="line-tools">
-            <button type="button" className="line-tool line-search" onClick={() => window.dispatchEvent(new Event('keel:palette'))} aria-label={t('Search (Ctrl+K)')} title={t('Search (Ctrl+K)')}>
-              <Icon name="search" /><kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>
-            </button>
-            <span className={`line-live line-live-${!live.connected ? 'warn' : live.ok === false && live.error ? 'bad' : 'ok'}`} role="img" aria-label={liveText(live)} title={liveText(live)} />
-            <Menu spinning={spinning} setSpinning={setSpinning} />
-          </div>
-        </header>
+          {newVersion && (
+            <div className="update-banner" role="status">
+              <span>{t('A new version of Keel is available.')}</span>
+              <button type="button" className="btn btn-small btn-primary" onClick={updateNow}>{t('Update')}</button>
+            </div>
+          )}
+          {meta.mock && !demoHidden && (
+            <div className="demo-banner demo-banner-mock">
+              <span className="demo-banner-text">
+                {tj("You're looking at demo data ({reason}). Add {orgUrl} and {pat} to {env} and restart to connect your organization.", {
+                  reason: tx(meta.mockReason), orgUrl: <code>AZDO_ORG_URL</code>, pat: <code>AZDO_PAT</code>, env: <code>.env</code>,
+                })}
+              </span>
+              <button type="button" className="demo-banner-x" onClick={hideDemo} aria-label={t('Dismiss')} title={t('Dismiss')}>✕</button>
+            </div>
+          )}
+          {!meta.trackedProjects.length && (
+            <div className="demo-banner">
+              {tj('No projects tracked yet. {link} to fill the console.', { link: <NavLink to="/settings">{t('Choose your projects and repos')}</NavLink> })}
+            </div>
+          )}
 
-        {newVersion && (
-          <div className="update-banner" role="status">
-            <span>{t('A new version of Keel is available.')}</span>
-            <button type="button" className="btn btn-small btn-primary" onClick={updateNow}>{t('Update')}</button>
-          </div>
-        )}
-        {meta.mock && !demoHidden && (
-          <div className="demo-banner demo-banner-mock">
-            <span className="demo-banner-text">
-              {tj("You're looking at demo data ({reason}). Add {orgUrl} and {pat} to {env} and restart to connect your organization.", {
-                reason: tx(meta.mockReason), orgUrl: <code>AZDO_ORG_URL</code>, pat: <code>AZDO_PAT</code>, env: <code>.env</code>,
-              })}
-            </span>
-            <button type="button" className="demo-banner-x" onClick={hideDemo} aria-label={t('Dismiss')} title={t('Dismiss')}>✕</button>
-          </div>
-        )}
-        {!meta.trackedProjects.length && (
-          <div className="demo-banner">
-            {tj('No projects tracked yet. {link} to fill the console.', { link: <NavLink to="/settings">{t('Choose your projects and repos')}</NavLink> })}
-          </div>
-        )}
+          {/* The stations are the home page's: elsewhere the sidebar (or the phone's menu) is the way around. */}
+          {home && <Rail stages={stages} tracks={line.tracks} history={line.history} here={here} compact={phone} loading={loading} />}
+          {view === 'line' && here && (
+            <nav className="stage-tabs" aria-label={stageName(here)}>
+              {stagePages(here).map(([label, to]) => (
+                <NavLink key={to} to={to} end className={({ isActive }) => (isActive || (to === '/totals' && pathname.startsWith('/totals/')) ? 'on' : '')}>{label}</NavLink>
+              ))}
+            </nav>
+          )}
 
-        {view === 'line' && <Rail stages={stages} tracks={line.tracks} history={line.history} here={here} compact={!home || phone} loading={loading} />}
-        {view === 'line' && here && (
-          <nav className="stage-tabs" aria-label={stageName(here)}>
-            {stagePages(here).map(([label, to]) => (
-              <NavLink key={to} to={to} end className={({ isActive }) => (isActive || (to === '/totals' && pathname.startsWith('/totals/')) ? 'on' : '')}>{label}</NavLink>
-            ))}
-          </nav>
-        )}
+          <main className="ls-main" ref={mainRef}>{children}</main>
+        </div>
 
-        <main className="ls-main" ref={mainRef}>{children}</main>
-
-        {/* Phones: the three views and the Inbox at the bottom, within reach of a thumb. */}
-        <nav className="bottom-bar" aria-label={t('Views')}>
-          <NavLink to="/" className={() => (view === 'line' && !pathname.startsWith('/inbox') ? 'on' : '')}><Icon name="line" /><span>{t('Line')}</span></NavLink>
-          <NavLink to="/desk" className={() => (view === 'desk' ? 'on' : '')}><Icon name="workItems" /><span>{t('Desk')}</span></NavLink>
-          <NavLink to="/control" className={() => (view === 'control' ? 'on' : '')}><Icon name="production" /><span>{t('Control room')}</span></NavLink>
-          <NavLink to="/inbox" className={({ isActive }) => (isActive ? 'on' : '')}>
-            <span className="bottom-icon"><Icon name="inbox" />{s?.high ? <span className="bottom-n">{s.high}</span> : null}</span>
-            <span>{t('Inbox')}</span>
-          </NavLink>
-        </nav>
+        {/* Phones: the menu, in the bottom right corner within reach of a thumb. */}
+        {phone && <Menu view={view} inbox={s?.high} spinning={spinning} setSpinning={setSpinning} />}
       </div>
     </LineData.Provider>
   );
 }
 
-/** The stations: the whole line on the home page, a slim one over every other page. */
+/** The stations, on the home page: the whole line, or a slim one pinned under the top bar on a phone. */
 function Rail({ stages, tracks, history, here, compact, loading }) {
   return (
     <nav className={`line-rail${compact ? ' line-rail-compact' : ''}`} aria-label={t('The Line')}>
@@ -240,12 +238,139 @@ function liveText(live) {
   return ago < 60 ? t('Live · checked {n}s ago', { n: ago }) : t('Live · checked {n}m ago', { n: Math.round(ago / 60) });
 }
 
-/** Everything beside the line: the other pages, refreshing, and who you are. */
-function Menu({ spinning, setSpinning }) {
-  const { meta, refresh, toast, authMode, signOut, live } = useApp();
+// The three ways to look at the same work, shared by the sidebar and the phone's menu.
+const VIEWS = [
+  ['line', '/', 'line', 'Line', 'Where change is stuck'],
+  ['desk', '/desk', 'workItems', 'Desk', 'What to do next'],
+  ['control', '/control', 'production', 'Control room', "What's happening now"],
+];
+
+/** Refresh from Azure DevOps, with the spin while it runs. */
+function useHardRefresh(setSpinning) {
+  const { refresh, toast } = useApp();
+  return async () => {
+    setSpinning(true);
+    try {
+      await api('/refresh', { method: 'POST' });
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setTimeout(() => setSpinning(false), 400);
+    }
+  };
+}
+
+/** Who you are, and the way out in sign-in mode. */
+function Me({ className }) {
+  const { meta, authMode, signOut } = useApp();
+  const name = meta.account?.name || meta.me.displayName;
+  return (
+    <div className={className}>
+      <Avatar person={{ displayName: name, uniqueName: meta.me.uniqueName }} size={28} title={name} />
+      <span className="truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
+        {t('Signed in as {name}', { name })}
+        {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
+      </span>
+      {authMode === 'login' && <button type="button" className="line-tool" onClick={signOut} title={t('Sign out')} aria-label={t('Sign out')}><Icon name="signOut" size={15} /></button>}
+    </div>
+  );
+}
+
+/**
+ * Wide screens: the views and every page down the left, grouped by what you're doing, each
+ * with the count of what needs you there. Collapsed, icons only (remembered in this browser).
+ */
+function Sidebar({ view, summary: s, mood, attention, collapsed, setCollapsed, spinning, setSpinning }) {
+  const { meta, live } = useApp();
+  const { pathname } = useLocation();
+  const hardRefresh = useHardRefresh(setSpinning);
+  const groups = [
+    { items: [
+      { to: '/inbox', label: t('Inbox'), icon: 'inbox', count: s?.high, tone: 'bad' },
+      { to: '/summary', label: t('Weekly summary'), icon: 'summary' },
+    ] },
+    { label: t('Work'), items: [
+      { to: '/work', label: t('Work items'), icon: 'workItems', also: ['/epics'] },
+      { to: '/board', label: t('Board'), icon: 'board' },
+    ] },
+    { label: t('Code and delivery'), items: [
+      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits', '/release-notes'] },
+      { to: '/ship', label: t('Waiting to ship'), icon: 'totals' },
+      { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
+      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals'] },
+    ] },
+    { label: t('People'), items: [
+      { to: '/people', label: t('Team'), icon: 'team', also: ['/team', '/users'] },
+      { to: '/insights', label: t('Insights'), icon: 'insights' },
+    ] },
+  ];
+  const lit = (n) => pathname === n.to || pathname.startsWith(`${n.to}/`) || !!n.also?.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const tip = (label) => (collapsed ? label : undefined);
+  const link = (to, label, icon, on, extra) => (
+    <NavLink to={to} className={() => `side-link${on ? ' on' : ''}`} title={tip(label)} aria-label={collapsed ? label : undefined}>
+      <Icon name={icon} /><span className="side-text">{label}</span>{extra}
+    </NavLink>
+  );
+  return (
+    <nav className="side" aria-label={t('Main')}>
+      <div className="side-brand">
+        <Link to="/" className="line-brand" title={pinchLine(mood, { attention, live })}>
+          <Logo mood={mood} size={30} />
+          <span className="line-brand-text side-text">
+            <strong>Keel</strong>
+            <span className="truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>
+              {meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\/(dev\.azure\.com\/)?/, '')}
+            </span>
+          </span>
+        </Link>
+        <button
+          type="button" className="side-toggle" onClick={() => setCollapsed((c) => !c)} aria-expanded={!collapsed}
+          aria-label={collapsed ? t('Expand menu') : t('Collapse menu')} title={collapsed ? t('Expand menu') : t('Collapse menu')}
+        >
+          <Icon name={collapsed ? 'expand' : 'collapse'} />
+        </button>
+      </div>
+      <div className="side-scroll">
+        <ul className="side-group side-views" aria-label={t('Views')}>
+          {VIEWS.map(([id, to, icon, label]) => <li key={id}>{link(to, t(label), icon, view === id && !groups.some((g) => g.items.some(lit)) && pathname !== '/settings')}</li>)}
+        </ul>
+        {groups.map((g, i) => (
+          <div key={g.label || i} className="side-group-wrap">
+            {g.label && <div className="side-label side-text" id={`side-group-${i}`}>{g.label}</div>}
+            <ul className="side-group" aria-labelledby={g.label ? `side-group-${i}` : undefined}>
+              {g.items.map((n) => (
+                <li key={n.to}>
+                  {link(n.to, n.label, n.icon, lit(n), n.count > 0 && (
+                    <span className={`side-count side-count-${n.tone}`} title={t(n.count === 1 ? '{n} needs attention' : '{n} need attention', { n: n.count })}>{n.count}</span>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="side-foot">
+        {link('/settings', t('Settings'), 'settings', pathname.startsWith('/settings'))}
+        <button type="button" className="side-link" onClick={hardRefresh} disabled={spinning} title={tip(t('Refresh from Azure DevOps'))} aria-label={collapsed ? t('Refresh from Azure DevOps') : undefined}>
+          <span className={spinning ? 'spin' : ''}><Icon name="refresh" /></span><span className="side-text">{t('Refresh from Azure DevOps')}</span>
+        </button>
+        <div className={`side-live live-${!live.connected ? 'warn' : !live.ok && live.error ? 'bad' : 'ok'}`} title={liveText(live)}>
+          <span className="live-dot" aria-hidden="true" /><span className="side-text">{liveText(live)}</span>
+        </div>
+        <Me className="side-me" />
+      </div>
+    </nav>
+  );
+}
+
+/** Phones: everything in one menu behind a button in the bottom right corner. */
+function Menu({ view, inbox, spinning, setSpinning }) {
+  const { live } = useApp();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const hardRefresh = useHardRefresh(setSpinning);
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
     if (!open) return undefined;
@@ -263,18 +388,6 @@ function Menu({ spinning, setSpinning }) {
     return () => clearInterval(timer);
   }, [open]);
 
-  const hardRefresh = async () => {
-    setSpinning(true);
-    try {
-      await api('/refresh', { method: 'POST' });
-      refresh();
-    } catch (e) {
-      toast(e.message, 'bad');
-    } finally {
-      setTimeout(() => setSpinning(false), 400);
-    }
-  };
-
   // Every page the stages hold, straight to it, each with the stage it sits in (names.js stagePages).
   const linePages = [
     ['/work', t('Work items'), 'workItems', 'planned'], ['/board', t('Board'), 'board', 'building'],
@@ -286,14 +399,15 @@ function Menu({ spinning, setSpinning }) {
     ['/inbox', t('Inbox'), 'inbox'], ['/summary', t('Weekly summary'), 'summary'],
     ['/people', t('Team'), 'team'], ['/insights', t('Insights'), 'insights'], ['/settings', t('Settings'), 'settings'],
   ];
-  const name = meta.account?.name || meta.me.displayName;
   return (
-    <div className="line-menu" ref={ref}>
-      <button type="button" className="line-tool" aria-expanded={open} aria-label={t('Menu')} title={t('Menu')} onClick={() => setOpen((o) => !o)}>
-        <Icon name={open ? 'close' : 'more'} />
-      </button>
+    <div className="line-menu line-menu-fab" ref={ref}>
       {open && (
         <div className="line-menu-pop">
+          <nav className="line-menu-views" aria-label={t('Views')}>
+            {VIEWS.map(([id, to, icon, label]) => (
+              <NavLink key={id} to={to} className={() => ((id === 'line' ? pathname === '/' || pathname.startsWith('/line/') : view === id) ? 'on' : '')}><Icon name={icon} /><span>{t(label)}</span></NavLink>
+            ))}
+          </nav>
           <nav className="line-menu-pages line-menu-all" aria-label={t('All pages')}>
             <span className="line-menu-h">{t('All pages')}</span>
             {linePages.map(([to, label, icon, stage]) => (
@@ -304,7 +418,9 @@ function Menu({ spinning, setSpinning }) {
           </nav>
           <nav className="line-menu-pages" aria-label={t('Menu')}>
             {pages.map(([to, label, icon]) => (
-              <NavLink key={to} to={to} className={({ isActive }) => (isActive || (to === '/people' && /^\/(team|users)(\/|$)/.test(pathname)) ? 'on' : '')}><Icon name={icon} size={15} /> {label}</NavLink>
+              <NavLink key={to} to={to} className={({ isActive }) => (isActive || (to === '/people' && /^\/(team|users)(\/|$)/.test(pathname)) ? 'on' : '')}>
+                <Icon name={icon} size={15} /> {label}{to === '/inbox' && inbox ? <span className="line-menu-n">{inbox}</span> : null}
+              </NavLink>
             ))}
           </nav>
           <div className="line-menu-foot">
@@ -314,18 +430,14 @@ function Menu({ spinning, setSpinning }) {
             <div className={`line-menu-live live-${!live.connected ? 'warn' : !live.ok && live.error ? 'bad' : 'ok'}`}>
               <span className="live-dot" aria-hidden="true" /> {liveText(live)}
             </div>
-            <div className="line-menu-me">
-              <Avatar person={{ displayName: name, uniqueName: meta.me.uniqueName }} size={28} title={name} />
-              <span className="truncate" title={meta.account ? `${meta.account.email} · Azure DevOps: ${meta.me.displayName}` : meta.me.uniqueName}>
-                {t('Signed in as {name}', { name })}
-                {authMode === 'login' && <span className="role-badge">{{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}</span>}
-              </span>
-              {authMode === 'login' && <button type="button" className="line-tool" onClick={signOut} title={t('Sign out')} aria-label={t('Sign out')}><Icon name="signOut" size={15} /></button>}
-            </div>
+            <Me className="line-menu-me" />
           </div>
         </div>
       )}
+      <button type="button" className="line-fab" aria-expanded={open} aria-label={t('Menu')} title={t('Menu')} onClick={() => setOpen((o) => !o)}>
+        <Icon name={open ? 'close' : 'more'} />
+        {!open && inbox ? <span className="line-fab-n">{inbox}</span> : null}
+      </button>
     </div>
   );
 }
-

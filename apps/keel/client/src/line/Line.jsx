@@ -57,7 +57,7 @@ export function LineHome() {
           const shown = stage.cards.slice(0, shownPer);
           const more = stage.cards.length - shown.length;
           return (
-            <section key={stage.id} className={`stage stage-${stage.tone || 'ok'}`} aria-label={stageName(stage.id)}>
+            <section key={stage.id} className={`line-stage line-stage-${stage.tone || 'ok'}`} aria-label={stageName(stage.id)}>
               {/* Phones: the stages are a list, each under its own heading (the slim line above is only a guide). */}
               <Link to={`/line/${stage.id}`} className="stage-title">
                 <span className="stage-title-name">{stageName(stage.id)}</span>
