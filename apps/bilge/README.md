@@ -6,7 +6,7 @@ What a project depends on, in the terminal. Bilge reads a folder's npm, Yarn, pn
 
 Before an update, it says whether the new version fits the project: a NuGet package built for frameworks the project doesn't target, an npm package that needs a newer Node than the project says, or one whose peers won't take it.
 
-It covers what Snyk, Mend, Socket or FOSSA are bought for in a small team: advisories, licences, outdated packages and an SBOM, from a free, open database, with nothing to sign up for. Only the packages' names and versions leave the machine: to `api.osv.dev`, and for `/outdated` to the npm and NuGet registries.
+It covers what Snyk, Mend, Socket or FOSSA are bought for in a small team: advisories, licences, outdated packages and an SBOM, from a free, open database, with nothing to sign up for. Only the packages' names and versions leave the machine: to `api.osv.dev`, and for `/outdated` to the npm and NuGet registries (and `/breaking` sends Claude the lines that import a package).
 
 ```
 bilge                    # this folder and the ones under it
@@ -103,6 +103,10 @@ NuGet's lock files don't record licences: `/outdated` reads them from each packa
 
 For the newest version that fits, npm's registry gives every version's needs in one answer. NuGet's are tried one at a time: the newest of each major version, at most six. When Bilge can't tell, it doesn't warn. That covers a project that says no Node, a package whose `.nuspec` names no frameworks or one Bilge doesn't know (Xamarin, UWP), and a range it can't read.
 
+### Breaking changes
+
+`/breaking <package>`, for a package whose newest version is a major one up, asks Claude what changes between the installed version and the newest that matters for this code. Bilge searches the project's source for the lines that import it (`import`, `require`, `import()`; for NuGet `using`, `open`, `Imports`; up to 80 lines from 4,000 files, never in `node_modules`, `bin` or `obj`), and gives Claude those, both versions, the package's registry page and its repository. Claude may read the project's files and fetch a page (its release notes or changelog), and changes nothing. The answer shows in the viewer: how much work the move is, each breaking change that touches this code with the lines and what to change, then the ones that don't. It needs Claude Code (`claude`) installed and signed in, and says so when it isn't; the lines it sends go to Claude as your own session would send them.
+
 ### Upgrading
 
 `/upgrade` updates every direct package that has a newer version fitting the project: the newest one, or where that won't fit (as in [Will it fit?](#will-it-fit)), the newest one that does. It takes what the last `/outdated` said, asking it first when it hasn't been asked. One question lists them all; it also offers to copy the commands, or to see them. Then, in order:
@@ -127,7 +131,7 @@ The lock files and projects found: their ecosystem, kind, how many packages, how
 
 ## Slash commands
 
-`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/upgrade` (above), `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/upgrade` (above), `/breaking <package>` (above), `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## In a pipeline
 
@@ -168,4 +172,4 @@ The downloaded executable looks for a newer `bilge-v…` release once a day and 
 
 ## Not yet
 
-Python, Go, Cargo and Maven; breaking changes between versions (release notes, API differences); a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called).
+Python, Go, Cargo and Maven; a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called).

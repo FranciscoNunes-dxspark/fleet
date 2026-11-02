@@ -18,6 +18,7 @@ import { fileData, markdownReport } from './share.js';
 import { bumpOf } from './versions.js';
 import { nodeOf, problems, targetsOf } from './compat.js';
 import { branchName, folderLabel, upgradeCandidates } from './upgrade.js';
+import { breakingInput, breakingPrompt } from './breaking.js';
 import { VERSION } from './app.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
@@ -276,6 +277,46 @@ export async function upgrade(ctx) {
   ctx.copy(line, 'a line for Splice');
   report(`${message} on ${branch}`, [`Committed "${message}". Push it from Splice (/push, then /pr) to open its pull request.`]);
   ctx.note(copiedNote('splice', line));
+  return true;
+}
+
+/**
+ * /breaking <package>: for a package a major version behind, Claude says what changes between the
+ * installed version and the newest for this code: the package, the versions, its registry page and
+ * repository, and the project's lines that import it. The newest is asked for first when /outdated
+ * hasn't been.
+ */
+export async function breaking(ctx, name = '') {
+  const p = findPackage(packages(ctx), name);
+  if (!p) return ctx.note(name.trim() ? `No package ${name.trim()} here.` : '/breaking needs a package: /breaking express', 'error') ?? false;
+  if (p.ecosystem !== 'npm' && p.ecosystem !== 'NuGet') return ctx.note(`${p.name} isn't from npm or NuGet: /breaking is for those.`, 'error') ?? false;
+  if (!ctx.data.latest?.get(p.key)?.latest) {
+    const r = await ctx.task(`newest ${p.name}`, async (signal) => {
+      const latest = await ctx.provider.latest([p], { signal });
+      ctx.setData((d) => ({ ...d, latest: new Map([...(d.latest ?? []), ...latest]) }));
+      return { stdout: latest.get(p.key)?.error ?? `${p.name} ${latest.get(p.key)?.latest ?? '?'}` };
+    }, { label: 'Asking the registry' });
+    if (!r.ok) return false;
+  }
+  const latest = ctx.data.latest?.get(p.key);
+  if (!latest?.latest) return ctx.note(`The registry didn't say what ${p.name}'s newest version is.`, 'error') ?? false;
+  if (bumpOf(p.version, latest.latest) !== 'major') {
+    return ctx.note(`${p.name} ${p.version} → ${latest.latest} isn't a major version: /breaking is for those, where what a package offers can change.${bumpOf(p.version, latest.latest) ? '' : ' It is up to date.'}`) ?? true;
+  }
+  let answer = '';
+  let used = [];
+  const r = await ctx.task(
+    `claude: ${p.name} ${p.version} → ${latest.latest}`,
+    async (signal) => {
+      used = await ctx.provider.usages(ctx.cwd(), p, { signal });
+      ctx.progress(`with ${plural(used.length, 'line')} that import it`);
+      answer = await ctx.provider.claude(breakingPrompt(p, p.version, latest.latest, { page: packageUrl(p), repository: latest.repository }), { input: breakingInput(p, used), cwd: ctx.cwd(), signal });
+      return { stdout: `${plural(used.length, 'line')} that import it, and Claude's answer` };
+    },
+    { label: 'Asking Claude' },
+  );
+  if (!r.ok) return false;
+  ctx.showText(`${p.name} ${p.version} → ${latest.latest}: what breaks here (Claude)`, `${answer}\n\n${used.length ? `Lines that import it: ${used.length} (${[...new Set(used.map((u) => u.path))].slice(0, 5).join(', ')}${new Set(used.map((u) => u.path)).size > 5 ? ', …' : ''})` : 'No line imports it by its name.'}`);
   return true;
 }
 

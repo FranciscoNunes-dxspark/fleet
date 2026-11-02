@@ -104,6 +104,14 @@ const OLDER = { express: ['4.21.2'], 'microsoft.data.sqlclient': ['6.0.2', '5.2.
 
 const NUGET_LICENCES = { 'newtonsoft.json': 'MIT', 'microsoft.data.sqlclient': 'MIT', serilog: 'Apache-2.0', 'system.text.encodings.web': 'MIT' };
 
+const DEMO_USAGES = {
+  express: [
+    { path: 'src/server.js', line: 1, text: "const express = require('express');" },
+    { path: 'src/routes/orders.js', line: 2, text: "const { Router } = require('express');" },
+  ],
+  'newtonsoft.json': [{ path: 'src/Api/Program.cs', line: 3, text: 'using Newtonsoft.Json;' }],
+};
+
 const idOf = (p) => (p.ecosystem === 'NuGet' ? p.name.toLowerCase() : p.name);
 
 export function demoBilge() {
@@ -139,7 +147,7 @@ export function demoBilge() {
         const id = idOf(p);
         const latest = LATEST[id] ?? p.version;
         const needs = NEEDS[`${id}@${latest}`];
-        out.set(p.key, { latest, ...(p.license ? {} : { license: NUGET_LICENCES[id] ?? null }), ...(p.name === 'ghostscript-js' ? { deprecated: 'No longer maintained' } : {}), ...(needs ? { needs } : {}) });
+        out.set(p.key, { latest, ...(p.license ? {} : { license: NUGET_LICENCES[id] ?? null }), ...(p.name === 'ghostscript-js' ? { deprecated: 'No longer maintained' } : {}), ...(needs ? { needs } : {}), ...(id === 'express' ? { repository: 'https://github.com/expressjs/express' } : {}) });
         onProgress?.(i + 1, packages.length);
       });
       return out;
@@ -178,6 +186,18 @@ export function demoBilge() {
       if (!m) return { stdout: `(demo) ${command}`, stderr: '' };
       for (const man of state.manifests ?? []) for (const p of man.packages) if (p.name.toLowerCase() === m[1].toLowerCase()) p.version = m[2];
       return { stdout: `(demo) changed ${m[1]} to ${m[2]}`, stderr: '' };
+    },
+    /** Where the demo's code imports a package: express in the server, Newtonsoft.Json in the API. */
+    async usages(root, p) {
+      state.calls.push(['usages', p.name]);
+      return DEMO_USAGES[idOf(p)] ?? [];
+    },
+    /** Claude, made up: what it was asked is kept in `state.asked`. */
+    async claude(prompt, { input = '' } = {}) {
+      state.calls.push(['claude']);
+      state.asked = { prompt, input };
+      const m = /package (\S+) at (\S+)\. Its newest version is (\S+),/.exec(prompt);
+      return `(demo) Moving ${m?.[1]} from ${m?.[2]} to ${m?.[3]} is a small job here: two places to change.\n\n- src/server.js:14 uses app.del(), which ${m?.[3]} removes: use app.delete().\n- src/routes/orders.js:3 passes a string to res.send(status): use res.sendStatus().`;
     },
     /** The demo's tests: the npm project's test script, and dotnet test on the API's project. */
     async tests(manifests, root) {

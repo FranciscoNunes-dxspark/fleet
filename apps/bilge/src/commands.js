@@ -12,6 +12,7 @@ export const COMMANDS = [
   { name: 'outdated', args: '[all]', desc: 'Ask npm and NuGet for the newest versions, whether they fit, and the licences of the direct packages (all: every package)', complete: 'outdated', run: (ctx, s) => a.outdated(ctx, s) },
   { name: 'fix', args: '<package|advisory>', desc: 'Move a vulnerable package to the version that fixes it (npm, yarn, pnpm or dotnet add; asks first)', complete: 'findings', run: (ctx, s) => a.fix(ctx, s) },
   { name: 'upgrade', desc: 'Update every direct package with a newer version that fits, on a branch of its own (bilge/updates-<date>), run the tests and commit (asks first)', run: (ctx) => a.upgrade(ctx) },
+  { name: 'breaking', args: '<package>', desc: "Claude says what changes for this code between a package's version and its newest major one (from the lines that import it)", complete: 'packages', run: (ctx, s) => a.breaking(ctx, s) },
   { name: 'why', args: '<package>', desc: 'Where a package is, its licence, newest version and advisories', complete: 'packages', run: (ctx, s) => a.why(ctx, s) },
   { name: 'ignore', args: '<advisory|package>', desc: 'Leave an advisory out of the list and the counts (asks; kept in the settings)', complete: 'advisories', run: (ctx, s) => a.ignore(ctx, s) },
   { name: 'unignore', args: '[advisory|all]', desc: 'Put an ignored advisory back; alone, says which are ignored', complete: 'ignored', run: (ctx, s) => a.unignore(ctx, s) },
