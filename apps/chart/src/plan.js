@@ -6,6 +6,7 @@
 //   diff:   [{ path, kind: add | remove | change | unknown, before?, after?, forces?, sensitive?, noise? }]
 import { attributeDiff } from './diff.js';
 import { pricingSpec } from './costs.js';
+import { idDependencies, planDependencies } from './graph.js';
 
 /** Terraform's actions as one word: ["delete","create"] (or the other way round) is a replacement. */
 export function actionOf(actions = []) {
@@ -65,7 +66,9 @@ export function parseTerraformPlan(json) {
   const outputs = Object.entries(plan.output_changes ?? {})
     .map(([name, c]) => ({ name, action: actionOf(c.actions), sensitive: Boolean(c.sensitive), diff: attributeDiff({ value: c.before }, { value: c.after }, { unknown: { value: c.after_unknown }, beforeSensitive: c.sensitive ? { value: true } : {}, afterSensitive: c.sensitive ? { value: true } : {} }) }))
     .filter((o) => o.action !== 'noop');
-  return { tool: 'terraform', version: plan.terraform_version ?? null, changes, drift, outputs, errored: Boolean(plan.errored) };
+  // What depends on what, from the configuration's references (null for a plan without one: /graph asks terraform graph).
+  const dependsOn = planDependencies(plan.configuration, changes.map((c) => c.address));
+  return { tool: 'terraform', version: plan.terraform_version ?? null, changes, drift, outputs, dependsOn, errored: Boolean(plan.errored) };
 }
 
 /**
@@ -139,7 +142,8 @@ export function parseWhatIf(json) {
     const diff = c.delta?.length ? flattenDelta(c.delta) : action === 'create' ? attributeDiff(null, c.after) : action === 'delete' ? attributeDiff(c.before, null) : [];
     return { address: `${type}/${name}`, type, name, mode: 'managed', provider: type.split('/')[0], action, ...(c.unsupportedReason ? { reason: c.unsupportedReason } : {}), diff, id: c.resourceId, ...(resourceGroup ? { resourceGroup } : {}), ...(subscription ? { subscription } : {}), pricing: { before: pricingSpec(type, c.before), after: pricingSpec(type, c.after) } };
   });
-  return { tool: 'bicep', version: null, changes, drift: [], outputs: [], errored: body.status === 'Failed' };
+  // A what-if says nothing of references: only a child resource's place under its parent.
+  return { tool: 'bicep', version: null, changes, drift: [], outputs: [], dependsOn: idDependencies(changes), errored: body.status === 'Failed' };
 }
 
 /** What a JSON file is: a Terraform plan, a Terraform state, or a what-if result, parsed; throws for anything else. */

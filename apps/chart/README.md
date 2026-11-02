@@ -35,7 +35,7 @@ Chart is one of the fleet's apps: it needs Node 22 or newer from a checkout (`np
 `/apply` applies the plan on screen, and only one Chart made, with these guardrails:
 
 - **Only a plan Chart saved.** For Terraform, the plan file `/plan` kept (`terraform apply -input=false <that file>`): never a fresh plan, never one opened with `/open`, never the same file twice. What is applied is exactly what you looked at; if the state changed since (someone else applied), Terraform refuses the stale plan and Chart says so: `/plan` again. For a what-if, `az deployment group create` (or `sub create`) of the same file, scope and parameters.
-- **What it does, first.** Before anything runs, the plan is shown grouped by what it loses: destroyed, then replaced, changed, created, each with why and what it costs a month.
+- **What it does, first.** Before anything runs, the plan is shown grouped by what it loses: destroyed, then replaced, changed, created, each with why, what it costs a month, and what destroying or replacing it affects (Depends, below).
 - **A name typed, not a key pressed.** You type the environment's name (`/env`), or with none the Terraform workspace (`terraform workspace show`, `default` most of the time) or the deployment's resource group; anything else, or `esc`, applies nothing.
 - **Production asks again.** In an environment marked `"prod": true`, one more question after the name, No first.
 - **The plan's own environment.** A plan made in `dev` isn't applied after `/env prod`: plan again.
@@ -48,7 +48,7 @@ When Chart opens, it only looks at the folder: a plan can take a while and signs
 
 ## Views
 
-`1` Changes · `2` Drift · `3` State · `4` Log (what Chart has run). `tab` goes round.
+`1` Changes · `2` Drift · `3` State · `4` Log (what Chart has run) · `5` Depends. `tab` goes round.
 
 ### Changes
 
@@ -58,6 +58,7 @@ What the plan does, worst first: `-` destroy and `±` replace in red (with why: 
 |---|---|
 | `↵` or `l` | What changes in it and what that costs a month (below), attribute by attribute: `~ sku_name: "B1" → "P1v3"`, `# forces replacement` on what does, `(known after apply)`, `(sensitive)` for what Terraform marks sensitive (its value is never shown or kept), `# no effect` for a what-if's noise; its id, and where it is declared |
 | `a` | Show the resources that don't change too, or hide them |
+| `g` | What depends on what, on this resource (the Depends view, below); `home` goes to the top here |
 | `t` | Copy where it is declared (`resource "type" "name"` in the `.tf` files) for Splice, whose blame says who wrote it |
 | `s` | Copy an App Service app (`azurerm_linux_web_app`, `Microsoft.Web/sites`…) for Locker, which shows its settings |
 | `y` | Copy its address |
@@ -88,9 +89,13 @@ What changed outside Terraform since the last apply: the plan's own refresh (`re
 
 Every resource Terraform keeps track of, the root module's first, then each module's under its name. `↵` shows its values (sensitive ones masked), `t` where it is declared, `y` its address.
 
+### Depends
+
+What depends on what, as an indented tree: the resources nothing depends on at the top, and under each the ones that depend on it (a resource under several is drawn in full once and marked `(above)` under the others). It comes from the plan's own configuration (the references each resource's arguments make, `depends_on`, and what a module is given); for a plan that came without one, `/graph` asks `terraform graph` and reads its DOT; for a what-if, a child resource sits under its parent (a slot under its app, a database under its server). What is destroyed or replaced is red, with how many depend on it (`replace: affects 1`); what depends on one of those is yellow with which (`← replacing azurerm_linux_web_app.admin`). The same "replacing X affects Y, Z" is in the change's detail (`↵`), and under it in what `/apply` shows before it asks. `g` in Changes opens it on the selected resource; `↵` shows a change, `y` copies its address.
+
 ## Slash commands
 
-`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/apply`, `/deploy`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/currency [code]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/apply`, `/deploy`, `/open`, `/show <address>`, `/graph [folder]` (what depends on what from `terraform graph`, for a plan that came without its configuration), `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/currency [code]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## Environments
 
@@ -146,4 +151,4 @@ The downloaded executable looks for a newer `chart-v…` release once a day and 
 
 ## Not yet
 
-Applying a plan opened from a file, or a refresh-only one (on purpose: Chart applies only what it planned and showed; `terraform apply` is there for the rest); Pulumi and CloudFormation; telling drift apart in a what-if; a graph of what depends on what.
+Applying a plan opened from a file, or a refresh-only one (on purpose: Chart applies only what it planned and showed; `terraform apply` is there for the rest); Pulumi and CloudFormation; telling drift apart in a what-if; what depends on what inside a module a plan only calls, or between what-if resources other than a child under its parent.

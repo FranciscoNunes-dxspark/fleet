@@ -11,6 +11,7 @@ import { summarize, summaryLine } from './plan.js';
 import { ACTION_MARK, ACTION_WORD, changeRows, findChange, siteOf } from './rows.js';
 import { markdownReport } from './share.js';
 import { CURRENCIES, costLines, costWords, planCosts, totalWords } from './costs.js';
+import { affectedBy, affectsLine, parseDot } from './graph.js';
 import { BINARIES } from './iac.js';
 import { describeEnvironments, markProduction, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 
@@ -239,7 +240,7 @@ const GROUPS = [
 ];
 
 /** The lines shown before an apply or a deployment: what it does, the destroys first, each with why and what it costs. */
-export function applyLines(plan, { title, costs } = {}) {
+export function applyLines(plan, { title, costs, dependsOn } = {}) {
   const total = totalWords(costs);
   const lines = [title, `${summaryLine(summarize(plan.changes)) || 'No changes.'}${total ? `, ${total}` : ''}`, ''];
   for (const [action, heading] of GROUPS) {
@@ -249,6 +250,8 @@ export function applyLines(plan, { title, costs } = {}) {
     for (const c of these) {
       const cost = costWords(costs?.byAddress?.[c.address], costs?.currency);
       lines.push(`  ${ACTION_MARK[c.action]} ${c.address}${c.reason ? `  (${c.reason})` : ''}${cost ? `  ${cost}` : ''}`);
+      const affects = dependsOn ? affectsLine(c, dependsOn) : null;
+      if (affects) lines.push(`      ${affects.replace(/^\S+ \S+ /, '')}`);
     }
     lines.push('');
   }
@@ -286,7 +289,7 @@ async function deployWhatIf(ctx, args, typed = {}) {
   const p = ctx.data.plan;
   const env = envOf(ctx);
   const name = env?.name ?? args.resourceGroup ?? args.location;
-  const go = await confirmByName(ctx, { name, verb: 'Deploy', what: `${args.file} ${where}${env ? ` (${env.name})` : ''}`, overview: applyLines(p, { title: `az deployment create of ${args.file} ${where}`, costs: costsOf(ctx.data) }) });
+  const go = await confirmByName(ctx, { name, verb: 'Deploy', what: `${args.file} ${where}${env ? ` (${env.name})` : ''}`, overview: applyLines(p, { title: `az deployment create of ${args.file} ${where}`, costs: costsOf(ctx.data), dependsOn: dependenciesOf(ctx.data) }) });
   if (!go) return false;
   const attempt = () =>
     ctx.task(
@@ -345,7 +348,7 @@ export async function apply(ctx) {
   const workspace = s.workspace ?? (await ctx.provider.workspace?.(s.dir, opts).catch(() => null)) ?? 'default';
   const name = env?.name ?? workspace;
   const where = `${s.label}${env ? ` (${env.name}, workspace ${workspace})` : ` (workspace ${workspace})`}`;
-  const go = await confirmByName(ctx, { name, verb: 'Apply', what: `this plan to ${where}`, overview: applyLines(p, { title: `${b} apply of the plan Chart saved for ${where}`, costs: costsOf(ctx.data) }) });
+  const go = await confirmByName(ctx, { name, verb: 'Apply', what: `this plan to ${where}`, overview: applyLines(p, { title: `${b} apply of the plan Chart saved for ${where}`, costs: costsOf(ctx.data), dependsOn: dependenciesOf(ctx.data) }) });
   if (!go) return false;
   const summary = summaryLine(summarize(p.changes)) || 'no changes';
   const r = await ctx.task(
@@ -436,6 +439,43 @@ export function currency(ctx, value = '') {
   return true;
 }
 
+/** What depends on what in the plan on screen: its own (configuration or ids), or /graph's for it; null when neither says. */
+export const dependenciesOf = (data) => data?.plan?.dependsOn ?? (data?.graph && data.graph.for === data.plan ? data.graph.dependsOn : null);
+
+/** A change's detail lines about what depends on it: what destroying or replacing it affects, or what it is affected by. */
+function dependencyLines(c, dependsOn, changes) {
+  if (!dependsOn) return [];
+  const affects = affectsLine(c, dependsOn);
+  const by = affectedBy(changes, dependsOn)[c.address];
+  return [...(affects ? [`${affects} (g shows what depends on what)`] : []), ...(by ? [`Depends on ${by.join(', ')}, which ${by.length === 1 ? 'is' : 'are'} destroyed or replaced`] : [])];
+}
+
+/** g: what depends on what, with the cursor on `change` (the one selected). */
+export function showDepends(ctx, change) {
+  ctx.openDepends(change?.address ?? null);
+  return true;
+}
+
+/** /graph [folder]: what depends on what from `terraform graph`, for a plan that came without its configuration. */
+export async function graph(ctx, folder = '') {
+  const p = ctx.data?.plan;
+  if (!p || p.tool !== 'terraform') return ctx.note('/graph needs a Terraform plan on screen: /plan or /open one first.', 'error') ?? false;
+  const dir = folder.trim() ? tfDir(ctx, folder) : (ctx.data.source?.dir ?? tfDir(ctx, ''));
+  const { varFile, ...opts } = tfOpts(ctx);
+  const r = await ctx.task(
+    `${opts.bin} graph ${label(ctx, dir)}`,
+    async (signal) => {
+      const dependsOn = parseDot(await ctx.provider.graph(dir, { ...opts, signal }), p.changes.map((c) => c.address));
+      ctx.setData((d) => (d?.plan === p ? { ...d, graph: { for: p, dependsOn } } : d));
+      const edges = Object.values(dependsOn).reduce((n, list) => n + list.length, 0);
+      return { stdout: `${edges} ${edges === 1 ? 'dependency' : 'dependencies'} between the plan's resources` };
+    },
+    { label: 'Asking terraform graph' },
+  );
+  if (r.ok) ctx.openDepends(null);
+  return r.ok;
+}
+
 /** ↵ on a change: what changes in it, attribute by attribute, and where it's declared. */
 export async function showChange(ctx, c, { drifted = false } = {}) {
   const where = await ctx.provider.locate(ctx.data?.source?.dir ?? ctx.cwd(), c).catch(() => null);
@@ -446,6 +486,7 @@ export async function showChange(ctx, c, { drifted = false } = {}) {
     ...(c.id ? [`Id: ${c.id}`] : []),
     ...(where ? [`Declared in ${where.path}:${where.line} (t copies it for Splice)`] : []),
     ...(siteOf(c) ? ['An App Service app: s copies it for Locker'] : []),
+    ...(drifted ? [] : dependencyLines(c, dependenciesOf(ctx.data), ctx.data?.plan?.changes ?? [])),
     ...(costs?.byAddress?.[c.address] ? costLines(costs.byAddress[c.address], costs.currency) : costs?.pending && !drifted ? ['Cost: being priced…'] : []),
     '',
   ];

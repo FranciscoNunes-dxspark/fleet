@@ -30,7 +30,35 @@ export const DEMO_PLAN = {
     api_url: { actions: ['no-op'], before: 'https://shop-api.azurewebsites.net', after: 'https://shop-api.azurewebsites.net' },
     insights_connection: { actions: ['create'], before: null, after: null, after_unknown: true, sensitive: true },
   },
+  // What each resource's arguments refer to, as `show -json` gives it: what depends on what. The
+  // database being destroyed is no longer in it, which is why it is destroyed.
+  configuration: {
+    root_module: {
+      resources: [
+        { address: 'azurerm_resource_group.main', mode: 'managed', type: 'azurerm_resource_group', name: 'main', expressions: { name: { constant_value: 'shop-prod' } } },
+        { address: 'azurerm_service_plan.main', mode: 'managed', type: 'azurerm_service_plan', name: 'main', expressions: { resource_group_name: { references: ['azurerm_resource_group.main.name', 'azurerm_resource_group.main'] }, sku_name: { references: ['var.plan_sku'] } } },
+        { address: 'azurerm_linux_web_app.admin', mode: 'managed', type: 'azurerm_linux_web_app', name: 'admin', expressions: { service_plan_id: { references: ['azurerm_service_plan.main.id', 'azurerm_service_plan.main'] }, app_settings: { references: ['azurerm_key_vault_secret.db.versionless_id', 'azurerm_key_vault_secret.db'] } } },
+        { address: 'azurerm_linux_web_app.api', mode: 'managed', type: 'azurerm_linux_web_app', name: 'api', expressions: { service_plan_id: { references: ['azurerm_service_plan.main.id', 'azurerm_service_plan.main'] }, app_settings: { references: ['azurerm_application_insights.main.connection_string', 'azurerm_application_insights.main', 'azurerm_linux_web_app.admin.default_hostname', 'azurerm_linux_web_app.admin', 'local.log_level'] }, site_config: [{ always_on: { constant_value: true } }] } },
+        { address: 'azurerm_key_vault_secret.db', mode: 'managed', type: 'azurerm_key_vault_secret', name: 'db', expressions: { value: { references: ['random_password.db.result', 'random_password.db'] } } },
+        { address: 'azurerm_application_insights.main', mode: 'managed', type: 'azurerm_application_insights', name: 'main', expressions: { resource_group_name: { references: ['azurerm_resource_group.main.name', 'azurerm_resource_group.main'] } } },
+        { address: 'random_password.db', mode: 'managed', type: 'random_password', name: 'db', expressions: { length: { constant_value: 24 } } },
+      ],
+      module_calls: {
+        network: { source: './modules/network', expressions: { resource_group: { references: ['azurerm_resource_group.main.name', 'azurerm_resource_group.main'] } }, module: { resources: [{ address: 'azurerm_virtual_network.main', mode: 'managed', type: 'azurerm_virtual_network', name: 'main', expressions: { resource_group_name: { references: ['var.resource_group'] } } }] } },
+      },
+    },
+  },
 };
+
+// `terraform graph` of the same folder, for /graph (newer Terraform's plain form).
+export const DEMO_GRAPH = `digraph G {
+  rankdir = "RL";
+  node [shape = rect, fontname = "sans-serif"];
+  "azurerm_service_plan.main" -> "azurerm_resource_group.main";
+  "azurerm_linux_web_app.admin" -> "azurerm_service_plan.main";
+  "azurerm_linux_web_app.api" -> "azurerm_linux_web_app.admin";
+  "azurerm_linux_web_app.api" -> "azurerm_service_plan.main";
+}`;
 
 export const DEMO_STATE = {
   format_version: '1.0',
@@ -108,6 +136,10 @@ export function demoChart() {
     cleanup() {
       calls.push(['cleanup']);
       saved.clear();
+    },
+    async graph(dir, { bin = 'terraform' } = {}) {
+      calls.push(['graph', dir, bin]);
+      return DEMO_GRAPH;
     },
     async workspace(dir, { workspace } = {}) {
       return workspace ?? 'default';

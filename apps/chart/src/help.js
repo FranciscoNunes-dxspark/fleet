@@ -5,7 +5,7 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-4 / tab', 'Changes, Drift, State, Log (shift+tab goes back)'],
+      ['1-5 / tab', 'Changes, Drift, State, Log, Depends (shift+tab goes back)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['!', 'Run a shell command in the folder, e.g.  !terraform validate'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
@@ -19,7 +19,7 @@ export const HELP = [
     title: 'Lists',
     rows: [
       ['j k / ↑ ↓', 'Move'],
-      ['g alt+g', 'Top, bottom'],
+      ['g alt+g', 'Top, bottom (in Changes, home: g there is what depends on what)'],
       ['ctrl+d ctrl+u', 'Page down, up'],
     ],
   },
@@ -29,6 +29,7 @@ export const HELP = [
     views: ['changes'],
     rows: [
       ['↵ / l', 'What changes in it, attribute by attribute (sensitive values never shown), where it is declared, and what it costs a month'],
+      ['g', 'What depends on what, on this resource: what destroying or replacing it affects'],
       ['a', 'Show the resources that don\'t change too, or hide them'],
       ['t', 'Copy where it is declared for Splice, whose blame says who wrote it'],
       ['s', 'Copy an App Service app for Locker, which shows its settings'],
@@ -56,6 +57,16 @@ export const HELP = [
       ['↵ / l', 'Its values (sensitive ones masked)'],
       ['t', 'Copy where it is declared for Splice'],
       ['y', 'Copy its address'],
+    ],
+  },
+  {
+    title: 'Depends',
+    about: "what depends on what: the plan's resources as a tree, under each what depends on it (from the plan's configuration, /graph's terraform graph, or a what-if's resource ids)",
+    views: ['depends'],
+    rows: [
+      ['↵ / l', 'What changes in it, and what destroying or replacing it affects'],
+      ['y', 'Copy its address'],
+      'In red: what is destroyed or replaced, with how many depend on it. Yellow ← : what depends on one of those.',
     ],
   },
   {

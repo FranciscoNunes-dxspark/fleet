@@ -22,6 +22,7 @@ import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHei
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { ChangesView } from './ChangesView.jsx';
 import { StateView } from './StateView.jsx';
+import { DependsView } from './DependsView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
@@ -34,12 +35,14 @@ const VIEWS = [
   { id: 'drift', label: 'Drift' },
   { id: 'state', label: 'State' },
   { id: 'log', label: 'Log' },
+  { id: 'depends', label: 'Depends' },
 ];
 
 const HINTS = {
-  changes: '↵ what changes · a unchanged too · t for Splice · s app for Locker · y copy address · ctrl+r plan again · /apply',
+  changes: '↵ what changes · g what depends on it · a unchanged too · t for Splice · s app for Locker · y copy address · /apply',
   drift: '↵ what changed · t for Splice · s app for Locker · y copy address · /drift looks again',
   state: '↵ its values · t for Splice · y copy address',
+  depends: '↵ what changes · y copy address · red: destroyed or replaced, yellow: what that affects',
   log: '↵ all its output · y copy it',
 };
 
@@ -134,6 +137,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   const [problem, setProblem] = useState(null);
   const [view, setView] = useState('changes');
   const [showAll, setShowAll] = useState(false);
+  // The resource the dependency view opens on (g on a change).
+  const [dependsFocus, setDependsFocus] = useState(null);
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
   const [sugIndex, setSugIndex] = useState(0);
@@ -355,6 +360,10 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     setConfig,
     setView,
     toggleAll: () => setShowAll((x) => !x),
+    openDepends: (address) => {
+      setDependsFocus(address);
+      setView('depends');
+    },
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // /update: asks for the latest release now, whatever the daily check last said, and installs it.
     updateNow: () => {
@@ -685,6 +694,10 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'depends') {
+    const dependsOn = a.dependenciesOf(data);
+    const dependsEmpty = !data?.plan ? 'No plan yet: /plan (or /whatif) first, then g on a change.' : !dependsOn ? 'This plan came without its configuration: /graph asks terraform graph what depends on what.' : 'Nothing in the plan.';
+    main = <DependsView changes={data?.plan?.changes ?? []} dependsOn={dependsOn} focus={dependsFocus} empty={dependsEmpty} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'state') {
     main = <StateView state={data?.state} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'drift') {

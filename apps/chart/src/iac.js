@@ -191,6 +191,12 @@ export function createChart({ run = runCommand, stream = runStreaming, fetch: fe
       if (planDir) rmSync(planDir, { recursive: true, force: true });
       planDir = null;
     },
+    /** `terraform graph`'s DOT for the folder: what depends on what, for a plan that came without its configuration. */
+    async graph(dir, { bin = 'terraform', workspace, signal } = {}) {
+      checkTool(bin, { workspace });
+      const { stdout } = await run(`${bin} graph`, { cwd: dir, signal, env: workspaceEnv(workspace) }).catch((e) => Promise.reject(explain(e, bin)));
+      return stdout;
+    },
     /** The workspace terraform runs in: the environment's, or what the folder has selected. */
     async workspace(dir, { bin = 'terraform', workspace, signal } = {}) {
       checkTool(bin, { workspace });

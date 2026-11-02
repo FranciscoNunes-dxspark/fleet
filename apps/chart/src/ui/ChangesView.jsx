@@ -28,6 +28,8 @@ export function ChangesView({ changes, drifted = false, costs, empty, hint: extr
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
+    // In Changes, g is what depends on what (home still goes to the top).
+    if (input === 'g' && !drifted) return a.showDepends(ctx, sel);
     if (nav.handle(input, key)) return;
     if (input === 'a' && !drifted) return ctx.toggleAll();
     if (!sel) return;
