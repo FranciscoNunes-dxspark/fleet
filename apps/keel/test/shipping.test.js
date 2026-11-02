@@ -478,3 +478,34 @@ test('waiting to ship with a Development branch: what develop has and the produc
   assert.deepEqual(env.pullRequests.map((p) => p.id), [9]);
   assert.equal(env.waiting, 1);
 });
+
+test('waiting to ship with a Development branch squashed into production: counted from what the last promotion took', async () => {
+  // main never holds develop's own commits (squashed), so comparing the branches alone lists them all.
+  const tips = { main: commit('m9', 50, 'Release 2026.10 (squashed)'), develop: commit('d3', 1, 'Coupon rules') };
+  const old = [commit('d3', 1, 'Coupon rules'), commit('d2', 60, 'Promoted already'), commit('d1', 24 * 1240, 'Years old')];
+  const make = (prs) => ({
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'main' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async () => [{ id: 3, label: '3', at: at(48), status: 'succeeded', repoId: 'r1', commit: 'm9' }],
+    listCommits: async (projectId, repoId, { branch }) => [tips[branch]],
+    listCommitsBetween: async (projectId, repoId, from) => (from === 'm9' ? old : from === 'd2' ? old.slice(0, 1) : assert.fail(`from ${from}`)),
+    listPullRequests: async () => prs,
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  });
+  const monitoring = { status: () => [{ id: 'm1', name: 'Shop web', link: { type: 'pipeline', projectId: 'p1', definitionId: 5, devBranch: 'develop' } }] };
+  const promotion = { id: 40, title: 'Release 2026.10', status: 'completed', repoId: 'r1', projectId: 'p1', sourceBranch: 'develop', targetBranch: 'main', sourceCommit: 'd2', closedAt: at(50) };
+
+  const viaPr = (await createService({ provider: make([promotion]), settings: memoryStore(), monitoring }).undeployed()).targets[0];
+  assert.deepEqual(viaPr.commits.map((c) => c.id), ['d3'], 'only what came after the promotion');
+  assert.equal(viaPr.promotedBy.id, 40);
+
+  // No promotion pull request: what reached develop after main last changed.
+  const byDate = (await createService({ provider: make([]), settings: memoryStore(), monitoring }).undeployed()).targets[0];
+  assert.deepEqual(byDate.commits.map((c) => c.id), ['d3']);
+  assert.equal(byDate.promotedBy, null);
+  assert.ok(byDate.productionChangedAt);
+});

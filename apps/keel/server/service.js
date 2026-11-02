@@ -474,6 +474,8 @@ export function createService({
   }, 5 * MIN);
 
   // What one commit has over another never changes.
+  // How far back to look for the pull request that last took a Development branch into production.
+  const PROMOTION_DAYS = 90;
   const commitsBetween = (projectId, repoId, from, to) => cached(`between:${repoId}:${from}:${to}`, () => provider.listCommitsBetween(projectId, repoId, from, to), 24 * 60 * MIN);
 
   /** The deploy before `i` in a newest-first history that shipped code from the same repo. */
@@ -534,9 +536,35 @@ export function createService({
       // No falling back to the default branch here: that would compare production with itself.
       if (dev.missing || dev.gone || !dev.tip) return { ...where, missingBranch: t.devBranch, waiting: 0, oldestAt: null };
       const devBranch = dev.branch;
-      const raw = !prod.tip || prod.tip.id === dev.tip.id ? [] : await commitsBetween(repo.projectId, repo.id, prod.tip.id, dev.tip.id);
+      const same = (x, y) => String(x || '').toLowerCase() === String(y || '').toLowerCase();
+      // The last pull request that took the Development branch into the production branch: Azure DevOps
+      // keeps the commit of the Development branch it took, so everything up to that commit has shipped,
+      // even when it was squashed (then the production branch never holds the Development branch's own
+      // commits, and comparing the two alone would list years of them).
+      const promoted = (await closedPRs(PROMOTION_DAYS).catch(() => []))
+        .filter((p) => p.status === 'completed' && p.repoId === repo.id && same(p.sourceBranch, devBranch) && same(p.targetBranch, prod.branch) && p.sourceCommit)
+        .sort((x, y) => Date.parse(y.closedAt) - Date.parse(x.closedAt))[0] || null;
+      const between = !prod.tip || prod.tip.id === dev.tip.id ? [] : await commitsBetween(repo.projectId, repo.id, prod.tip.id, dev.tip.id);
+      let raw = between;
+      if (promoted && between.length) {
+        const after = promoted.sourceCommit === dev.tip.id ? [] : await commitsBetween(repo.projectId, repo.id, promoted.sourceCommit, dev.tip.id);
+        const since = new Set(after.map((c) => c.id));
+        // Both: not on the production branch, and newer than what the last promotion took. When the
+        // comparison was cut short at 300 commits, what came after the promotion is the better list.
+        raw = between.length >= 300 ? after : between.filter((c) => since.has(c.id));
+      } else if (!promoted && between.length && prod.tip) {
+        // No such pull request lately (promoted by a push or a pipeline): what reached the Development
+        // branch before the production branch last changed went with it, merged or squashed.
+        const cut = Date.parse(landedAt(prod.tip));
+        if (Number.isFinite(cut)) raw = between.filter((c) => !(Date.parse(landedAt(c)) <= cut));
+      }
       const changes = await describeChanges(repo, raw);
-      return { ...where, devBranch, upcoming: comingNext(openPrs, repo.id, devBranch), ...changes, ...waitingChanges(changes), truncated: raw.length >= 300 };
+      return {
+        ...where, devBranch, upcoming: comingNext(openPrs, repo.id, devBranch), ...changes, ...waitingChanges(changes), truncated: raw.length >= 300,
+        // How it was worked out, for the card to say.
+        promotedBy: promoted ? { id: promoted.id, title: promoted.title, closedAt: promoted.closedAt, projectId: promoted.projectId, repoId: promoted.repoId } : null,
+        productionChangedAt: !promoted && prod.tip ? landedAt(prod.tip) : null,
+      };
     } catch (err) {
       return { ...base, error: err.message };
     }

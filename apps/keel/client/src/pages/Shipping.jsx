@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, REVIEW_STATE } from '../format.js';
 import { Chip, Empty, ErrorBox, ExternalLink, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
-import { t, tx } from '../i18n.js';
+import { t, tj, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { ChangeSections, deployStatus } from './DeployDetail.jsx';
 
@@ -124,6 +124,20 @@ function Environment({ env }) {
             {[projectLabel(env.projectName, env.org), env.repo?.name, env.devBranch && env.branch ? `${env.devBranch} → ${env.branch}` : env.branch].filter(Boolean).join(' · ')}
             {env.branchSet && env.branch && !env.branchGone && <span title={t('Set in Settings → Production monitors')}> {t('(set)')}</span>}
           </div>
+          {/* How the Development branch's waiting was counted (server/service.js betweenBranches). */}
+          {env.promotedBy && (
+            <div className="small muted ship-basis">
+              {tj('Counted from {pr}, which took {dev} into {branch} {age} ago.', {
+                pr: <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'pr', projectId: env.promotedBy.projectId, repoId: env.promotedBy.repoId, id: env.promotedBy.id, org: env.org })} title={env.promotedBy.title}>!{env.promotedBy.id}</button>,
+                dev: env.devBranch, branch: env.branch, age: age(env.promotedBy.closedAt),
+              })}
+            </div>
+          )}
+          {env.productionChangedAt && (
+            <div className="small muted ship-basis">
+              {t('No pull request took {dev} into {branch} in the last 90 days, so this counts what reached {dev} after {branch} last changed, {age} ago.', { dev: env.devBranch, branch: env.branch, age: age(env.productionChangedAt) })}
+            </div>
+          )}
         </div>
         {chip}
       </header>
