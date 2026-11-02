@@ -25,7 +25,7 @@ export const COMMANDS = [
   { name: 'history', args: '[clear]', desc: 'The responses kept for this file (clear forgets them)', run: (ctx, s) => (s.trim() === 'clear' ? a.clearHistory(ctx) : ctx.setView('history')) },
   { name: 'replay', args: '[environment|base-url]', desc: 'Send a request again elsewhere (the one last taken from Sonar, the response under the cursor in History, or the request picked) and compare the answers; credentials come from the environment, never along', complete: 'environments', run: (ctx, s) => a.replay(ctx, s) },
   { name: 'draft', args: '<openapi.json|url|file> [what to write]', desc: 'Claude writes requests from an API description, for you to look over and add to the file', run: (ctx, s) => a.draft(ctx, s) },
-  { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling app copied: a request from Sonar (replayed), rows from Trawl (a body), a log line from Bosun (its response in History)', run: (ctx, s) => a.take(ctx, s) },
+  { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling app copied: a request from Sonar (replayed), rows from Trawl (a body), a log line from Bosun (its response in History, or the request in it saved to a .http file)', run: (ctx, s) => a.take(ctx, s) },
   { name: 'family', desc: 'What this project offers the sibling apps (Splice, Bosun, Trawl): ↵ copies the command to paste into one', run: (ctx) => a.family(ctx) },
   { name: 'timeline', desc: "What the family's apps did, newest first (p this project only, ↵ an entry whole)", run: (ctx) => a.timeline(ctx) },
   { name: 'wiring', desc: "What this project points at: addresses, hosts, ports and connection strings in its settings (secrets masked)", run: (ctx) => a.wiring(ctx) },

@@ -2,7 +2,7 @@
 // (built in ui/App.jsx). Questions before anything destructive belong here too (ctx.confirm).
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { folderChoices, resolveFolder, samePath } from '@fleet/kit/folders.js';
 import { clip, draftPrompt, parseDraft } from './claude.js';
 import { configFile } from './config.js';
@@ -33,6 +33,8 @@ import { findByRequestId, hostVariable, idsIn, replayBlock, startsWithVariable, 
 import { describeEnvironments, productionQuestion, setEnvironment as setProjectEnvironment } from '@fleet/kit/environments.js';
 import { hailEnvironmentNamed, isSafeMethod } from './project.js';
 import { changeLine, compareAnswers } from './compare.js';
+import { captureBlock, capturedAt, requestInLine } from './capture.js';
+import { parseHttpFile } from './http-file.js';
 import { compareResponses, lastResponseTo, normaliseBase, rebaseUrl, replayHeaders, replayTargets, statusLine, targetNamed } from './replay.js';
 
 const YES_NO = (yes) => [
@@ -904,10 +906,12 @@ async function takeRequest(ctx, data) {
       { useHost: true, segments: [{ text: `To ${env ?? 'the environment'}`, strong: true }, { text: `  {{${hostVar}}} = ${ctx.data.environments.vars(env)[hostVar]}`, color: theme.dim }] },
       { useHost: false, segments: [{ text: 'As it came', strong: true }, { text: `  ${origin}`, color: theme.dim }] },
       { replay: true, segments: [{ text: 'Replay it elsewhere and compare', strong: true }, { text: `  with what it answered${data.response?.status ? ` (${statusLine(data.response)})` : ''}, /replay`, color: theme.dim }] },
+      { capture: true, segments: [{ text: 'Save it as a named request', strong: true }, { text: `  in a .http file of the project, under {{${hostVar}}}`, color: theme.dim }] },
     ],
     onPick: (it) => {
       ctx.closeOverlay();
       if (it.replay) return replay(ctx, '', { request: data });
+      if (it.capture) return captureRequest(ctx, { method: data.method, url: data.url, headers: data.headers, body: data.body, status: data.response?.status }, { from: data.app ?? 'a sibling app', at: capturedAt(data.response?.at) });
       add(it.useHost);
     },
   });
@@ -1096,13 +1100,87 @@ function takeRows(ctx, data) {
  * Request-Id, traceparent, correlation ids), shown with the cursor on it.
  */
 function takeLogline(ctx, data) {
-  if (!ctx.data) return ctx.note(NO_FILE, 'error');
+  // A line that carries a method and a URL can become a request of the project's (captureRequest),
+  // when the History has no response of the file's own requests to show for it.
+  const seen = requestInLine(data?.text);
+  const meta = { from: data?.app ?? data?.process ?? 'a log line', at: capturedAt(data?.time) };
+  if (!ctx.data) return seen ? captureRequest(ctx, seen, meta) : ctx.note(NO_FILE, 'error');
   const ids = data?.requestId ? [String(data.requestId)] : idsIn(data?.text);
+  const found = ids.length ? findByRequestId(ctx.history(), ids) : null;
+  if (!found && seen) return captureRequest(ctx, seen, meta);
   if (!ids.length) return ctx.note(`That log line has no request id to look for: ${String(data?.text ?? '').slice(0, 80)}`, 'error');
-  const found = findByRequestId(ctx.history(), ids);
   if (!found) return ctx.note(`No response kept for ${ctx.data.name} carries ${ids.join(' or ')}.\nHistory keeps the newest 300; the request may have come from somewhere else.`, 'error');
   ctx.showHistoryEntry(found.entry);
   ctx.note(`${found.entry.label}, ${new Date(found.entry.at).toLocaleString()}: its ${found.header} is ${ids.length === 1 ? ids[0] : 'the one in the log line'}`, 'ok');
+}
+
+/** The name of the file requests from logs go to when none of the project's is picked. */
+export const CAPTURED_FILE = 'captured.http';
+
+/**
+ * A request seen in a log line (capture.js's requestInLine) or taken from a sibling, offered to be saved
+ * as a named request: in the open file, another .http file of the folder Hail is in, or captured.http
+ * (made when it isn't there). `meta` is { from, at }, for the comment it carries.
+ */
+function captureRequest(ctx, seen, meta) {
+  const dir = ctx.folder();
+  const open = ctx.data?.path ?? null;
+  const files = findHttpFiles(dir).map((f) => resolve(dir, f));
+  const paths = [...(open ? [open] : []), ...files.filter((f) => !open || !samePath(f, open))];
+  const captured = resolve(dir, CAPTURED_FILE);
+  if (!paths.some((f) => samePath(f, captured))) paths.push(captured);
+  const shown = (f) => relative(dir, f).replaceAll('\\', '/') || basename(f);
+  ctx.showPicker({
+    title: `Save ${seen.method} ${seen.url}${seen.status ? ` (${seen.status})` : ''} as a request`,
+    hint: `↵ add it there, named, and pick it · from ${meta.from}`,
+    items: paths.map((file) => ({
+      file,
+      segments: [{ text: shown(file), strong: true }, { text: open && samePath(file, open) ? '  the open file' : existsSync(file) ? '' : '  a new file', color: theme.dim }],
+    })),
+    onPick: (it) => {
+      ctx.closeOverlay();
+      saveCaptured(ctx, it.file, seen, meta);
+    },
+  });
+}
+
+/** Writes the captured request to `file` (through the editor when it's the open one, so ctrl+z undoes it), opens it, and picks it. */
+async function saveCaptured(ctx, file, seen, meta) {
+  const isOpen = ctx.data && samePath(file, ctx.data.path);
+  let text = '';
+  if (!isOpen && existsSync(file)) {
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch (e) {
+      return ctx.note(`Couldn't read ${basename(file)}: ${firstLine(e.message)}`, 'error');
+    }
+  }
+  const requests = isOpen ? ctx.data.requests : parseHttpFile(text).requests;
+  // The open file's environment says what {{host}} is; a file of its own may have others beside it, read when it opens.
+  const vars = ctx.data?.environments.vars(ctx.environment()) ?? {};
+  const c = captureBlock(seen, { vars, taken: requests.map((r) => r.name).filter(Boolean), ...meta });
+  if (isOpen) {
+    const at = ctx.appendRequests(c.block);
+    if (at < 0) return;
+    const i = ctx.data.requests.findIndex((r) => r.name === c.name);
+    ctx.goToRequest(i >= 0 ? i : at);
+  } else {
+    try {
+      writeFileSync(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}${text.trim() ? '\n' : ''}${c.block}`);
+    } catch (e) {
+      return ctx.note(`Couldn't write ${basename(file)}: ${firstLine(e.message)}`, 'error');
+    }
+    await ctx.openFile(file);
+    const i = ctx.data?.requests.findIndex((r) => r.name === c.name) ?? -1;
+    if (i >= 0) ctx.goToRequest(i);
+  }
+  const said = [
+    `Saved ${c.name} (${seen.method} ${c.variable ? `{{${c.variable}}}` : 'its URL as it came'}) to ${basename(file)}`,
+    ...(c.placeholders.length ? [`${c.placeholders.join(', ')}: {{token}} in place of the value, which never leaves the log`] : []),
+    ...(c.dropped.length ? [`Left out ${c.dropped.join(', ')}: the cookie jar keeps cookies`] : []),
+  ];
+  ctx.note(said.join('\n'), 'ok');
+  activity(ctx, `Saved ${seen.method} ${c.name} from ${meta.from} to ${basename(file)}`);
 }
 
 /**

@@ -564,10 +564,45 @@ over and press `↵`.
 
 | What's taken | |
 | --- | --- |
-| A request (Sonar copies them from its logs and incidents, Trawl the request for an endpoint it wrote) | Added to the end of the file as `### replay <METHOD> <path>` and picked in Requests, ready to send. When the environment says where the API is (`host`, `baseUrl` or `baseURL`), Hail asks whether to send it there (the URL's scheme and host become `{{host}}`), to where it came from, or to replay it elsewhere and compare the answer with what it answered there (Sonar's carries production's status and time: see [Replaying a request elsewhere](#replaying-a-request-elsewhere); `/replay` does it later too); a URL that starts with a variable already (`{{host}}/players`) is added as it is. Credential headers it may carry are left out |
+| A request (Sonar copies them from its logs and incidents, Trawl the request for an endpoint it wrote) | Added to the end of the file as `### replay <METHOD> <path>` and picked in Requests, ready to send. When the environment says where the API is (`host`, `baseUrl` or `baseURL`), Hail asks whether to send it there (the URL's scheme and host become `{{host}}`), to where it came from, or to replay it elsewhere and compare the answer with what it answered there (Sonar's carries production's status and time: see [Replaying a request elsewhere](#replaying-a-request-elsewhere); `/replay` does it later too); a URL that starts with a variable already (`{{host}}/players`) is added as it is. Credential headers it may carry are left out. "Save it as a named request" keeps it in one of the project's `.http` files instead, as a log line's request is (below) |
 | Rows (Trawl copies them from its results) | Made a JSON body, an array of objects (one object for one row), and Hail asks where it goes: a new `POST` request at the end of the file, to `{{host}}/<table>` when the table is known, or in place of the body of the request under the cursor (a `Content-Type: application/json` header added when it has none). Either is an edit of the file, so `ctrl+z` in Edit undoes it |
-| A log line (Bosun copies them from a process's log) | Its request id (or, when it has none, the ids in its text: GUIDs, trace ids, `request_id=…`) is looked for in the History: the newest response whose request or response headers carry it (`X-Request-Id`, `Request-Id`, `traceparent`'s trace id, correlation ids, `X-Amzn-Trace-Id`) is shown, with the History's cursor on it. Those headers are kept in the history as they are; only credential headers are hidden |
+| A log line (Bosun copies them from a process's log) | Its request id (or, when it has none, the ids in its text: GUIDs, trace ids, `request_id=…`) is looked for in the History: the newest response whose request or response headers carry it (`X-Request-Id`, `Request-Id`, `traceparent`'s trace id, correlation ids, `X-Amzn-Trace-Id`) is shown, with the History's cursor on it. Those headers are kept in the history as they are; only credential headers are hidden. A line that carries a request of its own, and whose response isn't in the History, can be saved as one: see [Requests from logs](#requests-from-logs) |
 | Anything else | Said to be another app's: a commit, a file or an exception is Splice's, a query is Trawl's |
+
+### Requests from logs
+
+A log line taken from a sibling (Bosun's process logs, Sonar's, Wharf's containers') that carries a
+request, a method and a URL, perhaps with the status it got and its body, can become a request of the
+project's, when the History has no response of the file's own requests to show for it. Hail reads what
+logs usually write: `POST /api/orders/42 201`, an access log's `"GET /health HTTP/1.1" 200`, ASP.NET's
+`Request starting HTTP/1.1 POST http://localhost:5000/orders … {"id":1}`, and JSON lines with a
+`method` and `url` (or `path`, `uri`), at the top or under `req`, `request` or `http`, their `headers`
+and `statusCode` too.
+
+Hail asks where it goes: the open file, another `.http` file in the folder Hail is in, or
+`captured.http` there (made when it isn't). It's added at the end, through the editor when it's the
+open file (so `ctrl+z` in Edit takes it out), and picked in Requests, ready to send:
+
+```http
+### POST /api/orders/42/pay
+# from api at 10:42:01, where it answered 201
+# @name postApiOrdersPay
+POST {{host}}/api/orders/42/pay
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 5
+}
+```
+
+The URL's scheme and host become the environment's variable whose value it starts with (the longest
+one, so `{{apiBase}}` = `https://api.example.com/v1` wins over `{{host}}`), and a path alone goes under
+its `{{host}}`; with none that fits, the URL stays as it came. The headers that belong to the connection
+are left out, and so are cookies (the jar keeps them); a credential's value never goes into the file:
+`Authorization`, API keys and anything named like a token keep their name, and `Bearer` or `Basic`,
+with `{{token}}` where the value was, for the environment to give. It's named after its method and the
+path's words, ids left out, and a comment says which process it came from, when, and what it answered.
 
 `/family` lists what the open file's project offers the others, from its folder and the git checkout
 it's in: Splice's `/open <checkout>`, Bosun's `/move <folder>` when there's something to run there
