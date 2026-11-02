@@ -80,6 +80,7 @@ export const COMMANDS = [
   { name: 'restore', args: '<file> [--as <database>]', desc: 'Restore a backup into a database, made or replaced (asking first); not on production or read-only connections', run: (ctx, s) => a.restore(ctx, s) },
   { name: 'export-bacpac', args: '[file]', desc: "Export the database you're in as a .bacpac (schema and data) with SqlPackage; Azure SQL Database too", run: (ctx, s) => a.exportBacpac(ctx, s) },
   { name: 'import-bacpac', args: '<file> [--as <database>]', desc: 'Import a .bacpac as a new database with SqlPackage; not on production or read-only connections', run: (ctx, s) => a.importBacpac(ctx, s) },
+  { name: 'env', args: '[name]', desc: "The project's environment (.fleet/project.json): which one, or choose one for every app; Trawl moves to the connection it names, and a production one asks before any write", complete: 'environments', run: (ctx, s) => a.environment(ctx, s) },
   { name: 'project', desc: "The databases this project's appsettings and .env files name that aren't saved yet: ↵ adds one", run: (ctx) => a.project(ctx) },
   { name: 'family', desc: 'What this project offers Splice, Bosun and Hail: ↵ copies the command to paste into theirs', run: (ctx) => a.family(ctx) },
   { name: 'timeline', desc: "What the family's apps did that changed something, newest first: p this project or all, ↵ an entry whole", run: (ctx) => a.timeline(ctx) },

@@ -181,6 +181,7 @@ export const HELP = [
     title: 'The family',
     about: 'Splice (git), Sonar (Azure), Bosun (processes) and Hail (HTTP): each hands the others a command line to paste',
     rows: [
+      ['/env [name]', 'The project\'s environment (.fleet/project.json, shared by every app; the header names it, red for production): which one, or choose one, and Trawl moves to the connection it names for Trawl. A production one asks once more before any write; a switch in another app or Fleet is followed'],
       ['/take <family:v1:…>', 'What a sibling copied: a query goes into a console tab (on the saved connection it was for), rows into an INSERT script; pasting the bare family:v1:… works too\na slow query from Sonar (/slow-sql) is planned and explained, as /explain-slow does'],
       ['/share [query|rows|all]', 'Copy a /take line: the console\'s statement, or in Results the row under the cursor (all: every row); t in both'],
       ['/family', 'What this project offers the others: Splice /open <repo>, Bosun /move <dir>, Hail /open <file> per .http file; ↵ copies it'],

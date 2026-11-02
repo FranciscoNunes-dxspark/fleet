@@ -21,7 +21,9 @@ import { dialectOf, qualifiedFor } from '../dialects.js';
 import { qualified, splitStatements, statisticsSummary } from '../sql.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { environmentFor, readProject } from '@fleet/kit/environments.js';
+import { recordCommand } from '@fleet/kit/recording.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -119,12 +121,14 @@ function summarize(res, limit) {
 // How far installing a newer release has got, after its version in the header.
 const UPDATE_STATES = { installing: ' downloading…', installed: ' at next start' };
 
-function Header({ session, tranCount, tranFor = '', writesAllowed, file, width, connecting, mood, update }) {
+function Header({ session, tranCount, tranFor = '', writesAllowed, file, width, connecting, mood, update, env }) {
   const segs = [
     { text: `${FACES[mood]} `, color: mood === 'alert' ? theme.warn : theme.accent, bold: true },
     { text: 'Trawl', bold: true },
   ];
   if (update) segs.push({ text: ` ↑ ${update.version}${UPDATE_STATES[update.state] ?? ''}`, color: update.state === 'installed' ? theme.ok : theme.warn, bold: true });
+  // The project's environment (/env), which every app of the family shares.
+  if (env) segs.push({ text: '  ' }, env.prod ? { text: ` ${env.name} `, bg: theme.del, color: theme.ink, bold: true } : { text: env.name, color: theme.info, bold: true });
   if (session) {
     const { conn } = session;
     segs.push({ text: '  │  ', color: theme.border }, { text: conn.name, bold: true });
@@ -186,6 +190,9 @@ function activityRows(entries) {
 }
 
 const DOUBLE_CLICK_MS = 400;
+
+// What an environment means to Trawl, to tell a change from the same one seen again.
+const envKey = (env) => (env ? `${env.name}|${env.connection ?? ''}|${env.database ?? ''}` : '');
 
 /**
  * `checkLatest({ signal })` looks up the latest release (update.js fetchLatest), and
@@ -281,6 +288,19 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   const changesRef = useRef(NO_CHANGES);
   const resultIndexRef = useRef(0);
   const fileRef = useRef(null);
+  const envDir = useMemo(() => (file?.path ? (repoRoot(dirname(file.path)) ?? dirname(file.path)) : resolve(projectDir)), [file?.path, projectDir]);
+  const environment = useEnvironment('trawl', envDir);
+  // Its names, for completing /env, /compare and /copyrows' targets.
+  const environmentNames = useMemo(() => {
+    try {
+      const p = readProject(envDir);
+      return p && !p.error ? p.names : [];
+    } catch {
+      return [];
+    }
+  }, [envDir, environment?.name]);
+  // The environment Trawl last moved to (or started in), so a change is followed once.
+  const envFollowed = useRef(envKey(environment));
   const busyRef = useRef(null);
   const configRef = useRef(config);
   const promptRef = useRef(prompt);
@@ -1121,6 +1141,15 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
         const f = fileRef.current;
         return f?.path ? (repoRoot(dirname(f.path)) ?? dirname(f.path)) : resolve(projectDir);
       },
+      // The project's chosen environment as Trawl sees it (environments.js environmentFor: { name, prod,
+      // connection, … }, or null), read when asked, so a write just after /env already sees it.
+      get environment() {
+        try {
+          return environmentFor('trawl', this.projectDir);
+        } catch {
+          return null;
+        }
+      },
       // What useMouse registers: the component on screen takes the main area's clicks and wheel.
       mouseHandlers: [],
     };
@@ -1293,6 +1322,13 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
     // the prompt; both resolve false when it failed.
     runUserCommand: (cmd, rest) => runUserCommand(cmd, rest),
     runLine: (text) => runLine(text),
+    // Moves to what `env` names for Trawl, once per change (the watcher and /env may both see it).
+    followEnvironment: (env) => {
+      const k = envKey(env);
+      if (k === envFollowed.current) return;
+      envFollowed.current = k;
+      return a.followEnvironment(ctx, env);
+    },
     openPalette: () => openPalette(),
     showSettings: () => setOverlay({ settings: true }),
     showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('Nothing has run yet.')),
@@ -1303,6 +1339,9 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   // answered no (so your own commands stop there).
   const runLine = async (text) => {
     const [errors, declined] = [errorCount.current, declines.current];
+    // Your own command's lines aren't kept on their own: the command itself is. Only with the family's
+    // folder, as moods and the activity log.
+    if (familyHome && userDepth.current === 0 && !text.startsWith('!') && !SQL_START.test(text)) recordCommand('trawl', decodeContext(text) ? `/take ${text}` : text, { home: familyHome });
     try {
       let r;
       if (text.startsWith('!')) r = await a.runSql(ctx, text.slice(1));
@@ -1416,11 +1455,16 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
       if (found) note(found);
     } catch {}
     if (azureSql) return void a.azureSql(ctx, azureSql);
-    const name = initialConnection ?? initialConfig.last;
+    const name = initialConnection ?? (environment?.connection && initialConfig.connections.some((c) => c.name.toLowerCase() === String(environment.connection).toLowerCase()) ? initialConfig.connections.find((c) => c.name.toLowerCase() === String(environment.connection).toLowerCase()).name : null) ?? initialConfig.last;
     const conn = name && initialConfig.connections.find((c) => c.name === name);
     if (conn) connect(conn);
     else if (!initialFile) setView('connections');
   }, []);
+
+  // The environment changed (/env here, another app, Fleet): Trawl moves to its connection.
+  useEffect(() => {
+    if (envKey(environment) !== envFollowed.current) ctx.followEnvironment(environment);
+  }, [envKey(environment)]);
 
   // At most once a day, in the background: a newer release gets a ↑ in the header and is installed
   // (offerUpdate). A failed check (offline, rate-limited) says nothing and waits a day.
@@ -1456,14 +1500,14 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
     if (view !== 'results' && focusRef.current === 'cell') setFocus('view');
   }, [view, queryMode]);
 
-  const lists = { config, schema, conn: session?.conn.name, tabs: tabsRef.current.map((t) => t.name), user: custom.commands };
+  const lists = { config, schema, conn: session?.conn.name, tabs: tabsRef.current.map((t) => t.name), user: custom.commands, environments: environmentNames };
   const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, lists) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { config: configRef.current, schema: schemaRef.current, conn: sessionRef.current?.conn.name, tabs: tabsRef.current.map((t) => t.name), user: customRef.current.commands });
+    const items = suggestionsFor(value, { config: configRef.current, schema: schemaRef.current, conn: sessionRef.current?.conn.name, tabs: tabsRef.current.map((t) => t.name), user: customRef.current.commands, environments: environmentNames });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -1765,7 +1809,7 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header session={session} tranCount={tranCount} tranFor={tranCount && tranSince.current ? openFor(Date.now() - tranSince.current) : ''} writesAllowed={writesAllowed} file={file} width={W} connecting={connecting} mood={mood} update={update} />
+      <Header env={environment} session={session} tranCount={tranCount} tranFor={tranCount && tranSince.current ? openFor(Date.now() - tranSince.current) : ''} writesAllowed={writesAllowed} file={file} width={W} connecting={connecting} mood={mood} update={update} />
       <Tabs view={view} results={results} width={W} />
       <Box height={mainH} width={W}>
         {main}

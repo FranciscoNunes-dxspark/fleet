@@ -163,7 +163,7 @@ async function withParameters(ctx, sql) {
  * SQL with its parameters filled in, and `wrap` says manual commit wants it in a transaction.
  * `recover` runs if it fails (see db.js runScript).
  */
-export async function runSql(ctx, sql, { title, prefix = '', lineBase, stay, keep, top, run, recover } = {}) {
+export async function runSql(ctx, sql, { title, prefix = '', lineBase, stay, keep, top, run, recover, asked = false } = {}) {
   if (!sql.trim()) return;
   // Any other run ends a /watch, which would otherwise be in its way.
   await ctx.stopWatch?.('another run');
@@ -207,6 +207,8 @@ export async function runSql(ctx, sql, { title, prefix = '', lineBase, stay, kee
     });
     if (!ok) return;
   }
+  // A production environment asks once more, whatever was asked above.
+  if (write && !asked && !(await productionWriteOk(ctx, `Run this write on ${conn.name}`))) return;
   let kept = null;
   const notes = [];
   if (undo && !undo.reason && !tooMany) {
@@ -399,6 +401,47 @@ export async function connect(ctx, name, { database } = {}) {
   if (!conn) return ctx.note(`No connection called ${name}. /add creates one: ${ADD_USAGE}`, 'error');
   if (!(await leaveSession(ctx))) return;
   return ctx.connect(conn, { database });
+}
+
+/**
+ * /env [name]: which of the project's environments (.fleet/project.json) is chosen, or chooses one
+ * for every app of the family; Trawl then moves to the connection it names for Trawl.
+ */
+export function environment(ctx, rest = '') {
+  const name = rest.trim();
+  if (!name) return ctx.note(describeEnvironments(ctx.projectDir));
+  const r = setEnvironment(ctx.projectDir, name, { by: 'trawl' });
+  if (!r.ok) return ctx.note(r.error, 'error');
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production: writes ask first)' : ''}, for every app of the family.`, 'ok');
+  return ctx.followEnvironment?.(ctx.environment);
+}
+
+/**
+ * When the project's environment changes (here, in another app, or in Fleet): Trawl moves to the
+ * connection the environment names for it (its "trawl": { "connection", "database" }), asking first
+ * when a transaction is open, as /connect does. One that names none leaves Trawl where it is.
+ */
+export async function followEnvironment(ctx, env) {
+  if (!env) return;
+  const say = `Environment ${env.name}${env.prod ? ' (production)' : ''}`;
+  if (!env.connection) return ctx.note(`${say} names no connection for Trawl, so it stays where it is.`);
+  const conn = ctx.config.connections.find((c) => c.name.toLowerCase() === String(env.connection).toLowerCase());
+  if (!conn) return ctx.note(`${say} names the connection ${env.connection}, which isn't saved here: /add it.`, 'error');
+  const s = ctx.session;
+  if (s && s.conn.name === conn.name && (!env.database || s.database === env.database)) return ctx.note(`${say}: on ${conn.name} already.`);
+  if (!(await leaveSession(ctx))) return ctx.note(`${say}: still on ${s.conn.name}, with its transaction open. /connect ${conn.name} when you're done.`);
+  ctx.note(`${say}: switching to ${conn.name}.`);
+  return ctx.connect(conn, { database: env.database });
+}
+
+/**
+ * In a production environment (the chosen one says "prod": true), the kit's productionQuestion before
+ * anything that writes, on top of the operation's own questions; true to go on. Elsewhere it asks nothing.
+ */
+export async function productionWriteOk(ctx, what) {
+  const q = productionQuestion(ctx.environment, what);
+  if (!q) return true;
+  return ctx.confirm({ ...q, options: YES_NO('Yes, in production') });
 }
 
 /** Asks before leaving a session with an open transaction, which would roll it back. */
@@ -1091,6 +1134,7 @@ export async function killSession(ctx, id) {
     danger: true,
   });
   if (!ok) return;
+  if (!(await productionWriteOk(ctx, `End session ${n} on ${ctx.session.conn.name}`))) return;
   const r = await ctx.query(dialect.kind === 'sqlserver' ? sql : dialect.kill(n), { title: `KILL ${n}`, keep: true });
   if (r?.ok) await loadActivity(ctx);
 }
@@ -1176,6 +1220,7 @@ export async function startJob(ctx, job) {
     danger: Boolean(conn.prod),
   });
   if (!ok) return;
+  if (!(await productionWriteOk(ctx, `Start the job ${job.name}`))) return;
   const r = await ctx.query(sql, { title: `start job ${job.name}`, keep: true });
   if (r?.ok) await loadJobs(ctx);
 }
@@ -2380,6 +2425,7 @@ export async function runMigrations(ctx, root) {
     danger: Boolean(conn.prod) || odd > 0,
   });
   if (!ok) return;
+  if (!(await productionWriteOk(ctx, `Run ${plural(n, 'migration')} on ${conn.name}`))) return;
   if (history.missing) {
     const make = await ctx.confirm({
       title: `Make ${TOOLS.plain.table} in ${m.database} to record them?`,
@@ -2387,7 +2433,7 @@ export async function runMigrations(ctx, root) {
       options: YES_NO('Yes, make it'),
     });
     if (!make) return;
-    const c = await runSql(ctx, createPlainSql(dialect, history.schema), { title: `create ${TOOLS.plain.table}`, keep: true });
+    const c = await runSql(ctx, createPlainSql(dialect, history.schema), { title: `create ${TOOLS.plain.table}`, keep: true, asked: true });
     if (!c?.ok) return;
   }
   let rank = nextRank(m.rows);
@@ -2396,6 +2442,7 @@ export async function runMigrations(ctx, root) {
     const r = await runSql(ctx, e.file.text, {
       title: `migration ${e.script}`,
       keep: true,
+      asked: true,
       run: async (text, { wrap, title }) => {
         const started = Date.now();
         const q = await ctx.query(wrap ? `${dialect.begin}\n${text}` : text, { title, wrapped: wrap, keep: true });
@@ -2927,6 +2974,8 @@ async function copyRowsBetween(ctx, args, { strict }) {
     const yes = await ctx.confirm({ ...q, detail: env?.prod ? q.detail : `${target.name} is a production connection (--prod).`, scrollsOverlay: true, options: YES_NO('Yes, write to production') });
     if (!yes) return ctx.closeOverlay();
   }
+  const sameQuestion = strict && env?.prod && env.name === ctx.environment?.name;
+  if (!sameQuestion && !(await productionWriteOk(ctx, `Copy ${plural(built.rows, 'row')} into ${target.name}`))) return ctx.closeOverlay();
   ctx.closeOverlay();
   const { script, rows } = built;
   let ran = null;
@@ -3124,6 +3173,7 @@ export async function restore(ctx, rest = '') {
   const before = session.database;
   const moves = restoreMoves(files, target, info);
   const back = `\nUSE ${dialectOf(session).quote(before)};`;
+  if (!(await productionWriteOk(ctx, `Restore ${target} on ${session.conn.name}`))) return;
   const r = await ctx.query(restoreSql({ target, path, moves, replace }) + back, { title: `RESTORE DATABASE ${target}${replace ? ' (replacing it)' : ''}`, activity: false, notes: moves.map((m) => `${m.logical} → ${m.to}`) });
   if (r?.ok) {
     ctx.logActivity?.(`RESTORE DATABASE ${target} on ${t.conn.name}${replace ? ', replacing it' : ''}`, { kind: 'restore' });
@@ -3320,7 +3370,7 @@ export async function importBacpac(ctx, rest = '') {
   if ((ctx.schema?.databases ?? []).some((x) => x.toLowerCase() === target.toLowerCase())) {
     return ctx.note(`${target} is already on ${conn.name}, and an import only makes a new database: --as another name, or drop ${target} first.`, 'error');
   }
-  const ok = await ctx.confirm({ title: `Make the database ${target} on ${conn.name} from ${basename(full)}?`, detail: `With SqlPackage, from ${full}.`, options: YES_NO('Yes, import it') });
+  const ok = (await ctx.confirm({ title: `Make the database ${target} on ${conn.name} from ${basename(full)}?`, detail: `With SqlPackage, from ${full}.`, options: YES_NO('Yes, import it') })) && (await productionWriteOk(ctx, `Make the database ${target} on ${conn.name}`));
   if (!ok) return;
   const password = await toolPassword(ctx, conn);
   if (password === undefined) return;

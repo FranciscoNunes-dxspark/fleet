@@ -415,7 +415,7 @@ On PostgreSQL it checks what has an equivalent there: tables without a primary k
 
 Type `/` and the menu narrows as you type. `tab` completes, `↑`/`↓` picks, `↵` runs. `/connect` and `/copy-rows` complete connection names, `/use` database names, `/describe`, `/generate` and `/scaffold` tables and views, and `/script` and `/uses` everything in the database.
 
-`/import datagrip [folder]` `/import-csv <file.csv> <table> [--run]` `/connect <name>` `/add …` `/forget <name>` `/folder <connection> [folder]` `/password [connection]` `/azure-sql <server> [database] …` `/firewall [connection]` `/disconnect` `/use <database>` `/open <file.sql>` `/snippet [name]` `/snippets` `/console` `/tab …` `/new` `/format` `/search <text>` `/save <file.sql>` `/describe <table>` `/script <name>` `/grep <text>` `/uses <object>` `/diagram [table] [--depth n] [--mermaid]` `/find [text]` `/export <file.csv|file.xlsx|file.json|file.md>` `/chart [type] [x] [y…]` `/filter [text]` `/cell` `/data` `/follow` `/pin` `/compare [connection|environment] [database]` `/copy [tsv|csv|json|md|insert]` `/limit [rows]` `/watch <seconds> [sql] [--until <condition>]` `/writes` `/tx [auto|manual]` `/commit` `/rollback` `/undo-write` `/ask <question>` `/why` `/explain` `/explain-slow [family:v1:…|sql]` `/ai [connection] [level]` `/update` `/settings` `/stats [on|off]` `/plan [actual] [sql]` `/more` `/diff <connection|environment|database> [database]` `/health` `/sizes` `/deadlocks` `/fanout <folder> [sql]` `/activity` `/jobs` `/top-queries` `/kill <session>` `/backup [file]` `/restore <file> [--as <database>]` `/script-all <folder>` `/migrations [run] <folder>` `/generate <table> [rows] [--seed n]` `/scaffold <table> [csharp|ef|ts|python]` `/api [language]` `/copyrows <table> to <connection|environment> [where …] [limit n] [--keep col] [--mask col]` `/copy-rows <target> [table] [--where <condition>] [--no-mask]` `/timeline` `/wiring` `/last` `/refresh` `/help` `/quit`
+`/import datagrip [folder]` `/import-csv <file.csv> <table> [--run]` `/connect <name>` `/add …` `/forget <name>` `/folder <connection> [folder]` `/password [connection]` `/azure-sql <server> [database] …` `/firewall [connection]` `/disconnect` `/use <database>` `/open <file.sql>` `/snippet [name]` `/snippets` `/console` `/tab …` `/new` `/format` `/search <text>` `/save <file.sql>` `/describe <table>` `/script <name>` `/grep <text>` `/uses <object>` `/diagram [table] [--depth n] [--mermaid]` `/find [text]` `/export <file.csv|file.xlsx|file.json|file.md>` `/chart [type] [x] [y…]` `/filter [text]` `/cell` `/data` `/follow` `/pin` `/compare [connection|environment] [database]` `/copy [tsv|csv|json|md|insert]` `/limit [rows]` `/watch <seconds> [sql] [--until <condition>]` `/writes` `/tx [auto|manual]` `/commit` `/rollback` `/undo-write` `/ask <question>` `/why` `/explain` `/explain-slow [family:v1:…|sql]` `/ai [connection] [level]` `/update` `/settings` `/stats [on|off]` `/plan [actual] [sql]` `/more` `/diff <connection|environment|database> [database]` `/health` `/sizes` `/deadlocks` `/fanout <folder> [sql]` `/activity` `/jobs` `/top-queries` `/kill <session>` `/backup [file]` `/restore <file> [--as <database>]` `/script-all <folder>` `/migrations [run] <folder>` `/generate <table> [rows] [--seed n]` `/scaffold <table> [csharp|ef|ts|python]` `/api [language]` `/copyrows <table> to <connection|environment> [where …] [limit n] [--keep col] [--mask col]` `/copy-rows <target> [table] [--where <condition>] [--no-mask]` `/env [name]` `/timeline` `/wiring` `/last` `/refresh` `/help` `/quit`
 
 ### The command palette
 
@@ -532,6 +532,29 @@ claude mcp add --scope user trawl -- trawl mcp
 - Everything Claude runs shows in History, marked `◆`.
 
 `trawl mcp --demo` adds the demo connections, to try it without a server.
+
+## Environments
+
+A project can name its environments once for every app of the family, in `.fleet/project.json` at its root (the checkout of the script you have open, else the folder Trawl started in, or a folder above it): dev, staging, prod, and what each one means to each app. Trawl's part is the connection to use, and optionally the database:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev":     { "trawl": { "connection": "Shop (local)" } },
+    "staging": { "trawl": { "connection": "Shop (staging)", "database": "Shop" } },
+    "prod":    { "prod": true, "trawl": { "connection": "Shop (prod)" } }
+  }
+}
+```
+
+The connections are saved ones, named as in Connections; the file never holds a password or a connection string. The one chosen is kept per project in the family's folder (`~/.family/env.json`, or `FAMILY_HOME`), so choosing it in any app, or in Fleet, moves them all.
+
+- `/env` says which environment is chosen; `/env staging` chooses one, for every app. The header shows its name after Trawl's, in red for an environment marked `"prod": true` (whose frames are red too).
+- When the environment changes, here or in another app, Trawl moves to the connection it names (asking first when a transaction is open, as `/connect` does). One that names no connection for Trawl leaves it where it is. Started without `--connect`, Trawl opens on the chosen environment's connection rather than the last one.
+- **In a production environment, every write asks once more**, after the questions it already has (a risky statement, the row count, `/writes` for a production connection) and whatever connection you're on: `prod is production. Run this write on Shop (prod)?`. So do `/kill`, starting a job, `/migrations run` (once for them all), `/restore`, `/import-bacpac` and copying rows. Reads ask nothing, and `trawl mcp` is unchanged: it only ever reads.
+- An environment's name works wherever a connection's does for comparing and copying: `/compare staging`, `/diff staging`, `/copyrows dbo.Customers to staging`.
+- While Fleet records a runbook, the commands you run at the prompt are kept for it (the slash commands and `/take` lines, as typed; never SQL).
 
 ## The family
 
