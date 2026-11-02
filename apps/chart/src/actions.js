@@ -1,5 +1,5 @@
 // Every user-facing operation, written once: keys and slash commands call these with `ctx` (App's).
-// Chart only reads and plans: nothing here applies a plan or changes the infrastructure.
+// Chart reads and plans; the one thing that changes infrastructure is /deploy (a Bicep or ARM file), and only after a confirmation.
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { run } from '@fleet/kit/run.js';
 import { contextIn, copiedNote, notMine, splitArgs, takeLine } from '@fleet/kit/family.js';
@@ -148,6 +148,40 @@ export async function whatIf(ctx, rest = '') {
   if (r.ok) {
     ctx.setView('changes');
     ctx.logActivity(`What-if ${args.file} ${where}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
+  }
+  return r.ok;
+}
+
+/** /deploy [file] --rg <group> | --location <region> [--params <file>]: runs a what-if of a Bicep or ARM file, then deploys it if the confirmation that follows it is a yes (the same arguments as /whatif). */
+export async function deploy(ctx, rest = '') {
+  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found });
+  if (!args.file) return ctx.note('/deploy needs a .bicep or ARM file: /deploy main.bicep --rg shop-prod', 'error') ?? false;
+  if (!args.resourceGroup && !args.location) return ctx.note(`/deploy ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
+  const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
+  // The what-if always runs first, so the changes are on screen behind the question; a failed one stops here.
+  const planned = await whatIf(ctx, rest);
+  if (!planned) return false;
+  const summary = summaryLine(summarize(ctx.data.plan.changes)) || 'no changes';
+  // "No" comes first so that ↵ alone never deploys.
+  const yes = await ctx.confirm({
+    title: `Deploy ${args.file} ${where}?`,
+    detail: `What-if: ${summary}`,
+    danger: true,
+    options: [{ label: 'No, cancel', value: false }, { label: 'Yes, deploy it', value: true }],
+  });
+  if (!yes) return false;
+  const r = await ctx.task(
+    `deploy ${args.file} ${where}`,
+    async (signal) => {
+      const d = await ctx.provider.deploy(ctx.cwd(), { ...args, signal });
+      return { stdout: `${d.state}${d.name ? `: deployment ${d.name}` : ''}${d.outputs.length ? `, outputs ${d.outputs.join(', ')}` : ''}` };
+    },
+    { label: 'Deploying' },
+  );
+  if (r.ok) {
+    // The plan on screen was of what has now been done.
+    ctx.setData((d) => ({ ...d, plan: null, source: null }));
+    ctx.logActivity(`Deployed ${args.file} ${where}`);
   }
   return r.ok;
 }

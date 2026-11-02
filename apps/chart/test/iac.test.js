@@ -58,6 +58,18 @@ test("a what-if: az's command for a resource group or the subscription, everythi
   assert.match(explain(new Error('Error: Backend initialization required, please run "terraform init"'), 'terraform').message, /needs init first/);
 });
 
+test("a deployment: az's create for a resource group or the subscription, only the outputs' names kept", async () => {
+  const run = fakeRun([[/deployment/, { name: 'main', properties: { provisioningState: 'Succeeded', outputs: { cacheHost: { value: 'secret-host' } } } }]]);
+  const chart = createChart({ run });
+  const d = await chart.deploy('/srv', { file: 'main.bicep', resourceGroup: 'shop-prod', params: 'main.bicepparam' });
+  assert.equal(run.calls[0].command, 'az deployment group create --resource-group "shop-prod" --template-file "main.bicep" --parameters "main.bicepparam" --output json');
+  assert.deepEqual(d, { name: 'main', state: 'Succeeded', outputs: ['cacheHost'] });
+  await chart.deploy('/srv', { file: 'main.bicep', location: 'westeurope' });
+  assert.equal(run.calls[1].command, 'az deployment sub create --location "westeurope" --template-file "main.bicep" --output json');
+  await assert.rejects(chart.deploy('/srv', { file: 'main.bicep' }), /needs a resource group/);
+  await assert.rejects(chart.deploy('/srv', { file: 'main.bicep', resourceGroup: 'rg$(x)' }), /won't put in a command line/);
+});
+
 test("/whatif's arguments: given, or the last ones, a parameter file beside the template found", () => {
   const found = { bicep: ['bicep/main.bicep'], params: ['bicep/main.prod.bicepparam'] };
   assert.deepEqual(whatIfArgs('--rg shop-prod', { found }), { file: 'bicep/main.bicep', resourceGroup: 'shop-prod', location: undefined, params: 'bicep/main.prod.bicepparam' });

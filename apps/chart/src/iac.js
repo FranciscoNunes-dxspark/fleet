@@ -1,7 +1,7 @@
 // Everything Chart reads and runs goes through one object with one interface: `detect(dir)` (what the
 // folder holds), `plan` and `state` (terraform or tofu, through their command lines), `whatIf` (az's
 // what-if of a Bicep or ARM file), `init`, `readFile` (a saved plan) and `locate` (where a resource is
-// declared). The command lines run through the kit's run.js, so whatever they're signed in to and set
+// declared); `deploy` is the one thing that changes anything, and only /deploy calls it, after asking. The command lines run through the kit's run.js, so whatever they're signed in to and set
 // up for is what Chart uses; nothing may wait on a prompt (-input=false). Everything put in a command
 // line is checked first by safeArg(). demo.js's demoChart() has the same interface.
 import { readdirSync, readFileSync, rmSync } from 'node:fs';
@@ -122,6 +122,23 @@ export function createChart({ run = runCommand } = {}) {
       const command = `az deployment ${scope} --template-file "${file}"${params ? ` --parameters "${params}"` : ''} --no-pretty-print --output json`;
       const { stdout } = await run(command, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, 'az')));
       return parseWhatIf(stdout);
+    },
+    /** az's deployment of a Bicep or ARM `file`: the same scope and arguments as `whatIf`, for real. Only /deploy calls it, after asking. */
+    async deploy(dir, { file, resourceGroup, location, params, signal } = {}) {
+      for (const v of [file, resourceGroup, location, params].filter(Boolean)) if (!safeArg(v)) throw new Error(`"${v}" has characters Chart won't put in a command line.`);
+      if (!file) throw new Error('A deployment needs a Bicep or ARM file.');
+      if (!resourceGroup && !location) throw new Error('A deployment needs a resource group (--rg) or, at the subscription, a location (--location).');
+      const scope = resourceGroup ? `group create --resource-group "${resourceGroup}"` : `sub create --location "${location}"`;
+      const command = `az deployment ${scope} --template-file "${file}"${params ? ` --parameters "${params}"` : ''} --output json`;
+      const { stdout } = await run(command, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, 'az')));
+      let json = {};
+      try {
+        json = JSON.parse(stdout);
+      } catch {
+        // az printed something else: the deployment still went through.
+      }
+      // Outputs can hold secrets, so only their names are kept.
+      return { name: json.name ?? null, state: json.properties?.provisioningState ?? 'Succeeded', outputs: Object.keys(json.properties?.outputs ?? {}) };
     },
     async readFile(path) {
       return parseAny(readFileSync(path, 'utf8'));

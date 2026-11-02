@@ -87,6 +87,10 @@ export function demoChart() {
       calls.push(['whatIf', dir, opts]);
       return parseWhatIf(DEMO_WHAT_IF);
     },
+    async deploy(dir, opts = {}) {
+      calls.push(['deploy', dir, opts]);
+      return { name: 'main', state: 'Succeeded', outputs: ['cacheHost'] };
+    },
     async readFile(path) {
       calls.push(['readFile', path]);
       return { kind: 'plan', ...parseTerraformPlan(DEMO_PLAN) };
