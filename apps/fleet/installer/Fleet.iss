@@ -36,7 +36,7 @@ OutputDir=..\dist
 OutputBaseFilename=fleet-windows-x64-setup
 
 [Messages]
-FinishedLabel=Fleet is installed. Open it from the Start menu: Splice, Trawl, Sonar, Bosun, Hail, Locker and Mooring in one window, switched with ctrl+].
+FinishedLabel=Fleet is installed. Open it from the Start menu: Splice, Trawl, Sonar, Bosun, Hail, Locker, Mooring, Bilge, Chart and Helm in one window, switched with ctrl+].
 
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
