@@ -156,22 +156,38 @@ const ICONS = [
   ['/team', 'team'], ['/users', 'team'], ['/people', 'team'], ['/insights', 'insights'], ['/settings', 'settings'],
 ];
 
+// How far back into view the spot above a pinned page header must come before it unpins (PageHeader).
+const UNPIN_SLACK = 96;
+
 export function PageHeader({ title, sub, children }) {
   const { pathname } = useLocation();
   const icon = ICONS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`))?.[1];
   const stage = stageOfPath(pathname);
   const marker = useRef(null);
+  const header = useRef(null);
   const [stuck, setStuck] = useState(false);
+  // Pinned when the spot above it scrolls under the top bar. Pinned, the header shrinks, so the page
+  // gets shorter, and a page a little taller than the window scrolls back by that much; unpinning
+  // as soon as the spot shows again would make the page taller, pin it again, and flicker. So it
+  // unpins only once the spot is well back in view (more than any header shrinks), or at the top.
   useEffect(() => {
-    if (!marker.current || typeof IntersectionObserver === 'undefined') return undefined;
-    const io = new IntersectionObserver(([e]) => setStuck(!e.isIntersecting));
-    io.observe(marker.current);
-    return () => io.disconnect();
+    const check = () => {
+      const m = marker.current;
+      const el = header.current;
+      if (!m || !el) return;
+      const pin = parseFloat(getComputedStyle(el).top) || 0;
+      const top = m.getBoundingClientRect().top;
+      setStuck((was) => (window.scrollY <= 0 ? false : was ? top < pin + UNPIN_SLACK : top < pin));
+    };
+    check();
+    window.addEventListener('scroll', check, { passive: true });
+    window.addEventListener('resize', check);
+    return () => { window.removeEventListener('scroll', check); window.removeEventListener('resize', check); };
   }, []);
   return (
     <>
       <div ref={marker} className="page-header-marker" aria-hidden="true" />
-      <header className={`page-header${stuck ? ' page-header-stuck' : ''}`}>
+      <header ref={header} className={`page-header${stuck ? ' page-header-stuck' : ''}`}>
         <div className="page-title">
           {icon && <span className="page-icon" aria-hidden="true"><Icon name={icon} size={20} /></span>}
           <div className="page-title-text">
