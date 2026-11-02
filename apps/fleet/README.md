@@ -18,7 +18,8 @@ tab in its own colour.
 A tab off screen gets a badge when its app needs you: `!` when it has become worried or sad since you
 last looked at it (Bosun's process crashed or gave up, Hail's checks failed,
 Sonar ran into trouble), and a count of the alerts it logged since (Sonar's watches going
-over their threshold, Bosun's crashes). The bar says why for a moment and the terminal's bell rings once
+over their threshold, Bosun's crashes). The badge is orange, and red when what it counts includes an
+error or a crash. The bar says why for a moment and the terminal's bell rings once
 as a badge appears; looking at the space clears it. Fleet reads what the apps tell each other (their
 moods and the family's activity log, in `~/.family` or `FAMILY_HOME`) every few seconds, so an app
 whose moods are turned off in its settings never gets a `!`.

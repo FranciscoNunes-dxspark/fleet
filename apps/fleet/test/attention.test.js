@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { badgeFor, badgeText, familyReader, isNews } from '../src/attention.js';
 
 test('a worried or sad mood since you last looked is a !, an older one or a calm one nothing', () => {
-  assert.deepEqual(badgeFor('bosun', { mood: { mood: 'worried', reason: 'api crashed', at: 200 }, seen: 100 }), { alert: true, count: 0, reason: 'api crashed', text: '!' });
+  assert.deepEqual(badgeFor('bosun', { mood: { mood: 'worried', reason: 'api crashed', at: 200 }, seen: 100 }), { alert: true, count: 0, error: false, reason: 'api crashed', text: '!' });
   assert.equal(badgeFor('bosun', { mood: { mood: 'sad', reason: 'gave up', at: 200 }, seen: 100 }).text, '!');
   assert.equal(badgeFor('bosun', { mood: { mood: 'worried', at: 50 }, seen: 100 }), null);
   assert.equal(badgeFor('bosun', { mood: { mood: 'happy', at: 200 }, seen: 100 }), null);
@@ -21,10 +21,13 @@ test("alerting entries of the space's own app since you looked are counted, the 
     { at: 90, app: 'sonar', kind: 'alert', text: 'old' },
     { at: 180, app: 'bosun', kind: 'error', text: 'web crashed' },
   ];
-  assert.deepEqual(badgeFor('sonar', { activity, seen: 100 }), { alert: false, count: 2, reason: 'watch "5xx" is 30', text: '2' });
+  assert.deepEqual(badgeFor('sonar', { activity, seen: 100 }), { alert: false, count: 2, error: false, reason: 'watch "5xx" is 30', text: '2' });
   assert.equal(badgeFor('sonar', { mood: { mood: 'worried', reason: 'r', at: 200 }, activity, seen: 100 }).text, '!2');
   // Any space, by its id: Keel's entries count as anyone's.
   assert.equal(badgeFor('keel', { activity: [{ at: 300, app: 'keel', kind: 'error', text: 'x' }], seen: 100 }).text, '1');
+  // An error or a crash makes it red; an alert alone (a watch over its threshold) leaves it orange.
+  assert.equal(badgeFor('bosun', { activity, seen: 100 }).error, true);
+  assert.equal(badgeFor('bosun', { activity: [{ at: 300, app: 'bosun', kind: 'crash', text: 'api' }], seen: 100 }).error, true);
   assert.equal(badgeText({ alert: true, count: 12 }), '!9+');
   assert.equal(badgeText(null), '');
 });

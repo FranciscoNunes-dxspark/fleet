@@ -85,3 +85,10 @@ test("split, the other pane's tab is underlined in its accent", () => {
   assert.equal(layout.segments.find((s) => s.role === 'shown').id, 'hail');
   assert.ok(renderBar(layout, spaces).includes('\x1b[38;2;232;68;90m\x1b[1m\x1b[4m 5 Hail ● '));
 });
+
+test('a badge that counts an error or a crash is red, an alert orange', () => {
+  const badged = spaces.map((s) => (s.id === 'trawl' ? { ...s, state: 'running', badge: { alert: false, count: 1, error: true, text: '1' } } : s.id === 'bosun' ? { ...s, state: 'running', badge: { alert: true, count: 0, error: false, text: '!' } } : s));
+  const bar = renderBar(barLayout({ spaces: badged, active: 'splice', width: 160 }), badged);
+  assert.ok(bar.includes('\x1b[38;5;203m1'), 'red');
+  assert.ok(bar.includes('\x1b[38;5;214m!'), 'orange');
+});

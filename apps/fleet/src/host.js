@@ -71,7 +71,7 @@ export const helpRows = (p = DEFAULT_PREFIX) => [
   ...(p === 'ctrl+]' ? [] : [['ctrl+]', `works as ${p} does (host.json's "prefix" changes ${p})`]]),
   ['', ''],
   ['a click on a tab', 'switches to it'],
-  ['! or 2 in a tab', 'that app needs you (worried, alerts)'],
+  ['! or 2 in a tab', 'that app needs you (worried, alerts; red: errors)'],
   ['copied "for Trawl"', 'goes to Trawl, typed into its prompt'],
 ];
 

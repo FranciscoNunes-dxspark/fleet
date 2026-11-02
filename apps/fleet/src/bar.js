@@ -1,9 +1,9 @@
 // The bar: the host's one line at the bottom of the screen, a tab per space and a hint, pure. A tab
 // says the space's key, its name and its state (○ not started, ● running, ✕ and the code once it has
 // exited), and what the app is for beside its name (ROLES, in capitals) where there's room; the active one is drawn in its app's accent. A space off screen that needs you has a
-// badge after its state (attention.js: `!` for a worried app, a count of alerts), in a warning colour.
-// When the line is too narrow, the hint goes first, then the names shrink to their letters (the
-// badges stay), then the line is cut.
+// badge after its state (attention.js: `!` for a worried app, a count of alerts), in a warning colour,
+// red when it counts an error or a crash. When the line is too narrow, the hint goes first, then the
+// names shrink to their letters (the badges stay), then the line is cut.
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { ROLES } from '@fleet/kit/family.js';
 import { badgeText } from './attention.js';
@@ -49,7 +49,7 @@ export function barLayout({ spaces, active, shown = null, width, prefix = false,
     const left = width - col;
     if (left <= 0) break;
     const text = stringWidth(tabs[i]) <= left ? tabs[i] : fit(tabs[i], left);
-    segments.push({ text, role: s.id === active ? 'active' : s.id === shown ? 'shown' : 'tab', id: s.id, state: s.state, ...(badges[i] ? { badge: badges[i] } : {}) });
+    segments.push({ text, role: s.id === active ? 'active' : s.id === shown ? 'shown' : 'tab', id: s.id, state: s.state, ...(badges[i] ? { badge: badges[i], error: Boolean(s.badge?.error) } : {}) });
     where.push({ id: s.id, from: col, to: col + stringWidth(text) });
     col += stringWidth(text);
   }
@@ -83,8 +83,9 @@ export function colour(hex, { background = false, truecolor = true } = {}) {
   return truecolor ? `\x1b[${base};2;${rgb(hex).join(';')}m` : `\x1b[${base};5;${ansi256(hex)}m`;
 }
 
-/** A badge's colour: a warm orange, bold, that reads on the bar's grey whatever the tab's accent. */
+/** A badge's colour: a warm orange, bold, that reads on the bar's grey whatever the tab's accent; red for an error or a crash. */
 const BADGE = '\x1b[1m\x1b[38;5;214m';
+const BADGE_ERROR = '\x1b[1m\x1b[38;5;203m';
 
 /** The bar as one line of ANSI text, `width` columns wide, for `spaces` (with their accents). */
 export function renderBar(layout, spaces, { truecolor = true } = {}) {
@@ -96,7 +97,7 @@ export function renderBar(layout, spaces, { truecolor = true } = {}) {
     const end = ` ${seg.badge} `;
     if (seg.role === 'tab' && seg.badge && seg.text.endsWith(end)) {
       const head = seg.text.slice(0, -end.length);
-      out += `${seg.state === 'idle' ? '\x1b[38;5;244m' : colour(space.accent, { truecolor })}${head} ${BADGE}${seg.badge}${BAR} `;
+      out += `${seg.state === 'idle' ? '\x1b[38;5;244m' : colour(space.accent, { truecolor })}${head} ${seg.error ? BADGE_ERROR : BADGE}${seg.badge}${BAR} `;
       continue;
     }
     if (seg.role === 'active') out += `${colour(space.accent, { background: true, truecolor })}\x1b[38;5;16m\x1b[1m${seg.text}${BAR}`;
