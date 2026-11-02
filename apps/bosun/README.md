@@ -68,7 +68,7 @@ npm start
 | `watch` | Files that restart it when they change: paths or globs from its `cwd`, e.g. `["src", "lib/**/*.js"]` |
 | `ignore` | Changes to these don't (`"*.test.js"`, `"src/generated"`) |
 | `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
-| `tunnel` | `"cloudflared"` or `"ngrok"`: the tool `alt+t` opens its tunnel with (see Tunnels). At the top level, for every process |
+| `tunnel` | `"devtunnel"`, `"cloudflared"` or `"ngrok"`: the tool `/share` and `alt+t` share it with (see Sharing a running service). At the top level, for every process |
 | `test` | Hail's checks for it: an `.http` file (`"api.http"`), or `{ "file": "api.http", "env": "dev" }`, from its `cwd`. Needs `port` |
 | `build` | A command run before `run`, each time it starts (`"dotnet build"`): it starts only when the build passed, and the build's output is in its log |
 | `logs` | Log files to follow into its log, as the app writes them: a path, or a folder and a glob for the name (`"App_Data/logs/*.log"`, whose newest file is followed), or a list. `%VAR%` and `${VAR}` are put in |
@@ -196,7 +196,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `p` | Profiles |
 | `y` | Copy its command |
 | `t` | Copy its latest trouble line for Sonar, Hail or Wharf, to paste into their prompt (see The family) |
-| `alt+t` | Open its port to the internet, or close its tunnel (see Tunnels) |
+| `alt+t` | Share its port on the internet, or stop sharing it (see Sharing a running service) |
 
 Beside each running process, when the list has room, is what it uses: its CPU (as a % of one core, so
 a busy process on several cores can pass 100%) and its memory, both counting everything it started
@@ -368,16 +368,26 @@ without it the page works behind a browser warning. Without mkcert on your PATH,
 install it (`winget install FiloSottile.mkcert`, `brew install mkcert`, your package manager), and
 the process runs as before.
 
-### Tunnels
+### Sharing a running service
 
-`alt+t` (or `/tunnel <name>`) opens a running process's port to the internet for a while, to show someone
-your work or to take a webhook: Bosun asks first, then runs `cloudflared tunnel --url
-http://localhost:<port>` (a quick tunnel, no account needed) or `ngrok http <port>`, whichever is on
-your PATH, cloudflared first unless `"tunnel": "ngrok"` in `bosun.json` says otherwise. The address it
-gets (`https://….trycloudflare.com`, `https://….ngrok-free.app`) is copied and said, shown beside the
-process (`⇄`) and in its log's title, and its log says when the tunnel opens and closes. `alt+t` again
-closes it. It closes when the process stops, crashes or gives up (a restart with `r`, a watched file
-or `"restart"` keeps it) and when Bosun quits. Without either tool, Bosun says how to install one.
+`/share <name>` (or `alt+t` on it) puts a running process's port on the internet for a while, to show
+someone your work or to take a webhook. Bosun asks first, saying plainly that the address is public:
+anyone who has it reaches the process, without signing in. Then it runs the first of these on your
+PATH (or the one `"tunnel"` in `bosun.json` names):
+
+1. `devtunnel host -p <port> --allow-anonymous`, Microsoft's Dev Tunnels (sign in once with
+   `devtunnel user login`; the tunnel itself lets anyone in);
+2. `cloudflared tunnel --url http://localhost:<port>`, a quick tunnel, no account needed;
+3. `ngrok http <port>`.
+
+The address it gets (`https://….devtunnels.ms`, `https://….trycloudflare.com`, `https://….ngrok-free.app`)
+is copied and said, shown beside the process (`⇄`) and in its log's title, and its log says when the
+tunnel opens and closes. Bosun then offers it to Hail: `↵` copies a `GET` of the address as a `/take`
+line for Hail's prompt (and `/family` offers it while it's shared). `/unshare <name>` (or `alt+t` again)
+stops it, and so does the process stopping, crashing or giving up (a restart with `r`, a watched file
+or `"restart"` keeps it) and Bosun quitting. The family's activity log says which process was shared
+and when it stopped, never the address. Without any of the tools, Bosun says how to install one
+(`winget install Microsoft.devtunnel`, `brew install --cask devtunnel`, cloudflared's package).
 
 ### Structured logs
 
@@ -473,7 +483,7 @@ there; it never holds a password or a token.
   run with `↵`.
 - `/timeline` shows what the family's apps did, newest first, from the log they all add to: Bosun adds a
   process crashing (once, not each time it's restarted) or giving up, your restarts and stops (of a
-  process, a group or the crew), tunnels opened and closed, and `/move`; the siblings add their own
+  process, a group or the crew), which process was shared on the internet and when it stopped (never its address), and `/move`; the siblings add their own
   (a push, a write to a database…). It starts with this project's (and what names no project); `p`
   shows every project's, and `↵` one whole. Nothing secret goes in.
 - `/wiring` lists what the project points at, by the file that says it: the addresses, hosts, ports
@@ -521,7 +531,9 @@ Trawl.
 | `/save-log <name> [file]` | Write a process's log to a file, from the project's folder (`<name>.log` unless given; asks before writing over one) |
 | `/why <name>` | Ask Claude why a process failed |
 | `/open <name>` | Open a process's port in the browser |
-| `/tunnel <name>` | Open a process's port to the internet through cloudflared or ngrok (asks first; the address is copied), or close its tunnel |
+| `/share <name>` | Share a running process's port on the internet through devtunnel, cloudflared or ngrok (asks first: the address is public); the address is copied and offered to Hail |
+| `/unshare <name>` | Stop sharing a process: its public address stops working |
+| `/tunnel <name>` | `/share` it, or `/unshare` it when it's shared |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
 | `/preflight` | Check what the crew needs (Node version, Docker, free ports, `.env` keys, databases, `node_modules`, IIS, services, host names, tools), as a checklist |
 | `/top` | Every process's CPU and memory (with what it started), the busiest first, and a sparkline of the last minute of each; `↵` shows its log |

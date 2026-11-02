@@ -30,7 +30,7 @@ import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
-import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
+import { copiedNote, decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { Recorder, sessionsDir } from '../recorder.js';
 import { dumpsDir } from '../dumps.js';
@@ -59,7 +59,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · alt+r all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share it · w why · ↵ whole log',
+  crew: 'r restart · s stop/start · alt+r all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share its trouble · alt+t share it online · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
@@ -312,16 +312,26 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // a notification (unless the setting is off). A stop never comes here.
   const crewEvent = (e) => {
     if (e.type === 'ready') return e.p.spec.test && runTests(e.p);
-    // A tunnel's address, copied as soon as its tool says it; one that ended by itself, why.
+    // A shared process's public address, copied as soon as its tool says it and offered to Hail; one
+    // that ended by itself, why. The activity log names the process, never the address: whoever has
+    // it gets in.
     if (e.type === 'tunnel') {
-      activity(`Opened a tunnel to ${e.p.name} (port ${e.p.port}): ${e.url}`);
-      ctx.copy(e.url, 'the tunnel\'s address');
-      return note(`${e.p.name} is open at ${e.url} (copied). alt+t closes it.`, 'ok');
+      activity(`Shared ${e.p.name} (port ${e.p.port}) on the internet${e.p.tunnel?.tool ? ` through ${e.p.tunnel.tool}` : ''}`);
+      ctx.copy(e.url, 'the public address');
+      note(`${e.p.name} is public at ${e.url} (copied): anyone with the address reaches it. /unshare ${e.p.name} stops it.`, 'ok');
+      // Asked only when nothing else is: a question of its own mustn't take another's place.
+      if (confirmRef.current) return;
+      return confirm({ title: `Copy a GET of ${e.url} for Hail?`, detail: '/family offers it too, while it\'s shared.', options: [{ label: 'Yes, for Hail', value: true }, { label: 'No', value: false }] }).then((yes) => {
+        if (!yes) return;
+        const line = a.sharedRequestLine(e.p, e.url);
+        ctx.copy(line, 'the request for Hail');
+        note(copiedNote('hail', line), 'ok');
+      });
     }
     if (e.type === 'tunnel-closed') {
-      activity(`Closed the tunnel to ${e.p.name}${e.url ? ` (${e.url})` : ''}${e.asked ? '' : ': it ended by itself'}`, { kind: e.asked ? 'info' : 'error' });
-      if (e.asked) return note(`Closed ${e.p.name}'s tunnel${e.url ? ` (${e.url})` : ''}.`);
-      return note([`${e.p.name}'s tunnel closed by itself.`, ...e.said.slice(-3)].join('\n'), 'error');
+      activity(`Stopped sharing ${e.p.name}${e.asked ? '' : ': its tunnel ended by itself'}`, { kind: e.asked ? 'info' : 'error' });
+      if (e.asked) return note(`Stopped sharing ${e.p.name}${e.url ? `: ${e.url} is gone` : ''}.`);
+      return note([`${e.p.name}'s sharing stopped by itself.`, ...e.said.slice(-3)].join('\n'), 'error');
     }
     if (e.type !== 'exit') return;
     if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
@@ -619,7 +629,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     hostsFile,
     preflightReport: (facts) => preflightReport(facts),
     killPids: stopPids,
-    // T and /tunnel: cloudflared or ngrok, whichever is on the PATH (or the one bosun.json names).
+    // /share and alt+t: devtunnel, cloudflared or ngrok, the first on the PATH (or the one bosun.json names).
     tunnelTool: (preferred) => tunnelTool(preferred, findTool),
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // Whether this terminal can report the mouse at all (/settings says so).

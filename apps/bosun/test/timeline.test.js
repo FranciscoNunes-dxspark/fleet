@@ -49,11 +49,15 @@ test('crashes, giving up, restarts, stops, tunnels and /move go to the family\'s
     app.stdin.write('r');
     await until(() => mine().includes('Restarted api'), 'a restart');
     app.stdin.write('\x1bt');
-    await until(() => frame().includes('to the internet'), 'the tunnel asked for');
+    await until(() => frame().includes('on the internet'), 'sharing asked for');
     app.stdin.write(KEYS.enter);
-    await until(() => mine().includes('Opened a tunnel to api (port 4290): https://quiet-river-1.trycloudflare.com'), 'the tunnel opened');
+    await until(() => mine().includes('Shared api (port 4290) on the internet through cloudflared'), 'shared');
+    assert.ok(!mine().some((t) => t.includes('trycloudflare.com')), 'never its address');
+    await until(() => frame().includes('for Hail?'), 'offered to Hail');
+    app.stdin.write(KEYS.esc);
+    await until(() => !frame().includes('for Hail?'), 'not for Hail');
     app.stdin.write('s');
-    await until(() => mine().includes('Stopped api') && mine().some((t) => t.startsWith('Closed the tunnel to api')), 'stopped, and its tunnel closed');
+    await until(() => mine().includes('Stopped api') && mine().includes('Stopped sharing api'), 'stopped, and no longer shared');
 
     app.stdin.write(':');
     await type(app.stdin, 'timeline');

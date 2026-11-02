@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { encodeContext, shareLine, takeLine, writeMood, familyDir } from '@fleet/kit/family.js';
+import { contextIn, encodeContext, shareLine, takeLine, writeMood, familyDir } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../src/moods.js';
 import { familyOffers, trawlName } from '../src/actions.js';
 import { KEYS, project, start, tempHome, type, until } from './helpers.js';
@@ -46,6 +46,10 @@ test('what a project offers the siblings: Splice its checkout, Hail its .http fi
     ['trawl', '/add shop-shop-dev localhost,14330 "Shop Dev" --user sa'],
     ['trawl', '/add shop-shop db.local:5432 shop --kind postgres --user me'],
   ]);
+  // A process shared on the internet is a GET of its public address, for Hail.
+  const [shared] = familyOffers({ dir: '/w/shop', repo: null, httpFiles: [], databases: [], shared: [{ name: 'api', tunnel: { url: 'https://k2l8mx4p-4282.euw.devtunnels.ms' } }] });
+  assert.equal(shared.app, 'hail');
+  assert.deepEqual(contextIn(shared.line), { kind: 'request', data: { method: 'GET', url: 'https://k2l8mx4p-4282.euw.devtunnels.ms', name: 'api (shared)', app: 'bosun' } });
   assert.ok(offers.every((o) => !/Secret1|\bp\b(?!ostgres)/.test(o.line.replace('/open', ''))));
   assert.equal(trawlName('x', { name: 'M', kind: 'mysql', server: 'h', port: 3307, user: 'u' }), 'x-m');
 });

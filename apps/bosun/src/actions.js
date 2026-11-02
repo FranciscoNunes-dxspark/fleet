@@ -229,6 +229,7 @@ export function familyOffers(found) {
     ...(found.repo ? [{ app: 'splice', line: shareLine('open', [found.repo]), what: 'this checkout' }] : []),
     ...found.httpFiles.map((f) => ({ app: 'hail', line: shareLine('open', [f]), what: relative(found.dir, f) })),
     ...found.databases.map((d) => ({ app: 'trawl', line: trawlLine(d, trawlName(project, d)), what: `${d.name} (${d.source})` })),
+    ...(found.shared ?? []).map((p) => ({ app: 'hail', line: sharedRequestLine(p, p.tunnel.url), what: `${p.name}, shared` })),
   ];
 }
 
@@ -236,7 +237,9 @@ export function familyOffers(found) {
 export function family(ctx) {
   const found = projectAt(ctx.dir);
   // A .NET Framework project's databases are in its web.config: Trawl takes those too.
-  const offers = familyOffers({ ...found, databases: [...found.databases, ...webConfigDatabases(ctx.dir, crewFolders({ procs: (ctx.crew?.list() ?? []).map((p) => p.spec) }))] });
+  // And a process shared on the internet is a GET of its public address for Hail.
+  const shared = (ctx.crew?.list() ?? []).filter((p) => p.tunnel?.url);
+  const offers = familyOffers({ ...found, shared, databases: [...found.databases, ...webConfigDatabases(ctx.dir, crewFolders({ procs: (ctx.crew?.list() ?? []).map((p) => p.spec) }))] });
   if (!offers.length) return ctx.note('Nothing here for the siblings: no git checkout, .http files or databases in the settings.');
   ctx.showPicker({
     title: 'For the family',
@@ -593,26 +596,46 @@ export function top(ctx, { replace = false } = {}) {
 }
 
 /**
- * T and /tunnel: opens `name`'s port to the internet through cloudflared or ngrok (asking first), or
- * closes the tunnel it has. The address is copied once the tool says it (App's crewEvent).
+ * /share and alt+t: shares `name`'s port on the internet through devtunnel, cloudflared or ngrok, after
+ * asking (the address is public, which the question says). The address is copied once the tool says
+ * it, and offered to Hail (App's crewEvent); the tunnel is a child the supervisor keeps.
  */
-export async function tunnel(ctx, name) {
+export async function share(ctx, name) {
   const p = proc(ctx, name);
   if (!p) return false;
-  if (p.tunnel) return void ctx.crew.closeTunnel(p.name);
-  if (!p.port) return ctx.note(`${p.name} has no port to open: give it one in bosun.json ("port": 3000).`, 'error');
-  if (!p.child) return ctx.note(`${p.name} isn't running: start it first (s), then open its tunnel.`, 'error');
+  if (p.tunnel) return ctx.note(`${p.name} is shared already${p.tunnel.url ? ` at ${p.tunnel.url}` : ''}: /unshare ${p.name} stops it.`);
+  if (!p.port) return ctx.note(`${p.name} has no port to share: give it one in bosun.json ("port": 3000).`, 'error');
+  if (!p.child) return ctx.note(`${p.name} isn't running: start it first (s), then share it.`, 'error');
   const found = ctx.tunnelTool(p.spec.tunnel ?? ctx.data?.tunnel ?? null);
   if (found.missing) return ctx.note(installHint(found.missing), 'error');
   const ok = await ctx.confirm({
-    title: `Open ${p.name}'s port ${p.port} to the internet through ${found.tool}?`,
-    detail: 'Anyone with the address reaches it, until you close it (T) or the process stops.',
+    title: `Share ${p.name}'s port ${p.port} on the internet through ${found.tool}?`,
+    detail: `The address it gets is public: anyone who has it reaches ${p.name}, without signing in, until you /unshare it, it stops or Bosun quits.`,
     danger: true,
-    options: YES_NO('Yes, open it'),
+    options: YES_NO('Yes, share it'),
   });
   if (!ok) return false;
-  if (ctx.crew.openTunnel(p.name, found)) ctx.note(`Opening a tunnel to ${p.name}'s port ${p.port} through ${found.tool}…`);
+  if (!ctx.crew.openTunnel(p.name, found)) return ctx.note(`Couldn't share ${p.name}: see its log.`, 'error');
+  ctx.note(`Sharing ${p.name}'s port ${p.port} through ${found.tool}…`);
 }
+
+/** /unshare and alt+t on a shared one: closes `name`'s tunnel. */
+export function unshare(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  if (!p.tunnel) return ctx.note(`${p.name} isn't shared.`);
+  ctx.crew.closeTunnel(p.name);
+}
+
+/** alt+t and /tunnel: shares `name`, or stops sharing it when it is. */
+export function tunnel(ctx, name) {
+  const p = proc(ctx, name);
+  if (!p) return false;
+  return p.tunnel ? unshare(ctx, p.name) : share(ctx, p.name);
+}
+
+/** Hail's request for a shared process's public address: a GET of it, as a /take line. */
+export const sharedRequestLine = (p, url) => takeLine('request', { method: 'GET', url, name: `${p.name} (shared)`, app: 'bosun' });
 
 /** The address o opens: its https port's, else its host name's (an IIS site's binding, "host"), else localhost's. */
 export function procUrl(p) {
