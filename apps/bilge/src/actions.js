@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { run } from '@fleet/kit/run.js';
 import { contextIn, copiedNote, notMine, takeLine } from '@fleet/kit/family.js';
 import { resolveFolder, samePath } from '@fleet/kit/folders.js';
+import { describeEnvironments, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
 import { configFile } from './config.js';
 import { countLine, counts, findings, licenceKind } from './audit.js';
@@ -183,7 +184,7 @@ export async function fix(ctx, target) {
   });
   if (yes === 'why') return ctx.showText(`Fixing ${label(f.pkg)}`, [`Moving to ${f.fixed} may not fit this project:`, ...warnings.map((w) => `  · ${w}`), '', `The fix: ${plan.text}`, '', 'f again runs it anyway; a newer version may fit (↵ in Packages says).'].join('\n')) ?? false;
   if (yes === 'copy') return ctx.copy(plan.run.command, 'the command') ?? true;
-  if (!yes) return false;
+  if (!yes || !(await productionOk(ctx, `Move ${f.pkg.name} to ${f.fixed}`))) return false;
   const r = await ctx.task(plan.run.command, (signal) => ctx.provider.run(plan.run.command, { cwd: plan.run.cwd, signal }), {
     label: `Moving ${f.pkg.name}`,
     activity: `Moved ${f.pkg.name} ${f.pkg.version} → ${f.fixed} in ${manifest.path}`,
@@ -195,6 +196,24 @@ export async function fix(ctx, target) {
     const c = await ctx.task(plan.check.command, (signal) => ctx.provider.run(plan.check.command, { cwd: plan.check.cwd, signal }), { label: 'Checking' });
     if (!c.ok && !c.error?.cancelled) ctx.note(`${plan.check.command} found a problem after moving ${f.pkg.name}: /last says what.`, 'error');
   }
+  return true;
+}
+
+/**
+ * Whether to go on with `what`, which changes the project: asked once more when the project's
+ * environment is production (.fleet/project.json's "prod": true), straight on otherwise.
+ */
+async function productionOk(ctx, what) {
+  const question = productionQuestion(ctx.env, what);
+  return !question || (await ctx.confirm(question)) === true;
+}
+
+/** /env [name]: the project's environment; a name switches every app of the family to it. */
+export function env(ctx, name = '') {
+  if (!name.trim()) return ctx.note(describeEnvironments(ctx.cwd()));
+  const r = setEnvironment(ctx.cwd(), name, { by: 'bilge' });
+  if (!r.ok) return ctx.note(r.error, 'error') ?? false;
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production: a fix asks first)' : ''}, for every app.`, 'ok');
   return true;
 }
 

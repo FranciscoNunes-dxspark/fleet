@@ -115,7 +115,7 @@ The lock files and projects found: their ecosystem, kind, how many packages, how
 
 ## Slash commands
 
-`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## In a pipeline
 
@@ -135,6 +135,12 @@ bilge report [folder] [-o file]
 ## The family
 
 What changes a project (a fix) and what an audit found go to the family's activity log, so `/timeline` in the others shows when the advisories changed; Nibs's mood (worried while there's a critical or high advisory) goes to the others' mascots. `t` hands Splice a `file` context: with a package's line, Splice blames it; for a manifest, its history. Bilge takes no sibling's context yet. The `familyMoods` setting turns the moods and the activity log off.
+
+## Environments
+
+A project that names its environments in `.fleet/project.json` (dev, staging, prod: the same file every app of the family reads) shows the chosen one in Bilge's header. `/env` says which it is, `/env <name>` switches every app to another. While a production one (`"prod": true`) is chosen, the frames are red, and a fix asks once more before it changes anything.
+
+While Fleet records a runbook, every slash command and `/take` line Bilge's prompt runs goes into it.
 
 ## Mouse
 

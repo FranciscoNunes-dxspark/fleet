@@ -2,7 +2,11 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { APP_NAMES, FAMILY, PET_NAMES, ROLES, contextIn, readActivity } from '@fleet/kit/family.js';
-import { KEYS, start, tempHome, until } from './helpers.js';
+import { currentEnvironment } from '@fleet/kit/environments.js';
+import { recordedLines } from '@fleet/kit/recording.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { KEYS, start, tempHome, type, until } from './helpers.js';
 import { familyMood, reactionTo } from '../src/moods.js';
 import { fileData } from '../src/share.js';
 
@@ -50,5 +54,62 @@ test('/take of a context Bilge has no use for says whose it is', async () => {
   await until(shows(app, '/take family:v1:commit'), 'the prompt with it');
   app.stdin.write(KEYS.enter);
   await until(shows(app, "That's commit abc, for Splice or Sonar or Keel"), 'the answer');
+  app.unmount();
+});
+
+/** A project folder naming dev and prod in .fleet/project.json, under the temporary home. */
+function projectWithEnvironments() {
+  const dir = join(process.env.BILGE_HOME, 'shop');
+  mkdirSync(join(dir, '.fleet'), { recursive: true });
+  writeFileSync(join(dir, '.fleet', 'project.json'), JSON.stringify({ default: 'dev', environments: { dev: {}, prod: { prod: true } } }));
+  return dir;
+}
+
+test("/env says the project's environment and switches every app's; on production a fix asks once more", async () => {
+  const dir = projectWithEnvironments();
+  const app = start({ cwd: dir });
+  await until(shows(app, 'minimist@1.2.5'), 'the findings');
+  assert.match(app.lastFrame(), /shop {2}│ {2}dev/);
+  await type(app.stdin, '/env');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'Environment: dev. /env prod switches every app.'), 'which one');
+  await type(app.stdin, '/env prod');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'prod (production)'), 'the header saying so');
+  assert.equal(currentEnvironment(dir).name, 'prod', "chosen in the family's folder, for the others");
+  assert.ok(readActivity().some((e) => /Switched shop to prod \(production\)/.test(e.text)), 'the switch in the activity log');
+  await type(app.stdin, '/fix lodash');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'Move lodash from 4.17.20 to 4.17.21?'), 'the question');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'prod is production. Move lodash to 4.17.21?'), 'the production question');
+  app.stdin.write('2');
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(!app.provider.state.calls.some((c) => c[0] === 'run'), 'no means nothing runs');
+  await type(app.stdin, '/env nowhere');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'No environment nowhere: dev, prod.'), 'the error');
+  app.unmount();
+});
+
+test('while Fleet records a runbook, every slash command and /take line the prompt runs goes in it', async () => {
+  mkdirSync(process.env.FAMILY_HOME, { recursive: true });
+  writeFileSync(join(process.env.FAMILY_HOME, 'recording.json'), JSON.stringify({ project: '/tmp/shop', since: 1 }));
+  const app = start();
+  await until(shows(app, 'minimist@1.2.5'), 'the findings');
+  const context = 'family:v1:commit:eyJoYXNoIjoiYWJjIn0';
+  await type(app.stdin, '/audit');
+  app.stdin.write(KEYS.enter);
+  await until(() => recordedLines().length === 1, '/audit recorded');
+  await until(() => !app.lastFrame().includes('Asking OSV'), 'the audit done');
+  await type(app.stdin, `/take ${context}`);
+  app.stdin.write(KEYS.enter);
+  await until(() => recordedLines().length === 2, '/take recorded');
+  // A context pasted alone is /take's, and recorded as one.
+  app.stdin.write(context);
+  await until(shows(app, context), 'the prompt with it');
+  app.stdin.write(KEYS.enter);
+  await until(() => recordedLines().length === 3, 'the pasted one recorded');
+  assert.deepEqual(recordedLines().map((l) => [l.app, l.line]), [['bilge', '/audit'], ['bilge', `/take ${context}`], ['bilge', `/take ${context}`]]);
   app.unmount();
 });

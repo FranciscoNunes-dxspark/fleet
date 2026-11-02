@@ -1,6 +1,7 @@
 import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
+import { readProject } from '@fleet/kit/environments.js';
 import { FILTERS } from './rows.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
@@ -18,6 +19,7 @@ export const COMMANDS = [
   { name: 'sbom', args: '[file]', desc: 'Write a CycloneDX bill of materials (sbom.cdx.json in the folder unless named)', run: (ctx, s) => a.sbom(ctx, s) },
   { name: 'report', args: '[file]', desc: 'The audit as Markdown, to copy into a pull request or a ticket, or to write to a file', run: (ctx, s) => a.report(ctx, s) },
   { name: 'move', args: '[folder]', desc: 'Read another folder: one beside this one or in it, or a path (completed as you type)', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },
+  { name: 'env', args: '[name]', desc: "The project's environment (.fleet/project.json): alone, which one; a name switches every app to it", complete: 'envs', run: (ctx, s) => a.env(ctx, s) },
   { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling copied (Bilge takes nothing yet, and says whose it is)', run: (ctx, s) => a.take(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command in the folder (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
@@ -47,6 +49,7 @@ function completions(kind, { data, found = [], config = {}, cwd, typed = '' }) {
   if (kind === 'filters') return FILTERS;
   if (kind === 'outdated') return ['all'];
   if (kind === 'fresh') return ['fresh'];
+  if (kind === 'envs') return (cwd && readProject(cwd)?.names) || [];
   if (kind === 'folders') return cwd ? folderCompletions(cwd, typed) : [];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];
