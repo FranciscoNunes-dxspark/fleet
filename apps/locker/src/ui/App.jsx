@@ -592,6 +592,8 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
     // A value shown (`secret`) is kept only by the overlay, so closing it forgets it; /last never has it.
     showText: (title, text, opts = {}) => setOverlay({ title, text, ...opts }),
     showPicker: (picker) => setOverlay({ kind: 'picker', picker }),
+    // Whether `picker` is the overlay on screen (a list still being filled is drawn again only then).
+    isShowing: (picker) => overlayRef.current?.kind === 'picker' && overlayRef.current.picker === picker,
     // A picker whose items are a function draws them again (the columns, after one is turned on or off).
     refreshPicker: () => setOverlay((o) => (o?.kind === 'picker' ? { ...o, picker: { ...o.picker } } : o)),
     closeOverlay: () => setOverlay(null),
