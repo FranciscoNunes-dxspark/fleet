@@ -41,7 +41,7 @@ export const COMMANDS = [
   { name: 'cell', desc: 'The whole value of the cell under the cursor in Results: JSON and XML laid out, binary as hex (v)', run: (ctx) => a.showCell(ctx) },
   { name: 'follow', desc: 'From the cell under the cursor in Results along its foreign key (F)', run: (ctx) => a.followKey(ctx) },
   { name: 'pin', desc: 'Keep the result set on screen to compare a later run with (p in Results)', run: (ctx) => a.pinResult(ctx) },
-  { name: 'compare', desc: 'What changed between the pinned result and the one on screen (c in Results)', run: (ctx) => a.compareResults(ctx) },
+  { name: 'compare', args: '[connection|environment] [database]', desc: "This database's schema against another connection's or environment's: only here, only there, different; s the script that brings that one in line (alone: the pinned result against the one on screen, c in Results)", complete: 'compare', run: (ctx, s) => a.compareSchemas(ctx, s) },
   { name: 'data', desc: "The result set on screen as a table to look into, or the cell's value when it is JSON text, as a tree to open and query with a path like .items[0].name (w in Results)", run: (ctx) => a.showData(ctx) },
   { name: 'copy', args: '[tsv|csv|json|md|insert]', desc: 'Copy the result set on screen (tab-separated pastes into a spreadsheet)', run: (ctx, s) => a.copyResults(ctx, s.trim()) },
   { name: 'chart', args: '[bars|line|histogram|scatter] [x] [y…]', desc: 'The result set on screen as a chart, picked from its columns unless named (b in Results; esc back to the grid)', run: (ctx, s) => a.chart(ctx, s) },
@@ -101,12 +101,14 @@ export function findCommand(name, user = []) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, { config, schema, conn, tabs }) {
+function completions(kind, { config, schema, conn, tabs, environments = [] }) {
+  if (kind === 'environments') return environments;
+  if (kind === 'compare') return [...config.connections.map((c) => c.name), ...environments];
   if (kind === 'snippets') return [...snippetsFor(config.snippets, conn).map((s) => s.name), ...SNIPPET_WORDS];
   if (kind === 'connections') return config.connections.map((c) => c.name);
   if (kind === 'tabs') return [...(tabs ?? []), 'new', 'close', 'rename'];
   if (kind === 'folders') return folderNames(config.connections);
-  if (kind === 'diff') return [...config.connections.map((c) => c.name), ...(schema?.databases.filter((d) => d !== schema.database) ?? [])];
+  if (kind === 'diff') return [...config.connections.map((c) => c.name), ...environments, ...(schema?.databases.filter((d) => d !== schema.database) ?? [])];
   if (!schema) return [];
   if (kind === 'databases') return schema.databases;
   if (kind === 'everything') return schema.objects.map(objectName);

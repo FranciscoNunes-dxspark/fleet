@@ -21,7 +21,8 @@ import { compareSets, comparisonSet, comparisonSummary } from './compare.js';
 import { droppedPaths, findTab, freeName, tabNameFor, tabNameProblem } from './consoles.js';
 import { findSnippet, snippetNameProblem, snippetsFor, withSnippet, withoutSnippet } from './snippets.js';
 import { folderNames, inFolder, inParallel, mergeResults, readOnlyScript } from './fanout.js';
-import { DIFF_SQL, buildExtras, diffText, schemaDiff, syncScript } from './diff.js';
+import { DIFF_SQL, buildExtras, compareText, diffText, schemaDiff, syncScript } from './diff.js';
+import { describeEnvironments, productionQuestion, readProject, setEnvironment } from '@fleet/kit/environments.js';
 import { buildHealth, buildSizes, fixableGroups, healthScript, healthSummary, healthText } from './health.js';
 import { SOURCES as DEADLOCK_SOURCES, buildDeadlocks, buildInnodbDeadlocks, deadlockSummary, deadlockText, deadlockTime } from './deadlocks.js';
 import { agentProbe, buildActivity, buildJobHistory, buildJobs, buildTopQueries, jobHistorySql, jobHistoryText, killSql, sortColumn, sortQueries, startJobSql, topProbe } from './activity.js';
@@ -1342,30 +1343,49 @@ export async function fanOut(ctx, rest) {
 }
 
 /**
- * /diff <connection> [database], or /diff <database> for another one on this server: compares the
- * schema here with that one (tables, columns, keys, indexes, and the definitions of views, procedures
- * and functions), shows the differences, and offers the script that would make this database match,
- * in the console to read through. Nothing runs by itself.
+ * A saved connection called `name`, or else the one the project's environment called `name` gives
+ * Trawl (its `trawl.connection` in .fleet/project.json): { conn, env }, `env` being { name, prod } when
+ * it came from an environment; or { error }.
  */
-export async function diffSchema(ctx, rest) {
-  if (!needSession(ctx)) return;
-  const args = splitArgsLoose(rest);
-  if (!args.length) return ctx.prefill('/diff ');
-  const session = ctx.session;
-  let conn = ctx.config.connections.find((c) => c.name.toLowerCase() === args[0].toLowerCase());
-  let database = args[1];
-  if (!conn) {
-    database = args.length === 1 ? ctx.schema?.databases.find((d) => d.toLowerCase() === args[0].toLowerCase()) : null;
-    if (!database) return ctx.note(`No connection or database called ${args[0]}. /diff <connection> [database], or /diff <database> on this server.`, 'error');
-    conn = session.conn;
+export function connectionOrEnvironment(ctx, name) {
+  const want = String(name ?? '').trim().toLowerCase();
+  const conn = ctx.config.connections.find((c) => c.name.toLowerCase() === want);
+  if (conn) return { conn, env: null };
+  const project = projectOf(ctx);
+  const envName = project?.names?.find((n) => n.toLowerCase() === want);
+  if (!envName) return { error: `No connection${project?.names ? ' or environment' : ''} called ${name}.` };
+  const settings = project.environments[envName];
+  const target = settings.trawl?.connection;
+  if (!target) return { error: `The environment ${envName} names no connection for Trawl: give it "trawl": { "connection": "<name>" } in .fleet/project.json.` };
+  const named = ctx.config.connections.find((c) => c.name.toLowerCase() === String(target).toLowerCase());
+  if (!named) return { error: `The environment ${envName} names the connection ${target}, which isn't saved here: /add it.` };
+  return { conn: named, env: { name: envName, prod: settings.prod === true } };
+}
+
+// The project's environments (environments.js readProject), or null when there are none or the file is broken.
+function projectOf(ctx) {
+  try {
+    const p = readProject(ctx.projectDir);
+    return p && !p.error ? p : null;
+  } catch {
+    return null;
   }
+}
+
+/**
+ * Both schemas, read: this database's and `conn`'s (its own database, or `database`), each
+ * { schema, definitions, indexes, defaults } (the last three from SQL Server's catalog only; on the
+ * other kinds tables, columns and keys). { mine, theirs, left, right } (their names), or null when it
+ * failed or was cancelled, which the task has said.
+ */
+async function readSchemas(ctx, conn, database, verb) {
+  const session = ctx.session;
   const left = `${session.conn.name}/${session.database}`;
   let right = `${conn.name}/${database ?? conn.database ?? ''}`;
   let found = null;
   const r = await ctx.task(
-    `diff ${left} with ${right}`,
+    `${verb} ${left} with ${right}`,
     async (signal) => {
-      // Definitions and indexes are read from SQL Server's catalog; elsewhere, tables, columns and keys.
       const read = async (s) => ({
         schema: buildSchema((await s.run(dialectOf(s).schemaSql, { signal, limit: 1_000_000 })).sets),
         ...(dialectOf(s).kind === 'sqlserver' ? buildExtras((await s.run(DIFF_SQL, { signal, limit: 1_000_000 })).sets) : { definitions: new Map(), indexes: [] }),
@@ -1383,14 +1403,37 @@ export async function diffSchema(ctx, rest) {
       } finally {
         other?.close();
       }
-      const changes = schemaDiff(mine, theirs);
-      found = { changes, mine, theirs };
-      return [changes.length ? `${changes.length} difference${changes.length === 1 ? '' : 's'}: the list is on screen.` : 'The schemas are the same.'];
+      found = { mine, theirs };
+      const n = schemaDiff(mine, theirs).length;
+      return [n ? `${plural(n, 'difference')}: the list is on screen.` : 'The schemas are the same.'];
     },
     { label: `Comparing with ${right}` },
   );
-  if (!r.ok || !found) return;
-  const { changes, theirs } = found;
+  return r.ok && found ? { ...found, left, right } : null;
+}
+
+/**
+ * /diff <connection> [database], or /diff <database> for another one on this server: compares the
+ * schema here with that one (tables, columns, keys, indexes, and the definitions of views, procedures
+ * and functions), shows the differences, and offers the script that would make this database match,
+ * in the console to read through. Nothing runs by itself. An environment's name means its connection.
+ */
+export async function diffSchema(ctx, rest) {
+  if (!needSession(ctx)) return;
+  const args = splitArgsLoose(rest);
+  if (!args.length) return ctx.prefill('/diff ');
+  const session = ctx.session;
+  let { conn } = connectionOrEnvironment(ctx, args[0]);
+  let database = args[1];
+  if (!conn) {
+    database = args.length === 1 ? ctx.schema?.databases.find((d) => d.toLowerCase() === args[0].toLowerCase()) : null;
+    if (!database) return ctx.note(`No connection${projectOf(ctx) ? ', environment' : ''} or database called ${args[0]}. /diff <connection> [database], or /diff <database> on this server.`, 'error');
+    conn = session.conn;
+  }
+  const read = await readSchemas(ctx, conn, database, 'diff');
+  if (!read) return;
+  const { mine, theirs, left, right } = read;
+  const changes = schemaDiff(mine, theirs);
   const title = `Schema diff: ${left} ←→ ${right}`;
   const text = diffText(changes, { left, right });
   ctx.rememberOutput(title, text);
@@ -1404,7 +1447,68 @@ export async function diffSchema(ctx, rest) {
     options: YES_NO('Yes, into the console'),
   });
   ctx.closeOverlay();
-  if (open) ctx.editInConsole(syncScript(changes, { left, right, rightSchema: theirs.schema, rightDefinitions: theirs.definitions }));
+  if (open) ctx.editInConsole(syncScript(changes, { left, right, rightSchema: theirs.schema, rightDefinitions: theirs.definitions, rightIndexes: theirs.indexes, rightDefaults: theirs.defaults, leftSchema: mine.schema, leftIndexes: mine.indexes }));
+}
+
+/**
+ * /compare <connection|environment> [database]: this database's schema against another saved
+ * connection's (an environment's is the connection it names for Trawl), grouped as only here, only
+ * there and different, with what differs; s shows the T-SQL that brings the other database in line
+ * with this one, to copy or open there in a console tab. Nothing runs by itself: run from the console,
+ * it goes through runSql's checks like anything else. /compare alone compares the pinned result.
+ */
+export async function compareSchemas(ctx, rest) {
+  const args = splitArgsLoose(rest);
+  if (!args.length) return compareResults(ctx);
+  if (!needSession(ctx)) return;
+  const found = connectionOrEnvironment(ctx, args[0]);
+  if (found.error) return ctx.note(`${found.error} /compare <connection|environment> [database] compares schemas; /compare alone, the pinned result.`, 'error');
+  const { conn, env } = found;
+  const session = ctx.session;
+  const database = args[1];
+  if (conn.name === session.conn.name && (database ?? conn.database ?? session.database) === session.database) return ctx.note("That's the database you're in: name another connection or environment to compare it with.", 'error');
+  const read = await readSchemas(ctx, conn, database, 'compare');
+  if (!read) return;
+  const { mine, theirs, left: here, right: there } = read;
+  const changes = schemaDiff(mine, theirs);
+  const title = `Compare: ${here} → ${there}${env ? ` (${env.name})` : ''}`;
+  const text = compareText(changes, { here, there });
+  ctx.rememberOutput(title, text);
+  const sqlServer = dialectOf(session).kind === 'sqlserver' && dialectOf(conn).kind === 'sqlserver';
+  if (!changes.length || !sqlServer) {
+    ctx.showText(title, text);
+    if (changes.length) ctx.note('The script that brings one in line with the other is T-SQL, so only between SQL Server databases.');
+    return;
+  }
+  // The other database made to match this one: the changes as seen from there.
+  const script = syncScript(schemaDiff(theirs, mine), { left: there, right: here, rightSchema: mine.schema, rightDefinitions: mine.definitions, rightIndexes: mine.indexes, rightDefaults: mine.defaults, leftSchema: theirs.schema, leftIndexes: theirs.indexes });
+  const showScript = () =>
+    ctx.showText(`Script for ${there}: brings it in line with ${here}`, script, {
+      hint: `y copy · o open on ${conn.name}`,
+      keys: {
+        y: () => ctx.copy(script, `the script for ${there}`).then(showScript),
+        o: () => openScriptOn(ctx, conn, theirs.schema.database, script),
+      },
+    });
+  ctx.showText(title, text, { hint: 's script', keys: { s: showScript } });
+}
+
+/**
+ * Connects to `conn` (asking first when a transaction is open here, as /connect does) and puts the
+ * script in a console tab of its own there, to read and run: running it is an ordinary run, with
+ * every check and question that has.
+ */
+async function openScriptOn(ctx, conn, database, script) {
+  const there = ctx.session?.conn.name === conn.name && ctx.session.database === database;
+  if (!there) {
+    if (!(await leaveSession(ctx))) return;
+    await ctx.connect(conn, { database });
+    if (ctx.session?.conn.name !== conn.name) return;
+  }
+  const name = freeName(ctx.consoleTabs.names.map((x) => ({ name: x })), 'compare');
+  ctx.addConsoleTab(name);
+  ctx.setConsole(ed.fromText(script));
+  ctx.note(`The script is in the console tab ${name}, on ${conn.name}: read it through, then alt+r runs it, with the usual questions.`, 'ok');
 }
 
 // On Postgres a statement that fails spoils the transaction it's in, so with one open each of

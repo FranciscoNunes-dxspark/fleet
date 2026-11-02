@@ -136,7 +136,8 @@ export const HELP = [
   {
     title: 'Schema diff',
     rows: [
-      ['/diff <connection> [database]', 'Compare this database\'s schema with another\'s (/diff <database>: one on this server): tables, columns, primary and foreign keys, indexes, and the definitions of views, procedures, functions. < only here · > only there · ~ different. Then it offers the script that makes this one match, in the console to read (dropping tables or columns is left commented out); nothing runs.'],
+      ['/diff <connection> [database]', 'Compare this database\'s schema with another\'s (/diff <database>: one on this server): tables, columns (type, length, nullability, default, identity), primary and foreign keys, indexes, and the definitions of views, procedures, functions. < only here · > only there · ~ different. Then it offers the script that makes this one match, in the console to read (what would lose data is left commented out, with why); nothing runs.'],
+      ['/compare <connection|environment>', 'The same comparison the other way round: this database is the one to match. Grouped as only here, only there and different, with what differs (definitions by a hash of their text). s the T-SQL that brings the other in line: foreign keys dropped first and made after, ALTER COLUMN where every value fits, the rest commented out with why. There, y copies it and o opens it in a console tab on that connection; nothing runs until you run it, with the usual questions.'],
     ],
   },
   {

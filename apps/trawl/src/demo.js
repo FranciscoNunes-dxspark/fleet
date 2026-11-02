@@ -754,7 +754,8 @@ export function demoSession(conn, { database } = {}) {
           if (batch.startsWith('-- trawl:diff')) {
             const db = DATABASES[session.database];
             state.sets.push(set(['schema', 'name', 'definition'], db.tables.filter((t) => t.definition).map((t) => [t.schema, t.name, t.definition])));
-            return void state.sets.push(set(['schema', 'object', 'name', 'is_unique', 'type_desc', 'filter_definition', 'columns', 'included'], db.indexes.map(([name, table, unique, columns]) => ['dbo', table, name, unique, 'NONCLUSTERED', null, columns, null])));
+            state.sets.push(set(['schema', 'object', 'name', 'is_unique', 'type_desc', 'filter_definition', 'columns', 'included'], db.indexes.map(([name, table, unique, columns]) => ['dbo', table, name, unique, 'NONCLUSTERED', null, columns, null])));
+            return void state.sets.push(set(['schema', 'object', 'column', 'name', 'definition'], db.defaults.map(([table, column, name, def]) => ['dbo', table, column, name, def])));
           }
           if (batch.startsWith('-- trawl:backup-info')) return void state.sets.push(set(['backup_path', 'data_path', 'log_path', 'engine_edition', 'machine'], [['C:\\Program Files\\Microsoft SQL Server\\MSSQL16.MSSQLSERVER\\MSSQL\\Backup', 'C:\\Program Files\\Microsoft SQL Server\\MSSQL16.MSSQLSERVER\\MSSQL\\DATA\\', 'C:\\Program Files\\Microsoft SQL Server\\MSSQL16.MSSQLSERVER\\MSSQL\\DATA\\', session.conn.engineEdition ?? 3, 'DEMO']]));
           if (batch.startsWith('-- trawl:activity')) return void state.sets.push(...activitySets(session));
