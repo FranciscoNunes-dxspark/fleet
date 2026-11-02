@@ -34,6 +34,7 @@ Every container, a compose project's under its name, the standalone ones last, t
 | `o` | Open its first published port in the browser |
 | `p` | Pause it, or let it run again |
 | `a` | Only the running ones, or all of them |
+| `v` | Hand Bilge its image to scan for known vulnerabilities (see The family) |
 | `y` | Copy its id |
 
 ### The log
@@ -55,6 +56,7 @@ Every container, a compose project's under its name, the standalone ones last, t
 |---|---|
 | `x` | Remove it (asks first; one a container uses asks again to force it) |
 | `p` | Remove the images nothing uses |
+| `v` | Hand it to Bilge to scan for known vulnerabilities |
 | `y` | Copy its id |
 
 ### Pods
@@ -90,7 +92,7 @@ the prompt. `--demo` has a pretend shell.
 
 ## Slash commands
 
-`/start`, `/stop`, `/restart`, `/kill` take a container, a compose project's name, or `all`; stopping, killing or restarting several asks first. `/up` and `/down` run `docker compose up -d` or `down` for a project, where its files are (`/down` asks first; volumes are kept). `/exec <container> <command>` runs one command inside a running container with no terminal, so nothing interactive. `/shell <name> [container]` opens a shell in a running container or pod (see Shells). `/pause` and `/unpause` take a container. `/rm` removes (asks). `/logs`, `/inspect`, `/open` take a container. `/pull <image>`, `/rmi <image>` (asks), `/prune [containers|images]` (asks). `/run <command>` is `!`. `/last` shows the last command's whole output. `/refresh` reads Docker again now (it does every few seconds). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/start`, `/stop`, `/restart`, `/kill` take a container, a compose project's name, or `all`; stopping, killing or restarting several asks first. `/up` and `/down` run `docker compose up -d` or `down` for a project, where its files are (`/down` asks first; volumes are kept). `/exec <container> <command>` runs one command inside a running container with no terminal, so nothing interactive. `/shell <name> [container]` opens a shell in a running container or pod (see Shells). `/pause` and `/unpause` take a container. `/rm` removes (asks). `/logs`, `/inspect`, `/open` take a container. `/scan <container|image>` hands Bilge an image (as `v`). `/pull <image>`, `/rmi <image>` (asks), `/prune [containers|images]` (asks). `/run <command>` is `!`. `/last` shows the last command's whole output. `/refresh` reads Docker again now (it does every few seconds). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 A name can be a prefix when it's unambiguous, an id, or `project/service`.
 
@@ -99,6 +101,7 @@ A name can be a prefix when it's unambiguous, an id, or `project/service`.
 Wharf is one of the family's apps that hand each other what is under their cursor, as lines to paste into the other's prompt (never a secret).
 
 - `t` in a log copies its newest line that reads as trouble for Sonar, Hail or Bosun (`/take` there finds it in their logs and requests). In Fleet, the other app opens with it in its prompt.
+- `v` on a container or an image (or `/scan <name>`) copies its image (`repo:tag`, or the id of an untagged one) as a line for Bilge, which scans it for known vulnerabilities. In Fleet, Bilge opens with it.
 - `/take <line>` takes a log line a sibling copied: it is looked for in the last 1000 lines of every running container (and the pods the Pods tab has read), and the first log that has it opens with the line searched.
 - What Wharf changes (a start, a stop, a removal, a compose up or down, a pod deleted) goes in the family's activity log, so `/timeline` in the others shows it. Bark writes its mood for the others to remark on, and remarks on theirs; `"familyMoods": false` turns both off.
 

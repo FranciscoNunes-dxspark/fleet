@@ -272,6 +272,26 @@ export function shareTrouble(ctx, { process, project, text }) {
   return true;
 }
 
+/** The image a name means: a container's (what it was made from), else one of `docker images`' by name or id start; null when neither. */
+export function imageOf(ctx, name) {
+  const c = findContainer(containers(ctx), name);
+  if (c) return c.image;
+  const images = ctx.data?.images ?? [];
+  const i = images.find((x) => x.id === name || imageName(x) === name) ?? images.filter((x) => (x.repo && imageName(x).startsWith(name ?? '\0')) || x.id.startsWith(name ?? '\0'))[0];
+  // An untagged image has only its id to be scanned by.
+  return i ? (i.repo ? imageName(i) : i.id) : null;
+}
+
+/** v or /scan: hands Bilge the image of a container (or an image) to look for known vulnerabilities in; inside Fleet that switches to Bilge. */
+export function scanImage(ctx, name) {
+  const image = imageOf(ctx, name);
+  if (!image) return ctx.note(name ? `No container or image matches "${name}".` : '/scan needs a container or an image.', 'error') ?? false;
+  const line = takeLine('image', { image });
+  ctx.copy(line, `${image} for Bilge`);
+  ctx.note(copiedNote('bilge', line));
+  return true;
+}
+
 /**
  * /take: what a sibling copied. A log line is looked for in the logs of the running containers (and the
  * cluster's pods, when the Pods view has read them); the first log that has it opens with the line searched.

@@ -28,6 +28,7 @@ export const COMMANDS = [
   { name: 'pull', args: '<image>', desc: 'Pull an image, e.g. /pull redis:7', run: (ctx, s) => a.pull(ctx, s) },
   { name: 'rmi', args: '<image>', desc: 'Remove an image (asks first)', complete: 'images', run: (ctx, s) => a.removeImage(ctx, s) },
   { name: 'prune', args: '[containers|images]', desc: 'Remove every stopped container, or the images nothing uses (asks first)', complete: 'prunable', run: (ctx, s) => a.prune(ctx, s || 'containers') },
+  { name: 'scan', args: '<container|image>', desc: 'Hand Bilge the image a container was made from (or an image) to look for known vulnerabilities', complete: 'scannable', run: (ctx, s) => a.scanImage(ctx, s) },
   { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling copied: a log line is looked for in the running containers and pods', run: (ctx, s) => a.take(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
@@ -57,6 +58,7 @@ function completions(kind, data, kube) {
   if (kind === 'namespaces') return ['all', ...new Set((kube?.pods ?? []).map((p) => p.namespace))];
   if (kind === 'contexts') return kube?.contexts ?? [];
   if (kind === 'images') return (data?.images ?? []).filter((i) => i.repo).map((i) => `${i.repo}${i.tag ? `:${i.tag}` : ''}`);
+  if (kind === 'scannable') return [...(data?.containers ?? []).map((c) => c.name), ...completions('images', data)];
   if (kind === 'prunable') return ['containers', 'images'];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];

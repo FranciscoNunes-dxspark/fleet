@@ -37,8 +37,8 @@ const VIEWS = [
 ];
 
 const HINTS = {
-  containers: '↵ log · e shell · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause',
-  images: 'x remove · p prune unused · y copy id',
+  containers: '↵ log · e shell · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause · v scan',
+  images: 'x remove · p prune unused · v scan · y copy id',
   pods: '↵ log · c a container\'s log · e shell · x delete · r restart deployment · i describe · y copy name',
   log: '↵ all its output · y copy it',
 };

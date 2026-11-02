@@ -38,6 +38,7 @@ export const HELP = [
       ['o', 'Open its first published port in the browser'],
       ['a', 'Only the running ones, or all of them'],
       ['p', 'Pause it, or let it run again'],
+      ['v', 'Hand Bilge its image to scan for known vulnerabilities (inside Fleet, Bilge opens with it)'],
       ['y', 'Copy its id'],
       ['/up /down', 'docker compose up -d or down for a project, run where its files are (down asks first)'],
       ['/exec', 'One command inside a running container, no terminal: /exec shop-db-1 ls /app'],
@@ -51,6 +52,7 @@ export const HELP = [
     rows: [
       ['x', 'Remove it (asks first; one a container uses asks again to force it)'],
       ['p', 'Remove the images nothing uses (/prune images)'],
+      ['v', 'Hand it to Bilge to scan for known vulnerabilities (/scan)'],
       ['y', 'Copy its id'],
     ],
   },
