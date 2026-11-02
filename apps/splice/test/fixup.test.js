@@ -2,7 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import React from 'react';
@@ -251,7 +251,10 @@ test('Z absorbs each staged hunk into the branch commit that last changed its li
     assert.equal(g('diff', '--cached', '--name-only'), 'b.txt');
     assert.equal(g('diff', '--name-only'), '');
     app.stdin.write('1');
-    await until(() => g('log', '--format=%s') === 'Beta\nAlpha\nBase', 'the fixups to be folded in', 30000);
+    // The log reads Beta, Alpha, Base already once Beta is picked, before its fixup is folded in: wait
+    // for the rebase itself to be over before reading what the commits hold.
+    const rebasing = () => existsSync(join(dir, '.git', 'rebase-merge')) || existsSync(join(dir, '.git', 'rebase-apply'));
+    await until(() => g('log', '--format=%s') === 'Beta\nAlpha\nBase' && !rebasing(), 'the fixups to be folded in', 30000);
     assert.equal(g('show', 'HEAD~1:a.txt'), lines({ 2: 'alpha 2, fixed' }).trimEnd());
     assert.equal(g('show', 'HEAD:a.txt'), lines({ 2: 'alpha 2, fixed', 15: 'beta 15, fixed' }).trimEnd());
     assert.equal(g('diff', 'HEAD', '--name-only'), 'b.txt');
