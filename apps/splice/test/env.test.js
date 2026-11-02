@@ -1,5 +1,6 @@
 // The project's environment (.fleet/project.json): /env says and switches it, the header names it, a
-// production one turns the frames red, and a push to the branch Splice's section names asks first there.
+// production one turns the frames red, and a push to the branch Splice's section names asks first there;
+// and while Fleet records a runbook, the slash commands the prompt runs are kept, never git.
 import { removeTemp } from './temp.js';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,6 +11,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { theme } from '@fleet/kit/theme.js';
+import { recordedLines, startRecording, stopRecording } from '@fleet/kit/recording.js';
 import { readActivity } from '@fleet/kit/family.js';
 import { App } from '../src/ui/App.jsx';
 
@@ -58,8 +60,9 @@ async function until(check, what, ms = 8000) {
   throw new Error(`Timed out waiting for ${what}. Last frame:\n${lastApp?.lastFrame()}`);
 }
 
-test('/env says and switches the environment; in production a push to its branch asks first', async () => {
+test('/env says and switches the environment; in production a push to its branch asks first; the prompt\'s commands are recorded, not git', async () => {
   const { dir, g, remote } = makeRepo('shop');
+  startRecording(dir, { home: familyHome });
   lastApp = render(React.createElement(App, { initialPath: dir, familyHome, moodEvery: 0, config: { recent: [], roots: [], history: [], riskBeforePush: false } }));
   const app = lastApp;
   const frame = () => app.lastFrame() ?? '';
@@ -92,18 +95,22 @@ test('/env says and switches the environment; in production a push to its branch
     await until(() => frame().includes('prod is production. Push to main'), 'asked again');
     app.stdin.write('\r');
     await until(() => remote('log', '-1', '--format=%s', 'main') === 'Second', 'pushed', 20000);
+    await until(() => readActivity({ dir: familyHome }).some((e) => e.app === 'splice' && /^pushed main/i.test(e.text)), 'the push done');
 
     // A branch the environment doesn't deploy from goes without a word.
     g('checkout', '-q', '-b', 'feature');
     g('commit', '-q', '--allow-empty', '-m', 'Third');
-    await until(() => frame().includes('Third'), 'the feature commit');
+    await until(() => frame().includes('Third') && /⎇ feature/.test(frame().split('\n')[0]), 'the feature commit');
     app.stdin.write('\x1bp');
     await until(() => remote('branch', '--list', 'feature').includes('feature'), 'feature pushed', 20000);
     assert.ok(!frame().includes('prod is production'));
 
+    await command('!status');
     await command('env nope');
     await until(() => frame().includes('No environment nope: dev, prod.'), 'no such one');
+    assert.deepEqual(recordedLines({ home: familyHome }).map((l) => [l.app, l.line]), [['splice', '/env'], ['splice', '/env prod'], ['splice', '/env nope']]);
   } finally {
+    stopRecording({ home: familyHome });
     app.unmount();
   }
   await until(() => theme.envProd === false, 'the frames back once it is gone');

@@ -16,6 +16,7 @@ import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { environmentFor } from '@fleet/kit/environments.js';
+import { recordCommand } from '@fleet/kit/recording.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -674,11 +675,17 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
   // (so your own commands stop there).
   const runLine = async (text) => {
     const [errors, declined] = [errorCount.current, declines.current];
+    // While Fleet records a runbook (the kit's recording.js), each slash command or /take run here is kept,
+    // once: a line of one of your own commands isn't, the command is. Never git (! or git …): a runbook
+    // replays commands, not raw git. Only with the family's folder, as everything of the family's.
+    const record = (line) => familyHome && userDepth.current === 0 && recordCommand('splice', line, { home: familyHome });
     try {
       let r;
       // A context another app copied (family.js), pasted without its /take (after the prompt's / or not).
-      if (decodeContext(text.replace(/^\//, ''))) r = await a.take(ctx, text.replace(/^\//, ''));
-      else if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
+      if (decodeContext(text.replace(/^\//, ''))) {
+        r = await a.take(ctx, text.replace(/^\//, ''));
+        record(`/take ${text.replace(/^\//, '')}`);
+      } else if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
       else if (/^git(\s|$)/.test(text)) r = await a.raw(ctx, text);
       else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
@@ -687,7 +694,9 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
           note(`Unknown command: /${name}. Type / to see them all.`, 'error');
           return false;
         }
+        const top = userDepth.current === 0;
         r = await cmd.run(ctx, rest.trim());
+        if (top) record(text.startsWith('/') ? text : `/${text}`);
       }
       return r !== false && r?.ok !== false && errorCount.current === errors && declines.current === declined;
     } catch (e) {

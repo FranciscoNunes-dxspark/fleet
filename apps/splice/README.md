@@ -303,7 +303,9 @@ to that branch asks first:
 }
 ```
 
-`"branch"` can be a list (`["main", "release"]`).
+`"branch"` can be a list (`["main", "release"]`). While Fleet records a runbook, each slash command
+the prompt runs (and each `/take`) is kept for it, once; git (`!` lines, or a line starting `git`)
+never is.
 
 ### Sparse checkout
 
