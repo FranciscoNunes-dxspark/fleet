@@ -62,6 +62,9 @@ test('bilge audit: the findings, and an exit code by --fail-on; --json; what is 
   const provider = demoBilge();
   assert.equal(await runHeadless(['sbom', '.', '-o', 'bom.json'], { provider, write }), 0);
   assert.equal(JSON.parse(provider.state.written.text).components.length, 14);
+  const reporter = demoBilge();
+  assert.equal(await runHeadless(['report', '.', '-o', 'r.md'], { provider: reporter, write }), 0);
+  assert.match(reporter.state.written.text, /^# Dependencies of /);
 });
 
 test('the Markdown report: counts, a row per advisory, the manifests', () => {
