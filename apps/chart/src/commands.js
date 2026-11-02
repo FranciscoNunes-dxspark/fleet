@@ -1,6 +1,7 @@
 import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
+import { currentEnvironment } from '@fleet/kit/environments.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -15,6 +16,7 @@ export const COMMANDS = [
   { name: 'show', args: '<address>', desc: 'A change, attribute by attribute', complete: 'changes', run: (ctx, s) => a.show(ctx, s) },
   { name: 'report', desc: 'The plan as Markdown, to copy into a pull request', run: (ctx) => a.report(ctx) },
   { name: 'tool', args: '[terraform|tofu]', desc: 'Which one Chart runs', complete: 'tools', run: (ctx, s) => a.tool(ctx, s) },
+  { name: 'env', args: '[name]', desc: "The project's environment (every app's): which one, or switch to another (its workspace, var file, what-if target)", complete: 'envs', run: (ctx, s) => a.env(ctx, s) },
   { name: 'move', args: '[folder]', desc: 'Look at another folder: one beside this one or in it, or a path (completed as you type)', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },
   { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling copied (Chart takes nothing yet, and says whose it is)', run: (ctx, s) => a.take(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command in the folder (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
@@ -43,6 +45,7 @@ function completions(kind, { data, cwd, typed = '' }) {
   if (kind === 'saved') return data?.found?.saved ?? [];
   if (kind === 'changes') return [...(data?.plan?.changes ?? []), ...(data?.drift ?? [])].map((c) => c.address);
   if (kind === 'tools') return ['terraform', 'tofu'];
+  if (kind === 'envs') return cwd ? (currentEnvironment(cwd)?.names ?? []) : [];
   if (kind === 'folders') return cwd ? folderCompletions(cwd, typed) : [];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];

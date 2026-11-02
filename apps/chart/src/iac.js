@@ -91,6 +91,20 @@ export function missingParameters(error) {
   return m ? m[1].split(',').map((n) => n.trim()).filter((n) => /^[A-Za-z_][\w]*$/.test(n)) : [];
 }
 
+// A workspace's name as Terraform takes it.
+const WORKSPACE = /^[\w-]+$/;
+
+/** Throws unless `bin` is one Chart runs, and an environment's workspace and var file can go in a command line. */
+function checkTool(bin, { workspace, varFile } = {}) {
+  if (!BINARIES.includes(bin)) throw new Error(`Chart runs ${BINARIES.join(' or ')}, not ${bin}.`);
+  if (workspace && !WORKSPACE.test(workspace)) throw new Error(`"${workspace}" isn't a workspace name Terraform takes.`);
+  if (varFile && !safeArg(varFile)) throw new Error(`"${varFile}" has characters Chart won't put in a command line.`);
+}
+
+// An environment's workspace goes in TF_WORKSPACE rather than through `terraform workspace select`, so
+// choosing one in Chart never changes which workspace the folder is on for a terraform run outside it.
+const workspaceEnv = (workspace) => (workspace ? { TF_WORKSPACE: workspace } : undefined);
+
 export function createChart({ run = runCommand } = {}) {
   /** Runs one az deployment command; typed-in `values` go in a temporary parameters file (never the command line, where a process list would show them), removed afterwards. */
   async function az(dir, command, { values, signal } = {}) {
@@ -117,22 +131,23 @@ export function createChart({ run = runCommand } = {}) {
     async detect(dir) {
       return detectFolder(dir);
     },
-    /** A plan (or a refresh-only one: what drifted), as plan.js's. */
-    async plan(dir, { bin = 'terraform', refreshOnly = false, signal } = {}) {
-      if (!BINARIES.includes(bin)) throw new Error(`Chart runs ${BINARIES.join(' or ')}, not ${bin}.`);
+    /** A plan (or a refresh-only one: what drifted), as plan.js's; `workspace` and `varFile` are the environment's. */
+    async plan(dir, { bin = 'terraform', refreshOnly = false, workspace, varFile, signal } = {}) {
+      checkTool(bin, { workspace, varFile });
       const out = join(tmpdir(), `chart-${randomUUID()}.tfplan`);
       if (!safeArg(out)) throw new Error(`The temporary folder ${tmpdir()} has characters Chart won't put in a command line.`);
+      const env = workspaceEnv(workspace);
       try {
-        await run(`${bin} plan -input=false -lock=false -no-color${refreshOnly ? ' -refresh-only' : ''} -out="${out}"`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
-        const { stdout } = await run(`${bin} show -json "${out}"`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
+        await run(`${bin} plan -input=false -lock=false -no-color${refreshOnly ? ' -refresh-only' : ''}${varFile ? ` -var-file="${varFile}"` : ''} -out="${out}"`, { cwd: dir, signal, env }).catch((e) => Promise.reject(explain(e, bin)));
+        const { stdout } = await run(`${bin} show -json "${out}"`, { cwd: dir, signal, env }).catch((e) => Promise.reject(explain(e, bin)));
         return parseTerraformPlan(stdout);
       } finally {
         rmSync(out, { force: true });
       }
     },
-    async state(dir, { bin = 'terraform', signal } = {}) {
-      if (!BINARIES.includes(bin)) throw new Error(`Chart runs ${BINARIES.join(' or ')}, not ${bin}.`);
-      const { stdout } = await run(`${bin} show -json -no-color`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
+    async state(dir, { bin = 'terraform', workspace, signal } = {}) {
+      checkTool(bin, { workspace });
+      const { stdout } = await run(`${bin} show -json -no-color`, { cwd: dir, signal, env: workspaceEnv(workspace) }).catch((e) => Promise.reject(explain(e, bin)));
       // An empty state says so in words, not JSON.
       if (!stdout.trim().startsWith('{')) return { tool: 'terraform', version: null, resources: [] };
       return parseTerraformState(stdout);

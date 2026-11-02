@@ -13,7 +13,9 @@ import { actionTone } from '../rows.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { environmentFor } from '@fleet/kit/environments.js';
+import { recordCommand } from '@fleet/kit/recording.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { remember } from '@fleet/kit/folders.js';
 import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
@@ -48,12 +50,13 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, cwd, tool, width, loading, mood, problem }) {
+function Header({ data, cwd, tool, env, width, loading, mood, problem }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Chart', bold: true },
     { text: '  │  ', color: theme.border },
     { text: basename(cwd) || cwd, color: theme.dim },
+    ...(env ? [{ text: `  ${env.name}`, color: env.prod ? theme.del : theme.info, bold: env.prod }] : []),
     { text: `  ${tool}`, color: theme.dim },
   ];
   if (data?.plan) {
@@ -141,6 +144,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   const [progress, setProgress] = useState('');
   const [welcome, setWelcome] = useState(true);
   const [update, setUpdate] = useState(null);
+  // The project's environment (.fleet/project.json), kept current when another app switches it; a production one draws the frames red.
+  const env = useEnvironment('chart', cwd);
   // The pet looks happy (or worried) for a few seconds after a result; re-render when that wears off.
   const [, setMoodTick] = useState(0);
   useEffect(() => {
@@ -316,6 +321,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   Object.assign(ctx, {
     provider,
     cwd: () => cwdRef.current,
+    // Read when asked rather than from the hook's last render, so a /env just typed (here or in a sibling) counts at once.
+    env: () => environmentFor('chart', cwdRef.current),
     // /move: another folder, remembered among the recent ones.
     moveTo: (dir) => {
       cwdRef.current = dir;
@@ -385,21 +392,30 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
 
   // One line as typed at the prompt: a shell command after !, else a slash command. Resolves false when it failed.
   const runLine = async (text) => {
+    // While Fleet records a runbook, each slash command (and a sibling's context, as the /take it is) goes in it once it has run.
+    let recorded = null;
     try {
       if (text.startsWith('!')) return (await a.raw(ctx, text.slice(1).trim())) !== false;
       // A sibling's context pasted alone is /take's.
-      if (decodeContext(text)) return (await a.take(ctx, text)) !== false;
+      if (decodeContext(text)) {
+        recorded = `/take ${text}`;
+        return (await a.take(ctx, text)) !== false;
+      }
       const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
       const cmd = findCommand(name);
       if (!cmd) {
         note(`Unknown command: /${name}. Type / to see them all.`, 'error');
         return false;
       }
+      recorded = `/${text.replace(/^\//, '')}`;
       const r = await cmd.run(ctx, rest.trim());
       return r !== false && r?.ok !== false;
     } catch (e) {
       note(firstLine(e.message), 'error');
       return false;
+    } finally {
+      // Not a ! line, nor a command that doesn't exist.
+      if (recorded) recordCommand('chart', recorded);
     }
   };
 
@@ -681,7 +697,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} cwd={cwd} tool={config.terraform ?? 'terraform'} width={W} loading={loading} mood={mood} problem={problem} />
+      <Header data={data} cwd={cwd} tool={config.terraform ?? 'terraform'} env={env} width={W} loading={loading} mood={mood} problem={problem} />
       <Tabs view={view} entries={entries} data={data} width={W} />
       <Box height={mainH} width={W}>
         {main}

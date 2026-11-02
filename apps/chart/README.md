@@ -60,7 +60,30 @@ Every resource Terraform keeps track of, the root module's first, then each modu
 
 ## Slash commands
 
-`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/deploy`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/deploy`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+
+## Environments
+
+A project's `.fleet/project.json` (in the folder or one above it, up to its git checkout's root) names its environments once for every app of the fleet; `/env` says which one is chosen, `/env prod` switches every app to it (and the family's activity log says so). Its `chart` section says what an environment means to Chart:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev":  { "chart": { "workspace": "dev", "varFile": "env/dev.tfvars", "resourceGroup": "shop-dev", "parametersFile": "bicep/main.dev.bicepparam" } },
+    "prod": { "prod": true, "chart": { "workspace": "prod", "varFile": "env/prod.tfvars", "resourceGroup": "shop-prod" } }
+  }
+}
+```
+
+| Field | What it does |
+|---|---|
+| `workspace` | The Terraform workspace plans, the state and applies run in (as `TF_WORKSPACE`, so the folder's own selected workspace is left as it is) |
+| `varFile` | `-var-file=` for plans, relative to the Terraform folder |
+| `resourceGroup` | Where `/whatif` and `/deploy` go when no `--rg` or `--location` is typed (ahead of the last one used) |
+| `parametersFile` | The what-if's parameters file when none is typed |
+
+The header names the environment (red for production), and a `"prod": true` one draws every frame red and asks once more before anything is applied or deployed. A plan keeps the environment it was made for. While Fleet records a runbook, each slash command Chart runs (and each `/take`) goes in it; a `!` line never does.
 
 ## In a pipeline
 

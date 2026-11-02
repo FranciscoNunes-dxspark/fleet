@@ -70,13 +70,14 @@ export function demoChart() {
       calls.push(['detect', dir]);
       return { dir, tfDirs: ['.', 'modules/network'], bicep: ['bicep/main.bicep'], params: ['bicep/main.prod.bicepparam'], saved: [] };
     },
-    async plan(dir, { bin = 'terraform', refreshOnly = false } = {}) {
-      calls.push(['plan', dir, bin, refreshOnly]);
+    async plan(dir, { bin = 'terraform', refreshOnly = false, workspace, varFile } = {}) {
+      // An environment's workspace and var file only when it gives them, so a plain plan's call stays short.
+      calls.push(['plan', dir, bin, refreshOnly, ...(workspace || varFile ? [{ workspace, varFile }] : [])]);
       const plan = parseTerraformPlan(DEMO_PLAN);
       return refreshOnly ? { ...plan, changes: [] } : plan;
     },
-    async state(dir, { bin = 'terraform' } = {}) {
-      calls.push(['state', dir, bin]);
+    async state(dir, { bin = 'terraform', workspace } = {}) {
+      calls.push(['state', dir, bin, ...(workspace ? [{ workspace }] : [])]);
       return parseTerraformState(DEMO_STATE);
     },
     async init(dir, { bin = 'terraform' } = {}) {

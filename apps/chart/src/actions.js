@@ -11,10 +11,20 @@ import { summarize, summaryLine } from './plan.js';
 import { ACTION_WORD, findChange, siteOf } from './rows.js';
 import { markdownReport } from './share.js';
 import { BINARIES } from './iac.js';
+import { describeEnvironments, markProduction, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const bin = (ctx) => ctx.config.terraform ?? 'terraform';
 const toolName = (b) => (b === 'tofu' ? 'OpenTofu' : 'Terraform');
+// The project's chosen environment as Chart reads it ({ name, prod, workspace?, varFile?, resourceGroup?, parametersFile? }), or null.
+const envOf = (ctx) => ctx.env?.() ?? null;
+// What terraform runs with: the tool, and the environment's workspace and var file.
+const tfOpts = (ctx) => {
+  const e = envOf(ctx);
+  return { bin: bin(ctx), ...(e?.workspace ? { workspace: e.workspace } : {}), ...(e?.varFile ? { varFile: e.varFile } : {}) };
+};
+// " (prod)" after a folder's name in what's said and logged, when an environment is chosen.
+const inEnv = (ctx) => (envOf(ctx) ? ` (${envOf(ctx).name})` : '');
 
 /** What the folder holds: its Terraform folders, Bicep files, parameter files and saved plans. */
 export async function look(ctx) {
@@ -46,18 +56,21 @@ const label = (ctx, dir) => (samePath(dir, ctx.cwd()) ? basename(dir) : `${basen
 export async function plan(ctx, folder = '') {
   const dir = tfDir(ctx, folder);
   const b = bin(ctx);
+  const opts = tfOpts(ctx);
+  const env = envOf(ctx);
   const r = await ctx.task(
-    `${b} plan ${label(ctx, dir)}`,
+    `${b} plan ${label(ctx, dir)}${inEnv(ctx)}`,
     async (signal) => {
-      const p = await ctx.provider.plan(dir, { bin: b, signal });
-      ctx.setData((d) => ({ ...d, plan: p, drift: p.drift, source: { kind: 'terraform', dir, label: label(ctx, dir), at: Date.now() } }));
+      const p = await ctx.provider.plan(dir, { ...opts, signal });
+      // The environment it was made for goes with it: a plan of dev's is never applied to prod.
+      ctx.setData((d) => ({ ...d, plan: p, drift: p.drift, source: { kind: 'terraform', dir, label: label(ctx, dir), env: env?.name ?? null, workspace: opts.workspace ?? null, at: Date.now() } }));
       return { stdout: `${summaryLine(summarize(p.changes)) || 'No changes.'}${p.drift.length ? `; ${plural(p.drift.length, 'resource')} changed outside ${toolName(b)}` : ''}` };
     },
     { label: `Planning (${toolName(b)})` },
   );
   if (r.ok) {
     ctx.setView('changes');
-    ctx.logActivity(`Planned ${label(ctx, dir)}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
+    ctx.logActivity(`Planned ${label(ctx, dir)}${inEnv(ctx)}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
   }
   return r.ok;
 }
@@ -67,9 +80,9 @@ export async function drift(ctx, folder = '') {
   const dir = tfDir(ctx, folder);
   const b = bin(ctx);
   const r = await ctx.task(
-    `${b} plan -refresh-only ${label(ctx, dir)}`,
+    `${b} plan -refresh-only ${label(ctx, dir)}${inEnv(ctx)}`,
     async (signal) => {
-      const p = await ctx.provider.plan(dir, { bin: b, refreshOnly: true, signal });
+      const p = await ctx.provider.plan(dir, { ...tfOpts(ctx), refreshOnly: true, signal });
       ctx.setData((d) => ({ ...d, drift: p.drift, driftAt: Date.now() }));
       return { stdout: p.drift.length ? `${plural(p.drift.length, 'resource')} changed outside ${toolName(b)}` : `Nothing changed outside ${toolName(b)}.` };
     },
@@ -88,9 +101,10 @@ export async function state(ctx, folder = '') {
   const dir = tfDir(ctx, folder);
   const b = bin(ctx);
   const r = await ctx.task(
-    `${b} show ${label(ctx, dir)}`,
+    `${b} show ${label(ctx, dir)}${inEnv(ctx)}`,
     async (signal) => {
-      const s = await ctx.provider.state(dir, { bin: b, signal });
+      const { varFile, ...opts } = tfOpts(ctx);
+      const s = await ctx.provider.state(dir, { ...opts, signal });
       ctx.setData((d) => ({ ...d, state: s }));
       return { stdout: s.resources.length ? plural(s.resources.length, 'resource') : 'The state is empty.' };
     },
@@ -108,8 +122,19 @@ export async function init(ctx, folder = '') {
   return r.ok;
 }
 
-/** What /whatif's arguments say: { file, resourceGroup, location, params }, the last ones used filling the gaps. */
-export function whatIfArgs(rest, { last = {}, found } = {}) {
+/**
+ * What /whatif's arguments say: { file, resourceGroup, location, params }, the environment's resource
+ * group and parameters file (`env`) then the last ones used filling the gaps.
+ */
+export function whatIfArgs(rest, { last = {}, found, env } = {}) {
+  const own = typedWhatIfArgs(rest);
+  // What's typed wins; then the environment's, so switching it moves the target; then the last ones.
+  const group = own.resourceGroup ?? (own.location ? undefined : env?.resourceGroup);
+  const params = own.params ?? env?.parametersFile;
+  return lastWhatIfArgs({ ...own, ...(group ? { resourceGroup: group } : {}), ...(params ? { params } : {}) }, { last, found });
+}
+
+function typedWhatIfArgs(rest) {
   const words = splitArgs(rest ?? '');
   const out = {};
   for (let i = 0; i < words.length; i++) {
@@ -119,6 +144,10 @@ export function whatIfArgs(rest, { last = {}, found } = {}) {
     else if (w === '--params' || w === '-p' || w === '--parameters') out.params = words[++i];
     else if (!out.file) out.file = w;
   }
+  return out;
+}
+
+function lastWhatIfArgs(out, { last, found }) {
   const file = out.file ?? last.file ?? found?.bicep?.[0];
   const sameFile = file === last.file;
   return {
@@ -147,17 +176,20 @@ async function askParameters(ctx, names) {
 
 /** /whatif <file> --rg <group> | --location <region> [--params <file>]: what deploying a Bicep or ARM file would change, as Azure says. */
 export async function whatIf(ctx, rest = '', typed = {}) {
-  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found });
+  const env = envOf(ctx);
+  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found, env });
   if (!args.file) return ctx.note('/whatif needs a .bicep or ARM file: /whatif main.bicep --rg shop-prod', 'error') ?? false;
   if (!args.resourceGroup && !args.location) return ctx.note(`/whatif ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
-  ctx.setConfig((c) => ({ ...c, whatIf: args }));
+  // The last ones kept are what was typed (or kept before), not the environment's: switching to an
+  // environment without a resource group mustn't fall back on another environment's.
+  ctx.setConfig((c) => ({ ...c, whatIf: whatIfArgs(rest, { last: c.whatIf ?? {}, found: ctx.data?.found }) }));
   const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
   const attempt = () =>
     ctx.task(
-      `what-if ${args.file} ${where}`,
+      `what-if ${args.file} ${where}${inEnv(ctx)}`,
       async (signal) => {
         const p = await ctx.provider.whatIf(ctx.cwd(), { ...args, values: typed.values, signal });
-        ctx.setData((d) => ({ ...d, plan: p, drift: [], source: { kind: 'bicep', label: `${args.file} ${where}`, args, at: Date.now() } }));
+        ctx.setData((d) => ({ ...d, plan: p, drift: [], source: { kind: 'bicep', label: `${args.file} ${where}`, args, env: env?.name ?? null, at: Date.now() } }));
         return { stdout: summaryLine(summarize(p.changes)) || 'No changes.' };
       },
       { label: 'Asking Azure (what-if)' },
@@ -177,9 +209,16 @@ export async function whatIf(ctx, rest = '', typed = {}) {
   return r.ok;
 }
 
+/** In a production environment, the kit's question once more (No first); true straight away elsewhere. */
+async function productionAgrees(ctx, what) {
+  const q = productionQuestion(envOf(ctx), what);
+  if (!q) return true;
+  return Boolean(await ctx.confirm({ ...q, options: [{ label: 'No, cancel', value: false }, { label: 'Yes, it is meant for production', value: true }] }));
+}
+
 /** /deploy [file] --rg <group> | --location <region> [--params <file>]: runs a what-if of a Bicep or ARM file, then deploys it if the confirmation that follows it is a yes (the same arguments as /whatif). */
 export async function deploy(ctx, rest = '') {
-  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found });
+  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found, env: envOf(ctx) });
   if (!args.file) return ctx.note('/deploy needs a .bicep or ARM file: /deploy main.bicep --rg shop-prod', 'error') ?? false;
   if (!args.resourceGroup && !args.location) return ctx.note(`/deploy ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
   const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
@@ -196,6 +235,7 @@ export async function deploy(ctx, rest = '') {
     options: [{ label: 'No, cancel', value: false }, { label: 'Yes, deploy it', value: true }],
   });
   if (!yes) return false;
+  if (!(await productionAgrees(ctx, `Deploy ${args.file} ${where}`))) return false;
   const r = await ctx.task(
     `deploy ${args.file} ${where}`,
     async (signal) => {
@@ -311,6 +351,28 @@ export function tool(ctx, value = '') {
   return true;
 }
 
+/** What the chosen environment makes Chart do, in words: "workspace prod, var file prod.tfvars, what-ifs into rg-shop". */
+export function envSummary(e) {
+  if (!e) return '';
+  const parts = [e.workspace ? `workspace ${e.workspace}` : '', e.varFile ? `var file ${e.varFile}` : '', e.resourceGroup ? `what-ifs into ${e.resourceGroup}` : '', e.parametersFile ? `parameters ${e.parametersFile}` : ''].filter(Boolean);
+  return parts.length ? parts.join(', ') : 'its "chart" section says nothing, so plans run as they would without it';
+}
+
+/** /env [name]: which environment the project is on (every app's), or switch every app to another. */
+export function env(ctx, name = '') {
+  const n = name.trim();
+  if (!n) {
+    const e = envOf(ctx);
+    return ctx.note(`${describeEnvironments(ctx.cwd())}${e ? `\nChart: ${envSummary(e)}.` : ''}`);
+  }
+  const r = setEnvironment(ctx.cwd(), n, { by: 'chart' });
+  if (!r.ok) return ctx.note(r.error, 'error') ?? false;
+  // The hook notices within a second; the frames go red (or back) now.
+  markProduction(r.env.prod);
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production)' : ''}, for every app.\nChart: ${envSummary(envOf(ctx))}.${ctx.data?.plan ? ' The plan on screen is the last environment\'s: ctrl+r plans again.' : ''}`, 'ok');
+  return true;
+}
+
 /** /move <folder>: look at another folder: a path, or a folder beside this one or in it. */
 export function move(ctx, folder = '') {
   const dir = ctx.cwd();
@@ -380,6 +442,7 @@ export function settings(ctx) {
       `Accent colour    ${c.accent ?? 'default'}       /accent #rrggbb`,
       `Mouse            ${on(c.mouse)}       /mouse on|off`,
       `Runs             ${bin(ctx)}       /tool terraform|tofu`,
+      `Environment      ${envOf(ctx) ? `${envOf(ctx).name}${envOf(ctx).prod ? ' (production)' : ''}: ${envSummary(envOf(ctx))}` : 'none (.fleet/project.json names them)'}       /env [name]`,
       `Last what-if     ${w ? `${w.file} ${w.resourceGroup ? `--rg ${w.resourceGroup}` : `--location ${w.location}`}${w.params ? ` --params ${w.params}` : ''}` : 'none'}`,
       `Update checks    ${on(c.checkForUpdates)}       "checkForUpdates" in the file`,
       `Auto-update      ${on(c.autoUpdate)}       "autoUpdate" in the file`,
