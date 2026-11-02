@@ -1,7 +1,7 @@
 // The command lines Chart runs, against a fake run; what a folder holds; where a resource is declared; chart check.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createChart, detectFolder, explain, locateResource, safeArg } from '../src/iac.js';
@@ -129,4 +129,21 @@ test('the Markdown report: what is destroyed called out, a row per change, the a
   assert.match(md, /<details><summary><code>~ azurerm_service_plan\.main<\/code><\/summary>\n\n```diff\n! sku_name: "B1" → "P1v3"/);
   assert.match(md, /## Changed outside Terraform\n\n- `azurerm_linux_web_app\.api`: app_settings\.LOG_LEVEL/);
   assert.ok(!md.includes('hunter2'));
+});
+
+test('a template with parameters nobody gave a value: the error names them, typed values go in a temporary file and not the command line', async () => {
+  const missing = new Error('ERROR: Missing input parameters: adminPassword, client_name');
+  const chart = createChart({ run: fakeRun([[/what-if/, missing]]) });
+  await assert.rejects(chart.whatIf('/srv', { file: 'main.bicep', location: 'westeurope' }), (e) => e.missing.join() === 'adminPassword,client_name');
+  let sent;
+  const run = async (command) => {
+    sent = command;
+    const path = /"@([^"]+)"/.exec(command)[1];
+    sent = { command, body: JSON.parse(readFileSync(path, 'utf8')), path };
+    return { stdout: DEMO_WHAT_IF, stderr: '' };
+  };
+  await createChart({ run }).whatIf('/srv', { file: 'main.bicep', location: 'westeurope', values: { adminPassword: 'hunter2' } });
+  assert.ok(!sent.command.includes('hunter2'));
+  assert.deepEqual(sent.body.parameters, { adminPassword: { value: 'hunter2' } });
+  assert.equal(existsSync(sent.path), false, 'the file is removed afterwards');
 });

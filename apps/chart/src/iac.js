@@ -4,7 +4,7 @@
 // declared); `deploy` is the one thing that changes anything, and only /deploy calls it, after asking. The command lines run through the kit's run.js, so whatever they're signed in to and set
 // up for is what Chart uses; nothing may wait on a prompt (-input=false). Everything put in a command
 // line is checked first by safeArg(). demo.js's demoChart() has the same interface.
-import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -85,7 +85,33 @@ export function explain(error, program) {
   return error;
 }
 
+/** The parameters az says a template needs and was given no value for ("Missing input parameters: a, b"), or []. */
+export function missingParameters(error) {
+  const m = /Missing input parameters: *(.+)/i.exec(String(error?.message ?? error));
+  return m ? m[1].split(',').map((n) => n.trim()).filter((n) => /^[A-Za-z_][\w]*$/.test(n)) : [];
+}
+
 export function createChart({ run = runCommand } = {}) {
+  /** Runs one az deployment command; typed-in `values` go in a temporary parameters file (never the command line, where a process list would show them), removed afterwards. */
+  async function az(dir, command, { values, signal } = {}) {
+    const names = Object.keys(values ?? {});
+    const file = names.length ? join(tmpdir(), `chart-${randomUUID()}.json`) : null;
+    if (file && !safeArg(file)) throw new Error(`The temporary folder ${tmpdir()} has characters Chart won't put in a command line.`);
+    try {
+      if (file) {
+        const parameters = Object.fromEntries(names.map((n) => [n, { value: values[n] }]));
+        writeFileSync(file, JSON.stringify({ $schema: 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#', contentVersion: '1.0.0.0', parameters }), { mode: 0o600 });
+      }
+      return await run(`${command}${file ? ` --parameters "@${file}"` : ''}`, { cwd: dir, signal }).catch((e) => {
+        const err = explain(e, 'az');
+        const missing = missingParameters(err);
+        if (missing.length) err.missing = missing;
+        return Promise.reject(err);
+      });
+    } finally {
+      if (file) rmSync(file, { force: true });
+    }
+  }
   return {
     name: 'cli',
     async detect(dir) {
@@ -115,22 +141,22 @@ export function createChart({ run = runCommand } = {}) {
       return run(`${bin} init -input=false -no-color`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
     },
     /** az's what-if for a Bicep or ARM `file` (relative to `dir`): into resource group `resourceGroup`, or at the subscription in `location`. */
-    async whatIf(dir, { file, resourceGroup, location, params, signal } = {}) {
+    async whatIf(dir, { file, resourceGroup, location, params, values, signal } = {}) {
       for (const v of [file, resourceGroup, location, params].filter(Boolean)) if (!safeArg(v)) throw new Error(`"${v}" has characters Chart won't put in a command line.`);
       if (!resourceGroup && !location) throw new Error('A what-if needs a resource group (--rg) or, at the subscription, a location (--location).');
       const scope = resourceGroup ? `group what-if --resource-group "${resourceGroup}"` : `sub what-if --location "${location}"`;
       const command = `az deployment ${scope} --template-file "${file}"${params ? ` --parameters "${params}"` : ''} --no-pretty-print --output json`;
-      const { stdout } = await run(command, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, 'az')));
+      const { stdout } = await az(dir, command, { values, signal });
       return parseWhatIf(stdout);
     },
     /** az's deployment of a Bicep or ARM `file`: the same scope and arguments as `whatIf`, for real. Only /deploy calls it, after asking. */
-    async deploy(dir, { file, resourceGroup, location, params, signal } = {}) {
+    async deploy(dir, { file, resourceGroup, location, params, values, signal } = {}) {
       for (const v of [file, resourceGroup, location, params].filter(Boolean)) if (!safeArg(v)) throw new Error(`"${v}" has characters Chart won't put in a command line.`);
       if (!file) throw new Error('A deployment needs a Bicep or ARM file.');
       if (!resourceGroup && !location) throw new Error('A deployment needs a resource group (--rg) or, at the subscription, a location (--location).');
       const scope = resourceGroup ? `group create --resource-group "${resourceGroup}"` : `sub create --location "${location}"`;
       const command = `az deployment ${scope} --template-file "${file}"${params ? ` --parameters "${params}"` : ''} --output json`;
-      const { stdout } = await run(command, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, 'az')));
+      const { stdout } = await az(dir, command, { values, signal });
       let json = {};
       try {
         json = JSON.parse(stdout);
