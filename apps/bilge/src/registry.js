@@ -17,8 +17,19 @@ const AT_ONCE = 8;
 /** npm's address for a package: a scope's slash escaped. */
 export const npmPath = (name) => name.replace('/', '%2f');
 
-/** Where a person reads about a package. */
-export const packageUrl = (p) => (p.ecosystem === 'npm' ? `https://www.npmjs.com/package/${p.name}/v/${p.version}` : `https://www.nuget.org/packages/${p.name}/${p.version}`);
+/** Whether a package is one the registries here know (npm's and NuGet's), not an image's system package. */
+export const hasRegistry = (p) => p.ecosystem === 'npm' || p.ecosystem === 'NuGet';
+
+/** Where a person reads about a package: its registry's page, or its distribution's for an image's. */
+export function packageUrl(p) {
+  const name = encodeURIComponent(p.name);
+  if (p.ecosystem === 'npm') return `https://www.npmjs.com/package/${p.name}/v/${p.version}`;
+  if (p.ecosystem === 'NuGet') return `https://www.nuget.org/packages/${p.name}/${p.version}`;
+  if (/^Debian:/.test(p.ecosystem)) return `https://tracker.debian.org/pkg/${name}`;
+  if (/^Ubuntu:/.test(p.ecosystem)) return `https://launchpad.net/ubuntu/+source/${name}`;
+  if (/^Alpine:/.test(p.ecosystem)) return `https://pkgs.alpinelinux.org/packages?name=${name}&branch=${p.ecosystem.slice('Alpine:'.length)}`;
+  return `https://osv.dev/list?q=${name}`;
+}
 
 /** A .nuspec's licence: the SPDX expression, else the file or address it points at; null when it has none. */
 export function nuspecLicence(xml) {

@@ -32,6 +32,7 @@ Bilge is one of the fleet's apps: it needs Node 22 or newer from a checkout (`np
 | `.csproj`, `.fsproj`, `.vbproj` without a `packages.lock.json` | Only its `PackageReference`s with an exact version (from `Directory.Packages.props` under central package management), and its `TargetFramework` or `TargetFrameworks`. Set `RestorePackagesWithLockFile` to `true` and build to give Bilge everything |
 | `package.json` without a lock file | Nothing (its ranges aren't versions): it's listed, saying so |
 | `package.json` beside a lock file, `.nvmrc`, `.node-version` | The Node the project runs on: `engines.node`, else the version in `.nvmrc` or `.node-version` (in its folder or one above) |
+| A container image Wharf hands over (`/take`) | Its Debian, Ubuntu or Alpine system packages, by source package, read out of it with `docker` without running it ([Container images](#container-images)) |
 
 It looks six folders deep, and never in `node_modules`, `bin`, `obj`, `dist`, `build`, `out`, `target`, `vendor`, `coverage` or a hidden folder. A workspace's `package.json` is covered by its root's lock file. A folder with more than one lock file is read for the first of `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` and `pnpm-lock.yaml`.
 
@@ -131,7 +132,7 @@ The lock files and projects found: their ecosystem, kind, how many packages, how
 
 ## Slash commands
 
-`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/upgrade` (above), `/breaking <package>` (above), `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/upgrade` (above), `/breaking <package>` (above), `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take <family:v1:…>` (an image from Wharf, below), `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## In a pipeline
 
@@ -150,7 +151,13 @@ bilge report [folder] [-o file]
 
 ## The family
 
-What changes a project (a fix) and what an audit found go to the family's activity log, so `/timeline` in the others shows when the advisories changed; Nibs's mood (worried while there's a critical or high advisory) goes to the others' mascots. `t` hands Splice a `file` context: with a package's line, Splice blames it; for a manifest, its history. Bilge takes no sibling's context yet. The `familyMoods` setting turns the moods and the activity log off.
+What changes a project (a fix) and what an audit found go to the family's activity log, so `/timeline` in the others shows when the advisories changed; Nibs's mood (worried while there's a critical or high advisory) goes to the others' mascots. `t` hands Splice a `file` context: with a package's line, Splice blames it; for a manifest, its history. Bilge takes an `image` context from Wharf (below); any other it says whose it is. The `familyMoods` setting turns the moods and the activity log off.
+
+## Container images
+
+Wharf hands Bilge an image (`/take family:v1:image:…`, pasted or typed into the prompt; inside Fleet it arrives by itself). Bilge lists the image's operating-system packages without a shell inside it and without running it: `docker create <image>` makes a container that never starts (pulling the image if need be), `docker cp` copies the package database out of it (`/var/lib/dpkg/status` for Debian and Ubuntu, `/lib/apk/db/installed` for Alpine, `/var/lib/dpkg/status.d` for distroless) and `/etc/os-release`, and `docker rm` removes the container again.
+
+The packages are audited like any manifest's, as OSV knows them: by source package (glibc, not libc6) in the distribution's ecosystem (`Debian:12`, `Ubuntu:22.04:LTS`, `Alpine:v3.20`), with dpkg's way of comparing versions for the fixes. The image is a manifest of its own in Manifests (`image <name>`), and stays through `/scan` and `ctrl+r` until Bilge reads another folder. `f` on one of its packages says to rebuild on a newer base or upgrade it in the Dockerfile; `/outdated` and `/upgrade` leave them alone. RPM-based images (Fedora, Red Hat, Rocky) and ones with no package database (scratch, distroless static) give no packages, and say so.
 
 ## Environments
 
@@ -172,4 +179,4 @@ The downloaded executable looks for a newer `bilge-v…` release once a day and 
 
 ## Not yet
 
-Python, Go, Cargo and Maven; a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called).
+Python, Go, Cargo and Maven; RPM-based images; a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called).

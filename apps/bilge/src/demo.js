@@ -6,6 +6,7 @@
 import { join } from 'node:path';
 import { keyOf, mergePackages } from './lockfiles.js';
 import { testPlan } from './upgrade.js';
+import { imageManifest } from './image.js';
 
 const npm = (name, version, extra = {}) => ({ ecosystem: 'npm', name, version, direct: false, dev: false, ...extra });
 const nuget = (name, version, extra = {}) => ({ ecosystem: 'NuGet', name, version, direct: false, dev: false, ...extra });
@@ -69,6 +70,23 @@ export const DEMO_VULNS = [
   vuln('GHSA-rv95-896h-c2vc', 'express', 'npm', 'MODERATE', '4.19.2', 'Express.js open redirect in malformed URLs', { aliases: ['CVE-2024-29041'] }),
   vuln('GHSA-qwcr-r2fm-qrc7', 'express', 'npm', 'HIGH', '4.20.0', 'body-parser vulnerable to denial of service when url encoding is enabled', { aliases: ['CVE-2024-45590'] }),
 ];
+
+// An image Wharf could hand over: Debian 12's system packages, two of them with advisories.
+const DEMO_OS_RELEASE = 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nID=debian\nVERSION_ID="12"\nVERSION="12 (bookworm)"\n';
+const DEMO_DPKG = [
+  ['libc6', '2.36-9+deb12u3', 'glibc'],
+  ['libc-bin', '2.36-9+deb12u3', 'glibc'],
+  ['libssl3', '3.0.11-1~deb12u1', 'openssl'],
+  ['openssl', '3.0.11-1~deb12u1'],
+  ['zlib1g', '1:1.2.13.dfsg-1', 'zlib'],
+  ['bash', '5.2.15-2+b2', 'bash (5.2.15-2)'],
+]
+  .map(([pkg, version, source]) => `Package: ${pkg}\nStatus: install ok installed\n${source ? `Source: ${source}\n` : ''}Version: ${version}\nArchitecture: amd64\n`)
+  .join('\n');
+DEMO_VULNS.push(
+  vuln('DSA-5585-1', 'openssl', 'Debian:12', 'HIGH', '3.0.11-1~deb12u2', 'openssl: denial of service through excessive time checking DH keys', { aliases: ['CVE-2023-5678'] }),
+  vuln('DLA-3912-1', 'zlib', 'Debian:12', 'MODERATE', '1:1.2.13.dfsg-1+deb12u1', 'zlib: heap overflow in MiniZip zipOpenNewFileInZip4_64', { aliases: ['CVE-2023-45853'] }),
+);
 
 const LATEST = {
   express: '5.1.0',
@@ -186,6 +204,11 @@ export function demoBilge() {
       if (!m) return { stdout: `(demo) ${command}`, stderr: '' };
       for (const man of state.manifests ?? []) for (const p of man.packages) if (p.name.toLowerCase() === m[1].toLowerCase()) p.version = m[2];
       return { stdout: `(demo) changed ${m[1]} to ${m[2]}`, stderr: '' };
+    },
+    /** An image's system packages: Debian 12's, whatever it's called, as image.js reads them out of one. */
+    async image(ref) {
+      state.calls.push(['image', ref]);
+      return imageManifest(ref, { db: { kind: 'dpkg', text: DEMO_DPKG }, osRelease: DEMO_OS_RELEASE });
     },
     /** Where the demo's code imports a package: express in the server, Newtonsoft.Json in the API. */
     async usages(root, p) {

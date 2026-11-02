@@ -12,7 +12,9 @@ import { configFile } from './config.js';
 import { countLine, counts, findings, licenceKind } from './audit.js';
 import { fixPlan } from './fix.js';
 import { cyclonedx } from './sbom.js';
-import { packageUrl } from './registry.js';
+import { hasRegistry, packageUrl } from './registry.js';
+import { safeImage } from './image.js';
+import { mergePackages } from './lockfiles.js';
 import { SEVERITY_LABEL, findFinding, findPackage, label, licenceOf, withoutIgnored } from './rows.js';
 import { fileData, markdownReport } from './share.js';
 import { bumpOf } from './versions.js';
@@ -36,7 +38,13 @@ export async function scan(ctx, { audit: thenAudit = ctx.config.autoAudit !== fa
     `scan ${basename(dir) || dir}`,
     async () => {
       const result = await ctx.provider.scan(dir);
-      ctx.setData((d) => ({ ...result, audit: null, latest: d?.root === result.root ? d.latest : null }));
+      ctx.setData((d) => {
+        // An image taken from Wharf isn't on the disk: it stays while Bilge reads the same folder.
+        const same = d?.root === result.root;
+        const images = same ? (d.manifests ?? []).filter((m) => m.kind === 'image') : [];
+        const manifests = images.length ? [...result.manifests, ...images] : result.manifests;
+        return { ...result, manifests, packages: images.length ? mergePackages(manifests) : result.packages, audit: null, latest: same ? d.latest : null };
+      });
       const n = result.manifests.length;
       return { stdout: n ? `${plural(result.packages.length, 'package')} in ${plural(n, 'manifest')}` : 'No lock file (package-lock.json, yarn.lock, pnpm-lock.yaml, packages.lock.json) or .NET project here.' };
     },
@@ -79,7 +87,7 @@ export async function audit(ctx, { fresh = false } = {}) {
  */
 export async function outdated(ctx, which = '') {
   const all = /^all$/i.test(which.trim());
-  const list = packages(ctx).filter((p) => all || p.direct);
+  const list = packages(ctx).filter((p) => hasRegistry(p) && (all || p.direct));
   if (!list.length) return ctx.note('No packages to look up: /scan reads this folder.', 'error') ?? false;
   const r = await ctx.task(
     `outdated ${all ? 'all' : 'direct'}: ${plural(list.length, 'package')}`,
@@ -152,7 +160,7 @@ export function showPackage(ctx, p) {
   const licence = licenceOf(p, ctx.data.latest);
   const f = found(ctx).find((x) => x.key === p.key);
   ctx.showText(label(p), [
-    `${label(p)}  ${p.ecosystem}${p.direct ? ', direct' : ', brought in by another package'}${p.dev ? ', development only' : ''}`,
+    `${label(p)}  ${p.ecosystem}${!hasRegistry(p) ? `, in the image${p.binaries ? ` as ${p.binaries.join(', ')}` : ''}` : p.direct ? ', direct' : ', brought in by another package'}${p.dev ? ', development only' : ''}`,
     `Licence: ${licence ?? 'unknown (/outdated asks the registry)'}${licence ? `  (${licenceKind(licence)})` : ''}`,
     `Newest: ${latest ? (latest.error ? `couldn't ask: ${latest.error}` : `${latest.latest ?? '?'}${bumpOf(p.version, latest.latest) ? `  (${bumpOf(p.version, latest.latest)} behind)` : '  (up to date)'}`) : 'not asked yet (/outdated)'}`,
     ...(latest?.deprecated ? [`Deprecated: ${latest.deprecated}`] : []),
@@ -211,7 +219,7 @@ export async function fix(ctx, target) {
  */
 export async function upgrade(ctx) {
   if (!packages(ctx).length) return ctx.note('No packages to update: /scan reads this folder.', 'error') ?? false;
-  const asked = packages(ctx).some((p) => p.direct && ctx.data.latest?.has(p.key));
+  const asked = packages(ctx).some((p) => p.direct && hasRegistry(p) && ctx.data.latest?.has(p.key));
   if (!asked && !(await outdated(ctx))) return false;
   const list = upgradeCandidates(ctx.data);
   if (!list.length) return ctx.note("Nothing to update: every direct package is at its newest version, or no newer one fits this project (↵ in Packages says why).") ?? true;
@@ -408,7 +416,8 @@ export function open(ctx, what) {
 
 /** t: where a package is in its manifest, for Splice to blame (who brought it in, and when). */
 export function shareWhere(ctx, pkg) {
-  const where = pkg.where[0];
+  const where = pkg.where.find((w) => !w.path.startsWith('image '));
+  if (!where && pkg.where.length) return ctx.note(`${pkg.name} is in an image, not in a file Splice has: its Dockerfile's base image brings it in.`, 'error') ?? false;
   if (!where) return ctx.note(`${pkg.name} isn't in a manifest Bilge read.`, 'error') ?? false;
   const line = takeLine('file', fileData(where));
   ctx.copy(line, 'a line for Splice');
@@ -418,6 +427,7 @@ export function shareWhere(ctx, pkg) {
 
 /** t on a manifest: the file itself, for Splice's history of it. */
 export function shareManifest(ctx, manifest) {
+  if (manifest.kind === 'image') return ctx.note(`${manifest.image} is an image, not a file Splice has.`, 'error') ?? false;
   const line = takeLine('file', { path: manifest.path });
   ctx.copy(line, 'a line for Splice');
   ctx.note(copiedNote('splice', line));
@@ -474,11 +484,36 @@ export function move(ctx, folder = '') {
   return scan(ctx);
 }
 
-/** /take: Bilge takes no sibling's context yet; says whose it is. */
+/** /take: an image Wharf handed over (its system packages, audited); any other context says whose it is. */
 export function take(ctx, text) {
   const context = contextIn(text);
   if (!context) return ctx.note('/take needs what a sibling copied: a family:v1:… line.', 'error') ?? false;
+  if (context.kind === 'image') return takeImage(ctx, String(context.data.image ?? ''));
   return ctx.note(notMine('bilge', context), 'error') ?? false;
+}
+
+/**
+ * The operating-system packages of a container image, read out of it without running it (the
+ * provider's `image`: docker create, docker cp of dpkg's or apk's database and os-release, docker rm),
+ * added to what's shown as a manifest of its own, and audited with the rest.
+ */
+async function takeImage(ctx, image) {
+  if (!safeImage(image)) return ctx.note(`${image || 'That'} isn't an image name Bilge will put in a command.`, 'error') ?? false;
+  const r = await ctx.task(
+    `image ${image}`,
+    async (signal) => {
+      const manifest = await ctx.provider.image(image, { signal });
+      ctx.setData((d) => {
+        const manifests = [...(d?.manifests ?? []).filter((m) => m.path !== manifest.path), manifest];
+        return { ...(d ?? { root: ctx.cwd(), latest: null }), manifests, packages: mergePackages(manifests), audit: null };
+      });
+      return { stdout: manifest.note };
+    },
+    { label: 'Reading the image' },
+  );
+  if (!r.ok) return false;
+  ctx.setView('vulns');
+  return packages(ctx).length ? audit(ctx) : true;
 }
 
 /** /why <package>: every manifest a package is in, and whether it's asked for there or brought in. */

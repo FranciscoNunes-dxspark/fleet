@@ -64,7 +64,7 @@ export const HELP = [
       ['↵ / l', 'Its packages, in the Packages view'],
       ['t', 'Copy it for Splice, whose history says who changed it'],
       ['y', 'Copy its path'],
-      'package-lock.json, yarn.lock (1 and 2+), pnpm-lock.yaml and packages.lock.json are read. A .csproj without a packages.lock.json gives only its own references: set RestorePackagesWithLockFile to true and build to see everything. A package.json without a lock file gives nothing.',
+      'package-lock.json, yarn.lock (1 and 2+), pnpm-lock.yaml and packages.lock.json are read, and an image Wharf hands over (/take): its Debian, Ubuntu or Alpine packages, read out with docker create and docker cp, never run. A .csproj without a packages.lock.json gives only its own references: set RestorePackagesWithLockFile to true and build to see everything. A package.json without a lock file gives nothing.',
     ],
   },
   {

@@ -9,6 +9,12 @@ export function purlOf(p) {
     const [scope, name] = p.name.startsWith('@') ? p.name.split('/') : [null, p.name];
     return `pkg:npm/${scope ? `${encodeURIComponent(scope)}/` : ''}${encodeURIComponent(name)}@${encodeURIComponent(p.version)}`;
   }
+  // An image's system packages: pkg:deb/debian/openssl@3.0.11-1~deb12u2?distro=debian-12, pkg:apk/alpine/….
+  const os = /^(Debian|Ubuntu|Alpine):v?([^:]+)/.exec(p.ecosystem);
+  if (os) {
+    const vendor = os[1].toLowerCase();
+    return `pkg:${vendor === 'alpine' ? 'apk' : 'deb'}/${vendor}/${encodeURIComponent(p.name)}@${encodeURIComponent(p.version)}?distro=${vendor}-${os[2]}`;
+  }
   return `pkg:nuget/${encodeURIComponent(p.name)}@${encodeURIComponent(p.version)}`;
 }
 

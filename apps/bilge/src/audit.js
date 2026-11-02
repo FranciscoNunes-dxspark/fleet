@@ -1,6 +1,6 @@
 // What OSV's advisories mean for the packages found: how bad each one is, the version that fixes it, and
 // the findings the Vulnerabilities view lists; and what kind of licence a package has. Pure.
-import { compareVersions } from './versions.js';
+import { comparerFor } from './versions.js';
 
 export const SEVERITIES = ['critical', 'high', 'medium', 'low', 'unknown'];
 export const rank = (s) => {
@@ -72,6 +72,7 @@ const sameName = (ecosystem, a, b) => (ecosystem === 'NuGet' ? String(a).toLower
  * its version is in, else the lowest fix above it; null when there is none yet.
  */
 export function fixedIn(vuln, pkg) {
+  const compare = comparerFor(pkg.ecosystem);
   const fixes = [];
   for (const affected of vuln.affected ?? []) {
     const p = affected.package ?? {};
@@ -83,12 +84,12 @@ export function fixedIn(vuln, pkg) {
         if (e.introduced !== undefined) introduced = e.introduced;
         if (e.fixed !== undefined) {
           fixes.push(e.fixed);
-          if ((introduced === '0' || compareVersions(pkg.version, introduced) >= 0) && compareVersions(pkg.version, e.fixed) < 0) return e.fixed;
+          if ((introduced === '0' || compare(pkg.version, introduced) >= 0) && compare(pkg.version, e.fixed) < 0) return e.fixed;
         }
       }
     }
   }
-  return fixes.filter((f) => compareVersions(f, pkg.version) > 0).sort(compareVersions)[0] ?? null;
+  return fixes.filter((f) => compare(f, pkg.version) > 0).sort(compare)[0] ?? null;
 }
 
 /** An advisory as Bilge shows it, for package `pkg`. */
@@ -120,7 +121,7 @@ export function findings(packages, ids, details) {
     if (!list.length) continue;
     list.sort((a, b) => rank(a.severity) - rank(b.severity) || (b.score ?? 0) - (a.score ?? 0) || a.id.localeCompare(b.id));
     const fixes = list.map((a) => a.fixed);
-    const fixed = fixes.filter(Boolean).sort(compareVersions).at(-1) ?? null;
+    const fixed = fixes.filter(Boolean).sort(comparerFor(pkg.ecosystem)).at(-1) ?? null;
     out.push({ key: pkg.key, pkg, advisories: list, severity: list[0].severity, fixed, unfixed: fixes.some((f) => !f) });
   }
   return out.sort((a, b) => rank(a.severity) - rank(b.severity) || Number(b.pkg.direct) - Number(a.pkg.direct) || a.pkg.name.localeCompare(b.pkg.name));

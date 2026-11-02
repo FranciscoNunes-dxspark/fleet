@@ -69,6 +69,8 @@ export function updateCommand(pkg, manifest, version) {
 export function fixPlan(finding, manifest, version = finding.fixed) {
   const { pkg } = finding;
   if (!version) return null;
+  // An image's system package moves with the image: no command here does it.
+  if (pkg.ecosystem !== 'npm' && pkg.ecosystem !== 'NuGet') return { text: `${pkg.name} is part of the image's operating system (${pkg.ecosystem}): rebuild the image on a newer base, or upgrade it in the Dockerfile (apt-get install --only-upgrade, apk upgrade) to ${version} or later.` };
   if (!safe(pkg.ecosystem, pkg.name, version)) return { text: `${pkg.name} ${version} isn't a name and version Bilge will put in a command.` };
   if (pkg.ecosystem === 'npm') {
     const tool = TOOLS[toolOf(manifest)];
