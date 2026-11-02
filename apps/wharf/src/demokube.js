@@ -67,8 +67,15 @@ export function demoKube() {
   return {
     name: 'demo',
     state,
+    // As kube.js's: an environment's context, used without changing the current one.
+    pin(ctxName) {
+      state.pinned = ctxName ?? null;
+    },
+    get pinned() {
+      return state.pinned ?? null;
+    },
     async current() {
-      return state.current;
+      return state.pinned ?? state.current;
     },
     async contexts() {
       return [...state.contexts];

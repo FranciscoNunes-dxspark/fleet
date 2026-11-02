@@ -105,9 +105,21 @@ the prompt. `--demo` has a pretend shell.
 
 ## Slash commands
 
-`/start`, `/stop`, `/restart`, `/kill` take a container, a compose project's name, or `all`; stopping, killing or restarting several asks first. `/up` and `/down` run `docker compose up -d` or `down` for a project, where its files are (`/down` asks first; volumes are kept). `/exec <container> <command>` runs one command inside a running container with no terminal, so nothing interactive. `/shell <name> [container]` opens a shell in a running container or pod (see Shells). `/pause` and `/unpause` take a container. `/rm` removes (asks). `/logs`, `/inspect`, `/open` take a container. `/scan <container|image>` hands Bilge an image (as `v`). `/pull <image>`, `/rmi <image>` (asks), `/prune [containers|images]` (asks). `/run <command>` is `!`. `/last` shows the last command's whole output. `/refresh` reads Docker again now (it does every few seconds). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/start`, `/stop`, `/restart`, `/kill` take a container, a compose project's name, or `all`; stopping, killing or restarting several asks first. `/up` and `/down` run `docker compose up -d` or `down` for a project, where its files are (`/down` asks first; volumes are kept). `/exec <container> <command>` runs one command inside a running container with no terminal, so nothing interactive. `/shell <name> [container]` opens a shell in a running container or pod (see Shells). `/pause` and `/unpause` take a container. `/rm` removes (asks). `/logs`, `/inspect`, `/open` take a container. `/scan <container|image>` hands Bilge an image (as `v`). `/pull <image>`, `/rmi <image>` (asks), `/prune [containers|images]` (asks). `/run <command>` is `!`. `/last` shows the last command's whole output. `/refresh` reads Docker again now (it does every few seconds). `/env [name]` says or switches the project's environment (see Environments). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 A name can be a prefix when it's unambiguous, an id, or `project/service`.
+
+## Environments
+
+A project can name its environments (dev, staging, prod) once for every app of the family, in `.fleet/project.json` at its root (or a folder above where Wharf runs, inside the checkout), a section per app for each; nothing secret goes in it. Wharf reads its own section of the one chosen:
+
+```json
+"prod": { "prod": true, "wharf": { "context": "aks-prod", "namespace": "shop" } }
+```
+
+`context` sends every `kubectl` Wharf runs there with `--context` (kubectl's own current context, which every terminal shares, is left alone, and `/context` says so rather than switching), and `namespace` is what the Pods view lists. `/env` says which environment the project is on, `/env <name>` switches every app to another, and a switch made elsewhere is followed here within a second. The header shows its name; a production one (`"prod": true`) draws the frames red, and stopping, killing, restarting, removing, taking down, pruning, deleting a pod, restarting a deployment and undoing a rollout all ask first.
+
+While Fleet records a runbook, each slash command Wharf's prompt runs (and each `/take`) is kept for it; a `!` shell command never is.
 
 ## The family
 

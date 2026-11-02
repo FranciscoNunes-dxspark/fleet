@@ -12,6 +12,7 @@ const name = (s) => {
   if (!safeName(s)) throw new Error(`"${s}" isn't a name Kubernetes would have given.`);
   return s;
 };
+export const safeContext = (s) => CONTEXT.test(String(s ?? ''));
 const context = (s) => {
   if (!CONTEXT.test(String(s ?? ''))) throw new Error(`"${s}" isn't a context name kubectl would have.`);
   return s;
@@ -187,9 +188,20 @@ const scope = (namespace) => (!namespace || namespace === 'all' ? '-A' : `-n ${n
 
 /** The provider for a real cluster: `run(command, { signal })` is injectable for tests. */
 export function createKube({ run = kitRun } = {}) {
+  // The context a project's environment names (pin): every call but kubeconfig's own goes there with
+  // --context, so kubectl's current context, which every terminal shares, is never changed for it.
+  let pinned = null;
+  const kc = () => `kubectl${pinned ? ` --context ${context(pinned)}` : ''}`;
   return {
     name: 'kubectl',
+    pin(ctxName) {
+      pinned = ctxName ? context(ctxName) : null;
+    },
+    get pinned() {
+      return pinned;
+    },
     async current() {
+      if (pinned) return pinned;
       const { stdout } = await run('kubectl config current-context');
       return stdout.trim();
     },
@@ -206,29 +218,29 @@ export function createKube({ run = kitRun } = {}) {
       return stdout.split('\n').map((s) => s.trim().replace(/^namespace\//, '')).filter(Boolean);
     },
     async pods({ namespace, signal } = {}) {
-      const { stdout } = await run(`kubectl get pods ${scope(namespace)} -o json`, { signal });
+      const { stdout } = await run(`${kc()} get pods ${scope(namespace)} -o json`, { signal });
       return parsePods(stdout);
     },
     // Needs the metrics server; a cluster without one just has no numbers.
     async top({ namespace, signal } = {}) {
-      const { stdout } = await run(`kubectl top pods ${scope(namespace)} --no-headers`, { signal });
+      const { stdout } = await run(`${kc()} top pods ${scope(namespace)} --no-headers`, { signal });
       return parseTop(stdout, namespace === 'all' ? null : namespace);
     },
     async logs(pod, { tail = 500, container, signal } = {}) {
-      const { stdout, stderr } = await run(`kubectl logs --timestamps --tail ${Number(tail) || 500} -n ${name(pod.namespace)} ${name(pod.name)}${container ? ` -c ${name(container)}` : ' --all-containers=true'}`, { signal });
+      const { stdout, stderr } = await run(`${kc()} logs --timestamps --tail ${Number(tail) || 500} -n ${name(pod.namespace)} ${name(pod.name)}${container ? ` -c ${name(container)}` : ' --all-containers=true'}`, { signal });
       return [stdout, stderr].filter(Boolean).join('');
     },
     async describe(pod, { signal } = {}) {
-      const { stdout } = await run(`kubectl describe pod -n ${name(pod.namespace)} ${name(pod.name)}`, { signal });
+      const { stdout } = await run(`${kc()} describe pod -n ${name(pod.namespace)} ${name(pod.name)}`, { signal });
       return stdout;
     },
     // The controller makes a new one, so this is a restart for a pod that has one.
     async deletePod(pod, { signal } = {}) {
-      const { stdout } = await run(`kubectl delete pod -n ${name(pod.namespace)} ${name(pod.name)}`, { signal });
+      const { stdout } = await run(`${kc()} delete pod -n ${name(pod.namespace)} ${name(pod.name)}`, { signal });
       return stdout;
     },
     async rolloutRestart(deployment, namespace, { signal } = {}) {
-      const { stdout } = await run(`kubectl rollout restart deployment/${name(deployment)} -n ${name(namespace)}`, { signal });
+      const { stdout } = await run(`${kc()} rollout restart deployment/${name(deployment)} -n ${name(namespace)}`, { signal });
       return stdout;
     },
     // Where a deployment's rollout is: the deployment, then its ReplicaSets, pods and the namespace's pod events together.
@@ -241,18 +253,18 @@ export function createKube({ run = kitRun } = {}) {
         }
       };
       const ns = name(namespace);
-      const d = json((await run(`kubectl get deployment ${name(deployment)} -n ${ns} -o json`, { signal })).stdout);
+      const d = json((await run(`${kc()} get deployment ${name(deployment)} -n ${ns} -o json`, { signal })).stdout);
       const sel = selectorOf(d.spec?.selector?.matchLabels);
       const [rs, pods, events] = await Promise.all([
-        run(`kubectl get replicasets -n ${ns} -l ${sel} -o json`, { signal }),
-        run(`kubectl get pods -n ${ns} -l ${sel} -o json`, { signal }),
+        run(`${kc()} get replicasets -n ${ns} -l ${sel} -o json`, { signal }),
+        run(`${kc()} get pods -n ${ns} -l ${sel} -o json`, { signal }),
         // Events are a nicety: a cluster that won't list them still shows the rollout.
-        run(`kubectl get events -n ${ns} --field-selector involvedObject.kind=Pod -o json`, { signal }).catch(() => ({ stdout: '{"items":[]}' })),
+        run(`${kc()} get events -n ${ns} --field-selector involvedObject.kind=Pod -o json`, { signal }).catch(() => ({ stdout: '{"items":[]}' })),
       ]);
       return rolloutState({ deployment: d, replicaSets: json(rs.stdout).items ?? [], pods: json(pods.stdout).items ?? [], events: json(events.stdout).items ?? [] });
     },
     async rolloutUndo(deployment, namespace, { signal } = {}) {
-      const { stdout } = await run(`kubectl rollout undo deployment/${name(deployment)} -n ${name(namespace)}`, { signal });
+      const { stdout } = await run(`${kc()} rollout undo deployment/${name(deployment)} -n ${name(namespace)}`, { signal });
       return stdout;
     },
   };

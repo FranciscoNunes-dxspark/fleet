@@ -2,6 +2,7 @@
 import { findPod } from './rows.js';
 import { kubeProblem, safeName } from './kube.js';
 import { kubeShell } from './shell.js';
+import { askFirst } from './environment.js';
 
 const pods = (ctx) => ctx.kubeData?.pods ?? [];
 
@@ -58,7 +59,7 @@ export async function shell(ctx, text, container) {
   if (p.status !== 'Running') return ctx.note(`${p.name} isn't running (${p.status}).`, 'error') ?? false;
   const c = await containerOf(ctx, p, container, 'A shell');
   if ((p.containers ?? []).length > 1 && !c) return false;
-  ctx.openShell({ title: c && p.containers.length > 1 ? `${p.name}/${c}` : p.name, make: (tty) => kubeShell(p, c, { tty }) });
+  ctx.openShell({ title: c && p.containers.length > 1 ? `${p.name}/${c}` : p.name, make: (tty) => kubeShell(p, c, { tty, context: ctx.kube.pinned }) });
   return true;
 }
 
@@ -75,7 +76,7 @@ export async function describe(ctx, text) {
 export async function deletePod(ctx, text) {
   const p = pick(ctx, text);
   if (!p) return false;
-  const yes = await ctx.confirm({
+  const yes = await askFirst(ctx, {
     title: `Delete pod ${p.name}?`,
     detail: p.deployment ? `Its deployment ${p.deployment} starts another.` : 'Nothing owns it that you can see here: it may not come back.',
     danger: true,
@@ -90,7 +91,7 @@ export async function rollout(ctx, text) {
   const p = pick(ctx, text);
   if (!p) return false;
   if (!p.deployment) return ctx.note(`${p.name} doesn't belong to a deployment: x deletes it instead.`, 'error') ?? false;
-  const yes = await ctx.confirm({ title: `Restart deployment ${p.deployment}?`, detail: `Every pod of it in ${p.namespace} is replaced, one after another.`, danger: true });
+  const yes = await askFirst(ctx, { title: `Restart deployment ${p.deployment}?`, detail: `Every pod of it in ${p.namespace} is replaced, one after another.`, danger: true });
   if (!yes) return false;
   const r = await ctx.task(`rollout restart ${p.deployment}`, async (signal) => ({ stdout: await ctx.kube.rolloutRestart(p.deployment, p.namespace, { signal }).catch((e) => Promise.reject(explainKube(e))) }), { label: 'Restarting', refreshKube: true, activity: `Restarted deployment ${p.deployment} in ${p.namespace}` });
   if (r.ok) ctx.note(`w on one of its pods (or /rollout ${p.namespace}/${p.deployment}) follows the rollout.`);
@@ -132,7 +133,7 @@ export function watchRollout(ctx, text) {
 
 /** u in a rollout, or /rollout undo: back to the deployment's previous revision, asking first. */
 export async function undoRollout(ctx, { deployment, namespace }) {
-  const yes = await ctx.confirm({ title: `Undo the rollout of ${deployment}?`, detail: `kubectl rollout undo puts ${namespace}/${deployment} back on its previous revision, pod by pod.`, danger: true });
+  const yes = await askFirst(ctx, { title: `Undo the rollout of ${deployment}?`, detail: `kubectl rollout undo puts ${namespace}/${deployment} back on its previous revision, pod by pod.`, danger: true });
   if (!yes) return false;
   const r = await ctx.task(`rollout undo ${deployment}`, async (signal) => ({ stdout: await ctx.kube.rolloutUndo(deployment, namespace, { signal }).catch((e) => Promise.reject(explainKube(e))) }), { label: 'Undoing', refreshKube: true, activity: `Undid the rollout of ${deployment} in ${namespace}` });
   return r.ok;
@@ -161,6 +162,8 @@ export async function namespace(ctx, text) {
 
 /** /context: the cluster kubectl talks to, from kubeconfig; switching it changes kubectl everywhere, so it asks. */
 export async function useContext(ctx, text) {
+  // An environment that names a context has Wharf use it without touching kubectl's own.
+  if (text && ctx.env?.context) return ctx.note(`The ${ctx.env.name} environment sends Wharf's kubectl to ${ctx.env.context} (kubectl's own context is left alone): /env switches it.`, 'error') ?? false;
   const known = await ctx.kube.contexts().catch((e) => Promise.reject(explainKube(e)));
   const current = ctx.kubeData?.context ?? (await ctx.kube.current().catch(() => null));
   if (!text) return ctx.note(`Context: ${current ?? 'none'}.${known.length ? ` There is ${known.join(', ')}.` : ''} /context <name> switches.`);

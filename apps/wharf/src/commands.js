@@ -1,6 +1,7 @@
 import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import * as k from './kubeactions.js';
+import { env } from './environment.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -29,6 +30,7 @@ export const COMMANDS = [
   { name: 'rmi', args: '<image>', desc: 'Remove an image (asks first)', complete: 'images', run: (ctx, s) => a.removeImage(ctx, s) },
   { name: 'prune', args: '[containers|images]', desc: 'Remove every stopped container, or the images nothing uses (asks first)', complete: 'prunable', run: (ctx, s) => a.prune(ctx, s || 'containers') },
   { name: 'scan', args: '<container|image>', desc: 'Hand Bilge the image a container was made from (or an image) to look for known vulnerabilities', complete: 'scannable', run: (ctx, s) => a.scanImage(ctx, s) },
+  { name: 'env', args: '[name]', desc: 'The project\'s environment (.fleet/project.json), or switch every app to another; Wharf\'s section names a kube context and namespace', complete: 'environments', run: (ctx, s) => env(ctx, s) },
   { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling copied: a log line is looked for in the running containers and pods', run: (ctx, s) => a.take(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
@@ -51,7 +53,8 @@ export function findCommand(name) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, data, kube) {
+function completions(kind, data, kube, envs) {
+  if (kind === 'environments') return envs ?? [];
   if (kind === 'containers') return [...(data?.containers ?? []).map((c) => c.name), ...new Set((data?.containers ?? []).map((c) => c.project).filter(Boolean)), 'all'];
   if (kind === 'projects') return [...new Set((data?.containers ?? []).map((c) => c.project).filter(Boolean))];
   if (kind === 'deployments') return [...new Set((kube?.pods ?? []).filter((p) => p.deployment).map((p) => `${p.namespace}/${p.deployment}`)), 'restart', 'undo'];
@@ -78,7 +81,7 @@ function ranked(names, query) {
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away.
  */
-function commandCompletions(value, { data, kube } = {}) {
+function commandCompletions(value, { data, kube, envs } = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   if (space < 0) {
@@ -92,7 +95,7 @@ function commandCompletions(value, { data, kube } = {}) {
   const cmd = findCommand(value.slice(1, space));
   const rest = value.slice(space + 1);
   if (!cmd?.complete) return [];
-  const names = ranked([...new Set(completions(cmd.complete, data, kube))], rest);
+  const names = ranked([...new Set(completions(cmd.complete, data, kube, envs))], rest);
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
 }
