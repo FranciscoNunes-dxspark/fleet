@@ -272,6 +272,12 @@ export function createGithubProvider({ org, token, client } = {}) {
       };
     },
 
+    /** A pull request's changed files, with the lines each adds and removes (GitHub says). */
+    async getPullRequestFiles(_projectId, repoId, prId) {
+      const list = await listAll(`${repoPath(repoId)}/pulls/${Number(prId)}/files`, { max: 3000 });
+      return { iteration: null, total: list.length, truncated: list.length >= 3000, items: list.map(fileOf).sort((a, b) => a.path.localeCompare(b.path)) };
+    },
+
     async getPullRequestWorkItemIds() {
       return [];
     },

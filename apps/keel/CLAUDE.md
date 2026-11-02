@@ -42,6 +42,8 @@ To try accounts and roles on demo data, set `AUTH_MODE=login` and `AZDO_MOCK=1`.
 - `watcher.js`: polls only while a browser holds `/api/events` (SSE) open, diffs snapshots (`domain/changes.js`), and emits `changed` / `notify` / `status`.
 - `monitoring.js` + `platform.js`: production URL and App Insights checks, shared server-wide. `platform.js` handles the `platform/v1` `/health` + `/totals` envelope (schema id from `KEEL_PLATFORM_SCHEMA`; figure names and order from `data/platform-labels.json`).
 
+**Pull request risk** (`domain/risk.js`, pure: `scorePr`, the weights in `RISK_WEIGHTS`, the README's table) is `service.prRisks()` (the route `/prs/risk`, kept apart from `/prs` so the list never waits): each active pull request's files through the providers' `getPullRequestFiles` (GitHub's carry `lines`; Azure DevOps has no line counts), cached per source commit, and its busiest folders' history, as Suggested reviewers reads it. Its reasons are templates (`REASONS`) the web app translates (`client/src/risk.jsx`, `locales/pt/risk.js`, checked by `test/risk.test.js`) and the terminal fills (`reasonText`, `cli/format.js` `riskLines`); the terminal reads them after each load, into `data.risks`.
+
 **Persistence.** JSON files in the data folder (`config.js` `dataDirFor`: `DATA_DIR`, else `keel-data` next to Hostinger's `hbuilds/`, else `data/`). Use `jsonfile.js` `sharedJson` for anything several processes share: the host may run more than one copy, so it re-reads the file when it changes on disk. Background jobs (monitors, channels, push) elect a single runner across copies. Secrets (PATs, App Insights keys, webhooks, push keys) are encrypted with `secrets.js`, keyed from `SESSION_SECRET`.
 
 **Domain rules that recur everywhere:**

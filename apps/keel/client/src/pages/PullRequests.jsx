@@ -6,6 +6,7 @@ import { Avatar, Chip, CodeTabs, Empty, ErrorBox, FilterFold, Loading, PageHeade
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { SavedViews } from '../views.jsx';
+import { RiskScore, useRisks } from '../risk.jsx';
 
 const DAYS = [7, 30, 90];
 const OUTCOME = { completed: { tone: 'ok', label: 'Completed' }, abandoned: { tone: 'muted', label: 'Abandoned' } };
@@ -21,6 +22,8 @@ export default function PullRequests() {
   const days = DAYS.includes(Number(params.get('days'))) ? Number(params.get('days')) : 30;
   const active = useApi(closed ? null : '/prs');
   const history = useApi(closed ? `/prs/closed?days=${days}` : null);
+  // Each active pull request's risk, read apart from the list so the list isn't kept waiting.
+  const riskOf = useRisks(!closed);
   const current = closed ? history : active;
   // While another period loads, its list isn't shown under the new period's name.
   const data = closed && current.data?.days !== days ? null : current.data;
@@ -40,6 +43,7 @@ export default function PullRequests() {
     author: (p) => p.author?.displayName?.toLowerCase(),
     age: (p) => p.ageHours,
     approvals: (p) => p.approvals,
+    risk: (p) => riskOf(p)?.score ?? -1,
   };
   const activeSort = useSort({ key: 'age', dir: -1 }, getters);
   // Newest first; the open time is how long it was in review.
@@ -152,7 +156,7 @@ export default function PullRequests() {
             setSort={setSort}
             options={closed
               ? [['closed', t('Closed')], ['open', t('Open for')], ['title', t('Title')], ['author', t('Author')]]
-              : [['age', t('Age')], ['approvals', t('Reviewers')], ['title', t('Title')], ['author', t('Author')]]}
+              : [['age', t('Age')], ['risk', t('Risk')], ['approvals', t('Reviewers')], ['title', t('Title')], ['author', t('Author')]]}
           />
         )}
         {closed && (
@@ -196,7 +200,7 @@ export default function PullRequests() {
 
       {rows.length > 0 && phone ? (
         <ol className="list-cards">
-          {apply(rows).map((p) => <PrCard key={p.key} p={p} closed={closed} open={isOpen(p)} staleHours={staleHours} onOpen={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })} />)}
+          {apply(rows).map((p) => <PrCard key={p.key} p={p} risk={closed ? null : riskOf(p)} closed={closed} open={isOpen(p)} staleHours={staleHours} onOpen={() => openDrawer({ type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id })} />)}
         </ol>
       ) : !rows.length ? (
         <Empty title={t('No pull requests match.')}>{closed && !data.prs.length ? t('None were completed or abandoned in this period.') : t('Clear a filter to see more.')}</Empty>
@@ -256,6 +260,7 @@ export default function PullRequests() {
                 <Th id="title" sort={sort} setSort={setSort}>{t('Pull request')}</Th>
                 <Th id="author" sort={sort} setSort={setSort}>{t('Author')}</Th>
                 <Th id="age" sort={sort} setSort={setSort} className="num">{t('Age')}</Th>
+                <Th id="risk" sort={sort} setSort={setSort} className="num">{t('Risk')}</Th>
                 <Th id="approvals" sort={sort} setSort={setSort}>{t('Reviewers')}</Th>
                 <th>{t('Status')}</th>
               </tr>
@@ -275,6 +280,7 @@ export default function PullRequests() {
                   </td>
                   <td><Person person={p.author} /></td>
                   <td className={`num ${!p.isDraft && p.ageHours >= staleHours ? 'text-warn' : ''}`}>{age(p.createdAt)}</td>
+                  <td className="num"><RiskScore risk={riskOf(p)} /></td>
                   <td>
                     <div className="avatars">
                       {p.reviewers.length ? p.reviewers.map((r) => <Avatar key={r.id} person={r} vote={r.vote} />) : <span className="text-bad small">{t('None')}</span>}
@@ -304,7 +310,7 @@ export default function PullRequests() {
 }
 
 /** A pull request as a card (phones): where it is, its title, who wrote it, its reviewers and its state. */
-function PrCard({ p, closed, open, staleHours, onOpen }) {
+function PrCard({ p, risk, closed, open, staleHours, onOpen }) {
   const state = closed ? OUTCOME[p.status] : REVIEW_STATE[p.reviewState];
   return (
     <li className={`list-card${p.needsMyReview && !closed ? ' list-card-mine' : ''}${p.hasConflicts && !closed ? ' list-card-bad' : ''}${open ? ' list-card-open' : ''}`}>
@@ -319,6 +325,7 @@ function PrCard({ p, closed, open, staleHours, onOpen }) {
           <span className="avatars">{p.reviewers.slice(0, 5).map((r) => <Avatar key={r.id} person={r} vote={r.vote} size={20} />)}</span>
         </span>
         <span className="chips">
+          <RiskScore risk={risk} />
           {state && <Chip tone={state.tone || 'muted'}>{closed ? t(state.label) : state.label}</Chip>}
           {!closed && p.needsMyReview && <Chip tone="accent">{t('Your review')}</Chip>}
           {!closed && p.hasConflicts && <Chip tone="bad">{t('Conflicts')}</Chip>}

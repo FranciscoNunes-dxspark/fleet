@@ -9,6 +9,7 @@ import { useOrgKind, useProjectLabel } from '../orgs.js';
 import MergeStatus from './MergeStatus.jsx';
 import { SuggestedReviewers } from './NewPr.jsx';
 import Trace from '../line/Trace.jsx';
+import { RiskReasons, useRisks } from '../risk.jsx';
 
 // Labels are getters so they follow the current language.
 const FILE_KIND = {
@@ -172,6 +173,8 @@ export default function PrDetail({ target }) {
   const [comment, setComment] = useState('');
   const [reviewer, setReviewer] = useState('');
   const [completing, setCompleting] = useState(false);
+  // Its risk comes from the list's scores (/prs/risk), which the server keeps for a few minutes.
+  const riskOf = useRisks();
 
   if (!pr) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
 
@@ -220,6 +223,7 @@ export default function PrDetail({ target }) {
 
   const github = orgKind(pr.org) === 'github';
   const state = REVIEW_STATE[pr.reviewState];
+  const risk = pr.status === 'active' ? riskOf({ ...pr, org: pr.org || target.org }) : null;
   const mentionable = [...(people || []), pr.author, ...pr.reviewers, ...pr.threads.recent.map((c) => c.author)];
   const candidates = (people || []).filter((p) => p.id !== pr.author?.id && !pr.reviewers.some((r) => r.id === p.id));
   // GitHub refuses reviews and review requests from a pull request's author, so those buttons go.
@@ -280,6 +284,13 @@ export default function PrDetail({ target }) {
               </button>
             ))}
           </div>}
+        </section>
+      )}
+
+      {risk && (
+        <section className="detail-section">
+          <h3>{t('Risk')}</h3>
+          <RiskReasons risk={risk} />
         </section>
       )}
 

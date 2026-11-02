@@ -159,6 +159,9 @@ export function createMultiService(entries) {
         runs: parts.flatMap(({ org, value }) => tagAll(org, value.runs)).sort((a, b) => at(b) - at(a)),
       };
     },
+    async prRisks() {
+      return { risks: (await each((s) => s.prRisks())).flatMap(({ org, value }) => tagAll(org, value.risks)) };
+    },
     async closedPullRequests(days) {
       const parts = await each((s) => s.closedPullRequests(days));
       return {

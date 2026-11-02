@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import * as a from '../actions.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
-import { WI_VIEW_IDS, monitorFullText, pipelineDetail, prFullText, wiFullText } from '../format.js';
+import { WI_VIEW_IDS, monitorFullText, pipelineDetail, prFullText, riskFor, wiFullText } from '../format.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
 import { askHostToUpdate } from '@fleet/kit/hosted.js';
@@ -269,6 +269,13 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     metaRef.current = m;
     setMetaState(m);
   };
+  // Each active pull request's risk (service.prRisks), read after each load.
+  const [risks, setRisksState] = useState(null);
+  const risksRef = useRef(null);
+  const setRisks = (list) => {
+    risksRef.current = list;
+    setRisksState(list);
+  };
   const setData = (patch) => {
     dataRef.current = { ...dataRef.current, ...patch, version: dataRef.current.version + 1 };
     setDataState(dataRef.current);
@@ -333,6 +340,9 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
         noticeChanges(dataRef.current, { prs: prs.prs, pipelines });
         setData({ attention, prs: prs.prs, pipelines, workItems, production });
         setPollError(null);
+        // The pull requests' risk scores come after, so the list never waits for them (a first read takes a while).
+        // Kept apart from `data`, whose version would make every view (Settings among them) read again.
+        Promise.resolve(service.prRisks?.()).then((r) => r && setRisks(r.risks), () => {});
       })
       .finally(() => {
         loading.current = null;
@@ -575,7 +585,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
       setOverlay({ title: `!${pr.id} ${pr.title}`, loading: true });
       try {
         const full = await service.pullRequest(pr.projectId, pr.repoId, pr.id);
-        setOverlay((o) => (o?.title === `!${pr.id} ${pr.title}` ? { title: o.title, text: prFullText(full) } : o));
+        setOverlay((o) => (o?.title === `!${pr.id} ${pr.title}` ? { title: o.title, text: prFullText(full, Date.now(), riskFor(risksRef.current, pr)) } : o));
       } catch (e) {
         setOverlay(null);
         note(`Couldn't read !${pr.id}: ${firstLine(e.message)}`, 'error');
@@ -936,7 +946,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
   } else if (view === 'control') {
     main = <ControlView failed={Boolean(pollError)} data={data} version={data.version} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'prs') {
-    main = <PrsView failed={Boolean(pollError)} prs={data.prs} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <PrsView failed={Boolean(pollError)} prs={data.prs} risks={risks} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'workitems') {
     main = <WorkItemsView failed={Boolean(pollError)} workItems={data.workItems} meta={meta} show={wiShow} filter={filters.workitems} jump={jump?.view === 'workitems' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'production') {

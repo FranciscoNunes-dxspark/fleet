@@ -81,6 +81,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
 
   r.get('/people',async (req, res) => res.json(await req.ctx.service.people()));
   r.get('/prs', async (req, res) => res.json(await req.ctx.service.pullRequests()));
+  // Each active pull request's risk score and its reasons (domain/risk.js), apart from the list, which it would slow.
+  r.get('/prs/risk', async (req, res) => res.json(await req.ctx.service.prRisks()));
   r.get('/prs/closed', async (req, res) => res.json(await req.ctx.service.closedPullRequests(Number(req.query.days) || 30)));
   r.post('/prs', need('prs.write'), async (req, res) => res.status(201).json(await req.ctx.service.createPullRequest(req.body || {})));
   r.get('/repos', async (req, res) => res.json(await req.ctx.service.repos()));

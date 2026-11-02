@@ -63,7 +63,7 @@ export const HELP = [
   },
   {
     title: 'Pull requests',
-    about: 'waiting on your review, then yours, then everyone else\'s; each goes publish → approval → complete, and the pane says which step it\'s at and what it waits on',
+    about: 'waiting on your review, then yours, then everyone else\'s; each goes publish → approval → complete, and the pane says which step it\'s at and what it waits on; the number after each one\'s is its risk, 0 to 100 (red high, amber medium, green low), and the pane and ↵ say the reasons that add up to it',
     views: ['prs'],
     rows: [
       ['p', 'Publish a draft'],

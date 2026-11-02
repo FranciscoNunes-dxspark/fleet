@@ -162,6 +162,7 @@ export function remoteService({ call }) {
     team: () => call('/team'),
     insights: (days) => call(`/insights?days=${days}`),
     delivery: (days) => call(`/delivery?days=${days}`),
+    prRisks: () => call('/prs/risk'),
     dora: (days, { production } = {}) => call(`/dora?days=${days}${production ? `&production=${encodeURIComponent(production)}` : ''}`),
     flakyTests: () => call('/tests/flaky'),
     closedPullRequests: (days) => call(`/prs/closed?days=${days}`),

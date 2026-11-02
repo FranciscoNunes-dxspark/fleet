@@ -936,6 +936,11 @@ export function createMockProvider() {
       });
     },
 
+    getPullRequestFiles: (projectId, repoId, prId) => {
+      const pr = getPR(projectId, repoId, prId);
+      return delay({ iteration: 1, total: pr._files.length, truncated: false, items: pr._files.map((f) => ({ ...f })) });
+    },
+
     getPullRequestWorkItemIds: (projectId, repoId, prId) => delay([...getPR(projectId, repoId, prId)._workItemIds]),
 
     // The demo history has no branches: a PR's commits are the two before its merge commit.

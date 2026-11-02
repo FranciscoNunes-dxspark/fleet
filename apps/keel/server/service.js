@@ -22,6 +22,7 @@ import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
 import { changedFolders, suggestReviewers } from './domain/reviewers.js';
 import { findFlakyTests } from './domain/tests.js';
+import { scorePr } from './domain/risk.js';
 import { buildDiff, parsePatch } from './domain/filediff.js';
 
 const MIN = 60_000;
@@ -36,6 +37,9 @@ const LEAD_TIME_DEPLOYS = 30;
 const DORA_DEPLOYS = 60;
 // A merged pull request's own commits are read for at most this many per deploy; the rest are timed from their opening.
 const DORA_PR_COMMITS = 30;
+// A pull request's risk reads the history of its busiest folders, at most this many, over this many days.
+const RISK_FOLDERS = 4;
+const RISK_HISTORY_DAYS = 180;
 
 /** Backlog order, then id; items without a rank go last. */
 const byBacklogOrder = (a, b) => {
@@ -1226,6 +1230,28 @@ export function createService({
       const [prs, repoList, team] = await Promise.all([activePRs(), repos(), people()]);
       const upcoming = schedules?.upcoming() || new Map();
       return { prs: prs.map((p) => (upcoming.has(p.key) ? { ...p, completesAt: upcoming.get(p.key) } : p)), repos: repoList, people: team };
+    },
+
+    /**
+     * Each active pull request's risk (domain/risk.js): its files (read once per pushed commit), the
+     * history of its busiest folders on the branch it goes into, and its required reviewers.
+     */
+    async prRisks() {
+      return cached('prs:risk', async () => {
+        const prs = await activePRs();
+        const since = new Date(Date.now() - RISK_HISTORY_DAYS * DAY).toISOString();
+        const risks = await Promise.all(prs.map(async (pr) => {
+          const files = await cached(`prfiles:${pr.key}:${pr.sourceCommit || ''}`, () => provider.getPullRequestFiles(pr.projectId, pr.repoId, pr.id), 24 * 60 * MIN)
+            .then((f) => (f.error ? null : f.items), () => null);
+          const folders = files ? changedFolders(files.map((f) => f.path), RISK_FOLDERS) : [];
+          const history = await Promise.all(folders.map(async (f) => ({
+            dir: f.dir,
+            commits: await cached(`history:${pr.repoId}:${pr.targetBranch || ''}:${f.dir}`, () => provider.listCommits(pr.projectId, pr.repoId, { branch: pr.targetBranch || undefined, path: f.dir, since, top: 100 }), 30 * MIN).catch(() => []),
+          })));
+          return { key: pr.key, projectId: pr.projectId, repoId: pr.repoId, id: pr.id, ...scorePr({ pr, files, history, historyDays: RISK_HISTORY_DAYS }) };
+        }));
+        return { risks };
+      }, 5 * MIN);
     },
 
     /** Pull requests completed or abandoned in the last `days` days (7, 30 or 90), newest first. */
