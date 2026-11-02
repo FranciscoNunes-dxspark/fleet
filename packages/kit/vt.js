@@ -1,4 +1,4 @@
-// A virtual terminal, for the split view: there two apps share the screen, side by side, and neither
+// A virtual terminal, for Fleet's split view and Mooring's Terminal (the kit's, as both use it): in the split view two apps share the screen, side by side, and neither
 // can write to it as it does alone (each draws as if its pane were the whole screen, from the top left
 // corner), so each pane's app draws into one of these instead and the host copies its rows to their
 // columns (host.js). It keeps what's on the screen as cells, a character and its style each, from
@@ -8,7 +8,7 @@
 // and synchronized updates are what the host reads). What isn't drawing but the terminal's to act on
 // (the bell, the clipboard's OSC 52, notifications, titles) comes back from `write` for the host to
 // pass on; what only makes sense on a whole screen (hyperlinks, colour queries, DCS) is dropped.
-import { stringWidth } from '@fleet/kit/text.js';
+import { stringWidth } from './text.js';
 
 const segmenter = new Intl.Segmenter();
 
