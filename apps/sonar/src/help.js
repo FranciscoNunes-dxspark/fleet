@@ -156,6 +156,7 @@ export const HELP = [
       ['log line', 'With a request or operation id: everything that request did, in Logs'],
       'Anything else is for another app, and Sonar says which.',
       ['paste', 'A command (/…) or a family:v1:… line pasted while a view has the keys goes into the prompt, to run with ↵'],
+      ['/env', 'The project\'s environment (.fleet/project.json): /env says which, /env <name> switches every app; its "sonar" section picks a subscription, an app or slot and its Application Insights; in production every change asks first'],
       ['/family', 'What this folder is to the other apps (its checkout, processes, .http files, databases): ↵ copies a line for one\'s prompt'],
       ['/timeline', 'What the family\'s apps changed (pushes, writes, restarts, swaps, crashes…), newest first: p this project only or all, ↵ an entry whole, y copies it; Sonar adds its own changes and watches going over'],
       ['/wiring', 'What this folder points at (appsettings*.json, .env, Hail\'s env files): addresses, hosts, ports, connection strings, secrets masked'],

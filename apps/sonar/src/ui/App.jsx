@@ -17,7 +17,9 @@ import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { readProject } from '@fleet/kit/environments.js';
+import { environmentPicks, namesSomething } from '../environment.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -71,7 +73,7 @@ const webTarget = (t) => (t && !t.type ? t : null);
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, span, demo, width, loading, mood }) {
+function Header({ data, span, demo, width, loading, mood, env }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Sonar', bold: true },
@@ -80,6 +82,7 @@ function Header({ data, span, demo, width, loading, mood }) {
   if (data) segs.push({ text: '  │  ', color: theme.border }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps${loading ? ' · reading…' : ''}`, color: theme.dim });
   else if (loading) segs.push({ text: '  loading…', color: theme.dim });
   segs.push({ text: '  │  last ', color: theme.dim }, { text: span.label, color: theme.warn, bold: true });
+  if (env) segs.push({ text: '  │  ', color: theme.border }, { text: env.prod ? ` ${env.name} ` : env.name, color: env.prod ? theme.ink : theme.info, bg: env.prod ? theme.del : undefined, bold: true });
   return <Row pointer={false} width={width} segments={segs} />;
 }
 
@@ -137,6 +140,11 @@ const DOUBLE_CLICK_MS = 400;
 export function App({ config: initialConfig, provider, open, load = loadSubscription, checkUpdate, installUpdate, setTitle, mouse, copy, notify, askClaude = ask, cwd = process.cwd(), familyEvery = 30_000 }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
+  // The project's environment as Sonar sees it (its "sonar" section), kept current when it's switched
+  // here (/env) or in another app; a production one turns the frames red and asks before any change.
+  const env = useEnvironment('sonar', cwd);
+  const envRef = useRef(env);
+  envRef.current = env;
   const [config, setConfigState] = useState(initialConfig);
   const [data, setData] = useState(null);
   // Counts the subscriptions read: once when one first shows, once when it's whole. What looks again
@@ -659,6 +667,11 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     setIncident: (inc) => (incidentRef.current = inc),
     incident: () => incidentRef.current,
     cwd: () => cwd,
+    env: () => envRef.current,
+    environmentNames: () => {
+      const p = readProject(cwd);
+      return p && !p.error ? p.names : [];
+    },
     askClaude,
     selectedTarget: () => webTarget(selectedRef.current),
     // Worked out once per subscription read, not on every key typed in the prompt.
@@ -935,6 +948,29 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     };
   }, [streamTarget?.id, liveTick]);
 
+  // A chosen environment that names an app (or its Application Insights) picks it: in its subscription,
+  // focused in Resources and in scope for Logs and Problems. Once per choice, when the subscription is
+  // read; a start from the command line (sonar --app, --url, --insights) keeps what it asked for.
+  const envKey = env ? JSON.stringify(env) : '';
+  const envApplied = useRef(open?.app || open?.url || open?.insights ? envKey : null);
+  useEffect(() => {
+    const d = dataRef.current;
+    if (!d || loading || !env || envApplied.current === envKey) return;
+    if (!namesSomething(env)) return void (envApplied.current = envKey);
+    const picks = environmentPicks(env, d);
+    if (picks.switchTo) {
+      if (busyRef.current) return;
+      note(`Environment ${env.name}: opening its subscription`);
+      return void ctx.openSubscription(picks.switchTo);
+    }
+    envApplied.current = envKey;
+    if (picks.target) setFocusId(picks.target.id);
+    if (picks.target || picks.component) setScope({ target: picks.target, component: picks.component, all: !picks.target });
+    const what = [picks.target && label(picks.target), picks.component?.name].filter(Boolean).join(', ');
+    if (what) note(`Environment ${env.name}${env.prod ? ' (production)' : ''}: ${what}`);
+    if (picks.missing.length) note(`Environment ${env.name} names ${picks.missing.join(', ')}, which ${d.subscription.name} doesn't have.`, 'error');
+  }, [envKey, dataStamp, loading]);
+
   // The watches run every few minutes (the Watch every setting) for as long as Sonar runs.
   const watchCount = (config.watches ?? []).length;
   const watchMs = watchEvery(config) * 60_000;
@@ -1071,13 +1107,13 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     setTitle?.(title);
   }, [title]);
 
-  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets(), problems: ctx.problems(), queries: Object.keys(configRef.current.savedQueries ?? {}) }) : [];
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, targets: ctx.targets(), problems: ctx.problems(), queries: Object.keys(configRef.current.savedQueries ?? {}), environments: /^\/e/.test(prompt.value) ? ctx.environmentNames() : [] }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets(), problems: ctx.problems(), queries: Object.keys(configRef.current.savedQueries ?? {}) });
+    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, targets: ctx.targets(), problems: ctx.problems(), queries: Object.keys(configRef.current.savedQueries ?? {}), environments: /^\/e/.test(value) ? ctx.environmentNames() : [] });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -1324,7 +1360,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} span={TIMESPANS[spanIndex]} demo={provider?.kind === 'demo'} width={W} loading={loading} mood={mood} />
+      <Header data={data} span={TIMESPANS[spanIndex]} demo={provider?.kind === 'demo'} width={W} loading={loading} mood={mood} env={env} />
       <Tabs view={view} entries={entries} width={W} />
       <Box height={mainH} width={W}>
         {main}

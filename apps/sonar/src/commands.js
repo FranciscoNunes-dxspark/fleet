@@ -33,6 +33,7 @@ export const COMMANDS = [
   { name: 'compare-window', args: '[deploy | <time>]', desc: 'Two equal windows before and after the latest deployment (or a time, or the middle of the span): exceptions new, gone or twice as frequent, dependencies slower, operations failing more', run: (ctx, s) => a.compareWindow(ctx, s) },
   { name: 'watch', args: '<name> <threshold> <kql>', desc: 'Pin a query whose first value is a number, run every few minutes against the Application Insights in scope; going over the threshold notifies', run: (ctx, s) => a.watch(ctx, s) },
   { name: 'watches', desc: 'Your watches and what they said last: ↵ runs one in Logs, x removes it', run: (ctx) => a.watches(ctx) },
+  { name: 'env', args: '[name]', desc: "The project's environment (dev, staging, prod… in .fleet/project.json): none says which, a name switches every app; its sonar section picks the app and its Application Insights", complete: 'environments', run: (ctx, s) => a.environment(ctx, s) },
   { name: 'take', args: '<context>', desc: "What another app copied for Sonar: a commit's deployments, problems like an exception, a log line's request", run: (ctx, s) => a.take(ctx, s) },
   { name: 'timeline', desc: "What the family's apps did that changed something (pushes, writes, restarts, swaps…), newest first: p this project only or all, ↵ an entry whole", run: (ctx) => a.timeline(ctx) },
   { name: 'wiring', desc: 'What this folder points at: addresses, hosts, ports and connection strings in appsettings*.json, .env and http-client env files, by file (secrets masked)', run: (ctx) => a.wiring(ctx) },
@@ -56,8 +57,9 @@ export function findCommand(name, user = []) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, data, targets, problems, queries) {
+function completions(kind, data, targets, problems, queries, environments) {
   if (kind === 'queries') return queries ?? [];
+  if (kind === 'environments') return environments ?? [];
   if (kind === 'sql') return Object.keys(sqlByLabel(data?.sqlServers));
   if (kind === 'sqlservers') return (data?.sqlServers ?? []).map((s) => s.name);
   if (kind === 'problems') return (problems ?? []).map((p) => p.problemId);
@@ -79,7 +81,7 @@ function ranked(names, query) {
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away.
  */
-function commandCompletions(value, { data, targets, problems, queries, user = [] } = {}) {
+function commandCompletions(value, { data, targets, problems, queries, environments, user = [] } = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   const all = [...COMMANDS, ...user];
@@ -94,7 +96,7 @@ function commandCompletions(value, { data, targets, problems, queries, user = []
   const cmd = findCommand(value.slice(1, space), user);
   const rest = value.slice(space + 1);
   if (!cmd?.complete) return [];
-  const names = ranked(completions(cmd.complete, data, targets, problems, queries), rest);
+  const names = ranked(completions(cmd.complete, data, targets, problems, queries, environments), rest);
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
 }

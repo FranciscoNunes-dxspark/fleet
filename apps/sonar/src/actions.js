@@ -25,6 +25,7 @@ import { VIEW_MAX, blobUrl, isText, shortName, sizeText } from './blobs.js';
 import { dataExplorerUrl, throughputText } from './cosmos.js';
 import { openUrl } from './open.js';
 import { run } from '@fleet/kit/run.js';
+import { describeEnvironments, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
 import { BULLET, applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
 import { fit, relTime } from '@fleet/kit/text.js';
@@ -45,7 +46,10 @@ export function raw(ctx, command) {
 
 // Changing anything in Azure goes through here: a plain yes or no, or, for production (and for every
 // swap, which changes what production serves), typing the app's name, as the portal asks for deletes.
+// In a project environment marked production, the kit's question comes first, whatever the app is called.
 async function confirmChange(ctx, target, { title, detail, strict = false, yes }) {
+  const prod = productionQuestion(ctx.env?.(), title.replace(/\?$/, ''));
+  if (prod && !(await ctx.confirm({ ...prod, options: YES_NO('Yes, in production') }))) return false;
   if (strict || isProduction(target)) {
     const typed = await ctx.askText({ title: `${title} Type ${target.name} to go ahead.`, detail: detail ?? `${label(target)} looks like production.` });
     if (typed == null) return false;
@@ -67,6 +71,19 @@ export function activity(ctx, r, text, kind = 'change') {
   if (!(r === true || r?.ok)) return r;
   logActivity('sonar', { text: `${text}${ctx.data?.subscription ? ` (${ctx.data.subscription.name})` : ''}`, kind, project: ctx.cwd() });
   return r;
+}
+
+/**
+ * /env [name]: which of the project's environments is chosen (the kit's environments.js), or chooses
+ * one for every app; App picks what its sonar section names once the choice comes round.
+ */
+export function environment(ctx, name) {
+  const n = String(name ?? '').trim();
+  if (!n) return ctx.note(describeEnvironments(ctx.cwd()));
+  const r = setEnvironment(ctx.cwd(), n, { by: 'sonar' });
+  if (!r.ok) return ctx.note(r.error, 'error');
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production): every change asks first that you mean it' : ''}, for every app`, 'ok');
+  return true;
 }
 
 /** An app or slot by label ("contoso-web/staging"), or the one under the cursor in Resources. */

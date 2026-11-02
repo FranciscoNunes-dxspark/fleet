@@ -277,6 +277,39 @@ watching) and why, in a small file in `~/.family` (`FAMILY_HOME` moves it), and 
 says so once, in a line above the activity lines ("Twig says: PR #12 merged"), until `esc`. **Family
 moods** in the settings turns both off.
 
+## Environments
+
+A project names its environments (dev, staging, prod…) once for every app of the family, in
+`.fleet/project.json` in its folder (or a folder above the one Sonar starts in, up to its git checkout's
+root). `/env` says which is chosen, and `/env <name>` chooses another, for every app at once (as `ctrl+b
+e` does in Fleet); a switch in another app reaches Sonar within a second. Sonar reads its own section,
+`"sonar"`, which names things, never a secret:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev": { "sonar": { "subscription": "Contoso Dev", "app": "contoso-web-dev" } },
+    "prod": { "prod": true, "sonar": { "subscription": "Contoso Production", "resourceGroup": "contoso-prod", "app": "contoso-web", "slot": "staging", "component": "contoso-prod-ai" } }
+  }
+}
+```
+
+| In `"sonar"` | |
+| --- | --- |
+| `subscription` | Its name or id: Sonar opens it when it isn't the one on screen |
+| `app` | The web or function app to pick: the cursor goes to it in Resources, and Logs and Problems look at it |
+| `resourceGroup` | Where the app is, when two apps share its name |
+| `slot` | One of its slots instead (`production`, or none, is the app itself) |
+| `component` | The Application Insights to look in (its name or AppId), instead of the one the app's settings point at |
+
+Sonar picks them when the environment is chosen and when it starts (a start from the command line,
+`--app`, `--url` or `--insights`, keeps what it asked for), and says what it couldn't find. The
+environment shows in the top line. In one marked `"prod": true` the frames are red and everything Sonar
+changes (a restart, stop or start, a swap, settings, a function turned off or invoked, a scale, a route,
+a firewall rule, dead letters resubmitted or purged) asks first "prod is production. …?", before
+Sonar's own question (typing the app's name for one that looks like production).
+
 ## Keys
 
 | Key | What it does |
@@ -471,6 +504,7 @@ and Trawl.
 | `/compare-window [deploy\|<time>]` | What changed across the latest deployment of the app in scope, or a time: exceptions, dependencies, failing operations |
 | `/watch <name> <threshold> <kql>` | Pin a query whose first value is a number; going over the threshold says so (above) |
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |
+| `/env [name]` | Which of the project's environments is chosen, or choose another for every app; its `"sonar"` section picks the app (above) |
 | `/take <context>` | What another app copied for Sonar (above) |
 | `/family` | What this folder is to the other apps: a line for each one's prompt, `↵` copies it |
 | `/timeline` | What the family's apps changed, newest first: `p` this project only or all, `↵` an entry whole (above) |
