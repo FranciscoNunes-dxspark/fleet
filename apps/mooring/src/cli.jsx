@@ -9,6 +9,7 @@ import { App } from './ui/App.jsx';
 import { createLocal } from './local.js';
 import { createSession } from './session.js';
 import { demoLocal, demoSession } from './demo.js';
+import { createKeygen } from './keygen.js';
 import { createHostKeys } from './hostkeys.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
@@ -73,6 +74,7 @@ const app = render(
     connectTo={demo ? 'demo' : named}
     persist={!demo}
     hostKeys={demo ? undefined : createHostKeys()}
+    keygen={demo ? undefined : createKeygen()}
     demo={demo}
     copy={(text) => copyToClipboard(text)}
     checkUpdate={updates ? checkForUpdate : undefined}

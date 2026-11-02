@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 const TYPES = ['ED25519', 'ECDSA', 'RSA'];
 
 /** `command` with `args`, never through a shell: { code, stdout, stderr, missing } however it ends. */
-function defaultRun(command, args, { input, timeout = 15000 } = {}) {
+export function defaultRun(command, args, { input, timeout = 15000 } = {}) {
   return new Promise((resolve) => {
     const child = execFile(command, args, { timeout, windowsHide: true, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) =>
       resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: String(stdout), stderr: String(stderr), missing: error?.code === 'ENOENT' }),
