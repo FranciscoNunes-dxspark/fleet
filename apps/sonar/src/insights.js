@@ -36,9 +36,15 @@ export function problemsQuery(role) {
   return `exceptions${roleFilter(role)} | summarize count = count(), users = dcount(user_Id), first = min(timestamp), message = take_any(outerMessage), role = take_any(cloud_RoleName), arg_max(timestamp, operation_Id) by problemId, type | project problemId, type, count, users, first, last = timestamp, message, role, operation = operation_Id | order by count desc | take 100`;
 }
 
+const HOUR_MS = 3600_000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** How long each of trendQuery's buckets is over `timespan`, in ms: a day over a long span, an hour, or five minutes over an hour. */
+export const trendBin = (timespan) => (timespan.hours > 24 * 2 ? DAY_MS : timespan.hours > 1 ? HOUR_MS : 5 * 60_000);
+
 /** How often each problem happened, hour by hour (or day by day over a long span), for the sparklines. */
 export function trendQuery(role, timespan) {
-  const bin = timespan.hours > 24 * 2 ? '1d' : timespan.hours > 1 ? '1h' : '5m';
+  const bin = { [DAY_MS]: '1d', [HOUR_MS]: '1h' }[trendBin(timespan)] ?? '5m';
   return `exceptions${roleFilter(role)} | summarize n = count() by problemId, bucket = bin(timestamp, ${bin}) | order by bucket asc`;
 }
 
@@ -129,13 +135,15 @@ export const starterQuery = (role) => `requests${roleFilter(role)} | order by ti
 /** A table's rows as objects by column name. */
 export const records = (table) => table.rows.map((r) => Object.fromEntries(table.columns.map((c, i) => [c.name, r[i]])));
 
+/** The buckets sparklines draws, oldest first: the newest `width` of the times in `trend`. */
+export const sparkStamps = (trend, { width = 12 } = {}) => [...new Set(trend.map((t) => String(t.bucket)))].sort().slice(-width);
+
 /**
  * Sparkline characters for counts in `buckets` (each { problemId, bucket, n }), one per bucket from
  * the oldest to now, for every problem: { problemId: '▁▂▇' }.
  */
 export function sparklines(trend, { width = 12 } = {}) {
-  const stamps = [...new Set(trend.map((t) => String(t.bucket)))].sort();
-  const keep = stamps.slice(-width);
+  const keep = sparkStamps(trend, { width });
   const by = {};
   for (const t of trend) (by[t.problemId] ??= {})[String(t.bucket)] = Number(t.n);
   const bars = '▁▂▃▄▅▆▇█';

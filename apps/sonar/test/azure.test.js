@@ -348,6 +348,31 @@ test('deployments: listed newest first with Kudu\'s states in words, and one\'s 
   const slot = { ...web, id: `${web.id}/slots/staging`, slot: 'staging' };
   await assert.rejects(azure.deployments(slot), /Listing web\/staging's deployments: not found/);
   assert.equal(deploymentFrom({ name: 'x', properties: { status: 9 } }).status, '9');
+  assert.equal(deploymentFrom({ name: 'web/9b1c7e2d4f60a8c3e1f2b7d9a5c4e3f2a1b0c9d8', properties: { status: 4 } }).commit, '9b1c7e2d4f60a8c3e1f2b7d9a5c4e3f2a1b0c9d8', "a git deployment's name is its commit");
+  assert.equal(list[0].commit, null);
+});
+
+test("changes: the activity log of the app's resource group over the span, its own operations and its slots' swaps", async () => {
+  const web = siteFrom(site('web', 'rg'));
+  const op = (value, id, at, status = 'Succeeded') => ({ operationName: { value }, resourceId: id, eventTimestamp: at, status: { value: status }, caller: 'ana@contoso.com', correlationId: `${value}${at}` });
+  const { fetch, calls } = fakeFetch({
+    'GET /subscriptions/s1/providers/Microsoft.Insights/eventtypes/management/values': (_, call) =>
+      call.url.includes('page=2')
+        ? { value: [op('Microsoft.Web/sites/slots/slotsswap/action', `${web.id}/slots/staging`, '2026-10-21T10:00:00Z')] }
+        : {
+            value: [op('Microsoft.Web/sites/config/write', web.id, '2026-10-20T10:00:00Z'), op('Microsoft.Web/sites/restart/action', web.id, '2026-10-20T11:00:00Z', 'Started')],
+            nextLink: 'https://management.azure.com/subscriptions/s1/providers/Microsoft.Insights/eventtypes/management/values?page=2',
+          },
+  });
+  const azure = createAzure({ fetch, token: async () => 't' });
+  const list = await azure.changes(web, { span: TIMESPANS[2] });
+  assert.deepEqual(list.map((c) => [c.kind, c.who]), [['setting', 'ana@contoso.com'], ['swap', 'ana@contoso.com']], 'what succeeded, from every page');
+  const q = new URL(calls[0].url).searchParams;
+  assert.equal(q.get('api-version'), '2015-04-01');
+  assert.match(q.get('$filter'), /^eventTimestamp ge '\d{4}-\d\d-\d\dT[\d:.]+Z' and resourceGroupName eq 'rg'$/);
+  const since = Date.parse(/'([^']+)'/.exec(q.get('$filter'))[1]);
+  assert.ok(Math.abs(Date.now() - 7 * 24 * 3600_000 - since) < 60_000, 'over the span');
+  assert.equal(calls.length, 2, 'every page');
 });
 
 test('alerts: the fired ones over the span, most severe first; availability tests summarised by the demo', async () => {

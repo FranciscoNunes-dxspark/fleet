@@ -10,6 +10,7 @@ import { clip } from '@fleet/kit/claude-cli.js';
 import { configFile } from './config.js';
 import { cellText, compareQueries, compareWindows, componentFor, isProduction, latestExceptionQuery, looksSecret, operationQuery, records, settingsDiff, requestTraceQuery, sqlDependenciesQuery, windowsAround, workspaceStarter } from './insights.js';
 import { slowSqlContext, slowSqlQuery, slowestSql } from './slowsql.js';
+import { MARKER_KINDS, firstSeenAfter, firstSeenText, markerDetail, markerWords } from './markers.js';
 import { deploymentsBefore, exceptionContext, framesInCheckout, framesOf, gitLogCommand, incidentFile, incidentMarkdown, parseGitLog, requestContext, requestOf, sqlTarget, writeupPrompt } from './incident.js';
 import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, takeLine, trawlLine } from '@fleet/kit/family.js';
 import { familyChoices } from './kin.js';
@@ -290,6 +291,43 @@ export async function deploymentLog(ctx, target, d) {
     if (still()) ctx.closeOverlay();
     ctx.note(e.message, 'error');
   }
+}
+
+/**
+ * alt+m and /changes [app]: what changed an app or slot over the span, the marks on Sonar's charts
+ * (markers.js): its deployments, swaps, settings saved and restarts, and the family's changes for this
+ * project, newest first; ↵ shows one whole (who, when, its commit), y copies its commit or what it was.
+ */
+export async function changes(ctx, which) {
+  const named = typeof which === 'string' ? which.trim() : '';
+  const target = typeof which === 'object' && which ? which : named ? targetNamed(ctx, named) : ((await ctx.scope()).target ?? ctx.selectedTarget());
+  if (!target) return ctx.note(named ? `There's no app or slot called ${named} here.` : 'Pick an app or a slot in Resources first, or name one.', 'error');
+  if (target.type) return ctx.note(`Only web and function apps have deployments and changes here; ${target.name} is a ${typeLabel(target)}.`, 'error');
+  const span = ctx.timespan();
+  const { markers, errors } = await ctx.markersOf(target, span);
+  if (errors.length) ctx.note(`Some of what changed ${label(target)} couldn't be read: ${errors.join('; ')}`, 'error');
+  const list = [...markers].reverse();
+  ctx.showPicker({
+    title: `What changed ${label(target)} in the last ${span.label} (${list.length})`,
+    hint: '↵ the whole of it · y copy its commit (or what it was)',
+    empty: `Nothing changed ${label(target)} in the last ${span.label}: no deployment, swap, settings saved or restart, and nothing from the family for this folder. t changes the span.`,
+    items: list.map((m) => ({
+      m,
+      segments: [
+        { text: `${MARKER_KINDS[m.kind].letter} `, color: MARKER_KINDS[m.kind].color(), bold: true },
+        { text: fit(`${relTime(m.at)} ago`, 9), color: theme.dim },
+        { text: fit(MARKER_KINDS[m.kind].word, 19), color: theme.info },
+        { text: fit(m.who || '—', 22), strong: true },
+        { text: m.commit ? `${m.commit.slice(0, 7)}  ` : '', color: theme.accent },
+        { text: m.title },
+      ],
+    })),
+    onPick: ({ m }) => {
+      const d = markerDetail(m);
+      ctx.showText(d.title, d.text, { lines: d.lines });
+    },
+    keys: { y: ({ m }) => (m.commit ? ctx.copy(m.commit, 'its commit') : ctx.copy(m.title, 'what it was')) },
+  });
 }
 
 /**
@@ -1113,14 +1151,20 @@ export async function gatherIncident(ctx, component, problem) {
   const opts = { timespan: ctx.timespan().iso };
   const ask = (q) => ctx.provider.query(component, q, opts).then(records);
   const target = appOfRole(ctx, problem.role);
-  const [latest, rows, sql, deploys, refs] = await Promise.all([
+  const [latest, rows, sql, deploys, refs, marks] = await Promise.all([
     ask(latestExceptionQuery(problem.problemId)).then((r) => r[0] ?? null),
     ask(operationQuery(problem.operation)),
     ask(sqlDependenciesQuery(problem.problemId)).catch(() => []),
     target ? ctx.provider.deployments(target).then((list) => deploymentsBefore(list, problem.first), (e) => ({ error: firstLine(e.message) })) : Promise.resolve({ within: [], latest: null, error: `no app called ${problem.role} in this subscription` }),
     // Its Key Vault references as they are now: one that doesn't resolve is a likely cause.
     target && ctx.referencesOf ? ctx.referencesOf(target).catch((e) => ({ error: firstLine(e.message) })) : Promise.resolve(null),
+    // What else changed it (swaps, settings, restarts, the family's), and what came shortly before it.
+    target && ctx.markersOf ? ctx.markersOf(target).catch(() => null) : Promise.resolve(null),
   ]);
+  const markers = marks?.markers ?? [];
+  const first = Date.parse(problem.first);
+  const firstSeen = firstSeenAfter(first, markers, { since: Date.now() - ctx.timespan().hours * 3600_000 });
+  const changes = markers.filter((m) => m.kind !== 'deploy' && m.at <= first && first - m.at <= 24 * 3600_000).reverse();
   const frames = framesOf(latest?.details);
   const repo = repoRoot(ctx.cwd());
   let files = [];
@@ -1133,7 +1177,7 @@ export async function gatherIncident(ctx, component, problem) {
       commits = { error: firstLine(e.message) };
     }
   }
-  return { problem, spark: ctx.problemSpark(problem.problemId), span: ctx.timespan(), latest, rows, sql, deploys, refs, frames, request: requestOf(rows), repo, files, commits };
+  return { problem, spark: ctx.problemSpark(problem.problemId), span: ctx.timespan(), latest, rows, sql, deploys, changes, firstSeen, refs, frames, request: requestOf(rows), repo, files, commits };
 }
 
 const DOT = (colour) => ({ text: `${BULLET} `, color: colour });
@@ -1149,7 +1193,7 @@ function incidentLines(inc) {
     [{ text: p.message ?? '', color: theme.del }],
     [],
     [dim('app       '), { text: p.role ?? '—', color: theme.info }],
-    [dim('first     '), { text: time(p.first) }, dim(`  (${relTime(Date.parse(p.first))} ago)`)],
+    [dim('first     '), { text: time(p.first) }, dim(`  (${relTime(Date.parse(p.first))} ago)`), { text: inc.firstSeen ? `  ${firstSeenText(inc.firstSeen)}` : '', color: theme.warn }],
     [dim('last      '), { text: time(p.last) }, dim(`  (${relTime(Date.parse(p.last))} ago)`)],
     [dim('count     '), { text: `${p.count}`, bold: true, color: theme.del }, dim(` in the last ${inc.span.label} · ${p.users} user${p.users === 1 ? '' : 's'}  `), { text: inc.spark ?? '', color: theme.warn }],
     ...head('Deployments in the 24 h before first seen'),
@@ -1157,6 +1201,10 @@ function incidentLines(inc) {
   if (inc.deploys.error) lines.push([dim(`  can't say: ${inc.deploys.error}`)]);
   else if (inc.deploys.within.length) for (const d of inc.deploys.within) lines.push([DOT(DEPLOY_COLOUR[d.status] ?? theme.warn), { text: `${time(d.start)}  `, color: theme.dim }, { text: `${d.author || 'someone'}  `, bold: true }, dim(`${d.deployer}  `), { text: d.message.split('\n')[0] }]);
   else lines.push([dim(`  none${inc.deploys.latest ? `; the latest before it was ${relTime(Date.parse(inc.deploys.latest.start))} earlier: ${inc.deploys.latest.message.split('\n')[0]}` : ''}`)]);
+  if (inc.changes?.length) {
+    lines.push(...head('Other changes in the 24 h before first seen'));
+    for (const m of inc.changes) lines.push([{ text: `  ${MARKER_KINDS[m.kind].letter} `, color: MARKER_KINDS[m.kind].color(), bold: true }, { text: `${time(new Date(m.at).toISOString())}  `, color: theme.dim }, { text: markerWords(m) }]);
+  }
   if (inc.refs?.error || inc.refs?.length) {
     lines.push(...head('Key Vault references (now)'));
     if (inc.refs.error) lines.push([dim(`  can't say: ${inc.refs.error}`)]);

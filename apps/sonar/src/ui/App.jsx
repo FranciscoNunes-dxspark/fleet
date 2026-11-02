@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import * as a from '../actions.js';
 import { label } from '../azure/arm.js';
-import { SCHEMA, TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparklines, starterQuery, trendQuery } from '../insights.js';
+import { SCHEMA, TIMESPANS, availabilityQuery, componentFor, problemsQuery, records, sparkStamps, sparklines, starterQuery, trendBin, trendQuery } from '../insights.js';
+import { markersFrom } from '../markers.js';
 import { loadSubscription } from '../load.js';
 import { costDay } from '../cost.js';
 import { autoscaleFor } from '../scale.js';
@@ -35,7 +36,7 @@ import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { worthNotifying } from '../notify.js';
 import { ask } from '@fleet/kit/claude-cli.js';
-import { APP_NAMES, decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
+import { APP_NAMES, decodeContext, logActivity, pastedLine, readActivity, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, moodKey, reactionLine, reactionTo } from '../kin.js';
 
 const VIEWS = [
@@ -57,9 +58,9 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  resources: '↵ settings · alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · alt+k Locker · f functions · l logs · p problems · alt+l live log · o portal · b browse · on SQL: alt+t Trawl, alt+f firewall',
-  logs: 'e edit the query · ↵ run it / show a row · v chart/grid · s save it · h l columns · y copy the row · alt+y all · alt+h for Hail · alt+f as .http · c which insights',
-  problems: '↵ the latest occurrence · alt+i incident · alt+k before/after · alt+q slowest SQL · w ask Claude why · l in Logs · y copy · alt+y for Splice · c which insights',
+  resources: '↵ settings · alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · alt+m what changed it · alt+k Locker · f functions · l logs · p problems · alt+l live log · o portal · b browse · on SQL: alt+t Trawl, alt+f firewall',
+  logs: 'e edit the query · ↵ run it / show a row · v chart/grid · alt+m what changed it · s save it · h l columns · y copy the row · alt+y all · alt+h for Hail · alt+f as .http · c which insights',
+  problems: '↵ the latest occurrence · alt+i incident · alt+k before/after · alt+m what changed it · alt+q slowest SQL · w ask Claude why · l in Logs · y copy · alt+y for Splice · c which insights',
   alerts: '↵ the alert whole · o its target in the portal · ↵ on a test: its results in Logs · y copy the name · c which insights',
   live: 'j/k scroll back · alt+g follow · p pause · c clear · alt+r reconnect · y copy',
   log: '↵ all its output · y copy it',
@@ -188,6 +189,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const autoscaleCache = useRef(new Map());
   // A Log Analytics workspace's tables and columns, for completion in Logs; kept until r.
   const tablesCache = useRef(new Map());
+  // Each app's and slot's deployments and activity log changes over a span, for the marks; kept until r.
+  const markersCache = useRef(new Map());
   // What the list shows beside each app or slot, by id: { refs, routing } (its Key Vault references, an app's ramp-up rules).
   const [extras, setExtras] = useState({});
   // What each watch said last ({ value, above, error, at }), by name; only while Sonar runs.
@@ -318,6 +321,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     planCache.current = new Map();
     autoscaleCache.current = new Map();
     tablesCache.current = new Map();
+    markersCache.current = new Map();
     // A subscription not on screen yet shows as soon as its apps are known, slots and databases
     // filling in as they come; reading the one on screen again keeps it until the new one is whole.
     const n = ++loads.current;
@@ -481,6 +485,30 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     return cache.get(key);
   };
 
+  /**
+   * What changed an app or slot over the span, as marks (markers.js): its deployments and the activity
+   * log's changes (read once per span and kept until r), with the family's activity for the folder
+   * Sonar started in (read each time: it's a local file). { markers, errors }, the errors those that
+   * couldn't be read, in words; the marks there are still come.
+   */
+  const markersOf = async (target, span = TIMESPANS[spanRef.current]) => {
+    const key = `${target.id}|${span.iso}`;
+    const cache = markersCache.current;
+    if (!cache.has(key)) {
+      const said = (r) => (r.status === 'rejected' ? [firstLine(r.reason?.message)] : []);
+      const p = Promise.allSettled([provider.deployments(target), provider.changes ? provider.changes(target, { span }) : Promise.resolve([])]).then(([d, c]) => ({
+        deployments: d.status === 'fulfilled' ? d.value : [],
+        changes: c.status === 'fulfilled' ? c.value : [],
+        errors: [...said(d), ...said(c)],
+      }));
+      cache.set(key, p);
+    }
+    const { deployments, changes, errors } = await cache.get(key);
+    const from = Date.now() - span.hours * 3600_000;
+    const activity = readActivity({ project: cwd, since: from, limit: 500 });
+    return { markers: markersFrom({ deployments, changes, activity, from }), errors };
+  };
+
   /** A SQL server's firewall rules, kept until r or a rule is added. */
   const firewallOf = (server) => {
     const cache = firewallCache.current;
@@ -542,7 +570,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     if (!component && target) component = componentFor(await settingsOf(target).catch(() => ({})), d.components);
     if (!component && d.components.length === 1) component = d.components[0];
     const why = target ? `${label(target)} reports to no Application Insights that Sonar can see: c picks one` : 'c picks an Application Insights to look in';
-    return { component, role: target?.name ?? null, why: component ? '' : why };
+    return { component, role: target?.name ?? null, target: target ?? null, why: component ? '' : why };
   };
 
   // One command at a time, with the spinner, esc to cancel, and a line in the activity log.
@@ -642,6 +670,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     },
     settingsOf,
     metricsOf,
+    markersOf,
     firewallOf,
     adminOf,
     costsOf,
@@ -963,7 +992,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       try {
         const opts = { timespan: span.iso, signal: controller.signal };
         const [list, trend] = await Promise.all([provider.query(scope.component, problemsQuery(scope.role), opts), provider.query(scope.component, trendQuery(scope.role, span), opts)]);
-        if (!controller.signal.aborted) setProblems({ rows: records(list), spark: sparklines(records(trend)), span });
+        // The buckets the sparklines draw, so the marks of what changed the app go under the right ones.
+        if (!controller.signal.aborted) setProblems({ rows: records(list), spark: sparklines(records(trend)), stamps: sparkStamps(records(trend)), step: trendBin(span), span });
       } catch (e) {
         if (!controller.signal.aborted) setProblems({ rows: [], error: firstLine(e.message), span });
       }
