@@ -58,4 +58,6 @@ export default {
   '{n} open pull request into {branch}': '{n} pull request aberto para {branch}',
   '{n} open pull requests into {branch}': '{n} pull requests abertos para {branch}',
   'open {age}': 'aberto há {age}',
+  "The development branch {branch} set in Settings doesn't exist, so what's waiting can't be counted.": "A branch de desenvolvimento {branch} definida nas Definições não existe, por isso não é possível contar o que está à espera.",
+  "On {dev}, not yet on {branch}": "Em {dev}, ainda não em {branch}",
 };

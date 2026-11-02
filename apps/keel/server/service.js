@@ -413,15 +413,17 @@ export function createService({
       if (same) {
         same.name = `${same.name}, ${m.name}`;
         same.compareBranch ||= link.branch || null;
+        same.devBranch ||= link.devBranch || null;
         continue;
       }
       // `branch` is where a pipeline's deploy runs come from (learned from its runs, see pipelines.js, or
-      // the Production branch below); `compareBranch` is the Production branch set in Settings.
+      // the Production branch below); `compareBranch` is the Production branch set in Settings, and
+      // `devBranch` the Development branch: with it, waiting to ship is what it has that production's hasn't.
       if (link.type === 'release') {
-        add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, compareBranch: link.branch || null, name: m.name });
+        add({ key: targetKeyOf(link), type: 'release', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, stage: link.stage || null, compareBranch: link.branch || null, devBranch: link.devBranch || null, name: m.name });
       } else {
         const row = pipes.find((x) => x.projectId === link.projectId && x.definition.id === link.definitionId);
-        add({ key: targetKeyOf(link), type: 'pipeline', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, branch: row?.branch || null, compareBranch: link.branch || null, name: m.name });
+        add({ key: targetKeyOf(link), type: 'pipeline', projectId: link.projectId, projectName: projectName(link.projectId), definitionId: link.definitionId, branch: row?.branch || null, repoId: row?.repoId || null, compareBranch: link.branch || null, devBranch: link.devBranch || null, name: m.name });
       }
     }
     for (const d of rels) {
@@ -510,6 +512,34 @@ export function createService({
       if (tip !== undefined) return { branch: fallback, gone: first, tip };
     }
     return { branch: null, gone: first === repo.defaultBranch ? null : first, missing: repo.defaultBranch, tip: null };
+  }
+
+  /**
+   * Waiting to ship for an environment with a Development branch: the commits on it that the
+   * Production branch (the one set, else the repo's default) hasn't got. Being on the Production
+   * branch is being live, so the deploys only say when production last changed. The repo is the
+   * last deploy's, else the deploying pipeline's own.
+   */
+  async function betweenBranches(t, last, history, repoList, openPrs) {
+    const lastDeploy = last ? { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl } : null;
+    const repoId = last?.repoId || t.repoId;
+    const repo = repoList.find((r) => r.id === repoId);
+    if (!repo) return repoId ? { unknown: true, untracked: true, lastDeploy } : { unknown: true, lastDeploy, why: await whyUnknown(t, history) };
+    const base = { devBranch: t.devBranch, repo: { id: repo.id, name: repo.name, projectId: repo.projectId }, lastDeploy, upcoming: comingNext(openPrs, repo.id, t.devBranch) };
+    try {
+      const prod = await branchTip(repo, t.compareBranch || repo.defaultBranch);
+      const where = { ...base, branch: prod.branch, branchSet: !!t.compareBranch, branchGone: prod.gone };
+      if (prod.missing) return { ...where, missingBranch: prod.missing, waiting: 0, oldestAt: null };
+      const dev = await branchTip(repo, t.devBranch);
+      // No falling back to the default branch here: that would compare production with itself.
+      if (dev.missing || dev.gone || !dev.tip) return { ...where, missingBranch: t.devBranch, waiting: 0, oldestAt: null };
+      const devBranch = dev.branch;
+      const raw = !prod.tip || prod.tip.id === dev.tip.id ? [] : await commitsBetween(repo.projectId, repo.id, prod.tip.id, dev.tip.id);
+      const changes = await describeChanges(repo, raw);
+      return { ...where, devBranch, upcoming: comingNext(openPrs, repo.id, devBranch), ...changes, ...waitingChanges(changes), truncated: raw.length >= 300 };
+    } catch (err) {
+      return { ...base, error: err.message };
+    }
   }
 
   /**
@@ -782,7 +812,9 @@ export function createService({
     /**
      * What's waiting to ship: for each production environment, the commits on
      * its branch (the repo's default, or the pipeline's own) since the last
-     * successful deploy, with their pull requests and work items.
+     * successful deploy, with their pull requests and work items. With a
+     * Development branch set, the commits on it that the Production branch
+     * hasn't got instead (betweenBranches).
      */
     async undeployed() {
       // Open pull requests are "coming next" on the card of the branch they go into.
@@ -811,6 +843,7 @@ export function createService({
           deploy: deployUnderWay(t, { releases: rels, builds, approvals: appr }, { since: last?.at }),
           lastFailed: failed ? { id: failed.id, label: failed.label, at: failed.at, status: failed.status, webUrl: failed.webUrl } : null,
         };
+        if (t.devBranch) return { ...head, ...(await betweenBranches(t, last, history, repoList, openPrs)) };
         if (!last) return { ...head, unknown: true, lastDeploy: null, why: await whyUnknown(t, history) };
         const repo = repoList.find((r) => r.id === last.repoId);
         const lastDeploy = { id: last.id, label: last.label, at: last.at, by: last.by, webUrl: last.webUrl };

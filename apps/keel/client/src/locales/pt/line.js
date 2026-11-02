@@ -145,4 +145,5 @@ export default {
   'Ascending': 'Ascendente',
   'Descending': 'Descendente',
   'All pages': 'Todas as páginas',
+  "In {target}: on {branch}": "Em {target}: está em {branch}",
 };
