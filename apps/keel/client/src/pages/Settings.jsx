@@ -40,6 +40,9 @@ const MERGE = [
 // Older settings stored a single team as teamId/teamName.
 const teamsOf = (cfg = {}) => (Array.isArray(cfg.teams) ? cfg.teams : cfg.teamId ? [{ id: cfg.teamId, name: cfg.teamName }] : []);
 
+// The least severe advisory worth an inbox entry (server/domain/advisories.js MIN_SEVERITIES).
+const ADVISORY_SEVERITIES = [['critical', 'Critical only'], ['high', 'High and critical'], ['medium', 'Medium and up'], ['low', 'Every severity']];
+
 export default function Settings() {
   const { data, error, reload } = useApi('/settings');
   const projectLabel = useProjectLabel();
@@ -260,6 +263,18 @@ export default function Settings() {
       </Section>
 
 
+      <Section id="advisories" title={t('Security advisories')}>
+        <p className="muted small">{t("Once a day the server reads the npm and NuGet lock files on each tracked repository's default branch and asks osv.dev about their packages (only names and versions leave the server). New advisories go to your inbox and notifications.")}</p>
+        <div className="form-row">
+          <label className="check"><input type="checkbox" checked={draft.advisories?.enabled !== false} onChange={(e) => setDraft((d) => ({ ...d, advisories: { ...d.advisories, enabled: e.target.checked } }))} /> {t('Watch my repositories for new advisories')}</label>
+          <label>{t('Tell me about advisories from')}
+            <select className="input" value={draft.advisories?.minSeverity || 'high'} disabled={draft.advisories?.enabled === false} onChange={(e) => setDraft((d) => ({ ...d, advisories: { ...d.advisories, minSeverity: e.target.value } }))}>
+              {ADVISORY_SEVERITIES.map(([v, l]) => <option key={v} value={v}>{t(l)}</option>)}
+            </select>
+          </label>
+        </div>
+      </Section>
+
       <OrgSettings />
 
       <AccountSettings />
@@ -280,7 +295,7 @@ export default function Settings() {
       {/* Last on the page, so it stays pinned to the bottom wherever you are. */}
       {dirty && (
         <div className="save-bar" role="region" aria-label={t('Unsaved changes')}>
-          <span>{t('Unsaved changes to projects, flags or auto-complete.')}</span>
+          <span>{t('Unsaved changes to projects, flags, auto-complete or advisories.')}</span>
           <button type="button" className="btn btn-small btn-ghost" onClick={() => setDraft(structuredClone(data.settings))} disabled={saving}>{t('Discard')}</button>
           <button type="button" className="btn btn-small btn-primary" onClick={save} disabled={saving}>{saving ? t('Saving…') : t('Save settings')}</button>
         </div>

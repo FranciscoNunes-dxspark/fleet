@@ -18,6 +18,7 @@ const KINDS = [
   { id: 'work', get label() { return t('Work items'); } },
   { id: 'pipeline', get label() { return t('Pipelines'); } },
   { id: 'team', get label() { return t('Team load'); } },
+  { id: 'advisory', get label() { return t('Security advisories'); } },
 ];
 
 const SEVERITY = {
@@ -28,7 +29,7 @@ const SEVERITY = {
 
 // Keel writes the titles of these kinds; the others (pull requests, work items) carry the
 // Azure DevOps title, shown as is so templates can't rewrite e.g. a PR titled "Site is down".
-const KEEL_TITLES = ['production', 'approval', 'pipeline', 'team'];
+const KEEL_TITLES = ['production', 'approval', 'pipeline', 'team', 'advisory'];
 export const itemTitle = (i) => (KEEL_TITLES.includes(i.kind) ? tx(i.title) : i.title);
 /** The name of an inbox entry's kind (Production, Your reviews…), for a label beside it. */
 export const kindLabel = (kind) => KINDS.find((k) => k.id === kind)?.label || '';
@@ -41,6 +42,7 @@ export function openInboxItem(item, openDrawer, navigate) {
   else if (target.type === 'release') navigate('/pipelines?tab=releases');
   else if (target.type === 'production') navigate('/production');
   else if (target.type === 'person') navigate('/team');
+  else if (target.type === 'advisory') navigate('/insights?tab=advisories');
 }
 const inPanel = (item) => item.target.type === 'pr' || item.target.type === 'workitem';
 

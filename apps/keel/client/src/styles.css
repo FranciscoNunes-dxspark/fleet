@@ -1470,3 +1470,10 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .line-limits-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 18px; }
 .line-limits-grid label { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
 .line-limits-grid .input { width: 80px; }
+
+/* Insights → Security advisories (pages/Advisories.jsx): a block per repository. */
+.advisories { display: grid; gap: 16px; margin-top: 12px; }
+.advisory-repo { display: grid; gap: 8px; }
+.advisory-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.advisory-when { margin-left: auto; }
+@media (max-width: 900px) { .advisory-when { margin-left: 0; flex-basis: 100%; } }

@@ -20,8 +20,9 @@ import views from './pt/views.js';
 import line from './pt/line.js';
 import dora from './pt/dora.js';
 import risk from './pt/risk.js';
+import advisories from './pt/advisories.js';
 
-export default { ...server, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow, ...palette, ...channels, ...assist, ...tests, ...notes, ...views, ...line, ...dora, ...risk };
+export default { ...server, ...advisories, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow, ...palette, ...channels, ...assist, ...tests, ...notes, ...views, ...line, ...dora, ...risk };
 
 // Text the server sends: its templates are the only ones tx() matches against.
 export { server as serverText };
