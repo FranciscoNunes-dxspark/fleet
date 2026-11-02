@@ -497,10 +497,12 @@ function waitingLines(t, now) {
   const lines = ['', [{ text: 'Waiting to ship', bold: true }]];
   if (t.deploy) lines.push([{ text: `  ● ${DEPLOY_STATE[t.deploy.state] ?? 'Deploying'}: ${t.deploy.label}${t.deploy.startedAt ? `, since ${ago(t.deploy.startedAt, now)} ago` : ''}`, color: theme.info }]);
   if (t.lastFailed) lines.push([{ text: `  ✗ Last deploy failed (${t.lastFailed.label ?? ''}); production is still on ${t.lastDeploy?.label ?? 'an earlier one'}`, color: theme.del }]);
-  if (!t.waiting) lines.push([{ text: `  Nothing: ${t.branch ?? 'its branch'} is all deployed${t.lastDeploy ? ` (${t.lastDeploy.label}, ${ago(t.lastDeploy.at, now)} ago)` : ''}.`, color: theme.ok }]);
+  // With a Development branch, waiting is what it has and the production branch hasn't.
+  if (!t.waiting && t.devBranch) lines.push([{ text: `  Nothing: ${t.devBranch} is all on ${t.branch ?? 'the production branch'}.`, color: theme.ok }]);
+  else if (!t.waiting) lines.push([{ text: `  Nothing: ${t.branch ?? 'its branch'} is all deployed${t.lastDeploy ? ` (${t.lastDeploy.label}, ${ago(t.lastDeploy.at, now)} ago)` : ''}.`, color: theme.ok }]);
   else {
     const old = t.oldestAt && now - Date.parse(t.oldestAt) > 7 * 86_400_000;
-    lines.push([{ text: `  ${plural(t.waiting, 'change')} on ${t.branch ?? 'its branch'}`, bold: true }, { text: t.oldestAt ? `  oldest merged ${ago(t.oldestAt, now)} ago` : '', color: old ? theme.warn : theme.dim }]);
+    lines.push([{ text: `  ${plural(t.waiting, 'change')} on ${t.devBranch ? `${t.devBranch}, not yet on ${t.branch}` : t.branch ?? 'its branch'}`, bold: true }, { text: t.oldestAt ? `  oldest merged ${ago(t.oldestAt, now)} ago` : '', color: old ? theme.warn : theme.dim }]);
     for (const p of (t.pullRequests ?? []).slice(0, 5)) lines.push([{ text: `  !${p.id} `, color: theme.dim }, { text: p.title }]);
     for (const c of (t.directCommits ?? []).slice(0, Math.max(0, 5 - (t.pullRequests?.length ?? 0)))) lines.push([{ text: `  ${c.id.slice(0, 7)} `, color: theme.dim }, { text: c.subject ?? c.message }]);
     const more = t.waiting - Math.min(5, t.waiting);
@@ -541,7 +543,7 @@ export function monitorFullText(m, target, now = Date.now()) {
   if (m.ai?.topNotFound?.length) out.push('', 'Missing pages asked for (404s, not counted as failures)', ...m.ai.topNotFound.map((f) => `  ${f.count}× ${f.name}`));
   if (m.markers?.length) out.push('', 'Deploys', ...m.markers.map((d) => `  ${d.label}  ${d.status} · ${ago(d.at, now)} ago${d.by ? ` · ${d.by}` : ''}`));
   if (target) {
-    out.push('', `Waiting to ship to ${target.name} (${target.branch ?? 'its branch'})`);
+    out.push('', `Waiting to ship to ${target.name} (${target.devBranch ? `${target.devBranch} → ${target.branch}` : target.branch ?? 'its branch'})`);
     if (target.deploy) out.push(`  ${DEPLOY_STATE[target.deploy.state] ?? 'Deploying'}: ${target.deploy.label}`);
     if (!target.waiting) out.push('  Nothing: all deployed.');
     for (const p of target.pullRequests ?? []) {

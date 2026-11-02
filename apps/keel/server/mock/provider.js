@@ -626,7 +626,20 @@ const commitLists = new Map(); // `${repoId}|${branch}` -> commits, newest first
 const commitsById = new Map();
 const hex = (r, n) => Array.from({ length: n }, () => Math.floor(r() * 16).toString(16)).join('');
 
+// develop is ahead of the default branch: its own few commits since the default branch's newest,
+// then the default branch's history, as when work lands on develop first and later moves to main.
 function demoCommits(repo, branch = repo.defaultBranch) {
+  if (branch !== 'develop' || branch === repo.defaultBranch) return branchCommits(repo, branch);
+  const key = `${repo.id}|develop+`;
+  if (commitLists.has(key)) return commitLists.get(key);
+  const main = branchCommits(repo, repo.defaultBranch);
+  const newest = Date.parse(main[0]?.author.date || 0);
+  const list = [...branchCommits(repo, 'develop').filter((c) => Date.parse(c.author.date) > newest - 2 * D).slice(0, 4), ...main];
+  commitLists.set(key, list);
+  return list;
+}
+
+function branchCommits(repo, branch) {
   const key = `${repo.id}|${branch}`;
   if (commitLists.has(key)) return commitLists.get(key);
   const local = rng([...key].reduce((s, c) => (s * 31 + c.charCodeAt(0)) | 0, 7));
@@ -1021,7 +1034,8 @@ export function createMockProvider() {
     listCommitsBetween(projectId, repoId, from, to, { top = 300 } = {}) {
       const repo = ALL_REPOS.find((r) => r.id === repoId);
       if (!repo) throw notFound('Repository');
-      const list = demoCommits(repo);
+      // The default branch's history, or develop's when the newer end is only there.
+      const list = demoCommits(repo).some((c) => c.id === to) ? demoCommits(repo) : demoCommits(repo, 'develop');
       const end = list.findIndex((c) => c.id === to);
       if (end < 0) throw notFound(`Commit ${to}`);
       const start = list.findIndex((c) => c.id === from);

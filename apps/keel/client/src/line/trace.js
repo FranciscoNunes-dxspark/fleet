@@ -6,7 +6,8 @@
 //
 // Without merge commits, "built" is the first run of a pipeline on the repo's target branch that
 // finished after the merge, and "deployed" means merged before the target's latest deploy and not
-// among the changes it's still waiting to ship: close, and exact for the waiting ones.
+// among the changes it's still waiting to ship: close, and exact for the waiting ones. A target with
+// a Development branch is exact: what it has and the production branch hasn't is waiting, the rest live.
 
 const time = (iso) => (iso ? Date.parse(iso) : NaN);
 
@@ -65,14 +66,18 @@ export function traceChange({ workItem = null, prs = [], pipelines = [], targets
       steps.push({ stage: 'deploying', code: 'not-built', state: 'todo', pr: brief(pr) });
     }
 
-    // Each production target that deploys this repo's branch.
-    const mine = targets.filter((t) => t.repo?.id === pr.repoId && sameBranch(t.branch, pr.targetBranch));
+    // Each production target that deploys this repo's branch, or whose Development branch it merged into.
+    const mine = targets.filter((t) => t.repo?.id === pr.repoId && (sameBranch(t.branch, pr.targetBranch) || (t.devBranch && sameBranch(t.devBranch, pr.targetBranch))));
     if (!mine.length) steps.push({ stage: 'deploying', code: 'no-target', state: 'todo', repo: pr.repoName });
     for (const t of mine) {
       const waiting = (t.commits || []).some((c) => c.prId === pr.id) || (t.pullRequests || []).some((p) => p.id === pr.id);
       const monitor = monitors.find((m) => m.targetKey === t.key);
       if (waiting) {
         steps.push({ stage: 'merged', code: t.deploy ? (t.deploy.state === 'approval' ? 'awaiting-approval' : 'deploying') : 'waiting', state: 'now', target: t.name, at: pr.closedAt, label: t.deploy?.label });
+      } else if (t.devBranch && !t.missingBranch && !t.error) {
+        // On the production branch already (it isn't among what the Development branch has waiting): live.
+        steps.push({ stage: 'deploying', code: 'on-production-branch', state: 'done', target: t.name, branch: t.branch });
+        if (monitor) steps.push({ stage: 'live', code: `monitor-${monitor.state || 'unknown'}`, state: monitor.state === 'down' || monitor.state === 'degraded' ? 'bad' : 'done', name: monitor.name });
       } else if (t.lastDeploy && time(t.lastDeploy.at) >= time(pr.closedAt)) {
         steps.push({ stage: 'deploying', code: 'deployed', state: 'done', target: t.name, at: t.lastDeploy.at, label: t.lastDeploy.label });
         if (monitor) steps.push({ stage: 'live', code: `monitor-${monitor.state || 'unknown'}`, state: monitor.state === 'down' || monitor.state === 'degraded' ? 'bad' : 'done', name: monitor.name });

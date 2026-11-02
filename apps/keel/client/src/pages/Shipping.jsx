@@ -58,7 +58,7 @@ function ComingNext({ env }) {
     <details className="ship-next" open={n <= 5}>
       <summary className="small">
         {t('Coming next')}
-        <span className="muted"> · {t(n === 1 ? '{n} open pull request into {branch}' : '{n} open pull requests into {branch}', { n, branch: env.branch })}</span>
+        <span className="muted"> · {t(n === 1 ? '{n} open pull request into {branch}' : '{n} open pull requests into {branch}', { n, branch: env.devBranch || env.branch })}</span>
       </summary>
       <ul className="deploy-list">
         {env.upcoming.map((p) => {
@@ -120,7 +120,8 @@ function Environment({ env }) {
         <div>
           <h2>{env.name}</h2>
           <div className="small muted">
-            {[projectLabel(env.projectName, env.org), env.repo?.name, env.branch].filter(Boolean).join(' · ')}
+            {/* With a Development branch: what's on it and not on the Production branch, which is what's live. */}
+            {[projectLabel(env.projectName, env.org), env.repo?.name, env.devBranch && env.branch ? `${env.devBranch} → ${env.branch}` : env.branch].filter(Boolean).join(' · ')}
             {env.branchSet && env.branch && !env.branchGone && <span title={t('Set in Settings → Production monitors')}> {t('(set)')}</span>}
           </div>
         </div>
@@ -161,7 +162,9 @@ function Environment({ env }) {
       )}
       {env.missingBranch && (
         <p className="callout">
-          {env.branchGone
+          {env.devBranch && env.missingBranch === env.devBranch
+            ? t("The development branch {branch} set in Settings doesn't exist, so what's waiting can't be counted.", { branch: env.missingBranch })
+            : env.branchGone
             ? t("Production was built from {gone}, and the repo's default branch {branch} doesn't exist either, so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.", { gone: env.branchGone, branch: env.missingBranch })
             : t("The repo's default branch {branch} doesn't exist (renamed or deleted), so what's waiting can't be counted. Check the default branch in the repository's settings in Azure DevOps.", { branch: env.missingBranch })}
         </p>
@@ -186,13 +189,13 @@ function Environment({ env }) {
         </p>
       )}
 
-      {last && !env.error && !env.diverged && (
+      {(last || env.devBranch) && !env.error && !env.diverged && !env.missingBranch && (
         <dl className="fact-row monitor-facts">
-          <div className="fact">
+          {last && <div className="fact">
             <dt>{t('Last deploy')}</dt>
             <dd><button type="button" className="link-btn" onClick={openDeploy} title={t('What this deploy shipped')}>{last.label}</button></dd>
             <dd className="muted small" title={dateTime(last.at)}>{t('{age} ago', { age: age(last.at) })}{last.by ? ` · ${last.by}` : ''}</dd>
-          </div>
+          </div>}
           {!env.unknown && <>
             <div className="fact">
               <dt>{t('Waiting')}</dt>
@@ -215,7 +218,7 @@ function Environment({ env }) {
 
       {waiting > 0 && (
         <details className="ship-changes" open={waiting <= 12}>
-          <summary className="small">{t('What goes out with the next deploy')}{env.authors?.length ? <span className="muted"> · {env.authors.join(', ')}</span> : null}</summary>
+          <summary className="small">{env.devBranch ? t('On {dev}, not yet on {branch}', { dev: env.devBranch, branch: env.branch }) : t('What goes out with the next deploy')}{env.authors?.length ? <span className="muted"> · {env.authors.join(', ')}</span> : null}</summary>
           <ChangeSections changes={env} org={env.org} />
         </details>
       )}

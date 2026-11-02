@@ -157,7 +157,7 @@ async function aiSnapshot(appId, apiKey) {
 function demoMonitors() {
   const id = () => crypto.randomUUID();
   return [
-    { id: id(), name: 'Storefront (production)', url: 'https://shop.contoso-demo.com/health', appInsightsAppId: 'demo-app-1', apiKey: null, link: { type: 'release', projectId: 'p-commerce', definitionId: 1, stage: 'Production' }, latencyWarnMs: 1500, demo: 'healthy' },
+    { id: id(), name: 'Storefront (production)', url: 'https://shop.contoso-demo.com/health', appInsightsAppId: 'demo-app-1', apiKey: null, link: { type: 'release', projectId: 'p-commerce', definitionId: 1, stage: 'Production', devBranch: 'develop' }, latencyWarnMs: 1500, demo: 'healthy' },
     { id: id(), name: 'Identity API (production)', url: 'https://id.contoso-demo.com/health', appInsightsAppId: 'demo-app-2', apiKey: null, link: { type: 'release', projectId: 'p-platform', definitionId: 2, stage: 'Production' }, latencyWarnMs: 800, demo: 'errors' },
     { id: id(), name: 'Storefront canary', url: 'https://canary.shop.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: { type: 'pipeline', projectId: 'p-commerce', definitionId: 100 }, latencyWarnMs: 1500, demo: 'down' },
     { id: id(), name: 'Mobile backend (production)', url: 'https://mobile-api.contoso-demo.com/health', appInsightsAppId: '', apiKey: null, link: null, projectId: 'p-mobile', latencyWarnMs: 1500, demo: 'down' },
@@ -476,16 +476,23 @@ export function createMonitoring({ dataDir = config.dataDir, mock = config.mock 
         if (totalsKey && !url) throw Object.assign(new Error(`"${name}": platform totals need the site's URL`), { status: 400 });
         const totalsEvery = TOTALS_EVERY_HOURS.includes(Number(raw.totalsEvery)) ? Number(raw.totalsEvery) : 24;
         const totalsSeason = TOTALS_SEASONS.includes(raw.totalsSeason) ? raw.totalsSeason : 'current';
-        // The branch production deploys from, when Keel's guess is wrong (Waiting to ship compares it with what's live).
-        const branch = typeof raw.link?.branch === 'string' ? raw.link.branch.trim().replace(/^refs\/heads\//, '') : '';
-        if (branch && (branch.length > 250 || /[\s~^:?*[\\]|\.\.|@\{|^\/|\/$/.test(branch))) {
-          throw Object.assign(new Error(`"${name}": "${branch}" isn't a valid branch name`), { status: 400 });
-        }
+        // The branch production deploys from, when Keel's guess is wrong (Waiting to ship compares it with what's live),
+        // and the development branch: set, what's on it and not yet on the production branch is waiting to ship.
+        const branchOf = (value) => {
+          const b = typeof value === 'string' ? value.trim().replace(/^refs\/heads\//, '') : '';
+          if (b && (b.length > 250 || /[\s~^:?*[\\]|\.\.|@\{|^\/|\/$/.test(b))) {
+            throw Object.assign(new Error(`"${name}": "${b}" isn't a valid branch name`), { status: 400 });
+          }
+          return b;
+        };
+        const branch = branchOf(raw.link?.branch);
+        const devBranch = branchOf(raw.link?.devBranch);
         const link = raw.link && ['release', 'pipeline'].includes(raw.link.type) && raw.link.projectId && raw.link.definitionId
           ? {
             type: raw.link.type, projectId: String(raw.link.projectId), definitionId: Number(raw.link.definitionId),
             ...(raw.link.type === 'release' ? { stage: String(raw.link.stage || '') } : {}),
             ...(branch ? { branch } : {}),
+            ...(devBranch ? { devBranch } : {}),
           }
           : null;
         // The project it belongs to: the one that deploys it, else the one picked; none means everyone's.

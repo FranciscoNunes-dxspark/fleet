@@ -449,3 +449,32 @@ test('unknown says why: no deploys, none succeeded, no commit, or successful run
     listBuilds: async () => [build(1, 'develop'), build(2, 'develop')],
   }), { reason: 'otherBranch', branch: 'develop', other: 'main', label: 'B9' });
 });
+
+test('waiting to ship with a Development branch: what develop has and the production branch has not', async () => {
+  const tips = { main: commit('m1', 10, 'On main'), develop: commit('d2', 1, 'Merged PR 9: Coupons') };
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'main' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    // The last deploy ran an old commit; what's live is the production branch, so it's not compared with.
+    listDeployments: async () => [{ id: 3, label: '3', at: at(40), status: 'succeeded', repoId: 'r1', commit: 'old' }],
+    listCommits: async (projectId, repoId, { branch }) => [tips[branch]],
+    listCommitsBetween: async (projectId, repoId, from, to) => {
+      assert.deepEqual([from, to], ['m1', 'd2'], 'from the production branch to develop');
+      return [tips.develop, commit('d1', 3, 'Coupon rules')];
+    },
+    getPullRequestCommitIds: async () => ['d1'],
+    getWorkItems: async () => [],
+  };
+  const monitoring = { status: () => [{ id: 'm1', name: 'Shop web', link: { type: 'pipeline', projectId: 'p1', definitionId: 5, devBranch: 'develop' } }] };
+  const service = createService({ provider, settings: memoryStore(), monitoring });
+  const { targets } = await service.undeployed();
+  const env = targets[0];
+  assert.equal(env.devBranch, 'develop');
+  assert.equal(env.branch, 'main', "no Production branch set: the repo's default");
+  assert.deepEqual(env.commits.map((c) => c.id), ['d2', 'd1']);
+  assert.deepEqual(env.pullRequests.map((p) => p.id), [9]);
+  assert.equal(env.waiting, 1);
+});

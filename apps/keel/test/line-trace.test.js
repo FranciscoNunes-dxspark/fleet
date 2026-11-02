@@ -41,3 +41,16 @@ test("when a pipeline's listed runs don't reach back to the merge, it only says 
   assert.ok(steps.some((s) => s.code === 'built-since' && s.pipeline === 'shop-CI'));
   assert.ok(!steps.some((s) => s.code === 'built'));
 });
+
+test('with a Development branch, a pull request into it is waiting while the production branch lacks it, then live', () => {
+  const dev = (commits) => target({ devBranch: 'develop', branch: 'main', commits, lastDeploy: { label: 'R-1', at: '2026-09-01T00:00:00Z' } });
+  const into = pr({ targetBranch: 'refs/heads/develop' });
+  const waiting = traceChange({ prs: [into], targets: [dev([{ prId: 7 }])] });
+  assert.ok(codes(waiting).includes('merged:waiting:now'));
+  assert.equal(whereNow(waiting), 'merged');
+  // Off the waiting list means on main: live, whatever the last deploy's date says.
+  const live = traceChange({ prs: [into], targets: [dev([])], monitors: [{ targetKey: 't', name: 'Shop', state: 'up' }] });
+  assert.ok(codes(live).includes('deploying:on-production-branch:done'));
+  assert.ok(codes(live).includes('live:monitor-up:done'));
+  assert.equal(whereNow(live), 'live');
+});

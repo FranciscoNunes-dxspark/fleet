@@ -31,6 +31,7 @@ function stepText(s) {
     case 'awaiting-approval': return t('{label} to {target} is waiting for approval', { label: s.label, target: s.target });
     case 'deploying': return t('Deploying to {target} ({label})', { label: s.label, target: s.target });
     case 'deployed': return t('In {target} with {label} or earlier', { label: s.label, target: s.target });
+    case 'on-production-branch': return t('In {target}: on {branch}', { target: s.target, branch: s.branch });
     case 'monitor-up': return t('{name} is up', { name: s.name });
     case 'monitor-degraded': return t('{name} is degraded', { name: s.name });
     case 'monitor-down': return t('{name} is down', { name: s.name });

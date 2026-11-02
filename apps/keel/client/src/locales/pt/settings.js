@@ -405,4 +405,7 @@ export default {
   'Download for': 'Transferir para',
   'All releases': 'Todas as versões',
   'Rename it to {name} ({exe} on Windows) and put it in a folder on your PATH, then run {command}.': 'Mude-lhe o nome para {name} ({exe} no Windows) e coloque-o numa pasta do seu PATH; depois execute {command}.',
+  "Development branch": "Branch de desenvolvimento",
+  "Not set: waiting is what came after the last deploy": "Sem branch: o que espera é o que veio depois do último deploy",
+  "Where work is merged before it goes to production, such as develop. When it's set, Waiting to ship lists what's on it and not yet on the production branch (the one above, else the repo's default), and being on the production branch counts as live.": "Onde o trabalho é integrado antes de ir para produção, como develop. Com ela definida, Por entregar lista o que está nela e ainda não está na branch de produção (a de cima, ou a predefinida do repositório), e estar na branch de produção conta como estar em produção.",
 };

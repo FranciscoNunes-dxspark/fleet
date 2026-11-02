@@ -157,7 +157,7 @@ export default function ProductionSettings() {
                     <label className="wide">{t('URL to check')}<input className="input" value={r.url} onChange={(e) => set(r.key, { url: e.target.value })} placeholder="https://sports.example.com/health" inputMode="url" /></label>
                     <label>{t('Slow above (ms)')}<input className="input" type="number" min={100} max={30000} value={r.latencyWarnMs} onChange={(e) => set(r.key, { latencyWarnMs: Number(e.target.value) })} /></label>
                     <label className="wide">{t('Deploys come from')}
-                      <select className="input" value={linkValue(r.link)} onChange={(e) => { const l = linkOptions.find((o) => o.value === e.target.value)?.link; set(r.key, { link: l ? { ...l, ...(r.link?.branch ? { branch: r.link.branch } : {}) } : null, projectId: l ? l.projectId : r.projectId }); }}>
+                      <select className="input" value={linkValue(r.link)} onChange={(e) => { const l = linkOptions.find((o) => o.value === e.target.value)?.link; set(r.key, { link: l ? { ...l, ...(r.link?.branch ? { branch: r.link.branch } : {}), ...(r.link?.devBranch ? { devBranch: r.link.devBranch } : {}) } : null, projectId: l ? l.projectId : r.projectId }); }}>
                         <option value="">{t('Not linked')}</option>
                         {['Release stages', 'Pipelines'].map((g) => (
                           <optgroup key={g} label={t(g)}>
@@ -187,6 +187,18 @@ export default function ProductionSettings() {
                           spellCheck={false}
                         />
                         <span className="muted small">{t("The branch production deploys from, when Keel's guess is wrong. For a pipeline, its runs on this branch are the production deploys (once one has succeeded there), and Waiting to ship compares with it. Leave empty for Keel to work it out.")}</span>
+                      </label>
+                    )}
+                    {r.link && (
+                      <label className="wide">{t('Development branch')}
+                        <input
+                          className="input mono"
+                          value={r.link.devBranch || ''}
+                          onChange={(e) => set(r.key, { link: { ...r.link, devBranch: e.target.value } })}
+                          placeholder={t('Not set: waiting is what came after the last deploy')}
+                          spellCheck={false}
+                        />
+                        <span className="muted small">{t("Where work is merged before it goes to production, such as develop. When it's set, Waiting to ship lists what's on it and not yet on the production branch (the one above, else the repo's default), and being on the production branch counts as live.")}</span>
                       </label>
                     )}
                   </fieldset>
