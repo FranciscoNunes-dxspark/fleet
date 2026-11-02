@@ -56,7 +56,7 @@ const ATTENTION_MS = 3000;
 export const helpRows = (p = DEFAULT_PREFIX) => [
   ['alt+1-9', 'switch to that space'],
   [`${p} 1-9`, 'switch to that space'],
-  [`${p} s t o b h l u g c`, 'Splice, Trawl, Sonar, Bosun, Hail, Locker, Mooring, Bilge, Chart'],
+  [`${p} s t o b h l u g c e`, 'Splice, Trawl, Sonar, Bosun, Hail, Locker, Mooring, Bilge, Chart, Helm'],
   [`${p} ] or n`, 'next space'],
   [`${p} p`, 'previous space'],
   [`${p} ${p}`, `send ${p} to the app`],
