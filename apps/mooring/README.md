@@ -73,6 +73,19 @@ This machine's folder on the left, the server's on the right; the focused pane h
 
 `/cd <folder>` and `/lcd <folder>` go to a typed path on the server and on this machine (`..`, `~`, relative or absolute); `/get <name>` and `/put <name>` queue one named entry; `/mkdir [name]` makes a folder in the focused pane.
 
+### Syncing a folder
+
+`/sync [down|up|both]` makes the left pane's folder and the right pane's match. It compares every file under both (by size and modification time), shows the plan, each file with what happens to it and why (*new*, *changed*, *newer here*, *only on the server*), asks, and sends the transfers through the queue. `up` makes the server like this machine, `down` this machine like the server, and `both` (the default) carries each side's changes to the other. After a sync Mooring keeps what each file was (its size and time, nothing of its contents, in `~/.mooring/sync.json`), so the next `both` can tell which side changed a file: changed on both sides is a **conflict**, shown and left alone until `/sync up` or `/sync down` settles it, and a file gone from one side was deleted there. Before the first sync the newer copy wins.
+
+| Option | |
+|---|---|
+| `--checksum` | Files of the same size whose times differ are compared by sha256 (`sha256sum` on the server, in one `ssh` call), and left alone when they are the same |
+| `--delete` | What the plan finds only on one side (or deleted on the other) is deleted, after the question; without it such files are listed and kept |
+
+`.git` and `node_modules` are never synced, nor what the local folder's `.mooringignore` names, a pattern a line (`*.log`, `/dist`, `cache/tmp`; `#` for a comment): a name without a slash matches anywhere, one with a slash from the folder's top.
+
+`/watch` keeps uploading what changes in the left pane's folder to the right pane's, as it changes (a moment after the last write, so a save is one upload), with the same ignore list, until `/watch off`; the header says `⟳ watching <folder>`. Deletions aren't carried over: `/sync up --delete` does that.
+
 Folders are copied whole, file by file; links and special files in them are skipped, never followed (a link out of the folder would copy what isn't in it). A copy keeps each file's modification time.
 
 ### Transfers

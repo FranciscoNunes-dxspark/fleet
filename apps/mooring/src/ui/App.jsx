@@ -59,7 +59,7 @@ const abortable = (promise, signal) =>
   Promise.race([promise, new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { cancelled: true })), { once: true }))]);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Header({ conn, transfers, width, loading, demo, mood }) {
+function Header({ conn, transfers, width, loading, demo, mood, watching }) {
   const segs = [{ text: `${FACES[mood]} `, color: theme.accent, bold: true }, { text: 'Mooring', bold: true }];
   if (demo) segs.push({ text: '  demo', color: theme.warn });
   segs.push({ text: '  │  ', color: theme.border });
@@ -71,6 +71,7 @@ function Header({ conn, transfers, width, loading, demo, mood }) {
   const failed = transfers.filter((t) => t.status === 'failed').length;
   if (running || waiting) segs.push({ text: `  ⇅ ${running} running${waiting ? `, ${waiting} waiting` : ''}`, color: theme.info });
   if (failed) segs.push({ text: `  ${failed} failed`, color: theme.del, bold: true });
+  if (watching) segs.push({ text: `  ⟳ watching ${watching.localRoot.split(/[\\/]/).filter(Boolean).pop() ?? watching.localRoot}`, color: theme.accent });
   if (loading) segs.push({ text: '  reading…', color: theme.dim });
   if (conn.problem) segs.push({ text: '  │  ', color: theme.border }, { text: firstLine(conn.problem), color: theme.warn });
   return <Row pointer={false} width={width} segments={segs} />;
@@ -126,6 +127,8 @@ const viewerKey = (overlay) => {
 
 const emptyPane = (dir) => ({ dir, entries: [], problem: null, loading: false, marks: new Set(), select: null });
 const NO_CONN = { host: null, session: null, status: 'none', problem: null };
+// How long /watch waits after the last change before it uploads: an editor's save is several writes.
+const WATCH_SETTLE_MS = 400;
 
 // `local` is local.js's createLocal (demoLocal), `makeSession(host)` session.js's createSession (the
 // demo's host). `copy` puts plain text on the clipboard. `openUrl` is unused for now; `checkUpdate` and
@@ -351,7 +354,38 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   }
   const queue = queueRef.current;
 
+  // /watch: the local folder being watched ({ localRoot, remoteRoot, host, patterns }), its stop, and the
+  // changes waiting for it to settle.
+  const [watching, setWatching] = useState(null);
+  const watchRef = useRef(null);
+  const stopWatch = () => {
+    if (!watchRef.current) return;
+    watchRef.current.stop();
+    clearTimeout(watchRef.current.timer);
+    watchRef.current = null;
+    setWatching(null);
+  };
+  const startWatch = (w) => {
+    stopWatch();
+    const mine = { ...w, pending: new Set(), timer: null };
+    const flush = async () => {
+      const rels = [...mine.pending];
+      mine.pending.clear();
+      if (watchRef.current !== mine || !rels.length) return;
+      const n = await a.uploadChanged(ctx, mine, rels).catch((e) => note(`Watching ${w.localRoot}: ${firstLine(e.message)}`, 'error') ?? 0);
+      if (n) note(`${plural(n, 'change')} in ${w.localRoot} going up to ${w.host}`);
+    };
+    mine.stop = local.watch(w.localRoot, (rel) => {
+      mine.pending.add(rel);
+      clearTimeout(mine.timer);
+      mine.timer = setTimeout(flush, WATCH_SETTLE_MS);
+    });
+    watchRef.current = mine;
+    setWatching(w);
+  };
+
   const disconnect = () => {
+    stopWatch();
     queue.cancelAll();
     closeShell();
     sessionRef.current?.close();
@@ -570,6 +604,11 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     connect,
     disconnect,
     runRemote,
+    startWatch,
+    stopWatch,
+    get watching() {
+      return watchRef.current;
+    },
     enterTerminal,
     loadPane,
     side: () => sideRef.current,
@@ -758,6 +797,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     // Leaving closes the connection and stops what is transferring.
     return () => {
       queue.cancelAll();
+      stopWatch();
       sessionRef.current?.close();
       for (const t of Object.values(refreshTimers.current)) clearTimeout(t);
     };
@@ -1040,7 +1080,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header conn={conn} transfers={transfers} width={W} loading={loading} demo={demo} mood={mood} />
+      <Header conn={conn} transfers={transfers} width={W} loading={loading} demo={demo} mood={mood} watching={watching} />
       <Tabs view={view} entries={entries} transfers={transfers} width={W} />
       <Box height={mainH} width={W}>
         {main}

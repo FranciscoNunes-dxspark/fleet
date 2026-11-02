@@ -46,6 +46,7 @@ export function createQueue({ session, concurrency = 2, now = Date.now, onChange
       recursive: item.recursive,
       signal: controller.signal,
       size: item.size,
+      modified: item.modified,
       onProgress: ({ bytes, total }) => {
         item.bytes = bytes;
         item.total = total;

@@ -44,6 +44,8 @@ export const HELP = [
       ['i', 'Size, mode, time and, for a link, where it points'],
       ['.', 'Show files starting with a dot, or not'],
       '/cd and /lcd go to a typed path; /get and /put queue a named entry.',
+      ['/sync [down|up|both]', "Make the two panes' folders match: the plan (new, changed, deleted, conflicts) shown, asked, then the queue; --checksum compares sha256, --delete removes what is only on one side"],
+      ['/watch [off]', "Upload what changes in the left pane's folder as it changes (shown in the header), until /watch off"],
     ],
   },
   {

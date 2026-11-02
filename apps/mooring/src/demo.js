@@ -1,11 +1,14 @@
 // A made-up host and a made-up machine for --demo and the tests: the same interfaces as session.js and
 // local.js over in-memory trees. `state.calls` records what was asked (a name and its arguments), `state.tree` is the files.
+import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { baseName, parentOf, sortEntries } from './sftp.js';
 import { SessionError } from './errors.js';
 import { VirtualTerminal } from '@fleet/kit/vt.js';
 
 const T = Date.UTC(2026, 9, 28, 9, 0);
+// What sha256sum says of a demo file: its own `sum` when a test gave it one, else one that follows its size.
+export const demoSum = (entry) => createHash('sha256').update(String(entry.sum ?? entry.size ?? 0)).digest('hex');
 
 const seed = () =>
   new Map([
@@ -53,7 +56,7 @@ export function demoSession({ host = { name: 'demo', host: 'demo.example.com', u
       say('list', dir);
       if (need(dir).kind !== 'dir') throw new SessionError(`${dir}: Not a directory`);
       return childrenOf(dir)
-        .map((p) => ({ name: baseName(p), kind: tree.get(p).kind, size: tree.get(p).size ?? 4096, mode: tree.get(p).kind === 'dir' ? 'rwxr-xr-x' : 'rw-r--r--', modified: T }))
+        .map((p) => ({ name: baseName(p), kind: tree.get(p).kind, size: tree.get(p).size ?? 4096, mode: tree.get(p).kind === 'dir' ? 'rwxr-xr-x' : 'rw-r--r--', modified: tree.get(p).modified ?? T }))
         .sort((a, b) => (a.kind === 'dir' ? 0 : 1) - (b.kind === 'dir' ? 0 : 1) || a.name.localeCompare(b.name));
     },
     async mkdir(dir) {
@@ -90,11 +93,12 @@ export function demoSession({ host = { name: 'demo', host: 'demo.example.com', u
       await transferring(size, remote, signal, onProgress);
     },
     // `size` is for the demo only: the real sftp reads the file.
-    async put(local, remote, { recursive, size = 1024, signal, onProgress } = {}) {
+    async put(local, remote, { recursive, size = 1024, modified, signal, onProgress } = {}) {
       say('put', local, remote, { recursive: !!recursive });
       need(parentOf(remote));
       await transferring(size, local, signal, onProgress);
-      tree.set(remote, recursive ? { kind: 'dir' } : { kind: 'file', size });
+      // As a real upload, the copy keeps the file's time (when the demo is told it).
+      tree.set(remote, recursive ? { kind: 'dir' } : { kind: 'file', size, ...(modified != null ? { modified } : {}) });
     },
     // A shell that answers as exec does: the line typed runs as a command in the folder it started in (`exit` ends it).
     terminal({ columns = 80, rows = 24, dir = '/home/demo', onChange = () => {}, onExit = () => {} } = {}) {
@@ -162,6 +166,11 @@ export function demoSession({ host = { name: 'demo', host: 'demo.example.com', u
       if (cmd === 'uptime') return { code: 0, stdout: ' 09:00:00 up 41 days,  3:12,  1 user,  load average: 0.08, 0.03, 0.01\n', stderr: '' };
       if (cmd === 'echo') return { code: 0, stdout: `${rest.join(' ')}\n`, stderr: '' };
       if (cmd === 'pwd') return { code: 0, stdout: `${cwd}\n`, stderr: '' };
+      if (cmd === 'sha256sum') {
+        const names = [...line.matchAll(/'((?:[^']|'\\'')*)'/g)].map((m) => m[1].replaceAll("'\\''", "'"));
+        const out = names.filter((n) => tree.has(posix.join(cwd, n))).map((n) => `${demoSum(tree.get(posix.join(cwd, n)))}  ${n}`);
+        return { code: 0, stdout: out.length ? `${out.join('\n')}\n` : '', stderr: '' };
+      }
       if (cmd === 'ls') {
         const dir = rest.find((a) => !a.startsWith('-')) ?? cwd;
         const names = tree.has(dir) ? childrenOf(dir).map(baseName) : null;
@@ -187,9 +196,13 @@ const localSeed = () =>
     ['/demo/todo.txt', { kind: 'file', size: 120 }],
   ]);
 
-/** The demo's own machine: the same shape as local.js's `createLocal`, over an in-memory tree with `/` paths. */
+/**
+ * The demo's own machine: the same shape as local.js's `createLocal`, over an in-memory tree with `/`
+ * paths. `state.changed(rel)` is what a change under a watched folder would call (local.js's `watch`).
+ */
 export function demoLocal({ dir = '/demo', tree = localSeed() } = {}) {
-  const state = { calls: [], tree };
+  const watchers = new Set();
+  const state = { calls: [], tree, changed: (rel) => watchers.forEach((w) => w(rel)) };
   const say = (...call) => state.calls.push(call);
   const need = (path) => {
     if (!tree.has(path)) throw new Error(`${path}: no such file or directory`);
@@ -209,7 +222,7 @@ export function demoLocal({ dir = '/demo', tree = localSeed() } = {}) {
       return sortEntries(
         [...tree.keys()]
           .filter((p) => p !== '/' && posix.dirname(p) === d)
-          .map((p) => ({ name: posix.basename(p), kind: tree.get(p).kind, size: tree.get(p).size ?? 0, mode: tree.get(p).kind === 'dir' ? 'rwxr-xr-x' : 'rw-r--r--', modified: T })),
+          .map((p) => ({ name: posix.basename(p), kind: tree.get(p).kind, size: tree.get(p).size ?? 0, mode: tree.get(p).kind === 'dir' ? 'rwxr-xr-x' : 'rw-r--r--', modified: tree.get(p).modified ?? T })),
       );
     },
     async mkdir(d) {
@@ -236,5 +249,11 @@ export function demoLocal({ dir = '/demo', tree = localSeed() } = {}) {
     exists: async (path) => tree.has(path),
     /** The size of a file, for queueing an upload. */
     size: async (path) => need(path).size ?? 0,
+    readText: async (path) => (tree.get(path)?.text ?? null),
+    hash: async (path) => demoSum(need(path)),
+    watch(d, onChange) {
+      watchers.add(onChange);
+      return () => watchers.delete(onChange);
+    },
   };
 }

@@ -2,6 +2,8 @@
 // mode, modified (ms) } (a link to a folder has `isDir`). `createLocal` is the real folder; `demo.js`
 // `demoLocal()` is its in-memory twin. Paths go through the object's own `join` and `parent`, so the
 // panes never assume this machine's separator.
+import { createHash } from 'node:crypto';
+import { createReadStream, watch as fsWatch } from 'node:fs';
 import fsp from 'node:fs/promises';
 import { homedir } from 'node:os';
 import nodePath from 'node:path';
@@ -46,5 +48,22 @@ export function createLocal({ dir = homedir() } = {}) {
     /** A file, a link (never followed) or a folder with all that is in it. */
     remove: (path) => fsp.rm(path, { recursive: true }),
     exists: (path) => fsp.lstat(path).then(() => true, () => false),
+    /** A small text file's contents (a .mooringignore), or null when it isn't there. */
+    readText: (path) => fsp.readFile(path, 'utf8').catch(() => null),
+    /** A file's sha256, as sha256sum prints it, read as a stream so a big one isn't held in memory. */
+    hash: (path) =>
+      new Promise((resolve, reject) => {
+        const h = createHash('sha256');
+        createReadStream(path).on('error', reject).on('data', (d) => h.update(d)).on('end', () => resolve(h.digest('hex')));
+      }),
+    /**
+     * Calls `onChange(rel)` (the path inside `dir`, with `/`) when something under `dir` changes;
+     * returns the function that stops it. fs.watch's recursive mode, which Node has on Linux, macOS and Windows.
+     */
+    watch(d, onChange) {
+      const w = fsWatch(d, { recursive: true, persistent: false }, (_event, name) => name && onChange(String(name).split(nodePath.sep).join('/')));
+      w.on('error', () => {});
+      return () => w.close();
+    },
   };
 }
