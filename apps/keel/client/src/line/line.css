@@ -80,7 +80,7 @@ html.inspector-open .ls { padding-right: calc(var(--inspector-w) + var(--frame))
 .line-brand-text { display: grid; line-height: 1.2; min-width: 0; }
 .line-brand-text strong { font-size: 15px; }
 .line-brand-text span { font-size: 11.5px; color: var(--muted); }
-.line-needs { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.line-needs { flex: 1; display: flex; align-items: center; justify-content: safe center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .line-needs-label {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; white-space: nowrap;
   font-size: 13px; font-weight: 600; color: var(--ink-2);

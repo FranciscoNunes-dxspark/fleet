@@ -141,8 +141,8 @@ test('Keel logs what it changes for /timeline, writes its mood, and says once ho
     await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
     await until(() => frame().includes('Twig says: PR #12 merged'), "Twig's word");
     await until(() => existsSync(join(familyHome, 'keel.mood.json')), 'its mood written');
-    // Calm, or worried while one of the demo's monitors is down (they go down and up with the clock).
-    assert.match(JSON.parse(readFileSync(join(familyHome, 'keel.mood.json'), 'utf8')).reason, /^watching \d+ pull requests and \d+ pipelines|is down$/);
+    // Calm, or worried while the demo's monitors are down (they go down and up with the clock), one or several.
+    assert.match(JSON.parse(readFileSync(join(familyHome, 'keel.mood.json'), 'utf8')).reason, /^watching \d+ pull requests and \d+ pipelines|is down( \(and \d+ more\))?$/);
     lastApp.stdin.write('\x1b');
     await until(() => !frame().includes('Twig says'), 'put away with esc');
 

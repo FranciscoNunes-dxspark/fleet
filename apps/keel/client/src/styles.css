@@ -916,9 +916,13 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .link-row .input { flex: 1; min-width: 0; }
 
 /* ------------------------------------------------------- start in Claude */
-.claude-start { display: grid; gap: 10px; }
+.claude-start { display: grid; gap: 8px; }
 .claude-start h3 { margin-bottom: 0; }
-.claude-start p { margin: 0; }
+.claude-start .fold-chevron { transform: rotate(90deg); }
+.claude-start.folded .fold-chevron { transform: none; }
+.claude-body { display: grid; gap: 8px; }
+.claude-start p { margin: 0; font-size: 12px; line-height: 1.4; }
+.claude-start .detail-actions { margin: 0; }
 .claude-row { display: grid; grid-template-columns: minmax(160px, 220px) 1fr; gap: 12px; align-items: end; }
 .claude-row label { display: grid; gap: 4px; }
 .claude-folder { display: flex; gap: 8px; align-items: end; min-width: 0; }
