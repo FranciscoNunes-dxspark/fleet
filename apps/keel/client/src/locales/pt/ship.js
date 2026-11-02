@@ -60,4 +60,6 @@ export default {
   'open {age}': 'aberto há {age}',
   "The development branch {branch} set in Settings doesn't exist, so what's waiting can't be counted.": "A branch de desenvolvimento {branch} definida nas Definições não existe, por isso não é possível contar o que está à espera.",
   "On {dev}, not yet on {branch}": "Em {dev}, ainda não em {branch}",
+  "Counted from {pr}, which took {dev} into {branch} {age} ago.": "Contado a partir de {pr}, que levou {dev} para {branch} há {age}.",
+  "No pull request took {dev} into {branch} in the last 90 days, so this counts what reached {dev} after {branch} last changed, {age} ago.": "Nenhum pull request levou {dev} para {branch} nos últimos 90 dias, por isso conta o que chegou a {dev} depois da última alteração em {branch}, há {age}.",
 };
