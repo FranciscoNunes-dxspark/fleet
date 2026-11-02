@@ -384,8 +384,12 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     setWatching(w);
   };
 
+  // The last /health read: { host, at, problems }, which worries Tug while it's the connected host's.
+  const [health, setHealth] = useState(null);
+
   const disconnect = () => {
     stopWatch();
+    setHealth(null);
     queue.cancelAll();
     closeShell();
     sessionRef.current?.close();
@@ -606,6 +610,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     runRemote,
     startWatch,
     stopWatch,
+    setHealth,
     get watching() {
       return watchRef.current;
     },
@@ -913,6 +918,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     if (input === '!') return prefill('!');
     if (input === '$') return prefill('$ ');
     if (input === '?') return ctx.showHelp();
+    if (input === 'H') return a.health(ctx);
     if (input === ',') return a.settings(ctx);
     if (input === 'q') return exit();
     const n = Number(input);
@@ -1001,7 +1007,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
-  const trouble = troubles({ transfers, conn });
+  const trouble = troubles({ transfers, conn, health });
   const moving = transfers.filter((t) => t.status === 'running').length;
   const working = moving > 0;
   const mood = moodFor({ loaded, connected: Boolean(conn.session), busy, running: working, lastEntry: entries.at(-1), trouble });

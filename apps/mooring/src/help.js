@@ -10,6 +10,7 @@ export const HELP = [
       ['ctrl+p', "The command palette: every command and this view's keys, filtered as you type"],
       ['!', 'Run a shell command on this machine, e.g.  !ssh-add -l'],
       ['$', 'Type a command into the Console shell on the server, e.g.  $ ls -l'],
+      ['alt+h', "The server's health (/health): disks, memory, load, uptime, the busiest processes, failed units; r reads it again"],
       ['esc', 'Cancel the running command, or clear the activity lines'],
       ['ctrl+r', 'Read both folders again'],
       [',', 'Settings'],

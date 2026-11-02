@@ -11,6 +11,7 @@ import { IGNORE_FILE, checksumCandidates, checksumCommand, differs, ignoreList, 
 import { removeTree } from './session.js';
 import { sizeText } from './format.js';
 import { DEFAULT_KEY_NAME, validKeyName } from './keygen.js';
+import { DISK_FULL, HEALTH_COMMAND, healthProblems, parseHealth, uptimeText } from './health.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -451,6 +452,76 @@ export async function watch(ctx, arg) {
   if (!yes) return false;
   ctx.startWatch({ localRoot, remoteRoot, host: ctx.conn.host.name, patterns: await ignoreOf(ctx, localRoot) });
   ctx.note(`Watching ${localRoot}: changes go up to ${ctx.conn.host.name}:${remoteRoot}. /watch off stops it.`, 'ok');
+  return true;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The server's health
+
+const mb = (n) => (n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${n} MB`);
+const meter = (percent, width = 20) => {
+  const on = Math.round((Math.min(100, Math.max(0, percent)) / 100) * width);
+  return '█'.repeat(on) + '░'.repeat(width - on);
+};
+
+/** The health panel's rows: coloured segments, what is wrong in red. */
+export function healthRows(h, host) {
+  const rows = [];
+  const head = (text) => rows.push([], [{ text, color: theme.accent, bold: true }]);
+  const problems = healthProblems(h);
+  rows.push(problems.length ? [{ text: `${host}: ${problems.join(', ')}`, color: theme.del, bold: true }] : [{ text: `${host} looks well`, color: theme.accent, bold: true }]);
+  const load = h.load ? `load ${h.load.map((n) => n.toFixed(2)).join(' ')}` : 'load unknown';
+  const busy = h.load && h.cpus && h.load[0] > h.cpus;
+  rows.push([{ text: `up ${uptimeText(h.uptime) || '?'}`, color: theme.dim }, { text: '  ·  ', color: theme.dim }, { text: load, color: busy ? theme.warn : undefined }, { text: h.cpus ? ` on ${plural(h.cpus, 'CPU')}` : '', color: theme.dim }]);
+  head('Disks');
+  if (!h.disks.length) rows.push([{ text: 'df said nothing', color: theme.dim }]);
+  for (const d of h.disks) {
+    const full = d.percent > DISK_FULL;
+    rows.push([{ text: fit(d.mount, 18) }, { text: meter(d.percent), color: full ? theme.del : theme.info }, { text: ` ${String(d.percent).padStart(3)}%`, color: full ? theme.del : undefined, bold: full }, { text: `  ${sizeText(d.availKb * 1024)} free of ${sizeText(d.sizeKb * 1024)}`, color: theme.dim }, { text: `  ${d.fs}`, color: theme.dim }]);
+  }
+  // Failed units next to the disks: what is wrong comes before what is merely busy.
+  head('Failed units');
+  if (h.failed == null) rows.push([{ text: 'no systemd here', color: theme.dim }]);
+  else if (!h.failed.length) rows.push([{ text: 'none', color: theme.dim }]);
+  for (const u of h.failed ?? []) rows.push([{ text: `✗ ${u.unit}`, color: theme.del, bold: true }, { text: u.description ? `  ${u.description}` : '', color: theme.dim }]);
+  head('Memory');
+  if (!h.memory) rows.push([{ text: 'not known', color: theme.dim }]);
+  else {
+    const m = h.memory;
+    const pct = m.totalMb ? Math.round((m.usedMb / m.totalMb) * 100) : 0;
+    rows.push([{ text: fit('memory', 18) }, { text: meter(pct), color: pct > 90 ? theme.warn : theme.info }, { text: ` ${String(pct).padStart(3)}%` }, { text: `  ${mb(m.usedMb)} used of ${mb(m.totalMb)}, ${mb(m.availableMb)} available`, color: theme.dim }]);
+    if (m.swapTotalMb) rows.push([{ text: fit('swap', 18) }, { text: `${mb(m.swapUsedMb)} used of ${mb(m.swapTotalMb)}`, color: theme.dim }]);
+  }
+  for (const [title, list, key] of [
+    ['Busiest by CPU', h.topCpu, 'cpu'],
+    ['Busiest by memory', h.topMem, 'mem'],
+  ]) {
+    head(title);
+    if (!list.length) rows.push([{ text: 'ps said nothing', color: theme.dim }]);
+    for (const p of list) rows.push([{ text: `${String(p[key].toFixed(1)).padStart(5)}%  `, color: theme.info }, { text: fit(p.command, 30) }, { text: `  pid ${p.pid}  ${key === 'cpu' ? `${p.mem.toFixed(1)}% memory` : `${p.cpu.toFixed(1)}% CPU`}`, color: theme.dim }]);
+  }
+  rows.push([], [{ text: 'r reads it again · esc closes', color: theme.dim }]);
+  return rows;
+}
+
+/** /health or alt+h: one ssh command's worth of the server's state, in a panel; r there reads it again. */
+export async function health(ctx) {
+  if (!ctx.session) return ctx.note('Not connected: /connect <host>', 'error') ?? false;
+  const host = ctx.conn.host.name;
+  const r = await ctx.task(
+    `Reading ${host}'s health`,
+    async (signal) => {
+      const out = await ctx.session.exec(HEALTH_COMMAND, { signal });
+      const h = parseHealth(out.stdout);
+      const problems = healthProblems(h);
+      return { health: h, stdout: problems.length ? problems.join(', ') : 'Nothing wrong' };
+    },
+    { label: 'Reading the health' },
+  );
+  if (!r.ok) return false;
+  const h = r.result.health;
+  ctx.setHealth({ host, at: Date.now(), problems: healthProblems(h) });
+  ctx.showText(`Health · ${host}`, '', { kind: 'health', lines: healthRows(h, host), onKey: (input) => input === 'r' && (health(ctx), true) });
   return true;
 }
 

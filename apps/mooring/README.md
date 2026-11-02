@@ -114,6 +114,10 @@ It is `ssh -tt` (ssh makes the terminal on the server although this side has non
 | `↑` `↓` `j` `k` `pgup` `pgdn` `space` | Look back through what scrolled away (also the wheel) |
 | `y` | Copy the screen |
 
+### The server's health
+
+`/health` (or `alt+h` anywhere) runs one `ssh` command on the server and shows what it says in a panel: each disk's use (`df -P`), memory and swap (`/proc/meminfo`, or `free -m`), the load beside the number of CPUs, the uptime, the five busiest processes by CPU and by memory (`ps`), and the systemd units that have failed (where there is `systemctl`). A disk over 90% full and a failed unit are in red at the top, and Tug is worried about them (the family hears why) until a read shows them gone or you disconnect. `r` reads it again, `esc` closes it.
+
 ### Hosts, Log
 
 Hosts is above. Log is everything the activity lines have said, `↵` for one whole.
@@ -125,6 +129,7 @@ Hosts is above. Log is everything the activity lines have said, `↵` for one wh
 | `/` or `:` | Command prompt, with completion (host names, and the names in the panes for `/get` and `/put`); where there is nothing to complete, the command's parameters stay shown under the prompt |
 | `!` | A shell command on this machine, e.g. `!ssh-add -l` (its output is in the activity line; `/last` has all of it) |
 | `$` | A command on the server (above) |
+| `alt+h` | The server's health (`/health`, below) |
 | `ctrl+p` | The command palette |
 | `esc` | Cancel what is running, or clear the activity lines |
 | `ctrl+r` | Read both folders again |
