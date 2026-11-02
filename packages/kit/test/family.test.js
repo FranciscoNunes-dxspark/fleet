@@ -211,3 +211,10 @@ test('an App Service app or slot is a site context, which Locker takes', () => {
   assert.equal(APP_NAMES.locker, 'Locker');
   assert.equal(notMine('sonar', c), "That's app shop-api/staging, for Locker: paste it into its prompt instead.");
 });
+
+test('a container image is an image context, which Bilge takes', () => {
+  const c = contextIn(takeLine('image', { image: 'shop/api:1.4.2' }));
+  assert.equal(c.kind, 'image');
+  assert.equal(describeContext(c), 'image shop/api:1.4.2');
+  assert.deepEqual(TAKEN_BY.image, ['bilge']);
+});

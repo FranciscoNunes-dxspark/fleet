@@ -67,6 +67,7 @@ export const TAKEN_BY = {
   pullrequest: ['splice', 'keel'],
   pipeline: ['keel'],
   site: ['locker'],
+  image: ['bilge'],
 };
 
 const either = (apps) => apps.map((a) => APP_NAMES[a] ?? a).join(' or ');
@@ -132,7 +133,7 @@ export function trawlLine(db, name) {
 //   site      { name, slot?, resourceGroup?, subscription?, id? }   an App Service app or slot
 
 const PREFIX = 'family:v1:';
-export const CONTEXT_KINDS = ['exception', 'request', 'rows', 'query', 'commit', 'file', 'logline', 'pullrequest', 'pipeline', 'site'];
+export const CONTEXT_KINDS = ['exception', 'request', 'rows', 'query', 'commit', 'file', 'logline', 'pullrequest', 'pipeline', 'site', 'image'];
 
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64url = (s) => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
@@ -169,6 +170,7 @@ export function describeContext({ kind, data }) {
     case 'pullrequest': return `pull request !${data.id ?? '?'}${data.title ? ` ${data.title}` : ''}${data.sourceBranch && data.targetBranch ? ` (${data.sourceBranch} → ${data.targetBranch})` : ''}`;
     case 'pipeline': return `pipeline ${data.definition ?? data.definitionId ?? ''}${data.run ? ` ${data.run}` : ''}${data.step ? `, failed at ${data.step}` : ''}${data.test ? ` (${data.test})` : ''}`;
     case 'site': return `app ${data.name ?? ''}${data.slot ? `/${data.slot}` : ''}`;
+    case 'image': return `image ${data.image ?? ''}`.trim();
     default: return kind;
   }
 }
