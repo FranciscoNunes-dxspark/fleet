@@ -13,6 +13,7 @@
 import { buildInsights } from './domain/insights.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildDelivery } from './domain/delivery.js';
+import { buildDora } from './domain/dora.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow } from './domain/flow.js';
@@ -197,6 +198,19 @@ export function createMultiService(entries) {
     async delivery(days) {
       const parts = await each((s) => s.deliveryData(days));
       return buildDelivery({ targets: parts.flatMap(({ org, value }) => tagAll(org, value)), days });
+    },
+    /** DORA computed once over every organization's environments; the primary's settings say what production is. */
+    async dora(days, opts = {}) {
+      const parts = await each((s) => s.doraData(days, opts));
+      const first = parts[0].value;
+      return buildDora({
+        environments: parts.flatMap(({ org, value }) => tagAll(org, value.environments)),
+        pullRequests: parts.flatMap(({ org, value }) => tagAll(org, value.pullRequests)),
+        teams: parts.flatMap(({ org, value }) => tagAll(org, value.teams)),
+        production: first.production,
+        windowHours: first.windowHours,
+        days,
+      });
     },
     async summary(week) {
       const range = weekRange(week);

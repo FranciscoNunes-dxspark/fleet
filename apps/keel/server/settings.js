@@ -22,6 +22,9 @@ export const DEFAULT_SETTINGS = {
   blockedTag: 'Blocked',
   autoComplete: { mergeStrategy: 'noFastForward', deleteSourceBranch: false, transitionWorkItems: true },
   refreshSeconds: 30,
+  // DORA metrics: production names (comma-separated; empty is stages named like prod and what monitors link to),
+  // and how long after a deploy a failure still counts as its change failing.
+  dora: { production: '', windowHours: 24 },
   // attention key -> ISO date until which it is hidden
   snoozed: {},
   // person id -> { name, uniqueName, email }: left off the Team page and its overload alerts

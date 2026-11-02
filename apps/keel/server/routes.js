@@ -296,6 +296,12 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   // What's merged but not deployed yet, per production environment.
   r.get('/deploys/pending', async (req, res) => res.json(await req.ctx.service.undeployed()));
   r.get('/delivery', async (req, res) => res.json(await req.ctx.service.delivery(Math.min(90, Math.max(7, Number(req.query.days) || 30)))));
+  // DORA per project and team: 30 or 90 days against the period before; ?production= names override the settings'.
+  r.get('/dora', async (req, res) => {
+    const days = Number(req.query.days) === 90 ? 90 : 30;
+    const production = typeof req.query.production === 'string' ? req.query.production.slice(0, 300) : undefined;
+    res.json(await req.ctx.service.dora(days, { production }));
+  });
   // One week's summary for everyone: ?week=YYYY-MM-DD (any day of the week; this week when absent).
   r.get('/summary', async (req, res) => res.json(await req.ctx.service.summary(req.query.week ? String(req.query.week) : undefined)));
 

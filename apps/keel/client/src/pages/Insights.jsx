@@ -5,15 +5,16 @@ import { date, hours, pct } from '../format.js';
 import { ErrorBox, Loading, PageHeader } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import Delivery from './Delivery.jsx';
+import Dora from './Dora.jsx';
 import Flow from './Flow.jsx';
 
 const RANGES = [14, 30, 90];
 
-/** Three tabs over the same period: delivery to production (DORA), code review and merging, and work item flow. */
+/** Four tabs over the same period: delivery to production, DORA per project and team, code review and merging, and work item flow. */
 export default function Insights() {
   const [days, setDays] = useSticky('insights.days', 30);
   const [params, setParams] = useStickyParams('insights', ['tab']);
-  const tab = ['review', 'flow'].includes(params.get('tab')) ? params.get('tab') : 'delivery';
+  const tab = ['dora', 'review', 'flow'].includes(params.get('tab')) ? params.get('tab') : 'delivery';
 
   return (
     <div className="page page-wide">
@@ -24,10 +25,11 @@ export default function Insights() {
       </PageHeader>
       <div className="segmented" role="tablist" aria-label={t('Insights')}>
         <button type="button" role="tab" aria-selected={tab === 'delivery'} className={tab === 'delivery' ? 'on' : ''} onClick={() => setParams({}, { replace: true })}>{t('Delivery to production')}</button>
+        <button type="button" role="tab" aria-selected={tab === 'dora'} className={tab === 'dora' ? 'on' : ''} onClick={() => setParams({ tab: 'dora' }, { replace: true })}>{t('DORA by project and team')}</button>
         <button type="button" role="tab" aria-selected={tab === 'review'} className={tab === 'review' ? 'on' : ''} onClick={() => setParams({ tab: 'review' }, { replace: true })}>{t('Code review and merging')}</button>
         <button type="button" role="tab" aria-selected={tab === 'flow'} className={tab === 'flow' ? 'on' : ''} onClick={() => setParams({ tab: 'flow' }, { replace: true })}>{t('Work item flow')}</button>
       </div>
-      {tab === 'delivery' ? <Delivery days={days} /> : tab === 'flow' ? <Flow days={days} /> : <ReviewInsights days={days} />}
+      {tab === 'delivery' ? <Delivery days={days} /> : tab === 'dora' ? <Dora days={days} /> : tab === 'flow' ? <Flow days={days} /> : <ReviewInsights days={days} />}
     </div>
   );
 }

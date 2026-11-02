@@ -6,7 +6,7 @@ import { fieldValues, filterFields, splitFilter, withField } from './filters.js'
 import { approvalsFor, deployChoices, downloadChoices, isGithubRelease, stageStatus } from './releases.js';
 import { runText } from './runs.js';
 import { doneChanges } from './board.js';
-import { closedText, commitsText, flakyText, insightsText, totalsText } from './reports.js';
+import { closedText, commitsText, doraScope, doraText, flakyText, insightsText, totalsText } from './reports.js';
 import { compareForSonar, deploys, familyChoices, prContext, runForSplice, timelineText } from './kin.js';
 import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity, takeLine } from '@fleet/kit/family.js';
 
@@ -666,6 +666,24 @@ export async function showInsights(ctx, text = '') {
   await report(ctx, `Insights, the last ${days} days`, 'Reading the numbers', async () => {
     const [ins, del] = await Promise.all([ctx.service.insights(days), ctx.service.delivery(Math.min(90, days))]);
     return insightsText(ins, del);
+  });
+}
+
+/**
+ * /dora [30|90] [project or team]: the four DORA measures for everything, or one project or team,
+ * against the period before. Production is what the settings name, else stages named like prod.
+ */
+export async function showDora(ctx, text = '') {
+  const words = String(text ?? '').trim().split(/\s+/).filter(Boolean);
+  const first = words[0]?.replace(/d(ays?)?$/i, '');
+  const days = first && /^\d+$/.test(first) ? Number(words.shift().replace(/\D/g, '')) : 30;
+  if (![30, 90].includes(days)) return ctx.note('Over 30 or 90 days: /dora 30 or /dora 90.', 'error');
+  const name = words.join(' ');
+  await report(ctx, `DORA, the last ${days} days`, 'Reading the deploys', async () => {
+    const dora = await ctx.service.dora(days);
+    const scope = doraScope(dora, name);
+    if (!scope) throw new Error(`No project or team called ${name}: ${dora.scopes.slice(1).map((s) => s.name).join(', ') || 'none tracked'}.`);
+    return doraText(dora, scope);
   });
 }
 

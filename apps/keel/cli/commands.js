@@ -42,6 +42,7 @@ export const COMMANDS = [
   { name: 'show', args: '[view]', desc: 'Pull requests: all, review or mine. Work items: all, sprint, bugs, blocked, stuck, unassigned or mine', complete: 'show', run: (ctx, s) => ctx.showGroup(s || 'all') },
   { name: 'summary', args: '[last|-N|date]', desc: "One week's summary: finished, merged, deployed, blocked (this week by default)", run: (ctx, s) => a.showSummary(ctx, s) },
   { name: 'insights', args: '[days]', desc: 'Pull request flow and delivery to production (the DORA measures), the last 30 days by default', run: (ctx, s) => a.showInsights(ctx, s) },
+  { name: 'dora', args: '[30|90] [project|team]', desc: "DORA by project and team: deploys, lead time, change failure rate and time to restore, each with how it was counted", run: (ctx, s) => a.showDora(ctx, s) },
   { name: 'flaky', desc: 'Tests that fail now and then and pass again without a fix', run: (ctx) => a.showFlaky(ctx) },
   { name: 'closed', args: '[days]', desc: 'Pull requests completed or abandoned lately (7 days by default)', run: (ctx, s) => a.showClosed(ctx, s) },
   { name: 'commits', args: '[repo] [days]', desc: "The default branch's commits, every tracked repo or one (7 days by default)", run: (ctx, s) => a.showCommits(ctx, s) },

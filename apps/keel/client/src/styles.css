@@ -1162,6 +1162,11 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .deploy-pr-commits > summary { cursor: pointer; width: fit-content; }
 .deploy-pr-commits > .deploy-list { margin: 8px 0 2px 14px; padding-left: 10px; border-left: 2px solid var(--line); }
 .delivery-intro { margin: 0 0 14px; max-width: 90ch; }
+/* DORA: what production is and the failure window, in one line above the measures. */
+.dora-form { align-items: center; }
+.dora-form label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dora-form .input { min-width: 0; }
+.dora .fact dd + dd { margin-top: 2px; }
 
 /* ------------------------------------------------------------ work item flow */
 .sprint-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }

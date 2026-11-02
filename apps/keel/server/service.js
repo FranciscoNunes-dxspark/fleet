@@ -17,6 +17,7 @@ import { buildEpicTree } from './domain/epics.js';
 import { comingNext, commitCarriers, commitRefs, landedAt, mergeCommits, reposNamed, sameCommit, waitingChanges } from './domain/commits.js';
 import { deployMarkers, deployNote, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
+import { DEFAULT_WINDOW_HOURS, buildDora, isProduction } from './domain/dora.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
 import { changedFolders, suggestReviewers } from './domain/reviewers.js';
@@ -31,6 +32,10 @@ const toDiff = (raw) => (raw.patch !== undefined ? parsePatch(raw.patch, { empty
 const PROD_STAGE = /\b(prod|production|prd|live)\b/i;
 // Lead time is measured over this many recent deploys per environment (each costs one commits call, then cached).
 const LEAD_TIME_DEPLOYS = 30;
+// DORA reads what each of this many recent deploys per environment shipped (each costs a commits call, then cached).
+const DORA_DEPLOYS = 60;
+// A merged pull request's own commits are read for at most this many per deploy; the rest are timed from their opening.
+const DORA_PR_COMMITS = 30;
 
 /** Backlog order, then id; items without a rank go last. */
 const byBacklogOrder = (a, b) => {
@@ -641,6 +646,36 @@ export function createService({
     };
   }
 
+  /**
+   * The changes a deploy shipped, for DORA: each merged pull request (timed from its first commit in
+   * the range, else from its opening) and each commit pushed without one, with who wrote it.
+   */
+  async function changesShipped(repo, raw, prOf) {
+    const commits = mergeCommits([{ repo, commits: raw }], { github });
+    const merges = commits.filter((c) => c.prId);
+    const prCommitIds = await Promise.all(merges.map((c, i) => (i >= DORA_PR_COMMITS ? []
+      : cached(`prcommits:${repo.id}:${c.prId}`, () => provider.getPullRequestCommitIds(repo.projectId, repo.id, c.prId), 24 * 60 * MIN).catch(() => []))));
+    const inPr = new Set(merges.map((c) => c.id));
+    const changes = merges.map((c, i) => {
+      const own = new Set(prCommitIds[i]);
+      for (const id of own) inPr.add(id);
+      const dates = commits.filter((x) => own.has(x.id) && x.id !== c.id).map((x) => Date.parse(x.author?.date)).filter(Number.isFinite);
+      const pr = prOf(repo.id, c.prId);
+      return {
+        kind: 'pr',
+        id: c.prId,
+        firstCommitAt: dates.length ? new Date(Math.min(...dates)).toISOString() : null,
+        prCreatedAt: pr?.createdAt || null,
+        author: pr?.author || { displayName: c.author?.name || '', email: c.author?.email || '' },
+      };
+    });
+    for (const c of commits) {
+      if (inPr.has(c.id) || /^(Merged PR \d+:|Merge pull request #\d+ from )/.test(c.message || '')) continue;
+      changes.push({ kind: 'commit', id: c.id, firstCommitAt: c.author?.date || null, author: { displayName: c.author?.name || '', email: c.author?.email || '' } });
+    }
+    return changes;
+  }
+
   /** Pending approvals from classic releases and YAML environment checks, in one list. */
   const approvals = () => cached('builds:approvals', async () => {
     const [projects, who, builds] = await Promise.all([tracked(), me(), rawBuilds()]);
@@ -969,6 +1004,68 @@ export function createService({
 
     async delivery(days) {
       return buildDelivery({ targets: await this.deliveryData(days), days });
+    },
+
+    /**
+     * What DORA needs for this organization over two periods of `days` (this one and the one
+     * before): its production environments with their deploys and the changes each shipped, the
+     * completed pull requests (hotfixes, and when each was opened), and the tracked teams with their
+     * members. `production` (names) overrides the settings' production names.
+     */
+    async doraData(days, { production } = {}) {
+      const settings = await store.load();
+      const names = production ?? settings.dora?.production ?? '';
+      const span = 2 * days;
+      const [targets, rels, monitors, closed, projects, team, repoList] = await Promise.all([
+        productionTargets(), releases().catch(() => []), myMonitors(), closedPRs(span + 30).catch(() => []), tracked(), people().catch(() => []), repos(),
+      ]);
+      // Every classic release stage is a candidate, so a configured name can pick one the default wouldn't.
+      const linked = new Set(monitors.filter((m) => m.link).map((m) => targetKeyOf(m.link)));
+      const candidates = targets.map((t) => ({ ...t, monitored: linked.has(t.key) }));
+      const keys = new Set(candidates.map((t) => t.key));
+      for (const d of rels) {
+        for (const st of d.stages || []) {
+          const link = { type: 'release', projectId: d.projectId, definitionId: d.id, stage: st.name };
+          if (!keys.has(targetKeyOf(link))) candidates.push({ ...link, key: targetKeyOf(link), projectName: d.projectName, name: `${d.name} · ${st.name}` });
+        }
+      }
+      const since = Date.now() - span * DAY;
+      const prOf = (repoId, id) => closed.find((p) => p.repoId === repoId && String(p.id) === String(id));
+      const environments = await Promise.all(candidates.filter((t) => isProduction(t, names)).map(async (t) => {
+        let history;
+        try {
+          history = await deployHistory(t, span + 30);
+        } catch (err) {
+          console.warn(`[dora] ${t.name}: ${err.message}`);
+          return null;
+        }
+        let read = 0;
+        const deploys = await Promise.all(history.map(async (d, i) => {
+          const out = { id: d.id, label: d.label, at: d.at, status: d.status, commit: d.commit || null, repoId: d.repoId || null, branch: d.branch || null, webUrl: d.webUrl };
+          if (d.status !== 'succeeded' || Date.parse(d.at) < since || !d.commit) return out;
+          const prev = previousDeploy(history, i);
+          if (!prev || prev.commit === d.commit || read++ >= DORA_DEPLOYS) return out;
+          const repo = repoList.find((r) => r.id === d.repoId) || { id: d.repoId, name: '', projectId: t.projectId };
+          const raw = await commitsBetween(repo.projectId, repo.id, prev.commit, d.commit).catch(() => []);
+          return { ...out, changes: await changesShipped(repo, raw, prOf) };
+        }));
+        const { monitored, key, name, stage, type, projectId, projectName, branch } = t;
+        return { key, name, stage: stage || null, type, monitored: !!monitored, projectId, projectName, branch: branch || null, deploys };
+      }));
+      const teams = projects.flatMap((p) => p.teams.map((tm) => ({
+        key: `${p.id}:${tm.id}`,
+        name: tm.name,
+        projectId: p.id,
+        projectName: p.name,
+        members: team.filter((m) => (m.teams || []).some((x) => x.projectId === p.id && x.teamId === tm.id)),
+      })));
+      return { environments: environments.filter(Boolean), pullRequests: closed.filter((p) => p.status === 'completed'), teams, production: names, windowHours: settings.dora?.windowHours ?? DEFAULT_WINDOW_HOURS };
+    },
+
+    /** DORA metrics per project and team over the last `days` (30 or 90) and the period before (domain/dora.js). */
+    async dora(days, opts = {}) {
+      const data = await this.doraData(days, opts);
+      return buildDora({ ...data, days });
     },
 
     /** Raw material for one week's summary (see domain/summary.js). */
@@ -1705,6 +1802,12 @@ export function createService({
     async saveSettings(patch) {
       const allowed = {};
       for (const k of ['projects', 'thresholds', 'blockedTag', 'autoComplete', 'refreshSeconds']) if (k in patch) allowed[k] = patch[k];
+      // DORA: which environments are production (names, comma-separated; empty for the default) and the failure window.
+      if (patch.dora && typeof patch.dora === 'object') {
+        allowed.dora = {};
+        if ('production' in patch.dora) allowed.dora.production = String(patch.dora.production ?? '').slice(0, 300).trim();
+        if ('windowHours' in patch.dora) allowed.dora.windowHours = Math.min(14 * 24, Math.max(1, Math.round(Number(patch.dora.windowHours) || 24)));
+      }
       if ('refreshSeconds' in allowed) allowed.refreshSeconds = Math.min(600, Math.max(15, Math.round(Number(allowed.refreshSeconds) || 60)));
       const saved = await store.save(allowed);
       cache.invalidate('');
