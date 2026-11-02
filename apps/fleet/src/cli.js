@@ -135,6 +135,7 @@ async function updateFleet(asked) {
     saveState({ update: checked });
     if (!newer) return asked && host.notice(`Fleet ${VERSION} is the latest version`);
     // fleet.ico is the installer's shortcuts' icon, which a new executable alone wouldn't change.
+    host.notice(`Installing Fleet ${checked.latest}…`, 120_000);
     await installUpdate(checked.latest, { extras: ['fleet.ico'] });
     host.notice(`Fleet ${checked.latest} is installed: it runs from the next start`);
   } catch (e) {

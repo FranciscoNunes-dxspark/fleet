@@ -43,7 +43,7 @@ whose one font lacks many of the apps' characters: Fleet draws lookalikes in the
 **Elsewhere**, or for the bare executable, download `fleet` for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
 and put it on your PATH. It is one executable with all nine apps inside, so it's the only download you
 need. It checks for a new version once a day and installs it by itself; the new version starts the
-next time you open Fleet. (The apps inside don't update themselves: Fleet updates them together. `/update` in any of them asks Fleet to look for a new version now and install it.)
+next time you open Fleet. (The apps inside don't update themselves: Fleet updates them together. `/update` in any of them asks Fleet to look for a new version now and install it, saying "Installing Fleet <version>…" in the bar while it does.)
 
 From a checkout of the [fleet repository](https://github.com/FranciscoNunes-dxspark/fleet) (Node 22 or later):
 
