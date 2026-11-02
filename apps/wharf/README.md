@@ -70,10 +70,23 @@ The cluster `kubectl` is set to, a namespace's pods together under its name, the
 | `e` | A shell inside it (it asks which container, when the pod has several; see Shells) |
 | `x` | Delete it (asks first); its controller starts another |
 | `r` | Restart the deployment it belongs to, pod by pod (asks first) |
+| `w` | Follow its deployment's rollout (see Rollouts) |
 | `i` | `kubectl describe`, events included |
 | `y` | Copy its name |
 
-`/namespace <name>` lists one namespace (`all` lists every one; it is remembered), `/context <name>` switches the cluster (asks first: it changes `kubectl` itself, in every terminal), `/rollout`, `/describe` and `/delete-pod` take a pod.
+`/namespace <name>` lists one namespace (`all` lists every one; it is remembered), `/context <name>` switches the cluster (asks first: it changes `kubectl` itself, in every terminal), `/describe` and `/delete-pod` take a pod.
+
+### Rollouts
+
+`w` on a pod, or `/rollout <deployment>` (a name, `namespace/name`, or one of its pods), follows a deployment's rollout over the view, reading it again every 2 seconds: how many of the desired replicas are updated, ready and available, the old ones still running, the new ReplicaSet's pods, and their problems as they happen (a crash loop, an image that can't be pulled, a failed readiness or liveness probe, from the pods and their warning events). It ends done, or says so when it has stalled (past the deployment's `progressDeadlineSeconds`) or is failing (a new pod waits on something it won't get over by itself); either way the activity lines keep what it ended with.
+
+| Key | |
+|---|---|
+| `u` | Undo it: `kubectl rollout undo`, back to the previous revision (asks first), and follow that |
+| `l` | The log of the newest pod with a problem, else of the first new pod |
+| `esc` | Close |
+
+`/rollout restart <pod>` restarts a pod's deployment (as `r`), `/rollout undo <deployment>` undoes one (asks first).
 
 ### Shells
 

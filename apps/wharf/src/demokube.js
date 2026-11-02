@@ -1,6 +1,8 @@
 // An in-memory cluster with the interface of kube.js's provider, for --demo and the tests: two
 // namespaces, a deployment's pods, one crash-looping, one still starting. `state` is exposed for
-// the tests: { pods, contexts, current, calls }.
+// the tests: { pods, contexts, current, calls, rollouts }. A rollout moves on a step each time it's
+// read: web's and worker's come up, api's new pod crash-loops with its readiness probe failing until
+// it's undone.
 const pod = (namespace, name, status, extra = {}) => ({
   name,
   namespace,
@@ -32,8 +34,31 @@ const LOG = (name, n) => {
   return `${Array.from({ length: n }, (_, i) => `${at(i)} ${i % 8 === 7 ? `ERROR ${name}: connection to db refused` : `INFO ${name}: served request ${200 + i}`}`).join('\n')}\n`;
 };
 
+const REPLICAS = { web: 2, api: 1, worker: 1 };
+
+/** The demo's rollout of `deployment` `step` reads in (rolloutState's shape), crash-looping for api until it's `undone`. */
+function demoRollout(deployment, namespace, step, undone) {
+  const desired = REPLICAS[deployment];
+  const failing = deployment === 'api' && !undone;
+  const updated = Math.min(desired, step);
+  const available = failing ? 0 : Math.min(updated, Math.max(0, step - 1));
+  const total = available >= desired ? desired : desired + (updated ? 1 : 0);
+  const pods = Array.from({ length: updated }, (_, i) => ({
+    name: `${deployment}-9a8b7c6d5-new${i}`,
+    status: failing && step > 1 ? 'CrashLoopBackOff' : i < available ? 'Running' : 'ContainerCreating',
+    ready: i < available ? '1/1' : '0/1',
+    restarts: failing ? Math.max(0, step - 1) : 0,
+  }));
+  const problems = failing && step > 1 ? [{ pod: pods[0].name, text: 'Unhealthy: Readiness probe failed: HTTP probe failed with statuscode: 503' }, { pod: pods[0].name, text: 'app: CrashLoopBackOff: back-off 10s restarting failed container' }] : [];
+  const revision = String(undone ? 5 : 4);
+  const done = available >= desired && total === desired;
+  const phase = done ? 'done' : failing && step > 1 ? 'failing' : 'progressing';
+  const message = done ? `Done: ${available} of ${desired} available on revision ${revision}.` : phase === 'failing' ? `Failing: ${pods[0].name} is in CrashLoopBackOff, which it won't get over by itself.` : `Waiting: ${updated} of ${desired} new replicas updated.`;
+  return { name: deployment, namespace, revision, desired, updated, ready: available, available, total, phase, message, deadline: 600, pods, problems };
+}
+
 export function demoKube() {
-  const state = { pods: demoPods(), contexts: ['docker-desktop', 'aks-prod'], current: 'docker-desktop', calls: [] };
+  const state = { pods: demoPods(), contexts: ['docker-desktop', 'aks-prod'], current: 'docker-desktop', calls: [], rollouts: {} };
   const find = (p) => {
     const found = state.pods.find((x) => x.name === p.name && x.namespace === p.namespace);
     if (!found) throw new Error(`Error from server (NotFound): pods "${p.name}" not found`);
@@ -80,7 +105,19 @@ export function demoKube() {
     async rolloutRestart(deployment, namespace) {
       state.calls.push(['rollout restart', namespace, deployment]);
       for (const p of state.pods) if (p.deployment === deployment && p.namespace === namespace) Object.assign(p, { status: 'Running', ready: '1/1', readyCount: 1, restarts: 0 });
+      state.rollouts[`${namespace}/${deployment}`] = { step: 0, undone: false };
       return `deployment.apps/${deployment} restarted`;
+    },
+    async rollout(deployment, namespace) {
+      if (!REPLICAS[deployment] || namespace !== 'shop') throw new Error(`Error from server (NotFound): deployments.apps "${deployment}" not found`);
+      const r = (state.rollouts[`${namespace}/${deployment}`] ??= { step: 0, undone: false });
+      r.step++;
+      return demoRollout(deployment, namespace, r.step, r.undone);
+    },
+    async rolloutUndo(deployment, namespace) {
+      state.calls.push(['rollout undo', namespace, deployment]);
+      state.rollouts[`${namespace}/${deployment}`] = { step: 0, undone: true };
+      return `deployment.apps/${deployment} rolled back`;
     },
   };
 }

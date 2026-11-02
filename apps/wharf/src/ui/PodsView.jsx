@@ -28,6 +28,10 @@ export function PodsView({ kube, ctx, width, height, active }) {
     if (key.return || input === 'l') k.showLogs(ctx, id);
     else if (input === 'x') k.deletePod(ctx, id);
     else if (input === 'r') k.rollout(ctx, id);
+    else if (input === 'w') {
+      if (sel.deployment) k.watchRollout(ctx, `${sel.namespace}/${sel.deployment}`);
+      else ctx.note(`${sel.name} doesn't belong to a deployment: there's no rollout to follow.`, 'error');
+    }
     else if (input === 'i') k.describe(ctx, id);
     else if (input === 'y') ctx.copy(sel.name, `${sel.name}`);
     else if (input === 'e') k.shell(ctx, id);

@@ -66,11 +66,22 @@ export const HELP = [
       ['e', 'A shell inside it (asks which container, when it has several); inside Fleet, line by line'],
       ['x', 'Delete it (asks first); its controller starts another'],
       ['r', 'Restart the deployment it belongs to, pod by pod (asks first)'],
+      ['w', 'Follow its deployment\'s rollout: replicas as they change, the new pods\' problems, done or stalled'],
       ['i', 'kubectl describe, events included'],
       ['y', 'Copy its name'],
       ['/namespace', 'One namespace, or all of them'],
       ['/context', 'Another cluster from kubeconfig (asks: kubectl itself switches)'],
       'In the list: ● green running and ready · yellow starting, terminating or not all ready · red crash-looping, failing to pull, killed · grey completed. CPU and memory show when the cluster has a metrics server.',
+    ],
+  },
+  {
+    title: 'Rollout',
+    about: 'w on a pod, or /rollout <deployment>: a deployment\'s rollout, read again every 2 seconds until it is done',
+    rows: [
+      ['u', 'Undo it: kubectl rollout undo, back to the previous revision (asks first)'],
+      ['l', 'The log of the newest pod with a problem, else of the first new pod'],
+      ['esc / q', 'Close (what it ended with stays in the activity lines)'],
+      'Stalled is past its progressDeadlineSeconds; failing is a new pod waiting on what it won\'t get over by itself (a crash loop, an image that can\'t be pulled). Both say so and offer u.',
     ],
   },
   {

@@ -19,7 +19,7 @@ export const COMMANDS = [
   { name: 'pods', desc: 'The pods of the cluster kubectl is set to: the Pods view', run: (ctx) => ctx.setView('pods') },
   { name: 'namespace', args: '[name|all]', desc: 'Which namespace the Pods view lists', complete: 'namespaces', run: (ctx, s) => k.namespace(ctx, s) },
   { name: 'context', args: '[name]', desc: 'Which cluster kubectl talks to (asks before switching: it is kubectl itself that changes)', complete: 'contexts', run: (ctx, s) => k.useContext(ctx, s) },
-  { name: 'rollout', args: '<pod>', desc: 'Restart the deployment a pod belongs to, pod by pod (asks first)', complete: 'pods', run: (ctx, s) => k.rollout(ctx, s) },
+  { name: 'rollout', args: '<deployment|pod> | restart <pod> | undo <deployment>', desc: 'Follow a deployment\'s rollout (replicas, the new pods\' problems, done or stalled); restart one pod by pod, or undo it (both ask first)', complete: 'deployments', run: (ctx, s) => k.rolloutCommand(ctx, s) },
   { name: 'describe', args: '<pod>', desc: 'What kubectl describe says about a pod, events included', complete: 'pods', run: (ctx, s) => k.describe(ctx, s) },
   { name: 'delete-pod', args: '<pod>', desc: 'Delete a pod; its controller starts another (asks first)', complete: 'pods', run: (ctx, s) => k.deletePod(ctx, s) },
   { name: 'logs', args: '<name>', desc: 'A container\'s log, following it', complete: 'containers', run: (ctx, s) => a.showLogs(ctx, s) },
@@ -54,6 +54,7 @@ export function findCommand(name) {
 function completions(kind, data, kube) {
   if (kind === 'containers') return [...(data?.containers ?? []).map((c) => c.name), ...new Set((data?.containers ?? []).map((c) => c.project).filter(Boolean)), 'all'];
   if (kind === 'projects') return [...new Set((data?.containers ?? []).map((c) => c.project).filter(Boolean))];
+  if (kind === 'deployments') return [...new Set((kube?.pods ?? []).filter((p) => p.deployment).map((p) => `${p.namespace}/${p.deployment}`)), 'restart', 'undo'];
   if (kind === 'pods') return (kube?.pods ?? []).map((p) => p.name);
   if (kind === 'namespaces') return ['all', ...new Set((kube?.pods ?? []).map((p) => p.namespace))];
   if (kind === 'contexts') return kube?.contexts ?? [];

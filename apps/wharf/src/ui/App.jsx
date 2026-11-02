@@ -22,6 +22,7 @@ import { PodsView } from './PodsView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { ShellPane } from './ShellPane.jsx';
+import { RolloutView } from './RolloutView.jsx';
 import { commandLine } from '../shell.js';
 import { spawn } from 'node:child_process';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
@@ -39,7 +40,7 @@ const VIEWS = [
 const HINTS = {
   containers: '↵ log · e shell · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause · v scan',
   images: 'x remove · p prune unused · v scan · y copy id',
-  pods: '↵ log · c a container\'s log · e shell · x delete · r restart deployment · i describe · y copy name',
+  pods: '↵ log · c a container\'s log · e shell · x delete · r restart deployment · w watch rollout · i describe · y copy name',
   log: '↵ all its output · y copy it',
 };
 
@@ -114,7 +115,8 @@ const viewerKey = (overlay) => {
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
 // `runInTerminal(command, args)` hands the terminal to a program and takes it back (cli.jsx's, only
 // outside Fleet); without it a shell (e) runs in the line-mode pane, started by `spawnShell`.
-export function App({ config: initialConfig, provider = createDocker(), kube = createKube(), pollEvery = 3000, moodEvery = 30_000, openUrl, setTitle, mouse, copy, checkUpdate, installUpdate, runInTerminal, spawnShell = spawn }) {
+// `rolloutEvery` is how often a rollout being followed is read again, in ms.
+export function App({ config: initialConfig, provider = createDocker(), kube = createKube(), pollEvery = 3000, rolloutEvery = 2000, moodEvery = 30_000, openUrl, setTitle, mouse, copy, checkUpdate, installUpdate, runInTerminal, spawnShell = spawn }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -348,6 +350,10 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     get kubeData() {
       return kubeRef.current;
     },
+    // The namespace the Pods view lists, read or not yet: what a deployment named alone is looked for in.
+    get kubeNamespace() {
+      return kubeNamespace.current;
+    },
     task,
     note,
     confirm,
@@ -412,6 +418,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     // One container's (`container`), or every one of the pod's.
     showPodLogs: (p, { container, ...opts } = {}) => setOverlay({ kind: 'logs', title: `${p.name}${container ? `/${container}` : ''} · log`, process: p.name, source: () => kube.logs(p, { tail: 500, container }), ...opts }),
     shareTrouble: (what) => a.shareTrouble(ctx, what),
+    // A deployment's rollout ({ deployment, namespace }), followed over the view.
+    showRollout: (target) => setOverlay({ kind: 'rollout', title: `rollout ${target.namespace}/${target.deployment}`, target }),
     // e: a shell, `make(tty)` saying the command ({ command, args }). With a terminal to hand over it
     // runs there until it ends; inside Fleet (no terminal) in the line-mode pane.
     openShell: ({ title, make }) => {
@@ -712,6 +720,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     main = <HelpView sections={HELP_SECTIONS} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay?.kind === 'shell') {
     main = <ShellPane key={viewerKey(overlay)} title={overlay.title} shell={overlay.shell} spawnShell={spawnShell} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
+  } else if (overlay?.kind === 'rollout') {
+    main = <RolloutView key={viewerKey(overlay)} target={overlay.target} every={rolloutEvery} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay) {
     main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} source={overlay.source} log={overlay.kind === 'logs'} process={overlay.process} project={overlay.project} search={overlay.search} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (view === 'log') {
@@ -736,6 +746,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
+        : overlay?.kind === 'rollout'
+          ? 'u undo (asks) · l the log of a new pod · esc close'
         : overlay?.kind === 'shell'
           ? '↵ send · ↑↓ history · pgup pgdn scroll · ctrl+c twice stop · esc close'
         : overlay

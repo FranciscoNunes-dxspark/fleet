@@ -1,6 +1,6 @@
 // The Kubernetes operations, written once like actions.js's: keys and slash commands call these with `ctx`.
 import { findPod } from './rows.js';
-import { kubeProblem } from './kube.js';
+import { kubeProblem, safeName } from './kube.js';
 import { kubeShell } from './shell.js';
 
 const pods = (ctx) => ctx.kubeData?.pods ?? [];
@@ -93,7 +93,60 @@ export async function rollout(ctx, text) {
   const yes = await ctx.confirm({ title: `Restart deployment ${p.deployment}?`, detail: `Every pod of it in ${p.namespace} is replaced, one after another.`, danger: true });
   if (!yes) return false;
   const r = await ctx.task(`rollout restart ${p.deployment}`, async (signal) => ({ stdout: await ctx.kube.rolloutRestart(p.deployment, p.namespace, { signal }).catch((e) => Promise.reject(explainKube(e))) }), { label: 'Restarting', refreshKube: true, activity: `Restarted deployment ${p.deployment} in ${p.namespace}` });
+  if (r.ok) ctx.note(`w on one of its pods (or /rollout ${p.namespace}/${p.deployment}) follows the rollout.`);
   return r.ok;
+}
+
+/**
+ * The deployment `text` means, as { deployment, namespace }: `namespace/name`, a pod of the Pods view
+ * (its deployment), a deployment its pods belong to, or else a name in the namespace being listed
+ * (`default` when that's all of them). Says why and resolves null when there's none.
+ */
+export function deploymentTarget(ctx, text) {
+  const t = String(text ?? '').trim();
+  if (!t) return ctx.note('Name a deployment (or one of its pods).', 'error') ?? null;
+  const slash = t.indexOf('/');
+  if (slash > 0) return checked(ctx, { namespace: t.slice(0, slash), deployment: t.slice(slash + 1) });
+  const p = findPod(pods(ctx), t);
+  if (p?.deployment) return { deployment: p.deployment, namespace: p.namespace };
+  const owned = [...new Map(pods(ctx).filter((x) => x.deployment).map((x) => [`${x.namespace}/${x.deployment}`, { deployment: x.deployment, namespace: x.namespace }])).values()];
+  const exact = owned.filter((o) => o.deployment === t);
+  const found = exact.length ? exact : owned.filter((o) => o.deployment.startsWith(t));
+  if (found.length === 1) return found[0];
+  const ns = ctx.kubeData?.namespace ?? ctx.kubeNamespace;
+  return checked(ctx, { deployment: t, namespace: ns && ns !== 'all' ? ns : 'default' });
+}
+
+function checked(ctx, target) {
+  if (safeName(target.deployment) && safeName(target.namespace)) return target;
+  return ctx.note(`"${target.namespace}/${target.deployment}" isn't a deployment Kubernetes would have named.`, 'error') ?? null;
+}
+
+/** w on a pod, or /rollout: follows its deployment's rollout over the view until it's done or stalls. */
+export function watchRollout(ctx, text) {
+  const target = deploymentTarget(ctx, text);
+  if (!target) return false;
+  ctx.showRollout(target);
+  return true;
+}
+
+/** u in a rollout, or /rollout undo: back to the deployment's previous revision, asking first. */
+export async function undoRollout(ctx, { deployment, namespace }) {
+  const yes = await ctx.confirm({ title: `Undo the rollout of ${deployment}?`, detail: `kubectl rollout undo puts ${namespace}/${deployment} back on its previous revision, pod by pod.`, danger: true });
+  if (!yes) return false;
+  const r = await ctx.task(`rollout undo ${deployment}`, async (signal) => ({ stdout: await ctx.kube.rolloutUndo(deployment, namespace, { signal }).catch((e) => Promise.reject(explainKube(e))) }), { label: 'Undoing', refreshKube: true, activity: `Undid the rollout of ${deployment} in ${namespace}` });
+  return r.ok;
+}
+
+/** /rollout: `<deployment|pod>` follows a rollout, `restart <pod>` restarts one, `undo <deployment>` takes it back. */
+export function rolloutCommand(ctx, text) {
+  const [first, ...rest] = String(text ?? '').trim().split(/\s+/);
+  if (first === 'restart') return rollout(ctx, rest.join(' '));
+  if (first === 'undo') {
+    const target = deploymentTarget(ctx, rest.join(' '));
+    return target ? undoRollout(ctx, target) : false;
+  }
+  return watchRollout(ctx, text);
 }
 
 /** /namespace: which pods the Pods view lists: one namespace, or `all`. */
