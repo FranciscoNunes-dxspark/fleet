@@ -35,3 +35,14 @@ test('saved hosts: text, lookup by name or unique prefix, add and remove', () =>
   assert.deepEqual(withoutHost(hosts, 'alpha'), [b]);
   assert.equal(withHost(hosts, { ...a, user: 'you' }).length, 2);
 });
+
+test('a command keeps its parameters in view once its name is typed and there is nothing to complete', async () => {
+  const { suggestionsFor } = await import('../src/commands.js');
+  const [hint] = suggestionsFor('/add web me@web ', { data: { hosts: [], panes: {} } });
+  assert.match(hint.hint, /<name> <user@host\[:port\]>/);
+  assert.equal(hint.insert, '/add web me@web ', 'enter runs the line as typed');
+  assert.equal(hint.run, false);
+  assert.equal(suggestionsFor('/hidden on', {})[0].hint, '[on|off]', 'a value typed in full still shows what the command takes');
+  assert.equal(suggestionsFor('/last ', {}).length, 0, 'a command with no parameters has nothing to show');
+  assert.equal(suggestionsFor('/connect bu', { data: { hosts: [{ name: 'build' }] } })[0].label, 'build', 'candidates still come first');
+});

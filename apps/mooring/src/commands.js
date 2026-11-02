@@ -74,8 +74,10 @@ export function suggestionsFor(value, { data, user = [] } = {}) {
   }
   const cmd = findCommand(value.slice(1, space), user);
   const rest = value.slice(space + 1);
-  if (!cmd?.complete) return [];
-  const names = ranked([...new Set(completions(cmd.complete, data))], rest);
-  if (names.length === 1 && names[0] === rest) return [];
-  return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${quoted(n)}`, run: true }));
+  if (!cmd) return [];
+  const names = cmd.complete ? ranked([...new Set(completions(cmd.complete, data))], rest) : [];
+  if (names.length && !(names.length === 1 && names[0] === rest)) return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${quoted(n)}`, run: true }));
+  // Nothing to complete: keep the command's parameters in view while they are typed. Its `insert` is the line as it
+  // is, so ↵ runs it and tab changes nothing.
+  return cmd.args ? [{ label: `/${cmd.name}`, hint: cmd.args, desc: cmd.desc, insert: value, run: false }] : [];
 }
