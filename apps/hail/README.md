@@ -515,6 +515,26 @@ headers or bodies of production's answers, so for a request taken from it the bo
 last response History has to the same method, path and query, wherever it went; with none, only the
 status is. The replay's own answer isn't kept in History, since it belongs to no request of the file.
 
+### Comparing environments
+
+`/compare <environment>` (or `alt+c` in Requests, which lists the environments to pick from) sends the
+request under the cursor in the environment Hail is in and then in another, and shows how the two
+answers differ. The other can be one of Hail's own environments or a project environment's name (see
+[Environments](#environments)), which stands for the environment of Hail's it names: `/compare prod`
+with `"prod": { "hail": { "env": "production" } }` compares with `production`.
+
+Each answer's status and time come first, then what differs: the status; the headers, leaving out the
+ones that differ on every response (`Date`, request ids and trace ids, `ETag`, `Server-Timing`,
+caches' and CDNs' own) and taking only the names of the cookies `Set-Cookie` sets, their values always
+differing; and the body. A JSON body is compared by path, as `/data` writes paths: `+ .items[1]  "b"`
+is only in the other environment, `- .currency  "EUR"` only in this one, and `~ .total  10 → 9.5`
+changed; any other body is compared line by line. When nothing differs, it says so.
+
+Both go as `↵` sends them, with each environment's variables, certificates and proxy, but as `/load`
+does: without the cookie jar, response handlers or `>>`, and not kept in History, since the answers
+belong to the comparison. Before anything but a `GET`, `HEAD` or `OPTIONS` goes to a production
+environment, Hail asks.
+
 ### Claude drafts requests
 
 `/draft <openapi.json, a URL, or any file> [what to write]` hands an API description to Claude (through
@@ -582,6 +602,7 @@ setting turns both off.
 | `1` `2` `3` `4` `5` / `tab` | Requests, Edit, Response, History, Log (`shift+tab` goes back) |
 | `↵` | Send the request under the cursor; in Response, send it again; in Edit, start typing |
 | `alt+a` | In Requests: send every request, top to bottom, and show a report |
+| `alt+c` | In Requests: compare the request's answers in two environments (`/compare`) |
 | `alt+l` | In Requests: load in a pinch (starts `/load <request> 200 10` for you to change and run) |
 | `i` | Edit the file, typing, on the request under the cursor |
 | `ctrl+r` | In Edit: send the request the cursor is in |
@@ -647,6 +668,7 @@ and Trawl.
 | `/load [request] [count] [concurrency]` | Send a request many times, so many at once (200, 10 at a time, unless said), and report how it held up |
 | `/env [name]` | The environment the variables come from (a list to pick from if none is named) |
 | `/project-env [name]` | The project's environment, every app's (`.fleet/project.json`): alone, which it is; a name switches every app, and Hail's variables then come from the environment of Hail's it names (see [Environments](#environments)) |
+| `/compare [environment]` | Send the request picked in Hail's environment and in another (Hail's own, or the project's), and show how the answers differ: status, time, headers and the body, JSON by path (see [Comparing environments](#comparing-environments)) |
 | `/curl [request]` | Copy a request, filled in, as a curl command |
 | `/data` | The response body, when it is JSON, JSON lines or CSV/TSV, as a tree to open and close (`→ ← ↵`) or, for rows, a table (`t`); `y` copies a value, `p` its path, `/` asks a path such as `.items[0].name` or `.items[].id \| length`; `esc` closes (`d` in Response) |
 | `/import <file> [--new]` | Add the requests in a Postman collection, a HAR recording or an OpenAPI or Swagger document (or a Postman environment, to `http-client.env.json`); `--new` writes them to a file of their own |

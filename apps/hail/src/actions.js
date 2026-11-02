@@ -31,7 +31,8 @@ import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity,
 import { fit, relTime } from '@fleet/kit/text.js';
 import { findByRequestId, hostVariable, idsIn, replayBlock, startsWithVariable, rowsJson, rowsRequestBlock, tablePath } from './takes.js';
 import { describeEnvironments, productionQuestion, setEnvironment as setProjectEnvironment } from '@fleet/kit/environments.js';
-import { isSafeMethod } from './project.js';
+import { hailEnvironmentNamed, isSafeMethod } from './project.js';
+import { changeLine, compareAnswers } from './compare.js';
 import { compareResponses, lastResponseTo, normaliseBase, rebaseUrl, replayHeaders, replayTargets, statusLine, targetNamed } from './replay.js';
 
 const YES_NO = (yes) => [
@@ -59,12 +60,15 @@ function requestNamed(ctx, name) {
  * given. A secret that isn't saved yet ({{$secret name}}) is asked for, saved, and the request filled
  * in again. `missing` on what it returns lists the variables nothing gave a value.
  */
-async function fillRequest(ctx, request) {
-  let req = await prepare(request, ctx.scope(), { dir: ctx.data.dir });
+const fillRequest = (ctx, request) => fillIn(ctx, request, () => ctx.scope());
+
+/** fillRequest with the variables of `scope()` (/compare's other environment, say). */
+async function fillIn(ctx, request, scope) {
+  let req = await prepare(request, scope(), { dir: ctx.data.dir });
   const unsaved = req.missing.map((m) => /^\$secret\s+(\S+)$/.exec(m)?.[1]).filter(Boolean);
   if (unsaved.length) {
     for (const name of unsaved) if (!(await askForSecret(ctx, name))) return null;
-    req = await prepare(request, ctx.scope(), { dir: ctx.data.dir });
+    req = await prepare(request, scope(), { dir: ctx.data.dir });
   }
   return req;
 }
@@ -299,6 +303,134 @@ export async function load(ctx, rest) {
   const lines = loadReport(stats, { label: `${req.method} ${request.label}`, count, concurrency, cancelled: run.cancelled });
   ctx.showText(`Load: ${request.label}`, lines.map((segs) => segs.map((x) => x.text).join('')).join('\n'), { lines: toned(lines) });
   return { stats };
+}
+
+/**
+ * /compare <environment> (alt+c in Requests): the request under the cursor sent in the environment Hail
+ * is in and in another (one of Hail's, or a project environment's, by the Hail environment it names),
+ * one after the other, and how the answers differ: the status, the time, the headers that say
+ * something (compare.js leaves out the ones that differ on every response) and the body, JSON by path.
+ * As /load does, it goes without the cookie jar, response handlers, >> or the history: the answers
+ * belong to the comparison. Production asks first, for anything but GET, HEAD or OPTIONS.
+ */
+export async function compare(ctx, arg = '', which = null) {
+  const d = ctx.data;
+  if (!d) return ctx.note(NO_FILE, 'error');
+  const request = which ?? ctx.selectedRequest();
+  if (!request) return ctx.note('Pick a request first.', 'error');
+  if (!inRun(request)) return ctx.note("A WebSocket isn't something /compare sends: it's a connection, opened with ↵.", 'error');
+  const here = ctx.environment();
+  if (!here) return ctx.note('Pick an environment first (e): /compare sends the request in it and in another.', 'error');
+  const others = d.environments.names.filter((n) => n !== here);
+  const a = String(arg ?? '').trim();
+  if (!a) {
+    if (!others.length) return ctx.note(`${here} is the only environment in http-client.env.json: /compare needs another.`, 'error');
+    return ctx.showPicker({
+      title: `Compare ${request.label}: ${here} and`,
+      hint: '↵ send it in both and compare',
+      items: others.map((env) => ({ env, segments: [{ text: env, strong: true }, { text: ctx.productionFor?.(env) ? '  production' : '', color: theme.del }] })),
+      onPick: (it) => {
+        ctx.closeOverlay();
+        compare(ctx, it.env, request);
+      },
+    });
+  }
+  const target = hailEnvironmentNamed(a, { names: d.environments.names, dir: ctx.folder() });
+  if (target.error) return ctx.note(target.error, 'error');
+  const there = target.env;
+  if (there === here) return ctx.note(`Hail is in ${here} already${target.via ? ` (the project's ${target.via})` : ''}: name another environment to compare it with.`, 'error');
+  const prod = [here, there].find((env) => ctx.productionFor?.(env));
+  if (prod && !(await productionOk(ctx, request.method, `Send ${request.label} in ${here} and ${there} to compare`, prod))) return false;
+  const reqs = [];
+  for (const env of [here, there]) {
+    const vars = d.environments.vars(env);
+    const req = await fillIn(ctx, request, () => ({ ...ctx.scope(), environment: vars })).catch((e) => failed(ctx, e));
+    if (!req) return;
+    if (req.missing.length) return ctx.note(`In ${env}, nothing gives ${req.missing.map((m) => `{{${m}}}`).join(', ')} a value.`, 'error');
+    reqs.push({ env, req, insecure: Boolean(d.environments.options?.(env)?.insecure) });
+  }
+  const options = request.options ?? {};
+  const answers = [];
+  const r = await ctx.task(
+    `Compare ${request.label}: ${here} and ${there}`,
+    async (signal) => {
+      for (const { req, insecure } of reqs) {
+        const timeout = parseTimeout(options.timeout);
+        try {
+          answers.push(req.method === 'GRPC' ? await grpcSend(req, { signal, timeout, insecure }) : await sendRequest(req, { signal, jar: null, follow: !options['no-redirect'], timeout, insecure }));
+        } catch (e) {
+          if (signal.aborted) throw e;
+          answers.push({ error: networkText(e) });
+        }
+      }
+      if (answers.every((x) => x.error)) throw new Error(`No answer in either: ${answers[0].error}`);
+      const c = answers.some((x) => x.error) ? null : compareAnswers(answers[0], answers[1]);
+      const said = (x, env) => `${x.error ? 'no answer' : statusLine(x)} in ${env}`;
+      return { stdout: `${said(answers[0], here)}, ${said(answers[1], there)}${c ? (c.same ? ' · the same' : ` · ${differences(c)}`) : ''}` };
+    },
+    { label: 'Comparing' },
+  );
+  if (!r?.ok) return r;
+  const lines = compareLines({ request, reqs, answers });
+  ctx.showText(`Compared ${request.label}: ${here} and ${there}`, lines.map((l) => l.map((x) => x.text).join('')).join('\n'), { lines });
+  return r;
+}
+
+/** An error from sending, in a few words. */
+const networkText = (e) => firstLine(e?.message ?? e);
+const firstLine = (s) => String(s ?? '').split('\n')[0];
+
+/** "3 headers, 2 body values" that differ. */
+function differences(c) {
+  const parts = [];
+  if (!c.status.same) parts.push('the status');
+  if (c.headers.length) parts.push(`${c.headers.length} header${c.headers.length === 1 ? '' : 's'}`);
+  if (c.body.kind === 'json') parts.push(`${c.body.changes.length} value${c.body.changes.length === 1 ? '' : 's'} in the body`);
+  if (c.body.kind === 'text') parts.push('the body');
+  return `differ: ${parts.join(', ')}`;
+}
+
+// How many lines of the body's differences the viewer gets; the rest are counted.
+const COMPARE_LINES = 400;
+
+/** /compare's viewer: each environment's answer, then how they differ. */
+function compareLines({ request, reqs, answers }) {
+  const dim = (text) => ({ text, color: theme.dim });
+  const status = (x) => (x.error ? { text: 'no answer', bold: true, color: theme.del } : { text: statusLine(x), bold: true, color: statusColour(x.status) });
+  const mask = (req) => req.secrets.reduce((t, v) => t.split(v).join('••••••'), `${req.method} ${req.url}`);
+  const width = Math.max(...reqs.map((x) => x.env.length));
+  const lines = reqs.map((x, i) => [dim(`${x.env.padEnd(width)}  `), status(answers[i]), dim(`  ${mask(x.req)}`)]);
+  answers.forEach((x, i) => x.error && lines.push([{ text: `${reqs[i].env}: ${x.error}`, color: theme.del }]));
+  if (answers.some((x) => x.error)) return lines;
+  const c = compareAnswers(answers[0], answers[1]);
+  const [here, there] = reqs.map((x) => x.env);
+  lines.push([]);
+  if (c.same) {
+    lines.push([{ text: 'The same status, headers and body.', color: theme.add }, dim(c.ms.before != null ? `  ${c.ms.before} ms and ${c.ms.after} ms` : '')]);
+    return lines;
+  }
+  lines.push([dim(`- ${here} only   + ${there} only   ~ changed, ${here} → ${there}`)], []);
+  if (!c.status.same) lines.push([{ text: 'Status  ', bold: true }, { text: String(c.status.before), color: statusColour(c.status.before) }, dim(' → '), { text: String(c.status.after), color: statusColour(c.status.after) }]);
+  if (c.headers.length) {
+    lines.push([{ text: 'Headers', bold: true }, dim("  (not Date, request ids, cookies' values, ETags and the like)")]);
+    for (const h of c.headers) {
+      if (h.before === undefined) lines.push([{ text: `+ ${h.name}: ${h.after}`, color: theme.add }]);
+      else if (h.after === undefined) lines.push([{ text: `- ${h.name}: ${h.before}`, color: theme.del }]);
+      else lines.push([{ text: `~ ${h.name}: `, color: theme.warn }, { text: h.before }, dim(' → '), { text: h.after }]);
+    }
+  }
+  if (c.body.kind === 'json') {
+    lines.push([{ text: 'Body', bold: true }, dim(`  ${c.body.changes.length} value${c.body.changes.length === 1 ? '' : 's'} differ, by path`)]);
+    const colour = { added: theme.add, removed: theme.del, changed: theme.warn };
+    for (const ch of c.body.changes.slice(0, COMPARE_LINES)) lines.push([{ text: changeLine(ch), color: colour[ch.kind] }]);
+    if (c.body.changes.length > COMPARE_LINES) lines.push([dim(`… and ${c.body.changes.length - COMPARE_LINES} more`)]);
+  } else if (c.body.kind === 'text') {
+    lines.push([{ text: 'Body', bold: true }, dim('  line by line')]);
+    const colour = { '-': theme.del, '+': theme.add, '…': theme.dim };
+    for (const [m, l] of c.body.diff.slice(0, COMPARE_LINES)) lines.push([{ text: m === '…' ? '…' : `${m} ${l}`, color: colour[m] }]);
+    if (c.body.diff.length > COMPARE_LINES) lines.push([dim(`… and ${c.body.diff.length - COMPARE_LINES} more lines`)]);
+  } else lines.push([dim('The bodies are the same.')]);
+  return lines;
 }
 
 /** c in Requests, and /curl: the request, filled in, as a curl command on the clipboard. */

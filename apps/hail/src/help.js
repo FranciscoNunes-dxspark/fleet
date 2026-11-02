@@ -37,6 +37,7 @@ export const HELP = [
       ['c', 'Copy it as a curl command, variables filled in'],
       ['alt+i', 'Import a curl command (/import-curl): paste it, ↵ adds it to the file as a request'],
       ['/import <file>', 'Add the requests in a Postman collection, a HAR recording or an OpenAPI/Swagger document (ctrl+z in Edit undoes it)\na Postman environment goes into http-client.env.json · --new writes them to a file of their own\ncredentials become {{$secret}} placeholders, said; cookies and auth headers in a HAR are left out'],
+      ['alt+c', "Compare environments (/compare <env>): send it in Hail's environment and in another, then how the answers differ\nthe status, the time, the headers that say something (not Date, request ids, cookies' values…), the body by path for JSON, else line by line"],
       ['alt+l', 'Load in a pinch: starts /load <it> 200 10 (count, then how many at once) for you to change and ↵\nlatency percentiles, requests a second, statuses, errors and a sparkline over time · esc stops it'],
       ['y', 'Copy its URL'],
       ['i', 'Edit the file, typing, on this request'],

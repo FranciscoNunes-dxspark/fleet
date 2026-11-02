@@ -8,6 +8,7 @@ export const COMMANDS = [
   { name: 'load', args: '[request] [count] [concurrency]', desc: 'Send a request many times, so many at once (200, 10 at a time, unless said), and report its latency, statuses and errors; esc stops it', complete: 'requests', run: (ctx, s) => a.load(ctx, s) },
   { name: 'env', args: '[name]', desc: 'The environment the variables come from (a list to pick from if none is named)', complete: 'environments', run: (ctx, s) => a.chooseEnvironment(ctx, s) },
   { name: 'project-env', args: '[name]', desc: "The project's environment (.fleet/project.json), every app's: alone, which it is; a name switches every app, and Hail's variables follow (its \"hail\": { \"env\" })", complete: 'projectEnvironments', run: (ctx, s) => a.projectEnvironment(ctx, s) },
+  { name: 'compare', args: '[environment]', desc: "Send the request picked in Hail's environment and in another (Hail's, or the project's), and show how the answers differ: status, time, headers, the body by path (alt+c in Requests)", complete: 'compareEnvironments', run: (ctx, s) => a.compare(ctx, s) },
   { name: 'curl', args: '[request]', desc: 'Copy a request, filled in, as a curl command', complete: 'requests', run: (ctx, s) => a.copyCurl(ctx, s) },
   { name: 'data', desc: "The response body (JSON, JSON lines or CSV) as a tree or table to open and query with a path like .items[0].name (d in Response)", run: (ctx) => a.showData(ctx) },
   { name: 'import-curl', args: '<curl command>', desc: 'Add a request to the file from a curl command (a browser\'s Copy as cURL, from any shell)', run: (ctx, s) => a.importCurl(ctx, s) },
@@ -52,6 +53,11 @@ function completions(kind, data, files, environment, projectEnvs = []) {
   if (kind === 'environments') return data?.environments.names ?? [];
   if (kind === 'files') return files;
   if (kind === 'projectEnvironments') return projectEnvs;
+  // Hail's own environments but the one it's in, then the project's that aren't named the same.
+  if (kind === 'compareEnvironments') {
+    const own = (data?.environments.names ?? []).filter((n) => n !== environment);
+    return [...own, ...projectEnvs.filter((n) => !data?.environments.names.some((x) => x.toLowerCase() === n.toLowerCase()))];
+  }
   if (kind === 'auths') return data ? [...Object.keys(data.environments.auth?.(environment) ?? {}), 'clear'] : [];
   return [];
 }

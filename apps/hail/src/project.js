@@ -32,6 +32,27 @@ export function productionFor(dir, hailEnv, opts) {
   return null;
 }
 
+/**
+ * A name typed for /compare as one of Hail's environments: Hail's own (any case) first, then a project
+ * environment's, through its "hail": { "env" }. { env, via? } (`via` the project environment's name) or
+ * { error }.
+ */
+export function hailEnvironmentNamed(name, { names = [], dir = null } = {}) {
+  const n = String(name ?? '').trim();
+  const own = names.find((x) => x.toLowerCase() === n.toLowerCase());
+  if (own) return { env: own };
+  const project = dir ? readProject(dir) : null;
+  const pname = project && !project.error ? project.names.find((x) => x.toLowerCase() === n.toLowerCase()) : null;
+  if (pname) {
+    const env = hailEnvOf(project.environments[pname]);
+    if (!env) return { error: `The project's ${pname} names no environment of Hail's ("hail": { "env": "…" } in .fleet/project.json).` };
+    if (!names.includes(env)) return { error: `The project's ${pname} is Hail's ${env}, which http-client.env.json doesn't have.` };
+    return { env, via: pname };
+  }
+  const theirs = project && !project.error ? `; the project's: ${project.names.join(', ')}` : '';
+  return { error: `There's no environment called ${n}. Hail's: ${names.join(', ') || 'none'}${theirs}.` };
+}
+
 /** The project's environment names, for completing /project-env; [] without a project. */
 export function projectEnvironmentNames(dir) {
   const project = dir ? readProject(dir) : null;
