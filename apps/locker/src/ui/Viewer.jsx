@@ -9,8 +9,9 @@ import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
  * `lines` are rows of coloured segments to draw instead of `text` (which y still copies). Scrolls; esc or
  * q closes it, and with it whatever value it showed. With `secret`, y copies through ctx.copySecret,
  * which clears the clipboard again. `onKey(input)` sees a key first and returns true when it took it.
+ * With `follow` it opens scrolled to the end (a checklist shown again as it grows keeps its newest step in sight).
  */
-export function Viewer({ title, text = '', lines: given, secret = false, onKey, ctx, width, height, active, onClose }) {
+export function Viewer({ title, text = '', lines: given, secret = false, onKey, follow = false, ctx, width, height, active, onClose }) {
   const innerW = width - 4;
   const innerH = height - 2;
   const lines = given
@@ -21,8 +22,8 @@ export function Viewer({ title, text = '', lines: given, secret = false, onKey, 
         .flatMap((l) => (l ? wrap(l, innerW) : ['']))
         .map((l) => [{ text: l }]);
   const max = Math.max(0, lines.length - innerH);
-  const [top, setTopState] = useState(0);
-  const topRef = useRef(0);
+  const [top, setTopState] = useState(follow ? max : 0);
+  const topRef = useRef(follow ? max : 0);
   const setTop = (n) => {
     topRef.current = Math.max(0, Math.min(max, n));
     setTopState(topRef.current);

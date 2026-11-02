@@ -77,7 +77,21 @@ The key vault's secrets, then its certificates. Red when disabled or expired; th
 | `e` | A new value, typed hidden, saved as a new version after asking (the old one stays as a version; the new one has no expiry date) |
 | `n` | A new secret: its name, then its value, hidden |
 | `x` | Disable it after asking (it says which settings refer to it), or enable a disabled one |
+| `r` | Rotate it end to end (below) |
 | `o` | The vault in the Azure portal |
+
+### Rotating a secret
+
+`/rotate <secret>` (or `r` on one in the Vault view) does a rotation as one checklist, each step marked as
+it runs; `esc` stops it there (what is done stays done, and the checklist says where it stopped):
+
+1. **A new value**: generated (32 random bytes, base64url) unless you paste one (a new API key a provider gave you), typed hidden.
+2. **A new version** of the secret, after asking, as `e` sets one.
+3. **The apps that read it**: every App Service app and slot in the subscription whose settings or connection strings are Key Vault references to it. Those that read its latest version are restarted after asking, so they read the new value now rather than within the day App Service takes on its own. Those pinned to a version are listed with what their setting should say (`@Microsoft.KeyVault(SecretUri=…/secrets/<name>/<new version>)`), and once the checklist is done the line that opens the first one's settings in Sonar is copied (Sonar changes app settings; Locker doesn't).
+4. **The restarted apps answer again**: each one's default address with the environment's `healthPath` (`/` without one, see Environments) is asked every 3 s until it answers 2xx, for up to two minutes.
+5. **The previous version disabled**, after asking, once every restarted app answered (it says which pinned settings still read it).
+
+Every step goes in the family's activity log by name; the value goes only to Key Vault.
 
 ### Expiry
 
@@ -89,7 +103,7 @@ What Locker read, with how many keys each has and where it is. `↵` lists a sou
 
 ## Slash commands
 
-`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/disable <secret>` disables or enables one. `/env [name]` chooses the project's environment (below). `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/rotate <secret>` rotates one end to end (`r`), `/disable <secret>` disables or enables one. `/env [name]` chooses the project's environment (below). `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 Your own commands and keys go in the settings file, as in the siblings: `"commands": { "prod": "/app shop-api" }`, `"keys": { "drift": { "ctrl+o": "/app" } }`.
 
@@ -146,4 +160,4 @@ Once a day the downloaded executable looks for a newer `locker-v…` release and
 
 ## Not yet
 
-Changing an App Service app's settings (Sonar does that, `/appsettings` there), Key Vault keys, a certificate's renewal, and other stores (AWS, GCP, HashiCorp Vault, Doppler).
+Changing an App Service app's settings (Sonar does that, `/appsettings` there; `/rotate` says what to change), Key Vault keys, a certificate's renewal, and other stores (AWS, GCP, HashiCorp Vault, Doppler).

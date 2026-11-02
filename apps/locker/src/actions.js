@@ -18,6 +18,7 @@ import { cellMark } from './drift.js';
 import { expiryWords } from './expiry.js';
 import { isShown } from './load.js';
 import { familyChoices, siteIn, siteNamed, sonarLine } from './share.js';
+import { rotateSecret } from './rotate.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
@@ -290,7 +291,7 @@ export function showSecret(ctx, vault, s) {
   // The overlay has the keys, so the keys its hint names are its own: each acts on this secret and replaces the overlay.
   const onKey = isSecret
     ? (input) => {
-        const act = { v: revealSecret, y: copySecret, e: (c, vlt, sec) => setSecret(c, sec.name), x: (c, vlt, sec) => toggleSecret(c, sec) }[input];
+        const act = { v: revealSecret, y: copySecret, e: (c, vlt, sec) => setSecret(c, sec.name), x: (c, vlt, sec) => toggleSecret(c, sec), r: (c, vlt, sec) => rotateSecret(c, sec.name) }[input];
         if (!act) return false;
         act(ctx, vault, s);
         return true;
@@ -298,7 +299,7 @@ export function showSecret(ctx, vault, s) {
     : undefined;
   ctx.showText(s.name, text.join('\n'), {
     onKey,
-    lines: [[{ text: `${s.name} in ${vault.name}`, bold: true }], [], ...rows.map(([k, v]) => [{ text: k.padEnd(11), color: theme.dim }, { text: v, color: k === 'expires' && s.expires ? theme[/expired|today/.test(v) ? 'del' : 'warn'] : undefined }]), ...(usedBy.length ? [[], [{ text: `In the drift view as ${usedBy.join(', ')}`, color: theme.dim }]] : []), ...(isSecret ? [[], [{ text: 'v shows its value · y copies it · e sets a new one · x disables it', color: theme.dim }]] : [])],
+    lines: [[{ text: `${s.name} in ${vault.name}`, bold: true }], [], ...rows.map(([k, v]) => [{ text: k.padEnd(11), color: theme.dim }, { text: v, color: k === 'expires' && s.expires ? theme[/expired|today/.test(v) ? 'del' : 'warn'] : undefined }]), ...(usedBy.length ? [[], [{ text: `In the drift view as ${usedBy.join(', ')}`, color: theme.dim }]] : []), ...(isSecret ? [[], [{ text: 'v shows its value · y copies it · e sets a new one · r rotates it · x disables it', color: theme.dim }]] : [])],
   });
 }
 

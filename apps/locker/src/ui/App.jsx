@@ -48,7 +48,7 @@ const VIEW_LABELS = Object.fromEntries(VIEWS.map((v) => [v.id, v.label]));
 
 const HINTS = {
   drift: '↵ where · v values · y copy · a add to .env · d differs · m missing · c columns · t Sonar',
-  vault: '↵ details · v value · y copy · e new value · n new secret · x disable',
+  vault: '↵ details · v value · y copy · e new value · r rotate · n new secret · x disable',
   expiry: '↵ details · e new value',
   sources: '↵ its keys · space column or not',
   log: '↵ all its output · y copy it',
@@ -513,6 +513,12 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
     local: localRef.current,
     moveTo,
     task,
+    // Cancels the running task, as esc does where the view has the keys (an overlay closing, say).
+    cancel: () => busyRef.current?.abort(),
+    // A step of a longer job for the family's activity log, by name and never with a value (task's `activity` is the usual way).
+    log: (text, kind = 'change') => {
+      if (configRef.current.familyMoods !== false) logActivity('locker', { text, kind, project: storeRef.current.dir });
+    },
     note,
     confirm,
     // A plain or masked field in the confirm's place: resolves the text (or null on esc).
@@ -943,7 +949,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
   } else if (overlay?.kind === 'picker') {
     main = <Picker key={viewerKey(overlay)} picker={overlay.picker} ctx={ctx} width={W} height={mainH} active={overlayActive} />;
   } else if (overlay) {
-    main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} lines={overlay.lines} secret={overlay.secret} onKey={overlay.onKey} ctx={ctx} width={W} height={mainH} active={overlayActive} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
+    main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} lines={overlay.lines} secret={overlay.secret} onKey={overlay.onKey} follow={overlay.follow} ctx={ctx} width={W} height={mainH} active={overlayActive} onClose={() => (overlay.onClose?.(), queueMicrotask(ctx.closeOverlay))} />;
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'vault') {

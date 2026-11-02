@@ -1,4 +1,5 @@
 import * as a from './actions.js';
+import { rotateSecret } from './rotate.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { label } from './azure/arm.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
@@ -13,6 +14,7 @@ export const COMMANDS = [
   { name: 'columns', desc: 'Which sources are columns in the drift view', run: (ctx) => a.chooseColumns(ctx) },
   { name: 'only', args: '[all|diff|missing]', desc: 'The drift view\'s rows: all, only those that differ or are broken, only those a source lacks', complete: 'filters', run: (ctx, s) => ctx.setFilter(s || 'all') },
   { name: 'set', args: '[secret]', desc: 'Set a secret in the vault, typed hidden (a new version of one there, or a new one); asks first', complete: 'secrets', run: (ctx, s) => a.setSecret(ctx, s) },
+  { name: 'rotate', args: '<secret>', desc: 'Rotate a vault secret end to end: a new value, the apps that read it restarted or handed to Sonar, checked, the old version disabled (asks at each step)', complete: 'secrets', run: (ctx, s) => rotateSecret(ctx, s) },
   { name: 'disable', args: '<secret>', desc: 'Disable a secret in the vault, or enable a disabled one (asks first)', complete: 'secrets', run: (ctx, s) => a.toggleSecret(ctx, ctx.findSecret(s)) },
   { name: 'env', args: '[name]', desc: "The project's environment (dev, staging, prod: .fleet/project.json), for every app; alone, which one it is", complete: 'environments', run: (ctx, s) => a.environment(ctx, s) },
   { name: 'expiry', args: '[days]', desc: 'How many days ahead a secret or certificate counts as expiring (30)', run: (ctx, s) => a.setExpiryDays(ctx, s) },

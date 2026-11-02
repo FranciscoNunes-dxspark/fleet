@@ -1,6 +1,7 @@
 import React from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
+import { rotateSecret } from '../rotate.js';
 import { expiryTone, expiryWords, isExpired } from '../expiry.js';
 import { expiryDays } from '../config.js';
 import { theme } from '../theme.js';
@@ -62,6 +63,7 @@ export function VaultView({ vault, data, problem, ctx, width, height, active }) 
     else if (input === 'y') secret ? a.copySecret(ctx, vault, sel) : ctx.note('Locker copies secrets, not certificates.', 'error');
     else if (input === 'e') secret ? a.setSecret(ctx, sel.name) : ctx.note('Locker sets secrets, not certificates.', 'error');
     else if (input === 'x') a.toggleSecret(ctx, sel);
+    else if (input === 'r') secret ? rotateSecret(ctx, sel.name) : ctx.note('Locker rotates secrets, not certificates: the portal renews a certificate.', 'error');
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {
