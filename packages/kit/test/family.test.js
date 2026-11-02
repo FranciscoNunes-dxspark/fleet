@@ -218,3 +218,10 @@ test('a container image is an image context, which Bilge takes', () => {
   assert.equal(describeContext(c), 'image shop/api:1.4.2');
   assert.deepEqual(TAKEN_BY.image, ['bilge']);
 });
+
+test("a secret's name: what maskValue masks the whole of", async () => {
+  const { isSecretName, maskValue } = await import('../family.js');
+  for (const k of ['Db__Password', 'ApiKey', 'client_secret', 'SasToken', 'AccountKey']) assert.equal(isSecretName(k), true, k);
+  for (const k of ['Logging:Level', 'Port', 'ConnectionTimeout']) assert.equal(isSecretName(k), false, k);
+  assert.equal(maskValue('Db__Password', 'x') === '••••', isSecretName('Db__Password'));
+});

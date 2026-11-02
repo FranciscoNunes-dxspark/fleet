@@ -9,7 +9,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { run } from '@fleet/kit/run.js';
 import { fit } from '@fleet/kit/text.js';
-import { MASK, copiedNote, maskValue, redactSecrets, repoRoot, takeLine } from '@fleet/kit/family.js';
+import { MASK, copiedNote, isSecretName, maskValue, redactSecrets, repoRoot, takeLine } from '@fleet/kit/family.js';
 import { theme } from './theme.js';
 import { isReference, normKey } from './keys.js';
 import { rotateSecret } from './rotate.js';
@@ -29,8 +29,6 @@ export const PATTERNS = [
   { what: 'SAS signature', re: /[?&;]sig=([A-Za-z0-9%+/=]{16,})/g },
 ];
 
-// A key whose name says it holds a secret.
-const SECRET_NAME = /pass(word)?|pwd|secret|token|api[-_]?key|access[-_]?key|account[-_]?key|private|credential|signature/i;
 // A value that is only a placeholder, a reference or a variable, not a secret.
 const PLACEHOLDER = /^(|true|false|null|none|changeme|change-me|xxx+|\*+|•+|<[^>]*>|\{\{.*\}\}|\$\{.*\}|\$[A-Z_]+|%[A-Z_]+%|your[-_ ].*|example.*|todo)$/i;
 
@@ -40,7 +38,7 @@ const PLACEHOLDER = /^(|true|false|null|none|changeme|change-me|xxx+|\*+|•+|<[
  */
 export function secretKeys({ local = [], columns = [], vaultSecrets = [] } = {}) {
   const out = new Set();
-  for (const s of local) for (const e of s.entries ?? []) if (SECRET_NAME.test(e.key)) out.add(normKey(e.key));
+  for (const s of local) for (const e of s.entries ?? []) if (isSecretName(e.key)) out.add(normKey(e.key));
   for (const c of columns) if (c.kind === 'app') for (const e of c.entries ?? []) if (isReference(e.value)) out.add(normKey(e.key));
   for (const s of vaultSecrets) out.add(normKey(s.name));
   return out;
@@ -76,7 +74,7 @@ export function findSecrets(text, known = new Set(), { example = false } = {}) {
   }
   if (!example && known.size) {
     // A JSON file names a key by its last part inside its section: only a last part that names a secret counts.
-    const leaves = new Set([...known].map(leaf).filter((l) => SECRET_NAME.test(l)));
+    const leaves = new Set([...known].map(leaf).filter((l) => isSecretName(l)));
     for (const m of line.matchAll(ASSIGN)) {
       const norm = normKey(m[2]);
       if (known.has(norm) || leaves.has(norm)) add(m[2], m[2], m[3]);

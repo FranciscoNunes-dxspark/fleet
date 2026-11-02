@@ -329,6 +329,9 @@ const SECRET_KEY = /pass(word)?|pwd|secret|token|api[-_]?key|access[-_]?key|acco
 const SECRET_FIELD = /^(password|pwd|accountkey|sharedaccesskey|sharedaccesssignature|client ?secret|token|apikey|api key)$/i;
 export const MASK = '••••';
 
+/** Whether a setting's name says it holds a secret (a password, token, key, credential…), as maskValue decides. */
+export const isSecretName = (key) => SECRET_KEY.test(String(key ?? ''));
+
 /** `value` safe to show: passwords in URLs and connection strings masked, the whole value when its key names a secret. */
 export function maskValue(key, value) {
   const s = String(value ?? '');
