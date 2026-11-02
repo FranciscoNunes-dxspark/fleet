@@ -224,6 +224,7 @@ test('/leaks lists what it finds, masked; t hands Splice the commit, r rotates a
       app.stdin.write('j');
       await new Promise((r) => setTimeout(r, 30));
     }
+    await new Promise((r) => setTimeout(r, 150));
     app.stdin.write(KEYS.enter);
     await until(shows(app, 'needs a rewrite'), 'the details');
     clean(app.lastFrame());
@@ -240,6 +241,8 @@ test('/leaks lists what it finds, masked; t hands Splice the commit, r rotates a
       app.stdin.write('j');
       await new Promise((r) => setTimeout(r, 30));
     }
+    // As until() does: once the cursor shows there, let the view's key handler catch up before r.
+    await new Promise((r) => setTimeout(r, 150));
     app.stdin.write('r');
     await until(shows(app, 'A new value for db-password in kv-shop'), 'the rotation');
     app.stdin.write('3');
