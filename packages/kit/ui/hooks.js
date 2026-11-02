@@ -271,20 +271,21 @@ export function useAsync(key, load, delay = 60, { stale } = {}) {
  * ...its section }, or null), kept current when it's switched here or in another app; a production one
  * turns the frames red while it's chosen.
  */
-export function useEnvironment(app, dir) {
-  const [env, setEnv] = useState(() => environmentFor(app, dir));
+export function useEnvironment(app, dir, { home } = {}) {
+  const opts = home ? { home } : undefined;
+  const [env, setEnv] = useState(() => environmentFor(app, dir, opts));
   useEffect(() => {
     const update = () => {
-      const next = environmentFor(app, dir);
+      const next = environmentFor(app, dir, opts);
       markProduction(next?.prod);
       setEnv(next);
     };
     update();
-    const stop = watchEnvironment(dir, update);
+    const stop = watchEnvironment(dir, update, opts);
     return () => {
       stop();
       markProduction(false);
     };
-  }, [app, dir]);
+  }, [app, dir, home]);
   return env;
 }

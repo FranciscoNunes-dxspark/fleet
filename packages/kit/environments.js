@@ -54,6 +54,10 @@ export function readProject(dir) {
 
 const selectionPath = (dir = familyDir()) => join(dir, SELECTION_FILE);
 
+// The watchers in this process, told straight away when this process switches, rather than at their
+// next poll: an app that runs /env sees its own switch at once.
+const listeners = new Set();
+
 function readSelection(home) {
   try {
     return JSON.parse(readFileSync(selectionPath(home), 'utf8')) ?? {};
@@ -72,7 +76,7 @@ export function currentEnvironment(dir, { home = familyDir() } = {}) {
   const chosen = readSelection(home)[project.root];
   const name = project.names.includes(chosen) ? chosen : project.default;
   const settings = project.environments[name];
-  return { name, prod: settings.prod === true, settings, root: project.root, names: project.names };
+  return { name, prod: settings.prod === true, settings, root: project.root, names: project.names, environments: project.environments };
 }
 
 /** What the chosen environment says to `app`: { name, prod, ...its section }, or null with no environments. */
@@ -102,16 +106,27 @@ export function setEnvironment(dir, name, { by = 'fleet', home = familyDir() } =
     return { ok: false, error: `Couldn't keep the choice: ${e.message}` };
   }
   logActivity(by, { text: `Switched ${basename(project.root)} to ${wanted}${project.environments[wanted].prod === true ? ' (production)' : ''}`, kind: 'change', project: project.root }, { dir: home });
+  for (const check of [...listeners]) check();
   return { ok: true, env: currentEnvironment(dir, { home }) };
 }
 
-/** A sentence for an app's /env with no argument: which one, and the others. */
-export function describeEnvironments(dir, opts) {
+/** Whether the project's environment `name` (another than the chosen one, say) is marked production. */
+export function isProduction(dir, name) {
+  const project = readProject(dir);
+  return Boolean(project && !project.error && project.environments[name]?.prod === true);
+}
+
+/**
+ * A sentence for an app's /env with no argument: which one, and the others. `command` is the slash
+ * command that switches it in this app (Hail's is /project-env, its /env being its own environments).
+ */
+export function describeEnvironments(dir, opts = {}) {
+  const command = opts.command ?? '/env';
   const project = readProject(dir);
   if (!project) return `No environments: a ${PROJECT_FILE.split('\\').join('/')} names them (dev, staging, prod) for every app.`;
   if (project.error) return `${project.file} can't be read: ${project.error}`;
   const env = currentEnvironment(dir, opts);
-  return `Environment: ${env.name}${env.prod ? ' (production)' : ''}. ${project.names.length > 1 ? `/env ${project.names.filter((n) => n !== env.name).join('|')} switches every app.` : ''}`.trim();
+  return `Environment: ${env.name}${env.prod ? ' (production)' : ''}. ${project.names.length > 1 ? `${command} ${project.names.filter((n) => n !== env.name).join('|')} switches every app.` : ''}`.trim();
 }
 
 /**
@@ -129,7 +144,9 @@ export function watchEnvironment(dir, onChange, { home = familyDir(), interval =
     onChange(env);
   };
   for (const f of files) watchFile(f, { interval, persistent: false }, check);
+  listeners.add(check);
   return () => {
+    listeners.delete(check);
     for (const f of files) unwatchFile(f, check);
   };
 }

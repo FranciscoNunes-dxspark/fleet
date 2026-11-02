@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { currentEnvironment, describeEnvironments, environmentFor, markProduction, productionQuestion, readProject, setEnvironment, watchEnvironment } from '../environments.js';
+import { currentEnvironment, describeEnvironments, isProduction, environmentFor, markProduction, productionQuestion, readProject, setEnvironment, watchEnvironment } from '../environments.js';
 import { recordCommand, recordedLines, recordingState, startRecording, stopRecording } from '../recording.js';
 import { readActivity } from '../family.js';
 import { theme } from '../theme.js';
@@ -95,6 +95,24 @@ test('recording: only while on, only slash commands, secrets masked; stopping ha
     assert.equal(lines[0].line, '/start api');
     assert.equal(recordingState({ home: p.home }), null);
     assert.deepEqual(recordedLines({ home: p.home }), []);
+  } finally {
+    p.done();
+  }
+});
+
+test("a switch in this process reaches its watchers at once; another environment's production flag; the app's own command", async () => {
+  const p = project(SHOP);
+  try {
+    const seen = [];
+    // A poll far longer than the test: only the in-process notice can reach it.
+    const stop = watchEnvironment(p.sub, (env) => seen.push(env.name), { home: p.home, interval: 60_000 });
+    setEnvironment(p.sub, 'prod', { home: p.home });
+    stop();
+    assert.deepEqual(seen, ['prod']);
+    assert.equal(isProduction(p.sub, 'prod'), true);
+    assert.equal(isProduction(p.sub, 'dev'), false);
+    assert.deepEqual(Object.keys(currentEnvironment(p.sub, { home: p.home }).environments), ['dev', 'prod']);
+    assert.match(describeEnvironments(p.sub, { home: p.home, command: '/project-env' }), /\/project-env dev switches/);
   } finally {
     p.done();
   }
