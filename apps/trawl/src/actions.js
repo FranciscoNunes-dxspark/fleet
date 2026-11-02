@@ -9,7 +9,7 @@ import { csvInsertScript, parseCsv } from './csv.js';
 import * as ed from './editor.js';
 import { findDataSources, importPlan, planText } from './datagrip.js';
 import { formatSql } from './format.js';
-import { wrap } from '@fleet/kit/text.js';
+import { stringWidth, wrap } from '@fleet/kit/text.js';
 import { cellText } from './cell.js';
 import { changesText, hasChanges, insertScript, saveRecovery, saveScript, tsvText, withSaved } from './edit.js';
 import { AI_LABELS, AI_LEVELS, EXPLAIN_SYSTEM, WHY_SYSTEM, aiLevel, askPrompt, canSeeSchema, consoleText, explainPrompt, parseAnswer, whyConsoleText, whyPrompt } from './ai.js';
@@ -43,14 +43,14 @@ import { timelineItems, wiringText } from './timeline.js';
 import { SLOW_SYSTEM, declaredTypes, indexText, measuredText, prepareStatement, slowConsoleText, slowPrompt, splitSuggestion, tablesIn } from './slow.js';
 import { connectionForQuery, familyOffers, newDatabases, placeText, projectLine, queryContext, rowsContext, rowsScript } from './siblings.js';
 import { API_LANGUAGES, API_SYSTEM, apiFileName, apiLanguage, apiPrompt, apiRequest, parseApi, projectLanguage } from './api.js';
-import { copyRefusal, copyScript, foreignKeysFrom, insertOrder, insertedRows, keyTuples, maskRows, parentSql, parseCopyRowsArgs, rowKey, rowsSql, selfOrder, tupleKey } from './copyrows.js';
+import { copyRefusal, copyScript, foreignKeysFrom, insertOrder, insertedRows, keyTuples, maskRows, maskingRules, parentSql, parseCopyRowsArgs, parseCopyrowsArgs, parseRuleChanges, rowKey, rowsSql, ruleText, selfOrder, tupleKey } from './copyrows.js';
 import { rehearsalRefusal, rehearsalSteps, rehearsalText, rowsAffected } from './rehearse.js';
 import { locksText } from './transactions.js';
 import { chartTitle, drawChart, planChart } from './chart.js';
 import { toXlsx } from './xlsx.js';
 import { diagramGraph, drawDiagram, mermaidDiagram, parseDiagramArgs } from './diagram.js';
 import { theme } from './theme.js';
-import { applySqlcmd, bindVariables, classifyScript, countQuery, oneLine, scriptVariables, splitStatements, sqlcmdVariables, statementAt, toCsv, toJson, toMarkdown, withoutLeadingComments } from './sql.js';
+import { applySqlcmd, bindVariables, classifyScript, countQuery, formatValue, oneLine, scriptVariables, splitStatements, sqlcmdVariables, statementAt, toCsv, toJson, toMarkdown, withoutLeadingComments } from './sql.js';
 import { parseData } from '@fleet/kit/datatree.js';
 
 // A WHERE that still changes more rows than this is asked about too.
@@ -2749,12 +2749,40 @@ export async function copyRowsTo(ctx, rest) {
     return ctx.note(e.message, 'error');
   }
   if (!args.target) return ctx.prefill('/copy-rows ');
-  const target = ctx.config.connections.find((c) => c.name.toLowerCase() === args.target.toLowerCase());
-  if (!target) return ctx.note(`No connection called ${args.target}.`, 'error');
-  if (target.prod || isReadOnly(target)) return ctx.note(`${target.name} is ${target.prod ? 'production' : 'read-only'}: /copy-rows only writes to a connection that is neither, such as a dev database.`, 'error');
+  return copyRowsBetween(ctx, { ...args, limit: null, overrides: new Map() }, { strict: false });
+}
+
+/**
+ * /copyrows <table> to <connection|environment> [where <condition>] [limit n] [--keep col] [--mask
+ * col]: as /copy-rows, with a preview of what each column gets (kept, made up, NULL), which the
+ * question can change; a key the target has already stops it with nothing copied, and a production
+ * target (the connection's --prod, or a production environment's) is asked about rather than refused.
+ */
+export async function copyRowsMasked(ctx, rest) {
+  if (!needSession(ctx)) return;
+  let args;
+  try {
+    args = parseCopyrowsArgs(rest);
+  } catch (e) {
+    return ctx.note(e.message, 'error');
+  }
+  if (!args.table) return ctx.prefill('/copyrows ');
+  return copyRowsBetween(ctx, args, { strict: true });
+}
+
+// Both forms: `strict` is /copyrows'.
+async function copyRowsBetween(ctx, args, { strict }) {
+  const command = strict ? '/copyrows' : '/copy-rows';
+  const found = connectionOrEnvironment(ctx, args.target);
+  if (found.error) return ctx.note(found.error, 'error');
+  const { conn: target, env } = found;
+  const prod = Boolean(target.prod || env?.prod);
+  if (!strict && (prod || isReadOnly(target))) return ctx.note(`${target.name} is ${prod ? 'production' : 'read-only'}: /copy-rows only writes to a connection that is neither, such as a dev database.`, 'error');
+  // A connection made read-only on purpose stays so; production's own read-only rule is what the production question is for.
+  if (strict && target.readOnly === true) return ctx.note(`${target.name} is read-only: /copyrows doesn't write to it.`, 'error');
   const session = ctx.session;
   const d = dialectOf(session);
-  if (dialectOf(target).kind !== d.kind) return ctx.note(`/copy-rows copies between databases of the same kind: this is ${d.label}, ${target.name} is ${dialectOf(target).label}.`, 'error');
+  if (dialectOf(target).kind !== d.kind) return ctx.note(`${command} copies between databases of the same kind: this is ${d.label}, ${target.name} is ${dialectOf(target).label}.`, 'error');
   if (target.name === session.conn.name && (target.database ?? session.database) === session.database) return ctx.note(`Those rows are in ${target.name} already: name another connection to copy them to.`, 'error');
   const res = ctx.results;
   const fromResults = res && res.conn === session.conn.name && res.database === session.database ? (res.edit?.table ?? res.source?.table) : null;
@@ -2762,9 +2790,9 @@ export async function copyRowsTo(ctx, rest) {
   if (!obj) return ctx.note(args.table ? `No table called ${args.table} in ${session.database}.` : 'Which table? /copy-rows <target> <table>, or run a query on one table first.', 'error');
   const refusal = copyRefusal(obj);
   if (refusal) return ctx.note(`Can't copy: ${refusal}.`, 'error');
-  const limit = ctx.config.limit;
+  const limit = args.limit ?? ctx.config.limit;
   const first = rowsSql(d, obj, { where: args.where, limit });
-  if (classifyScript(first, { dialect: d.kind }).write) return ctx.note('/copy-rows only reads where the rows come from, and that --where changes something.', 'error');
+  if (classifyScript(first, { dialect: d.kind }).write) return ctx.note(`${command} only reads where the rows come from, and that ${strict ? 'where' : '--where'} changes something.`, 'error');
   const schema = ctx.schema;
   const groups = new Map();
   const notes = [];
@@ -2809,7 +2837,7 @@ export async function copyRowsTo(ctx, rest) {
         }
       }
       const counts = [...groups.values()].map((g) => `${objectName(g.obj)} ${g.set.rows.length}`);
-      return [`Read ${counts.join(', ')}: the script is on screen.`];
+      return [`Read ${counts.join(', ')}: the ${strict ? 'preview' : 'script'} is on screen.`];
     },
     { label: `Reading ${objectName(obj)} and what it refers to` },
   );
@@ -2817,37 +2845,90 @@ export async function copyRowsTo(ctx, rest) {
   const main = groups.get(objectName(obj));
   if (!main.set.rows.length) return ctx.note(`${objectName(obj)} has no rows${args.where ? ` where ${args.where}` : ''}: nothing to copy.`);
   const { order, cycle } = insertOrder(groups, schema.foreignKeys);
-  const masked = [];
-  const tables = order.map((name) => {
-    const g = groups.get(name);
-    const rows = selfOrder(g.obj, g.set, schema.foreignKeys);
-    if (!args.mask) return { obj: g.obj, set: g.set, rows };
-    const m = maskRows(g.obj, { columns: g.set.columns, rows }, { kind: d.kind });
-    masked.push(...m.masked.map((c) => `${g.obj.name}.${c}`));
-    return { obj: g.obj, set: g.set, rows: m.rows };
-  });
+  // A rule for a column none of these rows have is a typo: say so rather than copy it unmasked.
+  const unknownRules = (overrides) => {
+    const known = new Set([...groups.values()].flatMap((g) => g.set.columns.flatMap((c) => [c.name, `${g.obj.name}.${c.name}`, `${objectName(g.obj)}.${c.name}`].map((x) => x.toLowerCase()))));
+    return [...overrides.keys()].filter((k) => !known.has(k));
+  };
+  let overrides = args.overrides;
+  const unknown = unknownRules(overrides);
+  if (unknown.length) return ctx.note(`No column ${unknown.join(', ')} in the rows being copied (${order.join(', ')}).`, 'error');
   const others = order.filter((n) => n !== objectName(obj));
-  const head = [
-    `${plural(main.set.rows.length, 'row')} of ${objectName(obj)}${args.where ? ` where ${args.where}` : ''}${others.length ? `, and the rows they refer to in ${others.join(', ')}` : ''}: from ${session.conn.name}/${session.database} to ${target.name}${target.database ? `/${target.database}` : ''}.`,
-    args.mask ? (masked.length ? `Personal data made up (the same value always gets the same fake, so joins still meet): ${masked.join(', ')}.` : 'No column looked personal, so nothing is made up.') : 'Not masked (--no-mask): the values are as they are where they came from.',
-    'A row whose key the target has already is skipped.',
-    ...(d.kind === 'postgres' ? ['Identity columns keep their values; the target\'s sequences aren\'t moved past them (setval does that).'] : []),
-    ...(d.kind === 'mysql' ? ['INSERT IGNORE also lets some other errors by as warnings (a value too long is cut), as MySQL does.'] : []),
-    ...(cycle ? ['These tables refer to each other in a circle: some inserts may fail on a foreign key.'] : []),
-    ...notes,
-  ];
-  const { script, rows } = copyScript(tables, d, { head });
+  const build = () => {
+    const masked = [];
+    const tables = order.map((name) => {
+      const g = groups.get(name);
+      const rows = selfOrder(g.obj, g.set, schema.foreignKeys);
+      const rules = maskingRules(g.obj, g.set.columns, { overrides, mask: args.mask });
+      const m = maskRows(g.obj, { columns: g.set.columns, rows }, { kind: d.kind, rules });
+      masked.push(...rules.filter((x) => x.rule !== 'keep').map((x) => `${g.obj.name}.${x.name}${x.rule === 'null' ? ' (NULL)' : ''}`));
+      return { obj: g.obj, set: g.set, rows: m.rows, rules, stop: strict && name === objectName(obj) };
+    });
+    const head = [
+      `${plural(main.set.rows.length, 'row')} of ${objectName(obj)}${args.where ? ` where ${args.where}` : ''}${others.length ? `, and the rows they refer to in ${others.join(', ')}` : ''}: from ${session.conn.name}/${session.database} to ${target.name}${target.database ? `/${target.database}` : ''}${env ? ` (${env.name})` : ''}.`,
+      masked.length ? `Personal data made up (the same value always gets the same fake, so joins still meet): ${masked.join(', ')}.` : args.mask ? 'No column looked personal, so nothing is made up.' : 'Not masked (--no-mask): the values are as they are where they came from.',
+      strict ? `A row of ${objectName(obj)} whose key the target has already stops the copy, and nothing goes in; a row it refers to that's there already is skipped.` : 'A row whose key the target has already is skipped.',
+      ...(d.kind === 'postgres' ? ['Identity columns keep their values; the target\'s sequences aren\'t moved past them (setval does that).'] : []),
+      ...(d.kind === 'mysql' && !strict ? ['INSERT IGNORE also lets some other errors by as warnings (a value too long is cut), as MySQL does.'] : []),
+      ...(cycle ? ['These tables refer to each other in a circle: some inserts may fail on a foreign key.'] : []),
+      ...notes,
+    ];
+    const { script, rows } = copyScript(tables, d, { head });
+    if (!strict) return { script, rows, text: script };
+    const sample = tables.find((t) => t.stop);
+    const width = Math.max(0, ...tables.flatMap((t) => t.rules.map((x) => stringWidth(x.name))));
+    const text = [
+      ...head,
+      '',
+      'What each column gets (--keep and --mask change it, or "Change a column" below):',
+      // The table asked for first; each column that changes on a line, the ones kept as they are on one.
+      ...[sample, ...tables.filter((t) => t !== sample)].flatMap((t) => {
+        const kept = t.rules.filter((x) => x.rule === 'keep' && !x.why).map((x) => x.name);
+        return [`  ${objectName(t.obj)}`, ...t.rules.filter((x) => x.rule !== 'keep' || x.why).map((x) => `    ${x.name}${' '.repeat(width - stringWidth(x.name))}  ${ruleText(x)}${x.why ? ` (${x.why})` : ''}`), ...(kept.length ? [`    kept as they are: ${kept.join(', ')}`] : [])];
+      }),
+      '',
+      `The first rows of ${objectName(obj)} as they'll go in:`,
+      ...sample.rows.slice(0, 3).map((row) => `  ${sample.set.columns.map((c, i) => `${c.name} ${formatValue(row[i])}`).join(' · ')}`),
+      '',
+      script,
+    ].join('\n');
+    return { script, rows, text };
+  };
   const title = `Copy to ${target.name}`;
-  ctx.showText(title, script);
-  const ok = await ctx.confirm({
-    title: `Insert up to ${plural(rows, 'row')} into ${target.name}${target.database ? ` (${target.database})` : ''}?`,
-    detail: `The script is above (pgup/pgdn scroll it). It runs in one transaction on ${target.name}; rows it has already are skipped.`,
-    scrollsOverlay: true,
-    options: YES_NO('Yes, copy them'),
-    danger: true,
-  });
+  let built = build();
+  for (;;) {
+    ctx.showText(title, built.text);
+    const ok = await ctx.confirm({
+      title: `Insert ${strict ? '' : 'up to '}${plural(built.rows, 'row')} into ${target.name}${target.database ? ` (${target.database})` : ''}?`,
+      detail: `The ${strict ? 'preview and the script are' : 'script is'} above (pgup/pgdn scroll it). It runs in one transaction on ${target.name}; ${strict ? `a key of ${objectName(obj)} it has already stops it` : 'rows it has already are skipped'}.`,
+      scrollsOverlay: true,
+      options: [...YES_NO('Yes, copy them'), ...(strict ? [{ label: "Change a column's rule", value: 'change' }] : [])],
+      danger: true,
+    });
+    if (ok !== 'change') {
+      if (!ok) return ctx.closeOverlay();
+      break;
+    }
+    const typed = await ctx.askText({ title: 'Which column, and what does it get?', detail: 'Email=keep · Name=mask · Token=null, several with commas; Players.Email for one table\'s only.' });
+    if (typed == null) continue;
+    try {
+      const more = parseRuleChanges(typed);
+      const wrong = unknownRules(more);
+      if (wrong.length) throw new Error(`No column ${wrong.join(', ')} in the rows being copied.`);
+      overrides = new Map([...overrides, ...more]);
+      built = build();
+    } catch (e) {
+      ctx.note(e.message, 'error');
+    }
+  }
+  // On top of the question above: production is written to only when this is answered yes too.
+  if (strict && prod) {
+    const q = productionQuestion(env?.prod ? env : { name: target.name, prod: true }, `Copy ${plural(built.rows, 'row')} into it`);
+    const yes = await ctx.confirm({ ...q, detail: env?.prod ? q.detail : `${target.name} is a production connection (--prod).`, scrollsOverlay: true, options: YES_NO('Yes, write to production') });
+    if (!yes) return ctx.closeOverlay();
+  }
   ctx.closeOverlay();
-  if (!ok) return;
+  const { script, rows } = built;
   let ran = null;
   const done = await ctx.task(
     `copy ${plural(rows, 'row')} to ${target.name}`,
@@ -2857,7 +2938,7 @@ export async function copyRowsTo(ctx, rest) {
         s = await ctx.openSession(target, { signal });
         const out = await s.run(script, { signal, limit: 1 });
         const inserted = insertedRows(out.messages);
-        ran = { database: s.database, summary: `${inserted} of ${rows} rows inserted (/copy-rows)`, inserted };
+        ran = { database: s.database, summary: `${inserted} of ${rows} rows inserted (${command})`, inserted };
         return [`${plural(inserted, 'row')} went in${rows - inserted ? `; ${plural(rows - inserted, 'row')} ${rows - inserted === 1 ? 'was' : 'were'} there already` : ''}.`];
       } catch (e) {
         if (e.needsPassword) e.message = `${target.name} needs its password: connect to it once in Trawl to save it, then copy again.`;
@@ -2873,7 +2954,7 @@ export async function copyRowsTo(ctx, rest) {
     { label: `Copying to ${target.name}` },
   );
   if (ran) ctx.recordRun({ sql: script, conn: target.name, database: ran.database, at: Date.now(), ok: done.ok, summary: ran.summary });
-  if (done.ok) ctx.logActivity?.(`/copy-rows ${objectName(obj)} from ${session.conn.name}/${session.database} to ${target.name}${ran.database ? `/${ran.database}` : ''} · ${plural(ran.inserted, 'row')} inserted${args.mask ? ', personal data made up' : ''}`, { kind: 'copy' });
+  if (done.ok) ctx.logActivity?.(`${command} ${objectName(obj)} from ${session.conn.name}/${session.database} to ${target.name}${ran.database ? `/${ran.database}` : ''} · ${plural(ran.inserted, 'row')} inserted${args.mask ? ', personal data made up' : ''}`, { kind: 'copy' });
   return done;
 }
 

@@ -9,7 +9,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
 import { DIALECTS } from '../src/dialects.js';
-import { copyRefusal, copyScript, insertOrder, insertedRows, keyTuples, maskRows, parentSql, parseCopyRowsArgs, personalKind, rowsSql, selfOrder } from '../src/copyrows.js';
+import { copyRefusal, copyScript, insertOrder, insertedRows, keyTuples, maskRows, maskingRules, parentSql, parseCopyRowsArgs, parseCopyrowsArgs, parseRuleChanges, personalKind, rowsSql, ruleText, selfOrder } from '../src/copyrows.js';
 import { fakeValue } from '../src/generate.js';
 import { demoSession } from '../src/demo.js';
 import { App } from '../src/ui/App.jsx';
@@ -176,5 +176,100 @@ test('C in the Explorer picks the target, and a production target is refused', a
   app.stdin.write('2');
   await until(() => !frame().includes('Insert up to 3 rows'), 'the question answered no');
   assert.doesNotMatch(frame(), /went in/);
+  app.unmount();
+});
+
+// /copyrows: the newer form, with a preview of each column's rule, a key already there stopping it,
+// and production asked about rather than refused.
+test('/copyrows arguments: a table to a target, where up to limit, and --keep/--mask anywhere', () => {
+  const a = parseCopyrowsArgs('dbo.Players to dev where ClubId = 1 AND Goals > 0 limit 20 --keep Name --mask Shirt,Position');
+  assert.deepEqual({ ...a, overrides: [...a.overrides] }, { table: 'dbo.Players', target: 'dev', where: 'ClubId = 1 AND Goals > 0', limit: 20, overrides: [['name', 'keep'], ['shirt', 'mask'], ['position', 'mask']], mask: true });
+  assert.equal(parseCopyrowsArgs('').table, null);
+  assert.equal(parseCopyrowsArgs('t to staging').where, null);
+  assert.throws(() => parseCopyrowsArgs('t dev'), /Which table, to where/);
+  assert.throws(() => parseCopyrowsArgs('t to dev where'), /where takes a condition/);
+  assert.throws(() => parseCopyrowsArgs('t to dev --keep'), /take a column/);
+  assert.throws(() => parseCopyrowsArgs('t to dev limit 0'), /above 0/);
+  assert.deepEqual([...parseRuleChanges('Email=keep, Players.Token = null; Name mask')], [['email', 'keep'], ['players.token', 'null'], ['name', 'mask']]);
+  assert.throws(() => parseRuleChanges('Email=shuffle'), /isn't a column and a rule/);
+});
+
+test('secrets become NULL (scrambled where NOT NULL), flags and timestamps named like personal data stay, and overrides win', () => {
+  for (const c of ['PasswordHash', 'password_salt', 'RefreshToken', 'ApiKey', 'SecurityStamp']) assert.equal(personalKind(c, 'Users', 'nvarchar(200)'), 'secret', c);
+  for (const c of ['AccountNumber', 'BankAccount', 'SWIFT']) assert.equal(personalKind(c, 'Users', 'varchar(34)'), 'scramble', c);
+  assert.equal(personalKind('EmailConfirmed', 'Users', 'bit'), null);
+  assert.equal(personalKind('TokenExpiresAt', 'Users', 'datetime2'), null);
+  assert.equal(personalKind('BirthDate', 'Users', 'date'), 'birth');
+  assert.equal(personalKind('Origin', 'Visits', 'inet'), 'ip');
+  const users = { schema: 'dbo', name: 'Users', kind: 'table', columns: [col('Id', 'int', { pk: true }), col('Email', 'varchar(200)'), col('PasswordHash', 'varbinary(64)', { nullable: true }), col('Token', 'char(32)'), col('Notes', 'nvarchar(100)', { nullable: true })] };
+  const rules = maskingRules(users, users.columns, { overrides: new Map([['notes', 'mask'], ['users.email', 'keep']]) });
+  assert.deepEqual(rules.map((r) => [r.name, r.rule, r.kind ?? null]), [['Id', 'keep', null], ['Email', 'keep', null], ['PasswordHash', 'null', null], ['Token', 'fake', 'scramble'], ['Notes', 'fake', 'scramble']]);
+  assert.match(rules[3].why, /NOT NULL, so scrambled/);
+  assert.deepEqual(rules.map(ruleText), ['kept', 'kept', 'NULL', 'made up: scrambled, letters for letters and digits for digits', 'made up: scrambled, letters for letters and digits for digits']);
+  const m = maskRows(users, set(users, [[1, 'a@x.pt', Buffer.from('ff', 'hex'), 'abcdef0123456789abcdef0123456789', 'Rang 912 345 678']]), { rules });
+  assert.deepEqual(m.rows[0].slice(0, 3), [1, 'a@x.pt', null]);
+  assert.match(m.rows[0][3], /^[a-z]{6}\d{10}[a-z]{6}\d{10}$/);
+  assert.equal(m.rows[0][4].length, 'Rang 912 345 678'.length);
+});
+
+test('a table that stops on a key already there THROWs saying which, before its plain INSERT', () => {
+  const tables = [{ obj: clubs, set: set(clubs, []), rows: [[1, 'Club A']] }, { obj: people, set: set(people, []), rows: [[7, 1, null, "O'Neil", 'a@x', 'X', null, 0]], stop: true }];
+  const ss = copyScript(tables, DIALECTS.sqlserver).script;
+  assert.match(ss, /IF NOT EXISTS \(SELECT 1 FROM \[dbo\]\.\[Clubs\] WHERE \[Id\] = 1\) INSERT INTO \[dbo\]\.\[Clubs\]/);
+  assert.match(ss, /^IF EXISTS \(SELECT 1 FROM \[dbo\]\.\[People\] WHERE \[Id\] = 7\) THROW 50000, N'dbo\.People has a row with Id = 7 already, so nothing was copied\.', 1;\nINSERT INTO \[dbo\]\.\[People\] \([^)]*\) VALUES \(7, 1, NULL, N'O''Neil'/m);
+  const pg = copyScript(tables, DIALECTS.postgres).script;
+  assert.match(pg, /INSERT INTO "dbo"\."People" \([^)]*\) OVERRIDING SYSTEM VALUE VALUES \(7[^\n]*\);\n/);
+  assert.doesNotMatch(pg.split('"dbo"."People"')[1], /ON CONFLICT/);
+  assert.match(copyScript(tables, DIALECTS.mysql).script, /^INSERT INTO `dbo`\.`People`/m);
+});
+
+test('/copyrows previews each column, takes a changed rule in the question, and copies masked rows the target lacks', async () => {
+  const ran = [];
+  const open = (conn, opts) => {
+    const s = demoSession(conn, opts);
+    if (conn.name !== 'dev') return s;
+    const run = s.run;
+    s.run = (script, o) => (ran.push(script), run(script, o));
+    return s;
+  };
+  const app = start('demo', { open });
+  await until(() => frame().includes('Clubs'), 'the explorer');
+  // ClubA has Italian translations ClubB hasn't: nothing there stops them.
+  await command(app, "copyrows i18n.Translations to dev where Culture = N'it-it' limit 2 --mask Value");
+  await until(() => frame().includes('Insert 2 rows into dev (ClubB)?'), 'the question under the preview');
+  assert.match(frame(), /What each column gets/);
+  assert.match(frame(), /Value +made up: scrambled, letters for letters and digits for digits \(asked for\)/);
+  assert.match(frame(), /Change a column's rule/);
+  app.stdin.write('3');
+  await until(() => frame().includes('Which column, and what does it get?'), 'the rule asked for');
+  await type(app.stdin, 'Value=keep');
+  app.stdin.write(KEYS.enter);
+  await until(() => /Value +kept \(kept as asked\)/.test(frame()) && frame().includes('Insert 2 rows'), 'the preview again, Value kept');
+  app.stdin.write('1');
+  await until(() => frame().includes('2 rows went in'), 'the rows copied');
+  const script = ran.find((x) => x.startsWith('-- trawl:copy-rows insert'));
+  assert.match(script, /IF EXISTS \(SELECT 1 FROM \[i18n\]\.\[Translations\] WHERE \[ResourceKey\] = N'GameResult_1' AND \[Culture\] = N'it-it'\) THROW 50000/);
+  assert.match(script, /N'Vittoria'/);
+  app.unmount();
+});
+
+test('/copyrows stops at a key the target has, and asks before writing to production', async () => {
+  const app = start('demo');
+  await until(() => frame().includes('Clubs'), 'the explorer');
+  // dev's ClubB has the same players' keys.
+  await command(app, 'copyrows dbo.Players to dev limit 2');
+  await until(() => frame().includes('Insert 4 rows into dev (ClubB)?'), 'the question: two players and their two clubs');
+  assert.match(frame(), /Name +made up: a person's name \(by its name\)/);
+  app.stdin.write('1');
+  await until(() => frame().includes('dbo.Players has a row with Id = 1 already, so nothing was copied.'), 'the copy stopped');
+  assert.doesNotMatch(frame(), /went in/);
+  await command(app, 'copyrows dbo.Clubs to demo-prod');
+  await until(() => frame().includes('Insert 3 rows into demo-prod'), 'production previewed, not refused');
+  app.stdin.write('1');
+  await until(() => frame().includes('demo-prod is production. Copy 3 rows into it?'), 'the production question');
+  assert.match(frame(), /demo-prod is a production connection \(--prod\)\./);
+  app.stdin.write('2');
+  await until(() => !frame().includes('is production. Copy'), 'answered no');
+  assert.doesNotMatch(frame(), /copy 3 rows to demo-prod/);
   app.unmount();
 });
