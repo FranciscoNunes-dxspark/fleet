@@ -39,6 +39,8 @@ It looks six folders deep, and never in `node_modules`, `bin`, `obj`, `dist`, `b
 
 `1` Vulnerabilities · `2` Packages · `3` Manifests · `4` Log (what Bilge has run). `tab` goes round. On opening, Bilge reads the folder and asks OSV (turn that off with `"autoAudit": false`; `/audit` asks then); `ctrl+r` does both again.
 
+OSV's answers are kept between runs in `~/.bilge/cache/osv.json`: which advisories a package's version has for six hours, an advisory's record for a day. Opening Bilge and `/audit` ask OSV only about what isn't kept (the activity line says how many came from the cache); `ctrl+r` and `/audit fresh` ask about everything again. `bilge audit` in a pipeline always asks afresh.
+
 ### Vulnerabilities
 
 Each package with a known advisory against its version: the worst advisory's severity (CRIT and HIGH red, MED yellow, LOW blue: GitHub's own word where it has one, else the CVSS 3 score's band), `via` when another package brings it in, `dev` when only development needs it, the version that fixes all its advisories (`no fix` when one has none yet), and the first one's summary.
@@ -113,7 +115,7 @@ The lock files and projects found: their ecosystem, kind, how many packages, how
 
 ## Slash commands
 
-`/scan`, `/audit`, `/outdated [all]`, `/fix <package|advisory>`, `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## In a pipeline
 
@@ -123,7 +125,7 @@ bilge sbom [folder] [-o file]
 bilge report [folder] [-o file]
 ```
 
-`bilge audit` prints each finding with its advisories and where it is, then the counts. It exits `1` when a finding is as bad as `--fail-on` (`high` by default), `0` otherwise, and `2` when it couldn't run (OSV unreachable, a bad option). `--json` prints `{ dir, packages, manifests, counts, findings }`. The advisories ignored with `/ignore` (in `~/.bilge/config.json`) are left out. `bilge sbom` writes CycloneDX 1.5 JSON: every package with its purl, licence and scope (`optional` for development ones), and the advisories against them. `bilge report` prints the same Markdown as `/report` (or writes it with `-o`).
+`bilge audit` prints each finding with its advisories and where it is, then the counts. It asks OSV afresh, never from the cache. It exits `1` when a finding is as bad as `--fail-on` (`high` by default), `0` otherwise, and `2` when it couldn't run (OSV unreachable, a bad option). `--json` prints `{ dir, packages, manifests, counts, findings }`. The advisories ignored with `/ignore` (in `~/.bilge/config.json`) are left out. `bilge sbom` writes CycloneDX 1.5 JSON: every package with its purl, licence and scope (`optional` for development ones), and the advisories against them. `bilge report` prints the same Markdown as `/report` (or writes it with `-o`).
 
 ```yaml
 # Azure Pipelines or GitHub Actions, after npm ci / dotnet restore
@@ -148,4 +150,4 @@ The downloaded executable looks for a newer `bilge-v…` release once a day and 
 
 ## Not yet
 
-Python, Go, Cargo and Maven; breaking changes between versions (release notes, API differences); a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called); a cache of OSV's answers between runs.
+Python, Go, Cargo and Maven; breaking changes between versions (release notes, API differences); a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called).

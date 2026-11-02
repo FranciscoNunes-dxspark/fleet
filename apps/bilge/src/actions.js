@@ -22,8 +22,11 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const packages = (ctx) => ctx.data?.packages ?? [];
 const found = (ctx) => ctx.found ?? [];
 
-/** The folder's lock files and projects, read again; then, unless the setting is off or `audit` false, OSV is asked about them. */
-export async function scan(ctx, { audit: thenAudit = ctx.config.autoAudit !== false } = {}) {
+/**
+ * The folder's lock files and projects, read again; then, unless the setting is off or `audit` false,
+ * OSV is asked about them (`fresh`: about every package, not taking its recent answers from the cache).
+ */
+export async function scan(ctx, { audit: thenAudit = ctx.config.autoAudit !== false, fresh = false } = {}) {
   const dir = ctx.cwd();
   const r = await ctx.task(
     `scan ${basename(dir) || dir}`,
@@ -35,21 +38,25 @@ export async function scan(ctx, { audit: thenAudit = ctx.config.autoAudit !== fa
     },
     { label: 'Reading lock files' },
   );
-  if (r.ok && thenAudit && packages(ctx).length) return audit(ctx);
+  if (r.ok && thenAudit && packages(ctx).length) return audit(ctx, { fresh });
   return r.ok;
 }
 
-/** /audit: OSV's advisories for every package found. */
-export async function audit(ctx) {
+/**
+ * /audit [fresh]: OSV's advisories for every package found. What OSV said in the last six hours (a
+ * day for an advisory's record) comes from the cache; `fresh` asks about everything again.
+ */
+export async function audit(ctx, { fresh = false } = {}) {
   const list = packages(ctx);
   if (!list.length) return ctx.note(ctx.data?.manifests?.length ? 'No packages with exact versions to ask about.' : 'Nothing read yet: /scan reads this folder.', 'error') ?? false;
   const r = await ctx.task(
-    `audit ${plural(list.length, 'package')}`,
+    `audit ${plural(list.length, 'package')}${fresh ? ', fresh' : ''}`,
     async (signal) => {
-      const { ids, details } = await ctx.provider.audit(list, { signal });
+      const { ids, details, cached = 0 } = await ctx.provider.audit(list, { signal, fresh });
       ctx.setData((d) => ({ ...d, audit: { ids, details, at: Date.now() } }));
       const line = countLine(counts(withoutIgnored(findings(list, ids, details), ctx.config.ignore ?? [])));
-      return { stdout: line || 'Nothing known against them.' };
+      const kept = cached ? `\n${cached === list.length ? 'All' : `${cached} of ${list.length}`} from OSV's answers of the last few hours (/audit fresh asks again)` : '';
+      return { stdout: `${line || 'Nothing known against them.'}${kept}` };
     },
     { label: 'Asking OSV' },
   );

@@ -181,3 +181,21 @@ test('/sbom writes the bill of materials; /report shows the audit as Markdown', 
   await until(shows(app, '# Dependencies of shop'), 'the report');
   app.unmount();
 });
+
+test('ctrl+r reads and asks OSV again about everything; /audit fresh too, where /audit takes what OSV said lately', async () => {
+  const app = start();
+  await until(shows(app, 'minimist@1.2.5'), 'the findings');
+  const audits = () => app.provider.state.calls.filter((c) => c[0] === 'audit').map((c) => c[2] ?? 'kept');
+  app.stdin.write('\x12');
+  await until(() => audits().length === 2, 'the second audit');
+  await until(() => !app.lastFrame().includes('Asking OSV'), 'it done');
+  await type(app.stdin, '/audit fresh');
+  app.stdin.write(KEYS.enter);
+  await until(() => audits().length === 3, 'the third audit');
+  await until(() => !app.lastFrame().includes('Asking OSV'), 'it done');
+  await type(app.stdin, '/audit');
+  app.stdin.write(KEYS.enter);
+  await until(() => audits().length === 4, 'the fourth audit');
+  assert.deepEqual(audits(), ['kept', 'fresh', 'fresh', 'kept']);
+  app.unmount();
+});

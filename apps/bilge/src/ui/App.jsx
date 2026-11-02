@@ -348,7 +348,8 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     // A word on how far a task has got, beside the spinner.
     progress: (text) => alive.current && setProgress(text),
     logActivity: familyLog,
-    refresh: () => a.scan(ctx, { audit: true }),
+    // ctrl+r: everything read and asked again, OSV's kept answers too.
+    refresh: () => a.scan(ctx, { audit: true, fresh: true }),
     // Settings change through App's copy, the only one written to disk (ctx.config reads it).
     setConfig,
     setView,

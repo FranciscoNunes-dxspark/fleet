@@ -9,7 +9,7 @@ export const HELP = [
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['!', 'Run a shell command in the folder, e.g.  !npm ls lodash'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
-      ['ctrl+r', 'Read the lock files again and ask OSV about them'],
+      ['ctrl+r', "Read the lock files again and ask OSV about them, not taking its last hours' answers from the cache"],
       ['?', 'This help'],
       ['q', 'Quit'],
       ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go (ctrl+c copies it again; it never quits) · ctrl+v pastes'],

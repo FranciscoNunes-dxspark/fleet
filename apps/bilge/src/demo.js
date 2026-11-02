@@ -119,8 +119,8 @@ export function demoBilge() {
       const manifests = state.manifests.map((m) => ({ ...m, packages: m.packages.map((p) => ({ ...p })) }));
       return { root: dir, manifests, packages: mergePackages(manifests) };
     },
-    async audit(packages) {
-      state.calls.push(['audit', packages.length]);
+    async audit(packages, { fresh = false } = {}) {
+      state.calls.push(['audit', packages.length, ...(fresh ? ['fresh'] : [])]);
       const ids = new Map();
       const details = new Map();
       for (const p of packages) {

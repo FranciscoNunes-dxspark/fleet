@@ -38,7 +38,8 @@ export async function runHeadless(args, { provider, config = {}, write = (s) => 
       write(`No lock file (package-lock.json, yarn.lock, pnpm-lock.yaml, packages.lock.json) or .NET project in ${dir}.\n`);
       return opts.command === 'audit' ? 0 : 2;
     }
-    const { ids, details } = await provider.audit(scan.packages);
+    // A pipeline's verdict is today's: OSV is asked about every package, not answered from the cache.
+    const { ids, details } = await provider.audit(scan.packages, { fresh: true });
     const found = withoutIgnored(findings(scan.packages, ids, details), config.ignore ?? []);
     if (opts.command === 'sbom') {
       const bom = `${JSON.stringify(cyclonedx({ name: basename(dir), packages: scan.packages, found, tool: { name: 'Bilge', version }, serial: randomUUID() }), null, 2)}\n`;

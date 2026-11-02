@@ -7,7 +7,7 @@ import { FILTERS } from './rows.js';
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
   { name: 'scan', desc: 'Read the folder\'s lock files and projects again, then ask OSV about them', run: (ctx) => a.scan(ctx) },
-  { name: 'audit', desc: 'Ask OSV (osv.dev) for the advisories against every package found', run: (ctx) => a.audit(ctx) },
+  { name: 'audit', args: '[fresh]', desc: 'Ask OSV (osv.dev) for the advisories against every package found (its answers of the last 6 hours are kept; fresh asks again)', complete: 'fresh', run: (ctx, s) => a.audit(ctx, { fresh: /^fresh$/i.test(s.trim()) }) },
   { name: 'outdated', args: '[all]', desc: 'Ask npm and NuGet for the newest versions, whether they fit, and the licences of the direct packages (all: every package)', complete: 'outdated', run: (ctx, s) => a.outdated(ctx, s) },
   { name: 'fix', args: '<package|advisory>', desc: 'Move a vulnerable package to the version that fixes it (npm, yarn, pnpm or dotnet add; asks first)', complete: 'findings', run: (ctx, s) => a.fix(ctx, s) },
   { name: 'why', args: '<package>', desc: 'Where a package is, its licence, newest version and advisories', complete: 'packages', run: (ctx, s) => a.why(ctx, s) },
@@ -46,6 +46,7 @@ function completions(kind, { data, found = [], config = {}, cwd, typed = '' }) {
   if (kind === 'ignored') return ['all', ...(config.ignore ?? [])];
   if (kind === 'filters') return FILTERS;
   if (kind === 'outdated') return ['all'];
+  if (kind === 'fresh') return ['fresh'];
   if (kind === 'folders') return cwd ? folderCompletions(cwd, typed) : [];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];

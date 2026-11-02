@@ -1,6 +1,7 @@
 // OSV (osv.dev), the open database of advisories GitHub, npm and NuGet's own feed into: which of the
 // packages have advisories (one /v1/querybatch per thousand packages), then each advisory's record
-// (/v1/vulns/<id>), kept for the session. No account and no key.
+// (/v1/vulns/<id>), kept for the session, and between runs in a cache (cache.js) when one is given. No
+// account and no key.
 import { callSignal } from '@fleet/kit/run.js';
 
 export const OSV_URL = 'https://api.osv.dev';
@@ -47,11 +48,21 @@ export async function eachLimited(items, n, work) {
 export function createOsv({ fetchImpl = globalThis.fetch, base = OSV_URL } = {}) {
   const records = new Map();
   return {
-    /** Which advisories each package has: Map key → [id]. `packages` are lockfiles.js's (with `key`). */
-    async query(packages, { signal } = {}) {
+    /**
+     * Which advisories each package has: Map key → [id]. `packages` are lockfiles.js's (with `key`).
+     * With a `cache`, a package it has an answer for isn't asked about again unless `fresh`, and every
+     * answer is kept in it.
+     */
+    async query(packages, { signal, cache, fresh = false } = {}) {
       const ids = new Map();
-      for (let i = 0; i < packages.length; i += BATCH) {
-        const batch = packages.slice(i, i + BATCH);
+      const ask = [];
+      for (const p of packages) {
+        const kept = fresh ? undefined : cache?.query(p.key);
+        if (kept === undefined) ask.push(p);
+        else if (kept.length) ids.set(p.key, kept);
+      }
+      for (let i = 0; i < ask.length; i += BATCH) {
+        const batch = ask.slice(i, i + BATCH);
         const queries = batch.map((p) => ({ package: { name: p.name, ecosystem: p.ecosystem }, version: p.version }));
         const answer = await getJson(fetchImpl, `${base}/v1/querybatch`, { signal, body: { queries }, what: 'OSV' });
         const results = answer?.results ?? [];
@@ -64,17 +75,30 @@ export function createOsv({ fetchImpl = globalThis.fetch, base = OSV_URL } = {})
             found.push(...(more?.results?.[0]?.vulns ?? []).map((v) => v.id));
             token = more?.results?.[0]?.next_page_token;
           }
-          if (found.length) ids.set(batch[j].key, [...new Set(found)]);
+          const unique = [...new Set(found)];
+          if (unique.length) ids.set(batch[j].key, unique);
+          cache?.setQuery(batch[j].key, unique);
         }
       }
       return ids;
     },
-    /** The advisories' records: Map id → OSV record, the ones read before not asked for again. */
-    async vulns(ids, { signal } = {}) {
-      const wanted = [...new Set(ids)].filter((id) => !records.has(id));
+    /**
+     * The advisories' records: Map id → OSV record, the ones read before (this session, or in the
+     * `cache`) not asked for again unless `fresh`.
+     */
+    async vulns(ids, { signal, cache, fresh = false } = {}) {
+      const wanted = [];
+      for (const id of new Set(ids)) {
+        if (!fresh && records.has(id)) continue;
+        const kept = fresh ? undefined : cache?.vuln(id);
+        if (kept) records.set(id, kept);
+        else wanted.push(id);
+      }
       await eachLimited(wanted, AT_ONCE, async (id) => {
         const record = await getJson(fetchImpl, `${base}/v1/vulns/${encodeURIComponent(id)}`, { signal, what: 'OSV' });
-        if (record) records.set(id, record);
+        if (!record) return;
+        records.set(id, record);
+        cache?.setVuln(id, record);
       });
       return new Map([...new Set(ids)].filter((id) => records.has(id)).map((id) => [id, records.get(id)]));
     },
