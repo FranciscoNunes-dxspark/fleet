@@ -43,7 +43,7 @@ export async function until(check, what, ms = 8000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     // Once it shows, give the new view's key handlers a moment to subscribe, as a person would.
-    if (check()) return new Promise((r) => setTimeout(r, 100));
+    if (check()) return new Promise((r) => setTimeout(r, 200));
     await new Promise((r) => setTimeout(r, 40));
   }
   throw new Error(`Timed out waiting for ${what}. Last frame:\n${lastApp?.lastFrame()}`);

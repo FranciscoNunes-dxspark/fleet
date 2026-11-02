@@ -107,7 +107,7 @@ test('/upgrade stops on a working tree with changes, and on a failing test, sayi
 
   await type(app.stdin, '/upgrade');
   app.stdin.write(KEYS.enter);
-  await until(shows(app, 'Update'), 'the question once more');
+  await until(shows(app, 'Update 8 packages on a branch'), 'the question once more');
   app.stdin.write('2');
   await until(() => app.copied.length === 1, 'the copy');
   assert.match(app.copied[0], /^# in \.\nnpm install express@/);

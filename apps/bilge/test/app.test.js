@@ -42,13 +42,13 @@ test('↵ shows a finding: its advisories, where it is and the fix', async () =>
 test('f asks, runs the fix where the manifest is, then reads and asks again: the finding is gone', async () => {
   const app = start();
   await until(shows(app, 'minimist@1.2.5'), 'the findings');
-  // Down to lodash, a direct package: npm install.
-  app.stdin.write('j');
-  app.stdin.write('j');
-  await until(() => /❯ HIGH +express/.test(app.lastFrame()) || /❯ HIGH +lodash/.test(app.lastFrame()), 'the cursor on a high one');
-  while (!/❯ HIGH +lodash/.test(app.lastFrame())) {
+  // Down to lodash, a direct package: npm install. A step at a time, each seen before the next, so a
+  // busy machine can't leave a key in flight when f goes.
+  const cursorLine = () => app.lastFrame().split('\n').find((l) => l.includes('❯'));
+  for (let i = 0; i < 8 && !/❯ HIGH +lodash/.test(app.lastFrame()); i++) {
+    const before = cursorLine();
     app.stdin.write('j');
-    await new Promise((r) => setTimeout(r, 60));
+    await until(() => cursorLine() !== before, 'the cursor moving');
   }
   app.stdin.write('f');
   await until(shows(app, 'Move lodash from 4.17.20 to 4.17.21?'), 'the question');
