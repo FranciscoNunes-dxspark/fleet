@@ -509,3 +509,45 @@ test('waiting to ship with a Development branch squashed into production: counte
   assert.equal(byDate.promotedBy, null);
   assert.ok(byDate.productionChangedAt);
 });
+
+test("Azure DevOps: commits between two asks for what the newer one has (itemVersion is the older, compareVersion the newer)", async (t) => {
+  const seen = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    seen.push(new URL(url).searchParams);
+    return new Response(JSON.stringify({ value: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  const { createAzdoProvider } = await import('../server/azdo/provider.js');
+  await createAzdoProvider({ orgUrl: 'https://dev.azure.com/acme', pat: 'x' }).listCommitsBetween('p1', 'r1', 'old', 'new');
+  // The other way round lists what the older one has and the newer hasn't: for a release branch,
+  // years of merges never brought back, shown as waiting.
+  assert.equal(seen[0].get('searchCriteria.itemVersion.version'), 'old');
+  assert.equal(seen[0].get('searchCriteria.compareVersion.version'), 'new');
+});
+
+test('a Development branch promoted through a release branch: counted from what the pull request into release took', async () => {
+  const tips = { master: commit('m2', 90, 'Merged PR 61: Merging for deployment'), Develop: commit('d9', 1, 'Merged PR 70: Today') };
+  const provider = {
+    listProjects: async () => [{ id: 'p1', name: 'Shop' }],
+    listRepos: async () => [{ id: 'r1', name: 'web', projectId: 'p1', projectName: 'Shop', defaultBranch: 'Develop' }],
+    listReleases: async () => [],
+    listBuilds: async () => [],
+    listDefinitions: async () => [],
+    listDeployments: async () => [{ id: 3, label: '3', at: at(89), status: 'succeeded', repoId: 'r1', commit: 'm2' }],
+    listCommits: async (projectId, repoId, { branch }) => [tips[branch]],
+    listCommitsBetween: async (projectId, repoId, from) => (from === 'm2' ? [tips.Develop, commit('d8', 50, 'Merged PR 66: Before release'), commit('d5', 95, 'Merged PR 58: Went out')] : from === 'd6' ? [tips.Develop] : assert.fail(`from ${from}`)),
+    listPullRequests: async () => [
+      { id: 61, title: 'Merging for deployment', status: 'completed', repoId: 'r1', projectId: 'p1', sourceBranch: 'release', targetBranch: 'master', sourceCommit: 'rel1', closedAt: at(90) },
+      { id: 60, title: 'Merging for deployment', status: 'completed', repoId: 'r1', projectId: 'p1', sourceBranch: 'Develop', targetBranch: 'release', sourceCommit: 'd6', closedAt: at(90.1) },
+      { id: 62, title: 'Merge release into Develop', status: 'completed', repoId: 'r1', projectId: 'p1', sourceBranch: 'release', targetBranch: 'Develop', sourceCommit: 'rel1', closedAt: at(89) },
+    ],
+    getPullRequestCommitIds: async () => [],
+    getWorkItems: async () => [],
+  };
+  const monitoring = { status: () => [{ id: 'm1', name: 'Shop web', link: { type: 'pipeline', projectId: 'p1', definitionId: 5, branch: 'master', devBranch: 'Develop' } }] };
+  const env = (await createService({ provider, settings: memoryStore(), monitoring }).undeployed()).targets[0];
+  assert.equal(env.promotedBy.id, 60);
+  assert.deepEqual(env.promotedBy.via, ['release']);
+  // d8 and d5 aren't on master by commit (the releases merged release, not Develop), but came before
+  // what the pull request into release took, so they went out: only d9 is waiting.
+  assert.deepEqual(env.commits.map((c) => c.id), ['d9']);
+});

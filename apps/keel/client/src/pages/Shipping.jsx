@@ -157,7 +157,8 @@ function Environment({ env }) {
           {/* How the Development branch's waiting was counted (server/service.js betweenBranches). */}
           {env.promotedBy && (
             <div className="small muted ship-basis">
-              {tj('Counted from {pr}, which took {dev} into {branch} {age} ago.', {
+              {tj(env.promotedBy.via?.length ? 'Counted from {pr}, which took {dev} into {via} on its way to {branch}, {age} ago.' : 'Counted from {pr}, which took {dev} into {branch} {age} ago.', {
+                via: env.promotedBy.via?.join(' → '),
                 pr: <button type="button" className="link-btn" onClick={() => openDrawer({ type: 'pr', projectId: env.promotedBy.projectId, repoId: env.promotedBy.repoId, id: env.promotedBy.id, org: env.org })} title={env.promotedBy.title}>!{env.promotedBy.id}</button>,
                 dev: env.devBranch, branch: env.branch, age: age(env.promotedBy.closedAt),
               })}

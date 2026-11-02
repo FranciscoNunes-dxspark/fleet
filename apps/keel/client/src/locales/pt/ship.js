@@ -70,4 +70,5 @@ export default {
   "{n} of them came after {commit}, the commit of {dev} that {pr} took, and are counted.": "{n} deles vieram depois de {commit}, o commit de {dev} que {pr} levou, e são contados.",
   "{n} of them reached {dev} after {branch} last changed, and are counted.": "{n} deles chegaram a {dev} depois da última alteração em {branch}, e são contados.",
   "All of them are counted.": "São todos contados.",
+  "Counted from {pr}, which took {dev} into {via} on its way to {branch}, {age} ago.": "Contado a partir de {pr}, que levou {dev} para {via} a caminho de {branch}, há {age}.",
 };
