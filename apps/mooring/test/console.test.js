@@ -1,8 +1,9 @@
-// The console (commands on the server with $), the pet, and what Mooring tells the family.
+// The Console (a shell on the server, $ types into it), the pet, and what Mooring tells the family.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readActivity, readMoods } from '@fleet/kit/family.js';
-import { consoleLines } from '../src/ui/ConsoleView.jsx';
+import { VirtualTerminal } from '@fleet/kit/vt.js';
+import { consoleLines, screenText } from '../src/ui/ConsoleView.jsx';
 import { familyMood, reactionTo } from '../src/moods.js';
 import { FACES, PALETTE, moodFor, moodLine, petPixels, petRows, troubles } from '../src/pet.js';
 import { KEYS, shows, start, tempHome, type, until } from './helpers.js';
@@ -13,64 +14,65 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-test('$ runs a command on the server in the right pane\'s folder, and Console shows its output', async () => {
+test("$ types the command into a shell opened in the right pane's folder, and the Console shows what it answers", async () => {
   const app = start();
   await until(shows(app, 'notes.txt'), 'the server folder');
   await type(app.stdin, '$ ls');
   app.stdin.write(KEYS.enter);
-  await until(shows(app, '$ ls'), 'the command listed');
-  await until(shows(app, 'notes.txt'), 'its output');
+  await until(shows(app, 'Welcome to the demo shell'), 'the shell');
+  await until(() => app.lastFrame().includes('ls') && app.lastFrame().includes('backups'), 'its output');
   assert.match(app.lastFrame(), /Console/);
-  assert.match(app.lastFrame(), /demo:\/home\/demo/);
+  assert.match(app.lastFrame().replace(/\x1b\[[0-9;]*m/g, ''), /demo:\/home\/demo\$/, 'the prompt, with its colour');
+  assert.deepEqual(app.host.state.calls.filter((c) => c[0] === 'terminal'), [['terminal', '/home/demo']]);
   assert.deepEqual(app.host.state.calls.filter((c) => c[0] === 'exec').map((c) => c[1]), ["cd '/home/demo' && ls"]);
   app.unmount();
 });
 
-test('a command that fails shows its exit code and what it said', async () => {
+test('in the Console every key is the shell\'s until ctrl+\\ leaves; a command with no host says so', async () => {
   const app = start();
   await until(shows(app, 'notes.txt'), 'the server folder');
-  await type(app.stdin, '$ frobnicate');
+  await type(app.stdin, '$ echo first');
   app.stdin.write(KEYS.enter);
-  await until(shows(app, 'exit 127'), 'the exit code');
-  assert.match(app.lastFrame(), /command not found/);
+  await until(() => app.lastFrame().includes('first'), 'the first answer');
+  // q quits and 4 is a tab elsewhere: here they are text for the shell.
+  await type(app.stdin, 'echo q4');
+  app.stdin.write(KEYS.enter);
+  await until(() => app.host.state.calls.some((c) => c[0] === 'exec' && c[1] === "cd '/home/demo' && echo q4"), 'typed as it came');
+  assert.match(app.lastFrame(), /ctrl\+\\ leaves/);
+  app.stdin.write('\x1c');
+  await until(shows(app, 'type in it'), 'the keys back with the view');
+  assert.doesNotMatch(app.lastFrame(), /keys go to the server/);
   app.unmount();
+  const none = start({ connectTo: undefined });
+  await until(shows(none, 'Documents'), 'this machine');
+  await type(none.stdin, '$ ls');
+  none.stdin.write(KEYS.enter);
+  await until(shows(none, 'Not connected: /connect <host>'), 'the refusal');
+  none.unmount();
 });
 
-test('cd in the console moves the right pane, and the next command runs there', async () => {
+test('exit ends the shell, the screen stays, and ↵ starts another', async () => {
   const app = start();
   await until(shows(app, 'notes.txt'), 'the server folder');
-  await type(app.stdin, '$ cd /var/log');
+  await type(app.stdin, '$ exit');
   app.stdin.write(KEYS.enter);
-  await until(shows(app, 'syslog'), 'the pane moved');
-  await type(app.stdin, '/ssh pwd');
+  await until(shows(app, 'shell ended'), 'the end');
+  assert.match(app.lastFrame(), /Welcome to the demo shell/);
   app.stdin.write(KEYS.enter);
-  await until(() => app.host.state.calls.some((c) => c[0] === 'exec' && c[1] === "cd '/var/log' && pwd"), 'run there');
+  await until(() => app.host.state.calls.filter((c) => c[0] === 'terminal').length === 2, 'a new shell');
   app.unmount();
 });
 
-test('a command with no host open says so', async () => {
-  const app = start({ connectTo: undefined });
-  await until(shows(app, 'Documents'), 'this machine');
-  await type(app.stdin, '$ ls');
-  app.stdin.write(KEYS.enter);
-  await until(shows(app, 'Not connected: /connect <host>'), 'the refusal');
-  app.unmount();
-});
-
-test("console rows: commands, output, errors, and how each ended; long output keeps its end", () => {
-  const rows = consoleLines([
-    { id: 1, host: 'h', dir: '/x', command: 'ls', status: 'done', out: 'a\nb\n', err: '', code: 0 },
-    { id: 2, host: 'h', dir: '/x', command: 'bad', status: 'failed', out: '', err: 'oops\n', code: 2 },
-    { id: 3, host: 'h', dir: '/x', command: 'sleep 9', status: 'running', out: '', err: '' },
-    { id: 4, host: 'h', dir: '/x', command: 'many', status: 'done', out: `${Array.from({ length: 600 }, (_, i) => `l${i}`).join('\n')}\n`, err: '', code: 0 },
-    { id: 5, host: 'h', dir: '/x', command: 'colour', status: 'done', out: '\x1b[31mred\x1b[0m\x1b[2J\n', err: '', code: 0 },
-  ]);
-  assert.deepEqual(rows.slice(0, 7).map((r) => [r.kind, r.text]), [
-    ['command', 'ls'], ['out', 'a'], ['out', 'b'], ['command', 'bad'], ['err', 'oops'], ['bad', 'exit 2'], ['command', 'sleep 9'],
-  ]);
-  assert.equal(rows.find((r) => r.kind === 'dim' && /earlier/.test(r.text)).text, '… 100 earlier lines');
-  assert.equal(rows.at(-1).text, 'red');
-  assert.equal(rows.some((r) => r.text?.includes('\x1b')), false);
+test('console lines: the scrollback then the screen, looked back through, with the cursor showing', () => {
+  const vt = new VirtualTerminal(6, 3, { scrollback: 10 });
+  vt.write('a\r\nb\r\nc\r\nd\r\ne');
+  const plain = (lines) => lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').trimEnd());
+  assert.deepEqual(plain(consoleLines(vt, { height: 3 })), ['c', 'd', 'e']);
+  assert.deepEqual(plain(consoleLines(vt, { height: 3, back: 2 })), ['a', 'b', 'c']);
+  assert.deepEqual(plain(consoleLines(vt, { height: 10 })), ['a', 'b', 'c', 'd', 'e']);
+  assert.match(consoleLines(vt, { height: 3, cursor: true }).at(-1), /\x1b\[7m \x1b\[27m/);
+  assert.doesNotMatch(consoleLines(vt, { height: 3, back: 1, cursor: true }).join(''), /\x1b\[7m/);
+  assert.equal(screenText(vt), 'c\nd\ne');
 });
 
 test("Tug's art is whole: every row 16 wide, only palette letters, every mood", () => {

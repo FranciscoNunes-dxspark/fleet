@@ -3,6 +3,7 @@
 import { posix } from 'node:path';
 import { baseName, parentOf, sortEntries } from './sftp.js';
 import { SessionError } from './errors.js';
+import { VirtualTerminal } from '@fleet/kit/vt.js';
 
 const T = Date.UTC(2026, 9, 28, 9, 0);
 
@@ -94,6 +95,62 @@ export function demoSession({ host = { name: 'demo', host: 'demo.example.com', u
       need(parentOf(remote));
       await transferring(size, local, signal, onProgress);
       tree.set(remote, recursive ? { kind: 'dir' } : { kind: 'file', size });
+    },
+    // A shell that answers as exec does: the line typed runs as a command in the folder it started in (`exit` ends it).
+    terminal({ columns = 80, rows = 24, dir = '/home/demo', onChange = () => {}, onExit = () => {} } = {}) {
+      say('terminal', dir);
+      const vt = new VirtualTerminal(columns, rows, { scrollback: 200 });
+      let line = '';
+      let alive = true;
+      const prompt = () => vt.write(`\x1b[32mdemo\x1b[0m:${dir}$ `);
+      vt.write('Welcome to the demo shell\r\n');
+      prompt();
+      const session = this;
+      return {
+        vt,
+        get alive() {
+          return alive;
+        },
+        write(bytes) {
+          if (!alive) return;
+          for (const ch of bytes) {
+            if (ch === '\x7f') {
+              if (line) vt.write('\b \b');
+              line = line.slice(0, -1);
+            } else if (ch === '\r') {
+              vt.write('\r\n');
+              const typed = line.trim();
+              line = '';
+              if (typed === 'exit') {
+                alive = false;
+                onChange();
+                return onExit({ code: 0 });
+              }
+              if (!typed) prompt();
+              else {
+                session.exec(`cd '${dir}' && ${typed}`).then((r) => {
+                  vt.write(`${r.stdout}${r.stderr}`.replace(/\r?\n/g, '\r\n'));
+                  prompt();
+                  onChange();
+                });
+              }
+            } else if (ch >= ' ') {
+              line += ch;
+              vt.write(ch);
+            }
+          }
+          onChange();
+        },
+        resizable: true,
+        resize(c, r) {
+          say('resize', c, r);
+          vt.fit(c, r);
+          onChange();
+        },
+        close() {
+          alive = false;
+        },
+      };
     },
     async exec(line) {
       say('exec', line);

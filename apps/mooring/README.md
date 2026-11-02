@@ -91,16 +91,15 @@ The panes read again by themselves when a transfer finishes, and the header coun
 
 ### Console
 
-`$ <command>` at the prompt (or `/ssh <command>`) runs a command on the server, in the folder the right pane shows, and its output comes into Console as it arrives, with the exit code and what it said on standard error marked. `cd <folder>` moves the right pane instead (a command run alone could not stay in a folder). One command runs at a time.
+A shell on the server, with a terminal. Opening Console (`3`) opens one in the folder the right pane shows, and from then on **every key goes to it** as you press it: `ls`, `cd`, tab completion, `ctrl+c`, a pager, `vim`, `top`, a `sudo` asking for a password. **`ctrl+\` leaves it** (the keys are Mooring's again: `1`–`5` switch tab, `/` opens the prompt); `↵` goes back in. `$ <command>` at the prompt (or `/ssh <command>`) types that command into the shell and goes there. The shell is yours to end: `exit` shows "shell ended" and `↵` starts another. It closes with the connection.
 
-There is no terminal: nothing full-screen (`vim`, `top`) or interactive (a `sudo` asking for a password) works here, and the commands assume a POSIX shell on the server. What a program prints is cleaned before it is drawn (colours, cursor moves, titles and links are dropped), so a server can't repaint or retitle your terminal.
+It is `ssh -tt` (ssh makes the terminal on the server although this side has none) with its output drawn through the kit's virtual terminal, so colours, cursor movement and full-screen programs work, and what scrolls off the top is kept (2000 lines) to look back through. **Resizing** follows the window: the screen here changes at once, and when the size has stopped changing for a moment a second, short `ssh` runs `stty` on the shell's tty (which the shell reported when it started), so the server signals vim, `top` and the shell and they redraw. That second `ssh` signs in as the shell did (a password host's password is still only in memory). A server without `stty` or a tty path keeps the size it started at. A host that asks for a password signs in as always, for the shell too, and nothing typed in the shell is kept by Mooring.
 
 | Key | |
 |---|---|
-| `↵` `$` `i` | Type a command (the prompt opens with `$`) |
-| `x` | Cancel the command that is running |
-| `y` | Copy the output of the command under the cursor |
-| `c` | Clear the console |
+| `↵` `$` `i` | Type in the shell (everything you press goes to it; `ctrl+\` leaves) |
+| `↑` `↓` `j` `k` `pgup` `pgdn` `space` | Look back through what scrolled away (also the wheel) |
+| `y` | Copy the screen |
 
 ### Hosts, Log
 
