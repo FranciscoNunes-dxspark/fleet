@@ -278,6 +278,17 @@ export function createGithubProvider({ org, token, client } = {}) {
       return { iteration: null, total: list.length, truncated: list.length >= 3000, items: list.map(fileOf).sort((a, b) => a.path.localeCompare(b.path)) };
     },
 
+    /** Every file's path on a branch, from its git tree (GitHub cuts a very large tree short). Paths start with "/", as Azure DevOps' do. */
+    async listRepoFiles(_projectId, repoId, branch) {
+      const d = await api(`${repoPath(repoId)}/git/trees/${seg(branch)}`, { query: { recursive: 1 } });
+      return (d.tree || []).filter((x) => x.type === 'blob' && x.path).map((x) => `/${x.path}`);
+    },
+
+    /** One file's text on a branch. */
+    async getRepoFileText(_projectId, repoId, path, branch) {
+      return apiText(`${repoPath(repoId)}/contents/${String(path).replace(/^\/+/, '').split('/').map(seg).join('/')}`, { query: { ref: branch } });
+    },
+
     async getPullRequestWorkItemIds() {
       return [];
     },

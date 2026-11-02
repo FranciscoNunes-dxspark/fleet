@@ -483,6 +483,21 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
         .sort((a, b) => a.name.localeCompare(b.name));
     },
 
+    /** Every file's path on a branch (folders left out): one items call over the whole tree. */
+    async listRepoFiles(projectId, repoId, branch) {
+      const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/items`, {
+        query: { scopePath: '/', recursionLevel: 'Full', 'versionDescriptor.version': branch, 'versionDescriptor.versionType': 'branch' },
+      });
+      return (d.value || []).filter((it) => !it.isFolder && it.gitObjectType !== 'tree' && it.path).map((it) => it.path);
+    },
+
+    /** One file's text on a branch. */
+    async getRepoFileText(projectId, repoId, path, branch) {
+      return apiText(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/items`, {
+        query: { path, 'versionDescriptor.version': branch, 'versionDescriptor.versionType': 'branch', $format: 'text' },
+      });
+    },
+
     async listPullRequests(projectId, { status = 'active', closedAfter } = {}) {
       const query = { 'searchCriteria.status': status };
       if (closedAfter) {
