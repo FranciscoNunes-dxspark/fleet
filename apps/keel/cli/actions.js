@@ -8,6 +8,8 @@ import { runText } from './runs.js';
 import { doneChanges } from './board.js';
 import { closedText, commitsText, doraScope, doraText, flakyText, insightsText, totalsText } from './reports.js';
 import { compareForSonar, deploys, familyChoices, prContext, runForSplice, timelineText } from './kin.js';
+import { environmentFirst, productionAsk } from './environment.js';
+import { describeEnvironments, setEnvironment } from '@fleet/kit/environments.js';
 import { APP_NAMES, contextIn, copiedNote, describeContext, notMine, projectAt, projectWiring, readActivity, takeLine } from '@fleet/kit/family.js';
 
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -18,6 +20,10 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // App's ctx), for /timeline here and in the other apps: what and where, never a comment or a token.
 const did = (ctx, text, kind) => ctx.logActivity?.(text, kind);
 const inRepo = (pr) => (pr.repoName ? ` in ${pr.repoName}` : '');
+
+// The question before a change to a deployment: the kit's production question instead when the project's
+// environment is production and the change touches it (`names`: the stages it does, or true; environment.js).
+const ask = (ctx, names, req) => ctx.confirm(productionAsk(ctx.env?.(), names, req));
 
 const MERGE_STRATEGY = { squash: 'squash merge', noFastForward: 'merge commit', rebase: 'rebase', rebaseMerge: 'rebase with a merge commit' };
 
@@ -153,7 +159,7 @@ export async function comment(ctx, pr = ctx.current().pr, text = '') {
 export async function runPipeline(ctx, row = ctx.current().pipeline, text = '') {
   if (!row) return ctx.note('Pick a pipeline first.', 'error');
   const on = text.trim() || branch(row.branch) || '';
-  const ok = await ctx.confirm({
+  const ok = await ask(ctx, deploys(row, ctx.data.production?.monitors) || [], {
     title: `Run ${row.definition.name}${on ? ` on ${on}` : ''}?`,
     options: [{ label: 'Yes, run it', value: true }, { label: 'No', value: false }],
   });
@@ -170,7 +176,7 @@ export async function cancelRun(ctx, row = ctx.current().pipeline) {
   if (!row) return ctx.note('Pick a pipeline first.', 'error');
   const run = row.running?.[0];
   if (!run) return ctx.note(`${row.definition.name} has nothing queued or running.`);
-  const ok = await ctx.confirm({
+  const ok = await ask(ctx, deploys(row, ctx.data.production?.monitors) || [], {
     title: `Cancel ${row.definition.name} ${run.buildNumber} on ${branch(run.sourceBranch)}?`,
     danger: true,
     options: [{ label: 'Yes, cancel the run', value: true }, { label: 'No', value: false }],
@@ -188,7 +194,7 @@ export async function cancelRun(ctx, row = ctx.current().pipeline) {
 export async function decide(ctx, item = ctx.current().item, status, text = '') {
   if (item?.kind !== 'approval') return ctx.note('Pick an approval in the Inbox first.', 'error');
   const approve = status === 'approved';
-  const ok = await ctx.confirm({
+  const ok = await ask(ctx, [item.title, item.target?.stage], {
     title: `${approve ? 'Approve' : 'Reject'} ${short(item.title.replace(/^Approve /, ''))}?`,
     detail: item.reasons[0]?.text,
     danger: !approve,
@@ -491,7 +497,7 @@ const onGithub = (ctx, def) => {
 export async function createRelease(ctx, def = ctx.current().release, text = '') {
   if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
   if (onGithub(ctx, def)) return;
-  const ok = await ctx.confirm({
+  const ok = await ask(ctx, (def.stages ?? []).map((s) => s.name), {
     title: `Create a release of ${def.name}?`,
     detail: 'From the latest version of each artifact. Stages set to deploy automatically start by themselves.',
     options: [{ label: 'Yes, create it', value: true }, { label: 'No', value: false }],
@@ -513,7 +519,8 @@ export async function deployStage(ctx, def = ctx.current().release, name = '') {
   if (!def) return ctx.note('Pick a release pipeline first (Releases tab).', 'error');
   if (onGithub(ctx, def)) return;
   if (!def.releases.length) return ctx.note(`${def.name} has no releases yet: n creates one.`, 'error');
-  const stages = [...def.stages].sort((x, y) => x.rank - y.rank);
+  // The project's environment's stage first (environment.js), then the rest in their order.
+  const stages = environmentFirst([...def.stages].sort((x, y) => x.rank - y.rank), ctx.env?.()?.environment, (s) => [s.name]);
   let stage = name.trim() ? stages.find((s) => s.name.toLowerCase() === name.trim().toLowerCase()) : null;
   if (name.trim() && !stage) return ctx.note(`${def.name} has no stage "${name.trim()}". It has ${stages.map((s) => s.name).join(', ')}.`, 'error');
   if (!stage) {
@@ -525,7 +532,7 @@ export async function deployStage(ctx, def = ctx.current().release, name = '') {
   }
   const choices = deployChoices(def, stage);
   if (!choices.length) return ctx.note(`None of ${def.name}'s recent releases include ${stage.name}.`, 'error');
-  const pick = await ctx.confirm({
+  const pick = await ask(ctx, [stage.name], {
     title: `Deploy which release to ${stage.name}?`,
     detail: 'Approvals and gates on that stage still apply.',
     danger: /prod|production|prd|live/i.test(stage.name),
@@ -575,7 +582,7 @@ export async function decideRelease(ctx, def = ctx.current().release, status, te
   if (!a.canDecide) return ctx.note(`Azure DevOps doesn't let you decide on ${a.run?.name ?? 'it'} to ${a.stage}: ${(a.approvers ?? []).map((p) => p.displayName).join(', ') || 'someone else'} does.`, 'error');
   const approve = status === 'approved';
   const what = `${a.run?.name ?? 'the release'} to ${a.stage}`;
-  const ok = await ctx.confirm({
+  const ok = await ask(ctx, [a.stage], {
     title: `${approve ? 'Approve' : 'Reject'} ${what}?`,
     detail: a.instructions || undefined,
     danger: !approve,
@@ -671,7 +678,8 @@ export async function showInsights(ctx, text = '') {
 
 /**
  * /dora [30|90] [project or team]: the four DORA measures for everything, or one project or team,
- * against the period before. Production is what the settings name, else stages named like prod.
+ * against the period before. The project's environment (/env), when its keel section names one, is
+ * what counts as production; else the settings' names, else stages named like prod.
  */
 export async function showDora(ctx, text = '') {
   const words = String(text ?? '').trim().split(/\s+/).filter(Boolean);
@@ -679,12 +687,27 @@ export async function showDora(ctx, text = '') {
   const days = first && /^\d+$/.test(first) ? Number(words.shift().replace(/\D/g, '')) : 30;
   if (![30, 90].includes(days)) return ctx.note('Over 30 or 90 days: /dora 30 or /dora 90.', 'error');
   const name = words.join(' ');
+  const production = ctx.env?.()?.environment || undefined;
   await report(ctx, `DORA, the last ${days} days`, 'Reading the deploys', async () => {
-    const dora = await ctx.service.dora(days);
+    const dora = await ctx.service.dora(days, { production });
     const scope = doraScope(dora, name);
     if (!scope) throw new Error(`No project or team called ${name}: ${dora.scopes.slice(1).map((s) => s.name).join(', ') || 'none tracked'}.`);
     return doraText(dora, scope);
   });
+}
+
+/**
+ * /env [name]: which of the project's environments (.fleet/project.json, the kit's environments.js) is
+ * chosen, or chooses another, for every app of the family. Its keel section's environment is the
+ * stage or environment Keel shows first and DORA calls production.
+ */
+export function env(ctx, text = '') {
+  const name = String(text ?? '').trim();
+  if (!name) return ctx.note(describeEnvironments(ctx.cwd()));
+  const r = setEnvironment(ctx.cwd(), name, { by: 'keel' });
+  if (!r.ok) return ctx.note(r.error, 'error');
+  const keel = r.env.settings?.keel?.environment;
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production): Keel asks before it changes a deployment there' : ''}.${keel ? `\n${keel} goes first in Production and Releases, and /dora counts it as production.` : ''}`);
 }
 
 /** /flaky: tests that fail now and then and pass again without a fix. */

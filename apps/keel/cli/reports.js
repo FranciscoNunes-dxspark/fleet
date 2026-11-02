@@ -102,7 +102,7 @@ export function doraText(dora, scope = dora.scopes[0]) {
   const out = [`DORA, the last ${dora.days} days against the ${dora.days} before: ${scope.kind === 'all' ? 'everything' : `${scope.kind} ${scope.name}${scope.projectName ? ` (${scope.projectName})` : ''}`}`];
   out.push(prod.environments.length
     ? `Production: ${prod.environments.map((e) => e.name).join(', ')}${prod.names.length ? ` (named ${prod.names.join(', ')})` : ''}`
-    : prod.names.length ? `No environment is named ${prod.names.join(', ')}: the web app's Insights → DORA by project and team sets the names.` : 'No production environment found: link a production monitor to what deploys it, or name a release stage Production.');
+    : prod.names.length ? `No environment is named ${prod.names.join(', ')}: /env picks the project's, and the web app's Insights → DORA by project and team sets the names.` : 'No production environment found: link a production monitor to what deploys it, or name a release stage Production.');
   for (const [id, label, value, before] of DORA_MEASURES) {
     const m = scope.current[id];
     const tr = scope.trend[id];
