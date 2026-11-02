@@ -1,6 +1,7 @@
 // The project's environment (.fleet/project.json): what it gives the crew (FLEET_ENV, Bosun's
 // variables, never one that reads as a secret, and its profile), /env showing and switching it, a
-// switch from another app heard, the running processes keeping the old one until restarted.
+// switch from another app heard, the running processes keeping the old one until restarted; and every
+// line the prompt runs kept while Fleet records a runbook.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -8,6 +9,7 @@ import { join } from 'node:path';
 import { KEYS, project, start, tempHome, type, until } from './helpers.js';
 import { environmentProfile, environmentVars, looksSecret } from '../src/environment.js';
 import { setEnvironment } from '@fleet/kit/environments.js';
+import { recordedLines, startRecording, stopRecording } from '@fleet/kit/recording.js';
 import { familyDir, readActivity } from '@fleet/kit/family.js';
 
 let cleanup;
@@ -51,8 +53,9 @@ function envProject() {
   return dir;
 }
 
-test('/env shows and switches the environment; the running process keeps the old one until restarted; another app\'s switch is heard', async () => {
+test('/env shows and switches the environment; the running process keeps the old one until restarted; another app\'s switch is heard; the prompt\'s lines are recorded', async () => {
   const dir = envProject();
+  startRecording(dir, { home: familyDir() });
   const app = start({ dir });
   const frame = () => app.lastFrame() ?? '';
   try {
@@ -83,6 +86,9 @@ test('/env shows and switches the environment; the running process keeps the old
     await type(app.stdin, 'env qa');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('No environment qa: dev, staging, prod.'), 'no such one');
+    app.stdin.write(':');
+    await type(app.stdin, '!node -e 0');
+    app.stdin.write(KEYS.enter);
 
     // Fleet (or a sibling) switches it: heard within a second or so, frames and header in production's red.
     assert.equal(setEnvironment(dir, 'prod', { by: 'splice' }).ok, true);
@@ -92,7 +98,10 @@ test('/env shows and switches the environment; the running process keeps the old
     await until(() => !frame().includes('Restart api in prod'), 'not restarted');
     assert.ok(frame().includes('env=staging mode=cloud profile=stage'), 'it keeps staging until restarted');
 
+    const lines = recordedLines({ home: familyDir() }).map((l) => [l.app, l.line]);
+    assert.deepEqual(lines, [['bosun', '/env'], ['bosun', '/env staging'], ['bosun', '/env staging'], ['bosun', '/env qa']]);
   } finally {
+    stopRecording({ home: familyDir() });
     app.stdin.write('q');
     app.unmount();
   }

@@ -493,6 +493,9 @@ you to finish.
 
 ### The family
 
+While Fleet records a runbook (`ctrl+b R`), each command line Bosun's prompt runs (a slash command, or a
+`/take` line) is kept for it, once: a line of one of your own commands isn't, the command is, and a
+`!` line never is.
 
 Bosun's siblings ([Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice) for git,
 [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl) for SQL, [Sonar](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/sonar)

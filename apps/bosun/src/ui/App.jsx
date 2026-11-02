@@ -18,6 +18,7 @@ import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { environmentFor } from '@fleet/kit/environments.js';
+import { recordCommand } from '@fleet/kit/recording.js';
 import { environmentKey, environmentProfile, environmentVars } from '../environment.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
@@ -778,12 +779,17 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // commands stop there).
   const runLine = async (text) => {
     const [errors, declined] = [errorCount.current, declines.current];
+    // While Fleet records a runbook (the kit's recording.js), each line run here is kept, once: a line
+    // of one of your own commands isn't, the command is. The kit leaves out ! lines.
+    const top = userDepth.current === 0;
     try {
       let r;
       if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
       // A sibling's context pasted alone is /take's.
-      else if (decodeContext(text)) r = await a.take(ctx, text);
-      else {
+      else if (decodeContext(text)) {
+        r = await a.take(ctx, text);
+        if (top) recordCommand('bosun', `/take ${text}`);
+      } else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
         const cmd = findCommand(name, customRef.current.commands);
         if (!cmd) {
@@ -791,6 +797,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
           return false;
         }
         r = await cmd.run(ctx, rest.trim());
+        if (top) recordCommand('bosun', text);
       }
       return r !== false && r?.ok !== false && errorCount.current === errors && declines.current === declined;
     } catch (e) {
