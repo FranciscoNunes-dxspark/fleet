@@ -231,6 +231,13 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     res.json(await req.ctx.service.queueBuild(projectId, num(definitionId), branch));
   });
 
+  // The advisory watch's findings per tracked repository, and reading one again now (once per 10 minutes).
+  r.get('/advisories', async (req, res) => res.json(await req.ctx.service.advisories()));
+  r.post('/advisories/check', async (req, res) => {
+    const { projectId, repoId } = req.body || {};
+    if (typeof projectId !== 'string' || typeof repoId !== 'string' || !projectId || !repoId) return res.status(400).json({ error: 'projectId and repoId required' });
+    res.json(await req.ctx.service.checkAdvisories(projectId, repoId));
+  });
   r.get('/production', async (req, res) => res.json(await req.ctx.service.production()));
   r.get('/production/monitors', (req, res) => res.json(req.ctx.service.monitors().list()));
   r.put('/production/monitors', need('monitors.manage'), async (req, res) => {

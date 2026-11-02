@@ -24,6 +24,8 @@ import { changedFolders, suggestReviewers } from './domain/reviewers.js';
 import { findFlakyTests } from './domain/tests.js';
 import { scorePr } from './domain/risk.js';
 import { buildDiff, parsePatch } from './domain/filediff.js';
+import { DEFAULT_MIN_SEVERITY, MIN_SEVERITIES, advisoryAttention, pickLockFiles, sortAdvisories } from './domain/advisories.js';
+import { eachLimited } from '@fleet/kit/osv.js';
 
 const MIN = 60_000;
 
@@ -142,6 +144,8 @@ export function createService({
   // service this is (their account id; null locally), for their own schedules' outcomes.
   schedules = null,
   owner = null,
+  // The advisory watch (advisories.js), shared by the server; null where it doesn't run (the terminal app).
+  advisories: advisoryWatch = null,
 } = {}) {
   // Inbox keys and snoozes of other organizations carry their key, so #4107 in
   // one never hides #4107 in another; the primary's stay as they always were.
@@ -748,6 +752,24 @@ export function createService({
     return team.filter((p) => !isHidden(settings, p));
   }
 
+  // The advisory watch's findings for this person's tracked repositories, and the inbox entries
+  // the new ones make (none when they turned it off, or where the watch doesn't run).
+  const advisorySettings = (settings) => ({
+    enabled: settings.advisories?.enabled !== false,
+    minSeverity: MIN_SEVERITIES.includes(settings.advisories?.minSeverity) ? settings.advisories.minSeverity : DEFAULT_MIN_SEVERITY,
+  });
+  async function advisoryItems() {
+    const { enabled, minSeverity } = advisorySettings(await store.load());
+    if (!advisoryWatch || !enabled) return [];
+    const list = (await repos()).map((repo) => ({ repo, entry: advisoryWatch.entryOf(repo) })).filter((x) => x.entry);
+    return advisoryAttention(list, { minSeverity });
+  }
+  async function trackedRepo(projectId, repoId) {
+    const repo = (await repos()).find((r) => r.projectId === projectId && r.id === repoId);
+    if (!repo) throw Object.assign(new Error('That repository isn\'t one of your tracked repos'), { status: 400 });
+    return repo;
+  }
+
   async function workload() {
     const [settings, prs, items, team, paths] = await Promise.all([store.load(), activePRs(), openItems(), teamPeople(), currentIterationPaths()]);
     return buildWorkload({ people: team, prs, items, thresholds: settings.thresholds, blockedTag: settings.blockedTag, currentIterationPaths: paths });
@@ -761,7 +783,7 @@ export function createService({
     /** Tracked projects of this organization (for the multi-organization layer). */
     trackedProjects: () => tracked(),
     /** The same person looking at these projects instead of their own (a channel's view, see channels.js). */
-    withProjects: (projectIds) => createService({ provider, settings: projectsStore(store, projectIds, provider), monitoring, org }),
+    withProjects: (projectIds) => createService({ provider, settings: projectsStore(store, projectIds, provider), monitoring, org, advisories: advisoryWatch }),
     allProjects: () => allProjects(),
 
     async meta() {
@@ -783,14 +805,14 @@ export function createService({
     },
 
     async attention() {
-      const [settings, prs, items, pipes, load, paths, rels, appr, prod] = await Promise.all([
+      const [settings, prs, items, pipes, load, paths, rels, appr, prod, adv] = await Promise.all([
         store.load(), activePRs(), openItems(), pipelines(), workload(), currentIterationPaths(),
-        releases().catch(() => []), approvals().catch(() => []), production().catch(() => []),
+        releases().catch(() => []), approvals().catch(() => []), production().catch(() => []), advisoryItems().catch(() => []),
       ]);
-      if (!keyPrefix) return buildAttention({ prs, items, pipelines: pipes, workload: load, settings, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod });
+      if (!keyPrefix) return buildAttention({ prs, items, pipelines: pipes, workload: load, settings, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod, advisories: adv });
       // This organization's snoozes, without the prefix, then its keys with it.
       const mine = Object.fromEntries(Object.entries(settings.snoozed || {}).filter(([k]) => k.startsWith(keyPrefix)).map(([k, v]) => [k.slice(keyPrefix.length), v]));
-      const result = buildAttention({ prs, items, pipelines: pipes, workload: load, settings: { ...settings, snoozed: mine }, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod });
+      const result = buildAttention({ prs, items, pipelines: pipes, workload: load, settings: { ...settings, snoozed: mine }, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod, advisories: adv });
       return { ...result, items: result.items.map((i) => ({ ...i, key: keyPrefix + i.key })) };
     },
 
@@ -809,6 +831,37 @@ export function createService({
     people,
 
     repos: () => repos(),
+
+    /** A tracked repository's lock files on its default branch (domain/advisories.js pickLockFiles), with their text. */
+    async readLockFiles(projectId, repoId) {
+      const repo = await trackedRepo(projectId, repoId);
+      if (!repo.defaultBranch) return { branch: null, files: [], more: false };
+      const { files, more } = pickLockFiles(await provider.listRepoFiles(projectId, repoId, repo.defaultBranch));
+      const texts = await eachLimited(files, 4, (path) => provider.getRepoFileText(projectId, repoId, path, repo.defaultBranch));
+      return { branch: repo.defaultBranch, files: files.map((path, i) => ({ path, text: texts[i] })), more };
+    },
+
+    /** Each tracked repository's advisories as the watch last found them, worst first. */
+    async advisories() {
+      const settings = advisorySettings(await store.load());
+      const rows = (await repos()).map((r) => {
+        const e = advisoryWatch?.entryOf(r) || {};
+        return {
+          projectId: r.projectId, projectName: r.projectName, repoId: r.id, repoName: r.name, defaultBranch: r.defaultBranch || null, webUrl: r.webUrl || null,
+          checkedAt: e.checkedAt || null, triedAt: e.triedAt || null, error: e.error || null, lockFiles: e.lockFiles || [], moreLockFiles: !!e.moreLockFiles,
+          unreadable: e.unreadable || [], packages: e.packages ?? null, advisories: sortAdvisories([...(e.advisories || [])]),
+        };
+      });
+      return { available: !!advisoryWatch, ...settings, repos: rows };
+    },
+
+    /** Read one tracked repository again now (rate limited by the watch). */
+    async checkAdvisories(projectId, repoId) {
+      if (!advisoryWatch) throw Object.assign(new Error('The advisory watch doesn\'t run here'), { status: 404 });
+      const repo = await trackedRepo(projectId, repoId);
+      await advisoryWatch.checkNow(repo, () => this.readLockFiles(projectId, repoId));
+      return (await this.advisories()).repos.find((r) => r.projectId === projectId && r.repoId === repoId);
+    },
 
     /** A repo's branches; fresh skips the cache (the Refresh button on the new pull request page). */
     async branches(projectId, repoId, { fresh = false } = {}) {
@@ -1828,6 +1881,12 @@ export function createService({
     async saveSettings(patch) {
       const allowed = {};
       for (const k of ['projects', 'thresholds', 'blockedTag', 'autoComplete', 'refreshSeconds']) if (k in patch) allowed[k] = patch[k];
+      // The advisory watch: on or off, and the least severe advisory worth an inbox entry.
+      if (patch.advisories && typeof patch.advisories === 'object') {
+        allowed.advisories = {};
+        if ('enabled' in patch.advisories) allowed.advisories.enabled = patch.advisories.enabled !== false;
+        if (MIN_SEVERITIES.includes(patch.advisories.minSeverity)) allowed.advisories.minSeverity = patch.advisories.minSeverity;
+      }
       // DORA: which environments are production (names, comma-separated; empty for the default) and the failure window.
       if (patch.dora && typeof patch.dora === 'object') {
         allowed.dora = {};

@@ -141,6 +141,13 @@ export function createMultiService(entries) {
     async repos() {
       return (await each((s) => s.repos())).flatMap(({ org, value }) => tagAll(org, value));
     },
+    // The advisory watch: each organization's repositories, read and checked by the one that owns them.
+    readLockFiles: viaProject('readLockFiles'),
+    checkAdvisories: viaProject('checkAdvisories'),
+    async advisories() {
+      const parts = await each((s) => s.advisories());
+      return { ...parts[0].value, repos: parts.flatMap(({ org, value }) => tagAll(org, value.repos)) };
+    },
     async pullRequests() {
       const parts = await each((s) => s.pullRequests());
       return {

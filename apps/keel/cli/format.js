@@ -31,7 +31,7 @@ export const SEVERITY = {
   low: { icon: '●', color: theme.dim, label: 'when you can' },
 };
 
-export const KIND = { pr: 'PR', review: 'Review', work: 'Work', pipeline: 'Pipeline', approval: 'Approval', team: 'Team', production: 'Prod' };
+export const KIND = { pr: 'PR', review: 'Review', work: 'Work', pipeline: 'Pipeline', approval: 'Approval', team: 'Team', production: 'Prod', advisory: 'Advisory' };
 
 export const REVIEW_STATE = {
   draft: { icon: '◌', color: theme.draft, label: 'draft' },

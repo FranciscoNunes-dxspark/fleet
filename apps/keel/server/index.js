@@ -13,6 +13,8 @@ import { createMultiService } from './multiorg.js';
 import { createChannels } from './channels.js';
 import { createPush } from './push.js';
 import { createSchedules } from './schedules.js';
+import { createAdvisoryWatch } from './advisories.js';
+import { createMockOsvFetch } from './mock/advisories.js';
 import { providerFor } from './providers.js';
 import { azureDevOpsToken } from './azdo/azcli.js';
 import { createSettingsStore, defaultSettingsFile } from './settings.js';
@@ -27,13 +29,17 @@ app.use(securityHeaders);
 
 // Production checks run once per server and are shared by everyone using it.
 const monitoring = createMonitoring();
+// The advisory watch's OSV: the real one, or demo answers that never leave the machine.
+const osvFetch = config.mock ? createMockOsvFetch() : globalThis.fetch;
 
 if (config.authMode === 'login') {
   // Everyone signs in with their own PAT; each request runs as that person.
   // Scheduled completions run as whoever scheduled them.
   let auth = null;
   const schedules = createSchedules({ resolveService: (ownerId) => auth.serviceFor(ownerId) });
-  auth = createAuth({ monitoring, schedules });
+  // The advisory watch reads each tracked repository as someone who tracks it.
+  const advisories = createAdvisoryWatch({ people: () => auth.userIds(), resolveService: (userId) => auth.serviceFor(userId), fetchImpl: osvFetch });
+  auth = createAuth({ monitoring, schedules, advisories });
   // Channel posts read Azure DevOps as the Admin who set the channel up.
   const channels = createChannels({ resolveService: (ownerId) => auth.serviceFor(ownerId) });
   // Push notifications read Azure DevOps as the person whose device it is.
@@ -49,6 +55,7 @@ if (config.authMode === 'login') {
   const orgStore = createOrgStore();
   const settings = createSettingsStore(defaultSettingsFile());
   const schedules = createSchedules({ resolveService: () => localCtx().service });
+  const advisories = createAdvisoryWatch({ resolveService: () => localCtx().service, fetchImpl: osvFetch });
   // AZDO_AUTH=az without a PAT: your Azure CLI sign-in, shared by every organization.
   const azToken = config.azAuth && !config.pat ? azureDevOpsToken() : undefined;
   let ctx = null;
@@ -63,6 +70,7 @@ if (config.authMode === 'login') {
         monitoring: org.primary ? monitoring : null,
         org,
         schedules,
+        advisories,
       }),
     }));
     const service = createMultiService(entries);
