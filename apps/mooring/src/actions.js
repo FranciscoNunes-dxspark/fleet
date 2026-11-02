@@ -9,6 +9,7 @@ import { findHost, hostText, parseAdd, withHost, withoutHost } from './hosts.js'
 import { joinRemote, resolveRemote } from './sftp.js';
 import { removeTree } from './session.js';
 import { sizeText } from './format.js';
+import { DEFAULT_KEY_NAME, validKeyName } from './keygen.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -50,6 +51,59 @@ export function addHost(ctx, rest) {
   const existed = (ctx.config.hosts ?? []).some((h) => h.name === host.name);
   ctx.setConfig({ ...ctx.config, hosts: withHost(ctx.config.hosts, host) });
   ctx.note(`${existed ? 'Changed' : 'Saved'} ${host.name}: ${hostText(host)}${host.key ? `, key ${host.key}` : ', your ssh agent'}\n/connect ${host.name} opens it.`, 'ok');
+  return true;
+}
+
+/**
+ * /keygen [name] [host]: makes an ed25519 key in ~/.ssh (asking first), copies its public half, and says where it goes:
+ * the server's authorized_keys. With a saved host's name, that host is changed to sign in with the new key.
+ */
+export async function keygen(ctx, rest) {
+  if (!ctx.keygen) return ctx.note("Making a key isn't available here.", 'error') ?? false;
+  const [name = DEFAULT_KEY_NAME, hostName] = String(rest ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!validKeyName(name)) return ctx.note('A key name is letters, digits, . - and _ (no slash, and no dash first).', 'error') ?? false;
+  const host = hostName ? findHost(ctx.config.hosts, hostName) : null;
+  if (hostName && !host) return ctx.note(`There's no saved host ${hostName}.`, 'error') ?? false;
+  const path = ctx.keygen.path(name);
+  const yes = await ctx.confirm({
+    title: `Make a new ssh key, ${path}?`,
+    detail: `ed25519, with no passphrase (Mooring can't ask for one); anyone who can read the file can sign in as you${host ? `. ${host.name} will be saved to use it` : ''}.`,
+    options: [
+      { label: 'Make it', value: true },
+      { label: 'Cancel', value: false },
+    ],
+  });
+  if (!yes) return false;
+  let made;
+  const r = await ctx.task(
+    `Making ${name}`,
+    async () => {
+      made = await ctx.keygen.generate(name);
+      return { stdout: [made.path, made.fingerprint ?? '', made.publicKey].join('\n') };
+    },
+    { label: 'Making the key', activity: `made the ssh key ${name}` },
+  );
+  if (!r.ok) return ctx.note(r.error.message, 'error') ?? false;
+  if (host) {
+    const { password, ...others } = host;
+    ctx.setConfig({ ...ctx.config, hosts: withHost(ctx.config.hosts, { ...others, key: made.path }) });
+  }
+  ctx.copy?.(made.publicKey, 'the public key');
+  ctx.showText(
+    `Made ${name}`,
+    [
+      `Private key: ${made.path} (keep it to yourself)`,
+      `Fingerprint: ${made.fingerprint ?? ''}`,
+      '',
+      'Public key (copied; it is also in the file ending .pub):',
+      made.publicKey,
+      '',
+      'Add that line to ~/.ssh/authorized_keys on the server, once, some way you can already sign in (a password, a console), e.g.:',
+      '  ssh-copy-id -i ' + made.path + '.pub user@host',
+      '',
+      host ? `${host.name} now uses this key: /connect ${host.name}` : `Then: /add <name> user@host key=${made.path}`,
+    ].join('\n'),
+  );
   return true;
 }
 

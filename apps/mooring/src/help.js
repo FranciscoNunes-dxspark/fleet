@@ -78,6 +78,7 @@ export const HELP = [
       ['↵ / c', 'Connect'],
       ['a', 'Save a host (/add <name> <user@host> [key=<file>] [password])'],
       ['e', 'Change it (the line comes up at the prompt)'],
+      ['/keygen [name] [host]', 'Make an ssh key (no passphrase) and copy its public half; with a host, it signs in with it'],
       ['x d', 'Forget it (asks first)'],
     ],
   },
