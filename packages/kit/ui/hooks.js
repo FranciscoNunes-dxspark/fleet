@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStdin, useStdout } from 'ink';
+import { environmentFor, markProduction, watchEnvironment } from '../environments.js';
 
 export function useTerminalSize() {
   const { stdout } = useStdout();
@@ -263,4 +264,27 @@ export function useAsync(key, load, delay = 60, { stale } = {}) {
     };
   }, [key]);
   return state;
+}
+
+/**
+ * The project's chosen environment as `app` sees it (environments.js's environmentFor: { name, prod,
+ * ...its section }, or null), kept current when it's switched here or in another app; a production one
+ * turns the frames red while it's chosen.
+ */
+export function useEnvironment(app, dir) {
+  const [env, setEnv] = useState(() => environmentFor(app, dir));
+  useEffect(() => {
+    const update = () => {
+      const next = environmentFor(app, dir);
+      markProduction(next?.prod);
+      setEnv(next);
+    };
+    update();
+    const stop = watchEnvironment(dir, update);
+    return () => {
+      stop();
+      markProduction(false);
+    };
+  }, [app, dir]);
+  return env;
 }

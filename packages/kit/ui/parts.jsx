@@ -56,7 +56,8 @@ let cutShort = null;
 export const cutHint = () => cutShort;
 
 export function Panel({ title, hint, width, height, focused = false, children }) {
-  const color = focused ? theme.accent : theme.border;
+  // A production environment (environments.js's markProduction) draws every frame red.
+  const color = theme.envProd ? theme.del : focused ? theme.accent : theme.border;
   const label = title ? ` ${title} ` : '';
   const room = width - 4;
   // One column is kept for the space after the label, so a long title never pushes the corner off.
