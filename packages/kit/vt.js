@@ -41,7 +41,10 @@ function styleKey(a) {
 const wide = (ch) => ch.length > 1 || ch.charCodeAt(0) > 0x7e ? stringWidth(ch) === 2 : false;
 
 export class VirtualTerminal {
-  constructor(columns, rows) {
+  /** `scrollback`: how many rows pushed off the top of the main screen are kept (`history`, oldest first); none by default. */
+  constructor(columns, rows, { scrollback = 0 } = {}) {
+    this.scrollback = scrollback;
+    this.history = [];
     this.state = 'ground';
     this.seq = '';
     this.resize(columns, rows);
@@ -64,6 +67,52 @@ export class VirtualTerminal {
     this.saved = null;
     this.modes ??= new Map();
     this.sync = false;
+  }
+
+  /**
+   * A new size with what is on the screen kept, for a shell whose window changed under it: columns are cut or
+   * padded, rows are taken from the top (into `history`, when it is kept) down to the cursor's row, then from the
+   * bottom, and new ones come in at the bottom. The cursor stays on its text; the scroll region is the whole screen.
+   */
+  fit(columns, rows) {
+    columns = Math.max(1, columns);
+    rows = Math.max(1, rows);
+    const keep = this.scrollback > 0 && !this.modes.get(1049) && !this.modes.get(1047) && !this.modes.get(47);
+    while (this.chars.length > rows) {
+      if (this.y > 0) {
+        const chars = this.chars.shift();
+        const styles = this.styles.shift();
+        if (keep) {
+          this.history.push([chars, styles]);
+          if (this.history.length > this.scrollback) this.history.shift();
+        }
+        this.y--;
+      } else {
+        this.chars.pop();
+        this.styles.pop();
+      }
+    }
+    while (this.chars.length < rows) {
+      this.chars.push(Array(this.columns).fill(' '));
+      this.styles.push(Array(this.columns).fill(''));
+    }
+    for (let y = 0; y < rows; y++) {
+      this.chars[y].length = columns;
+      this.styles[y].length = columns;
+      for (let x = this.columns; x < columns; x++) {
+        this.chars[y][x] = ' ';
+        this.styles[y][x] = '';
+      }
+    }
+    this.columns = columns;
+    this.rows = rows;
+    this.x = Math.min(this.x, columns - 1);
+    this.y = Math.min(this.y, rows - 1);
+    this.top = 0;
+    this.bottom = rows - 1;
+    this.wrapNext = false;
+    this.saved = null;
+    this.dirty = Array(rows).fill(true);
   }
 
   /** Back to how it started: a blank screen, every mode off. */
@@ -252,9 +301,15 @@ export class VirtualTerminal {
     const bottom = this.bottom;
     if (top > bottom) return;
     n = Math.min(n, bottom - top + 1);
+    // Rows leaving the top of the whole screen are kept, unless an app owns the screen (the alternate one).
+    const keep = this.scrollback > 0 && top === 0 && !this.modes.get(1049) && !this.modes.get(1047) && !this.modes.get(47);
     for (let k = 0; k < n; k++) {
-      this.chars.splice(top, 1);
-      this.styles.splice(top, 1);
+      const gone = this.chars.splice(top, 1)[0];
+      const goneStyles = this.styles.splice(top, 1)[0];
+      if (keep) {
+        this.history.push([gone, goneStyles]);
+        if (this.history.length > this.scrollback) this.history.shift();
+      }
       const [c, s] = this.blankRow();
       this.chars.splice(bottom, 0, c);
       this.styles.splice(bottom, 0, s);
@@ -508,14 +563,22 @@ export class VirtualTerminal {
   // ---- reading it -------------------------------------------------------------------------------
 
   /** Row `y` as ANSI text from its first column, every cell of it, ending with the style reset. */
-  rowAnsi(y) {
-    const chars = this.chars[y];
-    const styles = this.styles[y];
+  rowAnsi(y, cursor = -1) {
+    return this.cellsAnsi(this.chars[y], this.styles[y], cursor);
+  }
+
+  /** A row kept in `history` (index from the oldest) as ANSI text, as `rowAnsi`. */
+  historyAnsi(i) {
+    return this.cellsAnsi(...this.history[i]);
+  }
+
+  // `cursor` is a column to show reversed: where the cursor is, for a view that draws it itself.
+  cellsAnsi(chars, styles, cursor = -1) {
     let out = '\x1b[0m';
     let style = '';
     let carried = false; // the cell before was a wide character's first half
     for (let x = 0; x < this.columns; x++) {
-      let ch = chars[x];
+      let ch = chars[x] ?? ' '; // a row kept in history is as wide as the screen was then
       if (ch === '') {
         if (carried) {
           carried = false;
@@ -527,11 +590,12 @@ export class VirtualTerminal {
         if (x + 1 < this.columns && chars[x + 1] === '') carried = true;
         else ch = ' ';
       } else carried = false;
-      if (styles[x] !== style) {
-        style = styles[x];
+      const cell = styles[x] ?? '';
+      if (cell !== style) {
+        style = cell;
         out += style ? `\x1b[0;${style}m` : '\x1b[0m';
       }
-      out += ch;
+      out += x === cursor ? `\x1b[7m${ch}\x1b[27m` : ch;
     }
     return `${out}\x1b[0m`;
   }
