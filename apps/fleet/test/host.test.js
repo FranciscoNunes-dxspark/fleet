@@ -365,3 +365,18 @@ test('following a request types its /take line into each running app that reads 
   keys('y');
   await done;
 });
+
+test('a notice stays for the time it asks for: the default, or longer for an install', async () => {
+  const { host, term, keys, done } = startHost({ spaces: SPACES, columns: 70, rows: 14 });
+  await until(() => term.screen.row(0) === 'one 70x13', 'the first app', { term });
+  const delays = [];
+  host.setTimer = (fn, ms) => (delays.push(ms), 0);
+  host.clearTimer = () => {};
+  host.notice('Looking for a new version of Fleet');
+  host.notice('Installing Fleet 1.2.3…', 120_000);
+  assert.deepEqual(delays, [4000, 120_000]);
+  await until(() => term.screen.row(-1).includes('Installing Fleet 1.2.3…'), 'the installing notice in the bar', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
