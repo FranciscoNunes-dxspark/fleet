@@ -62,4 +62,12 @@ export default {
   "On {dev}, not yet on {branch}": "Em {dev}, ainda não em {branch}",
   "Counted from {pr}, which took {dev} into {branch} {age} ago.": "Contado a partir de {pr}, que levou {dev} para {branch} há {age}.",
   "No pull request took {dev} into {branch} in the last 90 days, so this counts what reached {dev} after {branch} last changed, {age} ago.": "Nenhum pull request levou {dev} para {branch} nos últimos 90 dias, por isso conta o que chegou a {dev} depois da última alteração em {branch}, há {age}.",
+  "How this was counted": "Como foi contado",
+  "{dev} is at {devId}, from {devAge} ago; {branch} at {prodId}, from {prodAge} ago.": "{dev} está em {devId}, de há {devAge}; {branch} em {prodId}, de há {prodAge}.",
+  "The same commit, so nothing can be waiting: check the two branches in Settings → Production monitors.": "É o mesmo commit, por isso nada pode estar à espera: verifique as duas branches em Definições → Monitores de produção.",
+  "{n} commit on {dev} is not on {branch}.": "{n} commit de {dev} não está em {branch}.",
+  "{n} commits on {dev} are not on {branch}.": "{n} commits de {dev} não estão em {branch}.",
+  "{n} of them came after {commit}, the commit of {dev} that {pr} took, and are counted.": "{n} deles vieram depois de {commit}, o commit de {dev} que {pr} levou, e são contados.",
+  "{n} of them reached {dev} after {branch} last changed, and are counted.": "{n} deles chegaram a {dev} depois da última alteração em {branch}, e são contados.",
+  "All of them are counted.": "São todos contados.",
 };

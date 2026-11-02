@@ -564,6 +564,14 @@ export function createService({
         // How it was worked out, for the card to say.
         promotedBy: promoted ? { id: promoted.id, title: promoted.title, closedAt: promoted.closedAt, projectId: promoted.projectId, repoId: promoted.repoId } : null,
         productionChangedAt: !promoted && prod.tip ? landedAt(prod.tip) : null,
+        // The figures behind it, so a number that looks wrong can be checked against the repo.
+        counted: {
+          devTip: { id: dev.tip.id, at: landedAt(dev.tip) },
+          prodTip: prod.tip ? { id: prod.tip.id, at: landedAt(prod.tip) } : null,
+          promotedCommit: promoted?.sourceCommit || null,
+          notOnProduction: between.length,
+          kept: raw.length,
+        },
       };
     } catch (err) {
       return { ...base, error: err.message };
