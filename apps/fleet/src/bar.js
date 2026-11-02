@@ -2,8 +2,9 @@
 // says the space's key, its name and its state (○ not started, ● running, ✕ and the code once it has
 // exited), and what the app is for beside its name (ROLES, in capitals) where there's room; the active one is drawn in its app's accent. A space off screen that needs you has a
 // badge after its state (attention.js: `!` for a worried app, a count of alerts), in a warning colour,
-// red when it counts an error or a crash. When the line is too narrow, the hint goes first, then the
-// names shrink to their letters (the badges stay), then the line is cut.
+// red when it counts an error or a crash. At the right, before the hint, the fleet's own state: the
+// project's environment (red for production). When the line is too narrow, the hint goes first, then
+// the names shrink to their letters (the badges stay), then the line is cut; that state keeps its room.
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { ROLES } from '@fleet/kit/family.js';
 import { badgeText } from './attention.js';
@@ -15,18 +16,33 @@ export const stateMark = (space) => (space.state === 'exited' ? `✕${space.code
 
 /** The hint at the right: the prefix's keys while it waits for one, else how to get them. */
 export function hintFor({ prefix, notice, split = false, prefixLabel = 'ctrl+b' }) {
-  if (prefix) return `1-9 s t o b h l u g c · n p · ${split ? 'tab pane · x unsplit' : '| split'} · m move · r f · q quit · ? help`;
+  if (prefix) return `1-9 s t o b h l u g c · n p · ${split ? 'tab pane · x unsplit' : '| split'} · m move · r f e · q quit · ? help`;
   return notice || `${prefixLabel} ? help`;
+}
+
+/**
+ * The fleet's state as the bar's `status` segments: the environment ({ name, prod } or null).
+ */
+export function statusSegments({ env = null } = {}) {
+  const out = [];
+  // Production reads by its colour (white on red), whatever the project calls it.
+  if (env?.name) out.push({ text: stringWidth(String(env.name)) > 20 ? fit(String(env.name), 20) : String(env.name), role: env.prod ? 'env-prod' : 'env' });
+  return out;
 }
 
 /**
  * The bar's layout for `spaces` ({ id, title, letter, state, code }) at `width` columns:
  * { segments, tabs }. `segments` are { text, role } in order ('tab', 'active', 'shown', 'fill',
- * 'hint', 'prefix', 'notice'), together exactly `width` wide; `tabs` are { id, from, to } (columns,
- * `to` exclusive), for clicks. With the screen split, `shown` is the space in the other pane.
+ * the `status` ones (statusSegments'), 'hint', 'prefix', 'notice'), together exactly `width` wide;
+ * `tabs` are { id, from, to } (columns, `to` exclusive), for clicks. With the screen split, `shown`
+ * is the space in the other pane.
  */
-export function barLayout({ spaces, active, shown = null, width, prefix = false, notice = '', prefixLabel }) {
-  if (width <= 0) return { segments: [], tabs: [] };
+export function barLayout({ spaces, active, shown = null, width: full, prefix = false, notice = '', prefixLabel, status = [] }) {
+  if (full <= 0) return { segments: [], tabs: [] };
+  // The fleet's state keeps its room (a space before each), unless the line is too narrow for it at all.
+  const statusW = status.reduce((n, s) => n + 1 + stringWidth(s.text), 0);
+  const keep = statusW && statusW + 12 <= full ? status : [];
+  const width = full - (keep.length ? statusW : 0);
   const badges = spaces.map((s) => badgeText(s.badge));
   const labels = (short, roles = false) => spaces.map((s, i) => ` ${i + 1} ${short ? s.letter.toUpperCase() : roles && ROLES[s.id] ? `${s.title} ${ROLES[s.id]}` : s.title} ${stateMark(s)}${badges[i] ? ` ${badges[i]}` : ''} `);
   const hint = ` ${hintFor({ prefix, notice, split: Boolean(shown), prefixLabel })} `;
@@ -59,8 +75,9 @@ export function barLayout({ spaces, active, shown = null, width, prefix = false,
     const h = !showHint ? '' : stringWidth(said) > room - 2 ? fit(said, Math.max(0, room - 2)) : said;
     const gap = Math.max(0, room - stringWidth(h) - (h ? 1 : 0));
     segments.push({ text: ' '.repeat(gap), role: 'fill' });
+    for (const s of keep) segments.push({ text: `${s.text} `, role: s.role });
     if (h) segments.push({ text: `${h} `, role: prefix ? 'prefix' : notice ? 'notice' : 'hint' });
-  }
+  } else for (const s of keep) segments.push({ text: `${s.text} `, role: s.role });
   return { segments, tabs: where };
 }
 
@@ -86,6 +103,7 @@ export function colour(hex, { background = false, truecolor = true } = {}) {
 /** A badge's colour: a warm orange, bold, that reads on the bar's grey whatever the tab's accent; red for an error or a crash. */
 const BADGE = '\x1b[1m\x1b[38;5;214m';
 const BADGE_ERROR = '\x1b[1m\x1b[38;5;203m';
+const STATUS = { env: '\x1b[38;5;153m', 'env-prod': '\x1b[1m\x1b[38;5;231m\x1b[48;5;160m' };
 
 /** The bar as one line of ANSI text, `width` columns wide, for `spaces` (with their accents). */
 export function renderBar(layout, spaces, { truecolor = true } = {}) {
@@ -107,6 +125,8 @@ export function renderBar(layout, spaces, { truecolor = true } = {}) {
     else if (seg.role === 'prefix') out += `\x1b[1m\x1b[38;5;229m${seg.text}${BAR}`;
     else if (seg.role === 'notice') out += `\x1b[38;5;229m${seg.text}${BAR}`;
     else if (seg.role === 'hint') out += `\x1b[38;5;244m${seg.text}${BAR}`;
+    // The status's own trailing space stays on the bar's grey, so production's red reads as a label.
+    else if (STATUS[seg.role]) out += `${STATUS[seg.role]}${seg.text.slice(0, -1)}${BAR} `;
     else out += seg.text;
   }
   return `${out}\x1b[0m`;

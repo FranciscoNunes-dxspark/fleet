@@ -3,8 +3,9 @@
 // names another, whose next key is the host's: 1–9 or an app's letter switches, ] or n the next space
 // and p the one before, | or \ splits the screen in two (| again, or x, puts it back), tab or an arrow
 // left or right goes to the other pane, m asks for a folder to move every app to, r opens the
-// runbooks and f follows a request (panels.js), q quits, ? helps, the prefix again sends it to the
-// app; any other key cancels the prefix and is dropped. ctrl+] (0x1d), the prefix Fleet had first,
+// runbooks and f follows a request (panels.js), e picks the project's environment, q quits, ? helps,
+// the prefix again sends it to the app; any other key cancels the prefix and is dropped. ctrl+] (0x1d),
+// the prefix Fleet had first,
 // works too: it's hard to type on many keyboards (AltGr+9 on a Portuguese one), hence ctrl+b. Without
 // either, alt+1 to alt+9 (ESC and the digit: ctrl+alt+digit never reaches a terminal program) switch too.
 import { SPACES } from './spaces.js';
@@ -70,6 +71,7 @@ export function prefixAction(key, spaces = SPACES, started = PREFIX) {
   if (key === '?') return { type: 'help' };
   if (k === 'r') return { type: 'runbooks' };
   if (k === 'f') return { type: 'trace' };
+  if (k === 'e') return { type: 'environment' };
   return null;
 }
 

@@ -34,6 +34,7 @@ for it: .sql in Trawl, .http in Hail.
   ctrl+b m                    move every app to another folder
   ctrl+b r                    runbooks: steps handed to the apps
   ctrl+b f                    follow a request across the apps
+  ctrl+b e                    the project's environment (.fleet/project.json)
   ctrl+b ctrl+b               send ctrl+b to the app
   ctrl+b q                    quit, stopping every app
   ctrl+b ?                    the keys

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stringWidth } from '@fleet/kit/text.js';
-import { ansi256, barLayout, colour, renderBar, stateMark, tabAt } from '../src/bar.js';
+import { ansi256, barLayout, colour, renderBar, stateMark, statusSegments, tabAt } from '../src/bar.js';
 import { SPACES } from '../src/spaces.js';
 
 const spaces = SPACES.map((s, i) => ({ ...s, state: ['running', 'idle', 'exited', 'idle', 'running', 'idle', 'idle', 'idle', 'idle'][i], code: i === 2 ? 1 : null }));
@@ -36,12 +36,12 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 180, prefix: true })), /1-9 s t o b h l u g c · n p · \| split · m move · r f · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 180, prefix: true })), /1-9 s t o b h l u g c · n p · \| split · m move · r f e · q quit · \? help $/);
   // Split, the other pane and putting it back.
-  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 180, prefix: true })), /tab pane · x unsplit · m move · r f · q quit/);
+  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 180, prefix: true })), /tab pane · x unsplit · m move · r f e · q quit/);
   // With little room the prefix's keys win over the names.
-  const tight = barLayout({ spaces, active: 'splice', width: 135, prefix: true });
-  assert.equal(width(tight), 135);
+  const tight = barLayout({ spaces, active: 'splice', width: 145, prefix: true });
+  assert.equal(width(tight), 145);
   assert.match(text(tight), / 1 S ● .*q quit/);
   assert.match(text(barLayout({ spaces, active: 'splice', width: 120, notice: 'Handed to Trawl' })), /Handed to Trawl $/);
   // A notice too long beside the names has the names shrink to letters while it shows.
@@ -84,6 +84,22 @@ test("split, the other pane's tab is underlined in its accent", () => {
   const layout = barLayout({ spaces, active: 'splice', shown: 'hail', width: 120 });
   assert.equal(layout.segments.find((s) => s.role === 'shown').id, 'hail');
   assert.ok(renderBar(layout, spaces).includes('\x1b[38;2;232;68;90m\x1b[1m\x1b[4m 5 Hail ● '));
+});
+
+test("the fleet's state sits before the hint and keeps its room: the environment (production in red)", () => {
+  const status = statusSegments({ env: { name: 'prod', prod: true } });
+  assert.deepEqual(status.map((s) => s.role), ['env-prod']);
+  const layout = barLayout({ spaces, active: 'splice', width: 160, status });
+  assert.equal(width(layout), 160);
+  assert.match(text(layout), / prod ctrl\+b \? help $/);
+  // Narrow, the tabs give way to it rather than it to them.
+  const narrow = barLayout({ spaces, active: 'splice', width: 60, status });
+  assert.equal(width(narrow), 60);
+  assert.match(text(narrow), /prod $/);
+  const bar = renderBar(layout, spaces);
+  assert.ok(bar.includes('\x1b[48;5;160mprod'), 'production on red');
+  assert.deepEqual(statusSegments({ env: { name: 'dev', prod: false } }), [{ text: 'dev', role: 'env' }]);
+  assert.deepEqual(statusSegments({}), []);
 });
 
 test('a badge that counts an error or a crash is red, an alert orange', () => {

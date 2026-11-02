@@ -28,6 +28,14 @@ whose moods are turned off in its settings never gets a `!`.
  1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   Bosun: api crashed
 ```
 
+At the right of the bar, before the hint, Fleet says what it's doing itself: the project's
+environment, white on red when it's production ([Environments](#environments)). The tabs give way to it
+on a narrow screen.
+
+```
+ 1 Splice ●  2 Trawl ●  3 Sonar ●  4 Bosun ●  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   prod ctrl+b ? help
+```
+
 ## Install
 
 **On Windows**, download `fleet-windows-x64-setup.exe` from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
@@ -98,6 +106,7 @@ say `ctrl+b`; read yours there.
 | `ctrl+b` `ctrl+b` | Send `ctrl+b` to the app (the prefix twice is the prefix for the app; `ctrl+]` `ctrl+]` sends `ctrl+]`) |
 | `ctrl+b` `r` | The runbooks: the one you were in, else the list ([Runbooks](#runbooks)) |
 | `ctrl+b` `f` | Follow a request across the apps ([Following a request](#following-a-request)) |
+| `ctrl+b` `e` | The project's environment, for every app at once ([Environments](#environments)) |
 | `ctrl+b` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+b` `?` | The keys |
 
@@ -190,6 +199,29 @@ each runbook's progress until it quits.
 the last hour (the family's activity log: pushes, restarts, writes to a database, crashes). The log says
 what happened in words, not the commands that did it, so the draft lists what happened and leaves an
 empty step for you to fill in.
+
+## Environments
+
+A project names its environments once, for every app, in `.fleet/project.json` (in the folder Fleet runs
+in, or one above it up to its checkout's root): what dev, staging or prod means to each app, as a Trawl
+connection, Hail's env, a Sonar app or a key vault. `ctrl+b` `e` lists them, the one chosen marked `●`
+and production in red; `↵` chooses another, and every app moves to it by itself (they watch the choice,
+kept per project in `~/.family/env.json`). The bar shows the one chosen, white on red for production,
+where every app draws red and asks before it changes anything. With no file, the panel shows how to
+write one:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev":  { "trawl": { "connection": "Shop (dev)" }, "hail": { "env": "dev" } },
+    "prod": { "prod": true, "sonar": { "app": "shop-api" }, "locker": { "vault": "kv-shop" } }
+  }
+}
+```
+
+What each app reads from its section is in its own README. Nothing secret goes in the file: it names
+things, never a password.
 
 ## Following a request
 

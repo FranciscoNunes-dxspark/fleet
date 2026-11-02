@@ -2,9 +2,10 @@
 // are) as real processes, driven through its input and read from the screen it draws.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { currentEnvironment } from '@fleet/kit/environments.js';
 import { logActivity } from '@fleet/kit/family.js';
 import { traceLine } from '../src/trace.js';
 import { alive, familyHome, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
@@ -376,6 +377,39 @@ test('a notice stays for the time it asks for: the default, or longer for an ins
   host.notice('Installing Fleet 1.2.3…', 120_000);
   assert.deepEqual(delays, [4000, 120_000]);
   await until(() => term.screen.row(-1).includes('Installing Fleet 1.2.3…'), 'the installing notice in the bar', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+const PROJECT = JSON.stringify({ default: 'dev', environments: { dev: { two: { env: 'dev' } }, prod: { prod: true, two: { env: 'prod' } } } });
+
+test("the prefix and e picks the project's environment for every app, and the bar says which", async () => {
+  const tools = toolsIn({ 'project/.fleet/project.json': PROJECT });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 70, rows: 16 });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 70x15' && / dev ctrl\+b \? help$/.test(screen.row(-1)), 'the default environment in the bar', { term });
+  keys(`${PREFIX}e`);
+  await until(() => term.text().includes('Environment') && /› ● dev +current +two/.test(term.text()) && /prod +production/.test(term.text()), 'the picker, the current one marked', { term });
+  keys('j\r');
+  await until(() => / prod Every app is on prod now: production, careful$/.test(screen.row(-1)), 'switched, said in the bar', { term });
+  // The apps watch the choice in the family's folder; production is white on red in the bar.
+  assert.equal(currentEnvironment(tools.cwd, { home: tools.familyDir }).name, 'prod');
+  assert.ok(term.written.includes('\x1b[48;5;160mprod'));
+  assert.match(readFileSync(join(tools.familyDir, 'activity.jsonl'), 'utf8'), /"app":"fleet".*Switched project to prod \(production\)/);
+  await until(() => screen.row(0) === 'one 70x15', 'the app back', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('with no .fleet/project.json the environment panel says how to write one', async () => {
+  const tools = toolsIn({ 'project/readme.txt': 'x' });
+  const { term, keys, done } = startHost({ spaces: SPACES, tools, columns: 100, rows: 24 });
+  await until(() => term.screen.row(0) === 'one 100x23', 'the app', { term });
+  keys(`${PREFIX}e`);
+  await until(() => term.text().includes('No environments here.') && term.text().includes('"default": "dev",') && term.text().includes('"prod": { "prod": true'), 'the example', { term });
+  keys('\x1b');
   keys(`${PREFIX}q`);
   keys('y');
   await done;

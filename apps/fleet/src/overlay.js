@@ -184,3 +184,57 @@ export function traceLines({ id, asked = [], timeline = [], cursor = 0, width = 
   }
   return { lines, focus };
 }
+
+const RED = '\x1b[38;5;203m';
+const RED_BOLD = `${BOLD}${RED}`;
+
+// What a .fleet/project.json looks like, for the environment panel when there's none.
+const PROJECT_EXAMPLE = [
+  '{',
+  '  "default": "dev",',
+  '  "environments": {',
+  '    "dev":  { "trawl": { "connection": "Shop (dev)" }, "hail": { "env": "dev" } },',
+  '    "prod": { "prod": true, "sonar": { "app": "shop-api" }, "locker": { "vault": "kv-shop" } }',
+  '  }',
+  '}',
+];
+
+/**
+ * The environment panel's rows: `project` is the kit's readProject (null when there's none, `error`
+ * when it can't be read), `current` the name chosen. Each environment a row, the current one marked ●,
+ * a production one in red, with the apps it says something to. { lines, focus }.
+ */
+export function envLines({ project, current, cursor = 0, width = 80, where = '' } = {}) {
+  if (!project) {
+    return {
+      lines: [
+        [{ text: 'No environments here.', sgr: BOLD }],
+        [],
+        ...prose(`A .fleet/project.json in the project${where ? ` (${where}, or its checkout's root)` : ''} names them once for every app: what dev, staging or prod means to each one. Choosing one here moves every app to it. For example:`, width - 1),
+        [],
+        ...PROJECT_EXAMPLE.map((l) => [{ text: `  ${l}`, sgr: YELLOW }]),
+        [],
+        ...prose('Each app reads its own section (its README says what). "prod": true marks production: every app draws red there and asks before it changes anything. Nothing secret goes in the file.', width - 1),
+      ],
+      focus: [0, 0],
+    };
+  }
+  if (project.error) return { lines: [[{ text: `${project.file} can't be read:`, sgr: RED_BOLD }], ...prose(project.error, width - 1)], focus: [0, 0] };
+  const nameW = Math.max(...project.names.map((n) => stringWidth(n)));
+  const lines = project.names.map((name, i) => {
+    const settings = project.environments[name] ?? {};
+    const prod = settings.prod === true;
+    const here = i === cursor;
+    const apps = Object.keys(settings).filter((k) => k !== 'prod' && settings[k] && typeof settings[k] === 'object');
+    return [
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: name === current ? '● ' : '  ', sgr: prod ? RED_BOLD : GREEN },
+      { text: name.padEnd(nameW), sgr: prod ? RED_BOLD : here ? `${BOLD}${YELLOW}` : '' },
+      { text: prod ? '  production' : '', sgr: RED },
+      { text: name === current ? '  current' : '', sgr: GREEN },
+      { text: apps.length ? `  ${apps.join(', ')}` : '', sgr: DIM },
+    ];
+  });
+  lines.push([], ...prose(`From ${project.file}. ↵ switches every app.`, width - 1));
+  return { lines, focus: [cursor, cursor] };
+}

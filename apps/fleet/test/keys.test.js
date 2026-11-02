@@ -41,6 +41,10 @@ test('the prefix and | or \\ split the screen, x puts it back, tab or an arrow g
   assert.equal(prefixAction('\x1b[A'), null);
 });
 
+test('the prefix and e: the environment', () => {
+  assert.deepEqual(prefixAction('e'), { type: 'environment' });
+});
+
 test('the prefix and m ask for a folder to move the fleet to', () => {
   assert.deepEqual(prefixAction('m'), { type: 'folder' });
   assert.deepEqual(prefixAction('M'), { type: 'folder' });

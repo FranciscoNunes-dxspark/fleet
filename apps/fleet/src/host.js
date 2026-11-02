@@ -15,19 +15,22 @@
 // app is started again there, and the ones not started yet start there later.
 //
 // A space off screen whose app needs you gets a badge in its tab (attention.js), from the family's
-// moods and activity, read every few seconds; the bell rings when one appears.
+// moods and activity, read every few seconds; the bell rings when one appears. The same reading keeps
+// the bar's own state: the project's environment (the kit's environments.js; the prefix and e picks
+// another).
 //
 // Everything outside is injected: the terminal (`input`, `output` with columns, rows and 'resize'),
 // starting an app (`spawn`), timers, the clock and the family's folder, so tests drive it with
 // streams and small fake apps.
 import { StringDecoder } from 'node:string_decoder';
+import { currentEnvironment } from '@fleet/kit/environments.js';
 import { familyDir } from '@fleet/kit/family.js';
 import { encodeMessage, messageReader } from '@fleet/kit/hosted.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { remember } from '@fleet/kit/folders.js';
 import { badgeFor, badgeText, familyReader } from './attention.js';
 import { completeFolder, editLine, isFolder, lineOf, renderAsk, resolveFolder, shortFolder } from './folder.js';
-import { barLayout, colour, renderBar, tabAt } from './bar.js';
+import { barLayout, colour, renderBar, statusSegments, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { DEFAULT_PREFIX, prefixByte, prefixName, prefixesFor, readKeys, takeBarClicks } from './keys.js';
 import { Panels } from './panels.js';
@@ -68,10 +71,12 @@ export const helpRows = (p = DEFAULT_PREFIX) => [
   [`${p} tab ← →`, 'the other pane'],
   [`${p} x or |`, 'one app on screen again'],
   [`${p} m`, 'move every app to another folder'],
+  [`${p} e`, "the project's environment, for every app"],
   ...(p === 'ctrl+]' ? [] : [['ctrl+]', `works as ${p} does (host.json's "prefix" changes ${p})`]]),
   ['', ''],
   ['a click on a tab', 'switches to it'],
   ['! or 2 in a tab', 'that app needs you (worried, alerts; red: errors)'],
+  ['dev in the bar', "the project's environment (red: production)"],
   ['copied "for Trawl"', 'goes to Trawl, typed into its prompt'],
 ];
 
@@ -122,6 +127,8 @@ export class Host {
     // A panel over the app (panels.js: the runbooks, a request followed): it has the keys while it's open.
     this.overlay = null;
     this.panels = new Panels(this, tools);
+    // The bar's own state (bar.js statusSegments), read with the badges: refreshStatus.
+    this.status = { env: null };
     this.lastRequestId = null;
     this.confirming = false;
     // The bar asking for a folder to move the fleet to: { line, from, hint }, else null.
@@ -159,6 +166,8 @@ export class Host {
     this.output.write(ENTER);
     this.input.on('data', this.onInput);
     this.output.on?.('resize', this.onResize);
+    // The bar says the environment from its first frame.
+    this.refreshStatus({ draw: false });
     this.switchTo(id);
     this.watchAttention();
     return this.done;
@@ -179,7 +188,7 @@ export class Host {
       return renderAsk({ label, line, hint: hint || '↵ moves every app there · tab completes · esc cancels', keep: Boolean(hint), width: columns });
     }
     const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
-    this.layout = barLayout({ spaces: this.spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel });
+    this.layout = barLayout({ spaces: this.spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel, status: statusSegments(this.status) });
     return renderBar(this.layout, this.spaces, { truecolor: this.truecolor });
   }
 
@@ -226,7 +235,8 @@ export class Host {
     const { moods, activity } = this.family.read(this.spaces.map((s) => s.id));
     const now = this.now();
     const shown = new Set(this.onScreen());
-    let changed = false;
+    const status = this.refreshStatus({ draw: false });
+    let changed = status.changed;
     let news = null;
     for (const s of this.spaces) {
       if (shown.has(s.id)) {
@@ -244,6 +254,25 @@ export class Host {
     // Once as it appears: the badge stays until you look, the bell doesn't.
     if (this.bell) this.output.write('\x07');
     this.notice(`${news.space.title}${news.badge.reason ? `: ${news.badge.reason}` : ' needs you'}`);
+  }
+
+  /**
+   * Reads the bar's own state again: the project's environment. { changed }: whether the bar says
+   * something else now. `draw` draws the bar when it changed.
+   */
+  refreshStatus({ draw = true } = {}) {
+    const home = this.panels.familyDir;
+    let env = null;
+    try {
+      env = currentEnvironment(this.panels.cwd, { home });
+    } catch {
+      // A project file being written as it's read: the next reading has it.
+    }
+    const next = { env: env ? { name: env.name, prod: env.prod } : null };
+    const changed = JSON.stringify(next) !== JSON.stringify(this.status);
+    this.status = next;
+    if (draw && changed) this.drawBar();
+    return { changed };
   }
 
   /** You looked at space `id`: its badge goes, and what it said so far is old news. */
@@ -274,6 +303,7 @@ export class Host {
       else if (a.type === 'help') this.showHelp();
       else if (a.type === 'runbooks') this.panels.runbooks();
       else if (a.type === 'trace') this.panels.trace();
+      else if (a.type === 'environment') this.panels.environments();
     }
   }
 
@@ -777,6 +807,8 @@ export class Host {
     this.cwd = dir;
     this.folders = remember(this.folders, dir);
     this.onFolders(this.folders);
+    // Another folder can be another project, with environments of its own.
+    this.refreshStatus({ draw: false });
     const running = this.spaces.filter((s) => s.child);
     for (const s of running) {
       const child = s.child;

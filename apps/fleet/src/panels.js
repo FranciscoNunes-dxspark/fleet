@@ -1,13 +1,15 @@
-// The host's two panels over the apps: the runbooks (ctrl+] r: a picker, then a runbook whose steps
-// are handed to their apps one ↵ at a time) and following a request (ctrl+] f: an id, asked of every
-// running app that reads log lines, and a timeline of what Fleet finds itself). Each is an object with
+// The host's panels over the apps: the runbooks (ctrl+] r: a picker, then a runbook whose steps
+// are handed to their apps one ↵ at a time), following a request (ctrl+] f: an id, asked of every
+// running app that reads log lines, and a timeline of what Fleet finds itself), moving the fleet (m),
+// and the project's environments (e). Each is an object with
 // `render(size)` (the box, as ANSI text placed on screen) and `keys(text)`; the host shows one at a
 // time (Host.showOverlay) and gives it every key while it's open. What they do to the apps goes back
 // through the host: `sendLine` (a hand-off), `typeInto` (a line into a prompt, off screen), `switchTo`.
 import { join, relative } from 'node:path';
+import { currentEnvironment, readProject, setEnvironment } from '@fleet/kit/environments.js';
 import { familyDir as kitFamilyDir, readActivity, TAKEN_BY } from '@fleet/kit/family.js';
 import { keyLength } from './keys.js';
-import { boxRows, boxSize, folderLines, pickerLines, placeBox, runbookLines, traceAskLines, traceLines } from './overlay.js';
+import { boxRows, boxSize, envLines, folderLines, pickerLines, placeBox, runbookLines, traceAskLines, traceLines } from './overlay.js';
 import { folderPicks, shortFolder } from './folder.js';
 import { draftRunbook, listRunbooks, runbookDirs, writeDraft } from './runbooks.js';
 import { bosunHome, traceLine, traceTimeline } from './trace.js';
@@ -42,11 +44,23 @@ const moveIn = (key, at, count, page = 10) => {
 };
 
 export class Panels {
-  constructor(host, { cwd = process.cwd(), env = process.env, takers = TAKEN_BY.logline, familyDir = kitFamilyDir(env), bosun = bosunHome(env), now = () => Date.now() } = {}) {
-    Object.assign(this, { host, cwd, env, takers, familyDir, bosun, now });
+  // `cwd` fixes the folder the panels read for (the tests'); by default it's the fleet's, which moves.
+  // The family's folder is the host's unless given.
+  constructor(host, { cwd, env = process.env, takers = TAKEN_BY.logline, familyDir = host.family?.dir ?? kitFamilyDir(env), bosun = bosunHome(env), now = () => Date.now() } = {}) {
+    Object.assign(this, { host, fixedCwd: cwd, env, takers, familyDir, bosun, now });
     this.runbookPanel = new RunbookPanel(this);
     this.tracePanel = new TracePanel(this);
     this.folderPanel = new FolderPanel(this);
+    this.envPanel = new EnvironmentPanel(this);
+  }
+
+  get cwd() {
+    return this.fixedCwd ?? this.host.cwd ?? process.cwd();
+  }
+
+  /** The prefix and e: the project's environments. */
+  environments() {
+    this.envPanel.open();
   }
 
   /** The prefix and m: the folders to move the fleet to. */
@@ -259,5 +273,49 @@ class TracePanel {
     this.timeline = traceTimeline(id, { familyDir, bosun, since: this.panels.now() - DAY });
     this.cursor = 0;
     this.asking = false;
+  }
+}
+
+/** The project's environments: the one chosen marked, ↵ chooses another for every app. */
+class EnvironmentPanel {
+  constructor(panels) {
+    this.panels = panels;
+    this.host = panels.host;
+    this.cursor = 0;
+  }
+
+  open() {
+    const { cwd, familyDir } = this.panels;
+    this.project = readProject(cwd);
+    this.current = currentEnvironment(cwd, { home: familyDir })?.name ?? null;
+    this.cursor = Math.max(0, this.project?.names?.indexOf(this.current) ?? 0);
+    this.host.showOverlay(this);
+  }
+
+  render(size) {
+    const width = this.panels.inner(size);
+    const names = this.project?.names ?? [];
+    const view = envLines({ project: this.project, current: this.current, cursor: this.cursor, width, where: shortFolder(this.panels.cwd, this.host.home) });
+    return this.panels.box({ title: 'Environment', hint: `${names.length ? '↵ every app switches · j k move · ' : ''}esc close`, ...view }, size);
+  }
+
+  keys(text) {
+    for (const key of panelKeys(text)) {
+      if (key === 'esc') return this.host.closeOverlay();
+      const names = this.project?.names ?? [];
+      const to = moveIn(key, this.cursor, names.length);
+      if (to != null) this.cursor = to;
+      else if (key === 'enter' && names[this.cursor]) return this.choose(names[this.cursor]);
+    }
+    this.host.showOverlay(this);
+  }
+
+  /** Chooses `name` for every app: they watch the choice, and change by themselves. */
+  choose(name) {
+    const r = setEnvironment(this.panels.cwd, name, { by: 'fleet', home: this.panels.familyDir });
+    this.host.closeOverlay();
+    this.host.refreshStatus();
+    if (!r.ok) return this.host.notice(r.error);
+    this.host.notice(r.env.prod ? `Every app is on ${r.env.name} now: production, careful` : `Every app is on ${r.env.name} now`);
   }
 }
