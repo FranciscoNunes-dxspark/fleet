@@ -25,7 +25,7 @@ export const HELP = [
   },
   {
     title: 'Changes',
-    about: 'what the plan (/plan), what-if (/whatif) or saved plan (/open) would do, what loses something first. Chart never applies anything',
+    about: 'what the plan (/plan), what-if (/whatif) or saved plan (/open) would do, what loses something first. Chart only deploys a Bicep or ARM file (/deploy, after asking), never a Terraform plan',
     views: ['changes'],
     rows: [
       ['↵ / l', 'What changes in it, attribute by attribute (sensitive values never shown), and where it is declared'],

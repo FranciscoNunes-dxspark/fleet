@@ -29,6 +29,7 @@ if (args.includes('-h') || args.includes('--help')) {
   console.log(`bilge [folder] [--demo]
 bilge audit [folder] [--fail-on critical|high|medium|low|none] [--json]
 bilge sbom [folder] [-o file]
+bilge report [folder] [-o file]
 
 What a project depends on: the packages in its npm and NuGet lock files (package-lock.json,
 packages.lock.json, a .csproj's PackageReferences), the advisories OSV (osv.dev) knows against
@@ -47,7 +48,7 @@ Inside: press ? for shortcuts, / for commands, ! to run a shell command.`);
 
 const config = loadConfig();
 
-if (rest[0] === 'audit' || rest[0] === 'sbom') {
+if (rest[0] === 'audit' || rest[0] === 'sbom' || rest[0] === 'report') {
   const code = await runHeadless(rest, { provider: demo ? demoBilge() : createBilge(), config, version: VERSION });
   process.exit(code);
 }

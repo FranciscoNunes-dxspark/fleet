@@ -24,6 +24,7 @@
     "test:mooring": "npm test -w apps/mooring",
     "test:bilge": "npm test -w apps/bilge",
     "test:chart": "npm test -w apps/chart",
+    "test:helm": "npm test -w apps/helm",
     "test:fleet": "npm test -w apps/fleet",
     "build": "npm run build -w apps/keel",
     "start": "npm start -w apps/keel",

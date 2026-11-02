@@ -1,89 +1,77 @@
-import React from 'react';
-import { useInput } from 'ink';
-import { plainText } from '../format.js';
+import React, { useState } from 'react';
+import { Text, useInput } from 'ink';
 import { theme } from '../theme.js';
-import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
+import { useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
-// More than this of one command's output is kept; the start is dropped, as a terminal's scrollback is.
-export const MAX_LINES = 500;
-
-const split = (text) => {
-  const lines = plainText(text).split('\n');
-  if (lines.at(-1) === '') lines.pop();
-  return lines;
-};
-
 /**
- * What the console draws, one row per line: each command with where it ran, its output (standard
- * output, then what it said on standard error) and how it ended. `history` is App's list of
- * { id, host, dir, command, status, code, out, err }.
+ * The lines the Console draws: the scrollback and the screen of the shell's virtual terminal (@fleet/kit/vt.js) as
+ * ANSI text, the `height` ones that end `back` lines above the bottom, with the cursor (a reversed cell) when
+ * `cursor` says it is showing. Rows past what the terminal has are left out.
  */
-export function consoleLines(history) {
-  const rows = [];
-  for (const h of history) {
-    rows.push({ id: h.id, kind: 'command', text: h.command, where: `${h.host}:${h.dir}` });
-    for (const [kind, text] of [['out', h.out], ['err', h.err]]) {
-      const lines = split(text ?? '');
-      if (lines.length > MAX_LINES) rows.push({ id: h.id, kind: 'dim', text: `… ${lines.length - MAX_LINES} earlier lines` });
-      for (const line of lines.slice(-MAX_LINES)) rows.push({ id: h.id, kind, text: line });
-    }
-    if (h.status === 'running') rows.push({ id: h.id, kind: 'dim', text: 'running… (x cancels)' });
-    else if (h.status === 'cancelled') rows.push({ id: h.id, kind: 'warn', text: 'cancelled' });
-    else if (h.status === 'failed') rows.push({ id: h.id, kind: 'bad', text: h.code != null ? `exit ${h.code}` : (h.err ?? 'failed').split('\n')[0] });
+export function consoleLines(vt, { height, back = 0, cursor = false }) {
+  const kept = vt.history.length;
+  const total = kept + vt.rows;
+  const end = Math.max(0, total - back);
+  const start = Math.max(0, end - height);
+  const lines = [];
+  for (let i = start; i < end; i++) {
+    if (i < kept) lines.push(vt.historyAnsi(i));
+    else lines.push(vt.rowAnsi(i - kept, cursor && back === 0 && i - kept === vt.y && vt.cursorShown() ? vt.x : -1));
   }
-  return rows;
+  return lines;
 }
 
-const COLOURS = () => ({ command: undefined, out: undefined, err: theme.warn, dim: theme.dim, warn: theme.warn, bad: theme.del });
+/** The screen as plain text (what y copies): the rows without trailing blanks, and no blank rows at the end. */
+export const screenText = (vt) => Array.from({ length: vt.rows }, (_, y) => vt.rowText(y)).join('\n').replace(/\s+$/, '');
 
-/** Commands run on the server (`$ ls -l` at the prompt), each in the folder the right pane shows. */
-export function ConsoleView({ history, conn, ctx, width, height, active }) {
+/**
+ * A shell on the server with a terminal (`terminal` is terminal.js's, or null before there is one). While `typing`
+ * every key goes to it (App takes them before any view: ctrl+\ leaves); otherwise ↵ starts typing, and the
+ * arrows and the wheel look back through what scrolled away.
+ */
+export function ConsoleView({ terminal, ended, conn, ctx, width, height, active, typing }) {
   const innerH = height - 2;
-  const rows = consoleLines(history);
-  // Follows the newest line as output arrives; scroll up to read, and it stays until the next line.
-  const nav = useListNav(rows.length, innerH, { start: Math.max(0, rows.length - 1), resetKey: rows.length });
+  const [back, setBack] = useState(0);
+  const most = terminal ? terminal.vt.history.length + Math.max(0, terminal.vt.rows - innerH) : 0;
+  const scroll = (n) => setBack((b) => Math.max(0, Math.min(most, b + n)));
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
-    if (nav.handle(input, key)) return;
-    if (key.return || input === 'i' || input === '$') return ctx.prefill('$ ');
-    if (input === 'x') return ctx.cancelRemote();
-    if (input === 'c') return ctx.clearConsole();
-    if (input === 'y') {
-      const item = history.find((h) => h.id === rows[nav.index]?.id);
-      if (item) ctx.copy(plainText(item.out || item.err || ''), `the output of ${item.command}`);
-    }
+    if (key.return || input === 'i' || input === '$') return ctx.enterTerminal();
+    if (key.upArrow || input === 'k') return scroll(1);
+    if (key.downArrow || input === 'j') return scroll(-1);
+    if (key.pageUp) return scroll(innerH - 1);
+    if (key.pageDown || input === ' ') return scroll(-(innerH - 1));
+    if (input === 'y' && terminal) ctx.copy(screenText(terminal.vt), 'the screen');
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {
-    if (e.wheel) return nav.scrollBy(e.wheel * 3);
-    nav.pick(e.y - 1);
+    if (e.wheel) scroll(-e.wheel * 3);
   });
 
-  const hint = conn.session ? `${conn.host.name} · ↵ or $ type a command · x cancel · c clear · y copy its output` : 'not connected';
+  const where = conn.session ? conn.host.name : null;
+  const hint = !where
+    ? 'not connected'
+    : typing
+      ? `${where} · keys go to the server · ctrl+\\ leaves`
+      : ended
+        ? `${where} · shell ended${ended.code ? ` (exit ${ended.code})` : ''} · ↵ starts a new one`
+        : `${where} · ↵ type in it · ↑↓ look back · y copy the screen`;
+  const lines = terminal ? consoleLines(terminal.vt, { height: innerH, back, cursor: typing }) : [];
   return (
-    <Panel title="Console" hint={hint} width={width} height={height} focused={active}>
-      {!rows.length ? (
+    <Panel title="Console" hint={hint} width={width} height={height} focused={active || typing}>
+      {!terminal ? (
         <Row
           pointer={false}
           width={width - 2}
-          segments={[{ text: conn.session ? '  Nothing run yet. $ ls -l (or ↵ here) runs it on the server, in the folder the Files view shows.' : '  Not connected: /connect <host>, then $ <command> runs it there.', color: theme.dim }]}
+          segments={[{ text: conn.session ? '  ↵ opens a shell on the server, in the folder the Files view shows.' : '  Not connected: /connect <host>', color: theme.dim }]}
         />
       ) : null}
-      {rows.slice(nav.offset, nav.offset + innerH).map((r, i) => (
-        <Row
-          key={nav.offset + i}
-          width={width - 2}
-          selected={nav.offset + i === nav.index}
-          focused={active}
-          pointer={false}
-          segments={
-            r.kind === 'command'
-              ? [{ text: '$ ', color: theme.accent, bold: true }, { text: r.text, strong: true }, { text: `   ${r.where}`, color: theme.dim }]
-              : [{ text: `  ${r.text}`, color: COLOURS()[r.kind] }]
-          }
-        />
+      {lines.map((line, i) => (
+        <Text key={i} wrap="truncate">
+          {line}
+        </Text>
       ))}
     </Panel>
   );

@@ -5,7 +5,7 @@ import { withCommandHint } from '@fleet/kit/commandhint.js';
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
   { name: 'connect', args: '[host]', desc: 'Open a saved host: its files on the right (a list to pick from if none is named)', complete: 'hosts', run: (ctx, s) => a.connect(ctx, s) },
-  { name: 'ssh', args: '<command>', desc: 'Run a command on the server (as $ does), in the folder the right pane shows; the output is in Console', run: (ctx, s) => ctx.runRemote(s) },
+  { name: 'ssh', args: '<command>', desc: 'Type a command into the Console shell on the server (as $ does) and go there', run: (ctx, s) => ctx.runRemote(s) },
   { name: 'disconnect', desc: 'Close the connection (transfers still running are cancelled)', run: (ctx) => a.disconnect(ctx) },
   { name: 'add', args: '<name> <user@host[:port]> [key=<file>] [folder=<remote folder>] [password]', desc: 'Save a host, or change the one of that name. It signs in with the key or your ssh agent; with `password` it asks for one every time it connects (never saved)', run: (ctx, s) => a.addHost(ctx, s) },
   { name: 'keygen', args: '[name] [host]', desc: 'Make an ssh key (ed25519, in ~/.ssh) and copy its public half; with a saved host, that host signs in with it', complete: 'hosts', run: (ctx, s) => a.keygen(ctx, s) },

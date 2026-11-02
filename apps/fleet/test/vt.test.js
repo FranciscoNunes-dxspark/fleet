@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { VirtualTerminal } from '../src/vt.js';
+import { VirtualTerminal } from '@fleet/kit/vt.js';
 import { MIN_SPLIT_COLUMNS, paneAt, splitLayout, takePaneMouse } from '../src/split.js';
 
 const rows = (vt) => Array.from({ length: vt.rows }, (_, y) => vt.rowText(y));

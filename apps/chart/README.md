@@ -26,7 +26,8 @@ Chart is one of the fleet's apps: it needs Node 22 or newer from a checkout (`np
 | `/drift [folder]` | The same with `-refresh-only`: only what changed outside Terraform |
 | `/state [folder]` | `terraform show -json`: every resource in the state |
 | `/init [folder]` | `terraform init -input=false`, which a folder needs before its first plan (Chart says so when a plan fails for want of it) |
-| `/whatif [file] --rg <group>` or `--location <region>` `[--params <file>]` | `az deployment group what-if` (or `sub what-if`) `--no-pretty-print`. The file is the first `.bicep` found unless named, and a `.bicepparam` or `.parameters.json` beside it is used; alone, `/whatif` runs the last one again |
+| `/whatif [file] --rg <group>` or `--location <region>` `[--params <file>]` | `az deployment group what-if` (or `sub what-if`) `--no-pretty-print`. The file is the first `.bicep` found unless named, and a `.bicepparam` or `.parameters.json` beside it is used; alone, `/whatif` runs the last one again. When the template has parameters with no default and no value in a parameters file, Chart asks for each one (masked when the name looks like a secret), once, and runs it again; the values go to Azure through a temporary file that is removed afterwards, and are never saved |
+| `/deploy [file] --rg <group>` or `--location <region>` `[--params <file>]` | `az deployment group create` (or `sub create`) of a Bicep or ARM file, with the same arguments as `/whatif` (and the last ones again). It always runs the what-if first (its changes stay on screen), then asks, naming the file, where it goes and the what-if's summary (the default answer is No); only the deployment's output names are shown, never their values. Terraform is never applied |
 | `/open [file]` | A saved plan or state (`terraform show -json plan.tfplan > plan.json`) or what-if result |
 
 `/tool tofu` runs OpenTofu instead (`/tool terraform` back). `-lock=false` keeps a plan from holding the state's lock while you look. Everything put into a command line (a path, a resource group, a region) is checked first: no quotes, no `$`, nothing but what paths and names have.
@@ -59,7 +60,7 @@ Every resource Terraform keeps track of, the root module's first, then each modu
 
 ## Slash commands
 
-`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/deploy`, `/open`, `/show <address>`, `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## In a pipeline
 

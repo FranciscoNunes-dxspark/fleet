@@ -1,5 +1,5 @@
 // Every user-facing operation, written once: keys and slash commands call these with `ctx` (App's).
-// Chart only reads and plans: nothing here applies a plan or changes the infrastructure.
+// Chart reads and plans; the one thing that changes infrastructure is /deploy (a Bicep or ARM file), and only after a confirmation.
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { run } from '@fleet/kit/run.js';
 import { contextIn, copiedNote, notMine, splitArgs, takeLine } from '@fleet/kit/family.js';
@@ -129,25 +129,85 @@ export function whatIfArgs(rest, { last = {}, found } = {}) {
   };
 }
 
+/** What a template's missing parameters are, asked one at a time (esc cancels): { name: value }. Typed in, kept only in memory for the one command, and masked unless the name doesn't look like a secret. */
+async function askParameters(ctx, names) {
+  const values = {};
+  for (const [i, name] of names.entries()) {
+    const a = await ctx.confirm({
+      secret: true,
+      plain: !/pass|secret|key|token|pwd|credential/i.test(name),
+      title: `Parameter ${name} (${i + 1} of ${names.length})`,
+      detail: 'The template needs a value and has no default. It is sent to Azure for this command and not saved.',
+    });
+    if (!a) return null;
+    values[name] = a.value;
+  }
+  return values;
+}
+
 /** /whatif <file> --rg <group> | --location <region> [--params <file>]: what deploying a Bicep or ARM file would change, as Azure says. */
-export async function whatIf(ctx, rest = '') {
+export async function whatIf(ctx, rest = '', typed = {}) {
   const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found });
   if (!args.file) return ctx.note('/whatif needs a .bicep or ARM file: /whatif main.bicep --rg shop-prod', 'error') ?? false;
   if (!args.resourceGroup && !args.location) return ctx.note(`/whatif ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
   ctx.setConfig((c) => ({ ...c, whatIf: args }));
   const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
-  const r = await ctx.task(
-    `what-if ${args.file} ${where}`,
-    async (signal) => {
-      const p = await ctx.provider.whatIf(ctx.cwd(), { ...args, signal });
-      ctx.setData((d) => ({ ...d, plan: p, drift: [], source: { kind: 'bicep', label: `${args.file} ${where}`, args, at: Date.now() } }));
-      return { stdout: summaryLine(summarize(p.changes)) || 'No changes.' };
-    },
-    { label: 'Asking Azure (what-if)' },
-  );
+  const attempt = () =>
+    ctx.task(
+      `what-if ${args.file} ${where}`,
+      async (signal) => {
+        const p = await ctx.provider.whatIf(ctx.cwd(), { ...args, values: typed.values, signal });
+        ctx.setData((d) => ({ ...d, plan: p, drift: [], source: { kind: 'bicep', label: `${args.file} ${where}`, args, at: Date.now() } }));
+        return { stdout: summaryLine(summarize(p.changes)) || 'No changes.' };
+      },
+      { label: 'Asking Azure (what-if)' },
+    );
+  let r = await attempt();
+  // A template with parameters that have no default and no value in a parameters file: ask for them, once, and go again.
+  if (!r.ok && r.error?.missing?.length && !typed.values) {
+    const values = await askParameters(ctx, r.error.missing);
+    if (!values) return false;
+    typed.values = values;
+    r = await attempt();
+  }
   if (r.ok) {
     ctx.setView('changes');
     ctx.logActivity(`What-if ${args.file} ${where}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
+  }
+  return r.ok;
+}
+
+/** /deploy [file] --rg <group> | --location <region> [--params <file>]: runs a what-if of a Bicep or ARM file, then deploys it if the confirmation that follows it is a yes (the same arguments as /whatif). */
+export async function deploy(ctx, rest = '') {
+  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found });
+  if (!args.file) return ctx.note('/deploy needs a .bicep or ARM file: /deploy main.bicep --rg shop-prod', 'error') ?? false;
+  if (!args.resourceGroup && !args.location) return ctx.note(`/deploy ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
+  const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
+  // The what-if always runs first, so the changes are on screen behind the question; a failed one stops here.
+  const typed = {};
+  const planned = await whatIf(ctx, rest, typed);
+  if (!planned) return false;
+  const summary = summaryLine(summarize(ctx.data.plan.changes)) || 'no changes';
+  // "No" comes first so that ↵ alone never deploys.
+  const yes = await ctx.confirm({
+    title: `Deploy ${args.file} ${where}?`,
+    detail: `What-if: ${summary}`,
+    danger: true,
+    options: [{ label: 'No, cancel', value: false }, { label: 'Yes, deploy it', value: true }],
+  });
+  if (!yes) return false;
+  const r = await ctx.task(
+    `deploy ${args.file} ${where}`,
+    async (signal) => {
+      const d = await ctx.provider.deploy(ctx.cwd(), { ...args, values: typed.values, signal });
+      return { stdout: `${d.state}${d.name ? `: deployment ${d.name}` : ''}${d.outputs.length ? `, outputs ${d.outputs.join(', ')}` : ''}` };
+    },
+    { label: 'Deploying' },
+  );
+  if (r.ok) {
+    // The plan on screen was of what has now been done.
+    ctx.setData((d) => ({ ...d, plan: null, source: null }));
+    ctx.logActivity(`Deployed ${args.file} ${where}`);
   }
   return r.ok;
 }

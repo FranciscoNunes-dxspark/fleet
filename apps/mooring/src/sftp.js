@@ -28,6 +28,9 @@ export const sftpServerArgs = (host, options) => ['-s', ...common(host, options)
 /** ssh's arguments to run `command` on `host` with no terminal (the console). */
 export const sshArgs = (host, command, options) => ['-T', ...common(host, options), target(host), command];
 
+/** ssh's arguments for a login shell with a terminal on `host` (`-tt`: forced, though this side has none) running `command`. */
+export const terminalArgs = (host, command, options) => ['-tt', ...common(host, options), target(host), command];
+
 // ---------------------------------------------------------------------------------------------------
 // A server's paths: `/` separated, whatever the machine Mooring runs on.
 

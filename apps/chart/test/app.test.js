@@ -86,6 +86,25 @@ test('/whatif asks Azure for a Bicep file, keeps its arguments, and lists its ch
   app.unmount();
 });
 
+test('/deploy runs the what-if first, asks with No as the default, and deploys only on Yes', async () => {
+  const app = start();
+  await until(shows(app, '/plan asks terraform'), 'the hint');
+  await run(app, '/deploy --rg shop-prod');
+  await until(shows(app, 'Deploy bicep/main.bicep into shop-prod?'), 'the question');
+  assert.match(app.lastFrame(), /What-if: /);
+  app.stdin.write(KEYS.enter);
+  await until(() => !app.lastFrame().includes('Deploy bicep/main.bicep into shop-prod?'), 'the answer');
+  assert.ok(!app.provider.calls.some((c) => c[0] === 'deploy'), 'a bare ↵ is a No');
+  await run(app, '/deploy');
+  await until(shows(app, 'Deploy bicep/main.bicep into shop-prod?'), 'the question again');
+  assert.equal(app.provider.calls.filter((c) => c[0] === 'whatIf').length, 2, 'each /deploy asks Azure what it would change first');
+  app.stdin.write('2');
+  await until(() => app.provider.calls.some((c) => c[0] === 'deploy'), 'the deployment');
+  const call = app.provider.calls.find((c) => c[0] === 'deploy')[2];
+  assert.deepEqual([call.file, call.resourceGroup], ['bicep/main.bicep', 'shop-prod']);
+  app.unmount();
+});
+
 test('/state lists the resources by module; ↵ shows the values, a sensitive one masked', async () => {
   const app = start();
   await until(shows(app, '/plan asks terraform'), 'the hint');
