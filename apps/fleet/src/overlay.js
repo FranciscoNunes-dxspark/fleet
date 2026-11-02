@@ -274,3 +274,52 @@ export function proposalLines(items, { cursor = 0, width = 80, spaces = [], true
   });
   return { lines, focus };
 }
+
+/**
+ * The "what changed" panel's rows: the window (1h, 6h, 24h, the one shown bold), the symptoms (the
+ * worried moods, red), what Claude said or is asked, then the timeline, newest first, `cursor` on an
+ * entry. `result` is changes.js whatChanged's, null while it's read; `ask` the symptom being typed (or
+ * null), `claude` { state: 'asking' | 'done' | 'failed', symptom, text }.
+ */
+export function changesLines({ result, hours, windows = [1, 6, 24], cursor = 0, ask = null, claude = null, width = 80, spaces = [], truecolor = true } = {}) {
+  const lines = [[{ text: 'The last ', sgr: DIM }, ...windows.flatMap((h) => [{ text: `${h}h`, sgr: h === hours ? `${BOLD}${YELLOW}` : DIM }, { text: ' ' }]), { text: ' (- narrower, + wider)', sgr: DIM }], []];
+  if (!result) return { lines: [...lines, [{ text: "Reading the activity log, git and Bosun's recordings…", sgr: DIM }]], focus: [0, 0] };
+  lines.push([{ text: 'Symptoms now', sgr: BOLD }]);
+  if (!result.symptoms.length) lines.push([{ text: '  None: no app is worried. c asks Claude about one you describe.', sgr: DIM }]);
+  for (const m of result.symptoms) lines.push([{ text: '  ' }, { text: ` ${titleOf(spaces, m.app)} `, sgr: accentOf(spaces, m.app, truecolor) }, { text: ` ${m.mood}${m.reason ? `: ${String(m.reason).replace(/\s+/g, ' ')}` : ''}`, sgr: RED }]);
+  let focus = null;
+  if (ask) {
+    lines.push([], [{ text: 'What should Claude explain? ↵ asks, esc goes back', sgr: DIM }], [{ text: '> ', sgr: BOLD }, { text: ask.input, sgr: YELLOW }, { text: '▏' }]);
+    focus = [lines.length - 1, lines.length - 1];
+  } else if (claude) {
+    lines.push([]);
+    const from = lines.length;
+    if (claude.state === 'asking') lines.push([{ text: `Asking Claude about: ${claude.symptom}…`, sgr: DIM }]);
+    else if (claude.state === 'failed') lines.push([{ text: "Claude couldn't answer:", sgr: RED_BOLD }], ...wrap(claude.text, Math.max(10, width - 1)).map((l) => [{ text: l, sgr: RED }]));
+    else lines.push([{ text: `Claude's likely causes of: ${claude.symptom}`, sgr: BOLD }], ...wrap(claude.text, Math.max(10, width - 3)).map((l) => [{ text: `  ${l}` }]));
+    focus = [from, from];
+  }
+  const n = result.events.length;
+  lines.push([], [{ text: n ? `What changed, newest first (${n} ${n === 1 ? 'entry' : 'entries'}):` : "Nothing changed in that time: nothing in the activity log, git or Bosun's recordings.", sgr: BOLD }]);
+  const first = lines.length;
+  const tagW = Math.max(0, ...result.events.map((e) => stringWidth(titleOf(spaces, e.app))));
+  const dayOf = (ms) => new Date(ms).toDateString();
+  result.events.forEach((e, i) => {
+    const here = i === cursor;
+    // Over more than a day the time alone is ambiguous: an entry of another day says its date.
+    const d = new Date(e.at);
+    const time = `${dayOf(e.at) === dayOf(result.now) ? '' : `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} `}${clock(e.at).slice(0, 5)}`;
+    const alarming = e.kind === 'crash' || e.kind === 'error' || e.kind === 'alert';
+    lines.push([
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: `${time} `, sgr: DIM },
+      { text: ` ${titleOf(spaces, e.app).padEnd(tagW)} `, sgr: accentOf(spaces, e.app, truecolor) },
+      { text: ` ${e.source.padEnd(11)}`, sgr: DIM },
+      { text: ` ${String(e.text).replace(/\s+/g, ' ')}`, sgr: alarming ? RED : here ? BOLD : '' },
+    ]);
+  });
+  for (const note of result.notes) lines.push([{ text: `  Not read: ${note}`, sgr: DIM }]);
+  // Moving through the timeline shows the entry; otherwise what's being asked or answered.
+  const at = n && cursor > 0 ? first + cursor : null;
+  return { lines, focus: at != null ? [at, at] : (focus ?? [0, 0]) };
+}

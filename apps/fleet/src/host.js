@@ -77,6 +77,7 @@ export const helpRows = (p = DEFAULT_PREFIX) => [
   [`${p} x or |`, 'one app on screen again'],
   [`${p} m`, 'move every app to another folder'],
   [`${p} e`, "the project's environment, for every app"],
+  [`${p} w`, 'what changed lately, and Claude on why'],
   [`${p} P`, "Claude's proposals: ↵ hands one to its app"],
   [`${p} R`, 'record a runbook from what the apps run (again: stop)'],
   ...(p === 'ctrl+]' ? [] : [['ctrl+]', `works as ${p} does (host.json's "prefix" changes ${p})`]]),
@@ -356,6 +357,7 @@ export class Host {
       else if (a.type === 'runbooks') this.panels.runbooks();
       else if (a.type === 'trace') this.panels.trace();
       else if (a.type === 'environment') this.panels.environments();
+      else if (a.type === 'changes') this.panels.changes();
       else if (a.type === 'proposals') this.panels.proposals();
       else if (a.type === 'record') this.toggleRecording();
     }

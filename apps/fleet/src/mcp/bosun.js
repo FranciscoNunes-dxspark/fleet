@@ -32,6 +32,51 @@ async function readSession(ctx, { folder, session }) {
   return { dir, list, pick, parsed, procs, live: pick === list[0] && Date.now() - (pick.ended ?? 0) < LIVE_MS };
 }
 
+/**
+ * What Bosun's crew did that a person would call a change, from the recordings of `dir` (or its
+ * repository) written to since `since`: [{ at, app: 'bosun', text }] for each process that crashed,
+ * restarted or gave up restarting. `home` is Bosun's folder (BOSUN_HOME), for the host's tests.
+ */
+export async function crewEvents(dir, { since = 0, home } = {}) {
+  const { listSessions, parseSession } = await bosun();
+  const out = [];
+  // The folder's recordings, else its repository's, as the other bosun tools read them.
+  for (const d of [...new Set([dir, repoRoot(dir)].filter(Boolean))]) {
+    const sessions = listSessions(d, home ? { home } : undefined);
+    for (const s of sessions) {
+      if ((s.ended ?? 0) < since) continue;
+      let parsed;
+      try {
+        parsed = parseSession(readFileSync(s.file, 'utf8'));
+      } catch {
+        continue;
+      }
+      // The recorder writes a state on any change (a port opening, health), so a crash is the change to crashed.
+      const status = new Map();
+      const gaveUp = new Set();
+      const started = new Set();
+      for (const e of parsed.events) {
+        const p = e.p;
+        let text = null;
+        if (e.type === 'start') {
+          if (started.has(p)) text = `${p} restarted`;
+          started.add(p);
+        } else if (e.type === 'state') {
+          if (e.status === 'crashed' && status.get(p) !== 'crashed') text = `${p} crashed${e.code != null ? ` (exit ${e.code})` : ''}`;
+          if (e.gaveUp && !gaveUp.has(p)) {
+            gaveUp.add(p);
+            text = `${p} gave up restarting`;
+          }
+          if (e.status) status.set(p, e.status);
+        }
+        if (text && e.t >= since) out.push({ at: e.t, app: 'bosun', text });
+      }
+    }
+    if (sessions.length) break;
+  }
+  return out;
+}
+
 const sessionArg = { session: { type: 'integer', description: 'Which recorded run: 1 is the newest (default), 2 the one before…' } };
 const folderArg = { folder: { type: 'string', description: "The project's folder, if not the one this server runs for" } };
 

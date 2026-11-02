@@ -109,6 +109,7 @@ say `ctrl+b`; read yours there.
 | `ctrl+b` `R` | Start recording a runbook from what the apps run; again, stop and open it ([Recording a runbook](#recording-a-runbook)) |
 | `ctrl+b` `f` | Follow a request across the apps ([Following a request](#following-a-request)) |
 | `ctrl+b` `e` | The project's environment, for every app at once ([Environments](#environments)) |
+| `ctrl+b` `w` | What changed lately, and Claude's take on why something broke ([What changed?](#what-changed)) |
 | `ctrl+b` `P` | Claude's proposals: lines for an app's prompt, handed over with `↵` ([Claude proposes](#claude-proposes-you-press-)) |
 | `ctrl+b` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+b` `?` | The keys |
@@ -254,6 +255,25 @@ write one:
 What each app reads from its section is in its own README. Nothing secret goes in the file: it names
 things, never a password.
 
+## What changed?
+
+`ctrl+b` `w` answers "it broke: what changed?" for the project: one timeline of the last 6 hours, newest
+first, of what the apps did (the family's activity log: pushes, writes to a database, restarts,
+environment switches), the repository's commits and merges, and the crashes and restarts in Bosun's
+recordings. Above it, the symptoms: the apps that are worried now, and why. `-` and `+` narrow and widen
+it (1 hour, 6, 24), `j` `k` move.
+
+`c` asks Claude (Claude Code's `claude`, signed in as you are; nothing is sent anywhere else) to rank the
+likely causes of the symptom, given the timeline: the worried apps' reasons to start from, or one you
+type. Its answer shows in the panel. Without `claude` on your PATH, the panel says so. `esc` closes.
+
+| Keys | In what changed |
+| --- | --- |
+| `-` `+` | A narrower or wider window: 1h, 6h, 24h |
+| `↑` `↓` or `j` `k` | Move through the timeline |
+| `c` | Ask Claude for the likely causes; `↵` asks, `esc` goes back |
+| `esc` | Close |
+
 ## Claude proposes, you press ↵
 
 Claude Code, through `fleet mcp`'s `propose` tool, can leave a line for one app's prompt with why: a
@@ -308,6 +328,7 @@ It reads for the folder Claude Code starts it in; `fleet mcp --project <dir>` na
 | `sonar_components`, `sonar_problems`, `sonar_incident`, `sonar_query` | Application Insights, through your `az login`, in Sonar's last subscription: the problems, one told whole (its stack, its operation, the SQL that failed), and any KQL query |
 | `trawl_list_connections`, `trawl_list_tables`, `trawl_describe_table`, `trawl_run_query` | Trawl's own MCP tools (`trawl mcp`, below the surface), with every rule they have: your saved connections, each one's Claude access level, writes refused, every query rolled back, all of it in Trawl's History |
 | `family_timeline`, `family_moods`, `family_wiring` | What the apps did that changed something (this project's, or every project's), how their mascots feel and why (a quick read of what's wrong now), and what the project points at (addresses and connection strings, masked) |
+| `what_changed` | [What changed?](#what-changed) as text: the worried apps on top, then the activity log, commits and merges, and Bosun's crashes and restarts of the last `hours` (6 by default, a week at most), newest first |
 | `propose`, `proposal_status` | A line for one app's prompt, with why, for you to hand over in Fleet or dismiss ([Claude proposes](#claude-proposes-you-press-)); and what became of it |
 
 - **It only reads**, but for `propose`. No other tool changes anything: no git command that writes, no

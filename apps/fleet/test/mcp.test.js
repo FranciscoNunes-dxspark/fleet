@@ -113,7 +113,7 @@ test('initialize and tools/list: every tool read-only but propose, with a schema
   assert.match(init.result.instructions, /read-only/);
   const { tools } = (await s.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).result;
   const names = tools.map((t) => t.name);
-  for (const n of ['git_status', 'git_log', 'git_show', 'git_diff', 'git_blame', 'git_branches', 'bosun_crew', 'bosun_log', 'bosun_search', 'hail_requests', 'hail_history', 'sonar_components', 'sonar_problems', 'sonar_incident', 'sonar_query', 'family_timeline', 'family_moods', 'family_wiring', 'propose', 'proposal_status'])
+  for (const n of ['git_status', 'git_log', 'git_show', 'git_diff', 'git_blame', 'git_branches', 'bosun_crew', 'bosun_log', 'bosun_search', 'hail_requests', 'hail_history', 'sonar_components', 'sonar_problems', 'sonar_incident', 'sonar_query', 'family_timeline', 'family_moods', 'family_wiring', 'what_changed', 'propose', 'proposal_status'])
     assert.ok(names.includes(n), n);
   for (const t of tools) {
     // propose writes a proposal (for a person to hand over), and nothing else writes.
@@ -167,6 +167,25 @@ test('family: the timeline for this project or all, moods, and the wiring masked
   assert.match(wiring.text, /\.http files: api\.http/);
   assert.match(wiring.text, /databases: Default \(appsettings\.json\): sqlserver db\.example\.com\/Shop/);
   assert.doesNotMatch(wiring.text, /s3cret/);
+});
+
+test("what_changed: the worried moods on top, then activity, commits and Bosun's crash in one timeline, masked", async () => {
+  const s = server();
+  logActivity('fleet', { text: 'Switched repo to prod (production)', kind: 'change', project: repo });
+  const { text } = await call(s, 'what_changed', { hours: 2 });
+  assert.match(text, /in the last 2 hours/);
+  assert.match(text, /Symptoms now[^\n]*\n {2}Sonar is worried: production has 12 new exceptions/);
+  assert.match(text, /Splice +git +\[commit\] [0-9a-f]{7} Change b \(Tess\)/);
+  assert.match(text, /Splice +activity +Pushed main to origin/);
+  assert.match(text, /Fleet +environment +\[change\] Switched repo to prod/);
+  assert.match(text, /Bosun +bosun +\[crash\] api crashed \(exit 1\)/);
+  // Another project's entries stay out; secrets are masked.
+  assert.doesNotMatch(text, /Restarted api/);
+  assert.doesNotMatch(text, /letmein/);
+  // Newest first: the switch logged last comes before the first commit.
+  assert.ok(text.indexOf('Switched repo') < text.indexOf('First commit'));
+  // Bounded: hours past a week are a week.
+  assert.match((await call(s, 'what_changed', { hours: 10_000 })).text, /last 168 hours/);
 });
 
 test('propose writes one proposal, checked and masked; proposal_status reads what became of it', async () => {

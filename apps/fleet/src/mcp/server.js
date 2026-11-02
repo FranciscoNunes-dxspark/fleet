@@ -8,6 +8,7 @@ import { ToolError, mcpHandler, quietConsole, serveMcp } from '@fleet/kit/mcp.js
 import { COMPILED, VERSION } from '../app.js';
 import { finish } from './bound.js';
 import { bosunTools } from './bosun.js';
+import { changeTools } from './changes.js';
 import { familyTools } from './family.js';
 import { gitTools } from './git.js';
 import { hailTools } from './hail.js';
@@ -16,7 +17,7 @@ import { childServer, trawlCommand } from './proxy.js';
 import { sonarSide } from './sonar.js';
 
 export const INSTRUCTIONS = `Fleet reads the world of the family's apps for the project this server was started in, read-only: nothing here changes anything. The one tool that writes is propose, and what it writes is a suggestion: a slash command for one app's prompt that the person hands over in Fleet (or dismisses); nothing runs until they press enter in the app.
-git_* is the repository (Splice). bosun_* is the project's processes as Bosun ran them (from its recordings; the current run included). hail_* is the project's .http requests and the responses Hail kept. sonar_* is Application Insights through the user's az sign-in. trawl_* is databases through Trawl's saved connections (start with trawl_list_connections). family_* is what the apps did lately (family_timeline), how they feel (family_moods: a quick read of what's wrong now) and what the project points at (family_wiring). propose leaves a line for the person to run in an app; proposal_status says whether they did.
+git_* is the repository (Splice). bosun_* is the project's processes as Bosun ran them (from its recordings; the current run included). hail_* is the project's .http requests and the responses Hail kept. sonar_* is Application Insights through the user's az sign-in. trawl_* is databases through Trawl's saved connections (start with trawl_list_connections). family_* is what the apps did lately (family_timeline), how they feel (family_moods: a quick read of what's wrong now) and what the project points at (family_wiring). what_changed is all of it as one timeline (activity, commits and merges, Bosun's crashes and restarts) with the worried moods on top: start there when something broke. propose leaves a line for the person to run in an app; proposal_status says whether they did.
 Secrets are never shown: they come back as ••••. Long answers are cut; ask for less (n, lines, limit, a path).`;
 
 // Trawl's tools keep their own names under this prefix.
@@ -43,7 +44,7 @@ export function createFleetServer({ project = process.cwd(), demo = false, compi
   const flag = demo ? ['--demo'] : [];
   const trawlServer = trawl === undefined ? childServer({ command: trawlCommand(flag, { compiled }), title: 'Trawl', cwd: root, version: VERSION }) : trawl || null;
 
-  const local = [...gitTools, ...bosunTools, ...hailTools, ...sonarSide({ demo, override: sonar }), ...familyTools, ...proposalTools].map((t) => ({
+  const local = [...gitTools, ...bosunTools, ...hailTools, ...sonarSide({ demo, override: sonar }), ...familyTools, ...changeTools, ...proposalTools].map((t) => ({
     ...t,
     annotations: { readOnlyHint: true, openWorldHint: !/^(family|git|bosun|hail)_/.test(t.name), ...(t.annotations ?? {}) },
   }));

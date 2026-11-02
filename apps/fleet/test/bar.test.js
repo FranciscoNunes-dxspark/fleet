@@ -36,9 +36,9 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 180, prefix: true })), /1-9 s t o b h l u g c · n p · \| split · m move · r f e P R · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 180, prefix: true })), /1-9 s t o b h l u g c · n p · \| split · m move · r f e w P R · q quit · \? help $/);
   // Split, the other pane and putting it back.
-  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 180, prefix: true })), /tab pane · x unsplit · m move · r f e P R · q quit/);
+  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 180, prefix: true })), /tab pane · x unsplit · m move · r f e w P R · q quit/);
   // With little room the prefix's keys win over the names.
   const tight = barLayout({ spaces, active: 'splice', width: 145, prefix: true });
   assert.equal(width(tight), 145);

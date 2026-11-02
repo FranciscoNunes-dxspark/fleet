@@ -36,6 +36,7 @@ for it: .sql in Trawl, .http in Hail.
   ctrl+b R                    record a runbook from what the apps run (again: stop)
   ctrl+b f                    follow a request across the apps
   ctrl+b e                    the project's environment (.fleet/project.json)
+  ctrl+b w                    what changed lately, and Claude on why it broke
   ctrl+b P                    Claude's proposals: ↵ types one into its app
   ctrl+b ctrl+b               send ctrl+b to the app
   ctrl+b q                    quit, stopping every app

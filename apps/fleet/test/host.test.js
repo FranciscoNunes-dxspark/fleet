@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { NOT_INSTALLED } from '@fleet/kit/claude-cli.js';
 import { currentEnvironment } from '@fleet/kit/environments.js';
 import { logActivity } from '@fleet/kit/family.js';
 import { recordCommand, recordingState } from '@fleet/kit/recording.js';
@@ -471,6 +472,61 @@ test('the prefix and R records what the apps run as a runbook, opened when it st
   assert.match(text, /At \d\d:\d\d:\d\d, in Two:\n\n```two\n\/hello two\n\/again\n```\n\nAt \d\d:\d\d:\d\d, in One:\n\n```one\n\/bye\n```\n$/);
   assert.match(host.noticeText, /^Recorded 3 steps in \.fleet.runbooks.\d{4}/);
   keys('\x1b');
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('what changed: the symptoms on top and the timeline, - and + the window, and c asks Claude about it', async () => {
+  const tools = toolsIn({ 'project/readme.txt': 'x' });
+  const now = Date.now();
+  const asked = [];
+  let answer = async () => '1. The restart at 14:02 (likely).';
+  tools.changes = async ({ project, hours }) => {
+    asked.push(hours);
+    return {
+      project,
+      since: now - hours * 3_600_000,
+      now,
+      hours,
+      symptoms: [{ app: 'two', mood: 'worried', reason: 'api crashed', at: now }],
+      events: [
+        { at: now - 60_000, app: 'two', source: 'bosun', kind: 'crash', text: 'api crashed (exit 1)' },
+        { at: now - 120_000, app: 'one', source: 'git', kind: 'commit', text: 'abc1234 Change the pool size (Tess)' },
+      ],
+      notes: [],
+    };
+  };
+  tools.ask = (prompt, opts) => {
+    asked.push({ prompt, input: opts.input });
+    return answer();
+  };
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 100, rows: 30 });
+  await until(() => term.screen.row(0) === 'one 100x29', 'the app', { term });
+  // w is Two's letter in these spaces: the panel is opened as the prefix and w opens it.
+  host.panels.changes();
+  await until(() => term.text().includes('What changed: the last 6h') && /Two +worried: api crashed/.test(term.text()) && /Two +bosun +api crashed \(exit 1\)/.test(term.text()) && /One +git +abc1234 Change the pool size/.test(term.text()), 'the timeline', { term });
+  keys('+');
+  await until(() => term.text().includes('What changed: the last 24h'), 'wider', { term });
+  keys('--');
+  await until(() => term.text().includes('What changed: the last 1h') && term.text().includes('(2 entries)'), 'narrower, down to an hour, read', { term });
+  // The 6h stepped past at once isn't read.
+  assert.deepEqual(asked, [6, 24, 1]);
+  keys('c');
+  await until(() => term.text().includes('> Two: api crashed'), 'the symptom offered', { term });
+  keys('\r');
+  await until(() => term.text().includes("Claude's likely causes of: Two: api crashed") && term.text().includes('1. The restart at 14:02 (likely).'), 'the answer', { term });
+  assert.match(asked.at(-1).prompt, /Something is wrong in a software project: Two: api crashed/);
+  // Claude gets the window's timeline on its standard input, the symptoms first.
+  assert.match(asked.at(-1).input, /in the last 1 hour[^]*two is worried: api crashed[^]*\[crash\] api crashed \(exit 1\)/);
+  // Without claude on the PATH, the panel says so.
+  answer = async () => {
+    throw new Error(NOT_INSTALLED);
+  };
+  keys('c\x15it is slow\r');
+  await until(() => term.text().includes("Claude couldn't answer:") && term.text().includes('Claude Code (claude) is not installed'), 'not installed, said', { term });
+  keys('\x1b');
+  await until(() => term.screen.row(0) === 'one 100x29', 'closed', { term });
   keys(`${PREFIX}q`);
   keys('y');
   await done;
