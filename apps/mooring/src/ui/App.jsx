@@ -133,7 +133,7 @@ const NO_CONN = { host: null, session: null, status: 'none', problem: null };
 // anything. `connectTo` is a host (or the name of a saved one) to open at start. `persist` is whether
 // settings are written to the config file (not in the demo). `hostKeys` is hostkeys.js's (undefined in the demo and
 // the tests that don't try it): how a host ssh doesn't know yet is offered for trust.
-export function App({ config: initialConfig, local, makeSession, connectTo, copy, setTitle, mouse, checkUpdate, installUpdate, onConfig, persist = true, moodEvery = 30_000, hostKeys, demo = false }) {
+export function App({ config: initialConfig, local, makeSession, connectTo, copy, setTitle, mouse, checkUpdate, installUpdate, onConfig, persist = true, moodEvery = 30_000, hostKeys, keygen, demo = false }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -538,6 +538,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   if (!ctxRef.current) ctxRef.current = { get config() { return configRef.current; }, get panes() { return panesRef.current; }, get conn() { return connRef.current; }, get session() { return sessionRef.current; }, mouseHandlers: [] };
   const ctx = ctxRef.current;
   Object.assign(ctx, {
+    keygen,
     local,
     queue,
     task,
