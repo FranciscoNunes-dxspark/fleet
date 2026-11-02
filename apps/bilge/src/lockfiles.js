@@ -4,6 +4,7 @@
 // parsers take text and are pure; `scan` is the one that reads the disk.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { lockFrameworks, projectFrameworks } from './frameworks.js';
 
 // Folders never worth going into: what installs, builds and editors make.
 const SKIP = new Set(['node_modules', 'bin', 'obj', 'dist', 'build', 'out', 'target', 'vendor', 'coverage', 'TestResults', 'artifacts']);
@@ -52,7 +53,8 @@ export function parseNpmLock(text) {
       // The version of an alias (npm:other@1.2.3) or a git or file dependency isn't the registry's.
       if (!/^\d/.test(entry.version)) continue;
       const license = typeof entry.license === 'string' ? entry.license : entry.license?.type;
-      add({ ecosystem: 'npm', name, version: entry.version, direct: directs.has(name) && path.indexOf('node_modules/') === path.lastIndexOf('node_modules/'), dev: Boolean(entry.dev || entry.devOptional), ...(license ? { license } : {}), line: lineOf(text, new RegExp(`"${escape(path)}"\\s*:`)) });
+      const peers = requiredPeers(entry.peerDependencies, entry.peerDependenciesMeta);
+      add({ ecosystem: 'npm', name, version: entry.version, direct: directs.has(name) && path.indexOf('node_modules/') === path.lastIndexOf('node_modules/'), dev: Boolean(entry.dev || entry.devOptional), ...(license ? { license } : {}), ...(peers ? { peers } : {}), line: lineOf(text, new RegExp(`"${escape(path)}"\\s*:`)) });
     }
   } else if (lock.dependencies) {
     const walk = (deps, top) => {
@@ -64,6 +66,37 @@ export function parseNpmLock(text) {
     walk(lock.dependencies, true);
   }
   return [...out.values()];
+}
+
+/**
+ * A package's peerDependencies without the optional ones (peerDependenciesMeta): { name: range }, or
+ * null when it has none. What npm insists on: the installed version of each must be in its range.
+ */
+export function requiredPeers(peers, meta = {}) {
+  const out = Object.fromEntries(Object.entries(peers ?? {}).filter(([name, range]) => typeof range === 'string' && !meta?.[name]?.optional));
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * The Node a project says it runs on: package.json's engines.node (its lowest version is what it
+ * promises), else .nvmrc or .node-version in its folder or one above, up to `root`. { range, from } or
+ * { version, from }, or null when nothing says.
+ */
+export function projectNode(dir, root, packageJson = null) {
+  const engines = packageJson?.engines?.node;
+  if (typeof engines === 'string' && engines.trim()) return { range: engines.trim(), from: 'engines.node in package.json' };
+  for (let d = dir; ; d = dirname(d)) {
+    for (const name of ['.nvmrc', '.node-version']) {
+      const file = join(d, name);
+      if (!existsSync(file)) continue;
+      try {
+        const v = readFileSync(file, 'utf8').trim().replace(/^v/i, '');
+        // lts/*, node and the like name no version.
+        if (/^\d+(\.\d+){0,2}$/.test(v)) return { version: v, from: shortPath(root, file) };
+      } catch {}
+    }
+    if (d === root || dirname(d) === d || relative(root, d).startsWith('..')) return null;
+  }
 }
 
 /**
@@ -84,6 +117,9 @@ export function parseNugetLock(text) {
   }
   return [...out.values()];
 }
+
+/** The frameworks a packages.lock.json was restored for (its `dependencies` keys), as short names. */
+export const nugetLockFrameworks = (text) => lockFrameworks(Object.keys(JSON.parse(text.replace(/^\uFEFF/, '')).dependencies ?? {}));
 
 const attr = (attrs, name) => new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, 'i').exec(attrs)?.[1];
 const child = (body, name) => (body ? new RegExp(`<${name}>\\s*([^<]*?)\\s*</${name}>`, 'i').exec(body)?.[1] : undefined);
@@ -126,6 +162,15 @@ export function parseProject(text, central = {}) {
     packages.push({ ecosystem: 'NuGet', name, version, direct: true, dev: false, line: lineOf(text, new RegExp(`Include\\s*=\\s*"${escape(name)}"`, 'i')) });
   }
   return { packages, inexact };
+}
+
+/** A JSON file, or null when it isn't there or can't be read. */
+function readJson(file) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 /** Directory.Packages.props in `dir` or the nearest folder above it, up to `root`: its versions, or {}. */
@@ -185,8 +230,10 @@ export function readManifest(root, file) {
     const text = readFileSync(file, 'utf8');
     if (name === 'package-lock.json' || name === 'npm-shrinkwrap.json') {
       // The workspaces it covers: its entries outside node_modules.
-      const workspaces = Object.keys(JSON.parse(text).packages ?? {}).filter((k) => k && !k.includes('node_modules/'));
-      return { ...base, ecosystem: 'npm', kind: 'lock', packages: parseNpmLock(text), workspaces: workspaces.map((w) => join(dirname(file), ...w.split('/'))) };
+      const lock = JSON.parse(text);
+      const workspaces = Object.keys(lock.packages ?? {}).filter((k) => k && !k.includes('node_modules/'));
+      const node = projectNode(dirname(file), root, readJson(join(dirname(file), 'package.json')) ?? lock.packages?.[''] ?? null);
+      return { ...base, ecosystem: 'npm', kind: 'lock', packages: parseNpmLock(text), workspaces: workspaces.map((w) => join(dirname(file), ...w.split('/'))), ...(node ? { node } : {}) };
     }
     if (name === 'package.json') {
       // A workspace's own package.json is covered by the root's lock file.
@@ -194,12 +241,13 @@ export function readManifest(root, file) {
     }
     if (name === 'packages.lock.json') {
       const project = readdirSync(dirname(file)).find((n) => PROJECT.test(n));
-      return { ...base, ecosystem: 'NuGet', kind: 'lock', packages: parseNugetLock(text), ...(project ? { project: join(dirname(file), project) } : {}) };
+      return { ...base, ecosystem: 'NuGet', kind: 'lock', packages: parseNugetLock(text), frameworks: nugetLockFrameworks(text), ...(project ? { project: join(dirname(file), project) } : {}) };
     }
     const { packages, inexact } = parseProject(text, centralFor(dirname(file), root));
+    const frameworks = projectFrameworks(text);
     const notes = ['no packages.lock.json: only its own references'];
     if (inexact.length) notes.push(`no exact version for ${inexact.slice(0, 3).join(', ')}${inexact.length > 3 ? ` and ${inexact.length - 3} more` : ''}`);
-    return { ...base, ecosystem: 'NuGet', kind: 'project', project: file, packages, note: notes.join('; ') };
+    return { ...base, ecosystem: 'NuGet', kind: 'project', project: file, packages, ...(frameworks.length ? { frameworks } : {}), note: notes.join('; ') };
   } catch (e) {
     return { ...base, ecosystem: /\.json$/.test(name) && !/packages\.lock/.test(name) ? 'npm' : 'NuGet', kind: 'broken', packages: [], note: `couldn't be read: ${String(e.message).split('\n')[0]}` };
   }

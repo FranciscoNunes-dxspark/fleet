@@ -18,6 +18,9 @@ test('a fix: npm install for a direct package, npm update and an override for on
   assert.match(transitive.text, /"overrides": \{ "minimist": "\^1\.2\.6" \}/);
   const nuget = fixPlan(finding({ ecosystem: 'NuGet', name: 'Newtonsoft.Json', version: '12.0.1' }, '13.0.1'), { path: 'src/Api/packages.lock.json', dir: '/srv/shop/src/Api', kind: 'lock', project: '/srv/shop/src/Api/Api.csproj' });
   assert.deepEqual(nuget.run, { command: 'dotnet add "Api.csproj" package Newtonsoft.Json --version 13.0.1', cwd: '/srv/shop/src/Api' });
+  // Once it has run, what says the project still holds together.
+  assert.deepEqual(nuget.check, { command: 'dotnet restore "Api.csproj"', cwd: '/srv/shop/src/Api' });
+  assert.equal(transitive.check.command, 'npm ls minimist');
   assert.equal(fixPlan(finding({ name: 'x', version: '1.0.0' }, null), npmLock), null);
   assert.equal(fixPlan(finding({ name: 'x', version: '1.0.0' }), { ...npmLock, kind: 'manifest' }).run, undefined);
   // Nothing that isn't a package's name or version goes into a command line.

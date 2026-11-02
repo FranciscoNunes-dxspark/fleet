@@ -4,6 +4,8 @@
 
 What a project depends on, in the terminal. Bilge reads a folder's npm and NuGet lock files, asks [OSV](https://osv.dev) which advisories are known against the exact versions in them, and lists the vulnerable packages worst first, with the version that fixes each one and the command that gets you there. It also shows every package's licence and how far behind it is, writes a CycloneDX SBOM, and runs headless in a pipeline (`bilge audit --fail-on high`).
 
+Before an update, it says whether the new version fits the project: a NuGet package built for frameworks the project doesn't target, an npm package that needs a newer Node than the project says, or one whose peers won't take it.
+
 It covers what Snyk, Mend, Socket or FOSSA are bought for in a small team: advisories, licences, outdated packages and an SBOM, from a free, open database, with nothing to sign up for. Only the packages' names and versions leave the machine: to `api.osv.dev`, and for `/outdated` to the npm and NuGet registries.
 
 ```
@@ -24,9 +26,10 @@ Bilge is one of the fleet's apps: it needs Node 22 or newer from a checkout (`np
 | File | What Bilge takes from it |
 |---|---|
 | `package-lock.json`, `npm-shrinkwrap.json` (lock file 1, 2 or 3) | Every installed package, the root's and the workspaces' own dependencies marked direct, the development ones marked `dev`, the licence npm wrote down |
-| `packages.lock.json` (NuGet) | Every package of every target framework, the project's own references marked direct |
-| `.csproj`, `.fsproj`, `.vbproj` without a `packages.lock.json` | Only its `PackageReference`s with an exact version (from `Directory.Packages.props` under central package management). Set `RestorePackagesWithLockFile` to `true` and build to give Bilge everything |
+| `packages.lock.json` (NuGet) | Every package of every target framework, the project's own references marked direct, and the frameworks it was restored for |
+| `.csproj`, `.fsproj`, `.vbproj` without a `packages.lock.json` | Only its `PackageReference`s with an exact version (from `Directory.Packages.props` under central package management), and its `TargetFramework` or `TargetFrameworks`. Set `RestorePackagesWithLockFile` to `true` and build to give Bilge everything |
 | `package.json` without a lock file | Nothing (its ranges aren't versions): it's listed, saying so |
+| `package.json` beside a lock file, `.nvmrc`, `.node-version` | The Node the project runs on: `engines.node`, else the version in `.nvmrc` or `.node-version` (in its folder or one above) |
 
 It looks six folders deep, and never in `node_modules`, `bin`, `obj`, `dist`, `build`, `out`, `target`, `vendor`, `coverage` or a hidden folder. A workspace's `package.json` is covered by its root's lock file.
 
@@ -58,7 +61,9 @@ Each package with a known advisory against its version: the worst advisory's sev
 | npm, brought in by another | `npm update <name>`, which moves it within what its parents ask for; where that isn't enough, Bilge says which `overrides` entry to add to package.json |
 | NuGet | `dotnet add "<project>" package <Name> --version <fixed>` (for one brought in, a direct reference pins it, as NuGet advises) |
 
-The question also offers to copy the command instead. Only a package name and version as the registry would have them, and a plain project file name, go into a command line.
+Before it asks, Bilge asks the registry what the fixed version needs, and checks it against the project as in [Will it fit?](#will-it-fit). If something may not fit, the question is red and says what, and offers to show all of it. The question also offers to copy the command instead. Only a package name and version as the registry would have them, and a plain project file name, go into a command line.
+
+Once the fix has run, Bilge reads and audits again, then checks that the project still holds together: `npm ls <name>` (it fails on a peer or range the new version breaks) or `dotnet restore "<project>"` (it fails on NU1202, a package not built for the project's framework). If the check fails, Bilge says so, and `/last` shows what the check printed.
 
 ### Packages
 
@@ -76,6 +81,19 @@ Every package, the direct ones first: its version, the newest one (once asked: `
 | `esc` | Every manifest's packages again, after `↵` in Manifests |
 
 NuGet's lock files don't record licences: `/outdated` reads them from each package's `.nuspec`.
+
+### Will it fit?
+
+`/outdated` also asks what each newest version needs, and marks it with `!` when it won't fit the project. `↵` says why, and gives the newest version that does fit:
+
+| | Bilge compares |
+|---|---|
+| NuGet | The frameworks the new version is built for (its `.nuspec`'s dependency groups) with the ones the project targets, as NuGet would: `net6.0` runs `netstandard2.0` and `net6.0` builds, not `net8.0` ones; `net48` runs `netstandard2.0`, not `2.1` |
+| npm: Node | The new version's `engines.node` with the lowest Node the project's `engines.node` allows (or the version `.nvmrc` names; `20` there is any 20.x) |
+| npm: its peers | The new version's `peerDependencies` (not the optional ones) with the versions installed beside it |
+| npm: others' peers | The installed packages whose `peerDependencies` name it (react-redux 8 asking for react ^18 when react 19 is the newest) |
+
+For the newest version that fits, npm's registry gives every version's needs in one answer. NuGet's are tried one at a time: the newest of each major version, at most six. When Bilge can't tell, it doesn't warn. That covers a project that says no Node, a package whose `.nuspec` names no frameworks or one Bilge doesn't know (Xamarin, UWP), and a range it can't read.
 
 ### Manifests
 
@@ -124,4 +142,4 @@ The downloaded executable looks for a newer `bilge-v…` release once a day and 
 
 ## Not yet
 
-Yarn and pnpm lock files, Python, Go, Cargo and Maven; vulnerability reachability (whether the vulnerable code is called); a cache of OSV's answers between runs.
+Yarn and pnpm lock files, Python, Go, Cargo and Maven; breaking changes between versions (release notes, API differences); a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called); a cache of OSV's answers between runs.

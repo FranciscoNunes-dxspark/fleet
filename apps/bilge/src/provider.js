@@ -1,6 +1,7 @@
 // Everything Bilge reads and does goes through one object with one interface: `scan(dir)` (the lock
 // files, from the disk), `audit(packages)` (OSV's advisories), `latest(packages)` (the registries),
-// `run(command, { cwd })` (a fix, through the kit's run.js) and `writeFile` (an SBOM). demo.js's
+// `needs(pkg, version)` and `fitting(pkg, fits)` (what a version needs to run, and the newest that
+// fits), `run(command, { cwd })` (a fix, through the kit's run.js) and `writeFile` (an SBOM). demo.js's
 // demoBilge() has the same interface for --demo and the tests.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -24,6 +25,8 @@ export function createBilge({ fetchImpl = globalThis.fetch, run = runCommand } =
       return { ids, details };
     },
     latest: (packages, opts) => registry.latest(packages, opts),
+    needs: (pkg, version, opts) => registry.needs(pkg, version, opts),
+    fitting: (pkg, fits, opts) => registry.fitting(pkg, fits, opts),
     run: (command, { cwd, signal } = {}) => run(command, { cwd, signal }),
     writeFile(path, text) {
       mkdirSync(dirname(path), { recursive: true });

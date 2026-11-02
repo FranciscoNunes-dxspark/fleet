@@ -8,7 +8,7 @@ import { FILTERS } from './rows.js';
 export const COMMANDS = [
   { name: 'scan', desc: 'Read the folder\'s lock files and projects again, then ask OSV about them', run: (ctx) => a.scan(ctx) },
   { name: 'audit', desc: 'Ask OSV (osv.dev) for the advisories against every package found', run: (ctx) => a.audit(ctx) },
-  { name: 'outdated', args: '[all]', desc: 'Ask npm and NuGet for the newest versions and the licences of the direct packages (all: every package)', complete: 'outdated', run: (ctx, s) => a.outdated(ctx, s) },
+  { name: 'outdated', args: '[all]', desc: 'Ask npm and NuGet for the newest versions, whether they fit, and the licences of the direct packages (all: every package)', complete: 'outdated', run: (ctx, s) => a.outdated(ctx, s) },
   { name: 'fix', args: '<package|advisory>', desc: 'Move a vulnerable package to the version that fixes it (npm install, npm update or dotnet add; asks first)', complete: 'findings', run: (ctx, s) => a.fix(ctx, s) },
   { name: 'why', args: '<package>', desc: 'Where a package is, its licence, newest version and advisories', complete: 'packages', run: (ctx, s) => a.why(ctx, s) },
   { name: 'ignore', args: '<advisory|package>', desc: 'Leave an advisory out of the list and the counts (asks; kept in the settings)', complete: 'advisories', run: (ctx, s) => a.ignore(ctx, s) },

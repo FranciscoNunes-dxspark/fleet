@@ -1,15 +1,19 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { denied, licenceKind } from '../audit.js';
 import { FILTERS, SEVERITY_LABEL, bumpTone, licenceOf, licenceTone, packageRows, severityTone } from '../rows.js';
 import { bumpOf } from '../versions.js';
+import { updateProblems } from '../compat.js';
 import { theme } from '../theme.js';
 import { fit } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
-/** Every package, the direct ones first: its version, the newest one (once asked), its licence, and its advisories. */
+/**
+ * Every package, the direct ones first: its version, the newest one (once asked, with a ! when it
+ * wouldn't fit the project), its licence, and its advisories.
+ */
 export function PackagesView({ data, found, filter, deny, ctx, width, height, active }) {
   const innerH = height - 2;
   const latest = data?.latest ?? null;
@@ -17,6 +21,8 @@ export function PackagesView({ data, found, filter, deny, ctx, width, height, ac
   const nav = useListNav(list.length, innerH, { keyOf: (i) => list[i]?.key, resetKey: `${filter.filter}:${filter.manifest}` });
   const sel = list[nav.index];
   const findingOf = (p) => found.find((f) => f.key === p.key);
+  // Worked out again only when what was read or asked changes.
+  const blocked = useMemo(() => updateProblems(data), [data]);
 
   const keys = (input, key) => {
     if (!ctx.viewHasKeys()) return;
@@ -38,8 +44,8 @@ export function PackagesView({ data, found, filter, deny, ctx, width, height, ac
   });
 
   const inner = width - 4;
-  const nameW = Math.max(18, Math.min(44, inner - 64));
-  const hint = [`${list.length} ${filter.filter === 'all' ? 'packages' : filter.filter}`, filter.manifest ? `in ${filter.manifest} (esc: all)` : '', 'a changes', latest ? '' : 'u newest versions'].filter(Boolean).join(' · ');
+  const nameW = Math.max(18, Math.min(44, inner - 66));
+  const hint = [`${list.length} ${filter.filter === 'all' ? 'packages' : filter.filter}`, filter.manifest ? `in ${filter.manifest} (esc: all)` : '', 'a changes', latest ? '' : 'u newest versions', blocked.size ? `! ${blocked.size} won't fit (↵ says why)` : ''].filter(Boolean).join(' · ');
   const empty = !data ? '  Reading the lock files…' : !list.length ? (filter.filter === 'outdated' && !latest ? '  u asks the registries for the newest versions.' : '  None.') : null;
   return (
     <Panel title="Packages" hint={hint} width={width} height={height} focused={active}>
@@ -60,6 +66,7 @@ export function PackagesView({ data, found, filter, deny, ctx, width, height, ac
               { text: fit(p.name, nameW), strong: true, color: p.direct ? undefined : theme.dim },
               { text: ` ${fit(p.version, 12)}`, color: theme.dim },
               { text: ` ${fit(bump ? `→ ${newest.latest}` : newest?.deprecated ? 'deprecated' : '', 12)}`, color: newest?.deprecated ? theme.del : bumpTone(bump) },
+              { text: blocked.has(p.key) ? ' !' : '  ', color: theme.warn, bold: true },
               { text: ` ${fit(licence ?? (latest ? '?' : ''), 16)}`, color: denied(licence, deny) ? theme.del : licenceTone(kind) },
               { text: ` ${fit(p.ecosystem, 6)}`, color: theme.dim },
               { text: p.dev ? ' dev' : '    ', color: theme.dim },

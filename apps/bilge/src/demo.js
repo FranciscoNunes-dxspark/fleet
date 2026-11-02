@@ -1,6 +1,7 @@
 // An in-memory project with the provider's interface, for `bilge --demo` and the tests: an npm lock
 // file, a NuGet one and a package.json without one, OSV's answers for them, the registries' newest
-// versions, and fixes that move a package on. Nothing is read, fetched or run. `state` is the tests'
+// versions and what each needs (a framework the project's .NET doesn't run, a Node newer than it says),
+// and fixes that move a package on. Nothing is read, fetched or run. `state` is the tests'
 // handle: what it holds and `calls`, what was asked of it.
 import { join } from 'node:path';
 import { keyOf, mergePackages } from './lockfiles.js';
@@ -26,12 +27,14 @@ function demoManifests(root) {
         npm('ghostscript-js', '1.0.4', { license: 'AGPL-3.0-only', line: 27 }),
         npm('mariadb', '3.2.0', { license: 'LGPL-2.1-or-later', line: 44 }),
       ],
+      node: { range: '>=16', from: 'engines.node in package.json' },
     },
     {
       path: 'src/Api/packages.lock.json',
       ecosystem: 'NuGet',
       kind: 'lock',
       project: join(root, 'src', 'Api', 'Api.csproj'),
+      frameworks: ['net6.0'],
       packages: [
         nuget('Newtonsoft.Json', '12.0.1', { direct: true, line: 5 }),
         nuget('Microsoft.Data.SqlClient', '5.1.1', { direct: true, line: 11 }),
@@ -82,7 +85,25 @@ const LATEST = {
   serilog: '4.3.0',
   'system.text.encodings.web': '9.0.9',
 };
+// What the versions the demo offers need: Express 5 wants Node 18, SqlClient 6 dropped .NET 6.
+const NEEDS = {
+  'express@5.1.0': { node: '>= 18' },
+  'express@4.21.2': { node: '>= 0.10.0' },
+  'express@4.20.0': { node: '>= 0.10.0' },
+  'typescript@5.9.3': { node: '>=14.17' },
+  'microsoft.data.sqlclient@6.1.1': { frameworks: ['net462', 'net8.0', 'net9.0'] },
+  'microsoft.data.sqlclient@6.0.2': { frameworks: ['net462', 'net8.0', 'net9.0'] },
+  'microsoft.data.sqlclient@5.2.3': { frameworks: ['net462', 'net6.0', 'net8.0', 'netstandard2.0'] },
+  'microsoft.data.sqlclient@5.1.3': { frameworks: ['net462', 'net6.0', 'netstandard2.0'] },
+  'serilog@4.3.0': { frameworks: ['net462', 'net471', 'net6.0', 'net8.0', 'netstandard2.0'] },
+  'system.text.encodings.web@9.0.9': { frameworks: ['net462', 'net8.0', 'net9.0', 'netstandard2.0'] },
+};
+// The older versions the demo knows, newest first, for the newest that fits.
+const OLDER = { express: ['4.21.2'], 'microsoft.data.sqlclient': ['6.0.2', '5.2.3'] };
+
 const NUGET_LICENCES = { 'newtonsoft.json': 'MIT', 'microsoft.data.sqlclient': 'MIT', serilog: 'Apache-2.0', 'system.text.encodings.web': 'MIT' };
+
+const idOf = (p) => (p.ecosystem === 'NuGet' ? p.name.toLowerCase() : p.name);
 
 export function demoBilge() {
   const state = { manifests: null, calls: [], vulns: DEMO_VULNS };
@@ -114,15 +135,31 @@ export function demoBilge() {
       state.calls.push(['latest', packages.length]);
       const out = new Map();
       packages.forEach((p, i) => {
-        const id = p.ecosystem === 'NuGet' ? p.name.toLowerCase() : p.name;
-        out.set(p.key, { latest: LATEST[id] ?? p.version, ...(p.license ? {} : { license: NUGET_LICENCES[id] ?? null }), ...(p.name === 'ghostscript-js' ? { deprecated: 'No longer maintained' } : {}) });
+        const id = idOf(p);
+        const latest = LATEST[id] ?? p.version;
+        const needs = NEEDS[`${id}@${latest}`];
+        out.set(p.key, { latest, ...(p.license ? {} : { license: NUGET_LICENCES[id] ?? null }), ...(p.name === 'ghostscript-js' ? { deprecated: 'No longer maintained' } : {}), ...(needs ? { needs } : {}) });
         onProgress?.(i + 1, packages.length);
       });
       return out;
     },
+    async needs(p, version) {
+      state.calls.push(['needs', p.name, version]);
+      return NEEDS[`${idOf(p)}@${version}`] ?? {};
+    },
+    async fitting(p, fits) {
+      state.calls.push(['fitting', p.name]);
+      const id = idOf(p);
+      for (const version of OLDER[id] ?? []) {
+        const needs = NEEDS[`${id}@${version}`] ?? {};
+        if (fits(version, needs)) return { version, needs };
+      }
+      return null;
+    },
     /** A fix: npm install name@^v or dotnet add … package Name --version v moves that package on. */
     async run(command, { cwd } = {}) {
       state.calls.push(['run', command, cwd]);
+      if (/^(npm ls|dotnet restore)\b/.test(command)) return { stdout: `(demo) ${command}: all fits`, stderr: '' };
       const m = /^npm install (\S+)@\^?(\S+)/.exec(command) ?? /package (\S+) --version (\S+)/.exec(command);
       if (!m) return { stdout: `(demo) ${command}`, stderr: '' };
       for (const man of state.manifests ?? []) for (const p of man.packages) if (p.name.toLowerCase() === m[1].toLowerCase()) p.version = m[2];
