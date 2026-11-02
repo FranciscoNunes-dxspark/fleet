@@ -12,6 +12,7 @@ bilge ../shop            # another folder
 bilge --demo             # a made-up project, to look around: nothing is read, asked or run
 bilge audit --fail-on high          # in a pipeline: the findings, and exit 1 when one is high or worse
 bilge sbom -o sbom.cdx.json         # a CycloneDX bill of materials
+bilge report -o report.md           # the audit as Markdown
 ```
 
 Press `?` inside for every key and command, `/` for the commands, `!` to run a shell command in the folder (`!npm ls lodash`).
@@ -88,16 +89,17 @@ The lock files and projects found: their ecosystem, kind, how many packages, how
 
 ## Slash commands
 
-`/scan`, `/audit`, `/outdated [all]`, `/fix <package|advisory>`, `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report` (the audit as Markdown, `alt+y` copies it for a pull request), `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/scan`, `/audit`, `/outdated [all]`, `/fix <package|advisory>`, `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## In a pipeline
 
 ```
 bilge audit [folder] [--fail-on critical|high|medium|low|none] [--json]
 bilge sbom [folder] [-o file]
+bilge report [folder] [-o file]
 ```
 
-`bilge audit` prints each finding with its advisories and where it is, then the counts. It exits `1` when a finding is as bad as `--fail-on` (`high` by default), `0` otherwise, and `2` when it couldn't run (OSV unreachable, a bad option). `--json` prints `{ dir, packages, manifests, counts, findings }`. The advisories ignored with `/ignore` (in `~/.bilge/config.json`) are left out. `bilge sbom` writes CycloneDX 1.5 JSON: every package with its purl, licence and scope (`optional` for development ones), and the advisories against them.
+`bilge audit` prints each finding with its advisories and where it is, then the counts. It exits `1` when a finding is as bad as `--fail-on` (`high` by default), `0` otherwise, and `2` when it couldn't run (OSV unreachable, a bad option). `--json` prints `{ dir, packages, manifests, counts, findings }`. The advisories ignored with `/ignore` (in `~/.bilge/config.json`) are left out. `bilge sbom` writes CycloneDX 1.5 JSON: every package with its purl, licence and scope (`optional` for development ones), and the advisories against them. `bilge report` prints the same Markdown as `/report` (or writes it with `-o`).
 
 ```yaml
 # Azure Pipelines or GitHub Actions, after npm ci / dotnet restore

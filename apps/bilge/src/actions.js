@@ -218,11 +218,25 @@ export async function sbom(ctx, file = '') {
   return r.ok;
 }
 
-/** /report: the audit as Markdown, to read here and copy (y) into a pull request or a ticket. */
-export function report(ctx) {
+/** /report [file]: the audit as Markdown, to read here and copy (alt+y) into a pull request or a ticket, or written to a file (asking before replacing one). */
+export async function report(ctx, file = '') {
   if (!ctx.data?.audit) return ctx.note('Not audited yet: /audit first.', 'error') ?? false;
-  ctx.showText('Report (alt+y copies it all)', markdownReport({ name: basename(ctx.cwd()), manifests: ctx.data.manifests, packages: packages(ctx), found: found(ctx) }));
-  return true;
+  const md = markdownReport({ name: basename(ctx.cwd()), manifests: ctx.data.manifests, packages: packages(ctx), found: found(ctx) });
+  const name = file.trim();
+  if (!name) {
+    ctx.showText('Report (alt+y copies it all)', md);
+    return true;
+  }
+  const path = isAbsolute(name) ? name : resolve(ctx.cwd(), name);
+  if (ctx.provider.name !== 'demo' && existsSync(path)) {
+    const yes = await ctx.confirm({ title: `Replace ${name}?`, detail: path, danger: true });
+    if (!yes) return false;
+  }
+  const r = await ctx.task(`report ${name}`, async () => {
+    ctx.provider.writeFile(path, md);
+    return { stdout: `Report in ${path}` };
+  }, { label: 'Writing' });
+  return r.ok;
 }
 
 /** /move <folder>: read another folder: a path, or a folder beside this one or in it. */

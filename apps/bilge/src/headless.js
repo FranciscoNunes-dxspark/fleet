@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { SEVERITIES, countLine, counts, findings, rank } from './audit.js';
 import { SEVERITY_LABEL, label, withoutIgnored } from './rows.js';
 import { cyclonedx } from './sbom.js';
+import { markdownReport } from './share.js';
 
 /** { command, dir, failOn, json, out } from the arguments after `bilge`; an `error` when they don't add up. */
 export function parseArgs(args) {
@@ -23,7 +24,7 @@ export function parseArgs(args) {
   return opts;
 }
 
-/** Runs `bilge audit` or `bilge sbom`; resolves the exit code. `write` prints, `provider` is provider.js's (demo.js's in tests). */
+/** Runs `bilge audit`, `bilge sbom` or `bilge report`; resolves the exit code. `write` prints, `provider` is provider.js's (demo.js's in tests). */
 export async function runHeadless(args, { provider, config = {}, write = (s) => process.stdout.write(s), version = '0.0.0' }) {
   const opts = parseArgs(args);
   if (opts.error) {
@@ -45,6 +46,15 @@ export async function runHeadless(args, { provider, config = {}, write = (s) => 
         provider.writeFile(resolve(opts.out), bom);
         write(`${scan.packages.length} components in ${resolve(opts.out)}\n`);
       } else write(bom);
+      return 0;
+    }
+    if (opts.command === 'report') {
+      const md = markdownReport({ name: basename(dir), manifests: scan.manifests, packages: scan.packages, found });
+      if (opts.out) {
+        provider.writeFile(resolve(opts.out), md);
+        write(`Report in ${resolve(opts.out)}
+`);
+      } else write(md);
       return 0;
     }
     const failing = opts.failOn === 'none' ? [] : found.filter((f) => rank(f.severity) <= rank(opts.failOn) && f.severity !== 'unknown');

@@ -89,6 +89,7 @@ export const HELP = [
       ['--fail-on <level>', 'critical, high, medium, low, or none to never fail'],
       ['--json', 'The findings as JSON'],
       ['bilge sbom [folder] [-o file]', 'A CycloneDX bill of materials, to the file or the output'],
+      ['bilge report [folder] [-o file]', 'The audit as Markdown, to the file or the output'],
       'Advisories ignored with /ignore are left out of both (the settings in ~/.bilge).',
     ],
   },
