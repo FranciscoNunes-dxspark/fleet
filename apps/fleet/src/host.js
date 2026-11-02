@@ -192,14 +192,15 @@ export class Host {
     this.output.write(this.barString());
   }
 
-  notice(text) {
+  // `ms`: how long it stays (an install, which takes a while, asks for longer than the default).
+  notice(text, ms = NOTICE_MS) {
     this.noticeText = text;
     if (this.noticeTimer) this.clearTimer(this.noticeTimer);
     this.noticeTimer = this.setTimer(() => {
       this.noticeText = '';
       this.noticeTimer = null;
       this.drawBar();
-    }, NOTICE_MS);
+    }, ms);
     this.drawBar();
   }
 
