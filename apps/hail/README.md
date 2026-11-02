@@ -232,6 +232,45 @@ be committed. The environment wins over the file, so a file can hold defaults th
 variable can be made of others. A request with a variable nothing gives a value isn't sent: Hail
 says which.
 
+### Environments
+
+Hail has had environments of its own from the start, as VS Code and JetBrains do: the ones in
+`http-client.env.json` beside the file, which `e` and `/env [name]` pick between and Hail remembers for
+each file. The family of apps also shares a project's environments, named once for all of them in
+`.fleet/project.json` (in the project's folder or one above it, no higher than its git checkout), and
+chosen once for all of them: in any app, or in Fleet with `ctrl+b e`. In it, each environment says what
+it means to each app; to Hail, which of its own environments it is:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev":  { "hail": { "env": "local" } },
+    "prod": { "prod": true, "hail": { "env": "production" } }
+  }
+}
+```
+
+`/project-env` says which the project is in, and `/project-env prod` moves every app there. Whenever the
+project's environment changes (here, in another app, or in Fleet) or a file opens, Hail's variables
+come from the environment of Hail's it names (`production` above); one the file's `http-client.env.json`
+doesn't have is said. `e` and `/env` still pick another of Hail's for the moment, until the project's
+changes again. The header shows both: `env production  project prod (production)`.
+
+The family's other apps call theirs `/env`; in Hail `/env` was already its own environments' command,
+in the `.http` files' own format that other tools read too, so the project's is `/project-env` rather
+than a meaning of `/env` that changed underneath your own commands and keys.
+
+An environment marked `"prod": true` draws Hail's frames red, as it does every app's, and Hail asks
+before it sends anything but a `GET`, `HEAD` or `OPTIONS` to it: `↵` (and `ctrl+r` in Edit), `/send all`
+(once, saying how many would change something), `/load`, and `/replay` to it. GraphQL, gRPC and
+WebSocket requests count as ones that may change something. Hail's environment is production when a
+project environment marked so names it, or while the project's chosen environment is production and
+names none of Hail's.
+
+While Fleet records a runbook (`ctrl+b R`), each slash command run at Hail's prompt (and each `/take`)
+is kept for it, its secrets masked.
+
 ### OAuth 2
 
 As in JetBrains, an environment can say how to sign in, under `"Security"`, and a request uses the
@@ -607,6 +646,7 @@ and Trawl.
 | `/send [request]` | Send a request by name (the one under the cursor if none is named); `/send all` sends every one and shows a report |
 | `/load [request] [count] [concurrency]` | Send a request many times, so many at once (200, 10 at a time, unless said), and report how it held up |
 | `/env [name]` | The environment the variables come from (a list to pick from if none is named) |
+| `/project-env [name]` | The project's environment, every app's (`.fleet/project.json`): alone, which it is; a name switches every app, and Hail's variables then come from the environment of Hail's it names (see [Environments](#environments)) |
 | `/curl [request]` | Copy a request, filled in, as a curl command |
 | `/data` | The response body, when it is JSON, JSON lines or CSV/TSV, as a tree to open and close (`→ ← ↵`) or, for rows, a table (`t`); `y` copies a value, `p` its path, `/` asks a path such as `.items[0].name` or `.items[].id \| length`; `esc` closes (`d` in Response) |
 | `/import <file> [--new]` | Add the requests in a Postman collection, a HAR recording or an OpenAPI or Swagger document (or a Postman environment, to `http-client.env.json`); `--new` writes them to a file of their own |

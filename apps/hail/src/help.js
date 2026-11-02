@@ -104,6 +104,15 @@ export const HELP = [
     ],
   },
   {
+    title: 'Environments',
+    about: "Hail's own (http-client.env.json), and the project's (.fleet/project.json), which every app of the family shares",
+    rows: [
+      ['e  /env [name]', "Hail's environment: where the variables come from, kept for each file"],
+      ['/project-env [name]', "The project's environment: alone, which it is; a name switches every app (Fleet's ctrl+b e too)\nHail's variables then come from the environment of Hail's it names: \"hail\": { \"env\": \"staging\" }"],
+      ['production', 'A project environment with "prod": true draws the frames red, and Hail asks before it sends anything but GET, HEAD or OPTIONS there\n(↵, /send all, /load, /replay to it)'],
+    ],
+  },
+  {
     title: 'Bodies',
     rows: [
       ['< ./body.json', 'The body from a file, as it is (<@ fills in its variables)'],

@@ -30,6 +30,8 @@ import { checkLines, contractLines, statusColour } from './ui/response.js';
 import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, shareLine, trawlLine } from '@fleet/kit/family.js';
 import { fit, relTime } from '@fleet/kit/text.js';
 import { findByRequestId, hostVariable, idsIn, replayBlock, startsWithVariable, rowsJson, rowsRequestBlock, tablePath } from './takes.js';
+import { describeEnvironments, productionQuestion, setEnvironment as setProjectEnvironment } from '@fleet/kit/environments.js';
+import { isSafeMethod } from './project.js';
 import { compareResponses, lastResponseTo, normaliseBase, rebaseUrl, replayHeaders, replayTargets, statusLine, targetNamed } from './replay.js';
 
 const YES_NO = (yes) => [
@@ -116,12 +118,26 @@ function responseSummary({ response: res, checks, saved, contract }) {
   return [`${res.status} ${res.statusText} · ${res.ms} ms · ${formatSize(res.size)}${events}${summary.text ? ` · ${summary.text}` : ''}`, ...(save ? [save] : []), ...failed, ...(checks?.error ? [checks.error] : []), ...drift].join('\n');
 }
 
+/**
+ * Before anything that may change things goes to production: true when it can go. `methods` are the
+ * requests' methods (GET, HEAD and OPTIONS only read, and never ask); `env` is the Hail environment it
+ * goes to, production when the project's .fleet/project.json says so (project.js's productionFor).
+ */
+export async function productionOk(ctx, methods, what, env = ctx.environment()) {
+  if ([].concat(methods).every(isSafeMethod)) return true;
+  const q = productionQuestion(ctx.productionFor?.(env), what);
+  if (!q) return true;
+  // No comes first: a stray ↵ shouldn't send a POST to production.
+  return (await ctx.confirm({ ...q, options: [{ label: 'No', value: false }, { label: 'Yes, send it', value: true }] })) === true;
+}
+
 /** ↵ in Requests, and /send: sends it, and shows what came back. `/send all` sends every one. */
 export async function send(ctx, which) {
   if (!ctx.data) return ctx.note('Open a .http file first: /open <file>, or /new for an example.', 'error');
   if (typeof which === 'string' && which.trim().toLowerCase() === 'all' && !ctx.data.requests.some((r) => r.name?.toLowerCase() === 'all')) return sendAll(ctx);
   const request = typeof which === 'object' && which ? which : requestNamed(ctx, which);
   if (!request) return ctx.note(which ? `There's no request called ${which}.` : 'The file has no requests yet.', 'error');
+  if (!(await productionOk(ctx, request.method, `Send ${request.label}`))) return false;
   const req = await prepared(ctx, request).catch((e) => failed(ctx, e));
   if (!req) return;
   // The secrets in it stay out of the activity lines.
@@ -180,6 +196,8 @@ export async function sendAll(ctx) {
   if (!ctx.data) return ctx.note('Open a .http file first: /open <file>, or /new for an example.', 'error');
   const requests = ctx.data.requests.filter(inRun);
   if (!requests.length) return ctx.note(ctx.data.requests.length ? 'The file has only WebSockets, which ↵ opens one at a time.' : 'The file has no requests yet.', 'error');
+  const changing = requests.filter((r) => !isSafeMethod(r.method));
+  if (changing.length && !(await productionOk(ctx, changing.map((r) => r.method), `Send all ${requests.length}, ${changing.length} of them ${changing.map((r) => r.method).filter((m, i, all) => all.indexOf(m) === i).join(', ')}`))) return false;
   const results = [];
   let stopped = false;
   const done = await ctx.task(
@@ -247,6 +265,7 @@ export async function load(ctx, rest) {
   const request = requestNamed(ctx, args.name);
   if (!request) return ctx.note(args.name ? `There's no request called ${args.name}.` : 'The file has no requests yet.', 'error');
   if (!inRun(request)) return ctx.note("A WebSocket isn't something /load sends: it's a connection, opened with ↵.", 'error');
+  if (!(await productionOk(ctx, request.method, `Send ${request.label} ${args.count} times`))) return false;
   const req = await prepared(ctx, request).catch((e) => failed(ctx, e));
   if (!req) return;
   const { count, concurrency } = args;
@@ -589,6 +608,22 @@ export function chooseEnvironment(ctx, name) {
   });
 }
 
+/**
+ * /project-env [name]: the project's environment (.fleet/project.json), the one every app of the family
+ * works in. Alone it says which; a name chooses it for them all, and Hail's own environment follows
+ * (App, through the project environment's "hail": { "env" }). Hail's /env and e stay its own.
+ */
+export function projectEnvironment(ctx, name) {
+  const dir = ctx.folder();
+  const n = String(name ?? '').trim();
+  // The kit's sentence names the family's /env, which in Hail is its own environments' command.
+  if (!n) return ctx.note(describeEnvironments(dir).replace(/\/env /g, '/project-env '));
+  const r = setProjectEnvironment(dir, n, { by: 'hail' });
+  if (!r.ok) return ctx.note(r.error, 'error');
+  const own = r.env.settings?.hail?.env;
+  ctx.note(`Every app is in ${r.env.name}${r.env.prod ? ' (production)' : ''} now${own ? `\nHail's variables come from its ${own}` : ''}`, 'ok');
+}
+
 /** /open: another .http file, from the folder Hail is in. */
 export async function open(ctx, path) {
   if (!path.trim()) return ctx.prefill('/open ');
@@ -838,6 +873,7 @@ async function replayTo(ctx, src, target) {
   const { headers, dropped, added } = replayHeaders(src.request.headers, vars);
   const body = src.request.body == null ? '' : typeof src.request.body === 'object' ? JSON.stringify(src.request.body) : String(src.request.body);
   const method = String(src.request.method ?? 'GET').toUpperCase();
+  if (target.env && !(await productionOk(ctx, method, `Replay ${method} ${pathOfUrl(src.request.url)} there`, target.env))) return false;
   let req;
   try {
     req = await prepare({ method, url: rebaseUrl(src.request.url, base), headers, body, options: {} }, scope, { dir: d?.dir });

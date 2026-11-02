@@ -25,7 +25,9 @@ import { worthNotifying } from '../notify.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { recordCommand } from '@fleet/kit/recording.js';
+import { productionFor, projectEnvironmentNames } from '../project.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -78,7 +80,7 @@ const copiedText = (text) => {
   return n > 1 ? `${n} lines` : `${text.length} character${text.length === 1 ? '' : 's'}`;
 };
 
-function Header({ data, env, width, loading, mood, mock }) {
+function Header({ data, env, project, width, loading, mood, mock }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Hail', bold: true },
@@ -86,6 +88,8 @@ function Header({ data, env, width, loading, mood, mock }) {
   if (data) {
     segs.push({ text: '  │  ', color: theme.border }, { text: data.name, bold: true });
     segs.push({ text: '  env ', color: theme.dim }, { text: env ?? (data.environments.names.length ? 'none' : '—'), color: env ? theme.warn : theme.dim, bold: Boolean(env) });
+    // The project's environment (every app's), when it has one: red for production.
+    if (project) segs.push({ text: '  project ', color: theme.dim }, { text: `${project.name}${project.prod ? ' (production)' : ''}`, color: project.prod ? theme.del : theme.dim, bold: project.prod });
     if (mock) segs.push({ text: '  mock ', color: theme.dim }, { text: `:${mock.port}`, color: theme.accent, bold: true });
   } else if (loading) segs.push({ text: '  loading…', color: theme.dim });
   const path = data?.dir ?? '';
@@ -432,12 +436,15 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
     setContractTick((n) => n + 1);
   };
 
-  // /move: another folder; its first .http file is opened, as on starting there.
+  // /move: another folder; its first .http file is opened, as on starting there. A state too, so the
+  // project's environment is looked for from where Hail is now.
   const folderRef = useRef(cwd);
+  const [folder, setFolder] = useState(cwd);
   // The folder Hail started in, first in /move's list.
   useEffect(() => setConfig((c) => ({ ...c, folders: remember(c.folders, folderRef.current) })), []);
   const moveTo = async (dir) => {
     folderRef.current = dir;
+    setFolder(dir);
     setConfig((c) => ({ ...c, folders: remember(c.folders, dir) }));
     const found = findHttpFiles(dir);
     if (!found.length) return note(`Hail is in ${basename(dir)} now, which has no .http files: /new writes one, /import brings some in.`);
@@ -463,6 +470,27 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
 
   // The environment picked for this file (kept in the config, by file), if it still has it.
   const environment = () => defaultEnvironment(dataRef.current, configRef.current.environments?.[dataRef.current?.path]);
+
+  // The project's environment (the kit's environments.js), chosen for every app: when it changes, here
+  // or in another app, or a file opens, Hail's variables come from the environment of Hail's it names
+  // ("hail": { "env" }). e and /env still pick another of Hail's for the moment.
+  const projectEnv = useEnvironment('hail', folder);
+  const projectEnvRef = useRef(projectEnv);
+  projectEnvRef.current = projectEnv;
+  const followed = useRef(null);
+  useEffect(() => {
+    const d = dataRef.current;
+    const want = typeof projectEnv?.env === 'string' ? projectEnv.env.trim() : null;
+    if (!d || !want) return;
+    // Once for each environment and file, so a pick of your own isn't undone on the next reload.
+    const key = [d.path, projectEnv.name, want, d.environments.names.join(',')].join('\n');
+    if (followed.current === key) return;
+    followed.current = key;
+    if (!d.environments.names.includes(want)) return note(`The project's environment is ${projectEnv.name}, Hail's ${want}, which ${d.name}'s http-client.env.json doesn't have.`, 'error');
+    if (environment() === want) return;
+    setConfig((c) => ({ ...c, environments: { ...c.environments, [d.path]: want } }));
+    note(`Variables now come from ${want}: the project's environment is ${projectEnv.name}`);
+  }, [projectEnv?.name, projectEnv?.env, data?.path, data?.environments]);
 
   // One command at a time, with the spinner, esc to cancel, and a line in the activity log.
   // `start(signal)` resolves with { stdout, stderr }.
@@ -588,6 +616,10 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
     moveTo,
     folder: () => folderRef.current,
     environment,
+    // The project's environment (environmentFor's: { name, prod, env? }), or null without one.
+    projectEnvironment: () => projectEnvRef.current,
+    // Whether Hail's environment `env` is the project's production (project.js): { name, prod } or null.
+    productionFor: (env) => productionFor(folderRef.current, env),
     setEnvironment: (name) => {
       const path = dataRef.current?.path;
       if (!path) return;
@@ -890,7 +922,11 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
     const history = [text, ...(configRef.current.history ?? []).filter((h) => h !== text)].slice(0, 100);
     setConfig((c) => ({ ...c, history }));
     await runLine(text);
+    record(text);
   };
+  // A line the prompt ran, for a runbook Fleet is recording (the kit's recording.js keeps only slash
+  // commands and /take lines); a context pasted bare is kept as the /take it ran.
+  const record = (text) => recordCommand('hail', !text.startsWith('/') && contextIn(text) ? `/take ${text}` : text);
 
   // ctrl+p: the palette, over the view, starting from what's typed in the prompt when it's open there.
   const openPalette = () => {
@@ -905,7 +941,7 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
       ctx.closeOverlay();
       if (it.key) pendingKey.current = it.key.seq;
       else if (it.ask) prefill(`${it.command} `);
-      else runLine(it.command);
+      else runLine(it.command).then(() => record(it.command));
     });
 
   // Your keys, where they come in: while a view has the keys (never while typing, in a confirm or
@@ -1018,13 +1054,15 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
   // .http files to /open (or folders to /move to), looked for while that's being typed.
   const argsFor = (value) => (value.startsWith('/open ') ? findHttpFiles(folderRef.current) : value.startsWith('/move ') ? siblings(folderRef.current).map((d) => basename(d)).filter((n) => n !== basename(folderRef.current)) : []);
   const files = focus === 'prompt' ? argsFor(prompt.value) : [];
-  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, files, environment: environment() }) : [];
+  // The project's environments, read only while a command that takes one is being typed.
+  const projectEnvsFor = (value) => (/^\/(project-env|compare) /.test(value) ? projectEnvironmentNames(folderRef.current) : []);
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { user: customRef.current.commands, data, files, environment: environment(), projectEnvs: projectEnvsFor(prompt.value) }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, files: argsFor(value), environment: environment() });
+    const items = suggestionsFor(value, { user: customRef.current.commands, data: dataRef.current, files: argsFor(value), environment: environment(), projectEnvs: projectEnvsFor(value) });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -1277,7 +1315,7 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} env={environment()} width={W} loading={loading} mood={mood} mock={mockServer} />
+      <Header data={data} env={environment()} project={projectEnv} width={W} loading={loading} mood={mood} mock={mockServer} />
       <Tabs view={view} entries={entries} width={W} />
       <Box height={mainH} width={W}>
         {main}

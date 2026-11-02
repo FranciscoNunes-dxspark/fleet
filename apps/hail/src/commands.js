@@ -7,6 +7,7 @@ export const COMMANDS = [
   { name: 'send', args: '[request|all]', desc: 'Send a request (the one picked in Requests if none is named); all sends every one, top to bottom, and shows a report', complete: 'requests', run: (ctx, s) => a.send(ctx, s) },
   { name: 'load', args: '[request] [count] [concurrency]', desc: 'Send a request many times, so many at once (200, 10 at a time, unless said), and report its latency, statuses and errors; esc stops it', complete: 'requests', run: (ctx, s) => a.load(ctx, s) },
   { name: 'env', args: '[name]', desc: 'The environment the variables come from (a list to pick from if none is named)', complete: 'environments', run: (ctx, s) => a.chooseEnvironment(ctx, s) },
+  { name: 'project-env', args: '[name]', desc: "The project's environment (.fleet/project.json), every app's: alone, which it is; a name switches every app, and Hail's variables follow (its \"hail\": { \"env\" })", complete: 'projectEnvironments', run: (ctx, s) => a.projectEnvironment(ctx, s) },
   { name: 'curl', args: '[request]', desc: 'Copy a request, filled in, as a curl command', complete: 'requests', run: (ctx, s) => a.copyCurl(ctx, s) },
   { name: 'data', desc: "The response body (JSON, JSON lines or CSV) as a tree or table to open and query with a path like .items[0].name (d in Response)", run: (ctx) => a.showData(ctx) },
   { name: 'import-curl', args: '<curl command>', desc: 'Add a request to the file from a curl command (a browser\'s Copy as cURL, from any shell)', run: (ctx, s) => a.importCurl(ctx, s) },
@@ -46,10 +47,11 @@ export function findCommand(name, user = []) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, data, files, environment) {
+function completions(kind, data, files, environment, projectEnvs = []) {
   if (kind === 'requests') return [...(data?.requests ?? []).map((r) => r.name ?? r.label), ...(data?.requests?.length ? ['all'] : [])];
   if (kind === 'environments') return data?.environments.names ?? [];
   if (kind === 'files') return files;
+  if (kind === 'projectEnvironments') return projectEnvs;
   if (kind === 'auths') return data ? [...Object.keys(data.environments.auth?.(environment) ?? {}), 'clear'] : [];
   return [];
 }
@@ -66,7 +68,7 @@ function ranked(names, query) {
  * list a command completes its argument from. `insert` replaces the prompt text; `run` means picking
  * it can run straight away.
  */
-function commandCompletions(value, { data, files = [], user = [], environment = null } = {}) {
+function commandCompletions(value, { data, files = [], user = [], environment = null, projectEnvs = [] } = {}) {
   if (!value.startsWith('/')) return [];
   const space = value.indexOf(' ');
   const all = [...COMMANDS, ...user];
@@ -81,7 +83,7 @@ function commandCompletions(value, { data, files = [], user = [], environment = 
   const cmd = findCommand(value.slice(1, space), user);
   const rest = value.slice(space + 1);
   if (!cmd?.complete) return [];
-  const names = ranked(completions(cmd.complete, data, files, environment), rest);
+  const names = ranked(completions(cmd.complete, data, files, environment, projectEnvs), rest);
   if (names.length === 1 && names[0] === rest) return [];
   return names.slice(0, 7).map((n) => ({ label: n, insert: `/${cmd.name} ${n}`, run: true }));
 }
