@@ -28,13 +28,13 @@ whose moods are turned off in its settings never gets a `!`.
  1 Splice ●  2 Trawl ●  3 Sonar ● 2  4 Bosun ● !  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   Bosun: api crashed
 ```
 
-At the right of the bar, before the hint, Fleet says what it's doing itself: a red `● REC` while a
-runbook is being recorded ([Recording a runbook](#recording-a-runbook)), and the project's environment,
-white on red when it's production ([Environments](#environments)). The tabs give way to it on a narrow
-screen.
+At the right of the bar, before the hint, Fleet says what it's doing itself: `◆2 proposed` when Claude
+left lines for you ([Claude proposes](#claude-proposes-you-press-)), a red `● REC` while a runbook is
+being recorded ([Recording a runbook](#recording-a-runbook)), and the project's environment, white on
+red when it's production ([Environments](#environments)). The tabs give way to it on a narrow screen.
 
 ```
- 1 Splice ●  2 Trawl ●  3 Sonar ●  4 Bosun ●  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   ● REC prod ctrl+b ? help
+ 1 Splice ●  2 Trawl ●  3 Sonar ●  4 Bosun ●  5 Hail ○  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   ◆1 proposed ● REC prod ctrl+b ? help
 ```
 
 ## Install
@@ -109,10 +109,11 @@ say `ctrl+b`; read yours there.
 | `ctrl+b` `R` | Start recording a runbook from what the apps run; again, stop and open it ([Recording a runbook](#recording-a-runbook)) |
 | `ctrl+b` `f` | Follow a request across the apps ([Following a request](#following-a-request)) |
 | `ctrl+b` `e` | The project's environment, for every app at once ([Environments](#environments)) |
+| `ctrl+b` `P` | Claude's proposals: lines for an app's prompt, handed over with `↵` ([Claude proposes](#claude-proposes-you-press-)) |
 | `ctrl+b` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+b` `?` | The keys |
 
-`R` is a capital: `r` is the runbooks. Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
+`P` and `R` are capitals: `p` is the previous space and `r` the runbooks. Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
 
 ## Split
 
@@ -253,6 +254,23 @@ write one:
 What each app reads from its section is in its own README. Nothing secret goes in the file: it names
 things, never a password.
 
+## Claude proposes, you press ↵
+
+Claude Code, through `fleet mcp`'s `propose` tool, can leave a line for one app's prompt with why: a
+query for Trawl, a search for Sonar, a restart for Bosun. It never runs it. The bar shows `◆1 proposed`
+(and says so once), and `ctrl+b` `P` lists them, each with its app, its line and why. `↵` hands one to
+its app as a runbook step is: Fleet switches to the app, starting it if need be, and types the line into
+its prompt, where your own `↵` runs it (Fleet never presses it for an app). `x` dismisses one. Either
+is written back, so Claude can ask what became of it (`proposal_status`). A proposal nobody acts on
+drops off after an hour.
+
+| Keys | In the proposals |
+| --- | --- |
+| `↑` `↓` or `j` `k` | Move |
+| `↵` | Hand the line to its app (typed into its prompt, not run) |
+| `x` | Dismiss it |
+| `esc` | Close |
+
 ## Following a request
 
 `ctrl+b` `f` asks for a request, operation or trace id (offering the last one a hand-off carried, as
@@ -290,10 +308,15 @@ It reads for the folder Claude Code starts it in; `fleet mcp --project <dir>` na
 | `sonar_components`, `sonar_problems`, `sonar_incident`, `sonar_query` | Application Insights, through your `az login`, in Sonar's last subscription: the problems, one told whole (its stack, its operation, the SQL that failed), and any KQL query |
 | `trawl_list_connections`, `trawl_list_tables`, `trawl_describe_table`, `trawl_run_query` | Trawl's own MCP tools (`trawl mcp`, below the surface), with every rule they have: your saved connections, each one's Claude access level, writes refused, every query rolled back, all of it in Trawl's History |
 | `family_timeline`, `family_moods`, `family_wiring` | What the apps did that changed something (this project's, or every project's), how their mascots feel and why (a quick read of what's wrong now), and what the project points at (addresses and connection strings, masked) |
+| `propose`, `proposal_status` | A line for one app's prompt, with why, for you to hand over in Fleet or dismiss ([Claude proposes](#claude-proposes-you-press-)); and what became of it |
 
-- **It only reads.** No tool changes anything: no git command that writes, no restart, no request
-  sent, no query but reads (Trawl refuses writes and rolls back; Application Insights' query API
-  can't change anything, and a control command is refused).
+- **It only reads**, but for `propose`. No other tool changes anything: no git command that writes, no
+  restart, no request sent, no query but reads (Trawl refuses writes and rolls back; Application
+  Insights' query API can't change anything, and a control command is refused). `propose` writes a
+  proposal, one small file in the family's folder, and what it writes changes nothing by itself: it is
+  one slash command of a family app (never a `!` shell, SQL or git line, one line of at most 500
+  characters, secrets masked) that waits for you to press `↵` in Fleet, which types it into the app's
+  prompt, and `↵` again in the app, which runs it.
 - **Never a secret**, as everywhere in the family: everything a tool answers goes through the same
   masking as the activity log and `/wiring` (passwords in connection strings and URLs, bearer tokens,
   values whose names say they're secret come back as `••••`), and Hail's history never kept the

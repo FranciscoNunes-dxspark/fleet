@@ -3,9 +3,9 @@
 // exited), and what the app is for beside its name (ROLES, in capitals) where there's room; the active one is drawn in its app's accent. A space off screen that needs you has a
 // badge after its state (attention.js: `!` for a worried app, a count of alerts), in a warning colour,
 // red when it counts an error or a crash. At the right, before the hint, the fleet's own state: the
-// project's environment (red for production) and `● REC` while a runbook is being recorded. When the
-// line is too narrow, the hint goes first, then the names shrink to their letters (the badges stay),
-// then the line is cut; that state keeps its room.
+// project's environment (red for production), `● REC` while a runbook is being recorded, and how many
+// proposals Claude left waiting. When the line is too narrow, the hint goes first, then the names
+// shrink to their letters (the badges stay), then the line is cut; that state keeps its room.
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { ROLES } from '@fleet/kit/family.js';
 import { badgeText } from './attention.js';
@@ -17,16 +17,17 @@ export const stateMark = (space) => (space.state === 'exited' ? `✕${space.code
 
 /** The hint at the right: the prefix's keys while it waits for one, else how to get them. */
 export function hintFor({ prefix, notice, split = false, prefixLabel = 'ctrl+b' }) {
-  if (prefix) return `1-9 s t o b h l u g c · n p · ${split ? 'tab pane · x unsplit' : '| split'} · m move · r f e R · q quit · ? help`;
+  if (prefix) return `1-9 s t o b h l u g c · n p · ${split ? 'tab pane · x unsplit' : '| split'} · m move · r f e P R · q quit · ? help`;
   return notice || `${prefixLabel} ? help`;
 }
 
 /**
- * The fleet's state as the bar's `status` segments: the environment ({ name, prod } or null), and
- * `● REC` while `recording`.
+ * The fleet's state as the bar's `status` segments: the environment ({ name, prod } or null), `● REC`
+ * while `recording`, and the count of `proposals` waiting.
  */
-export function statusSegments({ env = null, recording = false } = {}) {
+export function statusSegments({ env = null, recording = false, proposals = 0 } = {}) {
   const out = [];
+  if (proposals > 0) out.push({ text: `◆${proposals > 9 ? '9+' : proposals} proposed`, role: 'proposals' });
   if (recording) out.push({ text: '● REC', role: 'rec' });
   // Production reads by its colour (white on red), whatever the project calls it.
   if (env?.name) out.push({ text: stringWidth(String(env.name)) > 20 ? fit(String(env.name), 20) : String(env.name), role: env.prod ? 'env-prod' : 'env' });
@@ -106,7 +107,7 @@ export function colour(hex, { background = false, truecolor = true } = {}) {
 /** A badge's colour: a warm orange, bold, that reads on the bar's grey whatever the tab's accent; red for an error or a crash. */
 const BADGE = '\x1b[1m\x1b[38;5;214m';
 const BADGE_ERROR = '\x1b[1m\x1b[38;5;203m';
-const STATUS = { rec: '\x1b[1m\x1b[38;5;196m', env: '\x1b[38;5;153m', 'env-prod': '\x1b[1m\x1b[38;5;231m\x1b[48;5;160m' };
+const STATUS = { proposals: '\x1b[1m\x1b[38;5;229m', rec: '\x1b[1m\x1b[38;5;196m', env: '\x1b[38;5;153m', 'env-prod': '\x1b[1m\x1b[38;5;231m\x1b[48;5;160m' };
 
 /** The bar as one line of ANSI text, `width` columns wide, for `spaces` (with their accents). */
 export function renderBar(layout, spaces, { truecolor = true } = {}) {

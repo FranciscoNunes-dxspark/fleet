@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { draftRunbook, listRunbooks, parseRunbook, recordedRunbook, runbookDirs, writeDraft, writeRecorded } from '../src/runbooks.js';
+import { checkProposal, listProposals, pruneProposals, writeProposal } from '../src/proposals.js';
 
 test('a recording becomes a runbook Fleet reads back: a block per run of one app, each said when; never over another', () => {
   const at = new Date(2026, 10, 2, 14, 5, 9).getTime();
@@ -27,6 +28,20 @@ test('a recording becomes a runbook Fleet reads back: a block per run of one app
   const b = writeRecorded(dir, text, { now: at });
   assert.ok(a.endsWith('2026-11-02-1405-recorded.md'));
   assert.ok(b.endsWith('2026-11-02-1405-recorded-2.md'));
+});
+
+test("a proposal is one slash command of a family app, never a ! line, with why; old ones drop off", () => {
+  assert.equal(checkProposal({ app: 'sonar', line: '/kql requests | where success != true', why: 'the 500s' }).ok, true);
+  assert.equal(checkProposal({ app: 'sonar', line: '/kql x | !danger', why: 'w' }).ok, false);
+  assert.equal(checkProposal({ app: 'helm', line: '/x', why: 'w' }).ok, false);
+  assert.match(checkProposal({ app: 'trawl', line: '/connect Server=x;Password=s3cret', why: 'w' }).proposal.line, /Password=••••/);
+  const home = mkdtempSync(join(tmpdir(), 'fleet-proposals-'));
+  const now = Date.now();
+  writeProposal({ app: 'trawl', line: '/tables', why: 'w' }, { home, now: now - 2 * 3_600_000 });
+  const fresh = writeProposal({ app: 'trawl', line: '/tables', why: 'w' }, { home, now });
+  assert.deepEqual(listProposals({ home, now }).map((p) => p.id), [fresh.id]);
+  pruneProposals({ home, now });
+  assert.equal(listProposals({ home, now, maxAge: Infinity }).length, 1);
 });
 
 const EXAMPLE = `# Is the API healthy?

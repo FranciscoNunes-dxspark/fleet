@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { currentEnvironment } from '@fleet/kit/environments.js';
 import { logActivity } from '@fleet/kit/family.js';
 import { recordCommand, recordingState } from '@fleet/kit/recording.js';
+import { readProposal, writeProposal } from '../src/proposals.js';
 import { traceLine } from '../src/trace.js';
 import { alive, familyHome, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
 
@@ -411,6 +412,33 @@ test('with no .fleet/project.json the environment panel says how to write one', 
   keys(`${PREFIX}e`);
   await until(() => term.text().includes('No environments here.') && term.text().includes('"default": "dev",') && term.text().includes('"prod": { "prod": true'), 'the example', { term });
   keys('\x1b');
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test("Claude's proposals wait in the bar and the panel: ↵ types one into its app's prompt, x dismisses one, and each says so", async () => {
+  const tools = toolsIn({ 'project/readme.txt': 'x' });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 70, rows: 16 });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 70x15', 'the app', { term });
+  const first = writeProposal({ app: 'two', line: '/hello two', why: 'Two has not said hello yet' }, { home: tools.familyDir });
+  const second = writeProposal({ app: 'one', line: '/bye', why: 'Nothing left to do' }, { home: tools.familyDir, now: Date.now() + 1 });
+  // An hour old: it drops off, file and all.
+  const old = writeProposal({ app: 'one', line: '/old', why: 'stale' }, { home: tools.familyDir, now: Date.now() - 2 * 60 * 60_000 });
+  await until(() => / ◆2 proposed /.test(screen.row(-1)) && host.noticeText === 'Claude proposes 2 lines: ctrl+b P', 'the badge and the notice', { term });
+  assert.equal(readProposal(old.id, { home: tools.familyDir }), null);
+  keys(`${PREFIX}P`);
+  await until(() => term.text().includes("Claude's proposals") && /› +Two +\/hello two/.test(term.text()) && term.text().includes('Two has not said hello yet'), 'the panel', { term });
+  keys('jx');
+  await until(() => !term.text().includes('/bye'), 'the second dismissed', { term });
+  assert.equal(readProposal(second.id, { home: tools.familyDir }).status, 'dismissed');
+  keys('\r');
+  await until(() => screen.row(0) === 'two 70x15' && screen.row(1) === 'keys: "/hello two"', 'typed into the other app, not run', { term });
+  const handed = readProposal(first.id, { home: tools.familyDir });
+  assert.equal(handed.status, 'handed');
+  assert.ok(handed.decidedAt >= handed.at);
+  await until(() => !screen.row(-1).includes('proposed'), 'nothing waiting any more', { term });
   keys(`${PREFIX}q`);
   keys('y');
   await done;

@@ -36,9 +36,9 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 180, prefix: true })), /1-9 s t o b h l u g c · n p · \| split · m move · r f e R · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 180, prefix: true })), /1-9 s t o b h l u g c · n p · \| split · m move · r f e P R · q quit · \? help $/);
   // Split, the other pane and putting it back.
-  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 180, prefix: true })), /tab pane · x unsplit · m move · r f e R · q quit/);
+  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 180, prefix: true })), /tab pane · x unsplit · m move · r f e P R · q quit/);
   // With little room the prefix's keys win over the names.
   const tight = barLayout({ spaces, active: 'splice', width: 145, prefix: true });
   assert.equal(width(tight), 145);
@@ -86,16 +86,16 @@ test("split, the other pane's tab is underlined in its accent", () => {
   assert.ok(renderBar(layout, spaces).includes('\x1b[38;2;232;68;90m\x1b[1m\x1b[4m 5 Hail ● '));
 });
 
-test("the fleet's state sits before the hint and keeps its room: REC, the environment (production in red)", () => {
-  const status = statusSegments({ env: { name: 'prod', prod: true }, recording: true });
-  assert.deepEqual(status.map((s) => s.role), ['rec', 'env-prod']);
+test("the fleet's state sits before the hint and keeps its room: proposals, REC, the environment (production in red)", () => {
+  const status = statusSegments({ env: { name: 'prod', prod: true }, recording: true, proposals: 2 });
+  assert.deepEqual(status.map((s) => s.role), ['proposals', 'rec', 'env-prod']);
   const layout = barLayout({ spaces, active: 'splice', width: 160, status });
   assert.equal(width(layout), 160);
-  assert.match(text(layout), / ● REC prod ctrl\+b \? help $/);
+  assert.match(text(layout), /◆2 proposed ● REC prod ctrl\+b \? help $/);
   // Narrow, the tabs give way to it rather than it to them.
   const narrow = barLayout({ spaces, active: 'splice', width: 60, status });
   assert.equal(width(narrow), 60);
-  assert.match(text(narrow), /● REC prod $/);
+  assert.match(text(narrow), /◆2 proposed ● REC prod $/);
   const bar = renderBar(layout, spaces);
   assert.ok(bar.includes('\x1b[48;5;160mprod'), 'production on red');
   assert.ok(bar.includes('\x1b[38;5;196m● REC'), 'REC in red');

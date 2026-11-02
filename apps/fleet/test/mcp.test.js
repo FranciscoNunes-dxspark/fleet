@@ -5,7 +5,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { logActivity, writeMood } from '@fleet/kit/family.js';
 import { MAX_TEXT, clip, count, finish, sinceOf, tail } from '../src/mcp/bound.js';
 import { createFleetServer } from '../src/mcp/server.js';
+import { decideProposal, listProposals, proposalsDir } from '../src/proposals.js';
 
 const BIN = fileURLToPath(new URL('../bin/fleet.js', import.meta.url));
 const base = mkdtempSync(join(tmpdir(), 'fleet-mcp-'));
@@ -105,17 +106,18 @@ const call = async (s, name, args = {}) => {
   return { text: res.result.content[0].text, error: Boolean(res.result.isError) };
 };
 
-test('initialize and tools/list: every tool read-only, with a schema', async () => {
+test('initialize and tools/list: every tool read-only but propose, with a schema', async () => {
   const s = server();
   const init = await s.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   assert.equal(init.result.serverInfo.name, 'fleet');
   assert.match(init.result.instructions, /read-only/);
   const { tools } = (await s.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).result;
   const names = tools.map((t) => t.name);
-  for (const n of ['git_status', 'git_log', 'git_show', 'git_diff', 'git_blame', 'git_branches', 'bosun_crew', 'bosun_log', 'bosun_search', 'hail_requests', 'hail_history', 'sonar_components', 'sonar_problems', 'sonar_incident', 'sonar_query', 'family_timeline', 'family_moods', 'family_wiring'])
+  for (const n of ['git_status', 'git_log', 'git_show', 'git_diff', 'git_blame', 'git_branches', 'bosun_crew', 'bosun_log', 'bosun_search', 'hail_requests', 'hail_history', 'sonar_components', 'sonar_problems', 'sonar_incident', 'sonar_query', 'family_timeline', 'family_moods', 'family_wiring', 'propose', 'proposal_status'])
     assert.ok(names.includes(n), n);
   for (const t of tools) {
-    assert.equal(t.annotations.readOnlyHint, true, t.name);
+    // propose writes a proposal (for a person to hand over), and nothing else writes.
+    assert.equal(t.annotations.readOnlyHint, t.name !== 'propose', t.name);
     assert.equal(t.inputSchema.type, 'object', t.name);
     assert.ok(t.description.length > 20, t.name);
     assert.equal(t.run, undefined);
@@ -165,6 +167,40 @@ test('family: the timeline for this project or all, moods, and the wiring masked
   assert.match(wiring.text, /\.http files: api\.http/);
   assert.match(wiring.text, /databases: Default \(appsettings\.json\): sqlserver db\.example\.com\/Shop/);
   assert.doesNotMatch(wiring.text, /s3cret/);
+});
+
+test('propose writes one proposal, checked and masked; proposal_status reads what became of it', async () => {
+  const s = server();
+  for (const [args, why] of [
+    [{ app: 'nope', line: '/x', why: 'w' }, /isn't an app of the family/],
+    [{ app: 'trawl', line: 'select 1', why: 'w' }, /slash command/],
+    [{ app: 'trawl', line: '!git push', why: 'w' }, /slash command/],
+    [{ app: 'bosun', line: '/run !npm test', why: 'w' }, /never proposed/],
+    [{ app: 'trawl', line: '/q\nDROP TABLE x', why: 'w' }, /one line/],
+    [{ app: 'trawl', line: `/${'x'.repeat(600)}`, why: 'w' }, /at most 500/],
+    [{ app: 'trawl', line: '/tables' }, /Say why/],
+  ]) {
+    const r = await call(s, 'propose', args);
+    assert.equal(r.error, true, JSON.stringify(args));
+    assert.match(r.text, why);
+  }
+  assert.equal(listProposals().length, 0, 'nothing written for a refused one');
+  const r = await call(s, 'propose', { app: 'Sonar', line: '/kql requests | where success != true and password=hunter2', why: 'The 500s started after the deploy' });
+  assert.equal(r.error, false, r.text);
+  const id = /id: (\S+)/.exec(r.text)[1];
+  assert.match(r.text, /Proposed to Sonar: \/kql requests \| where success != true/);
+  assert.doesNotMatch(r.text, /hunter2/);
+  assert.equal(readdirSync(proposalsDir()).length, 1, 'one file a proposal');
+  const [p] = listProposals({ pending: true });
+  assert.equal(p.id, id);
+  assert.equal(p.app, 'sonar');
+  assert.doesNotMatch(p.line, /hunter2/, 'masked as it was written');
+  assert.match((await call(s, 'proposal_status', { id })).text, /status: pending/);
+  decideProposal(id, 'handed');
+  assert.match((await call(s, 'proposal_status', { id })).text, /status: handed to Sonar at \d{4}-/);
+  const gone = await call(s, 'proposal_status', { id: 'not-an-id' });
+  assert.equal(gone.error, true);
+  assert.match(gone.text, /No proposal/);
 });
 
 test("bosun: the crew from the latest recording, a process's lines, and searching them", async () => {

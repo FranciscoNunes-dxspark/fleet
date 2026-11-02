@@ -36,6 +36,7 @@ for it: .sql in Trawl, .http in Hail.
   ctrl+b R                    record a runbook from what the apps run (again: stop)
   ctrl+b f                    follow a request across the apps
   ctrl+b e                    the project's environment (.fleet/project.json)
+  ctrl+b P                    Claude's proposals: ↵ types one into its app
   ctrl+b ctrl+b               send ctrl+b to the app
   ctrl+b q                    quit, stopping every app
   ctrl+b ?                    the keys
@@ -48,7 +49,8 @@ An app starts the first time you switch to it. A line an app copies "for
 Trawl" (or any sibling) goes straight to that app's prompt.
 
 fleet mcp [--project <dir>] runs Fleet as an MCP server for Claude Code, which
-reads every app's world through it, read-only (claude mcp add fleet -- fleet mcp).`);
+reads every app's world through it, read-only but for proposing a line for you
+to hand to an app (claude mcp add fleet -- fleet mcp).`);
   process.exit(0);
 }
 

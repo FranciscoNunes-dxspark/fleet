@@ -238,3 +238,39 @@ export function envLines({ project, current, cursor = 0, width = 80, where = '' 
   lines.push([], ...prose(`From ${project.file}. ↵ switches every app.`, width - 1));
   return { lines, focus: [cursor, cursor] };
 }
+
+const ago = (ms, now) => {
+  const m = Math.max(0, Math.round((now - ms) / 60_000));
+  return m < 1 ? 'just now' : `${m} min ago`;
+};
+
+/** The proposals panel's rows: each one's app (in its accent), its line, and why below it, dim. { lines, focus }. */
+export function proposalLines(items, { cursor = 0, width = 80, spaces = [], truecolor = true, now = Date.now(), prefix = 'ctrl+b' } = {}) {
+  if (!items.length) {
+    return {
+      lines: [
+        [{ text: 'Nothing proposed.', sgr: BOLD }],
+        [],
+        ...prose(`Claude Code proposes a line for an app through fleet mcp's propose tool; it waits here for you, an hour at most. ↵ types it into the app's prompt (${prefix} P comes back), where your own ↵ runs it; x dismisses it.`, width - 1),
+      ],
+      focus: [0, 0],
+    };
+  }
+  const tagW = Math.max(...items.map((p) => stringWidth(titleOf(spaces, p.app))));
+  const lines = [];
+  let focus = [0, 0];
+  items.forEach((p, i) => {
+    const here = i === cursor;
+    if (i > 0) lines.push([]);
+    const from = lines.length;
+    lines.push([
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: ` ${titleOf(spaces, p.app).padEnd(tagW)} `, sgr: `${accentOf(spaces, p.app, truecolor)}${here ? BOLD : ''}` },
+      { text: ` ${p.line}`, sgr: here ? BOLD : '' },
+    ]);
+    lines.push(...prose(`${p.why} (${ago(p.at, now)})`, width - 1, '    '));
+    if (!spaces.some((s) => s.id === p.app)) lines.push([{ text: `    ${titleOf(spaces, p.app)} doesn't run in Fleet: x dismisses it.`, sgr: RED }]);
+    if (here) focus = [from, lines.length - 1];
+  });
+  return { lines, focus };
+}

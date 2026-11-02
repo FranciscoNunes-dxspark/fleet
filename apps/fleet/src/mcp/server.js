@@ -1,4 +1,5 @@
-// `fleet mcp`: the whole family as one MCP server for Claude Code, read-only. Most tools run here,
+// `fleet mcp`: the whole family as one MCP server for Claude Code, read-only but for `propose`, which
+// leaves a line for a person to hand to an app and runs nothing (proposals.js). Most tools run here,
 // on the apps' own modules (imported when first called, so listing the tools stays quick); Trawl's
 // are Trawl's own server (`trawl mcp`), in a child process through proxy.js. Every answer leaves through bound.js's `finish`: secrets masked, the size bounded.
 import { existsSync, statSync } from 'node:fs';
@@ -10,11 +11,12 @@ import { bosunTools } from './bosun.js';
 import { familyTools } from './family.js';
 import { gitTools } from './git.js';
 import { hailTools } from './hail.js';
+import { proposalTools } from './proposals.js';
 import { childServer, trawlCommand } from './proxy.js';
 import { sonarSide } from './sonar.js';
 
-export const INSTRUCTIONS = `Fleet reads the world of the family's apps for the project this server was started in, read-only: nothing here changes anything.
-git_* is the repository (Splice). bosun_* is the project's processes as Bosun ran them (from its recordings; the current run included). hail_* is the project's .http requests and the responses Hail kept. sonar_* is Application Insights through the user's az sign-in. trawl_* is databases through Trawl's saved connections (start with trawl_list_connections). family_* is what the apps did lately (family_timeline), how they feel (family_moods: a quick read of what's wrong now) and what the project points at (family_wiring).
+export const INSTRUCTIONS = `Fleet reads the world of the family's apps for the project this server was started in, read-only: nothing here changes anything. The one tool that writes is propose, and what it writes is a suggestion: a slash command for one app's prompt that the person hands over in Fleet (or dismisses); nothing runs until they press enter in the app.
+git_* is the repository (Splice). bosun_* is the project's processes as Bosun ran them (from its recordings; the current run included). hail_* is the project's .http requests and the responses Hail kept. sonar_* is Application Insights through the user's az sign-in. trawl_* is databases through Trawl's saved connections (start with trawl_list_connections). family_* is what the apps did lately (family_timeline), how they feel (family_moods: a quick read of what's wrong now) and what the project points at (family_wiring). propose leaves a line for the person to run in an app; proposal_status says whether they did.
 Secrets are never shown: they come back as ••••. Long answers are cut; ask for less (n, lines, limit, a path).`;
 
 // Trawl's tools keep their own names under this prefix.
@@ -41,7 +43,7 @@ export function createFleetServer({ project = process.cwd(), demo = false, compi
   const flag = demo ? ['--demo'] : [];
   const trawlServer = trawl === undefined ? childServer({ command: trawlCommand(flag, { compiled }), title: 'Trawl', cwd: root, version: VERSION }) : trawl || null;
 
-  const local = [...gitTools, ...bosunTools, ...hailTools, ...sonarSide({ demo, override: sonar }), ...familyTools].map((t) => ({
+  const local = [...gitTools, ...bosunTools, ...hailTools, ...sonarSide({ demo, override: sonar }), ...familyTools, ...proposalTools].map((t) => ({
     ...t,
     annotations: { readOnlyHint: true, openWorldHint: !/^(family|git|bosun|hail)_/.test(t.name), ...(t.annotations ?? {}) },
   }));
@@ -93,7 +95,8 @@ export function createFleetServer({ project = process.cwd(), demo = false, compi
 const USAGE = `fleet mcp [--project <dir>] [--demo]
 
 Runs Fleet as an MCP server over stdio for Claude Code, reading the family's world for the
-project in <dir> (default: the current folder), read-only and with secrets masked.
+project in <dir> (default: the current folder), read-only and with secrets masked (propose
+only leaves a line for you to hand to an app in Fleet).
 Register it once:  claude mcp add fleet -- fleet mcp
 --demo puts Sonar and Trawl on their demo data.`;
 
