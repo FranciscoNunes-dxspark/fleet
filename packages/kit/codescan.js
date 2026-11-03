@@ -794,7 +794,8 @@ export async function scanCode(root, { signal, onProgress, maxFiles = MAX_FILES,
     }
     if (truncated) break;
   }
-  if (translations) findings.push(...translations.findings());
+  // One at a time: spread as arguments, a big project's hundred thousand findings overflow the stack.
+  if (translations) for (const f of translations.findings()) findings.push(f);
   return { root, files, findings: sortFindings(findings), truncated, at: Date.now() };
 }
 
