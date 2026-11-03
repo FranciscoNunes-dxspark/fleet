@@ -1,0 +1,104 @@
+# The shop's API after: OpenAPI 3.1. Breaking: DELETE /orders/{id} gone, a required header on GET
+# /orders, the coupon shorter, note gone from an order, total may be a fraction. Maybe: refunded
+# among the statuses. Not breaking: GET /customers, a new optional field, {id} renamed {orderId}.
+openapi: 3.1.0
+info:
+  title: Shop
+  version: 2.0.0
+servers:
+  - url: https://shop.example.com/api
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 100 }
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/Status'
+        - name: X-Tenant
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+    post:
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewOrder'
+      responses:
+        '201':
+          description: Made
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+  /customers:
+    get:
+      operationId: listCustomers
+      responses:
+        '200':
+          description: The customers
+components:
+  schemas:
+    Status:
+      type: string
+      enum: [open, paid, shipped, refunded]
+    Order:
+      type: object
+      required: [id, status, total]
+      properties:
+        id: { type: string }
+        status:
+          $ref: '#/components/schemas/Status'
+        total: { type: number }
+        placed: { type: string, format: date-time }
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/Line'
+    Line:
+      type: object
+      properties:
+        sku: { type: string }
+        quantity: { type: integer }
+        parent:
+          $ref: '#/components/schemas/Line'
+    NewOrder:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/Line'
+        coupon: { type: string, maxLength: 12 }

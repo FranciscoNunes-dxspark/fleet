@@ -13,6 +13,7 @@ import { findHttpFiles, loadHttpFile } from './files.js';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { parseHttpFile } from './http-file.js';
 import { checkContract, loadContract } from './contract.js';
+import { diffJson, diffLines, diffMarkdown, diffSources, diffSpecs, failingChanges, loadSpec, parseDiffFailOn } from './openapi-diff.js';
 import { exchange, inRun, reportLines, runFailed } from './runner.js';
 import { prepare } from './send.js';
 import { createTokens, fillAuthConfig, readAuthConfig, refreshName } from './oauth.js';
@@ -453,3 +454,75 @@ const originOf = (url) => {
     return null;
   }
 };
+
+// ---------------------------------------------------------------------------------------------------
+// `hail openapi-diff old.yaml new.yaml [--fail-on breaking] [--json | --markdown]`: what changed between
+// two versions of an API's description, and whether it breaks the clients of the old one. For CI: 0
+// when nothing fails at --fail-on, 1 when something does, 2 when it couldn't run.
+
+export const DIFF_USAGE = `hail openapi-diff <old> [new] [--fail-on breaking|may-break|none] [--json | --markdown]
+
+Compares two versions of an OpenAPI (3.0, 3.1) or Swagger 2 description and lists
+what breaks the clients of the old one, what may break them, and what doesn't.
+Each is a file, an http(s) URL, or git:<ref>:<path> (the file as it is in that
+commit); git:<ref>:<path> alone compares it with the file as it is now, and
+git:<ref> with no path takes the other one's.
+
+Exits with 1 when a change is as bad as --fail-on (breaking unless said; none
+never fails), 2 when it couldn't run. --json prints the changes for a program,
+--markdown for a pull request.`;
+
+/** `hail openapi-diff`'s arguments: { old, new, failOn, format, help } or { problem }. */
+export function diffArgs(args) {
+  const out = { old: null, new: null, failOn: 'breaking', format: 'text', help: false };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-h' || a === '--help') out.help = true;
+    else if (a === '--json') out.format = out.format === 'markdown' ? 'both' : 'json';
+    else if (a === '--markdown' || a === '--md') out.format = out.format === 'json' ? 'both' : 'markdown';
+    else if (a === '--fail-on' || a.startsWith('--fail-on=')) {
+      const v = a.startsWith('--fail-on=') ? a.slice(10) : args[++i];
+      out.failOn = parseDiffFailOn(v ?? '');
+      if (!out.failOn) return { problem: '--fail-on is breaking, may-break or none' };
+    } else if (a.startsWith('-')) return { problem: `${a} isn't an option of hail openapi-diff` };
+    else if (!out.old) out.old = a;
+    else if (!out.new) out.new = a;
+    else return { problem: `Two descriptions at most: ${out.old} and ${out.new}, then ${a}?` };
+  }
+  if (out.format === 'both') return { problem: '--json or --markdown, not both' };
+  return out;
+}
+
+/** Runs `args` (what follows `hail openapi-diff`), resolving with the exit code. */
+export async function runOpenapiDiff(args, { print = console.log, printError = console.error, cwd = process.cwd(), run, fetch = globalThis.fetch, color = false } = {}) {
+  const a = diffArgs(args);
+  if (a.problem) {
+    printError(`${a.problem}\n\n${DIFF_USAGE}`);
+    return 2;
+  }
+  if (a.help) {
+    print(DIFF_USAGE);
+    return 0;
+  }
+  const sources = diffSources(a.old, a.new);
+  if (sources.problem) {
+    printError(`${sources.problem}\n\n${DIFF_USAGE}`);
+    return 2;
+  }
+  const sides = [];
+  for (const source of [sources.old, sources.new]) {
+    try {
+      sides.push(await loadSpec(source, { cwd, fetch, ...(run ? { run } : {}) }));
+    } catch (e) {
+      printError(`${source}: ${e.message}`);
+      return 2;
+    }
+  }
+  const [oldSide, newSide] = sides;
+  const result = diffSpecs(oldSide.spec, newSide.spec);
+  const meta = { old: { source: oldSide.source, title: oldSide.title, version: oldSide.version, kind: oldSide.kind }, new: { source: newSide.source, title: newSide.title, version: newSide.version, kind: newSide.kind } };
+  if (a.format === 'json') print(JSON.stringify(diffJson(result, meta, a.failOn), null, 2));
+  else if (a.format === 'markdown') print(diffMarkdown(result, meta).trimEnd());
+  else print(plainReport(diffLines(result, meta), { color }));
+  return failingChanges(result.changes, a.failOn).length ? 1 : 0;
+}

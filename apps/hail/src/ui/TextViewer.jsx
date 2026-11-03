@@ -8,8 +8,9 @@ import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 /**
  * Text over the view (ctx.showText): a command's output, a past response, a diff. `lines` (rows of
  * segments) draws it in colour instead of `text`, which y still copies. Scrolls; esc or q closes it.
+ * `keys` adds keys of its own ({ m: () => … }), which `hint` names.
  */
-export function TextViewer({ title, text, lines: given, loading, ctx, width, height, active, onClose }) {
+export function TextViewer({ title, text, lines: given, loading, keys: more = {}, hint: extra, ctx, width, height, active, onClose }) {
   const innerW = width - 4;
   const innerH = height - 2;
   const lines = loading
@@ -32,6 +33,7 @@ export function TextViewer({ title, text, lines: given, loading, ctx, width, hei
     if (input === 'b' || key.pageUp || (key.ctrl && input === 'u')) return setTop(topRef.current - innerH + 1);
     if (input === 'g') return setTop(0);
     if (input === 'G') return setTop(max);
+    if (Object.hasOwn(more, input)) return more[input]();
     if (input === 'y') return ctx.copy(String(text ?? ''), `${lines.length} line${lines.length === 1 ? '' : 's'}`);
   };
   useInput(keys, { isActive: active });
@@ -42,7 +44,7 @@ export function TextViewer({ title, text, lines: given, loading, ctx, width, hei
   const shown = Math.min(top, max);
   const pos = lines.length > innerH ? `${shown + 1}-${Math.min(lines.length, shown + innerH)}/${lines.length} · ` : '';
   return (
-    <Panel title={title} hint={`${pos}esc close`} width={width} height={height} focused={active}>
+    <Panel title={title} hint={`${pos}${extra ? `${extra} · ` : ''}esc close`} width={width} height={height} focused={active}>
       {lines.slice(shown, shown + innerH).map((l, i) => (
         <Row key={i} pointer={false} width={width - 2} segments={[{ text: ' ' }, ...l]} />
       ))}

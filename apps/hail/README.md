@@ -34,6 +34,7 @@ hail              # the first .http (or .rest) file in this folder or the two be
 hail test api.http [--env dev] [--contract-strict]   # send them all without the screen and report (for CI)
 hail mock api.http [--port 4010] [--env dev]         # serve the responses kept for them, until ctrl+c
 hail security https://app.example [--json] [--sarif [file]] [--fail-on high]   # a security scan of an app you own
+hail openapi-diff git:main:openapi.yaml openapi.yaml [--fail-on breaking] [--json | --markdown]   # an API's breaking changes
 ```
 
 With none, `/new` writes an example to start from.
@@ -460,6 +461,63 @@ drifted has a `⚠` beside its status in Requests, and `/send all` lists the dif
 request. Drift isn't a failure: `hail test` reports it and still exits with 0, unless
 `--contract-strict` is given. It uses the contract set for the file, or `--contract <file or URL>`'s.
 
+### What changed in the API
+
+`/openapi-diff [old] [new]` compares two versions of an API's description (OpenAPI 3.0 or 3.1, or
+Swagger 2; JSON or YAML) and lists what changed for the clients of the old one, in three groups, each by
+operation: **breaking** (`✗`), what **may break** some of them (`!`), and what's **non-breaking** (`+`).
+Each is a file, a URL, or `git:<ref>:<path>`, the file as it is in that commit (read with `git show`).
+The new one is the file's contract (`/contract`) unless named; alone, `/openapi-diff` compares the
+contract as it is in git's `HEAD` with the file now, and `/openapi-diff git:main` with the contract on
+`main`. The changes open in the viewer; `m` copies them as Markdown for a pull request, `y` as text.
+
+`hail openapi-diff <old> [new]` does the same from the shell, for CI: it exits with 1 when a change is
+as bad as `--fail-on` (`breaking` unless said; `may-break` counts those too; `none` never fails), 0 when
+none is, and 2 when it couldn't run (a file that isn't there or isn't a description, a ref git doesn't
+have). `--markdown` prints it for a pull request's comment, `--json` for a program
+(`{ app, check: "openapi-diff", old, new, failOn, counts, failing, changes: [{ level, rule, operation,
+where, text }] }`). `git:<ref>:<path>` alone compares that file then and now, and `git:<ref>` with no
+path takes the other one's:
+
+```bash
+hail openapi-diff git:origin/main:api/openapi.yaml --markdown > api-changes.md
+```
+
+Operations are matched by method and path, a path's `{parameters}` by their place (renaming `{id}` to
+`{orderId}` changes nothing); `$ref`s are followed within the document (a schema that contains itself
+included), `allOf` is read as one schema, and `oneOf`/`anyOf` variants are paired by the `$ref` each is.
+Which way the data goes decides what breaks: what a client sends (parameters, the request body) breaks it
+when the new version accepts less; what it gets back (responses) breaks it when the new version may say
+more or something else.
+
+| Change | Request (parameters, body) | Response |
+| --- | --- | --- |
+| An operation removed | breaking | |
+| An operation added, or deprecated | non-breaking | |
+| A field (property) removed | may break (breaking when no others are allowed) | breaking |
+| A required field or parameter added | breaking | |
+| An optional field or parameter added | non-breaking | non-breaking |
+| Optional made required | breaking | non-breaking |
+| Required made optional | non-breaking | may break |
+| A narrower type (`number` to `integer`, no longer nullable), a smaller maximum or bigger minimum | breaking | non-breaking |
+| A wider type (`integer` to `number`, now nullable), a bigger maximum | non-breaking | breaking (bounds: may break) |
+| Another type (`string` to `integer`) | breaking | breaking |
+| An enum value removed, or an enum where there was none | breaking | non-breaking |
+| An enum value added | non-breaking | may break (a client that switches over the values) |
+| A `oneOf`/`anyOf` variant removed | breaking | non-breaking |
+| A variant added | non-breaking | may break |
+| A media type removed | breaking | breaking |
+| A success status removed / added | | breaking / may break |
+| An error status removed or added | | non-breaking |
+| Format or pattern changed | may break | may break (a format no longer promised) |
+
+And for an operation: a body or a parameter removed may break (the server may reject what's still sent),
+an `operationId` changed may break generated clients, security where there was none breaks (other
+security may break), and a changed base path (`basePath`, or the first server's path) breaks every
+operation. Each change carries a stable `rule` (`response-property-removed`, `request-enum-value-removed`,
+`security-added` …). Not compared: `$ref`s to other files, response headers, examples and descriptions,
+parameter styles, callbacks and webhooks.
+
 ### Cookies
 
 A response's `Set-Cookie` is kept, as a browser keeps it: for the site and path it names, until it
@@ -770,6 +828,7 @@ and Trawl.
 | `/move [folder]` | Work in another folder and open its first `.http` file: a path, or a folder beside this one (completed as you type); alone, a list of the folders used lately, then the ones beside this one (those with `.http` files in bold). `/open` and `/new` work from it |
 | `/mock [port\|off]` | Serve the responses kept for this file's requests (and the contract's examples) on `http://127.0.0.1:4010`, or stop it |
 | `/contract [file\|url\|off]` | Check every response against an OpenAPI or Swagger document, remembered for the file (`off` forgets it) |
+| `/openapi-diff [old] [new]` | What changed between two versions of an OpenAPI or Swagger description, breaking changes first (`m` copies it as Markdown): files, URLs or `git:<ref>:<path>`; the contract unless named, against git's `HEAD` alone |
 | `/find <text>` | Find text in the file, in Edit (`n` and `alt+n` go on to the next and the one before) |
 | `/auth [id\|clear]` | The environment's OAuth sign-ins and how each stands (`↵` signs in again, `x` forgets it); an id signs in with it; `clear` forgets them all |
 | `/secret [name]` | Save a secret in the system's store for `{{$secret name}}` (the saved ones, to replace or forget, if none is named) |

@@ -7,6 +7,7 @@ import { folderChoices, resolveFolder, samePath } from '@fleet/kit/folders.js';
 import { clip, draftPrompt, parseDraft } from './claude.js';
 import { configFile } from './config.js';
 import { driftSummary, loadContract } from './contract.js';
+import { countsLine, diffLines, diffMarkdown, diffSources, diffSpecs, diffText, loadSpec } from './openapi-diff.js';
 import { curlToHttp, parseCurl } from './curl.js';
 import { KIND_NAMES, importText } from './importers.js';
 import { DEFAULT_PORT, routesFor, startMock } from './mock.js';
@@ -27,7 +28,7 @@ import { parseTimeout } from './transport.js';
 import { nextTheme, settingRows, settingSegments } from './settings.js';
 import { applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
 import { checkLines, contractLines, statusColour } from './ui/response.js';
-import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, shareLine, trawlLine } from '@fleet/kit/family.js';
+import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, shareLine, splitArgs, trawlLine } from '@fleet/kit/family.js';
 import { fit, relTime, wrap as wrapText } from '@fleet/kit/text.js';
 import { countFindings, failingFindings, findingsLine } from '@fleet/kit/findings.js';
 import { SEVERITY_LABEL, authCandidates, findingText, runScan, sameHost, scanEstimate, scanMarkdown, scanSummary, scanUrl } from './scan.js';
@@ -825,6 +826,42 @@ export async function contract(ctx, rest) {
     },
     { label: 'Reading the contract' },
   );
+}
+
+/**
+ * /openapi-diff [old] [new]: what changed between two versions of an API's description, breaking
+ * changes first, in the viewer (m copies it as Markdown for a pull request). Each is a file, a URL or
+ * git:<ref>:<path>; the new one is the file's contract unless named, and with nothing named the old one
+ * is the contract as it was in git's HEAD.
+ */
+export async function openapiDiff(ctx, rest) {
+  const args = splitArgs(rest);
+  const contractSource = ctx.data ? ctx.contract().source : null;
+  // The contract is kept as an absolute path or a URL; git reads it as a file.
+  const fallback = args.length < 2 ? contractSource : null;
+  if (!args.length && !contractSource) return ctx.note(`${ctx.data ? `${ctx.data.name} has no contract to compare` : 'No file is open'}: /openapi-diff <old> <new> (a file, a URL or git:<ref>:<path>), or /contract <openapi file> first.`, 'error');
+  if (!args.length && /^https?:\/\//i.test(contractSource)) return ctx.note(`The contract is ${contractSource}, which isn't in git: /openapi-diff <old> to compare it with another.`, 'error');
+  const sources = diffSources(args[0] ?? 'git:HEAD', args[1], fallback);
+  if (sources.problem) return ctx.note(sources.problem, 'error');
+  const cwd = ctx.data?.dir ?? ctx.folder();
+  const sides = [];
+  const r = await ctx.task(
+    `OpenAPI diff ${[sources.old, sources.new].map((s) => (/^(git:|https?:)/i.test(s) ? s : relative(cwd, resolve(cwd, s)) || s)).join(' → ')}`,
+    async (signal) => {
+      for (const s of [sources.old, sources.new]) sides.push(await loadSpec(s, { cwd, signal }));
+      const result = diffSpecs(sides[0].spec, sides[1].spec);
+      sides.push(result);
+      return { stdout: countsLine(result.counts), worried: result.counts.breaking ? `${result.counts.breaking} breaking change${result.counts.breaking === 1 ? '' : 's'}` : undefined };
+    },
+    { label: 'Comparing the descriptions' },
+  );
+  if (!r?.ok) return r;
+  const [oldSide, newSide, result] = sides;
+  const shown = (side) => (/^(git:|https?:)/i.test(side.source) ? side.source : relative(cwd, resolve(cwd, side.source)) || side.source);
+  const meta = { old: { ...oldSide, source: shown(oldSide) }, new: { ...newSide, source: shown(newSide) } };
+  const lines = toned(diffLines(result, meta));
+  ctx.showText(`API changes: ${countsLine(result.counts)}`, diffText(result, meta), { lines, hint: 'm copy as Markdown', keys: { m: () => ctx.copy(diffMarkdown(result, meta), 'the changes as Markdown') } });
+  return r;
 }
 
 /** e and /env: the environment the variables come from, named or picked from a list. */
