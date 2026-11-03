@@ -97,14 +97,23 @@ function maskText(src, from = 0, stop = null) {
         } else j++;
       }
       fill(i, Math.min(j + 1, n));
-    } else {
+    } else if (stop) {
       out += ch;
       i++;
-      if (stop?.(i)) return { out, at: i };
+      if (stop(i)) return { out, at: i };
+    } else {
+      // Up to the next character that could start a run, kept as it is in one piece: a character
+      // at a time, a script of a megabyte or two took a few hundred milliseconds.
+      MAY_START.lastIndex = i + 1;
+      const next = MAY_START.exec(src)?.index ?? n;
+      out += src.slice(i, next);
+      i = next;
     }
   }
   return { out, at: n };
 }
+
+const MAY_START = /[-/'"[]/g;
 
 const GO_LINE = /^[ \t]*go(?:[ \t]+(\d+))?[ \t\u0001]*$/i;
 const hasCode = (masked) => /[^\s\u0001;]/.test(masked);
