@@ -121,7 +121,7 @@ const hasCode = (masked) => /[^\s\u0001;]/.test(masked);
 function lineIndex(src) {
   const starts = [0];
   for (let i = src.indexOf('\n'); i >= 0; i = src.indexOf('\n', i + 1)) starts.push(i + 1);
-  return (offset) => {
+  return Object.assign((offset) => {
     let lo = 0;
     let hi = starts.length - 1;
     while (lo < hi) {
@@ -130,10 +130,14 @@ function lineIndex(src) {
       else hi = mid - 1;
     }
     return lo + 1;
-  };
+  }, { count: starts.length });
 }
 
-const normalise = (text) => String(text ?? '').replace(/\r\n?/g, '\n');
+const normalise = (text) => {
+  const s = String(text ?? '');
+  // Most text has no \r, and looking for one is quicker than replacing nothing in a long script.
+  return s.includes('\r') ? s.replace(/\r\n?/g, '\n') : s;
+};
 
 /**
  * Splits a script into the batches SQL Server runs one at a time: `GO` on a line of its own
@@ -180,10 +184,11 @@ function isModuleHeader(words) {
  * A procedure, function, trigger or view runs on to the next `GO`, as SQL Server requires.
  * Each is { text, line, endLine, label }, with `label` the statement's first line of code.
  * The console asks this of the same text several times a keystroke (the gutter, the suggestions,
- * the syntax line), so the last answer is kept; callers only read it.
+ * the syntax line), so the last answer is kept; callers only read it. A long text is most often
+ * the last one after a key, so only the statements around the change are split again.
  */
 export function splitStatements(text) {
-  if (text !== lastSplit.text) lastSplit = { text, statements: split(text) };
+  if (text !== lastSplit.text) lastSplit = split(text, lastSplit);
   return lastSplit.statements;
 }
 
@@ -193,12 +198,86 @@ const WORD_AFTER = /[\s\u0001]*(\w+)/y;
 const wordStart = (c) => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 64 || c === 35;
 const wordChar = (c) => wordStart(c) || (c >= 48 && c <= 57) || c === 36;
 
-function split(text) {
+/**
+ * Where splitting `src` can start over from `before` (the last split, of a text that differs from it
+ * in one place): { lineStart, start, out, marks, resync }, or null when either is short.
+ *
+ * Splitting keeps `marks`, the line starts at which nothing is open ({ at, start, count }: `start`
+ * where the next statement starts, `count` the statements before it). From such a line on, the
+ * statements depend only on the text from there, so splitting resumes at the last one before the
+ * change, and `resync(at, start)` says, at each one after it, whether the rest is the old split's.
+ */
+function resumeFrom(before, src, m, lines) {
+  if (before.src == null || before.src.length < LONG || src.length < LONG) return null;
+  const old = before.src;
+  const oldMask = before.mask;
+  const n = Math.min(old.length, src.length);
+  // A character's mask depends on the text up to the one after it, so the masks agree up to the one
+  // before the first change; at the end they can differ for longer (a quote opened), so both are compared.
+  const p = Math.max(0, common(n, (k) => old.slice(0, k) === src.slice(0, k)) - 1);
+  const same = common(n - p, (k) => old.slice(old.length - k) === src.slice(src.length - k));
+  const tail = common(same, (k) => oldMask.slice(oldMask.length - k) === m.slice(m.length - k));
+  const shift = src.length - old.length;
+  const sameFrom = src.length - tail;
+  // The last mark before the change, whose line looks at nothing past it: the END on a line before
+  // a mark reads the next word (ELSE, TRY, CATCH), so the first line of code after it must be whole.
+  const settled = (at) => {
+    const code = m.slice(at, p).search(/[^\s\u0001]/);
+    if (code < 0) return false;
+    const nl = m.indexOf('\n', at + code);
+    return nl >= 0 && nl < p;
+  };
+  let k = before.marks.length - 1;
+  while (k >= 0 && (before.marks[k].at > p || !settled(before.marks[k].at))) k--;
+  // None: from the top, as a split from nothing does, though the rest can still be the old split's.
+  const from = k < 0 ? { at: 0, start: 0, count: 0 } : before.marks[k];
+  const lineShift = lines - before.lines;
+  return {
+    lineStart: from.at,
+    start: from.start,
+    out: before.statements.slice(0, from.count),
+    marks: before.marks.slice(0, Math.max(0, k)),
+    // Past the change, a mark the old split has at the same place: the rest of it, moved along.
+    resync(at, start, out, marks) {
+      if (start < sameFrom) return false;
+      const j = markAt(before.marks, at - shift);
+      if (j < 0 || before.marks[j].start !== start - shift) return false;
+      const count = before.marks[j].count;
+      const moved = out.length - count;
+      for (let i = count; i < before.statements.length; i++) {
+        const s = before.statements[i];
+        out.push(lineShift ? { ...s, line: s.line + lineShift, endLine: s.endLine + lineShift } : s);
+      }
+      for (let i = j; i < before.marks.length; i++) {
+        const mk = before.marks[i];
+        marks.push({ at: mk.at + shift, start: mk.start + shift, count: mk.count + moved });
+      }
+      return true;
+    },
+  };
+}
+
+// The index of the mark at `at`, or -1.
+function markAt(marks, at) {
+  let lo = 0;
+  let hi = marks.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (marks[mid].at === at) return mid;
+    if (marks[mid].at < at) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return -1;
+}
+
+function split(text, before = {}) {
   const src = normalise(text);
   const m = mask(src);
   const lineOf = lineIndex(src);
-  const out = [];
-  let start = 0;
+  const resume = resumeFrom(before, src, m, lineOf.count);
+  const out = resume?.out ?? [];
+  const marks = resume?.marks ?? [];
+  let start = resume?.start ?? 0;
   let paren = 0;
   let blocks = [];
   let whole = false;
@@ -230,8 +309,13 @@ function split(text) {
     words = [];
   };
 
-  // Line by line over the mask, a character code at a time: this runs over the whole console on every key.
-  for (let lineStart = 0; lineStart <= m.length; ) {
+  const done = () => ({ text, src, mask: m, lines: lineOf.count, statements: out, marks });
+  // Line by line over the mask, a character code at a time.
+  for (let lineStart = resume?.lineStart ?? 0; lineStart <= m.length; ) {
+    if (!paren && !blocks.length && !whole && !words.length) {
+      if (resume?.resync(lineStart, start, out, marks)) return done();
+      marks.push({ at: lineStart, start, count: out.length });
+    }
     const nl = m.indexOf('\n', lineStart);
     const lineEnd = nl < 0 ? m.length : nl;
     const off = lineEnd + 1;
@@ -287,7 +371,7 @@ function split(text) {
     lineStart = off;
   }
   flush(src.length);
-  return out;
+  return done();
 }
 
 /** The statement covering 1-based `line`, or the nearest one above it. */
