@@ -22,26 +22,39 @@ export const label = (p) => `${p.name}@${p.version}`;
 
 /**
  * What the Packages view lists: every package, the `direct` ones, the `outdated` ones (once /outdated has
- * asked), or the `flagged` ones (an advisory, a licence the config denies or a copyleft one, deprecated),
- * from `manifest` (a path) only when one is given. Direct ones first, then by name.
+ * asked), the `flagged` ones (an advisory, a licence the config denies or a copyleft one, deprecated, a
+ * supply-chain finding) or the `supply` ones (supply.js's findings), from `manifest` (a path) only when
+ * one is given. Direct ones first, then by name. A supply finding about a package Bilge doesn't read as
+ * one (Yarn's and pnpm's git and tarball dependencies) gets a row of its own under `supply`.
  */
-export function packageRows(packages, { filter = 'all', manifest = null, latest = null, found = [], deny = [] } = {}) {
+export function packageRows(packages, { filter = 'all', manifest = null, latest = null, found = [], deny = [], supply = [] } = {}) {
   const vulnerable = new Set(found.map((f) => f.key));
-  return packages
+  const flaggedSupply = new Set(supply.map((f) => f.key));
+  const known = new Set(packages.map((p) => p.key));
+  const unread = filter === 'supply' ? supplyOnlyRows(supply.filter((f) => !known.has(f.key))) : [];
+  return [...packages, ...unread]
     .filter((p) => !manifest || p.where.some((w) => w.path === manifest))
     .filter((p) => {
       if (filter === 'direct') return p.direct;
       if (filter === 'outdated') return Boolean(bumpOf(p.version, latest?.get(p.key)?.latest));
+      if (filter === 'supply') return flaggedSupply.has(p.key);
       if (filter === 'flagged') {
         const l = licenceOf(p, latest);
-        return vulnerable.has(p.key) || denied(l, deny) || licenceKind(l) === 'copyleft' || Boolean(latest?.get(p.key)?.deprecated);
+        return vulnerable.has(p.key) || flaggedSupply.has(p.key) || denied(l, deny) || licenceKind(l) === 'copyleft' || Boolean(latest?.get(p.key)?.deprecated);
       }
       return true;
     })
     .sort((a, b) => Number(b.direct) - Number(a.direct) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
-export const FILTERS = ['all', 'direct', 'outdated', 'flagged'];
+/** Rows for supply findings without a package: once per key, where the findings say. */
+function supplyOnlyRows(list) {
+  const out = new Map();
+  for (const f of list) if (!out.has(f.key)) out.set(f.key, { ecosystem: f.ecosystem, name: f.package, version: f.version, direct: false, dev: false, key: f.key, where: [{ path: f.where, ...(f.line ? { line: f.line } : {}) }], unread: true });
+  return [...out.values()];
+}
+
+export const FILTERS = ['all', 'direct', 'outdated', 'flagged', 'supply'];
 
 /** The findings the Vulnerabilities view lists: without the dev-only packages' unless `dev`. */
 export const findingRows = (found, { dev = true } = {}) => found.filter((f) => dev || !f.pkg.dev);

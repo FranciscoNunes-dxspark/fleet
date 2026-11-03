@@ -235,3 +235,34 @@ test('bilge security: the audit, the code and the supply chain in the family\'s 
   assert.match(out, /^17 packages in 3 manifests, 7 files read under /);
   assert.match(out, /CRIT AWS access key {2}src\/config\.js:1/);
 });
+
+test('the Packages view: /packages supply lists them, ↵ says what, x ignores one; /sarif writes them all', async () => {
+  const app = start();
+  await until(shows(app, 'minimist@1.2.5'), 'the findings');
+  await type(app.stdin, '/packages supply');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, '3 supply'), 'the supply ones');
+  const frame = app.lastFrame();
+  assert.match(frame, /crossenv .*typo\?/);
+  assert.match(frame, /esbuild .*script/);
+  assert.match(frame, /left-pad .*source/);
+  assert.ok(!frame.includes('lodash'));
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'Supply chain:'), 'the details');
+  assert.match(app.lastFrame(), /crossenv looks like cross-env/);
+  app.stdin.write(KEYS.esc);
+  await until(() => !app.lastFrame().includes('Supply chain:'), 'the list again');
+  app.stdin.write('x');
+  await until(shows(app, 'Ignore 2 supply-chain findings on crossenv?'), 'the question');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, '2 supply'), 'one fewer');
+  assert.doesNotMatch(app.lastFrame(), /crossenv +7\.0\.3/);
+  await type(app.stdin, '/sarif');
+  app.stdin.write(KEYS.enter);
+  await until(() => app.provider.state.written?.path?.endsWith('bilge.sarif'), 'the SARIF');
+  const sarif = JSON.parse(app.provider.state.written.text);
+  const rules = new Set(sarif.runs[0].results.map((r) => r.ruleId));
+  for (const id of ['GHSA-xvch-5gv4-984h', 'aws-key', 'install-script', 'not-from-registry']) assert.ok(rules.has(id), id);
+  assert.ok(!rules.has('typosquat'), 'what x ignored stays out');
+  app.unmount();
+});

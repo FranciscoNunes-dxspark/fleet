@@ -86,7 +86,7 @@ test('the Packages view: a changes what it lists, u asks the registries, outdate
   await until(shows(app, 'minimist@1.2.5'), 'the findings');
   app.stdin.write('2');
   await until(shows(app, '17 packages'), 'the packages');
-  assert.match(app.lastFrame(), /crossenv/);
+  assert.match(app.lastFrame(), /crossenv .*typo\?/);
   app.stdin.write('a');
   await until(shows(app, '8 direct'), 'the direct ones');
   assert.ok(!app.lastFrame().includes('minimist'));
@@ -97,7 +97,7 @@ test('the Packages view: a changes what it lists, u asks the registries, outdate
   await type(app.stdin, '/packages flagged');
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'ghostscript-js'), 'the flagged ones');
-  assert.match(app.lastFrame(), /8 flagged/);
+  assert.match(app.lastFrame(), /11 flagged/);
   assert.match(app.lastFrame(), /lodash .*HIGH/);
   await type(app.stdin, '/outdated all');
   app.stdin.write(KEYS.enter);
