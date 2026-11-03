@@ -319,7 +319,7 @@ test('an IIS site\'s build runs with app_offline.htm in its folder, and its logs
   const crew = readSpec({ procs: { shop: { iis: { site: 'Shop', build: check } } } }).procs;
   const sup = new Supervisor(crew, { dir: temp(), iis: fake.control, iisTimes: { every: 20, tailEvery: 20 } });
   const p = sup.get('shop');
-  sup.start('shop');
+  sup.start('shop', { build: true });
   await until(() => p.status === 'running' && p.pid, 'the built site');
   assert.match(said(p), /── build: node -e[^\n]*\noffline during the build\n── built\n── started Shop/);
   assert.equal(existsSync(join(site, 'app_offline.htm')), false);
@@ -332,6 +332,8 @@ test('an IIS site\'s build runs with app_offline.htm in its folder, and its logs
   writeFileSync(join(site, 'app_offline.htm'), 'mine');
   p.spec.iis.build = 'node -e "process.exit(3)"';
   await sup.restart('shop');
+  assert.doesNotMatch(said(p), /the build failed/, 'a plain restart does not build');
+  await sup.restart('shop', { build: true });
   assert.match(said(p), /── the build failed \(exit 3\)\n── the site still runs what was built before\n── recycled ShopPool/);
   assert.equal(existsSync(join(site, 'app_offline.htm')), true, "an app_offline.htm that was there stays");
   sup.dispose();
@@ -348,14 +350,29 @@ test('"build" runs before "run", which runs only when it passed; "logs" are foll
   }).procs;
   const { tailLogs: tail } = await import('../src/tail.js');
   const sup = new Supervisor(crew, { dir, tail: (patterns, opts) => tail(patterns, { ...opts, every: 20 }) });
-  sup.start('ok');
-  sup.start('broken');
+  sup.start('ok', { build: true });
+  sup.start('broken', { build: true });
   await until(() => /built it/.test(said(sup.get('ok'))), 'the build');
   appendFileSync(join(dir, 'app.log'), 'from the file\n');
   await until(() => /from the file/.test(said(sup.get('ok'))), 'the log file');
   assert.doesNotMatch(said(sup.get('ok')), /\bold\b/);
   await until(() => sup.get('broken').status === 'crashed', 'the broken build');
   assert.doesNotMatch(said(sup.get('broken')), /^ran anyway$/m);
+  await sup.stopAll();
+  sup.dispose();
+});
+
+test('a plain start and restart skip "build"; only a start asked to build runs it', async () => {
+  const crew = readSpec({ procs: { api: { run: 'node -e "setTimeout(() => {}, 60000)"', build: 'node -e "console.log(\'built it\')"' } } }).procs;
+  const sup = new Supervisor(crew, { dir: temp() });
+  const p = sup.get('api');
+  sup.start('api');
+  await until(() => p.status === 'running', 'the plain start');
+  assert.doesNotMatch(said(p), /built it/);
+  await sup.restart('api');
+  assert.doesNotMatch(said(p), /built it/);
+  await sup.restart('api', { build: true });
+  await until(() => /built it/.test(said(p)), 'the build');
   await sup.stopAll();
   sup.dispose();
 });

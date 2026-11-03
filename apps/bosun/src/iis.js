@@ -457,10 +457,11 @@ const OFFLINE = '<!doctype html><title>Building</title><p>Bosun is building this
  * 'site' says the binding (port, host, scheme) once the site has been read.
  */
 export class IisChild extends EventEmitter {
-  constructor(spec, { control, dir, env = process.env, spawnImpl = spawn, every = 2000, eventsEvery = 10_000, tailEvery = 1000, tail = tailLogs, now = Date.now, readFile = (f) => readFileSync(f, 'utf8'), settings = () => {} }) {
+  constructor(spec, { control, dir, env = process.env, spawnImpl = spawn, every = 2000, eventsEvery = 10_000, tailEvery = 1000, tail = tailLogs, now = Date.now, readFile = (f) => readFileSync(f, 'utf8'), settings = () => {}, build = false }) {
     super();
     // `settings(folder)` writes the site's appSettings file from its settings (the supervisor's writeSettings).
-    Object.assign(this, { spec, iis: spec.iis, control, dir, env, spawnImpl, every, eventsEvery, tailEvery, tail, now, readFile, settings });
+    // `build`: this start builds first (with "build"); a plain start and a restart don't.
+    Object.assign(this, { spec, iis: spec.iis, control, dir, env, spawnImpl, every, eventsEvery, tailEvery, tail, now, readFile, settings, withBuild: build });
     this.stdout = new PassThrough();
     this.stderr = new PassThrough();
     this.pid = null;
@@ -491,7 +492,7 @@ export class IisChild extends EventEmitter {
       this.emit('site', { id: site.id, pool: this.pool, physicalPath: site.physicalPath, binding });
       if (this.stopping) return this.end(null);
       this.adopted = site.state === 'Started' && pool.state === 'Started';
-      if (this.iis.build && !(await this.build())) return this.end(1);
+      if (this.withBuild && this.iis.build && !(await this.build())) return this.end(1);
       // A site already running reads its appSettings file again only when its pool recycles.
       if (this.settings(site.physicalPath) && this.adopted) await this.control.recycle(this.pool).catch(() => {});
       if (this.stopping) return this.end(null);
@@ -667,9 +668,9 @@ export class IisChild extends EventEmitter {
     });
   }
 
-  /** r and a watched change: build again (with "build"), then recycle the pool. Resolves whether it built. */
-  async recycle() {
-    const built = this.iis.build ? await this.build() : true;
+  /** r and a watched change recycle the pool; `build` (b) builds again first, with "build". Resolves whether it built. */
+  async recycle(build = false) {
+    const built = build && this.iis.build ? await this.build() : true;
     if (this.closed || this.stopping) return built;
     if (!built) this.warn('── the site still runs what was built before');
     this.settings(this.site?.physicalPath);

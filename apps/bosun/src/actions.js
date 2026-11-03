@@ -78,6 +78,29 @@ export async function restart(ctx, name) {
   await ctx.crew.restart(p.name);
 }
 
+/** b and /build: like restart (or start, when it isn't running), but builds first, with "build". */
+export async function build(ctx, name) {
+  if (String(name).trim() === 'all' || !String(name).trim()) {
+    if (!ctx.crew) return;
+    ctx.note('Building and restarting every process');
+    ctx.activity('Rebuilt and restarted the crew');
+    await ctx.crew.stopAll();
+    return ctx.crew.startAll({ build: true });
+  }
+  const g = group(ctx, name);
+  if (g) {
+    ctx.note(`Building and restarting ${g.group}: ${g.names.join(', ')}`);
+    ctx.activity(`Rebuilt and restarted ${g.group} (${g.names.join(', ')})`);
+    await Promise.all(g.names.map((n) => ctx.crew.stop(n, { keepWatching: true })));
+    return ctx.crew.startAll({ only: g.names, build: true });
+  }
+  const p = proc(ctx, name);
+  if (!p) return false;
+  if (!p.spec.build && !p.spec.iis?.build) return ctx.note(`${p.name} has no "build" in bosun.json, so there is nothing to build.`);
+  ctx.activity(`Rebuilt and restarted ${p.name}`);
+  await ctx.crew.restart(p.name, { build: true });
+}
+
 /** /stop: one process, a group, or `all`. */
 export async function stop(ctx, name) {
   if (String(name).trim() === 'all') {

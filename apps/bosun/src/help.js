@@ -32,6 +32,7 @@ export const HELP = [
     views: ['crew'],
     rows: [
       ['r', 'Restart it'],
+      ['b', 'Build it (its "build"), then restart it, or start it'],
       ['alt+r', 'Restart them all (each after the one it waits for)'],
       ['s', 'Stop it, or start it; while it waits to restart ("restart" in bosun.json), it won\'t'],
       ['a', 'Every process\'s log at once, or back to the one'],
