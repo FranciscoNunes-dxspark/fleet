@@ -9,6 +9,7 @@ import { readProject } from '@fleet/kit/environments.js';
 export const COMMANDS = [
   { name: 'restart', args: '[name|group|all]', desc: 'Restart a process, a group, or all of them', complete: 'targets', run: (ctx, s) => a.restart(ctx, s || 'all') },
   { name: 'stop', args: '<name|group|all>', desc: 'Stop a process (or a group) and what it started', complete: 'targets', run: (ctx, s) => a.stop(ctx, s) },
+  { name: 'build', args: '[name|group|all]', desc: 'Build, then restart (or start) a process, a group, or all of them', complete: 'targets', run: (ctx, s) => a.build(ctx, s || 'all') },
   { name: 'start', args: '[name|group|all]', desc: 'Start a process, a group, or all that aren\'t running', complete: 'targets', run: (ctx, s) => a.start(ctx, s) },
   { name: 'log', args: '<name>', desc: 'Everything a process has said', complete: 'procs', run: (ctx, s) => a.showLog(ctx, s) },
   { name: 'save-log', args: '<name> [file]', desc: 'Write a process\'s log to a file (name.log unless given)', complete: 'procs', run: (ctx, s) => a.saveLog(ctx, s) },
