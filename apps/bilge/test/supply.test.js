@@ -232,7 +232,7 @@ test('bilge security: the audit, the code and the supply chain in the family\'s 
   assert.deepEqual(provider.state.calls.find((c) => c[0] === 'audit').at(-1), 'fresh');
   out = '';
   assert.equal(await runHeadless(['security', '.', '--fail-on', 'none'], { provider: demoBilge(), write: (s) => (out += s) }), 0);
-  assert.match(out, /^17 packages in 3 manifests, 7 files read under /);
+  assert.match(out, /^17 packages in 3 manifests, 10 files read under /);
   assert.match(out, /CRIT AWS access key {2}src\/config\.js:1/);
 });
 

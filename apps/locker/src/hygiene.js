@@ -9,7 +9,7 @@
 // already holds, never by reading a vault secret's value. A finding is findings.js's shape and never
 // holds a value: what was seen is cut to its first characters (codescan.js's `redact`), and a value is
 // compared with another only by drift.js's keyed hash, made before it gets here.
-import { RULES, redact } from '@fleet/kit/codescan.js';
+import { RULES, frontendLeak, redact } from '@fleet/kit/codescan.js';
 import { sortFindings } from '@fleet/kit/findings.js';
 import { isSecretName } from '@fleet/kit/family.js';
 import { isReference, normKey, parseReference, vaultName } from './keys.js';
@@ -458,6 +458,41 @@ export function sharedSecretFindings(holders = []) {
   return out;
 }
 
+// ——— Secrets the browser gets ———
+
+/**
+ * The folder's .env files read for variables a bundler writes into the browser's code (VITE_,
+ * NEXT_PUBLIC_, REACT_APP_ …) holding a secret: the kit's `frontendLeak` judges each, the one judge
+ * Bilge's Code view uses too. Tracked by git or not, as the build reads both; example files are left
+ * out, as their values are placeholders. High: every visitor of the built site has the value.
+ */
+export function frontendFindings(sources = [], { rel = (f) => f } = {}) {
+  const out = [];
+  for (const s of sources) {
+    if (s.kind !== 'env' || isExampleSource(s)) continue;
+    const path = rel(s.file);
+    for (const e of s.entries ?? []) {
+      const leak = frontendLeak(e.key, e.value);
+      if (!leak) continue;
+      out.push({
+        rule: 'frontend-secret',
+        severity: 'high',
+        kind: 'secret',
+        scope: 'file',
+        key: e.key,
+        source: s.id,
+        title: 'Secret in a browser variable',
+        where: path,
+        ...(e.line ? { line: e.line } : {}),
+        why: `The bundler writes ${leak.prefix} variables into the JavaScript every visitor downloads, and ${e.key} holds ${leak.what}: anyone can read it in the site's sources.`,
+        fix: `Keep it on the server: rename it without ${leak.prefix} and read it in an API route or server function, then rotate it, as every build since it was set has published it.`,
+        excerpt: `${e.key}=${redact(String(e.value ?? '').trim())}`,
+      });
+    }
+  }
+  return out;
+}
+
 /**
  * Every hygiene finding, worst first, from what was read (security.js's readHygiene): { vaults: [{
  * vault, secrets, certificates }], sites: [{ site, settings, strings }], local: sources, tracked,
@@ -469,6 +504,7 @@ export function hygieneFindings(read, { now = Date.now() } = {}) {
     ...(read.vaults ?? []).flatMap((v) => [...vaultPostureFindings(v.vault), ...vaultItemFindings(v, { use, now })]),
     ...settingFindings(read.sites ?? [], { vault: read.vault }),
     ...localFindings(read.local ?? [], { tracked: read.tracked, rel: read.rel }),
+    ...frontendFindings(read.local ?? [], { rel: read.rel }),
     ...sharedSecretFindings(read.holders ?? []),
   ]);
 }
