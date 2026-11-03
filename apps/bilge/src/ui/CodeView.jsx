@@ -9,7 +9,7 @@ import { fit } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
-const KIND = { secret: 'secret', code: 'code  ', config: 'config' };
+const KIND = { secret: 'secret', code: 'code  ', config: 'config', i18n: 'i18n  ' };
 
 /** What /code found in the folder's own files, worst first: severity, kind, what, where, the line (a secret cut short). */
 export function CodeView({ code, found, counts, ctx, width, height, active }) {

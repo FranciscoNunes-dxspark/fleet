@@ -21,7 +21,7 @@ import { bumpOf } from './versions.js';
 import { nodeOf, problems, targetsOf } from './compat.js';
 import { branchName, folderLabel, upgradeCandidates } from './upgrade.js';
 import { breakingInput, breakingPrompt } from './breaking.js';
-import { findingWhere, withoutIgnoredCode } from '@fleet/kit/codescan.js';
+import { I18N_DEFAULTS, findingWhere, withoutIgnoredCode } from '@fleet/kit/codescan.js';
 import { auditFindings, codeFindings, sarifOf } from './security.js';
 import { VERSION } from './app.js';
 
@@ -496,7 +496,7 @@ export async function code(ctx) {
   const r = await ctx.task(
     `code ${basename(dir) || dir}`,
     async (signal) => {
-      const result = await ctx.provider.code(dir, { signal, onProgress: (n) => ctx.progress(`${n} files`) });
+      const result = await ctx.provider.code(dir, { signal, onProgress: (n) => ctx.progress(`${n} files`), i18n: ctx.config.i18n });
       ctx.setCode(result);
       const shown = codeFound(ctx);
       const line = countLine(counts(shown));
@@ -685,6 +685,7 @@ export function settings(ctx) {
       `Ignored          ${(c.ignore ?? []).join(', ') || 'none'}       /ignore, /unignore`,
       `Licences flagged ${(c.deny ?? []).join(', ') || 'none'}       /deny`,
       `Code ignored     ${(c.codeIgnore ?? []).join(', ') || 'none'}       x in Code; "codeIgnore" in the file`,
+      `Translations     ${c.i18n === false ? 'off' : `${(c.i18n?.functions ?? I18N_DEFAULTS.functions).join(' ')}() against ${(c.i18n?.locales ?? I18N_DEFAULTS.locales).join(', ')}/, keys in ${c.i18n?.source ?? I18N_DEFAULTS.source}`}       "i18n" in the file: { "locales": [...], "functions": [...], "source": "en" }, or false`,
       `Supply ignored   ${(c.supplyIgnore ?? []).join(', ') || 'none'}       x in Packages; "supplyIgnore" in the file (a rule, a package, or rule:package)`,
       `Update checks    ${on(c.checkForUpdates)}       "checkForUpdates" in the file`,
       `Auto-update      ${on(c.autoUpdate)}       "autoUpdate" in the file`,

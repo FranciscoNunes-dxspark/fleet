@@ -74,7 +74,7 @@ To try accounts and roles on demo data, set `AUTH_MODE=login` and `AZDO_MOCK=1`.
 - English source text is the key: `t('Save changes')`, `t('{n} items', { n })`, `tj(...)` when React elements go in placeholders, and `tx(text)` for strings the server sent (exact match first, then `{placeholder}` templates).
 - Portuguese lives in `client/src/locales/pt/<area>.js`, merged in `locales/pt.js` (later files win on duplicates). Server-sent sentences go in `locales/pt/server.js`; only those are used as `tx()` templates.
 - The server reuses the same dictionaries via `server/i18n.js` for Teams and Slack posts.
-- Every new or changed UI string needs its pt-PT entry. Check with `scripts/missing-pt.mjs`.
+- Every new or changed UI string needs its pt-PT entry. Check with `scripts/missing-pt.mjs`; `test/i18n-coverage.test.js` checks every file at once with the kit's translation check (`codescan.js` `i18nFindings`, Bilge's Code view), and fails on a missing one. Bilge's `/code` also lists translations nothing uses and JSX text outside `t()`.
 
 ## Conventions
 

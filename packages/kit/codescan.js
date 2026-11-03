@@ -359,6 +359,318 @@ export function fileFindings(path, { ignored = () => false } = {}) {
   return out;
 }
 
+// ——— Translation coverage ———
+//
+// Unlike the rules above, this reads across files: the keys code passes to t() (and its kin) against
+// the translations in a locale folder (locales/pt/*.js, i18n/pt.json, Strings.pt-PT.resx), so a pass
+// over the whole folder (`i18nCollector`, fed every file by scanCode) finds what no line alone can: a
+// key some language has no translation for, a translation nothing uses any more, and text in JSX
+// that never went through t(). The defaults follow Keel's web app (English text as the key, European
+// Portuguese in client/src/locales/pt/); Bilge's settings change them.
+
+/** The translation check's defaults: the folders translations live in, the functions code translates with, the language the code is written in. */
+export const I18N_DEFAULTS = { locales: ['locales', 'locale', 'i18n', 'lang', 'langs', 'translations', 'messages'], functions: ['t', 'tj', '$t', 'i18n.t'], source: 'en' };
+
+const LANG = /^[a-z]{2,3}(?:[-_][A-Za-z]{2,4})?$/;
+// Files whose keys are used (and whose strings may name a key): code, Razor views.
+const UI_CODE = /\.(m?[jt]sx?|cjs|cts|mts|vue|svelte|astro|cs|vb|cshtml|razor)$/i;
+const JSX = /\.(jsx|tsx)$/i;
+
+/**
+ * The language a file of translations is for, or null: `<locales>/<lang>/<any>.{js,ts,json}`,
+ * `<locales>/<lang>.{js,ts,json}` (`locales` the folder names), and `Name.<lang>.resx`, a `Name.resx`
+ * being the source language's.
+ */
+export function localeOf(path, { locales = I18N_DEFAULTS.locales, source = I18N_DEFAULTS.source } = {}) {
+  const parts = String(path).split('/');
+  const name = parts.at(-1);
+  const resx = /^[^.]+(?:\.[^.]+)*?(?:\.([a-z]{2,3}(?:-[A-Za-z]{2,4})?))?\.resx$/i.exec(name);
+  if (resx) return resx[1] ?? source;
+  if (!/\.(json|[mc]?[jt]s)$/i.test(name)) return null;
+  const folders = new Set(locales.map((l) => l.toLowerCase()));
+  let at = -1;
+  parts.forEach((p, i) => {
+    if (i < parts.length - 1 && folders.has(p.toLowerCase())) at = i;
+  });
+  if (at < 0) return null;
+  const rest = parts.slice(at + 1);
+  const lang = rest.length === 1 ? name.replace(/\.[^.]+$/, '') : rest[0];
+  return LANG.test(lang) ? lang : null;
+}
+
+const unescape = (s) => s.replace(/\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/g, (m, c) => (c[0] === 'u' && c.length > 1 ? String.fromCodePoint(parseInt(c.replace(/[u{}]/g, ''), 16)) : c[0] === 'x' && c.length === 3 ? String.fromCharCode(parseInt(c.slice(1), 16)) : ({ n: '\n', t: '\t', r: '\r' })[c] ?? c));
+// A key and a string compared for use: placeholders as one, whatever their names ({n} and ${count}).
+const usageForm = (s) => s.replace(/\$\{[^}]*\}|\{\{?\s*[\w.]*\s*\}?\}/g, '{}');
+
+/** A translation file's entries: [{ key, line, empty }]. JSON nested keys are joined with dots; a JS file's `'key': 'value'` lines; a .resx's <data name="…">. */
+export function translationEntries(path, text) {
+  const out = [];
+  const lines = String(text).split(/\r?\n/);
+  if (/\.resx$/i.test(path)) {
+    const data = /<data\s+name="([^"]+)"[^>]*>/g;
+    lines.forEach((l, i) => {
+      for (const m of l.matchAll(data)) {
+        // Forms' own entries ($this.Text, >>button1.Name) aren't text to translate.
+        if (/^[$>]|\.(?:Name|Type|Parent|ZOrder|Location|Size|TabIndex|Anchor)$/.test(m[1])) continue;
+        const rest = lines.slice(i, i + 4).join('\n');
+        out.push({ key: m[1], line: i + 1, empty: /<value\s*\/>|<value>\s*<\/value>/.test(rest.split('</data>')[0]) });
+      }
+    });
+    return out;
+  }
+  if (/\.json$/i.test(path)) {
+    let doc;
+    try {
+      doc = JSON.parse(text);
+    } catch {
+      return out;
+    }
+    // The line of each key: the first `"leaf":` from its parent's line on.
+    const lineOf = (leaf, from) => {
+      const quoted = JSON.stringify(leaf);
+      for (let i = from; i < lines.length; i++) if (lines[i].includes(`${quoted}`) && /:/.test(lines[i].slice(lines[i].indexOf(quoted) + quoted.length))) return i;
+      return from;
+    };
+    const walk = (obj, prefix, from) => {
+      for (const [k, v] of Object.entries(obj ?? {})) {
+        const at = lineOf(k, from);
+        const key = prefix ? `${prefix}.${k}` : k;
+        if (v && typeof v === 'object' && !Array.isArray(v)) walk(v, key, at);
+        else out.push({ key, line: at + 1, empty: v === '' || v == null });
+      }
+    };
+    if (doc && typeof doc === 'object') walk(doc, '', 0);
+    return out;
+  }
+  const entry = /^\s*(?:(['"`])((?:\\.|(?!\1)[^\\])*)\1|([A-Za-z_$][\w$]*))\s*:\s*(?:(['"`])((?:\\.|(?!\4)[^\\])*)\4|(['"`]))?/;
+  lines.forEach((l, i) => {
+    const m = entry.exec(l);
+    // A key with a string value (or one starting on this line); not `case 'x':` nor a nested object.
+    if (!m || (!m[4] && !m[6]) || /^\s*(case|default)\b/.test(l)) return;
+    out.push({ key: unescape(m[2] ?? m[3]), line: i + 1, empty: m[4] ? m[5] === '' : false });
+  });
+  return out;
+}
+
+const jsString = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g;
+const quoted = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"/g;
+
+/** The keys a line of code translates: [string], from `fn('…')` for each of `functions`, and .NET's `Localizer["…"]`. */
+function usesIn(line, functions) {
+  const out = [];
+  for (const m of line.matchAll(functions)) {
+    const s = m[1] ?? m[2] ?? m[3] ?? m[4];
+    if (s !== undefined && !(m[3] !== undefined && m[3].includes('${'))) out.push(unescape(s));
+  }
+  return out;
+}
+
+// Text in JSX a person reads: between tags, or in an attribute people read.
+const TAG_TEXT = /<(\/?)([A-Za-z][\w.:-]*)((?:\s+(?:[^<>"'{}]|"[^"]*"|'[^']*'|\{(?:[^{}]|\{[^{}]*\})*\})*)?)\s*>([^<>{}]+)(?=<|\{|$)/g;
+// Markup whose text is code, a command or a unit, not words to translate.
+const CODE_TAG = /^(?:code|kbd|pre|samp|var)$/i;
+const AFTER_EXPR = /\}([^<>{}]+)(?=<\/[A-Za-z])/g;
+const SEEN_ATTR = /\b(?:placeholder|title|alt|aria-label|label|tooltip|helperText)="([^"]*)"/g;
+const ENTITIES = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", hellip: '…', mdash: '—', ndash: '–', middot: '·', rarr: '→', larr: '←', copy: '©' };
+
+const plainForm = (s) => s.replace(/&(\w+);/g, (m, e) => ENTITIES[e] ?? ' ').replace(/\s+/g, ' ').trim();
+
+/** Whether `s` could be words at all: letters, not a unit or an abbreviation (ms, kB), not one token of code (onClick, src/app.js, a URL). */
+function maybeText(s) {
+  const text = plainForm(s);
+  if (!/[a-z]{2}/.test(text) || /^[a-zA-Z]{1,3}$/.test(text)) return false;
+  const words = text.split(' ').filter((w) => /[A-Za-z]/.test(w));
+  return !(words.length === 1 && /[a-z][A-Z]|^[a-z]+[-_./][a-z]|\.\w+$|^https?:/.test(words[0]));
+}
+
+/**
+ * Whether `s` is surely text for a person to read in their language: words in lower case, not a
+ * name (Keel, Azure DevOps), a number or a symbol. A word or two in capitals alone (Close, Pull
+ * Request) could be a name too: the check counts one only when the project translates it elsewhere.
+ */
+export function isUserText(s) {
+  if (!maybeText(s)) return false;
+  const words = plainForm(s).split(' ').filter((w) => /[A-Za-z]/.test(w));
+  return !words.every((w) => /^[^a-z]*[A-Z]/.test(w) || /^(?:of|and|for|the|by|on|in|to|de|da|do)$/.test(w));
+}
+
+/** Plain text in one JSX line (with the lines around it), not passed through a translation function: [{ text, sure }]. */
+function plainTextIn(line, prev, next) {
+  const out = [];
+  const add = (s) => {
+    const t = s.trim();
+    if (t && maybeText(t)) out.push({ text: plainForm(t), sure: isUserText(t) });
+  };
+  for (const m of line.matchAll(TAG_TEXT)) {
+    const [, closing, tag, attrs, text] = m;
+    if (!closing && (CODE_TAG.test(tag) || /\bclassName="[^"]*\b(?:mono|code|kbd)\b/.test(attrs))) continue;
+    // A comparison (`a > b`) or an arrow (`=>`) around the text means it's code, not markup.
+    if (/^\s*(?:&&|\|\||\?|:|\)|=|;)/.test(text) || /(?:&&|\|\||[=;(?:])\s*$/.test(text)) continue;
+    add(text);
+  }
+  for (const m of line.matchAll(AFTER_EXPR)) add(m[1]);
+  for (const m of line.matchAll(SEEN_ATTR)) add(m[1]);
+  // A line of bare text between a tag's end and a tag or an expression (text that wraps in the source).
+  const bare = line.trim();
+  if (/^[A-Za-z][^<>{}=;"'`()]*$/.test(bare) && /(?:^|[^=])>\s*$/.test(prev.trim()) && /^(?:<|\{)/.test(next.trim())) add(bare);
+  return out;
+}
+
+/**
+ * The translation check, fed one file at a time (`add(path, text)`, as scanCode walks) and judged at
+ * the end (`findings()`): a key used in code (`t('Save changes')`) with no translation in a language
+ * that has a locale folder (medium, `i18n-missing`), a key a source-language file has that another
+ * language's lacks (medium, `i18n-missing`), a translation no code uses (no string in the code is its
+ * key: low, `i18n-unused`) and text in JSX not passed through one of `functions` (low,
+ * `i18n-plain-text`). Nothing is found where there are no translations. Tests and fixtures are left out.
+ * Options: `locales` (folder names), `functions` (`t`, `$t`, `i18n.t` …), `source` (the language the
+ * keys are written in: its own file, when there is one, is checked like any other's).
+ */
+export function i18nCollector({ locales = I18N_DEFAULTS.locales, functions = I18N_DEFAULTS.functions, source = I18N_DEFAULTS.source } = {}) {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const call = `(?<![\\w$])(?:${functions.map(esc).join('|')})\\(\\s*(?:'((?:[^'\\\\\\n]|\\\\.)*)'|"((?:[^"\\\\\\n]|\\\\.)*)"|\`((?:[^\`\\\\]|\\\\.)*)\`)`;
+  const calls = new RegExp(`${call}|\\b[Ll]ocali[sz]er\\[\\s*"((?:[^"\\\\]|\\\\.)*)"\\s*\\]`, 'g');
+  // Whether a file translates at all: a call with any argument.
+  const callsOnly = new RegExp(`(?<![\\w$])(?:${functions.map(esc).join('|')})\\(`);
+  const folders = new Set(locales.map((l) => l.toLowerCase()));
+  // Each set of translations by the folder its app lives in: what holds the locale folder, less a src/
+  // or public/ (client for client/src/locales/pt/; a .resx's project, above its Resources/). Keys and text are
+  // looked for there, against that set: another app beside it (Keel's terminal app, English only) is
+  // not this one. `sets` maps that folder to Map(lang → Map(key → { path, line, empty })).
+  const sets = new Map();
+  const uses = []; // [key, path, line]
+  const strings = new Set(); // every string in the code, in usageForm
+  const plain = []; // { path, line, text, sure }
+  const used = new Set();
+  const translating = new Set(); // files that call a translation function
+  return {
+    add(path, text) {
+      // A test's or a fixture's translations and calls aren't the app's; their strings still count as
+      // using a key (a mock provider sends the server's sentences in demo mode).
+      const test = TESTISH.test(path);
+      const lang = test ? null : localeOf(path, { locales, source });
+      if (lang) {
+        const parts = path.split('/');
+        const at = parts.findLastIndex((p, i) => i < parts.length - 1 && folders.has(p.toLowerCase()));
+        const holder = /\.resx$/i.test(path) ? parts.slice(0, -1) : parts.slice(0, Math.max(0, at));
+        // The app, not the folder of its files: web for web/public/locales, client for client/src/locales.
+        while (holder.length && /^(?:src|public|static|assets|resources|app|wwwroot|lib)$/i.test(holder.at(-1))) holder.pop();
+        const scope = holder.join('/');
+        if (!sets.has(scope)) sets.set(scope, new Map());
+        const dicts = sets.get(scope);
+        if (!dicts.has(lang)) dicts.set(lang, new Map());
+        const d = dicts.get(lang);
+        for (const e of translationEntries(path, text)) if (!d.has(e.key)) d.set(e.key, { path, line: e.line, empty: e.empty });
+        return;
+      }
+      if (!UI_CODE.test(path)) return;
+      for (const m of String(text).matchAll(jsString)) {
+        const s = m[1] ?? m[2] ?? m[3];
+        if (s && s.length < 1000) strings.add(usageForm(unescape(s)));
+      }
+      // Strings inside a template's ${…} too, which the pass above took as part of the template.
+      for (const m of String(text).matchAll(quoted)) {
+        const s = m[1] ?? m[2];
+        if (s && s.length < 1000) strings.add(usageForm(unescape(s)));
+      }
+      if (test) return;
+      if (callsOnly.test(text)) translating.add(path);
+      const lines = String(text).split(/\r?\n/);
+      const jsx = JSX.test(path);
+      let inBlock = false;
+      lines.forEach((line, i) => {
+        if (line.length > MAX_LINE) return;
+        // Comments are left out: an example in one (`t('Save changes')`) is no use.
+        if (inBlock) {
+          if (line.includes('*/')) inBlock = false;
+          return;
+        }
+        if (/^\s*\/\*/.test(line) && !line.includes('*/')) {
+          inBlock = true;
+          return;
+        }
+        if (commentOnly(line) && !/^\s*\{?\s*\/\*.*\*\/\s*\}?\s*</.test(line)) return;
+        for (const key of usesIn(line, calls)) {
+          used.add(key);
+          uses.push([key, path, i + 1]);
+        }
+        if (jsx) for (const p of plainTextIn(line, lines[i - 1] ?? '', lines[i + 1] ?? '')) plain.push({ path, line: i + 1, ...p });
+      });
+    },
+    findings() {
+      const out = [];
+      if (!sets.size) return out;
+      // The set a file belongs to: the deepest folder holding it.
+      const scopes = [...sets.keys()].sort((a, b) => b.length - a.length);
+      const setOf = (path) => {
+        const s = scopes.find((x) => x === '' || path.startsWith(`${x}/`));
+        return s === undefined ? null : sets.get(s);
+      };
+      const fn = functions[0] ?? 't';
+      const cut = (s) => (s.length > 157 ? `${s.slice(0, 156)}…` : s);
+      const folderOf = (dicts, lang) => {
+        const any = dicts.get(lang).values().next().value?.path ?? '';
+        return any.split('/').slice(0, -1).join('/') || '.';
+      };
+      const lacks = (dicts, key, but) => [...dicts.keys()].sort().filter((l) => l !== but && (!dicts.get(l).get(key) || dicts.get(l).get(key).empty));
+      let n = 0;
+      const make = (rule, severity, title, path, line, excerpt, why, fix) => ({ key: `${rule}:${path}:${line}:${n++}`, rule, where: path, kind: 'i18n', severity, title, why, fix, path, line, excerpt: cut(excerpt), test: false });
+      // Keys the code uses that a language lacks (or has empty), said once a set, where first used.
+      // The source language needs no file (the key is its text); when it has one, it is checked too.
+      const said = new Map(); // set → Set(key)
+      for (const [key, path, line] of uses) {
+        const dicts = setOf(path);
+        if (!dicts) continue;
+        if (!said.has(dicts)) said.set(dicts, new Set());
+        if (said.get(dicts).has(key)) continue;
+        said.get(dicts).add(key);
+        const lacking = lacks(dicts, key);
+        if (!lacking.length) continue;
+        const where = lacking.map((l) => folderOf(dicts, l)).join(', ');
+        out.push(make('i18n-missing', 'medium', `No ${lacking.join(', ')} translation`, path, line, key, `${fn}() shows this text untranslated to everyone reading in ${lacking.join(' or ')}: nothing in ${where} has it.`, `Add ${JSON.stringify(key)} with its ${lacking.join(', ')} text to ${where}.`));
+      }
+      const isUsed = (key) => used.has(key) || strings.has(usageForm(key));
+      for (const dicts of sets.values()) {
+        const langs = [...dicts.keys()].sort();
+        // Keys the source language's own file has, that the code uses, which another language lacks.
+        for (const [key, e] of dicts.get(source) ?? []) {
+          if (said.get(dicts)?.has(key) || !isUsed(key)) continue;
+          const lacking = lacks(dicts, key, source);
+          if (lacking.length) out.push(make('i18n-missing', 'medium', `No ${lacking.join(', ')} translation`, e.path, e.line, key, `${e.path} has this key, and ${lacking.join(', ')} ${lacking.length === 1 ? 'has' : 'have'} no text for it.`, `Add ${JSON.stringify(key)} to ${lacking.map((l) => folderOf(dicts, l)).join(', ')}.`));
+        }
+        // Translations nothing uses: no call has the key, and no string in the code is it. A .resx's
+        // keys are properties in code (Strings.Hello), so they are never said to be unused.
+        const seen = new Set();
+        for (const lang of langs) {
+          for (const [key, e] of dicts.get(lang)) {
+            if (seen.has(key) || isUsed(key) || /\.resx$/i.test(e.path)) continue;
+            seen.add(key);
+            const elsewhere = langs.filter((l) => l !== lang && dicts.get(l).has(key));
+            out.push(make('i18n-unused', 'low', 'Translation no code uses', e.path, e.line, key, `No string in the code is this key${elsewhere.length ? ` (nor in ${elsewhere.join(', ')}'s)` : ''}: what it translated has changed or gone, or the key is made at run time.`, `Remove it from ${[lang, ...elsewhere].map((l) => folderOf(dicts, l)).join(', ')} if nothing builds the key at run time; if something does, ignore this finding.`));
+          }
+        }
+      }
+      // Text in JSX a person reads in one language only, in an app that translates: surely words, or a
+      // word or two the project translates elsewhere (Close).
+      for (const p of plain) {
+        const dicts = setOf(p.path);
+        if (!dicts || ![...translating].some((f) => setOf(f) === dicts)) continue;
+        if (!p.sure && ![...dicts.values()].some((d) => d.has(p.text))) continue;
+        const langs = [...dicts.keys()].sort();
+        out.push(make('i18n-plain-text', 'low', `Text not passed through ${fn}()`, p.path, p.line, p.text, `It shows as written to everyone, whatever language they chose (${langs.join(', ')} ${langs.length === 1 ? 'has' : 'have'} a locale folder).`, `Wrap it: {${fn}(${JSON.stringify(p.text)})}, and add its translations.`));
+      }
+      return out;
+    },
+  };
+}
+
+/** The translation check over files already read: [{ path, text }] → findings (i18nCollector's). */
+export function i18nFindings(files, options = {}) {
+  const c = i18nCollector(options);
+  for (const f of files) c.add(f.path, f.text);
+  return c.findings();
+}
+
 /** Worst first, then by file and line. */
 export const sortFindings = (list) => [...list].sort((a, b) => rank(a.severity) - rank(b.severity) || a.path.localeCompare(b.path) || a.line - b.line);
 
@@ -371,10 +683,12 @@ export const withoutIgnoredCode = (list, ignore = []) => {
 /**
  * Walks `root` (SKIP_DIRS left out, MAX_FILES at most, a file over 512 KB or with a NUL in its start
  * skipped) and reads every text file through the rules: { root, files, findings, truncated }. Reads
- * only; `signal` stops it between files, `onProgress(files)` says how far it has got.
+ * only; `signal` stops it between files, `onProgress(files)` says how far it has got. `i18n` is the
+ * translation check's options (`i18nCollector`'s), or false to leave it out.
  */
-export async function scanCode(root, { signal, onProgress, maxFiles = MAX_FILES } = {}) {
+export async function scanCode(root, { signal, onProgress, maxFiles = MAX_FILES, i18n = {} } = {}) {
   const findings = [];
+  const translations = i18n === false ? null : i18nCollector(i18n ?? {});
   let files = 0;
   let truncated = false;
   const ignoredBy = [];
@@ -430,9 +744,11 @@ export async function scanCode(root, { signal, onProgress, maxFiles = MAX_FILES 
       }
       if (ignoredEnv) findings.push(...scanText(path, text, { rules: FRONTEND_RULES }));
       else findings.push(...scanText(path, text), ...dockerFindings(path, text));
+      translations?.add(path, text);
     }
     if (truncated) break;
   }
+  if (translations) findings.push(...translations.findings());
   return { root, files, findings: sortFindings(findings), truncated, at: Date.now() };
 }
 

@@ -9,7 +9,7 @@ import { keyOf, mergePackages } from './lockfiles.js';
 import { testPlan } from './upgrade.js';
 import { imageManifest } from './image.js';
 import { nugetSupply, supplyFindings } from './supply.js';
-import { dockerFindings, fileFindings, gitignored, scanText, sortFindings } from '@fleet/kit/codescan.js';
+import { dockerFindings, fileFindings, gitignored, i18nFindings, scanText, sortFindings } from '@fleet/kit/codescan.js';
 
 const npm = (name, version, extra = {}) => ({ ecosystem: 'npm', name, version, direct: false, dev: false, ...extra });
 const nuget = (name, version, extra = {}) => ({ ecosystem: 'NuGet', name, version, direct: false, dev: false, ...extra });
@@ -154,12 +154,16 @@ const DEMO_FILES = {
   '.env': 'STRIPE_KEY=sk_test_51demo\n',
   // A secret the build writes into the browser's code, beside a publishable key that is meant to be there.
   'web/vite.config.js': `export default {\n  define: {\n    'import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY': JSON.stringify('pk_live_51demo'),\n    'import.meta.env.VITE_ADMIN_SECRET': JSON.stringify('${['q8ZtW2kP', '9xLmR4vN'].join('')}'),\n  },\n};\n`,
+  // The web front end's translations: a key with no Portuguese, one nothing uses, a sentence never passed through t().
+  'web/src/locales/pt/shop.js': "export default {\n  'Your basket': 'O seu cesto',\n  'Checkout': 'Finalizar compra',\n  'Free delivery this week': 'Entrega grátis esta semana',\n};\n",
+  'web/src/Basket.jsx': "export const Basket = () => (\n  <section>\n    <h2>{t('Your basket')}</h2>\n    <button>{t('Checkout')}</button>\n    <p>{t('Delivery in two days')}</p>\n    <p className=\"note\">Prices include VAT</p>\n  </section>\n);\n",
 };
 
-/** What codescan.js finds in DEMO_FILES, as the provider's `code` would on the disk. */
-export function demoCode(root) {
+/** What codescan.js finds in DEMO_FILES, as the provider's `code` would on the disk (`i18n` the translation check's options, or false). */
+export function demoCode(root, { i18n } = {}) {
   const ignored = gitignored(DEMO_FILES['.gitignore']);
   const findings = Object.entries(DEMO_FILES).flatMap(([path, text]) => [...fileFindings(path, { ignored }), ...scanText(path, text), ...dockerFindings(path, text)]);
+  if (i18n !== false) findings.push(...i18nFindings(Object.entries(DEMO_FILES).map(([path, text]) => ({ path, text })), i18n ?? {}));
   return { root, files: Object.keys(DEMO_FILES).length, findings: sortFindings(findings), truncated: false, at: Date.now() };
 }
 
@@ -244,9 +248,9 @@ export function demoBilge() {
       return imageManifest(ref, { db: { kind: 'dpkg', text: DEMO_DPKG }, osRelease: DEMO_OS_RELEASE });
     },
     /** The demo's own files, read for secrets and risky code (codescan.js's rules, on DEMO_FILES). */
-    async code(root) {
+    async code(root, { i18n } = {}) {
       state.calls.push(['code', root]);
-      return demoCode(root);
+      return demoCode(root, { i18n });
     },
     /** Where the demo's code imports a package: express in the server, Newtonsoft.Json in the API. */
     async usages(root, p) {
