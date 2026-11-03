@@ -111,6 +111,18 @@ test('the reads, the order parents first, and a table referring to itself', () =
   assert.equal(copyRefusal(clubs), null);
 });
 
+test('thousands of rows referring to each other are ordered in a moment, managers first', () => {
+  // Read newest first, each row managed by one with half its Id.
+  const n = 5000;
+  const s = set(people, Array.from({ length: n }, (_, i) => [n - i, 1, n - i > 1 ? Math.floor((n - i) / 2) : null, `P${n - i}`, 'p@x', 'X', null, 0]));
+  const started = performance.now();
+  const ordered = selfOrder(people, s, fks);
+  assert.ok(performance.now() - started < 1000, 'ordered in under a second');
+  const at = new Map(ordered.map((r, i) => [r[0], i]));
+  assert.equal(ordered.length, n);
+  for (const r of ordered) if (r[2] != null) assert.ok(at.get(r[2]) < at.get(r[0]), `${r[2]} before ${r[0]}`);
+});
+
 test('the script skips rows already there, each kind its own way', () => {
   const tables = [{ obj: clubs, set: set(clubs, []), rows: [[1, 'Club A']] }, { obj: people, set: set(people, []), rows: [[1, 1, null, 'A', 'a@x', 'X', new Date('2020-01-02T00:00:00Z'), 5]] }];
   const ss = copyScript(tables, DIALECTS.sqlserver, { head: ['from prod'] });
