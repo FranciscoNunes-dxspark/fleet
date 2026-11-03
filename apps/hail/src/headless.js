@@ -10,12 +10,16 @@ import { loadConfig } from './config.js';
 import { createJar } from './cookies.js';
 import { defaultEnvironment } from './environments.js';
 import { findHttpFiles, loadHttpFile } from './files.js';
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { parseHttpFile } from './http-file.js';
 import { checkContract, loadContract } from './contract.js';
 import { exchange, inRun, reportLines, runFailed } from './runner.js';
 import { prepare } from './send.js';
 import { createTokens, fillAuthConfig, readAuthConfig, refreshName } from './oauth.js';
+import { failingFindings, findingsText, parseFailOn, securityJson, toSarif } from '@fleet/kit/findings.js';
+import { SCAN_CAP, authCandidates, runScan, sameHost, scanEstimate, scanUrl } from './scan.js';
+import { productionFor } from './project.js';
+import { VERSION } from './app.js';
 
 export const TEST_USAGE = `hail test [file.http] [--env <name>] [--contract <openapi file or URL>] [--contract-strict]
 
@@ -276,3 +280,176 @@ export async function runMock(args, { print = console.log, printError = console.
   onStart?.(mock);
   return { code: null, ...mock };
 }
+
+// ---------------------------------------------------------------------------------------------------
+// `hail security <url|file.http> [--env dev] [--json] [--sarif [file]] [--fail-on high]`: /scan without
+// the UI, for CI: a web app you own (or may test) looked at from the outside, the findings printed as
+// text, the family's JSON or SARIF, and the exit code 1 when any is as bad as --fail-on (2: it couldn't run).
+
+export const SECURITY_USAGE = `hail security <url | file.http> [--env <name>] [--json] [--sarif [file]] [--fail-on <level>] [--production]
+
+Scans a web app you own or are authorised to test, as /scan does in Hail: TLS and
+its certificate, security headers, cookies' flags, CORS, files that shouldn't be
+served (.git, .env, backups…), TRACE, verbose errors, and, given a .http file, its
+GET requests that carry credentials sent again without them. Only GET, HEAD,
+OPTIONS and one TRACE are sent, about ${scanEstimate()} requests (at most ${SCAN_CAP}).
+
+Given a .http file, the target is the origin of its first request in the
+environment (--env, else the one Hail last used for the file).
+
+--json        the findings as JSON (the family's shape, as Fleet reads it)
+--sarif [f]   SARIF 2.1.0 for code scanning, to the file f (a .sarif or .json) or stdout
+--fail-on     critical, high (the default), medium, low or none: exit 1 at that or worse
+--production  scan even though the project (.fleet/project.json) calls the environment production`;
+
+/** `hail security`'s arguments: { target, env, json, sarif, sarifFile, failOn, production, help } or { problem }. */
+export function securityArgs(args) {
+  const out = { target: null, env: null, json: false, sarif: false, sarifFile: null, failOn: 'high', production: false, help: false };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-h' || a === '--help') out.help = true;
+    else if (a === '--env' || a === '-e') {
+      out.env = args[++i] ?? null;
+      if (!out.env) return { problem: '--env needs the name of an environment' };
+    } else if (a.startsWith('--env=')) out.env = a.slice(6);
+    else if (a === '--json') out.json = true;
+    else if (a === '--sarif') {
+      out.sarif = true;
+      if (/\.(sarif|json)$/i.test(args[i + 1] ?? '')) out.sarifFile = args[++i];
+    } else if (a.startsWith('--sarif=')) {
+      out.sarif = true;
+      out.sarifFile = a.slice(8) || null;
+    } else if (a === '--fail-on' || a.startsWith('--fail-on=')) {
+      const v = a.startsWith('--fail-on=') ? a.slice(10) : args[++i];
+      out.failOn = parseFailOn(v);
+      if (!out.failOn) return { problem: '--fail-on takes critical, high, medium, low or none' };
+    } else if (a === '--production') out.production = true;
+    else if (a.startsWith('-')) return { problem: `${a} isn't an option of hail security` };
+    else if (out.target) return { problem: `One target at a time: ${out.target} or ${a}?` };
+    else out.target = a;
+  }
+  if (out.json && out.sarif && !out.sarifFile) return { problem: '--json and --sarif both want stdout: give --sarif a file (results.sarif)' };
+  return out;
+}
+
+/**
+ * Runs `args` (what follows `hail security`). Resolves with the exit code. `scan` is runScan (tests
+ * leave it: they run servers); `write` saves the SARIF file.
+ */
+export async function runSecurity(args, { print = console.log, printError = console.error, credentials, azToken = azCli, config = loadConfig(), cwd = process.cwd(), scan = runScan, write = (p, text) => writeFileSync(p, text), now = new Date() } = {}) {
+  const a = securityArgs(args);
+  if (a.problem) {
+    printError(`${a.problem}\n\n${SECURITY_USAGE}`);
+    return 2;
+  }
+  if (a.help) {
+    print(SECURITY_USAGE);
+    return 0;
+  }
+  if (!a.target) {
+    printError(`Name what to scan: a URL, or a .http file.\n\n${SECURITY_USAGE}`);
+    return 2;
+  }
+  let target = null;
+  const auth = [];
+  let env = null;
+  let insecure = false;
+  let dir = cwd;
+  const asFile = resolve(cwd, a.target);
+  if (/\.(http|rest)$/i.test(a.target) || (!/^[a-z][\w+.-]*:\/\//i.test(a.target) && existsSync(asFile))) {
+    let data;
+    try {
+      data = await loadHttpFile(asFile);
+    } catch (e) {
+      printError(`Couldn't read ${asFile}: ${e.message.split('\n')[0]}`);
+      return 2;
+    }
+    dir = data.dir;
+    const names = data.environments.names;
+    if (a.env && !names.includes(a.env)) {
+      printError(names.length ? `There's no environment called ${a.env}. There are: ${names.join(', ')}` : `There are no environments beside ${data.name} (http-client.env.json).`);
+      return 2;
+    }
+    env = a.env ?? defaultEnvironment(data, config.environments?.[data.path]);
+    insecure = Boolean(data.environments.options(env).insecure);
+    const secret = async (name) => {
+      try {
+        return (await credentials?.get(name)) ?? null;
+      } catch {
+        return null;
+      }
+    };
+    const scope = { globals: {}, environment: data.environments.vars(env), file: data.variables, responses: {}, env: { azToken, secret } };
+    const fillIn = async (request) => {
+      try {
+        const req = await prepare(request, scope, { dir: data.dir });
+        return req.missing.length ? null : req;
+      } catch {
+        return null;
+      }
+    };
+    const first = data.requests.find(inRun);
+    const firstReq = first ? await fillIn(first) : null;
+    target = firstReq ? scanUrl(`${originOf(firstReq.url)}/`) : null;
+    if (!target) {
+      printError(first ? `${first.label}'s URL couldn't be filled in${env ? ` in ${env}` : ''}: name the URL to scan instead.` : `${data.name} has no requests to take the target from: name the URL to scan instead.`);
+      return 2;
+    }
+    // Only the ones that only read: there's no one here to ask about the others.
+    for (const c of authCandidates(data.requests).filter((x) => x.safe)) {
+      const req = await fillIn(c.request);
+      if (req && sameHost(req.url, target)) auth.push({ label: c.request.label, req });
+    }
+  } else {
+    target = scanUrl(a.target);
+    if (!target) {
+      printError(`${a.target} isn't an http(s) URL or a .http file.`);
+      return 2;
+    }
+  }
+  const prod = env ? productionFor(dir, env) : null;
+  if (prod && !a.production) {
+    printError(`${prod.name} is production (.fleet/project.json): the scan sends a TRACE too. Add --production to scan it anyway.`);
+    return 2;
+  }
+  // Said on stderr, so --json and --sarif keep stdout to themselves.
+  printError(`Scanning ${target}${env ? ` (${env})` : ''}: about ${scanEstimate({ auth: auth.length })} requests${auth.length ? `, ${auth.length} of the file's sent again without credentials` : ''}. Only for an app you own or may test.`);
+  let result;
+  try {
+    result = await scan({ target, auth, insecure });
+  } catch (e) {
+    printError(`The scan failed: ${e.message.split('\n')[0]}`);
+    return 2;
+  }
+  if (result.error) {
+    printError(result.error);
+    return 2;
+  }
+  const findings = result.findings;
+  if (a.sarif) {
+    const sarif = JSON.stringify(toSarif({ tool: 'Hail', version: VERSION, uri: 'https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail', findings }), null, 2);
+    if (a.sarifFile) {
+      try {
+        write(resolve(cwd, a.sarifFile), `${sarif}\n`);
+      } catch (e) {
+        printError(`Couldn't write ${a.sarifFile}: ${e.message}`);
+        return 2;
+      }
+    } else print(sarif);
+  }
+  const tls = result.tls && !result.tls.error ? { protocol: result.tls.protocol, validTo: result.tls.validTo, issuer: result.tls.issuer } : undefined;
+  if (a.json) print(JSON.stringify(securityJson({ app: 'hail', check: 'web', target, findings, now, extra: { environment: env, sent: result.sent, capped: result.capped, notes: result.notes, ...(tls ? { tls } : {}) } }), null, 2));
+  else if (!a.sarif || a.sarifFile) {
+    print(findingsText(findings, { failOn: a.failOn, header: `Security scan of ${target}${env ? ` · ${env}` : ''} · ${result.sent} requests\n` }).trimEnd());
+    for (const n of result.notes) print(n);
+  }
+  return failingFindings(findings, a.failOn).length ? 1 : 0;
+}
+
+const originOf = (url) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+};

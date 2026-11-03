@@ -28,7 +28,9 @@ import { nextTheme, settingRows, settingSegments } from './settings.js';
 import { applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
 import { checkLines, contractLines, statusColour } from './ui/response.js';
 import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, shareLine, trawlLine } from '@fleet/kit/family.js';
-import { fit, relTime } from '@fleet/kit/text.js';
+import { fit, relTime, wrap as wrapText } from '@fleet/kit/text.js';
+import { countFindings, failingFindings, findingsLine } from '@fleet/kit/findings.js';
+import { SEVERITY_LABEL, authCandidates, findingText, runScan, sameHost, scanEstimate, scanMarkdown, scanSummary, scanUrl } from './scan.js';
 import { findByRequestId, hostVariable, idsIn, replayBlock, startsWithVariable, rowsJson, rowsRequestBlock, tablePath } from './takes.js';
 import { describeEnvironments, productionQuestion, setEnvironment as setProjectEnvironment } from '@fleet/kit/environments.js';
 import { hailEnvironmentNamed, isSafeMethod } from './project.js';
@@ -433,6 +435,110 @@ function compareLines({ request, reqs, answers }) {
     if (c.body.diff.length > COMPARE_LINES) lines.push([dim(`… and ${c.body.diff.length - COMPARE_LINES} more lines`)]);
   } else lines.push([dim('The bodies are the same.')]);
   return lines;
+}
+
+/**
+ * /scan [url]: a security scan of a web app you own or may test (scan.js), of `url`, else the origin of
+ * the request picked, filled in in Hail's environment. It asks first, naming the target and about how
+ * many requests go; production asks again (a TRACE goes too). The file's requests that carry a
+ * credential to the same host are sent again without it: those that only read, and the others only if
+ * you say so. Without the cookie jar, handlers or the history; nothing secret reaches the activity
+ * lines or the evidence. esc stops it and shows what it found so far. The findings show worst first:
+ * ↵ the evidence, y copies one, m the whole report as Markdown.
+ */
+export async function scan(ctx, arg = '') {
+  const d = ctx.data;
+  let target;
+  const typed = String(arg ?? '').trim();
+  if (typed) {
+    target = scanUrl(typed);
+    if (!target) return ctx.note(`${typed} isn't an http(s) URL to scan.`, 'error');
+  } else {
+    if (!d) return ctx.note(`${NO_FILE} Or name the URL: /scan https://…`, 'error');
+    const request = ctx.selectedRequest();
+    if (!request) return ctx.note('Pick a request first (its origin is scanned), or name the URL: /scan https://…', 'error');
+    const req = await prepared(ctx, request).catch((e) => failed(ctx, e));
+    if (!req) return;
+    try {
+      target = scanUrl(`${new URL(req.url).origin}/`);
+    } catch {
+      target = null;
+    }
+    if (!target) return ctx.note(`${request.label} doesn't go to an http(s) URL.`, 'error');
+  }
+  const candidates = d ? authCandidates(d.requests) : [];
+  const unsafe = candidates.filter((c) => !c.safe);
+  const n = scanEstimate({ auth: candidates.filter((c) => c.safe).length });
+  const ok = await ctx.confirm({
+    title: `Scan ${target}? It sends about ${n} requests`,
+    detail: `Only for an app you own or are authorised to test. GET, HEAD, OPTIONS and one TRACE; ${candidates.length ? `the file's requests with credentials to it are sent again without them.` : 'nothing that changes things.'}`,
+    options: YES_NO('Yes, scan it'),
+  });
+  if (!ok) return false;
+  let withUnsafe = false;
+  if (unsafe.length) {
+    const methods = [...new Set(unsafe.map((c) => c.method))].join(', ');
+    withUnsafe = (await ctx.confirm({ title: `Also send ${unsafe.length} ${methods} request${unsafe.length === 1 ? '' : 's'} without credentials?`, detail: 'If the app lets one through, it does whatever it does (creates, changes, deletes).', danger: true, options: [{ label: 'No, only the ones that read', value: false }, { label: 'Yes, send them', value: true }] })) === true;
+  }
+  if (!(await productionOk(ctx, ['TRACE', ...(withUnsafe ? unsafe.map((c) => c.method) : [])], `Scan ${target}`))) return false;
+  const chosen = withUnsafe ? candidates : candidates.filter((c) => c.safe);
+  const insecure = Boolean(ctx.environmentOptions().insecure);
+  let result = null;
+  const r = await ctx.task(
+    `Scan ${target}`,
+    async (signal) => {
+      // The file's requests with credentials, filled in, those going to the target's host.
+      const auth = [];
+      for (const c of chosen) {
+        if (signal.aborted) break;
+        const req = await fillRequest(ctx, c.request).catch(() => null);
+        if (req && !req.missing.length && sameHost(req.url, target)) auth.push({ label: c.request.label, req });
+      }
+      result = await runScan({ target, auth, signal, insecure, onProgress: (sent) => ctx.setBusyLabel(`Scanning: ${sent} sent`) });
+      if (result.error) throw new Error(result.error);
+      const failing = failingFindings(result.findings, 'high').length;
+      return { stdout: scanSummary(result), worried: failing ? `${failing} serious finding${failing === 1 ? '' : 's'}` : undefined };
+    },
+    { label: 'Scanning' },
+  );
+  if (!result || result.error) return r;
+  activity(ctx, `Scan ${target}: ${scanSummary(result)}`, failingFindings(result.findings, 'high').length ? 'error' : 'info');
+  showScan(ctx, result);
+  return r;
+}
+
+/** /scan's findings as a list over the view: worst first, ↵ the evidence, y copies one, m a Markdown report. */
+export function showScan(ctx, result) {
+  const colour = { critical: theme.del, high: theme.del, medium: theme.warn, low: theme.dim, unknown: theme.dim };
+  const env = ctx.environment();
+  const markdown = () => scanMarkdown(result, { environment: env });
+  const items = result.findings.map((f) => ({
+    f,
+    segments: [{ text: (SEVERITY_LABEL[f.severity] ?? '?').padEnd(5), color: colour[f.severity], bold: true }, { text: f.title, strong: true }, { text: `  ${f.where}`, color: theme.dim }],
+  }));
+  const notes = result.notes.map((text) => ({ note: true, segments: [{ text: `  ${text}`, color: theme.dim }] }));
+  ctx.showPicker({
+    title: `Scan of ${new URL(result.target).host}: ${findingsLine(countFindings(result.findings)) || 'nothing found'}${result.cancelled ? ' (stopped)' : result.capped ? ' (capped)' : ''}`,
+    hint: '↵ evidence · y copy · m Markdown',
+    empty: 'Nothing found.',
+    items: [...items, ...notes],
+    onPick: (it) => it.f && ctx.showText(`${it.f.title}`, findingText(it.f), { lines: findingLines(it.f) }),
+    keys: { y: (it) => it.f && ctx.copy(findingText(it.f), it.f.title) },
+    actions: { m: () => ctx.copy(markdown(), 'the report as Markdown') },
+  });
+}
+
+/** A finding's evidence in the viewer: what, where, the request and its status, what was seen, why and the fix. */
+function findingLines(f) {
+  const dim = (text) => ({ text, color: theme.dim });
+  const colour = { critical: theme.del, high: theme.del, medium: theme.warn };
+  const out = [[{ text: f.severity.toUpperCase(), bold: true, color: colour[f.severity] }, dim(`  ${f.rule}`)], [{ text: f.title, bold: true }], [dim('Where    '), { text: String(f.where) }]];
+  if (f.request) out.push([dim('Request  '), { text: f.request }, ...(f.status != null ? [dim(' → '), { text: String(f.status), color: statusColour(f.status) }] : [])]);
+  if (f.header) out.push([dim('Seen     '), { text: f.header }]);
+  if (f.excerpt) out.push([], [dim('Excerpt')], ...wrapText(f.excerpt, 96).map((l) => [{ text: `  ${l}` }]));
+  if (f.why) out.push([], ...wrapText(f.why, 100).map((l) => [{ text: l }]));
+  if (f.fix) out.push([], ...wrapText(`Fix: ${f.fix}`, 100).map((l) => [{ text: l, color: theme.add }]));
+  return out;
 }
 
 /** c in Requests, and /curl: the request, filled in, as a curl command on the clipboard. */

@@ -167,6 +167,16 @@ export const HELP = [
     ],
   },
   {
+    title: 'Security scan',
+    about: 'a web app you own or are authorised to test, looked at from the outside; never point it at anyone else\'s',
+    rows: [
+      ['/scan [url]', "The picked request's origin in the environment (or the URL): asks first, naming it and about how many requests (some 22, at most 80)\nonly GET, HEAD, OPTIONS and one TRACE, three at a time · production asks again · esc stops it and shows what it found"],
+      ['what it checks', "TLS: the version, 1.0 and 1.1 accepted, the certificate's expiry, name and issuer · http not sent to https\nheaders: HSTS, CSP, X-Content-Type-Options, framing, Referrer-Policy, Server and X-Powered-By versions · cookies' Secure, HttpOnly, SameSite\nCORS with Origin: https://evil.example · .git, .env, backups, server-status, actuator, Swagger and the like (a catch-all page doesn't count)\nOPTIONS' Allow and TRACE · stack traces on errors · the file's requests with credentials sent again without them"],
+      ['↵  y  m', 'In the findings (worst first): the evidence (the request, its status, the header seen, a short excerpt) · copy one · copy the report as Markdown'],
+      ['hail security', 'From the shell: hail security <url|api.http> [--env dev] [--json] [--sarif [file]] [--fail-on high]; exits 1 on a finding that bad or worse'],
+    ],
+  },
+  {
     title: 'Sibling apps',
     about: 'Splice, Trawl, Sonar and Bosun hand Hail command lines to paste into the prompt, and Hail hands them some',
     rows: [
