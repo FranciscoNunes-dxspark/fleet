@@ -132,6 +132,16 @@ test("a source map's sources counted by the characters they map to", () => {
   const sizes = sourceSizes(map, 'abcdefghij\nxyzwv');
   assert.deepEqual(Object.fromEntries(sizes), { 'src/a.js': 5, 'src/b.js': 6 + 2, [UNMAPPED]: 3 });
   assert.equal(sourceSizes({ sections: [] }, 'x'), null);
+  // A character that isn't base64 ends its segment's reading (E! is a column alone), sources named
+  // alike count as one, a source called [unmapped] is that, and the source index runs past the list.
+  const odd = { sources: ['a.js', 'b.js', 'a.js', '[unmapped]'], mappings: 'AAAA,E!CAA,CEAA;;AAAA,CCAA,CAAA,CAAA,Cz;CAAA,EBAA,UGAA' };
+  assert.deepEqual([...sourceSizes(odd, 'abcdefgh\n\nxyzwvuts\nqrstuvwxyz\nlast')], [['a.js', 9], [UNMAPPED, 25]]);
+  // A minified file's one line of a million segments, in one pass.
+  const segments = Array.from({ length: 1_000_000 }, (_, i) => (i % 2 ? 'CDAA' : 'CCAA')).join(',');
+  const started = performance.now();
+  const big = sourceSizes({ sources: ['x.js', 'y.js'], mappings: `AAAA,${segments}` }, 'z'.repeat(1_000_001));
+  assert.deepEqual([...big], [['x.js', 500_001], ['y.js', 500_000]]);
+  assert.ok(performance.now() - started < 2000);
   assert.equal(mapUrlOf('x();\n//# sourceMappingURL=main.js.map\n'), 'main.js.map');
   assert.equal(mapUrlOf('x();\n/*# sourceMappingURL=data:application/json;base64,eyJ9 */'), null);
 });
