@@ -52,6 +52,10 @@ for (const target of targets) {
     entrypoints: [entry],
     compile: { target, outfile, windows, ...compile },
     minify: true,
+    // Each dynamic import its own chunk inside the executable: what isn't asked for is never parsed.
+    // Fleet holds every app and starts each as `fleet --run <app>`, which loaded all of them first:
+    // 220 ms before anything ran, in the host and in every app, against 45 ms with this.
+    splitting: true,
     plugins: [noDevtools],
     // The version, as the app's configureApp reads it (process.env.<APP>_VERSION). NODE_ENV picks React's
     // production build (several times faster to draw); defined in the bundle, it never reaches the
