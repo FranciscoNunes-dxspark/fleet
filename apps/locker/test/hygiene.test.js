@@ -276,6 +276,28 @@ test('over the demo: everything planted is found, from listings and shapes, with
   noValueIn(JSON.stringify(all));
 });
 
+test('every vault is listed a few at a time, in its order, and one that fails is a problem', async () => {
+  const provider = demoAzure({ now: NOW });
+  const local = demoLocal();
+  for (let i = 0; i < 10; i++) provider.state.vaults.push({ ...provider.state.vaults[0], id: `${provider.state.vaults[0].id}-${i}`, name: `kv-more-${i}` });
+  let open = 0;
+  let most = 0;
+  const secrets = provider.secrets;
+  provider.secrets = async (v, opts) => {
+    open++;
+    most = Math.max(most, open);
+    await new Promise((r) => setTimeout(r, 20));
+    open--;
+    if (v.name === 'kv-more-3') throw new Error('Forbidden\nmore');
+    return secrets(v, opts);
+  };
+  const azure = await loadSubscription(provider);
+  const read = await readHygiene({ provider, local, azure, all: true });
+  assert.deepEqual(read.scope.vaults, azure.vaults.map((v) => v.name).filter((n) => n !== 'kv-more-3'));
+  assert.ok(read.problems.includes('kv-more-3: Forbidden'));
+  assert.ok(most > 1 && most <= 4, `${most} at once`);
+});
+
 test('locker security: text, JSON and SARIF over the demo, the exit code by --fail-on, never a value', async () => {
   assert.deepEqual(parseSecurityArgs(['proj', '--json', '--fail-on', 'MEDIUM', '--app', 'shop-api/staging']), { dir: 'proj', json: true, sarif: false, failOn: 'medium', app: 'shop-api/staging', vault: null, all: false });
   assert.match(parseSecurityArgs(['--fail-on', 'bad']).error, /--fail-on/);
