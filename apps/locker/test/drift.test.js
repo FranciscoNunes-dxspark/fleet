@@ -48,6 +48,20 @@ test('a reference resolves when its secret is there, enabled and current', () =>
   assert.equal(checkReference({ problem: 'bad' }, vaults).ok, false);
 });
 
+test('a matrix of thousands of references checked against a vault of thousands of secrets, in key order', () => {
+  // The first secret of a name decides, in any case, as a search of the listing did.
+  const twice = new Map([['kv', [{ name: 'Dup', enabled: false }, { name: 'dup', enabled: true }]]]);
+  assert.match(checkReference({ vault: 'kv', secret: 'DUP' }, twice).why, /disabled/);
+  const secrets = Array.from({ length: 4000 }, (_, i) => ({ name: `Secret-${i}`, enabled: i % 2 === 0, expires: null }));
+  const entries = Array.from({ length: 4000 }, (_, i) => ({ key: `Key${4000 - i}`, value: `@Microsoft.KeyVault(VaultName=kv;SecretName=secret-${i})` }));
+  const started = Date.now();
+  const { rows } = driftMatrix([{ id: 'app', label: 'app', kind: 'app', entries }], { vaults: new Map([['kv', secrets]]), now: NOW });
+  assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+  assert.equal(rows.filter((r) => r.broken).length, 2000);
+  assert.deepEqual(rows.slice(0, 3).map((r) => r.key), ['Key1', 'Key10', 'Key100']);
+  assert.deepEqual(rows.map((r) => r.norm), rows.map((r) => r.norm).sort((a, b) => a.localeCompare(b)));
+});
+
 const columns = () => [
   { id: 'env:.env', label: '.env', kind: 'local', entries: [{ key: 'Api__BaseUrl', value: 'http://localhost' }, { key: 'Db__Password', value: 'dev-secret' }, { key: 'Same', value: 'x' }] },
   { id: 'env:.env.example', label: '.env.example', kind: 'local', presence: true, entries: [{ key: 'Api__BaseUrl', value: '' }, { key: 'Stripe__ApiKey', value: '' }] },
