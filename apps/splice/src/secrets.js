@@ -16,6 +16,8 @@ export const SECRET_RULES = RULES.filter((r) => r.kind === 'secret');
 export const HISTORY_MAX = 5000;
 // Commits asked for in one git, so memory stays bounded and esc is heard between them.
 const CHUNK = 200;
+// Those gits running at once, at most.
+const READ_AHEAD = 3;
 // A file's added text past this isn't read (generated or vendored); git already counts files over 2 MB as binary.
 export const MAX_ADDED = 512 * 1024;
 // codescan.js passes lock files by too: their integrity hashes look like keys.
@@ -215,12 +217,26 @@ export async function readHistory({ root, range = ['HEAD'], max = HISTORY_MAX, s
   const listed = (await run(['rev-list', `--max-count=${max + 1}`, '--no-merges', ...range, '--'])).split('\n').filter(Boolean);
   const hashes = listed.slice(0, max);
   const found = new Map();
-  for (let i = 0; i < hashes.length; i += chunk) {
-    const part = hashes.slice(i, i + chunk);
-    const raw = await run(historyArgs(), { input: `${part.join('\n')}\n` });
+  const parts = [];
+  for (let i = 0; i < hashes.length; i += chunk) parts.push(hashes.slice(i, i + chunk));
+  // A few gits run ahead of the scan, so git writes the next patches while these are read: one after
+  // another, git and the rules took turns, and a long history took twice as long. Each git's answer is
+  // still read in order. One that fails is caught here too, so an error after the first isn't unhandled.
+  const read = (part) => {
+    const p = run(historyArgs(), { input: `${part.join('\n')}\n` });
+    p.catch(() => {});
+    return p;
+  };
+  const reading = parts.slice(0, READ_AHEAD).map(read);
+  let done = 0;
+  for (let k = 0; k < parts.length; k++) {
+    const raw = await reading[k];
+    reading[k] = null;
+    if (k + READ_AHEAD < parts.length) reading.push(read(parts[k + READ_AHEAD]));
     // Newest first, so a later (older) commit takes the place of a newer one with the same secret.
     for (const c of parseHistoryLog(raw)) for (const s of secretsOf(c)) found.set(sameKey(s.finding), s);
-    onProgress?.(i + part.length, hashes.length);
+    done += parts[k].length;
+    onProgress?.(done, hashes.length);
   }
   const secrets = [...found.values()];
   // The tracked files, for a secret that isn't where it was added any more.
