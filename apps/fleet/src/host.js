@@ -81,6 +81,7 @@ export const helpRows = (p = DEFAULT_PREFIX) => [
   [`${p} P`, "Claude's proposals: ↵ hands one to its app"],
   [`${p} R`, 'record a runbook from what the apps run (again: stop)'],
   [`${p} S`, "security: every app's check for the project, as one overview"],
+  [`${p} a`, 'the apps in the bar: choose which (the others by their letter)'],
   ...(p === 'ctrl+]' ? [] : [['ctrl+]', `works as ${p} does (host.json's "prefix" changes ${p})`]]),
   ['', ''],
   ['a click on a tab', 'switches to it'],
@@ -90,6 +91,13 @@ export const helpRows = (p = DEFAULT_PREFIX) => [
 ];
 
 export const HELP = helpRows();
+
+/** The ids of `spaces` that `chosen` names (host.json's "apps"), as a Set: every space when it names none of them. */
+export function chosenIds(spaces, chosen) {
+  const known = new Set(spaces.map((s) => s.id));
+  const ids = Array.isArray(chosen) ? chosen.filter((id) => known.has(id)) : [];
+  return new Set(ids.length ? ids : spaces.map((s) => s.id));
+}
 
 export class Host {
   constructor({
@@ -115,11 +123,15 @@ export class Host {
     // The folders the fleet moved to lately, newest first (host.json's "folders"), and keeping them.
     folders = [],
     onFolders = () => {},
+    // The apps the bar shows (host.json's "apps", ids), null for all of them, and keeping a new choice.
+    chosen = null,
+    onChosen = () => {},
   }) {
-    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders });
+    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders, onChosen });
     this.prefixes = prefixesFor(prefix);
     this.prefixLabel = prefixName(prefix);
     this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '', badge: null }));
+    this.chosen = chosenIds(this.spaces, chosen);
     this.family = familyReader(familyHome);
     // When each space was last on screen: what an app said before that is old news. Fleet starting
     // counts as a look at every space, so moods from before it never badge.
@@ -199,7 +211,7 @@ export class Host {
       return renderAsk({ label, line, hint: hint || '↵ moves every app there · tab completes · esc cancels', keep: Boolean(hint), width: columns });
     }
     const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
-    this.layout = barLayout({ spaces: this.spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel, status: statusSegments(this.status) });
+    this.layout = barLayout({ spaces: this.barSpaces(), active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel, status: statusSegments(this.status) });
     return renderBar(this.layout, this.spaces, { truecolor: this.truecolor });
   }
 
@@ -341,7 +353,7 @@ export class Host {
   handleInput(text) {
     if (!text || this.quitting) return;
     if (this.asking) return this.editFolder(text);
-    const { state, actions } = readKeys(this.keys, text, this.spaces, this.prefixes);
+    const { state, actions } = readKeys(this.keys, text, this.barSpaces(), this.prefixes, this.spaces);
     this.keys = state;
     for (const a of actions) {
       if (a.type === 'prefix') this.drawBar();
@@ -361,6 +373,7 @@ export class Host {
       else if (a.type === 'changes') this.panels.changes();
       else if (a.type === 'proposals') this.panels.proposals();
       else if (a.type === 'security') this.panels.security();
+      else if (a.type === 'apps') this.panels.apps();
       else if (a.type === 'record') this.toggleRecording();
     }
   }
@@ -388,8 +401,31 @@ export class Host {
   }
 
   move(by) {
-    const i = this.spaces.findIndex((s) => s.id === this.active);
-    this.switchTo(this.spaces[(i + by + this.spaces.length) % this.spaces.length].id);
+    const list = this.barSpaces();
+    const i = list.findIndex((s) => s.id === this.active);
+    this.switchTo(list[(i + by + list.length) % list.length].id);
+  }
+
+  /**
+   * The spaces the bar shows, in their order: the ones chosen (the prefix and a), and any other that is
+   * running or on screen, so an app reached by its letter or a hand-off can be found again.
+   */
+  barSpaces() {
+    const panes = new Set(this.split?.panes.map((p) => p.id) ?? []);
+    return this.spaces.filter((s) => this.chosen.has(s.id) || s.child || s.id === this.active || panes.has(s.id));
+  }
+
+  /** Shows `id` in the bar or not (one at least stays), and keeps the choice. */
+  toggleChosen(id) {
+    if (!this.space(id)) return;
+    const next = new Set(this.chosen);
+    if (next.has(id)) {
+      if (next.size === 1) return this.notice('One app at least stays in the bar');
+      next.delete(id);
+    } else next.add(id);
+    this.chosen = next;
+    this.onChosen(this.spaces.filter((s) => next.has(s.id)).map((s) => s.id));
+    this.drawBar?.();
   }
 
   // ---- switching and drawing ---------------------------------------------------------------------

@@ -4,7 +4,8 @@ import { stringWidth } from '@fleet/kit/text.js';
 import { ansi256, barLayout, colour, renderBar, stateMark, statusSegments, tabAt } from '../src/bar.js';
 import { SPACES } from '../src/spaces.js';
 
-const spaces = SPACES.map((s, i) => ({ ...s, state: ['running', 'idle', 'exited', 'idle', 'running', 'idle', 'idle', 'idle', 'idle'][i], code: i === 2 ? 1 : null }));
+// The nine apps Fleet held first: the expected lines below are written for them.
+const spaces = SPACES.slice(0, 9).map((s, i) => ({ ...s, state: ['running', 'idle', 'exited', 'idle', 'running', 'idle', 'idle', 'idle', 'idle'][i], code: i === 2 ? 1 : null }));
 const width = (layout) => layout.segments.reduce((n, s) => n + stringWidth(s.text), 0);
 const text = (layout) => layout.segments.map((s) => s.text).join('');
 
@@ -36,9 +37,9 @@ test('narrower, the hint goes, then the names shrink to letters, then it is cut'
 });
 
 test("the prefix's keys show while it waits, and a notice in place of the hint", () => {
-  assert.match(text(barLayout({ spaces, active: 'splice', width: 180, prefix: true })), /1-9 s t o b h l u g c · n p · \| split · m move · r f e w P R · q quit · \? help $/);
+  assert.match(text(barLayout({ spaces, active: 'splice', width: 180, prefix: true })), /1-9 or a letter · n p · \| split · m move · a apps · r f e w P R S · q quit · \? help $/);
   // Split, the other pane and putting it back.
-  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 180, prefix: true })), /tab pane · x unsplit · m move · r f e w P R · q quit/);
+  assert.match(text(barLayout({ spaces, active: 'splice', shown: 'hail', width: 180, prefix: true })), /tab pane · x unsplit · m move · a apps · r f e w P R S · q quit/);
   // With little room the prefix's keys win over the names.
   const tight = barLayout({ spaces, active: 'splice', width: 145, prefix: true });
   assert.equal(width(tight), 145);

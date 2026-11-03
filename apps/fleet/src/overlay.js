@@ -2,6 +2,7 @@
 // pure: each panel's rows as segments ({ text, sgr }), the box around them scrolled to what has the
 // cursor, every width through the kit's text.js. The host writes the box over the app's screen and
 // holds the app's drawing back while it's open, as it does for the help.
+import { ROLES } from '@fleet/kit/family.js';
 import { fitSegments, stringWidth, wrap } from '@fleet/kit/text.js';
 import { colour } from './bar.js';
 
@@ -378,4 +379,25 @@ export function securityLines({ overview, running = null, cursor = 0, open = fal
     if (here) focus = [from, lines.length - 1];
   });
   return { lines, focus };
+}
+
+/**
+ * The apps panel's rows: every app with whether the bar shows it, its letter (which reaches it either
+ * way) and what it is for, `cursor` on one.
+ */
+export function appsLines({ spaces, chosen, cursor = 0, width = 80, truecolor = true, prefix = 'ctrl+b' } = {}) {
+  const titleW = Math.max(...spaces.map((s) => stringWidth(s.title)));
+  const lines = spaces.map((s, i) => {
+    const on = chosen.has(s.id);
+    const here = i === cursor;
+    return [
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: on ? '[x] ' : '[ ] ', sgr: on ? GREEN : DIM },
+      { text: ` ${s.title.padEnd(titleW)} `, sgr: `${accentOf(spaces, s.id, truecolor)}${here ? BOLD : ''}` },
+      { text: `  ${prefix} ${s.letter}`, sgr: DIM },
+      { text: ROLES[s.id] ? `  ${ROLES[s.id].toLowerCase()}` : '', sgr: DIM },
+    ];
+  });
+  lines.push([], ...prose(`The numbers 1 to 9 go to the apps shown, in this order. One that's hidden is still there: its letter (${prefix} and it) or a sibling handing it something opens it, and it shows in the bar while it runs.`, width - 1));
+  return { lines, focus: [cursor, cursor] };
 }

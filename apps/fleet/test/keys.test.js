@@ -124,3 +124,17 @@ test('the prefix: ctrl+b unless host.json names another, ctrl+] always, and twic
   assert.equal(sent(a.actions), '\x02');
   assert.deepEqual(a.actions.at(-1), { type: 'switch', id: 'hail' });
 });
+
+test('the numbers reach the apps the bar shows, the letters any app; a opens the apps panel', () => {
+  const all = [
+    { id: 'one', letter: 'o' },
+    { id: 'two', letter: 'w' },
+    { id: 'three', letter: 'h' },
+  ];
+  const shown = [all[0], all[2]];
+  assert.deepEqual(prefixAction('2', shown, PREFIX, all), { type: 'switch', id: 'three' });
+  assert.equal(prefixAction('3', shown, PREFIX, all), null);
+  assert.deepEqual(prefixAction('w', shown, PREFIX, all), { type: 'switch', id: 'two' });
+  assert.deepEqual(prefixAction('a', shown, PREFIX, all), { type: 'apps' });
+  assert.deepEqual(readKeys({ prefix: false }, `${PREFIX}w`, shown, prefixesFor(), all).actions.find((a) => a.type === 'switch'), { type: 'switch', id: 'two' });
+});

@@ -61,8 +61,8 @@ test('the plan: Bilge, Splice and Chart always; the rest only as .fleet/project.
   assert.deepEqual(args.keel, ['security', 'Commerce']);
   assert.ok(plan.left.some((l) => l.app === 'chart' && /skipped/.test(l.why)));
 
-  // Compiled, Wharf and Keel aren't in the build; --only narrows; --demo runs the demos (Splice reads the real history).
-  assert.ok(securityPlan(root, config, { compiled: true }).left.some((l) => l.app === 'keel' && /not in Fleet's build/.test(l.why)));
+  // Every app is in the build now, Wharf and Keel too; --only narrows; --demo runs the demos (Splice reads the real history).
+  assert.ok(securityPlan(root, config, { compiled: true }).run.some((r) => r.app === 'keel'));
   assert.deepEqual(securityPlan(root, config, { only: ['bilge', 'keel'] }).run.map((r) => r.app), ['bilge', 'keel']);
   const demo = securityPlan(bare, {}, { demo: true });
   assert.ok(demo.run.find((r) => r.app === 'bilge').args.includes('--demo'));

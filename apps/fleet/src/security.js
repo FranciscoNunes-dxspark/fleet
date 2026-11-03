@@ -32,8 +32,6 @@ export const CHECKS = [
   { app: 'keel', what: 'Azure DevOps pipelines, repos and connections' },
 ];
 const ALWAYS = ['bilge', 'splice', 'chart'];
-// Wharf and Keel aren't in the compiled build (package.json's "includes"): only a checkout runs them.
-const NOT_IN_BUILD = new Set(['wharf', 'keel']);
 const NO_DEMO = new Set(['splice', 'hail']);
 
 const asObject = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
@@ -68,10 +66,6 @@ export function securityPlan(root, config = {}, { only = null, demo = false, com
     if (only && !only.includes(app)) continue;
     if (skip.has(app)) {
       left.push({ app, why: 'skipped in .fleet/project.json' });
-      continue;
-    }
-    if (compiled && NOT_IN_BUILD.has(app)) {
-      if (config[app] || demo) left.push({ app, why: "not in Fleet's build: run it from its own executable" });
       continue;
     }
     const c = config[app];
