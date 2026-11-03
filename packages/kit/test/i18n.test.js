@@ -88,6 +88,43 @@ test('translationEntries: a JS dictionary\'s lines, JSON nested with dots, .resx
   assert.deepEqual(translationEntries('S.pt.resx', resx).map((e) => [e.key, e.line, e.empty]), [['Hello', 2, false], ['Bye', 6, true]]);
 });
 
+test('translationEntries: each JSON key on its own line, awkward ones too (escaped quotes, punctuation, numbers, a key that is also a value)', () => {
+  const text = [
+    '{',
+    '  "say \\"Ok\\" twice": "x",',
+    '  "Ok": "Save",',
+    '  "Save": "y",',
+    '  "12": "twelve",',
+    '  "3": "three",',
+    '  "a, b: c": "punct",',
+    '  "": "empty",',
+    '  "nest": { "Ok": "z", "deep": { "3": "again" } },',
+    '  "say \\"Last": "v",',
+    '  "Later": "\\"Last\\": q",',
+    '  "Last": "w"',
+    '}',
+  ].join('\n');
+  // The first line from the parent's on with `"key"` and a colon after it, as a pass over the lines finds
+  // it: numeric keys come first (JSON.parse's order), and `"say \"Last":` holds `"Last"`.
+  assert.deepEqual(translationEntries('pt.json', text).map((e) => `${e.key}@${e.line}`), ['3@6', '12@5', 'say "Ok" twice@2', 'Ok@3', 'Save@4', 'a, b: c@7', '@8', 'nest.Ok@9', 'nest.deep.3@9', 'say "Last@10', 'Later@11', 'Last@10']);
+});
+
+test('the translation check over a big app stays quick: a flat file of 6,000 keys, and 3,000 components with plain text', () => {
+  const keys = Array.from({ length: 6000 }, (_, i) => `Message number ${i}`);
+  const files = [
+    { path: 'web/src/locales/en.json', text: JSON.stringify(Object.fromEntries(keys.map((k) => [k, k])), null, 2) },
+    { path: 'web/src/locales/pt.json', text: JSON.stringify(Object.fromEntries(keys.map((k) => [k, `pt ${k}`])), null, 2) },
+  ];
+  for (let i = 0; i < 3000; i++) files.push({ path: `web/src/c${i}.jsx`, text: `export const C = () => (\n  <div>\n    <p>{t('Message number ${i}')}</p>\n    <span>Plain words nobody translated</span>\n  </div>\n);\n` });
+  const started = performance.now();
+  const found = i18nFindings(files);
+  // A pass over the file for each key, and over every translating file for each piece of text, took seconds here.
+  assert.ok(performance.now() - started < 1500, `${Math.round(performance.now() - started)} ms`);
+  assert.equal(found.filter((f) => f.rule === 'i18n-plain-text').length, 3000);
+  assert.equal(found.filter((f) => f.rule === 'i18n-unused').length, 3000);
+  assert.equal(translationEntries('web/src/locales/en.json', files[0].text).at(-1).line, 6001);
+});
+
 test('Keel\'s layout: a key with no Portuguese, a translation nothing uses, and plain JSX text; the terminal app and tests left alone', () => {
   const found = i18nFindings(Object.entries(KEEL_LIKE).map(([path, text]) => ({ path, text })));
   assert.deepEqual(rules(found), [

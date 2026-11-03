@@ -426,10 +426,54 @@ export function translationEntries(path, text) {
       return out;
     }
     // The line of each key: the first `"leaf":` from its parent's line on.
-    const lineOf = (leaf, from) => {
-      const quoted = JSON.stringify(leaf);
+    const scan = (quoted, from) => {
       for (let i = from; i < lines.length; i++) if (lines[i].includes(`${quoted}`) && /:/.test(lines[i].slice(lines[i].indexOf(quoted) + quoted.length))) return i;
       return from;
+    };
+    // Looking every key up from its parent's line was a pass over the file for each key: a flat file
+    // of 6,000 keys took close to a second. So the lines are indexed once, by the strings they hold
+    // with a colon after them. A key without quotes, backslashes or JSON's punctuation in it can only
+    // be found as a whole string token, so the index gives the same line, but on a line with an
+    // escaped quote (`"say \"no": …` holds `"no"`), which is looked through as before; any other key too.
+    let index = null;
+    const odd = [];
+    const indexed = () => {
+      if (index) return index;
+      index = new Map();
+      lines.forEach((l, i) => {
+        if (!l.includes(':')) return;
+        if (l.includes('\\"')) return void odd.push(i);
+        for (const [token] of l.matchAll(/"(?:[^"\\]|\\.)*"/g)) {
+          const at = index.get(token);
+          if (at?.at(-1) === i || !/:/.test(l.slice(l.indexOf(token) + token.length))) continue;
+          if (at) at.push(i);
+          else index.set(token, [i]);
+        }
+      });
+      return index;
+    };
+    const lineOf = (leaf, from) => {
+      const quoted = JSON.stringify(leaf);
+      if (/["\\,:[\]{}]|^\s|\s$/.test(leaf) || !leaf) return scan(quoted, from);
+      const at = indexed().get(quoted) ?? [];
+      // The first of its lines at or after `from`.
+      const first = (list) => {
+        let lo = 0;
+        let hi = list.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (list[mid] < from) lo = mid + 1;
+          else hi = mid;
+        }
+        return lo;
+      };
+      const i = first(at);
+      const found = i < at.length ? at[i] : Infinity;
+      for (let j = first(odd); j < odd.length && odd[j] < found; j++) {
+        const l = lines[odd[j]];
+        if (l.includes(quoted) && /:/.test(l.slice(l.indexOf(quoted) + quoted.length))) return odd[j];
+      }
+      return found === Infinity ? from : found;
     };
     const walk = (obj, prefix, from) => {
       for (const [k, v] of Object.entries(obj ?? {})) {
@@ -652,9 +696,11 @@ export function i18nCollector({ locales = I18N_DEFAULTS.locales, functions = I18
       }
       // Text in JSX a person reads in one language only, in an app that translates: surely words, or a
       // word or two the project translates elsewhere (Close).
+      // The sets some file translates in, worked out once rather than for each piece of text.
+      const translated = new Set([...translating].map(setOf));
       for (const p of plain) {
         const dicts = setOf(p.path);
-        if (!dicts || ![...translating].some((f) => setOf(f) === dicts)) continue;
+        if (!dicts || !translated.has(dicts)) continue;
         if (!p.sure && ![...dicts.values()].some((d) => d.has(p.text))) continue;
         const langs = [...dicts.keys()].sort();
         out.push(make('i18n-plain-text', 'low', `Text not passed through ${fn}()`, p.path, p.line, p.text, `It shows as written to everyone, whatever language they chose (${langs.join(', ')} ${langs.length === 1 ? 'has' : 'have'} a locale folder).`, `Wrap it: {${fn}(${JSON.stringify(p.text)})}, and add its translations.`));
