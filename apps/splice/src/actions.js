@@ -4691,7 +4691,7 @@ const trackedFiles = async (ctx) => (await ctx.git(['ls-files', '-z'])).split('\
 /**
  * /take <context>: what a sibling app copied for Splice (family.js). An exception opens blame at the first
  * of its frames that's a file of this repository (a list of them when several are, top frame first); a
- * file, blame at its line (its history without one); a commit, its diff (offering to fetch it when it isn't
+ * file, or a failed test from Drill, blame at its line (its history without one); a commit, its diff (offering to fetch it when it isn't
  * here); a pull request (from Keel), what its branch adds to its target. Other kinds say which app they're for.
  */
 export async function take(ctx, text) {
@@ -4711,10 +4711,12 @@ export async function take(ctx, text) {
   } catch (e) {
     return ctx.note(`Couldn't list the files of ${ctx.data.name}: ${firstLine(e.message)}`, 'error');
   }
-  if (kind === 'file') {
-    const typed = repoPath(ctx.data.root, String(data.path ?? ''));
-    const path = files.includes(typed) || existsSync(join(ctx.data.root, typed)) ? typed : matchFrameFile(String(data.path ?? ''), files);
-    if (!path) return ctx.note(`${data.path} isn't a file of ${ctx.data.name}.`, 'error');
+  // A failed test (Drill's) is the test's file at its line: who wrote it, and when.
+  if (kind === 'file' || kind === 'test') {
+    const where = String((kind === 'test' ? data.file : data.path) ?? '');
+    const typed = repoPath(ctx.data.root, where);
+    const path = files.includes(typed) || existsSync(join(ctx.data.root, typed)) ? typed : matchFrameFile(where, files);
+    if (!path) return ctx.note(`${where || 'That test'} isn't a file of ${ctx.data.name}.`, 'error');
     const line = Number(data.line) || null;
     return line ? ctx.showPicker(blamePicker(ctx, path, { line })) : fileHistory(ctx, path);
   }

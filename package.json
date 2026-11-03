@@ -28,7 +28,11 @@
     "test:fleet": "npm test -w apps/fleet",
     "build": "npm run build -w apps/keel",
     "start": "npm start -w apps/keel",
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js",
+    "test:lantern": "npm test -w apps/lantern",
+    "test:drill": "npm test -w apps/drill",
+    "test:ballast": "npm test -w apps/ballast",
+    "test:lookout": "npm test -w apps/lookout"
   },
   "devDependencies": {
     "patch-package": "^8.0.1"
