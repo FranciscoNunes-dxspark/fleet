@@ -17,8 +17,9 @@
 
 // GRAPHQL is JetBrains': a GraphQL query, POSTed as JSON (bodies.js). WEBSOCKET too: a connection whose
 // body is the messages to send, between === lines (websocket.js). GRPC: a unary call to
-// host:port/package.Service/Method, its body the request message as JSON (grpc.js).
-export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT', 'GRAPHQL', 'WEBSOCKET', 'GRPC'];
+// host:port/package.Service/Method, its body the request message as JSON (grpc.js). SSE: a GET that
+// asks for an event stream and reads it as one, live (send.js, sse.js).
+export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT', 'GRAPHQL', 'WEBSOCKET', 'GRPC', 'SSE'];
 
 const SEPARATOR = /^###/;
 const COMMENT = /^\s*(#|\/\/)/;

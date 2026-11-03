@@ -6,9 +6,9 @@
 import { currentEnvironment, readProject } from '@fleet/kit/environments.js';
 
 // Methods that only read: sending one to production needs no question.
-const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
+const SAFE = new Set(['GET', 'HEAD', 'OPTIONS', 'SSE']);
 
-/** Whether `method` only reads (GET, HEAD, OPTIONS); a GraphQL, gRPC or WebSocket one may change things. */
+/** Whether `method` only reads (GET, HEAD, OPTIONS, and SSE, a GET); a GraphQL, gRPC or WebSocket one may change things. */
 export const isSafeMethod = (method) => SAFE.has(String(method ?? 'GET').toUpperCase());
 
 /** The Hail environment a project environment's settings name (its "hail": { "env" }), or null. */

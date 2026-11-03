@@ -41,7 +41,7 @@ export function routeOf(request, vars = {}) {
   if (/^[a-z][\w+.-]*:\/\//i.test(url)) url = url.replace(/^[a-z][\w+.-]*:\/\/[^/]*/i, '');
   else if (/^\{\{[^}]*\}\}/.test(url)) url = url.replace(/^\{\{[^}]*\}\}/, '');
   if (!url.startsWith('/')) url = `/${url}`;
-  return { method: request.method === 'GRAPHQL' ? 'POST' : request.method, ...pattern(url) };
+  return { method: request.method === 'GRAPHQL' ? 'POST' : request.method === 'SSE' ? 'GET' : request.method, ...pattern(url) };
 }
 
 /** An example response for an operation of the contract: { status, headers, body } from its first 2xx (or default) response. */

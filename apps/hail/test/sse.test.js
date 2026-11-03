@@ -7,7 +7,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eventReader, eventsText, parseEvents } from '../src/sse.js';
-import { prettyBody, send } from '../src/send.js';
+import { prepare, prettyBody, send } from '../src/send.js';
+import { parseHttpFile } from '../src/http-file.js';
+import { isSafeMethod } from '../src/project.js';
 import { KEYS, start, tempHome, until } from './helpers.js';
 
 let cleanup;
@@ -20,6 +22,13 @@ before(async () => {
   cleanup = tempHome();
   dir = mkdtempSync(join(tmpdir(), 'hail-sse-'));
   server = createServer((req, res) => {
+    if (req.url === '/plain') {
+      // An event stream that doesn't say it's one: what an SSE request reads as one anyway.
+      res.writeHead(200, { 'Content-Type': 'text/plain', 'X-Accept': req.headers.accept ?? '' });
+      res.write('data: {"first":true}\n\n');
+      setTimeout(() => res.end('event: last\ndata: bye\n\n'), 20);
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
     if (req.url === '/three') {
       let n = 0;
@@ -95,6 +104,35 @@ test('through the UI: the events stream into the Response view until esc, and ar
     assert.match(f(), /200 OK .*\d+ events, stopped/s);
     app.stdin.write('4');
     await until(() => f().includes('1 kept'), 'kept in the history');
+  } finally {
+    app.unmount();
+  }
+});
+
+test("JetBrains' SSE method: a GET asking for an event stream, read as one whatever the server calls it", async () => {
+  const [plain, own] = parseHttpFile(`### Feed\nSSE ${base}/plain\n\n### Own accept\nSSE ${base}/plain\nAccept: application/x-ndjson\n`).requests;
+  assert.equal(plain.method, 'SSE');
+  assert.equal(plain.label, 'Feed');
+  assert.ok(isSafeMethod('SSE'));
+  const req = await prepare(plain, {});
+  assert.equal(req.method, 'GET');
+  assert.equal(req.stream, true);
+  assert.deepEqual(req.headers, [['Accept', 'text/event-stream']]);
+  assert.deepEqual((await prepare(own, {})).headers, [['Accept', 'application/x-ndjson']]);
+  const seen = [];
+  const r = await send(req, { onStream: (p) => seen.push(p.events) });
+  assert.equal(r.headers.find(([k]) => k === 'x-accept')[1], 'text/event-stream');
+  assert.equal(r.stream.events, 2);
+  assert.ok(seen.length >= 1);
+  assert.equal(prettyBody(r), '#1\n{\n  "first": true\n}\n\n#2  event: last\nbye');
+  writeFileSync(join(dir, 'sse.http'), `### Feed\nSSE ${base}/plain\n`);
+  const app = start({ initialFile: join(dir, 'sse.http') });
+  const f = () => app.lastFrame() ?? '';
+  try {
+    await until(() => f().includes('Feed'), 'the request');
+    app.stdin.write(KEYS.enter);
+    await until(() => /200 OK .*2 events/s.test(f()), 'the two events, as a stream');
+    assert.match(f(), /event: last/);
   } finally {
     app.unmount();
   }

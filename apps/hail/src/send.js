@@ -15,7 +15,8 @@ import { eventReader, eventsText, isEventStream, parseEvents } from './sse.js';
  * the response ([{ script, name }]), `output` where to save its body ({ path, shown, overwrite }, from
  * `>> path`). `payload`, when there is one, is what's sent in place of `body`
  * (the bytes of a multipart body, its files in it, or of a body file), `body` staying the text to show
- * and keep. A GraphQL request becomes the POST of { query, variables } as JSON.
+ * and keep. A GraphQL request becomes the POST of { query, variables } as JSON; an SSE one a GET with
+ * `stream` set (and Accept: text/event-stream unless it says otherwise).
  */
 export async function prepare(request, scope, { dir = process.cwd(), read = (p) => readFile(p, 'utf8'), readBytes = (p) => readFile(p) } = {}) {
   const missing = [];
@@ -55,6 +56,12 @@ export async function prepare(request, scope, { dir = process.cwd(), read = (p) 
     if (!headers.some(([k]) => k.toLowerCase() === 'content-type')) headers.push(['Content-Type', 'application/json']);
     body = JSON.stringify(graphqlBody(body));
   }
+  // JetBrains' SSE: a GET for an event stream, read as one even when the server doesn't say it's one.
+  const stream = method === 'SSE';
+  if (stream) {
+    method = 'GET';
+    if (!headers.some(([k]) => k.toLowerCase() === 'accept')) headers.push(['Accept', 'text/event-stream']);
+  }
   const handlers = [];
   for (const h of request.handlers ?? []) {
     if (h.script != null) handlers.push({ script: h.script, name: `the script on line ${h.line}` });
@@ -68,7 +75,7 @@ export async function prepare(request, scope, { dir = process.cwd(), read = (p) 
     const path = await f(request.output.path);
     output = { path: at(path), shown: path, overwrite: request.output.overwrite };
   }
-  return { method, url, headers, body, ...(payload ? { payload } : {}), missing: [...new Set(missing)], secrets: [...used], handlers, output, options: request.options ?? {} };
+  return { method, url, headers, body, ...(payload ? { payload } : {}), ...(stream ? { stream: true } : {}), missing: [...new Set(missing)], secrets: [...used], handlers, output, options: request.options ?? {} };
 }
 
 /**
@@ -150,7 +157,8 @@ export async function send(req, { signal, fetch = globalThis.fetch, now = () => 
       redirects++;
     }
     const got = [...res.headers.entries()];
-    if (isEventStream(got) && res.body) {
+    // An SSE request's answer is read as a stream unless it failed (an error's body is a page, not events).
+    if ((isEventStream(got) || (req.stream && res.ok)) && res.body) {
       stream = { events: 0, stopped: false };
       const chunks = [];
       const decoder = new TextDecoder();
@@ -217,7 +225,7 @@ export function networkError(e, url, way = {}) {
 export function prettyBody(response) {
   const type = response.headers.find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '';
   const text = response.body;
-  if (isEventStream(response.headers)) return eventsText(parseEvents(text)) || text;
+  if (isEventStream(response.headers) || response.stream || response.streaming) return eventsText(parseEvents(text)) || text;
   if (/json/i.test(type) || /^\s*[[{]/.test(text)) {
     try {
       return JSON.stringify(JSON.parse(text), null, 2);

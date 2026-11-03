@@ -143,7 +143,14 @@ the Response view opens on it and keeps its newest events on screen (scrolling u
 back), each event under a line with its number, `event:` and `id:`, its data JSON indented, and the
 spinner counts them. It goes on until the server ends it or `esc` stops it, which keeps what came; then
 it's kept like any response. In a run of the whole file (or `hail test`) an endless stream needs a
-`# @timeout`, which ends it there rather than failing it.
+`# @timeout`, which ends it there rather than failing it. JetBrains' `SSE` method says so in the
+request line: a GET with `Accept: text/event-stream` (unless the request sets its own `Accept`), read
+as a stream even when the server doesn't name its `Content-Type` (an answer that failed is read whole):
+
+```http
+### Ticks
+SSE {{host}}/events
+```
 
 Hail reads the file again whenever it's saved, so it can sit beside your editor, or you can edit it
 in Hail itself.
