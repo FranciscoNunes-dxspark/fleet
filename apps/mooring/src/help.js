@@ -11,6 +11,7 @@ export const HELP = [
       ['!', 'Run a shell command on this machine, e.g.  !ssh-add -l'],
       ['$', 'Type a command into the Console shell on the server, e.g.  $ ls -l'],
       ['alt+h', "The server's health (/health): disks, memory, load, uptime, the busiest processes, failed units; r reads it again"],
+      ['/harden', "How the server is hardened (read only): open ports, sshd, updates, firewall, accounts, files, the OS's end of life; ↵ a finding's detail and fix, y copy, r again"],
       ['esc', 'Cancel the running command, or clear the activity lines'],
       ['ctrl+r', 'Read both folders again'],
       [',', 'Settings'],

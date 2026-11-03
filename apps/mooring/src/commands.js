@@ -18,6 +18,7 @@ export const COMMANDS = [
   { name: 'sync', args: '[down|up|both] [--checksum] [--delete]', desc: "Make the left pane's folder and the right's match (both ways by default): the plan shown, asked, then the queue; --checksum compares sha256 of files differing only in time; deletes only with --delete", complete: 'sync', run: (ctx, s) => a.sync(ctx, s) },
   { name: 'watch', args: '[off]', desc: "Upload what changes in the left pane's folder to the right pane's as it changes, until /watch off", complete: 'off', run: (ctx, s) => a.watch(ctx, s) },
   { name: 'health', desc: "The server's disk use, memory, load, uptime, busiest processes and failed systemd units (alt+h; r reads it again)", run: (ctx) => a.health(ctx) },
+  { name: 'harden', desc: "Check how the server is hardened (read only): open ports, sshd, updates, firewall, accounts, sudo, SUID and world-writable files, the OS's end of life; worst first, ↵ for each one's detail and fix", run: (ctx) => a.harden(ctx) },
   { name: 'env', args: '[name]', desc: "The project's environment (.fleet/project.json), or switch every app to another; Mooring's section opens a saved host and folder", complete: 'environments', run: (ctx, s) => env(ctx, s) },
   { name: 'mkdir', args: '[name]', desc: "A new folder in the focused pane's folder", run: (ctx, s) => a.mkdir(ctx, ctx.side(), s) },
   { name: 'hidden', args: '[on|off]', desc: 'List files starting with a dot, or not', complete: 'onoff', run: (ctx, s) => a.setHidden(ctx, s) },
