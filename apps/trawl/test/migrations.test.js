@@ -300,6 +300,18 @@ test('Flyway: thousands of versions against as many rows, each matched by a look
   assert.deepEqual(s.notes, ['Version 1.5 is in 2 files: V1_5__m5.sql, V1_5_0__again.sql. Flyway refuses that.', 'Version 1.5.0 is in 2 files: V1_5__m5.sql, V1_5_0__again.sql. Flyway refuses that.']);
 });
 
+test('DbUp: thousands of scripts against as many rows, each matched by a lookup', () => {
+  const files = Array.from({ length: 4000 }, (_, i) => ({ path: `Scripts/Script${String(i).padStart(5, '0')}.sql`, text: '' }));
+  // Embedded resource names, one of them in other case, and a few rows with no file.
+  const rows = files.slice(0, 3990).map((f, i) => ({ ScriptName: `${i === 3 ? 'APP.SCRIPTS.' : 'App.Scripts.'}${f.path.slice(8)}`, Applied: '2024-01-01' }));
+  for (let i = 0; i < 5; i++) rows.push({ ScriptName: `App.Scripts.Gone${i}.sql`, Applied: '2024-01-01' });
+  const started = performance.now();
+  const s = migrationStatus({ tool: 'dbup', files, rows });
+  assert.ok(performance.now() - started < 1000);
+  const count = (status) => s.entries.filter((e) => e.status === status).length;
+  assert.deepEqual([count('applied'), count('pending'), count('missing')], [3990, 10, 5]);
+});
+
 test('Knex: thousands of migrations against as many rows, each matched by a lookup', () => {
   const pad = (i) => String(i).padStart(5, '0');
   const files = Array.from({ length: 5000 }, (_, i) => ({ path: `migrations/${pad(i)}_m.ts`, text: '' }));

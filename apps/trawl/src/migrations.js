@@ -282,13 +282,25 @@ function dbup(files, history) {
   const sql = files.filter((f) => /\.sql$/i.test(f.path)).sort((x, y) => byText(base(x.path), base(y.path)));
   const applied = history.map((r) => ({ ...r, script: String(r.scriptname ?? '') }));
   // DbUp names an embedded script by its resource name (MyApp.Scripts.Script0001.sql), a file by its name.
-  const matches = (script, file) => script.toLowerCase() === file.toLowerCase() || script.toLowerCase().endsWith(`.${file.toLowerCase()}`);
+  // A script is a file's when, lower-cased, it is the file's name or ends with . and the name: so each
+  // script stands for itself and for what follows each of its dots. The first row for each of those,
+  // and the files' names, are looked up rather than searched for each file and each row (2,000 of
+  // each took 1.1 s).
+  const namesOf = (script) => {
+    const s = script.toLowerCase();
+    const out = [s];
+    for (let i = s.indexOf('.'); i >= 0; i = s.indexOf('.', i + 1)) out.push(s.slice(i + 1));
+    return out;
+  };
+  const rowFor = new Map();
+  for (const r of applied) for (const n of namesOf(r.script)) if (!rowFor.has(n)) rowFor.set(n, r);
+  const fileNames = new Set(sql.map((f) => base(f.path).toLowerCase()));
   const entries = [];
   for (const f of sql) {
-    const row = applied.find((r) => matches(r.script, base(f.path)));
+    const row = rowFor.get(base(f.path).toLowerCase());
     entries.push({ script: base(f.path), file: f, version: null, description: '', status: row ? 'applied' : 'pending', detail: row ? dateText(row.applied) : '' });
   }
-  for (const r of applied) if (!sql.some((f) => matches(r.script, base(f.path)))) entries.push({ script: r.script, version: null, description: '', status: 'missing', detail: `applied ${dateText(r.applied)}, no file` });
+  for (const r of applied) if (!namesOf(r.script).some((n) => fileNames.has(n))) entries.push({ script: r.script, version: null, description: '', status: 'missing', detail: `applied ${dateText(r.applied)}, no file` });
   return { tool: 'dbup', entries, pending: entries.filter((e) => e.status === 'pending'), notes: ["DbUp keeps no checksums, so a script changed since it ran can't be told; scripts run in name order."], runnable: true };
 }
 
