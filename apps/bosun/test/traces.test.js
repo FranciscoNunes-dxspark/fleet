@@ -163,6 +163,22 @@ test('the store keeps traces slowest first, bounded by count and age, and the wa
   assert.match(spanText(spans[2], s.start), /db\.query\.text = SELECT \* FROM orders/);
 });
 
+test('the store lists 300 traces of 2,000 spans in a moment, each summed again only when a span of it arrives', () => {
+  const store = new TraceStore();
+  const span = (t, i, start = 1000 + i) => ({ traceId: `t${t}`, spanId: `s${i}`, parentId: i ? `s${Math.floor((i - 1) / 3)}` : '', name: `span ${i}`, service: 'api', start, end: start + 5, attrs: {}, status: { code: 0 } });
+  for (let t = 0; t < 300; t++) store.add(Array.from({ length: 2000 }, (_, i) => span(t, i)), 0);
+  store.list(0);
+  const started = performance.now();
+  for (let i = 0; i < 20; i++) store.list(0);
+  assert.ok(performance.now() - started < 200, 'it took too long');
+  assert.equal(store.list(0)[0].duration, 2004);
+  // A span sent again (a full trace keeps the ones it has) changes its trace's row.
+  store.add([span(7, 1999, 9000)], 1);
+  assert.deepEqual([store.list(1)[0].id, store.list(1)[0].duration, store.list(1)[0].spans], ['t7', 8005, 2000]);
+  store.add([{ ...span(8, 5, 1005), status: { code: 2 } }], 2);
+  assert.equal(store.list(2).find((t) => t.id === 't8').errors, 1);
+});
+
 test('a span hands its SQL to Trawl and its request to Hail, from current and older conventions', () => {
   const [web, api, db] = decodeTraceRequest(PROTO);
   const q = spanHandoff(db);
