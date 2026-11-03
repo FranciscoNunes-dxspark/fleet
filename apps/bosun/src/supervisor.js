@@ -334,10 +334,14 @@ export class Supervisor {
     if (p.spec.logs?.length) this.tailFor(p, child);
     if (p.spec.trace) this.traceFor(p, child);
     let buffered = { out: '', err: '' };
-    const take = (which, err) => (d) => {
+    const take = (which, err) => (chunk) => {
+      const d = String(chunk);
+      // Only the new chunk is looked through for the line's end: a progress bar redrawn with \r and
+      // no newline for minutes would otherwise have the whole of what it said searched each time.
+      const inChunk = d.lastIndexOf('\n');
+      if (inChunk < 0) return void (buffered[which] += d);
+      const cut = buffered[which].length + inChunk;
       buffered[which] += d;
-      const cut = buffered[which].lastIndexOf('\n');
-      if (cut < 0) return;
       const { status, trouble } = p;
       this.push(p, buffered[which].slice(0, cut), err);
       buffered[which] = buffered[which].slice(cut + 1);
