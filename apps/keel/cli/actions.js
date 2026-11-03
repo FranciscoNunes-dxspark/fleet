@@ -7,6 +7,7 @@ import { approvalsFor, deployChoices, downloadChoices, isGithubRelease, stageSta
 import { runText } from './runs.js';
 import { doneChanges } from './board.js';
 import { closedText, commitsText, doraScope, doraText, flakyText, insightsText, totalsText } from './reports.js';
+import { reviewSummary } from './security.js';
 import { compareForSonar, deploys, familyChoices, prContext, runForSplice, timelineText } from './kin.js';
 import { environmentFirst, productionAsk } from './environment.js';
 import { describeEnvironments, setEnvironment } from '@fleet/kit/environments.js';
@@ -708,6 +709,26 @@ export function env(ctx, text = '') {
   if (!r.ok) return ctx.note(r.error, 'error');
   const keel = r.env.settings?.keel?.environment;
   ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production): Keel asks before it changes a deployment there' : ''}.${keel ? `\n${keel} goes first in Production and Releases, and /dora counts it as production.` : ''}`);
+}
+
+/**
+ * /security [project]: the security review of the tracked Azure DevOps projects, or the one named
+ * (server/domain/devopssecurity.js), read again now, as a list over the tab, worst first.
+ */
+export async function showSecurity(ctx, text = '') {
+  const project = String(text ?? '').trim() || undefined;
+  let review;
+  const r = await ctx.task(`Security review${project ? ` of ${project}` : ''}`, async () => {
+    try {
+      review = await ctx.service.devopsSecurity({ project, fresh: true });
+    } catch (e) {
+      if (ctx.server && e.status === 404) throw new Error(`Your team's Keel at ${ctx.server} has no security review yet: it's older than this terminal. Once it's updated, /security works.`);
+      throw e;
+    }
+    if (!review.projects.length) throw new Error(project ? `No Azure DevOps project called ${project}.` : 'No tracked Azure DevOps projects to review: track one in Settings, or name one (/security <project>).');
+    return [reviewSummary(review)];
+  }, { label: 'Reading the projects\' settings', quiet: true });
+  if (r.ok) ctx.showSecurity(review);
 }
 
 /** /flaky: tests that fail now and then and pass again without a fix. */

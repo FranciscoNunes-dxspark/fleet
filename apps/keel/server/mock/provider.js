@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { stageSummary } from '../domain/releases.js';
 import { demoFile } from './files.js';
 import { DEMO_FILES } from './advisories.js';
+import { demoSecuritySettings } from './security.js';
 
 // Demo provider: a deterministic, in-memory Azure DevOps organization.
 // It implements exactly the same methods and return shapes as
@@ -914,6 +915,13 @@ export function createMockProvider() {
       const text = repo && DEMO_FILES[repo.name]?.[path];
       if (text === undefined) throw notFound('File');
       return delay(text);
+    },
+
+    // A project's settings as Azure DevOps' REST answers them, for its security review (mock/security.js).
+    readSecuritySettings(projectId) {
+      const p = projectById(projectId);
+      if (!p) throw notFound('Project');
+      return delay(demoSecuritySettings(p, ORG));
     },
 
     listPullRequests: (projectId, { status = 'active', closedAfter } = {}) => delay(
