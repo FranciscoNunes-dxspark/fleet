@@ -95,18 +95,21 @@ export function layoutGraph(rows, { wip, main } = {}) {
   });
 
   // Columns, group by group: branches in the order they start, each in the left-most column it doesn't
-  // overlap, which takes as few columns as there can be.
+  // overlap, which takes as few columns as there can be. Taken in the order they start, a branch overlaps
+  // a column's branches only if the lowest of them reaches its top, so each column keeps just that bottom
+  // (a long history has thousands of branches, and comparing each with every one before it took seconds).
   let offset = 0;
+  const byColumn = [];
   for (let g = 0; g <= GROUPS.length; g++) {
-    const columns = [];
+    const bottoms = [];
     const group = tracks.filter((t) => t.group === g).sort((a, b) => a.top - b.top || b.bottom - a.bottom);
     for (const t of group) {
-      let c = columns.findIndex((used) => used.every((o) => t.top > o.bottom || t.bottom < o.top));
-      if (c < 0) c = columns.push([]) - 1;
-      columns[c].push(t);
+      let c = bottoms.findIndex((bottom) => t.top > bottom);
+      if (c < 0) c = bottoms.push(-1) - 1;
+      bottoms[c] = t.bottom;
       t.column = offset + c;
     }
-    offset += columns.length;
+    offset += bottoms.length;
   }
 
   // Colours: the default branch's own; the others in turn, unlike the branches beside them.
@@ -115,13 +118,20 @@ export function layoutGraph(rows, { wip, main } = {}) {
   for (const t of [...tracks].sort((a, b) => a.top - b.top)) {
     if (t.group === 0) {
       t.color = theme.lanes[0];
+      (byColumn[t.column] ??= []).push(t);
       continue;
     }
-    const near = tracks.filter((o) => o.color && Math.abs(o.column - t.column) === 1 && o.top <= t.bottom && o.bottom >= t.top).map((o) => o.color);
+    // The branches beside it already coloured that it overlaps: in a column they started no later than it
+    // and end in the order they start, so they're the last ones coloured there that reach its top.
+    const near = [];
+    for (const side of [byColumn[t.column - 1], byColumn[t.column + 1]]) {
+      for (let j = (side?.length ?? 0) - 1; j >= 0 && side[j].bottom >= t.top; j--) near.push(side[j].color);
+    }
     let k = 0;
     while (k < others.length - 1 && near.includes(others[(turn + k) % others.length])) k++;
     t.color = others[(turn + k) % others.length];
     turn += k + 1;
+    (byColumn[t.column] ??= []).push(t);
   }
   // Where lines meet, the more lasting branch's colour shows.
   tracks.forEach((t, i) => (t.rank = t.group * tracks.length + i));
