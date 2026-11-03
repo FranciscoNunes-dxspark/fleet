@@ -62,7 +62,7 @@ function Header({ build, measure, over, compare, cwd, env, width, loading, mood,
   // The project's environment, when it names them: red and bold for a production one.
   if (env) segs.push({ text: '  │  ', color: theme.border }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
   if (build?.chunks.length) {
-    segs.push({ text: '  │  ', color: theme.border }, { text: `${formatBytes(sizeIn(totals(build.chunks), measure))} ${measure}`, bold: true }, { text: ` in ${build.chunks.length} files`, color: theme.dim });
+    segs.push({ text: '  │  ', color: theme.border }, { text: `${formatBytes(sizeIn(totals(build.chunks), measure))} ${measure}`, bold: true }, { text: ` in ${build.chunks.length} file${build.chunks.length === 1 ? '' : 's'}`, color: theme.dim });
     if (over) segs.push({ text: `  ${over} over budget`, color: theme.del, bold: true });
     const t = compare?.result?.total;
     if (t) segs.push({ text: `  ${t.delta ? formatDelta(t.delta) : '±0'} vs ${compare.base === 'last' ? 'last' : compare.name}`, color: t.delta > 0 ? theme.warn : t.delta < 0 ? theme.add : theme.dim });

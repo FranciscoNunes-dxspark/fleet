@@ -45,7 +45,7 @@ export function ChunksView({ build, checks, measure, ctx, width, height, active 
   const all = sizeIn(totals(chunks), measure) || 1;
   const fileW = Math.max(20, inner - 66);
   const over = checks.filter((b) => b.over).length;
-  const hint = build ? [`${chunks.length} files`, `${formatBytes(sizeIn(totals(chunks), measure))} ${measure}`, over ? `${over} over budget` : checks.length ? 'within budgets' : '', `sorted by ${sort} (s)`].filter(Boolean).join(' · ') : '';
+  const hint = build ? [`${chunks.length} file${chunks.length === 1 ? '' : 's'}`, `${formatBytes(sizeIn(totals(chunks), measure))} ${measure}`, over ? `${over} over budget` : checks.length ? 'within budgets' : '', `sorted by ${sort} (s)`].filter(Boolean).join(' · ') : '';
   let empty = null;
   if (!build) empty = '  Reading the build…';
   else if (!chunks.length) empty = '  No stats file and no output folder (dist, build, .next/static, out): /build builds it once with stats.';

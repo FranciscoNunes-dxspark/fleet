@@ -17,7 +17,8 @@ const packageName = (node) => node.name ?? node.pkg?.name ?? null;
  * size, its share and how many modules it holds.
  */
 export function ModulesView({ build, file, measure, ctx, width, height, active }) {
-  const innerH = height - 2;
+  // One row for the columns' names.
+  const innerH = height - 3;
   const chunks = (build?.chunks ?? []).filter((c) => (file ? c.file === file : c.modules.length));
   const tree = useMemo(() => moduleTree(chunks, measure), [build, file, measure]);
   const [open, setOpen] = useState(() => new Set());
@@ -59,7 +60,7 @@ export function ModulesView({ build, file, measure, ctx, width, height, active }
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {
     if (e.wheel) return nav.scrollBy(e.wheel * 3);
-    if (nav.pick(e.y - 1) && e.double) keys('', { return: true });
+    if (nav.pick(e.y - 2) && e.double) keys('', { return: true });
   });
 
   const inner = width - 4;
@@ -69,7 +70,11 @@ export function ModulesView({ build, file, measure, ctx, width, height, active }
   const empty = !build ? '  Reading the build…' : !chunks.length ? '  Nothing inside to show: the stats (or source maps) say what a file holds, and there are none for this one. /build builds with them.' : null;
   return (
     <Panel title={`Modules · ${file ?? 'all chunks'}`} hint={hint} width={width} height={height} focused={active}>
-      {empty ? <Row pointer={false} width={width - 2} segments={[{ text: empty, color: theme.dim }]} /> : null}
+      {empty ? (
+        <Row pointer={false} width={width - 2} segments={[{ text: empty, color: theme.dim }]} />
+      ) : (
+        <Row pointer={false} width={width - 2} segments={[{ text: `  ${fit(build?.chunks.length ? 'package or folder' : '', labelW)} ${fit(`≈ ${measure}`, 9, 'right')} ${fit('raw', 9, 'right')} ${fit('share', 6, 'right')}`, color: theme.dim }]} />
+      )}
       {rows.slice(nav.offset, nav.offset + innerH).map(({ node, depth, open: isOpen }, i) => {
         const mark = node.children?.length ? (isOpen ? '▾ ' : '▸ ') : '  ';
         const label = node.kind === 'package' ? `${node.label}${node.versions.length ? ` ${node.versions.join(', ')}` : ''}` : node.label;

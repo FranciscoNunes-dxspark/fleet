@@ -34,7 +34,7 @@ test("Plod's mood: a file over its budget worries it, a build within its budgets
   assert.equal(moodFor({ build, over: 1 }), 'worried');
   assert.equal(moodFor({ build, over: 0 }), 'wave');
   assert.equal(moodFor({ build: { chunks: [] } }), 'sleep');
-  assert.match(moodLine({ build, over: 1, total: 190000 }), /1 files, 190\.0 kB gzip; 1 over budget/);
+  assert.match(moodLine({ build, over: 1, total: 190000 }), /1 file, 190\.0 kB gzip; 1 over budget/);
   for (const m of ['idle', 'look', 'sleep', 'happy', 'worried', 'wave']) assert.ok(petPixels(m).every((row) => row.length === 16), m);
   const said = reactionTo([{ app: 'bilge', mood: 'worried', reason: '2 critical', at: 5 }]);
   assert.match(said.text, /Plod pulls its head in: Bilge is worried \(2 critical\)/);

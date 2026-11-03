@@ -97,7 +97,7 @@ export function moodFor({ build, over = 0, busy, lastEntry, now = Date.now() }) 
 export function moodLine({ build, over = 0, total = null, measure = 'gzip', compared = null }) {
   if (!build) return `${PET.name} is weighing the build.`;
   if (!build.chunks.length) return 'No stats file or output folder here: /build builds it once with stats, or /move to a project.';
-  const weight = `${build.chunks.length} files, ${formatBytes(total)} ${measure}`;
+  const weight = `${build.chunks.length} file${build.chunks.length === 1 ? '' : 's'}, ${formatBytes(total)} ${measure}`;
   if (over) return `${weight}; ${over} over budget. ↵ on one says what's in it.`;
   if (compared) return `${weight}; ${compared}.`;
   return `${weight}. 2 shows what's inside, 4 what changed.`;

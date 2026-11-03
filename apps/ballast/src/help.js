@@ -43,7 +43,7 @@ export const HELP = [
     rows: [
       ['↵ / l / →', 'Open or close a package or folder; on a file, where it is and what it weighs'],
       ['← / h', 'Close it, or go up to the one it is in'],
-      ['c / C', 'The next chunk, the one before (all chunks first)'],
+      ['c / alt+c', 'The next chunk, the one before (all chunks first)'],
       ['p', 'The package: its copies, what brings each in, its licence and its advisories (OSV)'],
       ['w', 'Copy "/why <package>" for Bilge, which says which manifest brings it in'],
       ['t', 'Copy a file of the project\'s own for Splice, whose history says who made it heavy'],

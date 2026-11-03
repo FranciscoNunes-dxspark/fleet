@@ -179,7 +179,7 @@ async function runSizes(opts, dir, { provider, write }) {
     );
     return failing.length ? 1 : 0;
   }
-  const lines = [`${build.chunks.length} files under ${dir} (${build.source.label}): ${formatBytes(sizeIn(totals(build.chunks), measure))} ${measure}`];
+  const lines = [`${build.chunks.length} file${build.chunks.length === 1 ? '' : 's'} under ${dir} (${build.source.label}): ${formatBytes(sizeIn(totals(build.chunks), measure))} ${measure}`];
   if (!budgets.length) lines.push(`No budgets: give --budget dist/assets/index-*.js=180kB, or put them in ballast.json.`);
   for (const b of checks) lines.push(budgetLine(b, measure));
   if (base) lines.push(result ? `Against ${runLabel(base.run, base.name)}: ${result.headline}${result.total.before ? ` (${formatPercent(result.total.delta, result.total.before)})` : ''}` : `Not compared: ${base.missing}`);
