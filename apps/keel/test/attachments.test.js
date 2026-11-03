@@ -109,3 +109,13 @@ test('in the demo, an attached file is listed and downloads as it was uploaded',
   const file = await demo.downloadAttachment(added.id, 'notes.txt');
   assert.equal(await new Response(file.stream).text(), 'hello demo');
 });
+
+test("in the demo, a bug's own files are listed with the size they download at", async () => {
+  const demo = createMockProvider();
+  const ids = Array.from({ length: 200 }, (_, i) => 4100 + i);
+  const files = (await Promise.all(ids.map((id) => demo.listAttachments(id).catch(() => [])))).flat();
+  const png = files.find((a) => a.name.endsWith('.png'));
+  assert.ok(png, 'a screenshot');
+  assert.ok(png.size > 0);
+  assert.equal((await demo.downloadAttachment(png.id, png.name)).length, png.size);
+});
