@@ -46,7 +46,16 @@ const KINDS = { U: 'table', V: 'view', P: 'procedure', FN: 'function', IF: 'func
 /** Rows of a result set as objects keyed by column name. */
 export function rowsOf(set) {
   if (!set) return [];
-  return set.rows.map((row) => Object.fromEntries(set.columns.map((c, i) => [c.name, row[i]])));
+  const names = set.columns.map((c) => c.name);
+  // A column called __proto__ would set the prototype when assigned, not be a property.
+  if (names.includes('__proto__')) return set.rows.map((row) => Object.fromEntries(names.map((n, i) => [n, row[i]])));
+  // A property at a time, in the columns' order, so every row has the same shape: through
+  // Object.fromEntries, the catalog of a database of thousands of tables took several hundred milliseconds.
+  return set.rows.map((row) => {
+    const o = {};
+    for (let i = 0; i < names.length; i++) o[names[i]] = row[i];
+    return o;
+  });
 }
 
 /**

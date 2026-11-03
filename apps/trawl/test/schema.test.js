@@ -1,11 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ADD_USAGE, commitMode, connectionRows, isReadOnly, parseAddArgs, parseServer, splitArgs, tediousConfig } from '../src/connections.js';
-import { buildSchema, createTableScript, definitionSql, describeObject, findObject, typeLabel } from '../src/schema.js';
+import { buildSchema, rowsOf, createTableScript, definitionSql, describeObject, findObject, typeLabel } from '../src/schema.js';
 import { demoSession } from '../src/demo.js';
 import { SCHEMA_SQL } from '../src/schema.js';
 
 const set = (names, rows) => ({ columns: names.map((name) => ({ name })), rows });
+
+test('rows as objects keyed by column, the last of a repeated name winning, __proto__ a property like any other', () => {
+  assert.deepEqual(rowsOf(set(['a', 'b', 'a'], [[1, 2, 3], [4, 5, 6]])), [{ a: 3, b: 2 }, { a: 6, b: 5 }]);
+  const [row] = rowsOf(set(['__proto__', 'x'], [[{ polluted: true }, 1]]));
+  assert.equal(Object.getPrototypeOf(row), Object.prototype);
+  assert.deepEqual(Object.keys(row), ['__proto__', 'x']);
+  assert.equal(row.polluted, undefined);
+  assert.deepEqual(rowsOf(null), []);
+});
 
 test('types read the way they are declared', () => {
   assert.equal(typeLabel('nvarchar', 100, 0, 0), 'nvarchar(50)');
