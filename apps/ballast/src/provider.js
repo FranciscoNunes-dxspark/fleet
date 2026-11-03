@@ -30,9 +30,9 @@ export function createBallast({ run = runCommand, home = configDir, fetchImpl = 
     if (plan.temp) mkdirSync(plan.temp, { recursive: true });
     try {
       await run(plan.command, { cwd: dir, signal, onLine });
-      if (plan.statsPath) return readBuild(dir, { statsPath: plan.statsPath, now });
-      if (plan.outDir) return readBuild(dir, { outDirs: [{ dir: plan.outDir, label: plan.outLabel ?? 'dist' }], now });
-      return readBuild(dir, { now });
+      if (plan.statsPath) return await readBuild(dir, { statsPath: plan.statsPath, now });
+      if (plan.outDir) return await readBuild(dir, { outDirs: [{ dir: plan.outDir, label: plan.outLabel ?? 'dist' }], now });
+      return await readBuild(dir, { now });
     } finally {
       if (plan.temp) rmSync(plan.temp, { recursive: true, force: true });
     }
