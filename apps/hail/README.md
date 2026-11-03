@@ -33,6 +33,7 @@ hail api.http     # that file
 hail              # the first .http (or .rest) file in this folder or the two below it
 hail test api.http [--env dev] [--contract-strict]   # send them all without the screen and report (for CI)
 hail mock api.http [--port 4010] [--env dev]         # serve the responses kept for them, until ctrl+c
+hail security https://app.example [--json] [--sarif [file]] [--fail-on high]   # a security scan of an app you own
 ```
 
 With none, `/new` writes an example to start from.
@@ -535,6 +536,55 @@ does: without the cookie jar, response handlers or `>>`, and not kept in History
 belong to the comparison. Before anything but a `GET`, `HEAD` or `OPTIONS` goes to a production
 environment, Hail asks.
 
+### Security scan
+
+**Only for an app you own or are authorised to test.** Scanning someone else's site without their
+permission may be against the law where you or they are, and it is never what this is for.
+
+`/scan [url]` looks at a web app from the outside, as an attacker's first pass would, and lists what
+it finds, worst first. With no URL it scans the origin of the request picked in Requests, filled in in
+the environment Hail is in (`https://api.example.com/`). It always asks first, naming the target and
+about how many requests it sends (some 22, plus two for each of the file's requests it checks for
+missing authentication, never more than 80); in an environment the project calls production
+(`.fleet/project.json`), it asks again. It sends only `GET`, `HEAD`, `OPTIONS` and one `TRACE`, no more than
+three at a time, each given 8 seconds, never through the cookie jar and never kept in History. `esc` stops it and
+shows what it found so far.
+
+| Check | Rule ids | |
+| --- | --- | --- |
+| TLS | `tls-old-negotiated`, `tls-1.0-accepted`, `tls-1.1-accepted`, `cert-expired`, `cert-expiring`, `cert-hostname-mismatch`, `cert-self-signed`, `cert-untrusted` | For an https target: the protocol negotiated, whether a TLS 1.0-only or 1.1-only handshake is accepted, the certificate's end (under 30 days medium, under 7 high, gone critical), whether it names the host, who issued it |
+| https | `http-no-https-redirect` | An http target that answers rather than sending you to https (high) |
+| Headers | `hsts-missing`, `hsts-short`, `csp-missing`, `xcto-missing`, `framing-allowed`, `referrer-policy-missing`, `server-version`, `powered-by` | On the main response (after a redirect on the same host): Strict-Transport-Security (over https), Content-Security-Policy, X-Content-Type-Options, X-Frame-Options or frame-ancestors, Referrer-Policy; `Server` with a version and `X-Powered-By` (low). A page weighs more than an API's JSON |
+| Cookies | `cookie-not-secure`, `cookie-not-httponly`, `cookie-no-samesite`, `cookie-samesite-none-insecure` | Each `Set-Cookie`: Secure over https, HttpOnly for one named like a session, SameSite. Their values are never shown |
+| CORS | `cors-reflected-credentials`, `cors-reflected`, `cors-null-credentials`, `cors-wildcard-credentials` | A request with `Origin: https://evil.example`: the origin echoed back (high with `Access-Control-Allow-Credentials: true`), `*` with credentials |
+| Exposed files | `exposed-git`, `exposed-env`, `exposed-ds-store`, `exposed-server-status`, `exposed-actuator`, `exposed-api-docs`, `exposed-phpinfo`, `exposed-backup`, `exposed-web-config`, `exposed-elmah`, `exposed-debug`, `exposed-console`, `no-security-txt` | `/.git/HEAD`, `/.env`, `/.DS_Store`, `/server-status`, `/actuator/env`, `/swagger`, `/swagger/index.html`, `/openapi.json`, `/v2/api-docs`, `/phpinfo.php`, `/backup.zip`, `/web.config`, `/elmah.axd`, `/debug`, `/console`, and `/.well-known/security.txt`'s absence (low). Redirects aren't followed, and each is judged by what came back (`ref:` for `.git/HEAD`, `KEY=value` lines for `.env`, a zip's first bytes…), compared with the answer to a path that can't exist first, so a single-page app that answers everything with its index page finds nothing. A `.env` shows only its names |
+| Methods | `methods-allowed`, `trace-enabled` | `OPTIONS`'s `Allow` listing `TRACE`, `PUT`, `DELETE` (low); a `TRACE` that echoes the request back (medium; not sent through a proxy) |
+| Errors | `verbose-error` | The answer to a path that can't exist and to a malformed query, looked at for stack traces and debug pages (Node, .NET, Java, Python, PHP, Rails, Django, Laravel, Go) |
+| Authentication | `auth-not-required` | Each of the file's requests to the same host that carries a credential header (`Authorization`, `Cookie`, an API key, anything named like a token) is sent with it and then without it; answering 2xx with the same kind of body both times is high. Only `GET`, `HEAD` and `OPTIONS` ones, unless you say yes to the others when asked |
+
+In the list, `↵` shows a finding's evidence: the request, its status, the header seen and a short
+excerpt of the body (secrets the request filled in blanked, values named like a password or key
+masked), then why it matters and the fix. `y` copies one finding, `m` the whole report as Markdown.
+
+`hail security <url|file.http>` does the same from the shell, for CI: given a `.http` file it scans the
+origin of its first request in `--env`'s environment (else the one Hail last used for the file) and
+checks its `GET`s with credentials. It prints the findings, worst first, and exits with 1 when any is as
+bad as `--fail-on` (`high` unless said: `critical`, `high`, `medium`, `low` or `none`), 2 when it couldn't
+run. `--json` prints the family's findings JSON, the same shape every app's security checks print and
+Fleet reads:
+
+```json
+{ "app": "hail", "check": "web", "target": "https://app.example/", "at": "2026-11-03T10:00:00.000Z",
+  "counts": { "critical": 0, "high": 1, "medium": 2, "low": 3, "unknown": 0 },
+  "environment": "staging", "sent": 24, "capped": false, "notes": [], "tls": { "protocol": "TLSv1.3", "validTo": "…", "issuer": "…" },
+  "findings": [{ "rule": "cors-reflected-credentials", "severity": "high", "title": "CORS lets any site read it, signed in",
+    "where": "https://app.example/", "request": "GET / with Origin: https://evil.example", "status": 200,
+    "header": "Access-Control-Allow-Origin: https://evil.example · Access-Control-Allow-Credentials: true", "why": "…", "fix": "…" }] }
+```
+
+`--sarif [file]` writes SARIF 2.1.0 for GitHub's or Azure DevOps' code scanning (to the file, a `.sarif`
+or `.json`, or else stdout). For a production environment it refuses unless given `--production`.
+
 ### Claude drafts requests
 
 `/draft <openapi.json, a URL, or any file> [what to write]` hands an API description to Claude (through
@@ -704,6 +754,7 @@ and Trawl.
 | `/env [name]` | The environment the variables come from (a list to pick from if none is named) |
 | `/project-env [name]` | The project's environment, every app's (`.fleet/project.json`): alone, which it is; a name switches every app, and Hail's variables then come from the environment of Hail's it names (see [Environments](#environments)) |
 | `/compare [environment]` | Send the request picked in Hail's environment and in another (Hail's own, or the project's), and show how the answers differ: status, time, headers and the body, JSON by path (see [Comparing environments](#comparing-environments)) |
+| `/scan [url]` | A security scan of a web app you own or may test (the picked request's origin unless a URL is named): TLS, headers, cookies, CORS, exposed files, TRACE, verbose errors, routes that answer without their credentials; asks first; `↵` evidence, `y` copy, `m` Markdown (see [Security scan](#security-scan)) |
 | `/curl [request]` | Copy a request, filled in, as a curl command |
 | `/data` | The response body, when it is JSON, JSON lines or CSV/TSV, as a tree to open and close (`→ ← ↵`) or, for rows, a table (`t`); `y` copies a value, `p` its path, `/` asks a path such as `.items[0].name` or `.items[].id \| length`; `esc` closes (`d` in Response) |
 | `/import <file> [--new]` | Add the requests in a Postman collection, a HAR recording or an OpenAPI or Swagger document (or a Postman environment, to `http-client.env.json`); `--new` writes them to a file of their own |
