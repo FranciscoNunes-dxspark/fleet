@@ -238,6 +238,11 @@ test('the history read for secrets: one added then removed is only in the histor
   const capped = await readHistory({ root: dir, max: 2 });
   assert.equal(capped.commits, 2);
   assert.equal(capped.truncated, true);
+  // A commit at a time, several gits reading ahead: the same findings, the oldest commit kept, progress in order.
+  const progress = [];
+  const chunked = await readHistory({ root: dir, chunk: 1, onProgress: (done) => progress.push(done) });
+  assert.deepEqual(chunked.findings, found.findings);
+  assert.deepEqual(progress, [1, 2, 3, 4, 5]);
 });
 
 test('splice security prints the kit\'s security JSON, SARIF, and fails on what --fail-on says', async () => {
