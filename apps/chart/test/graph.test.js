@@ -61,6 +61,35 @@ test('the tree: what nothing depends on at the top, what depends on each under i
   assert.deepEqual(cyclic.map((r) => r.change.address).sort(), ['a.a', 'b.b']);
 });
 
+test('what depends on what over thousands of resources: the same answers, in well under a second', () => {
+  // A what-if's ids: an app, its slots, a slot's child, mixed case and a twice-listed id.
+  const ids = idDependencies([
+    { address: 'app', id: '/S/rg/providers/W/sites/app' },
+    { address: 'slot', id: '/s/RG/providers/w/sites/app/slots/one' },
+    { address: 'cfg', id: '/s/rg/providers/w/sites/app/slots/one/config/web' },
+    { address: 'app2', id: '/s/rg/providers/w/sites/app' },
+    { address: 'apple', id: '/s/rg/providers/w/sites/apple' },
+    { address: 'none' },
+  ]);
+  assert.deepEqual(ids, { app: [], slot: ['app', 'app2'], cfg: ['app', 'slot', 'app2'], app2: [], apple: [], none: [] });
+  // Listed twice is one dependent; what nothing names has none.
+  assert.deepEqual(dependentsOf({ b: ['a', 'a'], c: ['b'], d: ['a'] }, 'a'), ['b', 'd', 'c']);
+  assert.deepEqual(dependentsOf({ b: ['a'] }, 'z'), []);
+
+  const N = 5000;
+  const changes = Array.from({ length: N }, (_, i) => ({ address: `t.r${i}`, action: i % 100 === 0 ? 'delete' : 'update', id: i % 5 ? `/rg/p/sites/a${Math.floor(i / 5)}/slots/s${i}` : `/rg/p/sites/a${i / 5}` }));
+  const dependsOn = Object.fromEntries(changes.map((c, i) => [c.address, i ? [changes[i - 1].address] : []]));
+  const t0 = performance.now();
+  const byIds = idDependencies(changes);
+  const affected = affectedBy(changes, dependsOn);
+  const rows = dependencyRows(changes, dependsOn, { rank: actionRank });
+  assert.ok(performance.now() - t0 < 1000, `took ${Math.round(performance.now() - t0)} ms`);
+  assert.deepEqual(byIds['t.r7'], ['t.r5']);
+  assert.deepEqual(affected['t.r101'], ['t.r0', 't.r100']);
+  assert.equal(rows.length, N);
+  assert.equal(rows.at(-1).depth, N - 1, 'one long chain');
+});
+
 test("the provider's terraform graph runs in the environment's workspace", async () => {
   const calls = [];
   const chart = createChart({ run: async (command, opts) => (calls.push({ command, env: opts.env }), { stdout: DEMO_GRAPH, stderr: '' }) });

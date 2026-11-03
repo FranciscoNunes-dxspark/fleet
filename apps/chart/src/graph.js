@@ -105,25 +105,55 @@ export function parseDot(text, addresses) {
 
 /** A what-if's `dependsOn`: each resource on the one whose id its own id is under (a slot on its app, a database on its server). */
 export function idDependencies(changes) {
+  // The changes by their lowercased id, so each change looks up the ids its own starts with (each
+  // prefix ending before a "/") rather than comparing itself with every other change.
+  const byId = new Map();
+  changes.forEach((p, i) => {
+    if (!p.id) return;
+    const key = String(p.id).toLowerCase();
+    if (!byId.has(key)) byId.set(key, []);
+    byId.get(key).push(i);
+  });
   const out = {};
   for (const c of changes) {
     const id = String(c.id ?? '').toLowerCase();
-    out[c.address] = changes.filter((p) => p !== c && p.id && id.startsWith(`${String(p.id).toLowerCase()}/`)).map((p) => p.address);
+    const found = [];
+    for (let j = id.indexOf('/'); j >= 0; j = id.indexOf('/', j + 1)) for (const i of byId.get(id.slice(0, j)) ?? []) found.push(i);
+    out[c.address] = found.sort((x, y) => x - y).map((i) => changes[i].address);
   }
   return out;
+}
+
+// What depends on each address directly, sorted: dependsOn turned round once per dependsOn (never
+// changed once made), so walking what depends on what doesn't scan every address at each step.
+const directIndex = new WeakMap();
+function directDependents(dependsOn) {
+  let index = directIndex.get(dependsOn);
+  if (index) return index;
+  index = new Map();
+  for (const k of Object.keys(dependsOn)) {
+    for (const a of dependsOn[k]) {
+      const list = index.get(a);
+      if (!list) index.set(a, [k]);
+      else if (list.at(-1) !== k) list.push(k);
+    }
+  }
+  for (const list of index.values()) list.sort();
+  directIndex.set(dependsOn, index);
+  return index;
 }
 
 /** What depends on `address`, directly and through others: addresses, nearest first. */
 export function dependentsOf(dependsOn, address) {
   if (!dependsOn) return [];
-  const direct = (a) => Object.keys(dependsOn).filter((k) => dependsOn[k].includes(a)).sort();
+  const index = directDependents(dependsOn);
   const seen = new Set([address]);
   const out = [];
   let level = [address];
   while (level.length) {
     const next = [];
     for (const a of level)
-      for (const d of direct(a))
+      for (const d of index.get(a) ?? [])
         if (!seen.has(d)) {
           seen.add(d);
           out.push(d);
@@ -164,11 +194,18 @@ export function dependencyRows(changes, dependsOn, { rank = () => 0 } = {}) {
   for (const [a, deps] of Object.entries(dependsOn ?? {})) for (const d of deps) if (dependents.has(d) && by.has(a)) dependents.get(d).push(a);
   const rows = [];
   const shown = new Set();
+  // `path` is the way down to here, added to going in and taken from coming out (a copy at each step
+  // made a long chain quadratic).
   const visit = (c, depth, path) => {
     if (shown.has(c.address)) return rows.push({ change: c, depth, repeat: true });
     shown.add(c.address);
     rows.push({ change: c, depth, repeat: false });
-    for (const d of order(dependents.get(c.address) ?? [])) if (!path.has(d.address)) visit(d, depth + 1, new Set([...path, d.address]));
+    for (const d of order(dependents.get(c.address) ?? [])) {
+      if (path.has(d.address)) continue;
+      path.add(d.address);
+      visit(d, depth + 1, path);
+      path.delete(d.address);
+    }
   };
   const roots = order(changes.filter((c) => !(dependsOn?.[c.address] ?? []).some((d) => by.has(d))).map((c) => c.address));
   for (const r of roots) visit(r, 0, new Set([r.address]));
