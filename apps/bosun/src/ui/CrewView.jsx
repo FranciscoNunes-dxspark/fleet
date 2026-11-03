@@ -294,6 +294,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
     if (!sel) return;
     if (key.return) a.showLog(ctx, sel.name);
     else if (input === 'r') a.restart(ctx, sel.name);
+    else if (input === 'b') a.build(ctx, sel.name);
     else if (input === 's') a.toggle(ctx, sel.name);
     else if (input === 'w') a.why(ctx, sel.name);
     else if (input === 'o') a.openProc(ctx, sel.name);

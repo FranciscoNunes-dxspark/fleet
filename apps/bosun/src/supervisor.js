@@ -286,17 +286,18 @@ export class Supervisor {
    * a restart after it ended by itself, which keeps counting towards giving up; any other start
    * counts from nothing again.
    */
-  start(name, { auto = false } = {}) {
+  start(name, { auto = false, build: withBuild = false } = {}) {
     const p = this.procs.get(name);
     if (!p || p.child || this.closed) return;
     this.clearRestart(p);
     if (!auto) Object.assign(p, { attempt: 0, quick: 0 });
     p.gaveUp = false;
     if (!p.watchers) this.watch(p);
-    const { cwd, env, build } = p.spec;
+    const { cwd, env } = p.spec;
+    // "build" runs only when asked (b, /build): then the process starts only when it passed.
+    const build = withBuild ? p.spec.build : null;
     // An IIS site or a Windows service isn't a command Bosun runs.
     const kind = p.spec.iis ? 'iis' : p.spec.service ? 'service' : 'command';
-    // "build" runs first, each start: the process starts only when it passed.
     const run = build && kind === 'command' ? `${build} && ${p.spec.run}` : p.spec.run;
     p.status = 'starting';
     p.code = null;
@@ -313,7 +314,7 @@ export class Supervisor {
     const dumps = p.spec.dump ? this.dumpsFolder(p) : null;
     const child =
       kind === 'iis'
-        ? this.iisChild(p)
+        ? this.iisChild(p, withBuild)
         : kind === 'service'
           ? this.serviceChild(p)
           : this.spawnImpl(run, {
@@ -388,8 +389,8 @@ export class Supervisor {
    * `p`'s IIS site as its child (iis.js's IisChild): its worker's pid as `p.pid`, and its binding as
    * the port (when bosun.json gives none) and the host its health page is asked for.
    */
-  iisChild(p) {
-    const child = new IisChild(p.spec, { control: this.iisControl(), dir: this.dir, env: { ...this.env, ...this.projectEnv }, spawnImpl: this.spawnImpl, settings: (folder) => this.writeSettings(p, folder), ...this.iisTimes });
+  iisChild(p, build = false) {
+    const child = new IisChild(p.spec, { control: this.iisControl(), dir: this.dir, env: { ...this.env, ...this.projectEnv }, spawnImpl: this.spawnImpl, settings: (folder) => this.writeSettings(p, folder), build, ...this.iisTimes });
     this.followPid(p, child);
     // Started: asked for at once, so the first request isn't the one that waits.
     child.once('spawn', () => this.warmUp(p, child, 'started'));
@@ -773,18 +774,18 @@ export class Supervisor {
     return gone;
   }
 
-  async restart(name, { keepWatching = true } = {}) {
+  async restart(name, { keepWatching = true, build = false } = {}) {
     const p = this.procs.get(name);
-    // An IIS site running is recycled (built again first, with "build"), not stopped and started.
-    if (p?.child?.recycle && p.status !== 'stopping') return this.recycle(p);
+    // An IIS site running is recycled (built again first when `build`), not stopped and started.
+    if (p?.child?.recycle && p.status !== 'stopping') return this.recycle(p, build);
     if (p) p.keepTunnel = true;
     await this.stop(name, { keepWatching });
     if (p) p.keepTunnel = false;
-    this.start(name);
+    this.start(name, { build });
   }
 
   /** Recycles `p`'s IIS site: a start of its own, as far as the list, its tests and its uptime go. */
-  async recycle(p) {
+  async recycle(p, build = false) {
     const child = p.child;
     // bosun.json read again since it started: its build and settings as they are now.
     child.spec = p.spec;
@@ -792,7 +793,7 @@ export class Supervisor {
     Object.assign(p, { status: 'starting', startedAt: Date.now(), trouble: null, tests: null, portOpen: null, health: null, warm: null });
     this.push(p, '── recycling');
     this.onChange();
-    await child.recycle();
+    await child.recycle(build);
     if (p.child === child && p.status === 'starting') p.status = 'running';
     this.onChange();
     // In the background: r is done when the pool has recycled, not when the site answers.
@@ -876,7 +877,7 @@ export class Supervisor {
    * Starts every process not running, each after the one it waits for (`after`): once that one's port
    * answers, or it has run a moment when it has no port.
    */
-  async startAll({ waitMs = 20000, only = null } = {}) {
+  async startAll({ waitMs = 20000, only = null, build = false } = {}) {
     const started = new Set();
     const order = [];
     // `only`: these names (a group), each still waiting for the one it starts after when that runs.
@@ -893,7 +894,7 @@ export class Supervisor {
     for (const p of order) {
       const dep = p.spec.after && this.procs.get(p.spec.after);
       if (dep) await this.ready(dep, waitMs);
-      this.start(p.name);
+      this.start(p.name, { build });
     }
   }
 

@@ -70,7 +70,7 @@ npm start
 | `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
 | `tunnel` | `"devtunnel"`, `"cloudflared"` or `"ngrok"`: the tool `/share` and `alt+t` share it with (see Sharing a running service). At the top level, for every process |
 | `test` | Hail's checks for it: an `.http` file (`"api.http"`), or `{ "file": "api.http", "env": "dev" }`, from its `cwd`. Needs `port` |
-| `build` | A command run before `run`, each time it starts (`"dotnet build"`): it starts only when the build passed, and the build's output is in its log |
+| `build` | A command run before `run` when you ask for a build (`b`, `/build`; `"dotnet build"`): it starts only when the build passed, and the build's output is in its log. A plain start, `r`, `/restart` and a `watch`ed change don't build |
 | `logs` | Log files to follow into its log, as the app writes them: a path, or a folder and a glob for the name (`"App_Data/logs/*.log"`, whose newest file is followed), or a list. `%VAR%` and `${VAR}` are put in |
 | `host` | The host name its health page is asked for, and `o` opens (`"shop.local"`): for a server that answers only for its own name |
 | `iis` | An IIS site to run instead of a command (Windows): see IIS sites |
@@ -212,6 +212,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | Key | What it does |
 | --- | --- |
 | `r` | Restart it |
+| `b` | Build it, then restart it (or start it): runs its `build` first |
 | `alt+r` | Restart them all, each after the one it waits for |
 | `s` | Stop it, or start it; while it waits to restart, it won't |
 | `a` | Every process's log at once, or back to the one |
@@ -261,16 +262,16 @@ A process with `"iis"` is a site of this machine's IIS rather than a command: II
 ```
 
 `"iis"` is the site's name, or `{ "site", "pool", "build", "offline", "failedRequests", "path", "runtime" }`: `pool`
-when it isn't the site's own (its root application's), `build` a command run before it starts and
-before each restart (MSBuild, `dotnet publish -o <the site's folder>`), with `app_offline.htm` in the
+when it isn't the site's own (its root application's), `build` a command run before it starts or
+recycles when you ask for a build (`b`, `/build`; MSBuild, `dotnet publish -o <the site's folder>`), with `app_offline.htm` in the
 site's folder meanwhile so IIS lets go of its files and shows a page saying so (`"offline": false`
 leaves it out; one that was there already stays), `failedRequests` (`true`) Failed Request Tracing
 while it runs (below). `path` and `runtime` are for `/register` (below).
 
 - **Starting** starts its pool and the site. One that was running already is used as it is, and left
   running when Bosun quits; one Bosun started is stopped when it quits.
-- **`r`** (and a `watch`ed change) builds it again, when it has `build`, and recycles its pool: a
-  failed build leaves the site running what was built before. **`s`** stops the site, and its pool
+- **`r`** (and a `watch`ed change) recycles its pool; **`b`** builds it again first, when it has
+  `build`: a failed build leaves the site running what was built before. **`s`** stops the site, and its pool
   unless the pool runs other sites too (recycling such a pool restarts them with it, and the log
   says so).
 - **The list** shows its pool's worker: its CPU and memory are the worker's, and the log says when
@@ -560,6 +561,7 @@ Trawl.
 | Command | What it does |
 | --- | --- |
 | `/restart [name\|group\|all]` | Restart a process, a group, or all of them |
+| `/build [name\|group\|all]` | Build, then restart (or start) a process, a group, or all of them |
 | `/stop <name\|group\|all>` | Stop a process (or every one of a group) and what it started |
 | `/start [name\|group\|all]` | Start a process, a group, or all that aren't running |
 | `/graph` | Who starts after whom (`after` in `bosun.json`), as a tree, each with its state, port and group |
