@@ -12,6 +12,7 @@ import { createLocal } from './local.js';
 import { demoAzure, demoLocal } from './demo.js';
 import { notification } from './notify.js';
 import { clipGuard } from './clipguard.js';
+import { runSecurity } from './headless.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { copyToClipboard, readClipboard } from '@fleet/kit/clipboard.js';
 import { terminalMouse } from '@fleet/kit/mouse.js';
@@ -27,6 +28,7 @@ if (args.includes('-v') || args.includes('--version')) {
 
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`locker [--demo]
+locker security [folder] [--app app|app/slot] [--vault name] [--all] [--fail-on critical|high|medium|low|none] [--json|--sarif]
 
 Secrets and configuration in the terminal: the folder's .env files, appsettings*.json, .NET user
 secrets and Hail's env files side by side with an App Service app's settings and a key vault, by
@@ -36,19 +38,31 @@ Azure CLI's sign-in (az login).
 
   --demo   a made-up project and Azure, to look around (nothing is touched)
 
+locker security checks secret hygiene without the screen, for a pipeline: secrets and certificates
+expired, expiring or never rotated, settings holding a secret as plain text instead of a Key Vault
+reference, secrets in files git tracks, the same secret in two environments. It prints the findings
+(never a value) and exits 1 when one is as bad as --fail-on (high by default).
+
 Inside: press ? for shortcuts, / for commands, ctrl+p for the palette.`);
   process.exit(0);
+}
+
+const config = loadConfig();
+const demo = args.includes('--demo');
+
+// locker security: the hygiene check for a pipeline, before (and without) the terminal.
+if (args.filter((a) => a !== '--demo')[0] === 'security') {
+  const rest = args.filter((a) => a !== '--demo').slice(1);
+  const code = await runSecurity(rest, demo ? { provider: demoAzure(), local: demoLocal(), config: {}, version: VERSION } : { provider: { ...createAzure({ token }), currentSubscription }, makeLocal: (dir) => createLocal({ dir }), config, version: VERSION });
+  process.exit(code);
 }
 
 // The terminal, or inside Fleet the host's pipes made to look like one (the kit's hosted.js).
 const { stdin, stdout, hosted } = appTerminal();
 if (!stdin.isTTY || !stdout.isTTY) {
-  console.error('locker needs an interactive terminal.');
+  console.error('locker needs an interactive terminal (locker security runs without one).');
   process.exit(1);
 }
-
-const config = loadConfig();
-const demo = args.includes('--demo');
 
 // o: the portal, through what the OS opens addresses with.
 const openUrl = (url) => {

@@ -49,9 +49,25 @@ export function siteFrom(s, parent = null) {
 /** An app or slot in words: shop-api, shop-api/staging. */
 export const label = (t) => (t ? `${t.name}${t.slot ? `/${t.slot}` : ''}` : '');
 
-/** A vault from ARM: { id, name, uri, resourceGroup, location }. */
+/**
+ * A vault from ARM: { id, name, uri, resourceGroup, location, posture? }. `posture` is what the hygiene
+ * check reads of the vault itself, when ARM said it: { purgeProtection, publicNetworkAccess,
+ * defaultAction, rules (how many network rules) }.
+ */
 export function vaultFrom(v) {
-  return { id: v.id, name: v.name, uri: String(v.properties?.vaultUri ?? `https://${v.name}.vault.azure.net/`).replace(/\/?$/, '/'), resourceGroup: groupOf(v.id), location: v.location };
+  const p = v.properties ?? {};
+  const out = { id: v.id, name: v.name, uri: String(p.vaultUri ?? `https://${v.name}.vault.azure.net/`).replace(/\/?$/, '/'), resourceGroup: groupOf(v.id), location: v.location };
+  // A vault listed with its properties says them; ARM leaves enablePurgeProtection out when it is off.
+  if (p.tenantId || p.sku || 'enableSoftDelete' in p || 'publicNetworkAccess' in p || p.networkAcls) {
+    const acls = p.networkAcls ?? {};
+    out.posture = {
+      purgeProtection: p.enablePurgeProtection === true,
+      publicNetworkAccess: p.publicNetworkAccess ?? 'Enabled',
+      defaultAction: acls.defaultAction ?? 'Allow',
+      rules: (acls.ipRules?.length ?? 0) + (acls.virtualNetworkRules?.length ?? 0),
+    };
+  }
+  return out;
 }
 
 const iso = (seconds) => (seconds ? new Date(seconds * 1000).toISOString() : null);
