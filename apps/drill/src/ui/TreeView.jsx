@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { theme } from '../theme.js';
@@ -25,7 +25,9 @@ function countSegs(c) {
 export function TreeView({ run, ctx, width, height, active, onPickFailure }) {
   const [failuresOnly, setFailuresOnly] = useState(false);
   const [collapsed, setCollapsed] = useState(() => new Set());
-  const rows = treeRows(run?.tests ?? [], { failuresOnly, collapsed });
+  // Built again only when the run, the filter or a fold changes, not on every key that moves the cursor.
+  const tests = run?.tests;
+  const rows = useMemo(() => treeRows(tests ?? [], { failuresOnly, collapsed }), [tests, failuresOnly, collapsed]);
   const innerH = height - 2;
   const nav = useListNav(rows.length, innerH, { keyOf: (i) => rows[i]?.key });
   const sel = rows[nav.index];
