@@ -127,13 +127,16 @@ export function parseTap(text, { root, version } = {}) {
     walk(n, [], null);
     top++;
   }
-  // Each top-level result's file, from any of its tests; one with none takes its neighbour's.
-  const fileOfTop = Array.from({ length: top }, (_, i) => found.find((f) => f.top === i && f.fileOf)?.fileOf ?? null);
-  const near = (i) => {
-    for (let j = i - 1; j >= 0; j--) if (fileOfTop[j]) return fileOfTop[j];
-    for (let j = i + 1; j < top; j++) if (fileOfTop[j]) return fileOfTop[j];
-    return '';
-  };
+  // Each top-level result's file, from the first of its tests that has one; one with none takes its
+  // neighbour's, the one before it else the one after. Both in one pass each: a report of thousands
+  // of top-level tests searched for each of them took seconds.
+  const fileOfTop = new Array(top).fill(null);
+  for (const f of found) if (f.fileOf && !fileOfTop[f.top]) fileOfTop[f.top] = f.fileOf;
+  const before = new Array(top).fill(null);
+  const after = new Array(top).fill(null);
+  for (let i = 1; i < top; i++) before[i] = fileOfTop[i - 1] || before[i - 1];
+  for (let i = top - 2; i >= 0; i--) after[i] = fileOfTop[i + 1] || after[i + 1];
+  const near = (i) => before[i] || after[i] || '';
   const tests = found.map((f) => makeTest({ ...f.test, file: relPath(root, f.fileOf ?? fileOfTop[f.top] ?? near(f.top)) }));
   return { runner: 'node', version, tests, errors };
 }

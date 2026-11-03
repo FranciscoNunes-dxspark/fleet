@@ -94,6 +94,20 @@ test("node:test 22's TAP: nested suites, skips, expected and actual, file URLs i
   assert.equal(byName(r, 'reads the defaults').file, 'test/settings.test.js');
 });
 
+test("node:test's TAP of 20,000 top-level tests: each takes its neighbour's file, in a moment", () => {
+  let tap = 'TAP version 13\n';
+  for (let i = 0; i < 20_000; i++) tap += i % 1000 === 999 ? `not ok ${i + 1} - t${i}\n  ---\n  location: '/work/shop/f${Math.floor(i / 1000)}.test.js:3:1'\n  error: 'boom'\n  ...\n` : `ok ${i + 1} - t${i}\n  ---\n  duration_ms: 1\n  ...\n`;
+  const started = performance.now();
+  const r = parseTap(tap, { root });
+  assert.ok(performance.now() - started < 1500, 'it took too long');
+  assert.equal(r.tests.length, 20_000);
+  // Before a file's failure, the file before it; the first ones, the first file there is.
+  assert.equal(r.tests[0].file, 'f0.test.js');
+  assert.equal(r.tests[999].file, 'f0.test.js');
+  assert.equal(r.tests[1000].file, 'f0.test.js');
+  assert.equal(r.tests[1999].file, 'f1.test.js');
+});
+
 test("node:test 22's spec output: the tree from the marks, the failure from the part at the end", () => {
   const r = parseSpec(fixture('node-22.spec.txt'), { root });
   assert.deepEqual(r.tests.map((t) => [t.suite.join('/'), t.name, t.status]), [
