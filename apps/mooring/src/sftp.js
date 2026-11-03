@@ -59,10 +59,14 @@ export function resolveRemote(dir, path) {
   return `/${out.join('/')}`;
 }
 
+// One collator for every listing: localeCompare with options makes a new one for each comparison, which
+// took seconds over a folder of thousands of files.
+const byName = new Intl.Collator(undefined, { sensitivity: 'base' }).compare;
+
 /** Folders first (a link to one too: `isDir`), then by name without regard to case. */
 export function sortEntries(entries) {
   const rank = (e) => (e.kind === 'dir' || e.isDir ? 0 : 1);
-  return [...entries].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return [...entries].sort((a, b) => rank(a) - rank(b) || byName(a.name, b.name));
 }
 
 // ---------------------------------------------------------------------------------------------------
