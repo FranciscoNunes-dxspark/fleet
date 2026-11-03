@@ -10,6 +10,7 @@ import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { createBilge } from '../provider.js';
 import { SEVERITIES, counts as countOf, findings } from '../audit.js';
 import { severityTone, withoutIgnored } from '../rows.js';
+import { withoutIgnoredCode } from '../codescan.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
@@ -22,6 +23,7 @@ import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { VulnsView } from './VulnsView.jsx';
 import { PackagesView } from './PackagesView.jsx';
 import { ManifestsView } from './ManifestsView.jsx';
+import { CodeView } from './CodeView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
@@ -33,6 +35,7 @@ const VIEWS = [
   { id: 'vulns', label: 'Vulnerabilities' },
   { id: 'packages', label: 'Packages' },
   { id: 'manifests', label: 'Manifests' },
+  { id: 'code', label: 'Code' },
   { id: 'log', label: 'Log' },
 ];
 
@@ -40,6 +43,7 @@ const HINTS = {
   vulns: '↵ details · f fix · o advisory · x ignore · t for Splice · d dev packages · y copy ids',
   packages: '↵ details · a all/direct/outdated/flagged · u newest versions · f fix · o registry · t for Splice · y copy · /upgrade',
   manifests: '↵ its packages · t for Splice · y copy path',
+  code: '↵ details · r read again · x ignore · t for Splice · y copy where',
   log: '↵ all its output · y copy it',
 };
 
@@ -69,11 +73,12 @@ function Header({ data, counts, cwd, env, width, loading, mood, problem }) {
 }
 
 /** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries, found) {
+function tabLabels(entries, found, codeFound) {
   let x = 0;
   return VIEWS.map((v, i) => {
     let label = ` ${i + 1} ${v.label}`;
     if (v.id === 'vulns' && found.length) label += ` ${found.length}`;
+    if (v.id === 'code' && codeFound?.length) label += ` ${codeFound.length}`;
     if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
     label += ' ';
     const from = x;
@@ -82,9 +87,9 @@ function tabLabels(entries, found) {
   });
 }
 
-function Tabs({ view, entries, found, width }) {
+function Tabs({ view, entries, found, codeFound, width }) {
   const segs = [];
-  for (const t of tabLabels(entries, found)) {
+  for (const t of tabLabels(entries, found, codeFound)) {
     const on = t.id === view;
     segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
   }
@@ -123,6 +128,9 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
   const [data, setDataState] = useState(null);
+  // What /code found in the folder's own files (codescan.js), until Bilge reads another folder.
+  const [code, setCodeState] = useState(null);
+  const codeRef = useRef(null);
   const [cwd, setCwdState] = useState(startDir);
   const [loading, setLoading] = useState(true);
   const [problem, setProblem] = useState(null);
@@ -205,6 +213,10 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   const setData = (next) => {
     dataRef.current = typeof next === 'function' ? next(dataRef.current) : next;
     setDataState(dataRef.current);
+  };
+  const setCode = (next) => {
+    codeRef.current = next;
+    setCodeState(next);
   };
   const setConfig = (next) => {
     const value = typeof next === 'function' ? next(configRef.current) : next;
@@ -335,6 +347,10 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
       get counts() {
         return derive().counts;
       },
+      // The last /code's result ({ root, files, findings, truncated, at }), or null.
+      get code() {
+        return codeRef.current;
+      },
       // { name, prod, ... } from .fleet/project.json, or null when the project names no environments.
       get env() {
         return envRef.current;
@@ -350,9 +366,11 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
       cwdRef.current = dir;
       setCwdState(dir);
       setData(null);
+      setCode(null);
       setConfig((c) => ({ ...c, recent: remember(c.recent ?? [], dir) }));
     },
     setData,
+    setCode,
     task,
     note,
     confirm,
@@ -492,6 +510,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   }, [title]);
 
   const { found, counts, ignored } = derive();
+  const codeFound = code ? withoutIgnoredCode(code.findings, config.codeIgnore ?? []) : [];
   const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data, found, config, cwd }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
@@ -683,7 +702,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     mainH,
     promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries, found),
+    tabs: tabLabels(entries, found, codeFound),
   };
 
   let main;
@@ -695,6 +714,8 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'packages') {
     main = <PackagesView data={data} found={found} filter={pkgFilter} deny={config.deny ?? []} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'code') {
+    main = <CodeView code={code} found={codeFound} counts={countOf(codeFound)} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'manifests') {
     main = <ManifestsView data={data} found={found} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
@@ -715,7 +736,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   return (
     <Box flexDirection="column" width={W} height={H}>
       <Header data={data} counts={counts} cwd={cwd} env={env} width={W} loading={loading} mood={mood} problem={problem} />
-      <Tabs view={view} entries={entries} found={found} width={W} />
+      <Tabs view={view} entries={entries} found={found} codeFound={codeFound} width={W} />
       <Box height={mainH} width={W}>
         {main}
       </Box>

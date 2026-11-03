@@ -1,4 +1,4 @@
-// bilge audit and bilge sbom: the same reading and asking as the app, without the screen, for a
+// bilge audit, bilge code and bilge sbom: the same reading and asking as the app, without the screen, for a
 // pipeline. `audit` prints the findings (or --json) and its exit code says whether one is as bad as
 // --fail-on (high unless given): 0 fine, 1 found, 2 couldn't run.
 import { basename, resolve } from 'node:path';
@@ -7,6 +7,7 @@ import { SEVERITIES, countLine, counts, findings, rank } from './audit.js';
 import { SEVERITY_LABEL, label, withoutIgnored } from './rows.js';
 import { cyclonedx } from './sbom.js';
 import { markdownReport } from './share.js';
+import { findingWhere, withoutIgnoredCode } from './codescan.js';
 
 /** { command, dir, failOn, json, out } from the arguments after `bilge`; an `error` when they don't add up. */
 export function parseArgs(args) {
@@ -24,7 +25,7 @@ export function parseArgs(args) {
   return opts;
 }
 
-/** Runs `bilge audit`, `bilge sbom` or `bilge report`; resolves the exit code. `write` prints, `provider` is provider.js's (demo.js's in tests). */
+/** Runs `bilge audit`, `bilge code`, `bilge sbom` or `bilge report`; resolves the exit code. `write` prints, `provider` is provider.js's (demo.js's in tests). */
 export async function runHeadless(args, { provider, config = {}, write = (s) => process.stdout.write(s), version = '0.0.0' }) {
   const opts = parseArgs(args);
   if (opts.error) {
@@ -33,6 +34,7 @@ export async function runHeadless(args, { provider, config = {}, write = (s) => 
   }
   const dir = resolve(opts.dir);
   try {
+    if (opts.command === 'code') return await runCode(opts, dir, { provider, config, write });
     const scan = await provider.scan(dir);
     if (!scan.manifests.length) {
       write(`No lock file (package-lock.json, yarn.lock, pnpm-lock.yaml, packages.lock.json) or .NET project in ${dir}.\n`);
@@ -76,4 +78,24 @@ export async function runHeadless(args, { provider, config = {}, write = (s) => 
     write(`bilge ${opts.command}: ${String(e.message).split('\n')[0]}\n`);
     return 2;
   }
+}
+
+/**
+ * bilge code: the folder's own files through codescan.js, as the Code view reads them, without the
+ * codeIgnore entries. Exits as audit does: 1 when a finding is as bad as --fail-on.
+ */
+async function runCode(opts, dir, { provider, config, write }) {
+  const result = await provider.code(dir);
+  const found = withoutIgnoredCode(result.findings, config.codeIgnore ?? []);
+  const failing = opts.failOn === 'none' ? [] : found.filter((f) => rank(f.severity) <= rank(opts.failOn));
+  if (opts.json) {
+    // The excerpt is redacted already; it stays out of the JSON all the same, which ends up in build logs.
+    write(`${JSON.stringify({ dir, files: result.files, truncated: result.truncated, counts: counts(found), findings: found.map(({ excerpt, why, key, ...f }) => f) }, null, 2)}\n`);
+  } else {
+    write(`${result.files} files read under ${dir}${result.truncated ? ' (stopped early)' : ''}\n`);
+    if (!found.length) write('Nothing found.\n');
+    for (const f of found) write(`${SEVERITY_LABEL[f.severity].padEnd(5)}${f.title}  ${findingWhere(f)}${f.test ? ' (test)' : ''}\n     ${f.fix}\n`);
+    if (found.length) write(`\n${countLine(counts(found))}${failing.length ? ` · failing on ${opts.failOn} and above` : ''}\n`);
+  }
+  return failing.length ? 1 : 0;
 }

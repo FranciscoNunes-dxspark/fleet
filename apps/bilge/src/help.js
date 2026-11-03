@@ -5,7 +5,7 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-4 / tab', 'Vulnerabilities, Packages, Manifests, Log (shift+tab goes back)'],
+      ['1-5 / tab', 'Vulnerabilities, Packages, Manifests, Code, Log (shift+tab goes back)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['!', 'Run a shell command in the folder, e.g.  !npm ls lodash'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
@@ -68,6 +68,19 @@ export const HELP = [
     ],
   },
   {
+    title: 'Code',
+    about: "what /code found in the folder's own files (not its packages): secrets, code that runs what it's given, protections turned off, risky config. A static read with patterns: nothing is run, nothing leaves the machine",
+    views: ['code'],
+    rows: [
+      ['↵ / l', 'What it is, the line (a secret cut short), why it matters and the fix'],
+      ['r', 'Read the folder again (/code)'],
+      ['x', 'Ignore this rule in this file (asks; kept in the settings as codeIgnore)'],
+      ['t', 'Copy the file and line for Splice, whose blame says who wrote it'],
+      ['y', 'Copy file:line'],
+      'secret: keys, tokens, passwords, private keys · code: eval, shell and SQL built from values, HTML from values, unsafe deserialisation, TLS or token checks off, open CORS, MD5/SHA-1 · config: a container as root, an unpinned base image, a .env git would commit, a workflow running an issue\'s text, curl | sh. In tests, fixtures and examples, one step milder. A bilge-ignore comment on a line (or the one above) leaves it out.',
+    ],
+  },
+  {
     title: 'Log',
     about: 'what Bilge has run, newest at the bottom',
     views: ['log'],
@@ -86,13 +99,14 @@ export const HELP = [
   },
   {
     title: 'In a pipeline',
-    about: 'bilge audit, without the screen',
+    about: 'bilge audit and bilge code, without the screen',
     rows: [
       ['bilge audit [folder]', 'The findings as text; exits 1 when one is as bad as --fail-on (high by default)'],
       ['--fail-on <level>', 'critical, high, medium, low, or none to never fail'],
       ['--json', 'The findings as JSON'],
       ['bilge sbom [folder] [-o file]', 'A CycloneDX bill of materials, to the file or the output'],
       ['bilge report [folder] [-o file]', 'The audit as Markdown, to the file or the output'],
+      ['bilge code [folder]', "The Code view's findings as text (--json, --fail-on as audit's); reads the files, asks nobody"],
       'Advisories ignored with /ignore are left out of both (the settings in ~/.bilge).',
     ],
   },
