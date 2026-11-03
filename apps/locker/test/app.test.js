@@ -47,6 +47,26 @@ test('the drift view compares the folder, the app named as the folder, and its v
   app.unmount();
 });
 
+test('a browser variable holding a secret is marked ! in the key table, and ↵ says why, never the value', async () => {
+  const app = start();
+  await until(shows(app, '✗ broken'), 'the matrix');
+  await onRow(app, 'VITE_ADMIN_SECRET');
+  await new Promise((r) => setTimeout(r, 50));
+  const line = (key) => app.lastFrame().split('\n').find((l) => l.includes(key)) ?? '';
+  assert.match(line('VITE_ADMIN_SECRET'), /VITE_ADMIN_SECRET +! +=/);
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'every visitor downloads'), 'why');
+  assert.match(app.lastFrame(), /This one holds a value named like a secret \(\.env\)\./);
+  assert.ok(!app.lastFrame().includes('adm-7Hq2-dev'));
+  app.stdin.write(KEYS.esc);
+  await until(() => !app.lastFrame().includes('every visitor downloads'), 'closed');
+  // A publishable key is made for the browser: no mark.
+  await onRow(app, 'VITE_STRIPE_PUBLISHABLE_KEY');
+  await new Promise((r) => setTimeout(r, 50));
+  assert.match(line('VITE_STRIPE_PUBLISHABLE_KEY'), /VITE_STRIPE_PUBLISHABLE_KEY +=/);
+  app.unmount();
+});
+
 test('d shows only what differs or is broken, m only what is missing, again all', async () => {
   const app = start();
   await until(shows(app, '✗ broken'), 'the matrix');

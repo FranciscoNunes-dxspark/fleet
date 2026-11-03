@@ -51,6 +51,8 @@ A row per key, a column per source: the folder's first, then the app's and the v
 | `● set` | In the vault (its value isn't read to compare), or named in an example file |
 | `· missing` | The source doesn't have it |
 
+A key marked `!` (in red, and counted in the panel's title) is a variable the bundler writes into the browser's code (`VITE_`, `NEXT_PUBLIC_`, `REACT_APP_`, `NUXT_PUBLIC_`, `PUBLIC_`, `EXPO_PUBLIC_`, `GATSBY_`, `VUE_APP_`, `STORYBOOK_`) whose value in a `.env` file looks like a secret: a known key's shape, a name such as `SECRET`, `PRIVATE` or `PASSWORD`, or random enough to be a key. Every visitor of the built site can read it. `↵` says what it looked like and in which files, never the value. Keys made for the browser aren't marked: Stripe's publishable `pk_` keys, Firebase web and Google Maps browser keys, Supabase's anon key, Sentry DSNs and the like (the same judge as Bilge's Code view).
+
 A vault secret an app setting refers to sits in that setting's row. A key the vault lacks isn't missing there: a vault holds the secrets, not every setting.
 
 | Key | |
@@ -135,6 +137,7 @@ and the folder; `/hygiene all` reads every app, slot and vault in the subscripti
 | A disabled secret a setting still refers to | high |
 | An app setting or connection string holding a secret as plain text, not a Key Vault reference (named like one, `Password`, `Secret`, `Token`, `…Key`, or shaped like one: `Password=` in a connection string, a storage key, a token) | high |
 | A secret in a file git tracks (a `.env`, `appsettings*.json`, Hail's env file; never an example file). User secrets and files git ignores are where secrets belong | high |
+| A secret in a `.env` variable the bundler sends to the browser (`VITE_…`, `NEXT_PUBLIC_…`, the `!` keys in Drift), tracked by git or not | high |
 | Expires within 30 days; not changed in over a year | medium |
 | A setting one slot reads from Key Vault and another holds as plain text | medium |
 | The same secret in production and another environment (compared by a keyed hash: `.env` and user secrets are development, `.env.<name>` and `appsettings.<Name>.json` that environment, the app production and a slot its name) | medium (low between two others) |

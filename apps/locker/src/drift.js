@@ -6,6 +6,7 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { isReference, normKey, parseReference, referenceText } from './keys.js';
 import { isExpired } from './expiry.js';
+import { frontendLeak } from '@fleet/kit/codescan.js';
 
 const KEY = randomBytes(32);
 
@@ -105,6 +106,13 @@ export function driftMatrix(columns, { vaults = new Map(), now = Date.now() } = 
         r.cells[c] = { state: check.ok ? 'ref' : 'broken', why: check.why, ref: referenceText(ref), key: e.key };
       } else {
         r.cells[c] = { state: 'value', hash: fingerprint(e.value), key: e.key };
+        // A variable the bundler sends to the browser (VITE_…) holding a secret: the row says so and
+        // what the value looked like, never the value.
+        const leak = col.kind === 'local' && (col.source?.kind ?? 'env') === 'env' ? frontendLeak(e.key, e.value) : null;
+        if (leak) {
+          r.leak ??= { prefix: leak.prefix, what: leak.what, reason: leak.reason, in: [] };
+          r.leak.in.push(col.label);
+        }
       }
     }
   });
@@ -139,10 +147,17 @@ export function filterRows(rows, filter = 'all') {
   return rows;
 }
 
-/** How many rows differ, are broken and are missing somewhere: { differs, broken, missing }. */
+/** How many rows differ, are broken, are missing somewhere and leak into the browser: { differs, broken, missing, leaks }. */
 export function driftCounts(rows) {
-  return { differs: rows.filter((r) => r.differs).length, broken: rows.filter((r) => r.broken).length, missing: rows.filter((r) => r.missing).length };
+  return { differs: rows.filter((r) => r.differs).length, broken: rows.filter((r) => r.broken).length, missing: rows.filter((r) => r.missing).length, leaks: rows.filter((r) => r.leak).length };
 }
+
+/** What a row's `leak` means, as short lines: the bundler sends the variable to the browser, and what its value looked like. */
+export const leakWords = (row) => [
+  `Sent to the browser: the bundler writes ${row.leak.prefix} variables into the code every visitor downloads.`,
+  `This one holds ${row.leak.what} (${row.leak.in.join(', ')}).`,
+  'Keep it on the server, without the prefix, and rotate it.',
+];
 
 /** A cell of `row` as the matrix draws it: { text, tone } (tone a theme colour's name). */
 export function cellMark(cell, row) {

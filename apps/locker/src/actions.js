@@ -14,7 +14,7 @@ import { clearAfter, configFile, expiryDays } from './config.js';
 import { label } from './azure/arm.js';
 import { envKey } from './local.js';
 import { isReference, isVaultName, normKey, vaultName } from './keys.js';
-import { cellMark } from './drift.js';
+import { cellMark, leakWords } from './drift.js';
 import { expiryWords } from './expiry.js';
 import { isShown } from './load.js';
 import { familyChoices, siteIn, siteNamed, sonarLine } from './share.js';
@@ -55,6 +55,11 @@ export function showRow(ctx, row) {
   const w = Math.min(36, Math.max(8, ...columns.map((c) => c.label.length)));
   const lines = [[{ text: row.key, bold: true }], [{ text: row.differs ? 'The values differ: the same letter is the same value.' : row.broken ? 'Something here does not resolve.' : row.missing ? 'Not every source has it.' : 'Every source that has it agrees.', color: theme.dim }], []];
   const text = [row.key, ''];
+  if (row.leak) {
+    const said = leakWords(row).map((l, i) => `${i ? ' ' : '!'} ${l}`);
+    lines.splice(2, 0, ...said.map((l) => [{ text: l, color: theme.del }]));
+    text.push(...said, '');
+  }
   columns.forEach((col, i) => {
     const cell = row.cells[i];
     const mark = cellMark(cell, row);

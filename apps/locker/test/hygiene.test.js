@@ -4,7 +4,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readActivity } from '@fleet/kit/family.js';
-import { envOfSite, envOfSource, hygieneFindings, isLiteral, isSecretSetting, jsonKeyLine, jsonKeyLines, localFindings, normEnv, plainSecret, secretShape, settingFindings, sharedSecretFindings, thumbprintHex, vaultItemFindings, vaultPostureFindings, vaultUse } from '../src/hygiene.js';
+import { envOfSite, envOfSource, frontendFindings, hygieneFindings, isLiteral, isSecretSetting, jsonKeyLine, jsonKeyLines, localFindings, normEnv, plainSecret, secretShape, settingFindings, sharedSecretFindings, thumbprintHex, vaultItemFindings, vaultPostureFindings, vaultUse } from '../src/hygiene.js';
 import { readHygiene, relPath } from '../src/security.js';
 import { parseSecurityArgs, runSecurity } from '../src/headless.js';
 import { fingerprint } from '../src/drift.js';
@@ -25,7 +25,7 @@ const at = (days) => new Date(NOW + days * DAY).toISOString();
 // Values that must never be shown: the demo's, and the fakes made here.
 const PASSWORD = ['Hu', 'nter', '2-', 'pr0d'].join('');
 const GITHUB = ['gh', 'p_', 'aB3d'.repeat(9)].join('');
-const DEMO_VALUES = ['Pr0d-db-S3cret!', 'sk_live_demo_4242', 'dev-password', 'sk_test_local_4242', 'Local#123', 'local-redis', 'ZGVtby1rZXk=', 'jwt-signing-key-demo', 'legacy-0ld-t0ken', 'SG.demo-key', 'demo-salt'];
+const DEMO_VALUES = ['Pr0d-db-S3cret!', 'sk_live_demo_4242', 'dev-password', 'sk_test_local_4242', 'Local#123', 'local-redis', 'ZGVtby1rZXk=', 'jwt-signing-key-demo', 'legacy-0ld-t0ken', 'SG.demo-key', 'demo-salt', 'adm-7Hq2-dev'];
 const noValueIn = (text, values = DEMO_VALUES) => {
   for (const v of values) assert.ok(!String(text).includes(v), `${v} appeared`);
 };
@@ -194,6 +194,18 @@ test('the folder: a secret in a file git tracks is high, with its line; ignored 
   assert.equal(jsonKeyLine('{}', 'Nope'), null);
 });
 
+test('the folder: a browser variable holding a secret is high whether git tracks it or not; publishable keys and examples are fine', () => {
+  const sources = [
+    { id: 'env:.env.local', kind: 'env', label: '.env.local', file: '/p/.env.local', entries: [{ key: 'VITE_API_TOKEN', value: GITHUB, line: 3 }, { key: 'VITE_STRIPE_PUBLISHABLE_KEY', value: 'pk_live_51abcdefghijklmnop', line: 4 }, { key: 'Db__Password', value: PASSWORD, line: 5 }] },
+    { id: 'env:.env.example', kind: 'env', label: '.env.example', file: '/p/.env.example', example: true, entries: [{ key: 'VITE_ADMIN_PASSWORD', value: 'real-looking-9x', line: 1 }] },
+    { id: 'json:appsettings.json', kind: 'appsettings', label: 'appsettings.json', file: '/p/appsettings.json', entries: [{ key: 'VITE_ADMIN_PASSWORD', value: PASSWORD, line: 2 }] },
+  ];
+  const found = frontendFindings(sources, { rel: (f) => relPath('/p', f) });
+  assert.deepEqual(found.map((f) => `${f.severity} ${f.rule} ${f.where}:${f.line} ${f.key}`), ['high frontend-secret .env.local:3 VITE_API_TOKEN']);
+  assert.match(found[0].why, /VITE_ variables .* a GitHub token/);
+  noValueIn(JSON.stringify(found), [PASSWORD, GITHUB]);
+});
+
 test('jsonKeyLines finds what jsonKeyLine does, in any case, past an earlier mention, and fast over a big appsettings file', () => {
   const text = '{\n  "Db": { "Host": "x" },\n  "Api": {\n    "db": "y",\n    "Key": "k", "Other": 1\n  },\n  "\u00c9t\u00e9": { "Key": 2 }\n}';
   const lineOf = jsonKeyLines(text);
@@ -252,6 +264,7 @@ test('over the demo: everything planted is found, from listings and shapes, with
   assert.deepEqual(read.scope.vaults, ['kv-shop']);
   const found = hygieneFindings(read, { now: NOW });
   assert.deepEqual(rules(found), [
+    'high frontend-secret .env',
     'high secret-in-git appsettings.json',
     'high kv-expired kv-shop/old-token',
     'high kv-expires-7d kv-shop/Stripe--ApiKey',
@@ -265,7 +278,10 @@ test('over the demo: everything planted is found, from listings and shapes, with
     'low kv-no-expiry kv-shop/Redis--Password',
     'low kv-stale-180d kv-shop/Stripe--ApiKey',
   ]);
-  assert.equal(found[0].line, 14);
+  assert.equal(found[1].line, 14);
+  // A VITE_ secret in .env is the browser's whatever git does with the file; the publishable key beside it isn't one.
+  assert.deepEqual([found[0].key, found[0].line, found[0].excerpt], ['VITE_ADMIN_SECRET', 9, 'VITE_ADMIN_SECRET=adm-••••••••']);
+  assert.ok(!found.some((f) => f.key === 'VITE_STRIPE_PUBLISHABLE_KEY'));
   // .env holds the same Redis password, but git ignores it: shared, not committed.
   assert.ok(!found.some((f) => f.rule === 'secret-in-git' && f.where === '.env'));
   const all = hygieneFindings(await readHygiene({ provider, local, azure, target, vault, all: true }), { now: NOW });
@@ -311,7 +327,8 @@ test('locker security: text, JSON and SARIF over the demo, the exit code by --fa
   assert.equal(text.code, 1);
   assert.match(text.out, /^Secret hygiene in .*shop-api, shop-api\/staging, kv-shop\n/);
   assert.match(text.out, /HIGH Secret in a plain setting {2}shop-api\/Redis__Password/);
-  assert.match(text.out, /4 high · 5 medium · 3 low · failing on high and above/);
+  assert.match(text.out, /5 high · 5 medium · 3 low · failing on high and above/);
+  assert.match(text.out, /HIGH Secret in a browser variable {2}\.env:9/);
   noValueIn(text.out);
 
   const json = await run(['--json', '--fail-on', 'none']);
@@ -321,10 +338,10 @@ test('locker security: text, JSON and SARIF over the demo, the exit code by --fa
   assert.equal(doc.check, 'hygiene');
   assert.equal(doc.site, 'shop-api');
   assert.deepEqual(doc.vaults, ['kv-shop']);
-  assert.deepEqual(doc.counts, { critical: 0, high: 4, medium: 5, low: 3, unknown: 0 });
+  assert.deepEqual(doc.counts, { critical: 0, high: 5, medium: 5, low: 3, unknown: 0 });
   assert.equal(doc.at, new Date(NOW).toISOString());
   assert.ok(doc.findings.every((f) => !('excerpt' in f)), 'an excerpt in the JSON');
-  assert.deepEqual(doc.findings[0], { ...doc.findings[0], rule: 'secret-in-git', where: 'appsettings.json', line: 14, severity: 'high' });
+  assert.deepEqual(doc.findings[1], { ...doc.findings[1], rule: 'secret-in-git', where: 'appsettings.json', line: 14, severity: 'high' });
   noValueIn(json.out);
 
   const crit = await run(['--fail-on', 'critical']);
@@ -353,10 +370,13 @@ test('/hygiene lists the findings worst first; ↵ shows one without its value, 
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'Secret hygiene: shop-api · shop-api, shop-api/staging · kv-shop'), 'the list');
   const list = app.lastFrame();
-  assert.match(list, /❯ HIGH Password in a connection string in a file git.* +appsettings\.json:14/);
+  assert.match(list, /❯ HIGH Secret in a browser variable +\.env:9/);
+  assert.match(list, /HIGH Password in a connection string in a file git.* +appsettings\.json:14/);
   assert.match(list, /MED +Purge protection off/);
-  assert.match(list, /4 high · 5 medium · 3 low/);
+  assert.match(list, /5 high · 5 medium · 3 low/);
   noValueIn(list);
+  app.stdin.write('j');
+  await until(() => /❯ HIGH Password in a connection string/.test(app.lastFrame()), 'the second');
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'secret-in-git'), 'the details');
   const detail = app.lastFrame();

@@ -145,7 +145,8 @@ export function frontendLeak(name, value) {
   if (known) return said('shape', aOrAn(known.title));
   for (const r of secretShapes()) {
     const m = r.pattern.exec(v);
-    if (m && (!r.accept || r.accept(m, v))) return said('shape', aOrAn(r.title.replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase())));
+    // A title starting with a plain word reads in lower case (a password in a URL); a name keeps its capital (a GitHub token).
+    if (m && (!r.accept || r.accept(m, v))) return said('shape', aOrAn(r.title.replace(/^(?:Private|Password|Hard-coded|Secret)\b/, (w) => w.toLowerCase())));
   }
   if (SECRET_NAME.test(rest) && v.length >= 6 && !/^\d+$/.test(v) && !/^[a-z]+(?:[._ -][a-z]+)*$/i.test(v)) return said('name', 'a value named like a secret');
   if (!PUBLIC_NAME.test(rest) && !v.includes('://') && looksRandom(v)) return said('entropy', 'a random-looking value, as keys are');
