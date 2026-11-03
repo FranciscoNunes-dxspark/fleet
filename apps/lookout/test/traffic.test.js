@@ -75,6 +75,19 @@ test('the masks: credential headers, cookies by name, secret query parameters an
   assert.equal(maskBody('user=ana&password=hunter2hunter2', 'application/x-www-form-urlencoded'), 'user=ana&password=••••');
 });
 
+test('secretsIn finds each secret in a long text, on whichever line, and looks through ten thousand bodies quickly', () => {
+  const lines = Array.from({ length: 3000 }, (_, i) => `  "line ${i}": "nothing secret here, item ${i}",`);
+  lines[10] = `  "a": "${GH}",`;
+  lines[2500] = `  "b": "Bearer ${JWT}",`;
+  assert.deepEqual(secretsIn(lines.join('\n')).sort(), [GH, JWT].sort());
+  assert.deepEqual(secretsIn(lines.slice(100, 2000).join('\r\n')), []);
+  const body = JSON.stringify({ items: Array.from({ length: 40 }, (_, k) => ({ id: k, name: `item ${k}`, desc: 'lorem ipsum dolor sit amet' })) }, null, 2);
+  const started = performance.now();
+  for (let i = 0; i < 10000; i++) secretsIn(body);
+  // Each rule's pattern made again on every line took about five seconds here.
+  assert.ok(performance.now() - started < 2000);
+});
+
 test('the detail view hides every credential until s, and says how many', () => {
   const e = login();
   const hidden = detailText(e);

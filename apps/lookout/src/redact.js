@@ -18,18 +18,30 @@ export const isSecretHeader = (name) => CREDENTIAL_HEADERS.test(String(name)) ||
 export const isSecretParam = (name) => SECRET_PARAMS.test(String(name)) || isSecretName(name);
 
 // The codescan rules that find a secret in any text: those for every kind of file, and that hold one.
-const SECRET_RULES = RULES.filter((r) => r.kind === 'secret' && !r.files && r.id !== 'hardcoded-secret');
+// Each with its pattern made global once, for matchAll.
+const SECRET_RULES = RULES.filter((r) => r.kind === 'secret' && !r.files && r.id !== 'hardcoded-secret').map((r) => ({
+  ...r,
+  global: new RegExp(r.pattern.source, r.pattern.flags.includes('g') ? r.pattern.flags : `${r.pattern.flags}g`),
+}));
+// Any rule's `needs` word, in one pattern: when every rule has some, a text holding none of them has no secret for them.
+const ANY_NEED = SECRET_RULES.every((r) => r.needs) ? new RegExp(SECRET_RULES.flatMap((r) => r.needs).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')) : null;
 
 /** The secrets codescan's rules find in `text`, each once: the values themselves, longest first. */
 export function secretsIn(text) {
   const found = new Set();
-  for (const line of String(text ?? '').split(/\r?\n/)) {
+  const s = String(text ?? '');
+  // Only the rules one of whose `needs` is somewhere in the text: most bodies hold none, and lowering
+  // each line once a rule, then making its pattern again, was most of the time a filter or an export took.
+  const all = s.toLowerCase();
+  if (ANY_NEED && !ANY_NEED.test(all)) return [];
+  const rules = SECRET_RULES.filter((r) => !r.needs || r.needs.some((w) => all.includes(w)));
+  if (!rules.length) return [];
+  for (const line of s.split(/\r?\n/)) {
     if (line.length > 20000) continue;
-    for (const r of SECRET_RULES) {
-      const lower = line.toLowerCase();
+    const lower = line.toLowerCase();
+    for (const r of rules) {
       if (r.needs && !r.needs.some((w) => lower.includes(w))) continue;
-      const g = new RegExp(r.pattern.source, r.pattern.flags.includes('g') ? r.pattern.flags : `${r.pattern.flags}g`);
-      for (const m of line.matchAll(g)) {
+      for (const m of line.matchAll(r.global)) {
         if (r.accept && !r.accept(m, line)) continue;
         const secret = r.secret === undefined ? null : (m[r.secret] ?? m[r.secret + 1] ?? m[0]);
         if (secret && secret.length >= 6) found.add(secret);
