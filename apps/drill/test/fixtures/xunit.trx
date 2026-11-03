@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="5b1c7a9e-2d43-4f0c-9c1e-0a6d3f2b8e11" name="runner@build 2026-10-31 09:00:00" runUser="runner" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-31T09:00:00.0000000+00:00" queuing="2026-10-31T09:00:00.0000000+00:00" start="2026-10-31T09:00:00.1000000+00:00" finish="2026-10-31T09:00:02.4000000+00:00" />
+  <TestSettings name="default" id="0f6c0c1d-4a7a-4b55-9a51-7a9a8c9b2f10">
+    <Deployment runDeploymentRoot="runner_build_2026-10-31_09_00_00" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="aa000001-0000-0000-0000-000000000001" testId="bb000001-0000-0000-0000-000000000001" testName="Shop.Tests.CartTests.Total_AddsTheLines" computerName="build" duration="00:00:00.0123456" startTime="2026-10-31T09:00:01.0000000+00:00" endTime="2026-10-31T09:00:01.0200000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aa000001-0000-0000-0000-000000000001" />
+    <UnitTestResult executionId="aa000002-0000-0000-0000-000000000002" testId="bb000002-0000-0000-0000-000000000002" testName="Shop.Tests.CartTests.Total_AppliesDiscount" computerName="build" duration="00:00:00.0456789" startTime="2026-10-31T09:00:01.0300000+00:00" endTime="2026-10-31T09:00:01.0800000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aa000002-0000-0000-0000-000000000002">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ
+Expected: 90
+Actual:   100</Message>
+          <StackTrace>   at Shop.Tests.CartTests.Total_AppliesDiscount() in /work/shop/tests/Shop.Tests/CartTests.cs:line 27
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="aa000003-0000-0000-0000-000000000003" testId="bb000003-0000-0000-0000-000000000003" testName="Shop.Tests.PriceTests.Format(amount: 12.5, expected: &quot;12,50 €&quot;)" computerName="build" duration="00:00:00.0010000" startTime="2026-10-31T09:00:01.1000000+00:00" endTime="2026-10-31T09:00:01.1010000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aa000003-0000-0000-0000-000000000003" />
+    <UnitTestResult executionId="aa000004-0000-0000-0000-000000000004" testId="bb000004-0000-0000-0000-000000000004" testName="Shop.Tests.PriceTests.Format(amount: 0, expected: &quot;0,00 €&quot;)" computerName="build" duration="00:00:00.0020000" startTime="2026-10-31T09:00:01.1100000+00:00" endTime="2026-10-31T09:00:01.1120000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aa000004-0000-0000-0000-000000000004">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "0,00 €"
+Actual:   "—"
+           ↑ (pos 0)</Message>
+          <StackTrace>   at Shop.Price.Format(Decimal amount) in /work/shop/src/Shop/Price.cs:line 14
+   at Shop.Tests.PriceTests.Format(Decimal amount, String expected) in /work/shop/tests/Shop.Tests/PriceTests.cs:line 19</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="aa000005-0000-0000-0000-000000000005" testId="bb000005-0000-0000-0000-000000000005" testName="Shop.Tests.PriceTests.Rounds" computerName="build" duration="00:00:00" startTime="2026-10-31T09:00:01.2000000+00:00" endTime="2026-10-31T09:00:01.2000000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aa000005-0000-0000-0000-000000000005">
+      <Output>
+        <StdOut>Skipped: waiting on the new rounding rules</StdOut>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Shop.Tests.CartTests.Total_AddsTheLines" storage="/work/shop/tests/shop.tests/bin/debug/net8.0/shop.tests.dll" id="bb000001-0000-0000-0000-000000000001">
+      <Execution id="aa000001-0000-0000-0000-000000000001" />
+      <TestMethod codeBase="/work/shop/tests/Shop.Tests/bin/Debug/net8.0/Shop.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Shop.Tests.CartTests" name="Total_AddsTheLines" />
+    </UnitTest>
+    <UnitTest name="Shop.Tests.CartTests.Total_AppliesDiscount" storage="/work/shop/tests/shop.tests/bin/debug/net8.0/shop.tests.dll" id="bb000002-0000-0000-0000-000000000002">
+      <Execution id="aa000002-0000-0000-0000-000000000002" />
+      <TestMethod codeBase="/work/shop/tests/Shop.Tests/bin/Debug/net8.0/Shop.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Shop.Tests.CartTests" name="Total_AppliesDiscount" />
+    </UnitTest>
+    <UnitTest name="Shop.Tests.PriceTests.Format(amount: 12.5, expected: &quot;12,50 €&quot;)" storage="/work/shop/tests/shop.tests/bin/debug/net8.0/shop.tests.dll" id="bb000003-0000-0000-0000-000000000003">
+      <Execution id="aa000003-0000-0000-0000-000000000003" />
+      <TestMethod codeBase="/work/shop/tests/Shop.Tests/bin/Debug/net8.0/Shop.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Shop.Tests.PriceTests" name="Format" />
+    </UnitTest>
+    <UnitTest name="Shop.Tests.PriceTests.Format(amount: 0, expected: &quot;0,00 €&quot;)" storage="/work/shop/tests/shop.tests/bin/debug/net8.0/shop.tests.dll" id="bb000004-0000-0000-0000-000000000004">
+      <Execution id="aa000004-0000-0000-0000-000000000004" />
+      <TestMethod codeBase="/work/shop/tests/Shop.Tests/bin/Debug/net8.0/Shop.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Shop.Tests.PriceTests" name="Format" />
+    </UnitTest>
+    <UnitTest name="Shop.Tests.PriceTests.Rounds" storage="/work/shop/tests/shop.tests/bin/debug/net8.0/shop.tests.dll" id="bb000005-0000-0000-0000-000000000005">
+      <Execution id="aa000005-0000-0000-0000-000000000005" />
+      <TestMethod codeBase="/work/shop/tests/Shop.Tests/bin/Debug/net8.0/Shop.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Shop.Tests.PriceTests" name="Rounds" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="bb000001-0000-0000-0000-000000000001" executionId="aa000001-0000-0000-0000-000000000001" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bb000002-0000-0000-0000-000000000002" executionId="aa000002-0000-0000-0000-000000000002" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="5" executed="4" passed="2" failed="2" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="1" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.10)</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>
