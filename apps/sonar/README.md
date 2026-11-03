@@ -233,6 +233,48 @@ staying over says nothing more, and it says so again only after it has been back
 lists them with what each said last: `↵` runs one in Logs, `x` removes it, `y` copies its query. They're
 kept in `config.json` under `"watches"`.
 
+### Security posture
+
+`/posture` checks the subscription's resources (or one resource group's: `/posture <group>`) for
+settings that leave them open. It reads them through Azure Resource Graph, one query per kind, and
+ARM only for what Resource Graph doesn't carry (an app's TLS, FTP and remote debugging settings, a SQL
+server's firewall and auditing, the containers of an account that allows public blobs). It changes
+nothing, and needs no more than Reader.
+
+| Kind | What it finds |
+| --- | --- |
+| Storage accounts | Blob public access allowed (high), a public container (high), plain HTTP allowed (high), TLS below 1.2 (medium), reachable from any network (low), shared key access allowed (low) |
+| NSGs | Every port open to the internet (critical); SSH or RDP (high), SQL Server, MySQL, PostgreSQL, Redis or MongoDB (high) open to it: an Allow rule from `*`, `Internet` or `0.0.0.0/0` that decides for that port, after the rules above it |
+| VMs | SSH or RDP reachable at its public address through every NSG on its way (high, naming the NSG to fix); a Basic public address with no NSG (high); encryption at host off (low) |
+| Web and function apps, slots | Plain HTTP allowed (high), TLS below 1.2 (medium), plain FTP allowed (medium), remote debugging on (medium), no managed identity (low) |
+| SQL servers | A firewall rule for every address, 0.0.0.0–255.255.255.255 (critical), auditing off (medium), any Azure service let in (low), public access with no private endpoint (low), SQL logins allowed, Entra-only off (low) |
+| Key vaults | Soft delete off (high), purge protection off (medium), reachable from any network (low), access policies instead of Azure RBAC (low) |
+| Redis | The non-TLS port open (high), TLS below 1.2 (medium) |
+| Cosmos DB | Reachable from any network, no IP or virtual network rules (medium), key authentication on (low) |
+| Container registries | Anonymous pull (high), the admin user (medium) |
+| Defender for Cloud | Its unhealthy recommendations, at Defender's severity, marked Defender; left out quietly when it isn't on |
+
+They're listed worst first, each with its resource and resource group. `↵` shows one whole: why it
+matters, the property seen and the `az` command that fixes it, which Sonar never runs (`c` there
+copies it). `o` opens the resource in the portal, `y` copies the fix, `i` its id, and `x` leaves that
+finding out from now on (kept in `config.json` under `"postureIgnore"`, as `rule:resource id`; a
+rule's id alone leaves out all of its findings).
+
+The same check runs without the screen, for a pipeline:
+
+```bash
+sonar security                                      # az's selected subscription
+sonar security --subscription "Contoso Production" --resource-group contoso-prod --fail-on medium
+sonar security --json > posture.json                # the shape every Fleet app's security check prints
+sonar security --sarif > posture.sarif              # for GitHub's or Azure DevOps' code scanning
+```
+
+It prints the findings with their fixes, and exits 1 when one is as bad as `--fail-on` (`critical`,
+`high` (the default), `medium`, `low` or `none`), 2 when it couldn't run (not signed in, say).
+`--ignore <rule[:id],…>` leaves findings out as `postureIgnore` does (which it reads too), and
+`--no-defender` doesn't ask Defender for Cloud. `sonar --demo security` checks the made-up
+subscription, whose `contoso-legacy` group has a little of everything.
+
 ### From the other apps
 
 Splice, Trawl, Bosun, Hail and Keel copy things for Sonar as a line for its prompt, `/take family:v1:…`
@@ -507,6 +549,7 @@ and Trawl.
 | `/compare-window [deploy\|<time>]` | What changed across the latest deployment of the app in scope, or a time: exceptions, dependencies, failing operations |
 | `/watch <name> <threshold> <kql>` | Pin a query whose first value is a number; going over the threshold says so (above) |
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |
+| `/posture [resource group]` | The subscription's security posture, or a resource group's: worst first, `↵` one with the `az` command that fixes it, `o` portal, `y` copy the fix, `x` leave it out (above) |
 | `/env [name]` | Which of the project's environments is chosen, or choose another for every app; its `"sonar"` section picks the app (above) |
 | `/take <context>` | What another app copied for Sonar (above) |
 | `/family` | What this folder is to the other apps: a line for each one's prompt, `↵` copies it |

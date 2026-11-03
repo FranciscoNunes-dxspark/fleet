@@ -15,6 +15,7 @@ import { terminalMouse } from '@fleet/kit/mouse.js';
 import { appTerminal } from '@fleet/kit/hosted.js';
 import { notification } from './notify.js';
 import { ask } from '@fleet/kit/claude-cli.js';
+import { runHeadless } from './headless.js';
 
 const args = process.argv.slice(2);
 
@@ -25,6 +26,7 @@ if (args.includes('-v') || args.includes('--version')) {
 
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`sonar [--demo] [--sub <name|id>] [--app <app[/slot]> | --url <address>] [--insights <appId|name>] [--logs [--kql <query>] | --problems]
+sonar security [--subscription <name|id>] [--resource-group <name>] [--fail-on critical|high|medium|low|none] [--json | --sarif] [--ignore <rule[:id],…>] [--no-defender]
 
 An Azure console for the terminal: App Service and Functions, their logs and their
 problems. It signs in through the Azure CLI (az login) and starts on the subscription
@@ -39,8 +41,21 @@ az has selected; --demo shows a made-up one instead.
 
 Keel's terminal app opens Sonar this way from a production monitor (S).
 
+sonar security checks the subscription's security posture (or one resource group's) through Azure
+Resource Graph, read-only: storage, NSGs and VMs, web and function apps, SQL servers, key vaults,
+Redis, Cosmos DB, container registries, and Defender for Cloud's recommendations when it's on. It
+prints each finding with the az command that fixes it, and exits 1 when one is as bad as --fail-on
+(high by default), 2 when it couldn't run.
+
 Inside: press ? for shortcuts, / for commands, t to change the time span.`);
   process.exit(0);
+}
+
+// A pipeline's check, without the screen (headless.js), before anything wants a terminal.
+if (args[0] === 'security' || (args[0] === '--demo' && args[1] === 'security')) {
+  const rest = args.filter((a) => a !== '--demo');
+  const provider = args.includes('--demo') ? demoAzure() : { ...createAzure({ token }), currentSubscription };
+  process.exit(await runHeadless(rest, { provider, config: loadConfig(), version: VERSION }));
 }
 
 // The terminal, or inside Fleet the host's pipes made to look like one (the kit's hosted.js).

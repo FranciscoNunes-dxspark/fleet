@@ -378,6 +378,36 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       } while (skip);
       return ids;
     },
+    /**
+     * The rows of an Azure Resource Graph query over subscription `sub`, every page of them, as objects
+     * (the posture check's families and Defender's assessments).
+     */
+    async resourceGraph(sub, query, { signal } = {}) {
+      const rows = [];
+      let skip = null;
+      do {
+        const body = { subscriptions: [sub], query, options: { $top: 1000, resultFormat: 'objectArray', ...(skip ? { $skipToken: skip } : {}) } };
+        const page = await arm(`/providers/Microsoft.ResourceGraph/resources?api-version=${GRAPH}`, { method: 'POST', body, signal, what: 'Asking Resource Graph' });
+        rows.push(...(page?.data ?? []));
+        skip = page?.$skipToken ?? null;
+      } while (skip);
+      return rows;
+    },
+    /** An app's or slot's site config (TLS, FTPS, remote debugging…), from ARM's config/web: its properties. */
+    async siteConfig(target, opts) {
+      const r = await arm(`${target.id}/config/web?api-version=${WEB}`, { ...opts, what: `Reading ${target.name}'s configuration` });
+      return r?.properties ?? null;
+    },
+    /** A storage account's blob containers as ARM lists them, with their public access: [{ name, publicAccess }]. */
+    async storageContainers(account, opts) {
+      const list = await all(`${account.id}/blobServices/default/containers?api-version=${STORAGE}`, { ...opts, what: `Listing ${account.name}'s containers` });
+      return list.map((c) => ({ name: c.name, publicAccess: c.properties?.publicAccess ?? 'None' }));
+    },
+    /** A SQL server's auditing: { state } ('Enabled' or 'Disabled'). */
+    async sqlAuditing(server, opts) {
+      const r = await arm(`${server.id}/auditingSettings/default?api-version=${SQL}`, { ...opts, what: `Reading ${server.name}'s auditing` });
+      return { state: r?.properties?.state ?? 'Disabled' };
+    },
     async slots(app, opts) {
       const slots = await all(`${app.id}/slots?api-version=${WEB}`, { ...opts, what: `Listing ${app.name}'s slots` });
       return slots.map((s) => siteFrom(s, app));

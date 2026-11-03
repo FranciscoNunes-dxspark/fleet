@@ -29,6 +29,8 @@ import { describeEnvironments, productionQuestion, setEnvironment } from '@fleet
 import { nextTheme, settingRows, settingSegments } from './settings.js';
 import { BULLET, applyTheme, defaultAccent, isColour, setAccent, theme } from './theme.js';
 import { fit, relTime } from '@fleet/kit/text.js';
+import { countFindings, findingsLine, sortFindings, withoutIgnoredFindings } from '@fleet/kit/findings.js';
+import { postureCheck, readLine } from './posture/check.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
@@ -1773,4 +1775,87 @@ async function changeSetting(ctx, row) {
     ctx.setConfig((c) => ({ ...c, [row.id]: [] }));
     redrawSettings(ctx);
   }
+}
+
+const SEVERITY_LABEL = { critical: 'CRIT', high: 'HIGH', medium: 'MED', low: 'LOW', unknown: '?' };
+/** The colour a severity is drawn in, read while drawing. */
+const severityColor = (s) => ({ critical: theme.del, high: theme.del, medium: theme.warn, low: theme.info })[s] ?? theme.dim;
+
+/** The resource groups the subscription on screen has resources in, for /posture's completion. */
+export const resourceGroups = (data) =>
+  [...new Set([...(data?.apps ?? []), ...(data?.containers ?? []), ...(data?.storage ?? []), ...(data?.sqlServers ?? []), ...(data?.serviceBus ?? []), ...(data?.cosmos ?? []), ...(data?.workspaces ?? [])].map((r) => r.resourceGroup).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+/**
+ * /posture [resource group]: the subscription's security posture (posture/check.js), read-only, through
+ * Resource Graph: worst first, ↵ one whole with the property seen and the az command that fixes it
+ * (never run), o the resource in the portal, y copies the command, x leaves one out from now on.
+ */
+export async function posture(ctx, group) {
+  const sub = ctx.data?.subscription;
+  if (!sub) return ctx.note('The subscription is still being read.', 'error');
+  const rg = group?.trim() || null;
+  const where = `${sub.name}${rg ? ` · ${rg}` : ''}`;
+  let result;
+  const r = await ctx.task(
+    `Security posture of ${where}`,
+    async (signal) => {
+      result = await postureCheck(ctx.provider, sub.id, { resourceGroup: rg, signal });
+      const found = withoutIgnoredFindings(result.findings, ctx.config.postureIgnore ?? []);
+      const notes = [...result.skipped.map((s) => `Not read: ${s.what} (${s.why})`), ...(result.defender === 'read' ? [] : [`Defender for Cloud not read: ${result.defender}`])];
+      return { stdout: [`${readLine(result.read)}: ${findingsLine(countFindings(found)) || 'nothing found'}`, ...notes].join('\n') };
+    },
+    { label: 'Checking' },
+  );
+  if (!r.ok) return r;
+  showPosture(ctx, result, where);
+  return r;
+}
+
+const portalOf = (ctx, f) => openUrl(f.portal ?? ctx.provider.portalUrl({ id: f.resourceId ?? f.where })).catch((e) => ctx.note(`Couldn't open the browser: ${e.message}`, 'error'));
+const copyFix = (ctx, f) => (f.fix ? ctx.copy(f.fix, 'the fix') : ctx.note('Defender gives no fix for this one: ↵ shows what it says.', 'error'));
+
+/** The posture check's findings as a list, worst first, without those left out (postureIgnore). */
+function showPosture(ctx, result, where, { replace = false } = {}) {
+  const found = sortFindings(withoutIgnoredFindings(result.findings, ctx.config.postureIgnore ?? []));
+  const hidden = result.findings.length - found.length;
+  const counts = findingsLine(countFindings(found));
+  ctx.showPicker(
+    {
+      title: `Security posture of ${where}${counts ? `: ${counts}` : ''}${hidden ? ` (${hidden} left out)` : ''}`,
+      hint: '↵ whole, with its fix · o portal · y copy the fix · i copy its id · x leave it out',
+      empty: `Nothing found in ${where}${hidden ? ` (${hidden} left out: postureIgnore in the config)` : ''}.`,
+      items: found.map((f) => ({
+        f,
+        segments: [
+          { text: SEVERITY_LABEL[f.severity].padEnd(5), color: severityColor(f.severity), bold: true },
+          { text: fit(f.title, 46), strong: true },
+          { text: '  ' },
+          { text: fit(f.name ?? f.where.split('/').pop(), 30), color: theme.info },
+          { text: `  ${f.resourceGroup ?? ''}`, color: theme.dim },
+          { text: f.kind === 'defender' ? '  Defender' : '', color: theme.accent },
+        ],
+      })),
+      onPick: ({ f }) => showFinding(ctx, f),
+      keys: {
+        o: ({ f }) => portalOf(ctx, f),
+        y: ({ f }) => copyFix(ctx, f),
+        i: ({ f }) => ctx.copy(f.where, 'its id'),
+        x: ({ f }) => {
+          const key = `${f.rule}:${f.where}`;
+          ctx.setConfig((c) => ({ ...c, postureIgnore: [...new Set([...(c.postureIgnore ?? []), key])] }));
+          ctx.note(`Left out from now on, here and in sonar security: ${key} (postureIgnore in ${configFile()})`, 'ok');
+          // The config has it at once (ctx.config), so the list is drawn again without it.
+          showPosture(ctx, result, where, { replace: true });
+        },
+      },
+    },
+    { replace },
+  );
+}
+
+/** ↵ on a finding: what it's about, why it matters, what was seen and the az command that fixes it (as text). */
+function showFinding(ctx, f) {
+  const rows = [['severity', f.severity], ['resource', f.name ?? '—'], ['group', f.resourceGroup || '—'], ['type', f.resourceType || '—'], ['rule', f.rule], ...(f.kind ? [['from', f.kind === 'defender' ? 'Defender for Cloud' : f.kind]] : []), ...(f.excerpt ? [['seen', f.excerpt]] : [])];
+  const text = [f.title, ...(f.why ? [f.why] : []), '', ...rows.map(([k, v]) => `${k.padEnd(10)}${v}`), '', ...(f.fix ? ['Fix (Sonar never runs it):', f.fix, ''] : []), f.where].join('\n');
+  ctx.showText(`${SEVERITY_LABEL[f.severity]} ${f.title}`, text, { hint: 'c copy the fix · o portal', keys: { c: () => copyFix(ctx, f), o: () => portalOf(ctx, f) } });
 }
