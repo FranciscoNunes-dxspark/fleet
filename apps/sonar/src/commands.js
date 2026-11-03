@@ -33,6 +33,7 @@ export const COMMANDS = [
   { name: 'compare-window', args: '[deploy | <time>]', desc: 'Two equal windows before and after the latest deployment (or a time, or the middle of the span): exceptions new, gone or twice as frequent, dependencies slower, operations failing more', run: (ctx, s) => a.compareWindow(ctx, s) },
   { name: 'watch', args: '<name> <threshold> <kql>', desc: 'Pin a query whose first value is a number, run every few minutes against the Application Insights in scope; going over the threshold notifies', run: (ctx, s) => a.watch(ctx, s) },
   { name: 'watches', desc: 'Your watches and what they said last: ↵ runs one in Logs, x removes it', run: (ctx) => a.watches(ctx) },
+  { name: 'posture', args: '[resource group]', desc: "The subscription's security posture (or one resource group's), read through Resource Graph: storage, NSGs and VMs, apps, SQL, key vaults, Redis, Cosmos DB, registries, Defender's recommendations; worst first, ↵ one with the az command that fixes it", complete: 'groups', run: (ctx, s) => a.posture(ctx, s) },
   { name: 'env', args: '[name]', desc: "The project's environment (dev, staging, prod… in .fleet/project.json): none says which, a name switches every app; its sonar section picks the app and its Application Insights", complete: 'environments', run: (ctx, s) => a.environment(ctx, s) },
   { name: 'take', args: '<context>', desc: "What another app copied for Sonar: a commit's deployments, problems like an exception, a log line's request", run: (ctx, s) => a.take(ctx, s) },
   { name: 'timeline', desc: "What the family's apps did that changed something (pushes, writes, restarts, swaps…), newest first: p this project only or all, ↵ an entry whole", run: (ctx) => a.timeline(ctx) },
@@ -66,6 +67,7 @@ function completions(kind, data, targets, problems, queries, environments) {
   if (kind === 'subscriptions') return (data?.subscriptions ?? []).map((s) => s.name);
   if (kind === 'components') return [...(data?.components ?? []), ...(data?.workspaces ?? [])].map((c) => c.name);
   if (kind === 'targets') return Object.keys(targets ?? {});
+  if (kind === 'groups') return a.resourceGroups(data);
   return [];
 }
 

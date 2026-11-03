@@ -173,6 +173,16 @@ export const HELP = [
     ],
   },
   {
+    title: 'Security posture',
+    about: 'the subscription\'s (or a resource group\'s) settings that leave it open, read through Resource Graph and never changed (/posture, sonar security)',
+    rows: [
+      ['/posture', '/posture [resource group]: storage, NSGs and the VMs behind them, web and function apps, SQL servers, key vaults, Redis, Cosmos DB, container registries, and Defender for Cloud\'s recommendations where it\'s on; worst first'],
+      ['↵', 'One whole: why it matters, the property seen, and the az command that fixes it (Sonar never runs it); c there copies it'],
+      ['o  y  i', 'The resource in the portal · copy the fix · copy its id'],
+      ['x', 'Leave it out from now on, here and in sonar security (postureIgnore in the config)'],
+    ],
+  },
+  {
     title: 'Incident',
     about: 'a problem told whole (I in Problems, /incident)',
     rows: [

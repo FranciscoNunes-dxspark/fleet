@@ -724,3 +724,24 @@ test('Log Analytics workspaces: listed with their customer id; their tables from
   assert.deepEqual(await azure.workspaceTables({ ...ws, workspaceId: 'cust-2' }), { AppRequests: [], Heartbeat: [] });
   assert.deepEqual(calls.at(-1).body, { query: 'search * | distinct $table | take 500', timespan: 'P7D' });
 });
+
+test('posture: Resource Graph is asked page by page, and ARM for site config, containers and SQL auditing', async () => {
+  const sub = '/subscriptions/s1/resourceGroups/rg/providers';
+  const routes = {
+    'POST /providers/Microsoft.ResourceGraph/resources': (body) => (body.options.$skipToken ? { data: [{ id: 'b' }] } : { data: [{ id: 'a' }], $skipToken: 'p2' }),
+    [`GET ${sub}/Microsoft.Web/sites/web/config/web`]: { properties: { minTlsVersion: '1.0', ftpsState: 'AllAllowed' } },
+    [`GET ${sub}/Microsoft.Storage/storageAccounts/st/blobServices/default/containers`]: { value: [{ name: 'public', properties: { publicAccess: 'Blob' } }, { name: 'private', properties: {} }] },
+    [`GET ${sub}/Microsoft.Sql/servers/sql/auditingSettings/default`]: { properties: { state: 'Disabled' } },
+  };
+  const { fetch, calls } = fakeFetch(routes);
+  const azure = createAzure({ fetch, token: async () => 't' });
+  assert.deepEqual(await azure.resourceGraph('s1', "resources | where type in~ ('x')"), [{ id: 'a' }, { id: 'b' }]);
+  const graph = calls.filter((c) => c.key.includes('ResourceGraph'));
+  assert.deepEqual(graph[0].body.subscriptions, ['s1']);
+  assert.equal(graph[0].body.options.resultFormat, 'objectArray');
+  assert.equal(graph[1].body.options.$skipToken, 'p2');
+  assert.deepEqual(await azure.siteConfig({ id: `${sub}/Microsoft.Web/sites/web`, name: 'web' }), { minTlsVersion: '1.0', ftpsState: 'AllAllowed' });
+  assert.deepEqual(await azure.storageContainers({ id: `${sub}/Microsoft.Storage/storageAccounts/st`, name: 'st' }), [{ name: 'public', publicAccess: 'Blob' }, { name: 'private', publicAccess: 'None' }]);
+  assert.deepEqual(await azure.sqlAuditing({ id: `${sub}/Microsoft.Sql/servers/sql`, name: 'sql' }), { state: 'Disabled' });
+  assert.ok(calls.every((c) => c.init.method === 'GET' || c.key.includes('ResourceGraph')), 'nothing but reads');
+});
