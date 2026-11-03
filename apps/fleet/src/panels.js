@@ -2,7 +2,8 @@
 // are handed to their apps one ↵ at a time), following a request (ctrl+] f: an id, asked of every
 // running app that reads log lines, and a timeline of what Fleet finds itself), moving the fleet (m),
 // the project's environments (e), what changed lately (w, and Claude's take on why something broke)
-// and Claude's proposals (P: lines handed to their apps as runbook steps are). Each is an object with
+// Claude's proposals (P: lines handed to their apps as runbook steps are) and the security overview
+// (S: every app's security check for the project, security.js). Each is an object with
 // `render(size)` (the box, as ANSI text placed on screen) and `keys(text)`; the host shows one at a
 // time (Host.showOverlay) and gives it every key while it's open. What they do to the apps goes back
 // through the host: `sendLine` (a hand-off), `typeInto` (a line into a prompt, off screen), `switchTo`.
@@ -11,7 +12,9 @@ import { ask as askClaude, clip } from '@fleet/kit/claude-cli.js';
 import { currentEnvironment, readProject, setEnvironment } from '@fleet/kit/environments.js';
 import { APP_NAMES, familyDir as kitFamilyDir, readActivity, TAKEN_BY } from '@fleet/kit/family.js';
 import { keyLength } from './keys.js';
-import { boxRows, boxSize, changesLines, envLines, folderLines, pickerLines, placeBox, proposalLines, runbookLines, traceAskLines, traceLines } from './overlay.js';
+import { boxRows, boxSize, changesLines, envLines, folderLines, pickerLines, placeBox, proposalLines, runbookLines, securityLines, traceAskLines, traceLines } from './overlay.js';
+import { COMPILED } from './app.js';
+import { loadOverview, securityConfig, securityOverview } from './security.js';
 import { folderPicks, shortFolder } from './folder.js';
 import { decideProposal, listProposals } from './proposals.js';
 import { draftRunbook, listRunbooks, runbookDirs, writeDraft } from './runbooks.js';
@@ -54,14 +57,15 @@ export class Panels {
   // `cwd` fixes the folder the panels read for (the tests'); by default it's the fleet's, which moves.
   // The family's folder is the host's unless given. `ask` is Claude (the kit's claude-cli.js) and
   // `changes` what changed (mcp/changes.js), both for the tests to replace.
-  constructor(host, { cwd, env = process.env, takers = TAKEN_BY.logline, familyDir = host.family?.dir ?? kitFamilyDir(env), bosun = bosunHome(env), now = () => Date.now(), ask = askClaude, changes = readChanges } = {}) {
-    Object.assign(this, { host, fixedCwd: cwd, env, takers, familyDir, bosun, now, ask, readChanges: changes });
+  constructor(host, { cwd, env = process.env, takers = TAKEN_BY.logline, familyDir = host.family?.dir ?? kitFamilyDir(env), bosun = bosunHome(env), now = () => Date.now(), ask = askClaude, changes = readChanges, security = securityOverview, compiled = COMPILED } = {}) {
+    Object.assign(this, { host, fixedCwd: cwd, env, takers, familyDir, bosun, now, ask, readChanges: changes, runSecurity: security, compiled });
     this.runbookPanel = new RunbookPanel(this);
     this.tracePanel = new TracePanel(this);
     this.folderPanel = new FolderPanel(this);
     this.envPanel = new EnvironmentPanel(this);
     this.changesPanel = new ChangesPanel(this);
     this.proposalPanel = new ProposalPanel(this);
+    this.securityPanel = new SecurityPanel(this);
   }
 
   get cwd() {
@@ -81,6 +85,11 @@ export class Panels {
   /** The prefix and P: what Claude proposed. */
   proposals() {
     this.proposalPanel.open();
+  }
+
+  /** The prefix and S: every app's security check for the project, the last overview until r runs them again. */
+  security() {
+    this.securityPanel.open();
   }
 
   /** Opens the runbook in `file` (one just written), the list's cursor on it. */
@@ -506,5 +515,82 @@ class ProposalPanel {
     decideProposal(p.id, 'handed', { home: this.panels.familyDir, now: this.panels.now() });
     this.host.refreshStatus();
     this.host.sendLine(p.app, p.line);
+  }
+}
+
+/**
+ * The security overview (security.js): the last one kept for the project, or r to run every app's
+ * check again (in the background: the panel can close and come back); j k move, ↵ shows a finding's
+ * why and fix, esc closes.
+ */
+class SecurityPanel {
+  constructor(panels) {
+    this.panels = panels;
+    this.host = panels.host;
+    this.cursor = 0;
+    this.openFinding = false;
+    this.running = null;
+    this.overview = null;
+  }
+
+  root() {
+    return securityConfig(this.panels.cwd, { home: this.panels.familyDir }).root;
+  }
+
+  open() {
+    if (!this.running) this.overview = loadOverview(this.root(), this.panels.env) ?? this.overview;
+    this.host.showOverlay(this);
+  }
+
+  redraw() {
+    if (this.host.overlay === this) this.host.showOverlay(this);
+  }
+
+  render(size) {
+    const width = this.panels.inner(size);
+    const view = securityLines({ overview: this.overview, running: this.running, cursor: this.cursor, open: this.openFinding, width, spaces: this.host.spaces, truecolor: this.host.truecolor, now: this.panels.now() });
+    const hint = `${this.running ? '' : 'r run the checks · '}${this.overview?.findings.length ? '↵ why and fix · j k move · ' : ''}esc close`;
+    return this.panels.box({ title: 'Security', hint, ...view }, size);
+  }
+
+  keys(text) {
+    for (const key of panelKeys(text)) {
+      if (key === 'esc') return this.host.closeOverlay();
+      if (key === 'r' && !this.running) this.run();
+      else if (key === 'enter') this.openFinding = !this.openFinding;
+      else {
+        const to = moveIn(key, this.cursor, this.overview?.findings.length ?? 0);
+        if (to != null) {
+          this.cursor = to;
+          this.openFinding = false;
+        }
+      }
+    }
+    this.host.showOverlay(this);
+  }
+
+  /** Runs every check for the project; the panel draws the progress and the overview if it's still open, and the bar says when it's done. */
+  run() {
+    this.running = { done: 0, total: 0 };
+    const onProgress = (done, total) => {
+      this.running = { done, total };
+      this.redraw();
+    };
+    Promise.resolve()
+      .then(() => this.panels.runSecurity(this.panels.cwd, { compiled: this.panels.compiled, home: this.panels.familyDir, env: this.panels.env, onProgress }))
+      .then(
+        (o) => {
+          this.overview = o;
+          this.cursor = 0;
+          this.openFinding = false;
+          const bad = (o.counts.critical ?? 0) + (o.counts.high ?? 0);
+          this.host.notice(bad ? `Security: ${bad} critical or high (prefix S)` : 'Security: nothing critical or high');
+        },
+        (e) => this.host.notice(`Security checks failed: ${String(e?.message ?? e).split('\n')[0]}`),
+      )
+      .finally(() => {
+        this.running = null;
+        this.redraw();
+      });
   }
 }

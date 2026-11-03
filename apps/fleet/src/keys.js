@@ -59,9 +59,10 @@ const PANE_KEYS = new Set(['\t', '\x1b[C', '\x1b[D', '\x1bOC', '\x1bOD']);
 export function prefixAction(key, spaces = SPACES, started = PREFIX) {
   if (key === started) return { type: 'send', data: started };
   if (/^[1-9]$/.test(key) && spaces[Number(key) - 1]) return { type: 'switch', id: spaces[Number(key) - 1].id };
-  // Capitals first: lowercased, P would be the previous space and R the runbooks.
+  // Capitals first: lowercased, P would be the previous space, R the runbooks and S Splice.
   if (key === 'P') return { type: 'proposals' };
   if (key === 'R') return { type: 'record' };
+  if (key === 'S') return { type: 'security' };
   const k = key.length === 1 ? key.toLowerCase() : key;
   const space = spaces.find((s) => s.letter === k);
   if (space) return { type: 'switch', id: space.id };
