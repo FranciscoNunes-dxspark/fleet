@@ -103,7 +103,7 @@ test('/apply shows what it does, destroys first, and applies only once the works
   assert.match(call[2].planFile, /^demo-plans\/chart-1\.tfplan$/);
   await until(() => readActivity().some((e) => /^Applied/.test(e.text)), 'the activity');
   const applied = readActivity().find((e) => /^Applied/.test(e.text));
-  assert.equal(applied.text, 'Applied infra (workspace default): +2 ~2 ±1 -1');
+  assert.equal(applied.text, 'Applied infra (workspace default): +5 ~2 ±1 -1');
   assert.equal(applied.kind, 'change');
   await until(shows(app, '/plan asks terraform'), 'the plan gone from the screen');
   app.unmount();

@@ -8,11 +8,13 @@ import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
 import { configFile } from './config.js';
 import { diffLines, valueLines } from './diff.js';
 import { summarize, summaryLine } from './plan.js';
-import { ACTION_MARK, ACTION_WORD, changeRows, findChange, siteOf } from './rows.js';
+import { ACTION_MARK, ACTION_WORD, SEVERITY_LABEL, changeRows, findChange, siteOf } from './rows.js';
 import { markdownReport } from './share.js';
 import { CURRENCIES, costLines, costWords, planCosts, totalWords } from './costs.js';
 import { affectedBy, affectsLine, parseDot } from './graph.js';
 import { BINARIES } from './iac.js';
+import { folderFindings } from './security.js';
+import { countFindings, findingPlace, findingsLine, withoutIgnoredFindings } from '@fleet/kit/findings.js';
 import { describeEnvironments, markProduction, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -488,11 +490,85 @@ export async function showChange(ctx, c, { drifted = false } = {}) {
     ...(siteOf(c) ? ['An App Service app: s copies it for Locker'] : []),
     ...(drifted ? [] : dependencyLines(c, dependenciesOf(ctx.data), ctx.data?.plan?.changes ?? [])),
     ...(costs?.byAddress?.[c.address] ? costLines(costs.byAddress[c.address], costs.currency) : costs?.pending && !drifted ? ['Cost: being priced…'] : []),
+    ...(drifted ? [] : securityOf(ctx.data, ctx.config).planned.filter((f) => f.resource === c.address).map((f) => `Security: ${SEVERITY_LABEL[f.severity]} ${f.title}${f.excerpt ? ` (${f.excerpt})` : ''}. ${f.fix}`)),
     '',
   ];
   const lines = diffLines(c.diff);
   ctx.showText(`${c.address}${drifted ? ' · drift' : ''}`, [...head, ...(lines.length ? lines : ['(no attributes change)'])].join('\n'));
   return true;
+}
+
+/**
+ * What security.js found, without what the settings' `securityIgnore` names (a rule, or `rule:where`):
+ * { planned (the plan on screen's), source (the folder's files', once read) }.
+ */
+export function securityOf(data, config = {}) {
+  const ignore = config.securityIgnore ?? [];
+  return { planned: withoutIgnoredFindings(data?.plan?.security ?? [], ignore), source: withoutIgnoredFindings(data?.sources?.findings ?? [], ignore) };
+}
+
+/** A finding's detail lines: what, where, what was seen, why it matters and what to set. */
+export function findingLines(f) {
+  return [
+    `${SEVERITY_LABEL[f.severity] ?? '?'}  ${f.title}`,
+    '',
+    `Where:      ${findingPlace(f)}`,
+    ...(f.resource && f.resource !== f.where ? [`Resource:   ${f.resource}${f.type && !f.resource.startsWith(f.type) ? ` (${f.type})` : ''}`] : []),
+    ...(f.attribute ? [`Attribute:  ${f.attribute}`] : []),
+    ...(f.excerpt ? [`Seen:       ${f.excerpt}`] : []),
+    `Rule:       ${f.rule} (securityIgnore: "${f.rule}" or "${f.rule}:${f.where}" in the settings leaves it out)`,
+    '',
+    ...(f.why ? [`Why: ${f.why}`] : []),
+    ...(f.fix ? [`Fix: ${f.fix}`] : []),
+  ];
+}
+
+/**
+ * /security [folder]: the folder's .tf, .tfvars, .bicep and .bicepparam files read as they are
+ * (nothing is run), for misconfigurations and passwords written into them, beside what the plan on
+ * screen would deploy; the Security view shows both.
+ */
+export async function security(ctx, folder = '') {
+  const n = folder.trim();
+  const dir = n ? (isAbsolute(n) ? n : join(ctx.cwd(), n)) : ctx.cwd();
+  const r = await ctx.task(
+    `security ${label(ctx, dir)}`,
+    async () => {
+      const files = await ctx.provider.sources(dir);
+      const findings = folderFindings(files);
+      ctx.setData((d) => ({ ...d, sources: { dir, files: files.length, findings, at: Date.now() } }));
+      const { planned, source } = securityOf(ctx.data, ctx.config);
+      const parts = [`${plural(files.length, 'source file')} read: ${findingsLine(countFindings(source)) || 'nothing found'}`, ctx.data?.plan ? `the plan on screen: ${findingsLine(countFindings(planned)) || 'nothing found'}` : ''].filter(Boolean);
+      return { stdout: parts.join('; ') };
+    },
+    { label: 'Reading the source files' },
+  );
+  if (r.ok) ctx.setView('security');
+  return r.ok;
+}
+
+/** ↵ on a finding: what it is, where, and what to set; for a plan's, where its resource is declared. */
+export async function showFinding(ctx, f) {
+  const change = f.line ? null : (ctx.data?.plan?.changes ?? []).find((c) => c.address === f.resource);
+  const where = change ? await ctx.provider.locate(ctx.data?.source?.dir ?? ctx.cwd(), change).catch(() => null) : null;
+  const lines = findingLines(f);
+  if (where) lines.splice(3, 0, `Declared:   ${where.path}:${where.line} (t copies it for Splice)`);
+  if (change) lines.splice(3, 0, `Planned:    ${ACTION_WORD[change.action]}`);
+  ctx.showText(`${f.title} · ${findingPlace(f)}`, lines.join('\n'));
+  return true;
+}
+
+/** t on a finding: the line it is on (a source file's), or where its resource is declared (a plan's), for Splice. */
+export async function shareFinding(ctx, f) {
+  if (f.line) {
+    const line = takeLine('file', { path: f.where, line: f.line });
+    ctx.copy(line, 'a line for Splice');
+    ctx.note(copiedNote('splice', line));
+    return true;
+  }
+  const change = (ctx.data?.plan?.changes ?? []).find((c) => c.address === f.resource);
+  if (!change) return ctx.note(`Couldn't find ${f.resource} in the plan on screen.`, 'error') ?? false;
+  return shareDeclaration(ctx, change);
 }
 
 /** ↵ on a resource of the state: its values, the sensitive ones masked. */

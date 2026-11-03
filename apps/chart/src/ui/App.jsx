@@ -9,7 +9,7 @@ import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
 import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { createChart } from '../iac.js';
 import { summarize } from '../plan.js';
-import { actionTone } from '../rows.js';
+import { actionTone, findingsByAddress } from '../rows.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
@@ -23,6 +23,7 @@ import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { ChangesView } from './ChangesView.jsx';
 import { StateView } from './StateView.jsx';
 import { DependsView } from './DependsView.jsx';
+import { SecurityView } from './SecurityView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
@@ -36,6 +37,7 @@ const VIEWS = [
   { id: 'state', label: 'State' },
   { id: 'log', label: 'Log' },
   { id: 'depends', label: 'Depends' },
+  { id: 'security', label: 'Security' },
 ];
 
 const HINTS = {
@@ -44,6 +46,7 @@ const HINTS = {
   state: '↵ its values · t for Splice · y copy address',
   depends: '↵ what changes · y copy address · red: destroyed or replaced, yellow: what that affects',
   log: '↵ all its output · y copy it',
+  security: '↵ what and how to fix it · t for Splice · y copy where · /security reads the source files',
 };
 
 // The marks of a plan's summary in the header, worst first.
@@ -76,7 +79,7 @@ function Header({ data, cwd, tool, env, width, loading, mood, problem }) {
 }
 
 /** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries, data) {
+function tabLabels(entries, data, config = {}) {
   let x = 0;
   return VIEWS.map((v, i) => {
     let label = ` ${i + 1} ${v.label}`;
@@ -84,6 +87,10 @@ function tabLabels(entries, data) {
     if (v.id === 'changes' && changing) label += ` ${changing}`;
     if (v.id === 'drift' && data?.drift?.length) label += ` ${data.drift.length}`;
     if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
+    if (v.id === 'security') {
+      const { planned, source } = a.securityOf(data, config);
+      if (planned.length + source.length) label += ` ${planned.length + source.length}`;
+    }
     label += ' ';
     const from = x;
     x += stringWidth(label) + 1;
@@ -91,9 +98,9 @@ function tabLabels(entries, data) {
   });
 }
 
-function Tabs({ view, entries, data, width }) {
+function Tabs({ view, entries, data, config, width }) {
   const segs = [];
-  for (const t of tabLabels(entries, data)) {
+  for (const t of tabLabels(entries, data, config)) {
     const on = t.id === view;
     segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
   }
@@ -487,6 +494,11 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     })();
   }, []);
 
+  // The Security view reads the folder's source files the first time it's shown: reading, nothing run.
+  useEffect(() => {
+    if (view === 'security' && data?.found && !data.sources && !busyRef.current) void a.security(ctx);
+  }, [view, Boolean(data?.found), Boolean(data?.sources)]);
+
   // cli.jsx passes the terminal's title setter; tests pass a stub or nothing.
   const title = `${basename(cwd) || cwd} · ${VIEWS.find((v) => v.id === view).label} — Chart`;
   useEffect(() => {
@@ -684,7 +696,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     mainH,
     promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries, data),
+    tabs: tabLabels(entries, data, config),
   };
 
   let main;
@@ -698,6 +710,9 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     const dependsOn = a.dependenciesOf(data);
     const dependsEmpty = !data?.plan ? 'No plan yet: /plan (or /whatif) first, then g on a change.' : !dependsOn ? 'This plan came without its configuration: /graph asks terraform graph what depends on what.' : 'Nothing in the plan.';
     main = <DependsView changes={data?.plan?.changes ?? []} dependsOn={dependsOn} focus={dependsFocus} empty={dependsEmpty} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'security') {
+    const { planned, source } = a.securityOf(data, config);
+    main = <SecurityView planned={planned} source={source} sourcesRead={Boolean(data?.sources)} hasPlan={Boolean(data?.plan)} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'state') {
     main = <StateView state={data?.state} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'drift') {
@@ -706,7 +721,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   } else {
     const found = data?.found;
     const changesEmpty = data?.plan ? 'Nothing to change: the infrastructure matches.' : !found ? 'Looking at the folder…' : found.tfDirs.length ? '/plan asks terraform what it would change (nothing is applied).' : found.bicep.length ? `/whatif ${found.bicep[0]} --rg <resource group> asks Azure what deploying it would change.` : 'No .tf or .bicep files here: /move to an infrastructure folder, or /open a saved plan.';
-    main = <ChangesView key="changes" changes={data?.plan?.changes ?? []} costs={a.costsOf(data)} empty={changesEmpty} hint={data?.plan?.outputs?.length ? `${data.plan.outputs.length} outputs change` : ''} showAll={showAll} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ChangesView key="changes" changes={data?.plan?.changes ?? []} costs={a.costsOf(data)} security={findingsByAddress(a.securityOf(data, config).planned)} empty={changesEmpty} hint={data?.plan?.outputs?.length ? `${data.plan.outputs.length} outputs change` : ''} showAll={showAll} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash
@@ -723,7 +738,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   return (
     <Box flexDirection="column" width={W} height={H}>
       <Header data={data} cwd={cwd} tool={config.terraform ?? 'terraform'} env={env} width={W} loading={loading} mood={mood} problem={problem} />
-      <Tabs view={view} entries={entries} data={data} width={W} />
+      <Tabs view={view} entries={entries} data={data} config={config} width={W} />
       <Box height={mainH} width={W}>
         {main}
       </Box>

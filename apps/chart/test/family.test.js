@@ -22,7 +22,7 @@ test('Chart is in the family, with its names', () => {
 
 test("Plot's mood: a plan that destroys, or drift, worries it; a plan with nothing to do makes it happy", () => {
   const plan = parseTerraformPlan(DEMO_PLAN);
-  assert.deepEqual(familyMood({ mood: 'worried', data: { plan } }), { mood: 'worried', reason: 'the plan destroys 2 (+2 ~2 ±1 -1)' });
+  assert.deepEqual(familyMood({ mood: 'worried', data: { plan } }), { mood: 'worried', reason: 'the plan destroys 2 (+5 ~2 ±1 -1)' });
   assert.deepEqual(familyMood({ mood: 'worried', data: { plan: { ...plan, changes: [] } } }), { mood: 'worried', reason: '1 changed outside Terraform' });
   assert.deepEqual(familyMood({ mood: 'sleep', data: { plan: { ...plan, changes: [], drift: [] } } }), { mood: 'happy', reason: 'the infrastructure matches' });
   assert.equal(familyMood({ mood: 'idle', data: {} }).reason, 'no plan yet');
@@ -35,7 +35,7 @@ test('t copies where a resource is declared for Splice, s an App Service app for
   await type(app.stdin, '/plan');
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'azurerm_mssql_database.reports'), 'the changes');
-  assert.match(readActivity().at(-1).text, /Planned infra: \+2 ~2 ±1 -1/);
+  assert.match(readActivity().at(-1).text, /Planned infra: \+5 ~2 ±1 -1/);
   app.stdin.write('t');
   await until(() => app.copied.length === 1, 'the copy for Splice');
   assert.deepEqual(contextIn(app.copied[0]), { kind: 'file', data: { path: 'db.tf', line: 20 } });
