@@ -1,0 +1,32 @@
+▶ slug
+  ✔ lower-cases (0.612ms)
+  ✖ drops accents (1.204ms)
+  ﹣ handles emoji # signs (0.081ms) # not yet
+▶ slug (3.112ms)
+✔ reads the defaults (0.45ms)
+ℹ tests 4
+ℹ suites 1
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 58.1
+
+✖ failing tests:
+
+test at test/slug.test.js:10:3
+✖ drops accents (1.204ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  'cafe-creme' !== 'café-crème'
+
+      at TestContext.<anonymous> (file:///work/shop/test/slug.test.js:11:12)
+      at Test.runInAsyncScope (node:async_hooks:211:14)
+      at Test.run (node:internal/test_runner/test:930:25) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'cafe-creme',
+    expected: 'café-crème',
+    operator: 'strictEqual'
+  }

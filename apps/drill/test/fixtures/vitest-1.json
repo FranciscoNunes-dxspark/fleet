@@ -1,0 +1,76 @@
+{
+  "numTotalTestSuites": 4,
+  "numPassedTestSuites": 2,
+  "numFailedTestSuites": 2,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 5,
+  "numPassedTests": 2,
+  "numFailedTests": 2,
+  "numPendingTests": 1,
+  "numTodoTests": 0,
+  "startTime": 1761900000000,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["sum"],
+          "fullName": "sum adds two numbers",
+          "status": "passed",
+          "title": "adds two numbers",
+          "duration": 1.0632,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": ["sum"],
+          "fullName": "sum handles negatives",
+          "status": "failed",
+          "title": "handles negatives",
+          "duration": 3.1844,
+          "failureMessages": [
+            "AssertionError: expected -4 to be -5 // Object.is equality\n    at /work/shop/src/sum.test.ts:9:22\n    at file:///work/shop/node_modules/@vitest/runner/dist/index.js:135:14\n    at file:///work/shop/node_modules/@vitest/runner/dist/index.js:60:26"
+          ]
+        },
+        {
+          "ancestorTitles": ["sum"],
+          "fullName": "sum overflows",
+          "status": "skipped",
+          "title": "overflows",
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1761900000110,
+      "endTime": 1761900000124,
+      "status": "failed",
+      "message": "",
+      "name": "/work/shop/src/sum.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["users", "find"],
+          "fullName": "users find returns the user",
+          "status": "failed",
+          "title": "returns the user",
+          "duration": 4.52,
+          "failureMessages": [
+            "AssertionError: expected { id: 1, name: 'Ada' } to deeply equal { id: 1, name: 'Ada Lovelace' }\n    at /work/shop/src/users.test.ts:14:30\n    at /work/shop/src/testing/helpers.ts:3:9\n    at file:///work/shop/node_modules/@vitest/runner/dist/index.js:135:14"
+          ]
+        },
+        {
+          "ancestorTitles": ["users"],
+          "fullName": "users lists them",
+          "status": "passed",
+          "title": "lists them",
+          "duration": 0.88,
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1761900000111,
+      "endTime": 1761900000130,
+      "status": "failed",
+      "message": "",
+      "name": "/work/shop/src/users.test.ts"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "numTotalTestSuites": 3,
+  "numPassedTestSuites": 1,
+  "numFailedTestSuites": 2,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 4,
+  "numPassedTests": 1,
+  "numFailedTests": 2,
+  "numPendingTests": 0,
+  "numTodoTests": 1,
+  "startTime": 1761900000000,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["cart"],
+          "fullName": "cart totals the lines",
+          "status": "failed",
+          "title": "totals the lines",
+          "duration": 2.4,
+          "failureMessages": [
+            "AssertionError: expected 41.99 to be 42 // Object.is equality\n\n- Expected\n+ Received\n\n- 42\n+ 41.99\n\n    at /work/shop/src/cart.test.ts:12:27\n    at file:///work/shop/node_modules/@vitest/runner/dist/index.js:146:14"
+          ],
+          "location": { "line": 10, "column": 3 },
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["cart"],
+          "fullName": "cart applies discounts",
+          "status": "todo",
+          "title": "applies discounts",
+          "duration": 0,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["cart"],
+          "fullName": "cart is empty at first",
+          "status": "passed",
+          "title": "is empty at first",
+          "duration": 0.31,
+          "failureMessages": [],
+          "location": { "line": 4, "column": 3 },
+          "meta": {}
+        }
+      ],
+      "startTime": 1761900000100,
+      "endTime": 1761900000140,
+      "status": "failed",
+      "message": "",
+      "name": "/work/shop/src/cart.test.ts"
+    },
+    {
+      "assertionResults": [],
+      "startTime": 1761900000100,
+      "endTime": 1761900000100,
+      "status": "failed",
+      "message": "Failed to load url ./missing.js (resolved id: ./missing.js) in /work/shop/src/broken.test.ts. Does the file exist?",
+      "name": "/work/shop/src/broken.test.ts"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 1,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 1,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 0,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 1,
+  "numTotalTestSuites": 1,
+  "numTotalTests": 3,
+  "openHandles": [],
+  "snapshot": { "added": 0, "didUpdate": false, "failure": false, "filesAdded": 0, "filesRemoved": 0, "filesRemovedList": [], "filesUnmatched": 0, "filesUpdated": 0, "matched": 0, "total": 0, "unchecked": 0, "uncheckedKeysByFile": [], "unmatched": 0, "updated": 0 },
+  "startTime": 1761900000000,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["profile"],
+          "duration": 5,
+          "failureDetails": [
+            {
+              "matcherResult": {
+                "actual": { "name": "Ada", "roles": ["admin"] },
+                "expected": { "name": "Ada", "roles": ["admin", "billing"] },
+                "message": "expect(received).toEqual(expected) // deep equality",
+                "name": "toEqual",
+                "pass": false
+              }
+            }
+          ],
+          "failureMessages": [
+            "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 0\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[2m  Object {\u001b[22m\n\u001b[2m    \"name\": \"Ada\",\u001b[22m\n\u001b[2m    \"roles\": Array [\u001b[22m\n\u001b[2m      \"admin\",\u001b[22m\n\u001b[32m-     \"billing\",\u001b[39m\n\u001b[2m    ],\u001b[22m\n\u001b[2m  }\u001b[22m\n    at Object.toEqual (/work/shop/src/profile.test.js:15:28)\n    at /work/shop/src/profile.js:40:5\n    at Promise.finally.completed (/work/shop/node_modules/jest-circus/build/jestAdapterInit.js:1559:28)"
+          ],
+          "fullName": "profile keeps every role",
+          "invocations": 1,
+          "location": { "column": 3, "line": 12 },
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "startAt": 1761900000150,
+          "status": "failed",
+          "title": "keeps every role"
+        },
+        {
+          "ancestorTitles": ["profile"],
+          "duration": 1,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "profile has a name",
+          "invocations": 1,
+          "location": { "column": 3, "line": 5 },
+          "numPassingAsserts": 1,
+          "retryReasons": ["Error: flaked once"],
+          "startAt": 1761900000140,
+          "status": "passed",
+          "title": "has a name"
+        },
+        {
+          "ancestorTitles": ["profile"],
+          "duration": null,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "profile uploads an avatar",
+          "invocations": 0,
+          "location": { "column": 3, "line": 20 },
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "startAt": null,
+          "status": "todo",
+          "title": "uploads an avatar"
+        }
+      ],
+      "endTime": 1761900000420,
+      "message": "",
+      "name": "/work/shop/src/profile.test.js",
+      "startTime": 1761900000100,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

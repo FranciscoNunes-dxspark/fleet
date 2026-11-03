@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="7d2e1f3a-0000-4000-8000-000000000101" name="runner@build 2026-10-31 09:10:00" runUser="runner" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-31T09:10:00.0000000+00:00" queuing="2026-10-31T09:10:00.0000000+00:00" start="2026-10-31T09:10:00.1000000+00:00" finish="2026-10-31T09:10:01.0000000+00:00" />
+  <Results>
+    <UnitTestResult executionId="cc000001-0000-0000-0000-000000000001" testId="dd000001-0000-0000-0000-000000000001" testName="ParsesAnOrder" computerName="build" duration="00:00:00.0310000" startTime="2026-10-31T09:10:00.2000000+00:00" endTime="2026-10-31T09:10:00.2310000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cc000001-0000-0000-0000-000000000001">
+      <Output>
+        <ErrorInfo>
+          <Message>  Expected: 3
+  But was:  2
+</Message>
+          <StackTrace>   at Orders.Tests.OrderParserTests.ParsesAnOrder() in C:\work\orders\tests\Orders.Tests\OrderParserTests.cs:line 22
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="cc000002-0000-0000-0000-000000000002" testId="dd000002-0000-0000-0000-000000000002" testName="RejectsEmpty" computerName="build" duration="00:00:00.0010000" startTime="2026-10-31T09:10:00.2400000+00:00" endTime="2026-10-31T09:10:00.2410000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cc000002-0000-0000-0000-000000000002" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ParsesAnOrder" storage="c:\work\orders\tests\orders.tests\bin\debug\net8.0\orders.tests.dll" id="dd000001-0000-0000-0000-000000000001">
+      <Execution id="cc000001-0000-0000-0000-000000000001" />
+      <TestMethod codeBase="C:\work\orders\tests\Orders.Tests\bin\Debug\net8.0\Orders.Tests.dll" adapterTypeName="executor://NUnit3TestExecutor" className="Orders.Tests.OrderParserTests" name="ParsesAnOrder" />
+    </UnitTest>
+    <UnitTest name="RejectsEmpty" storage="c:\work\orders\tests\orders.tests\bin\debug\net8.0\orders.tests.dll" id="dd000002-0000-0000-0000-000000000002">
+      <Execution id="cc000002-0000-0000-0000-000000000002" />
+      <TestMethod codeBase="C:\work\orders\tests\Orders.Tests\bin\Debug\net8.0\Orders.Tests.dll" adapterTypeName="executor://NUnit3TestExecutor" className="Orders.Tests.OrderParserTests" name="RejectsEmpty" />
+    </UnitTest>
+  </TestDefinitions>
+  <ResultSummary outcome="Failed">
+    <Counters total="2" executed="2" passed="1" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>
