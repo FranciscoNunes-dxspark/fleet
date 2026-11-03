@@ -27,6 +27,8 @@ import { Palette } from '@fleet/kit/ui/Palette.jsx';
 import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { CrewView } from './CrewView.jsx';
+import { TracesView } from './TracesView.jsx';
+import { OTLP_PORT, TraceStore, startOtlpReceiver } from '../traces.js';
 import { LogView } from './LogView.jsx';
 import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
@@ -50,6 +52,7 @@ import { SAMPLE_EVERY, createSampler, keepSample, memoryAlertLabel, memoryGrowin
 const VIEWS = [
   { id: 'crew', label: 'Crew' },
   { id: 'log', label: 'Log' },
+  { id: 'traces', label: 'Traces' },
 ];
 
 const VIEW_LABELS = Object.fromEntries(VIEWS.map((v) => [v.id, v.label]));
@@ -64,6 +67,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const HINTS = {
   crew: 'r restart · s stop/start · alt+r all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share its trouble · alt+t share it online · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
+  traces: '↵ open (a span: its attributes) · t its SQL to Trawl or request to Hail · y copy its id · c clear · esc back',
 };
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
@@ -148,9 +152,10 @@ const viewerKey = (overlay) => {
 // every `sampleEvery` ms while the Crew view shows. `findTool(name)` finds a program on the PATH
 // (which.js's; tests pass their own) and `tunnelSpawn` starts a tunnel's (child_process's spawn; tests a fake).
 // `ensureCert(opts)` makes or reads the certificate "https" serves with (https.js's; tests pass their own).
+// `startOtlp(opts)` starts the OTLP receiver the crew exports traces to (traces.js's; tests pass their own port).
 // `copy` puts text on the clipboard (cli.jsx's; tests pass a stub). `checkUpdate` and `installUpdate`
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
-export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, ensureCert: certFor = ensureCert, hostsFile = { path: hostsPath(), read: (f) => readFileSync(f, 'utf8'), write: (f, t) => writeFileSync(f, t) }, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
+export function App({ config: initialConfig, dir = process.cwd(), load = loadCrew, autostart = true, profile: initialProfile = null, askClaude = ask, openUrl, pidsOnPort: portPids = pidsOnPort, killPids: stopPids = killPids, listPorts = listeningPorts, gatherFacts: gather = gatherFacts, runHail = hailTest, restartTimes, moodEvery = 30_000, sampleUsage, sampleEvery = SAMPLE_EVERY, findTool = findOnPath, tunnelSpawn, startOtlp = startOtlpReceiver, ensureCert: certFor = ensureCert, hostsFile = { path: hostsPath(), read: (f) => readFileSync(f, 'utf8'), write: (f, t) => writeFileSync(f, t) }, notify, checkUpdate, installUpdate, setTitle, mouse, copy }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -413,10 +418,44 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     ));
   const crewEventRef = useRef(crewEvent);
   crewEventRef.current = crewEvent;
+  // Traces: what the crew exports over OTLP to Bosun's receiver (traces.js), kept in memory and drawn
+  // by the Traces view, redrawn at most a few times a second while it shows. One receiver for the
+  // whole run, across /move; the Traces setting off starts none (from the next start).
+  const traceStore = useRef(null);
+  const tracesRedraw = useRef(null);
+  traceStore.current ??= new TraceStore({
+    onChange: () => {
+      if (viewRef.current !== 'traces' || tracesRedraw.current) return;
+      tracesRedraw.current = setTimeout(() => {
+        tracesRedraw.current = null;
+        setTick((n) => n + 1);
+      }, 150);
+    },
+  });
+  const [receiver, setReceiver] = useState(undefined);
+  const tracesPlace = useRef({ open: null, at: null });
+  const receiverRef = useRef(null);
+  const traceReceiver = () =>
+    (receiverRef.current ??=
+      configRef.current.traces === false
+        ? Promise.resolve(null).then(() => (setReceiver(null), null))
+        : startOtlp({ port: Number(configRef.current.tracesPort) || OTLP_PORT, onSpans: (spans) => traceStore.current.add(spans) }).then(
+            (r) => {
+              setReceiver(r);
+              return r;
+            },
+            (e) => {
+              setReceiver({ error: firstLine(e.message) });
+              note(`The traces receiver couldn't listen, so the crew's traces aren't collected: ${firstLine(e.message)}`, 'error');
+              return null;
+            },
+          ));
   // The crew again (bosun.json changed, /reload, another profile): new processes start, ones gone stop,
   // and with `restartChanged` the ones whose command changed restart.
   const reload = async ({ restartChanged = false } = {}) => {
     try {
+      // Listening before the first start, so the crew is given its address.
+      const otlp = await traceReceiver();
       const crew = await load(dirRef.current);
       crewRef.current = crew;
       const first = !supRef.current;
@@ -438,7 +477,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       // profile and the checkout's branch and commit, so /replay's r can say what to put back.
       const project = dirRef.current;
       const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs, profile: profileRef.current, readGit: () => gitHead(project) }) : null;
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), dumpDir: dumpsDir(dirRef.current), projectEnv: givenVars(firstEnv), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), dumpDir: dumpsDir(dirRef.current), projectEnv: givenVars(firstEnv), otel: otlp?.endpoint ?? null, ...(tunnelSpawn ? { tunnelSpawn } : {}) });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
@@ -595,7 +634,9 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     return () => {
       clearInterval(t);
       clearTimeout(redrawSoon.current);
+      clearTimeout(tracesRedraw.current);
       supRef.current?.dispose();
+      receiverRef.current?.then((r) => r?.close());
     };
   }, []);
 
@@ -1141,6 +1182,8 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     main = <Picker key={overlay.id} picker={overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay) {
     main = <TextViewer key={viewerKey(overlay)} {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={ctx.closeOverlay} />;
+  } else if (view === 'traces') {
+    main = <TracesView store={traceStore.current} receiver={receiver} place={tracesPlace.current} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (!data) {

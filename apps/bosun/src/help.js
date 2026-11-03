@@ -6,12 +6,12 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-2 / tab', 'Crew, Log (shift+tab goes back)'],
+      ['1-3 / tab', 'Crew, Log, Traces (shift+tab goes back)'],
       ['/ or :', 'Command prompt (slash commands, with completion); pasting a /command or a family:v1: line opens it with that, to run with ↵'],
       ['ctrl+p', 'Command palette: every slash command (yours too) and the keys of the view you\'re in, filtered as you type; ↵ runs one (a command that takes more goes into the prompt)'],
       ['!', 'Run a shell command, e.g.  !node --version'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
-      [',', 'Settings (/settings): theme, accent colour, mouse, notifications, memory alert, recording, family moods, updates, history'],
+      [',', 'Settings (/settings): theme, accent colour, mouse, notifications, memory alert, recording, traces and their port, family moods, updates, history'],
       ['?', 'This help'],
       ['q', 'Quit, stopping every process Bosun started (and what they started)'],
       ['mouse', 'Click a tab, a row or the prompt · double-click does ↵ · the wheel scrolls\ndrag to select text, copied when you let go (ctrl+c copies it again; it never quits) · ctrl+v pastes'],
@@ -65,12 +65,25 @@ export const HELP = [
     rows: [['↵', 'All of its output']],
   },
   {
+    title: 'Traces',
+    about: 'what the crew exported over OpenTelemetry to Bosun\'s receiver on 127.0.0.1 (each process Bosun starts gets OTEL_EXPORTER_OTLP_ENDPOINT, _PROTOCOL and OTEL_SERVICE_NAME, unless its env files or bosun.json set them), slowest first',
+    views: ['traces'],
+    rows: [
+      ['↵', 'A trace: its spans as a waterfall across the processes, each under its parent; on a span, its attributes, resource and events'],
+      ['t', 'On a span: its SQL to Trawl (a query context, from db.query.text or db.statement), or its request to Hail (from http.request.method and url.full, or http.method and http.url)'],
+      ['y', 'Copy the trace\'s id, or the span\'s'],
+      ['c', 'Clear the traces'],
+      ['esc', 'Back to the list'],
+      'The newest 300 traces of the last 30 minutes are kept, in memory only. A red bar failed (its status is an error); a green one ran SQL.',
+    ],
+  },
+  {
     title: 'Your own commands and keys',
     about: 'in the settings file (config.json), read when Bosun starts; what\'s wrong with them is said in the log then',
     rows: [
       ['"commands"', '{ "morning": ["/one", "/two"], "v": "!node --version" }: a line as typed at the prompt, or a list run in order, stopping at the first that fails (or that you answer no); { "run": …, "desc": … } gives it a description. They show in the / menu, the palette and Slash commands below'],
       ['$1 $2  $*', 'What\'s typed after it: a word each ("quoted words" are one), or all of it; a command with no $ gets it at the end of its line'],
-      ['"keys"', '{ "global": { "ctrl+s": "/settings" }, "crew": { "x": "/why web" } }: a key to another key (the view does what that one does) or to a command line, anywhere or in one view (crew, log). They work while a view has the keys, never while typing; Your keys (above Slash commands) lists them'],
+      ['"keys"', '{ "global": { "ctrl+s": "/settings" }, "crew": { "x": "/why web" } }: a key to another key (the view does what that one does) or to a command line, anywhere or in one view (crew, log, traces). They work while a view has the keys, never while typing; Your keys (above Slash commands) lists them'],
       ['key names', 'a character (x, X, +), ctrl+s, alt+x, shift+tab, F1-F12, enter, esc, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown'],
     ],
   },

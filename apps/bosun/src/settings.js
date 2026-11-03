@@ -4,6 +4,7 @@ import { THEMES, defaultAccent, theme } from './theme.js';
 import { fit } from '@fleet/kit/text.js';
 import { notifySeconds } from './notify.js';
 import { memoryAlertLabel, nextMemoryAlert } from './usage.js';
+import { OTLP_PORT } from './traces.js';
 
 const isOn = (value) => value !== false;
 const count = (n, one, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : 'none');
@@ -16,7 +17,7 @@ export const nextTheme = (config) => THEMES[(THEMES.indexOf(themeSetting(config)
 
 /**
  * The rows, from the config: { id, label, value, note, action }, where `action` is what ↵ does:
- * 'toggle' (an on/off setting named `id`), 'theme', 'accent', 'clear' (the list named `id`) or 'none'.
+ * 'toggle' (an on/off setting named `id`), 'theme', 'accent', 'port' (the traces port), 'clear' (the list named `id`) or 'none'.
  * `mouse`: whether this terminal can report the mouse at all.
  */
 export function settingRows(config, { file = '', mouse = true } = {}) {
@@ -59,6 +60,14 @@ export function settingRows(config, { file = '', mouse = true } = {}) {
       note: isOn(config.record) ? 'every run\'s logs and states, for /replay (from the next start)' : 'record nothing (from the next start)',
       action: 'toggle',
     },
+    {
+      id: 'traces',
+      label: 'Traces',
+      value: isOn(config.traces) ? 'on' : 'off',
+      note: isOn(config.traces) ? 'an OTLP receiver on 127.0.0.1 the crew exports to, for the Traces view (from the next start of Bosun)' : 'no receiver, no OTEL_ settings (from the next start of Bosun)',
+      action: 'toggle',
+    },
+    { id: 'tracesPort', label: 'Traces port', value: String(config.tracesPort ?? `${OTLP_PORT} (default)`), note: 'type another (the next free one when it\'s taken; from the next start)', action: 'port' },
     {
       id: 'familyMoods',
       label: 'Family moods',
