@@ -4,52 +4,71 @@ import { existsSync } from 'node:fs';
 import { basename, isAbsolute, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { run } from '@fleet/kit/run.js';
-import { contextIn, copiedNote, notMine, takeLine } from '@fleet/kit/family.js';
+import { contextIn, copiedNote, notMine, shareLine, takeLine } from '@fleet/kit/family.js';
 import { resolveFolder, samePath } from '@fleet/kit/folders.js';
+import { describeEnvironments, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
 import { configFile } from './config.js';
 import { countLine, counts, findings, licenceKind } from './audit.js';
 import { fixPlan } from './fix.js';
 import { cyclonedx } from './sbom.js';
-import { packageUrl } from './registry.js';
+import { hasRegistry, packageUrl } from './registry.js';
+import { safeImage } from './image.js';
+import { mergePackages } from './lockfiles.js';
 import { SEVERITY_LABEL, findFinding, findPackage, label, licenceOf, withoutIgnored } from './rows.js';
 import { fileData, markdownReport } from './share.js';
 import { bumpOf } from './versions.js';
 import { nodeOf, problems, targetsOf } from './compat.js';
+import { branchName, folderLabel, upgradeCandidates } from './upgrade.js';
+import { breakingInput, breakingPrompt } from './breaking.js';
 import { VERSION } from './app.js';
 
+const firstLine = (s) => String(s ?? '').split('\n')[0];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const packages = (ctx) => ctx.data?.packages ?? [];
 const found = (ctx) => ctx.found ?? [];
 
-/** The folder's lock files and projects, read again; then, unless the setting is off or `audit` false, OSV is asked about them. */
-export async function scan(ctx, { audit: thenAudit = ctx.config.autoAudit !== false } = {}) {
+/**
+ * The folder's lock files and projects, read again; then, unless the setting is off or `audit` false,
+ * OSV is asked about them (`fresh`: about every package, not taking its recent answers from the cache).
+ */
+export async function scan(ctx, { audit: thenAudit = ctx.config.autoAudit !== false, fresh = false } = {}) {
   const dir = ctx.cwd();
   const r = await ctx.task(
     `scan ${basename(dir) || dir}`,
     async () => {
       const result = await ctx.provider.scan(dir);
-      ctx.setData((d) => ({ ...result, audit: null, latest: d?.root === result.root ? d.latest : null }));
+      ctx.setData((d) => {
+        // An image taken from Wharf isn't on the disk: it stays while Bilge reads the same folder.
+        const same = d?.root === result.root;
+        const images = same ? (d.manifests ?? []).filter((m) => m.kind === 'image') : [];
+        const manifests = images.length ? [...result.manifests, ...images] : result.manifests;
+        return { ...result, manifests, packages: images.length ? mergePackages(manifests) : result.packages, audit: null, latest: same ? d.latest : null };
+      });
       const n = result.manifests.length;
-      return { stdout: n ? `${plural(result.packages.length, 'package')} in ${plural(n, 'manifest')}` : 'No package-lock.json, packages.lock.json or .NET project here.' };
+      return { stdout: n ? `${plural(result.packages.length, 'package')} in ${plural(n, 'manifest')}` : 'No lock file (package-lock.json, yarn.lock, pnpm-lock.yaml, packages.lock.json) or .NET project here.' };
     },
     { label: 'Reading lock files' },
   );
-  if (r.ok && thenAudit && packages(ctx).length) return audit(ctx);
+  if (r.ok && thenAudit && packages(ctx).length) return audit(ctx, { fresh });
   return r.ok;
 }
 
-/** /audit: OSV's advisories for every package found. */
-export async function audit(ctx) {
+/**
+ * /audit [fresh]: OSV's advisories for every package found. What OSV said in the last six hours (a
+ * day for an advisory's record) comes from the cache; `fresh` asks about everything again.
+ */
+export async function audit(ctx, { fresh = false } = {}) {
   const list = packages(ctx);
   if (!list.length) return ctx.note(ctx.data?.manifests?.length ? 'No packages with exact versions to ask about.' : 'Nothing read yet: /scan reads this folder.', 'error') ?? false;
   const r = await ctx.task(
-    `audit ${plural(list.length, 'package')}`,
+    `audit ${plural(list.length, 'package')}${fresh ? ', fresh' : ''}`,
     async (signal) => {
-      const { ids, details } = await ctx.provider.audit(list, { signal });
+      const { ids, details, cached = 0 } = await ctx.provider.audit(list, { signal, fresh });
       ctx.setData((d) => ({ ...d, audit: { ids, details, at: Date.now() } }));
       const line = countLine(counts(withoutIgnored(findings(list, ids, details), ctx.config.ignore ?? [])));
-      return { stdout: line || 'Nothing known against them.' };
+      const kept = cached ? `\n${cached === list.length ? 'All' : `${cached} of ${list.length}`} from OSV's answers of the last few hours (/audit fresh asks again)` : '';
+      return { stdout: `${line || 'Nothing known against them.'}${kept}` };
     },
     { label: 'Asking OSV' },
   );
@@ -68,7 +87,7 @@ export async function audit(ctx) {
  */
 export async function outdated(ctx, which = '') {
   const all = /^all$/i.test(which.trim());
-  const list = packages(ctx).filter((p) => all || p.direct);
+  const list = packages(ctx).filter((p) => hasRegistry(p) && (all || p.direct));
   if (!list.length) return ctx.note('No packages to look up: /scan reads this folder.', 'error') ?? false;
   const r = await ctx.task(
     `outdated ${all ? 'all' : 'direct'}: ${plural(list.length, 'package')}`,
@@ -141,7 +160,7 @@ export function showPackage(ctx, p) {
   const licence = licenceOf(p, ctx.data.latest);
   const f = found(ctx).find((x) => x.key === p.key);
   ctx.showText(label(p), [
-    `${label(p)}  ${p.ecosystem}${p.direct ? ', direct' : ', brought in by another package'}${p.dev ? ', development only' : ''}`,
+    `${label(p)}  ${p.ecosystem}${!hasRegistry(p) ? `, in the image${p.binaries ? ` as ${p.binaries.join(', ')}` : ''}` : p.direct ? ', direct' : ', brought in by another package'}${p.dev ? ', development only' : ''}`,
     `Licence: ${licence ?? 'unknown (/outdated asks the registry)'}${licence ? `  (${licenceKind(licence)})` : ''}`,
     `Newest: ${latest ? (latest.error ? `couldn't ask: ${latest.error}` : `${latest.latest ?? '?'}${bumpOf(p.version, latest.latest) ? `  (${bumpOf(p.version, latest.latest)} behind)` : '  (up to date)'}`) : 'not asked yet (/outdated)'}`,
     ...(latest?.deprecated ? [`Deprecated: ${latest.deprecated}`] : []),
@@ -176,7 +195,7 @@ export async function fix(ctx, target) {
   });
   if (yes === 'why') return ctx.showText(`Fixing ${label(f.pkg)}`, [`Moving to ${f.fixed} may not fit this project:`, ...warnings.map((w) => `  · ${w}`), '', `The fix: ${plan.text}`, '', 'f again runs it anyway; a newer version may fit (↵ in Packages says).'].join('\n')) ?? false;
   if (yes === 'copy') return ctx.copy(plan.run.command, 'the command') ?? true;
-  if (!yes) return false;
+  if (!yes || !(await productionOk(ctx, `Move ${f.pkg.name} to ${f.fixed}`))) return false;
   const r = await ctx.task(plan.run.command, (signal) => ctx.provider.run(plan.run.command, { cwd: plan.run.cwd, signal }), {
     label: `Moving ${f.pkg.name}`,
     activity: `Moved ${f.pkg.name} ${f.pkg.version} → ${f.fixed} in ${manifest.path}`,
@@ -188,6 +207,158 @@ export async function fix(ctx, target) {
     const c = await ctx.task(plan.check.command, (signal) => ctx.provider.run(plan.check.command, { cwd: plan.check.cwd, signal }), { label: 'Checking' });
     if (!c.ok && !c.error?.cancelled) ctx.note(`${plan.check.command} found a problem after moving ${f.pkg.name}: /last says what.`, 'error');
   }
+  return true;
+}
+
+/**
+ * /upgrade: every direct package with a newer version that fits the project (the newest, else the
+ * newest that fits), from the last /outdated (asked first when it hasn't been). One question lists
+ * them; then, on a clean working tree, a branch of their own (bilge/updates-<date>), each update's
+ * command where its manifest is, the project's tests, and a commit, saying how each step went. A
+ * failed step stops it there, the branch left for the person. Splice gets the branch.
+ */
+export async function upgrade(ctx) {
+  if (!packages(ctx).length) return ctx.note('No packages to update: /scan reads this folder.', 'error') ?? false;
+  const asked = packages(ctx).some((p) => p.direct && hasRegistry(p) && ctx.data.latest?.has(p.key));
+  if (!asked && !(await outdated(ctx))) return false;
+  const list = upgradeCandidates(ctx.data);
+  if (!list.length) return ctx.note("Nothing to update: every direct package is at its newest version, or no newer one fits this project (↵ in Packages says why).") ?? true;
+  const root = ctx.cwd();
+  const steps = list.flatMap((u) => u.steps.map((s) => ({ ...s, pkg: u.pkg, to: u.to })));
+  const lines = list.map((u) => `${u.pkg.name} ${u.pkg.version} → ${u.to}${u.capped ? ' (the newest that fits)' : ''}`);
+  const yes = await ctx.confirm({
+    title: `Update ${plural(list.length, 'package')} on a branch of their own, then run the tests?`,
+    detail: lines.join(' · '),
+    options: [{ label: 'Yes, update them', value: true }, { label: 'Copy the commands', value: 'copy' }, { label: 'See the list', value: 'list' }, { label: 'No', value: false }],
+  });
+  if (yes === 'list') return ctx.showText(`Updates that fit (${list.length})`, [...lines, '', 'The commands:', ...steps.map((s) => `  ${s.command}  (in ${folderLabel(root, s.cwd)})`), '', '/upgrade again runs them on a new branch.'].join('\n')) ?? false;
+  if (yes === 'copy') {
+    const byFolder = [...new Set(steps.map((s) => folderLabel(root, s.cwd)))].flatMap((f) => [`# in ${f}`, ...steps.filter((s) => folderLabel(root, s.cwd) === f).map((s) => s.command)]);
+    return ctx.copy(byFolder.join('\n'), 'the commands') ?? true;
+  }
+  if (!yes || !(await productionOk(ctx, `Update ${plural(list.length, 'package')}`))) return false;
+
+  const done = [];
+  const say = (ok, text) => done.push(`${ok ? '✓' : '✗'} ${text}`);
+  const report = (title, tail) => ctx.showText(title, [...done, ...(tail ? ['', ...tail] : [])].join('\n'));
+  const step = (command, cwd, opts) => ctx.task(command, (signal) => ctx.provider.run(command, { cwd, signal }), opts);
+
+  // Only on a clean tree: the commit should hold the updates and nothing else.
+  const status = await step('git status --porcelain', root, { label: 'Checking the working tree' });
+  if (!status.ok) return ctx.note(`/upgrade needs a git repository here: ${firstLine(status.error.message)}`, 'error') ?? false;
+  if (status.out.trim()) return ctx.note('The working tree has changes: commit or stash them first (Splice does both), then /upgrade again. Nothing was changed.', 'error') ?? false;
+  const branch = await newBranch(ctx, root);
+  if (!branch) return false;
+  say(true, `on a new branch, ${branch}`);
+
+  for (const [i, s] of steps.entries()) {
+    const r = await step(s.command, s.cwd, { label: `Updating ${i + 1}/${steps.length}`, activity: `Updated ${s.pkg.name} ${s.pkg.version} → ${s.to} in ${s.manifest.path} on ${branch}` });
+    say(r.ok, `${s.command}  (in ${folderLabel(root, s.cwd)})`);
+    if (!r.ok) {
+      report(`Upgrade stopped at step ${i + 1} of ${steps.length}`, [`${s.command} failed: /last says what it printed.`, `${branch} is left as it is, with the updates before it uncommitted, for you to finish or drop (Splice: /discard, /checkout).`]);
+      return false;
+    }
+  }
+  const tests = await ctx.provider.tests([...new Set(steps.map((s) => s.manifest))], root);
+  for (const t of tests) {
+    const r = await step(t.command, t.cwd, { label: 'Testing' });
+    say(r.ok, `${t.command}  (in ${folderLabel(root, t.cwd)})`);
+    if (!r.ok) {
+      report(`Upgrade stopped: ${t.command} failed`, [`/last says what it printed. The updates are on ${branch}, not committed, for you to look into.`]);
+      return false;
+    }
+  }
+  if (!tests.length) say(true, 'no tests found to run (a test script in package.json, a .sln or a .csproj)');
+  const message = `Update ${plural(list.length, 'package')}`;
+  for (const command of ['git add -A', `git commit -m "${message}"`]) {
+    const r = await step(command, root, { label: 'Committing' });
+    say(r.ok, command);
+    if (!r.ok) {
+      report('Upgrade not committed', [`/last says why. The updates are on ${branch}, tested, for you to commit.`]);
+      return false;
+    }
+  }
+  ctx.logActivity(`${message} on ${branch} in ${basename(root)}`, 'change');
+  await scan(ctx, { audit: true });
+  // Splice pushes it and opens the pull request: the line that checks the branch out there.
+  const line = shareLine('checkout', [branch]);
+  ctx.copy(line, 'a line for Splice');
+  report(`${message} on ${branch}`, [`Committed "${message}". Push it from Splice (/push, then /pr) to open its pull request.`]);
+  ctx.note(copiedNote('splice', line));
+  return true;
+}
+
+/**
+ * /breaking <package>: for a package a major version behind, Claude says what changes between the
+ * installed version and the newest for this code: the package, the versions, its registry page and
+ * repository, and the project's lines that import it. The newest is asked for first when /outdated
+ * hasn't been.
+ */
+export async function breaking(ctx, name = '') {
+  const p = findPackage(packages(ctx), name);
+  if (!p) return ctx.note(name.trim() ? `No package ${name.trim()} here.` : '/breaking needs a package: /breaking express', 'error') ?? false;
+  if (p.ecosystem !== 'npm' && p.ecosystem !== 'NuGet') return ctx.note(`${p.name} isn't from npm or NuGet: /breaking is for those.`, 'error') ?? false;
+  if (!ctx.data.latest?.get(p.key)?.latest) {
+    const r = await ctx.task(`newest ${p.name}`, async (signal) => {
+      const latest = await ctx.provider.latest([p], { signal });
+      ctx.setData((d) => ({ ...d, latest: new Map([...(d.latest ?? []), ...latest]) }));
+      return { stdout: latest.get(p.key)?.error ?? `${p.name} ${latest.get(p.key)?.latest ?? '?'}` };
+    }, { label: 'Asking the registry' });
+    if (!r.ok) return false;
+  }
+  const latest = ctx.data.latest?.get(p.key);
+  if (!latest?.latest) return ctx.note(`The registry didn't say what ${p.name}'s newest version is.`, 'error') ?? false;
+  if (bumpOf(p.version, latest.latest) !== 'major') {
+    return ctx.note(`${p.name} ${p.version} → ${latest.latest} isn't a major version: /breaking is for those, where what a package offers can change.${bumpOf(p.version, latest.latest) ? '' : ' It is up to date.'}`) ?? true;
+  }
+  let answer = '';
+  let used = [];
+  const r = await ctx.task(
+    `claude: ${p.name} ${p.version} → ${latest.latest}`,
+    async (signal) => {
+      used = await ctx.provider.usages(ctx.cwd(), p, { signal });
+      ctx.progress(`with ${plural(used.length, 'line')} that import it`);
+      answer = await ctx.provider.claude(breakingPrompt(p, p.version, latest.latest, { page: packageUrl(p), repository: latest.repository }), { input: breakingInput(p, used), cwd: ctx.cwd(), signal });
+      return { stdout: `${plural(used.length, 'line')} that import it, and Claude's answer` };
+    },
+    { label: 'Asking Claude' },
+  );
+  if (!r.ok) return false;
+  ctx.showText(`${p.name} ${p.version} → ${latest.latest}: what breaks here (Claude)`, `${answer}\n\n${used.length ? `Lines that import it: ${used.length} (${[...new Set(used.map((u) => u.path))].slice(0, 5).join(', ')}${new Set(used.map((u) => u.path)).size > 5 ? ', …' : ''})` : 'No line imports it by its name.'}`);
+  return true;
+}
+
+/** `git checkout -b` the day's branch, or the day's second, third… when that one's taken. */
+async function newBranch(ctx, root) {
+  const base = branchName();
+  for (let n = 1; n <= 9; n++) {
+    const branch = n === 1 ? base : `${base}-${n}`;
+    const r = await ctx.task(`git checkout -b ${branch}`, (signal) => ctx.provider.run(`git checkout -b ${branch}`, { cwd: root, signal }), { label: 'Making the branch' });
+    if (r.ok) return branch;
+    if (!/already exists/i.test(r.error?.message ?? '')) {
+      ctx.note(`Couldn't make the branch ${branch}: ${firstLine(r.error?.message)}`, 'error');
+      return null;
+    }
+  }
+  ctx.note(`${base} and the next eight are taken: delete some in Splice, then /upgrade again.`, 'error');
+  return null;
+}
+
+/**
+ * Whether to go on with `what`, which changes the project: asked once more when the project's
+ * environment is production (.fleet/project.json's "prod": true), straight on otherwise.
+ */
+async function productionOk(ctx, what) {
+  const question = productionQuestion(ctx.env, what);
+  return !question || (await ctx.confirm(question)) === true;
+}
+
+/** /env [name]: the project's environment; a name switches every app of the family to it. */
+export function env(ctx, name = '') {
+  if (!name.trim()) return ctx.note(describeEnvironments(ctx.cwd()));
+  const r = setEnvironment(ctx.cwd(), name, { by: 'bilge' });
+  if (!r.ok) return ctx.note(r.error, 'error') ?? false;
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production: fixes and /upgrade ask first)' : ''}, for every app.`, 'ok');
   return true;
 }
 
@@ -245,7 +416,8 @@ export function open(ctx, what) {
 
 /** t: where a package is in its manifest, for Splice to blame (who brought it in, and when). */
 export function shareWhere(ctx, pkg) {
-  const where = pkg.where[0];
+  const where = pkg.where.find((w) => !w.path.startsWith('image '));
+  if (!where && pkg.where.length) return ctx.note(`${pkg.name} is in an image, not in a file Splice has: its Dockerfile's base image brings it in.`, 'error') ?? false;
   if (!where) return ctx.note(`${pkg.name} isn't in a manifest Bilge read.`, 'error') ?? false;
   const line = takeLine('file', fileData(where));
   ctx.copy(line, 'a line for Splice');
@@ -255,6 +427,7 @@ export function shareWhere(ctx, pkg) {
 
 /** t on a manifest: the file itself, for Splice's history of it. */
 export function shareManifest(ctx, manifest) {
+  if (manifest.kind === 'image') return ctx.note(`${manifest.image} is an image, not a file Splice has.`, 'error') ?? false;
   const line = takeLine('file', { path: manifest.path });
   ctx.copy(line, 'a line for Splice');
   ctx.note(copiedNote('splice', line));
@@ -311,11 +484,36 @@ export function move(ctx, folder = '') {
   return scan(ctx);
 }
 
-/** /take: Bilge takes no sibling's context yet; says whose it is. */
+/** /take: an image Wharf handed over (its system packages, audited); any other context says whose it is. */
 export function take(ctx, text) {
   const context = contextIn(text);
   if (!context) return ctx.note('/take needs what a sibling copied: a family:v1:… line.', 'error') ?? false;
+  if (context.kind === 'image') return takeImage(ctx, String(context.data.image ?? ''));
   return ctx.note(notMine('bilge', context), 'error') ?? false;
+}
+
+/**
+ * The operating-system packages of a container image, read out of it without running it (the
+ * provider's `image`: docker create, docker cp of dpkg's or apk's database and os-release, docker rm),
+ * added to what's shown as a manifest of its own, and audited with the rest.
+ */
+async function takeImage(ctx, image) {
+  if (!safeImage(image)) return ctx.note(`${image || 'That'} isn't an image name Bilge will put in a command.`, 'error') ?? false;
+  const r = await ctx.task(
+    `image ${image}`,
+    async (signal) => {
+      const manifest = await ctx.provider.image(image, { signal });
+      ctx.setData((d) => {
+        const manifests = [...(d?.manifests ?? []).filter((m) => m.path !== manifest.path), manifest];
+        return { ...(d ?? { root: ctx.cwd(), latest: null }), manifests, packages: mergePackages(manifests), audit: null };
+      });
+      return { stdout: manifest.note };
+    },
+    { label: 'Reading the image' },
+  );
+  if (!r.ok) return false;
+  ctx.setView('vulns');
+  return packages(ctx).length ? audit(ctx) : true;
 }
 
 /** /why <package>: every manifest a package is in, and whether it's asked for there or brought in. */

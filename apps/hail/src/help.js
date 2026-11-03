@@ -37,6 +37,7 @@ export const HELP = [
       ['c', 'Copy it as a curl command, variables filled in'],
       ['alt+i', 'Import a curl command (/import-curl): paste it, ↵ adds it to the file as a request'],
       ['/import <file>', 'Add the requests in a Postman collection, a HAR recording or an OpenAPI/Swagger document (ctrl+z in Edit undoes it)\na Postman environment goes into http-client.env.json · --new writes them to a file of their own\ncredentials become {{$secret}} placeholders, said; cookies and auth headers in a HAR are left out'],
+      ['alt+c', "Compare environments (/compare <env>): send it in Hail's environment and in another, then how the answers differ\nthe status, the time, the headers that say something (not Date, request ids, cookies' values…), the body by path for JSON, else line by line"],
       ['alt+l', 'Load in a pinch: starts /load <it> 200 10 (count, then how many at once) for you to change and ↵\nlatency percentiles, requests a second, statuses, errors and a sparkline over time · esc stops it'],
       ['y', 'Copy its URL'],
       ['i', 'Edit the file, typing, on this request'],
@@ -104,6 +105,15 @@ export const HELP = [
     ],
   },
   {
+    title: 'Environments',
+    about: "Hail's own (http-client.env.json), and the project's (.fleet/project.json), which every app of the family shares",
+    rows: [
+      ['e  /env [name]', "Hail's environment: where the variables come from, kept for each file"],
+      ['/project-env [name]', "The project's environment: alone, which it is; a name switches every app (Fleet's ctrl+b e too)\nHail's variables then come from the environment of Hail's it names: \"hail\": { \"env\": \"staging\" }"],
+      ['production', 'A project environment with "prod": true draws the frames red, and Hail asks before it sends anything but GET, HEAD or OPTIONS there\n(↵, /send all, /load, /replay to it)'],
+    ],
+  },
+  {
     title: 'Bodies',
     rows: [
       ['< ./body.json', 'The body from a file, as it is (<@ fills in its variables)'],
@@ -160,7 +170,7 @@ export const HELP = [
     title: 'Sibling apps',
     about: 'Splice, Trawl, Sonar and Bosun hand Hail command lines to paste into the prompt, and Hail hands them some',
     rows: [
-      ['/take family:v1:…', 'What a sibling copied (/take is optional): a request from Sonar is added as ### replay <METHOD> <path>,\nto the environment\'s {{host}} or to where it came from, and picked to send\nrows from Trawl become a JSON body: a new POST to {{host}}/<table>, or the body of the request under the cursor (ctrl+z in Edit undoes it)\na log line from Bosun: the response in History whose headers carry its request id (X-Request-Id, traceparent…)'],
+      ['/take family:v1:…', 'What a sibling copied (/take is optional): a request from Sonar is added as ### replay <METHOD> <path>,\nto the environment\'s {{host}} or to where it came from, and picked to send\nrows from Trawl become a JSON body: a new POST to {{host}}/<table>, or the body of the request under the cursor (ctrl+z in Edit undoes it)\na log line from Bosun: the response in History whose headers carry its request id (X-Request-Id, traceparent…)\na log line that carries a method and a URL (and none of the file\'s responses): saved as a named request, in the open file,\nanother .http file or captured.http, its host as {{host}}, credentials as {{token}}, and picked'],
       ['/replay', '/replay [environment|base-url]: the request last taken from Sonar (or the response under the cursor in History, or the request picked) sent again\nto an environment\'s {{host}}, a port in bosun.json or an address, then compared with what it answered there (status, headers, body)\ncredential headers stay behind: the environment\'s token or key variables give their own'],
       ['paste', 'A line starting with / (or a family:v1: context) pasted while a view has the keys opens the prompt with it, for ↵'],
       ['/family', 'What this project offers the others, ↵ copies it: Splice /open <checkout> · Bosun /move <folder>\nTrawl /azure-sql or /add for each database in appsettings*.json and .env (never a password)'],

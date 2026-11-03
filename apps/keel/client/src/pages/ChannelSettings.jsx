@@ -19,6 +19,7 @@ const EVENTS = [
   { id: 'approval', label: 'Deployment approvals waiting' },
   { id: 'work', label: 'Blocked work items and P1 bugs with no owner' },
   { id: 'pr', label: 'Pull requests with no reviewers or stale for twice the limit' },
+  { id: 'advisory', label: 'New critical or high security advisories in the lock files' },
 ];
 const zone = () => {
   try {
@@ -27,7 +28,7 @@ const zone = () => {
     return 'UTC';
   }
 };
-const blank = () => ({ key: Math.random(), id: null, name: '', kind: 'teams', url: '', hasUrl: false, events: ['production', 'pipeline', 'approval'], projects: [], weekly: { enabled: true, weekday: 1, hour: 9 }, daily: { enabled: false, hour: 9 }, timeZone: zone(), language: getLanguage() });
+const blank = () => ({ key: Math.random(), id: null, name: '', kind: 'teams', url: '', hasUrl: false, events: ['production', 'pipeline', 'approval', 'advisory'], projects: [], weekly: { enabled: true, weekday: 1, hour: 9 }, daily: { enabled: false, hour: 9 }, timeZone: zone(), language: getLanguage() });
 const snapshot = (rows) => JSON.stringify((rows || []).map(({ key, lastPostAt, lastError, lastErrorAt, lastWeekly, ...rest }) => rest));
 // Monday first, in the current language.
 const weekdays = () => [1, 2, 3, 4, 5, 6, 7].map((d) => ({ d, label: new Date(Date.UTC(2024, 0, d)).toLocaleDateString(locale(), { weekday: 'long', timeZone: 'UTC' }) }));

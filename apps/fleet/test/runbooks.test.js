@@ -3,7 +3,46 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { draftRunbook, listRunbooks, parseRunbook, runbookDirs, writeDraft } from '../src/runbooks.js';
+import { draftRunbook, listRunbooks, parseRunbook, recordedRunbook, runbookDirs, writeDraft, writeRecorded } from '../src/runbooks.js';
+import { checkProposal, listProposals, pruneProposals, writeProposal } from '../src/proposals.js';
+
+test('a recording becomes a runbook Fleet reads back: a block per run of one app, each said when; never over another', () => {
+  const at = new Date(2026, 10, 2, 14, 5, 9).getTime();
+  const text = recordedRunbook(
+    [
+      { at, app: 'trawl', line: '/connect Shop' },
+      { at: at + 1000, app: 'trawl', line: '/tables' },
+      { at: at + 60_000, app: 'hail', line: '/send health' },
+      { at: at + 61_000, app: 'trawl', line: '/q select 1' },
+    ],
+    { now: at + 120_000, since: at - 5000 },
+  );
+  assert.match(text, /^# Recorded 2026-11-02 14:05\n/);
+  assert.match(text, /At 14:05:09, in Trawl:\n\n```trawl\n\/connect Shop\n\/tables\n```\n\nAt 14:06:09, in Hail:/);
+  const r = parseRunbook(text, { name: 'x' });
+  assert.equal(r.title, 'Recorded 2026-11-02 14:05');
+  assert.deepEqual(r.steps.map((s) => [s.app, s.line]), [['trawl', '/connect Shop'], ['trawl', '/tables'], ['hail', '/send health'], ['trawl', '/q select 1']]);
+  assert.match(r.steps[2].prose, /At 14:06:09, in Hail:/);
+  const dir = mkdtempSync(join(tmpdir(), 'fleet-recorded-'));
+  const a = writeRecorded(dir, text, { now: at });
+  const b = writeRecorded(dir, text, { now: at });
+  assert.ok(a.endsWith('2026-11-02-1405-recorded.md'));
+  assert.ok(b.endsWith('2026-11-02-1405-recorded-2.md'));
+});
+
+test("a proposal is one slash command of a family app, never a ! line, with why; old ones drop off", () => {
+  assert.equal(checkProposal({ app: 'sonar', line: '/kql requests | where success != true', why: 'the 500s' }).ok, true);
+  assert.equal(checkProposal({ app: 'sonar', line: '/kql x | !danger', why: 'w' }).ok, false);
+  assert.equal(checkProposal({ app: 'helm', line: '/x', why: 'w' }).ok, false);
+  assert.match(checkProposal({ app: 'trawl', line: '/connect Server=x;Password=s3cret', why: 'w' }).proposal.line, /Password=••••/);
+  const home = mkdtempSync(join(tmpdir(), 'fleet-proposals-'));
+  const now = Date.now();
+  writeProposal({ app: 'trawl', line: '/tables', why: 'w' }, { home, now: now - 2 * 3_600_000 });
+  const fresh = writeProposal({ app: 'trawl', line: '/tables', why: 'w' }, { home, now });
+  assert.deepEqual(listProposals({ home, now }).map((p) => p.id), [fresh.id]);
+  pruneProposals({ home, now });
+  assert.equal(listProposals({ home, now, maxAge: Infinity }).length, 1);
+});
 
 const EXAMPLE = `# Is the API healthy?
 

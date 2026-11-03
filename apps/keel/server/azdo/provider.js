@@ -200,6 +200,29 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
   const prWebUrl = (projectName, repoName, id) => `${org}/${seg(projectName)}/_git/${seg(repoName)}/pullrequest/${id}`;
   const wiWebUrl = (projectName, id) => `${org}/${seg(projectName)}/_workitems/edit/${id}`;
 
+  // Latest iteration vs. the merge base: the same diff the Files tab shows. Azure DevOps gives no line counts.
+  const prFiles = (base) => api(`${base}/iterations`).then(async (d) => {
+    const latest = (d.value || []).at(-1);
+    if (!latest) return { total: 0, truncated: false, items: [] };
+    const ch = await api(`${base}/iterations/${latest.id}/changes`, { query: { $top: 2000 } });
+    // Deleted files have no current path (item.path is null), only originalPath.
+    const entries = (ch.changeEntries || [])
+      .filter((e) => (e.item?.path || e.originalPath) && !e.item?.isFolder && e.item?.gitObjectType !== 'tree');
+    return {
+      iteration: latest.id,
+      total: entries.length,
+      truncated: ch.nextSkip > 0,
+      items: entries.map((e) => {
+        const kind = changeKind(e.changeType);
+        return {
+          path: e.item?.path || e.originalPath,
+          kind,
+          originalPath: kind === 'renamed' ? e.originalPath || null : null,
+        };
+      }).sort((a, b) => a.path.localeCompare(b.path)),
+    };
+  }).catch((err) => ({ error: err.message, total: 0, truncated: false, items: [] }));
+
   function normalizePR(r) {
     const projectName = r.repository?.project?.name;
     return {
@@ -460,6 +483,21 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
         .sort((a, b) => a.name.localeCompare(b.name));
     },
 
+    /** Every file's path on a branch (folders left out): one items call over the whole tree. */
+    async listRepoFiles(projectId, repoId, branch) {
+      const d = await api(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/items`, {
+        query: { scopePath: '/', recursionLevel: 'Full', 'versionDescriptor.version': branch, 'versionDescriptor.versionType': 'branch' },
+      });
+      return (d.value || []).filter((it) => !it.isFolder && it.gitObjectType !== 'tree' && it.path).map((it) => it.path);
+    },
+
+    /** One file's text on a branch. */
+    async getRepoFileText(projectId, repoId, path, branch) {
+      return apiText(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/items`, {
+        query: { path, 'versionDescriptor.version': branch, 'versionDescriptor.versionType': 'branch', $format: 'text' },
+      });
+    },
+
     async listPullRequests(projectId, { status = 'active', closedAfter } = {}) {
       const query = { 'searchCriteria.status': status };
       if (closedAfter) {
@@ -483,28 +521,7 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
           apiVersion: '7.1-preview.1',
           query: { artifactId: `vstfs:///CodeReview/CodeReviewId/${pr.projectId}/${prId}` },
         }).then((d) => d.value || []).catch(() => []),
-        // Latest iteration vs. the merge base: the same diff the Files tab shows.
-        api(`${base}/iterations`).then(async (d) => {
-          const latest = (d.value || []).at(-1);
-          if (!latest) return { total: 0, truncated: false, items: [] };
-          const ch = await api(`${base}/iterations/${latest.id}/changes`, { query: { $top: 2000 } });
-          // Deleted files have no current path (item.path is null), only originalPath.
-          const entries = (ch.changeEntries || [])
-            .filter((e) => (e.item?.path || e.originalPath) && !e.item?.isFolder && e.item?.gitObjectType !== 'tree');
-          return {
-            iteration: latest.id,
-            total: entries.length,
-            truncated: ch.nextSkip > 0,
-            items: entries.map((e) => {
-              const kind = changeKind(e.changeType);
-              return {
-                path: e.item?.path || e.originalPath,
-                kind,
-                originalPath: kind === 'renamed' ? e.originalPath || null : null,
-              };
-            }).sort((a, b) => a.path.localeCompare(b.path)),
-          };
-        }).catch((err) => ({ error: err.message, total: 0, truncated: false, items: [] })),
+        prFiles(base),
       ]);
 
       const discussion = threads.filter((t) => !t.isDeleted && t.comments?.[0]?.commentType !== 'system' && t.comments?.length);
@@ -539,6 +556,11 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
             isBlocking: !!p.configuration?.isBlocking,
           })),
       };
+    },
+
+    /** A pull request's changed files, as its Files tab lists them (no line counts here). */
+    getPullRequestFiles(projectId, repoId, prId) {
+      return prFiles(`${seg(projectId)}/_apis/git/repositories/${seg(repoId)}/pullrequests/${prId}`);
     },
 
     async getPullRequestWorkItemIds(projectId, repoId, prId) {

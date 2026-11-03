@@ -8,6 +8,7 @@ import { applyFilter, shownFilter } from '../filters.js';
 import { useAsync, useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { Lines, Panel, Row } from '@fleet/kit/ui/parts.jsx';
 import { wrapLines } from './wrap.js';
+import { environmentFirst, releaseNames } from '../environment.js';
 
 export const releaseId = (d) => `${d.org ?? ''}/${d.key}`;
 
@@ -17,15 +18,16 @@ export const releaseId = (d) => `${d.org ?? ''}/${d.key}`;
  * releases with their files. Read when the tab opens, and again with each load (the version moves
  * on each check and after each action).
  */
-export function ReleasesView({ version, filter, ctx, width, height, active }) {
+export function ReleasesView({ version, environment, filter, ctx, width, height, active }) {
   const data = useAsync(`releases:${version}`, () => ctx.service.releases(), 50);
   const github = useAsync(`repo-releases:${version}`, () => ctx.service.repoReleases(), 50);
   // The filter's fields (project:) narrow them; its words search them.
   const rows = useMemo(() => {
     const { items, text } = applyFilter('releases', data.value?.definitions ?? [], filter);
     const repos = applyFilter('releases', github.value ?? [], filter);
-    return [...releaseRows(data.value && { ...data.value, definitions: items }, text), ...githubRows(repos.items, repos.text)];
-  }, [data.value, github.value, filter]);
+    // The release pipelines with the project's environment's stage (/env) first.
+    return [...environmentFirst(releaseRows(data.value && { ...data.value, definitions: items }, text), environment, releaseNames), ...githubRows(repos.items, repos.text)];
+  }, [data.value, github.value, filter, environment]);
   const split = width >= 100;
   const listW = split ? Math.floor(width * 0.5) : width;
   const sideW = width - listW;

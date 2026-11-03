@@ -58,6 +58,8 @@ export function start(props = {}) {
   lastApp = render(
     React.createElement(App, {
       config: { history: [], hosts: [{ name: 'demo', host: 'demo.example.com', user: 'demo' }, { name: 'build', host: 'build.example.com', user: 'ci', key: '~/.ssh/ci' }, { name: 'secure', host: 'secure.example.com', user: 'me', password: true }] },
+      // The temporary home, so no project's .fleet/project.json above the checkout is followed.
+      cwd: process.env.MOORING_HOME,
       local,
       makeSession: () => host,
       connectTo: 'demo',

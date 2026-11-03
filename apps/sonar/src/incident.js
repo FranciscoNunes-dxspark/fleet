@@ -3,6 +3,7 @@
 // it, the request that failed, the Markdown write-up and what Claude is asked. actions.js fetches.
 import { matchFrameFile, quoteArg, stackFrames } from '@fleet/kit/family.js';
 import { referenceWords, resolved } from './keyvault.js';
+import { MARKER_KINDS, firstSeenText, markerWords } from './markers.js';
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
@@ -117,19 +118,23 @@ const ago = (iso, now) => {
 
 /**
  * The incident in Markdown: what `s` saves (before Claude's write-up), and what Claude is given.
- * `inc`: { problem, spark, span, latest, frames, deploys, rows, sql, request, commits, repo }.
+ * `inc`: { problem, spark, span, latest, frames, deploys, changes, firstSeen, rows, sql, request, commits, repo }.
  */
 export function incidentMarkdown(inc, now = Date.now()) {
   const p = inc.problem;
   const out = [`# ${p.type}`, '', `> ${p.message ?? ''}`, ''];
   out.push(`- **App:** ${p.role ?? '—'}`);
-  out.push(`- **First seen:** ${when(p.first)} · **last seen:** ${when(p.last)} (${ago(p.last, now)} ago)`);
+  out.push(`- **First seen:** ${when(p.first)}${inc.firstSeen ? ` (${firstSeenText(inc.firstSeen)})` : ''} · **last seen:** ${when(p.last)} (${ago(p.last, now)} ago)`);
   out.push(`- **Count:** ${p.count} in the last ${inc.span?.label ?? ''}, ${p.users} user${p.users === 1 ? '' : 's'}${inc.spark ? ` · \`${inc.spark}\`` : ''}`);
   out.push(`- **Problem id:** ${p.problemId}`, '');
   out.push('## Deployments in the 24 h before first seen', '');
   if (inc.deploys?.error) out.push(`Couldn't read them: ${inc.deploys.error}`);
   else if (inc.deploys?.within?.length) for (const d of inc.deploys.within) out.push(`- ${when(d.start)} ${d.status} by ${d.author || 'someone'}${d.deployer ? ` through ${d.deployer}` : ''}: ${d.message.split('\n')[0]}${d.active ? ' (active)' : ''}`);
   else out.push(`None.${inc.deploys?.latest ? ` The latest before it: ${when(inc.deploys.latest.start)}, ${inc.deploys.latest.message.split('\n')[0]}.` : ''}`);
+  if (inc.changes?.length) {
+    out.push('', '## Other changes in the 24 h before first seen', '');
+    for (const m of inc.changes) out.push(`- ${when(new Date(m.at).toISOString())} ${MARKER_KINDS[m.kind].word}: ${markerWords(m)}`);
+  }
   if (inc.refs?.error) out.push('', '## Key Vault references (now)', '', `Couldn't read them: ${inc.refs.error}`);
   else if (inc.refs?.length) {
     out.push('', '## Key Vault references (now)', '');

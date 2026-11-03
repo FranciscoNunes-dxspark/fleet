@@ -9,7 +9,7 @@ import { csvInsertScript, parseCsv } from './csv.js';
 import * as ed from './editor.js';
 import { findDataSources, importPlan, planText } from './datagrip.js';
 import { formatSql } from './format.js';
-import { wrap } from '@fleet/kit/text.js';
+import { stringWidth, wrap } from '@fleet/kit/text.js';
 import { cellText } from './cell.js';
 import { changesText, hasChanges, insertScript, saveRecovery, saveScript, tsvText, withSaved } from './edit.js';
 import { AI_LABELS, AI_LEVELS, EXPLAIN_SYSTEM, WHY_SYSTEM, aiLevel, askPrompt, canSeeSchema, consoleText, explainPrompt, parseAnswer, whyConsoleText, whyPrompt } from './ai.js';
@@ -21,7 +21,8 @@ import { compareSets, comparisonSet, comparisonSummary } from './compare.js';
 import { droppedPaths, findTab, freeName, tabNameFor, tabNameProblem } from './consoles.js';
 import { findSnippet, snippetNameProblem, snippetsFor, withSnippet, withoutSnippet } from './snippets.js';
 import { folderNames, inFolder, inParallel, mergeResults, readOnlyScript } from './fanout.js';
-import { DIFF_SQL, buildExtras, diffText, schemaDiff, syncScript } from './diff.js';
+import { DIFF_SQL, buildExtras, compareText, diffText, schemaDiff, syncScript } from './diff.js';
+import { describeEnvironments, productionQuestion, readProject, setEnvironment } from '@fleet/kit/environments.js';
 import { buildHealth, buildSizes, fixableGroups, healthScript, healthSummary, healthText } from './health.js';
 import { SOURCES as DEADLOCK_SOURCES, buildDeadlocks, buildInnodbDeadlocks, deadlockSummary, deadlockText, deadlockTime } from './deadlocks.js';
 import { agentProbe, buildActivity, buildJobHistory, buildJobs, buildTopQueries, jobHistorySql, jobHistoryText, killSql, sortColumn, sortQueries, startJobSql, topProbe } from './activity.js';
@@ -42,14 +43,14 @@ import { timelineItems, wiringText } from './timeline.js';
 import { SLOW_SYSTEM, declaredTypes, indexText, measuredText, prepareStatement, slowConsoleText, slowPrompt, splitSuggestion, tablesIn } from './slow.js';
 import { connectionForQuery, familyOffers, newDatabases, placeText, projectLine, queryContext, rowsContext, rowsScript } from './siblings.js';
 import { API_LANGUAGES, API_SYSTEM, apiFileName, apiLanguage, apiPrompt, apiRequest, parseApi, projectLanguage } from './api.js';
-import { copyRefusal, copyScript, foreignKeysFrom, insertOrder, insertedRows, keyTuples, maskRows, parentSql, parseCopyRowsArgs, rowKey, rowsSql, selfOrder, tupleKey } from './copyrows.js';
+import { copyRefusal, copyScript, foreignKeysFrom, insertOrder, insertedRows, keyTuples, maskRows, maskingRules, parentSql, parseCopyRowsArgs, parseCopyrowsArgs, parseRuleChanges, rowKey, rowsSql, ruleText, selfOrder, tupleKey } from './copyrows.js';
 import { rehearsalRefusal, rehearsalSteps, rehearsalText, rowsAffected } from './rehearse.js';
 import { locksText } from './transactions.js';
 import { chartTitle, drawChart, planChart } from './chart.js';
 import { toXlsx } from './xlsx.js';
 import { diagramGraph, drawDiagram, mermaidDiagram, parseDiagramArgs } from './diagram.js';
 import { theme } from './theme.js';
-import { applySqlcmd, bindVariables, classifyScript, countQuery, oneLine, scriptVariables, splitStatements, sqlcmdVariables, statementAt, toCsv, toJson, toMarkdown, withoutLeadingComments } from './sql.js';
+import { applySqlcmd, bindVariables, classifyScript, countQuery, formatValue, oneLine, scriptVariables, splitStatements, sqlcmdVariables, statementAt, toCsv, toJson, toMarkdown, withoutLeadingComments } from './sql.js';
 import { parseData } from '@fleet/kit/datatree.js';
 
 // A WHERE that still changes more rows than this is asked about too.
@@ -162,7 +163,7 @@ async function withParameters(ctx, sql) {
  * SQL with its parameters filled in, and `wrap` says manual commit wants it in a transaction.
  * `recover` runs if it fails (see db.js runScript).
  */
-export async function runSql(ctx, sql, { title, prefix = '', lineBase, stay, keep, top, run, recover } = {}) {
+export async function runSql(ctx, sql, { title, prefix = '', lineBase, stay, keep, top, run, recover, asked = false } = {}) {
   if (!sql.trim()) return;
   // Any other run ends a /watch, which would otherwise be in its way.
   await ctx.stopWatch?.('another run');
@@ -206,6 +207,8 @@ export async function runSql(ctx, sql, { title, prefix = '', lineBase, stay, kee
     });
     if (!ok) return;
   }
+  // A production environment asks once more, whatever was asked above.
+  if (write && !asked && !(await productionWriteOk(ctx, `Run this write on ${conn.name}`))) return;
   let kept = null;
   const notes = [];
   if (undo && !undo.reason && !tooMany) {
@@ -398,6 +401,47 @@ export async function connect(ctx, name, { database } = {}) {
   if (!conn) return ctx.note(`No connection called ${name}. /add creates one: ${ADD_USAGE}`, 'error');
   if (!(await leaveSession(ctx))) return;
   return ctx.connect(conn, { database });
+}
+
+/**
+ * /env [name]: which of the project's environments (.fleet/project.json) is chosen, or chooses one
+ * for every app of the family; Trawl then moves to the connection it names for Trawl.
+ */
+export function environment(ctx, rest = '') {
+  const name = rest.trim();
+  if (!name) return ctx.note(describeEnvironments(ctx.projectDir));
+  const r = setEnvironment(ctx.projectDir, name, { by: 'trawl' });
+  if (!r.ok) return ctx.note(r.error, 'error');
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production: writes ask first)' : ''}, for every app of the family.`, 'ok');
+  return ctx.followEnvironment?.(ctx.environment);
+}
+
+/**
+ * When the project's environment changes (here, in another app, or in Fleet): Trawl moves to the
+ * connection the environment names for it (its "trawl": { "connection", "database" }), asking first
+ * when a transaction is open, as /connect does. One that names none leaves Trawl where it is.
+ */
+export async function followEnvironment(ctx, env) {
+  if (!env) return;
+  const say = `Environment ${env.name}${env.prod ? ' (production)' : ''}`;
+  if (!env.connection) return ctx.note(`${say} names no connection for Trawl, so it stays where it is.`);
+  const conn = ctx.config.connections.find((c) => c.name.toLowerCase() === String(env.connection).toLowerCase());
+  if (!conn) return ctx.note(`${say} names the connection ${env.connection}, which isn't saved here: /add it.`, 'error');
+  const s = ctx.session;
+  if (s && s.conn.name === conn.name && (!env.database || s.database === env.database)) return ctx.note(`${say}: on ${conn.name} already.`);
+  if (!(await leaveSession(ctx))) return ctx.note(`${say}: still on ${s.conn.name}, with its transaction open. /connect ${conn.name} when you're done.`);
+  ctx.note(`${say}: switching to ${conn.name}.`);
+  return ctx.connect(conn, { database: env.database });
+}
+
+/**
+ * In a production environment (the chosen one says "prod": true), the kit's productionQuestion before
+ * anything that writes, on top of the operation's own questions; true to go on. Elsewhere it asks nothing.
+ */
+export async function productionWriteOk(ctx, what) {
+  const q = productionQuestion(ctx.environment, what);
+  if (!q) return true;
+  return ctx.confirm({ ...q, options: YES_NO('Yes, in production') });
 }
 
 /** Asks before leaving a session with an open transaction, which would roll it back. */
@@ -1090,6 +1134,7 @@ export async function killSession(ctx, id) {
     danger: true,
   });
   if (!ok) return;
+  if (!(await productionWriteOk(ctx, `End session ${n} on ${ctx.session.conn.name}`))) return;
   const r = await ctx.query(dialect.kind === 'sqlserver' ? sql : dialect.kill(n), { title: `KILL ${n}`, keep: true });
   if (r?.ok) await loadActivity(ctx);
 }
@@ -1175,6 +1220,7 @@ export async function startJob(ctx, job) {
     danger: Boolean(conn.prod),
   });
   if (!ok) return;
+  if (!(await productionWriteOk(ctx, `Start the job ${job.name}`))) return;
   const r = await ctx.query(sql, { title: `start job ${job.name}`, keep: true });
   if (r?.ok) await loadJobs(ctx);
 }
@@ -1342,30 +1388,49 @@ export async function fanOut(ctx, rest) {
 }
 
 /**
- * /diff <connection> [database], or /diff <database> for another one on this server: compares the
- * schema here with that one (tables, columns, keys, indexes, and the definitions of views, procedures
- * and functions), shows the differences, and offers the script that would make this database match,
- * in the console to read through. Nothing runs by itself.
+ * A saved connection called `name`, or else the one the project's environment called `name` gives
+ * Trawl (its `trawl.connection` in .fleet/project.json): { conn, env }, `env` being { name, prod } when
+ * it came from an environment; or { error }.
  */
-export async function diffSchema(ctx, rest) {
-  if (!needSession(ctx)) return;
-  const args = splitArgsLoose(rest);
-  if (!args.length) return ctx.prefill('/diff ');
-  const session = ctx.session;
-  let conn = ctx.config.connections.find((c) => c.name.toLowerCase() === args[0].toLowerCase());
-  let database = args[1];
-  if (!conn) {
-    database = args.length === 1 ? ctx.schema?.databases.find((d) => d.toLowerCase() === args[0].toLowerCase()) : null;
-    if (!database) return ctx.note(`No connection or database called ${args[0]}. /diff <connection> [database], or /diff <database> on this server.`, 'error');
-    conn = session.conn;
+export function connectionOrEnvironment(ctx, name) {
+  const want = String(name ?? '').trim().toLowerCase();
+  const conn = ctx.config.connections.find((c) => c.name.toLowerCase() === want);
+  if (conn) return { conn, env: null };
+  const project = projectOf(ctx);
+  const envName = project?.names?.find((n) => n.toLowerCase() === want);
+  if (!envName) return { error: `No connection${project?.names ? ' or environment' : ''} called ${name}.` };
+  const settings = project.environments[envName];
+  const target = settings.trawl?.connection;
+  if (!target) return { error: `The environment ${envName} names no connection for Trawl: give it "trawl": { "connection": "<name>" } in .fleet/project.json.` };
+  const named = ctx.config.connections.find((c) => c.name.toLowerCase() === String(target).toLowerCase());
+  if (!named) return { error: `The environment ${envName} names the connection ${target}, which isn't saved here: /add it.` };
+  return { conn: named, env: { name: envName, prod: settings.prod === true } };
+}
+
+// The project's environments (environments.js readProject), or null when there are none or the file is broken.
+function projectOf(ctx) {
+  try {
+    const p = readProject(ctx.projectDir);
+    return p && !p.error ? p : null;
+  } catch {
+    return null;
   }
+}
+
+/**
+ * Both schemas, read: this database's and `conn`'s (its own database, or `database`), each
+ * { schema, definitions, indexes, defaults } (the last three from SQL Server's catalog only; on the
+ * other kinds tables, columns and keys). { mine, theirs, left, right } (their names), or null when it
+ * failed or was cancelled, which the task has said.
+ */
+async function readSchemas(ctx, conn, database, verb) {
+  const session = ctx.session;
   const left = `${session.conn.name}/${session.database}`;
   let right = `${conn.name}/${database ?? conn.database ?? ''}`;
   let found = null;
   const r = await ctx.task(
-    `diff ${left} with ${right}`,
+    `${verb} ${left} with ${right}`,
     async (signal) => {
-      // Definitions and indexes are read from SQL Server's catalog; elsewhere, tables, columns and keys.
       const read = async (s) => ({
         schema: buildSchema((await s.run(dialectOf(s).schemaSql, { signal, limit: 1_000_000 })).sets),
         ...(dialectOf(s).kind === 'sqlserver' ? buildExtras((await s.run(DIFF_SQL, { signal, limit: 1_000_000 })).sets) : { definitions: new Map(), indexes: [] }),
@@ -1383,14 +1448,37 @@ export async function diffSchema(ctx, rest) {
       } finally {
         other?.close();
       }
-      const changes = schemaDiff(mine, theirs);
-      found = { changes, mine, theirs };
-      return [changes.length ? `${changes.length} difference${changes.length === 1 ? '' : 's'}: the list is on screen.` : 'The schemas are the same.'];
+      found = { mine, theirs };
+      const n = schemaDiff(mine, theirs).length;
+      return [n ? `${plural(n, 'difference')}: the list is on screen.` : 'The schemas are the same.'];
     },
     { label: `Comparing with ${right}` },
   );
-  if (!r.ok || !found) return;
-  const { changes, theirs } = found;
+  return r.ok && found ? { ...found, left, right } : null;
+}
+
+/**
+ * /diff <connection> [database], or /diff <database> for another one on this server: compares the
+ * schema here with that one (tables, columns, keys, indexes, and the definitions of views, procedures
+ * and functions), shows the differences, and offers the script that would make this database match,
+ * in the console to read through. Nothing runs by itself. An environment's name means its connection.
+ */
+export async function diffSchema(ctx, rest) {
+  if (!needSession(ctx)) return;
+  const args = splitArgsLoose(rest);
+  if (!args.length) return ctx.prefill('/diff ');
+  const session = ctx.session;
+  let { conn } = connectionOrEnvironment(ctx, args[0]);
+  let database = args[1];
+  if (!conn) {
+    database = args.length === 1 ? ctx.schema?.databases.find((d) => d.toLowerCase() === args[0].toLowerCase()) : null;
+    if (!database) return ctx.note(`No connection${projectOf(ctx) ? ', environment' : ''} or database called ${args[0]}. /diff <connection> [database], or /diff <database> on this server.`, 'error');
+    conn = session.conn;
+  }
+  const read = await readSchemas(ctx, conn, database, 'diff');
+  if (!read) return;
+  const { mine, theirs, left, right } = read;
+  const changes = schemaDiff(mine, theirs);
   const title = `Schema diff: ${left} ←→ ${right}`;
   const text = diffText(changes, { left, right });
   ctx.rememberOutput(title, text);
@@ -1404,7 +1492,68 @@ export async function diffSchema(ctx, rest) {
     options: YES_NO('Yes, into the console'),
   });
   ctx.closeOverlay();
-  if (open) ctx.editInConsole(syncScript(changes, { left, right, rightSchema: theirs.schema, rightDefinitions: theirs.definitions }));
+  if (open) ctx.editInConsole(syncScript(changes, { left, right, rightSchema: theirs.schema, rightDefinitions: theirs.definitions, rightIndexes: theirs.indexes, rightDefaults: theirs.defaults, leftSchema: mine.schema, leftIndexes: mine.indexes }));
+}
+
+/**
+ * /compare <connection|environment> [database]: this database's schema against another saved
+ * connection's (an environment's is the connection it names for Trawl), grouped as only here, only
+ * there and different, with what differs; s shows the T-SQL that brings the other database in line
+ * with this one, to copy or open there in a console tab. Nothing runs by itself: run from the console,
+ * it goes through runSql's checks like anything else. /compare alone compares the pinned result.
+ */
+export async function compareSchemas(ctx, rest) {
+  const args = splitArgsLoose(rest);
+  if (!args.length) return compareResults(ctx);
+  if (!needSession(ctx)) return;
+  const found = connectionOrEnvironment(ctx, args[0]);
+  if (found.error) return ctx.note(`${found.error} /compare <connection|environment> [database] compares schemas; /compare alone, the pinned result.`, 'error');
+  const { conn, env } = found;
+  const session = ctx.session;
+  const database = args[1];
+  if (conn.name === session.conn.name && (database ?? conn.database ?? session.database) === session.database) return ctx.note("That's the database you're in: name another connection or environment to compare it with.", 'error');
+  const read = await readSchemas(ctx, conn, database, 'compare');
+  if (!read) return;
+  const { mine, theirs, left: here, right: there } = read;
+  const changes = schemaDiff(mine, theirs);
+  const title = `Compare: ${here} → ${there}${env ? ` (${env.name})` : ''}`;
+  const text = compareText(changes, { here, there });
+  ctx.rememberOutput(title, text);
+  const sqlServer = dialectOf(session).kind === 'sqlserver' && dialectOf(conn).kind === 'sqlserver';
+  if (!changes.length || !sqlServer) {
+    ctx.showText(title, text);
+    if (changes.length) ctx.note('The script that brings one in line with the other is T-SQL, so only between SQL Server databases.');
+    return;
+  }
+  // The other database made to match this one: the changes as seen from there.
+  const script = syncScript(schemaDiff(theirs, mine), { left: there, right: here, rightSchema: mine.schema, rightDefinitions: mine.definitions, rightIndexes: mine.indexes, rightDefaults: mine.defaults, leftSchema: theirs.schema, leftIndexes: theirs.indexes });
+  const showScript = () =>
+    ctx.showText(`Script for ${there}: brings it in line with ${here}`, script, {
+      hint: `y copy · o open on ${conn.name}`,
+      keys: {
+        y: () => ctx.copy(script, `the script for ${there}`).then(showScript),
+        o: () => openScriptOn(ctx, conn, theirs.schema.database, script),
+      },
+    });
+  ctx.showText(title, text, { hint: 's script', keys: { s: showScript } });
+}
+
+/**
+ * Connects to `conn` (asking first when a transaction is open here, as /connect does) and puts the
+ * script in a console tab of its own there, to read and run: running it is an ordinary run, with
+ * every check and question that has.
+ */
+async function openScriptOn(ctx, conn, database, script) {
+  const there = ctx.session?.conn.name === conn.name && ctx.session.database === database;
+  if (!there) {
+    if (!(await leaveSession(ctx))) return;
+    await ctx.connect(conn, { database });
+    if (ctx.session?.conn.name !== conn.name) return;
+  }
+  const name = freeName(ctx.consoleTabs.names.map((x) => ({ name: x })), 'compare');
+  ctx.addConsoleTab(name);
+  ctx.setConsole(ed.fromText(script));
+  ctx.note(`The script is in the console tab ${name}, on ${conn.name}: read it through, then alt+r runs it, with the usual questions.`, 'ok');
 }
 
 // On Postgres a statement that fails spoils the transaction it's in, so with one open each of
@@ -2276,6 +2425,7 @@ export async function runMigrations(ctx, root) {
     danger: Boolean(conn.prod) || odd > 0,
   });
   if (!ok) return;
+  if (!(await productionWriteOk(ctx, `Run ${plural(n, 'migration')} on ${conn.name}`))) return;
   if (history.missing) {
     const make = await ctx.confirm({
       title: `Make ${TOOLS.plain.table} in ${m.database} to record them?`,
@@ -2283,7 +2433,7 @@ export async function runMigrations(ctx, root) {
       options: YES_NO('Yes, make it'),
     });
     if (!make) return;
-    const c = await runSql(ctx, createPlainSql(dialect, history.schema), { title: `create ${TOOLS.plain.table}`, keep: true });
+    const c = await runSql(ctx, createPlainSql(dialect, history.schema), { title: `create ${TOOLS.plain.table}`, keep: true, asked: true });
     if (!c?.ok) return;
   }
   let rank = nextRank(m.rows);
@@ -2292,6 +2442,7 @@ export async function runMigrations(ctx, root) {
     const r = await runSql(ctx, e.file.text, {
       title: `migration ${e.script}`,
       keep: true,
+      asked: true,
       run: async (text, { wrap, title }) => {
         const started = Date.now();
         const q = await ctx.query(wrap ? `${dialect.begin}\n${text}` : text, { title, wrapped: wrap, keep: true });
@@ -2645,12 +2796,40 @@ export async function copyRowsTo(ctx, rest) {
     return ctx.note(e.message, 'error');
   }
   if (!args.target) return ctx.prefill('/copy-rows ');
-  const target = ctx.config.connections.find((c) => c.name.toLowerCase() === args.target.toLowerCase());
-  if (!target) return ctx.note(`No connection called ${args.target}.`, 'error');
-  if (target.prod || isReadOnly(target)) return ctx.note(`${target.name} is ${target.prod ? 'production' : 'read-only'}: /copy-rows only writes to a connection that is neither, such as a dev database.`, 'error');
+  return copyRowsBetween(ctx, { ...args, limit: null, overrides: new Map() }, { strict: false });
+}
+
+/**
+ * /copyrows <table> to <connection|environment> [where <condition>] [limit n] [--keep col] [--mask
+ * col]: as /copy-rows, with a preview of what each column gets (kept, made up, NULL), which the
+ * question can change; a key the target has already stops it with nothing copied, and a production
+ * target (the connection's --prod, or a production environment's) is asked about rather than refused.
+ */
+export async function copyRowsMasked(ctx, rest) {
+  if (!needSession(ctx)) return;
+  let args;
+  try {
+    args = parseCopyrowsArgs(rest);
+  } catch (e) {
+    return ctx.note(e.message, 'error');
+  }
+  if (!args.table) return ctx.prefill('/copyrows ');
+  return copyRowsBetween(ctx, args, { strict: true });
+}
+
+// Both forms: `strict` is /copyrows'.
+async function copyRowsBetween(ctx, args, { strict }) {
+  const command = strict ? '/copyrows' : '/copy-rows';
+  const found = connectionOrEnvironment(ctx, args.target);
+  if (found.error) return ctx.note(found.error, 'error');
+  const { conn: target, env } = found;
+  const prod = Boolean(target.prod || env?.prod);
+  if (!strict && (prod || isReadOnly(target))) return ctx.note(`${target.name} is ${prod ? 'production' : 'read-only'}: /copy-rows only writes to a connection that is neither, such as a dev database.`, 'error');
+  // A connection made read-only on purpose stays so; production's own read-only rule is what the production question is for.
+  if (strict && target.readOnly === true) return ctx.note(`${target.name} is read-only: /copyrows doesn't write to it.`, 'error');
   const session = ctx.session;
   const d = dialectOf(session);
-  if (dialectOf(target).kind !== d.kind) return ctx.note(`/copy-rows copies between databases of the same kind: this is ${d.label}, ${target.name} is ${dialectOf(target).label}.`, 'error');
+  if (dialectOf(target).kind !== d.kind) return ctx.note(`${command} copies between databases of the same kind: this is ${d.label}, ${target.name} is ${dialectOf(target).label}.`, 'error');
   if (target.name === session.conn.name && (target.database ?? session.database) === session.database) return ctx.note(`Those rows are in ${target.name} already: name another connection to copy them to.`, 'error');
   const res = ctx.results;
   const fromResults = res && res.conn === session.conn.name && res.database === session.database ? (res.edit?.table ?? res.source?.table) : null;
@@ -2658,9 +2837,9 @@ export async function copyRowsTo(ctx, rest) {
   if (!obj) return ctx.note(args.table ? `No table called ${args.table} in ${session.database}.` : 'Which table? /copy-rows <target> <table>, or run a query on one table first.', 'error');
   const refusal = copyRefusal(obj);
   if (refusal) return ctx.note(`Can't copy: ${refusal}.`, 'error');
-  const limit = ctx.config.limit;
+  const limit = args.limit ?? ctx.config.limit;
   const first = rowsSql(d, obj, { where: args.where, limit });
-  if (classifyScript(first, { dialect: d.kind }).write) return ctx.note('/copy-rows only reads where the rows come from, and that --where changes something.', 'error');
+  if (classifyScript(first, { dialect: d.kind }).write) return ctx.note(`${command} only reads where the rows come from, and that ${strict ? 'where' : '--where'} changes something.`, 'error');
   const schema = ctx.schema;
   const groups = new Map();
   const notes = [];
@@ -2705,7 +2884,7 @@ export async function copyRowsTo(ctx, rest) {
         }
       }
       const counts = [...groups.values()].map((g) => `${objectName(g.obj)} ${g.set.rows.length}`);
-      return [`Read ${counts.join(', ')}: the script is on screen.`];
+      return [`Read ${counts.join(', ')}: the ${strict ? 'preview' : 'script'} is on screen.`];
     },
     { label: `Reading ${objectName(obj)} and what it refers to` },
   );
@@ -2713,37 +2892,92 @@ export async function copyRowsTo(ctx, rest) {
   const main = groups.get(objectName(obj));
   if (!main.set.rows.length) return ctx.note(`${objectName(obj)} has no rows${args.where ? ` where ${args.where}` : ''}: nothing to copy.`);
   const { order, cycle } = insertOrder(groups, schema.foreignKeys);
-  const masked = [];
-  const tables = order.map((name) => {
-    const g = groups.get(name);
-    const rows = selfOrder(g.obj, g.set, schema.foreignKeys);
-    if (!args.mask) return { obj: g.obj, set: g.set, rows };
-    const m = maskRows(g.obj, { columns: g.set.columns, rows }, { kind: d.kind });
-    masked.push(...m.masked.map((c) => `${g.obj.name}.${c}`));
-    return { obj: g.obj, set: g.set, rows: m.rows };
-  });
+  // A rule for a column none of these rows have is a typo: say so rather than copy it unmasked.
+  const unknownRules = (overrides) => {
+    const known = new Set([...groups.values()].flatMap((g) => g.set.columns.flatMap((c) => [c.name, `${g.obj.name}.${c.name}`, `${objectName(g.obj)}.${c.name}`].map((x) => x.toLowerCase()))));
+    return [...overrides.keys()].filter((k) => !known.has(k));
+  };
+  let overrides = args.overrides;
+  const unknown = unknownRules(overrides);
+  if (unknown.length) return ctx.note(`No column ${unknown.join(', ')} in the rows being copied (${order.join(', ')}).`, 'error');
   const others = order.filter((n) => n !== objectName(obj));
-  const head = [
-    `${plural(main.set.rows.length, 'row')} of ${objectName(obj)}${args.where ? ` where ${args.where}` : ''}${others.length ? `, and the rows they refer to in ${others.join(', ')}` : ''}: from ${session.conn.name}/${session.database} to ${target.name}${target.database ? `/${target.database}` : ''}.`,
-    args.mask ? (masked.length ? `Personal data made up (the same value always gets the same fake, so joins still meet): ${masked.join(', ')}.` : 'No column looked personal, so nothing is made up.') : 'Not masked (--no-mask): the values are as they are where they came from.',
-    'A row whose key the target has already is skipped.',
-    ...(d.kind === 'postgres' ? ['Identity columns keep their values; the target\'s sequences aren\'t moved past them (setval does that).'] : []),
-    ...(d.kind === 'mysql' ? ['INSERT IGNORE also lets some other errors by as warnings (a value too long is cut), as MySQL does.'] : []),
-    ...(cycle ? ['These tables refer to each other in a circle: some inserts may fail on a foreign key.'] : []),
-    ...notes,
-  ];
-  const { script, rows } = copyScript(tables, d, { head });
+  const build = () => {
+    const masked = [];
+    const tables = order.map((name) => {
+      const g = groups.get(name);
+      const rows = selfOrder(g.obj, g.set, schema.foreignKeys);
+      const rules = maskingRules(g.obj, g.set.columns, { overrides, mask: args.mask });
+      const m = maskRows(g.obj, { columns: g.set.columns, rows }, { kind: d.kind, rules });
+      masked.push(...rules.filter((x) => x.rule !== 'keep').map((x) => `${g.obj.name}.${x.name}${x.rule === 'null' ? ' (NULL)' : ''}`));
+      return { obj: g.obj, set: g.set, rows: m.rows, rules, stop: strict && name === objectName(obj) };
+    });
+    const head = [
+      `${plural(main.set.rows.length, 'row')} of ${objectName(obj)}${args.where ? ` where ${args.where}` : ''}${others.length ? `, and the rows they refer to in ${others.join(', ')}` : ''}: from ${session.conn.name}/${session.database} to ${target.name}${target.database ? `/${target.database}` : ''}${env ? ` (${env.name})` : ''}.`,
+      masked.length ? `Personal data made up (the same value always gets the same fake, so joins still meet): ${masked.join(', ')}.` : args.mask ? 'No column looked personal, so nothing is made up.' : 'Not masked (--no-mask): the values are as they are where they came from.',
+      strict ? `A row of ${objectName(obj)} whose key the target has already stops the copy, and nothing goes in; a row it refers to that's there already is skipped.` : 'A row whose key the target has already is skipped.',
+      ...(d.kind === 'postgres' ? ['Identity columns keep their values; the target\'s sequences aren\'t moved past them (setval does that).'] : []),
+      ...(d.kind === 'mysql' && !strict ? ['INSERT IGNORE also lets some other errors by as warnings (a value too long is cut), as MySQL does.'] : []),
+      ...(cycle ? ['These tables refer to each other in a circle: some inserts may fail on a foreign key.'] : []),
+      ...notes,
+    ];
+    const { script, rows } = copyScript(tables, d, { head });
+    if (!strict) return { script, rows, text: script };
+    const sample = tables.find((t) => t.stop);
+    const width = Math.max(0, ...tables.flatMap((t) => t.rules.map((x) => stringWidth(x.name))));
+    const text = [
+      ...head,
+      '',
+      'What each column gets (--keep and --mask change it, or "Change a column" below):',
+      // The table asked for first; each column that changes on a line, the ones kept as they are on one.
+      ...[sample, ...tables.filter((t) => t !== sample)].flatMap((t) => {
+        const kept = t.rules.filter((x) => x.rule === 'keep' && !x.why).map((x) => x.name);
+        return [`  ${objectName(t.obj)}`, ...t.rules.filter((x) => x.rule !== 'keep' || x.why).map((x) => `    ${x.name}${' '.repeat(width - stringWidth(x.name))}  ${ruleText(x)}${x.why ? ` (${x.why})` : ''}`), ...(kept.length ? [`    kept as they are: ${kept.join(', ')}`] : [])];
+      }),
+      '',
+      `The first rows of ${objectName(obj)} as they'll go in:`,
+      ...sample.rows.slice(0, 3).map((row) => `  ${sample.set.columns.map((c, i) => `${c.name} ${formatValue(row[i])}`).join(' · ')}`),
+      '',
+      script,
+    ].join('\n');
+    return { script, rows, text };
+  };
   const title = `Copy to ${target.name}`;
-  ctx.showText(title, script);
-  const ok = await ctx.confirm({
-    title: `Insert up to ${plural(rows, 'row')} into ${target.name}${target.database ? ` (${target.database})` : ''}?`,
-    detail: `The script is above (pgup/pgdn scroll it). It runs in one transaction on ${target.name}; rows it has already are skipped.`,
-    scrollsOverlay: true,
-    options: YES_NO('Yes, copy them'),
-    danger: true,
-  });
+  let built = build();
+  for (;;) {
+    ctx.showText(title, built.text);
+    const ok = await ctx.confirm({
+      title: `Insert ${strict ? '' : 'up to '}${plural(built.rows, 'row')} into ${target.name}${target.database ? ` (${target.database})` : ''}?`,
+      detail: `The ${strict ? 'preview and the script are' : 'script is'} above (pgup/pgdn scroll it). It runs in one transaction on ${target.name}; ${strict ? `a key of ${objectName(obj)} it has already stops it` : 'rows it has already are skipped'}.`,
+      scrollsOverlay: true,
+      options: [...YES_NO('Yes, copy them'), ...(strict ? [{ label: "Change a column's rule", value: 'change' }] : [])],
+      danger: true,
+    });
+    if (ok !== 'change') {
+      if (!ok) return ctx.closeOverlay();
+      break;
+    }
+    const typed = await ctx.askText({ title: 'Which column, and what does it get?', detail: 'Email=keep · Name=mask · Token=null, several with commas; Players.Email for one table\'s only.' });
+    if (typed == null) continue;
+    try {
+      const more = parseRuleChanges(typed);
+      const wrong = unknownRules(more);
+      if (wrong.length) throw new Error(`No column ${wrong.join(', ')} in the rows being copied.`);
+      overrides = new Map([...overrides, ...more]);
+      built = build();
+    } catch (e) {
+      ctx.note(e.message, 'error');
+    }
+  }
+  // On top of the question above: production is written to only when this is answered yes too.
+  if (strict && prod) {
+    const q = productionQuestion(env?.prod ? env : { name: target.name, prod: true }, `Copy ${plural(built.rows, 'row')} into it`);
+    const yes = await ctx.confirm({ ...q, detail: env?.prod ? q.detail : `${target.name} is a production connection (--prod).`, scrollsOverlay: true, options: YES_NO('Yes, write to production') });
+    if (!yes) return ctx.closeOverlay();
+  }
+  const sameQuestion = strict && env?.prod && env.name === ctx.environment?.name;
+  if (!sameQuestion && !(await productionWriteOk(ctx, `Copy ${plural(built.rows, 'row')} into ${target.name}`))) return ctx.closeOverlay();
   ctx.closeOverlay();
-  if (!ok) return;
+  const { script, rows } = built;
   let ran = null;
   const done = await ctx.task(
     `copy ${plural(rows, 'row')} to ${target.name}`,
@@ -2753,7 +2987,7 @@ export async function copyRowsTo(ctx, rest) {
         s = await ctx.openSession(target, { signal });
         const out = await s.run(script, { signal, limit: 1 });
         const inserted = insertedRows(out.messages);
-        ran = { database: s.database, summary: `${inserted} of ${rows} rows inserted (/copy-rows)`, inserted };
+        ran = { database: s.database, summary: `${inserted} of ${rows} rows inserted (${command})`, inserted };
         return [`${plural(inserted, 'row')} went in${rows - inserted ? `; ${plural(rows - inserted, 'row')} ${rows - inserted === 1 ? 'was' : 'were'} there already` : ''}.`];
       } catch (e) {
         if (e.needsPassword) e.message = `${target.name} needs its password: connect to it once in Trawl to save it, then copy again.`;
@@ -2769,7 +3003,7 @@ export async function copyRowsTo(ctx, rest) {
     { label: `Copying to ${target.name}` },
   );
   if (ran) ctx.recordRun({ sql: script, conn: target.name, database: ran.database, at: Date.now(), ok: done.ok, summary: ran.summary });
-  if (done.ok) ctx.logActivity?.(`/copy-rows ${objectName(obj)} from ${session.conn.name}/${session.database} to ${target.name}${ran.database ? `/${ran.database}` : ''} · ${plural(ran.inserted, 'row')} inserted${args.mask ? ', personal data made up' : ''}`, { kind: 'copy' });
+  if (done.ok) ctx.logActivity?.(`${command} ${objectName(obj)} from ${session.conn.name}/${session.database} to ${target.name}${ran.database ? `/${ran.database}` : ''} · ${plural(ran.inserted, 'row')} inserted${args.mask ? ', personal data made up' : ''}`, { kind: 'copy' });
   return done;
 }
 
@@ -2939,6 +3173,7 @@ export async function restore(ctx, rest = '') {
   const before = session.database;
   const moves = restoreMoves(files, target, info);
   const back = `\nUSE ${dialectOf(session).quote(before)};`;
+  if (!(await productionWriteOk(ctx, `Restore ${target} on ${session.conn.name}`))) return;
   const r = await ctx.query(restoreSql({ target, path, moves, replace }) + back, { title: `RESTORE DATABASE ${target}${replace ? ' (replacing it)' : ''}`, activity: false, notes: moves.map((m) => `${m.logical} → ${m.to}`) });
   if (r?.ok) {
     ctx.logActivity?.(`RESTORE DATABASE ${target} on ${t.conn.name}${replace ? ', replacing it' : ''}`, { kind: 'restore' });
@@ -3135,7 +3370,7 @@ export async function importBacpac(ctx, rest = '') {
   if ((ctx.schema?.databases ?? []).some((x) => x.toLowerCase() === target.toLowerCase())) {
     return ctx.note(`${target} is already on ${conn.name}, and an import only makes a new database: --as another name, or drop ${target} first.`, 'error');
   }
-  const ok = await ctx.confirm({ title: `Make the database ${target} on ${conn.name} from ${basename(full)}?`, detail: `With SqlPackage, from ${full}.`, options: YES_NO('Yes, import it') });
+  const ok = (await ctx.confirm({ title: `Make the database ${target} on ${conn.name} from ${basename(full)}?`, detail: `With SqlPackage, from ${full}.`, options: YES_NO('Yes, import it') })) && (await productionWriteOk(ctx, `Make the database ${target} on ${conn.name}`));
   if (!ok) return;
   const password = await toolPassword(ctx, conn);
   if (password === undefined) return;

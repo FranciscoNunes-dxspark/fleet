@@ -2,6 +2,7 @@
 // order of lists and the lines of the detail panes. Pure, so the tests can check it.
 import { theme } from './theme.js';
 import { fit, relTime } from '@fleet/kit/text.js';
+import { reasonText } from '../server/domain/risk.js';
 
 export const branch = (ref) => String(ref ?? '').replace(/^refs\/heads\//, '');
 const ago = (iso, now) => (iso ? relTime(Date.parse(iso), now) : '');
@@ -30,7 +31,7 @@ export const SEVERITY = {
   low: { icon: '●', color: theme.dim, label: 'when you can' },
 };
 
-export const KIND = { pr: 'PR', review: 'Review', work: 'Work', pipeline: 'Pipeline', approval: 'Approval', team: 'Team', production: 'Prod' };
+export const KIND = { pr: 'PR', review: 'Review', work: 'Work', pipeline: 'Pipeline', approval: 'Approval', team: 'Team', production: 'Prod', advisory: 'Advisory' };
 
 export const REVIEW_STATE = {
   draft: { icon: '◌', color: theme.draft, label: 'draft' },
@@ -151,7 +152,24 @@ export function flowSegments(flow) {
 }
 
 /** The detail pane of a pull request, as lines of segments. */
-export function prDetail(pr, now = Date.now()) {
+// A pull request's risk (server/domain/risk.js): red when high, amber when medium, green when low.
+const RISK_COLOR = { high: 'del', medium: 'warn', low: 'ok' };
+/** The colour a risk score is drawn in. */
+export const riskColor = (risk) => theme[RISK_COLOR[risk?.level] ?? 'dim'];
+/** A pull request's risk among `risks` (service.prRisks), by its project, repo, number and organization. */
+export const riskFor = (risks, pr) => risks?.find((r) => r.id === pr.id && r.repoId === pr.repoId && r.projectId === pr.projectId && (r.org ?? '') === (pr.org ?? ''));
+/** A risk score as one line: "Risk 34 of 100, medium". */
+export const riskHead = (risk) => [{ text: 'Risk ', bold: true }, { text: `${risk.score}`, color: riskColor(risk), bold: true }, { text: ` of 100, ${risk.level}`, color: theme.dim }];
+/** The reasons that add up to a risk score, biggest first, as lines (`head` puts the score first). */
+export function riskLines(risk, { head = true } = {}) {
+  if (!risk) return [];
+  const lines = head ? [riskHead(risk)] : [[{ text: 'Why that risk', bold: true }]];
+  if (!risk.reasons.length) lines.push([{ text: '  nothing adds to it: small, with tests, by someone who has worked here', color: theme.dim }]);
+  for (const r of risk.reasons) lines.push([{ text: `  ${r.points ? `+${r.points}`.padStart(3) : '  ·'} `, color: theme.dim }, { text: reasonText(r) }]);
+  return lines;
+}
+
+export function prDetail(pr, now = Date.now(), risk = null) {
   const st = prState(pr);
   const lines = [
     [{ text: pr.title, bold: true }],
@@ -163,6 +181,8 @@ export function prDetail(pr, now = Date.now()) {
   ];
   if (pr.labels?.length) lines.push([{ text: pr.labels.map((l) => `#${l}`).join(' '), color: theme.draft }]);
   if (pr.flow && pr.status === 'active') lines.push('', flowSegments(pr.flow), [{ text: flowWaiting(pr.flow, isGithubPr(pr)), color: theme.dim }]);
+  // The score by its state; the reasons below the reviewers, which come first in a short pane.
+  if (risk) lines.push(riskHead(risk));
   lines.push('', [{ text: 'Reviewers', bold: true }]);
   if (!pr.reviewers.length) lines.push([{ text: '  none yet', color: theme.dim }]);
   for (const r of pr.reviewers) {
@@ -174,6 +194,7 @@ export function prDetail(pr, now = Date.now()) {
     ]);
   }
   if (pr.myVote != null) lines.push('', [{ text: `Your vote: ${(VOTES[pr.myVote] ?? VOTES[0]).label}`, color: theme.dim }]);
+  if (risk) lines.push('', ...riskLines(risk, { head: false }));
   return lines;
 }
 
@@ -251,12 +272,13 @@ export function diffText(file, d) {
 }
 
 /** A pull request in full (service.pullRequest), as plain text for the viewer. */
-export function prFullText(pr, now = Date.now()) {
+export function prFullText(pr, now = Date.now(), risk = null) {
   const out = [
     pr.title,
     `!${pr.id} · ${pr.projectName} / ${pr.repoName} · ${branch(pr.sourceBranch)} → ${branch(pr.targetBranch)}`,
     `${pr.author?.displayName ?? 'Someone'} opened it ${ago(pr.createdAt, now)} ago · ${prState(pr).label}${pr.autoComplete ? ' · auto-complete on' : ''}`,
     ...(pr.flow && pr.status === 'active' ? [`${flowSegments(pr.flow).map((s) => s.text).join('')}  ${flowWaiting(pr.flow, isGithubPr(pr))}`] : []),
+    ...(risk ? ['', ...riskLines(risk).map((l) => l.map((s) => s.text).join(''))] : []),
     '',
     ...(pr.description?.trim() ? readable(pr.description.trim()).split('\n') : ['(No description.)']),
   ];

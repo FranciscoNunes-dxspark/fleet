@@ -2,7 +2,7 @@
 // (-it); inside Fleet the app has pipes, not a terminal, so the exec runs without one (-i) and the
 // shell pane (ui/ShellPane.jsx) sends it a line at a time. Pure: the commands and the pane's state.
 import { safe } from './docker.js';
-import { safeName } from './kube.js';
+import { safeContext, safeName } from './kube.js';
 
 // bash where the image has it, else sh, which every image with a shell has.
 export const SHELL_SCRIPT = 'command -v bash >/dev/null && exec bash || exec sh';
@@ -17,12 +17,12 @@ export function dockerShell(id, { tty = true } = {}) {
   return { command: 'docker', args: ['exec', tty ? '-it' : '-i', need(safe, id, 'container Docker would have named'), 'sh', '-c', SHELL_SCRIPT] };
 }
 
-/** kubectl exec into pod `pod` ({ name, namespace }), its `container` when given: { command, args }. */
-export function kubeShell(pod, container, { tty = true } = {}) {
+/** kubectl exec into pod `pod` ({ name, namespace }), its `container` when given, in `context` when an environment names one: { command, args }. */
+export function kubeShell(pod, container, { tty = true, context } = {}) {
   const name = (s) => need(safeName, s, 'name Kubernetes would have given');
   return {
     command: 'kubectl',
-    args: ['exec', tty ? '-it' : '-i', '-n', name(pod.namespace), name(pod.name), ...(container ? ['-c', name(container)] : []), '--', 'sh', '-c', SHELL_SCRIPT],
+    args: [...(context ? ['--context', need(safeContext, context, 'context name kubectl would have')] : []), 'exec', tty ? '-it' : '-i', '-n', name(pod.namespace), name(pod.name), ...(container ? ['-c', name(container)] : []), '--', 'sh', '-c', SHELL_SCRIPT],
   };
 }
 

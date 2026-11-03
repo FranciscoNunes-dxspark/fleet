@@ -17,7 +17,7 @@ const MIN = 60_000;
 const MAX_DEVICES = 10; // per person
 const MAX_SINGLE = 3; // more new events than this at once go out as one notification
 // The console's notification categories (client/src/notify.js); "other pull request alerts" are off unless chosen.
-export const PUSH_CATEGORIES = ['production', 'approval', 'review', 'myPr', 'run', 'pipeline', 'work', 'pr'];
+export const PUSH_CATEGORIES = ['production', 'approval', 'review', 'myPr', 'run', 'pipeline', 'work', 'pr', 'advisory'];
 const DEFAULT_OFF = new Set(['pr']);
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 
@@ -31,6 +31,7 @@ export function openUrl(target) {
   if (target.type === 'approval' || (target.type === 'pipeline' && !target.key)) return '/pipelines';
   if (target.type === 'release') return '/pipelines?tab=releases';
   if (target.type === 'person') return '/team';
+  if (target.type === 'advisory') return '/insights?tab=advisories';
   return `/inbox?open=${encodeURIComponent(JSON.stringify(target))}`;
 }
 

@@ -754,7 +754,8 @@ export function demoSession(conn, { database } = {}) {
           if (batch.startsWith('-- trawl:diff')) {
             const db = DATABASES[session.database];
             state.sets.push(set(['schema', 'name', 'definition'], db.tables.filter((t) => t.definition).map((t) => [t.schema, t.name, t.definition])));
-            return void state.sets.push(set(['schema', 'object', 'name', 'is_unique', 'type_desc', 'filter_definition', 'columns', 'included'], db.indexes.map(([name, table, unique, columns]) => ['dbo', table, name, unique, 'NONCLUSTERED', null, columns, null])));
+            state.sets.push(set(['schema', 'object', 'name', 'is_unique', 'type_desc', 'filter_definition', 'columns', 'included'], db.indexes.map(([name, table, unique, columns]) => ['dbo', table, name, unique, 'NONCLUSTERED', null, columns, null])));
+            return void state.sets.push(set(['schema', 'object', 'column', 'name', 'definition'], db.defaults.map(([table, column, name, def]) => ['dbo', table, column, name, def])));
           }
           if (batch.startsWith('-- trawl:backup-info')) return void state.sets.push(set(['backup_path', 'data_path', 'log_path', 'engine_edition', 'machine'], [['C:\\Program Files\\Microsoft SQL Server\\MSSQL16.MSSQLSERVER\\MSSQL\\Backup', 'C:\\Program Files\\Microsoft SQL Server\\MSSQL16.MSSQLSERVER\\MSSQL\\DATA\\', 'C:\\Program Files\\Microsoft SQL Server\\MSSQL16.MSSQLSERVER\\MSSQL\\DATA\\', session.conn.engineEdition ?? 3, 'DEMO']]));
           if (batch.startsWith('-- trawl:activity')) return void state.sets.push(...activitySets(session));
@@ -776,6 +777,11 @@ export function demoSession(conn, { database } = {}) {
           // IF NOT EXISTS … INSERTs, is counted as other writes are, every row as new.
           if (batch.startsWith('-- trawl:copy-rows read')) return void state.sets.push(snapshotSet(DATABASES[session.database], batch));
           if (batch.startsWith('-- trawl:copy-rows insert')) {
+            // /copyrows stops at a key the target has: its IF EXISTS … THROW checks are answered
+            // from the demo's own rows, before anything is counted.
+            for (const m of batch.matchAll(/^IF EXISTS \(SELECT 1 FROM (\S+) WHERE (.*?)\) THROW 50000, N'((?:[^']|'')*)', 1;$/gm)) {
+              if (snapshotSet(DATABASES[session.database], `SELECT * FROM ${m[1]} WHERE ${m[2]};`).rows.length) throw new DbError(m[3].replace(/''/g, "'"), { number: 50000, line });
+            }
             for (const _ of batch.matchAll(/\bINSERT\s+(?:IGNORE\s+)?INTO\b/gi)) state.messages.push('1 row affected');
             return void state.messages.push('(Demo: nothing was changed.)');
           }

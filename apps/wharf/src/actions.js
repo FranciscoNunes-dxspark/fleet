@@ -9,6 +9,7 @@ import { copiedNote, describeContext, contextIn, notMine, takeLine } from '@flee
 import { latestTrouble, loglineData, matchIn, needleOf } from './share.js';
 import * as k from './kubeactions.js';
 import { dockerShell } from './shell.js';
+import { askFirst } from '@fleet/kit/environments.js';
 
 const containers = (ctx) => ctx.data?.containers ?? [];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -39,8 +40,10 @@ export async function change(ctx, verb, target) {
     return true;
   }
   const names = affected.map((c) => c.name);
-  if (affected.length > 1 && ['stop', 'kill', 'restart'].includes(verb)) {
-    const yes = await ctx.confirm({ title: `${verb[0].toUpperCase()}${verb.slice(1)} ${plural(affected.length, 'container')}?`, detail: names.slice(0, 4).join(', ') + (names.length > 4 ? ', …' : ''), danger: verb !== 'restart' });
+  if (['stop', 'kill', 'restart'].includes(verb)) {
+    const Verb = `${verb[0].toUpperCase()}${verb.slice(1)}`;
+    // One container is asked about only in production; several always.
+    const yes = await askFirst(ctx, affected.length > 1 ? { title: `${Verb} ${plural(affected.length, 'container')}?`, detail: names.slice(0, 4).join(', ') + (names.length > 4 ? ', …' : ''), danger: verb !== 'restart' } : null, `${Verb} ${names[0]}`);
     if (!yes) return false;
   }
   const done = { start: 'Started', stop: 'Stopped', restart: 'Restarted', kill: 'Killed', pause: 'Paused', unpause: 'Unpaused' }[verb];
@@ -66,7 +69,7 @@ export async function remove(ctx, target) {
   if (!list.length) return ctx.note(target ? `No container or project matches "${target}".` : '/rm needs a container, a compose project or all.', 'error') ?? false;
   const running = list.filter((c) => c.state === 'running');
   const names = list.map((c) => c.name);
-  const yes = await ctx.confirm({
+  const yes = await askFirst(ctx, {
     title: `Remove ${list.length === 1 ? names[0] : plural(list.length, 'container')}?`,
     detail: running.length ? `${plural(running.length, 'container')} still running: ${running.slice(0, 3).map((c) => c.name).join(', ')}: they will be stopped and removed.` : 'Its writable layer is deleted with it; volumes are kept.',
     danger: true,
@@ -93,7 +96,7 @@ export async function compose(ctx, verb, name) {
   const mine = containers(ctx).filter((c) => c.project === project);
   const found = mine.find((c) => c.workingDir) ?? mine[0];
   if (verb === 'down') {
-    const yes = await ctx.confirm({ title: `Take ${project} down?`, detail: `${plural(mine.length, 'container')} stopped and removed, and the project's network; volumes are kept.`, danger: true });
+    const yes = await askFirst(ctx, { title: `Take ${project} down?`, detail: `${plural(mine.length, 'container')} stopped and removed, and the project's network; volumes are kept.`, danger: true });
     if (!yes) return false;
   }
   const r = await ctx.task(
@@ -175,7 +178,7 @@ export async function pull(ctx, image) {
 export async function prune(ctx, kind = 'containers') {
   const what = kind.startsWith('image') ? 'images' : 'containers';
   const count = what === 'images' ? (ctx.data?.images ?? []).filter((i) => i.dangling).length : containers(ctx).filter((c) => c.state === 'exited').length;
-  const yes = await ctx.confirm({
+  const yes = await askFirst(ctx, {
     title: what === 'images' ? 'Remove the images nothing uses?' : 'Remove every stopped container?',
     detail: `${plural(count, what === 'images' ? 'untagged image' : 'stopped container')} now; volumes are kept.`,
     danger: true,
@@ -190,7 +193,7 @@ export async function removeImage(ctx, name) {
   const images = ctx.data?.images ?? [];
   const image = images.find((i) => i.id === name || imageName(i) === name) ?? images.filter((i) => imageName(i).startsWith(name ?? '\0') || i.id.startsWith(name ?? '\0'))[0];
   if (!image) return ctx.note(name ? `No image matches "${name}".` : '/rmi needs an image.', 'error') ?? false;
-  const yes = await ctx.confirm({ title: `Remove ${imageName(image)}?`, detail: `${image.size}, ${image.created}`, danger: true });
+  const yes = await askFirst(ctx, { title: `Remove ${imageName(image)}?`, detail: `${image.size}, ${image.created}`, danger: true });
   if (!yes) return false;
   const r = await ctx.task(`rmi ${imageName(image)}`, async (signal) => ({ stdout: await ctx.provider.removeImage(image.id, { signal }).catch((e) => Promise.reject(explain(e))) }), { label: 'Removing', refresh: true, activity: `Removed image ${imageName(image)}` });
   if (r.ok) return true;
@@ -269,6 +272,26 @@ export function shareTrouble(ctx, { process, project, text }) {
   const share = takeLine('logline', loglineData({ process, line, project, log: text }));
   ctx.copy(share, 'a line for Sonar, Hail or Bosun');
   ctx.note(copiedNote(['sonar', 'hail', 'bosun'], share));
+  return true;
+}
+
+/** The image a name means: a container's (what it was made from), else one of `docker images`' by name or id start; null when neither. */
+export function imageOf(ctx, name) {
+  const c = findContainer(containers(ctx), name);
+  if (c) return c.image;
+  const images = ctx.data?.images ?? [];
+  const i = images.find((x) => x.id === name || imageName(x) === name) ?? images.filter((x) => (x.repo && imageName(x).startsWith(name ?? '\0')) || x.id.startsWith(name ?? '\0'))[0];
+  // An untagged image has only its id to be scanned by.
+  return i ? (i.repo ? imageName(i) : i.id) : null;
+}
+
+/** v or /scan: hands Bilge the image of a container (or an image) to look for known vulnerabilities in; inside Fleet that switches to Bilge. */
+export function scanImage(ctx, name) {
+  const image = imageOf(ctx, name);
+  if (!image) return ctx.note(name ? `No container or image matches "${name}".` : '/scan needs a container or an image.', 'error') ?? false;
+  const line = takeLine('image', { image });
+  ctx.copy(line, `${image} for Bilge`);
+  ctx.note(copiedNote('bilge', line));
   return true;
 }
 

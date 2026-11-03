@@ -1,16 +1,25 @@
-// The host's two panels over the apps: the runbooks (ctrl+] r: a picker, then a runbook whose steps
-// are handed to their apps one ↵ at a time) and following a request (ctrl+] f: an id, asked of every
-// running app that reads log lines, and a timeline of what Fleet finds itself). Each is an object with
+// The host's panels over the apps: the runbooks (ctrl+] r: a picker, then a runbook whose steps
+// are handed to their apps one ↵ at a time), following a request (ctrl+] f: an id, asked of every
+// running app that reads log lines, and a timeline of what Fleet finds itself), moving the fleet (m),
+// the project's environments (e), what changed lately (w, and Claude's take on why something broke)
+// and Claude's proposals (P: lines handed to their apps as runbook steps are). Each is an object with
 // `render(size)` (the box, as ANSI text placed on screen) and `keys(text)`; the host shows one at a
 // time (Host.showOverlay) and gives it every key while it's open. What they do to the apps goes back
 // through the host: `sendLine` (a hand-off), `typeInto` (a line into a prompt, off screen), `switchTo`.
 import { join, relative } from 'node:path';
-import { familyDir as kitFamilyDir, readActivity, TAKEN_BY } from '@fleet/kit/family.js';
+import { ask as askClaude, clip } from '@fleet/kit/claude-cli.js';
+import { currentEnvironment, readProject, setEnvironment } from '@fleet/kit/environments.js';
+import { APP_NAMES, familyDir as kitFamilyDir, readActivity, TAKEN_BY } from '@fleet/kit/family.js';
 import { keyLength } from './keys.js';
-import { boxRows, boxSize, folderLines, pickerLines, placeBox, runbookLines, traceAskLines, traceLines } from './overlay.js';
+import { boxRows, boxSize, changesLines, envLines, folderLines, pickerLines, placeBox, proposalLines, runbookLines, traceAskLines, traceLines } from './overlay.js';
 import { folderPicks, shortFolder } from './folder.js';
+import { decideProposal, listProposals } from './proposals.js';
 import { draftRunbook, listRunbooks, runbookDirs, writeDraft } from './runbooks.js';
 import { bosunHome, traceLine, traceTimeline } from './trace.js';
+
+// What changed reads Splice's git and Bosun's recordings (mcp/changes.js), so it's imported when first asked.
+const changesModule = () => import('./mcp/changes.js');
+const readChanges = (opts) => changesModule().then((m) => m.whatChanged(opts));
 
 const HOUR = 60 * 60_000;
 const DAY = 24 * HOUR;
@@ -42,11 +51,43 @@ const moveIn = (key, at, count, page = 10) => {
 };
 
 export class Panels {
-  constructor(host, { cwd = process.cwd(), env = process.env, takers = TAKEN_BY.logline, familyDir = kitFamilyDir(env), bosun = bosunHome(env), now = () => Date.now() } = {}) {
-    Object.assign(this, { host, cwd, env, takers, familyDir, bosun, now });
+  // `cwd` fixes the folder the panels read for (the tests'); by default it's the fleet's, which moves.
+  // The family's folder is the host's unless given. `ask` is Claude (the kit's claude-cli.js) and
+  // `changes` what changed (mcp/changes.js), both for the tests to replace.
+  constructor(host, { cwd, env = process.env, takers = TAKEN_BY.logline, familyDir = host.family?.dir ?? kitFamilyDir(env), bosun = bosunHome(env), now = () => Date.now(), ask = askClaude, changes = readChanges } = {}) {
+    Object.assign(this, { host, fixedCwd: cwd, env, takers, familyDir, bosun, now, ask, readChanges: changes });
     this.runbookPanel = new RunbookPanel(this);
     this.tracePanel = new TracePanel(this);
     this.folderPanel = new FolderPanel(this);
+    this.envPanel = new EnvironmentPanel(this);
+    this.changesPanel = new ChangesPanel(this);
+    this.proposalPanel = new ProposalPanel(this);
+  }
+
+  get cwd() {
+    return this.fixedCwd ?? this.host.cwd ?? process.cwd();
+  }
+
+  /** The prefix and e: the project's environments. */
+  environments() {
+    this.envPanel.open();
+  }
+
+  /** The prefix and w: what changed lately. */
+  changes() {
+    this.changesPanel.open();
+  }
+
+  /** The prefix and P: what Claude proposed. */
+  proposals() {
+    this.proposalPanel.open();
+  }
+
+  /** Opens the runbook in `file` (one just written), the list's cursor on it. */
+  openRunbook(file) {
+    this.runbookPanel.current = file;
+    this.runbookPanel.open();
+    this.runbookPanel.cursor = Math.max(0, this.runbookPanel.list.findIndex((r) => r.file === file));
   }
 
   /** The prefix and m: the folders to move the fleet to. */
@@ -259,5 +300,211 @@ class TracePanel {
     this.timeline = traceTimeline(id, { familyDir, bosun, since: this.panels.now() - DAY });
     this.cursor = 0;
     this.asking = false;
+  }
+}
+
+/** The project's environments: the one chosen marked, ↵ chooses another for every app. */
+class EnvironmentPanel {
+  constructor(panels) {
+    this.panels = panels;
+    this.host = panels.host;
+    this.cursor = 0;
+  }
+
+  open() {
+    const { cwd, familyDir } = this.panels;
+    this.project = readProject(cwd);
+    this.current = currentEnvironment(cwd, { home: familyDir })?.name ?? null;
+    this.cursor = Math.max(0, this.project?.names?.indexOf(this.current) ?? 0);
+    this.host.showOverlay(this);
+  }
+
+  render(size) {
+    const width = this.panels.inner(size);
+    const names = this.project?.names ?? [];
+    const view = envLines({ project: this.project, current: this.current, cursor: this.cursor, width, where: shortFolder(this.panels.cwd, this.host.home) });
+    return this.panels.box({ title: 'Environment', hint: `${names.length ? '↵ every app switches · j k move · ' : ''}esc close`, ...view }, size);
+  }
+
+  keys(text) {
+    for (const key of panelKeys(text)) {
+      if (key === 'esc') return this.host.closeOverlay();
+      const names = this.project?.names ?? [];
+      const to = moveIn(key, this.cursor, names.length);
+      if (to != null) this.cursor = to;
+      else if (key === 'enter' && names[this.cursor]) return this.choose(names[this.cursor]);
+    }
+    this.host.showOverlay(this);
+  }
+
+  /** Chooses `name` for every app: they watch the choice, and change by themselves. */
+  choose(name) {
+    const r = setEnvironment(this.panels.cwd, name, { by: 'fleet', home: this.panels.familyDir });
+    this.host.closeOverlay();
+    this.host.refreshStatus();
+    if (!r.ok) return this.host.notice(r.error);
+    this.host.notice(r.env.prod ? `Every app is on ${r.env.name} now: production, careful` : `Every app is on ${r.env.name} now`);
+  }
+}
+
+/**
+ * What changed lately in the project, one timeline (mcp/changes.js), the worried moods on top; - and +
+ * narrow and widen it (1h, 6h, 24h), and c asks Claude for the likely causes of a symptom: the worried
+ * moods' reasons to start from, or what's typed.
+ */
+class ChangesPanel {
+  constructor(panels) {
+    this.panels = panels;
+    this.host = panels.host;
+    this.windows = [1, 6, 24];
+    this.hours = 6;
+    this.result = null;
+    this.cursor = 0;
+    this.ask = null; // { input } while a symptom is typed
+    this.claude = null; // { state, symptom, text }
+    this.reading = 0;
+  }
+
+  open() {
+    this.ask = null;
+    this.load();
+    this.host.showOverlay(this);
+  }
+
+  /** Reads the timeline again for the window; the panel draws it when it comes, if it's still open. */
+  load() {
+    const asked = ++this.reading;
+    this.result = null;
+    this.cursor = 0;
+    const { cwd, familyDir, bosun, now } = this.panels;
+    const at = now();
+    const hours = this.hours;
+    Promise.resolve()
+      // A window stepped past before it was read (- - typed at once) isn't read at all.
+      .then(() => (asked === this.reading ? this.panels.readChanges({ project: cwd, hours, now: at, familyDir, bosun }) : null))
+      .catch((e) => ({ project: cwd, since: at - hours * HOUR, now: at, hours, symptoms: [], events: [], notes: [String(e?.message ?? e)] }))
+      .then((result) => {
+        if (asked !== this.reading || !result) return;
+        this.result = result;
+        this.redraw();
+      });
+  }
+
+  redraw() {
+    if (this.host.overlay === this) this.host.showOverlay(this);
+  }
+
+  render(size) {
+    const width = this.panels.inner(size);
+    const view = changesLines({ result: this.result, hours: this.hours, windows: this.windows, cursor: this.cursor, ask: this.ask, claude: this.claude, width, spaces: this.host.spaces, truecolor: this.host.truecolor });
+    const hint = this.ask ? '↵ ask Claude · esc back' : '- + the window · c ask Claude why · j k move · esc close';
+    return this.panels.box({ title: `What changed: the last ${this.hours}h`, hint, ...view }, size);
+  }
+
+  keys(text) {
+    for (const key of panelKeys(text)) {
+      if (this.ask) {
+        if (key === 'esc') this.ask = null;
+        else if (key === 'enter') {
+          if (this.ask.input.trim()) this.askClaude(this.ask.input.trim());
+        } else if (key === 'backspace') this.ask.input = [...this.ask.input].slice(0, -1).join('');
+        else if (key === 'clear') this.ask.input = '';
+        else if ([...key].length === 1) this.ask.input += key;
+        continue;
+      }
+      if (key === 'esc') {
+        // Claude's answer would come to a closed panel: it's stopped instead.
+        this.abort?.abort();
+        this.abort = null;
+        if (this.claude?.state === 'asking') this.claude = null;
+        return this.host.closeOverlay();
+      }
+      const i = this.windows.indexOf(this.hours);
+      const to = moveIn(key, this.cursor, this.result?.events.length ?? 0);
+      if (to != null) this.cursor = to;
+      else if ((key === '+' || key === '=') && i < this.windows.length - 1) {
+        this.hours = this.windows[i + 1];
+        this.load();
+      } else if (key === '-' && i > 0) {
+        this.hours = this.windows[i - 1];
+        this.load();
+      } else if (key === 'c' && this.result) {
+        // The worried moods are the symptom to start from; the person can say another.
+        this.ask = { input: this.result.symptoms.map((m) => `${this.host.space(m.app)?.title ?? APP_NAMES[m.app] ?? m.app}: ${m.reason || m.mood}`).join('; ') };
+      }
+    }
+    this.host.showOverlay(this);
+  }
+
+  /** Asks Claude to rank the likely causes of `symptom` from the timeline; the answer shows in the panel. */
+  askClaude(symptom) {
+    this.ask = null;
+    this.abort?.abort();
+    const abort = (this.abort = new AbortController());
+    this.claude = { state: 'asking', symptom, text: '' };
+    const result = this.result;
+    changesModule()
+      .then(({ causesPrompt, timelineText }) => this.panels.ask(causesPrompt(symptom), { input: clip(timelineText(result)), cwd: this.panels.cwd, signal: abort.signal }))
+      .then(
+        (text) => ({ state: 'done', symptom, text: String(text ?? '').trim() || 'Claude gave no answer.' }),
+        // Not installed says so in the kit's words (claude-cli.js NOT_INSTALLED); cancelled says nothing.
+        (e) => (e?.cancelled ? null : { state: 'failed', symptom, text: String(e?.message ?? e) }),
+      )
+      .then((answer) => {
+        if (!answer || this.abort !== abort) return;
+        this.abort = null;
+        this.claude = answer;
+        this.redraw();
+      });
+  }
+}
+
+/** What Claude proposed (proposals.js): ↵ hands a line to its app as a runbook step, x dismisses it. */
+class ProposalPanel {
+  constructor(panels) {
+    this.panels = panels;
+    this.host = panels.host;
+    this.items = [];
+    this.cursor = 0;
+  }
+
+  load() {
+    this.items = listProposals({ home: this.panels.familyDir, now: this.panels.now(), pending: true });
+    this.cursor = Math.min(this.cursor, Math.max(0, this.items.length - 1));
+  }
+
+  open() {
+    this.load();
+    this.host.showOverlay(this);
+  }
+
+  render(size) {
+    const width = this.panels.inner(size);
+    const view = proposalLines(this.items, { cursor: this.cursor, width, spaces: this.host.spaces, truecolor: this.host.truecolor, now: this.panels.now(), prefix: this.host.prefixLabel });
+    return this.panels.box({ title: "Claude's proposals", hint: `${this.items.length ? '↵ hand it to its app · x dismiss · j k move · ' : ''}esc close`, ...view }, size);
+  }
+
+  keys(text) {
+    for (const key of panelKeys(text)) {
+      if (key === 'esc') return this.host.closeOverlay();
+      const to = moveIn(key, this.cursor, this.items.length);
+      const p = this.items[this.cursor];
+      if (to != null) this.cursor = to;
+      else if (key === 'enter' && p) return this.hand(p);
+      else if (key === 'x' && p) {
+        decideProposal(p.id, 'dismissed', { home: this.panels.familyDir, now: this.panels.now() });
+        this.load();
+        this.host.refreshStatus();
+      }
+    }
+    this.host.showOverlay(this);
+  }
+
+  /** Types the line into its app's prompt as a hand-off does (Fleet never presses ↵ for it), and says so in its file. */
+  hand(p) {
+    if (!this.host.space(p.app)) return this.host.notice(`${APP_NAMES[p.app] ?? p.app} doesn't run in Fleet: x dismisses the proposal`);
+    decideProposal(p.id, 'handed', { home: this.panels.familyDir, now: this.panels.now() });
+    this.host.refreshStatus();
+    this.host.sendLine(p.app, p.line);
   }
 }

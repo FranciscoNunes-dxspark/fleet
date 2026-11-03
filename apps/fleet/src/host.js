@@ -15,22 +15,30 @@
 // app is started again there, and the ones not started yet start there later.
 //
 // A space off screen whose app needs you gets a badge in its tab (attention.js), from the family's
-// moods and activity, read every few seconds; the bell rings when one appears.
+// moods and activity, read every few seconds; the bell rings when one appears. The same reading keeps
+// the bar's own state: the project's environment (the kit's environments.js; the prefix and e picks
+// another), `● REC` while a runbook is recorded (the prefix and R, the kit's recording.js, written as
+// a runbook when it stops) and the proposals Claude left (proposals.js; the prefix and P).
 //
 // Everything outside is injected: the terminal (`input`, `output` with columns, rows and 'resize'),
 // starting an app (`spawn`), timers, the clock and the family's folder, so tests drive it with
 // streams and small fake apps.
+import { join, relative } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
+import { currentEnvironment } from '@fleet/kit/environments.js';
 import { familyDir } from '@fleet/kit/family.js';
+import { recordingState, startRecording, stopRecording } from '@fleet/kit/recording.js';
 import { encodeMessage, messageReader } from '@fleet/kit/hosted.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
 import { remember } from '@fleet/kit/folders.js';
 import { badgeFor, badgeText, familyReader } from './attention.js';
 import { completeFolder, editLine, isFolder, lineOf, renderAsk, resolveFolder, shortFolder } from './folder.js';
-import { barLayout, colour, renderBar, tabAt } from './bar.js';
+import { barLayout, colour, renderBar, statusSegments, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { DEFAULT_PREFIX, prefixByte, prefixName, prefixesFor, readKeys, takeBarClicks } from './keys.js';
 import { Panels } from './panels.js';
+import { listProposals, pruneProposals } from './proposals.js';
+import { recordedRunbook, writeRecorded } from './runbooks.js';
 import { HOST_MOUSE, MOUSE_MODES, OutputFilter } from './screen.js';
 import { SPACES } from './spaces.js';
 import { requestIdOfLine } from './trace.js';
@@ -68,10 +76,15 @@ export const helpRows = (p = DEFAULT_PREFIX) => [
   [`${p} tab ← →`, 'the other pane'],
   [`${p} x or |`, 'one app on screen again'],
   [`${p} m`, 'move every app to another folder'],
+  [`${p} e`, "the project's environment, for every app"],
+  [`${p} w`, 'what changed lately, and Claude on why'],
+  [`${p} P`, "Claude's proposals: ↵ hands one to its app"],
+  [`${p} R`, 'record a runbook from what the apps run (again: stop)'],
   ...(p === 'ctrl+]' ? [] : [['ctrl+]', `works as ${p} does (host.json's "prefix" changes ${p})`]]),
   ['', ''],
   ['a click on a tab', 'switches to it'],
-  ['! or 2 in a tab', 'that app needs you (worried, alerts)'],
+  ['! or 2 in a tab', 'that app needs you (worried, alerts; red: errors)'],
+  ['◆ ● REC dev', 'proposals, recording, the environment'],
   ['copied "for Trawl"', 'goes to Trawl, typed into its prompt'],
 ];
 
@@ -122,6 +135,10 @@ export class Host {
     // A panel over the app (panels.js: the runbooks, a request followed): it has the keys while it's open.
     this.overlay = null;
     this.panels = new Panels(this, tools);
+    // The bar's own state (bar.js statusSegments), read with the badges: refreshStatus.
+    this.status = { env: null, recording: false, proposals: 0 };
+    // The proposals waiting when last read, so a new one is said once.
+    this.proposalIds = new Set();
     this.lastRequestId = null;
     this.confirming = false;
     // The bar asking for a folder to move the fleet to: { line, from, hint }, else null.
@@ -159,6 +176,8 @@ export class Host {
     this.output.write(ENTER);
     this.input.on('data', this.onInput);
     this.output.on?.('resize', this.onResize);
+    // What's waiting already shows in the bar; only what comes later is said.
+    this.refreshStatus({ draw: false });
     this.switchTo(id);
     this.watchAttention();
     return this.done;
@@ -179,7 +198,7 @@ export class Host {
       return renderAsk({ label, line, hint: hint || '↵ moves every app there · tab completes · esc cancels', keep: Boolean(hint), width: columns });
     }
     const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
-    this.layout = barLayout({ spaces: this.spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel });
+    this.layout = barLayout({ spaces: this.spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel, status: statusSegments(this.status) });
     return renderBar(this.layout, this.spaces, { truecolor: this.truecolor });
   }
 
@@ -226,7 +245,8 @@ export class Host {
     const { moods, activity } = this.family.read(this.spaces.map((s) => s.id));
     const now = this.now();
     const shown = new Set(this.onScreen());
-    let changed = false;
+    const status = this.refreshStatus({ draw: false });
+    let changed = status.changed;
     let news = null;
     for (const s of this.spaces) {
       if (shown.has(s.id)) {
@@ -240,10 +260,72 @@ export class Host {
       changed ||= badgeText(badge) !== badgeText(s.badge);
       s.badge = badge;
     }
+    if (!news && status.fresh.length) {
+      // A proposal is news too, said once, without the bell: it waits for you rather than needing you.
+      const p = status.fresh.at(-1);
+      const title = this.space(p.app)?.title ?? p.app;
+      return this.notice(`Claude proposes ${status.fresh.length === 1 ? `a line for ${title}` : `${status.fresh.length} lines`}: ${this.prefixLabel} P`);
+    }
     if (!news) return changed && this.drawBar();
     // Once as it appears: the badge stays until you look, the bell doesn't.
     if (this.bell) this.output.write('\x07');
     this.notice(`${news.space.title}${news.badge.reason ? `: ${news.badge.reason}` : ' needs you'}`);
+  }
+
+  /**
+   * Reads the bar's own state again: the project's environment, whether a runbook is being recorded,
+   * the proposals waiting (old ones taken away). { changed, fresh }: whether the bar says something
+   * else now, and the proposals not seen before. `draw` draws the bar when it changed.
+   */
+  refreshStatus({ draw = true } = {}) {
+    const home = this.panels.familyDir;
+    const now = this.now();
+    let env = null;
+    try {
+      env = currentEnvironment(this.panels.cwd, { home });
+    } catch {
+      // A project file being written as it's read: the next reading has it.
+    }
+    pruneProposals({ home, now });
+    const pending = listProposals({ home, now, pending: true });
+    const fresh = pending.filter((p) => !this.proposalIds.has(p.id));
+    this.proposalIds = new Set(pending.map((p) => p.id));
+    const next = { env: env ? { name: env.name, prod: env.prod } : null, recording: Boolean(recordingState({ home })), proposals: pending.length };
+    const changed = JSON.stringify(next) !== JSON.stringify(this.status);
+    this.status = next;
+    if (draw && changed) this.drawBar();
+    return { changed, fresh };
+  }
+
+  /**
+   * The prefix and R: starts recording what the apps run (each app's recordCommand), or stops it and
+   * writes it as a runbook in the fleet's folder, opened in the runbooks panel. Nothing recorded, nothing written.
+   */
+  toggleRecording() {
+    const home = this.panels.familyDir;
+    const cwd = this.panels.cwd;
+    const state = recordingState({ home });
+    if (!state) {
+      try {
+        startRecording(cwd, { home, now: this.now() });
+      } catch (e) {
+        return this.notice(`Couldn't start recording: ${e.message}`);
+      }
+      this.refreshStatus({ draw: false });
+      return this.notice(`Recording a runbook: the commands the apps run · ${this.prefixLabel} R stops`);
+    }
+    const lines = stopRecording({ home });
+    this.refreshStatus({ draw: false });
+    if (!lines.length) return this.notice('Stopped: nothing was recorded (no app ran a command), so no runbook was written');
+    let file;
+    try {
+      const now = this.now();
+      file = writeRecorded(join(cwd, '.fleet', 'runbooks'), recordedRunbook(lines, { now, since: state.since, title: (id) => this.space(id)?.title ?? id }), { now });
+    } catch (e) {
+      return this.notice(`Couldn't write the runbook: ${e.message}`);
+    }
+    this.panels.openRunbook(file);
+    this.notice(`Recorded ${lines.length} step${lines.length === 1 ? '' : 's'} in ${relative(cwd, file) || file}`);
   }
 
   /** You looked at space `id`: its badge goes, and what it said so far is old news. */
@@ -274,6 +356,10 @@ export class Host {
       else if (a.type === 'help') this.showHelp();
       else if (a.type === 'runbooks') this.panels.runbooks();
       else if (a.type === 'trace') this.panels.trace();
+      else if (a.type === 'environment') this.panels.environments();
+      else if (a.type === 'changes') this.panels.changes();
+      else if (a.type === 'proposals') this.panels.proposals();
+      else if (a.type === 'record') this.toggleRecording();
     }
   }
 
@@ -777,6 +863,8 @@ export class Host {
     this.cwd = dir;
     this.folders = remember(this.folders, dir);
     this.onFolders(this.folders);
+    // Another folder can be another project, with environments of its own.
+    this.refreshStatus({ draw: false });
     const running = this.spaces.filter((s) => s.child);
     for (const s of running) {
       const child = s.child;

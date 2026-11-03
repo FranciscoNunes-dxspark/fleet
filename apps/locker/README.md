@@ -77,7 +77,21 @@ The key vault's secrets, then its certificates. Red when disabled or expired; th
 | `e` | A new value, typed hidden, saved as a new version after asking (the old one stays as a version; the new one has no expiry date) |
 | `n` | A new secret: its name, then its value, hidden |
 | `x` | Disable it after asking (it says which settings refer to it), or enable a disabled one |
+| `r` | Rotate it end to end (below) |
 | `o` | The vault in the Azure portal |
+
+### Rotating a secret
+
+`/rotate <secret>` (or `r` on one in the Vault view) does a rotation as one checklist, each step marked as
+it runs; `esc` stops it there (what is done stays done, and the checklist says where it stopped):
+
+1. **A new value**: generated (32 random bytes, base64url) unless you paste one (a new API key a provider gave you), typed hidden.
+2. **A new version** of the secret, after asking, as `e` sets one.
+3. **The apps that read it**: every App Service app and slot in the subscription whose settings or connection strings are Key Vault references to it. Those that read its latest version are restarted after asking, so they read the new value now rather than within the day App Service takes on its own. Those pinned to a version are listed with what their setting should say (`@Microsoft.KeyVault(SecretUri=…/secrets/<name>/<new version>)`), and once the checklist is done the line that opens the first one's settings in Sonar is copied (Sonar changes app settings; Locker doesn't).
+4. **The restarted apps answer again**: each one's default address with the environment's `healthPath` (`/` without one, see Environments) is asked every 3 s until it answers 2xx, for up to two minutes.
+5. **The previous version disabled**, after asking, once every restarted app answered (it says which pinned settings still read it).
+
+Every step goes in the family's activity log by name; the value goes only to Key Vault.
 
 ### Expiry
 
@@ -87,17 +101,66 @@ The secrets and certificates of every vault Locker has read that have expired or
 
 What Locker read, with how many keys each has and where it is. `↵` lists a source's keys (values masked), `space` makes it a column or not.
 
+## Leaked secrets in git
+
+`/leaks [commits|since]` looks through the checkout for values that look like secrets: the files git
+would commit (what `.gitignore` leaves out isn't read), then what the history added, the last 200
+commits by default, a number of them (`/leaks 50`) or since a date git takes (`/leaks 2026-01-31`,
+`/leaks 2 weeks ago`). It reads a batch of commits at a time and lists what it finds as it goes; `esc`
+stops it. What counts:
+
+- a key Locker knows to hold a secret given a literal value: the folder's keys whose names say so (`Password`, `Secret`, `Token`, `ApiKey` …), the app's settings that are Key Vault references, the vault's secrets (`Db__Password=…` in a script, `"Password": "…"` in JSON; never an example file's, nor a placeholder like `${DB_PASSWORD}` or a reference)
+- the shapes secrets have: a storage account's `AccountKey=`, `Password=` or `Pwd=` in a connection string, a private key's `-----BEGIN … PRIVATE KEY-----`, a JWT, GitHub tokens (`ghp_…`, `github_pat_…`), Azure DevOps tokens, AWS access and secret keys, a SAS token's `sig=`
+
+Each finding says the file and line, the commit (or `worktree`), its author and date, and the key or
+shape, with the value masked; nothing Locker shows or keeps has the value. `↵` shows one, `t` copies
+its commit for Splice (`/take commit`, its diff there; the file and line, `/take file`, for one not
+committed yet), `r` rotates it when it is a secret of the vault (`/rotate`). Taking a secret out of
+git's history needs a rewrite (git filter-repo, and a force push everyone takes), and every copy made
+before keeps it: rotating it is the fix.
+
 ## Slash commands
 
-`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/disable <secret>` disables or enables one. `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/rotate <secret>` rotates one end to end (`r`), `/disable <secret>` disables or enables one. `/leaks [commits|since]` looks for secrets in git (above). `/env [name]` chooses the project's environment (below). `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 Your own commands and keys go in the settings file, as in the siblings: `"commands": { "prod": "/app shop-api" }`, `"keys": { "drift": { "ctrl+o": "/app" } }`.
+
+## Environments
+
+A project names its environments once, for every app in the family, in `.fleet/project.json` (in its
+folder or one above, up to its checkout's root). `/env` says which one is chosen; `/env <name>`
+chooses another for every app (Fleet's `ctrl+b e` too), and the header names it. Locker's section of
+an environment says what to compare there, by name and never with a value:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev":  { "locker": { "vault": "kv-shop-dev", "app": "shop-api", "slot": "staging" } },
+    "prod": { "prod": true, "locker": { "vault": "kv-shop", "app": "shop-api", "resourceGroup": "rg-shop", "healthPath": "/healthz" } }
+  }
+}
+```
+
+| Field | |
+|---|---|
+| `vault` | The key vault to compare and list |
+| `app`, `slot` | The App Service app (and slot) whose settings are compared |
+| `resourceGroup` | Which `app` is meant when two share a name |
+| `healthPath` | Where `/rotate` checks that a restarted app answers (`/` when it isn't set) |
+
+When the environment changes, here or in another app, Locker picks what its section names. In an
+environment marked `"prod": true` the frames are red, and every change (setting, copying, disabling a
+secret, adding one to `.env`, restarting an app) is asked about once more, after Locker's own question.
+
+While Fleet records a runbook, each slash command Locker's prompt runs (and each `/take`) is added to it.
 
 ## The family
 
 Locker is one of the apps that hand each other what is under their cursor, as lines to paste into the other's prompt, and never a secret.
 
 - `t` copies the app for Sonar as `/appsettings <app>`; Sonar shows its settings, logs and problems. In Fleet, the other app opens with it in its prompt.
+- In `/leaks`, `t` copies a finding's commit for Splice (`/take commit`), or its file and line when it isn't committed (`/take file`).
 - `/take <line>` takes an app or slot a sibling copied (a `site` context; Sonar's `alt+k` on an app in Resources copies one): Locker compares its settings in the drift view.
 - `/family` lists what the folder is to the other apps (its checkout for Splice, what Bosun runs, Hail's `.http` files, the databases its settings name for Trawl, the app for Sonar), `↵` copying the line for one's prompt. `/wiring` lists what the folder points at (addresses, hosts, ports, connection strings), secrets masked. `/timeline` shows what the family's apps changed, newest first.
 - What Locker sets, disables, adds to `.env` or copies goes in the family's activity log, by name and never with the value. Hush writes its mood (worried when something expires soon, a reference is broken or the sources differ) for the others to remark on, and remarks on theirs; `"familyMoods": false` turns both off.
@@ -116,4 +179,4 @@ Once a day the downloaded executable looks for a newer `locker-v…` release and
 
 ## Not yet
 
-Changing an App Service app's settings (Sonar does that, `/appsettings` there), Key Vault keys, a certificate's renewal, and other stores (AWS, GCP, HashiCorp Vault, Doppler).
+Changing an App Service app's settings (Sonar does that, `/appsettings` there; `/rotate` says what to change), Key Vault keys, a certificate's renewal, and other stores (AWS, GCP, HashiCorp Vault, Doppler).

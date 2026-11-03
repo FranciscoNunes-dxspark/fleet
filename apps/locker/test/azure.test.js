@@ -70,13 +70,14 @@ test("a vault's secrets are listed page by page without their values, those behi
 test('a value is read, set and turned off only by name, and never reaches an error', async () => {
   const { fetch, calls } = fakeFetch([
     ['GET', '/secrets/db-password?', { value: 's3cr3t', id: 'https://kv.vault.azure.net/secrets/db-password/v1' }],
-    ['PUT', '/secrets/new-one?', ({ init }) => ({ value: JSON.parse(init.body).value, id: 'x' })],
+    ['PUT', '/secrets/new-one?', ({ init }) => ({ value: JSON.parse(init.body).value, id: 'https://kv.vault.azure.net/secrets/new-one/abc123' })],
     ['PATCH', '/secrets/db-password/?', { id: 'x', attributes: { enabled: false } }],
     ['PUT', '/secrets/denied?', { error: { code: 'Forbidden', message: 'The user does not have secrets set permission' } }, 403],
   ]);
   const azure = createAzure({ fetch, token: tokens });
   assert.equal(await azure.secretValue(KV, 'db-password'), 's3cr3t');
-  assert.equal(await azure.setSecret(KV, 'new-one', 'hunter2', { contentType: 'text/plain' }), undefined);
+  // The answer repeats the value: only the new version's id is kept.
+  assert.deepEqual(await azure.setSecret(KV, 'new-one', 'hunter2', { contentType: 'text/plain' }), { version: 'abc123' });
   assert.deepEqual(calls[1].body, { value: 'hunter2', contentType: 'text/plain' });
   await azure.enableSecret(KV, 'db-password', false);
   assert.deepEqual([calls[2].method, calls[2].body], ['PATCH', { attributes: { enabled: false } }]);
@@ -85,6 +86,29 @@ test('a value is read, set and turned off only by name, and never reaches an err
   await assert.rejects(azure.secretValue(KV, '../keys/x'), /isn't a Key Vault secret name/);
   await assert.rejects(azure.setSecret(KV, 'a?b=c', 'v'), /isn't a Key Vault secret name/);
   assert.equal(calls.length, 4);
+});
+
+test("a secret's versions, one version disabled, a restart and a health probe", async () => {
+  const { fetch, calls } = fakeFetch([
+    ['GET', '/secrets/db-password/versions?maxresults=25', { value: [{ id: 'https://kv.vault.azure.net/secrets/db-password/old1', attributes: { enabled: true, created: 1600000000 } }, { id: 'https://kv.vault.azure.net/secrets/db-password/new2', attributes: { enabled: true, created: 1700000000 } }] }],
+    ['PATCH', '/secrets/db-password/old1?', { id: 'x' }],
+    ['POST', '/restart?api-version', null],
+    ['GET', 'https://shop-api.azurewebsites.net/healthz', null, 503],
+  ]);
+  const azure = createAzure({ fetch, token: tokens });
+  assert.deepEqual((await azure.versions(KV, 'db-password')).map((v) => v.version), ['new2', 'old1']);
+  await azure.enableSecret(KV, 'db-password', false, { version: 'old1' });
+  assert.deepEqual([calls[1].method, calls[1].body], ['PATCH', { attributes: { enabled: false } }]);
+  await assert.rejects(azure.enableSecret(KV, 'db-password', false, { version: '../x' }), /isn't a Key Vault secret version/);
+  await azure.restart({ id: `${SITE}/slots/staging`, name: 'shop-api', slot: 'staging' });
+  assert.equal(calls[2].url, `${ARM}${SITE}/slots/staging/restart?api-version=2023-12-01`);
+  assert.equal(calls[2].auth, `Bearer token-for-${ARM}/`);
+  // A probe sends no token, and says what answered rather than throwing.
+  assert.deepEqual(await azure.probe('https://shop-api.azurewebsites.net/healthz'), { status: 503 });
+  assert.equal(calls[3].auth, undefined);
+  const down = createAzure({ fetch: async () => Promise.reject(new Error('getaddrinfo ENOTFOUND')), token: tokens });
+  assert.deepEqual(await down.probe('https://nowhere.example/'), { status: 0, error: 'getaddrinfo ENOTFOUND' });
+  assert.equal(siteFrom({ id: SITE, name: 'shop-api', properties: { defaultHostName: 'shop-api.azurewebsites.net' } }).hostName, 'shop-api.azurewebsites.net');
 });
 
 test("ARM's shapes, and its errors in words", () => {

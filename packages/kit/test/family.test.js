@@ -211,3 +211,17 @@ test('an App Service app or slot is a site context, which Locker takes', () => {
   assert.equal(APP_NAMES.locker, 'Locker');
   assert.equal(notMine('sonar', c), "That's app shop-api/staging, for Locker: paste it into its prompt instead.");
 });
+
+test('a container image is an image context, which Bilge takes', () => {
+  const c = contextIn(takeLine('image', { image: 'shop/api:1.4.2' }));
+  assert.equal(c.kind, 'image');
+  assert.equal(describeContext(c), 'image shop/api:1.4.2');
+  assert.deepEqual(TAKEN_BY.image, ['bilge']);
+});
+
+test("a secret's name: what maskValue masks the whole of", async () => {
+  const { isSecretName, maskValue } = await import('../family.js');
+  for (const k of ['Db__Password', 'ApiKey', 'client_secret', 'SasToken', 'AccountKey']) assert.equal(isSecretName(k), true, k);
+  for (const k of ['Logging:Level', 'Port', 'ConnectionTimeout']) assert.equal(isSecretName(k), false, k);
+  assert.equal(maskValue('Db__Password', 'x') === '••••', isSecretName('Db__Password'));
+});

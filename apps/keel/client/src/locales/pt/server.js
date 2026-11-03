@@ -356,4 +356,16 @@ export default {
   'Deploying turned red on the Line': 'A fazer deploy ficou a vermelho na Linha',
   'Live turned red on the Line': 'Em produção ficou a vermelho na Linha',
   '{n} of {count} stuck': '{n} de {count} parados',
+  // The advisory watch (server/domain/advisories.js, server/advisories.js); OSV's own summaries stay in English
+  '{package} {version} has a critical security advisory': '{package} {version} tem um aviso de segurança crítico',
+  '{package} {version} has a high-severity security advisory': '{package} {version} tem um aviso de segurança de gravidade alta',
+  '{package} {version} has a medium-severity security advisory': '{package} {version} tem um aviso de segurança de gravidade média',
+  '{package} {version} has a low-severity security advisory': '{package} {version} tem um aviso de segurança de gravidade baixa',
+  'Fixed in {version}': 'Corrigido em {version}',
+  'No fixed version yet': 'Ainda sem versão corrigida',
+  'This repository was checked less than 10 minutes ago. Check it again in a few minutes.': 'Este repositório foi verificado há menos de 10 minutos. Volte a verificá-lo daqui a alguns minutos.',
+  'This repository is being checked right now.': 'Este repositório está a ser verificado neste momento.',
+  "The advisory watch doesn't run here": 'A vigilância de avisos não corre aqui',
+  // Teams and Slack posts about one (server/domain/messages.js)
+  'Open the advisory': 'Abrir o aviso',
 };

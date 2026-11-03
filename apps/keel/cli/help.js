@@ -63,7 +63,7 @@ export const HELP = [
   },
   {
     title: 'Pull requests',
-    about: 'waiting on your review, then yours, then everyone else\'s; each goes publish → approval → complete, and the pane says which step it\'s at and what it waits on',
+    about: 'waiting on your review, then yours, then everyone else\'s; each goes publish → approval → complete, and the pane says which step it\'s at and what it waits on; the number after each one\'s is its risk, 0 to 100 (red high, amber medium, green low), and the pane and ↵ say the reasons that add up to it',
     views: ['prs'],
     rows: [
       ['p', 'Publish a draft'],
@@ -189,9 +189,10 @@ export const HELP = [
   },
   {
     title: 'Reports',
-    about: 'the web app\'s Insights, Flaky tests, closed pull requests, Commits and Platform totals, in the viewer',
+    about: 'the web app\'s Insights (DORA by project and team too), Flaky tests, closed pull requests, Commits and Platform totals, in the viewer',
     rows: [
       ['/insights [days]', 'Pull request flow (merged, how long they take, by repo, author and reviewer) and delivery to production: deploys, lead time, change failure rate and time to restore, by environment. 30 days by default, up to 180'],
+      ['/dora [30|90] [project|team]', 'The DORA measures for everything, or one project or team, against the period before: deploys a week, lead time, change failure rate and time to restore, each with its band and how it was counted, then a line per project and team. Production is the /env environment\'s, when it names one'],
       ['/flaky', 'Tests that fail now and then on a pipeline\'s own branch and pass again without a fix, failing now first'],
       ['/closed [days]', 'Pull requests completed or abandoned in the last 7 days (or 30, 90), with who closed them, how long they were open and the votes'],
       ['/commits [repo] [days]', 'Commits on each tracked repo\'s default branch, by day, with their pull request and work items; a repo name narrows it'],

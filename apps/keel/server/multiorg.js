@@ -13,6 +13,7 @@
 import { buildInsights } from './domain/insights.js';
 import { buildWorkload } from './domain/workload.js';
 import { buildDelivery } from './domain/delivery.js';
+import { buildDora } from './domain/dora.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow } from './domain/flow.js';
@@ -140,6 +141,13 @@ export function createMultiService(entries) {
     async repos() {
       return (await each((s) => s.repos())).flatMap(({ org, value }) => tagAll(org, value));
     },
+    // The advisory watch: each organization's repositories, read and checked by the one that owns them.
+    readLockFiles: viaProject('readLockFiles'),
+    checkAdvisories: viaProject('checkAdvisories'),
+    async advisories() {
+      const parts = await each((s) => s.advisories());
+      return { ...parts[0].value, repos: parts.flatMap(({ org, value }) => tagAll(org, value.repos)) };
+    },
     async pullRequests() {
       const parts = await each((s) => s.pullRequests());
       return {
@@ -157,6 +165,9 @@ export function createMultiService(entries) {
         prs: parts.flatMap(({ org, value }) => tagAll(org, value.prs)).sort((a, b) => at(b) - at(a)),
         runs: parts.flatMap(({ org, value }) => tagAll(org, value.runs)).sort((a, b) => at(b) - at(a)),
       };
+    },
+    async prRisks() {
+      return { risks: (await each((s) => s.prRisks())).flatMap(({ org, value }) => tagAll(org, value.risks)) };
     },
     async closedPullRequests(days) {
       const parts = await each((s) => s.closedPullRequests(days));
@@ -197,6 +208,19 @@ export function createMultiService(entries) {
     async delivery(days) {
       const parts = await each((s) => s.deliveryData(days));
       return buildDelivery({ targets: parts.flatMap(({ org, value }) => tagAll(org, value)), days });
+    },
+    /** DORA computed once over every organization's environments; the primary's settings say what production is. */
+    async dora(days, opts = {}) {
+      const parts = await each((s) => s.doraData(days, opts));
+      const first = parts[0].value;
+      return buildDora({
+        environments: parts.flatMap(({ org, value }) => tagAll(org, value.environments)),
+        pullRequests: parts.flatMap(({ org, value }) => tagAll(org, value.pullRequests)),
+        teams: parts.flatMap(({ org, value }) => tagAll(org, value.teams)),
+        production: first.production,
+        windowHours: first.windowHours,
+        days,
+      });
     },
     async summary(week) {
       const range = weekRange(week);

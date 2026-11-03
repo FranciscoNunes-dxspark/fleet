@@ -2,7 +2,7 @@
 // (built in ui/App.jsx). Questions before anything destructive belong here too (ctx.confirm).
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { folderChoices, resolveFolder, samePath } from '@fleet/kit/folders.js';
 import { clip, draftPrompt, parseDraft } from './claude.js';
 import { configFile } from './config.js';
@@ -30,6 +30,11 @@ import { checkLines, contractLines, statusColour } from './ui/response.js';
 import { APP_NAMES, FAMILY, contextIn, copiedNote, describeContext, logActivity, notMine, projectAt, projectWiring, readActivity, repoRoot, shareLine, trawlLine } from '@fleet/kit/family.js';
 import { fit, relTime } from '@fleet/kit/text.js';
 import { findByRequestId, hostVariable, idsIn, replayBlock, startsWithVariable, rowsJson, rowsRequestBlock, tablePath } from './takes.js';
+import { describeEnvironments, productionQuestion, setEnvironment as setProjectEnvironment } from '@fleet/kit/environments.js';
+import { hailEnvironmentNamed, isSafeMethod } from './project.js';
+import { changeLine, compareAnswers } from './compare.js';
+import { captureBlock, capturedAt, requestInLine } from './capture.js';
+import { parseHttpFile } from './http-file.js';
 import { compareResponses, lastResponseTo, normaliseBase, rebaseUrl, replayHeaders, replayTargets, statusLine, targetNamed } from './replay.js';
 
 const YES_NO = (yes) => [
@@ -57,12 +62,15 @@ function requestNamed(ctx, name) {
  * given. A secret that isn't saved yet ({{$secret name}}) is asked for, saved, and the request filled
  * in again. `missing` on what it returns lists the variables nothing gave a value.
  */
-async function fillRequest(ctx, request) {
-  let req = await prepare(request, ctx.scope(), { dir: ctx.data.dir });
+const fillRequest = (ctx, request) => fillIn(ctx, request, () => ctx.scope());
+
+/** fillRequest with the variables of `scope()` (/compare's other environment, say). */
+async function fillIn(ctx, request, scope) {
+  let req = await prepare(request, scope(), { dir: ctx.data.dir });
   const unsaved = req.missing.map((m) => /^\$secret\s+(\S+)$/.exec(m)?.[1]).filter(Boolean);
   if (unsaved.length) {
     for (const name of unsaved) if (!(await askForSecret(ctx, name))) return null;
-    req = await prepare(request, ctx.scope(), { dir: ctx.data.dir });
+    req = await prepare(request, scope(), { dir: ctx.data.dir });
   }
   return req;
 }
@@ -116,12 +124,26 @@ function responseSummary({ response: res, checks, saved, contract }) {
   return [`${res.status} ${res.statusText} · ${res.ms} ms · ${formatSize(res.size)}${events}${summary.text ? ` · ${summary.text}` : ''}`, ...(save ? [save] : []), ...failed, ...(checks?.error ? [checks.error] : []), ...drift].join('\n');
 }
 
+/**
+ * Before anything that may change things goes to production: true when it can go. `methods` are the
+ * requests' methods (GET, HEAD and OPTIONS only read, and never ask); `env` is the Hail environment it
+ * goes to, production when the project's .fleet/project.json says so (project.js's productionFor).
+ */
+export async function productionOk(ctx, methods, what, env = ctx.environment()) {
+  if ([].concat(methods).every(isSafeMethod)) return true;
+  const q = productionQuestion(ctx.productionFor?.(env), what);
+  if (!q) return true;
+  // No comes first: a stray ↵ shouldn't send a POST to production.
+  return (await ctx.confirm({ ...q, options: [{ label: 'No', value: false }, { label: 'Yes, send it', value: true }] })) === true;
+}
+
 /** ↵ in Requests, and /send: sends it, and shows what came back. `/send all` sends every one. */
 export async function send(ctx, which) {
   if (!ctx.data) return ctx.note('Open a .http file first: /open <file>, or /new for an example.', 'error');
   if (typeof which === 'string' && which.trim().toLowerCase() === 'all' && !ctx.data.requests.some((r) => r.name?.toLowerCase() === 'all')) return sendAll(ctx);
   const request = typeof which === 'object' && which ? which : requestNamed(ctx, which);
   if (!request) return ctx.note(which ? `There's no request called ${which}.` : 'The file has no requests yet.', 'error');
+  if (!(await productionOk(ctx, request.method, `Send ${request.label}`))) return false;
   const req = await prepared(ctx, request).catch((e) => failed(ctx, e));
   if (!req) return;
   // The secrets in it stay out of the activity lines.
@@ -180,6 +202,8 @@ export async function sendAll(ctx) {
   if (!ctx.data) return ctx.note('Open a .http file first: /open <file>, or /new for an example.', 'error');
   const requests = ctx.data.requests.filter(inRun);
   if (!requests.length) return ctx.note(ctx.data.requests.length ? 'The file has only WebSockets, which ↵ opens one at a time.' : 'The file has no requests yet.', 'error');
+  const changing = requests.filter((r) => !isSafeMethod(r.method));
+  if (changing.length && !(await productionOk(ctx, changing.map((r) => r.method), `Send all ${requests.length}, ${changing.length} of them ${changing.map((r) => r.method).filter((m, i, all) => all.indexOf(m) === i).join(', ')}`))) return false;
   const results = [];
   let stopped = false;
   const done = await ctx.task(
@@ -247,6 +271,7 @@ export async function load(ctx, rest) {
   const request = requestNamed(ctx, args.name);
   if (!request) return ctx.note(args.name ? `There's no request called ${args.name}.` : 'The file has no requests yet.', 'error');
   if (!inRun(request)) return ctx.note("A WebSocket isn't something /load sends: it's a connection, opened with ↵.", 'error');
+  if (!(await productionOk(ctx, request.method, `Send ${request.label} ${args.count} times`))) return false;
   const req = await prepared(ctx, request).catch((e) => failed(ctx, e));
   if (!req) return;
   const { count, concurrency } = args;
@@ -280,6 +305,134 @@ export async function load(ctx, rest) {
   const lines = loadReport(stats, { label: `${req.method} ${request.label}`, count, concurrency, cancelled: run.cancelled });
   ctx.showText(`Load: ${request.label}`, lines.map((segs) => segs.map((x) => x.text).join('')).join('\n'), { lines: toned(lines) });
   return { stats };
+}
+
+/**
+ * /compare <environment> (alt+c in Requests): the request under the cursor sent in the environment Hail
+ * is in and in another (one of Hail's, or a project environment's, by the Hail environment it names),
+ * one after the other, and how the answers differ: the status, the time, the headers that say
+ * something (compare.js leaves out the ones that differ on every response) and the body, JSON by path.
+ * As /load does, it goes without the cookie jar, response handlers, >> or the history: the answers
+ * belong to the comparison. Production asks first, for anything but GET, HEAD or OPTIONS.
+ */
+export async function compare(ctx, arg = '', which = null) {
+  const d = ctx.data;
+  if (!d) return ctx.note(NO_FILE, 'error');
+  const request = which ?? ctx.selectedRequest();
+  if (!request) return ctx.note('Pick a request first.', 'error');
+  if (!inRun(request)) return ctx.note("A WebSocket isn't something /compare sends: it's a connection, opened with ↵.", 'error');
+  const here = ctx.environment();
+  if (!here) return ctx.note('Pick an environment first (e): /compare sends the request in it and in another.', 'error');
+  const others = d.environments.names.filter((n) => n !== here);
+  const a = String(arg ?? '').trim();
+  if (!a) {
+    if (!others.length) return ctx.note(`${here} is the only environment in http-client.env.json: /compare needs another.`, 'error');
+    return ctx.showPicker({
+      title: `Compare ${request.label}: ${here} and`,
+      hint: '↵ send it in both and compare',
+      items: others.map((env) => ({ env, segments: [{ text: env, strong: true }, { text: ctx.productionFor?.(env) ? '  production' : '', color: theme.del }] })),
+      onPick: (it) => {
+        ctx.closeOverlay();
+        compare(ctx, it.env, request);
+      },
+    });
+  }
+  const target = hailEnvironmentNamed(a, { names: d.environments.names, dir: ctx.folder() });
+  if (target.error) return ctx.note(target.error, 'error');
+  const there = target.env;
+  if (there === here) return ctx.note(`Hail is in ${here} already${target.via ? ` (the project's ${target.via})` : ''}: name another environment to compare it with.`, 'error');
+  const prod = [here, there].find((env) => ctx.productionFor?.(env));
+  if (prod && !(await productionOk(ctx, request.method, `Send ${request.label} in ${here} and ${there} to compare`, prod))) return false;
+  const reqs = [];
+  for (const env of [here, there]) {
+    const vars = d.environments.vars(env);
+    const req = await fillIn(ctx, request, () => ({ ...ctx.scope(), environment: vars })).catch((e) => failed(ctx, e));
+    if (!req) return;
+    if (req.missing.length) return ctx.note(`In ${env}, nothing gives ${req.missing.map((m) => `{{${m}}}`).join(', ')} a value.`, 'error');
+    reqs.push({ env, req, insecure: Boolean(d.environments.options?.(env)?.insecure) });
+  }
+  const options = request.options ?? {};
+  const answers = [];
+  const r = await ctx.task(
+    `Compare ${request.label}: ${here} and ${there}`,
+    async (signal) => {
+      for (const { req, insecure } of reqs) {
+        const timeout = parseTimeout(options.timeout);
+        try {
+          answers.push(req.method === 'GRPC' ? await grpcSend(req, { signal, timeout, insecure }) : await sendRequest(req, { signal, jar: null, follow: !options['no-redirect'], timeout, insecure }));
+        } catch (e) {
+          if (signal.aborted) throw e;
+          answers.push({ error: networkText(e) });
+        }
+      }
+      if (answers.every((x) => x.error)) throw new Error(`No answer in either: ${answers[0].error}`);
+      const c = answers.some((x) => x.error) ? null : compareAnswers(answers[0], answers[1]);
+      const said = (x, env) => `${x.error ? 'no answer' : statusLine(x)} in ${env}`;
+      return { stdout: `${said(answers[0], here)}, ${said(answers[1], there)}${c ? (c.same ? ' · the same' : ` · ${differences(c)}`) : ''}` };
+    },
+    { label: 'Comparing' },
+  );
+  if (!r?.ok) return r;
+  const lines = compareLines({ request, reqs, answers });
+  ctx.showText(`Compared ${request.label}: ${here} and ${there}`, lines.map((l) => l.map((x) => x.text).join('')).join('\n'), { lines });
+  return r;
+}
+
+/** An error from sending, in a few words. */
+const networkText = (e) => firstLine(e?.message ?? e);
+const firstLine = (s) => String(s ?? '').split('\n')[0];
+
+/** "3 headers, 2 body values" that differ. */
+function differences(c) {
+  const parts = [];
+  if (!c.status.same) parts.push('the status');
+  if (c.headers.length) parts.push(`${c.headers.length} header${c.headers.length === 1 ? '' : 's'}`);
+  if (c.body.kind === 'json') parts.push(`${c.body.changes.length} value${c.body.changes.length === 1 ? '' : 's'} in the body`);
+  if (c.body.kind === 'text') parts.push('the body');
+  return `differ: ${parts.join(', ')}`;
+}
+
+// How many lines of the body's differences the viewer gets; the rest are counted.
+const COMPARE_LINES = 400;
+
+/** /compare's viewer: each environment's answer, then how they differ. */
+function compareLines({ request, reqs, answers }) {
+  const dim = (text) => ({ text, color: theme.dim });
+  const status = (x) => (x.error ? { text: 'no answer', bold: true, color: theme.del } : { text: statusLine(x), bold: true, color: statusColour(x.status) });
+  const mask = (req) => req.secrets.reduce((t, v) => t.split(v).join('••••••'), `${req.method} ${req.url}`);
+  const width = Math.max(...reqs.map((x) => x.env.length));
+  const lines = reqs.map((x, i) => [dim(`${x.env.padEnd(width)}  `), status(answers[i]), dim(`  ${mask(x.req)}`)]);
+  answers.forEach((x, i) => x.error && lines.push([{ text: `${reqs[i].env}: ${x.error}`, color: theme.del }]));
+  if (answers.some((x) => x.error)) return lines;
+  const c = compareAnswers(answers[0], answers[1]);
+  const [here, there] = reqs.map((x) => x.env);
+  lines.push([]);
+  if (c.same) {
+    lines.push([{ text: 'The same status, headers and body.', color: theme.add }, dim(c.ms.before != null ? `  ${c.ms.before} ms and ${c.ms.after} ms` : '')]);
+    return lines;
+  }
+  lines.push([dim(`- ${here} only   + ${there} only   ~ changed, ${here} → ${there}`)], []);
+  if (!c.status.same) lines.push([{ text: 'Status  ', bold: true }, { text: String(c.status.before), color: statusColour(c.status.before) }, dim(' → '), { text: String(c.status.after), color: statusColour(c.status.after) }]);
+  if (c.headers.length) {
+    lines.push([{ text: 'Headers', bold: true }, dim("  (not Date, request ids, cookies' values, ETags and the like)")]);
+    for (const h of c.headers) {
+      if (h.before === undefined) lines.push([{ text: `+ ${h.name}: ${h.after}`, color: theme.add }]);
+      else if (h.after === undefined) lines.push([{ text: `- ${h.name}: ${h.before}`, color: theme.del }]);
+      else lines.push([{ text: `~ ${h.name}: `, color: theme.warn }, { text: h.before }, dim(' → '), { text: h.after }]);
+    }
+  }
+  if (c.body.kind === 'json') {
+    lines.push([{ text: 'Body', bold: true }, dim(`  ${c.body.changes.length} value${c.body.changes.length === 1 ? '' : 's'} differ, by path`)]);
+    const colour = { added: theme.add, removed: theme.del, changed: theme.warn };
+    for (const ch of c.body.changes.slice(0, COMPARE_LINES)) lines.push([{ text: changeLine(ch), color: colour[ch.kind] }]);
+    if (c.body.changes.length > COMPARE_LINES) lines.push([dim(`… and ${c.body.changes.length - COMPARE_LINES} more`)]);
+  } else if (c.body.kind === 'text') {
+    lines.push([{ text: 'Body', bold: true }, dim('  line by line')]);
+    const colour = { '-': theme.del, '+': theme.add, '…': theme.dim };
+    for (const [m, l] of c.body.diff.slice(0, COMPARE_LINES)) lines.push([{ text: m === '…' ? '…' : `${m} ${l}`, color: colour[m] }]);
+    if (c.body.diff.length > COMPARE_LINES) lines.push([dim(`… and ${c.body.diff.length - COMPARE_LINES} more lines`)]);
+  } else lines.push([dim('The bodies are the same.')]);
+  return lines;
 }
 
 /** c in Requests, and /curl: the request, filled in, as a curl command on the clipboard. */
@@ -589,6 +742,22 @@ export function chooseEnvironment(ctx, name) {
   });
 }
 
+/**
+ * /project-env [name]: the project's environment (.fleet/project.json), the one every app of the family
+ * works in. Alone it says which; a name chooses it for them all, and Hail's own environment follows
+ * (App, through the project environment's "hail": { "env" }). Hail's /env and e stay its own.
+ */
+export function projectEnvironment(ctx, name) {
+  const dir = ctx.folder();
+  const n = String(name ?? '').trim();
+  // The kit's sentence names the family's /env, which in Hail is its own environments' command.
+  if (!n) return ctx.note(describeEnvironments(dir).replace(/\/env /g, '/project-env '));
+  const r = setProjectEnvironment(dir, n, { by: 'hail' });
+  if (!r.ok) return ctx.note(r.error, 'error');
+  const own = r.env.settings?.hail?.env;
+  ctx.note(`Every app is in ${r.env.name}${r.env.prod ? ' (production)' : ''} now${own ? `\nHail's variables come from its ${own}` : ''}`, 'ok');
+}
+
 /** /open: another .http file, from the folder Hail is in. */
 export async function open(ctx, path) {
   if (!path.trim()) return ctx.prefill('/open ');
@@ -737,10 +906,12 @@ async function takeRequest(ctx, data) {
       { useHost: true, segments: [{ text: `To ${env ?? 'the environment'}`, strong: true }, { text: `  {{${hostVar}}} = ${ctx.data.environments.vars(env)[hostVar]}`, color: theme.dim }] },
       { useHost: false, segments: [{ text: 'As it came', strong: true }, { text: `  ${origin}`, color: theme.dim }] },
       { replay: true, segments: [{ text: 'Replay it elsewhere and compare', strong: true }, { text: `  with what it answered${data.response?.status ? ` (${statusLine(data.response)})` : ''}, /replay`, color: theme.dim }] },
+      { capture: true, segments: [{ text: 'Save it as a named request', strong: true }, { text: `  in a .http file of the project, under {{${hostVar}}}`, color: theme.dim }] },
     ],
     onPick: (it) => {
       ctx.closeOverlay();
       if (it.replay) return replay(ctx, '', { request: data });
+      if (it.capture) return captureRequest(ctx, { method: data.method, url: data.url, headers: data.headers, body: data.body, status: data.response?.status }, { from: data.app ?? 'a sibling app', at: capturedAt(data.response?.at) });
       add(it.useHost);
     },
   });
@@ -838,6 +1009,7 @@ async function replayTo(ctx, src, target) {
   const { headers, dropped, added } = replayHeaders(src.request.headers, vars);
   const body = src.request.body == null ? '' : typeof src.request.body === 'object' ? JSON.stringify(src.request.body) : String(src.request.body);
   const method = String(src.request.method ?? 'GET').toUpperCase();
+  if (target.env && !(await productionOk(ctx, method, `Replay ${method} ${pathOfUrl(src.request.url)} there`, target.env))) return false;
   let req;
   try {
     req = await prepare({ method, url: rebaseUrl(src.request.url, base), headers, body, options: {} }, scope, { dir: d?.dir });
@@ -928,13 +1100,87 @@ function takeRows(ctx, data) {
  * Request-Id, traceparent, correlation ids), shown with the cursor on it.
  */
 function takeLogline(ctx, data) {
-  if (!ctx.data) return ctx.note(NO_FILE, 'error');
+  // A line that carries a method and a URL can become a request of the project's (captureRequest),
+  // when the History has no response of the file's own requests to show for it.
+  const seen = requestInLine(data?.text);
+  const meta = { from: data?.app ?? data?.process ?? 'a log line', at: capturedAt(data?.time) };
+  if (!ctx.data) return seen ? captureRequest(ctx, seen, meta) : ctx.note(NO_FILE, 'error');
   const ids = data?.requestId ? [String(data.requestId)] : idsIn(data?.text);
+  const found = ids.length ? findByRequestId(ctx.history(), ids) : null;
+  if (!found && seen) return captureRequest(ctx, seen, meta);
   if (!ids.length) return ctx.note(`That log line has no request id to look for: ${String(data?.text ?? '').slice(0, 80)}`, 'error');
-  const found = findByRequestId(ctx.history(), ids);
   if (!found) return ctx.note(`No response kept for ${ctx.data.name} carries ${ids.join(' or ')}.\nHistory keeps the newest 300; the request may have come from somewhere else.`, 'error');
   ctx.showHistoryEntry(found.entry);
   ctx.note(`${found.entry.label}, ${new Date(found.entry.at).toLocaleString()}: its ${found.header} is ${ids.length === 1 ? ids[0] : 'the one in the log line'}`, 'ok');
+}
+
+/** The name of the file requests from logs go to when none of the project's is picked. */
+export const CAPTURED_FILE = 'captured.http';
+
+/**
+ * A request seen in a log line (capture.js's requestInLine) or taken from a sibling, offered to be saved
+ * as a named request: in the open file, another .http file of the folder Hail is in, or captured.http
+ * (made when it isn't there). `meta` is { from, at }, for the comment it carries.
+ */
+function captureRequest(ctx, seen, meta) {
+  const dir = ctx.folder();
+  const open = ctx.data?.path ?? null;
+  const files = findHttpFiles(dir).map((f) => resolve(dir, f));
+  const paths = [...(open ? [open] : []), ...files.filter((f) => !open || !samePath(f, open))];
+  const captured = resolve(dir, CAPTURED_FILE);
+  if (!paths.some((f) => samePath(f, captured))) paths.push(captured);
+  const shown = (f) => relative(dir, f).replaceAll('\\', '/') || basename(f);
+  ctx.showPicker({
+    title: `Save ${seen.method} ${seen.url}${seen.status ? ` (${seen.status})` : ''} as a request`,
+    hint: `↵ add it there, named, and pick it · from ${meta.from}`,
+    items: paths.map((file) => ({
+      file,
+      segments: [{ text: shown(file), strong: true }, { text: open && samePath(file, open) ? '  the open file' : existsSync(file) ? '' : '  a new file', color: theme.dim }],
+    })),
+    onPick: (it) => {
+      ctx.closeOverlay();
+      saveCaptured(ctx, it.file, seen, meta);
+    },
+  });
+}
+
+/** Writes the captured request to `file` (through the editor when it's the open one, so ctrl+z undoes it), opens it, and picks it. */
+async function saveCaptured(ctx, file, seen, meta) {
+  const isOpen = ctx.data && samePath(file, ctx.data.path);
+  let text = '';
+  if (!isOpen && existsSync(file)) {
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch (e) {
+      return ctx.note(`Couldn't read ${basename(file)}: ${firstLine(e.message)}`, 'error');
+    }
+  }
+  const requests = isOpen ? ctx.data.requests : parseHttpFile(text).requests;
+  // The open file's environment says what {{host}} is; a file of its own may have others beside it, read when it opens.
+  const vars = ctx.data?.environments.vars(ctx.environment()) ?? {};
+  const c = captureBlock(seen, { vars, taken: requests.map((r) => r.name).filter(Boolean), ...meta });
+  if (isOpen) {
+    const at = ctx.appendRequests(c.block);
+    if (at < 0) return;
+    const i = ctx.data.requests.findIndex((r) => r.name === c.name);
+    ctx.goToRequest(i >= 0 ? i : at);
+  } else {
+    try {
+      writeFileSync(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}${text.trim() ? '\n' : ''}${c.block}`);
+    } catch (e) {
+      return ctx.note(`Couldn't write ${basename(file)}: ${firstLine(e.message)}`, 'error');
+    }
+    await ctx.openFile(file);
+    const i = ctx.data?.requests.findIndex((r) => r.name === c.name) ?? -1;
+    if (i >= 0) ctx.goToRequest(i);
+  }
+  const said = [
+    `Saved ${c.name} (${seen.method} ${c.variable ? `{{${c.variable}}}` : 'its URL as it came'}) to ${basename(file)}`,
+    ...(c.placeholders.length ? [`${c.placeholders.join(', ')}: {{token}} in place of the value, which never leaves the log`] : []),
+    ...(c.dropped.length ? [`Left out ${c.dropped.join(', ')}: the cookie jar keeps cookies`] : []),
+  ];
+  ctx.note(said.join('\n'), 'ok');
+  activity(ctx, `Saved ${seen.method} ${c.name} from ${meta.from} to ${basename(file)}`);
 }
 
 /**

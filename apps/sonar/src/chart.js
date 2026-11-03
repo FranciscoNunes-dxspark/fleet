@@ -4,6 +4,7 @@
 // from the theme when they're made, as everything drawn does).
 import { theme } from './theme.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
+import { legendSegments, markerSegments, placeMarkers } from './markers.js';
 
 /** The chart a query asks for with `| render …`: 'time' (timechart, linechart, areachart), 'bars' (columnchart, barchart) or 'pie'; null for none. */
 export function renderKind(query) {
@@ -105,8 +106,12 @@ export function spark(values, width) {
 
 const when = (s) => String(s).replace('T', ' ').replace(/:\d\d(\.\d+)?Z$|Z$/, '');
 
-/** The chart as lines of segments `width` wide: what LogsView draws in place of the grid. */
-export function chartLines(chart, width) {
+/**
+ * The chart as lines of segments `width` wide: what LogsView draws in place of the grid. A time chart
+ * has `markers` (markers.js's, what changed the app) on a line of their own under its series, each in
+ * the column its time falls in, with their legend.
+ */
+export function chartLines(chart, width, { markers = [] } = {}) {
   if (chart.error) return [[{ text: chart.error, color: theme.dim }]];
   if (chart.type === 'time') {
     const nameW = Math.min(24, Math.max(6, ...chart.series.map((s) => stringWidth(s.name))));
@@ -121,6 +126,11 @@ export function chartLines(chart, width) {
       { text: spark(s.values, w), color: i % 2 ? theme.info : theme.warn },
       { text: `  ${stats(s)}`, color: theme.dim },
     ]);
+    const cells = placeMarkers(markers, chart.stamps, { cells: Math.min(w, chart.stamps.length) });
+    if (cells.some((c) => c.length)) {
+      lines.push([{ text: `${fit('change', nameW)}  `, color: theme.dim }, ...markerSegments(cells)]);
+      lines.push([{ text: ' '.repeat(nameW + 2) }, ...legendSegments(cells.flat()), { text: '  (alt+m lists them)', color: theme.dim }]);
+    }
     const from = when(chart.stamps[0]);
     const to = when(chart.stamps.at(-1));
     const axis = from === to ? from : `${from}${' '.repeat(Math.max(1, w - stringWidth(from) - stringWidth(to)))}${to}`;

@@ -1,15 +1,18 @@
 import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
+import { readProject } from '@fleet/kit/environments.js';
 import { FILTERS } from './rows.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
   { name: 'scan', desc: 'Read the folder\'s lock files and projects again, then ask OSV about them', run: (ctx) => a.scan(ctx) },
-  { name: 'audit', desc: 'Ask OSV (osv.dev) for the advisories against every package found', run: (ctx) => a.audit(ctx) },
+  { name: 'audit', args: '[fresh]', desc: 'Ask OSV (osv.dev) for the advisories against every package found (its answers of the last 6 hours are kept; fresh asks again)', complete: 'fresh', run: (ctx, s) => a.audit(ctx, { fresh: /^fresh$/i.test(s.trim()) }) },
   { name: 'outdated', args: '[all]', desc: 'Ask npm and NuGet for the newest versions, whether they fit, and the licences of the direct packages (all: every package)', complete: 'outdated', run: (ctx, s) => a.outdated(ctx, s) },
-  { name: 'fix', args: '<package|advisory>', desc: 'Move a vulnerable package to the version that fixes it (npm install, npm update or dotnet add; asks first)', complete: 'findings', run: (ctx, s) => a.fix(ctx, s) },
+  { name: 'fix', args: '<package|advisory>', desc: 'Move a vulnerable package to the version that fixes it (npm, yarn, pnpm or dotnet add; asks first)', complete: 'findings', run: (ctx, s) => a.fix(ctx, s) },
+  { name: 'upgrade', desc: 'Update every direct package with a newer version that fits, on a branch of its own (bilge/updates-<date>), run the tests and commit (asks first)', run: (ctx) => a.upgrade(ctx) },
+  { name: 'breaking', args: '<package>', desc: "Claude says what changes for this code between a package's version and its newest major one (from the lines that import it)", complete: 'packages', run: (ctx, s) => a.breaking(ctx, s) },
   { name: 'why', args: '<package>', desc: 'Where a package is, its licence, newest version and advisories', complete: 'packages', run: (ctx, s) => a.why(ctx, s) },
   { name: 'ignore', args: '<advisory|package>', desc: 'Leave an advisory out of the list and the counts (asks; kept in the settings)', complete: 'advisories', run: (ctx, s) => a.ignore(ctx, s) },
   { name: 'unignore', args: '[advisory|all]', desc: 'Put an ignored advisory back; alone, says which are ignored', complete: 'ignored', run: (ctx, s) => a.unignore(ctx, s) },
@@ -18,7 +21,8 @@ export const COMMANDS = [
   { name: 'sbom', args: '[file]', desc: 'Write a CycloneDX bill of materials (sbom.cdx.json in the folder unless named)', run: (ctx, s) => a.sbom(ctx, s) },
   { name: 'report', args: '[file]', desc: 'The audit as Markdown, to copy into a pull request or a ticket, or to write to a file', run: (ctx, s) => a.report(ctx, s) },
   { name: 'move', args: '[folder]', desc: 'Read another folder: one beside this one or in it, or a path (completed as you type)', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },
-  { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling copied (Bilge takes nothing yet, and says whose it is)', run: (ctx, s) => a.take(ctx, s) },
+  { name: 'env', args: '[name]', desc: "The project's environment (.fleet/project.json): alone, which one; a name switches every app to it", complete: 'envs', run: (ctx, s) => a.env(ctx, s) },
+  { name: 'take', args: '<family:v1:…>', desc: "Take what a sibling copied: an image from Wharf (its system packages, audited); anything else says whose it is", run: (ctx, s) => a.take(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command in the folder (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
   { name: 'last', desc: 'All the output of the last command', run: (ctx) => ctx.showLast() },
   { name: 'settings', desc: 'Theme, accent colour, mouse, audit on start, what is ignored and flagged', run: (ctx) => a.settings(ctx) },
@@ -46,6 +50,8 @@ function completions(kind, { data, found = [], config = {}, cwd, typed = '' }) {
   if (kind === 'ignored') return ['all', ...(config.ignore ?? [])];
   if (kind === 'filters') return FILTERS;
   if (kind === 'outdated') return ['all'];
+  if (kind === 'fresh') return ['fresh'];
+  if (kind === 'envs') return (cwd && readProject(cwd)?.names) || [];
   if (kind === 'folders') return cwd ? folderCompletions(cwd, typed) : [];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];

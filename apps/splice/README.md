@@ -87,7 +87,7 @@ The mouse works too: click a tab, a row or the prompt, double-click a row to do 
 
 Type `/` and the menu narrows as you type; `tab` completes, `↑`/`↓` picks, `↵` runs. Commands that take a branch complete branch, tag and remote names; `/history` and `/blame` complete the repository's tracked files.
 
-`/commit <msg> | --file [path]` `/amend [msg | --file [path]]` `/checkout <ref>` `/branch <name> [start]` `/delete <ref>` `/merge <ref>` `/rebase <ref>` `/update-branch [base] [--stack]` `/reset <ref>` `/tag <name> [ref]` `/tag-push <tag> [remote]` `/release <tag> [--draft] [--notes-file <path>] [title]` `/release <tag> [--draft] [title]` `/fetch` `/sync` `/pull [--rebase]` `/push [--force] [remote]` `/verify [range]` `/risk` `/checks [on|off|run|edit]` `/remote [add|rename|remove|set-url] …` `/upstream [branch] <remote/branch>` `/stash [-u | --no-untracked] [msg]` `/pop` `/discard` `/sparse [set|add|off] [folder…]` `/submodules` `/submodule-update [path]` `/lfs [pull|fetch|locks|lock <path>|unlock <path> [--force]]` `/undo` `/reflog` `/continue` `/abort` `/find <text>` `/find -S <text>` `/find -G <regex>` `/filter [--author <name>] [--path <path>] [--since <date>] [--until <date>]` `/fixup [ref]` `/open <path>` `/clone <url> [folder]` `/scan <folder>` `/last` `/settings` `/accent <#rrggbb|default>` `/refresh` `/help` `/quit` `/pr <title> [--into <branch>] [--draft]` `/comment <text>` `/review-comment <text>` `/reply <text>` `/resolve` `/unresolve` `/approve` `/request-changes [text]` `/merge-pr [squash|merge|rebase] [--delete-branch] [--auto]` `/ci` `/reviewer <name>` `/draft` `/ready` `/title <text>` `/body [--file <path>]` `/worktree <path> [ref]` `/unlock-worktree [path]` `/compare <ref> [base]` `/forecast <ref> [base]` `/history <path>` `/blame <path>[:<line>]` `/owners [path]` `/future [<path>:<line>]` `/note [text | -d | --undo]` `/notes push [remote]` `/hooks` `/family` `/timeline` `/wiring` `/take <context>` `/cleanup` `/cleanup-keep [pattern]` `/absorb` `/doctor` `/describe` `/split` `/draft-pr [--into <branch>]` `/ship [--into <branch>]` `/review-pr <number>` `/run-at [commit]` `/backport <pr-number> <branch>` `/changelog [since-tag] [--into-release <tag>]` `/explain [ref]` `/review [ref]`` `/review [ref]` `/cherry-pick <ref | a..b>` `/range-diff [branch | <a> <b>]` `/bisect <good|bad|skip|reset> [ref]` `/bisect run <command…>` `/ignore <pattern>`
+`/commit <msg> | --file [path]` `/amend [msg | --file [path]]` `/checkout <ref>` `/branch <name> [start]` `/delete <ref>` `/merge <ref>` `/rebase <ref>` `/update-branch [base] [--stack]` `/reset <ref>` `/tag <name> [ref]` `/tag-push <tag> [remote]` `/release <tag> [--draft] [--notes-file <path>] [title]` `/release <tag> [--draft] [title]` `/fetch` `/sync` `/pull [--rebase]` `/push [--force] [remote]` `/verify [range]` `/risk` `/checks [on|off|run|edit]` `/remote [add|rename|remove|set-url] …` `/upstream [branch] <remote/branch>` `/stash [-u | --no-untracked] [msg]` `/pop` `/discard` `/sparse [set|add|off] [folder…]` `/submodules` `/submodule-update [path]` `/lfs [pull|fetch|locks|lock <path>|unlock <path> [--force]]` `/undo` `/reflog` `/continue` `/abort` `/find <text>` `/find -S <text>` `/find -G <regex>` `/filter [--author <name>] [--path <path>] [--since <date>] [--until <date>]` `/fixup [ref]` `/open <path>` `/clone <url> [folder]` `/scan <folder>` `/last` `/settings` `/accent <#rrggbb|default>` `/refresh` `/help` `/quit` `/pr <title> [--into <branch>] [--draft]` `/comment <text>` `/review-comment <text>` `/reply <text>` `/resolve` `/unresolve` `/approve` `/request-changes [text]` `/merge-pr [squash|merge|rebase] [--delete-branch] [--auto]` `/ci` `/reviewer <name>` `/draft` `/ready` `/title <text>` `/body [--file <path>]` `/worktree <path> [ref]` `/unlock-worktree [path]` `/compare <ref> [base]` `/forecast <ref> [base]` `/history <path>` `/blame <path>[:<line>]` `/owners [path]` `/future [<path>:<line>]` `/note [text | -d | --undo]` `/notes push [remote]` `/hooks` `/env [name]` `/family` `/timeline` `/wiring` `/take <context>` `/cleanup` `/cleanup-keep [pattern]` `/absorb` `/doctor` `/describe` `/split` `/draft-pr [--into <branch>]` `/ship [--into <branch>]` `/review-pr <number>` `/run-at [commit]` `/backport <pr-number> <branch>` `/changelog [since-tag] [--into-release <tag>]` `/explain [ref]` `/review [ref]`` `/review [ref]` `/cherry-pick <ref | a..b>` `/range-diff [branch | <a> <b>]` `/bisect <good|bad|skip|reset> [ref]` `/bisect run <command…>` `/ignore <pattern>`
 
 ### The command palette
 
@@ -283,6 +283,29 @@ Which checks: the commands in `.splice/checks.json` at the top of the repository
 They run one after another in the repository's folder, each passing when it exits with 0, with nothing on its input. The activity line shows each one as it goes: `✓` or `✗`, and how long it took. When one fails, its output opens in the viewer and Splice asks whether to push anyway, no unless you say so; a push made past failing checks says so in the family's activity log (`/timeline`). `esc` stops them, and the push. A `pre-push` hook still runs after them, as git always runs it (or not, if you skip the hooks).
 
 `/checks` lists them, from the file or worked out, and says whether they're on here: `↵` runs one, `r` all of them, without pushing; `/checks run` does the same from the prompt, the failing ones' output in the viewer.
+
+### Environments
+
+A project can name its environments once for every app of the family, in `.fleet/project.json` in the
+repository: dev, staging, prod, and what each means to each app. `/env` says which one the project is
+in, and `/env <name>` switches it for every app (Bosun, Hail, Trawl and the rest follow, and so does
+Fleet). The header names it; a `"prod": true` one draws every frame red. Splice has nothing of its own
+to switch, but its section can name the branch an environment deploys from, and in production a push
+to that branch asks first:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev": {},
+    "prod": { "prod": true, "splice": { "branch": "main" } }
+  }
+}
+```
+
+`"branch"` can be a list (`["main", "release"]`). While Fleet records a runbook, each slash command
+the prompt runs (and each `/take`) is kept for it, once; git (`!` lines, or a line starting `git`)
+never is.
 
 ### Sparse checkout
 

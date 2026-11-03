@@ -1,7 +1,7 @@
 // What the views draw, and finding a package by what's typed. Pure.
 import { theme } from './theme.js';
 import { denied, licenceKind, rank } from './audit.js';
-import { bumpOf, compareVersions } from './versions.js';
+import { bumpOf, comparerFor } from './versions.js';
 
 export const SEVERITY_LABEL = { critical: 'CRIT', high: 'HIGH', medium: 'MED', low: 'LOW', unknown: '?' };
 
@@ -76,7 +76,7 @@ export function withoutIgnored(found, ignore = []) {
     if (!advisories.length) continue;
     if (advisories.length === f.advisories.length) out.push(f);
     else {
-      const fixed = advisories.map((a) => a.fixed).filter(Boolean).sort(compareVersions).at(-1) ?? null;
+      const fixed = advisories.map((a) => a.fixed).filter(Boolean).sort(comparerFor(f.pkg.ecosystem)).at(-1) ?? null;
       out.push({ ...f, advisories, severity: advisories.reduce((w, a) => (rank(a.severity) < rank(w) ? a.severity : w), 'unknown'), fixed, unfixed: advisories.some((a) => !a.fixed) });
     }
   }

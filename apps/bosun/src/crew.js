@@ -5,13 +5,13 @@ import { join, resolve } from 'node:path';
 import { parseDotenv } from './dotenv.js';
 import { parseYaml } from './yaml.js';
 import { testSpec } from './hailcheck.js';
-import { TUNNEL_TOOLS } from './tunnel.js';
+import { TUNNEL_TOOLS, either } from './tunnel.js';
 import { httpsProblem } from './https.js';
 import { iisSpec } from './iis.js';
 import { serviceSpec } from './service.js';
 import { dotnetCrew } from './dotnet.js';
 
-const tunnelProblem = (where, v) => (v != null && !TUNNEL_TOOLS.includes(v) ? `${where}"tunnel" is ${TUNNEL_TOOLS.map((t) => `"${t}"`).join(' or ')}` : null);
+const tunnelProblem = (where, v) => (v != null && !TUNNEL_TOOLS.includes(v) ? `${where}"tunnel" is ${either(TUNNEL_TOOLS.map((t) => `"${t}"`))}` : null);
 
 export const FILE = 'bosun.json';
 export const PROCFILE = 'Procfile';

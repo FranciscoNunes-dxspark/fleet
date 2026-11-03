@@ -128,7 +128,9 @@ const FILE_KIND = { added: 'added', removed: 'deleted', renamed: 'renamed', copi
 /** A changed file (REST pulls/commits files); paths start with "/", as Azure DevOps' do. */
 export const fileOf = (f) => {
   const kind = FILE_KIND[f.status] || 'edited';
-  return { path: `/${f.filename}`, kind, originalPath: kind === 'renamed' && f.previous_filename ? `/${f.previous_filename}` : null };
+  // GitHub counts the lines each file adds and removes; Azure DevOps doesn't, so `lines` is GitHub's alone.
+  const lines = Number.isFinite(f.additions) && Number.isFinite(f.deletions) ? { lines: f.additions + f.deletions } : {};
+  return { path: `/${f.filename}`, kind, originalPath: kind === 'renamed' && f.previous_filename ? `/${f.previous_filename}` : null, ...lines };
 };
 
 /** A REST commit (list or single). */

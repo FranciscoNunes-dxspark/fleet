@@ -13,7 +13,8 @@ import { severityTone, withoutIgnored } from '../rows.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { recordCommand } from '@fleet/kit/recording.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { remember } from '@fleet/kit/folders.js';
 import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
@@ -37,7 +38,7 @@ const VIEWS = [
 
 const HINTS = {
   vulns: '↵ details · f fix · o advisory · x ignore · t for Splice · d dev packages · y copy ids',
-  packages: '↵ details · a all/direct/outdated/flagged · u newest versions · f fix · o registry · t for Splice · y copy',
+  packages: '↵ details · a all/direct/outdated/flagged · u newest versions · f fix · o registry · t for Splice · y copy · /upgrade',
   manifests: '↵ its packages · t for Splice · y copy path',
   log: '↵ all its output · y copy it',
 };
@@ -46,13 +47,15 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, counts, cwd, width, loading, mood, problem }) {
+function Header({ data, counts, cwd, env, width, loading, mood, problem }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Bilge', bold: true },
     { text: '  │  ', color: theme.border },
     { text: basename(cwd) || cwd, color: theme.dim },
   ];
+  // The project's environment, when it names them: red and bold for a production one.
+  if (env) segs.push({ text: '  │  ', color: theme.border }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
   if (data) {
     segs.push({ text: '  │  ', color: theme.border }, { text: `${data.packages.length} packages`, color: theme.dim });
     if (data.audit) {
@@ -136,6 +139,11 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   const [progress, setProgress] = useState('');
   const [welcome, setWelcome] = useState(true);
   const [update, setUpdate] = useState(null);
+  // The project's environment (the kit's environments.js), followed as it's switched here or in another
+  // app; a production one draws the frames red, and fixes and /upgrade ask first.
+  const env = useEnvironment('bilge', cwd);
+  const envRef = useRef(env);
+  envRef.current = env;
   // The pet looks happy (or worried) for a few seconds after a result; re-render when that wears off.
   const [, setMoodTick] = useState(0);
   useEffect(() => {
@@ -327,6 +335,10 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
       get counts() {
         return derive().counts;
       },
+      // { name, prod, ... } from .fleet/project.json, or null when the project names no environments.
+      get env() {
+        return envRef.current;
+      },
       mouseHandlers: [],
     };
   const ctx = ctxRef.current;
@@ -348,7 +360,8 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     // A word on how far a task has got, beside the spinner.
     progress: (text) => alive.current && setProgress(text),
     logActivity: familyLog,
-    refresh: () => a.scan(ctx, { audit: true }),
+    // ctrl+r: everything read and asked again, OSV's kept answers too.
+    refresh: () => a.scan(ctx, { audit: true, fresh: true }),
     // Settings change through App's copy, the only one written to disk (ctx.config reads it).
     setConfig,
     setView,
@@ -432,6 +445,8 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     const history = [text, ...(configRef.current.history ?? []).filter((h) => h !== text)].slice(0, 100);
     setConfig((c) => ({ ...c, history }));
     await runLine(text);
+    // While Fleet records a runbook, the line goes in it (the kit keeps only slash commands and /take lines).
+    recordCommand('bilge', decodeContext(text) ? `/take ${text}` : text);
   };
 
   // Read the folder on opening (and ask OSV, unless that's turned off), then look for a newer release.
@@ -699,7 +714,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} counts={counts} cwd={cwd} width={W} loading={loading} mood={mood} problem={problem} />
+      <Header data={data} counts={counts} cwd={cwd} env={env} width={W} loading={loading} mood={mood} problem={problem} />
       <Tabs view={view} entries={entries} found={found} width={W} />
       <Box height={mainH} width={W}>
         {main}

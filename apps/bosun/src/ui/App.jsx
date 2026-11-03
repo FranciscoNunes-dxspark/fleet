@@ -16,7 +16,10 @@ import { ask } from '@fleet/kit/claude-cli.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { environmentFor } from '@fleet/kit/environments.js';
+import { recordCommand } from '@fleet/kit/recording.js';
+import { environmentKey, environmentProfile, environmentVars } from '../environment.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -30,7 +33,7 @@ import { TextViewer } from './TextViewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
-import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
+import { copiedNote, decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { Recorder, sessionsDir } from '../recorder.js';
 import { dumpsDir } from '../dumps.js';
@@ -59,7 +62,7 @@ const CTRL_P = '\x10';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const HINTS = {
-  crew: 'r restart · s stop/start · alt+r all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share it · w why · ↵ whole log',
+  crew: 'r restart · s stop/start · alt+r all · a all logs · ctrl+f search the log · ctrl+l filter · e trouble · t share its trouble · alt+t share it online · w why · ↵ whole log',
   log: '↵ all its output · y copy it',
 };
 
@@ -68,7 +71,7 @@ const firstLine = (s) => String(s ?? '').split('\n')[0];
 // Whether a process runs differently now (its command or its settings), so /reload restarts it.
 const changedSpec = (had, now) => had.run !== now.run || had.build !== now.build || JSON.stringify(had.iis ?? null) !== JSON.stringify(now.iis ?? null) || JSON.stringify(had.logs ?? []) !== JSON.stringify(now.logs ?? []) || Boolean(had.trace) !== Boolean(now.trace) || had.service !== now.service || Boolean(had.dump) !== Boolean(now.dump) || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
 
-function Header({ data, width, loading, mood }) {
+function Header({ data, width, loading, mood, environment }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Bosun', bold: true },
@@ -81,6 +84,7 @@ function Header({ data, width, loading, mood }) {
     if (crashed) segs.push({ text: `  ${crashed} crashed`, color: theme.del, bold: true });
     if (data.from) segs.push({ text: `  │  ${data.from}`, color: theme.dim });
     if (data.profile) segs.push({ text: `  │  profile ${data.profile}`, color: theme.accent });
+    if (environment) segs.push({ text: '  │  ', color: theme.border }, { text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod });
   }
   else if (loading) segs.push({ text: '  loading…', color: theme.dim });
   return <Row pointer={false} width={width} segments={segs} />;
@@ -291,6 +295,14 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // The project: where Bosun started, until /move takes it to another.
   const dirRef = useRef(dir);
   const profileRef = useRef(initialProfile);
+  // The project's environment (the kit's environments.js), kept current when it's switched here or in
+  // another app; a production one draws the frames red. What the crew was given of it is `applied`
+  // (environment.js's environmentKey), and the profile it chose `envProfile`, so that moving to an
+  // environment without one goes back to none only when it was the environment's.
+  const environment = useEnvironment('bosun', dirRef.current);
+  const applied = useRef(null);
+  const appliedName = useRef(null);
+  const envProfile = useRef(null);
   const [, setTick] = useState(0);
   const redrawSoon = useRef(null);
   const changed = (linesOf) => {
@@ -312,16 +324,26 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // a notification (unless the setting is off). A stop never comes here.
   const crewEvent = (e) => {
     if (e.type === 'ready') return e.p.spec.test && runTests(e.p);
-    // A tunnel's address, copied as soon as its tool says it; one that ended by itself, why.
+    // A shared process's public address, copied as soon as its tool says it and offered to Hail; one
+    // that ended by itself, why. The activity log names the process, never the address: whoever has
+    // it gets in.
     if (e.type === 'tunnel') {
-      activity(`Opened a tunnel to ${e.p.name} (port ${e.p.port}): ${e.url}`);
-      ctx.copy(e.url, 'the tunnel\'s address');
-      return note(`${e.p.name} is open at ${e.url} (copied). alt+t closes it.`, 'ok');
+      activity(`Shared ${e.p.name} (port ${e.p.port}) on the internet${e.p.tunnel?.tool ? ` through ${e.p.tunnel.tool}` : ''}`);
+      ctx.copy(e.url, 'the public address');
+      note(`${e.p.name} is public at ${e.url} (copied): anyone with the address reaches it. /unshare ${e.p.name} stops it.`, 'ok');
+      // Asked only when nothing else is: a question of its own mustn't take another's place.
+      if (confirmRef.current) return;
+      return confirm({ title: `Copy a GET of ${e.url} for Hail?`, detail: '/family offers it too, while it\'s shared.', options: [{ label: 'Yes, for Hail', value: true }, { label: 'No', value: false }] }).then((yes) => {
+        if (!yes) return;
+        const line = a.sharedRequestLine(e.p, e.url);
+        ctx.copy(line, 'the request for Hail');
+        note(copiedNote('hail', line), 'ok');
+      });
     }
     if (e.type === 'tunnel-closed') {
-      activity(`Closed the tunnel to ${e.p.name}${e.url ? ` (${e.url})` : ''}${e.asked ? '' : ': it ended by itself'}`, { kind: e.asked ? 'info' : 'error' });
-      if (e.asked) return note(`Closed ${e.p.name}'s tunnel${e.url ? ` (${e.url})` : ''}.`);
-      return note([`${e.p.name}'s tunnel closed by itself.`, ...e.said.slice(-3)].join('\n'), 'error');
+      activity(`Stopped sharing ${e.p.name}${e.asked ? '' : ': its tunnel ended by itself'}`, { kind: e.asked ? 'info' : 'error' });
+      if (e.asked) return note(`Stopped sharing ${e.p.name}${e.url ? `: ${e.url} is gone` : ''}.`);
+      return note([`${e.p.name}'s sharing stopped by itself.`, ...e.said.slice(-3)].join('\n'), 'error');
     }
     if (e.type !== 'exit') return;
     if (e.plan.gaveUp) note(`${e.p.name} gave up: it ended ${e.plan.quick} times in a row just after starting. s or r starts it again.`, 'error');
@@ -397,15 +419,26 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     try {
       const crew = await load(dirRef.current);
       crewRef.current = crew;
+      const first = !supRef.current;
+      // Read here rather than from the hook, which hears of a /move's new folder only after this.
+      const firstEnv = first ? environmentFor('bosun', dirRef.current) : null;
+      if (first) {
+        applied.current = environmentKey(firstEnv);
+        appliedName.current = firstEnv?.name ?? null;
+        envProfile.current = null;
+        const chosen = environmentProfile(firstEnv, crew.profiles);
+        if (chosen.problem) note(chosen.problem, 'error');
+        // --profile wins over the environment's.
+        else if (chosen.profile && !profileRef.current) profileRef.current = envProfile.current = chosen.profile;
+      }
       if (profileRef.current && !crew.profiles[profileRef.current]) profileRef.current = null;
       const procs = withProfile(crew.procs, crew.profiles, profileRef.current);
-      const first = !supRef.current;
       const before = new Map(supRef.current?.list().map((p) => [p.name, p.spec]) ?? []);
       // Each run of a project's crew is recorded for /replay, unless the setting is off, with the
       // profile and the checkout's branch and commit, so /replay's r can say what to put back.
       const project = dirRef.current;
       const recorder = first && configRef.current.record !== false ? new Recorder({ dir: sessionsDir(dirRef.current), project: dirRef.current, procs, profile: profileRef.current, readGit: () => gitHead(project) }) : null;
-      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), dumpDir: dumpsDir(dirRef.current), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
+      if (first) supRef.current = new Supervisor(procs, { dir: dirRef.current, onChange: changed, onEvent: (e) => crewEventRef.current(e), restartTimes, recorder, tls: () => certificate(), dumpDir: dumpsDir(dirRef.current), projectEnv: givenVars(firstEnv), ...(tunnelSpawn ? { tunnelSpawn } : {}) });
       else supRef.current.setCrew(procs);
       publish();
       // A project with something to run is remembered, for /move and for starting where there's nothing.
@@ -447,6 +480,43 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     if (checks.length) note(text);
     return checks;
   };
+  // FLEET_ENV and the environment's variables, saying which were left out as secrets.
+  const givenVars = (env) => {
+    const { vars, refused } = environmentVars(env);
+    if (refused.length) note([`Left out of ${env.name}'s variables (.fleet/project.json):`, ...refused.map((r) => `${r.name} ${r.why}`)].join('\n'), 'error');
+    return vars;
+  };
+  // The environment switched (here with /env, in a sibling, in Fleet): the processes Bosun starts from
+  // now get its settings and profile; the running ones keep the old until they restart, which is offered.
+  const switchEnvironment = async (env) => {
+    const sup = supRef.current;
+    if (!sup || environmentKey(env) === applied.current) return;
+    const was = appliedName.current;
+    applied.current = environmentKey(env);
+    appliedName.current = env?.name ?? null;
+    sup.projectEnv = givenVars(env);
+    const chosen = environmentProfile(env, crewRef.current?.profiles ?? {});
+    if (chosen.problem) note(chosen.problem, 'error');
+    else {
+      const next = chosen.profile ?? (profileRef.current === envProfile.current ? null : profileRef.current);
+      envProfile.current = chosen.profile;
+      if (next !== profileRef.current) {
+        profileRef.current = next;
+        sup.recorder?.profile(next);
+        await reload();
+      }
+    }
+    const running = sup.list().filter((p) => p.child);
+    const what = env ? `${env.name}${env.prod ? ' (production)' : ''}` : 'none';
+    note(`Environment ${what}: what Bosun starts gets ${env ? `FLEET_ENV=${env.name}` : 'no FLEET_ENV'}${profileRef.current ? `, with profile ${profileRef.current}` : ''}.${running.length ? `\n${running.length === 1 ? `${running[0].name} keeps` : `The ${running.length} running processes keep`} ${was ?? 'what they had'} until restarted.` : ''}`, 'ok');
+    // Asked only when nothing else is: a question of its own mustn't take another's place.
+    if (!running.length || confirmRef.current) return;
+    const yes = await confirm({ title: `Restart ${running.length === 1 ? running[0].name : `the ${running.length} running processes`} in ${what}?`, detail: running.length > 1 ? running.map((p) => p.name).join(', ') : undefined, options: [{ label: 'Yes, restart', value: true }, { label: 'No', value: false }] });
+    if (yes && supRef.current === sup) await Promise.all(running.map((p) => sup.restart(p.name)));
+  };
+  useEffect(() => {
+    switchEnvironment(environment);
+  }, [environmentKey(environment)]);
   const setProfile = (name) => {
     profileRef.current = name;
     supRef.current?.recorder?.profile(name);
@@ -619,7 +689,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     hostsFile,
     preflightReport: (facts) => preflightReport(facts),
     killPids: stopPids,
-    // T and /tunnel: cloudflared or ngrok, whichever is on the PATH (or the one bosun.json names).
+    // /share and alt+t: devtunnel, cloudflared or ngrok, the first on the PATH (or the one bosun.json names).
     tunnelTool: (preferred) => tunnelTool(preferred, findTool),
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // Whether this terminal can report the mouse at all (/settings says so).
@@ -692,6 +762,14 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     // the prompt; both resolve false when it failed.
     runUserCommand: (cmd, rest) => runUserCommand(cmd, rest),
     runLine: (text) => runLine(text),
+    // /env chose an environment: applied now rather than when the hook next looks. False when the
+    // crew has it already.
+    environmentChanged: () => {
+      const env = environmentFor('bosun', dirRef.current);
+      if (environmentKey(env) === applied.current) return false;
+      switchEnvironment(env);
+      return true;
+    },
     openPalette: () => openPalette(),
     showLast: () => (lastOutput.current ? setOverlay({ ...lastOutput.current }) : note('No command has run yet.')),
   });
@@ -701,12 +779,17 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // commands stop there).
   const runLine = async (text) => {
     const [errors, declined] = [errorCount.current, declines.current];
+    // While Fleet records a runbook (the kit's recording.js), each line run here is kept, once: a line
+    // of one of your own commands isn't, the command is. The kit leaves out ! lines.
+    const top = userDepth.current === 0;
     try {
       let r;
       if (text.startsWith('!')) r = await a.raw(ctx, text.slice(1));
       // A sibling's context pasted alone is /take's.
-      else if (decodeContext(text)) r = await a.take(ctx, text);
-      else {
+      else if (decodeContext(text)) {
+        r = await a.take(ctx, text);
+        if (top) recordCommand('bosun', `/take ${text}`);
+      } else {
         const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
         const cmd = findCommand(name, customRef.current.commands);
         if (!cmd) {
@@ -714,6 +797,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
           return false;
         }
         r = await cmd.run(ctx, rest.trim());
+        if (top) recordCommand('bosun', text);
       }
       return r !== false && r?.ok !== false && errorCount.current === errors && declines.current === declined;
     } catch (e) {
@@ -1088,7 +1172,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} width={W} loading={loading} mood={mood} />
+      <Header environment={environment} data={data} width={W} loading={loading} mood={mood} />
       <Tabs view={view} entries={entries} width={W} />
       <Box height={mainH} width={W}>
         {main}

@@ -1,10 +1,14 @@
 // OSV's and the registries' answers, through a fake fetch: batches, pages, records kept, newest versions and licences.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BATCH, createOsv } from '../src/osv.js';
+import { BATCH, createOsv } from '@fleet/kit/osv.js';
 import { createRegistry, npmPath, nuspecLicence, packageUrl } from '../src/registry.js';
 import { createBilge } from '../src/provider.js';
-import { fakeFetch } from './helpers.js';
+import { CACHE_FILE, QUERY_TTL, createOsvCache } from '../src/cache.js';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fakeFetch, tempHome } from './helpers.js';
 
 const pkg = (name, version, ecosystem = 'npm') => ({ ecosystem, name, version, key: `${ecosystem}:${name}@${version}` });
 
@@ -36,10 +40,74 @@ test("OSV's records: each asked for once in the session; a failure says who answ
 });
 
 test("the provider's audit: OSV's ids, then their records", async () => {
-  const fetchImpl = fakeFetch({ 'POST https://api.osv.dev/v1/querybatch': { results: [{ vulns: [{ id: 'GHSA-1' }] }, {}] }, 'GET https://api.osv.dev/v1/vulns/GHSA-1': { id: 'GHSA-1' } });
-  const { ids, details } = await createBilge({ fetchImpl }).audit([pkg('a', '1.0.0'), pkg('b', '1.0.0')]);
-  assert.deepEqual([...ids], [['npm:a@1.0.0', ['GHSA-1']]]);
-  assert.deepEqual([...details.keys()], ['GHSA-1']);
+  const cleanup = tempHome();
+  try {
+    const fetchImpl = fakeFetch({ 'POST https://api.osv.dev/v1/querybatch': { results: [{ vulns: [{ id: 'GHSA-1' }] }, {}] }, 'GET https://api.osv.dev/v1/vulns/GHSA-1': { id: 'GHSA-1' } });
+    const { ids, details, cached } = await createBilge({ fetchImpl }).audit([pkg('a', '1.0.0'), pkg('b', '1.0.0')]);
+    assert.deepEqual([...ids], [['npm:a@1.0.0', ['GHSA-1']]]);
+    assert.deepEqual([...details.keys()], ['GHSA-1']);
+    assert.equal(cached, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("OSV's answers kept between runs in Bilge's home: a package's for 6 hours, a record's for a day, fresh asks again", async () => {
+  const cleanup = tempHome();
+  try {
+    let clock = Date.parse('2026-11-02T09:00:00Z');
+    const now = () => clock;
+    const asked = (fetchImpl) => fetchImpl.calls.map((c) => (c.method === 'POST' ? c.body.queries.map((q) => q.package.name).join(',') : c.url.split('/').pop()));
+    const routes = {
+      'POST https://api.osv.dev/v1/querybatch': (body) => ({ results: body.queries.map((q) => (q.package.name === 'a' ? { vulns: [{ id: 'GHSA-1' }] } : {})) }),
+      'GET https://api.osv.dev/v1/vulns/GHSA-1': { id: 'GHSA-1', summary: 'one' },
+    };
+    const list = [pkg('a', '1.0.0'), pkg('b', '1.0.0')];
+    // Each run is a new Bilge: nothing kept in the session, only in the file.
+    const run = async (opts = {}, packages = list) => {
+      const fetchImpl = fakeFetch(routes);
+      const result = await createBilge({ fetchImpl, now }).audit(packages, opts);
+      return { result, asked: asked(fetchImpl) };
+    };
+    assert.deepEqual((await run()).asked, ['a,b', 'GHSA-1']);
+    assert.ok(existsSync(join(process.env.BILGE_HOME, 'cache', CACHE_FILE)));
+    clock += 60 * 60_000;
+    const again = await run();
+    assert.deepEqual(again.asked, [], 'an hour later, all of it from the cache');
+    assert.deepEqual([...again.result.ids], [['npm:a@1.0.0', ['GHSA-1']]]);
+    assert.equal(again.result.details.get('GHSA-1').summary, 'one');
+    assert.equal(again.result.cached, 2);
+    // A package not asked about before is asked about alone.
+    assert.deepEqual((await run({}, [...list, pkg('c', '2.0.0')])).asked, ['c']);
+    assert.deepEqual((await run({ fresh: true })).asked, ['a,b', 'GHSA-1'], 'fresh asks about everything');
+    clock += 7 * 60 * 60_000;
+    assert.deepEqual((await run()).asked, ['a,b'], "after 6 hours the packages again, the record still a day's");
+    clock += 24 * 60 * 60_000;
+    assert.deepEqual((await run()).asked, ['a,b', 'GHSA-1']);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a cache that cannot be read is empty, and stale entries are dropped when it is written', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bilge-cache-'));
+  try {
+    writeFileSync(join(dir, CACHE_FILE), '{not json');
+    let clock = 0;
+    const cache = createOsvCache({ dir, now: () => clock });
+    assert.equal(cache.query('npm:a@1.0.0'), undefined);
+    cache.setQuery('npm:a@1.0.0', []);
+    cache.setVuln('GHSA-1', { id: 'GHSA-1' });
+    assert.deepEqual(cache.query('npm:a@1.0.0'), [], 'no advisories is an answer too');
+    clock = QUERY_TTL + 1;
+    cache.setQuery('npm:b@1.0.0', ['GHSA-1']);
+    cache.save();
+    const kept = JSON.parse(readFileSync(join(dir, CACHE_FILE), 'utf8'));
+    assert.deepEqual(Object.keys(kept.queries), ['npm:b@1.0.0']);
+    assert.deepEqual(Object.keys(kept.vulns), ['GHSA-1']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("the registries: npm's latest and licence, NuGet's newest stable version and its .nuspec's licence", async () => {

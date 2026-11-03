@@ -20,11 +20,15 @@ export const ALERT_MOODS = new Set(['worried', 'sad']);
  */
 export const ALERT_KINDS = new Set(['alert', 'error', 'crash', 'failed', 'failure', 'warning']);
 
+/** The kinds that make a badge red rather than orange: something failed, rather than looks wrong. */
+export const ERROR_KINDS = new Set(['error', 'crash', 'failed', 'failure']);
+
 /** How many entries a badge counts before it says "9+". */
 const MAX_COUNT = 9;
 
 /**
- * A tab's badge for space `id`, pure: { alert, count, reason, text } or null for none. `mood` is the
+ * A tab's badge for space `id`, pure: { alert, count, error, reason, text } or null for none (`error`:
+ * an entry it counts is an error or a crash, which the bar draws red). `mood` is the
  * app's last mood ({ mood, reason, at }) or null, `activity` the family's entries (any order), `seen`
  * when you last looked at the space (ms).
  */
@@ -34,7 +38,8 @@ export function badgeFor(id, { mood, activity = [], seen = 0 }) {
   if (!alert && !entries.length) return null;
   const count = entries.length;
   const reason = alert ? String(mood.reason ?? '') : String(entries[0].text ?? '');
-  return { alert, count, reason, text: badgeText({ alert, count }) };
+  const error = entries.some((e) => ERROR_KINDS.has(e.kind));
+  return { alert, count, error, reason, text: badgeText({ alert, count }) };
 }
 
 /** What the tab writes for a badge: "!", "3", "!3", "!9+". */

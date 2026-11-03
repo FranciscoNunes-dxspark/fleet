@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { monitorBrief, monitorDetail, monitorRows, monitorState } from '../format.js';
+import { environmentFirst, monitorNames } from '../environment.js';
 import { shownFilter } from '../filters.js';
 import { theme } from '../theme.js';
 import { fit, stringWidth } from '@fleet/kit/text.js';
@@ -13,8 +14,9 @@ import { wrapLines } from './wrap.js';
  * Production monitors, as the web app's Production page: those that need you first (down,
  * degraded, deploying), each with its numbers, its latest deploys and what's waiting to ship to it.
  */
-export function ProductionView({ failed, production, version, filter, ctx, width, height, active }) {
-  const rows = useMemo(() => monitorRows(production?.monitors, filter), [production, filter]);
+export function ProductionView({ failed, production, environment, version, filter, ctx, width, height, active }) {
+  // The project's environment's monitors first (/env), then those that need you.
+  const rows = useMemo(() => environmentFirst(monitorRows(production?.monitors, filter), environment, monitorNames), [production, filter, environment]);
   const split = width >= 100;
   const listW = split ? Math.floor(width * 0.56) : width;
   const sideW = width - listW;

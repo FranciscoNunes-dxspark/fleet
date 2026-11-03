@@ -21,6 +21,7 @@ export function ImagesView({ images, containers, ctx, width, height, active }) {
     if (!sel) return;
     if (input === 'x') a.removeImage(ctx, sel.id);
     else if (input === 'y') ctx.copy(sel.id, `${imageName(sel)}'s id`);
+    else if (input === 'v') a.scanImage(ctx, sel.repo ? imageName(sel) : sel.id);
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {

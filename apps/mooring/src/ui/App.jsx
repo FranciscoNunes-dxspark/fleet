@@ -9,7 +9,10 @@ import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { readProject } from '@fleet/kit/environments.js';
+import { recordCommand } from '@fleet/kit/recording.js';
+import { findHost } from '../hosts.js';
 import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/kit/keymap.js';
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
@@ -59,9 +62,10 @@ const abortable = (promise, signal) =>
   Promise.race([promise, new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { cancelled: true })), { once: true }))]);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Header({ conn, transfers, width, loading, demo, mood }) {
+function Header({ conn, transfers, width, loading, demo, mood, watching, env }) {
   const segs = [{ text: `${FACES[mood]} `, color: theme.accent, bold: true }, { text: 'Mooring', bold: true }];
   if (demo) segs.push({ text: '  demo', color: theme.warn });
+  if (env) segs.push({ text: `  ${env.name}`, color: env.prod ? theme.del : theme.info, bold: env.prod });
   segs.push({ text: '  │  ', color: theme.border });
   if (conn.status === 'connecting') segs.push({ text: `connecting to ${conn.host?.name}…`, color: theme.dim });
   else if (conn.session) segs.push({ text: `${BULLET} ${conn.host.name}`, color: theme.accent, bold: true }, { text: `  ${hostText(conn.host)}`, color: theme.dim });
@@ -71,6 +75,7 @@ function Header({ conn, transfers, width, loading, demo, mood }) {
   const failed = transfers.filter((t) => t.status === 'failed').length;
   if (running || waiting) segs.push({ text: `  ⇅ ${running} running${waiting ? `, ${waiting} waiting` : ''}`, color: theme.info });
   if (failed) segs.push({ text: `  ${failed} failed`, color: theme.del, bold: true });
+  if (watching) segs.push({ text: `  ⟳ watching ${watching.localRoot.split(/[\\/]/).filter(Boolean).pop() ?? watching.localRoot}`, color: theme.accent });
   if (loading) segs.push({ text: '  reading…', color: theme.dim });
   if (conn.problem) segs.push({ text: '  │  ', color: theme.border }, { text: firstLine(conn.problem), color: theme.warn });
   return <Row pointer={false} width={width} segments={segs} />;
@@ -126,14 +131,20 @@ const viewerKey = (overlay) => {
 
 const emptyPane = (dir) => ({ dir, entries: [], problem: null, loading: false, marks: new Set(), select: null });
 const NO_CONN = { host: null, session: null, status: 'none', problem: null };
+// Slash commands that run a command (on the server, or here): never recorded for a runbook, as
+// Mooring never keeps a command it ran.
+const NOT_RECORDED = new Set(['ssh', 'run']);
+// How long /watch waits after the last change before it uploads: an editor's save is several writes.
+const WATCH_SETTLE_MS = 400;
 
 // `local` is local.js's createLocal (demoLocal), `makeSession(host)` session.js's createSession (the
 // demo's host). `copy` puts plain text on the clipboard. `openUrl` is unused for now; `checkUpdate` and
 // `installUpdate` come only in the downloaded builds, so tests and checkouts never go online or replace
 // anything. `connectTo` is a host (or the name of a saved one) to open at start. `persist` is whether
 // settings are written to the config file (not in the demo). `hostKeys` is hostkeys.js's (undefined in the demo and
-// the tests that don't try it): how a host ssh doesn't know yet is offered for trust.
-export function App({ config: initialConfig, local, makeSession, connectTo, copy, setTitle, mouse, checkUpdate, installUpdate, onConfig, persist = true, moodEvery = 30_000, hostKeys, keygen, demo = false }) {
+// the tests that don't try it): how a host ssh doesn't know yet is offered for trust. `cwd` is the folder
+// whose project's environments (.fleet/project.json) Mooring follows.
+export function App({ config: initialConfig, cwd = process.cwd(), local, makeSession, connectTo, copy, setTitle, mouse, checkUpdate, installUpdate, onConfig, persist = true, moodEvery = 30_000, hostKeys, keygen, demo = false }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -158,6 +169,10 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const shellSize = useRef({ columns: 80, rows: 24 });
   const [welcome, setWelcome] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  // The project's environment as Mooring's section has it: { name, prod, host?, folder? } or null.
+  const env = useEnvironment('mooring', cwd);
+  const envRef = useRef(env);
+  envRef.current = env;
   // The pet looks happy (or worried) for a few seconds after a result; re-render when that wears off.
   const [, setMoodTick] = useState(0);
   useEffect(() => {
@@ -351,7 +366,42 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   }
   const queue = queueRef.current;
 
+  // /watch: the local folder being watched ({ localRoot, remoteRoot, host, patterns }), its stop, and the
+  // changes waiting for it to settle.
+  const [watching, setWatching] = useState(null);
+  const watchRef = useRef(null);
+  const stopWatch = () => {
+    if (!watchRef.current) return;
+    watchRef.current.stop();
+    clearTimeout(watchRef.current.timer);
+    watchRef.current = null;
+    setWatching(null);
+  };
+  const startWatch = (w) => {
+    stopWatch();
+    const mine = { ...w, pending: new Set(), timer: null };
+    const flush = async () => {
+      const rels = [...mine.pending];
+      mine.pending.clear();
+      if (watchRef.current !== mine || !rels.length) return;
+      const n = await a.uploadChanged(ctx, mine, rels).catch((e) => note(`Watching ${w.localRoot}: ${firstLine(e.message)}`, 'error') ?? 0);
+      if (n) note(`${plural(n, 'change')} in ${w.localRoot} going up to ${w.host}`);
+    };
+    mine.stop = local.watch(w.localRoot, (rel) => {
+      mine.pending.add(rel);
+      clearTimeout(mine.timer);
+      mine.timer = setTimeout(flush, WATCH_SETTLE_MS);
+    });
+    watchRef.current = mine;
+    setWatching(w);
+  };
+
+  // The last /health read: { host, at, problems }, which worries Tug while it's the connected host's.
+  const [health, setHealth] = useState(null);
+
   const disconnect = () => {
+    stopWatch();
+    setHealth(null);
     queue.cancelAll();
     closeShell();
     sessionRef.current?.close();
@@ -570,6 +620,16 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     connect,
     disconnect,
     runRemote,
+    startWatch,
+    stopWatch,
+    setHealth,
+    cwd,
+    get env() {
+      return envRef.current;
+    },
+    get watching() {
+      return watchRef.current;
+    },
     enterTerminal,
     loadPane,
     side: () => sideRef.current,
@@ -659,6 +719,9 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
           return false;
         }
         r = await cmd.run(ctx, rest.trim());
+        // For a runbook Fleet is recording: the line as typed at the prompt (not your commands' own
+        // lines, which the command's name stands for), never one that runs a command.
+        if (userDepth.current === 0 && !NOT_RECORDED.has(cmd.name)) recordCommand('mooring', text);
       }
       return r !== false && r?.ok !== false && errorCount.current === errors && declines.current === declined;
     } catch (e) {
@@ -726,7 +789,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
         const host = typeof connectTo === 'string' ? (configRef.current.hosts ?? []).find((h) => h.name === connectTo) : connectTo;
         if (host) await connect(host);
         else note(`There's no saved host ${connectTo}: /add saves one.`, 'error');
-      }
+      } else if (envRef.current?.host) await openEnvironment(envRef.current);
       if (checkUpdate && configRef.current.checkForUpdates !== false) {
         checkUpdate(configRef.current.lastUpdateCheck).then(
           ({ checked, newer }) => {
@@ -758,10 +821,29 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     // Leaving closes the connection and stops what is transferring.
     return () => {
       queue.cancelAll();
+      stopWatch();
       sessionRef.current?.close();
       for (const t of Object.values(refreshTimers.current)) clearTimeout(t);
     };
   }, []);
+
+  // The environment's host and folder (Mooring's section of .fleet/project.json), opened when it's
+  // switched, here or in another app; the one it starts in is opened at start (above).
+  const openEnvironment = async (e) => {
+    const host = findHost(configRef.current.hosts ?? [], e.host);
+    if (!host) return note(`The ${e.name} environment names ${e.host}, which isn't a saved host: /add saves it.`, 'error');
+    if (connRef.current.session && connRef.current.host?.name === host.name) return e.folder ? loadPane('remote', e.folder) : true;
+    return connect({ ...host, folder: e.folder ?? host.folder });
+  };
+  const envKey = `${env?.name ?? ''}\0${env?.host ?? ''}\0${env?.folder ?? ''}`;
+  const firstEnv = useRef(true);
+  useEffect(() => {
+    if (firstEnv.current) {
+      firstEnv.current = false;
+      return;
+    }
+    if (env?.host) openEnvironment(env);
+  }, [envKey]);
 
   // cli.jsx passes the terminal's title setter; tests pass a stub or nothing.
   const title = `${VIEW_LABELS[view]} — Mooring`;
@@ -769,7 +851,9 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     setTitle?.(title);
   }, [title]);
 
-  const data = { hosts: config.hosts ?? [], panes };
+  // The project's environments, read only while /env is being typed.
+  const envNames = (value) => (/^\/env\s/.test(value) ? (readProject(cwd)?.names ?? []) : undefined);
+  const data = { hosts: config.hosts ?? [], panes, envs: envNames(prompt.value) };
   const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data, user: custom.commands }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
@@ -812,7 +896,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { data: { hosts: configRef.current.hosts ?? [], panes: panesRef.current }, user: customRef.current.commands });
+    const items = suggestionsFor(value, { data: { hosts: configRef.current.hosts ?? [], panes: panesRef.current, envs: envNames(value) }, user: customRef.current.commands });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -873,6 +957,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
     if (input === '!') return prefill('!');
     if (input === '$') return prefill('$ ');
     if (input === '?') return ctx.showHelp();
+    if (input === 'H') return a.health(ctx);
     if (input === ',') return a.settings(ctx);
     if (input === 'q') return exit();
     const n = Number(input);
@@ -961,7 +1046,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries.filter((e) => e.shown !== false));
   const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
-  const trouble = troubles({ transfers, conn });
+  const trouble = troubles({ transfers, conn, health });
   const moving = transfers.filter((t) => t.status === 'running').length;
   const working = moving > 0;
   const mood = moodFor({ loaded, connected: Boolean(conn.session), busy, running: working, lastEntry: entries.at(-1), trouble });
@@ -1040,7 +1125,7 @@ export function App({ config: initialConfig, local, makeSession, connectTo, copy
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header conn={conn} transfers={transfers} width={W} loading={loading} demo={demo} mood={mood} />
+      <Header conn={conn} transfers={transfers} width={W} loading={loading} demo={demo} mood={mood} watching={watching} env={env} />
       <Tabs view={view} entries={entries} transfers={transfers} width={W} />
       <Box height={mainH} width={W}>
         {main}

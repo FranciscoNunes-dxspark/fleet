@@ -35,6 +35,54 @@ export function compareVersions(a, b) {
 
 export const isPrerelease = (v) => parseVersion(v).pre.length > 0;
 
+// dpkg's ordering of a version part's characters: ~ before anything (even the end), then letters,
+// then everything else.
+const dpkgOrder = (c) => (c === undefined ? 0 : c === '~' ? -1 : /[A-Za-z]/.test(c) ? c.charCodeAt(0) : c.charCodeAt(0) + 256);
+const isDigit = (c) => c !== undefined && c >= '0' && c <= '9';
+
+/** dpkg's comparison of an upstream version or a revision: runs of other characters, then of digits as numbers. */
+function verrevcmp(a, b) {
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    while ((i < a.length && !isDigit(a[i])) || (j < b.length && !isDigit(b[j]))) {
+      const d = dpkgOrder(isDigit(a[i]) ? undefined : a[i]) - dpkgOrder(isDigit(b[j]) ? undefined : b[j]);
+      if (d) return Math.sign(d);
+      if (!isDigit(a[i])) i++;
+      if (!isDigit(b[j])) j++;
+    }
+    while (a[i] === '0') i++;
+    while (b[j] === '0') j++;
+    let first = 0;
+    while (isDigit(a[i]) && isDigit(b[j])) {
+      first ||= a.charCodeAt(i) - b.charCodeAt(j);
+      i++;
+      j++;
+    }
+    if (isDigit(a[i])) return 1;
+    if (isDigit(b[j])) return -1;
+    if (first) return Math.sign(first);
+  }
+  return 0;
+}
+
+/**
+ * Debian's (and Ubuntu's) versions compared as dpkg does: [epoch:]upstream[-revision], 1:1.0 newer than
+ * 2.0, 1.0~rc1 older than 1.0, 2.36-9+deb12u4 newer than 2.36-9. Alpine's (1.2.3-r5) come out right too.
+ */
+export function compareDpkg(a, b) {
+  const split = (v) => {
+    const m = /^(?:(\d+):)?(.*?)(?:-([^-]*))?$/.exec(String(v ?? '').trim());
+    return { epoch: Number(m[1] ?? 0), upstream: m[2], revision: m[3] ?? '' };
+  };
+  const x = split(a);
+  const y = split(b);
+  return Math.sign(x.epoch - y.epoch) || verrevcmp(x.upstream, y.upstream) || verrevcmp(x.revision, y.revision);
+}
+
+/** The comparison for an ecosystem's versions: dpkg's for an image's distribution, else npm's and NuGet's. */
+export const comparerFor = (ecosystem) => (/^(Debian|Ubuntu|Alpine)\b/.test(String(ecosystem)) ? compareDpkg : compareVersions);
+
 /** The newest of `versions` (no pre-releases unless they're all there is), or null. */
 export function newest(versions) {
   const list = [...versions].filter(Boolean);

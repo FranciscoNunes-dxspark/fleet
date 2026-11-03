@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import * as a from '../actions.js';
 import { COMMANDS, findCommand, suggestionsFor } from '../commands.js';
-import { WI_VIEW_IDS, monitorFullText, pipelineDetail, prFullText, wiFullText } from '../format.js';
+import { WI_VIEW_IDS, monitorFullText, pipelineDetail, prFullText, riskFor, wiFullText } from '../format.js';
 import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
 import { askHostToUpdate } from '@fleet/kit/hosted.js';
@@ -20,7 +20,9 @@ import { githubFullText, isGithubRelease, releaseFullText } from '../releases.js
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { familyMoodsOn, mouseOn } from '../settings.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { recordCommand } from '@fleet/kit/recording.js';
+import { environmentLabel } from '../environment.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { Confirm, PromptBox, Row, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
 import { InboxView } from './InboxView.jsx';
@@ -75,7 +77,7 @@ const firstLine = (s) => String(s ?? '').split('\n')[0];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const segmentsText = (line) => (typeof line === 'string' ? line : line.map((s) => s.text).join(''));
 
-function Header({ meta, orgs, signIn, server, attention, pollError, width, mood }) {
+function Header({ meta, orgs, signIn, server, attention, pollError, width, mood, env }) {
   const segs = [
     { text: `${FACES[mood]} `, color: mood === 'worried' ? theme.warn : theme.accent, bold: true },
     { text: 'Keel', bold: true },
@@ -88,6 +90,8 @@ function Header({ meta, orgs, signIn, server, attention, pollError, width, mood 
   if (signIn === 'demo') segs.push({ text: '  ' }, { text: ' DEMO ', bg: theme.warn, color: theme.ink, bold: true });
   else if (signIn === 'keel') segs.push({ text: `  ${meta?.account?.name ?? 'signed in'} · ${server.replace(/^https?:\/\//, '')}`, color: theme.dim });
   else segs.push({ text: signIn === 'az' ? '  az login' : '  PAT', color: theme.dim });
+  // The project's environment (/env); a production one also draws every frame red (the kit's Panel).
+  if (env) segs.push({ text: '  ' }, env.prod ? { text: ` ${environmentLabel(env)} `, bg: theme.del, color: theme.ink, bold: true } : { text: environmentLabel(env), color: theme.info });
   const high = attention?.summary?.high;
   if (high) segs.push({ text: '  ' }, { text: ` ${high} act now `, bg: theme.del, color: theme.ink, bold: true });
   if (pollError) segs.push({ text: "  can't reach Azure DevOps", color: theme.del });
@@ -178,6 +182,11 @@ function activityRows(entries) {
 export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = openSonarApp, poll = true, checkUpdate, installUpdate, updater, envFile = path.join(ROOT, '.env'), mouse, copy = copyToClipboard, familyHome, familyEvery = 30_000, cwd = process.cwd() }) {
   const { service, orgs, signIn, live } = keel;
   const { exit } = useApp();
+  // The project's environment, as every app of the family has it (.fleet/project.json, the kit's environments.js):
+  // what its keel section names goes first for deployments, and in a production one changes there ask first.
+  const env = useEnvironment('keel', cwd);
+  const envRef = useRef(env);
+  envRef.current = env;
   const { columns, rows } = useTerminalSize();
   const [meta, setMetaState] = useState(null);
   const [data, setDataState] = useState({ attention: null, prs: null, pipelines: null, workItems: null, production: null, version: 0 });
@@ -269,6 +278,13 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     metaRef.current = m;
     setMetaState(m);
   };
+  // Each active pull request's risk (service.prRisks), read after each load.
+  const [risks, setRisksState] = useState(null);
+  const risksRef = useRef(null);
+  const setRisks = (list) => {
+    risksRef.current = list;
+    setRisksState(list);
+  };
   const setData = (patch) => {
     dataRef.current = { ...dataRef.current, ...patch, version: dataRef.current.version + 1 };
     setDataState(dataRef.current);
@@ -333,6 +349,9 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
         noticeChanges(dataRef.current, { prs: prs.prs, pipelines });
         setData({ attention, prs: prs.prs, pipelines, workItems, production });
         setPollError(null);
+        // The pull requests' risk scores come after, so the list never waits for them (a first read takes a while).
+        // Kept apart from `data`, whose version would make every view (Settings among them) read again.
+        Promise.resolve(service.prRisks?.()).then((r) => r && setRisks(r.risks), () => {});
       })
       .finally(() => {
         loading.current = null;
@@ -500,6 +519,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     },
     familyHome,
     cwd: () => cwd,
+    env: () => envRef.current,
     // What Keel changed, for the family's /timeline; nothing when it keeps to itself.
     logActivity: (text, kind) => {
       if (familyHome) logActivity('keel', { text, kind }, { dir: familyHome });
@@ -575,7 +595,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
       setOverlay({ title: `!${pr.id} ${pr.title}`, loading: true });
       try {
         const full = await service.pullRequest(pr.projectId, pr.repoId, pr.id);
-        setOverlay((o) => (o?.title === `!${pr.id} ${pr.title}` ? { title: o.title, text: prFullText(full) } : o));
+        setOverlay((o) => (o?.title === `!${pr.id} ${pr.title}` ? { title: o.title, text: prFullText(full, Date.now(), riskFor(risksRef.current, pr)) } : o));
       } catch (e) {
         setOverlay(null);
         note(`Couldn't read !${pr.id}: ${firstLine(e.message)}`, 'error');
@@ -642,11 +662,17 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     history.current = [text, ...history.current.filter((h) => h !== text)].slice(0, 100);
     try {
       // A sibling's line on its own (the family:v1:… without /take) is taken as /take would.
-      if (decodeContext(text)) return await a.take(ctx, text);
+      // While Fleet records a runbook, each line run is kept (the kit's recording.js), a sibling's line as the /take it is.
+      const record = (line) => familyHome && recordCommand('keel', line, { home: familyHome });
+      if (decodeContext(text)) {
+        await a.take(ctx, text);
+        return record(`/take ${text}`);
+      }
       const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
       const cmd = findCommand(name);
       if (!cmd) return note(`Unknown command: /${name}. Type / to see them all.`, 'error');
       await cmd.run(ctx, rest.trim());
+      record(`/${cmd.name}${rest.trim() ? ` ${rest.trim()}` : ''}`);
     } catch (e) {
       note(firstLine(e.message), 'error');
     }
@@ -936,17 +962,17 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
   } else if (view === 'control') {
     main = <ControlView failed={Boolean(pollError)} data={data} version={data.version} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'prs') {
-    main = <PrsView failed={Boolean(pollError)} prs={data.prs} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <PrsView failed={Boolean(pollError)} prs={data.prs} risks={risks} show={show} filter={filters.prs} jump={jump?.view === 'prs' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'workitems') {
     main = <WorkItemsView failed={Boolean(pollError)} workItems={data.workItems} meta={meta} show={wiShow} filter={filters.workitems} jump={jump?.view === 'workitems' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'production') {
-    main = <ProductionView failed={Boolean(pollError)} production={data.production} version={data.version} filter={filters.production} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ProductionView failed={Boolean(pollError)} production={data.production} environment={env?.environment} version={data.version} filter={filters.production} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'team') {
     main = <TeamView version={data.version} workItems={data.workItems} prs={data.prs} filter={filters.team} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'board') {
     main = <BoardView version={data.version} filter={filters.board} meta={meta} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'releases') {
-    main = <ReleasesView version={data.version} filter={filters.releases} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ReleasesView version={data.version} environment={env?.environment} filter={filters.releases} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'pipelines') {
     main = <PipelinesView failed={Boolean(pollError)} pipelines={data.pipelines} version={data.version} filter={filters.pipelines} jump={jump?.view === 'pipelines' ? jump.key : null} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
@@ -958,7 +984,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header meta={meta} orgs={orgs} signIn={signIn} server={keel.server ?? ''} attention={data.attention} pollError={pollError} width={W} mood={mood} />
+      <Header meta={meta} orgs={orgs} signIn={signIn} server={keel.server ?? ''} attention={data.attention} pollError={pollError} width={W} mood={mood} env={env} />
       <Tabs view={view} data={data} width={W} />
       <Box height={mainH} width={W}>
         {main}

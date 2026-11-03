@@ -1,5 +1,5 @@
 // Every user-facing operation, written once: keys and slash commands call these with `ctx` (App's).
-// Chart reads and plans; the one thing that changes infrastructure is /deploy (a Bicep or ARM file), and only after a confirmation.
+// Chart reads and plans; what changes infrastructure is /apply (a plan Chart saved, or a what-if) and /deploy, only after the name of where it goes is typed.
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { run } from '@fleet/kit/run.js';
 import { contextIn, copiedNote, notMine, splitArgs, takeLine } from '@fleet/kit/family.js';
@@ -8,13 +8,31 @@ import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
 import { configFile } from './config.js';
 import { diffLines, valueLines } from './diff.js';
 import { summarize, summaryLine } from './plan.js';
-import { ACTION_WORD, findChange, siteOf } from './rows.js';
+import { ACTION_MARK, ACTION_WORD, changeRows, findChange, siteOf } from './rows.js';
 import { markdownReport } from './share.js';
+import { CURRENCIES, costLines, costWords, planCosts, totalWords } from './costs.js';
+import { affectedBy, affectsLine, parseDot } from './graph.js';
 import { BINARIES } from './iac.js';
+import { describeEnvironments, markProduction, productionQuestion, setEnvironment } from '@fleet/kit/environments.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const bin = (ctx) => ctx.config.terraform ?? 'terraform';
 const toolName = (b) => (b === 'tofu' ? 'OpenTofu' : 'Terraform');
+// The project's chosen environment as Chart reads it ({ name, prod, workspace?, varFile?, resourceGroup?, parametersFile? }), or null.
+const envOf = (ctx) => ctx.env?.() ?? null;
+// What terraform runs with: the tool, and the environment's workspace and var file.
+const tfOpts = (ctx) => {
+  const e = envOf(ctx);
+  return { bin: bin(ctx), ...(e?.workspace ? { workspace: e.workspace } : {}), ...(e?.varFile ? { varFile: e.varFile } : {}) };
+};
+// " (prod)" after a folder's name in what's said and logged, when an environment is chosen.
+const inEnv = (ctx) => (envOf(ctx) ? ` (${envOf(ctx).name})` : '');
+
+/** The plan on screen is being replaced: the file kept for applying it goes (nothing can apply it any more). */
+function replacePlan(ctx) {
+  const file = ctx.data?.plan?.planFile;
+  if (file) ctx.provider.discard?.(file);
+}
 
 /** What the folder holds: its Terraform folders, Bicep files, parameter files and saved plans. */
 export async function look(ctx) {
@@ -42,22 +60,28 @@ function tfDir(ctx, name) {
 
 const label = (ctx, dir) => (samePath(dir, ctx.cwd()) ? basename(dir) : `${basename(ctx.cwd())}/${dir.slice(ctx.cwd().length + 1).split(/[\\/]/).join('/')}`);
 
-/** /plan [folder]: terraform (or tofu) plan, its changes and what drifted; nothing is applied. */
+/** /plan [folder]: terraform (or tofu) plan, its changes and what drifted; the plan file kept for /apply. */
 export async function plan(ctx, folder = '') {
   const dir = tfDir(ctx, folder);
   const b = bin(ctx);
+  const opts = tfOpts(ctx);
+  const env = envOf(ctx);
   const r = await ctx.task(
-    `${b} plan ${label(ctx, dir)}`,
+    `${b} plan ${label(ctx, dir)}${inEnv(ctx)}`,
     async (signal) => {
-      const p = await ctx.provider.plan(dir, { bin: b, signal });
-      ctx.setData((d) => ({ ...d, plan: p, drift: p.drift, source: { kind: 'terraform', dir, label: label(ctx, dir), at: Date.now() } }));
+      // Kept as a plan file, the only thing /apply applies.
+      const p = await ctx.provider.plan(dir, { ...opts, keep: true, signal });
+      replacePlan(ctx);
+      // The environment it was made for goes with it: a plan of dev's is never applied to prod.
+      ctx.setData((d) => ({ ...d, plan: p, drift: p.drift, source: { kind: 'terraform', dir, label: label(ctx, dir), env: env?.name ?? null, workspace: opts.workspace ?? null, at: Date.now() } }));
       return { stdout: `${summaryLine(summarize(p.changes)) || 'No changes.'}${p.drift.length ? `; ${plural(p.drift.length, 'resource')} changed outside ${toolName(b)}` : ''}` };
     },
     { label: `Planning (${toolName(b)})` },
   );
   if (r.ok) {
     ctx.setView('changes');
-    ctx.logActivity(`Planned ${label(ctx, dir)}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
+    void price(ctx);
+    ctx.logActivity(`Planned ${label(ctx, dir)}${inEnv(ctx)}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
   }
   return r.ok;
 }
@@ -67,9 +91,9 @@ export async function drift(ctx, folder = '') {
   const dir = tfDir(ctx, folder);
   const b = bin(ctx);
   const r = await ctx.task(
-    `${b} plan -refresh-only ${label(ctx, dir)}`,
+    `${b} plan -refresh-only ${label(ctx, dir)}${inEnv(ctx)}`,
     async (signal) => {
-      const p = await ctx.provider.plan(dir, { bin: b, refreshOnly: true, signal });
+      const p = await ctx.provider.plan(dir, { ...tfOpts(ctx), refreshOnly: true, signal });
       ctx.setData((d) => ({ ...d, drift: p.drift, driftAt: Date.now() }));
       return { stdout: p.drift.length ? `${plural(p.drift.length, 'resource')} changed outside ${toolName(b)}` : `Nothing changed outside ${toolName(b)}.` };
     },
@@ -88,9 +112,10 @@ export async function state(ctx, folder = '') {
   const dir = tfDir(ctx, folder);
   const b = bin(ctx);
   const r = await ctx.task(
-    `${b} show ${label(ctx, dir)}`,
+    `${b} show ${label(ctx, dir)}${inEnv(ctx)}`,
     async (signal) => {
-      const s = await ctx.provider.state(dir, { bin: b, signal });
+      const { varFile, ...opts } = tfOpts(ctx);
+      const s = await ctx.provider.state(dir, { ...opts, signal });
       ctx.setData((d) => ({ ...d, state: s }));
       return { stdout: s.resources.length ? plural(s.resources.length, 'resource') : 'The state is empty.' };
     },
@@ -108,8 +133,19 @@ export async function init(ctx, folder = '') {
   return r.ok;
 }
 
-/** What /whatif's arguments say: { file, resourceGroup, location, params }, the last ones used filling the gaps. */
-export function whatIfArgs(rest, { last = {}, found } = {}) {
+/**
+ * What /whatif's arguments say: { file, resourceGroup, location, params }, the environment's resource
+ * group and parameters file (`env`) then the last ones used filling the gaps.
+ */
+export function whatIfArgs(rest, { last = {}, found, env } = {}) {
+  const own = typedWhatIfArgs(rest);
+  // What's typed wins; then the environment's, so switching it moves the target; then the last ones.
+  const group = own.resourceGroup ?? (own.location ? undefined : env?.resourceGroup);
+  const params = own.params ?? env?.parametersFile;
+  return lastWhatIfArgs({ ...own, ...(group ? { resourceGroup: group } : {}), ...(params ? { params } : {}) }, { last, found });
+}
+
+function typedWhatIfArgs(rest) {
   const words = splitArgs(rest ?? '');
   const out = {};
   for (let i = 0; i < words.length; i++) {
@@ -119,6 +155,10 @@ export function whatIfArgs(rest, { last = {}, found } = {}) {
     else if (w === '--params' || w === '-p' || w === '--parameters') out.params = words[++i];
     else if (!out.file) out.file = w;
   }
+  return out;
+}
+
+function lastWhatIfArgs(out, { last, found }) {
   const file = out.file ?? last.file ?? found?.bicep?.[0];
   const sameFile = file === last.file;
   return {
@@ -147,17 +187,21 @@ async function askParameters(ctx, names) {
 
 /** /whatif <file> --rg <group> | --location <region> [--params <file>]: what deploying a Bicep or ARM file would change, as Azure says. */
 export async function whatIf(ctx, rest = '', typed = {}) {
-  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found });
+  const env = envOf(ctx);
+  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found, env });
   if (!args.file) return ctx.note('/whatif needs a .bicep or ARM file: /whatif main.bicep --rg shop-prod', 'error') ?? false;
   if (!args.resourceGroup && !args.location) return ctx.note(`/whatif ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
-  ctx.setConfig((c) => ({ ...c, whatIf: args }));
+  // The last ones kept are what was typed (or kept before), not the environment's: switching to an
+  // environment without a resource group mustn't fall back on another environment's.
+  ctx.setConfig((c) => ({ ...c, whatIf: whatIfArgs(rest, { last: c.whatIf ?? {}, found: ctx.data?.found }) }));
   const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
   const attempt = () =>
     ctx.task(
-      `what-if ${args.file} ${where}`,
+      `what-if ${args.file} ${where}${inEnv(ctx)}`,
       async (signal) => {
         const p = await ctx.provider.whatIf(ctx.cwd(), { ...args, values: typed.values, signal });
-        ctx.setData((d) => ({ ...d, plan: p, drift: [], source: { kind: 'bicep', label: `${args.file} ${where}`, args, at: Date.now() } }));
+        replacePlan(ctx);
+        ctx.setData((d) => ({ ...d, plan: p, drift: [], source: { kind: 'bicep', label: `${args.file} ${where}`, args, env: env?.name ?? null, at: Date.now() } }));
         return { stdout: summaryLine(summarize(p.changes)) || 'No changes.' };
       },
       { label: 'Asking Azure (what-if)' },
@@ -172,43 +216,154 @@ export async function whatIf(ctx, rest = '', typed = {}) {
   }
   if (r.ok) {
     ctx.setView('changes');
+    void price(ctx);
     ctx.logActivity(`What-if ${args.file} ${where}: ${summaryLine(summarize(ctx.data.plan.changes)) || 'no changes'}`);
   }
   return r.ok;
 }
 
-/** /deploy [file] --rg <group> | --location <region> [--params <file>]: runs a what-if of a Bicep or ARM file, then deploys it if the confirmation that follows it is a yes (the same arguments as /whatif). */
-export async function deploy(ctx, rest = '') {
-  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found });
-  if (!args.file) return ctx.note('/deploy needs a .bicep or ARM file: /deploy main.bicep --rg shop-prod', 'error') ?? false;
-  if (!args.resourceGroup && !args.location) return ctx.note(`/deploy ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
-  const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
-  // The what-if always runs first, so the changes are on screen behind the question; a failed one stops here.
-  const typed = {};
-  const planned = await whatIf(ctx, rest, typed);
-  if (!planned) return false;
-  const summary = summaryLine(summarize(ctx.data.plan.changes)) || 'no changes';
-  // "No" comes first so that ↵ alone never deploys.
-  const yes = await ctx.confirm({
-    title: `Deploy ${args.file} ${where}?`,
-    detail: `What-if: ${summary}`,
+/** In a production environment, the kit's question once more (No first); true straight away elsewhere. */
+async function productionAgrees(ctx, what) {
+  const q = productionQuestion(envOf(ctx), what);
+  if (!q) return true;
+  return Boolean(await ctx.confirm({ ...q, options: [{ label: 'No, cancel', value: false }, { label: 'Yes, it is meant for production', value: true }] }));
+}
+
+// What an apply or deployment does, in the order it loses things: what's destroyed first.
+const GROUPS = [
+  ['delete', 'Destroyed'],
+  ['replace', 'Replaced (destroyed, then created again)'],
+  ['forget', 'Forgotten (left in place, out of the state)'],
+  ['update', 'Changed in place'],
+  ['deploy', 'Deployed'],
+  ['create', 'Created'],
+];
+
+/** The lines shown before an apply or a deployment: what it does, the destroys first, each with why and what it costs. */
+export function applyLines(plan, { title, costs, dependsOn } = {}) {
+  const total = totalWords(costs);
+  const lines = [title, `${summaryLine(summarize(plan.changes)) || 'No changes.'}${total ? `, ${total}` : ''}`, ''];
+  for (const [action, heading] of GROUPS) {
+    const these = changeRows(plan.changes).filter((c) => c.action === action);
+    if (!these.length) continue;
+    lines.push(`${heading}:`);
+    for (const c of these) {
+      const cost = costWords(costs?.byAddress?.[c.address], costs?.currency);
+      lines.push(`  ${ACTION_MARK[c.action]} ${c.address}${c.reason ? `  (${c.reason})` : ''}${cost ? `  ${cost}` : ''}`);
+      const affects = dependsOn ? affectsLine(c, dependsOn) : null;
+      if (affects) lines.push(`      ${affects.replace(/^\S+ \S+ /, '')}`);
+    }
+    lines.push('');
+  }
+  return lines;
+}
+
+/**
+ * The typed confirmation an apply or deployment needs: `name` (the environment, workspace or resource
+ * group it goes to) typed exactly, with what it does on screen; then, in production, the kit's question.
+ * Resolves whether to go ahead; anything else typed, or esc, is a no and says so.
+ */
+async function confirmByName(ctx, { name, verb, what, overview }) {
+  ctx.showText(`${verb} · type ${name} to go ahead`, overview.join('\n'));
+  const answer = await ctx.confirm({
+    secret: true,
+    plain: true,
     danger: true,
-    options: [{ label: 'No, cancel', value: false }, { label: 'Yes, deploy it', value: true }],
+    title: `Type ${name} to ${verb.toLowerCase()} ${what}`,
+    detail: 'What it does is above, what is destroyed first. Anything else, or esc, cancels.',
   });
-  if (!yes) return false;
-  const r = await ctx.task(
-    `deploy ${args.file} ${where}`,
-    async (signal) => {
-      const d = await ctx.provider.deploy(ctx.cwd(), { ...args, values: typed.values, signal });
-      return { stdout: `${d.state}${d.name ? `: deployment ${d.name}` : ''}${d.outputs.length ? `, outputs ${d.outputs.join(', ')}` : ''}` };
-    },
-    { label: 'Deploying' },
-  );
+  const ok = answer && answer.value.trim() === name;
+  if (!ok) {
+    ctx.closeOverlay();
+    if (answer) ctx.note(`That isn't ${name}: nothing was ${verb === 'Apply' ? 'applied' : 'deployed'}.`, 'error');
+    return false;
+  }
+  const yes = await productionAgrees(ctx, `${verb} ${what}`);
+  ctx.closeOverlay();
+  return yes;
+}
+
+/** A deployment of `args` (whatIfArgs') after its what-if, which is the plan on screen: the typed name, then az deployment create. */
+async function deployWhatIf(ctx, args, typed = {}) {
+  const where = args.resourceGroup ? `into ${args.resourceGroup}` : `at the subscription, ${args.location}`;
+  const p = ctx.data.plan;
+  const env = envOf(ctx);
+  const name = env?.name ?? args.resourceGroup ?? args.location;
+  const go = await confirmByName(ctx, { name, verb: 'Deploy', what: `${args.file} ${where}${env ? ` (${env.name})` : ''}`, overview: applyLines(p, { title: `az deployment create of ${args.file} ${where}`, costs: costsOf(ctx.data), dependsOn: dependenciesOf(ctx.data) }) });
+  if (!go) return false;
+  const attempt = () =>
+    ctx.task(
+      `deploy ${args.file} ${where}${inEnv(ctx)}`,
+      async (signal) => {
+        const d = await ctx.provider.deploy(ctx.cwd(), { ...args, values: typed.values, signal });
+        return { stdout: `${d.state}${d.name ? `: deployment ${d.name}` : ''}${d.outputs.length ? `, outputs ${d.outputs.join(', ')}` : ''}` };
+      },
+      { label: 'Deploying' },
+    );
+  let r = await attempt();
+  // The values a what-if was given by hand are never kept, so a deployment after it asks for them again.
+  if (!r.ok && r.error?.missing?.length && !typed.values) {
+    const values = await askParameters(ctx, r.error.missing);
+    if (!values) return false;
+    typed.values = values;
+    r = await attempt();
+  }
   if (r.ok) {
     // The plan on screen was of what has now been done.
     ctx.setData((d) => ({ ...d, plan: null, source: null }));
-    ctx.logActivity(`Deployed ${args.file} ${where}`);
+    ctx.logActivity(`Deployed ${args.file} ${where}${inEnv(ctx)}: ${summaryLine(summarize(p.changes)) || 'no changes'}`, 'change');
   }
+  return r.ok;
+}
+
+/** /deploy [file] --rg <group> | --location <region> [--params <file>]: a what-if of a Bicep or ARM file, then the deployment if the name it goes to is typed (the same arguments as /whatif). */
+export async function deploy(ctx, rest = '') {
+  const args = whatIfArgs(rest, { last: ctx.config.whatIf ?? {}, found: ctx.data?.found, env: envOf(ctx) });
+  if (!args.file) return ctx.note('/deploy needs a .bicep or ARM file: /deploy main.bicep --rg shop-prod', 'error') ?? false;
+  if (!args.resourceGroup && !args.location) return ctx.note(`/deploy ${args.file} needs where to: --rg <resource group>, or --location <region> at the subscription.`, 'error') ?? false;
+  // The what-if always runs first, so its changes are what's confirmed; a failed one stops here.
+  const typed = {};
+  const planned = await whatIf(ctx, rest, typed);
+  if (!planned) return false;
+  return deployWhatIf(ctx, args, typed);
+}
+
+/**
+ * /apply: the plan on screen, for real, and only one Chart made: a Terraform plan it saved (/plan,
+ * terraform apply of that file), or a what-if (az deployment create of the same file and arguments).
+ * It shows what it does, the destroys first, and goes ahead only once the environment's (or else the
+ * workspace's or resource group's) name is typed; in production the kit asks once more.
+ */
+export async function apply(ctx) {
+  const p = ctx.data?.plan;
+  const s = ctx.data?.source;
+  if (!p || !s) return ctx.note('No plan to apply: /plan (or /whatif) first, then /apply.', 'error') ?? false;
+  const env = envOf(ctx);
+  if ((s.env ?? null) !== (env?.name ?? null)) return ctx.note(`This plan was made for ${s.env ?? 'no environment'}, and the project is on ${env?.name ?? 'none'} now: /plan again, then /apply.`, 'error') ?? false;
+  if (!p.changes.some((c) => !['noop', 'read', 'ignore'].includes(c.action))) return ctx.note('Nothing to apply: the plan changes nothing.') ?? false;
+  if (s.kind === 'bicep') return deployWhatIf(ctx, s.args);
+  if (s.kind !== 'terraform' || !p.planFile) return ctx.note("/apply applies only a plan Chart made and saved itself (/plan). A plan opened from a file isn't one: Terraform's own apply is for that.", 'error') ?? false;
+  const b = bin(ctx);
+  const opts = tfOpts(ctx);
+  const workspace = s.workspace ?? (await ctx.provider.workspace?.(s.dir, opts).catch(() => null)) ?? 'default';
+  const name = env?.name ?? workspace;
+  const where = `${s.label}${env ? ` (${env.name}, workspace ${workspace})` : ` (workspace ${workspace})`}`;
+  const go = await confirmByName(ctx, { name, verb: 'Apply', what: `this plan to ${where}`, overview: applyLines(p, { title: `${b} apply of the plan Chart saved for ${where}`, costs: costsOf(ctx.data), dependsOn: dependenciesOf(ctx.data) }) });
+  if (!go) return false;
+  const summary = summaryLine(summarize(p.changes)) || 'no changes';
+  const r = await ctx.task(
+    `${b} apply ${where}`,
+    (signal, stream) => ctx.provider.apply(s.dir, { bin: b, planFile: p.planFile, ...(opts.workspace ? { workspace: opts.workspace } : {}), onLine: stream?.line, signal }),
+    { label: `Applying (${toolName(b)})` },
+  );
+  // Applied or refused, the plan file is gone: what's on screen can't be applied again.
+  ctx.setData((d) => {
+    if (d?.plan !== p) return d;
+    if (r.ok) return { ...d, plan: null, source: null };
+    const spent = { ...p, planFile: null };
+    return { ...d, plan: spent, ...(d.costs?.for === p ? { costs: { ...d.costs, for: spent } } : {}) };
+  });
+  if (r.ok) ctx.logActivity(`Applied ${where}: ${summary}`, 'change');
   return r.ok;
 }
 
@@ -225,12 +380,14 @@ export async function open(ctx, file = '') {
         ctx.setData((d) => ({ ...d, state: read }));
         return { stdout: `A state: ${plural(read.resources.length, 'resource')}`, kind: 'state' };
       }
+      replacePlan(ctx);
       ctx.setData((d) => ({ ...d, plan: read, drift: read.drift, source: { kind: 'file', label: name, path, at: Date.now() } }));
       return { stdout: summaryLine(summarize(read.changes)) || 'No changes.', kind: 'plan' };
     },
     { label: 'Reading' },
   );
   if (r.ok) ctx.setView(r.result.kind === 'state' ? 'state' : 'changes');
+  if (r.ok && r.result.kind === 'plan') void price(ctx);
   return r.ok;
 }
 
@@ -243,15 +400,94 @@ export function again(ctx) {
   return look(ctx);
 }
 
+const currencyOf = (ctx) => ctx.config.currency ?? 'USD';
+
+/** The costs worked out for the plan on screen, or null (none yet, or they were another plan's). */
+export const costsOf = (data) => (data?.costs && data.costs.for === data.plan ? data.costs : null);
+
+/**
+ * What the plan on screen costs a month (costs.js, prices from the Azure Retail Prices API), worked
+ * out beside it: it doesn't hold up the next command, and a newer plan's prices replace it.
+ */
+export async function price(ctx) {
+  const p = ctx.data?.plan;
+  if (!p || ctx.config.costs === false || !ctx.provider.prices) return false;
+  if (!p.changes.some((c) => ['create', 'delete', 'replace', 'update'].includes(c.action))) return false;
+  const currency = currencyOf(ctx);
+  const keep = (costs) => ctx.setData((d) => (d?.plan === p ? { ...d, costs: { ...costs, for: p } } : d));
+  keep({ pending: true, currency });
+  try {
+    const costs = await planCosts(p, { prices: (q) => ctx.provider.prices(q, { currency }), currency });
+    keep(costs);
+    if (costs.failed) ctx.note(`No prices for ${plural(costs.failed, 'resource')}: ${Object.values(costs.byAddress).find((c) => /couldn't be asked/.test(c.note ?? ''))?.note ?? 'the price list failed'}`, 'error');
+    return true;
+  } catch (e) {
+    keep({ error: String(e.message).split('\n')[0], currency });
+    ctx.note(`No prices: ${String(e.message).split('\n')[0]}`, 'error');
+    return false;
+  }
+}
+
+/** /currency [code]: the currency prices are shown in (USD unless set), and the plan on screen priced again in it. */
+export function currency(ctx, value = '') {
+  const v = value.trim().toUpperCase();
+  if (!v) return ctx.note(`Prices are in ${currencyOf(ctx)}. /currency ${CURRENCIES.slice(0, 4).join('|')}… changes it.`);
+  if (!CURRENCIES.includes(v)) return ctx.note(`The Azure price list has ${CURRENCIES.join(', ')}.`, 'error') ?? false;
+  ctx.setConfig((c) => ({ ...c, currency: v }));
+  ctx.note(`Prices in ${v} from now on.`, 'ok');
+  void price(ctx);
+  return true;
+}
+
+/** What depends on what in the plan on screen: its own (configuration or ids), or /graph's for it; null when neither says. */
+export const dependenciesOf = (data) => data?.plan?.dependsOn ?? (data?.graph && data.graph.for === data.plan ? data.graph.dependsOn : null);
+
+/** A change's detail lines about what depends on it: what destroying or replacing it affects, or what it is affected by. */
+function dependencyLines(c, dependsOn, changes) {
+  if (!dependsOn) return [];
+  const affects = affectsLine(c, dependsOn);
+  const by = affectedBy(changes, dependsOn)[c.address];
+  return [...(affects ? [`${affects} (g shows what depends on what)`] : []), ...(by ? [`Depends on ${by.join(', ')}, which ${by.length === 1 ? 'is' : 'are'} destroyed or replaced`] : [])];
+}
+
+/** g: what depends on what, with the cursor on `change` (the one selected). */
+export function showDepends(ctx, change) {
+  ctx.openDepends(change?.address ?? null);
+  return true;
+}
+
+/** /graph [folder]: what depends on what from `terraform graph`, for a plan that came without its configuration. */
+export async function graph(ctx, folder = '') {
+  const p = ctx.data?.plan;
+  if (!p || p.tool !== 'terraform') return ctx.note('/graph needs a Terraform plan on screen: /plan or /open one first.', 'error') ?? false;
+  const dir = folder.trim() ? tfDir(ctx, folder) : (ctx.data.source?.dir ?? tfDir(ctx, ''));
+  const { varFile, ...opts } = tfOpts(ctx);
+  const r = await ctx.task(
+    `${opts.bin} graph ${label(ctx, dir)}`,
+    async (signal) => {
+      const dependsOn = parseDot(await ctx.provider.graph(dir, { ...opts, signal }), p.changes.map((c) => c.address));
+      ctx.setData((d) => (d?.plan === p ? { ...d, graph: { for: p, dependsOn } } : d));
+      const edges = Object.values(dependsOn).reduce((n, list) => n + list.length, 0);
+      return { stdout: `${edges} ${edges === 1 ? 'dependency' : 'dependencies'} between the plan's resources` };
+    },
+    { label: 'Asking terraform graph' },
+  );
+  if (r.ok) ctx.openDepends(null);
+  return r.ok;
+}
+
 /** ↵ on a change: what changes in it, attribute by attribute, and where it's declared. */
 export async function showChange(ctx, c, { drifted = false } = {}) {
   const where = await ctx.provider.locate(ctx.data?.source?.dir ?? ctx.cwd(), c).catch(() => null);
+  const costs = drifted ? null : costsOf(ctx.data);
   const head = [
     `${c.address}  ${drifted ? 'changed outside the code' : ACTION_WORD[c.action]}${c.reason ? `: ${c.reason}` : ''}`,
     ...(c.movedFrom ? [`Moved from ${c.movedFrom}`] : []),
     ...(c.id ? [`Id: ${c.id}`] : []),
     ...(where ? [`Declared in ${where.path}:${where.line} (t copies it for Splice)`] : []),
     ...(siteOf(c) ? ['An App Service app: s copies it for Locker'] : []),
+    ...(drifted ? [] : dependencyLines(c, dependenciesOf(ctx.data), ctx.data?.plan?.changes ?? [])),
+    ...(costs?.byAddress?.[c.address] ? costLines(costs.byAddress[c.address], costs.currency) : costs?.pending && !drifted ? ['Cost: being priced…'] : []),
     '',
   ];
   const lines = diffLines(c.diff);
@@ -297,7 +533,7 @@ export function show(ctx, text) {
 export function report(ctx) {
   const p = ctx.data?.plan;
   if (!p) return ctx.note('No plan yet: /plan, /whatif or /open first.', 'error') ?? false;
-  ctx.showText('Report (alt+y copies it all)', markdownReport({ ...p, drift: ctx.data.drift ?? p.drift }, { label: ctx.data.source?.label ?? basename(ctx.cwd()) }));
+  ctx.showText('Report (alt+y copies it all)', markdownReport({ ...p, drift: ctx.data.drift ?? p.drift }, { label: ctx.data.source?.label ?? basename(ctx.cwd()), costs: costsOf(ctx.data) }));
   return true;
 }
 
@@ -308,6 +544,28 @@ export function tool(ctx, value = '') {
   if (!BINARIES.includes(v)) return ctx.note(`/tool is one of ${BINARIES.join(', ')}.`, 'error') ?? false;
   ctx.setConfig((c) => ({ ...c, terraform: v }));
   ctx.note(`Running ${v} from now on.`, 'ok');
+  return true;
+}
+
+/** What the chosen environment makes Chart do, in words: "workspace prod, var file prod.tfvars, what-ifs into rg-shop". */
+export function envSummary(e) {
+  if (!e) return '';
+  const parts = [e.workspace ? `workspace ${e.workspace}` : '', e.varFile ? `var file ${e.varFile}` : '', e.resourceGroup ? `what-ifs into ${e.resourceGroup}` : '', e.parametersFile ? `parameters ${e.parametersFile}` : ''].filter(Boolean);
+  return parts.length ? parts.join(', ') : 'its "chart" section says nothing, so plans run as they would without it';
+}
+
+/** /env [name]: which environment the project is on (every app's), or switch every app to another. */
+export function env(ctx, name = '') {
+  const n = name.trim();
+  if (!n) {
+    const e = envOf(ctx);
+    return ctx.note(`${describeEnvironments(ctx.cwd())}${e ? `\nChart: ${envSummary(e)}.` : ''}`);
+  }
+  const r = setEnvironment(ctx.cwd(), n, { by: 'chart' });
+  if (!r.ok) return ctx.note(r.error, 'error') ?? false;
+  // The hook notices within a second; the frames go red (or back) now.
+  markProduction(r.env.prod);
+  ctx.note(`Environment: ${r.env.name}${r.env.prod ? ' (production)' : ''}, for every app.\nChart: ${envSummary(envOf(ctx))}.${ctx.data?.plan ? ' The plan on screen is the last environment\'s: ctrl+r plans again.' : ''}`, 'ok');
   return true;
 }
 
@@ -380,6 +638,8 @@ export function settings(ctx) {
       `Accent colour    ${c.accent ?? 'default'}       /accent #rrggbb`,
       `Mouse            ${on(c.mouse)}       /mouse on|off`,
       `Runs             ${bin(ctx)}       /tool terraform|tofu`,
+      `Prices           ${c.costs === false ? 'off' : `in ${currencyOf(ctx)}, from prices.azure.com`}       /currency <code> · "costs": false in the file turns them off`,
+      `Environment      ${envOf(ctx) ? `${envOf(ctx).name}${envOf(ctx).prod ? ' (production)' : ''}: ${envSummary(envOf(ctx))}` : 'none (.fleet/project.json names them)'}       /env [name]`,
       `Last what-if     ${w ? `${w.file} ${w.resourceGroup ? `--rg ${w.resourceGroup}` : `--location ${w.location}`}${w.params ? ` --params ${w.params}` : ''}` : 'none'}`,
       `Update checks    ${on(c.checkForUpdates)}       "checkForUpdates" in the file`,
       `Auto-update      ${on(c.autoUpdate)}       "autoUpdate" in the file`,

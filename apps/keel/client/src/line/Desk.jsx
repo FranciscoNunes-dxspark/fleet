@@ -173,7 +173,7 @@ function Detail({ item, data, onSnooze }) {
   const approvals = target.type === 'approval' ? (data.approvals || []).filter((a) => a.key === target.key) : [];
   const monitorId = monitorIdOf(item);
   const tile = monitorId ? serviceTiles(data).find((x) => x.id === monitorId) : null;
-  const where = { approval: t('Pipelines'), release: t('Releases'), production: t('Production'), person: t('Team') }[target.type];
+  const where = { approval: t('Pipelines'), release: t('Releases'), production: t('Production'), person: t('Team'), advisory: t('Security advisories') }[target.type];
   return (
     <div className="detail desk-summary">
       {bar}

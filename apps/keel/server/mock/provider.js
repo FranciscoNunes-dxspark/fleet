@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { stageSummary } from '../domain/releases.js';
 import { demoFile } from './files.js';
+import { DEMO_FILES } from './advisories.js';
 
 // Demo provider: a deterministic, in-memory Azure DevOps organization.
 // It implements exactly the same methods and return shapes as
@@ -902,6 +903,18 @@ export function createMockProvider() {
     getCurrentIteration: (projectId) => delay(SPRINTS(projectById(projectId)).current),
     getTeamDefaultArea: (projectId) => delay(projectById(projectId).name),
     listRepos: (projectId) => delay(projectById(projectId).repoObjs.map((r) => ({ ...r }))),
+    // A repository's files on a branch (paths), and one file's text: the advisory watch's lock files.
+    listRepoFiles(projectId, repoId) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      if (!repo) throw notFound('Repository');
+      return delay(Object.keys(DEMO_FILES[repo.name] || { '/README.md': '' }));
+    },
+    getRepoFileText(projectId, repoId, path) {
+      const repo = ALL_REPOS.find((r) => r.id === repoId);
+      const text = repo && DEMO_FILES[repo.name]?.[path];
+      if (text === undefined) throw notFound('File');
+      return delay(text);
+    },
 
     listPullRequests: (projectId, { status = 'active', closedAfter } = {}) => delay(
       [...prs.values()]
@@ -934,6 +947,11 @@ export function createMockProvider() {
           { name: 'Comments resolved', status: pr._threads.some((t) => t.status === 'active') ? 'rejected' : 'approved', isBlocking: true },
         ],
       });
+    },
+
+    getPullRequestFiles: (projectId, repoId, prId) => {
+      const pr = getPR(projectId, repoId, prId);
+      return delay({ iteration: 1, total: pr._files.length, truncated: false, items: pr._files.map((f) => ({ ...f })) });
     },
 
     getPullRequestWorkItemIds: (projectId, repoId, prId) => delay([...getPR(projectId, repoId, prId)._workItemIds]),

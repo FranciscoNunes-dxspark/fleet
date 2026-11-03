@@ -10,6 +10,8 @@ import { referenceWords, unresolved } from '../keyvault.js';
 import { autoscaleSummary, planLine } from '../scale.js';
 import { productionShare } from '../routing.js';
 import { totals } from '../servicebus.js';
+import { legendSegments, markerSegments, placeMarkers } from '../markers.js';
+import { useMarkers } from './useMarkers.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
@@ -23,8 +25,8 @@ const TAGS = { container: 'container', sqlserver: 'sql server', storage: 'storag
 
 // The keys each kind of resource takes, as the details' last line says them.
 const KEY_HINTS = {
-  web: 'alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · l logs · p problems · alt+l live log · o portal · b browse',
-  function: 'f functions · alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · l logs · p problems · alt+l live log · o portal · b browse',
+  web: 'alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · alt+m what changed it · l logs · p problems · alt+l live log · o portal · b browse',
+  function: 'f functions · alt+r restart · alt+s stop/start · alt+w swap · alt+d deployments · alt+m what changed it · l logs · p problems · alt+l live log · o portal · b browse',
   container: 'alt+r restart its revision · l its logs · o portal · b browse · y copy its address',
   storage: '↵ its containers and blobs · o portal · y copy its blob address',
   workspace: '↵ / l query it in Logs · o portal',
@@ -124,6 +126,9 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
       stop();
     };
   }, [sel?.id, span?.iso]);
+
+  // What changed it over the span (markers.js), drawn under its metrics in the columns they fall in.
+  const marks = useMarkers(ctx, metrics?.series ? web : null, span, metrics);
 
   // This month's costs, once a day; nothing is said of them when they can't be read.
   const [costs, setCosts] = useState(null);
@@ -225,6 +230,7 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
     if (input === 'p') return ctx.problemsFor(sel);
     if (input === 'L') return ctx.liveFor(sel);
     if (input === 'D') return a.deployments(ctx, sel);
+    if (input === 'M') return a.changes(ctx, sel);
     if (input === 'K') return a.toLocker(ctx, sel);
     if (input === 'f') return a.functions(ctx, sel);
     if (input === 'b') return a.browse(ctx, sel);
@@ -248,7 +254,19 @@ export function ResourcesView({ data, extras = {}, span, ctx, width, height, act
           { text: m.spark.padStart(sparkW), color: theme.warn },
           { text: metrics ? `  ${m.summary}` : '', color: m.summary === 'no data' ? theme.dim : undefined },
         ])),
+    ...markLines(),
   ];
+  // The metrics' last `sparkW` times, as metricRows draws them, and the marks that fall in them.
+  function markLines() {
+    const points = (metrics?.series ?? []).find((x) => x.points?.some((p) => p.value != null))?.points.filter((p) => p.value != null) ?? [];
+    const stamps = points.slice(-sparkW).map((p) => p.at);
+    const cells = placeMarkers(marks?.markers ?? [], stamps);
+    if (!cells.some((c) => c.length)) return [];
+    return [
+      [{ text: 'changes'.padEnd(10), color: theme.dim }, { text: ' '.repeat(Math.max(0, sparkW - cells.length)) }, ...markerSegments(cells)],
+      [{ text: ' '.repeat(10) }, ...legendSegments(cells.flat())],
+    ];
+  }
   const field = (name, value, color) => [{ text: name.padEnd(10), color: theme.dim }, { text: value ?? '—', color }];
   const prod = (t) => [{ text: t.state, color: stateColour(t.state), bold: true }, { text: isProduction(t) ? '  production: changes ask you to type its name' : '', color: theme.warn }];
   const firewallLines = () => [

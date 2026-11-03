@@ -81,8 +81,10 @@ export const FACES = {
 };
 
 /** What is wrong right now, for the pet and the family: the transfers that failed and the connection's problem. */
-export function troubles({ transfers = [], conn } = {}) {
-  return { failed: transfers.filter((t) => t.status === 'failed'), problem: conn?.problem ?? null };
+export function troubles({ transfers = [], conn, health } = {}) {
+  // The last health read counts only while it's the connected host's.
+  const ill = health && health.host === conn?.host?.name ? health.problems : [];
+  return { failed: transfers.filter((t) => t.status === 'failed'), problem: conn?.problem ?? null, health: ill };
 }
 
 /** How the pet feels right now: about the last result, a command or transfer running, and what is wrong. */
@@ -91,7 +93,7 @@ export function moodFor({ loaded, connected, busy, running, lastEntry, trouble, 
   if (busy || running) return 'look';
   if (lastEntry?.status === 'ok' && now - lastEntry.at < 4000) return 'happy';
   if (!loaded) return 'idle';
-  if (trouble?.failed.length || trouble?.problem) return 'worried';
+  if (trouble?.failed.length || trouble?.problem || trouble?.health?.length) return 'worried';
   return connected ? 'wave' : 'sleep';
 }
 
@@ -102,6 +104,7 @@ export function moodLine(mood, { loaded, connected, host, trouble, running = 0, 
   if (!loaded) return `${PET.name} is looking around this machine.`;
   if (trouble?.problem) return `The last connection failed: ${String(trouble.problem).split('\n')[0]}`;
   if (trouble?.failed.length) return `${few(trouble.failed)} didn't copy: 2 shows why, r tries again.`;
+  if (trouble?.health?.length) return `${host}: ${trouble.health.join(', ')}. /health reads it again.`;
   if (running) return `${running} transfer${running === 1 ? ' is' : 's are'} moving: 2 shows how far.`;
   if (mood === 'worried') return 'Something went wrong: the line below says what.';
   if (!connected) return hosts ? 'Not connected: 4 lists your hosts, ↵ opens one.' : 'No hosts yet: /add <name> <user@host> saves one.';

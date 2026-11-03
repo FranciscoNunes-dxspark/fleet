@@ -184,3 +184,142 @@ export function traceLines({ id, asked = [], timeline = [], cursor = 0, width = 
   }
   return { lines, focus };
 }
+
+const RED = '\x1b[38;5;203m';
+const RED_BOLD = `${BOLD}${RED}`;
+
+// What a .fleet/project.json looks like, for the environment panel when there's none.
+const PROJECT_EXAMPLE = [
+  '{',
+  '  "default": "dev",',
+  '  "environments": {',
+  '    "dev":  { "trawl": { "connection": "Shop (dev)" }, "hail": { "env": "dev" } },',
+  '    "prod": { "prod": true, "sonar": { "app": "shop-api" }, "locker": { "vault": "kv-shop" } }',
+  '  }',
+  '}',
+];
+
+/**
+ * The environment panel's rows: `project` is the kit's readProject (null when there's none, `error`
+ * when it can't be read), `current` the name chosen. Each environment a row, the current one marked ●,
+ * a production one in red, with the apps it says something to. { lines, focus }.
+ */
+export function envLines({ project, current, cursor = 0, width = 80, where = '' } = {}) {
+  if (!project) {
+    return {
+      lines: [
+        [{ text: 'No environments here.', sgr: BOLD }],
+        [],
+        ...prose(`A .fleet/project.json in the project${where ? ` (${where}, or its checkout's root)` : ''} names them once for every app: what dev, staging or prod means to each one. Choosing one here moves every app to it. For example:`, width - 1),
+        [],
+        ...PROJECT_EXAMPLE.map((l) => [{ text: `  ${l}`, sgr: YELLOW }]),
+        [],
+        ...prose('Each app reads its own section (its README says what). "prod": true marks production: every app draws red there and asks before it changes anything. Nothing secret goes in the file.', width - 1),
+      ],
+      focus: [0, 0],
+    };
+  }
+  if (project.error) return { lines: [[{ text: `${project.file} can't be read:`, sgr: RED_BOLD }], ...prose(project.error, width - 1)], focus: [0, 0] };
+  const nameW = Math.max(...project.names.map((n) => stringWidth(n)));
+  const lines = project.names.map((name, i) => {
+    const settings = project.environments[name] ?? {};
+    const prod = settings.prod === true;
+    const here = i === cursor;
+    const apps = Object.keys(settings).filter((k) => k !== 'prod' && settings[k] && typeof settings[k] === 'object');
+    return [
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: name === current ? '● ' : '  ', sgr: prod ? RED_BOLD : GREEN },
+      { text: name.padEnd(nameW), sgr: prod ? RED_BOLD : here ? `${BOLD}${YELLOW}` : '' },
+      { text: prod ? '  production' : '', sgr: RED },
+      { text: name === current ? '  current' : '', sgr: GREEN },
+      { text: apps.length ? `  ${apps.join(', ')}` : '', sgr: DIM },
+    ];
+  });
+  lines.push([], ...prose(`From ${project.file}. ↵ switches every app.`, width - 1));
+  return { lines, focus: [cursor, cursor] };
+}
+
+const ago = (ms, now) => {
+  const m = Math.max(0, Math.round((now - ms) / 60_000));
+  return m < 1 ? 'just now' : `${m} min ago`;
+};
+
+/** The proposals panel's rows: each one's app (in its accent), its line, and why below it, dim. { lines, focus }. */
+export function proposalLines(items, { cursor = 0, width = 80, spaces = [], truecolor = true, now = Date.now(), prefix = 'ctrl+b' } = {}) {
+  if (!items.length) {
+    return {
+      lines: [
+        [{ text: 'Nothing proposed.', sgr: BOLD }],
+        [],
+        ...prose(`Claude Code proposes a line for an app through fleet mcp's propose tool; it waits here for you, an hour at most. ↵ types it into the app's prompt (${prefix} P comes back), where your own ↵ runs it; x dismisses it.`, width - 1),
+      ],
+      focus: [0, 0],
+    };
+  }
+  const tagW = Math.max(...items.map((p) => stringWidth(titleOf(spaces, p.app))));
+  const lines = [];
+  let focus = [0, 0];
+  items.forEach((p, i) => {
+    const here = i === cursor;
+    if (i > 0) lines.push([]);
+    const from = lines.length;
+    lines.push([
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: ` ${titleOf(spaces, p.app).padEnd(tagW)} `, sgr: `${accentOf(spaces, p.app, truecolor)}${here ? BOLD : ''}` },
+      { text: ` ${p.line}`, sgr: here ? BOLD : '' },
+    ]);
+    lines.push(...prose(`${p.why} (${ago(p.at, now)})`, width - 1, '    '));
+    if (!spaces.some((s) => s.id === p.app)) lines.push([{ text: `    ${titleOf(spaces, p.app)} doesn't run in Fleet: x dismisses it.`, sgr: RED }]);
+    if (here) focus = [from, lines.length - 1];
+  });
+  return { lines, focus };
+}
+
+/**
+ * The "what changed" panel's rows: the window (1h, 6h, 24h, the one shown bold), the symptoms (the
+ * worried moods, red), what Claude said or is asked, then the timeline, newest first, `cursor` on an
+ * entry. `result` is changes.js whatChanged's, null while it's read; `ask` the symptom being typed (or
+ * null), `claude` { state: 'asking' | 'done' | 'failed', symptom, text }.
+ */
+export function changesLines({ result, hours, windows = [1, 6, 24], cursor = 0, ask = null, claude = null, width = 80, spaces = [], truecolor = true } = {}) {
+  const lines = [[{ text: 'The last ', sgr: DIM }, ...windows.flatMap((h) => [{ text: `${h}h`, sgr: h === hours ? `${BOLD}${YELLOW}` : DIM }, { text: ' ' }]), { text: ' (- narrower, + wider)', sgr: DIM }], []];
+  if (!result) return { lines: [...lines, [{ text: "Reading the activity log, git and Bosun's recordings…", sgr: DIM }]], focus: [0, 0] };
+  lines.push([{ text: 'Symptoms now', sgr: BOLD }]);
+  if (!result.symptoms.length) lines.push([{ text: '  None: no app is worried. c asks Claude about one you describe.', sgr: DIM }]);
+  for (const m of result.symptoms) lines.push([{ text: '  ' }, { text: ` ${titleOf(spaces, m.app)} `, sgr: accentOf(spaces, m.app, truecolor) }, { text: ` ${m.mood}${m.reason ? `: ${String(m.reason).replace(/\s+/g, ' ')}` : ''}`, sgr: RED }]);
+  let focus = null;
+  if (ask) {
+    lines.push([], [{ text: 'What should Claude explain? ↵ asks, esc goes back', sgr: DIM }], [{ text: '> ', sgr: BOLD }, { text: ask.input, sgr: YELLOW }, { text: '▏' }]);
+    focus = [lines.length - 1, lines.length - 1];
+  } else if (claude) {
+    lines.push([]);
+    const from = lines.length;
+    if (claude.state === 'asking') lines.push([{ text: `Asking Claude about: ${claude.symptom}…`, sgr: DIM }]);
+    else if (claude.state === 'failed') lines.push([{ text: "Claude couldn't answer:", sgr: RED_BOLD }], ...wrap(claude.text, Math.max(10, width - 1)).map((l) => [{ text: l, sgr: RED }]));
+    else lines.push([{ text: `Claude's likely causes of: ${claude.symptom}`, sgr: BOLD }], ...wrap(claude.text, Math.max(10, width - 3)).map((l) => [{ text: `  ${l}` }]));
+    focus = [from, from];
+  }
+  const n = result.events.length;
+  lines.push([], [{ text: n ? `What changed, newest first (${n} ${n === 1 ? 'entry' : 'entries'}):` : "Nothing changed in that time: nothing in the activity log, git or Bosun's recordings.", sgr: BOLD }]);
+  const first = lines.length;
+  const tagW = Math.max(0, ...result.events.map((e) => stringWidth(titleOf(spaces, e.app))));
+  const dayOf = (ms) => new Date(ms).toDateString();
+  result.events.forEach((e, i) => {
+    const here = i === cursor;
+    // Over more than a day the time alone is ambiguous: an entry of another day says its date.
+    const d = new Date(e.at);
+    const time = `${dayOf(e.at) === dayOf(result.now) ? '' : `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} `}${clock(e.at).slice(0, 5)}`;
+    const alarming = e.kind === 'crash' || e.kind === 'error' || e.kind === 'alert';
+    lines.push([
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: `${time} `, sgr: DIM },
+      { text: ` ${titleOf(spaces, e.app).padEnd(tagW)} `, sgr: accentOf(spaces, e.app, truecolor) },
+      { text: ` ${e.source.padEnd(11)}`, sgr: DIM },
+      { text: ` ${String(e.text).replace(/\s+/g, ' ')}`, sgr: alarming ? RED : here ? BOLD : '' },
+    ]);
+  });
+  for (const note of result.notes) lines.push([{ text: `  Not read: ${note}`, sgr: DIM }]);
+  // Moving through the timeline shows the entry; otherwise what's being asked or answered.
+  const at = n && cursor > 0 ? first + cursor : null;
+  return { lines, focus: at != null ? [at, at] : (focus ?? [0, 0]) };
+}

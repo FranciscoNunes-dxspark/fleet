@@ -113,6 +113,7 @@ export const HELP = [
       ['alt+f', 'Follow the cell\'s foreign key (/follow): the row its value refers to, or on a key other tables refer to, their rows (it asks which when there are several ways to go)'],
       ['t', 'Share the row under the cursor (/share; /share all: every row): copies a /take line, for Hail to send as a body or another Trawl to insert'],
       ['alt+c', 'Copy the table\'s rows to another connection (/copy-rows <target> [table] [--where <condition>] [--no-mask]): the rows they refer to come too, parents first, personal data made up; the script shows first, rows already there are skipped, production targets are refused'],
+      ['/copyrows <table> to <target>', 'The newer form: [where …] [limit n] [--keep col] [--mask col], to a connection or an environment. A preview says what each column gets (kept, NULL for passwords and tokens, made up), and the question can change a rule (Email=keep); a key the target has already stops it with nothing copied; production asks a second time'],
       ['/watch <s> [sql]', 'Run a read again every s seconds (2 at least; without sql, the console\'s statement), the cells that changed since the run before picked out; esc, another run or /watch stop ends it\n--until "Status = \'Done\'" (or <>, >, <, >=, <=, IS NULL, "rows > 0", "rows = 0") stops and notifies when a row matches'],
       { heading: 'Editing', about: 'the rows of one table, with its primary key: ↵ in the Explorer, or SELECT … FROM one table' },
       ['e or i', 'Edit the cell: ↵ keeps it, tab keeps it and edits the next column, esc leaves it'],
@@ -136,7 +137,8 @@ export const HELP = [
   {
     title: 'Schema diff',
     rows: [
-      ['/diff <connection> [database]', 'Compare this database\'s schema with another\'s (/diff <database>: one on this server): tables, columns, primary and foreign keys, indexes, and the definitions of views, procedures, functions. < only here · > only there · ~ different. Then it offers the script that makes this one match, in the console to read (dropping tables or columns is left commented out); nothing runs.'],
+      ['/diff <connection> [database]', 'Compare this database\'s schema with another\'s (/diff <database>: one on this server): tables, columns (type, length, nullability, default, identity), primary and foreign keys, indexes, and the definitions of views, procedures, functions. < only here · > only there · ~ different. Then it offers the script that makes this one match, in the console to read (what would lose data is left commented out, with why); nothing runs.'],
+      ['/compare <connection|environment>', 'The same comparison the other way round: this database is the one to match. Grouped as only here, only there and different, with what differs (definitions by a hash of their text). s the T-SQL that brings the other in line: foreign keys dropped first and made after, ALTER COLUMN where every value fits, the rest commented out with why. There, y copies it and o opens it in a console tab on that connection; nothing runs until you run it, with the usual questions.'],
     ],
   },
   {
@@ -179,6 +181,7 @@ export const HELP = [
     title: 'The family',
     about: 'Splice (git), Sonar (Azure), Bosun (processes) and Hail (HTTP): each hands the others a command line to paste',
     rows: [
+      ['/env [name]', 'The project\'s environment (.fleet/project.json, shared by every app; the header names it, red for production): which one, or choose one, and Trawl moves to the connection it names for Trawl. A production one asks once more before any write; a switch in another app or Fleet is followed'],
       ['/take <family:v1:…>', 'What a sibling copied: a query goes into a console tab (on the saved connection it was for), rows into an INSERT script; pasting the bare family:v1:… works too\na slow query from Sonar (/slow-sql) is planned and explained, as /explain-slow does'],
       ['/share [query|rows|all]', 'Copy a /take line: the console\'s statement, or in Results the row under the cursor (all: every row); t in both'],
       ['/family', 'What this project offers the others: Splice /open <repo>, Bosun /move <dir>, Hail /open <file> per .http file; ↵ copies it'],

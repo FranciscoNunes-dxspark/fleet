@@ -8,6 +8,7 @@
 import { metricInterval } from './metrics.js';
 import { functionUrl, invocation, isHttp } from './functions.js';
 import { storageRoleNeeded } from './blobs.js';
+import { changesFrom, commitOf } from './markers.js';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -172,8 +173,32 @@ function initialState(now) {
   // contoso-web sends a tenth of its traffic to staging.
   const web = sites.find((x) => x.name === 'contoso-web' && !x.slot);
   const routing = { [web.id]: [{ slot: 'staging', host: 'contoso-web-staging.azurewebsites.net', percent: 10 }] };
-  return { sites, components, alerts, vault, invocations: [], plans, autoscale, routing, ...otherResources(), ip: '198.51.100.7', telemetry: telemetry(now, sites) };
+  const items = telemetry(now, sites);
+  return { sites, components, alerts, vault, invocations: [], plans, autoscale, routing, ...otherResources(), ip: '198.51.100.7', telemetry: items, changes: changes(now, sites, items) };
 }
+
+// What the activity log has done to the apps, as ARM's events (an operation's Started and Succeeded):
+// production's checkout flag turned on in contoso-web's settings a quarter of an hour before the new
+// cart first failed there, a restart the day before, staging's settings changed and contoso-api's staging
+// swapped in last week.
+function changes(now, sites, items) {
+  const web = sites.find((x) => x.name === 'contoso-web' && !x.slot);
+  const api = sites.find((x) => x.name === 'contoso-api' && !x.slot);
+  const firstCart = items.find((i) => i.itemType === 'exception' && i.type === 'TypeError' && i.cloud_RoleName === 'contoso-web');
+  const flagged = firstCart ? Date.parse(firstCart.timestamp) - 17 * 60_000 : now - 2 * 24 * HOUR;
+  const list = [
+    { at: flagged, op: 'Microsoft.Web/sites/config/write', id: web.id, caller: 'rui.costa@contoso.com' },
+    { at: flagged - 26 * HOUR, op: 'Microsoft.Web/sites/restart/action', id: web.id, caller: 'ana.silva@contoso.com' },
+    { at: now - 30 * HOUR, op: 'Microsoft.Web/sites/slots/config/write', id: `${web.id}/slots/staging`, caller: 'ana.silva@contoso.com' },
+    { at: now - 6 * 24 * HOUR, op: 'Microsoft.Web/sites/slots/slotsswap/action', id: `${api.id}/slots/staging`, caller: 'rui.costa@contoso.com' },
+    { at: now - 4.2 * HOUR, op: 'Microsoft.Web/sites/restart/action', id: api.id, caller: 'ana.silva@contoso.com' },
+  ];
+  return list.flatMap((c, i) => activityEvents(c, `demo-${i}`));
+}
+
+/** An operation as the activity log keeps it: Started, then Succeeded a few seconds later. */
+const activityEvents = ({ at, op, id, caller }, correlationId) =>
+  ['Started', 'Succeeded'].map((status, k) => ({ eventTimestamp: new Date(at + k * 4000).toISOString(), operationName: { value: op }, caller, resourceId: id, status: { value: status }, correlationId }));
 
 // A few days of what the apps did: requests (some failing), the exceptions behind the failures, traces.
 function telemetry(now, sites) {
@@ -530,6 +555,11 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     if (!s) throw new Error(`${server.name}: not found`);
     return s;
   };
+  // What a change through the demo leaves in its activity log, as Azure's would.
+  const logged = (target, action) => {
+    const s = site(target);
+    state.changes.push(...activityEvents({ at: Date.now(), op: `Microsoft.Web/sites/${s.slot ? 'slots/' : ''}${action}`, id: s.id, caller: 'you@contoso.com' }, `demo-${state.changes.length}`));
+  };
   return {
     kind: 'demo',
     state,
@@ -573,18 +603,22 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     async saveSettings(target, settings, { signal } = {}) {
       await wait(signal);
       site(target).settings = { ...settings };
+      logged(target, 'config/write');
     },
     async restart(target, { signal } = {}) {
       await wait(signal);
       site(target).modified = new Date().toISOString();
+      logged(target, 'restart/action');
     },
     async stop(target, { signal } = {}) {
       await wait(signal);
       site(target).state = 'Stopped';
+      logged(target, 'stop/action');
     },
     async start(target, { signal } = {}) {
       await wait(signal);
       site(target).state = 'Running';
+      logged(target, 'start/action');
     },
     // What a swap moves: everything but the settings Azure keeps with a slot (here, the environment's name).
     async swap(slot, { signal } = {}) {
@@ -594,6 +628,7 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       const sticky = ['ASPNETCORE_ENVIRONMENT'];
       const move = (from, to) => ({ ...Object.fromEntries(Object.entries(from).filter(([k]) => !sticky.includes(k))), ...Object.fromEntries(sticky.filter((k) => k in to).map((k) => [k, to[k]])) });
       [s.settings, prod.settings] = [move(prod.settings, s.settings), move(s.settings, prod.settings)];
+      logged(slot, 'slotsswap/action');
     },
     async components(sub, { signal } = {}) {
       await wait(signal);
@@ -784,16 +819,28 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       return state.alerts.filter((a) => a.sub === sub && a.condition === 'Fired' && a.fired >= since).map(({ sub: _, ago: __, ...a }) => a);
     },
     // A few deployments each, the latest active; the one before it failed on the main slots of production.
+    // The slots have had the next release candidate since yesterday, as their APP_VERSION says.
     async deployments(target, { signal } = {}) {
       await wait(signal);
       const s = site(target);
       const day = 24 * HOUR;
       const list = [
-        { name: 'd3', status: 'succeeded', author: 'Ana Silva', deployer: 'GitHub Actions', ago: 3 * day, message: 'Release 2.14.0: the new checkout behind a flag\n\nCommit 9b1c7e2d4f60a8c3e1f2b7d9a5c4e3f2a1b0c9d8', active: true },
+        ...(s.slot ? [{ name: 'd4', status: 'succeeded', author: 'Rui Costa', deployer: 'GitHub Actions', ago: 26 * HOUR, message: 'Release 2.15.0-rc.1: the cart reads its items again\n\nCommit 3e8d0a6c1b7f4e2d9a5c8b1f0e7d6c3a2b4f9e1d', active: true }] : []),
+        { name: 'd3', status: 'succeeded', author: 'Ana Silva', deployer: 'GitHub Actions', ago: 3 * day, message: 'Release 2.14.0: the new checkout behind a flag\n\nCommit 9b1c7e2d4f60a8c3e1f2b7d9a5c4e3f2a1b0c9d8', active: !s.slot },
         { name: 'd2', status: s.sub === 'sub-prod' && !s.slot ? 'failed' : 'succeeded', author: 'Rui Costa', deployer: 'GitHub Actions', ago: 5 * day, message: 'Release 2.13.1: payments retries' },
         { name: 'd1', status: 'succeeded', author: 'Ana Silva', deployer: 'ZipDeploy', ago: 12 * day, message: 'Release 2.13.0' },
       ];
-      return list.map((d) => ({ id: `${s.id}/deployments/${d.name}`, name: d.name, status: d.status, author: d.author, deployer: d.deployer, start: new Date(now - d.ago).toISOString(), end: new Date(now - d.ago + 95_000).toISOString(), message: d.message, active: Boolean(d.active) }));
+      return list.map((d) => {
+        const out = { id: `${s.id}/deployments/${d.name}`, name: d.name, status: d.status, author: d.author, deployer: d.deployer, start: new Date(now - d.ago).toISOString(), end: new Date(now - d.ago + 95_000).toISOString(), message: d.message, active: Boolean(d.active) };
+        return { ...out, commit: commitOf(out) };
+      });
+    },
+    // The activity log's swaps, settings saved and restarts of an app or slot over the span, as ARM's would be read.
+    async changes(target, { span, signal } = {}) {
+      await wait(signal);
+      site(target);
+      const since = new Date(now - (span?.hours ?? 24) * HOUR).toISOString();
+      return changesFrom(state.changes.filter((e) => e.eventTimestamp >= since), target);
     },
     async deploymentLog(deployment, { signal } = {}) {
       await wait(signal);

@@ -18,6 +18,7 @@ export const CATEGORIES = [
   { id: 'work', get label() { return t('Newly blocked items and unowned P1 bugs'); } },
   { id: 'pr', get label() { return t('Other pull request alerts (no reviewers, conflicts, stale)'); } },
   { id: 'line', get label() { return t('A stage of the Line turning red'); } },
+  { id: 'advisory', get label() { return t('New security advisories in your repositories'); } },
 ];
 
 const DEFAULTS = {

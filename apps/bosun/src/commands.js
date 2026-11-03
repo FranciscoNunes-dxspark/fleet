@@ -2,6 +2,7 @@ import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
 import { groupsOf } from './groups.js';
+import { readProject } from '@fleet/kit/environments.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -13,7 +14,9 @@ export const COMMANDS = [
   { name: 'save-log', args: '<name> [file]', desc: 'Write a process\'s log to a file (name.log unless given)', complete: 'procs', run: (ctx, s) => a.saveLog(ctx, s) },
   { name: 'why', args: '<name>', desc: 'Ask Claude why a process failed, from its log', complete: 'procs', run: (ctx, s) => a.why(ctx, s) },
   { name: 'open', args: '<name>', desc: 'Open a process\'s port in the browser', complete: 'procs', run: (ctx, s) => a.openProc(ctx, s) },
-  { name: 'tunnel', args: '<name>', desc: 'Open a process\'s port to the internet through cloudflared or ngrok (asks first), or close its tunnel', complete: 'procs', run: (ctx, s) => a.tunnel(ctx, s) },
+  { name: 'share', args: '<name>', desc: 'Share a running process\'s port on the internet through devtunnel or cloudflared (asks first: the address is public); the address is copied and offered to Hail', complete: 'procs', run: (ctx, s) => a.share(ctx, s) },
+  { name: 'unshare', args: '<name>', desc: 'Stop sharing a process: its public address stops working', complete: 'procs', run: (ctx, s) => a.unshare(ctx, s) },
+  { name: 'tunnel', args: '<name>', desc: 'Share a process (as /share), or stop sharing it when it is', complete: 'procs', run: (ctx, s) => a.tunnel(ctx, s) },
   { name: 'free', args: '<port>', desc: 'Stop whatever holds a port on this machine (asks first)', run: (ctx, s) => a.free(ctx, s) },
   { name: 'preflight', desc: 'Check what the crew needs: Node version, Docker, free ports, .env keys, databases, node_modules, IIS, services, host names, tools', run: (ctx) => a.preflight(ctx) },
   { name: 'iis', args: '[name]', desc: 'An IIS site\'s application pool: idle timeout, start mode, recycling, rapid-fail protection, 32-bit; ↵ sets one for development', complete: 'procs', run: (ctx, s) => a.iis(ctx, s) },
@@ -23,6 +26,7 @@ export const COMMANDS = [
   { name: 'graph', desc: 'Who starts after whom ("after" in bosun.json), as a tree', run: (ctx) => a.graph(ctx) },
   { name: 'top', desc: 'Every process\'s CPU and memory (with what it started), the busiest first, and the last minute of each', run: (ctx) => a.top(ctx) },
   { name: 'profile', args: '[name|none]', desc: 'Run the crew with a profile from bosun.json', complete: 'profiles', run: (ctx, s) => a.profiles(ctx, s) },
+  { name: 'env', args: '[name]', desc: 'The project\'s environment (.fleet/project.json), or switch every app to another: what Bosun starts gets FLEET_ENV, and Bosun\'s profile and variables there', complete: 'envs', run: (ctx, s) => a.env(ctx, s) },
   { name: 'reload', desc: 'Read bosun.json and the env files again (what changed restarts)', run: (ctx) => ctx.reload() },
   { name: 'move', args: '[folder]', desc: 'Run another project instead (this one\'s processes stop)', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },
   { name: 'replay', desc: 'Play back a recorded session of this project: the crew and logs as they were, crashes marked', run: (ctx) => a.replay(ctx) },
@@ -54,6 +58,7 @@ function completions(kind, data, typed = '') {
   if (kind === 'procs') return [...(data?.procs ?? []).map((p) => p.name), 'all'];
   if (kind === 'targets') return [...(data?.procs ?? []).map((p) => p.name), ...groupsOf(data?.procs ?? []).filter((g) => !(data?.procs ?? []).some((p) => p.name === g)), 'all'];
   if (kind === 'profiles') return [...Object.keys(data?.profiles ?? {}), 'none'];
+  if (kind === 'envs') return (data?.dir && readProject(data.dir)?.names) || [];
   // The projects beside this one, by name, as /move takes them.
   if (kind === 'folders') return data?.dir ? folderCompletions(data.dir, typed) : [];
   return [];

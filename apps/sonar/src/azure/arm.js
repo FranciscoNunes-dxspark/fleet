@@ -10,6 +10,7 @@ import { rampUpRules, routingFrom } from '../routing.js';
 import { STORAGE_VERSION, VIEW_MAX, blobUrl, parseBlobs, parseContainers, storageRoleNeeded } from '../blobs.js';
 import { containerFrom, cosmosFrom, throughputFrom } from '../cosmos.js';
 import { busRoleNeeded, deadLetterPath, entityFrom, messageFrom, namespaceFrom, resendHeaders, resubmitPath } from '../servicebus.js';
+import { changesFrom, commitOf } from '../markers.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
@@ -27,6 +28,7 @@ const STORAGE = '2023-05-01';
 const WEB = '2023-12-01';
 const BUS = '2021-11-01';
 const COSMOS = '2024-05-15';
+const ACTIVITY = '2015-04-01';
 
 /** Azure's error, in words: ARM's { error: { code, message } } or App Insights' { error: { message, innererror } }. */
 export function azureError(status, body, what) {
@@ -81,7 +83,7 @@ const DEPLOY_STATUS = { 0: 'pending', 1: 'building', 2: 'deploying', 3: 'failed'
 /** A deployment of an app or slot, as ARM lists it (Kudu's record underneath): who, when, how it went. */
 export function deploymentFrom(d) {
   const p = d.properties ?? {};
-  return {
+  const out = {
     id: d.id,
     name: String(d.name ?? '').split('/').pop(),
     status: DEPLOY_STATUS[p.status] ?? String(p.status ?? 'unknown'),
@@ -92,6 +94,7 @@ export function deploymentFrom(d) {
     message: String(p.message ?? '').trim(),
     active: Boolean(p.active),
   };
+  return { ...out, commit: commitOf(out) };
 }
 
 /** A fired alert from Alerts Management, as the Alerts view shows it. */
@@ -682,6 +685,23 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
     async deployments(target, opts) {
       const list = await all(`${target.id}/deployments?api-version=${WEB}`, { ...opts, what: `Listing ${label(target)}'s deployments` });
       return list.map(deploymentFrom).sort((a, b) => String(b.start ?? '').localeCompare(String(a.start ?? '')));
+    },
+    /**
+     * What the activity log has for an app or slot over `span`: its slot swaps, settings saved and
+     * restarts (markers.js changesFrom's), oldest first. Asked by resource group, since a resource's own
+     * filter leaves out its slots, whose swaps change what the app serves.
+     */
+    async changes(target, { span, signal } = {}) {
+      const sub = /\/subscriptions\/([^/]+)/i.exec(target.id)?.[1];
+      const group = target.resourceGroup ?? /\/resourceGroups\/([^/]+)/i.exec(target.id)?.[1];
+      const from = new Date(Date.now() - (span?.hours ?? 24) * 3600_000).toISOString();
+      const q = new URLSearchParams({
+        'api-version': ACTIVITY,
+        $filter: `eventTimestamp ge '${from}' and resourceGroupName eq '${group}'`,
+        $select: 'eventTimestamp,operationName,caller,resourceId,status,correlationId',
+      });
+      const list = await all(`/subscriptions/${sub}/providers/Microsoft.Insights/eventtypes/management/values?${q}`, { signal, what: `Reading ${label(target)}'s activity log` });
+      return changesFrom(list, target);
     },
     /** One deployment's log: [{ at, message }] in order. */
     async deploymentLog(deployment, opts) {

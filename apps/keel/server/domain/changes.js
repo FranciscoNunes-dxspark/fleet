@@ -16,7 +16,7 @@ const RUN_TITLE = {
   declined: (p) => `Your run of ${p} was declined`,
 };
 
-const CATEGORY_BY_KIND = { approval: 'approval', review: 'review', pipeline: 'pipeline', work: 'work', pr: 'pr', production: 'production' };
+const CATEGORY_BY_KIND = { approval: 'approval', review: 'review', pipeline: 'pipeline', work: 'work', pr: 'pr', production: 'production', advisory: 'advisory' };
 
 /**
  * snapshot = {

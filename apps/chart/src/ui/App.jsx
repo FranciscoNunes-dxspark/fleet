@@ -13,13 +13,16 @@ import { actionTone } from '../rows.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { environmentFor } from '@fleet/kit/environments.js';
+import { recordCommand } from '@fleet/kit/recording.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { remember } from '@fleet/kit/folders.js';
 import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { ChangesView } from './ChangesView.jsx';
 import { StateView } from './StateView.jsx';
+import { DependsView } from './DependsView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
@@ -32,12 +35,14 @@ const VIEWS = [
   { id: 'drift', label: 'Drift' },
   { id: 'state', label: 'State' },
   { id: 'log', label: 'Log' },
+  { id: 'depends', label: 'Depends' },
 ];
 
 const HINTS = {
-  changes: '↵ what changes · a unchanged too · t for Splice · s app for Locker · y copy address · ctrl+r plan again',
+  changes: '↵ what changes · g what depends on it · a unchanged too · t for Splice · s app for Locker · y copy address · /apply',
   drift: '↵ what changed · t for Splice · s app for Locker · y copy address · /drift looks again',
   state: '↵ its values · t for Splice · y copy address',
+  depends: '↵ what changes · y copy address · red: destroyed or replaced, yellow: what that affects',
   log: '↵ all its output · y copy it',
 };
 
@@ -48,12 +53,13 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, cwd, tool, width, loading, mood, problem }) {
+function Header({ data, cwd, tool, env, width, loading, mood, problem }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Chart', bold: true },
     { text: '  │  ', color: theme.border },
     { text: basename(cwd) || cwd, color: theme.dim },
+    ...(env ? [{ text: `  ${env.name}`, color: env.prod ? theme.del : theme.info, bold: env.prod }] : []),
     { text: `  ${tool}`, color: theme.dim },
   ];
   if (data?.plan) {
@@ -131,6 +137,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   const [problem, setProblem] = useState(null);
   const [view, setView] = useState('changes');
   const [showAll, setShowAll] = useState(false);
+  // The resource the dependency view opens on (g on a change).
+  const [dependsFocus, setDependsFocus] = useState(null);
   const [focus, setFocusState] = useState('view');
   const [prompt, setPromptState] = useState({ value: '', cursor: 0 });
   const [sugIndex, setSugIndex] = useState(0);
@@ -141,6 +149,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   const [progress, setProgress] = useState('');
   const [welcome, setWelcome] = useState(true);
   const [update, setUpdate] = useState(null);
+  // The project's environment (.fleet/project.json), kept current when another app switches it; a production one draws the frames red.
+  const env = useEnvironment('chart', cwd);
   // The pet looks happy (or worried) for a few seconds after a result; re-render when that wears off.
   const [, setMoodTick] = useState(0);
   useEffect(() => {
@@ -237,6 +247,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   useEffect(
     () => () => {
       alive.current = false;
+      // The plan files kept for /apply go when Chart does.
+      provider.cleanup?.();
     },
     [],
   );
@@ -257,8 +269,16 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     const id = addEntry({ title, status: 'running' });
     // The reading on opening leaves the welcome box up; anything after puts it away.
     if (!starting.current) setWelcome(false);
+    // Output as it comes (an apply's): kept in the task's own entry, the last line beside the spinner.
+    let streamed = [];
+    const line = (l) => {
+      if (!alive.current) return;
+      streamed = [...streamed.slice(-499), l];
+      updateEntry(id, { lines: streamed });
+      if (l.trim()) setProgress(`· ${l.trim().slice(0, 80)}`);
+    };
     try {
-      const result = await start(controller.signal);
+      const result = await start(controller.signal, { line });
       const { stdout = '', stderr = '' } = result;
       const out = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
       lastOutput.current = { title, text: out || '(no output)' };
@@ -316,10 +336,14 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   Object.assign(ctx, {
     provider,
     cwd: () => cwdRef.current,
+    // Read when asked rather than from the hook's last render, so a /env just typed (here or in a sibling) counts at once.
+    env: () => environmentFor('chart', cwdRef.current),
     // /move: another folder, remembered among the recent ones.
     moveTo: (dir) => {
       cwdRef.current = dir;
       setCwdState(dir);
+      // Another folder's plan can't be applied from here any more.
+      if (dataRef.current?.plan?.planFile) provider.discard?.(dataRef.current.plan.planFile);
       setData(null);
       setConfig((c) => ({ ...c, recent: remember(c.recent ?? [], dir) }));
     },
@@ -336,6 +360,10 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     setConfig,
     setView,
     toggleAll: () => setShowAll((x) => !x),
+    openDepends: (address) => {
+      setDependsFocus(address);
+      setView('depends');
+    },
     openUrl: (url) => (openUrl ? openUrl(url) : note(`Open ${url}`)),
     // /update: asks for the latest release now, whatever the daily check last said, and installs it.
     updateNow: () => {
@@ -385,21 +413,30 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
 
   // One line as typed at the prompt: a shell command after !, else a slash command. Resolves false when it failed.
   const runLine = async (text) => {
+    // While Fleet records a runbook, each slash command (and a sibling's context, as the /take it is) goes in it once it has run.
+    let recorded = null;
     try {
       if (text.startsWith('!')) return (await a.raw(ctx, text.slice(1).trim())) !== false;
       // A sibling's context pasted alone is /take's.
-      if (decodeContext(text)) return (await a.take(ctx, text)) !== false;
+      if (decodeContext(text)) {
+        recorded = `/take ${text}`;
+        return (await a.take(ctx, text)) !== false;
+      }
       const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
       const cmd = findCommand(name);
       if (!cmd) {
         note(`Unknown command: /${name}. Type / to see them all.`, 'error');
         return false;
       }
+      recorded = `/${text.replace(/^\//, '')}`;
       const r = await cmd.run(ctx, rest.trim());
       return r !== false && r?.ok !== false;
     } catch (e) {
       note(firstLine(e.message), 'error');
       return false;
+    } finally {
+      // Not a ! line, nor a command that doesn't exist.
+      if (recorded) recordCommand('chart', recorded);
     }
   };
 
@@ -657,6 +694,10 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'depends') {
+    const dependsOn = a.dependenciesOf(data);
+    const dependsEmpty = !data?.plan ? 'No plan yet: /plan (or /whatif) first, then g on a change.' : !dependsOn ? 'This plan came without its configuration: /graph asks terraform graph what depends on what.' : 'Nothing in the plan.';
+    main = <DependsView changes={data?.plan?.changes ?? []} dependsOn={dependsOn} focus={dependsFocus} empty={dependsEmpty} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'state') {
     main = <StateView state={data?.state} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'drift') {
@@ -665,7 +706,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   } else {
     const found = data?.found;
     const changesEmpty = data?.plan ? 'Nothing to change: the infrastructure matches.' : !found ? 'Looking at the folder…' : found.tfDirs.length ? '/plan asks terraform what it would change (nothing is applied).' : found.bicep.length ? `/whatif ${found.bicep[0]} --rg <resource group> asks Azure what deploying it would change.` : 'No .tf or .bicep files here: /move to an infrastructure folder, or /open a saved plan.';
-    main = <ChangesView key="changes" changes={data?.plan?.changes ?? []} empty={changesEmpty} hint={data?.plan?.outputs?.length ? `${data.plan.outputs.length} outputs change` : ''} showAll={showAll} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ChangesView key="changes" changes={data?.plan?.changes ?? []} costs={a.costsOf(data)} empty={changesEmpty} hint={data?.plan?.outputs?.length ? `${data.plan.outputs.length} outputs change` : ''} showAll={showAll} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash
@@ -681,7 +722,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} cwd={cwd} tool={config.terraform ?? 'terraform'} width={W} loading={loading} mood={mood} problem={problem} />
+      <Header data={data} cwd={cwd} tool={config.terraform ?? 'terraform'} env={env} width={W} loading={loading} mood={mood} problem={problem} />
       <Tabs view={view} entries={entries} data={data} width={W} />
       <Box height={mainH} width={W}>
         {main}

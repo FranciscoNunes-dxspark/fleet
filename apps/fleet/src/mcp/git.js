@@ -33,6 +33,24 @@ async function read(root, args) {
   }
 }
 
+/**
+ * The commits on the checked-out branch since `since` (ms), newest first, at most `max`, for what
+ * changed lately (changes.js): [{ at, hash, author, subject, merge }]. None when there's no repository
+ * or no commit yet; git's own failure otherwise.
+ */
+export async function recentCommits(root, since, { max = 200 } = {}) {
+  const { LOG_FORMAT, DECORATE_REFS, parseLog } = await splice();
+  let raw;
+  try {
+    raw = await read(root, ['log', '--decorate=full', ...DECORATE_REFS, `--format=${LOG_FORMAT}`, `--since=@${Math.floor(since / 1000)}`, `-n${max}`, 'HEAD']);
+  } catch (e) {
+    // A repository with no commit yet has no HEAD to read from: nothing changed in it.
+    if (/unknown revision|bad default revision|does not have any commits/i.test(e.message)) return [];
+    throw e;
+  }
+  return parseLog(raw).map(({ commit: c }) => ({ at: c.time * 1000, hash: c.hash, author: c.author, subject: c.subject, merge: c.parents.length > 1 }));
+}
+
 const folderArg = { folder: { type: 'string', description: 'A folder of another repository (default: the project)' } };
 
 export const gitTools = [

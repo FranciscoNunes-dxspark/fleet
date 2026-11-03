@@ -41,6 +41,16 @@ test('the prefix and | or \\ split the screen, x puts it back, tab or an arrow g
   assert.equal(prefixAction('\x1b[A'), null);
 });
 
+test('the prefix and e, w, P and R: the environment, what changed, the proposals, recording', () => {
+  assert.deepEqual(prefixAction('e'), { type: 'environment' });
+  assert.deepEqual(prefixAction('w'), { type: 'changes' });
+  // Capitals are their own keys here: p stays the previous space, r the runbooks.
+  assert.deepEqual(prefixAction('P'), { type: 'proposals' });
+  assert.deepEqual(prefixAction('p'), { type: 'move', by: -1 });
+  assert.deepEqual(prefixAction('R'), { type: 'record' });
+  assert.deepEqual(prefixAction('r'), { type: 'runbooks' });
+});
+
 test('the prefix and m ask for a folder to move the fleet to', () => {
   assert.deepEqual(prefixAction('m'), { type: 'folder' });
   assert.deepEqual(prefixAction('M'), { type: 'folder' });

@@ -2,10 +2,14 @@
 // are) as real processes, driven through its input and read from the screen it draws.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { NOT_INSTALLED } from '@fleet/kit/claude-cli.js';
+import { currentEnvironment } from '@fleet/kit/environments.js';
 import { logActivity } from '@fleet/kit/family.js';
+import { recordCommand, recordingState } from '@fleet/kit/recording.js';
+import { readProposal, writeProposal } from '../src/proposals.js';
 import { traceLine } from '../src/trace.js';
 import { alive, familyHome, PREFIX, quietEnv, startHost, stopAll, until } from './helpers.js';
 
@@ -376,6 +380,153 @@ test('a notice stays for the time it asks for: the default, or longer for an ins
   host.notice('Installing Fleet 1.2.3…', 120_000);
   assert.deepEqual(delays, [4000, 120_000]);
   await until(() => term.screen.row(-1).includes('Installing Fleet 1.2.3…'), 'the installing notice in the bar', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+const PROJECT = JSON.stringify({ default: 'dev', environments: { dev: { two: { env: 'dev' } }, prod: { prod: true, two: { env: 'prod' } } } });
+
+test("the prefix and e picks the project's environment for every app, and the bar says which", async () => {
+  const tools = toolsIn({ 'project/.fleet/project.json': PROJECT });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 70, rows: 16 });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 70x15' && / dev ctrl\+b \? help$/.test(screen.row(-1)), 'the default environment in the bar', { term });
+  keys(`${PREFIX}e`);
+  await until(() => term.text().includes('Environment') && /› ● dev +current +two/.test(term.text()) && /prod +production/.test(term.text()), 'the picker, the current one marked', { term });
+  keys('j\r');
+  await until(() => / prod Every app is on prod now: production, careful$/.test(screen.row(-1)), 'switched, said in the bar', { term });
+  // The apps watch the choice in the family's folder; production is white on red in the bar.
+  assert.equal(currentEnvironment(tools.cwd, { home: tools.familyDir }).name, 'prod');
+  assert.ok(term.written.includes('\x1b[48;5;160mprod'));
+  assert.match(readFileSync(join(tools.familyDir, 'activity.jsonl'), 'utf8'), /"app":"fleet".*Switched project to prod \(production\)/);
+  await until(() => screen.row(0) === 'one 70x15', 'the app back', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('with no .fleet/project.json the environment panel says how to write one', async () => {
+  const tools = toolsIn({ 'project/readme.txt': 'x' });
+  const { term, keys, done } = startHost({ spaces: SPACES, tools, columns: 100, rows: 24 });
+  await until(() => term.screen.row(0) === 'one 100x23', 'the app', { term });
+  keys(`${PREFIX}e`);
+  await until(() => term.text().includes('No environments here.') && term.text().includes('"default": "dev",') && term.text().includes('"prod": { "prod": true'), 'the example', { term });
+  keys('\x1b');
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test("Claude's proposals wait in the bar and the panel: ↵ types one into its app's prompt, x dismisses one, and each says so", async () => {
+  const tools = toolsIn({ 'project/readme.txt': 'x' });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 70, rows: 16 });
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 70x15', 'the app', { term });
+  const first = writeProposal({ app: 'two', line: '/hello two', why: 'Two has not said hello yet' }, { home: tools.familyDir });
+  const second = writeProposal({ app: 'one', line: '/bye', why: 'Nothing left to do' }, { home: tools.familyDir, now: Date.now() + 1 });
+  // An hour old: it drops off, file and all.
+  const old = writeProposal({ app: 'one', line: '/old', why: 'stale' }, { home: tools.familyDir, now: Date.now() - 2 * 60 * 60_000 });
+  await until(() => / ◆2 proposed /.test(screen.row(-1)) && host.noticeText === 'Claude proposes 2 lines: ctrl+b P', 'the badge and the notice', { term });
+  assert.equal(readProposal(old.id, { home: tools.familyDir }), null);
+  keys(`${PREFIX}P`);
+  await until(() => term.text().includes("Claude's proposals") && /› +Two +\/hello two/.test(term.text()) && term.text().includes('Two has not said hello yet'), 'the panel', { term });
+  keys('jx');
+  await until(() => !term.text().includes('/bye'), 'the second dismissed', { term });
+  assert.equal(readProposal(second.id, { home: tools.familyDir }).status, 'dismissed');
+  keys('\r');
+  await until(() => screen.row(0) === 'two 70x15' && screen.row(1) === 'keys: "/hello two"', 'typed into the other app, not run', { term });
+  const handed = readProposal(first.id, { home: tools.familyDir });
+  assert.equal(handed.status, 'handed');
+  assert.ok(handed.decidedAt >= handed.at);
+  await until(() => !screen.row(-1).includes('proposed'), 'nothing waiting any more', { term });
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('the prefix and R records what the apps run as a runbook, opened when it stops; nothing recorded writes nothing', async () => {
+  const tools = toolsIn({ 'project/readme.txt': 'x' });
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 80, rows: 20 });
+  const { screen } = term;
+  const dir = join(tools.cwd, '.fleet', 'runbooks');
+  await until(() => screen.row(0) === 'one 80x19', 'the app', { term });
+  keys(`${PREFIX}R`);
+  await until(() => /● REC/.test(screen.row(-1)), 'REC in the bar', { term });
+  keys(`${PREFIX}R`);
+  await until(() => !/● REC/.test(screen.row(-1)) && /nothing was recorded/.test(host.noticeText), 'stopped, nothing written', { term });
+  assert.equal(existsSync(dir), false);
+  keys(`${PREFIX}R`);
+  await until(() => recordingState({ home: tools.familyDir })?.project === tools.cwd, 'recording again');
+  // What each app's recordCommand keeps, as they run their commands.
+  recordCommand('two', '/hello two', { home: tools.familyDir });
+  recordCommand('two', '/again', { home: tools.familyDir });
+  recordCommand('one', '/bye', { home: tools.familyDir });
+  recordCommand('one', '!rm -rf build', { home: tools.familyDir });
+  keys(`${PREFIX}R`);
+  await until(() => /› +1 {2}Two {2}\/hello two/.test(term.text()) && /3 {2}One {2}\/bye/.test(term.text()), 'the runbook, open', { term });
+  const [name] = readdirSync(dir);
+  assert.match(name, /^\d{4}-\d\d-\d\d-\d{4}-recorded\.md$/);
+  const text = readFileSync(join(dir, name), 'utf8');
+  assert.match(text, /^# Recorded \d{4}-\d\d-\d\d \d\d:\d\d\n/);
+  assert.match(text, /At \d\d:\d\d:\d\d, in Two:\n\n```two\n\/hello two\n\/again\n```\n\nAt \d\d:\d\d:\d\d, in One:\n\n```one\n\/bye\n```\n$/);
+  assert.match(host.noticeText, /^Recorded 3 steps in \.fleet.runbooks.\d{4}/);
+  keys('\x1b');
+  keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test('what changed: the symptoms on top and the timeline, - and + the window, and c asks Claude about it', async () => {
+  const tools = toolsIn({ 'project/readme.txt': 'x' });
+  const now = Date.now();
+  const asked = [];
+  let answer = async () => '1. The restart at 14:02 (likely).';
+  tools.changes = async ({ project, hours }) => {
+    asked.push(hours);
+    return {
+      project,
+      since: now - hours * 3_600_000,
+      now,
+      hours,
+      symptoms: [{ app: 'two', mood: 'worried', reason: 'api crashed', at: now }],
+      events: [
+        { at: now - 60_000, app: 'two', source: 'bosun', kind: 'crash', text: 'api crashed (exit 1)' },
+        { at: now - 120_000, app: 'one', source: 'git', kind: 'commit', text: 'abc1234 Change the pool size (Tess)' },
+      ],
+      notes: [],
+    };
+  };
+  tools.ask = (prompt, opts) => {
+    asked.push({ prompt, input: opts.input });
+    return answer();
+  };
+  const { host, term, keys, done } = startHost({ spaces: SPACES, tools, columns: 100, rows: 30 });
+  await until(() => term.screen.row(0) === 'one 100x29', 'the app', { term });
+  // w is Two's letter in these spaces: the panel is opened as the prefix and w opens it.
+  host.panels.changes();
+  await until(() => term.text().includes('What changed: the last 6h') && /Two +worried: api crashed/.test(term.text()) && /Two +bosun +api crashed \(exit 1\)/.test(term.text()) && /One +git +abc1234 Change the pool size/.test(term.text()), 'the timeline', { term });
+  keys('+');
+  await until(() => term.text().includes('What changed: the last 24h'), 'wider', { term });
+  keys('--');
+  await until(() => term.text().includes('What changed: the last 1h') && term.text().includes('(2 entries)'), 'narrower, down to an hour, read', { term });
+  // The 6h stepped past at once isn't read.
+  assert.deepEqual(asked, [6, 24, 1]);
+  keys('c');
+  await until(() => term.text().includes('> Two: api crashed'), 'the symptom offered', { term });
+  keys('\r');
+  await until(() => term.text().includes("Claude's likely causes of: Two: api crashed") && term.text().includes('1. The restart at 14:02 (likely).'), 'the answer', { term });
+  assert.match(asked.at(-1).prompt, /Something is wrong in a software project: Two: api crashed/);
+  // Claude gets the window's timeline on its standard input, the symptoms first.
+  assert.match(asked.at(-1).input, /in the last 1 hour[^]*two is worried: api crashed[^]*\[crash\] api crashed \(exit 1\)/);
+  // Without claude on the PATH, the panel says so.
+  answer = async () => {
+    throw new Error(NOT_INSTALLED);
+  };
+  keys('c\x15it is slow\r');
+  await until(() => term.text().includes("Claude couldn't answer:") && term.text().includes('Claude Code (claude) is not installed'), 'not installed, said', { term });
+  keys('\x1b');
+  await until(() => term.screen.row(0) === 'one 100x29', 'closed', { term });
   keys(`${PREFIX}q`);
   keys('y');
   await done;

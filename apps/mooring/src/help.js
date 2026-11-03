@@ -10,6 +10,7 @@ export const HELP = [
       ['ctrl+p', "The command palette: every command and this view's keys, filtered as you type"],
       ['!', 'Run a shell command on this machine, e.g.  !ssh-add -l'],
       ['$', 'Type a command into the Console shell on the server, e.g.  $ ls -l'],
+      ['alt+h', "The server's health (/health): disks, memory, load, uptime, the busiest processes, failed units; r reads it again"],
       ['esc', 'Cancel the running command, or clear the activity lines'],
       ['ctrl+r', 'Read both folders again'],
       [',', 'Settings'],
@@ -44,6 +45,8 @@ export const HELP = [
       ['i', 'Size, mode, time and, for a link, where it points'],
       ['.', 'Show files starting with a dot, or not'],
       '/cd and /lcd go to a typed path; /get and /put queue a named entry.',
+      ['/sync [down|up|both]', "Make the two panes' folders match: the plan (new, changed, deleted, conflicts) shown, asked, then the queue; --checksum compares sha256, --delete removes what is only on one side"],
+      ['/watch [off]', "Upload what changes in the left pane's folder as it changes (shown in the header), until /watch off"],
     ],
   },
   {

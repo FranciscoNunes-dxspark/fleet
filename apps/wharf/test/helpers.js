@@ -30,6 +30,8 @@ export function start(props = {}) {
   lastApp = render(
     React.createElement(App, {
       config: { history: [] },
+      // The temporary home, so no project's .fleet/project.json above the checkout is followed.
+      cwd: process.env.WHARF_HOME,
       provider,
       kube,
       pollEvery: 0,

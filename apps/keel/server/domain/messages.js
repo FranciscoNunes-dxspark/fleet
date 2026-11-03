@@ -7,10 +7,10 @@ import { STAGE_NAMES, reasonText } from '../../client/src/line/reasons.js';
 
 export const CHANNEL_KINDS = ['teams', 'slack', 'webhook'];
 // Inbox kinds a channel can announce. Reviews waiting on someone are personal, so they're not offered.
-export const CHANNEL_EVENTS = ['production', 'pipeline', 'approval', 'work', 'pr'];
-export const DEFAULT_EVENTS = ['production', 'pipeline', 'approval'];
+export const CHANNEL_EVENTS = ['production', 'pipeline', 'approval', 'work', 'pr', 'advisory'];
+export const DEFAULT_EVENTS = ['production', 'pipeline', 'approval', 'advisory'];
 // Keel writes these titles (translated); the others are Azure DevOps titles, posted as they are.
-const KEEL_TITLES = new Set(['production', 'approval', 'pipeline', 'team']);
+const KEEL_TITLES = new Set(['production', 'approval', 'pipeline', 'team', 'advisory']);
 const MAX_LINES = 25;
 
 /**
@@ -49,8 +49,8 @@ export function eventMessage(item, { t, tx }, keelUrl = null) {
   // The context line, unless it only repeats the link (a monitor's URL).
   const lines = [...item.reasons.map((r) => tx(r.text)), item.context && item.context !== item.webUrl ? tx(item.context) : null].filter(Boolean);
   const links = [
-    item.webUrl ? { label: item.kind === 'production' ? t('Open the site') : t('Open in Azure DevOps'), url: item.webUrl } : null,
-    keelUrl ? { label: t('Open in Keel'), url: `${keelUrl}/${item.kind === 'production' ? 'production' : 'inbox'}` } : null,
+    item.webUrl ? { label: item.kind === 'production' ? t('Open the site') : item.kind === 'advisory' ? t('Open the advisory') : t('Open in Azure DevOps'), url: item.webUrl } : null,
+    keelUrl ? { label: t('Open in Keel'), url: `${keelUrl}/${item.kind === 'production' ? 'production' : item.kind === 'advisory' ? 'insights?tab=advisories' : 'inbox'}` } : null,
   ].filter(Boolean);
   return { title, tone: item.severity === 'high' ? 'bad' : 'warn', sections: [{ lines }], links };
 }

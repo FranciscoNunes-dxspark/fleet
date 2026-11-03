@@ -10,7 +10,7 @@ import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
  * time the picker shows), or `load` fetches them first.
  * ↵ runs `onPick(item)`; `keys` maps other keys to `(item, picked) => ...`, and `actions` to `() => ...` for
  * keys about the whole list. With `range`, v starts and ends a selection of several rows, and `picked`
- * is the rows selected (otherwise just `item`). Esc clears the selection, else closes the picker; an overlay
+ * is the rows selected (otherwise just `item`); `onClose()` is called when esc or q closes it. Esc clears the selection, else closes the picker; an overlay
  * opened from here (the viewer, say) comes back to it, cursor and all, when that one closes.
  */
 export function Picker({ picker, ctx, width, height, active }) {
@@ -53,7 +53,8 @@ export function Picker({ picker, ctx, width, height, active }) {
   const press = (input, key) => {
     if (!ctx.overlayHasKeys()) return;
     if (key.escape && anchor != null) return setAnchor(null);
-    if (key.escape || input === 'q') return ctx.closeOverlay();
+    // `onClose` hears it go (a scan still filling it stops).
+    if (key.escape || input === 'q') return picker.onClose?.(), ctx.closeOverlay();
     if (input === 'v' && picker.range) return setAnchor(anchor == null ? nav.index : null);
     if (nav.handle(input, key)) return;
     // `actions`: keys about the list rather than a row (add one, say), which work even when it's empty.

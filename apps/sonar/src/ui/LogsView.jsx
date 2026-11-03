@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useInput } from 'ink';
-import { requestForHail, runQuery, saveQuery, toggleChart } from '../actions.js';
+import { changes, requestForHail, runQuery, saveQuery, toggleChart } from '../actions.js';
+import { legendSegments, rowMarkers } from '../markers.js';
+import { useMarkers } from './useMarkers.js';
 import { chartLines, chartOf } from '../chart.js';
 import { cellText, completeQuery, hailRequest, records } from '../insights.js';
 import { theme } from '../theme.js';
@@ -33,8 +35,15 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
     };
   }, [scope.component?.workspaceId ?? '']);
   const table = result ?? { columns: [], rows: [] };
+  // What changed the app in scope over the result's span: on a time chart's own line, and in a grid with
+  // a time column beside the first row after each (in time), with the legend under it.
+  const marks = useMarkers(ctx, scope.target, result?.span, result);
+  const markers = marks?.markers ?? [];
+  const timeCol = table.columns.findIndex((c) => /^(datetime|date|timestamp)$/i.test(c.type ?? ''));
+  const rowMarks = useMemo(() => (timeCol >= 0 && !result?.chart ? rowMarkers(markers, table.rows, timeCol) : {}), [marks, result]);
+  const marked = Object.values(rowMarks).flat();
   const extra = edit ? Math.min(5, completeQuery(edit.text, edit.cursor, schema).items.length) : 0;
-  const innerH = Math.max(1, height - 6 - extra);
+  const innerH = Math.max(1, height - 6 - extra - (marked.length ? 1 : 0));
   const nav = useListNav(table.rows.length, innerH, { resetKey: result });
   // Measured once per result, not on every key.
   const widths = useMemo(() => columnWidths(table), [result]);
@@ -81,6 +90,7 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
     if (input === 'c') return ctx.chooseComponent();
     if (input === 's') return saveQuery(ctx, query);
     if (input === 'v') return toggleChart(ctx);
+    if (input === 'M') return changes(ctx, scope.target ?? '');
     if (result?.chart) return key.return ? runQuery(ctx, query) : undefined;
     if (nav.handle(input, key)) return;
     if (input === 'h' || key.leftArrow) return setCol((c) => Math.max(0, c - 1));
@@ -114,7 +124,7 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
   const status = !result ? (query ? '↵ runs it' : 'e to write a query') : `${table.rows.length} row${table.rows.length === 1 ? '' : 's'} · ${result.span.label}${result.chart ? ' · chart (v grid)' : table.columns.length > 1 ? ` · columns ${col + 1}-${table.columns.length}` : ''}`;
   // The result as a chart (a query ending in render, or v): worked out once per result and width.
   const charted = useMemo(() => (result?.chart ? chartOf(table, result.kind) : null), [result]);
-  const chart = useMemo(() => (charted ? chartLines(charted, width - 4) : null), [charted, width]);
+  const chart = useMemo(() => (charted ? chartLines(charted, width - 4, { markers }) : null), [charted, width, marks]);
   return (
     <Panel title="Logs" hint={`${where} · ${status}`} width={width} height={height} focused={active}>
       <Row
@@ -134,7 +144,10 @@ export function LogsView({ query, result, scope, ctx, width, height, active }) {
         <Lines lines={chart.map((segs) => [{ text: ' ' }, ...segs])} width={width - 2} height={innerH + 2} />
       ) : result ? (
         table.rows.length ? (
-          <Grid table={table} widths={widths} width={width - 2} height={innerH} offset={nav.offset} index={nav.index} col={col} active={active && !edit} />
+          <>
+            <Grid table={table} widths={widths} width={width - 2} height={innerH} offset={nav.offset} index={nav.index} col={col} active={active && !edit} marks={marked.length ? rowMarks : null} />
+            {marked.length ? <Row pointer={false} width={width - 2} segments={[{ text: '  ' }, ...legendSegments(marked), { text: '  beside the first row after it · alt+m lists them', color: theme.dim }]} /> : null}
+          </>
         ) : (
           <Row pointer={false} width={width - 2} segments={[{ text: '  Nothing came back.', color: theme.dim }]} />
         )

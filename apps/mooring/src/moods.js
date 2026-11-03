@@ -7,12 +7,13 @@ import { PET } from './pet.js';
 const names = (list, name) => (list.length <= 2 ? list.map(name).join(', ') : `${list.slice(0, 2).map(name).join(', ')} and ${list.length - 2} more`);
 
 /**
- * The family's word for how Tug feels (happy | worried | busy | neutral) and why: a transfer that failed
- * or a connection that didn't open, worried; a transfer or command running, busy; a result just now, happy.
+ * The family's word for how Tug feels (happy | worried | busy | neutral) and why: a transfer that failed,
+ * a connection that didn't open, or a server whose disk is nearly full or whose units failed, worried; a transfer or command running, busy; a result just now, happy.
  */
 export function familyMood({ mood, trouble, lastEntry, busy, host }) {
   if (trouble?.failed.length) return { mood: 'worried', reason: `${names(trouble.failed, (t) => t.name)} didn't transfer` };
   if (trouble?.problem) return { mood: 'worried', reason: `couldn't connect: ${String(trouble.problem).split('\n')[0]}`.slice(0, 100) };
+  if (trouble?.health?.length) return { mood: 'worried', reason: `${host}: ${trouble.health.join(', ')}`.slice(0, 100) };
   if (mood === 'worried') return { mood: 'worried', reason: String(lastEntry?.title ?? 'something went wrong').slice(0, 100) };
   if (mood === 'look') return { mood: 'busy', reason: busy?.label ?? 'transferring' };
   if (mood === 'happy') return { mood: 'happy', reason: String(lastEntry?.title ?? 'that went well').slice(0, 100) };

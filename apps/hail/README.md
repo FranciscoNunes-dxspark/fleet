@@ -232,6 +232,45 @@ be committed. The environment wins over the file, so a file can hold defaults th
 variable can be made of others. A request with a variable nothing gives a value isn't sent: Hail
 says which.
 
+### Environments
+
+Hail has had environments of its own from the start, as VS Code and JetBrains do: the ones in
+`http-client.env.json` beside the file, which `e` and `/env [name]` pick between and Hail remembers for
+each file. The family of apps also shares a project's environments, named once for all of them in
+`.fleet/project.json` (in the project's folder or one above it, no higher than its git checkout), and
+chosen once for all of them: in any app, or in Fleet with `ctrl+b e`. In it, each environment says what
+it means to each app; to Hail, which of its own environments it is:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev":  { "hail": { "env": "local" } },
+    "prod": { "prod": true, "hail": { "env": "production" } }
+  }
+}
+```
+
+`/project-env` says which the project is in, and `/project-env prod` moves every app there. Whenever the
+project's environment changes (here, in another app, or in Fleet) or a file opens, Hail's variables
+come from the environment of Hail's it names (`production` above); one the file's `http-client.env.json`
+doesn't have is said. `e` and `/env` still pick another of Hail's for the moment, until the project's
+changes again. The header shows both: `env production  project prod (production)`.
+
+The family's other apps call theirs `/env`; in Hail `/env` was already its own environments' command,
+in the `.http` files' own format that other tools read too, so the project's is `/project-env` rather
+than a meaning of `/env` that changed underneath your own commands and keys.
+
+An environment marked `"prod": true` draws Hail's frames red, as it does every app's, and Hail asks
+before it sends anything but a `GET`, `HEAD` or `OPTIONS` to it: `↵` (and `ctrl+r` in Edit), `/send all`
+(once, saying how many would change something), `/load`, and `/replay` to it. GraphQL, gRPC and
+WebSocket requests count as ones that may change something. Hail's environment is production when a
+project environment marked so names it, or while the project's chosen environment is production and
+names none of Hail's.
+
+While Fleet records a runbook (`ctrl+b R`), each slash command run at Hail's prompt (and each `/take`)
+is kept for it, its secrets masked.
+
 ### OAuth 2
 
 As in JetBrains, an environment can say how to sign in, under `"Security"`, and a request uses the
@@ -476,6 +515,26 @@ headers or bodies of production's answers, so for a request taken from it the bo
 last response History has to the same method, path and query, wherever it went; with none, only the
 status is. The replay's own answer isn't kept in History, since it belongs to no request of the file.
 
+### Comparing environments
+
+`/compare <environment>` (or `alt+c` in Requests, which lists the environments to pick from) sends the
+request under the cursor in the environment Hail is in and then in another, and shows how the two
+answers differ. The other can be one of Hail's own environments or a project environment's name (see
+[Environments](#environments)), which stands for the environment of Hail's it names: `/compare prod`
+with `"prod": { "hail": { "env": "production" } }` compares with `production`.
+
+Each answer's status and time come first, then what differs: the status; the headers, leaving out the
+ones that differ on every response (`Date`, request ids and trace ids, `ETag`, `Server-Timing`,
+caches' and CDNs' own) and taking only the names of the cookies `Set-Cookie` sets, their values always
+differing; and the body. A JSON body is compared by path, as `/data` writes paths: `+ .items[1]  "b"`
+is only in the other environment, `- .currency  "EUR"` only in this one, and `~ .total  10 → 9.5`
+changed; any other body is compared line by line. When nothing differs, it says so.
+
+Both go as `↵` sends them, with each environment's variables, certificates and proxy, but as `/load`
+does: without the cookie jar, response handlers or `>>`, and not kept in History, since the answers
+belong to the comparison. Before anything but a `GET`, `HEAD` or `OPTIONS` goes to a production
+environment, Hail asks.
+
 ### Claude drafts requests
 
 `/draft <openapi.json, a URL, or any file> [what to write]` hands an API description to Claude (through
@@ -505,10 +564,45 @@ over and press `↵`.
 
 | What's taken | |
 | --- | --- |
-| A request (Sonar copies them from its logs and incidents, Trawl the request for an endpoint it wrote) | Added to the end of the file as `### replay <METHOD> <path>` and picked in Requests, ready to send. When the environment says where the API is (`host`, `baseUrl` or `baseURL`), Hail asks whether to send it there (the URL's scheme and host become `{{host}}`), to where it came from, or to replay it elsewhere and compare the answer with what it answered there (Sonar's carries production's status and time: see [Replaying a request elsewhere](#replaying-a-request-elsewhere); `/replay` does it later too); a URL that starts with a variable already (`{{host}}/players`) is added as it is. Credential headers it may carry are left out |
+| A request (Sonar copies them from its logs and incidents, Trawl the request for an endpoint it wrote) | Added to the end of the file as `### replay <METHOD> <path>` and picked in Requests, ready to send. When the environment says where the API is (`host`, `baseUrl` or `baseURL`), Hail asks whether to send it there (the URL's scheme and host become `{{host}}`), to where it came from, or to replay it elsewhere and compare the answer with what it answered there (Sonar's carries production's status and time: see [Replaying a request elsewhere](#replaying-a-request-elsewhere); `/replay` does it later too); a URL that starts with a variable already (`{{host}}/players`) is added as it is. Credential headers it may carry are left out. "Save it as a named request" keeps it in one of the project's `.http` files instead, as a log line's request is (below) |
 | Rows (Trawl copies them from its results) | Made a JSON body, an array of objects (one object for one row), and Hail asks where it goes: a new `POST` request at the end of the file, to `{{host}}/<table>` when the table is known, or in place of the body of the request under the cursor (a `Content-Type: application/json` header added when it has none). Either is an edit of the file, so `ctrl+z` in Edit undoes it |
-| A log line (Bosun copies them from a process's log) | Its request id (or, when it has none, the ids in its text: GUIDs, trace ids, `request_id=…`) is looked for in the History: the newest response whose request or response headers carry it (`X-Request-Id`, `Request-Id`, `traceparent`'s trace id, correlation ids, `X-Amzn-Trace-Id`) is shown, with the History's cursor on it. Those headers are kept in the history as they are; only credential headers are hidden |
+| A log line (Bosun copies them from a process's log) | Its request id (or, when it has none, the ids in its text: GUIDs, trace ids, `request_id=…`) is looked for in the History: the newest response whose request or response headers carry it (`X-Request-Id`, `Request-Id`, `traceparent`'s trace id, correlation ids, `X-Amzn-Trace-Id`) is shown, with the History's cursor on it. Those headers are kept in the history as they are; only credential headers are hidden. A line that carries a request of its own, and whose response isn't in the History, can be saved as one: see [Requests from logs](#requests-from-logs) |
 | Anything else | Said to be another app's: a commit, a file or an exception is Splice's, a query is Trawl's |
+
+### Requests from logs
+
+A log line taken from a sibling (Bosun's process logs, Sonar's, Wharf's containers') that carries a
+request, a method and a URL, perhaps with the status it got and its body, can become a request of the
+project's, when the History has no response of the file's own requests to show for it. Hail reads what
+logs usually write: `POST /api/orders/42 201`, an access log's `"GET /health HTTP/1.1" 200`, ASP.NET's
+`Request starting HTTP/1.1 POST http://localhost:5000/orders … {"id":1}`, and JSON lines with a
+`method` and `url` (or `path`, `uri`), at the top or under `req`, `request` or `http`, their `headers`
+and `statusCode` too.
+
+Hail asks where it goes: the open file, another `.http` file in the folder Hail is in, or
+`captured.http` there (made when it isn't). It's added at the end, through the editor when it's the
+open file (so `ctrl+z` in Edit takes it out), and picked in Requests, ready to send:
+
+```http
+### POST /api/orders/42/pay
+# from api at 10:42:01, where it answered 201
+# @name postApiOrdersPay
+POST {{host}}/api/orders/42/pay
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 5
+}
+```
+
+The URL's scheme and host become the environment's variable whose value it starts with (the longest
+one, so `{{apiBase}}` = `https://api.example.com/v1` wins over `{{host}}`), and a path alone goes under
+its `{{host}}`; with none that fits, the URL stays as it came. The headers that belong to the connection
+are left out, and so are cookies (the jar keeps them); a credential's value never goes into the file:
+`Authorization`, API keys and anything named like a token keep their name, and `Bearer` or `Basic`,
+with `{{token}}` where the value was, for the environment to give. It's named after its method and the
+path's words, ids left out, and a comment says which process it came from, when, and what it answered.
 
 `/family` lists what the open file's project offers the others, from its folder and the git checkout
 it's in: Splice's `/open <checkout>`, Bosun's `/move <folder>` when there's something to run there
@@ -543,6 +637,7 @@ setting turns both off.
 | `1` `2` `3` `4` `5` / `tab` | Requests, Edit, Response, History, Log (`shift+tab` goes back) |
 | `↵` | Send the request under the cursor; in Response, send it again; in Edit, start typing |
 | `alt+a` | In Requests: send every request, top to bottom, and show a report |
+| `alt+c` | In Requests: compare the request's answers in two environments (`/compare`) |
 | `alt+l` | In Requests: load in a pinch (starts `/load <request> 200 10` for you to change and run) |
 | `i` | Edit the file, typing, on the request under the cursor |
 | `ctrl+r` | In Edit: send the request the cursor is in |
@@ -607,6 +702,8 @@ and Trawl.
 | `/send [request]` | Send a request by name (the one under the cursor if none is named); `/send all` sends every one and shows a report |
 | `/load [request] [count] [concurrency]` | Send a request many times, so many at once (200, 10 at a time, unless said), and report how it held up |
 | `/env [name]` | The environment the variables come from (a list to pick from if none is named) |
+| `/project-env [name]` | The project's environment, every app's (`.fleet/project.json`): alone, which it is; a name switches every app, and Hail's variables then come from the environment of Hail's it names (see [Environments](#environments)) |
+| `/compare [environment]` | Send the request picked in Hail's environment and in another (Hail's own, or the project's), and show how the answers differ: status, time, headers and the body, JSON by path (see [Comparing environments](#comparing-environments)) |
 | `/curl [request]` | Copy a request, filled in, as a curl command |
 | `/data` | The response body, when it is JSON, JSON lines or CSV/TSV, as a tree to open and close (`→ ← ↵`) or, for rows, a table (`t`); `y` copies a value, `p` its path, `/` asks a path such as `.items[0].name` or `.items[].id \| length`; `esc` closes (`d` in Response) |
 | `/import <file> [--new]` | Add the requests in a Postman collection, a HAR recording or an OpenAPI or Swagger document (or a Postman environment, to `http-client.env.json`); `--new` writes them to a file of their own |

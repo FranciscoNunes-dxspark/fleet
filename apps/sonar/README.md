@@ -154,7 +154,7 @@ it reads the code the exception went through.
 
 `alt+i` on a problem (or `/incident`) tells it whole, in the viewer: when it was first and last seen, how
 often and to how many users, with its sparkline; the app's deployments in the 24 hours before it was
-first seen (or the latest before that); the app's Key Vault references as they are now, when it has any (one that doesn't resolve is a likely cause); its latest occurrence end to end; the stack it went through;
+first seen (or the latest before that), and its other changes then (swaps, settings saved, restarts, the family's), with what came shortly before it; the app's Key Vault references as they are now, when it has any (one that doesn't resolve is a likely cause); its latest occurrence end to end; the stack it went through;
 the SQL calls that failed in its operations (the server and database, and the command when Application
 Insights kept it); and when Sonar was started in the app's git checkout, the commits that touched the
 files in its stack in the 14 days before it was first seen. Outside a checkout that part is left out.
@@ -167,6 +167,30 @@ files in its stack in the 14 days before it was first seen. Outside a checkout t
 | `w` | Ask Claude for a draft write-up in Markdown: summary, impact, timeline, likely cause, next steps (it may read the code, as `w` in Problems does) |
 | `s` | Save the write-up (or the incident itself, before there's one) to a Markdown file; `/incident save <file>` does it too |
 | `y` | Copy the incident as Markdown |
+
+### What changed it
+
+Wherever Sonar draws something over time, it marks what changed the app in scope at that time, each a
+letter with a legend beside it: **D** a deployment (App Service's deployment history), **S** a slot
+swap, **C** a setting change and **R** a restart, stop or start (all three from the Azure activity log of
+the app and its slots), and from the family's activity for the folder Sonar started in, **K** a Keel
+pipeline, **P** a Splice push, **L** a change Locker made, **E** an environment switched, **F** another
+sibling's (Chart's deployments). The marks go:
+
+- in Problems, on a line over the sparklines, each in the bucket it fell in (a click on one shows it);
+- under a time chart in Logs, in the columns their times fall in;
+- in a grid in Logs with a time column, beside the first row after each, with the legend under it;
+- in Resources, under an app's metrics.
+
+A problem first seen within two hours of a deployment, a swap or a setting change says so: `12m after
+deploy` in its row, and "first seen 12 min after deployment Release 2.14.0 by Ana Silva (9b1c7e2)" under
+the list for the one under the cursor, and in its incident. A problem first seen within two hours of the
+span's start says nothing: it may have been there before.
+
+`alt+m` (or `/changes [app]`) lists them over the time span, newest first: what, when, who and the
+commit when the deployment has one (a git deployment is named by its commit; a message may say
+`Commit <hash>`). `↵` shows one whole, `y` copies its commit. Reading the activity log needs Reader on the
+app's resource group; what can't be read is said, and the rest still shows.
 
 ### Before and after
 
@@ -253,6 +277,42 @@ watching) and why, in a small file in `~/.family` (`FAMILY_HOME` moves it), and 
 says so once, in a line above the activity lines ("Twig says: PR #12 merged"), until `esc`. **Family
 moods** in the settings turns both off.
 
+## Environments
+
+A project names its environments (dev, staging, prod…) once for every app of the family, in
+`.fleet/project.json` in its folder (or a folder above the one Sonar starts in, up to its git checkout's
+root). `/env` says which is chosen, and `/env <name>` chooses another, for every app at once (as `ctrl+b
+e` does in Fleet); a switch in another app reaches Sonar within a second. Sonar reads its own section,
+`"sonar"`, which names things, never a secret:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev": { "sonar": { "subscription": "Contoso Dev", "app": "contoso-web-dev" } },
+    "prod": { "prod": true, "sonar": { "subscription": "Contoso Production", "resourceGroup": "contoso-prod", "app": "contoso-web", "slot": "staging", "component": "contoso-prod-ai" } }
+  }
+}
+```
+
+| In `"sonar"` | |
+| --- | --- |
+| `subscription` | Its name or id: Sonar opens it when it isn't the one on screen |
+| `app` | The web or function app to pick: the cursor goes to it in Resources, and Logs and Problems look at it |
+| `resourceGroup` | Where the app is, when two apps share its name |
+| `slot` | One of its slots instead (`production`, or none, is the app itself) |
+| `component` | The Application Insights to look in (its name or AppId), instead of the one the app's settings point at |
+
+Sonar picks them when the environment is chosen and when it starts (a start from the command line,
+`--app`, `--url` or `--insights`, keeps what it asked for), and says what it couldn't find. The
+environment shows in the top line. In one marked `"prod": true` the frames are red and everything Sonar
+changes (a restart, stop or start, a swap, settings, a function turned off or invoked, a scale, a route,
+a firewall rule, dead letters resubmitted or purged) asks first "prod is production. …?", before
+Sonar's own question (typing the app's name for one that looks like production).
+
+While Fleet records a runbook (`ctrl+b R`), each slash command Sonar runs from its prompt (and each
+`/take`) goes into it as it was typed; a command of your own is recorded as the lines it runs.
+
 ## Keys
 
 | Key | What it does |
@@ -276,6 +336,7 @@ moods** in the settings turns both off.
 | `alt+s` | Stop it, or start it if it's stopped |
 | `alt+w` | Swap a slot into production (on an app, pick the slot) |
 | `alt+d` | Its deployments: who, when, through what, how it went, which is active; `↵` shows one's log |
+| `alt+m` | What changed it over the span: deployments, swaps, settings saved, restarts, the family's changes (above); `↵` one whole |
 | `alt+k` | Copy it for [Locker](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/locker)'s prompt (`/take`), which compares its settings with the folder's and its key vault (`/locker [app]` too) |
 | `f` | A function app's functions (below) |
 | `l` `p` | Its logs · its problems |
@@ -336,6 +397,7 @@ accounts show their details only.
 | `alt+h` | Copy a request row for [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail)'s prompt, to send it again there, with its status and time when the row has them (for Hail's `/replay` to compare against) |
 | `alt+f` | Copy a request row as the text of a request in a `.http` file |
 | `c` | Which Application Insights (or Log Analytics workspace) to look in |
+| `alt+m` | What changed the app in scope over the span, the marks on the chart and the grid (above) |
 
 | In Live | |
 | --- | --- |
@@ -358,6 +420,7 @@ accounts show their details only.
 | `alt+i` | The incident: the problem told whole (below) |
 | `alt+k` | Before and after: what changed across the app's latest deployment (below) |
 | `alt+q` | The slowest SQL of the app in scope, for Trawl to explain (below) |
+| `alt+m` | What changed the app in scope over the span, the marks over the sparklines (above) |
 | `l` | Its exceptions in Logs |
 | `y` | Copy the message |
 | `alt+y` | Copy its latest exception, with its stack and the request it failed, for Splice's prompt |
@@ -435,6 +498,7 @@ and Trawl.
 | `/route <app> <slot> <percent>` | Send a share of an app's production traffic to a slot; `0` stops it (above) |
 | `/scale [app] <instances\|tier>` | Scale the App Service plan an app runs on (above) |
 | `/deployments [app]` | An app's or slot's deployments, and their logs |
+| `/changes [app]` | What changed an app or slot over the span: deployments, swaps, settings saved, restarts, the family's changes; `↵` one whole (who, when, its commit) |
 | `/locker [app]` | Copy an app or slot for Locker, to compare its settings with the folder's and its key vault |
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
 | `/firewall [server]` | Let this machine's public address through a SQL server's firewall |
@@ -443,6 +507,7 @@ and Trawl.
 | `/compare-window [deploy\|<time>]` | What changed across the latest deployment of the app in scope, or a time: exceptions, dependencies, failing operations |
 | `/watch <name> <threshold> <kql>` | Pin a query whose first value is a number; going over the threshold says so (above) |
 | `/watches` | Your watches and what they said last: `↵` runs one in Logs, `x` removes it |
+| `/env [name]` | Which of the project's environments is chosen, or choose another for every app; its `"sonar"` section picks the app (above) |
 | `/take <context>` | What another app copied for Sonar (above) |
 | `/family` | What this folder is to the other apps: a line for each one's prompt, `↵` copies it |
 | `/timeline` | What the family's apps changed, newest first: `p` this project only or all, `↵` an entry whole (above) |

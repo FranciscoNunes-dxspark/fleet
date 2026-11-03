@@ -38,6 +38,7 @@ export const HELP = [
       ['o', 'Open its first published port in the browser'],
       ['a', 'Only the running ones, or all of them'],
       ['p', 'Pause it, or let it run again'],
+      ['v', 'Hand Bilge its image to scan for known vulnerabilities (inside Fleet, Bilge opens with it)'],
       ['y', 'Copy its id'],
       ['/up /down', 'docker compose up -d or down for a project, run where its files are (down asks first)'],
       ['/exec', 'One command inside a running container, no terminal: /exec shop-db-1 ls /app'],
@@ -51,6 +52,7 @@ export const HELP = [
     rows: [
       ['x', 'Remove it (asks first; one a container uses asks again to force it)'],
       ['p', 'Remove the images nothing uses (/prune images)'],
+      ['v', 'Hand it to Bilge to scan for known vulnerabilities (/scan)'],
       ['y', 'Copy its id'],
     ],
   },
@@ -64,11 +66,22 @@ export const HELP = [
       ['e', 'A shell inside it (asks which container, when it has several); inside Fleet, line by line'],
       ['x', 'Delete it (asks first); its controller starts another'],
       ['r', 'Restart the deployment it belongs to, pod by pod (asks first)'],
+      ['w', 'Follow its deployment\'s rollout: replicas as they change, the new pods\' problems, done or stalled'],
       ['i', 'kubectl describe, events included'],
       ['y', 'Copy its name'],
       ['/namespace', 'One namespace, or all of them'],
       ['/context', 'Another cluster from kubeconfig (asks: kubectl itself switches)'],
       'In the list: ● green running and ready · yellow starting, terminating or not all ready · red crash-looping, failing to pull, killed · grey completed. CPU and memory show when the cluster has a metrics server.',
+    ],
+  },
+  {
+    title: 'Rollout',
+    about: 'w on a pod, or /rollout <deployment>: a deployment\'s rollout, read again every 2 seconds until it is done',
+    rows: [
+      ['u', 'Undo it: kubectl rollout undo, back to the previous revision (asks first)'],
+      ['l', 'The log of the newest pod with a problem, else of the first new pod'],
+      ['esc / q', 'Close (what it ended with stays in the activity lines)'],
+      'Stalled is past its progressDeadlineSeconds; failing is a new pod waiting on what it won\'t get over by itself (a crash loop, an image that can\'t be pulled). Both say so and offer u.',
     ],
   },
   {

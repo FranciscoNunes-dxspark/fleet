@@ -41,7 +41,7 @@ export const COMMANDS = [
   { name: 'cell', desc: 'The whole value of the cell under the cursor in Results: JSON and XML laid out, binary as hex (v)', run: (ctx) => a.showCell(ctx) },
   { name: 'follow', desc: 'From the cell under the cursor in Results along its foreign key (F)', run: (ctx) => a.followKey(ctx) },
   { name: 'pin', desc: 'Keep the result set on screen to compare a later run with (p in Results)', run: (ctx) => a.pinResult(ctx) },
-  { name: 'compare', desc: 'What changed between the pinned result and the one on screen (c in Results)', run: (ctx) => a.compareResults(ctx) },
+  { name: 'compare', args: '[connection|environment] [database]', desc: "This database's schema against another connection's or environment's: only here, only there, different; s the script that brings that one in line (alone: the pinned result against the one on screen, c in Results)", complete: 'compare', run: (ctx, s) => a.compareSchemas(ctx, s) },
   { name: 'data', desc: "The result set on screen as a table to look into, or the cell's value when it is JSON text, as a tree to open and query with a path like .items[0].name (w in Results)", run: (ctx) => a.showData(ctx) },
   { name: 'copy', args: '[tsv|csv|json|md|insert]', desc: 'Copy the result set on screen (tab-separated pastes into a spreadsheet)', run: (ctx, s) => a.copyResults(ctx, s.trim()) },
   { name: 'chart', args: '[bars|line|histogram|scatter] [x] [y…]', desc: 'The result set on screen as a chart, picked from its columns unless named (b in Results; esc back to the grid)', run: (ctx, s) => a.chart(ctx, s) },
@@ -73,12 +73,14 @@ export const COMMANDS = [
   { name: 'explain-slow', args: '[family:v1:…|sql]', desc: 'A statement slow in production (Sonar\'s /slow-sql hands one over), or the console\'s: its estimated plan (never run), then Claude on indexes, its DDL left in a console tab as text', run: (ctx, s) => a.explainSlow(ctx, s) },
   { name: 'explain', desc: 'Claude explains the last plan (p): what it does, what costs most, what might help', run: (ctx) => a.explainPlan(ctx) },
   { name: 'api', args: '[csharp|node|python|go]', desc: "Claude writes an HTTP endpoint that runs the console's statement, in the project's language (s saves it); copies a request for Hail", run: (ctx, s) => a.api(ctx, s) },
+  { name: 'copyrows', args: '<table> to <connection|environment> [where …] [limit n] [--keep col] [--mask col]', desc: 'Copy rows (and the rows they refer to) to another connection or environment, personal data masked: a preview says what each column gets; a key already there stops it; production asks first', complete: 'objects', run: (ctx, s) => a.copyRowsMasked(ctx, s) },
   { name: 'copy-rows', args: '<target> [table] [--where <condition>] [--no-mask]', desc: 'Copy rows (and the rows they refer to) to another connection, personal data made up; the script shows first (alt+c in Results and the Explorer)', complete: 'connections', run: (ctx, s) => a.copyRowsTo(ctx, s) },
   { name: 'rehearse', args: '[file]', desc: 'Run a migration (the console, or a file) inside a transaction that is rolled back: each statement\'s time, rows and errors, and the locks it held', run: (ctx, s) => a.rehearse(ctx, s) },
   { name: 'backup', args: '[file]', desc: "Back up the database you're in (not production or read-only): BACKUP … COPY_ONLY to the server's backup folder, or pg_dump / mysqldump here", run: (ctx, s) => a.backup(ctx, s) },
   { name: 'restore', args: '<file> [--as <database>]', desc: 'Restore a backup into a database, made or replaced (asking first); not on production or read-only connections', run: (ctx, s) => a.restore(ctx, s) },
   { name: 'export-bacpac', args: '[file]', desc: "Export the database you're in as a .bacpac (schema and data) with SqlPackage; Azure SQL Database too", run: (ctx, s) => a.exportBacpac(ctx, s) },
   { name: 'import-bacpac', args: '<file> [--as <database>]', desc: 'Import a .bacpac as a new database with SqlPackage; not on production or read-only connections', run: (ctx, s) => a.importBacpac(ctx, s) },
+  { name: 'env', args: '[name]', desc: "The project's environment (.fleet/project.json): which one, or choose one for every app; Trawl moves to the connection it names, and a production one asks before any write", complete: 'environments', run: (ctx, s) => a.environment(ctx, s) },
   { name: 'project', desc: "The databases this project's appsettings and .env files name that aren't saved yet: ↵ adds one", run: (ctx) => a.project(ctx) },
   { name: 'family', desc: 'What this project offers Splice, Bosun and Hail: ↵ copies the command to paste into theirs', run: (ctx) => a.family(ctx) },
   { name: 'timeline', desc: "What the family's apps did that changed something, newest first: p this project or all, ↵ an entry whole", run: (ctx) => a.timeline(ctx) },
@@ -101,12 +103,14 @@ export function findCommand(name, user = []) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function completions(kind, { config, schema, conn, tabs }) {
+function completions(kind, { config, schema, conn, tabs, environments = [] }) {
+  if (kind === 'environments') return environments;
+  if (kind === 'compare') return [...config.connections.map((c) => c.name), ...environments];
   if (kind === 'snippets') return [...snippetsFor(config.snippets, conn).map((s) => s.name), ...SNIPPET_WORDS];
   if (kind === 'connections') return config.connections.map((c) => c.name);
   if (kind === 'tabs') return [...(tabs ?? []), 'new', 'close', 'rename'];
   if (kind === 'folders') return folderNames(config.connections);
-  if (kind === 'diff') return [...config.connections.map((c) => c.name), ...(schema?.databases.filter((d) => d !== schema.database) ?? [])];
+  if (kind === 'diff') return [...config.connections.map((c) => c.name), ...environments, ...(schema?.databases.filter((d) => d !== schema.database) ?? [])];
   if (!schema) return [];
   if (kind === 'databases') return schema.databases;
   if (kind === 'everything') return schema.objects.map(objectName);

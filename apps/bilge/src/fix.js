@@ -9,9 +9,53 @@ const NUGET_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 const VERSION = /^[0-9][0-9A-Za-z.+-]*$/;
 const FILE = /^[\w][\w .-]*$/;
 
+// What each of npm's, Yarn's and pnpm's commands is for the same job. Only safe() names and versions reach them.
+const TOOLS = {
+  npm: {
+    name: 'npm',
+    add: (name, spec, dev) => `npm install ${name}@${spec}${dev ? ' --save-dev' : ''}`,
+    update: (name) => `npm update ${name}`,
+    check: (name) => `npm ls ${name}`,
+    override: (name, version) => `"overrides": { "${name}": "^${version}" }`,
+  },
+  yarn: {
+    name: 'yarn',
+    add: (name, spec, dev) => `yarn add ${name}@${spec}${dev ? ' --dev' : ''}`,
+    // Yarn 2+ moves a package anywhere in the tree with up -R; Yarn 1 only what the project asks for.
+    update: (name, manifest) => (manifest.berry ? `yarn up -R ${name}` : null),
+    check: (name) => `yarn why ${name}`,
+    override: (name, version) => `"resolutions": { "${name}": "^${version}" }`,
+  },
+  pnpm: {
+    name: 'pnpm',
+    add: (name, spec, dev) => `pnpm add ${name}@${spec}${dev ? ' --save-dev' : ''}`,
+    update: (name) => `pnpm update ${name}`,
+    check: (name) => `pnpm why ${name}`,
+    override: (name, version) => `"pnpm": { "overrides": { "${name}": "^${version}" } }`,
+  },
+};
+
+/** The tool a JavaScript manifest's lock file is for: npm, yarn or pnpm. */
+export const toolOf = (manifest) => (TOOLS[manifest?.tool] ? manifest.tool : 'npm');
+
+/** A manifest's folder as Bilge shows it ('.' for the top). */
+const folderOf = (manifest) => manifest.path.replace(/\/?[^/]+$/, '') || '.';
+
 /** Whether `name` and `version` are what the registry of `ecosystem` would have given. */
 export function safe(ecosystem, name, version) {
   return (ecosystem === 'npm' ? NPM_NAME : NUGET_NAME).test(String(name)) && VERSION.test(String(version));
+}
+
+/**
+ * The command that moves `pkg` (a direct one) to exactly `version` in `manifest`, for /upgrade:
+ * { command, cwd }, or null when no command does it safely (no lock file, no plain project file).
+ */
+export function updateCommand(pkg, manifest, version) {
+  if (!safe(pkg.ecosystem, pkg.name, version)) return null;
+  if (pkg.ecosystem === 'npm') return manifest.kind === 'lock' ? { command: TOOLS[toolOf(manifest)].add(pkg.name, version, pkg.dev), cwd: manifest.dir } : null;
+  if (pkg.ecosystem !== 'NuGet') return null;
+  const project = manifest.project ? basename(manifest.project) : null;
+  return project && FILE.test(project) ? { command: `dotnet add "${project}" package ${pkg.name} --version ${version}`, cwd: manifest.dir } : null;
 }
 
 /**
@@ -19,26 +63,29 @@ export function safe(ecosystem, name, version) {
  * (the finding's fix by default): { run: { command, cwd }, check: { command, cwd }, text } when a
  * command does it, else { text } saying what to change, or null when nothing fixes it yet. `check` is
  * what says, once it has run, whether the project still holds together: npm ls on the package (an
- * invalid peer or range fails it), dotnet restore on the project (a framework the package isn't built
+ * invalid peer or range fails it; yarn why and pnpm why for theirs), dotnet restore on the project (a framework the package isn't built
  * for, NU1202, fails it).
  */
 export function fixPlan(finding, manifest, version = finding.fixed) {
   const { pkg } = finding;
   if (!version) return null;
+  // An image's system package moves with the image: no command here does it.
+  if (pkg.ecosystem !== 'npm' && pkg.ecosystem !== 'NuGet') return { text: `${pkg.name} is part of the image's operating system (${pkg.ecosystem}): rebuild the image on a newer base, or upgrade it in the Dockerfile (apt-get install --only-upgrade, apk upgrade) to ${version} or later.` };
   if (!safe(pkg.ecosystem, pkg.name, version)) return { text: `${pkg.name} ${version} isn't a name and version Bilge will put in a command.` };
   if (pkg.ecosystem === 'npm') {
+    const tool = TOOLS[toolOf(manifest)];
     if (manifest.kind !== 'lock') return { text: `${manifest.path} has no lock file: npm install makes one, then /audit again.` };
+    const check = { command: tool.check(pkg.name), cwd: manifest.dir };
     if (pkg.direct) {
-      const command = `npm install ${pkg.name}@^${version}${pkg.dev ? ' --save-dev' : ''}`;
-      return { run: { command, cwd: manifest.dir }, check: { command: `npm ls ${pkg.name}`, cwd: manifest.dir }, text: `${command}  (in ${manifest.path.replace(/\/?[^/]+$/, '') || '.'})` };
+      const command = tool.add(pkg.name, `^${version}`, pkg.dev);
+      return { run: { command, cwd: manifest.dir }, check, text: `${command}  (in ${folderOf(manifest)})` };
     }
-    // Something else brings it in: npm update moves it within the ranges asked for, and an override
-    // where they don't reach.
-    return {
-      run: { command: `npm update ${pkg.name}`, cwd: manifest.dir },
-      check: { command: `npm ls ${pkg.name}`, cwd: manifest.dir },
-      text: `npm update ${pkg.name} moves it within what its parents ask for. If ${version} is outside that, add to package.json:\n  "overrides": { "${pkg.name}": "^${version}" }\nthen npm install.`,
-    };
+    // Something else brings it in: the tool's update moves it within the ranges asked for, and an
+    // override where they don't reach. Yarn 1 has no command that moves a package it doesn't ask for.
+    const update = tool.update(pkg.name, manifest);
+    const pin = `add to package.json:\n  ${tool.override(pkg.name, version)}\nthen ${tool.name} install.`;
+    if (!update) return { text: `Yarn 1 can't move a package something else brings in by itself. To move ${pkg.name} to ${version}, ${pin}` };
+    return { run: { command: update, cwd: manifest.dir }, check, text: `${update} moves it within what its parents ask for. If ${version} is outside that, ${pin}` };
   }
   const project = manifest.project ? basename(manifest.project) : null;
   if (!project) return { text: `No project file beside ${manifest.path}: dotnet add <project> package ${pkg.name} --version ${version}` };

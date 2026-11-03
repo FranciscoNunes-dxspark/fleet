@@ -1,10 +1,14 @@
 // Everything Chart reads and runs goes through one object with one interface: `detect(dir)` (what the
 // folder holds), `plan` and `state` (terraform or tofu, through their command lines), `whatIf` (az's
 // what-if of a Bicep or ARM file), `init`, `readFile` (a saved plan) and `locate` (where a resource is
-// declared); `deploy` is the one thing that changes anything, and only /deploy calls it, after asking. The command lines run through the kit's run.js, so whatever they're signed in to and set
-// up for is what Chart uses; nothing may wait on a prompt (-input=false). Everything put in a command
-// line is checked first by safeArg(). demo.js's demoChart() has the same interface.
-import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+// declared), `prices` (the Azure Retail Prices API). Two things change anything, and only after the
+// person has typed the name of where they go: `apply` (terraform apply of a plan file this provider
+// saved itself, and no other) and `deploy` (az deployment create). The command lines run through the
+// kit's run.js (apply's with its `onLine`, so its output comes as it's written), so whatever
+// they're signed in to and set up for is what Chart uses; nothing may wait on a prompt
+// (-input=false). Everything put in a command line is checked first by safeArg(). demo.js's
+// demoChart() has the same interface.
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -81,6 +85,7 @@ export function explain(error, program) {
   const text = String(error.message ?? error);
   if (/not found|not recognized|ENOENT/i.test(text) && text.length < 300) return new Error(`${program} isn't installed (or isn't on the PATH).`);
   if (/Please run "az login"|az login/i.test(text)) return new Error(`az isn't signed in: run az login.\n${text.split('\n')[0]}`);
+  if (/Saved plan is stale/i.test(text)) return new Error(`The plan is stale: the state changed after Chart planned, so ${program} applied nothing. /plan again, then /apply.`);
   if (/terraform init|tofu init|Plugin reinitialization required|Module not installed|Backend initialization required/i.test(text)) return new Error(`The folder needs init first: /init runs it.\n${text.split('\n').find((l) => /Error/.test(l)) ?? text.split('\n')[0]}`);
   return error;
 }
@@ -91,7 +96,39 @@ export function missingParameters(error) {
   return m ? m[1].split(',').map((n) => n.trim()).filter((n) => /^[A-Za-z_][\w]*$/.test(n)) : [];
 }
 
-export function createChart({ run = runCommand } = {}) {
+// A workspace's name as Terraform takes it.
+const WORKSPACE = /^[\w-]+$/;
+
+/** Throws unless `bin` is one Chart runs, and an environment's workspace and var file can go in a command line. */
+function checkTool(bin, { workspace, varFile } = {}) {
+  if (!BINARIES.includes(bin)) throw new Error(`Chart runs ${BINARIES.join(' or ')}, not ${bin}.`);
+  if (workspace && !WORKSPACE.test(workspace)) throw new Error(`"${workspace}" isn't a workspace name Terraform takes.`);
+  if (varFile && !safeArg(varFile)) throw new Error(`"${varFile}" has characters Chart won't put in a command line.`);
+}
+
+// An environment's workspace goes in TF_WORKSPACE rather than through `terraform workspace select`, so
+// choosing one in Chart never changes which workspace the folder is on for a terraform run outside it.
+const workspaceEnv = (workspace) => (workspace ? { TF_WORKSPACE: workspace } : undefined);
+
+export const PRICES_URL = 'https://prices.azure.com/api/retail/prices';
+// Enough pages for any one service in one region; a filter that matches more is too broad to be one price.
+const MAX_PRICE_PAGES = 20;
+
+/** The Retail Prices API's $filter for `query` (serviceName, armRegionName, armSkuName, skuName, productName): pay-as-you-go prices only. */
+export function priceFilter(query) {
+  const quote = (v) => `'${String(v).replace(/'/g, "''")}'`;
+  const fields = ['serviceName', 'armRegionName', 'armSkuName', 'skuName', 'productName'].filter((k) => query[k] !== undefined && query[k] !== null);
+  return [...fields.map((k) => `${k} eq ${quote(query[k])}`), "priceType eq 'Consumption'"].join(' and ');
+}
+
+export function createChart({ run = runCommand, stream = runCommand, fetch: fetchPrices = globalThis.fetch } = {}) {
+  // Prices for the session: each query asked once (its promise kept, so two changes asking together ask once).
+  const priceCache = new Map();
+  // The plan files this provider saved, in a folder of its own only this user can read (a plan file
+  // holds the configuration's values, sensitive ones too); apply takes no other.
+  const saved = new Set();
+  let planDir = null;
+  const planFolder = () => (planDir ??= mkdtempSync(join(tmpdir(), 'chart-plans-')));
   /** Runs one az deployment command; typed-in `values` go in a temporary parameters file (never the command line, where a process list would show them), removed afterwards. */
   async function az(dir, command, { values, signal } = {}) {
     const names = Object.keys(values ?? {});
@@ -117,22 +154,75 @@ export function createChart({ run = runCommand } = {}) {
     async detect(dir) {
       return detectFolder(dir);
     },
-    /** A plan (or a refresh-only one: what drifted), as plan.js's. */
-    async plan(dir, { bin = 'terraform', refreshOnly = false, signal } = {}) {
-      if (!BINARIES.includes(bin)) throw new Error(`Chart runs ${BINARIES.join(' or ')}, not ${bin}.`);
-      const out = join(tmpdir(), `chart-${randomUUID()}.tfplan`);
+    /**
+     * A plan (or a refresh-only one: what drifted), as plan.js's; `workspace` and `varFile` are the
+     * environment's. With `keep`, the plan file stays (in the provider's own folder) as the plan's
+     * `planFile`, the one thing `apply` takes; otherwise it is removed once read.
+     */
+    async plan(dir, { bin = 'terraform', refreshOnly = false, workspace, varFile, keep = false, signal } = {}) {
+      checkTool(bin, { workspace, varFile });
+      const keeping = keep && !refreshOnly;
+      const out = join(keeping ? planFolder() : tmpdir(), `chart-${randomUUID()}.tfplan`);
       if (!safeArg(out)) throw new Error(`The temporary folder ${tmpdir()} has characters Chart won't put in a command line.`);
+      const env = workspaceEnv(workspace);
+      let done = false;
       try {
-        await run(`${bin} plan -input=false -lock=false -no-color${refreshOnly ? ' -refresh-only' : ''} -out="${out}"`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
-        const { stdout } = await run(`${bin} show -json "${out}"`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
-        return parseTerraformPlan(stdout);
+        await run(`${bin} plan -input=false -lock=false -no-color${refreshOnly ? ' -refresh-only' : ''}${varFile ? ` -var-file="${varFile}"` : ''} -out="${out}"`, { cwd: dir, signal, env }).catch((e) => Promise.reject(explain(e, bin)));
+        const { stdout } = await run(`${bin} show -json "${out}"`, { cwd: dir, signal, env }).catch((e) => Promise.reject(explain(e, bin)));
+        const plan = parseTerraformPlan(stdout);
+        done = true;
+        if (!keeping) return plan;
+        saved.add(out);
+        return { ...plan, planFile: out };
       } finally {
-        rmSync(out, { force: true });
+        if (!keeping || !done) rmSync(out, { force: true });
       }
     },
-    async state(dir, { bin = 'terraform', signal } = {}) {
-      if (!BINARIES.includes(bin)) throw new Error(`Chart runs ${BINARIES.join(' or ')}, not ${bin}.`);
-      const { stdout } = await run(`${bin} show -json -no-color`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
+    /** Removes a plan file `plan` kept (a newer plan replaced it, or it was applied). */
+    discard(planFile) {
+      if (!planFile || !saved.has(planFile)) return;
+      saved.delete(planFile);
+      rmSync(planFile, { force: true });
+    },
+    /** Removes every plan file kept, and their folder: when Chart closes. */
+    cleanup() {
+      saved.clear();
+      if (planDir) rmSync(planDir, { recursive: true, force: true });
+      planDir = null;
+    },
+    /** `terraform graph`'s DOT for the folder: what depends on what, for a plan that came without its configuration. */
+    async graph(dir, { bin = 'terraform', workspace, signal } = {}) {
+      checkTool(bin, { workspace });
+      const { stdout } = await run(`${bin} graph`, { cwd: dir, signal, env: workspaceEnv(workspace) }).catch((e) => Promise.reject(explain(e, bin)));
+      return stdout;
+    },
+    /** The workspace terraform runs in: the environment's, or what the folder has selected. */
+    async workspace(dir, { bin = 'terraform', workspace, signal } = {}) {
+      checkTool(bin, { workspace });
+      if (workspace) return workspace;
+      const { stdout } = await run(`${bin} workspace show`, { cwd: dir, signal }).catch((e) => Promise.reject(explain(e, bin)));
+      return stdout.trim().split('\n').pop() || 'default';
+    },
+    /**
+     * terraform apply of `planFile`, which must be one `plan` saved (`keep`): nothing else is ever
+     * applied. Terraform itself refuses a plan the state has moved on from (explain() says so).
+     * `onLine` gets the output as it comes.
+     */
+    async apply(dir, { bin = 'terraform', planFile, workspace, onLine, signal } = {}) {
+      checkTool(bin, { workspace });
+      if (!planFile || !saved.has(planFile)) throw new Error('Chart applies only a plan it saved itself: /plan, then /apply.');
+      if (!safeArg(planFile)) throw new Error(`"${planFile}" has characters Chart won't put in a command line.`);
+      try {
+        return await stream(`${bin} apply -input=false -no-color "${planFile}"`, { cwd: dir, signal, env: workspaceEnv(workspace), onLine }).catch((e) => Promise.reject(explain(e, bin)));
+      } finally {
+        // Applied, or refused as stale: either way it can't be applied again.
+        saved.delete(planFile);
+        rmSync(planFile, { force: true });
+      }
+    },
+    async state(dir, { bin = 'terraform', workspace, signal } = {}) {
+      checkTool(bin, { workspace });
+      const { stdout } = await run(`${bin} show -json -no-color`, { cwd: dir, signal, env: workspaceEnv(workspace) }).catch((e) => Promise.reject(explain(e, bin)));
       // An empty state says so in words, not JSON.
       if (!stdout.trim().startsWith('{')) return { tool: 'terraform', version: null, resources: [] };
       return parseTerraformState(stdout);
@@ -149,7 +239,7 @@ export function createChart({ run = runCommand } = {}) {
       const { stdout } = await az(dir, command, { values, signal });
       return parseWhatIf(stdout);
     },
-    /** az's deployment of a Bicep or ARM `file`: the same scope and arguments as `whatIf`, for real. Only /deploy calls it, after asking. */
+    /** az's deployment of a Bicep or ARM `file`: the same scope and arguments as `whatIf`, for real. Only /deploy and /apply call it, after a what-if and the typed name. */
     async deploy(dir, { file, resourceGroup, location, params, values, signal } = {}) {
       for (const v of [file, resourceGroup, location, params].filter(Boolean)) if (!safeArg(v)) throw new Error(`"${v}" has characters Chart won't put in a command line.`);
       if (!file) throw new Error('A deployment needs a Bicep or ARM file.');
@@ -165,6 +255,33 @@ export function createChart({ run = runCommand } = {}) {
       }
       // Outputs can hold secrets, so only their names are kept.
       return { name: json.name ?? null, state: json.properties?.provisioningState ?? 'Succeeded', outputs: Object.keys(json.properties?.outputs ?? {}) };
+    },
+    /** The Azure Retail Prices API's items for `query` (priceFilter's) in `currency`, every page of them; kept for the session. */
+    async prices(query, { currency = 'USD', signal } = {}) {
+      if (!/^[A-Z]{3}$/.test(currency)) throw new Error(`${currency} isn't a currency code (USD, EUR, GBP…).`);
+      const key = JSON.stringify([currency, priceFilter(query)]);
+      if (!priceCache.has(key)) {
+        const ask = (async () => {
+          const items = [];
+          let url = `${PRICES_URL}?currencyCode='${currency}'&$filter=${encodeURIComponent(priceFilter(query))}`;
+          for (let page = 0; url && page < MAX_PRICE_PAGES; page++) {
+            const res = await fetchPrices(url, { signal, headers: { accept: 'application/json' } }).catch((e) => {
+              throw new Error(`Couldn't reach prices.azure.com: ${e.cause?.code ?? e.message}`);
+            });
+            if (!res.ok) throw new Error(`The Azure price list answered ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`);
+            const body = await res.json();
+            items.push(...(body.Items ?? []));
+            url = body.NextPageLink || null;
+          }
+          return items;
+        })();
+        // A failure isn't kept: the next plan asks again.
+        priceCache.set(key, ask.catch((e) => {
+          priceCache.delete(key);
+          throw e;
+        }));
+      }
+      return priceCache.get(key);
     },
     async readFile(path) {
       return parseAny(readFileSync(path, 'utf8'));

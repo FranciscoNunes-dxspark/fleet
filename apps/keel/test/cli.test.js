@@ -69,6 +69,23 @@ test('↵ on a pull request in the Inbox opens it in the Pull requests tab', asy
   app.unmount();
 });
 
+test('each pull request shows its risk score, and its pane the reasons that add up to it', async () => {
+  const app = start();
+  await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');
+  app.stdin.write(KEYS.enter);
+  await until(() => /Risk \d+ of 100, (low|medium|high)/.test(frame()), 'the risk in the pane');
+  const { risks } = await keel.service.prRisks();
+  const r = risks.find((x) => x.id === 817);
+  assert.ok(r, 'a score for !817');
+  // The number sits after the pull request's own in its row.
+  assert.ok(frame().split('\n').some((l) => new RegExp(`!817\\s+${r.score} `).test(l)), `!817 with ${r.score} in the list`);
+  assert.match(frame(), new RegExp(`Risk ${r.score} of 100, ${r.level}`));
+  // The reasons come below the reviewers; the full view (↵) has them all.
+  app.stdin.write(KEYS.enter);
+  if (r.reasons[0]) await until(() => new RegExp(`\\+\\s*${r.reasons[0].points} `).test(frame()), 'the reasons in the full view');
+  app.unmount();
+});
+
 test('approving a pull request records the vote and says so', async () => {
   const app = start();
   await until(() => frame().includes('Implement refund endpoint'), 'the Inbox');

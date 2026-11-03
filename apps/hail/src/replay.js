@@ -161,7 +161,7 @@ export function targetNamed(arg, { envs = null } = {}) {
 }
 
 // Headers that differ on every response, whatever the server: comparing them says nothing.
-const VOLATILE = /^(date|age|expires|last-modified|etag|content-length|transfer-encoding|connection|keep-alive|server-timing|set-cookie|x-request-id|request-id|request-context|traceparent|tracestate|x-correlation-id|x-trace-id|x-amzn-trace-id|x-azure-ref|x-ms-request-id|x-powered-by|server|via|alt-svc|strict-transport-security|report-to|nel)$/i;
+export const VOLATILE = /^(date|age|expires|last-modified|etag|content-length|transfer-encoding|connection|keep-alive|server-timing|set-cookie|x-request-id|request-id|request-context|traceparent|tracestate|x-correlation-id|x-trace-id|x-amzn-trace-id|x-azure-ref|x-ms-request-id|x-powered-by|server|via|alt-svc|strict-transport-security|report-to|nel)$/i;
 
 /** A response as text to compare: its status, the headers that say something (when `headers`), its body. */
 export function comparable(r, { headers = true } = {}) {

@@ -3,6 +3,7 @@
 // So demo data and tests go through the same mapping as a real GitHub owner, and write
 // actions (reviews, merges, runs, deployment reviews) really change what it answers.
 import { createGithubProvider } from '../github/provider.js';
+import { DEMO_GITHUB_FILES } from './advisories.js';
 
 // What GitHub sends for a changed file: a unified patch of it, which the demo makes up.
 const withPatch = (f) => (f.patch || f.status === 'removed' ? f : {
@@ -227,6 +228,10 @@ export function createDemoApi(owner) {
   // REST: [method, path pattern, handler(match, { query, body })].
   const routes = [
     ['GET', /^user$/, () => ({ login: ME.login, name: ME.name })],
+    ['GET', /^repos\/[^/]+\/([^/]+)\/git\/trees\/[^/]+$/, ([, r]) => {
+      repoOf(r);
+      return { tree: Object.keys(DEMO_GITHUB_FILES[r] || { 'README.md': '' }).map((path) => ({ path, type: 'blob' })), truncated: false };
+    }],
     ['GET', /^users\/([^/]+)$/, () => ({ login: owner, type: 'Organization' })],
     ['GET', /^orgs\/[^/]+\/repos$/, () => db.repos],
     ['GET', /^repos\/[^/]+\/([^/]+)\/pulls\/(\d+)\/files$/, ([, r, n]) => prOf(r, n).files.map(withPatch)],
@@ -374,6 +379,9 @@ export function createDemoApi(owner) {
   async function apiText(path) {
     if (/\/contents\//.test(path)) {
       if (/\.github\/pull_request_template\.md$/.test(path)) return '## What\n\n## Why\n\n## How to test\n';
+      const [, r, file] = /^repos\/[^/]+\/([^/]+)\/contents\/(.+)$/.exec(path) || [];
+      const text = r && DEMO_GITHUB_FILES[r]?.[decodeURIComponent(file)];
+      if (text !== undefined) return text;
       throw notFound(path);
     }
     const job = /actions\/jobs\/(\d+)\/logs$/.exec(path);

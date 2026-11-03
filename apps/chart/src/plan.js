@@ -1,10 +1,12 @@
 // What a plan says, in one shape for every tool: Terraform's (and OpenTofu's) `show -json` of a plan or
 // of the state, and Azure's what-if of a Bicep or ARM deployment. Pure.
 //
-// A change: { address, type, name, module?, mode, provider?, action, reason?, diff, id?, resourceGroup? }
+// A change: { address, type, name, module?, mode, provider?, action, reason?, diff, id?, resourceGroup?, pricing }
 //   action: create | update | replace | delete | read | noop | forget | deploy | ignore | unsupported
 //   diff:   [{ path, kind: add | remove | change | unknown, before?, after?, forces?, sensitive?, noise? }]
 import { attributeDiff } from './diff.js';
+import { pricingSpec } from './costs.js';
+import { idDependencies, planDependencies } from './graph.js';
 
 /** Terraform's actions as one word: ["delete","create"] (or the other way round) is a replacement. */
 export function actionOf(actions = []) {
@@ -46,6 +48,8 @@ function terraformChange(rc) {
     diff: attributeDiff(c.before, c.after, { unknown: c.after_unknown, beforeSensitive: c.before_sensitive, afterSensitive: c.after_sensitive, forces: c.replace_paths }),
     ...(action === 'create' ? {} : { id: c.before?.id ?? null }),
     ...(c.before?.resource_group_name || c.after?.resource_group_name ? { resourceGroup: c.after?.resource_group_name ?? c.before?.resource_group_name } : {}),
+    // What sets its price, before and after (costs.js): a few named facts, nothing sensitive or unknown.
+    pricing: { before: pricingSpec(rc.type, c.before, { sensitive: c.before_sensitive }), after: pricingSpec(rc.type, c.after, { sensitive: c.after_sensitive, unknown: c.after_unknown }) },
   };
 }
 
@@ -62,7 +66,9 @@ export function parseTerraformPlan(json) {
   const outputs = Object.entries(plan.output_changes ?? {})
     .map(([name, c]) => ({ name, action: actionOf(c.actions), sensitive: Boolean(c.sensitive), diff: attributeDiff({ value: c.before }, { value: c.after }, { unknown: { value: c.after_unknown }, beforeSensitive: c.sensitive ? { value: true } : {}, afterSensitive: c.sensitive ? { value: true } : {} }) }))
     .filter((o) => o.action !== 'noop');
-  return { tool: 'terraform', version: plan.terraform_version ?? null, changes, drift, outputs, errored: Boolean(plan.errored) };
+  // What depends on what, from the configuration's references (null for a plan without one: /graph asks terraform graph).
+  const dependsOn = planDependencies(plan.configuration, changes.map((c) => c.address));
+  return { tool: 'terraform', version: plan.terraform_version ?? null, changes, drift, outputs, dependsOn, errored: Boolean(plan.errored) };
 }
 
 /**
@@ -134,9 +140,10 @@ export function parseWhatIf(json) {
     const { type, name, resourceGroup, subscription } = parseResourceId(c.resourceId);
     const action = WHAT_IF[c.changeType] ?? 'unsupported';
     const diff = c.delta?.length ? flattenDelta(c.delta) : action === 'create' ? attributeDiff(null, c.after) : action === 'delete' ? attributeDiff(c.before, null) : [];
-    return { address: `${type}/${name}`, type, name, mode: 'managed', provider: type.split('/')[0], action, ...(c.unsupportedReason ? { reason: c.unsupportedReason } : {}), diff, id: c.resourceId, ...(resourceGroup ? { resourceGroup } : {}), ...(subscription ? { subscription } : {}) };
+    return { address: `${type}/${name}`, type, name, mode: 'managed', provider: type.split('/')[0], action, ...(c.unsupportedReason ? { reason: c.unsupportedReason } : {}), diff, id: c.resourceId, ...(resourceGroup ? { resourceGroup } : {}), ...(subscription ? { subscription } : {}), pricing: { before: pricingSpec(type, c.before), after: pricingSpec(type, c.after) } };
   });
-  return { tool: 'bicep', version: null, changes, drift: [], outputs: [], errored: body.status === 'Failed' };
+  // A what-if says nothing of references: only a child resource's place under its parent.
+  return { tool: 'bicep', version: null, changes, drift: [], outputs: [], dependsOn: idDependencies(changes), errored: body.status === 'Failed' };
 }
 
 /** What a JSON file is: a Terraform plan, a Terraform state, or a what-if result, parsed; throws for anything else. */

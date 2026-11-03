@@ -6,7 +6,7 @@ import { fit } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
-const KINDS = { lock: 'lock file', project: 'project', manifest: 'no lock', broken: 'unreadable' };
+const KINDS = { lock: 'lock file', project: 'project', manifest: 'no lock', broken: 'unreadable', image: 'image' };
 
 /** The lock files and projects found: how many packages each has, how many it asks for itself, how many are vulnerable. */
 export function ManifestsView({ data, found, ctx, width, height, active }) {
@@ -34,7 +34,7 @@ export function ManifestsView({ data, found, ctx, width, height, active }) {
   const vulnerable = (m) => found.filter((f) => f.pkg.where.some((w) => w.path === m.path)).length;
   return (
     <Panel title="Manifests" hint={data ? `${list.length} in ${data.root}` : ''} width={width} height={height} focused={active}>
-      {data && !list.length ? <Row pointer={false} width={width - 2} segments={[{ text: '  None here. /move to a folder with a package-lock.json, a packages.lock.json or a .csproj.', color: theme.dim }]} /> : null}
+      {data && !list.length ? <Row pointer={false} width={width - 2} segments={[{ text: '  None here. /move to a folder with a lock file (npm, Yarn, pnpm, NuGet) or a .csproj.', color: theme.dim }]} /> : null}
       {list.slice(nav.offset, nav.offset + innerH).map((m, i) => {
         const v = vulnerable(m);
         return (
@@ -46,7 +46,7 @@ export function ManifestsView({ data, found, ctx, width, height, active }) {
             segments={[
               { text: fit(m.path, pathW), strong: true },
               { text: ` ${fit(m.ecosystem, 6)}`, color: theme.dim },
-              { text: ` ${fit(KINDS[m.kind] ?? m.kind, 11)}`, color: m.kind === 'lock' ? theme.dim : theme.warn },
+              { text: ` ${fit(KINDS[m.kind] ?? m.kind, 11)}`, color: m.kind === 'lock' || (m.kind === 'image' && m.packages.length) ? theme.dim : theme.warn },
               { text: ` ${fit(`${m.packages.length} packages`, 13)}`, color: theme.info },
               { text: ` ${fit(`${m.packages.filter((p) => p.direct).length} direct`, 10)}`, color: theme.dim },
               { text: ` ${fit(v ? `${v} vulnerable` : '', 13)}`, color: theme.del },

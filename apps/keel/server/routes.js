@@ -81,6 +81,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
 
   r.get('/people',async (req, res) => res.json(await req.ctx.service.people()));
   r.get('/prs', async (req, res) => res.json(await req.ctx.service.pullRequests()));
+  // Each active pull request's risk score and its reasons (domain/risk.js), apart from the list, which it would slow.
+  r.get('/prs/risk', async (req, res) => res.json(await req.ctx.service.prRisks()));
   r.get('/prs/closed', async (req, res) => res.json(await req.ctx.service.closedPullRequests(Number(req.query.days) || 30)));
   r.post('/prs', need('prs.write'), async (req, res) => res.status(201).json(await req.ctx.service.createPullRequest(req.body || {})));
   r.get('/repos', async (req, res) => res.json(await req.ctx.service.repos()));
@@ -229,6 +231,13 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     res.json(await req.ctx.service.queueBuild(projectId, num(definitionId), branch));
   });
 
+  // The advisory watch's findings per tracked repository, and reading one again now (once per 10 minutes).
+  r.get('/advisories', async (req, res) => res.json(await req.ctx.service.advisories()));
+  r.post('/advisories/check', async (req, res) => {
+    const { projectId, repoId } = req.body || {};
+    if (typeof projectId !== 'string' || typeof repoId !== 'string' || !projectId || !repoId) return res.status(400).json({ error: 'projectId and repoId required' });
+    res.json(await req.ctx.service.checkAdvisories(projectId, repoId));
+  });
   r.get('/production', async (req, res) => res.json(await req.ctx.service.production()));
   r.get('/production/monitors', (req, res) => res.json(req.ctx.service.monitors().list()));
   r.put('/production/monitors', need('monitors.manage'), async (req, res) => {
@@ -296,6 +305,12 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   // What's merged but not deployed yet, per production environment.
   r.get('/deploys/pending', async (req, res) => res.json(await req.ctx.service.undeployed()));
   r.get('/delivery', async (req, res) => res.json(await req.ctx.service.delivery(Math.min(90, Math.max(7, Number(req.query.days) || 30)))));
+  // DORA per project and team: 30 or 90 days against the period before; ?production= names override the settings'.
+  r.get('/dora', async (req, res) => {
+    const days = Number(req.query.days) === 90 ? 90 : 30;
+    const production = typeof req.query.production === 'string' ? req.query.production.slice(0, 300) : undefined;
+    res.json(await req.ctx.service.dora(days, { production }));
+  });
   // One week's summary for everyone: ?week=YYYY-MM-DD (any day of the week; this week when absent).
   r.get('/summary', async (req, res) => res.json(await req.ctx.service.summary(req.query.week ? String(req.query.week) : undefined)));
 

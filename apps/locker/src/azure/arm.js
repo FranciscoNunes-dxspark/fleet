@@ -29,7 +29,7 @@ export const kindOf = (kind) => (/functionapp/i.test(kind ?? '') ? 'function' : 
 
 const groupOf = (id) => /\/resourceGroups\/([^/]+)/i.exec(id ?? '')?.[1] ?? '';
 
-/** An ARM site or slot as Locker shows it: { id, name, slot, kind, resourceGroup, location, state }. */
+/** An ARM site or slot as Locker shows it: { id, name, slot, kind, resourceGroup, location, state, hostName }. */
 export function siteFrom(s, parent = null) {
   const p = s.properties ?? {};
   return {
@@ -41,6 +41,8 @@ export function siteFrom(s, parent = null) {
     resourceGroup: p.resourceGroup ?? groupOf(s.id),
     location: s.location,
     state: p.state ?? 'Unknown',
+    // Its default address (shop-api.azurewebsites.net), where /rotate checks it answers after a restart.
+    hostName: p.defaultHostName ?? null,
   };
 }
 
@@ -56,6 +58,9 @@ const iso = (seconds) => (seconds ? new Date(seconds * 1000).toISOString() : nul
 
 /** A secret's or certificate's name from its id (https://v.vault.azure.net/secrets/<name>[/<version>]). */
 export const nameOfId = (id) => String(id ?? '').split('/')[4] ?? '';
+
+/** The version in a secret's id, or null when it names none. */
+export const versionOfId = (id) => String(id ?? '').split('/')[5] || null;
 
 /** A secret as Key Vault lists it (never with its value): { name, enabled, contentType, created, updated, expires, notBefore, managed }. */
 export function secretFrom(s) {
@@ -92,6 +97,12 @@ const pause = (ms, signal) =>
     const t = setTimeout(() => (signal?.removeEventListener('abort', stop), resolve()), ms);
     signal?.addEventListener('abort', stop, { once: true });
   });
+
+/** A secret's version in a vault's address, refused when it isn't one. */
+function versionPath(version) {
+  if (!/^[0-9A-Za-z]{1,64}$/.test(String(version ?? ''))) throw new Error(`"${version}" isn't a Key Vault secret version.`);
+  return version;
+}
 
 /** A secret's name in a vault's address, refused when it isn't one (nothing else may reach the URL). */
 function secretPath(name) {
@@ -193,13 +204,45 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       const r = await kv(vault, `secrets/${secretPath(name)}`, { ...opts, what: `Reading ${name} in ${vault.name}` });
       return String(r?.value ?? '');
     },
-    /** Sets a secret (a new version of it, or the first); the answer, which repeats the value, is dropped. */
+    /**
+     * Sets a secret (a new version of it, or the first): { version }, the new version's id. The rest of
+     * the answer, which repeats the value, is dropped.
+     */
     async setSecret(vault, name, value, { contentType, ...opts } = {}) {
-      await kv(vault, `secrets/${secretPath(name)}`, { ...opts, method: 'PUT', body: { value: String(value), ...(contentType ? { contentType } : {}) }, what: `Setting ${name} in ${vault.name}` });
+      const r = await kv(vault, `secrets/${secretPath(name)}`, { ...opts, method: 'PUT', body: { value: String(value), ...(contentType ? { contentType } : {}) }, what: `Setting ${name} in ${vault.name}` });
+      return { version: versionOfId(r?.id) };
     },
-    /** Turns a secret's current version off (enabled false), or back on. */
-    async enableSecret(vault, name, enabled, opts) {
-      await kv(vault, `secrets/${secretPath(name)}/`, { ...opts, method: 'PATCH', body: { attributes: { enabled: Boolean(enabled) } }, what: `${enabled ? 'Enabling' : 'Disabling'} ${name} in ${vault.name}` });
+    /** A secret's versions, newest first, without their values: [{ version, enabled, created, updated, expires }]. */
+    async versions(vault, name, opts) {
+      const list = await all(`secrets/${secretPath(name)}/versions?maxresults=25`, (url, o) => (url.startsWith('http') ? call(VAULT, url, o) : kv(vault, url, o)), { ...opts, what: `Listing ${name}'s versions in ${vault.name}` });
+      return list
+        .map((v) => ({ version: versionOfId(v.id), enabled: v.attributes?.enabled !== false, created: iso(v.attributes?.created), updated: iso(v.attributes?.updated), expires: iso(v.attributes?.exp) }))
+        .sort((a, b) => String(b.created).localeCompare(String(a.created)));
+    },
+    /** Turns a secret's current version off (enabled false), or back on; with `version`, that version. */
+    async enableSecret(vault, name, enabled, { version, ...opts } = {}) {
+      await kv(vault, `secrets/${secretPath(name)}/${version ? versionPath(version) : ''}`, { ...opts, method: 'PATCH', body: { attributes: { enabled: Boolean(enabled) } }, what: `${enabled ? 'Enabling' : 'Disabling'} ${name}${version ? `'s version ${version.slice(0, 8)}` : ''} in ${vault.name}` });
+    },
+    /** Restarts an app or slot, as az webapp restart does (the same ARM call). */
+    async restart(target, opts) {
+      await arm(`${target.id}/restart?api-version=${WEB}`, { ...opts, method: 'POST', what: `Restarting ${label(target)}` });
+    },
+    /**
+     * A plain GET of `url` (an app's health address, no token sent): { status }, 0 with `error` when
+     * nothing answered within ten seconds or at all. Never throws but for a cancel.
+     */
+    async probe(url, { signal } = {}) {
+      const own = callSignal(signal);
+      try {
+        const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.any([own.signal ?? new AbortController().signal, AbortSignal.timeout(10_000)]) });
+        await res.text?.().catch(() => '');
+        return { status: res.status };
+      } catch (e) {
+        if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { cancelled: true });
+        return { status: 0, error: String(e.message ?? e).split('\n')[0] };
+      } finally {
+        own.done();
+      }
     },
     portalUrl: (resource) => `https://portal.azure.com/#@/resource${resource.id}`,
   };

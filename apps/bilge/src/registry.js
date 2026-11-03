@@ -4,7 +4,7 @@
 // /<name>/latest and /<name>/<version>, and every version at once in its short form; NuGet's flat
 // container lists every version and keeps each one's .nuspec, whose <license> is the licence and whose
 // dependency groups name the frameworks.
-import { eachLimited, getJson } from './osv.js';
+import { eachLimited, getJson } from '@fleet/kit/osv.js';
 import { compareVersions, isPrerelease, newest, parseVersion } from './versions.js';
 import { nuspecFrameworks } from './frameworks.js';
 import { requiredPeers } from './lockfiles.js';
@@ -17,8 +17,19 @@ const AT_ONCE = 8;
 /** npm's address for a package: a scope's slash escaped. */
 export const npmPath = (name) => name.replace('/', '%2f');
 
-/** Where a person reads about a package. */
-export const packageUrl = (p) => (p.ecosystem === 'npm' ? `https://www.npmjs.com/package/${p.name}/v/${p.version}` : `https://www.nuget.org/packages/${p.name}/${p.version}`);
+/** Whether a package is one the registries here know (npm's and NuGet's), not an image's system package. */
+export const hasRegistry = (p) => p.ecosystem === 'npm' || p.ecosystem === 'NuGet';
+
+/** Where a person reads about a package: its registry's page, or its distribution's for an image's. */
+export function packageUrl(p) {
+  const name = encodeURIComponent(p.name);
+  if (p.ecosystem === 'npm') return `https://www.npmjs.com/package/${p.name}/v/${p.version}`;
+  if (p.ecosystem === 'NuGet') return `https://www.nuget.org/packages/${p.name}/${p.version}`;
+  if (/^Debian:/.test(p.ecosystem)) return `https://tracker.debian.org/pkg/${name}`;
+  if (/^Ubuntu:/.test(p.ecosystem)) return `https://launchpad.net/ubuntu/+source/${name}`;
+  if (/^Alpine:/.test(p.ecosystem)) return `https://pkgs.alpinelinux.org/packages?name=${name}&branch=${p.ecosystem.slice('Alpine:'.length)}`;
+  return `https://osv.dev/list?q=${name}`;
+}
 
 /** A .nuspec's licence: the SPDX expression, else the file or address it points at; null when it has none. */
 export function nuspecLicence(xml) {
@@ -34,6 +45,24 @@ export function nuspecLicence(xml) {
     [/opensource\.org\/licenses\/BSD-3/i, 'BSD-3-Clause'],
   ].find(([re]) => re.test(url));
   return known ? known[1] : url;
+}
+
+/**
+ * A repository's address as a person opens it: npm's `git+https://…/x.git`, `git://…` or
+ * `github:owner/repo` as https. Null when it isn't one.
+ */
+export function repositoryUrl(text) {
+  const s = String(text ?? '').trim();
+  const short = /^(?:github:)?([\w.-]+\/[\w.-]+)$/.exec(s);
+  if (short) return `https://github.com/${short[1].replace(/\.git$/, '')}`;
+  const url = s.replace(/^git\+/, '').replace(/^git:\/\//, 'https://').replace(/^ssh:\/\/git@/, 'https://').replace(/\.git$/, '');
+  return /^https?:\/\/\S+$/.test(url) ? url : null;
+}
+
+/** A .nuspec's repository (its <repository url>, else its <projectUrl>), or null. */
+export function nuspecRepository(xml) {
+  const s = String(xml ?? '');
+  return repositoryUrl(/<repository\b[^>]*\burl\s*=\s*"([^"]+)"/i.exec(s)?.[1] ?? /<projectUrl>\s*([^<]+?)\s*<\/projectUrl>/i.exec(s)?.[1]);
 }
 
 /** What an npm version's document says it needs: { node?, peers? }. */
@@ -78,7 +107,8 @@ export function createRegistry({ fetchImpl = globalThis.fetch, npm = NPM_URL, nu
       if (!doc) return { latest: null };
       const licence = typeof doc.license === 'string' ? doc.license : doc.license?.type;
       const needs = npmNeeds(doc);
-      return { latest: doc.version ?? null, ...(doc.deprecated ? { deprecated: String(doc.deprecated) } : {}), ...(licence && !p.license ? { license: licence } : {}), ...(Object.keys(needs).length ? { needs } : {}) };
+      const repository = repositoryUrl(typeof doc.repository === 'string' ? doc.repository : doc.repository?.url);
+      return { latest: doc.version ?? null, ...(doc.deprecated ? { deprecated: String(doc.deprecated) } : {}), ...(licence && !p.license ? { license: licence } : {}), ...(Object.keys(needs).length ? { needs } : {}), ...(repository ? { repository } : {}) };
     }
     const id = p.name.toLowerCase();
     const index = await getJson(fetchImpl, `${nuget}/${id}/index.json`, { signal, what: 'NuGet' });
@@ -87,7 +117,8 @@ export function createRegistry({ fetchImpl = globalThis.fetch, npm = NPM_URL, nu
     const [own, next] = await Promise.all([p.license ? null : nuspecOf(p, p.version, signal), newer ? nuspecOf(p, latest, signal) : null]);
     const licence = p.license ? null : nuspecLicence(own);
     const needs = next ? nugetNeeds(next) : {};
-    return { latest, ...(licence ? { license: licence } : {}), ...(Object.keys(needs).length ? { needs } : {}) };
+    const repository = nuspecRepository(next ?? own);
+    return { latest, ...(licence ? { license: licence } : {}), ...(Object.keys(needs).length ? { needs } : {}), ...(repository ? { repository } : {}) };
   };
   return {
     /**

@@ -12,7 +12,9 @@ import { explainKube } from '../kubeactions.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
-import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
+import { recordCommand } from '@fleet/kit/recording.js';
+import { readProject } from '@fleet/kit/environments.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
@@ -22,6 +24,7 @@ import { PodsView } from './PodsView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { ShellPane } from './ShellPane.jsx';
+import { RolloutView } from './RolloutView.jsx';
 import { commandLine } from '../shell.js';
 import { spawn } from 'node:child_process';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
@@ -37,9 +40,9 @@ const VIEWS = [
 ];
 
 const HINTS = {
-  containers: '↵ log · e shell · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause',
-  images: 'x remove · p prune unused · y copy id',
-  pods: '↵ log · c a container\'s log · e shell · x delete · r restart deployment · i describe · y copy name',
+  containers: '↵ log · e shell · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause · v scan',
+  images: 'x remove · p prune unused · v scan · y copy id',
+  pods: '↵ log · c a container\'s log · e shell · x delete · r restart deployment · w watch rollout · i describe · y copy name',
   log: '↵ all its output · y copy it',
 };
 
@@ -47,12 +50,13 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, width, loading, mood, problem, provider }) {
+function Header({ data, width, loading, mood, problem, provider, env }) {
   const segs = [
     { text: `${FACES[mood]} `, color: theme.accent, bold: true },
     { text: 'Wharf', bold: true },
   ];
   if (provider !== 'docker') segs.push({ text: `  ${provider}`, color: theme.warn });
+  if (env) segs.push({ text: `  ${env.name}`, color: env.prod ? theme.del : theme.info, bold: env.prod });
   if (data) {
     const up = data.containers.filter((c) => c.state === 'running').length;
     const bad = data.containers.filter((c) => c.health === 'unhealthy' || (c.state === 'exited' && c.exitCode > 0)).length;
@@ -114,7 +118,9 @@ const viewerKey = (overlay) => {
 // come only in the downloaded builds, so tests and checkouts never go online or replace anything.
 // `runInTerminal(command, args)` hands the terminal to a program and takes it back (cli.jsx's, only
 // outside Fleet); without it a shell (e) runs in the line-mode pane, started by `spawnShell`.
-export function App({ config: initialConfig, provider = createDocker(), kube = createKube(), pollEvery = 3000, moodEvery = 30_000, openUrl, setTitle, mouse, copy, checkUpdate, installUpdate, runInTerminal, spawnShell = spawn }) {
+// `rolloutEvery` is how often a rollout being followed is read again, in ms. `cwd` is the folder whose
+// project's environments (.fleet/project.json) Wharf follows.
+export function App({ config: initialConfig, cwd = process.cwd(), provider = createDocker(), kube = createKube(), pollEvery = 3000, rolloutEvery = 2000, moodEvery = 30_000, openUrl, setTitle, mouse, copy, checkUpdate, installUpdate, runInTerminal, spawnShell = spawn }) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
@@ -195,6 +201,10 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
   viewRef.current = view;
   const kubeRef = useRef(null);
   const kubeNamespace = useRef(initialConfig.kubeNamespace ?? 'all');
+  // The project's environment, as Wharf's section has it: { name, prod, context?, namespace? } or null.
+  const env = useEnvironment('wharf', cwd);
+  const envRef = useRef(env);
+  envRef.current = env;
   const setKubeData = (next) => {
     kubeRef.current = next;
     setKubeDataState(next);
@@ -348,6 +358,14 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     get kubeData() {
       return kubeRef.current;
     },
+    get env() {
+      return envRef.current;
+    },
+    cwd,
+    // The namespace the Pods view lists, read or not yet: what a deployment named alone is looked for in.
+    get kubeNamespace() {
+      return kubeNamespace.current;
+    },
     task,
     note,
     confirm,
@@ -358,7 +376,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     refresh: () => (viewRef.current === 'pods' ? reloadKube() : reload()),
     setKubeNamespace: (namespace) => {
       kubeNamespace.current = namespace;
-      setConfig((c) => ({ ...c, kubeNamespace: namespace }));
+      // An environment's namespace is its own; only one chosen without it is remembered.
+      if (!envRef.current?.namespace) setConfig((c) => ({ ...c, kubeNamespace: namespace }));
       reloadKube();
     },
     // Settings change through App's copy, the only one written to disk (ctx.config reads it).
@@ -412,6 +431,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     // One container's (`container`), or every one of the pod's.
     showPodLogs: (p, { container, ...opts } = {}) => setOverlay({ kind: 'logs', title: `${p.name}${container ? `/${container}` : ''} · log`, process: p.name, source: () => kube.logs(p, { tail: 500, container }), ...opts }),
     shareTrouble: (what) => a.shareTrouble(ctx, what),
+    // A deployment's rollout ({ deployment, namespace }), followed over the view.
+    showRollout: (target) => setOverlay({ kind: 'rollout', title: `rollout ${target.namespace}/${target.deployment}`, target }),
     // e: a shell, `make(tty)` saying the command ({ command, args }). With a terminal to hand over it
     // runs there until it ends; inside Fleet (no terminal) in the line-mode pane.
     openShell: ({ title, make }) => {
@@ -432,7 +453,11 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     try {
       if (text.startsWith('!')) return (await a.raw(ctx, text.slice(1).trim())) !== false;
       // A sibling's context pasted alone is /take's.
-      if (decodeContext(text)) return (await a.take(ctx, text)) !== false;
+      if (decodeContext(text)) {
+        const ok = (await a.take(ctx, text)) !== false;
+        recordCommand('wharf', `/take ${text}`);
+        return ok;
+      }
       const [, name, rest] = text.replace(/^\//, '').match(/^(\S+)\s*([\s\S]*)$/);
       const cmd = findCommand(name);
       if (!cmd) {
@@ -440,6 +465,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
         return false;
       }
       const r = await cmd.run(ctx, rest.trim());
+      // For a runbook Fleet is recording: the line as typed, once it has run.
+      recordCommand('wharf', text);
       return r !== false && r?.ok !== false;
     } catch (e) {
       note(firstLine(e.message), 'error');
@@ -497,6 +524,26 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     return () => clearInterval(t);
   }, []);
 
+  // The environment's context and namespace (Wharf's section of .fleet/project.json): kubectl goes there
+  // with --context and the Pods view lists that namespace, while kubectl's own context stays as it is.
+  // Switched elsewhere (another app, Fleet) it applies here too, and the cluster is read again.
+  const envKey = `${env?.name ?? ''}\0${env?.context ?? ''}\0${env?.namespace ?? ''}`;
+  const firstEnv = useRef(true);
+  useEffect(() => {
+    try {
+      kube.pin?.(env?.context ?? null);
+    } catch (e) {
+      note(`The ${env.name} environment's context: ${firstLine(e.message)}`, 'error');
+    }
+    kubeNamespace.current = env?.namespace ?? configRef.current.kubeNamespace ?? 'all';
+    if (firstEnv.current) {
+      firstEnv.current = false;
+      return;
+    }
+    setKubeData(null);
+    if (viewRef.current === 'pods') reloadKube();
+  }, [envKey]);
+
   // The cluster is read when the Pods view opens and, while it stays on screen, every `pollEvery` ms.
   useEffect(() => {
     if (view !== 'pods') return;
@@ -514,7 +561,9 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     setTitle?.(title);
   }, [title]);
 
-  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data, kube: kubeData }) : [];
+  // The project's environments, read only while /env is being typed.
+  const envNames = (value) => (/^\/env\s/.test(value) ? (readProject(cwd)?.names ?? []) : undefined);
+  const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data, kube: kubeData, envs: envNames(prompt.value) }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
   // Uppercase shortcuts are alt+letter (caps lock can't fire them); typing in a prompt or a confirm is left alone.
@@ -528,7 +577,7 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
   // Line editing in the prompt.
   const promptKeys = (input, key) => {
     const { value, cursor } = promptRef.current;
-    const items = suggestionsFor(value, { data: dataRef.current, kube: kubeRef.current });
+    const items = suggestionsFor(value, { data: dataRef.current, kube: kubeRef.current, envs: envNames(value) });
     const pick = items[Math.min(sugIndex, items.length - 1)];
     const edit = (v, c) => {
       setPrompt(v, c);
@@ -712,6 +761,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
     main = <HelpView sections={HELP_SECTIONS} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay?.kind === 'shell') {
     main = <ShellPane key={viewerKey(overlay)} title={overlay.title} shell={overlay.shell} spawnShell={spawnShell} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
+  } else if (overlay?.kind === 'rollout') {
+    main = <RolloutView key={viewerKey(overlay)} target={overlay.target} every={rolloutEvery} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay) {
     main = <Viewer key={viewerKey(overlay)} title={overlay.title} text={overlay.text} source={overlay.source} log={overlay.kind === 'logs'} process={overlay.process} project={overlay.project} search={overlay.search} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (view === 'log') {
@@ -736,6 +787,8 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
+        : overlay?.kind === 'rollout'
+          ? 'u undo (asks) · l the log of a new pod · esc close'
         : overlay?.kind === 'shell'
           ? '↵ send · ↑↓ history · pgup pgdn scroll · ctrl+c twice stop · esc close'
         : overlay
@@ -745,7 +798,7 @@ export function App({ config: initialConfig, provider = createDocker(), kube = c
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} width={W} loading={loading} mood={mood} problem={data ? problem : null} provider={provider.name} />
+      <Header data={data} width={W} loading={loading} mood={mood} problem={data ? problem : null} provider={provider.name} env={env} />
       <Tabs view={view} entries={entries} width={W} />
       <Box height={mainH} width={W}>
         {main}

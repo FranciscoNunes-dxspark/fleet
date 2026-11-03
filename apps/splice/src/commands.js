@@ -2,6 +2,7 @@ import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { splitArgs } from './parse.js';
 import { pathArg } from './drop.js';
+import { readProject } from '@fleet/kit/environments.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -97,6 +98,7 @@ export const COMMANDS = [
   { name: 'note', args: '[text | -d | --undo]', desc: "The note on the graph's commit under the cursor (HEAD elsewhere): text adds or replaces it (\\n for a new line); alone, it goes in the prompt to edit; -d removes it (asks); --undo puts back the last one replaced or removed", run: (ctx, s) => a.note(ctx, s) },
   { name: 'notes', args: 'push [remote]', desc: 'Push the notes (refs/notes/*) to the remote', run: (ctx, s) => a.notes(ctx, s) },
   { name: 'hooks', desc: 'The active git hooks (core.hooksPath, husky, .git/hooks) and hook frameworks (lefthook, pre-commit): ↵ shows one, r runs it now', run: (ctx) => a.showHooks(ctx) },
+  { name: 'env', args: '[name]', desc: "The project's environment (.fleet/project.json), or switch every app to another; in production the frames turn red and a push to the branch it deploys from asks first", complete: 'envs', run: (ctx, s) => a.env(ctx, s) },
   { name: 'family', desc: 'What this repository offers the other apps (Bosun, Hail, Trawl): ↵ copies the command to paste into one', run: (ctx) => a.family(ctx) },
   { name: 'timeline', desc: 'What the family\'s apps did (pushes, merges, restarts, writes to a database), newest first: p this repository only or all, ↵ an entry whole', run: (ctx) => a.timeline(ctx) },
   { name: 'wiring', desc: 'What this repository points at: addresses, hosts, ports and connection strings from appsettings*.json, .env and http-client env files, by file (secrets masked)', run: (ctx) => a.wiring(ctx) },
@@ -158,6 +160,7 @@ function completions(kind, data, repos, files) {
   // Tracked files, relative to the repository root; App loads them when first asked for (see completionKind).
   if (kind === 'files') return files ?? [];
   if (!data) return [];
+  if (kind === 'envs') return readProject(data.root)?.names ?? [];
   const { local, remote, tags } = data.refs;
   return [...local.map((b) => b.name), ...remote.map((b) => b.name), ...tags.map((t) => t.name)];
 }

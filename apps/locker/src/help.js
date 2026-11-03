@@ -56,6 +56,7 @@ export const HELP = [
       ['e', 'A new value, typed hidden: a new version (asks first)'],
       ['n', 'A new secret'],
       ['x', 'Disable it, or enable a disabled one (asks first)'],
+      ['r', 'Rotate it end to end (/rotate): a new value, the apps that read it restarted or handed to Sonar, checked, the old version disabled'],
       ['o', 'The vault in the Azure portal'],
     ],
   },

@@ -68,7 +68,7 @@ npm start
 | `watch` | Files that restart it when they change: paths or globs from its `cwd`, e.g. `["src", "lib/**/*.js"]` |
 | `ignore` | Changes to these don't (`"*.test.js"`, `"src/generated"`) |
 | `restart` | `"no"` (the default), `"on-failure"` (when it exits with an error) or `"always"` (whenever it ends by itself) |
-| `tunnel` | `"cloudflared"` or `"ngrok"`: the tool `alt+t` opens its tunnel with (see Tunnels). At the top level, for every process |
+| `tunnel` | `"devtunnel"`, `"cloudflared"` or `"ngrok"`: the tool `/share` and `alt+t` share it with (see Sharing a running service). At the top level, for every process |
 | `test` | Hail's checks for it: an `.http` file (`"api.http"`), or `{ "file": "api.http", "env": "dev" }`, from its `cwd`. Needs `port` |
 | `build` | A command run before `run`, each time it starts (`"dotnet build"`): it starts only when the build passed, and the build's output is in its log |
 | `logs` | Log files to follow into its log, as the app writes them: a path, or a folder and a glob for the name (`"App_Data/logs/*.log"`, whose newest file is followed), or a list. `%VAR%` and `${VAR}` are put in |
@@ -142,6 +142,38 @@ Without a `bosun.json`, Bosun works out what to run from the first of these it f
 
 `--no-start` opens without starting anything (`alt+r` starts them all).
 
+### Environments
+
+A project can name its environments once for every app of the family, in `.fleet/project.json` (in
+the project's folder or one above it, up to its checkout's root): dev, staging, prod, and what each
+means to each app. The one chosen is kept for the project, so `/env staging` here (or in a sibling, or
+`ctrl+b e` in Fleet) switches them all, and a `"prod": true` one draws every frame red. The header
+says which one Bosun is in. Bosun's section says two things, both optional:
+
+```json
+{
+  "default": "dev",
+  "environments": {
+    "dev": { "bosun": { "variables": { "API_URL": "http://localhost:4280" } } },
+    "staging": { "bosun": { "profile": "staging", "variables": { "API_URL": "https://api.staging.example" } } },
+    "prod": { "prod": true }
+  }
+}
+```
+
+- `profile`: the profile from `bosun.json` the crew runs with in that environment (`--profile` and
+  `p` still choose another). Moving to an environment without one goes back to no profile, when the
+  profile was the environment's.
+- `variables`: settings added to every process Bosun starts, after the env files and before a
+  process's own `env`. They name things (an address, a mode), never secrets: the file is meant to be
+  committed, so a variable whose name reads as a secret (a password, token, key, secret, connection
+  string) or whose value carries one is left out, and Bosun says so. Those belong in an env file.
+
+Every process Bosun starts also gets `FLEET_ENV`, the environment's name. `/env` says which one the
+project is in; `/env <name>` switches it. A switch takes effect for what starts from then on: the
+processes running keep the old environment until they restart, which Bosun offers to do there and
+then (`/restart all` does it later).
+
 ### Pre-flight
 
 Before the crew starts, Bosun checks what it needs and says what's wrong in the activity lines (and
@@ -196,7 +228,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 | `p` | Profiles |
 | `y` | Copy its command |
 | `t` | Copy its latest trouble line for Sonar, Hail or Wharf, to paste into their prompt (see The family) |
-| `alt+t` | Open its port to the internet, or close its tunnel (see Tunnels) |
+| `alt+t` | Share its port on the internet, or stop sharing it (see Sharing a running service) |
 
 Beside each running process, when the list has room, is what it uses: its CPU (as a % of one core, so
 a busy process on several cores can pass 100%) and its memory, both counting everything it started
@@ -368,16 +400,26 @@ without it the page works behind a browser warning. Without mkcert on your PATH,
 install it (`winget install FiloSottile.mkcert`, `brew install mkcert`, your package manager), and
 the process runs as before.
 
-### Tunnels
+### Sharing a running service
 
-`alt+t` (or `/tunnel <name>`) opens a running process's port to the internet for a while, to show someone
-your work or to take a webhook: Bosun asks first, then runs `cloudflared tunnel --url
-http://localhost:<port>` (a quick tunnel, no account needed) or `ngrok http <port>`, whichever is on
-your PATH, cloudflared first unless `"tunnel": "ngrok"` in `bosun.json` says otherwise. The address it
-gets (`https://….trycloudflare.com`, `https://….ngrok-free.app`) is copied and said, shown beside the
-process (`⇄`) and in its log's title, and its log says when the tunnel opens and closes. `alt+t` again
-closes it. It closes when the process stops, crashes or gives up (a restart with `r`, a watched file
-or `"restart"` keeps it) and when Bosun quits. Without either tool, Bosun says how to install one.
+`/share <name>` (or `alt+t` on it) puts a running process's port on the internet for a while, to show
+someone your work or to take a webhook. Bosun asks first, saying plainly that the address is public:
+anyone who has it reaches the process, without signing in. Then it runs the first of these on your
+PATH (or the one `"tunnel"` in `bosun.json` names):
+
+1. `devtunnel host -p <port> --allow-anonymous`, Microsoft's Dev Tunnels (sign in once with
+   `devtunnel user login`; the tunnel itself lets anyone in);
+2. `cloudflared tunnel --url http://localhost:<port>`, a quick tunnel, no account needed;
+3. `ngrok http <port>`.
+
+The address it gets (`https://….devtunnels.ms`, `https://….trycloudflare.com`, `https://….ngrok-free.app`)
+is copied and said, shown beside the process (`⇄`) and in its log's title, and its log says when the
+tunnel opens and closes. Bosun then offers it to Hail: `↵` copies a `GET` of the address as a `/take`
+line for Hail's prompt (and `/family` offers it while it's shared). `/unshare <name>` (or `alt+t` again)
+stops it, and so does the process stopping, crashing or giving up (a restart with `r`, a watched file
+or `"restart"` keeps it) and Bosun quitting. The family's activity log says which process was shared
+and when it stopped, never the address. Without any of the tools, Bosun says how to install one
+(`winget install Microsoft.devtunnel`, `brew install --cask devtunnel`, cloudflared's package).
 
 ### Structured logs
 
@@ -451,6 +493,10 @@ you to finish.
 
 ### The family
 
+While Fleet records a runbook (`ctrl+b R`), each command line Bosun's prompt runs (a slash command, or a
+`/take` line) is kept for it, once: a line of one of your own commands isn't, the command is, and a
+`!` line never is.
+
 Bosun's siblings ([Splice](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/splice) for git,
 [Trawl](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/trawl) for SQL, [Sonar](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/sonar)
 for Azure, [Hail](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/hail) for HTTP) never start each other.
@@ -473,7 +519,7 @@ there; it never holds a password or a token.
   run with `↵`.
 - `/timeline` shows what the family's apps did, newest first, from the log they all add to: Bosun adds a
   process crashing (once, not each time it's restarted) or giving up, your restarts and stops (of a
-  process, a group or the crew), tunnels opened and closed, and `/move`; the siblings add their own
+  process, a group or the crew), which process was shared on the internet and when it stopped (never its address), and `/move`; the siblings add their own
   (a push, a write to a database…). It starts with this project's (and what names no project); `p`
   shows every project's, and `↵` one whole. Nothing secret goes in.
 - `/wiring` lists what the project points at, by the file that says it: the addresses, hosts, ports
@@ -521,7 +567,9 @@ Trawl.
 | `/save-log <name> [file]` | Write a process's log to a file, from the project's folder (`<name>.log` unless given; asks before writing over one) |
 | `/why <name>` | Ask Claude why a process failed |
 | `/open <name>` | Open a process's port in the browser |
-| `/tunnel <name>` | Open a process's port to the internet through cloudflared or ngrok (asks first; the address is copied), or close its tunnel |
+| `/share <name>` | Share a running process's port on the internet through devtunnel, cloudflared or ngrok (asks first: the address is public); the address is copied and offered to Hail |
+| `/unshare <name>` | Stop sharing a process: its public address stops working |
+| `/tunnel <name>` | `/share` it, or `/unshare` it when it's shared |
 | `/free <port>` | Stop whatever holds a port on this machine (asks first) |
 | `/preflight` | Check what the crew needs (Node version, Docker, free ports, `.env` keys, databases, `node_modules`, IIS, services, host names, tools), as a checklist |
 | `/top` | Every process's CPU and memory (with what it started), the busiest first, and a sparkline of the last minute of each; `↵` shows its log |
@@ -530,6 +578,7 @@ Trawl.
 | `/hosts` | Add the host names the crew answers to that this machine can't find (a process's `host`, an IIS site's bindings) to the hosts file, as 127.0.0.1 (asks first; it takes an administrator) |
 | `/ports` | Every TCP port listening on this machine, with the process holding it (pid and name); the crew's are marked. `f` frees one (asks first), `o` or `↵` opens it in the browser |
 | `/profile [name\|none]` | Run the crew with a profile |
+| `/env [name]` | The project's environment (`.fleet/project.json`), or switch every app to another: what Bosun starts gets `FLEET_ENV` and Bosun's `profile` and `variables` there (see Environments) |
 | `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |
 | `/move [folder]` | Run another project instead: a path, or a folder beside this one (completed as you type); without one, a list of the projects run lately and the folders beside this one. This one's processes stop first |
 | `/replay` | Play back a recorded run of this project's crew (see Replay) |

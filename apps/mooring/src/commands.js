@@ -1,5 +1,6 @@
 import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
+import { env } from './environment.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
@@ -14,6 +15,10 @@ export const COMMANDS = [
   { name: 'lcd', args: '<folder>', desc: 'Go to a folder on this machine: a path, .. or ~', run: (ctx, s) => a.cd(ctx, 'local', s) },
   { name: 'get', args: '<name>', desc: "Download a file or folder of the server's folder to this machine's", complete: 'remote', run: (ctx, s) => a.transferNamed(ctx, 'remote', s) },
   { name: 'put', args: '<name>', desc: "Upload a file or folder of this machine's folder to the server's", complete: 'local', run: (ctx, s) => a.transferNamed(ctx, 'local', s) },
+  { name: 'sync', args: '[down|up|both] [--checksum] [--delete]', desc: "Make the left pane's folder and the right's match (both ways by default): the plan shown, asked, then the queue; --checksum compares sha256 of files differing only in time; deletes only with --delete", complete: 'sync', run: (ctx, s) => a.sync(ctx, s) },
+  { name: 'watch', args: '[off]', desc: "Upload what changes in the left pane's folder to the right pane's as it changes, until /watch off", complete: 'off', run: (ctx, s) => a.watch(ctx, s) },
+  { name: 'health', desc: "The server's disk use, memory, load, uptime, busiest processes and failed systemd units (alt+h; r reads it again)", run: (ctx) => a.health(ctx) },
+  { name: 'env', args: '[name]', desc: "The project's environment (.fleet/project.json), or switch every app to another; Mooring's section opens a saved host and folder", complete: 'environments', run: (ctx, s) => env(ctx, s) },
   { name: 'mkdir', args: '[name]', desc: "A new folder in the focused pane's folder", run: (ctx, s) => a.mkdir(ctx, ctx.side(), s) },
   { name: 'hidden', args: '[on|off]', desc: 'List files starting with a dot, or not', complete: 'onoff', run: (ctx, s) => a.setHidden(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command on this machine (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
@@ -40,10 +45,13 @@ export function findCommand(name, user = []) {
 
 function completions(kind, data) {
   if (kind === 'hosts') return (data?.hosts ?? []).map((h) => h.name);
+  if (kind === 'environments') return data?.envs ?? [];
   if (kind === 'remote') return (data?.panes?.remote.entries ?? []).map((e) => e.name);
   if (kind === 'local') return (data?.panes?.local.entries ?? []).map((e) => e.name);
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];
+  if (kind === 'off') return ['off'];
+  if (kind === 'sync') return ['both', 'up', 'down', '--checksum', '--delete'];
   return [];
 }
 

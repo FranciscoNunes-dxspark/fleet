@@ -129,3 +129,32 @@ test('/take finds a line by the request it names when its text is not in any log
   await until(shows(app, '/1042 1/1'), 'the request found');
   app.unmount();
 });
+
+test('v hands Bilge the image of the container under the cursor, and of an image; /scan takes either by name', async () => {
+  const app = start();
+  await until(shows(app, 'Standalone'), 'the list');
+  // The first container is shop-api-1, made from shop/api:1.4.
+  app.stdin.write('v');
+  await until(() => app.copied.length === 1, 'the clipboard');
+  assert.deepEqual(decodeContext(app.copied[0].replace('/take ', '')), { kind: 'image', data: { image: 'shop/api:1.4' } });
+  await until(shows(app, 'Copied for Bilge'), 'the note');
+  assert.ok(TAKEN_BY.image.includes('bilge'));
+  app.stdin.write('2');
+  await until(shows(app, '111111111111'), 'the images');
+  // Sorted by name: postgres:16 first.
+  app.stdin.write('v');
+  await until(() => app.copied.length === 2, 'the second line');
+  assert.equal(decodeContext(app.copied[1].replace('/take ', '')).data.image, 'postgres:16');
+  await type(app.stdin, '/scan redis-cache');
+  app.stdin.write(KEYS.enter);
+  await until(() => app.copied.length === 3, 'the third line');
+  assert.equal(decodeContext(app.copied[2].replace('/take ', '')).data.image, 'redis:7');
+  await type(app.stdin, '/scan 5555');
+  app.stdin.write(KEYS.enter);
+  await until(() => app.copied.length === 4, 'the untagged one');
+  assert.equal(decodeContext(app.copied[3].replace('/take ', '')).data.image, '555555555555');
+  await type(app.stdin, '/scan nothing-here');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'No container or image matches "nothing-here"'), 'the miss');
+  app.unmount();
+});

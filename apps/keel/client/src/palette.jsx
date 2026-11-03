@@ -75,6 +75,7 @@ function pages(can, authMode) {
     p('/team', t('Team'), ['people', 'load']),
     p('/people', `${t('Team')} · ${t('On the line')}`, ['people', 'who holds what', 'per person']),
     p('/insights', `${t('Insights')} · ${t('Delivery to production')}`, ['dora', 'metrics']),
+    p('/insights?tab=dora', `${t('Insights')} · ${t('DORA by project and team')}`, ['dora', 'lead time', 'change failure rate', 'time to restore', 'teams']),
     p('/insights?tab=review', `${t('Insights')} · ${t('Code review and merging')}`, ['metrics']),
     p('/insights?tab=flow', `${t('Insights')} · ${t('Work item flow')}`, ['cycle time', 'throughput', 'aging', 'sprint scope']),
     p('/settings', t('Settings'), ['preferences', 'projects', 'repos', 'monitors', 'notifications']),

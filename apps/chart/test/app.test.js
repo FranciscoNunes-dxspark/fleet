@@ -33,7 +33,7 @@ test('/plan lists the changes, what is destroyed first, with the summary and dri
   assert.match(frame, /infra {2}-1 {2}±1 {2}~2 {2}\+2 {2}1 drifted/);
   assert.ok(frame.indexOf('azurerm_mssql_database.reports') < frame.indexOf('azurerm_linux_web_app.admin'));
   assert.ok(frame.indexOf('azurerm_linux_web_app.admin') < frame.indexOf('azurerm_service_plan.main'));
-  assert.match(frame, /± azurerm_linux_web_app\.admin +replace +2 attributes +app +an argument that forces/);
+  assert.match(frame, /± azurerm_linux_web_app\.admin +replace +2 attributes +(on its plan +)?app +an argum/);
   assert.ok(!frame.includes('random_password.db'), 'what does not change is hidden');
   assert.match(frame, /2 unchanged \(a\)/);
   assert.match(frame, /1 Changes 6 {3}2 Drift 1/);
@@ -86,19 +86,20 @@ test('/whatif asks Azure for a Bicep file, keeps its arguments, and lists its ch
   app.unmount();
 });
 
-test('/deploy runs the what-if first, asks with No as the default, and deploys only on Yes', async () => {
+test('/deploy runs the what-if first, shows what it does, and deploys only once the resource group is typed', async () => {
   const app = start();
   await until(shows(app, '/plan asks terraform'), 'the hint');
   await run(app, '/deploy --rg shop-prod');
-  await until(shows(app, 'Deploy bicep/main.bicep into shop-prod?'), 'the question');
-  assert.match(app.lastFrame(), /What-if: /);
+  await until(shows(app, 'Type shop-prod to deploy bicep/main.bicep into shop-prod'), 'the question');
+  assert.match(app.lastFrame(), /Destroyed: +│\n│ +- Microsoft\.Cache\/Redis\/shop-cache/);
   app.stdin.write(KEYS.enter);
-  await until(() => !app.lastFrame().includes('Deploy bicep/main.bicep into shop-prod?'), 'the answer');
+  await until(shows(app, "That isn't shop-prod: nothing was deployed."), 'the answer');
   assert.ok(!app.provider.calls.some((c) => c[0] === 'deploy'), 'a bare ↵ is a No');
   await run(app, '/deploy');
-  await until(shows(app, 'Deploy bicep/main.bicep into shop-prod?'), 'the question again');
+  await until(shows(app, 'Type shop-prod to deploy'), 'the question again');
   assert.equal(app.provider.calls.filter((c) => c[0] === 'whatIf').length, 2, 'each /deploy asks Azure what it would change first');
-  app.stdin.write('2');
+  await type(app.stdin, 'shop-prod');
+  app.stdin.write(KEYS.enter);
   await until(() => app.provider.calls.some((c) => c[0] === 'deploy'), 'the deployment');
   const call = app.provider.calls.find((c) => c[0] === 'deploy')[2];
   assert.deepEqual([call.file, call.resourceGroup], ['bicep/main.bicep', 'shop-prod']);

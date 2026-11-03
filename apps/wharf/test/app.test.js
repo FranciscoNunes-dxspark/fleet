@@ -292,3 +292,37 @@ test("a cluster that can't be reached is explained on the Pods tab, and Docker's
   await until(shows(app, 'Standalone'), 'Docker\'s list');
   app.unmount();
 });
+
+test("w follows a pod's deployment's rollout; a failing one shows its problems and u undoes it after asking", async () => {
+  const app = start({ rolloutEvery: 30 });
+  await until(shows(app, 'Standalone'), 'the list');
+  app.stdin.write('3');
+  await until(shows(app, 'CrashLoopBackOff'), 'the pods');
+  // prometheus-0 has no deployment.
+  app.stdin.write('w');
+  await until(shows(app, "prometheus-0 doesn't belong to a deployment"), 'the refusal');
+  app.stdin.write('j');
+  await new Promise((r) => setTimeout(r, 60));
+  app.stdin.write('w');
+  await until(shows(app, 'Rollout shop/api'), 'the rollout');
+  await until(shows(app, 'Failing: api-9a8b7c6d5-new0 is in CrashLoopBackOff'), 'the failure');
+  assert.match(app.lastFrame(), /Readiness probe failed/);
+  assert.match(app.lastFrame(), /u undo/);
+  app.stdin.write('u');
+  await until(shows(app, 'Undo the rollout of api?'), 'the question');
+  app.stdin.write(KEYS.enter);
+  await until(() => app.kube.state.calls.some(([verb]) => verb === 'rollout undo'), 'the undo');
+  assert.deepEqual(app.kube.state.calls.at(-1), ['rollout undo', 'shop', 'api']);
+  await until(shows(app, 'Done: 1 of 1 available on revision 5'), 'the rollout back');
+  app.stdin.write(KEYS.esc);
+  await until(shows(app, 'CrashLoopBackOff'), 'the pods again');
+  // Named at the prompt, it goes on to done by itself.
+  await type(app.stdin, '/rollout shop/web');
+  app.stdin.write(KEYS.enter);
+  await until(shows(app, 'Rollout shop/web'), 'the web rollout');
+  await until(shows(app, 'Done: 2 of 2 available on revision 4'), 'it done');
+  app.stdin.write(KEYS.esc);
+  await until(() => !app.lastFrame().includes('Rollout shop/web'), 'it closed');
+  assert.match(app.lastFrame(), /Rollout of shop\/web: Done/);
+  app.unmount();
+});

@@ -14,7 +14,7 @@ const React = (await import('react')).default;
 const { render } = await import('ink-testing-library');
 const { openKeel } = await import('../cli/service.js');
 const { App } = await import('../cli/ui/App.jsx');
-const { closedText, commitsText, dur, figureLabel, flakyText, insightsText, sparkline, totalsText } = await import('../cli/reports.js');
+const { closedText, commitsText, doraScope, doraText, dur, figureLabel, flakyText, insightsText, sparkline, totalsText } = await import('../cli/reports.js');
 const { parseDaysArg } = await import('../cli/actions.js');
 
 let keel;
@@ -112,6 +112,30 @@ test('/totals: the key figures first, with the change since the fetch before, th
   assert.match(totalsText([]), /No sites report platform totals yet/);
 });
 
+test('/dora: one scope\'s measures with their bands, trend and how, then every project and team', async () => {
+  const { buildDora } = await import('../server/domain/dora.js');
+  const at = (d) => new Date(now - d * 86_400_000).toISOString();
+  const ann = { id: 'ann', uniqueName: 'ann@x.com', displayName: 'Ann' };
+  const deploys = [3, 6, 9, 40].map((d, i) => ({ id: 10 - i, at: at(d), status: 'succeeded', commit: `c${i}`, changes: [{ kind: 'pr', id: i, author: ann, firstCommitAt: at(d + 0.5) }] }));
+  const dora = buildDora({
+    environments: [{ key: 'e', name: 'Shop · Production', stage: 'Production', projectId: 'p1', projectName: 'Shop', deploys }],
+    teams: [{ key: 'p1:t', name: 'Shop Team', projectId: 'p1', projectName: 'Shop', members: [ann] }],
+    days: 30,
+    now,
+  });
+  assert.equal(doraScope(dora, ''), dora.scopes[0]);
+  assert.equal(doraScope(dora, 'shop team').kind, 'team');
+  assert.equal(doraScope(dora, 'nope'), null);
+  const text = doraText(dora, doraScope(dora, 'team'));
+  assert.match(text, /^DORA, the last 30 days against the 30 before: team Shop Team \(Shop\)/);
+  assert.match(text, /Production: Shop · Production/);
+  assert.match(text, /Deployment frequency: 0\.7 a week \(3\)  \(medium\)  ▲ better, was 1 deploys/);
+  assert.match(text, /Lead time for changes: 12h  \(elite\)/);
+  assert.match(text, /  How: Median of 3 changes, from the first commit/);
+  assert.match(text, /Change failure rate: 0%  \(elite\)/);
+  assert.match(text, /  team Shop Team \(Shop\): 0\.7 medium · 12h elite/);
+});
+
 test('/insights opens in the viewer on the demo organization', async () => {
   lastApp = render(React.createElement(App, { home: 'inbox', keel, poll: false, openUrl: () => {} }));
   const app = lastApp;
@@ -131,6 +155,10 @@ test('/insights opens in the viewer on the demo organization', async () => {
     await type(app.stdin, 'commits nothing-like-it');
     app.stdin.write('\r');
     await until(() => frame().includes('No commits in the last 7 days in a tracked repo'), 'the empty search');
+    app.stdin.write('/');
+    await type(app.stdin, 'dora 90 platform');
+    app.stdin.write('\r');
+    await until(() => frame().includes('DORA, the last 90 days against the 90 before: project Platform') && frame().includes('How: '), 'DORA for one project');
   } finally {
     app.unmount();
   }

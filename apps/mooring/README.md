@@ -73,6 +73,19 @@ This machine's folder on the left, the server's on the right; the focused pane h
 
 `/cd <folder>` and `/lcd <folder>` go to a typed path on the server and on this machine (`..`, `~`, relative or absolute); `/get <name>` and `/put <name>` queue one named entry; `/mkdir [name]` makes a folder in the focused pane.
 
+### Syncing a folder
+
+`/sync [down|up|both]` makes the left pane's folder and the right pane's match. It compares every file under both (by size and modification time), shows the plan, each file with what happens to it and why (*new*, *changed*, *newer here*, *only on the server*), asks, and sends the transfers through the queue. `up` makes the server like this machine, `down` this machine like the server, and `both` (the default) carries each side's changes to the other. After a sync Mooring keeps what each file was (its size and time, nothing of its contents, in `~/.mooring/sync.json`), so the next `both` can tell which side changed a file: changed on both sides is a **conflict**, shown and left alone until `/sync up` or `/sync down` settles it, and a file gone from one side was deleted there. Before the first sync the newer copy wins.
+
+| Option | |
+|---|---|
+| `--checksum` | Files of the same size whose times differ are compared by sha256 (`sha256sum` on the server, in one `ssh` call), and left alone when they are the same |
+| `--delete` | What the plan finds only on one side (or deleted on the other) is deleted, after the question; without it such files are listed and kept |
+
+`.git` and `node_modules` are never synced, nor what the local folder's `.mooringignore` names, a pattern a line (`*.log`, `/dist`, `cache/tmp`; `#` for a comment): a name without a slash matches anywhere, one with a slash from the folder's top.
+
+`/watch` keeps uploading what changes in the left pane's folder to the right pane's, as it changes (a moment after the last write, so a save is one upload), with the same ignore list, until `/watch off`; the header says `⟳ watching <folder>`. Deletions aren't carried over: `/sync up --delete` does that.
+
 Folders are copied whole, file by file; links and special files in them are skipped, never followed (a link out of the folder would copy what isn't in it). A copy keeps each file's modification time.
 
 ### Transfers
@@ -101,6 +114,10 @@ It is `ssh -tt` (ssh makes the terminal on the server although this side has non
 | `↑` `↓` `j` `k` `pgup` `pgdn` `space` | Look back through what scrolled away (also the wheel) |
 | `y` | Copy the screen |
 
+### The server's health
+
+`/health` (or `alt+h` anywhere) runs one `ssh` command on the server and shows what it says in a panel: each disk's use (`df -P`), memory and swap (`/proc/meminfo`, or `free -m`), the load beside the number of CPUs, the uptime, the five busiest processes by CPU and by memory (`ps`), and the systemd units that have failed (where there is `systemctl`). A disk over 90% full and a failed unit are in red at the top, and Tug is worried about them (the family hears why) until a read shows them gone or you disconnect. `r` reads it again, `esc` closes it.
+
 ### Hosts, Log
 
 Hosts is above. Log is everything the activity lines have said, `↵` for one whole.
@@ -112,6 +129,7 @@ Hosts is above. Log is everything the activity lines have said, `↵` for one wh
 | `/` or `:` | Command prompt, with completion (host names, and the names in the panes for `/get` and `/put`); where there is nothing to complete, the command's parameters stay shown under the prompt |
 | `!` | A shell command on this machine, e.g. `!ssh-add -l` (its output is in the activity line; `/last` has all of it) |
 | `$` | A command on the server (above) |
+| `alt+h` | The server's health (`/health`, below) |
 | `ctrl+p` | The command palette |
 | `esc` | Cancel what is running, or clear the activity lines |
 | `ctrl+r` | Read both folders again |
@@ -125,6 +143,18 @@ Your own commands and keys (`"commands"` and `"keys"` in the settings file) work
 ## Settings
 
 `~/.mooring/config.json` (`MOORING_HOME` names another folder): the saved hosts (where each is, the key file or that it asks for a password: never a password or passphrase), `showHidden`, `transfers` (how many run at once, 2), `theme` (`dark`, `light`, `auto`), `accent` (`#rrggbb`), `mouse`, `checkForUpdates`, `autoUpdate`, `familyMoods`, your `commands` and `keys`. `/settings` shows them; `/theme`, `/accent`, `/mouse` and `/hidden` change them.
+
+## Environments
+
+A project can name its environments (dev, staging, prod) once for every app of the family, in `.fleet/project.json` at its root (or a folder above where Mooring runs, inside the checkout), a section per app for each; nothing secret goes in it. Mooring reads its own section of the one chosen, a saved host's name and a folder on it:
+
+```json
+"prod": { "prod": true, "mooring": { "host": "web", "folder": "/var/www/shop" } }
+```
+
+`/env` says which environment the project is on, and `/env <name>` switches every app to another; Mooring then opens that host at that folder (as it does at start, when no host is named on the command line). A switch made in another app is followed within a second. The header shows the environment's name; in a production one (`"prod": true`) the frames are red and anything that changes the server asks first: an upload (`c`, `/put`), a delete or a rename there, a `/sync` that uploads or deletes there, and `/watch`.
+
+While Fleet records a runbook, each slash command Mooring's prompt runs is kept for it, but never one that runs a command (`/ssh`, `/run`, `$`, `!`): Mooring never keeps a command it ran.
 
 ## In the fleet
 

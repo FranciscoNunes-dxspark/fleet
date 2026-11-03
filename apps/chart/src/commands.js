@@ -1,20 +1,26 @@
 import * as a from './actions.js';
 import { withCommandHint } from '@fleet/kit/commandhint.js';
 import { folderCompletions } from '@fleet/kit/folders.js';
+import { currentEnvironment } from '@fleet/kit/environments.js';
+import { CURRENCIES } from './costs.js';
 
 // Slash commands. `args` in square brackets are optional, so picking the command runs it straight away.
 // `complete` names the list offered while typing the first argument.
 export const COMMANDS = [
-  { name: 'plan', args: '[folder]', desc: 'terraform (or tofu) plan: what it would change, and what drifted (nothing is applied)', complete: 'tfdirs', run: (ctx, s) => a.plan(ctx, s) },
+  { name: 'plan', args: '[folder]', desc: 'terraform (or tofu) plan: what it would change, and what drifted (saved, for /apply)', complete: 'tfdirs', run: (ctx, s) => a.plan(ctx, s) },
   { name: 'drift', args: '[folder]', desc: 'A refresh-only plan: what changed outside Terraform since the last apply', complete: 'tfdirs', run: (ctx, s) => a.drift(ctx, s) },
   { name: 'state', args: '[folder]', desc: 'Every resource Terraform keeps track of, by module', complete: 'tfdirs', run: (ctx, s) => a.state(ctx, s) },
   { name: 'init', args: '[folder]', desc: 'terraform init, which a folder needs before its first plan', complete: 'tfdirs', run: (ctx, s) => a.init(ctx, s) },
   { name: 'whatif', args: '[file] [--rg group | --location region] [--params file]', desc: 'What deploying a Bicep or ARM file would change, as az deployment what-if says (the last one again, alone)', complete: 'bicep', run: (ctx, s) => a.whatIf(ctx, s) },
-  { name: 'deploy', args: '[file] [--rg group | --location region] [--params file]', desc: 'A what-if of a Bicep or ARM file, then az deployment create if you approve it (the same arguments as /whatif)', complete: 'bicep', run: (ctx, s) => a.deploy(ctx, s) },
+  { name: 'apply', desc: 'Apply the plan on screen (one Chart saved, or a what-if): what it does first, destroys at the top, then type the environment or workspace name to go ahead', run: (ctx) => a.apply(ctx) },
+  { name: 'deploy', args: '[file] [--rg group | --location region] [--params file]', desc: 'A what-if of a Bicep or ARM file, then az deployment create once you type where it goes (the same arguments as /whatif)', complete: 'bicep', run: (ctx, s) => a.deploy(ctx, s) },
   { name: 'open', args: '[file]', desc: 'A saved plan or state (terraform show -json) or a what-if result', complete: 'saved', run: (ctx, s) => a.open(ctx, s) },
   { name: 'show', args: '<address>', desc: 'A change, attribute by attribute', complete: 'changes', run: (ctx, s) => a.show(ctx, s) },
+  { name: 'graph', args: '[folder]', desc: 'What depends on what from terraform graph, for a plan that came without its configuration (g in Changes shows it)', complete: 'tfdirs', run: (ctx, s) => a.graph(ctx, s) },
   { name: 'report', desc: 'The plan as Markdown, to copy into a pull request', run: (ctx) => a.report(ctx) },
+  { name: 'currency', args: '[USD|EUR|GBP|…]', desc: "The currency a plan's monthly cost is shown in (USD unless set)", complete: 'currencies', run: (ctx, s) => a.currency(ctx, s) },
   { name: 'tool', args: '[terraform|tofu]', desc: 'Which one Chart runs', complete: 'tools', run: (ctx, s) => a.tool(ctx, s) },
+  { name: 'env', args: '[name]', desc: "The project's environment (every app's): which one, or switch to another (its workspace, var file, what-if target)", complete: 'envs', run: (ctx, s) => a.env(ctx, s) },
   { name: 'move', args: '[folder]', desc: 'Look at another folder: one beside this one or in it, or a path (completed as you type)', complete: 'folders', run: (ctx, s) => a.move(ctx, s) },
   { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling copied (Chart takes nothing yet, and says whose it is)', run: (ctx, s) => a.take(ctx, s) },
   { name: 'run', args: '<command>', desc: 'Run a shell command in the folder (as ! does)', run: (ctx, s) => a.raw(ctx, s) },
@@ -43,6 +49,8 @@ function completions(kind, { data, cwd, typed = '' }) {
   if (kind === 'saved') return data?.found?.saved ?? [];
   if (kind === 'changes') return [...(data?.plan?.changes ?? []), ...(data?.drift ?? [])].map((c) => c.address);
   if (kind === 'tools') return ['terraform', 'tofu'];
+  if (kind === 'currencies') return CURRENCIES;
+  if (kind === 'envs') return cwd ? (currentEnvironment(cwd)?.names ?? []) : [];
   if (kind === 'folders') return cwd ? folderCompletions(cwd, typed) : [];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];

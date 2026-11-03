@@ -5,6 +5,8 @@
 // handle: what it holds and `calls`, what was asked of it.
 import { join } from 'node:path';
 import { keyOf, mergePackages } from './lockfiles.js';
+import { testPlan } from './upgrade.js';
+import { imageManifest } from './image.js';
 
 const npm = (name, version, extra = {}) => ({ ecosystem: 'npm', name, version, direct: false, dev: false, ...extra });
 const nuget = (name, version, extra = {}) => ({ ecosystem: 'NuGet', name, version, direct: false, dev: false, ...extra });
@@ -69,6 +71,23 @@ export const DEMO_VULNS = [
   vuln('GHSA-qwcr-r2fm-qrc7', 'express', 'npm', 'HIGH', '4.20.0', 'body-parser vulnerable to denial of service when url encoding is enabled', { aliases: ['CVE-2024-45590'] }),
 ];
 
+// An image Wharf could hand over: Debian 12's system packages, two of them with advisories.
+const DEMO_OS_RELEASE = 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nID=debian\nVERSION_ID="12"\nVERSION="12 (bookworm)"\n';
+const DEMO_DPKG = [
+  ['libc6', '2.36-9+deb12u3', 'glibc'],
+  ['libc-bin', '2.36-9+deb12u3', 'glibc'],
+  ['libssl3', '3.0.11-1~deb12u1', 'openssl'],
+  ['openssl', '3.0.11-1~deb12u1'],
+  ['zlib1g', '1:1.2.13.dfsg-1', 'zlib'],
+  ['bash', '5.2.15-2+b2', 'bash (5.2.15-2)'],
+]
+  .map(([pkg, version, source]) => `Package: ${pkg}\nStatus: install ok installed\n${source ? `Source: ${source}\n` : ''}Version: ${version}\nArchitecture: amd64\n`)
+  .join('\n');
+DEMO_VULNS.push(
+  vuln('DSA-5585-1', 'openssl', 'Debian:12', 'HIGH', '3.0.11-1~deb12u2', 'openssl: denial of service through excessive time checking DH keys', { aliases: ['CVE-2023-5678'] }),
+  vuln('DLA-3912-1', 'zlib', 'Debian:12', 'MODERATE', '1:1.2.13.dfsg-1+deb12u1', 'zlib: heap overflow in MiniZip zipOpenNewFileInZip4_64', { aliases: ['CVE-2023-45853'] }),
+);
+
 const LATEST = {
   express: '5.1.0',
   lodash: '4.17.21',
@@ -103,6 +122,14 @@ const OLDER = { express: ['4.21.2'], 'microsoft.data.sqlclient': ['6.0.2', '5.2.
 
 const NUGET_LICENCES = { 'newtonsoft.json': 'MIT', 'microsoft.data.sqlclient': 'MIT', serilog: 'Apache-2.0', 'system.text.encodings.web': 'MIT' };
 
+const DEMO_USAGES = {
+  express: [
+    { path: 'src/server.js', line: 1, text: "const express = require('express');" },
+    { path: 'src/routes/orders.js', line: 2, text: "const { Router } = require('express');" },
+  ],
+  'newtonsoft.json': [{ path: 'src/Api/Program.cs', line: 3, text: 'using Newtonsoft.Json;' }],
+};
+
 const idOf = (p) => (p.ecosystem === 'NuGet' ? p.name.toLowerCase() : p.name);
 
 export function demoBilge() {
@@ -119,8 +146,8 @@ export function demoBilge() {
       const manifests = state.manifests.map((m) => ({ ...m, packages: m.packages.map((p) => ({ ...p })) }));
       return { root: dir, manifests, packages: mergePackages(manifests) };
     },
-    async audit(packages) {
-      state.calls.push(['audit', packages.length]);
+    async audit(packages, { fresh = false } = {}) {
+      state.calls.push(['audit', packages.length, ...(fresh ? ['fresh'] : [])]);
       const ids = new Map();
       const details = new Map();
       for (const p of packages) {
@@ -138,7 +165,7 @@ export function demoBilge() {
         const id = idOf(p);
         const latest = LATEST[id] ?? p.version;
         const needs = NEEDS[`${id}@${latest}`];
-        out.set(p.key, { latest, ...(p.license ? {} : { license: NUGET_LICENCES[id] ?? null }), ...(p.name === 'ghostscript-js' ? { deprecated: 'No longer maintained' } : {}), ...(needs ? { needs } : {}) });
+        out.set(p.key, { latest, ...(p.license ? {} : { license: NUGET_LICENCES[id] ?? null }), ...(p.name === 'ghostscript-js' ? { deprecated: 'No longer maintained' } : {}), ...(needs ? { needs } : {}), ...(id === 'express' ? { repository: 'https://github.com/expressjs/express' } : {}) });
         onProgress?.(i + 1, packages.length);
       });
       return out;
@@ -156,14 +183,49 @@ export function demoBilge() {
       }
       return null;
     },
-    /** A fix: npm install name@^v or dotnet add … package Name --version v moves that package on. */
+    /** A fix: npm install (yarn add, pnpm add) name@^v or dotnet add … package Name --version v moves that package on. */
     async run(command, { cwd } = {}) {
       state.calls.push(['run', command, cwd]);
-      if (/^(npm ls|dotnet restore)\b/.test(command)) return { stdout: `(demo) ${command}: all fits`, stderr: '' };
-      const m = /^npm install (\S+)@\^?(\S+)/.exec(command) ?? /package (\S+) --version (\S+)/.exec(command);
+      if (/^(npm ls|yarn why|pnpm why|dotnet restore)\b/.test(command)) return { stdout: `(demo) ${command}: all fits`, stderr: '' };
+      // /upgrade's git and tests: a clean tree unless `state.dirty` says what's changed, a failing step where `state.failing` names it.
+      if (state.failing && command.startsWith(state.failing)) throw Object.assign(new Error(`(demo) ${command} failed: 1 test of 12 failed`), { code: 1 });
+      if (command === 'git status --porcelain') return { stdout: state.dirty ?? '', stderr: '' };
+      const branch = /^git checkout -b (\S+)$/.exec(command);
+      if (branch) {
+        state.branches ??= [];
+        if (state.branches.includes(branch[1])) throw new Error(`fatal: a branch named '${branch[1]}' already exists`);
+        state.branches.push(branch[1]);
+        return { stdout: '', stderr: `Switched to a new branch '${branch[1]}'` };
+      }
+      const commit = /^git commit -m "([^"]*)"$/.exec(command);
+      if (commit) (state.commits ??= []).push(commit[1]);
+      if (/^(git|npm test|yarn test|pnpm test|dotnet test)\b/.test(command)) return { stdout: `(demo) ${command}`, stderr: '' };
+      const m = /^(?:npm install|yarn add|pnpm add) (\S+)@\^?(\S+)/.exec(command) ?? /package (\S+) --version (\S+)/.exec(command);
       if (!m) return { stdout: `(demo) ${command}`, stderr: '' };
       for (const man of state.manifests ?? []) for (const p of man.packages) if (p.name.toLowerCase() === m[1].toLowerCase()) p.version = m[2];
       return { stdout: `(demo) changed ${m[1]} to ${m[2]}`, stderr: '' };
+    },
+    /** An image's system packages: Debian 12's, whatever it's called, as image.js reads them out of one. */
+    async image(ref) {
+      state.calls.push(['image', ref]);
+      return imageManifest(ref, { db: { kind: 'dpkg', text: DEMO_DPKG }, osRelease: DEMO_OS_RELEASE });
+    },
+    /** Where the demo's code imports a package: express in the server, Newtonsoft.Json in the API. */
+    async usages(root, p) {
+      state.calls.push(['usages', p.name]);
+      return DEMO_USAGES[idOf(p)] ?? [];
+    },
+    /** Claude, made up: what it was asked is kept in `state.asked`. */
+    async claude(prompt, { input = '' } = {}) {
+      state.calls.push(['claude']);
+      state.asked = { prompt, input };
+      const m = /package (\S+) at (\S+)\. Its newest version is (\S+),/.exec(prompt);
+      return `(demo) Moving ${m?.[1]} from ${m?.[2]} to ${m?.[3]} is a small job here: two places to change.\n\n- src/server.js:14 uses app.del(), which ${m?.[3]} removes: use app.delete().\n- src/routes/orders.js:3 passes a string to res.send(status): use res.sendStatus().`;
+    },
+    /** The demo's tests: the npm project's test script, and dotnet test on the API's project. */
+    async tests(manifests, root) {
+      state.calls.push(['tests', manifests.map((m) => m.path)]);
+      return testPlan(manifests, root, { readJson: () => ({ scripts: { test: 'node --test' } }), list: () => [] });
     },
     writeFile(path, text) {
       state.calls.push(['write', path, text.length]);

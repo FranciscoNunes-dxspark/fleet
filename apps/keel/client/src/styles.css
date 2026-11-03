@@ -1162,6 +1162,15 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .deploy-pr-commits > summary { cursor: pointer; width: fit-content; }
 .deploy-pr-commits > .deploy-list { margin: 8px 0 2px 14px; padding-left: 10px; border-left: 2px solid var(--line); }
 .delivery-intro { margin: 0 0 14px; max-width: 90ch; }
+/* A pull request's risk: its score as a number in a chip, and its reasons with their points. */
+.risk-score { display: inline-block; min-width: 3.2ch; text-align: center; font-variant-numeric: tabular-nums; }
+.risk-reasons ul { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; }
+.risk-points { display: inline-block; min-width: 3.5ch; text-align: right; }
+/* DORA: what production is and the failure window, in one line above the measures. */
+.dora-form { align-items: center; }
+.dora-form label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dora-form .input { min-width: 0; }
+.dora .fact dd + dd { margin-top: 2px; }
 
 /* ------------------------------------------------------------ work item flow */
 .sprint-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }
@@ -1461,3 +1470,10 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .line-limits-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 18px; }
 .line-limits-grid label { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
 .line-limits-grid .input { width: 80px; }
+
+/* Insights → Security advisories (pages/Advisories.jsx): a block per repository. */
+.advisories { display: grid; gap: 16px; margin-top: 12px; }
+.advisory-repo { display: grid; gap: 8px; }
+.advisory-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.advisory-when { margin-left: auto; }
+@media (max-width: 900px) { .advisory-when { margin-left: 0; flex-basis: 100%; } }

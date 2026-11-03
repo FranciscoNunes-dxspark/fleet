@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
-import { branch, isGithubPr, prDetail, prRows, prState } from '../format.js';
+import { branch, isGithubPr, prDetail, prRows, prState, riskColor, riskFor } from '../format.js';
 import { theme } from '../theme.js';
 import { fit, relTime, stringWidth } from '@fleet/kit/text.js';
 import { applyFilter, shownFilter } from '../filters.js';
@@ -23,7 +23,7 @@ const stepHint = (pr) => {
 };
 
 /** Active pull requests in the tracked repos: waiting on your review, then yours, then everyone else's. */
-export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, active }) {
+export function PrsView({ failed, prs, risks, show, filter, jump, ctx, width, height, active }) {
   // The filter's fields (who: the author, project:, repo:) narrow them; its words search them.
   const rows = useMemo(() => {
     const { items, text } = applyFilter('prs', prs ?? [], filter, (p) => p.isMine);
@@ -40,7 +40,9 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
   // Who opened it and when, as a right-hand column the same width on every row. It goes when
   // the terminal is too narrow to leave the titles 20 columns.
   const meta = (p) => `  ${p.isMine ? 'you' : p.author?.displayName ?? ''} · ${relTime(Date.parse(p.createdAt))}`;
-  const titleW = innerW - 2 - 2 - 6 - repoW - 1;
+  // The risk score sits after the number, three columns wide, once the scores are in.
+  const riskW = risks ? 4 : 0;
+  const titleW = innerW - 2 - 2 - 6 - riskW - repoW - 1;
   const widest = Math.min(26, Math.max(0, ...rows.slice(nav.offset, nav.offset + innerH).filter((r) => r.pr).map((r) => stringWidth(meta(r.pr)))));
   const metaW = titleW - widest >= 20 ? widest : 0;
 
@@ -93,6 +95,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
         {rows.slice(nav.offset, nav.offset + innerH).map((r, i) => {
           if (r.header) return <Row key={`h:${r.title}`} pointer={false} width={innerW} segments={[{ text: r.title, color: theme.dim, bold: true }]} />;
           const st = prState(r.pr);
+          const risk = riskFor(risks, r.pr);
           return (
             <Row
               key={prId(r.pr)}
@@ -102,6 +105,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
               segments={[
                 { text: `${st.icon} `, color: st.color },
                 { text: fit(`!${r.pr.id}`, 6), color: theme.dim },
+                ...(riskW ? [{ text: fit(risk ? String(risk.score) : '', 3, 'right') + ' ', color: riskColor(risk), bold: risk?.level === 'high' }] : []),
                 { text: `${fit(r.pr.repoName, repoW)} `, color: theme.info },
                 { text: metaW ? fit(r.pr.title, titleW - metaW) : r.pr.title, strong: true },
                 { text: metaW ? fit(meta(r.pr), metaW, 'right') : '', color: theme.dim },
@@ -112,7 +116,7 @@ export function PrsView({ failed, prs, show, filter, jump, ctx, width, height, a
       </Panel>
       {split ? (
         <Panel title={pr ? `!${pr.id} ${branch(pr.sourceBranch)}` : 'Pull request'} hint={pr ? stepHint(pr) : ''} width={sideW} height={height}>
-          <Lines width={sideW - 2} height={innerH} lines={wrapLines(pr ? prDetail(pr) : [], sideW - 2)} />
+          <Lines width={sideW - 2} height={innerH} lines={wrapLines(pr ? prDetail(pr, Date.now(), riskFor(risks, pr)) : [], sideW - 2)} />
         </Panel>
       ) : null}
     </Box>

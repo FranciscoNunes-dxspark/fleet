@@ -17,11 +17,15 @@ import { buildEpicTree } from './domain/epics.js';
 import { comingNext, commitCarriers, commitRefs, landedAt, mergeCommits, reposNamed, sameCommit, waitingChanges } from './domain/commits.js';
 import { deployMarkers, deployNote, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
+import { DEFAULT_WINDOW_HOURS, buildDora, isProduction } from './domain/dora.js';
 import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
 import { changedFolders, suggestReviewers } from './domain/reviewers.js';
 import { findFlakyTests } from './domain/tests.js';
+import { scorePr } from './domain/risk.js';
 import { buildDiff, parsePatch } from './domain/filediff.js';
+import { DEFAULT_MIN_SEVERITY, MIN_SEVERITIES, advisoryAttention, pickLockFiles, sortAdvisories } from './domain/advisories.js';
+import { eachLimited } from '@fleet/kit/osv.js';
 
 const MIN = 60_000;
 
@@ -31,6 +35,13 @@ const toDiff = (raw) => (raw.patch !== undefined ? parsePatch(raw.patch, { empty
 const PROD_STAGE = /\b(prod|production|prd|live)\b/i;
 // Lead time is measured over this many recent deploys per environment (each costs one commits call, then cached).
 const LEAD_TIME_DEPLOYS = 30;
+// DORA reads what each of this many recent deploys per environment shipped (each costs a commits call, then cached).
+const DORA_DEPLOYS = 60;
+// A merged pull request's own commits are read for at most this many per deploy; the rest are timed from their opening.
+const DORA_PR_COMMITS = 30;
+// A pull request's risk reads the history of its busiest folders, at most this many, over this many days.
+const RISK_FOLDERS = 4;
+const RISK_HISTORY_DAYS = 180;
 
 /** Backlog order, then id; items without a rank go last. */
 const byBacklogOrder = (a, b) => {
@@ -133,6 +144,8 @@ export function createService({
   // service this is (their account id; null locally), for their own schedules' outcomes.
   schedules = null,
   owner = null,
+  // The advisory watch (advisories.js), shared by the server; null where it doesn't run (the terminal app).
+  advisories: advisoryWatch = null,
 } = {}) {
   // Inbox keys and snoozes of other organizations carry their key, so #4107 in
   // one never hides #4107 in another; the primary's stay as they always were.
@@ -641,6 +654,36 @@ export function createService({
     };
   }
 
+  /**
+   * The changes a deploy shipped, for DORA: each merged pull request (timed from its first commit in
+   * the range, else from its opening) and each commit pushed without one, with who wrote it.
+   */
+  async function changesShipped(repo, raw, prOf) {
+    const commits = mergeCommits([{ repo, commits: raw }], { github });
+    const merges = commits.filter((c) => c.prId);
+    const prCommitIds = await Promise.all(merges.map((c, i) => (i >= DORA_PR_COMMITS ? []
+      : cached(`prcommits:${repo.id}:${c.prId}`, () => provider.getPullRequestCommitIds(repo.projectId, repo.id, c.prId), 24 * 60 * MIN).catch(() => []))));
+    const inPr = new Set(merges.map((c) => c.id));
+    const changes = merges.map((c, i) => {
+      const own = new Set(prCommitIds[i]);
+      for (const id of own) inPr.add(id);
+      const dates = commits.filter((x) => own.has(x.id) && x.id !== c.id).map((x) => Date.parse(x.author?.date)).filter(Number.isFinite);
+      const pr = prOf(repo.id, c.prId);
+      return {
+        kind: 'pr',
+        id: c.prId,
+        firstCommitAt: dates.length ? new Date(Math.min(...dates)).toISOString() : null,
+        prCreatedAt: pr?.createdAt || null,
+        author: pr?.author || { displayName: c.author?.name || '', email: c.author?.email || '' },
+      };
+    });
+    for (const c of commits) {
+      if (inPr.has(c.id) || /^(Merged PR \d+:|Merge pull request #\d+ from )/.test(c.message || '')) continue;
+      changes.push({ kind: 'commit', id: c.id, firstCommitAt: c.author?.date || null, author: { displayName: c.author?.name || '', email: c.author?.email || '' } });
+    }
+    return changes;
+  }
+
   /** Pending approvals from classic releases and YAML environment checks, in one list. */
   const approvals = () => cached('builds:approvals', async () => {
     const [projects, who, builds] = await Promise.all([tracked(), me(), rawBuilds()]);
@@ -709,6 +752,24 @@ export function createService({
     return team.filter((p) => !isHidden(settings, p));
   }
 
+  // The advisory watch's findings for this person's tracked repositories, and the inbox entries
+  // the new ones make (none when they turned it off, or where the watch doesn't run).
+  const advisorySettings = (settings) => ({
+    enabled: settings.advisories?.enabled !== false,
+    minSeverity: MIN_SEVERITIES.includes(settings.advisories?.minSeverity) ? settings.advisories.minSeverity : DEFAULT_MIN_SEVERITY,
+  });
+  async function advisoryItems() {
+    const { enabled, minSeverity } = advisorySettings(await store.load());
+    if (!advisoryWatch || !enabled) return [];
+    const list = (await repos()).map((repo) => ({ repo, entry: advisoryWatch.entryOf(repo) })).filter((x) => x.entry);
+    return advisoryAttention(list, { minSeverity });
+  }
+  async function trackedRepo(projectId, repoId) {
+    const repo = (await repos()).find((r) => r.projectId === projectId && r.id === repoId);
+    if (!repo) throw Object.assign(new Error('That repository isn\'t one of your tracked repos'), { status: 400 });
+    return repo;
+  }
+
   async function workload() {
     const [settings, prs, items, team, paths] = await Promise.all([store.load(), activePRs(), openItems(), teamPeople(), currentIterationPaths()]);
     return buildWorkload({ people: team, prs, items, thresholds: settings.thresholds, blockedTag: settings.blockedTag, currentIterationPaths: paths });
@@ -722,7 +783,7 @@ export function createService({
     /** Tracked projects of this organization (for the multi-organization layer). */
     trackedProjects: () => tracked(),
     /** The same person looking at these projects instead of their own (a channel's view, see channels.js). */
-    withProjects: (projectIds) => createService({ provider, settings: projectsStore(store, projectIds, provider), monitoring, org }),
+    withProjects: (projectIds) => createService({ provider, settings: projectsStore(store, projectIds, provider), monitoring, org, advisories: advisoryWatch }),
     allProjects: () => allProjects(),
 
     async meta() {
@@ -744,14 +805,14 @@ export function createService({
     },
 
     async attention() {
-      const [settings, prs, items, pipes, load, paths, rels, appr, prod] = await Promise.all([
+      const [settings, prs, items, pipes, load, paths, rels, appr, prod, adv] = await Promise.all([
         store.load(), activePRs(), openItems(), pipelines(), workload(), currentIterationPaths(),
-        releases().catch(() => []), approvals().catch(() => []), production().catch(() => []),
+        releases().catch(() => []), approvals().catch(() => []), production().catch(() => []), advisoryItems().catch(() => []),
       ]);
-      if (!keyPrefix) return buildAttention({ prs, items, pipelines: pipes, workload: load, settings, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod });
+      if (!keyPrefix) return buildAttention({ prs, items, pipelines: pipes, workload: load, settings, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod, advisories: adv });
       // This organization's snoozes, without the prefix, then its keys with it.
       const mine = Object.fromEntries(Object.entries(settings.snoozed || {}).filter(([k]) => k.startsWith(keyPrefix)).map(([k, v]) => [k.slice(keyPrefix.length), v]));
-      const result = buildAttention({ prs, items, pipelines: pipes, workload: load, settings: { ...settings, snoozed: mine }, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod });
+      const result = buildAttention({ prs, items, pipelines: pipes, workload: load, settings: { ...settings, snoozed: mine }, currentIterationPaths: paths, releases: rels, approvals: appr, production: prod, advisories: adv });
       return { ...result, items: result.items.map((i) => ({ ...i, key: keyPrefix + i.key })) };
     },
 
@@ -770,6 +831,37 @@ export function createService({
     people,
 
     repos: () => repos(),
+
+    /** A tracked repository's lock files on its default branch (domain/advisories.js pickLockFiles), with their text. */
+    async readLockFiles(projectId, repoId) {
+      const repo = await trackedRepo(projectId, repoId);
+      if (!repo.defaultBranch) return { branch: null, files: [], more: false };
+      const { files, more } = pickLockFiles(await provider.listRepoFiles(projectId, repoId, repo.defaultBranch));
+      const texts = await eachLimited(files, 4, (path) => provider.getRepoFileText(projectId, repoId, path, repo.defaultBranch));
+      return { branch: repo.defaultBranch, files: files.map((path, i) => ({ path, text: texts[i] })), more };
+    },
+
+    /** Each tracked repository's advisories as the watch last found them, worst first. */
+    async advisories() {
+      const settings = advisorySettings(await store.load());
+      const rows = (await repos()).map((r) => {
+        const e = advisoryWatch?.entryOf(r) || {};
+        return {
+          projectId: r.projectId, projectName: r.projectName, repoId: r.id, repoName: r.name, defaultBranch: r.defaultBranch || null, webUrl: r.webUrl || null,
+          checkedAt: e.checkedAt || null, triedAt: e.triedAt || null, error: e.error || null, lockFiles: e.lockFiles || [], moreLockFiles: !!e.moreLockFiles,
+          unreadable: e.unreadable || [], packages: e.packages ?? null, advisories: sortAdvisories([...(e.advisories || [])]),
+        };
+      });
+      return { available: !!advisoryWatch, ...settings, repos: rows };
+    },
+
+    /** Read one tracked repository again now (rate limited by the watch). */
+    async checkAdvisories(projectId, repoId) {
+      if (!advisoryWatch) throw Object.assign(new Error('The advisory watch doesn\'t run here'), { status: 404 });
+      const repo = await trackedRepo(projectId, repoId);
+      await advisoryWatch.checkNow(repo, () => this.readLockFiles(projectId, repoId));
+      return (await this.advisories()).repos.find((r) => r.projectId === projectId && r.repoId === repoId);
+    },
 
     /** A repo's branches; fresh skips the cache (the Refresh button on the new pull request page). */
     async branches(projectId, repoId, { fresh = false } = {}) {
@@ -971,6 +1063,68 @@ export function createService({
       return buildDelivery({ targets: await this.deliveryData(days), days });
     },
 
+    /**
+     * What DORA needs for this organization over two periods of `days` (this one and the one
+     * before): its production environments with their deploys and the changes each shipped, the
+     * completed pull requests (hotfixes, and when each was opened), and the tracked teams with their
+     * members. `production` (names) overrides the settings' production names.
+     */
+    async doraData(days, { production } = {}) {
+      const settings = await store.load();
+      const names = production ?? settings.dora?.production ?? '';
+      const span = 2 * days;
+      const [targets, rels, monitors, closed, projects, team, repoList] = await Promise.all([
+        productionTargets(), releases().catch(() => []), myMonitors(), closedPRs(span + 30).catch(() => []), tracked(), people().catch(() => []), repos(),
+      ]);
+      // Every classic release stage is a candidate, so a configured name can pick one the default wouldn't.
+      const linked = new Set(monitors.filter((m) => m.link).map((m) => targetKeyOf(m.link)));
+      const candidates = targets.map((t) => ({ ...t, monitored: linked.has(t.key) }));
+      const keys = new Set(candidates.map((t) => t.key));
+      for (const d of rels) {
+        for (const st of d.stages || []) {
+          const link = { type: 'release', projectId: d.projectId, definitionId: d.id, stage: st.name };
+          if (!keys.has(targetKeyOf(link))) candidates.push({ ...link, key: targetKeyOf(link), projectName: d.projectName, name: `${d.name} · ${st.name}` });
+        }
+      }
+      const since = Date.now() - span * DAY;
+      const prOf = (repoId, id) => closed.find((p) => p.repoId === repoId && String(p.id) === String(id));
+      const environments = await Promise.all(candidates.filter((t) => isProduction(t, names)).map(async (t) => {
+        let history;
+        try {
+          history = await deployHistory(t, span + 30);
+        } catch (err) {
+          console.warn(`[dora] ${t.name}: ${err.message}`);
+          return null;
+        }
+        let read = 0;
+        const deploys = await Promise.all(history.map(async (d, i) => {
+          const out = { id: d.id, label: d.label, at: d.at, status: d.status, commit: d.commit || null, repoId: d.repoId || null, branch: d.branch || null, webUrl: d.webUrl };
+          if (d.status !== 'succeeded' || Date.parse(d.at) < since || !d.commit) return out;
+          const prev = previousDeploy(history, i);
+          if (!prev || prev.commit === d.commit || read++ >= DORA_DEPLOYS) return out;
+          const repo = repoList.find((r) => r.id === d.repoId) || { id: d.repoId, name: '', projectId: t.projectId };
+          const raw = await commitsBetween(repo.projectId, repo.id, prev.commit, d.commit).catch(() => []);
+          return { ...out, changes: await changesShipped(repo, raw, prOf) };
+        }));
+        const { monitored, key, name, stage, type, projectId, projectName, branch } = t;
+        return { key, name, stage: stage || null, type, monitored: !!monitored, projectId, projectName, branch: branch || null, deploys };
+      }));
+      const teams = projects.flatMap((p) => p.teams.map((tm) => ({
+        key: `${p.id}:${tm.id}`,
+        name: tm.name,
+        projectId: p.id,
+        projectName: p.name,
+        members: team.filter((m) => (m.teams || []).some((x) => x.projectId === p.id && x.teamId === tm.id)),
+      })));
+      return { environments: environments.filter(Boolean), pullRequests: closed.filter((p) => p.status === 'completed'), teams, production: names, windowHours: settings.dora?.windowHours ?? DEFAULT_WINDOW_HOURS };
+    },
+
+    /** DORA metrics per project and team over the last `days` (30 or 90) and the period before (domain/dora.js). */
+    async dora(days, opts = {}) {
+      const data = await this.doraData(days, opts);
+      return buildDora({ ...data, days });
+    },
+
     /** Raw material for one week's summary (see domain/summary.js). */
     async summaryData({ from }) {
       const days = Math.ceil((Date.now() - from) / DAY) + 1;
@@ -1129,6 +1283,28 @@ export function createService({
       const [prs, repoList, team] = await Promise.all([activePRs(), repos(), people()]);
       const upcoming = schedules?.upcoming() || new Map();
       return { prs: prs.map((p) => (upcoming.has(p.key) ? { ...p, completesAt: upcoming.get(p.key) } : p)), repos: repoList, people: team };
+    },
+
+    /**
+     * Each active pull request's risk (domain/risk.js): its files (read once per pushed commit), the
+     * history of its busiest folders on the branch it goes into, and its required reviewers.
+     */
+    async prRisks() {
+      return cached('prs:risk', async () => {
+        const prs = await activePRs();
+        const since = new Date(Date.now() - RISK_HISTORY_DAYS * DAY).toISOString();
+        const risks = await Promise.all(prs.map(async (pr) => {
+          const files = await cached(`prfiles:${pr.key}:${pr.sourceCommit || ''}`, () => provider.getPullRequestFiles(pr.projectId, pr.repoId, pr.id), 24 * 60 * MIN)
+            .then((f) => (f.error ? null : f.items), () => null);
+          const folders = files ? changedFolders(files.map((f) => f.path), RISK_FOLDERS) : [];
+          const history = await Promise.all(folders.map(async (f) => ({
+            dir: f.dir,
+            commits: await cached(`history:${pr.repoId}:${pr.targetBranch || ''}:${f.dir}`, () => provider.listCommits(pr.projectId, pr.repoId, { branch: pr.targetBranch || undefined, path: f.dir, since, top: 100 }), 30 * MIN).catch(() => []),
+          })));
+          return { key: pr.key, projectId: pr.projectId, repoId: pr.repoId, id: pr.id, ...scorePr({ pr, files, history, historyDays: RISK_HISTORY_DAYS }) };
+        }));
+        return { risks };
+      }, 5 * MIN);
     },
 
     /** Pull requests completed or abandoned in the last `days` days (7, 30 or 90), newest first. */
@@ -1705,6 +1881,18 @@ export function createService({
     async saveSettings(patch) {
       const allowed = {};
       for (const k of ['projects', 'thresholds', 'blockedTag', 'autoComplete', 'refreshSeconds']) if (k in patch) allowed[k] = patch[k];
+      // The advisory watch: on or off, and the least severe advisory worth an inbox entry.
+      if (patch.advisories && typeof patch.advisories === 'object') {
+        allowed.advisories = {};
+        if ('enabled' in patch.advisories) allowed.advisories.enabled = patch.advisories.enabled !== false;
+        if (MIN_SEVERITIES.includes(patch.advisories.minSeverity)) allowed.advisories.minSeverity = patch.advisories.minSeverity;
+      }
+      // DORA: which environments are production (names, comma-separated; empty for the default) and the failure window.
+      if (patch.dora && typeof patch.dora === 'object') {
+        allowed.dora = {};
+        if ('production' in patch.dora) allowed.dora.production = String(patch.dora.production ?? '').slice(0, 300).trim();
+        if ('windowHours' in patch.dora) allowed.dora.windowHours = Math.min(14 * 24, Math.max(1, Math.round(Number(patch.dora.windowHours) || 24)));
+      }
       if ('refreshSeconds' in allowed) allowed.refreshSeconds = Math.min(600, Math.max(15, Math.round(Number(allowed.refreshSeconds) || 60)));
       const saved = await store.save(allowed);
       cache.invalidate('');

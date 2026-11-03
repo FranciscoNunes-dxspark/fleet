@@ -69,13 +69,24 @@ const site = (name, kind = 'app', slot = null) => ({
   resourceGroup: 'shop',
   location: 'westeurope',
   state: 'Running',
+  hostName: `${name}${slot ? `-${slot}` : ''}.azurewebsites.net`,
 });
 
 const vault = (name, rg = 'shop') => ({ id: `${RG}/${rg}/providers/Microsoft.KeyVault/vaults/${name}`, name, uri: `https://${name}.vault.azure.net/`, resourceGroup: rg, location: 'westeurope' });
 
 const ref = (v, s) => `@Microsoft.KeyVault(SecretUri=https://${v}.vault.azure.net/secrets/${s}/)`;
 
-/** `state` is exposed for the tests: { sites, slots, settings, strings, statuses, vaults, secrets, values, calls }. */
+// db-password's version as the demo starts: the one the function app's reference pins.
+export const DB_VERSION = '0a1b2c3d4e5f60718293a4b5c6d7e8f9';
+// Each new version's id: 32 hex digits, as Key Vault's are.
+let versionCount = 0;
+const nextVersion = () => `${(++versionCount).toString(16).padStart(8, '0')}${'f'.repeat(24)}`;
+
+/**
+ * `state` is exposed for the tests: { sites, slots, settings, strings, statuses, vaults, secrets,
+ * versions, values, health, calls }. `health` maps a host name to the statuses its probes answer, in
+ * turn (200 when it runs out).
+ */
 export function demoAzure({ now = Date.now() } = {}) {
   const at = (days) => new Date(now + days * DAY).toISOString();
   const api = site('shop-api');
@@ -106,7 +117,8 @@ export function demoAzure({ now = Date.now() } = {}) {
         Db__Password: ref('kv-shop', 'db-password'),
         Stripe__ApiKey: ref('kv-shop', 'Stripe--ApiKey'),
       },
-      [fn.id]: { FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated', AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=shopfn;AccountKey=ZGVtby1rZXk=;EndpointSuffix=core.windows.net', Db__Password: ref('kv-shop', 'db-password') },
+      // The function app reads db-password's version pinned: a rotation can't reach it by a restart.
+      [fn.id]: { FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated', AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=shopfn;AccountKey=ZGVtby1rZXk=;EndpointSuffix=core.windows.net', Db__Password: ref('kv-shop', `db-password/${DB_VERSION}`) },
     },
     strings: {
       [api.id]: { Default: { value: 'Server=tcp:shop-sql.database.windows.net;Database=shop;Authentication=Active Directory Default', type: 'SQLAzure' } },
@@ -149,7 +161,15 @@ export function demoAzure({ now = Date.now() } = {}) {
       ['kv-shared/Sendgrid--ApiKey', 'SG.demo-key'],
       ['kv-shared/Shared--Salt', 'demo-salt'],
     ]),
+    // Each secret's versions, newest first, made on first ask (db-password's is the one pinned above).
+    versions: new Map(),
+    health: {},
     calls: [],
+  };
+  const versionsOf = (v, s) => {
+    const k = `${v.name}/${s.name}`;
+    if (!state.versions.has(k)) state.versions.set(k, [{ version: s.name === 'db-password' ? DB_VERSION : nextVersion(), enabled: s.enabled, created: s.updated, updated: s.updated, expires: s.expires }]);
+    return state.versions.get(k);
   };
   const find = (v, name) => state.secrets[v.name]?.find((s) => s.name.toLowerCase() === String(name).toLowerCase());
   const later = (value) => new Promise((r) => setTimeout(() => r(value), 5));
@@ -180,14 +200,39 @@ export function demoAzure({ now = Date.now() } = {}) {
       if (s) Object.assign(s, { updated: stamp, enabled: true, expires: null, ...(contentType ? { contentType } : {}) });
       else state.secrets[v.name] = [...(state.secrets[v.name] ?? []), { kind: 'secret', name, enabled: true, contentType: contentType ?? '', created: stamp, updated: stamp, expires: null, notBefore: null, managed: false }].sort((a, b) => a.name.localeCompare(b.name));
       state.values.set(`${v.name}/${s?.name ?? name}`, String(value));
-      return later();
+      const version = nextVersion();
+      const made = find(v, name);
+      versionsOf(v, made).unshift({ version, enabled: true, created: stamp, updated: stamp, expires: null });
+      return later({ version });
     },
-    async enableSecret(v, name, enabled) {
-      state.calls.push([enabled ? 'enableSecret' : 'disableSecret', v.name, name]);
+    async versions(v, name) {
+      const s = find(v, name);
+      if (!s) throw Object.assign(new Error(`Listing ${name}'s versions in ${v.name}: not found`), { status: 404 });
+      return later(versionsOf(v, s).map((x) => ({ ...x })));
+    },
+    async enableSecret(v, name, enabled, { version } = {}) {
       const s = find(v, name);
       if (!s) throw new Error(`${name} isn't in ${v.name}.`);
+      if (version) {
+        state.calls.push([enabled ? 'enableVersion' : 'disableVersion', v.name, name, version]);
+        const x = versionsOf(v, s).find((y) => y.version === version);
+        if (!x) throw new Error(`${name} has no version ${version} in ${v.name}.`);
+        x.enabled = Boolean(enabled);
+        return later();
+      }
+      state.calls.push([enabled ? 'enableSecret' : 'disableSecret', v.name, name]);
       s.enabled = Boolean(enabled);
       return later();
+    },
+    async restart(t) {
+      state.calls.push(['restart', `${t.name}${t.slot ? `/${t.slot}` : ''}`]);
+      return later();
+    },
+    async probe(url) {
+      state.calls.push(['probe', url]);
+      const host = new URL(url).host;
+      const next = state.health[host]?.shift();
+      return later(next === undefined ? { status: 200 } : typeof next === 'number' ? { status: next } : next);
     },
     portalUrl: (resource) => `https://portal.azure.com/#@/resource${resource.id}`,
   };

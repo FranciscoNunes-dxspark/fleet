@@ -1,9 +1,10 @@
 // The reports the terminal app shows in its viewer, as plain text: insights (pull request flow and
-// delivery to production), flaky tests, closed pull requests, recent commits and platform totals.
+// delivery to production), DORA by project and team, flaky tests, closed pull requests, recent commits and platform totals.
 // Each reads what the web app's page of the same name reads from the service. Pure, so the tests
 // can check it.
 import { branch } from './format.js';
 import { relTime } from '@fleet/kit/text.js';
+import { howText } from '../server/domain/dora.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const ago = (iso, now) => {
@@ -70,6 +71,52 @@ export function insightsText(ins, del, now = Date.now()) {
       }
     }
   }
+  return out.join('\n');
+}
+
+const TREND = { better: '▲ better', worse: '▼ worse', same: '= the same' };
+const DORA_MEASURES = [
+  ['frequency', 'Deployment frequency', (m) => `${m.perWeek >= 10 ? Math.round(m.perWeek) : m.perWeek.toFixed(1)} a week (${m.deploys})`, (tr) => `${tr.previous} deploys`],
+  ['leadTime', 'Lead time for changes', (m) => dur(m.hours), (tr) => dur(tr.previous)],
+  ['failureRate', 'Change failure rate', (m) => pct(m.rate), (tr) => pct(tr.previous)],
+  ['restore', 'Time to restore', (m) => dur(m.hours), (tr) => dur(tr.previous)],
+];
+
+/**
+ * Which DORA scope `name` means: a project or team whose name has it (any case), else everything.
+ * A team's name with its project's also matches ("Shop Team" or "Shop").
+ */
+export function doraScope(dora, name = '') {
+  const n = name.trim().toLowerCase();
+  if (!n) return dora.scopes[0];
+  const named = (s) => s.name.toLowerCase();
+  return dora.scopes.find((s) => named(s) === n) ?? dora.scopes.find((s) => named(s).includes(n)) ?? null;
+}
+
+/**
+ * /dora: the four DORA measures for one scope (everything, a project or a team) with their bands,
+ * the change against the period before and how each was counted, then a line per project and team.
+ */
+export function doraText(dora, scope = dora.scopes[0]) {
+  const prod = dora.production;
+  const out = [`DORA, the last ${dora.days} days against the ${dora.days} before: ${scope.kind === 'all' ? 'everything' : `${scope.kind} ${scope.name}${scope.projectName ? ` (${scope.projectName})` : ''}`}`];
+  out.push(prod.environments.length
+    ? `Production: ${prod.environments.map((e) => e.name).join(', ')}${prod.names.length ? ` (named ${prod.names.join(', ')})` : ''}`
+    : prod.names.length ? `No environment is named ${prod.names.join(', ')}: /env picks the project's, and the web app's Insights → DORA by project and team sets the names.` : 'No production environment found: link a production monitor to what deploys it, or name a release stage Production.');
+  for (const [id, label, value, before] of DORA_MEASURES) {
+    const m = scope.current[id];
+    const tr = scope.trend[id];
+    out.push('', `${label}: ${value(m)}${m.band ? `  (${BAND[m.band]})` : ''}${tr?.direction ? `  ${TREND[tr.direction]}, was ${before(tr)}` : ''}`, `  How: ${howText(m.how)}`);
+  }
+  if (dora.scopes.length > 1) {
+    out.push('', 'By project and team (deploys a week · lead time · change failure rate · time to restore)');
+    for (const s of dora.scopes) {
+      const c = s.current;
+      const band = (m) => (m.band ? ` ${BAND[m.band]}` : '');
+      out.push(`  ${s.kind === 'team' ? `team ${s.name} (${s.projectName})` : s.kind === 'project' ? s.name : 'Everything'}: ${c.frequency.perWeek.toFixed(1)}${band(c.frequency)} · ${dur(c.leadTime.hours)}${band(c.leadTime)} · ${pct(c.failureRate.rate)}${band(c.failureRate)} · ${dur(c.restore.hours)}${band(c.restore)}`);
+    }
+  }
+  out.push('', `A deploy's change failed when, within ${dora.windowHours}h and before the next deploy shipping something new, production saw a failed deploy, a rollback or a hotfix pull request.`);
   return out.join('\n');
 }
 

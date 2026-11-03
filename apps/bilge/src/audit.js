@@ -1,69 +1,9 @@
 // What OSV's advisories mean for the packages found: how bad each one is, the version that fixes it, and
 // the findings the Vulnerabilities view lists; and what kind of licence a package has. Pure.
-import { compareVersions } from './versions.js';
+import { comparerFor } from './versions.js';
+import { SEVERITIES, rank, severityOf } from '@fleet/kit/osv.js';
 
-export const SEVERITIES = ['critical', 'high', 'medium', 'low', 'unknown'];
-export const rank = (s) => {
-  const i = SEVERITIES.indexOf(s);
-  return i < 0 ? SEVERITIES.length : i;
-};
-
-const WEIGHTS = {
-  AV: { N: 0.85, A: 0.62, L: 0.55, P: 0.2 },
-  AC: { L: 0.77, H: 0.44 },
-  UI: { N: 0.85, R: 0.62 },
-  CIA: { H: 0.56, L: 0.22, N: 0 },
-};
-
-// CVSS 3.1's own rounding up to one decimal, which avoids floating point's near misses.
-const roundUp = (x) => {
-  const n = Math.round(x * 100000);
-  return n % 10000 === 0 ? n / 100000 : (Math.floor(n / 10000) + 1) / 10;
-};
-
-/** A CVSS 3.0 or 3.1 vector's base score (CVSS:3.1/AV:N/AC:L/…), or null when it isn't one. */
-export function cvss3Score(vector) {
-  const m = Object.fromEntries(
-    String(vector ?? '')
-      .split('/')
-      .map((p) => p.split(':')),
-  );
-  if (!/^3\.[01]$/.test(m.CVSS ?? '')) return null;
-  const changed = m.S === 'C';
-  const av = WEIGHTS.AV[m.AV];
-  const ac = WEIGHTS.AC[m.AC];
-  const ui = WEIGHTS.UI[m.UI];
-  const pr = { N: 0.85, L: changed ? 0.68 : 0.62, H: changed ? 0.5 : 0.27 }[m.PR];
-  const [c, i, a] = [m.C, m.I, m.A].map((x) => WEIGHTS.CIA[x]);
-  if ([av, ac, ui, pr, c, i, a].some((x) => x === undefined)) return null;
-  const iss = 1 - (1 - c) * (1 - i) * (1 - a);
-  const impact = changed ? 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15 : 6.42 * iss;
-  if (impact <= 0) return 0;
-  const exploit = 8.22 * av * ac * pr * ui;
-  return roundUp(Math.min(changed ? 1.08 * (impact + exploit) : impact + exploit, 10));
-}
-
-/** The severity a score falls in. */
-export function severityOfScore(score) {
-  if (score == null) return 'unknown';
-  if (score >= 9) return 'critical';
-  if (score >= 7) return 'high';
-  if (score >= 4) return 'medium';
-  return score > 0 ? 'low' : 'unknown';
-}
-
-/**
- * How bad an OSV advisory is: { severity, score? }. GitHub's own word first (database_specific.severity:
- * LOW, MODERATE, HIGH, CRITICAL), then the CVSS 3 vector's score.
- */
-export function severityOf(vuln) {
-  const vector = (vuln.severity ?? []).find((s) => /^CVSS_V3/.test(s.type))?.score;
-  const score = cvss3Score(vector);
-  const said = String(vuln.database_specific?.severity ?? '').toLowerCase();
-  const word = said === 'moderate' ? 'medium' : said;
-  if (SEVERITIES.includes(word) && word !== 'unknown') return { severity: word, ...(score != null ? { score } : {}) };
-  return { severity: severityOfScore(score), ...(score != null ? { score } : {}) };
-}
+export { SEVERITIES, rank, cvss3Score, severityOfScore, severityOf } from '@fleet/kit/osv.js';
 
 const sameName = (ecosystem, a, b) => (ecosystem === 'NuGet' ? String(a).toLowerCase() === String(b).toLowerCase() : a === b);
 
@@ -72,6 +12,7 @@ const sameName = (ecosystem, a, b) => (ecosystem === 'NuGet' ? String(a).toLower
  * its version is in, else the lowest fix above it; null when there is none yet.
  */
 export function fixedIn(vuln, pkg) {
+  const compare = comparerFor(pkg.ecosystem);
   const fixes = [];
   for (const affected of vuln.affected ?? []) {
     const p = affected.package ?? {};
@@ -83,12 +24,12 @@ export function fixedIn(vuln, pkg) {
         if (e.introduced !== undefined) introduced = e.introduced;
         if (e.fixed !== undefined) {
           fixes.push(e.fixed);
-          if ((introduced === '0' || compareVersions(pkg.version, introduced) >= 0) && compareVersions(pkg.version, e.fixed) < 0) return e.fixed;
+          if ((introduced === '0' || compare(pkg.version, introduced) >= 0) && compare(pkg.version, e.fixed) < 0) return e.fixed;
         }
       }
     }
   }
-  return fixes.filter((f) => compareVersions(f, pkg.version) > 0).sort(compareVersions)[0] ?? null;
+  return fixes.filter((f) => compare(f, pkg.version) > 0).sort(compare)[0] ?? null;
 }
 
 /** An advisory as Bilge shows it, for package `pkg`. */
@@ -120,7 +61,7 @@ export function findings(packages, ids, details) {
     if (!list.length) continue;
     list.sort((a, b) => rank(a.severity) - rank(b.severity) || (b.score ?? 0) - (a.score ?? 0) || a.id.localeCompare(b.id));
     const fixes = list.map((a) => a.fixed);
-    const fixed = fixes.filter(Boolean).sort(compareVersions).at(-1) ?? null;
+    const fixed = fixes.filter(Boolean).sort(comparerFor(pkg.ecosystem)).at(-1) ?? null;
     out.push({ key: pkg.key, pkg, advisories: list, severity: list[0].severity, fixed, unfixed: fixes.some((f) => !f) });
   }
   return out.sort((a, b) => rank(a.severity) - rank(b.severity) || Number(b.pkg.direct) - Number(a.pkg.direct) || a.pkg.name.localeCompare(b.pkg.name));
