@@ -289,3 +289,46 @@ test('through the UI: /openapi-diff compares the contract with git, in the viewe
     app.unmount();
   }
 });
+
+test('schemas shared by many operations, each referring to several of the next layer, are compared once and said for each', () => {
+  // Seven layers of 20 schemas, each pointing at three of the next; 400 operations over the first layer.
+  const doc = (changed) => {
+    const schemas = {};
+    for (let i = 0; i < 140; i++) {
+      const layer = Math.floor(i / 20);
+      const properties = { id: { type: 'string', maxLength: changed && i === 139 ? 10 : 20 }, count: { type: 'integer' } };
+      if (changed && i % 5 === 2) delete properties.count;
+      if (layer < 6) {
+        const next = (k) => ({ $ref: `#/components/schemas/S${(layer + 1) * 20 + ((i * 3 + k) % 20)}` });
+        Object.assign(properties, { a: next(0), b: next(1), list: { type: 'array', items: next(2) } });
+      }
+      schemas[`S${i}`] = { type: 'object', properties };
+    }
+    const paths = Object.fromEntries(Array.from({ length: 400 }, (_, p) => [`/r${p}`, { get: { responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: `#/components/schemas/S${p % 20}` } } } } } } }]));
+    return { openapi: '3.0.3', paths, components: { schemas } };
+  };
+  const started = performance.now();
+  const r = diffSpecs(doc(false), doc(true));
+  // Compared again for every operation, it took 2.5 s.
+  assert.ok(performance.now() - started < 1500);
+  assert.equal(r.changes.length, 102020);
+  // Two operations over the same schema say the same, each under its own name.
+  const of = (op) => r.changes.filter((c) => c.operation === op).map((c) => [c.level, c.rule, c.where, c.text]);
+  assert.equal(of('GET /r0').length, 255);
+  assert.deepEqual(of('GET /r20'), of('GET /r0'));
+  assert.deepEqual(of('GET /r1')[0], ['breaking', 'response-property-removed', 'response 200 $.a.a.a.count', 'removed']);
+});
+
+test('a big enum shared by many operations is compared value by value, not each value against every other', () => {
+  const values = Array.from({ length: 20000 }, (_, i) => `v${i}`);
+  const doc = (list) => ({
+    openapi: '3.0.3',
+    paths: Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`/r${i}`, { get: { parameters: [{ $ref: '#/components/parameters/kind' }], responses: { 200: { description: 'ok' } } } }])),
+    components: { parameters: { kind: { name: 'kind', in: 'query', schema: { type: 'string', enum: list } } } },
+  });
+  const started = performance.now();
+  const r = diffSpecs(doc(values), doc([...values.slice(1), 'w']));
+  assert.ok(performance.now() - started < 2000);
+  assert.deepEqual([r.counts.breaking, r.counts['non-breaking']], [50, 50]);
+  assert.equal(r.changes[0].text, 'enum value "v0" removed');
+});

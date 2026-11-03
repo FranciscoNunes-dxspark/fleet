@@ -1,5 +1,5 @@
 // Comparing builds (the summaries kept, the change and its reason, the Markdown for a pull request),
-// the runs kept in ~/.ballast, and budgets.
+// the runs kept in ~/.ballast, budgets, and the sizes compressed.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { lastRun, loadRuns, runAt, runsFile, saveRun } from '../src/history.js';
 import { savedBase } from '../src/base.js';
 import { checkBudgets, globToRegExp, growthFails, parseBudget, parseFailOn, readBudgets } from '../src/budgets.js';
 import { finishChunk } from '../src/build.js';
-import { formatBytes, formatDelta, formatPercent, parseSize } from '../src/sizes.js';
+import { compressedSizes, compressedSizesAsync, formatBytes, formatDelta, formatPercent, mapLimit, parseSize } from '../src/sizes.js';
 import { demoBallast, demoBuild, DEMO_LAST, DEMO_MAIN } from '../src/demo.js';
 
 let home;
@@ -132,4 +132,31 @@ test('budgets: globs over the files, each file held to its own, total over all; 
   assert.ok(growthFails({ bytes: 1000 }, { before: 10, delta: 1001 }));
   assert.ok(!growthFails({ percent: 5 }, { before: 100, delta: -50 }));
   assert.deepEqual(readBudgets({ budgets: { a: 100 }, measure: 'weight' }).errors, ['measure is gzip, brotli or raw, not weight']);
+});
+
+test('sizes compressed on the thread pool are those compressed in place, and content seen before is not compressed again', async () => {
+  const text = Array.from({ length: 3000 }, (_, i) => `var v${i}=${i * 7};`).join('');
+  const once = await compressedSizesAsync(Buffer.from(text));
+  assert.deepEqual(once, compressedSizes(text));
+  assert.ok(once.gzip < once.raw && once.brotli < once.raw);
+  // The same bytes again come from what was kept, well under the time brotli's best level takes.
+  const big = Buffer.from(Array.from({ length: 60000 }, (_, i) => `function f${i}(a){return a*${(i * 2654435761) % 9973}}`).join(''));
+  const first = await compressedSizesAsync(big);
+  const started = performance.now();
+  assert.deepEqual(await compressedSizesAsync(Buffer.from(big)), first);
+  assert.ok(performance.now() - started < 200);
+});
+
+test('mapLimit keeps the order and runs no more than it is told to at once', async () => {
+  let running = 0;
+  let most = 0;
+  const out = await mapLimit([5, 1, 4, 2, 3], 2, async (n, i) => {
+    most = Math.max(most, ++running);
+    await new Promise((r) => setTimeout(r, n));
+    running--;
+    return n * 10 + i;
+  });
+  assert.deepEqual(out, [50, 11, 42, 23, 34]);
+  assert.equal(most, 2);
+  assert.deepEqual(await mapLimit([], 4, async () => 1), []);
 });

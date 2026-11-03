@@ -51,12 +51,12 @@ function builtWithMap(path, a, b, { sourcesContent = false } = {}) {
   return code;
 }
 
-test('an output folder: each file sized raw, gzip and brotli, and its source map says what is inside', () => {
+test('an output folder: each file sized raw, gzip and brotli, and its source map says what is inside', async () => {
   put('package-lock.json', JSON.stringify(LOCK));
   const code = builtWithMap('dist/assets/index-Ab12Cd34.js', 16, 84);
   put('dist/index.html', '<!doctype html><script src="/assets/index-Ab12Cd34.js"></script>');
   put('dist/logo.png', Buffer.alloc(300, 7));
-  const build = readBuild(dir);
+  const build = await readBuild(dir);
   assert.equal(build.source.kind, 'files');
   assert.match(build.source.label, /dist\/ and its source maps/);
   const files = build.chunks.map((c) => c.file).sort();
@@ -76,7 +76,7 @@ test('an output folder: each file sized raw, gzip and brotli, and its source map
   assert.deepEqual([png.raw, png.gzip, png.brotli], [300, 300, 300]);
 });
 
-test('a stats file is found (the newest), its chunks sized from the files on the disk, versions from the lock file', () => {
+test('a stats file is found (the newest), its chunks sized from the files on the disk, versions from the lock file', async () => {
   put('package-lock.json', JSON.stringify(LOCK));
   // webpack's stats, made on another machine: its outputPath isn't here, so build/ is looked in.
   const stats = JSON.parse(readFileSync(new URL('./fixtures/webpack-stats.json', import.meta.url), 'utf8'));
@@ -87,7 +87,7 @@ test('a stats file is found (the newest), its chunks sized from the files on the
   const old = new Date(Date.now() - 60_000);
   utimesSync(join(dir, 'dist/meta.json'), old, old);
   assert.equal(findStatsFiles(dir)[0].path, join(dir, 'stats.json'));
-  const build = readBuild(dir);
+  const build = await readBuild(dir);
   assert.equal(build.tool, 'webpack');
   assert.equal(build.source.label, 'webpack stats, stats.json');
   const vendors = build.chunks.find((c) => c.file === 'build/static/js/vendors.8c2d4e6f.js');
@@ -103,23 +103,23 @@ test('a stats file is found (the newest), its chunks sized from the files on the
   assert.equal(build.licences['chart-kit@2.1.0'], 'Apache-2.0');
 });
 
-test("esbuild's metafile names outputs from the project's folder; a stats file named is read even when others are newer", () => {
+test("esbuild's metafile names outputs from the project's folder; a stats file named is read even when others are newer", async () => {
   put('dist/main.js', 'x'.repeat(11102));
   put('dist/main.css', 'y'.repeat(6149));
   put('reports/esbuild.json', readFileSync(new URL('./fixtures/esbuild-meta.json', import.meta.url), 'utf8'));
   put('stats.json', JSON.stringify({ outputs: {}, inputs: {} }));
-  const build = readBuild(dir, { statsPath: 'reports/esbuild.json' });
+  const build = await readBuild(dir, { statsPath: 'reports/esbuild.json' });
   assert.equal(build.tool, 'esbuild');
   const main = build.chunks.find((c) => c.file === 'dist/main.js');
   assert.equal(main.raw, 11102);
   assert.ok(main.gzip != null);
-  assert.throws(() => readBuild(dir, { statsPath: 'package.json' }), /Couldn't read package\.json/);
+  await assert.rejects(() => readBuild(dir, { statsPath: 'package.json' }), /Couldn't read package\.json/);
   put('notstats.json', '{"a":1}');
-  assert.throws(() => readBuild(dir, { statsPath: 'notstats.json' }), /isn't stats Ballast reads/);
+  await assert.rejects(() => readBuild(dir, { statsPath: 'notstats.json' }), /isn't stats Ballast reads/);
 });
 
-test('nothing built: kind none, no chunks', () => {
-  const build = readBuild(dir);
+test('nothing built: kind none, no chunks', async () => {
+  const build = await readBuild(dir);
   assert.equal(build.source.kind, 'none');
   assert.deepEqual(build.chunks, []);
 });

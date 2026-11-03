@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parseNpmLock } from '@fleet/kit/lockfiles.js';
 import { cleanId, parseStats, statsJson, TOOLS } from './stats.js';
 import { finishChunk, kindOf } from './build.js';
-import { compressedSizes } from './sizes.js';
+import { compressedSizesAsync, mapLimit } from './sizes.js';
 import { mapUrlOf, sourceSizes } from './sourcemap.js';
 import { readBudgets } from './budgets.js';
 import { bundleSecrets, mapFinding } from './security.js';
@@ -65,11 +65,15 @@ export function walk(dir) {
 }
 
 /** A file's sizes, compressed only where a server would compress it. */
-function fileSizes(full, file) {
+async function fileSizes(full, file) {
   const bytes = readFileSync(full);
   if (!COMPRESSIBLE.has(kindOf(file)) && !/\.(json|svg|txt|xml)$/i.test(file)) return { raw: bytes.length, gzip: bytes.length, brotli: bytes.length };
-  return compressedSizes(bytes);
+  return compressedSizesAsync(bytes);
 }
+
+// Files compressed at once: libuv's four threads, each file's gzip and brotli on two of them. An 18 MB
+// output folder of 31 files took 36 s one file after another, on the main thread.
+const AT_ONCE = 4;
 
 /** The stats files under `root`, newest first: [{ path, mtime }]. */
 export function findStatsFiles(root) {
@@ -186,7 +190,7 @@ function modulesFromMap(root, full) {
  * { root, tool, source: { kind, path?, label }, chunks, licences, lock, at }; kind 'none' with no chunks
  * when there is nothing to read.
  */
-export function readBuild(root, { statsPath = null, outDirs = null, now = Date.now } = {}) {
+export async function readBuild(root, { statsPath = null, outDirs = null, now = Date.now } = {}) {
   root = resolve(root);
   const lock = readLock(root);
   const versionAt = lock.versionAt;
@@ -205,22 +209,21 @@ export function readBuild(root, { statsPath = null, outDirs = null, now = Date.n
       if (statsPath) throw new Error(text == null ? `Couldn't read ${statsPath}` : `${statsPath} isn't stats Ballast reads (esbuild's metafile, rollup-plugin-visualizer's data, webpack's stats)`);
       continue;
     }
-    const chunks = parsed.chunks.map((c) => {
+    const chunks = await mapLimit(parsed.chunks, AT_ONCE, async (c) => {
       const found = locate(root, c.name, { statsDir: dirname(path), outputPath: parsed.outputPath });
-      return finishChunk({ file: found ? rel(root, found) : c.name, bytes: c.bytes, sizes: found ? fileSizes(found, found) : null, modules: c.modules, entry: c.entry }, { versionAt });
+      return finishChunk({ file: found ? rel(root, found) : c.name, bytes: c.bytes, sizes: found ? await fileSizes(found, found) : null, modules: c.modules, entry: c.entry }, { versionAt });
     });
     return finish({ tool: parsed.tool, chunks }, { kind: 'stats', path: rel(root, path), label: `${TOOLS[parsed.tool]}, ${rel(root, path)}` });
   }
 
   const dirs = outDirs ?? findOutputDirs(root);
-  const chunks = [];
-  for (const { dir, label } of dirs) {
-    for (const f of walk(dir)) {
-      if (/\.(map|gz|br)$/i.test(f.path)) continue;
-      const file = `${label}/${f.path}`;
-      chunks.push(finishChunk({ file, sizes: fileSizes(f.full, file), modules: modulesFromMap(root, f.full) }, { versionAt }));
-    }
-  }
+  const files = dirs.flatMap(({ dir, label }) => walk(dir).filter((f) => !/\.(map|gz|br)$/i.test(f.path)).map((f) => ({ ...f, file: `${label}/${f.path}` })));
+  // A file's map is read while the files before it are compressed.
+  const chunks = await mapLimit(files, AT_ONCE, async (f) => {
+    const sizes = fileSizes(f.full, f.file);
+    const modules = modulesFromMap(root, f.full);
+    return finishChunk({ file: f.file, sizes: await sizes, modules }, { versionAt });
+  });
   if (!chunks.length) return { root, tool: null, source: { kind: 'none', label: 'nothing read' }, chunks: [], licences: {}, lock: lock.path ? rel(root, lock.path) : null, at: now() };
   const mapped = chunks.some((c) => c.modules.length);
   return finish({ tool: null, chunks }, { kind: 'files', label: `${dirs.map((d) => `${d.label}/`).join(', ')}${mapped ? ' and its source maps' : ' (no stats: sizes only)'}` });

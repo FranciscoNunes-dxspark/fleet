@@ -133,19 +133,91 @@ const covers = (a, b) => [...b].every((t) => accepts(a, t));
 const typeText = (set) => (set ? [...set].join(' or ') : 'anything');
 const enumOf = (s) => (Array.isArray(s.enum) ? s.enum : s.const !== undefined ? [s.const] : null);
 
+// An enum's values as JSON, what two values are compared by: a Set made once for each list, as a
+// shared schema's enum is compared again for every operation that uses it (each value against each
+// other one, it took most of the time a big description's diff took).
+const ENUM_KEYS = new WeakMap();
+function enumKeys(list) {
+  let keys = ENUM_KEYS.get(list);
+  if (!keys) ENUM_KEYS.set(list, (keys = new Set(list.map((v) => JSON.stringify(v)))));
+  return keys;
+}
+
 // Bounds: a bigger maximum or smaller minimum lets more through.
 const MAXIMA = ['maxLength', 'maximum', 'maxItems', 'maxProperties'];
 const MINIMA = ['minLength', 'minimum', 'minItems', 'minProperties'];
+
+const MAX_DEPTH = 40;
+
+/**
+ * What compareSchemas found for each pair of schemas in a diff, to be said again where the pair comes
+ * up again: a schema shared by many operations (and one a schema refers to from several places) was
+ * compared all over again each time, every operation going through the whole tree of $refs under its
+ * bodies. `key` makes a $ref one key whatever object holds it, as where it leads is the same.
+ */
+function schemaMemo() {
+  const refs = new Map();
+  const pairs = new Map();
+  const key = (raw) => {
+    if (!raw || typeof raw !== 'object' || typeof raw.$ref !== 'string') return raw;
+    if (!refs.has(raw.$ref)) refs.set(raw.$ref, { $ref: raw.$ref });
+    return refs.get(raw.$ref);
+  };
+  return {
+    /** The entry of `oldRaw` against `newRaw`: { request?, response? }. */
+    entry(oldRaw, newRaw) {
+      const a = key(oldRaw);
+      const b = key(newRaw);
+      let byNew = pairs.get(a);
+      if (!byNew) pairs.set(a, (byNew = new Map()));
+      let e = byNew.get(b);
+      if (!e) byNew.set(b, (e = {}));
+      return e;
+    },
+  };
+}
 
 /**
  * Compares two schemas at `path` ($, $.items[].id) for direction `dir` ('request' or 'response'),
  * calling `emit(level, rule, path, text)` for each difference. `stack` holds the $refs being compared,
  * so a schema that contains itself is compared once.
+ *
+ * With `cx.memo`, a pair compared before is said again from what it said then, its paths under this
+ * one's: but only when it would come out the same, so none of the $refs it went through is on the
+ * stack now (one that is would end it sooner) and it reaches no deeper than MAX_DEPTH from here. What
+ * a pair said is kept only when nothing outside it cut it short in the same way. `cx.frame` gathers,
+ * for the pair being compared, the $refs it went through and how deep it went.
  */
 function compareSchemas(cx, oldRaw, newRaw, dir, path, stack, depth = 0) {
+  if (!cx.memo) return compareFresh(cx, oldRaw, newRaw, dir, path, stack, depth);
+  const parent = cx.frame;
+  const entry = cx.memo.entry(oldRaw, newRaw);
+  const known = entry[dir];
+  let said = known && depth + known.reach <= MAX_DEPTH && !known.refs.some((r) => stack.has(r)) ? known : null;
+  if (said) {
+    for (const [level, rule, under, text] of said.emits) cx.emit(level, rule, `${path}${under}`, text);
+  } else {
+    const frame = { refs: new Set(), deepest: depth, emits: [] };
+    const emit = cx.emit;
+    const record = (level, rule, at, text) => {
+      frame.emits.push([level, rule, at.slice(path.length), text]);
+      emit(level, rule, at, text);
+    };
+    compareFresh({ ...cx, frame, emit: record }, oldRaw, newRaw, dir, path, stack, depth);
+    said = { emits: frame.emits, refs: [...frame.refs], reach: frame.deepest - depth };
+    if (frame.deepest <= MAX_DEPTH && !said.refs.some((r) => stack.has(r))) entry[dir] = said;
+  }
+  if (parent) {
+    for (const r of said.refs) parent.refs.add(r);
+    parent.deepest = Math.max(parent.deepest, depth + said.reach);
+  }
+}
+
+function compareFresh(cx, oldRaw, newRaw, dir, path, stack, depth) {
   const { emit } = cx;
-  if (depth > 40) return;
+  if (depth > MAX_DEPTH) return;
   const refKey = oldRaw?.$ref || newRaw?.$ref ? `${oldRaw?.$ref ?? ''}|${newRaw?.$ref ?? ''}` : null;
+  if (refKey && cx.frame) cx.frame.refs.add(refKey);
   if (refKey && stack.has(refKey)) return;
   const o = flatten(cx.old, deref(cx.old, oldRaw));
   const n = flatten(cx.new, deref(cx.new, newRaw));
@@ -188,9 +260,10 @@ function compareSchemas(cx, oldRaw, newRaw, dir, path, stack, depth = 0) {
     const oe = enumOf(o);
     const ne = enumOf(n);
     if (oe && ne) {
-      const has = (list, v) => list.some((x) => JSON.stringify(x) === JSON.stringify(v));
-      const gone = oe.filter((v) => !has(ne, v));
-      const added = ne.filter((v) => !has(oe, v));
+      const ok = enumKeys(oe);
+      const nk = enumKeys(ne);
+      const gone = oe.filter((v) => !nk.has(JSON.stringify(v)));
+      const added = ne.filter((v) => !ok.has(JSON.stringify(v)));
       if (gone.length) {
         const text = `enum value${gone.length === 1 ? '' : 's'} ${gone.map(shown).join(', ')} removed`;
         if (req) emit('breaking', 'request-enum-value-removed', path, text);
@@ -297,6 +370,8 @@ export function diffSpecs(oldSpec, newSpec) {
   const nb = basePath(newSpec);
   if (ob !== nb) add('breaking', 'base-path-changed', null, null, `the API moved from ${ob || '/'} to ${nb || '/'}`);
   const olds = operations(oldSpec);
+  // One for the whole diff: the schemas operations share are compared once.
+  const memo = schemaMemo();
   const news = operations(newSpec);
   for (const [key, o] of olds) {
     const n = news.get(key);
@@ -305,7 +380,7 @@ export function diffSpecs(oldSpec, newSpec) {
       add('breaking', 'operation-removed', name, null, `removed${o.op.deprecated ? ' (it was deprecated)' : ''}`);
       continue;
     }
-    const cx = { old: oldSpec, new: newSpec };
+    const cx = { old: oldSpec, new: newSpec, memo };
     const schemaDiff = (place, a, b, dir) =>
       compareSchemas({ ...cx, emit: (level, rule, path, text) => add(level, rule, name, path === '$' ? place : `${place} ${path}`, text) }, a, b, dir, '$', new Set());
     if (!o.op.deprecated && n.op.deprecated) add('non-breaking', 'operation-deprecated', name, null, 'deprecated');

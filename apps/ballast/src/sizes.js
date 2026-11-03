@@ -1,20 +1,62 @@
 // What a file weighs: as it is, and as a server sends it, gzip and brotli (node:zlib, at the levels a
 // build's precompression or a CDN uses). And sizes as people write and read them: "180kB", "1.2 MB".
-// Pure but for the compressing, which is CPU only.
-import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
+// Pure but for the compressing, which is CPU only, and the sizes it keeps for the session.
+import { createHash } from 'node:crypto';
+import { promisify } from 'node:util';
+import { brotliCompress, brotliCompressSync, constants, gzip, gzipSync } from 'node:zlib';
 
 // Brotli's best level is slow on a big file; above this, level 9 gives a size within a percent or two.
 const BROTLI_BEST_UP_TO = 4 * 1024 * 1024;
 
+const brotliOptions = (bytes) => ({ params: { [constants.BROTLI_PARAM_QUALITY]: bytes.length <= BROTLI_BEST_UP_TO ? 11 : 9, [constants.BROTLI_PARAM_SIZE_HINT]: bytes.length } });
+const asBytes = (content) => (Buffer.isBuffer(content) ? content : Buffer.from(String(content)));
+
+// The sizes of what was compressed this session, by the content's hash: brotli at its best level takes
+// a second or two a megabyte, so a file read again (ctrl+r, a build that left it as it was, a hashed
+// name that hasn't changed) isn't compressed again. Bounded, the oldest dropped first.
+const CACHE_MAX = 5000;
+const cache = new Map();
+const hashOf = (bytes) => createHash('sha256').update(bytes).digest('base64');
+const remember = (key, sizes) => {
+  if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
+  cache.set(key, sizes);
+  return sizes;
+};
+
 /** { raw, gzip, brotli } in bytes for `content` (a Buffer or text). */
 export function compressedSizes(content) {
-  const bytes = Buffer.isBuffer(content) ? content : Buffer.from(String(content));
-  const quality = bytes.length <= BROTLI_BEST_UP_TO ? 11 : 9;
-  return {
-    raw: bytes.length,
-    gzip: gzipSync(bytes, { level: 9 }).length,
-    brotli: brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: quality, [constants.BROTLI_PARAM_SIZE_HINT]: bytes.length } }).length,
+  const bytes = asBytes(content);
+  const key = hashOf(bytes);
+  const known = cache.get(key);
+  if (known) return { ...known };
+  return { ...remember(key, { raw: bytes.length, gzip: gzipSync(bytes, { level: 9 }).length, brotli: brotliCompressSync(bytes, brotliOptions(bytes)).length }) };
+}
+
+const gzipAsync = promisify(gzip);
+const brotliAsync = promisify(brotliCompress);
+
+/** compressedSizes, compressed on libuv's threads: several files at once, and the terminal kept drawing meanwhile. */
+export async function compressedSizesAsync(content) {
+  const bytes = asBytes(content);
+  const key = hashOf(bytes);
+  const known = cache.get(key);
+  if (known) return { ...known };
+  const [gz, br] = await Promise.all([gzipAsync(bytes, { level: 9 }), brotliAsync(bytes, brotliOptions(bytes))]);
+  return { ...remember(key, { raw: bytes.length, gzip: gz.length, brotli: br.length }) };
+}
+
+/** `fn` over `items` with at most `limit` running at once, the results in the items' order. */
+export async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
   };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 export const MEASURES = ['gzip', 'brotli', 'raw'];
