@@ -9,7 +9,7 @@ const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
 });
 const crc32 = (buf) => {
   let c = 0xffffffff;
-  for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 };
 function chunk(type, data) {
@@ -35,9 +35,16 @@ export function screenshotPng(seed = 0) {
     if (y >= 86 && (y - 86) % 22 < 10 && x >= 112 && x < 112 + len) return [58, 66, 78]; // text lines
     return [18, 22, 28];
   };
+  // The pixels are written straight into each row: a buffer for every one of its 130,000 pixels made
+  // each image take about 50 ms, and the demo draws one for every bug as it starts.
   for (let y = 0; y < H; y++) {
     const row = Buffer.alloc(1 + W * 3);
-    for (let x = 0; x < W; x++) Buffer.from(color(x, y)).copy(row, 1 + x * 3);
+    for (let x = 0; x < W; x++) {
+      const [r, g, b] = color(x, y);
+      row[1 + x * 3] = r;
+      row[2 + x * 3] = g;
+      row[3 + x * 3] = b;
+    }
     rows.push(row);
   }
   const ihdr = Buffer.alloc(13);
