@@ -2,13 +2,14 @@
 // reads from the DOM (title, description, canonical, robots, lang, images, links, what blocks the first
 // paint), so audit.js judges them alike. Pure, and only as good as a read of the markup can be: what
 // scripts add later isn't there.
+import { stripComments, tagsIn } from '@fleet/kit/webchecks.js';
 
 const decode = (s) => String(s ?? '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
 const attr = (tag, name) => {
   const m = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(tag);
   return m ? decode(m[1] ?? m[2] ?? m[3] ?? '') : null;
 };
-const tags = (html, name) => [...html.matchAll(new RegExp(`<${name}\\b[^>]*>`, 'gi'))].map((m) => m[0]);
+const tags = (html, name) => tagsIn(html, name).map((t) => t.tag);
 const abs = (href, base) => {
   try {
     return new URL(href, base).href;
@@ -19,7 +20,7 @@ const abs = (href, base) => {
 
 /** The facts of `html` served at `url`. */
 export function htmlFacts(html, url) {
-  const text = String(html ?? '').replace(/<!--[\s\S]*?-->/g, '');
+  const text = stripComments(html);
   const head = /<head\b[^>]*>([\s\S]*?)<\/head>/i.exec(text)?.[1] ?? '';
   const meta = (name) => {
     const t = tags(text, 'meta').find((m) => (attr(m, 'name') ?? '').toLowerCase() === name);

@@ -79,6 +79,16 @@ test('assemble: a page without runs has no lab numbers, says why, and is still j
   assert.deepEqual(rules(withoutIgnored(r.findings, ['csp-missing', 'lang-missing:https://s/p'])).filter((x) => x === 'csp-missing' || x === 'lang-missing'), []);
 });
 
+test('htmlFacts leaves comments out and stays quick on tags and comments left open', () => {
+  const facts = htmlFacts('<html lang="pt"><head><!-- <title>Old</title> --><title>New one here</title></head><body><img src="a.png"><!-- <img src="b.png"> --><img src="c.png" id="c"><img', 'https://s/');
+  assert.deepEqual([facts.title, facts.lang, facts.images.map((i) => [i.src, i.selector])], ['New one here', 'pt', [['https://s/a.png', 'img:nth-of-type(1)'], ['https://s/c.png', '#c']]]);
+  // These took 3.6 s and 1.5 s when every open <img and <!-- was searched to the end.
+  const started = performance.now();
+  htmlFacts(`<html><head></head><body>${'<img'.repeat(30_000)}`, 'https://s/');
+  htmlFacts('<!--'.repeat(20_000) + 'x'.repeat(100_000), 'https://s/');
+  assert.ok(performance.now() - started < 1000, `took ${Math.round(performance.now() - started)} ms`);
+});
+
 test('--fail-on: levels, categories with axe\'s words, metrics with units, and what fails', () => {
   assert.deepEqual(parseFailOn('a11y:serious, perf:lcp>2.5s, cls>0.1, perf:weight>2mb, high').terms.map((t) => [t.category ?? t.metric ?? null, t.level ?? t.over]), [['a11y', 'high'], ['lcp', 2500], ['cls', 0.1], ['weight', 2_000_000], [null, 'high']]);
   assert.deepEqual(parseFailOn('none').terms, []);
