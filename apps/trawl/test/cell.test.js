@@ -33,3 +33,16 @@ test('binary is a hex dump, anything else folded to the width', () => {
   assert.equal(cellText('line one\r\nline\ttwo', 40).text, 'line one\nline    two');
   for (const line of cellText('word '.repeat(100), 30).text.split('\n')) assert.ok(line.length <= 30);
 });
+
+test('a value of hundreds of thousands of characters on one line folds in a moment', () => {
+  const started = performance.now();
+  const lines = fold(`  ${'word '.repeat(40000)}`, 100);
+  const wide = fold('漢'.repeat(50000), 100);
+  assert.ok(performance.now() - started < 1000, 'folded in under a second');
+  assert.equal(lines.length, 2106);
+  assert.ok(lines.every((l) => l.length <= 100 && l.startsWith('  word')));
+  assert.equal(wide.length, 1000);
+  assert.ok(wide.every((l) => l === '漢'.repeat(50)));
+  // Wide characters count two columns, and a line still breaks at a space.
+  assert.deepEqual(fold(`${'ab 漢 '.repeat(30)}`, 20).slice(0, 2), ['ab 漢 ab 漢 ab 漢', 'ab 漢 ab 漢 ab 漢']);
+});
