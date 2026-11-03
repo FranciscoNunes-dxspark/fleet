@@ -286,6 +286,20 @@ test("Drizzle: the journal's order, hashes of each file, applied by when, change
   assert.match(migrationStatus({ tool: 'drizzle', files: [f0], rows: [] }).notes[0], /No meta\/_journal\.json/);
 });
 
+test('Knex: thousands of migrations against as many rows, each matched by a lookup', () => {
+  const pad = (i) => String(i).padStart(5, '0');
+  const files = Array.from({ length: 5000 }, (_, i) => ({ path: `migrations/${pad(i)}_m.ts`, text: '' }));
+  // Run compiled (.js names) but for the last few, and a few rows with no file.
+  const rows = files.slice(0, 4990).map((f, i) => ({ name: `${pad(i)}_m.${i < 4980 ? 'js' : 'ts'}`, batch: 1 }));
+  for (let i = 0; i < 5; i++) rows.push({ name: `gone${i}.js`, batch: 2 });
+  const started = performance.now();
+  const s = migrationStatus({ tool: 'knex', files, rows });
+  assert.ok(performance.now() - started < 1000);
+  const count = (status) => s.entries.filter((e) => e.status === status).length;
+  assert.deepEqual([count('applied'), count('pending'), count('missing')], [4990, 10, 5]);
+  assert.equal(s.entries.at(-1).script, 'gone4.js');
+});
+
 test("Prisma, Knex and Drizzle in the probe and the records; the folder's kind of files picks between several histories", () => {
   for (const kind of ['sqlserver', 'postgres', 'mysql']) for (const t of ['_prisma_migrations', 'knex_migrations', '__drizzle_migrations']) assert.ok(probeSql(kind).includes(`'${t}'`), `${kind}: ${t}`);
   // Drizzle keeps its table in a schema of its own on Postgres, outside the search path.

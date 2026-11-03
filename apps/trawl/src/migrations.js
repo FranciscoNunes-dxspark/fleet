@@ -322,14 +322,24 @@ function prisma(files, history) {
 function knex(files, history) {
   const scripts = files.filter(isKnex).sort((x, y) => byText(base(x.path), base(y.path)));
   const stem = (n) => String(n).replace(SCRIPT, '');
-  // Knex records the file's name; a TypeScript project run compiled records .js names for its .ts files.
-  const same = (name, file) => String(name) === file || stem(name) === stem(file);
+  // Knex records the file's name; a TypeScript project run compiled records .js names for its .ts
+  // files: a row is a file's when its name is the file's, else when their stems are the same. The
+  // first row by name and by stem, and the files' names and stems, are looked up rather than searched
+  // for each file and each row (2,000 of each took 2 s).
+  const byName = new Map();
+  const byStem = new Map();
+  for (const r of history) {
+    if (!byName.has(String(r.name))) byName.set(String(r.name), r);
+    if (!byStem.has(stem(r.name))) byStem.set(stem(r.name), r);
+  }
+  const names = new Set(scripts.map((f) => base(f.path)));
+  const stems = new Set([...names].map(stem));
   const entries = [];
   for (const f of scripts) {
-    const row = history.find((r) => String(r.name) === base(f.path)) ?? history.find((r) => same(r.name, base(f.path)));
+    const row = byName.get(base(f.path)) ?? byStem.get(stem(base(f.path)));
     entries.push({ script: base(f.path), version: null, description: '', status: row ? 'applied' : 'pending', detail: row ? `batch ${row.batch ?? '?'}, ${dateText(row.migration_time)}` : `in ${f.path}` });
   }
-  for (const r of history) if (!scripts.some((f) => same(r.name, base(f.path)))) entries.push({ script: String(r.name), version: null, description: '', status: 'missing', detail: `applied ${dateText(r.migration_time)} (batch ${r.batch ?? '?'}), no file` });
+  for (const r of history) if (!names.has(String(r.name)) && !stems.has(stem(r.name))) entries.push({ script: String(r.name), version: null, description: '', status: 'missing', detail: `applied ${dateText(r.migration_time)} (batch ${r.batch ?? '?'}), no file` });
   const notes = ["Knex keeps no checksums, so a migration changed since it ran can't be told.", "Knex's migrations are JavaScript, so Trawl lists them but doesn't run them: npx knex migrate:latest applies them."];
   // Listed as pending, but not for Trawl to run.
   return { tool: 'knex', entries, pending: entries.filter((e) => e.status === 'pending'), notes, runnable: false };
