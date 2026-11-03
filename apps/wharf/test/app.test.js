@@ -16,7 +16,7 @@ test('the containers are listed by compose project, with the standalone ones las
   const app = start();
   await until(shows(app, 'Standalone'), 'the standalone heading');
   const frame = app.lastFrame();
-  assert.match(frame, /5\/7 running/);
+  assert.match(frame, /6\/8 running/);
   assert.match(frame, /1 not well|2 not well/);
   assert.ok(frame.indexOf('shop') < frame.indexOf('Standalone'));
   assert.match(frame, /redis-cache/);
@@ -120,7 +120,7 @@ test('o opens the first published port, y copies the id, i shows inspect', async
   assert.deepEqual(app.copied, ['b2c3d4e5f6a1']);
   app.stdin.write('i');
   await until(shows(app, 'inspect shop-api-1'), 'the inspect');
-  assert.match(app.lastFrame(), /"Image": "shop\/api:1.4"/);
+  assert.match(app.lastFrame(), /"Name": "\/shop-api-1"/);
   app.unmount();
 });
 

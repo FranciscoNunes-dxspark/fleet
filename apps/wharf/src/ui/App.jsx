@@ -25,6 +25,9 @@ import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { ShellPane } from './ShellPane.jsx';
 import { RolloutView } from './RolloutView.jsx';
+import { SecurityView } from './SecurityView.jsx';
+import { securityCheck } from '../headless.js';
+import { worstByContainer } from '../security.js';
 import { commandLine } from '../shell.js';
 import { spawn } from 'node:child_process';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
@@ -40,7 +43,7 @@ const VIEWS = [
 ];
 
 const HINTS = {
-  containers: '↵ log · e shell · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause · v scan',
+  containers: '↵ log · e shell · s stop/start · r restart · x remove · i inspect · o open · a only running · p pause · v scan · alt+s security',
   images: 'x remove · p prune unused · v scan · y copy id',
   pods: '↵ log · c a container\'s log · e shell · x delete · r restart deployment · w watch rollout · i describe · y copy name',
   log: '↵ all its output · y copy it',
@@ -138,6 +141,10 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   const [welcome, setWelcome] = useState(true);
   const [update, setUpdate] = useState(null);
   const [onlyRunning, setOnlyRunning] = useState(false);
+  // Each container's worst security finding (security.js), for the list's marker: a Map from its name.
+  const [security, setSecurityState] = useState(null);
+  const securityKey = useRef(null);
+  const setSecurity = (findings) => setSecurityState(worstByContainer(findings));
   // The cluster, read only while the Pods view is on screen (kubectl may not even be installed): { pods, top, namespace, context, problem }.
   const [kubeData, setKubeDataState] = useState(null);
   // The pet looks happy (or worried) for a few seconds after a result; re-render when that wears off.
@@ -261,6 +268,15 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
       if (!alive.current) return;
       setData({ containers, images, stats: dataRef.current?.stats ?? new Map() });
       setProblem(null);
+      // The security check's markers, quietly, whenever the containers are others than last time (one docker inspect).
+      const key = containers.map((c) => c.id).join(',');
+      if (provider.inspectAll && key !== securityKey.current) {
+        securityKey.current = key;
+        securityCheck(provider, { ids: containers.map((c) => c.id), ignore: configRef.current.securityIgnore ?? [] }).then(
+          (r) => alive.current && setSecurity(r.findings),
+          () => {},
+        );
+      }
       provider.stats().then(
         (stats) => alive.current && dataRef.current && setData({ ...dataRef.current, stats }),
         () => {},
@@ -426,6 +442,9 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
     overlayHasKeys: () => focusRef.current === 'view' && !confirmRef.current && answerKey.current !== keySeq.current,
     quit: () => exit(),
     showText: (title, text) => setOverlay({ title, text }),
+    // /security's findings over the view ({ title, findings, arg }), and every container's for the markers.
+    showSecurity: (what) => setOverlay({ kind: 'security', ...what }),
+    setSecurity,
     // A container's log, followed: read again every moment while it's open.
     showLogs: (c, opts = {}) => setOverlay({ kind: 'logs', title: `${c.name} · log`, process: c.name, project: c.workingDir ?? undefined, source: () => provider.logs(c.id, { tail: 500 }), ...opts }),
     // One container's (`container`), or every one of the pod's.
@@ -761,6 +780,8 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
     main = <HelpView sections={HELP_SECTIONS} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay?.kind === 'shell') {
     main = <ShellPane key={viewerKey(overlay)} title={overlay.title} shell={overlay.shell} spawnShell={spawnShell} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
+  } else if (overlay?.kind === 'security') {
+    main = <SecurityView key={viewerKey(overlay)} title={overlay.title} findings={overlay.findings} arg={overlay.arg} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay?.kind === 'rollout') {
     main = <RolloutView key={viewerKey(overlay)} target={overlay.target} every={rolloutEvery} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => queueMicrotask(ctx.closeOverlay)} />;
   } else if (overlay) {
@@ -778,7 +799,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   } else if (view === 'images') {
     main = <ImagesView images={data.images} containers={data.containers} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
-    main = <ContainersView containers={data.containers} stats={data.stats} onlyRunning={onlyRunning} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <ContainersView containers={data.containers} stats={data.stats} security={security} onlyRunning={onlyRunning} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
   const left = flash
@@ -787,6 +808,8 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
+        : overlay?.kind === 'security'
+          ? 'j/k move · ↵ the finding · y copy it · r check again · esc close'
         : overlay?.kind === 'rollout'
           ? 'u undo (asks) · l the log of a new pod · esc close'
         : overlay?.kind === 'shell'

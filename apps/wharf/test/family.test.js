@@ -37,7 +37,7 @@ test("Bark's mood: unwell containers and crash-looping pods worry it, a quiet cr
   const boxes = demoContainers();
   assert.deepEqual(familyMood({ mood: 'wave', data: { containers: boxes } }), { mood: 'worried', reason: 'shop-worker-1 exited with an error' });
   const fine = boxes.filter((c) => c.state === 'running' && !c.health);
-  assert.deepEqual(familyMood({ mood: 'wave', data: { containers: fine } }), { mood: 'happy', reason: 'all 3 running' });
+  assert.deepEqual(familyMood({ mood: 'wave', data: { containers: fine } }), { mood: 'happy', reason: 'all 4 running' });
   assert.match(familyMood({ mood: 'wave', data: { containers: fine }, kubeData: { pods: [{ name: 'api-1', status: 'CrashLoopBackOff' }] } }).reason, /api-1: CrashLoopBackOff/);
   assert.equal(familyMood({ mood: 'look', data: { containers: fine }, busy: { label: 'Pulling' } }).mood, 'busy');
   const said = reactionTo([{ app: 'sonar', mood: 'worried', reason: '12 new exceptions', at: 5 }, { app: 'hail', mood: 'neutral', at: 4 }]);
