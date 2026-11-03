@@ -11,7 +11,7 @@ import { label } from './azure/arm.js';
 import { fingerprint } from './drift.js';
 import { normKey } from './keys.js';
 import { loadTarget, loadVault, mapLimited, referencedVaults } from './load.js';
-import { hygieneFindings, jsonKeyLine, secretHolders } from './hygiene.js';
+import { hygieneFindings, jsonKeyLines, secretHolders } from './hygiene.js';
 import { rotateSecret } from './rotate.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
@@ -44,7 +44,9 @@ export async function readHygiene({ provider, local, azure = null, target = null
     sources.map(async (s) => {
       if (s.kind !== 'appsettings' || !local.text) return s;
       const text = await local.text(s.file).catch(() => null);
-      return text ? { ...s, entries: s.entries.map((e) => ({ ...e, line: jsonKeyLine(text, e.key) ?? undefined })) } : s;
+      if (!text) return s;
+      const lineOf = jsonKeyLines(text);
+      return { ...s, entries: s.entries.map((e) => ({ ...e, line: lineOf(e.key) ?? undefined })) };
     }),
   );
   const list = local.tracked ? await local.tracked().catch(() => null) : null;
