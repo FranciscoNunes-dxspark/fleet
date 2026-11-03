@@ -31,6 +31,8 @@ import {
   redirectChain,
   scriptUrls,
   sourceMapUrl,
+  stripComments,
+  tagsIn,
 } from '../webchecks.js';
 
 const KEY = ['-----BEGIN PRIVATE KEY-----', 'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgGQM/e21mklph5ULm', 'eHWTzBXiCz4UdVBUDZZlJqdXEDuhRANCAAQxgxi49hlQP+0iDrP+lpqX3kFMtfM2', 'akU3350uhSTqNR5ahV1QnYc2Fu9mN+jUtSy/1H7lhSpbLpDmBPWo1xQu', '-----END PRIVATE KEY-----'].join('\n');
@@ -265,4 +267,46 @@ test('checkDomain puts the records, the redirects and the certificate together',
   const www = await checkDomain('www.shop.example', { resolver, fetchImpl, probe, now });
   assert.ok(rules(www.findings).includes('https-unreachable'));
   assert.equal(www.bare, 'shop.example');
+});
+
+test('stripComments and tagsIn read as the regexes did, and stay linear on comments and tags left open', () => {
+  const oldStrip = (s) => s.replace(/<!--[\s\S]*?-->/g, '');
+  const oldTags = (s, names) => [...s.matchAll(new RegExp(`<(${names})\\b[^>]*>`, 'gi'))].map((m) => ({ name: m[1].toLowerCase(), tag: m[0] }));
+  const samples = [
+    '',
+    '<p>no comments</p>',
+    'a<!-- one -->b<!---->c<!-->d-->e',
+    'a<!-- open <script src="x.js">',
+    '<!-- a --><!-- b <!-- c --> d -->',
+    '<SCRIPT src=a.js><script\nsrc="b.js" defer><scripts><script',
+    '<iframe src=a><frame src=b><img src=c><img',
+    '<script src="a>b.js"><img alt="x" src=y>',
+  ];
+  for (const s of samples) {
+    assert.equal(stripComments(s), oldStrip(s), s);
+    for (const names of ['script', 'iframe|frame', 'img|audio|video|source|track']) assert.deepEqual(tagsIn(oldStrip(s), names), oldTags(oldStrip(s), names), `${names} in ${s}`);
+  }
+  // Each of these took seconds with the regexes: every <!-- or <script left open was searched to the end.
+  const started = performance.now();
+  assert.deepEqual(mixedContent('<!--'.repeat(20_000) + 'x'.repeat(100_000), 'https://s.example/'), []);
+  assert.deepEqual(scriptUrls('<script'.repeat(30_000), 'https://s.example/'), []);
+  assert.ok(performance.now() - started < 1000, `took ${Math.round(performance.now() - started)} ms`);
+});
+
+test('findSourceMaps asks for a few scripts at once and keeps the page\'s order', async () => {
+  let open = 0;
+  let most = 0;
+  const fetchImpl = async (url) => {
+    open++;
+    most = Math.max(most, open);
+    // The first scripts answer last, so the order can't come from who finished first.
+    const n = Number(/s(\d+)\.js/.exec(url)?.[1] ?? 0);
+    await new Promise((r) => setTimeout(r, 40 - n * 4));
+    open--;
+    return url.endsWith('.map') ? new Response(`{"version":3,"sources":[${'"a",'.repeat(n)}"z"],"mappings":""}`) : new Response('x();');
+  };
+  const page = Array.from({ length: 8 }, (_, i) => `<script src="/s${i}.js"></script>`).join('');
+  const maps = await findSourceMaps(page, 'https://s.example/', { fetchImpl });
+  assert.deepEqual(maps.map((m) => [m.script.replace('https://s.example', ''), m.sources]), Array.from({ length: 8 }, (_, i) => [`/s${i}.js`, i + 1]));
+  assert.ok(most > 1 && most <= 4, `${most} at once`);
 });

@@ -21,6 +21,7 @@ export const EXPIRY_HIGH_DAYS = 7;
 // What a page's body is read up to, and how many of its scripts are looked at for a source map.
 const BODY_MAX = 2_000_000;
 const SCRIPTS_MAX = 8;
+const SCRIPTS_AT_ONCE = 4;
 const HIDDEN = '••••••';
 
 // ---------------------------------------------------------------------------------------------------
@@ -210,7 +211,45 @@ const attrOf = (tag, name) => {
   const m = ATTR(name).exec(tag);
   return m ? (m[1] ?? m[2] ?? m[3] ?? '').trim() : null;
 };
-const tagsOf = (html, names) => [...String(html ?? '').replace(/<!--[\s\S]*?-->/g, '').matchAll(new RegExp(`<(${names})\\b[^>]*>`, 'gi'))].map((m) => ({ name: m[1].toLowerCase(), tag: m[0] }));
+
+/**
+ * `html` without its comments: each `<!--` up to the next `-->` taken out, one left open kept as it is.
+ * By hand rather than /<!--[\s\S]*?-->/g, which searches to the end again from every `<!--` that never
+ * closes: 20,000 of them in a 180 kB body took 8 s.
+ */
+export function stripComments(html) {
+  const s = String(html ?? '');
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = s.indexOf('<!--', from);
+    if (open < 0) break;
+    const close = s.indexOf('-->', open + 4);
+    if (close < 0) break;
+    out += s.slice(from, open);
+    from = close + 3;
+  }
+  return from ? out + s.slice(from) : s;
+}
+
+/**
+ * The tags named (`script`, `img|audio`) in `text`, comments already out: [{ name, tag }], as
+ * /<(names)\b[^>]*>/gi would match them. The `>` is looked for with indexOf, and once there is none no
+ * later tag can end either, where the regex would scan to the end from every `<script` left open.
+ */
+export function tagsIn(text, names) {
+  const start = new RegExp(`<(${names})\\b`, 'gi');
+  const out = [];
+  for (let m = start.exec(text); m; m = start.exec(text)) {
+    const end = text.indexOf('>', m.index + m[0].length);
+    if (end < 0) break;
+    out.push({ name: m[1].toLowerCase(), tag: text.slice(m.index, end + 1) });
+    start.lastIndex = end + 1;
+  }
+  return out;
+}
+
+const tagsOf = (html, names) => tagsIn(stripComments(html), names);
 
 // Which tags load what, and whether a browser blocks it on an https page (active) or only warns (passive).
 const LOADS = [
@@ -227,8 +266,10 @@ const LOADS = [
 export function mixedContent(html, pageUrl) {
   if (!isHttps(pageUrl)) return [];
   const out = [];
+  // The comments come out once, not once per kind of tag.
+  const text = stripComments(html);
   for (const l of LOADS) {
-    for (const { name, tag } of tagsOf(html, l.tags)) {
+    for (const { name, tag } of tagsIn(text, l.tags)) {
       if (l.when && !l.when(tag)) continue;
       const v = attrOf(tag, l.attr);
       if (v && /^http:\/\//i.test(v)) out.push({ tag: name, url: v, active: l.active });
@@ -476,16 +517,12 @@ export async function redirectChain(url, { fetchImpl = globalThis.fetch, max = 8
  * same-origin script naming one that answers with a map, or carrying it inline; a script naming none is
  * tried with `.map` added.
  */
-export async function findSourceMaps(html, pageUrl, { fetchImpl = globalThis.fetch, signal, timeout = CHECK_TIMEOUT, max = SCRIPTS_MAX } = {}) {
-  const out = [];
-  for (const script of scriptUrls(html, pageUrl, max)) {
+export async function findSourceMaps(html, pageUrl, { fetchImpl = globalThis.fetch, signal, timeout = CHECK_TIMEOUT, max = SCRIPTS_MAX, concurrency = SCRIPTS_AT_ONCE } = {}) {
+  const one = async (script) => {
     const js = await fetchPage(script, { fetchImpl, signal, timeout });
-    if (js.error || js.status >= 400) continue;
+    if (js.error || js.status >= 400) return null;
     const named = sourceMapUrl(js.body, script);
-    if (named === 'inline') {
-      out.push({ script, inline: true });
-      continue;
-    }
+    if (named === 'inline') return { script, inline: true };
     const map = named ?? `${script.replace(/[?#].*$/, '')}.map`;
     const res = await fetchPage(map, { fetchImpl, signal, timeout });
     if (!res.error && res.status === 200 && looksLikeSourceMap(res.body)) {
@@ -495,9 +532,25 @@ export async function findSourceMaps(html, pageUrl, { fetchImpl = globalThis.fet
       } catch {
         sources = undefined;
       }
-      out.push({ script, map, ...(sources ? { sources } : {}) });
+      return { script, map, ...(sources ? { sources } : {}) };
     }
-  }
+    return null;
+  };
+  // A few scripts at a time (two round trips each, one after another, was up to sixteen in a row), in the page's order.
+  return (await inTurn(scriptUrls(html, pageUrl, max), one, concurrency)).filter(Boolean);
+}
+
+/** `fn` over `items`, `n` at a time: its results in the items' order. */
+async function inTurn(items, fn, n) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(n, items.length)) }, worker));
   return out;
 }
 
@@ -521,17 +574,25 @@ export async function checkSite(url, { fetchImpl = globalThis.fetch, probe = pro
   out.findings.push(...judgeHeaders(res, { where, https: isHttps(end.url) }), ...judgeServerHeaders(res, { where }), ...judgeCookies(res, { where, https: isHttps(end.url) }));
   // The cookies set on the way (a redirect that signs in, say) count too.
   for (const step of chain.slice(0, -1)) if (step.res) out.findings.push(...judgeCookies(step.res, { where, https: isHttps(step.url) }));
-  if (isHtml(res)) {
+  // The source maps, the redirects from http:// and the certificate don't wait on each other: asked at
+  // once, their findings still go in this order.
+  const html = isHtml(res);
+  const u = isHttps(url) ? new URL(url) : null;
+  const [maps, httpChain, cert] = await Promise.all([
+    html && sourceMaps ? findSourceMaps(res.body, end.url, { fetchImpl, signal, timeout }) : null,
+    u ? redirectChain(`http://${u.host}${u.pathname}${u.search}`, { fetchImpl, signal, timeout }) : null,
+    isHttps(end.url) ? probe(end.url, { timeout }) : undefined,
+  ]);
+  if (html) {
     out.findings.push(...judgeMixedContent(mixedContent(res.body, end.url), { where }));
-    if (sourceMaps) out.findings.push(...judgeSourceMaps(await findSourceMaps(res.body, end.url, { fetchImpl, signal, timeout }), { where }));
+    if (maps) out.findings.push(...judgeSourceMaps(maps, { where }));
   }
-  if (isHttps(url)) {
-    const u = new URL(url);
-    out.httpChain = (await redirectChain(`http://${u.host}${u.pathname}${u.search}`, { fetchImpl, signal, timeout })).map(({ res: _r, ...s }) => s);
+  if (u) {
+    out.httpChain = httpChain.map(({ res: _r, ...s }) => s);
     out.findings.push(...judgeRedirects({ http: out.httpChain }, { where }));
   } else out.findings.push(...judgeRedirects({ http: out.chain }, { where }));
   if (isHttps(end.url)) {
-    out.cert = await probe(end.url, { timeout });
+    out.cert = cert;
     out.findings.push(...judgeCertificate(out.cert, { where: hostOf(end.url), now }));
   }
   out.findings = dedupe(out.findings);
