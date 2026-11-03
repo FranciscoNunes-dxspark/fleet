@@ -10,6 +10,7 @@ import { THEMES, applyTheme, isColour, setAccent, theme } from './theme.js';
 import { configFile } from './config.js';
 import { CATEGORY_LABEL, bytes, formatMetric, vitalsLine } from './audit.js';
 import { normalUrl, pathOf } from './pages.js';
+import { CHECKS_AT_ONCE, pool } from './provider.js';
 import { compareRows, compareSentence, markdownReport, requestContext } from './share.js';
 import { sarifOf } from './security.js';
 import { VERSION } from './app.js';
@@ -94,13 +95,13 @@ export async function domains(ctx, host = '') {
   if (!hosts.length) return ctx.note('No hosts: /domains <host>, or name pages in lantern.json or .fleet/project.json.', 'error') ?? false;
   ctx.setView('domains');
   const r = await ctx.task(`domains ${hosts.join(', ')}`, async (signal) => {
-    const lines = [];
-    for (const h of hosts) {
+    // A few hosts at a time, each shown as it's done; the summary keeps the hosts' order.
+    const lines = await pool(hosts.map((h) => async () => {
       ctx.progress(h);
       const d = await ctx.provider.domain(h, { signal });
       ctx.setDomain(d);
-      lines.push(`${h}: ${findingsLine(countOf(d.findings)) || 'nothing found'}${d.days !== null ? `, certificate ${d.days} days` : ''}`);
-    }
+      return `${h}: ${findingsLine(countOf(d.findings)) || 'nothing found'}${d.days !== null ? `, certificate ${d.days} days` : ''}`;
+    }), CHECKS_AT_ONCE);
     return { stdout: lines.join('\n') };
   }, { label: 'Checking domains' });
   if (r.ok) ctx.logActivity(`Checked ${plural(hosts.length, 'domain')}: ${hosts.join(', ')}`);

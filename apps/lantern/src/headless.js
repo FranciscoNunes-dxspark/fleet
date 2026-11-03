@@ -9,6 +9,7 @@ import { domainLines } from '@fleet/kit/webchecks.js';
 import { CATEGORY_SHORT, vitalsLine } from './audit.js';
 import { failures, parseFailOn } from './failon.js';
 import { normalUrl } from './pages.js';
+import { CHECKS_AT_ONCE, pool } from './provider.js';
 import { sarifOf, withoutIgnored } from './security.js';
 
 export const HEADLESS = ['audit', 'security', 'domains'];
@@ -131,11 +132,8 @@ async function runAudit(opts, pages, { provider, config, write, version }) {
 }
 
 async function runSecurity(opts, pages, { provider, config, write, version }) {
-  const all = [];
-  for (const p of pages) {
-    const s = await provider.security(p.url);
-    all.push(...s.findings.map((f) => ({ ...f, category: 'security', page: p.url })));
-  }
+  const checked = await pool(pages.map((p) => () => provider.security(p.url)), CHECKS_AT_ONCE);
+  const all = checked.flatMap((s, i) => s.findings.map((f) => ({ ...f, category: 'security', page: pages[i].url })));
   const findings = withoutIgnored(all, config.ignore ?? []);
   const target = opts.targets.length ? pages.map((p) => p.url).join(' ') : resolve(opts.dir);
   output(opts, {
@@ -153,8 +151,7 @@ async function runDomains(opts, { provider, config, write, version }) {
     write('No hosts: lantern domains shop.example, or name pages in lantern.json or .fleet/project.json.\n');
     return 2;
   }
-  const checked = [];
-  for (const h of hosts) checked.push(await provider.domain(h));
+  const checked = await pool(hosts.map((h) => () => provider.domain(h)), CHECKS_AT_ONCE);
   const findings = withoutIgnored(checked.flatMap((d) => d.findings), config.ignore ?? []);
   const text = () => {
     const lines = [];

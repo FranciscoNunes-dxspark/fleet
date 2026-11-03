@@ -21,6 +21,10 @@ import { findChrome, launchChrome } from './chrome.js';
 import { htmlFacts } from './html.js';
 import { readPages } from './pages.js';
 
+// How many hosts (lantern domains, /domains) and pages (lantern security) are checked at once: each is
+// a handful of round trips that mostly wait, and one after another 50 hosts took 50 times one.
+export const CHECKS_AT_ONCE = 6;
+
 export const NO_BROWSER = 'No Chrome, Edge or Chromium on this machine (or at the path in the settings): no lab numbers or accessibility check, only what the page\'s headers, certificate and HTML say. Install one, or /chrome <path>.';
 
 /** axe-core's source, to put in the page: the package's own `source`, which the Bun build carries inside the executable. */
@@ -30,7 +34,7 @@ export async function axeSource() {
 }
 
 /** Runs `jobs` (functions returning promises) `n` at a time; resolves their results in order. */
-async function pool(jobs, n) {
+export async function pool(jobs, n) {
   const out = new Array(jobs.length);
   let next = 0;
   await Promise.all(
