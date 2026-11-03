@@ -286,6 +286,20 @@ test("Drizzle: the journal's order, hashes of each file, applied by when, change
   assert.match(migrationStatus({ tool: 'drizzle', files: [f0], rows: [] }).notes[0], /No meta\/_journal\.json/);
 });
 
+test('Flyway: thousands of versions against as many rows, each matched by a lookup', () => {
+  const files = Array.from({ length: 3000 }, (_, i) => ({ path: `V1_${i}__m${i}.sql`, text: `select ${i};` }));
+  // Written 1.<i>.0 in the history: the same version. A file of its own for 1.5, twice.
+  files.push({ path: 'V1_5_0__again.sql', text: 'select 5;' });
+  const rows = files.slice(0, 2990).map((f, i) => ({ installed_rank: i + 1, version: `1.${i}.0`, type: 'SQL', script: f.path, checksum: flywayChecksum(i === 7 ? 'x' : f.text), success: true }));
+  for (let i = 0; i < 5; i++) rows.push({ installed_rank: 3000 + i, version: `9.${i}`, type: 'SQL', script: `V9_${i}__gone.sql`, checksum: 1, success: true });
+  const started = performance.now();
+  const s = migrationStatus({ tool: 'flyway', files, rows });
+  assert.ok(performance.now() - started < 1000);
+  const count = (status) => s.entries.filter((e) => e.status === status).length;
+  assert.deepEqual([count('applied'), count('changed'), count('pending'), count('missing')], [2990, 1, 10, 5]);
+  assert.deepEqual(s.notes, ['Version 1.5 is in 2 files: V1_5__m5.sql, V1_5_0__again.sql. Flyway refuses that.', 'Version 1.5.0 is in 2 files: V1_5__m5.sql, V1_5_0__again.sql. Flyway refuses that.']);
+});
+
 test('Knex: thousands of migrations against as many rows, each matched by a lookup', () => {
   const pad = (i) => String(i).padStart(5, '0');
   const files = Array.from({ length: 5000 }, (_, i) => ({ path: `migrations/${pad(i)}_m.ts`, text: '' }));

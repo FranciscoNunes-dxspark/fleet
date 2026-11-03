@@ -101,7 +101,14 @@ export function compareVersions(a, b) {
   return 0;
 }
 
-const sq = (s) => `'${String(s).replace(/'/g, "''")}'`;
+/** A version as compareVersions sees it, one key for versions it calls the same: 1.0 and 1 are "1". */
+function versionKey(v) {
+  const parts = String(v).split('.').map((p) => BigInt(p || 0));
+  while (parts.length > 1 && parts.at(-1) === 0n) parts.pop();
+  return parts.join('.');
+}
+
+const sq =(s) => `'${String(s).replace(/'/g, "''")}'`;
 const names = Object.values(TOOLS).map((t) => t.table.toLowerCase());
 
 /** The query that finds which of the history tables this database has (marked for the demo). */
@@ -198,12 +205,23 @@ function flyway(files, history) {
   const applied = rowsOk.filter((r) => truthy(r.success) && String(r.type).toUpperCase() !== 'BASELINE');
   const newest = applied.map((r) => String(r.version)).sort(compareVersions).at(-1) ?? null;
   const versioned = parsed.filter((p) => p.prefix === 'V').sort((x, y) => compareVersions(x.version, y.version));
+  // The files of each version and the last row that isn't the baseline, by the version as
+  // compareVersions sees it, looked up rather than searched for each file (2,000 files against 2,000
+  // rows took 4.5 s).
+  const filesOf = new Map();
+  for (const p of versioned) {
+    const v = versionKey(p.version);
+    if (!filesOf.has(v)) filesOf.set(v, []);
+    filesOf.get(v).push(p);
+  }
+  const rowOf = new Map();
+  for (const r of rowsOk) if (String(r.type).toUpperCase() !== 'BASELINE') rowOf.set(versionKey(String(r.version)), r);
   const seen = new Set();
   for (const p of versioned) {
-    const key = versioned.filter((q) => compareVersions(q.version, p.version) === 0);
+    const key = filesOf.get(versionKey(p.version));
     if (key.length > 1 && !seen.has(p.version)) notes.push(`Version ${p.version} is in ${key.length} files: ${key.map((q) => q.file.path).join(', ')}. Flyway refuses that.`);
     seen.add(p.version);
-    const row = [...rowsOk].reverse().find((r) => compareVersions(String(r.version), p.version) === 0 && String(r.type).toUpperCase() !== 'BASELINE');
+    const row = rowOf.get(versionKey(p.version));
     const e = { script: p.file.path, file: p.file, version: p.version, description: p.description, checksum: p.checksum, kind: 'versioned' };
     if (row && !truthy(row.success)) entries.push({ ...e, status: 'failed', detail: `failed on ${dateText(row.installed_on)}: fix it, then flyway repair` });
     else if (row) {
@@ -213,7 +231,7 @@ function flyway(files, history) {
     else entries.push({ ...e, status: 'pending', detail: newest && compareVersions(p.version, newest) < 0 ? `older than ${newest}, the newest applied (Flyway runs it only with outOfOrder)` : '' });
   }
   for (const r of applied) {
-    if (versioned.some((p) => compareVersions(p.version, String(r.version)) === 0)) continue;
+    if (filesOf.has(versionKey(String(r.version)))) continue;
     entries.push({ script: r.script, version: String(r.version), description: r.description, status: 'missing', detail: `applied ${dateText(r.installed_on)}, no file` });
   }
   // Repeatable migrations run again whenever their checksum changes.
