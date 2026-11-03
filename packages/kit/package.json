@@ -41,6 +41,7 @@
     "./osv.js": "./osv.js",
     "./codescan.js": "./codescan.js",
     "./findings.js": "./findings.js",
+    "./webchecks.js": "./webchecks.js",
     "./lockfiles.js": "./lockfiles.js",
     "./hosted.js": "./hosted.js",
     "./mcp.js": "./mcp.js",
