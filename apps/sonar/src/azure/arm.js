@@ -11,6 +11,7 @@ import { STORAGE_VERSION, VIEW_MAX, blobUrl, parseBlobs, parseContainers, storag
 import { containerFrom, cosmosFrom, throughputFrom } from '../cosmos.js';
 import { busRoleNeeded, deadLetterPath, entityFrom, messageFrom, namespaceFrom, resendHeaders, resubmitPath } from '../servicebus.js';
 import { changesFrom, commitOf } from '../markers.js';
+import { checkDomain } from '@fleet/kit/webchecks.js';
 
 export const ARM = 'https://management.azure.com';
 export const INSIGHTS = 'https://api.applicationinsights.io';
@@ -732,6 +733,10 @@ export function createAzure({ fetch = globalThis.fetch, token }) {
       });
       const list = await all(`/subscriptions/${sub}/providers/Microsoft.Insights/eventtypes/management/values?${q}`, { signal, what: `Reading ${label(target)}'s activity log` });
       return changesFrom(list, target);
+    },
+    /** A custom domain checked from the outside (the kit's webchecks.js): DNS, redirects, https, the certificate. Not ARM: the domain's own answers. */
+    domain(host, { signal } = {}) {
+      return checkDomain(host, { fetchImpl: fetch, signal });
     },
     /** One deployment's log: [{ at, message }] in order. */
     async deploymentLog(deployment, opts) {
