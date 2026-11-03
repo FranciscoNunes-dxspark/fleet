@@ -159,6 +159,11 @@ export function ServiceTile({ tile, onOpen }) {
             {tile.checks.map((c, i) => (!c.ok ? <rect key={i} x={i * step - 1} y={0} width={2} height={h} className="tile-fail" /> : null))}
           </svg>
         )}
+        {tile.db && (
+          <span className={`tile-db small${tile.db.failRate >= 0.05 ? ' text-bad' : ' muted'}`}>
+            {t('Database: p95 {ms}, {pct} failing', { ms: tile.db.p95 == null ? '—' : tile.db.p95 >= 1000 ? `${(tile.db.p95 / 1000).toFixed(1)}s` : `${Math.round(tile.db.p95)}ms`, pct: `${Math.round(tile.db.failRate * 1000) / 10}%` })}
+          </span>
+        )}
         <span className="tile-foot">
           {tile.deploying
             ? <span className="tile-deploying">{t('Deploying {label}', { label: tile.deploying.label })}</span>

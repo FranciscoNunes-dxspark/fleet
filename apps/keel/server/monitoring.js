@@ -127,12 +127,36 @@ const SERVER_ERROR = 'toint(resultCode) >= 500';
 const AI_FORMAT = 2;
 const NOT_FOUND = 'resultCode == "404"';
 
+// Database calls the SDK records as dependencies ("SQL", "Azure SQL", "Postgres", "MySQL"). `type has_any`
+// matches whole words, so it reaches all of them and no HTTP or queue dependency.
+const DB_CALL = 'type has_any ("sql", "postgres", "postgresql", "mysql")';
+
+/** What the database did: null when the app records no database calls. Failures are unsuccessful calls. */
+function dbFrom(series, slow) {
+  const lastHour = series.filter((b) => Date.parse(b.timestamp) > Date.now() - HOUR);
+  const sum = (k) => lastHour.reduce((s, b) => s + (b[k] || 0), 0);
+  const calls = sum('calls');
+  const failed = sum('failed');
+  if (!series.length) return null;
+  return {
+    calls,
+    failed,
+    failRate: calls ? failed / calls : 0,
+    p95: lastHour.length ? Math.max(...lastHour.map((b) => b.p95 || 0)) : null,
+    topSlow: slow.map((s) => ({ name: s.name, target: s.target || '', p95: s.p95, count: s.n })),
+    series: series.map((b) => ({ at: b.timestamp, calls: b.calls, failed: b.failed, p95: b.p95 })),
+  };
+}
+
 async function aiSnapshot(appId, apiKey) {
-  const [series, exceptions, failing, missing] = await Promise.all([
+  const [series, exceptions, failing, missing, dbSeries, dbSlow] = await Promise.all([
     aiQuery(appId, apiKey, `requests | where timestamp > ago(24h) | summarize total=count(), failed=countif(${SERVER_ERROR}), notFound=countif(${NOT_FOUND}), p95=percentile(duration, 95) by bin(timestamp, 30m) | order by timestamp asc`),
     aiQuery(appId, apiKey, 'exceptions | where timestamp > ago(1h) | summarize n=count()'),
     aiQuery(appId, apiKey, `requests | where timestamp > ago(1h) and ${SERVER_ERROR} | summarize n=count() by name, resultCode | top 5 by n desc`),
     aiQuery(appId, apiKey, `requests | where timestamp > ago(1h) and ${NOT_FOUND} | summarize n=count() by name | top 5 by n desc`),
+    // A failing database query must not take the request figures down with it.
+    aiQuery(appId, apiKey, `dependencies | where timestamp > ago(24h) and ${DB_CALL} | summarize calls=count(), failed=countif(success == false), p95=percentile(duration, 95) by bin(timestamp, 30m) | order by timestamp asc`).catch(() => []),
+    aiQuery(appId, apiKey, `dependencies | where timestamp > ago(1h) and ${DB_CALL} | summarize n=count(), p95=percentile(duration, 95) by name, target | top 5 by p95 desc`).catch(() => []),
   ]);
   const lastHour = series.filter((b) => Date.parse(b.timestamp) > Date.now() - HOUR);
   const sum = (k) => lastHour.reduce((s, b) => s + (b[k] || 0), 0);
@@ -150,6 +174,7 @@ async function aiSnapshot(appId, apiKey) {
     topFailures: failing.map((f) => ({ name: f.name, code: f.resultCode, count: f.n })),
     topNotFound: missing.map((f) => ({ name: f.name, count: f.n })),
     series: series.map((b) => ({ at: b.timestamp, total: b.total, failed: b.failed, notFound: b.notFound || 0, p95: b.p95 })),
+    db: dbFrom(dbSeries, dbSlow),
   };
 }
 
@@ -201,6 +226,15 @@ function demoAi(m) {
     notFound: lastHour.reduce((s, b) => s + b.notFound, 0),
     topNotFound: [{ name: 'GET /wp-login.php', count: 14 }, { name: 'GET /.env', count: 6 }, { name: 'GET admin/functions', count: 2 }],
     series,
+    db: dbFrom(
+      series.map((b, i) => ({
+        timestamp: b.at, calls: b.total * 4, failed: m.demo === 'errors' && i > series.length - 9 ? Math.round(b.total * 0.3) : 0,
+        p95: m.demo === 'errors' && i > series.length - 9 ? 1400 : 18,
+      })),
+      m.demo === 'errors'
+        ? [{ name: 'SELECT Users WHERE Email = @p0', target: 'identity-sql | idp', p95: 2100, n: 412 }, { name: 'UPDATE Sessions SET Seen = @p0', target: 'identity-sql | idp', p95: 950, n: 1180 }]
+        : [{ name: 'SELECT Orders WHERE CustomerId = @p0', target: 'shop-sql | storefront', p95: 64, n: 2210 }],
+    ),
   };
 }
 
