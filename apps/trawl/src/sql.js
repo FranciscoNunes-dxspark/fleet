@@ -694,6 +694,15 @@ export function applySqlcmd(text, values = new Map()) {
 }
 
 const VARIABLE = /(?<![\w@$#])@(?!@)([A-Za-z_#$][\w@#$]*)/g;
+const VARIABLE_KEYWORDS = /(?<![\w@#$])(?:DECLARE|EXEC|EXECUTE)(?![\w@#$])/gi;
+
+/** The tokens of masked `text` from `from` on, as scriptVariables reads them: words, ( ) , ; and =. */
+function* tokensFrom(text, from) {
+  const token = /[\w@#$]+|[(),;=]/g;
+  token.lastIndex = from;
+  for (let t; (t = token.exec(text)); ) yield { u: t[0], at: t.index };
+}
+
 const DECLARE_ENDS = new Set([...STARTS, 'SET', 'WITH', 'BEGIN', 'END', 'WHILE', 'RETURN', 'FETCH', 'OPEN', 'CLOSE', 'DEALLOCATE', 'USE', 'GO']);
 
 /**
@@ -712,43 +721,49 @@ export function scriptVariables(text) {
     const from = base;
     base += piece.length;
     if (GO_LINE.test(piece) && !piece.includes('\n')) continue;
-    const words = [...piece.matchAll(/[\w@#$]+/g)].slice(0, 4).map((w) => w[0].toUpperCase());
+    // Only the first four words, without finding every other one in the batch first.
+    const words = [];
+    for (const w of piece.matchAll(/[\w@#$]+/g)) if (words.push(w[0].toUpperCase()) === 4) break;
     if (isModuleHeader(words)) continue;
-    const toks = [...piece.matchAll(/[\w@#$]+|[(),;=]/g)];
     const declared = new Set();
     const argNames = new Set();
-    let depth = 0;
-    for (let i = 0; i < toks.length; i++) {
-      const t = toks[i][0];
-      if (t === '(') depth++;
-      else if (t === ')') depth = Math.max(0, depth - 1);
-      const w = t.toUpperCase();
-      if (w === 'DECLARE') {
+    // Only what follows a DECLARE or an EXEC is read token by token, from a depth of 0 there: the
+    // depth only matters relative to the keyword's. Tokenizing the whole batch first took most of a
+    // second for a script of a megabyte or two, which every run of it paid twice.
+    for (const k of piece.matchAll(VARIABLE_KEYWORDS)) {
+      const after = k.index + k[0].length;
+      if (k[0].toUpperCase() === 'DECLARE') {
         // DECLARE @a int = 1, @b TABLE (…): the names at its own depth, first and after each comma.
-        let d = depth;
+        let d = 0;
         let expect = true;
-        for (let j = i + 1; j < toks.length; j++) {
-          const u = toks[j][0];
+        for (const { u } of tokensFrom(piece, after)) {
           if (u === '(') d++;
           else if (u === ')') d--;
-          else if (d === depth && u === ';') break;
-          else if (d === depth && u === ',') expect = true;
-          else if (d === depth && expect && u.startsWith('@')) {
+          else if (d === 0 && u === ';') break;
+          else if (d === 0 && u === ',') expect = true;
+          else if (d === 0 && expect && u.startsWith('@')) {
             declared.add(u.toLowerCase());
             expect = false;
-          } else if (d === depth && DECLARE_ENDS.has(u.toUpperCase()) && !expect) break;
-          else if (d === depth) expect = false;
+          } else if (d === 0 && DECLARE_ENDS.has(u.toUpperCase()) && !expect) break;
+          else if (d === 0) expect = false;
         }
-      } else if (w === 'EXEC' || w === 'EXECUTE') {
+      } else {
         // EXEC [@ret =] proc @Arg = value, …: the argument names are the procedure's, not variables.
         // An argument name is "@x =" after the procedure's name or a comma; "@ret =" straight after EXEC is a variable.
-        let d = depth;
-        for (let j = i + 1; j < toks.length; j++) {
-          const u = toks[j][0];
+        let d = 0;
+        let j = 0;
+        let prev = null;
+        let pending = null;
+        for (const { u, at } of tokensFrom(piece, after)) {
+          // The "@x" before is an argument's name when this is its "=".
+          if (pending != null && u === '=') argNames.add(`${from + pending}`);
+          pending = null;
+          j++;
           if (u === '(') d++;
           else if (u === ')') d--;
-          if (d < depth || (d === depth && (u === ';' || (STARTS.has(u.toUpperCase()) && j > i + 1)))) break;
-          if (d === depth && j > i + 1 && u.startsWith('@') && toks[j + 1]?.[0] === '=' && toks[j - 1][0] !== '=') argNames.add(`${from + toks[j].index}`);
+          if (d < 0 || (d === 0 && (u === ';' || (STARTS.has(u.toUpperCase()) && j > 1)))) break;
+          if (d === 0 && j > 1 && u.startsWith('@') && prev !== '=') pending = at;
+          prev = u;
         }
       }
     }
@@ -781,7 +796,14 @@ export function bindVariables(text, values) {
     if (!value) continue;
     for (const at of v.at) edits.push([at, v.name.length, parameterLiteral(value[1])]);
   }
-  let out = src;
-  for (const [at, len, lit] of edits.sort((x, y) => y[0] - x[0])) out = out.slice(0, at) + lit + out.slice(at + len);
-  return out;
+  // Put together in one pass, front to back: splicing each use into the whole text copied it every
+  // time, which in a big seed script using @variables thousands of times took seconds.
+  const out = [];
+  let from = 0;
+  for (const [at, len, lit] of edits.sort((x, y) => x[0] - y[0])) {
+    out.push(src.slice(from, at), lit);
+    from = at + len;
+  }
+  out.push(src.slice(from));
+  return out.join('');
 }
