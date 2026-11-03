@@ -26,7 +26,7 @@ function fakeRun(answers) {
 test('a plan: terraform plan into a file of its own, then show -json of it, never asking for input', async () => {
   const run = fakeRun([[/show -json/, DEMO_PLAN]]);
   const plan = await createChart({ run }).plan('/srv/infra', { bin: 'tofu', refreshOnly: true });
-  assert.equal(plan.changes.length, 8);
+  assert.equal(plan.changes.length, 11);
   assert.match(run.calls[0].command, /^tofu plan -input=false -lock=false -no-color -refresh-only -out=".+chart-[\w-]+\.tfplan"$/);
   assert.match(run.calls[1].command, /^tofu show -json ".+\.tfplan"$/);
   assert.equal(run.calls[0].cwd, '/srv/infra');
@@ -105,7 +105,7 @@ test('chart check: what the plan does, and an exit code by --fail-on; --json; --
   const out = [];
   const write = (s) => out.push(s);
   assert.equal(await runHeadless(['check'], { provider: demoChart(), write }), 1);
-  assert.match(out.join(''), /^\+2 ~2 ±1 -1\n- azurerm_mssql_database\.reports {2}\(it is no longer in the configuration\)/);
+  assert.match(out.join(''), /^\+5 ~2 ±1 -1\n- azurerm_mssql_database\.reports {2}\(it is no longer in the configuration\)/);
   assert.match(out.join(''), /Changed outside Terraform:\n~ azurerm_linux_web_app\.api: app_settings\.LOG_LEVEL: "info" → "debug"; tags\.owner = "ana"/);
   assert.equal(await runHeadless(['check', '--fail-on', 'none'], { provider: demoChart(), write }), 0);
   const provider = demoChart();
@@ -113,7 +113,7 @@ test('chart check: what the plan does, and an exit code by --fail-on; --json; --
   assert.deepEqual(provider.calls.find((c) => c[0] === 'plan').slice(2), ['tofu', true]);
   out.length = 0;
   assert.equal(await runHeadless(['check', '--json', '--fail-on', 'replace'], { provider: demoChart(), write }), 1);
-  assert.deepEqual(JSON.parse(out.join('')).summary, { delete: 1, replace: 1, update: 2, create: 2, noop: 2 });
+  assert.deepEqual(JSON.parse(out.join('')).summary, { delete: 1, replace: 1, update: 2, create: 5, noop: 2 });
   assert.equal(await runHeadless(['check', '--fail-on', 'everything'], { provider: demoChart(), write }), 2);
   assert.deepEqual(parseArgs(['check', 'plan.json', '--markdown']), { command: 'check', target: 'plan.json', failOn: 'destroy', json: false, markdown: true, bin: 'terraform', currency: 'USD', costs: true });
   const plan = parseTerraformPlan(DEMO_PLAN);
@@ -123,7 +123,7 @@ test('chart check: what the plan does, and an exit code by --fail-on; --json; --
 
 test('the Markdown report: what is destroyed called out, a row per change, the attributes folded away, the drift', () => {
   const md = markdownReport(parseTerraformPlan(DEMO_PLAN), { label: 'infra', when: new Date('2026-10-30T12:00:00Z') });
-  assert.match(md, /^# Terraform plan: infra\n\n\+2 ~2 ±1 -1 \(2026-10-30 12:00 UTC, Terraform 1\.9\.8\)/);
+  assert.match(md, /^# Terraform plan: infra\n\n\+5 ~2 ±1 -1 \(2026-10-30 12:00 UTC, Terraform 1\.9\.8\)/);
   assert.match(md, /> \*\*2 resources are destroyed:\*\* `azurerm_mssql_database\.reports`, `azurerm_linux_web_app\.admin`/);
   assert.match(md, /\| `±` \| `azurerm_linux_web_app\.admin` \| replace \| an argument that forces replacement changed \|/);
   assert.match(md, /<details><summary><code>~ azurerm_service_plan\.main<\/code><\/summary>\n\n```diff\n! sku_name: "B1" → "P1v3"/);

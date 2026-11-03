@@ -3,6 +3,7 @@ import { diffLines } from './diff.js';
 import { summarize, summaryLine } from './plan.js';
 import { ACTION_MARK, ACTION_WORD, changeRows } from './rows.js';
 import { HOURS_A_MONTH, costWords, totalWords } from './costs.js';
+import { countFindings, findingsLine, sortFindings } from '@fleet/kit/findings.js';
 
 /** `plan` (plan.js's) as Markdown: what it does in a line, the destroyed and replaced first, each change's attributes folded away. */
 export function markdownReport(plan, { label = 'the plan', when = new Date(), costs = null } = {}) {
@@ -21,6 +22,13 @@ export function markdownReport(plan, { label = 'the plan', when = new Date(), co
     for (const c of rows.filter((x) => x.diff.length)) {
       lines.push(`<details><summary><code>${ACTION_MARK[c.action]} ${c.address}</code></summary>`, '', '```diff', ...diffLines(c.diff).map((l) => l.replace(/^~/, '!')), '```', '</details>', '');
     }
+  }
+  // What it would deploy that security.js's judges found insecure: in the pull request, before the apply.
+  const security = sortFindings(plan.security ?? []);
+  if (security.length) {
+    lines.push('## Security', '', `${findingsLine(countFindings(security))} in what the plan would deploy.`, '', '| Severity | Resource | Finding | Fix |', '| --- | --- | --- | --- |');
+    for (const f of security) lines.push(`| ${f.severity} | \`${f.resource ?? f.where}\` | ${f.title}${f.excerpt ? ` (\`${f.excerpt.replace(/\|/g, '\\|')}\`)` : ''} | ${(f.fix ?? '').replace(/\|/g, '\\|')} |`);
+    lines.push('');
   }
   if (plan.drift.length) {
     lines.push('## Changed outside Terraform', '');

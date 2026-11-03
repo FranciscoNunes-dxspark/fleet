@@ -2,7 +2,7 @@ import React from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { summarize, summaryLine } from '../plan.js';
-import { ACTION_MARK, ACTION_WORD, actionTone, changeRows, siteOf } from '../rows.js';
+import { ACTION_MARK, ACTION_WORD, actionTone, changeRows, severityTone, siteOf, worstSeverity } from '../rows.js';
 import { theme } from '../theme.js';
 import { costWords, totalWords } from '../costs.js';
 import { fit } from '@fleet/kit/text.js';
@@ -16,11 +16,21 @@ function costCell(cost, currency, w) {
   return { text: ` ${fit(text, w - 1)}`, color };
 }
 
+const SHORT = { critical: 'crit', high: 'high', medium: 'med', low: 'low' };
+
+/** A change's security marker: "! high" (its worst finding, +n more), in that severity's colour; blank when none. */
+function securityCell(findings, w) {
+  const worst = worstSeverity(findings);
+  const text = worst ? `! ${SHORT[worst] ?? worst}${findings.length > 1 ? `+${findings.length - 1}` : ''}` : '';
+  return { text: ` ${fit(text, w - 1)}`, color: severityTone(worst), bold: worst === 'critical' || worst === 'high' };
+}
+
 /**
  * The changes a plan makes, what loses something first: the action's mark, the address, how many
- * attributes change, and why (a replacement's cause). With `drifted`, what changed outside the code.
+ * attributes change, and why (a replacement's cause); `security` ({ address → findings }) marks what
+ * it would deploy insecurely ("! high"). With `drifted`, what changed outside the code.
  */
-export function ChangesView({ changes, drifted = false, costs, empty, hint: extra, showAll, ctx, width, height, active }) {
+export function ChangesView({ changes, drifted = false, costs, security, empty, hint: extra, showAll, ctx, width, height, active }) {
   const innerH = height - 2;
   const list = drifted ? changes : changeRows(changes, { all: showAll });
   const nav = useListNav(list.length, innerH, { keyOf: (i) => list[i]?.address });
@@ -51,6 +61,8 @@ export function ChangesView({ changes, drifted = false, costs, empty, hint: extr
   const hint = drifted ? `${changes.length} changed outside${extra ? ` · ${extra}` : ''}` : [summaryLine(summarize(changes)) || 'no changes', hidden ? `${hidden} unchanged (a)` : '', total ? `cost ${total}` : '', extra].filter(Boolean).join(' · ');
   // The cost column only once there are costs, so a plan that isn't priced keeps its room.
   const costW = costs?.byAddress ? 15 : 0;
+  // The security column only when something in the plan was found insecure.
+  const secW = !drifted && security && Object.keys(security).length ? 9 : 0;
   return (
     <Panel title={drifted ? 'Drift' : 'Changes'} hint={hint} width={width} height={height} focused={active}>
       {!list.length ? <Row pointer={false} width={width - 2} segments={[{ text: `  ${empty}`, color: theme.dim }]} /> : null}
@@ -68,6 +80,7 @@ export function ChangesView({ changes, drifted = false, costs, empty, hint: extr
               { text: ` ${fit(drifted ? 'drifted' : ACTION_WORD[c.action], 10)}`, color: drifted ? theme.warn : actionTone(c.action) },
               { text: ` ${fit(n ? `${n} attribute${n === 1 ? '' : 's'}` : '', 14)}`, color: theme.dim },
               ...(costW ? [costCell(costs.byAddress[c.address], costs.currency, costW)] : []),
+              ...(secW ? [securityCell(security[c.address], secW)] : []),
               ...(siteOf(c) ? [{ text: ' app ', color: theme.info }] : []),
               ...(c.reason ? [{ text: ` ${c.reason}`, color: theme.dim }] : []),
             ]}

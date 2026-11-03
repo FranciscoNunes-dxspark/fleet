@@ -45,7 +45,8 @@ test('the tree: what nothing depends on at the top, what depends on each under i
   const plan = parseTerraformPlan(DEMO_PLAN);
   const rows = dependencyRows(plan.changes, plan.dependsOn, { rank: actionRank });
   const text = rows.map((r) => `${'  '.repeat(r.depth)}${r.change.address}${r.repeat ? ' (above)' : ''}`);
-  assert.deepEqual(text.slice(0, 3), ['azurerm_mssql_database.reports', 'azurerm_resource_group.main', '  azurerm_service_plan.main']);
+  assert.equal(text[0], 'azurerm_mssql_database.reports');
+  assert.equal(text[text.indexOf('azurerm_resource_group.main') + 1], '  azurerm_service_plan.main');
   assert.ok(text.includes('    azurerm_linux_web_app.admin'));
   assert.ok(text.includes('      azurerm_linux_web_app.api'));
   assert.equal(rows.filter((r) => r.change.address === 'azurerm_linux_web_app.api' && !r.repeat).length, 1, 'in full once');

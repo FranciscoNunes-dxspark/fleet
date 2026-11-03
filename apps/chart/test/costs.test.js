@@ -62,7 +62,7 @@ test("a plan's costs: what's resized, destroyed and created priced, in total; th
   assert.equal(costWords(by['azurerm_mssql_database.reports'], 'USD'), '-$15/month');
   assert.deepEqual([by['azurerm_linux_web_app.admin'].status, by['azurerm_key_vault_secret.db'].status, by['azurerm_application_insights.main'].status], ['included', 'none', 'usage']);
   assert.equal(by['azurerm_linux_web_app.api'], undefined, 'an update that leaves the price alone');
-  assert.equal(totalWords(costs), '+$219/month (1 with no price, 1 usage-priced)');
+  assert.equal(totalWords(costs), '+$219/month (3 with no price, 2 usage-priced)');
   assert.deepEqual(provider.calls.filter((c) => c[0] === 'prices').map((c) => c[1].serviceName).sort(), ['Azure App Service', 'Azure App Service', 'SQL Database']);
   const whatIf = await planCosts(parseWhatIf(DEMO_WHAT_IF), { prices: (q) => provider.prices(q), currency: 'USD' });
   assert.equal(totalWords(whatIf), '-$99/month (1 usage-priced)');
@@ -114,7 +114,7 @@ test("chart check and the report: each change's cost and the total; --currency, 
   const text = out.join('');
   assert.match(text, /- azurerm_mssql_database\.reports {2}\(it is no longer in the configuration\) {2}-\$15\/month/);
   assert.match(text, /~ azurerm_service_plan\.main {2}\+\$234\/month/);
-  assert.match(text, /Cost: \+\$219\/month \(1 with no price, 1 usage-priced\), from Azure's retail prices in USD/);
+  assert.match(text, /Cost: \+\$219\/month \(3 with no price, 2 usage-priced\), from Azure's retail prices in USD/);
   out.length = 0;
   await runHeadless(['check', '--currency', 'eur', '--json'], { provider: demoChart(), write });
   const json = JSON.parse(out.join(''));
@@ -129,7 +129,7 @@ test("chart check and the report: each change's cost and the total; --currency, 
   const plan = parseTerraformPlan(DEMO_PLAN);
   const costs = await planCosts(plan, { prices: (q) => demoChart().prices(q) });
   const md = markdownReport(plan, { label: 'infra', costs });
-  assert.match(md, /\*\*Monthly cost: \+\$219\/month \(1 with no price, 1 usage-priced\)\*\*, from Azure's retail prices in USD/);
+  assert.match(md, /\*\*Monthly cost: \+\$219\/month \(3 with no price, 2 usage-priced\)\*\*, from Azure's retail prices in USD/);
   assert.match(md, /\| `-` \| `azurerm_mssql_database\.reports` \| destroy \| it is no longer in the configuration \| -\$15 \|/);
 });
 

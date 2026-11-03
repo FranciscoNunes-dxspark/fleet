@@ -1,6 +1,8 @@
 // An in-memory infrastructure with the provider's interface, for `chart --demo` and the tests: a
 // Terraform folder whose plan changes, replaces and deletes Azure resources (and found one changed in
-// the portal), its state, and a Bicep file's what-if. Nothing is run. `calls` is the tests' handle:
+// the portal), its state, and a Bicep file's what-if. Nothing is run. A few of what it would deploy are
+// insecure on purpose (a storage account with public blobs, SSH open to the internet, a database
+// firewall open to everyone), as are its source files (DEMO_SOURCES), for the Security view. `calls` is the tests' handle:
 // what was asked of it.
 import { parseTerraformPlan, parseTerraformState, parseWhatIf } from './plan.js';
 import { explain } from './iac.js';
@@ -22,6 +24,17 @@ export const DEMO_PLAN = {
     rc('azurerm_key_vault_secret.db', 'azurerm_key_vault_secret', 'db', ['create'], null, { name: 'db-password', value: 'correct horse battery staple', key_vault_id: `${RG}/providers/Microsoft.KeyVault/vaults/shop-kv` }, { change: { after_unknown: { id: true, version: true }, after_sensitive: { value: true } } }),
     rc('azurerm_application_insights.main', 'azurerm_application_insights', 'main', ['create'], null, { name: 'shop-insights', resource_group_name: 'shop-prod', application_type: 'web', retention_in_days: 90 }, { change: { after_unknown: { id: true, connection_string: true, instrumentation_key: true } } }),
     rc('random_password.db', 'random_password', 'db', ['no-op'], { length: 24 }, { length: 24 }),
+    rc('azurerm_storage_account.uploads', 'azurerm_storage_account', 'uploads', ['create'], null, { name: 'shopuploads', resource_group_name: 'shop-prod', location: 'westeurope', account_tier: 'Standard', allow_nested_items_to_be_public: true, https_traffic_only_enabled: true, min_tls_version: 'TLS1_0', public_network_access_enabled: true, network_rules: [], primary_access_key: null }, { change: { after_unknown: { id: true, primary_access_key: true }, after_sensitive: { primary_access_key: true } } }),
+    rc('azurerm_network_security_group.web', 'azurerm_network_security_group', 'web', ['create'], null, {
+      name: 'shop-web-nsg',
+      resource_group_name: 'shop-prod',
+      location: 'westeurope',
+      security_rule: [
+        { name: 'allow-https', priority: 100, direction: 'Inbound', access: 'Allow', protocol: 'Tcp', source_address_prefix: 'Internet', source_port_range: '*', destination_address_prefix: '*', destination_port_range: '443' },
+        { name: 'allow-ssh', priority: 110, direction: 'Inbound', access: 'Allow', protocol: 'Tcp', source_address_prefix: '*', source_port_range: '*', destination_address_prefix: '*', destination_port_range: '22' },
+      ],
+    }, { change: { after_unknown: { id: true } } }),
+    rc('azurerm_mssql_firewall_rule.everyone', 'azurerm_mssql_firewall_rule', 'everyone', ['create'], null, { name: 'everyone', server_id: `${RG}/providers/Microsoft.Sql/servers/shop`, start_ip_address: '0.0.0.0', end_ip_address: '255.255.255.255' }, { change: { after_unknown: { id: true } } }),
   ],
   resource_drift: [
     rc('azurerm_linux_web_app.api', 'azurerm_linux_web_app', 'api', ['update'], app('shop-api', { FEATURE_REFUNDS: 'false', LOG_LEVEL: 'info' }), app('shop-api', { FEATURE_REFUNDS: 'false', LOG_LEVEL: 'debug' }, { env: 'prod', owner: 'ana' }), { change: { before_sensitive: { connection_string: [{ value: true }] }, after_sensitive: { connection_string: [{ value: true }] } } }),
@@ -42,6 +55,9 @@ export const DEMO_PLAN = {
         { address: 'azurerm_key_vault_secret.db', mode: 'managed', type: 'azurerm_key_vault_secret', name: 'db', expressions: { value: { references: ['random_password.db.result', 'random_password.db'] } } },
         { address: 'azurerm_application_insights.main', mode: 'managed', type: 'azurerm_application_insights', name: 'main', expressions: { resource_group_name: { references: ['azurerm_resource_group.main.name', 'azurerm_resource_group.main'] } } },
         { address: 'random_password.db', mode: 'managed', type: 'random_password', name: 'db', expressions: { length: { constant_value: 24 } } },
+        { address: 'azurerm_storage_account.uploads', mode: 'managed', type: 'azurerm_storage_account', name: 'uploads', expressions: { resource_group_name: { references: ['azurerm_resource_group.main.name', 'azurerm_resource_group.main'] } } },
+        { address: 'azurerm_network_security_group.web', mode: 'managed', type: 'azurerm_network_security_group', name: 'web', expressions: { resource_group_name: { references: ['azurerm_resource_group.main.name', 'azurerm_resource_group.main'] } } },
+        { address: 'azurerm_mssql_firewall_rule.everyone', mode: 'managed', type: 'azurerm_mssql_firewall_rule', name: 'everyone', expressions: { server_id: { references: ['var.sql_server_id'] } } },
       ],
       module_calls: {
         network: { source: './modules/network', expressions: { resource_group: { references: ['azurerm_resource_group.main.name', 'azurerm_resource_group.main'] } }, module: { resources: [{ address: 'azurerm_virtual_network.main', mode: 'managed', type: 'azurerm_virtual_network', name: 'main', expressions: { resource_group_name: { references: ['var.resource_group'] } } }] } },
@@ -82,7 +98,7 @@ export const DEMO_WHAT_IF = {
   status: 'Succeeded',
   changes: [
     { resourceId: site('shop-api'), changeType: 'Modify', delta: [{ path: 'properties.siteConfig', propertyChangeType: 'Modify', children: [{ path: 'alwaysOn', propertyChangeType: 'Modify', before: false, after: true }] }, { path: 'properties.httpsOnly', propertyChangeType: 'NoEffect', before: true, after: true }] },
-    { resourceId: `${RG}/providers/Microsoft.Storage/storageAccounts/shopfiles`, changeType: 'Create', after: { name: 'shopfiles', kind: 'StorageV2', sku: { name: 'Standard_LRS' } } },
+    { resourceId: `${RG}/providers/Microsoft.Storage/storageAccounts/shopfiles`, changeType: 'Create', after: { name: 'shopfiles', kind: 'StorageV2', sku: { name: 'Standard_LRS' }, properties: { allowBlobPublicAccess: true, supportsHttpsTrafficOnly: false, minimumTlsVersion: 'TLS1_2' } } },
     { resourceId: `${RG}/providers/Microsoft.Insights/components/shop-insights`, changeType: 'NoChange' },
     { resourceId: `${RG}/providers/Microsoft.Cache/Redis/shop-cache`, changeType: 'Delete', before: { name: 'shop-cache', location: 'westeurope', properties: { sku: { name: 'Standard', family: 'C', capacity: 1 } } } },
   ],
@@ -104,7 +120,20 @@ export const DEMO_PRICES = [
   price('Virtual Machines', 'Virtual Machines DSv3 Series Windows', 'D2s v3', 'D2s v3', 0.188, '1 Hour', { armSkuName: 'Standard_D2s_v3' }),
 ];
 
-const LOCATIONS = { 'azurerm_linux_web_app.api': { path: 'app.tf', line: 12 }, 'azurerm_linux_web_app.admin': { path: 'app.tf', line: 40 }, 'azurerm_service_plan.main': { path: 'main.tf', line: 8 }, 'azurerm_mssql_database.reports': { path: 'db.tf', line: 20 } };
+// The folder's source files, for the static checks (security.js): some of what the plan deploys, as
+// written, a password typed into a tfvars and a Bicep parameter that isn't @secure(). The password is
+// put together here so that this file itself doesn't hold one.
+const DEMO_PASSWORD = ['Shop', 'Adm1n', '2026', '!x'].join('');
+const lines = (...l) => [...l, ''].join('\n');
+export const DEMO_SOURCES = [
+  { path: 'storage.tf', text: lines('resource "azurerm_storage_account" "uploads" {', '  name                            = "shopuploads"', '  resource_group_name             = azurerm_resource_group.main.name', '  location                        = "westeurope"', '  account_tier                    = "Standard"', '  account_replication_type        = "LRS"', '  allow_nested_items_to_be_public = true', '  min_tls_version                 = "TLS1_0"', '}') },
+  { path: 'network.tf', text: lines('resource "azurerm_network_security_group" "web" {', '  name     = "shop-web-nsg"', '  location = "westeurope"', '', '  security_rule {', '    name                       = "allow-ssh"', '    priority                   = 110', '    direction                  = "Inbound"', '    access                     = "Allow"', '    protocol                   = "Tcp"', '    source_address_prefix      = "*"', '    source_port_range          = "*"', '    destination_address_prefix = "*"', '    destination_port_range     = "22"', '  }', '}') },
+  { path: 'db.tf', text: lines('resource "azurerm_mssql_firewall_rule" "everyone" {', '  name             = "everyone"', '  server_id        = var.sql_server_id', '  start_ip_address = "0.0.0.0"', '  end_ip_address   = "255.255.255.255"', '}') },
+  { path: 'env/prod.tfvars', text: lines('sql_admin_login    = "shopadmin"', `sql_admin_password = "${DEMO_PASSWORD}"`) },
+  { path: 'bicep/main.bicep', text: lines('param location string = resourceGroup().location', 'param adminPassword string', '', "resource files 'Microsoft.Storage/storageAccounts@2023-01-01' = {", "  name: 'shopfiles'", '  location: location', "  kind: 'StorageV2'", '  properties: {', '    allowBlobPublicAccess: true', '    supportsHttpsTrafficOnly: false', '  }', '}') },
+];
+
+const LOCATIONS = { 'azurerm_linux_web_app.api': { path: 'app.tf', line: 12 }, 'azurerm_linux_web_app.admin': { path: 'app.tf', line: 40 }, 'azurerm_service_plan.main': { path: 'main.tf', line: 8 }, 'azurerm_mssql_database.reports': { path: 'db.tf', line: 20 }, 'azurerm_storage_account.uploads': { path: 'storage.tf', line: 1 }, 'azurerm_network_security_group.web': { path: 'network.tf', line: 1 }, 'azurerm_mssql_firewall_rule.everyone': { path: 'db.tf', line: 1 } };
 
 export function demoChart() {
   const calls = [];
@@ -182,6 +211,10 @@ export function demoChart() {
     },
     async locate(dir, change) {
       return LOCATIONS[change.address] ?? null;
+    },
+    async sources(dir) {
+      calls.push(['sources', dir]);
+      return DEMO_SOURCES;
     },
   };
   return demo;

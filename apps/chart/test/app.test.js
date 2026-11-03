@@ -30,13 +30,13 @@ test('/plan lists the changes, what is destroyed first, with the summary and dri
   await run(app, '/plan');
   await until(shows(app, 'azurerm_mssql_database.reports'), 'the changes');
   const frame = app.lastFrame();
-  assert.match(frame, /infra {2}-1 {2}±1 {2}~2 {2}\+2 {2}1 drifted/);
+  assert.match(frame, /infra {2}-1 {2}±1 {2}~2 {2}\+5 {2}1 drifted/);
   assert.ok(frame.indexOf('azurerm_mssql_database.reports') < frame.indexOf('azurerm_linux_web_app.admin'));
   assert.ok(frame.indexOf('azurerm_linux_web_app.admin') < frame.indexOf('azurerm_service_plan.main'));
-  assert.match(frame, /± azurerm_linux_web_app\.admin +replace +2 attributes +(on its plan +)?app +an argum/);
+  assert.match(frame, /± azurerm_linux_web_app\.admin +replace +2 attributes +(on its plan +)?app/);
   assert.ok(!frame.includes('random_password.db'), 'what does not change is hidden');
   assert.match(frame, /2 unchanged \(a\)/);
-  assert.match(frame, /1 Changes 6 {3}2 Drift 1/);
+  assert.match(frame, /1 Changes 9 {3}2 Drift 1/);
   assert.deepEqual(app.provider.calls[1], ['plan', app.provider.calls[0][1], 'terraform', false]);
   app.stdin.write('a');
   await until(shows(app, 'random_password.db'), 'the unchanged ones');

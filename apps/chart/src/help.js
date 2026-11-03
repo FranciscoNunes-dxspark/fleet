@@ -5,7 +5,7 @@ export const HELP = [
   {
     title: 'Anywhere',
     rows: [
-      ['1-5 / tab', 'Changes, Drift, State, Log, Depends (shift+tab goes back)'],
+      ['1-6 / tab', 'Changes, Drift, State, Log, Depends, Security (shift+tab goes back)'],
       ['/ or :', 'Command prompt (slash commands, with completion)'],
       ['!', 'Run a shell command in the folder, e.g.  !terraform validate'],
       ['esc', 'Cancel the running command, or clear the activity lines'],
@@ -35,6 +35,7 @@ export const HELP = [
       ['s', 'Copy an App Service app for Locker, which shows its settings'],
       ['y', 'Copy its address'],
       'In red: - destroy and ± replace (with why: an argument that forces replacement, no longer in the configuration…). Yellow ~ update, green + create.',
+      'The security column: ! and the worst of what the resource would be deployed with (! crit, ! high, ! med, ! low; +n more), in the Security view (6) and its detail.',
       "The cost column: what each change adds a month at Azure's retail prices (+$234/month, a destroy negative; usage-priced, on its plan, or no price), the total in the title. /currency changes the currency.",
     ],
   },
@@ -70,6 +71,17 @@ export const HELP = [
     ],
   },
   {
+    title: 'Security',
+    about: "what the plan on screen would deploy insecurely (public storage, SSH or RDP open to the internet, a database firewall open to everyone, TLS older than 1.2…), then what the folder's .tf, .tfvars, .bicep and .bicepparam files say, passwords written into them too (/security reads them; nothing is run)",
+    views: ['security'],
+    rows: [
+      ['↵ / l', 'What it is, where, what was seen, why it matters and what to set'],
+      ['t', 'Copy the line it is on (or where its resource is declared) for Splice'],
+      ['y', 'Copy where it is (path:line, or the resource\'s address)'],
+      '"securityIgnore" in the settings leaves out a rule ("app-ftp") or one rule on one thing ("app-ftp:azurerm_linux_web_app.api").',
+    ],
+  },
+  {
     title: 'Log',
     about: 'what Chart has run, newest at the bottom',
     views: ['log'],
@@ -94,6 +106,8 @@ export const HELP = [
       ['--markdown', 'The plan as Markdown, for a pull request\'s comment'],
       ['--json', 'The summary, changes, drift, outputs and cost as JSON'],
       ['--currency <code> / --no-costs', 'Prices in another currency (USD by default), or none asked for'],
+      ['chart security [folder|plan.json]', "Misconfigurations in what a plan or what-if file would deploy, or in a folder's .tf, .tfvars and .bicep files (nothing is run; --plan plans it too, --source adds a folder to a file)"],
+      ['--fail-on <level> / --json / --sarif [file.sarif]', 'Exit 1 at critical, high (the default), medium or low (none never); the findings as JSON, or SARIF for code scanning'],
     ],
   },
 ];

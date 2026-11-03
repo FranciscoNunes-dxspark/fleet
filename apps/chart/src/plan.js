@@ -4,9 +4,12 @@
 // A change: { address, type, name, module?, mode, provider?, action, reason?, diff, id?, resourceGroup?, pricing }
 //   action: create | update | replace | delete | read | noop | forget | deploy | ignore | unsupported
 //   diff:   [{ path, kind: add | remove | change | unknown, before?, after?, forces?, sensitive?, noise? }]
+// A plan also carries `security`: what security.js's judges say of what it would deploy (each
+// resource's after state, what Terraform marks sensitive or unknown left out first), findings.js's shape.
 import { attributeDiff } from './diff.js';
 import { pricingSpec } from './costs.js';
 import { idDependencies, planDependencies } from './graph.js';
+import { knownValues, planFindings } from './security.js';
 
 /** Terraform's actions as one word: ["delete","create"] (or the other way round) is a replacement. */
 export function actionOf(actions = []) {
@@ -68,7 +71,10 @@ export function parseTerraformPlan(json) {
     .filter((o) => o.action !== 'noop');
   // What depends on what, from the configuration's references (null for a plan without one: /graph asks terraform graph).
   const dependsOn = planDependencies(plan.configuration, changes.map((c) => c.address));
-  return { tool: 'terraform', version: plan.terraform_version ?? null, changes, drift, outputs, dependsOn, errored: Boolean(plan.errored) };
+  // What it would deploy, judged: every managed resource that is there after the apply.
+  const deployed = (plan.resource_changes ?? []).filter((rc) => rc.mode !== 'data' && rc.change?.after && typeof rc.change.after === 'object').map((rc) => ({ address: rc.address, type: rc.type, values: knownValues(rc.change.after, rc.change.after_sensitive, rc.change.after_unknown) }));
+  const security = planFindings(deployed, { dependsOn });
+  return { tool: 'terraform', version: plan.terraform_version ?? null, changes, drift, outputs, dependsOn, security, errored: Boolean(plan.errored) };
 }
 
 /**
@@ -136,14 +142,17 @@ export function parseWhatIf(json) {
     if (body?.error) throw new Error(`What-if failed: ${body.error.message ?? body.error.code}`);
     throw new Error("That isn't a what-if result: az deployment group what-if --no-pretty-print -o json makes one.");
   }
+  const deployed = [];
   const changes = body.changes.map((c) => {
     const { type, name, resourceGroup, subscription } = parseResourceId(c.resourceId);
     const action = WHAT_IF[c.changeType] ?? 'unsupported';
     const diff = c.delta?.length ? flattenDelta(c.delta) : action === 'create' ? attributeDiff(null, c.after) : action === 'delete' ? attributeDiff(c.before, null) : [];
+    if (action !== 'delete' && c.after && typeof c.after === 'object') deployed.push({ address: `${type}/${name}`, type, values: c.after });
     return { address: `${type}/${name}`, type, name, mode: 'managed', provider: type.split('/')[0], action, ...(c.unsupportedReason ? { reason: c.unsupportedReason } : {}), diff, id: c.resourceId, ...(resourceGroup ? { resourceGroup } : {}), ...(subscription ? { subscription } : {}), pricing: { before: pricingSpec(type, c.before), after: pricingSpec(type, c.after) } };
   });
   // A what-if says nothing of references: only a child resource's place under its parent.
-  return { tool: 'bicep', version: null, changes, drift: [], outputs: [], dependsOn: idDependencies(changes), errored: body.status === 'Failed' };
+  const dependsOn = idDependencies(changes);
+  return { tool: 'bicep', version: null, changes, drift: [], outputs: [], dependsOn, security: planFindings(deployed, { dependsOn }), errored: body.status === 'Failed' };
 }
 
 /** What a JSON file is: a Terraform plan, a Terraform state, or a what-if result, parsed; throws for anything else. */

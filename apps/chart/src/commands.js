@@ -17,6 +17,7 @@ export const COMMANDS = [
   { name: 'open', args: '[file]', desc: 'A saved plan or state (terraform show -json) or a what-if result', complete: 'saved', run: (ctx, s) => a.open(ctx, s) },
   { name: 'show', args: '<address>', desc: 'A change, attribute by attribute', complete: 'changes', run: (ctx, s) => a.show(ctx, s) },
   { name: 'graph', args: '[folder]', desc: 'What depends on what from terraform graph, for a plan that came without its configuration (g in Changes shows it)', complete: 'tfdirs', run: (ctx, s) => a.graph(ctx, s) },
+  { name: 'security', args: '[folder]', desc: "The folder's .tf, .tfvars and .bicep files read for misconfigurations and passwords (nothing is run), beside what the plan on screen would deploy", complete: 'tfdirs', run: (ctx, s) => a.security(ctx, s) },
   { name: 'report', desc: 'The plan as Markdown, to copy into a pull request', run: (ctx) => a.report(ctx) },
   { name: 'currency', args: '[USD|EUR|GBP|…]', desc: "The currency a plan's monthly cost is shown in (USD unless set)", complete: 'currencies', run: (ctx, s) => a.currency(ctx, s) },
   { name: 'tool', args: '[terraform|tofu]', desc: 'Which one Chart runs', complete: 'tools', run: (ctx, s) => a.tool(ctx, s) },
