@@ -40,6 +40,52 @@ export const DEMO_HEALTH = [
   '@@end',
   '',
 ].join('\n');
+// What harden.js's script prints on the demo host, `@@NONCE` standing for the run's marker: Ubuntu 20.04
+// read by a user who isn't root, Redis open to the world, root signing in with a password, no firewall.
+export const DEMO_HARDEN = [
+  '@@NONCE id', '1000', 'demo',
+  '@@NONCE os', 'NAME="Ubuntu"', 'VERSION="20.04.6 LTS (Focal Fossa)"', 'ID=ubuntu', 'ID_LIKE=debian', 'PRETTY_NAME="Ubuntu 20.04.6 LTS"', 'VERSION_ID="20.04"',
+  '@@NONCE kernel', 'Linux 5.4.0-182-generic',
+  '@@NONCE listen', '#tool ss',
+  'udp   UNCONN 0      0      127.0.0.53%lo:53        0.0.0.0:*',
+  'udp   UNCONN 0      0      0.0.0.0:68              0.0.0.0:*',
+  'tcp   LISTEN 0      511    0.0.0.0:80              0.0.0.0:*',
+  'tcp   LISTEN 0      128    0.0.0.0:22              0.0.0.0:*',
+  'tcp   LISTEN 0      511    0.0.0.0:6379            0.0.0.0:*',
+  'tcp   LISTEN 0      244    127.0.0.1:5432          0.0.0.0:*',
+  'tcp   LISTEN 0      511    *:3000                  *:*        users:(("node",pid=1312,fd=21))',
+  'tcp   LISTEN 0      128    [::]:22                 [::]:*',
+  'tcp   LISTEN 0      511    [::]:6379               [::]:*',
+  '@@NONCE sshd_t',
+  '@@NONCE sshd_config',
+  '#file /etc/ssh/sshd_config',
+  'Include /etc/ssh/sshd_config.d/*.conf',
+  'PermitRootLogin yes',
+  '#PasswordAuthentication no',
+  'X11Forwarding yes',
+  'Match User backup',
+  '  PermitEmptyPasswords yes',
+  '#file /etc/ssh/sshd_config.d/50-cloud-init.conf',
+  'PasswordAuthentication yes',
+  '@@NONCE pkg', 'apt',
+  '@@NONCE apt', 'Listing...',
+  'libssl1.1/focal-updates,focal-security 1.1.1f-1ubuntu2.23 amd64 [upgradable from: 1.1.1f-1ubuntu2.22]',
+  'openssh-server/focal-updates,focal-security 1:8.2p1-4ubuntu0.12 amd64 [upgradable from: 1:8.2p1-4ubuntu0.11]',
+  'nano/focal-updates 4.8-1ubuntu1.1 amd64 [upgradable from: 4.8-1ubuntu1]',
+  '@@NONCE unattended', 'install ok installed', 'APT::Periodic::Update-Package-Lists "1";', 'APT::Periodic::Unattended-Upgrade "1";',
+  '@@NONCE reboot', 'required', 'linux-image-5.4.0-189-generic',
+  '@@NONCE firewall', 'ufw-installed', 'ufw.conf ENABLED=no',
+  '@@NONCE passwd', 'root:0:/root:/bin/bash', 'daemon:1:/usr/sbin:/usr/sbin/nologin', 'toor:0:/root:/bin/bash', 'demo:1000:/home/demo:/bin/bash',
+  '@@NONCE shadow', '#unreadable',
+  '@@NONCE sudoers', '#unreadable',
+  '@@NONCE keys', 'root ?', 'toor ?', 'demo 2',
+  '@@NONCE worldwritable', '/etc/cron.d/backup',
+  '@@NONCE suid', '/usr/bin/sudo', '/usr/bin/passwd', '/usr/local/bin/backup-helper',
+  '@@NONCE docker', 'srw-rw---- 1 0 998 0 Oct 28 09:00 /var/run/docker.sock', 'group docker:x:998:demo',
+  '@@NONCE end',
+  '',
+].join('\n');
+
 // What sha256sum says of a demo file: its own `sum` when a test gave it one, else one that follows its size.
 export const demoSum = (entry) => createHash('sha256').update(String(entry.sum ?? entry.size ?? 0)).digest('hex');
 
@@ -196,6 +242,12 @@ export function demoSession({ host = { name: 'demo', host: 'demo.example.com', u
       const lead = line.match(/^cd '((?:[^']|'\\'')*)' && ([\s\S]*)$/);
       if (lead) [cwd, line] = [lead[1].replaceAll("'\\''", "'"), lead[2]];
       if (line.startsWith("echo '@@df'")) return { code: 0, stdout: DEMO_HEALTH, stderr: '' };
+      // harden.js's script, as base64 for sh: answered with its run's marker.
+      const script = /^echo ([A-Za-z0-9+/=]+) \| base64 -d \| sh$/.exec(line);
+      if (script) {
+        const nonce = /^N=(\w+)$/m.exec(Buffer.from(script[1], 'base64').toString())?.[1];
+        return { code: 0, stdout: DEMO_HARDEN.replaceAll('@@NONCE ', `@@${nonce} `), stderr: '' };
+      }
       const [cmd, ...rest] = line.trim().split(/\s+/);
       if (cmd === 'uptime') return { code: 0, stdout: ' 09:00:00 up 41 days,  3:12,  1 user,  load average: 0.08, 0.03, 0.01\n', stderr: '' };
       if (cmd === 'echo') return { code: 0, stdout: `${rest.join(' ')}\n`, stderr: '' };

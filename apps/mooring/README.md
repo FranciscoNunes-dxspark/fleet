@@ -8,6 +8,7 @@ Files and commands on a server, in the terminal. Mooring puts this machine's fol
 mooring            # this folder; /connect (or a host's name here) opens a saved host
 mooring build      # the saved host "build", opened at start
 mooring --demo     # a made-up host and machine, to look around: nothing is touched
+mooring security web --fail-on high   # how the saved host "web" is hardened, for a pipeline (below)
 ```
 
 Press `?` inside for every key and command, `/` for the commands, `ctrl+p` for the palette.
@@ -118,6 +119,33 @@ It is `ssh -tt` (ssh makes the terminal on the server although this side has non
 
 `/health` (or `alt+h` anywhere) runs one `ssh` command on the server and shows what it says in a panel: each disk's use (`df -P`), memory and swap (`/proc/meminfo`, or `free -m`), the load beside the number of CPUs, the uptime, the five busiest processes by CPU and by memory (`ps`), and the systemd units that have failed (where there is `systemctl`). A disk over 90% full and a failed unit are in red at the top, and Tug is worried about them (the family hears why) until a read shows them gone or you disconnect. `r` reads it again, `esc` closes it.
 
+### How the server is hardened
+
+`/harden` checks how a Linux server is hardened, **reading only**: one script goes to the server over `ssh` (as base64 for `sh`, so your login shell's quoting can't change it), prints what each tool says, and Mooring reads it here. Nothing on the server is changed; each finding comes with the command that would fix it, as text, for you to run if you agree.
+
+| What | Found when |
+|---|---|
+| Listening sockets (`ss`, else `netstat`) | The Docker API (2375) on anything but loopback (critical); a database or cache (MySQL 3306, PostgreSQL 5432, Redis 6379, MongoDB 27017, Elasticsearch 9200/9300, Memcached 11211, SQL Server 1433, etcd 2379, CouchDB 5984) on every address or a public one (high), on a private address (medium); anything else beyond loopback but 22, 80 and 443 (low) |
+| sshd (`sshd -T`, else `/etc/ssh/sshd_config` and its `sshd_config.d` drop-ins, the first value winning, `Match` blocks left out) | `PermitEmptyPasswords yes` (critical), `PermitRootLogin yes` (high), `Protocol 1` (high), `PasswordAuthentication yes`, or unset (OpenSSH's default is yes) (medium), CBC, arcfour, MD5 or SHA-1 key exchange offered (medium), `X11Forwarding yes` (low) |
+| Updates (apt's lists, or `dnf`/`yum updateinfo` from their cache) | Security updates waiting (medium; high with a critical dnf advisory), no `unattended-upgrades` or turned off (low), `/var/run/reboot-required` or `needs-restarting -r` (medium) |
+| Firewall (ufw, firewalld, nftables, iptables) | None is on while something listens beyond loopback (medium) |
+| Accounts | A user id 0 other than root (critical), an empty password in `/etc/shadow` (high; only the names leave the server, never a hash), `NOPASSWD` in sudoers (medium for `ALL`, else low); `authorized_keys` counted per user |
+| Files | World-writable files in `/etc`, `/usr/local/bin`, `/usr/local/sbin` (high), SUID programs a distribution doesn't ship (low; in `/tmp` or a home, high), a docker socket anyone can write (critical) and who is in the `docker` group (low) |
+| The system | A release past its end of life in `/etc/os-release` (Ubuntu 18.04 and 20.04, Debian 10 and 11, CentOS 7 and 8, Amazon Linux 2, old Alpine…) (high) |
+
+What only root can read (`sshd -T`, `/etc/shadow`, sudoers, nftables and iptables, other users' keys) is read through `sudo -n` when the user may use sudo without a password (one `sudo -n true` asks first, never a prompt), and otherwise is listed under *couldn't tell*: never a finding. Each part copes with its tool being absent; `find` and the package tools are bounded by `timeout`.
+
+The findings come in a list, worst first, each with where it is (`host`, or `host:/path` and a line). `↵` shows one: why it matters, the fix, and the lines it was seen in; `esc` comes back to the list. The last row is what was seen (the system, who checked, what listens, the firewall, keys per user) and what couldn't be told.
+
+| Key | |
+|---|---|
+| `↵` | The finding's detail and evidence |
+| `y` | Copy every finding, what was seen and what couldn't be told |
+| `r` | Check again |
+| `esc` | Close (from a finding, back to the list) |
+
+Neither the check nor what it found goes in the family's activity log.
+
 ### Hosts, Log
 
 Hosts is above. Log is everything the activity lines have said, `↵` for one whole.
@@ -139,6 +167,14 @@ Hosts is above. Log is everything the activity lines have said, `↵` for one wh
 The mouse: click a tab, a pane, a row or the prompt; double-click does `↵`; the wheel scrolls. Drag to select text, copied when you let go. `/mouse off` leaves it to the terminal.
 
 Your own commands and keys (`"commands"` and `"keys"` in the settings file) work as in the other apps.
+
+## In a pipeline
+
+```
+mooring security <host> [--json] [--fail-on critical|high|medium|low|none]
+```
+
+The same check as `/harden`, without a terminal: `<host>` is a saved host (its name, or a prefix only it has) or `user@host[:port]`, signing in as Mooring's ssh always does without a terminal, with a key or the agent and the host already in `known_hosts`. A host saved with `password` can't be checked here, as there is no one to ask (`/keygen` makes it a key). It prints the findings worst first with their fixes and what couldn't be told, or with `--json` the fleet's security JSON (`{ app: "mooring", check: "harden", target, at, counts, host, facts, unchecked, findings }`, without the evidence lines), and exits **1** when a finding is as bad as `--fail-on` (high unless given), **0** when none is, **2** when it couldn't run (ssh's own words say why).
 
 ## Settings
 

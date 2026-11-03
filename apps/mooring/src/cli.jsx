@@ -11,6 +11,7 @@ import { createSession } from './session.js';
 import { demoLocal, demoSession } from './demo.js';
 import { createKeygen } from './keygen.js';
 import { createHostKeys } from './hostkeys.js';
+import { runSecurity } from './headless.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
 import { terminalMouse } from '@fleet/kit/mouse.js';
@@ -25,6 +26,7 @@ if (args.includes('-v') || args.includes('--version')) {
 
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`mooring [host] [--demo]
+mooring security <host> [--json] [--fail-on critical|high|medium|low|none]
 
 Files and shells on a server, in the terminal: this machine's folder beside a server's, uploads and
 downloads in a queue with their progress, over the system's ssh (SFTP). It signs in with a key or your
@@ -33,8 +35,23 @@ ssh agent only: there is no password prompt, and the host must be in known_hosts
   host     a saved host to open at start (/add saves one)
   --demo   a made-up host and machine, to look around (nothing is touched)
 
+mooring security checks how a Linux server is hardened, reading only (open ports, sshd's settings,
+pending security updates, the firewall, accounts and sudo rules, SUID and world-writable files, the
+system's end of life), prints the findings (or --json) and exits 1 when one is as bad as --fail-on
+(high by default), 2 when it couldn't run. The host is a saved one or user@host[:port], signing in
+with a key or the agent (a host saved with a password can't be checked without a terminal).
+
 Inside: press ? for shortcuts, / for commands, ctrl+p for the palette.`);
   process.exit(0);
+}
+
+// mooring security: no terminal needed, so before the check for one.
+if (args[0] === 'security') {
+  const config = loadConfig();
+  const demo = args.includes('--demo');
+  if (demo) config.hosts = [{ name: 'demo', host: 'demo.example.com', user: 'demo' }];
+  const code = await runSecurity(args.slice(1), { config, makeSession: demo ? () => demoSession() : (host) => createSession(host) });
+  process.exit(code);
 }
 
 // The terminal, or inside Fleet the host's pipes made to look like one (the kit's hosted.js).

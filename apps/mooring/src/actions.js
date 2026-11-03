@@ -13,6 +13,8 @@ import { sizeText } from './format.js';
 import { DEFAULT_KEY_NAME, validKeyName } from './keygen.js';
 import { askFirst } from '@fleet/kit/environments.js';
 import { DISK_FULL, HEALTH_COMMAND, healthProblems, parseHealth, uptimeText } from './health.js';
+import { checkHardening } from './harden.js';
+import { countFindings, findingPlace, findingsLine, findingsText, sortFindings } from '@fleet/kit/findings.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -528,6 +530,79 @@ export async function health(ctx) {
   const h = r.result.health;
   ctx.setHealth({ host, at: Date.now(), problems: healthProblems(h) });
   ctx.showText(`Health · ${host}`, '', { kind: 'health', lines: healthRows(h, host), onKey: (input) => input === 'r' && (health(ctx), true) });
+  return true;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// How well the server is hardened
+
+const SEVERITY_LABEL = { critical: 'CRIT', high: 'HIGH', medium: 'MED', low: 'LOW', unknown: '?' };
+const severityColour = (s) => (s === 'critical' || s === 'high' ? theme.del : s === 'medium' ? theme.warn : s === 'low' ? theme.info : theme.dim);
+
+/** A finding as plain lines: what, where, why, the fix, and what was seen. */
+export function findingDetail(f) {
+  const lines = [`${f.severity.toUpperCase()}  ${f.title}`, `where  ${findingPlace(f)}`, `rule   ${f.rule}`];
+  if (f.why) lines.push('', f.why);
+  if (f.fix) lines.push('', `Fix: ${f.fix}`);
+  if (f.excerpt) lines.push('', 'Seen:', ...f.excerpt.split('\n').map((l) => `  ${l}`));
+  return lines;
+}
+
+/** The whole result as text, for y: findings.js's text, then what was seen and what couldn't be told. */
+export function hardenText(result, host) {
+  const parts = [findingsText(result.findings, { header: `Hardening of ${host}` }).trimEnd()];
+  if (result.facts.length) parts.push('', 'Seen:', ...result.facts.map((f) => `  ${f}`));
+  if (result.unchecked.length) parts.push('', "Couldn't tell:", ...result.unchecked.map((f) => `  ${f}`));
+  return `${parts.join('\n')}\n`;
+}
+
+/**
+ * /harden: one read-only script on the server (harden.js), its findings in a list, worst first: ↵ a
+ * finding's detail and the lines it was seen in (esc comes back to the list), y copies them all, r
+ * checks again. The last row is what was seen and what couldn't be told. Nothing is changed on the server.
+ */
+export async function harden(ctx) {
+  if (!ctx.session) return ctx.note('Not connected: /connect <host>', 'error') ?? false;
+  const host = ctx.conn.host.name;
+  const r = await ctx.task(
+    `Checking how ${host} is hardened`,
+    async (signal) => {
+      const result = await checkHardening(ctx.session, { host, signal });
+      const counts = findingsLine(countFindings(result.findings));
+      return { result, stdout: result.ran ? counts || 'Nothing found' : result.unchecked[0] };
+    },
+    { label: 'Checking the hardening' },
+  );
+  if (!r.ok) return false;
+  const result = r.result.result;
+  const findings = sortFindings(result.findings);
+  const text = hardenText(result, host);
+  const counts = findingsLine(countFindings(findings));
+  const about = { about: true, segments: [{ text: `  what was seen${result.unchecked.length ? ` · ${result.unchecked.length} couldn't be told` : ''}`, color: theme.dim }] };
+  const items = [
+    ...findings.map((f) => ({ f, segments: [{ text: SEVERITY_LABEL[f.severity].padEnd(5), color: severityColour(f.severity), bold: true }, { text: f.title }, { text: `  ${findingPlace(f)}`, color: theme.dim }] })),
+    about,
+  ];
+  const picker = {
+    title: `Hardening · ${host}${counts ? ` · ${counts}` : ' · nothing found'}`,
+    hint: '↵ detail · y copy · r check again',
+    items,
+    onPick: (item) => {
+      const back = { kind: 'picker', picker };
+      if (item.about) {
+        const lines = [...result.facts.map((f) => `• ${f}`), ...(result.unchecked.length ? ['', "Couldn't tell:", ...result.unchecked.map((u) => `• ${u}`)] : [])];
+        return ctx.showText(`Hardening · ${host} · what was seen`, lines.join('\n'), { back });
+      }
+      const lines = findingDetail(item.f);
+      const rows = lines.map((l, i) => (i === 0 ? [{ text: l, color: severityColour(item.f.severity), bold: true }] : l === 'Seen:' || l.startsWith('Fix: ') ? [{ text: l, color: l === 'Seen:' ? theme.accent : undefined }] : [{ text: l, color: l.startsWith('  ') || /^(where|rule) /.test(l) ? theme.dim : undefined }]));
+      ctx.showText(item.f.title, lines.join('\n'), { lines: rows, back });
+    },
+    actions: {
+      y: () => ctx.copy(text, `${findings.length} findings`),
+      r: () => harden(ctx),
+    },
+  };
+  ctx.showPicker(picker);
   return true;
 }
 
