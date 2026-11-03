@@ -33,7 +33,7 @@ export const roleFilter = (role) => (role ? ` | where cloud_RoleName == ${quote(
 /** The problems: exceptions grouped as Application Insights groups them (problemId), most frequent first. */
 export function problemsQuery(role) {
   // arg_max brings the latest occurrence's timestamp and operation along, under their own names.
-  return `exceptions${roleFilter(role)} | summarize count = count(), users = dcount(user_Id), first = min(timestamp), message = take_any(outerMessage), role = take_any(cloud_RoleName), arg_max(timestamp, operation_Id) by problemId, type | project problemId, type, count, users, first, last = timestamp, message, role, operation = operation_Id | order by count desc | take 100`;
+  return `exceptions${roleFilter(role)} | summarize count = count(), users = dcount(user_Id), ['first'] = min(timestamp), message = take_any(outerMessage), role = take_any(cloud_RoleName), arg_max(timestamp, operation_Id) by problemId, type | project problemId, type, count, users, ['first'], ['last'] = timestamp, message, role, operation = operation_Id | order by count desc | take 100`;
 }
 
 const HOUR_MS = 3600_000;
