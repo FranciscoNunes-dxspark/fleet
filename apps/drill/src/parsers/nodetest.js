@@ -57,8 +57,10 @@ function locationOf(loc) {
 
 /**
  * The tests in node --test's TAP. Suites (a result with subtests, or `type: 'suite'`) give their
- * names to the tests under them; each test's file is its location's (Node 22 reports every file's
- * tests at the top level), else the top-level name when that is a path (a file that failed to load).
+ * names to the tests under them; each test's file is its location's, else its suite's, else the
+ * top-level name when that is a path (a file that failed to load). Node 22 gives a location only to a
+ * failure and a suite, and reports each file's tests together at the top level, so a top-level test
+ * that passed takes the file of the one before it (or after it).
  */
 export function parseTap(text, { root, version } = {}) {
   const lines = stripAnsi(text).replace(/\r\n/g, '\n').split('\n');
@@ -87,7 +89,8 @@ export function parseTap(text, { root, version } = {}) {
     const node = { name: unescapeName(m[3] ?? ''), ok: m[2].toLowerCase() === 'ok', directive: m[4]?.toUpperCase() ?? null, diag, children };
     pending[depth].push(node);
   }
-  const tests = [];
+  const found = [];
+  let top = 0;
   const walk = (node, suite, file) => {
     const loc = locationOf(node.diag.location);
     const here = loc?.file ?? file;
@@ -103,23 +106,35 @@ export function parseTap(text, { root, version } = {}) {
       return;
     }
     const status = node.directive ? 'skipped' : node.ok ? 'passed' : 'failed';
-    const fileOf = here ?? (/[\\/]/.test(node.name) ? node.name : '');
+    const fileOf = here ?? (/[\\/]/.test(node.name) ? node.name : null);
     const d = node.diag;
     const values = 'expected' in d || 'actual' in d ? { expected: d.expected, actual: d.actual } : {};
-    tests.push(
-      makeTest({
+    found.push({
+      top,
+      fileOf,
+      test: {
         runner: 'node',
-        file: relPath(root, fileOf),
         suite: suite.map(String),
         name: node.name,
         status,
         duration: typeof d.duration_ms === 'number' ? d.duration_ms : 0,
         ...(loc ? { line: loc.line } : {}),
         ...(status === 'failed' ? { failure: makeFailure({ message: [d.name && d.name !== 'Error' && !String(d.error ?? '').startsWith(d.name) ? `${d.name}: ` : '', String(d.error ?? 'Failed')].join(''), stack: String(d.stack ?? ''), root, ...values }) } : {}),
-      }),
-    );
+      },
+    });
   };
-  for (const n of pending[0]) walk(n, [], null);
+  for (const n of pending[0]) {
+    walk(n, [], null);
+    top++;
+  }
+  // Each top-level result's file, from any of its tests; one with none takes its neighbour's.
+  const fileOfTop = Array.from({ length: top }, (_, i) => found.find((f) => f.top === i && f.fileOf)?.fileOf ?? null);
+  const near = (i) => {
+    for (let j = i - 1; j >= 0; j--) if (fileOfTop[j]) return fileOfTop[j];
+    for (let j = i + 1; j < top; j++) if (fileOfTop[j]) return fileOfTop[j];
+    return '';
+  };
+  const tests = found.map((f) => makeTest({ ...f.test, file: relPath(root, f.fileOf ?? fileOfTop[f.top] ?? near(f.top)) }));
   return { runner: 'node', version, tests, errors };
 }
 
