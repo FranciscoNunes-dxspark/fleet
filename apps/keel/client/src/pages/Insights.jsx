@@ -8,20 +8,21 @@ import Delivery from './Delivery.jsx';
 import Dora from './Dora.jsx';
 import Flow from './Flow.jsx';
 import Advisories from './Advisories.jsx';
+import DevOpsSecurity from './DevOpsSecurity.jsx';
 
 const RANGES = [14, 30, 90];
 
-/** Four tabs over the same period (delivery to production, DORA per project and team, code review and merging, and work item flow), and the repositories' security advisories. */
+/** Four tabs over the same period (delivery to production, DORA per project and team, code review and merging, and work item flow), the repositories' security advisories, and the projects' Azure DevOps security review. */
 export default function Insights() {
   const [days, setDays] = useSticky('insights.days', 30);
   const [params, setParams] = useStickyParams('insights', ['tab']);
-  const tab = ['dora', 'review', 'flow', 'advisories'].includes(params.get('tab')) ? params.get('tab') : 'delivery';
+  const tab = ['dora', 'review', 'flow', 'advisories', 'devops'].includes(params.get('tab')) ? params.get('tab') : 'delivery';
 
   return (
     <div className="page page-wide">
       <PageHeader title={t('Insights')} sub={t('How work flows through review and delivery across your tracked repos.')}>
-        {/* Advisories are what's there now, not a period. */}
-        {tab !== 'advisories' && <div className="segmented segmented-compact" role="tablist" aria-label={t('Time range')}>
+        {/* Advisories and the security review are what's there now, not a period. */}
+        {tab !== 'advisories' && tab !== 'devops' && <div className="segmented segmented-compact" role="tablist" aria-label={t('Time range')}>
           {RANGES.map((d) => <button key={d} type="button" role="tab" aria-selected={days === d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{t('{n} days', { n: d })}</button>)}
         </div>}
       </PageHeader>
@@ -31,8 +32,9 @@ export default function Insights() {
         <button type="button" role="tab" aria-selected={tab === 'review'} className={tab === 'review' ? 'on' : ''} onClick={() => setParams({ tab: 'review' }, { replace: true })}>{t('Code review and merging')}</button>
         <button type="button" role="tab" aria-selected={tab === 'flow'} className={tab === 'flow' ? 'on' : ''} onClick={() => setParams({ tab: 'flow' }, { replace: true })}>{t('Work item flow')}</button>
         <button type="button" role="tab" aria-selected={tab === 'advisories'} className={tab === 'advisories' ? 'on' : ''} onClick={() => setParams({ tab: 'advisories' }, { replace: true })}>{t('Security advisories')}</button>
+        <button type="button" role="tab" aria-selected={tab === 'devops'} className={tab === 'devops' ? 'on' : ''} onClick={() => setParams({ tab: 'devops' }, { replace: true })}>{t('Azure DevOps security')}</button>
       </div>
-      {tab === 'delivery' ? <Delivery days={days} /> : tab === 'dora' ? <Dora days={days} /> : tab === 'flow' ? <Flow days={days} /> : tab === 'advisories' ? <Advisories /> : <ReviewInsights days={days} />}
+      {tab === 'delivery' ? <Delivery days={days} /> : tab === 'dora' ? <Dora days={days} /> : tab === 'flow' ? <Flow days={days} /> : tab === 'advisories' ? <Advisories /> : tab === 'devops' ? <DevOpsSecurity /> : <ReviewInsights days={days} />}
     </div>
   );
 }

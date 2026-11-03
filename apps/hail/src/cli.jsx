@@ -30,6 +30,16 @@ if (args[0] === 'test') {
   process.exit(code);
 }
 
+// hail security <url|api.http> [--json] [--sarif [file]] [--fail-on high]: /scan without the UI, for CI.
+if (args[0] === 'security') {
+  const { runSecurity } = await import('./headless.js');
+  const { osCredentials } = await import('@fleet/kit/credentials.js');
+  const code = await runSecurity(args.slice(1), { credentials: osCredentials });
+  await new Promise((r) => process.stdout.write('', r));
+  await new Promise((r) => process.stderr.write('', r));
+  process.exit(code);
+}
+
 // hail mock api.http [--port 4010] [--env dev]: the kept responses served until ctrl+c (Bosun can run it).
 if (args[0] === 'mock') {
   const { runMock } = await import('./headless.js');
@@ -56,6 +66,7 @@ if (args.includes('-h') || args.includes('--help')) {
   console.log(`hail [file.http]
 hail test [file.http] [--env <name>] [--contract <openapi>] [--contract-strict]
 hail mock [file.http] [--port 4010] [--env <name>]
+hail security <url|file.http> [--env <name>] [--json] [--sarif [file]] [--fail-on <level>]
 
 An HTTP client for the terminal, over .http files. Opens [file.http], or the
 first .http file in the current folder (or the folders under it).
@@ -66,6 +77,10 @@ exits with 1 if anything failed (drift only with --contract-strict).
 
 hail mock serves the responses Hail kept for the file's requests (and the
 contract's examples) on http://127.0.0.1:4010, until ctrl+c.
+
+hail security scans a web app you own or are authorised to test (TLS, headers,
+cookies, CORS, exposed files, TRACE, verbose errors, routes that answer without
+their credentials) and exits with 1 on a finding as bad as --fail-on (high).
 
 Inside: ↵ sends the request under the cursor, e picks the environment,
 ? shows every key, / the commands.`);

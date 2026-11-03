@@ -80,6 +80,7 @@ export const helpRows = (p = DEFAULT_PREFIX) => [
   [`${p} w`, 'what changed lately, and Claude on why'],
   [`${p} P`, "Claude's proposals: ↵ hands one to its app"],
   [`${p} R`, 'record a runbook from what the apps run (again: stop)'],
+  [`${p} S`, "security: every app's check for the project, as one overview"],
   ...(p === 'ctrl+]' ? [] : [['ctrl+]', `works as ${p} does (host.json's "prefix" changes ${p})`]]),
   ['', ''],
   ['a click on a tab', 'switches to it'],
@@ -359,6 +360,7 @@ export class Host {
       else if (a.type === 'environment') this.panels.environments();
       else if (a.type === 'changes') this.panels.changes();
       else if (a.type === 'proposals') this.panels.proposals();
+      else if (a.type === 'security') this.panels.security();
       else if (a.type === 'record') this.toggleRecording();
     }
   }

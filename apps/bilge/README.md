@@ -4,6 +4,10 @@
 
 What a project depends on, in the terminal. Bilge reads a folder's npm, Yarn, pnpm and NuGet lock files, asks [OSV](https://osv.dev) which advisories are known against the exact versions in them, and lists the vulnerable packages worst first, with the version that fixes each one and the command that gets you there. It also shows every package's licence and how far behind it is, writes a CycloneDX SBOM, and runs headless in a pipeline (`bilge audit --fail-on high`).
 
+It also flags what in the lock files could run or arrive from somewhere it shouldn't: a package whose name is one slip from a well-known one's, one that runs a script on install, one downloaded from a git repository, a URL or plain http ([Supply chain](#supply-chain), `bilge supply`). And `bilge security` runs all of it at once, with SARIF for GitHub's and Azure DevOps' code scanning.
+
+It also reads the project's own code (`/code`, the Code view, `bilge code`): secrets written into files, code that runs what it's given, protections turned off and risky config, the first things an attacker looks for. It reads the files on this machine and nothing else.
+
 Before an update, it says whether the new version fits the project: a NuGet package built for frameworks the project doesn't target, an npm package that needs a newer Node than the project says, or one whose peers won't take it.
 
 It covers what Snyk, Mend, Socket or FOSSA are bought for in a small team: advisories, licences, outdated packages and an SBOM, from a free, open database, with nothing to sign up for. Only the packages' names and versions leave the machine: to `api.osv.dev`, and for `/outdated` to the npm and NuGet registries (and `/breaking` sends Claude the lines that import a package).
@@ -15,6 +19,9 @@ bilge --demo             # a made-up project, to look around: nothing is read, a
 bilge audit --fail-on high          # in a pipeline: the findings, and exit 1 when one is high or worse
 bilge sbom -o sbom.cdx.json         # a CycloneDX bill of materials
 bilge report -o report.md           # the audit as Markdown
+bilge code --fail-on high           # the folder's own files: secrets, risky code and config
+bilge supply                        # typosquats, install scripts, packages from outside the registry
+bilge security . --sarif bilge.sarif   # all three, and SARIF for code scanning
 ```
 
 Press `?` inside for every key and command, `/` for the commands, `!` to run a shell command in the folder (`!npm ls lodash`).
@@ -38,7 +45,7 @@ It looks six folders deep, and never in `node_modules`, `bin`, `obj`, `dist`, `b
 
 ## Views
 
-`1` Vulnerabilities · `2` Packages · `3` Manifests · `4` Log (what Bilge has run). `tab` goes round. On opening, Bilge reads the folder and asks OSV (turn that off with `"autoAudit": false`; `/audit` asks then); `ctrl+r` does both again.
+`1` Vulnerabilities · `2` Packages · `3` Manifests · `4` Code · `5` Log (what Bilge has run). `tab` goes round. On opening, Bilge reads the folder and asks OSV (turn that off with `"autoAudit": false`; `/audit` asks then); `ctrl+r` does both again.
 
 OSV's answers are kept between runs in `~/.bilge/cache/osv.json`: which advisories a package's version has for six hours, an advisory's record for a day. Opening Bilge and `/audit` ask OSV only about what isn't kept (the activity line says how many came from the cache); `ctrl+r` and `/audit fresh` ask about everything again. `bilge audit` in a pipeline always asks afresh.
 
@@ -81,15 +88,29 @@ Every package, the direct ones first: its version, the newest one (once asked: `
 | Key | |
 |---|---|
 | `↵` or `l` | Its licence, newest version, advisories, where it is, its registry page |
-| `a` | All of them, the direct ones, the outdated ones, or the flagged ones (an advisory, a copyleft or denied licence, deprecated) |
+| `a` | All of them, the direct ones, the outdated ones, the flagged ones (an advisory, a copyleft or denied licence, deprecated, a supply-chain finding), or the supply-chain ones (also `/packages supply`) |
 | `u` | Ask npm and NuGet for the direct packages' newest versions and licences (`/outdated all`: every package) |
 | `f` | Fix it, when it has advisories |
+| `x` | Ignore its supply-chain findings (asks; kept as `supplyIgnore` in the settings) |
 | `o` | Its page on npmjs.com or nuget.org |
 | `t` | Copy where it is for Splice's blame |
 | `y` | Copy `name@version` |
 | `esc` | Every manifest's packages again, after `↵` in Manifests |
 
 NuGet's lock files don't record licences: `/outdated` reads them from each package's `.nuspec`.
+
+### Supply chain
+
+What an advisory database doesn't know yet: the ways a malicious or tampered package gets into a project. Bilge reads them from the lock files as it reads the packages, asking nobody, and marks each package in Packages with the worst (`a` or `/packages supply` lists only those; `↵` says what, why and what to do):
+
+| Mark | Rule | | Severity |
+|---|---|---|---|
+| `typo?` | `typosquat` | A name one slip away from a well-known package it isn't: two letters swapped, one letter changed, added or dropped, or only `-`, `_` or `.` different (`crossenv` for `cross-env`, `lodahs`, `Newtonsoft.Jsom`). Compared with about 250 of npm's and 60 of NuGet's most used names; a scoped package (`@scope/name`) is its publisher's and isn't compared, and a short name only for swapped letters and separators | high |
+| `http` | `http-download` | Downloaded over plain `http://` (`resolved` in the lock file) | high |
+| `source` | `not-from-registry` | Downloaded from a git repository, a tarball's URL, or a registry other than `registry.npmjs.org` and `registry.yarnpkg.com` (a private registry counts: `x`, or `"supplyIgnore": ["not-from-registry"]`, leaves those out) | medium |
+| `script` | `install-script` | Runs a script on `npm install` (`hasInstallScript` in package-lock.json 2 and 3, `requiresBuild` in pnpm's lock files before 9) | low; medium when it's also one of the above |
+
+Yarn's lock files don't say which packages have install scripts, nor does package-lock.json 1 or pnpm's lock file 9; Yarn 2 and newer only say where a package came from when it isn't npm's registry. A git or tarball dependency Bilge doesn't read as a package (Yarn's and pnpm's) is still flagged, and listed under `supply` on its own.
 
 ### Will it fit?
 
@@ -130,23 +151,86 @@ The lock files and projects found: their ecosystem, kind, how many packages, how
 | `t` | Copy it for Splice, whose history says who changed it |
 | `y` | Copy its path |
 
+### Code
+
+The project's own files, not its packages, read for what an attacker would look for first: `/code` (or `r` in the view) reads them, the findings worst first. It's a static read with patterns, like a first pass of a penetration test's source review: it runs nothing, sends nothing anywhere, and what it finds is for a person to look at, not proof of a hole (SQL put together from an identifier the code chose itself is flagged as much as one from a request).
+
+| Kind | What's found |
+|---|---|
+| secret | Private keys; AWS, GitHub, Anthropic, OpenAI, Stripe live, Slack, Google and npm keys and tokens; Azure storage account keys and SAS tokens; JSON web tokens; passwords in URLs and connection strings; values named like a secret (`apiKey = "…"`); `ENV`/`ARG` secrets in a Dockerfile; `.pfx`, `.p12` and keystore files |
+| code | `eval` and `new Function`; `exec` with a command built from values (JavaScript), `os.system` and `shell=True` (Python); SQL built from values; HTML written from values (`innerHTML`, `dangerouslySetInnerHTML`, `v-html`); unsafe deserialisation (`pickle`, `yaml.load`, `BinaryFormatter`, `TypeNameHandling`); TLS certificate checks off; tokens not checked (`none`, `ValidateLifetime = false`); CORS open to any origin; MD5 and SHA-1; `Math.random` for a token |
+| config | A container that runs as root; a base image without a version; `ADD` from a URL; a `.env` git doesn't ignore; `curl … \| sh`; a GitHub workflow putting an issue's or pull request's text into its script, and `pull_request_target`; `strict-ssl=false` |
+
+A secret is never shown whole: the line keeps its first four characters. In tests, fixtures, examples and demos a finding is one step milder. It reads the folder and every one under it, except `node_modules`, `.git`, `bin`, `obj`, `dist`, `build`, `out`, `target`, `vendor`, `coverage` and tools' caches, skipping lock files, binaries, minified files, files over 512 KB and a `.env` git ignores (where secrets belong); it stops after 20,000 files.
+
+| Key | |
+|---|---|
+| `↵` or `l` | What it is, the line, why it matters and the fix |
+| `r` | Read the folder again |
+| `x` | Ignore this rule in this file (asks; kept as `codeIgnore` in the settings, `rule:path`, or a rule's id for every file) |
+| `t` | Copy the file and line for Splice, whose blame says who wrote it |
+| `y` | Copy `file:line` |
+
+A comment saying `bilge-ignore` on a line, or the line above it, leaves that line out; `bilge-ignore-file` in a file's first lines leaves the file out. Once `/code` has run, `/report` has a Code section (where each finding is, never the line).
+
 ## Slash commands
 
-`/scan`, `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/upgrade` (above), `/breaking <package>` (above), `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take <family:v1:…>` (an image from Wharf, below), `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/scan`, `/code` (above), `/audit [fresh]` (`fresh`: not from the cache), `/outdated [all]`, `/fix <package|advisory>`, `/upgrade` (above), `/breaking <package>` (above), `/why <package>`, `/ignore <advisory|package>`, `/unignore [advisory|all]`, `/deny [licence…|none]` (the licences to flag: SPDX ids, or their start, `GPL-` for every GPL; with an `OR`, only when every choice is), `/packages [all|direct|outdated|flagged|supply]`, `/sbom [file]` (`sbom.cdx.json` in the folder unless named; asks before replacing one), `/sarif [file]` (the audit's advisories, the code's findings, reading the code first if `/code` hasn't, and the supply chain's, as one SARIF file: `bilge.sarif` in the folder unless named; asks before replacing one), `/report [file]` (the audit as Markdown, `alt+y` copies it for a pull request; with a file, writes it, asking before replacing one), `/move <folder>`, `/env [name]` (below), `/take <family:v1:…>` (an image from Wharf, below), `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## In a pipeline
 
 ```
-bilge audit [folder] [--fail-on critical|high|medium|low|none] [--json]
+bilge audit [folder] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file]]
+bilge code [folder] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file]]
+bilge supply [folder] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file]]
+bilge security [folder] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file]]
 bilge sbom [folder] [-o file]
 bilge report [folder] [-o file]
 ```
 
-`bilge audit` prints each finding with its advisories and where it is, then the counts. It asks OSV afresh, never from the cache. It exits `1` when a finding is as bad as `--fail-on` (`high` by default), `0` otherwise, and `2` when it couldn't run (OSV unreachable, a bad option). `--json` prints `{ dir, packages, manifests, counts, findings }`. The advisories ignored with `/ignore` (in `~/.bilge/config.json`) are left out. `bilge sbom` writes CycloneDX 1.5 JSON: every package with its purl, licence and scope (`optional` for development ones), and the advisories against them. `bilge report` prints the same Markdown as `/report` (or writes it with `-o`).
+`bilge code` prints what the Code view would find, with the fix for each, and exits as `bilge audit` does (`1` when one is as bad as `--fail-on`); it reads the files and asks nobody. Its `--json` (`{ dir, files, truncated, counts, findings }`) leaves the lines out, as build logs are read widely. `codeIgnore` in the settings is left out. `bilge audit` prints each finding with its advisories and where it is, then the counts. It asks OSV afresh, never from the cache. It exits `1` when a finding is as bad as `--fail-on` (`high` by default), `0` otherwise, and `2` when it couldn't run (OSV unreachable, a bad option). `--json` prints `{ dir, packages, manifests, counts, findings }`. The advisories ignored with `/ignore` (in `~/.bilge/config.json`) are left out. `bilge sbom` writes CycloneDX 1.5 JSON: every package with its purl, licence and scope (`optional` for development ones), and the advisories against them. `bilge report` prints the same Markdown as `/report` (or writes it with `-o`).
+
+`bilge supply` prints the [supply chain](#supply-chain)'s findings and exits the same way; `supplyIgnore` in the settings is left out. `bilge security` is the audit, the code and the supply chain together, each without what the settings ignore, OSV asked afresh. The `--json` of both is the one every app of the family prints for a security check, which Fleet's security overview adds up:
+
+```json
+{ "app": "bilge", "check": "security", "target": "/path/to/folder", "at": "2026-11-03T10:00:00.000Z",
+  "counts": { "critical": 2, "high": 9, "medium": 6, "low": 3, "unknown": 0 },
+  "findings": [{ "rule": "GHSA-xvch-5gv4-984h", "severity": "critical", "title": "minimist@1.2.5: Prototype pollution in minimist",
+                 "where": "package-lock.json", "line": 48, "why": "…", "fix": "Move minimist to 1.2.6 or later.", "kind": "dependency",
+                 "package": "minimist", "version": "1.2.5", "ecosystem": "npm", "aliases": ["CVE-2021-44906"], "fixed": "1.2.6", "url": "…" }] }
+```
+
+`kind` is `dependency` (an advisory: `rule` is its id, `where` the lock file and `line` the package's line in it, one finding per advisory), `secret`, `code` or `config` (the Code view's), or `supply`. A code finding's line is never in it.
+
+`--sarif` writes SARIF 2.1.0 for code scanning, from `bilge audit`, `code`, `supply` and `security`: alone (or `--sarif -`) it's all that's printed; with a file (`--sarif bilge.sarif` or `--sarif=bilge.sarif`) the usual output prints as well. Put the folder before it (`bilge audit web --sarif out.sarif`), as what follows `--sarif` is its file. An advisory's rule is its id, at the package's line in its lock file; a code finding at its line, never with the line's text. The exit code is the same.
+
+```yaml
+# GitHub Actions: the findings in the repository's Security tab (code scanning)
+permissions:
+  security-events: write
+steps:
+  - uses: actions/checkout@v4
+  - run: ./bilge security . --sarif bilge.sarif --fail-on none
+  - uses: github/codeql-action/upload-sarif@v3
+    with:
+      sarif_file: bilge.sarif
+      category: bilge
+```
+
+```yaml
+# Azure Pipelines: the SARIF SAST Scans Tab extension shows what's published as CodeAnalysisLogs
+- script: ./bilge security . --sarif $(Build.ArtifactStagingDirectory)/CodeAnalysisLogs/bilge.sarif --fail-on high
+- task: PublishBuildArtifacts@1
+  condition: always()
+  inputs:
+    PathtoPublish: $(Build.ArtifactStagingDirectory)/CodeAnalysisLogs
+    ArtifactName: CodeAnalysisLogs
+```
 
 ```yaml
 # Azure Pipelines or GitHub Actions, after npm ci / dotnet restore
 - run: ./bilge audit --fail-on high
+- run: ./bilge code --fail-on high
 ```
 
 ## The family
@@ -171,7 +255,7 @@ Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Dr
 
 ## Settings
 
-`~/.bilge/config.json` (`BILGE_HOME` moves it): `theme`, `accent`, `mouse`, `autoAudit`, `ignore` (advisory ids), `deny` (licences), `checkForUpdates`, `autoUpdate`, `familyMoods`. `,` or `/settings` shows them.
+`~/.bilge/config.json` (`BILGE_HOME` moves it): `theme`, `accent`, `mouse`, `autoAudit`, `ignore` (advisory ids), `codeIgnore` (code findings, `rule:path` or a rule), `supplyIgnore` (supply-chain findings: a rule, a package's name, or `rule:package`), `deny` (licences), `checkForUpdates`, `autoUpdate`, `familyMoods`. `,` or `/settings` shows them.
 
 ## Updates
 
@@ -179,4 +263,4 @@ The downloaded executable looks for a newer `bilge-v…` release once a day and 
 
 ## Not yet
 
-Python, Go, Cargo and Maven; RPM-based images; a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called).
+Active testing of a running app (the Code view reads files; Hail sends requests); Python, Go, Cargo and Maven; RPM-based images; a framework set in `Directory.Build.props` rather than the project file; vulnerability reachability (whether the vulnerable code is called); how new a package or version is, for the supply chain.

@@ -39,10 +39,11 @@ export const HELP = [
       ['a', 'Only the running ones, or all of them'],
       ['p', 'Pause it, or let it run again'],
       ['v', 'Hand Bilge its image to scan for known vulnerabilities (inside Fleet, Bilge opens with it)'],
+      ['alt+s', 'How it runs, judged for security (/security): privileged, the socket or host folders mounted, root, open ports, passwords in its environment'],
       ['y', 'Copy its id'],
       ['/up /down', 'docker compose up -d or down for a project, run where its files are (down asks first)'],
       ['/exec', 'One command inside a running container, no terminal: /exec shop-db-1 ls /app'],
-      'In the list: ● green running · yellow starting, paused or restarting · red unhealthy or exited with an error · grey stopped.',
+      'In the list: ● green running · yellow starting, paused or restarting · red unhealthy or exited with an error · grey stopped. A ! after the name: the security check found something (red critical or high, yellow medium).',
     ],
   },
   {
@@ -82,6 +83,18 @@ export const HELP = [
       ['l', 'The log of the newest pod with a problem, else of the first new pod'],
       ['esc / q', 'Close (what it ended with stays in the activity lines)'],
       'Stalled is past its progressDeadlineSeconds; failing is a new pod waiting on what it won\'t get over by itself (a crash loop, an image that can\'t be pulled). Both say so and offer u.',
+    ],
+  },
+  {
+    title: 'Security',
+    about: '/security: how containers run, from one docker inspect (or a compose file\'s services), worst first',
+    rows: [
+      ['↵ / l', 'The finding: what was seen (a secret cut short), why it matters, the fix (the docker run flag and the compose key)'],
+      ['y', 'Copy it'],
+      ['r', 'Check again'],
+      ['esc / q', 'Close (esc in a finding goes back to the list)'],
+      ['/security <name>', 'One container; a compose project\'s name checks its compose files, a path any compose file'],
+      'Critical: privileged, the Docker or Podman socket. High: SYS_ADMIN, NET_ADMIN or ALL added, seccomp or AppArmor off, the host\'s pid, network or ipc, the host\'s folders writable, a database or admin port on every interface. Medium: root, a password in the environment. Low: a writable root filesystem, no memory or process limit, other open ports, an image on latest or without a digest. What the image holds is Bilge\'s (v). wharf security does the same without the screen.',
     ],
   },
   {

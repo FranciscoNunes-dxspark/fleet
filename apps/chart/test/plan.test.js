@@ -18,8 +18,8 @@ test('a Terraform plan: its changes with why, the drift, the outputs that change
   const plan = parseTerraformPlan({ ...DEMO_PLAN, resource_changes: [...DEMO_PLAN.resource_changes, { address: 'data.azurerm_client_config.me', mode: 'data', type: 'azurerm_client_config', name: 'me', change: { actions: ['read'] } }] });
   assert.equal(plan.tool, 'terraform');
   assert.equal(plan.version, '1.9.8');
-  assert.equal(plan.changes.length, 8);
-  assert.equal(summaryLine(summarize(plan.changes)), '+2 ~2 ±1 -1');
+  assert.equal(plan.changes.length, 11);
+  assert.equal(summaryLine(summarize(plan.changes)), '+5 ~2 ±1 -1');
   assert.deepEqual(ordered(plan.changes).slice(0, 2).map((c) => [c.action, c.address]), [['delete', 'azurerm_mssql_database.reports'], ['replace', 'azurerm_linux_web_app.admin']]);
   const admin = plan.changes.find((c) => c.address === 'azurerm_linux_web_app.admin');
   assert.equal(admin.reason, 'an argument that forces replacement changed');
@@ -77,7 +77,7 @@ test("Azure's what-if: changes by resource id, a property's children flattened, 
     { path: 'properties.siteConfig.alwaysOn', kind: 'change', before: false, after: true },
     { path: 'properties.httpsOnly', kind: 'change', before: true, after: true, noise: true },
   ]);
-  assert.deepEqual(plan.changes[1].diff.map((d) => d.path), ['kind', 'name', 'sku.name']);
+  assert.deepEqual(plan.changes[1].diff.map((d) => d.path), ['kind', 'name', 'properties.allowBlobPublicAccess', 'properties.minimumTlsVersion', 'properties.supportsHttpsTrafficOnly', 'sku.name']);
   assert.deepEqual(parseResourceId('/subscriptions/s1/resourceGroups/rg/providers/Microsoft.Web/sites/app/slots/staging'), { type: 'Microsoft.Web/sites/slots', name: 'app/staging', resourceGroup: 'rg', subscription: 's1' });
   assert.throws(() => parseWhatIf({ status: 'Failed', error: { code: 'InvalidTemplate', message: 'bad template' } }), /What-if failed: bad template/);
   assert.equal(parseAny(JSON.stringify({ properties: DEMO_WHAT_IF })).tool, 'bicep');

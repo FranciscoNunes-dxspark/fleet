@@ -238,6 +238,11 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     if (typeof projectId !== 'string' || typeof repoId !== 'string' || !projectId || !repoId) return res.status(400).json({ error: 'projectId and repoId required' });
     res.json(await req.ctx.service.checkAdvisories(projectId, repoId));
   });
+  // The security review of the tracked Azure DevOps projects (or ?project=name), read only; ?fresh=1 reads them again.
+  r.get('/security/devops', async (req, res) => res.json(await req.ctx.service.devopsSecurity({
+    project: req.query.project ? String(req.query.project) : undefined,
+    fresh: req.query.fresh === '1',
+  })));
   r.get('/production', async (req, res) => res.json(await req.ctx.service.production()));
   r.get('/production/monitors', (req, res) => res.json(req.ctx.service.monitors().list()));
   r.put('/production/monitors', need('monitors.manage'), async (req, res) => {

@@ -9,6 +9,7 @@ Values stay hidden: they are compared by a keyed hash made fresh each run, and s
 ```
 locker           # this folder, and the App Service app and vault you pick
 locker --demo    # a made-up project and Azure, to look around: nothing is touched
+locker security  # the secret hygiene check, without the screen (for a pipeline; below)
 ```
 
 Press `?` inside for every key and command, `/` for the commands, `ctrl+p` for the palette.
@@ -119,9 +120,61 @@ committed yet), `r` rotates it when it is a secret of the vault (`/rotate`). Tak
 git's history needs a rewrite (git filter-repo, and a force push everyone takes), and every copy made
 before keeps it: rotating it is the fix.
 
+## Secret hygiene
+
+`/hygiene` checks how the secrets Locker reads are kept, and lists what is wrong worst first. It
+judges from what Key Vault and App Service say of them (names, dates, flags) and from the shape of
+values Locker holds already; it never reads a vault secret's value to judge it, and never shows one.
+It reads the app being compared with its slots, the vault picked and those their settings refer to,
+and the folder; `/hygiene all` reads every app, slot and vault in the subscription (their listings).
+
+| Finding | Severity |
+|---|---|
+| A certificate that has expired while in use (a setting refers to it, or an app loads it with `WEBSITE_LOAD_CERTIFICATES`) | critical |
+| A secret or certificate that has expired; one that expires within 7 days | high |
+| A disabled secret a setting still refers to | high |
+| An app setting or connection string holding a secret as plain text, not a Key Vault reference (named like one, `Password`, `Secret`, `Token`, `…Key`, or shaped like one: `Password=` in a connection string, a storage key, a token) | high |
+| A secret in a file git tracks (a `.env`, `appsettings*.json`, Hail's env file; never an example file). User secrets and files git ignores are where secrets belong | high |
+| Expires within 30 days; not changed in over a year | medium |
+| A setting one slot reads from Key Vault and another holds as plain text | medium |
+| The same secret in production and another environment (compared by a keyed hash: `.env` and user secrets are development, `.env.<name>` and `appsettings.<Name>.json` that environment, the app production and a slot its name) | medium (low between two others) |
+| Purge protection off on a vault | medium |
+| A secret with no expiry date; not changed in over 180 days | low |
+| A vault open to every network with no rules | low |
+
+Each finding says where (`kv-shop/old-token`, `shop-api/Redis__Password`, `appsettings.json:14`),
+why, and the fix: often the `az` command to run yourself (moving a setting to a Key Vault reference
+says both commands); Locker runs none of them. What it saw is cut to its first characters.
+
+| Key | |
+|---|---|
+| `↵` | The finding, why it matters and its fix |
+| `y` | Copy its name: the secret, the setting or the file |
+| `f` | Copy its fix |
+| `s` | Show it in its view: a vault's secret or certificate in Vault, a setting's row in Drift |
+| `r` | Rotate it, when it is a secret of the vault (`/rotate`) |
+
+`"hygieneIgnore"` in the settings leaves findings out: a rule's id (`kv-no-expiry`) or a rule on one
+thing (`kv-no-expiry:kv-shop/Shared--Salt`). Key Vault keys aren't read (nor, so, judged); a
+vault's posture in depth is Sonar's.
+
+### In a pipeline
+
+```
+locker security [folder] [--app app|app/slot] [--vault name] [--all] [--fail-on critical|high|medium|low|none] [--json|--sarif]
+```
+
+The same check without the screen, from the folder (the current one by default), the app named as it
+(or the one saved, or `--app`) and its slots, and their vaults (signed in with `az login`; without
+it, only the folder is read, and it says so). It prints the findings, never a value, and exits 1 when
+one is as bad as `--fail-on` (high by default), 2 when it couldn't run. `--json` prints the fleet's
+security JSON (`{ app, check, target, at, counts, site, sites, vaults, problems, findings }`, without
+even the shortened excerpts), `--sarif` SARIF 2.1.0 for GitHub's or Azure DevOps' code scanning.
+`locker security --demo` runs it over the demo.
+
 ## Slash commands
 
-`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/rotate <secret>` rotates one end to end (`r`), `/disable <secret>` disables or enables one. `/leaks [commits|since]` looks for secrets in git (above). `/env [name]` chooses the project's environment (below). `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/app [app|app/slot|none]`, `/vault [name|none]` and `/sub [name]` pick what to compare (a list without a name). `/columns` is `c`. `/only all|diff|missing` filters the drift view. `/set [secret]` sets a secret (a new one when the vault has none by that name), `/rotate <secret>` rotates one end to end (`r`), `/disable <secret>` disables or enables one. `/leaks [commits|since]` looks for secrets in git (above). `/hygiene [all]` checks how secrets are kept (above). `/env [name]` chooses the project's environment (below). `/expiry [days]` and `/clear-after [seconds]` change the windows. `/sonar` is `t`. `/take <line>` takes what a sibling copied. `/family`, `/wiring`, `/timeline` (below). `/run <command>` is `!`. `/last` shows the last command's whole output (never a value). `/refresh` (`ctrl+r`) reads everything again. `/move [folder]` reads another folder (see Sources). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 Your own commands and keys go in the settings file, as in the siblings: `"commands": { "prod": "/app shop-api" }`, `"keys": { "drift": { "ctrl+o": "/app" } }`.
 
@@ -171,7 +224,7 @@ Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Dr
 
 ## Settings
 
-Kept in `~/.locker/config.json` (`LOCKER_HOME` moves it), which holds which app and vault you picked and never a value: `target`, `vault`, `subscription`, `columns`, `expiryDays` (30), `clearClipboard` (seconds, 30; 0 leaves a copied value there), `notify`, `theme` (`dark`, `light`, `auto`), `accent` (`#rrggbb`), `familyMoods`, `mouse`, `checkForUpdates`, `autoUpdate`, `commands`, `keys`, `history`. `/settings` (`,`) shows them.
+Kept in `~/.locker/config.json` (`LOCKER_HOME` moves it), which holds which app and vault you picked and never a value: `target`, `vault`, `subscription`, `columns`, `expiryDays` (30), `clearClipboard` (seconds, 30; 0 leaves a copied value there), `notify`, `theme` (`dark`, `light`, `auto`), `accent` (`#rrggbb`), `familyMoods`, `mouse`, `checkForUpdates`, `autoUpdate`, `hygieneIgnore`, `commands`, `keys`, `history`. `/settings` (`,`) shows them.
 
 ## Updates
 

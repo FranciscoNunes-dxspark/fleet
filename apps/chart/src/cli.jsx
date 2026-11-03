@@ -9,7 +9,7 @@ import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
 import { createChart } from './iac.js';
 import { demoChart } from './demo.js';
-import { runHeadless } from './headless.js';
+import { runHeadless, runSecurity } from './headless.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
 import { terminalMouse } from '@fleet/kit/mouse.js';
@@ -29,6 +29,8 @@ if (args.includes('-h') || args.includes('--help')) {
   console.log(`chart [folder] [--demo]
 chart check [folder|plan.json] [--fail-on destroy|replace|change|drift|none] [--tofu] [--markdown|--json]
             [--currency EUR] [--no-costs]
+chart security [folder|plan.json|whatif.json] [--plan] [--source folder] [--fail-on critical|high|medium|low|none]
+               [--json] [--sarif [file.sarif]]
 
 Infrastructure as code: what a Terraform (or OpenTofu) plan would change, resource by resource and
 attribute by attribute, what changed outside Terraform (drift), what its state holds, and what
@@ -43,11 +45,22 @@ and exits 1 when the plan does what --fail-on names (destroy by default: a delet
 for a pipeline; --markdown prints it for a pull request's comment. Each change's monthly cost,
 and the total, come from the Azure Retail Prices API (--currency, --no-costs).
 
+chart security reads what a plan would deploy for misconfigurations (public storage, SSH or RDP open
+to the internet, a database firewall open to everyone, TLS older than 1.2…): a saved plan or what-if
+file, or a folder's .tf, .tfvars, .bicep and .bicepparam files as they are, passwords written into
+them too. Nothing is run unless --plan asks it to plan the folder. It exits 1 when a finding is as
+bad as --fail-on (high by default); --sarif writes SARIF for GitHub's or Azure DevOps' code scanning.
+
 Inside: press ? for shortcuts, / for commands, ! to run a shell command.`);
   process.exit(0);
 }
 
 const config = loadConfig();
+
+if (rest[0] === 'security') {
+  const code = await runSecurity(rest, { provider: demo ? demoChart() : createChart(), config });
+  process.exit(code);
+}
 
 if (rest[0] === 'check') {
   const code = await runHeadless(rest, { provider: demo ? demoChart() : createChart(), config });

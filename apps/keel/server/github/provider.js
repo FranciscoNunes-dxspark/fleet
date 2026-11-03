@@ -284,6 +284,11 @@ export function createGithubProvider({ org, token, client } = {}) {
       return (d.tree || []).filter((x) => x.type === 'blob' && x.path).map((x) => `/${x.path}`);
     },
 
+    /** A GitHub owner has no Azure DevOps project settings to review (domain/devopssecurity.js). */
+    async readSecuritySettings() {
+      return null;
+    },
+
     /** One file's text on a branch. */
     async getRepoFileText(_projectId, repoId, path, branch) {
       return apiText(`${repoPath(repoId)}/contents/${String(path).replace(/^\/+/, '').split('/').map(seg).join('/')}`, { query: { ref: branch } });

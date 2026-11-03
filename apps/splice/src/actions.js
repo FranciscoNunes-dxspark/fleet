@@ -60,6 +60,8 @@ import { forcePushes, forwardInput, planSync, rebasingElsewhere, syncSummary, sy
 import { SIGNING_KEYS, checkGpgKey, explainSigning, needsPinentryCheck, parseVerify, signingConfig, unsignedOf, verifyArgs, verifyText } from './signing.js';
 import { LFS_MISSING, lfsCommand, lfsError, lfsText, parseLfsFiles, parseLfsLocks, withoutHints } from './lfs.js';
 import { run as runGit } from './git.js';
+import { historyRange, readHistory, secretDetail } from './secrets.js';
+import { countFindings, findingsLine } from '@fleet/kit/findings.js';
 import { commitsLine, insideSummary, parseGitlinks, parseInside, submoduleInfo } from './submodules.js';
 import { fit } from '@fleet/kit/text.js';
 import { futureItems, futureRefspecs, lineInBase, nameList, touchingHunks } from './future.js';
@@ -534,6 +536,52 @@ export async function risk(ctx) {
   if (!r.ok) return r;
   if (!found) return ctx.note('Nothing to push, so nothing to score.');
   ctx.showText(`Risk before push: ${found.level}`, riskText(found));
+}
+
+/**
+ * /secrets [all|<range>]: the kit's secret rules over the lines every commit added (the current branch, every
+ * ref, or a range; the newest 5,000 commits at most), in a list: each secret once, in the commit that added
+ * it, and whether the working tree still has it. ↵ the finding whole with what to do (rotate it, and how to
+ * take it out of the history, as text: nothing is rewritten), d the commit's diff of that file, y its hash.
+ */
+export async function secrets(ctx, text) {
+  if (!needRepo(ctx)) return;
+  const { range, what, error } = historyRange(text);
+  if (error) return ctx.note(error, 'error');
+  if (!ctx.data.status.branch.oid && range[0] === 'HEAD') return ctx.note('No commits yet, so no history to look through.');
+  let found = null;
+  const r = await ctx.task(
+    `Looking for secrets in ${what}`,
+    async (signal) => {
+      found = await readHistory({ root: ctx.data.root, range, signal, onProgress: (done, total) => ctx.taskProgress([`${done} of ${total} commits read`]) });
+      const n = found.findings.length;
+      // Counts only: the activity lines never hold what was found.
+      return { stdout: `${n ? `${n} possible secret${n === 1 ? '' : 's'}` : 'No secrets'} in ${found.commits} commit${found.commits === 1 ? '' : 's'}${found.truncated ? ' (the newest; more not read)' : ''}`, stderr: '' };
+    },
+    { label: 'Looking for secrets', refresh: false },
+  );
+  if (!r.ok || !found.findings.length) return r;
+  const now = Date.now();
+  ctx.showPicker({
+    title: `Secrets in ${what}: ${findingsLine(countFindings(found.findings))}`,
+    hint: '↵ what to do · d the diff · y hash',
+    items: found.findings.map((f) => ({
+      ...f,
+      segments: [
+        { text: fit(f.severity, 9), color: f.severity === 'critical' || f.severity === 'high' ? theme.del : theme.warn },
+        { text: short(f.commit), color: theme.warn },
+        { text: ` ${fit(relTime(Date.parse(f.date) / 1000, now / 1000), 4, 'right')}  `, color: theme.dim },
+        { text: f.inTree ? 'in tree ' : 'history ', color: f.inTree ? theme.del : theme.dim },
+        { text: `${f.title}  `, strong: true },
+        { text: f.line ? `${f.where}:${f.line}` : f.where, color: theme.hunk },
+      ],
+    })),
+    onPick: (f) => ctx.showText(`${f.title} in ${short(f.commit)}`, secretDetail(f)),
+    keys: {
+      d: (f) => ctx.showPatch({ hash: f.commit, subject: f.subject }, [f.where]),
+      y: (f) => ctx.copy(f.commit, `the hash of ${short(f.commit)}`),
+    },
+  });
 }
 
 /**

@@ -37,6 +37,7 @@ import { TeamView } from './TeamView.jsx';
 import { SettingsView } from './SettingsView.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
+import { SecurityView } from './SecurityView.jsx';
 import { WorkItemsView, wiId } from './WorkItemsView.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pinch.jsx';
 
@@ -71,6 +72,7 @@ const HINTS = {
   board: 'h/l column · < > move the card · m move to… · space done · ↵ more · s i b · t team · v board · f sprint',
   team: '↵ their work items · p their pull requests · /find a name',
 };
+const SECURITY_HINT = 'j/k finding · ↵ in full · o open in Azure DevOps · /find narrows it · esc close';
 const SETTINGS_HINT = "tab next section · space change · - + a number · ↵ a project's repos · /find a project · esc close";
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
@@ -450,6 +452,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     const v = viewRef.current;
     const d = dataRef.current;
     if (overlayRef.current?.settings) return { setting: sel.setting, webUrl: sel.setting?.org?.url ?? sel.setting?.project?.webUrl };
+    if (overlayRef.current?.security) return { finding: sel.finding, webUrl: sel.finding?.webUrl };
     if (v === 'prs') return { pr: sel.pr, webUrl: sel.pr?.webUrl };
     if (v === 'pipelines') return { pipeline: sel.pipeline, webUrl: sel.pipeline?.lastRun?.webUrl ?? sel.pipeline?.latest?.webUrl };
     if (v === 'workitems') return { workItem: sel.workItem, webUrl: sel.workItem?.webUrl };
@@ -567,12 +570,12 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     },
     jumped: () => setJump(null),
     find: (text) => {
-      const v = overlayRef.current?.settings ? 'settings' : viewRef.current;
+      const v = overlayRef.current?.settings ? 'settings' : overlayRef.current?.security ? 'security' : viewRef.current;
       setFilters((f) => ({ ...f, [v]: text.trim() }));
     },
     // F and /filter (actions.js pickFilter): this tab's filter text, and the list it narrows, which
     // each view hands over as { tab, items } (the tab's id, so another tab's leftover list never counts).
-    currentFilter: () => filtersRef.current[overlayRef.current?.settings ? 'settings' : viewRef.current] ?? '',
+    currentFilter: () => filtersRef.current[overlayRef.current?.settings ? 'settings' : overlayRef.current?.security ? 'security' : viewRef.current] ?? '',
     filterSource: () => {
       const src = selection.current.filterSource;
       return src && src.tab === viewRef.current && !overlayRef.current ? src : null;
@@ -590,7 +593,16 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     },
     showGroup: (value) => ctx.showView(viewRef.current === 'workitems' ? 'workitems' : 'prs', value),
     viewHasKeys: () => focusRef.current === 'view' && !overlayRef.current && !confirmRef.current,
-    showText: (title, text, opts) => setOverlay({ title, text, ...opts }),
+    // `back`: esc in the viewer goes back to what was open (the security review), not the tab; after
+    // the key has been seen by every handler, so the same esc doesn't close the review too.
+    showText: (title, text, opts = {}) => setOverlay((prev) => ({ title, text, ...opts, back: opts.back === true ? prev : opts.back || undefined })),
+    // /security: the review over the current tab, as Settings is (ui/SecurityView.jsx).
+    showSecurity: (review) => {
+      // A new review starts unfiltered: the last one's /find may name nothing in it.
+      setFilters((f) => ({ ...f, security: '' }));
+      setOverlay({ security: review });
+    },
+    securityHasKeys: () => focusRef.current === 'view' && !!overlayRef.current?.security && !confirmRef.current,
     showPrFull: async (pr) => {
       setOverlay({ title: `!${pr.id} ${pr.title}`, loading: true });
       try {
@@ -811,7 +823,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     if (text) edit(value.slice(0, cursor) + text + value.slice(cursor), cursor + text.length);
   };
 
-  // Over Settings: esc closes it (or stops waiting), the prompt and o still work; the rest is the overlay's.
+  // Over Settings (and the security review): esc closes it (or stops waiting), the prompt and o still work; the rest is the overlay's.
   const settingsKeys = (input, key) => {
     if (key.escape) return busyRef.current ? busyRef.current.abort() : setOverlay(null);
     if (key.ctrl || key.meta) return;
@@ -868,7 +880,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     if (focusRef.current === 'prompt' && !confirmRef.current) return promptKeys(input, key);
     if (key.ctrl && input === 'c') return nothingToCopy();
     if (confirmRef.current) return;
-    if (overlayRef.current?.settings) return settingsKeys(input, key);
+    if (overlayRef.current?.settings || overlayRef.current?.security) return settingsKeys(input, key);
     if (overlayRef.current) return;
     globalKeys(input, key);
   });
@@ -955,8 +967,10 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     main = <SettingsView version={data.version} orgs={orgs} local={local} filter={filters.settings} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay?.help) {
     main = <HelpView sections={HELP_SECTIONS} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
+  } else if (overlay?.security) {
+    main = <SecurityView review={overlay.security} start={overlay.at ?? 0} filter={filters.security ?? ''} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} />;
   } else if (overlay) {
-    main = <TextViewer {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => setOverlay(null)} />;
+    main = <TextViewer {...overlay} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={() => (overlay.back ? setTimeout(() => setOverlay(overlay.back), 0) : setOverlay(null))} />;
   } else if (view === 'line') {
     main = <LineView failed={Boolean(pollError)} data={data} version={data.version} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'control') {
@@ -979,7 +993,7 @@ export function App({ keel, home = 'line', openUrl = openInBrowser, openSonar = 
     main = <InboxView failed={Boolean(pollError)} attention={data.attention} filter={filters.inbox} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash ? flash.text : focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.settings ? SETTINGS_HINT : overlay?.help ? 'j/k section · space scroll · / search · esc close' : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
+  const left = flash ? flash.text : focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.settings ? SETTINGS_HINT : overlay?.security ? SECURITY_HINT : overlay?.help ? 'j/k section · space scroll · / search · esc close' : overlay ? 'j/k scroll · space page · esc close' : HINTS[view];
   const right = focus === 'prompt' ? '' : '  / commands · ? help';
 
   return (

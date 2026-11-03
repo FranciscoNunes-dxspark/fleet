@@ -1477,3 +1477,9 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .advisory-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
 .advisory-when { margin-left: auto; }
 @media (max-width: 900px) { .advisory-when { margin-left: 0; flex-basis: 100%; } }
+
+/* Insights → Azure DevOps security (pages/DevOpsSecurity.jsx): the severity filter, when, and Review again in a row. */
+.devops-security { display: grid; gap: 12px; margin-top: 12px; }
+.devops-security-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.devops-security-when { margin-left: auto; }
+@media (max-width: 900px) { .devops-security-when { margin-left: 0; flex-basis: 100%; } }

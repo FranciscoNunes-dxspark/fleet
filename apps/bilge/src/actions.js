@@ -21,6 +21,8 @@ import { bumpOf } from './versions.js';
 import { nodeOf, problems, targetsOf } from './compat.js';
 import { branchName, folderLabel, upgradeCandidates } from './upgrade.js';
 import { breakingInput, breakingPrompt } from './breaking.js';
+import { findingWhere, withoutIgnoredCode } from '@fleet/kit/codescan.js';
+import { auditFindings, codeFindings, sarifOf } from './security.js';
 import { VERSION } from './app.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
@@ -167,9 +169,17 @@ export function showPackage(ctx, p) {
     ...fitLines(ctx, p, latest),
     `Found in: ${p.where.map((w) => `${w.path}${w.line ? `:${w.line}` : ''}`).join(', ')}`,
     `Registry: ${packageUrl(p)}`,
+    ...supplyLines(ctx, p),
     '',
-    ...(f ? f.advisories.flatMap((a) => [...advisoryLines(a), '']) : [ctx.data.audit ? 'No known advisories.' : 'Not audited yet (/audit).']),
+    ...(p.unread ? ['Not read as a package (a git or tarball dependency), so not audited.'] : f ? f.advisories.flatMap((a) => [...advisoryLines(a), '']) : [ctx.data.audit ? 'No known advisories.' : 'Not audited yet (/audit).']),
   ].join('\n'));
+}
+
+/** A package's supply-chain findings, for ↵: what each is, why it matters and what to do. */
+function supplyLines(ctx, p) {
+  const list = (ctx.supply ?? []).filter((s) => s.key === p.key);
+  if (!list.length) return [];
+  return ['', 'Supply chain:', ...list.flatMap((s) => [`${SEVERITY_LABEL[s.severity]}  ${s.title.replace(/: [^:]*$/, '')}: ${s.excerpt}`, `  ${s.why}`, `  ${s.fix}`]), 'x leaves these out (asks; kept as supplyIgnore in the settings).'];
 }
 
 /**
@@ -455,7 +465,7 @@ export async function sbom(ctx, file = '') {
 /** /report [file]: the audit as Markdown, to read here and copy (alt+y) into a pull request or a ticket, or written to a file (asking before replacing one). */
 export async function report(ctx, file = '') {
   if (!ctx.data?.audit) return ctx.note('Not audited yet: /audit first.', 'error') ?? false;
-  const md = markdownReport({ name: basename(ctx.cwd()), manifests: ctx.data.manifests, packages: packages(ctx), found: found(ctx) });
+  const md = markdownReport({ name: basename(ctx.cwd()), manifests: ctx.data.manifests, packages: packages(ctx), found: found(ctx), code: ctx.code ? codeFound(ctx) : null });
   const name = file.trim();
   if (!name) {
     ctx.showText('Report (alt+y copies it all)', md);
@@ -469,6 +479,105 @@ export async function report(ctx, file = '') {
   const r = await ctx.task(`report ${name}`, async () => {
     ctx.provider.writeFile(path, md);
     return { stdout: `Report in ${path}` };
+  }, { label: 'Writing' });
+  return r.ok;
+}
+
+/** The code findings as shown: the last /code's, without what the config ignores. */
+export const codeFound = (ctx) => withoutIgnoredCode(ctx.code?.findings ?? [], ctx.config.codeIgnore ?? []);
+
+/**
+ * /code: the folder's own files read for what an attacker looks for first (codescan.js): secrets in
+ * the code, code that runs what it's given, TLS checks off, a container running as root, a .env git
+ * would commit. It reads the files and nothing else: nothing is run or sent.
+ */
+export async function code(ctx) {
+  const dir = ctx.cwd();
+  const r = await ctx.task(
+    `code ${basename(dir) || dir}`,
+    async (signal) => {
+      const result = await ctx.provider.code(dir, { signal, onProgress: (n) => ctx.progress(`${n} files`) });
+      ctx.setCode(result);
+      const shown = codeFound(ctx);
+      const line = countLine(counts(shown));
+      const more = result.truncated ? `\nStopped after ${result.files} files: /move to a smaller folder to read the rest.` : '';
+      return { stdout: `${plural(result.files, 'file')} read: ${line || 'nothing found'}${more}` };
+    },
+    { label: 'Reading the code' },
+  );
+  if (r.ok) {
+    const c = counts(codeFound(ctx));
+    // Only the counts go to the family's log, never what was found: a finding may be a secret's place.
+    ctx.logActivity(`Code of ${basename(dir)}: ${countLine(c) || 'nothing found'}`, 'info');
+    ctx.setView('code');
+  }
+  return r.ok;
+}
+
+/** ↵ on a code finding: what it is, where, why it matters and what to do. */
+export function showCodeFinding(ctx, f) {
+  ctx.showText(`${f.title} · ${findingWhere(f)}`, [
+    `${SEVERITY_LABEL[f.severity]}  ${f.title}${f.test ? '  (in a test, an example or a fixture: one step milder)' : ''}`,
+    `In: ${findingWhere(f)}`,
+    '',
+    `  ${f.excerpt}`,
+    '',
+    f.why,
+    '',
+    `Fix: ${f.fix}`,
+    '',
+    f.kind === 'secret' ? 'A secret that was ever committed stays in the history: rotate it, removing it is not enough.' : '',
+    `x ignores ${f.rule} in this file; a "bilge-ignore" comment on the line (or the one above) leaves just that line out.`,
+  ].filter((l, i, all) => l !== '' || all[i - 1] !== '').join('\n'));
+}
+
+/** t on a code finding: its file and line, for Splice to blame (who wrote it, and when). */
+export function shareCode(ctx, f) {
+  const line = takeLine('file', fileData({ path: f.path, line: f.line || undefined }));
+  ctx.copy(line, 'a line for Splice');
+  ctx.note(copiedNote('splice', line));
+  return true;
+}
+
+/** x on a code finding: its rule in its file left out (kept in the settings as `rule:path`). */
+export async function ignoreCode(ctx, f) {
+  const key = `${f.rule}:${f.path}`;
+  const yes = await ctx.confirm({ title: `Ignore ${f.title.toLowerCase()} in ${f.path}?`, detail: `It stays out of the Code view and bilge code's exit code until it's taken out of "codeIgnore" in ${configFile()}.` });
+  if (!yes) return false;
+  ctx.setConfig((c) => ({ ...c, codeIgnore: [...new Set([...(c.codeIgnore ?? []), key])] }));
+  ctx.note(`Ignoring ${key}`, 'ok');
+  return true;
+}
+
+/** x on a package with supply-chain findings: those rules for that package left out (kept as `rule:name` in supplyIgnore). */
+export async function ignoreSupply(ctx, p) {
+  const keys = [...new Set((ctx.supply ?? []).filter((s) => s.key === p.key).map((s) => `${s.rule}:${p.name.toLowerCase()}`))];
+  if (!keys.length) return false;
+  const yes = await ctx.confirm({ title: `Ignore ${keys.length === 1 ? 'the supply-chain finding' : plural(keys.length, 'supply-chain finding')} on ${p.name}?`, detail: `${keys.join(', ')}: out of Packages, bilge supply and bilge security until taken out of "supplyIgnore" in ${configFile()}.` });
+  if (!yes) return false;
+  ctx.setConfig((c) => ({ ...c, supplyIgnore: [...new Set([...(c.supplyIgnore ?? []), ...keys])] }));
+  ctx.note(`Ignoring ${keys.join(', ')}`, 'ok');
+  return true;
+}
+
+/**
+ * /sarif [file]: the audit's advisories, the code's findings (/code is run first when it hasn't been)
+ * and the supply chain's, as one SARIF file for GitHub's or Azure DevOps' code scanning (bilge.sarif in
+ * the folder unless named), asking before replacing one.
+ */
+export async function sarif(ctx, file = '') {
+  if (!ctx.data?.audit) return ctx.note('Not audited yet: /audit first.', 'error') ?? false;
+  if (!ctx.code && !(await code(ctx))) return false;
+  const name = file.trim() || 'bilge.sarif';
+  const path = isAbsolute(name) ? name : resolve(ctx.cwd(), name);
+  if (ctx.provider.name !== 'demo' && existsSync(path)) {
+    const yes = await ctx.confirm({ title: `Replace ${name}?`, detail: path, danger: true });
+    if (!yes) return false;
+  }
+  const list = [...auditFindings(found(ctx)), ...codeFindings(codeFound(ctx)), ...(ctx.supply ?? [])];
+  const r = await ctx.task(`sarif ${name}`, async () => {
+    ctx.provider.writeFile(path, `${JSON.stringify(sarifOf(list, VERSION), null, 2)}\n`);
+    return { stdout: `${plural(list.length, 'result')} in ${path}` };
   }, { label: 'Writing' });
   return r.ok;
 }
@@ -575,6 +684,8 @@ export function settings(ctx) {
       `Audit on start   ${on(c.autoAudit)}       "autoAudit" in the file (OSV is asked about the packages' names and versions)`,
       `Ignored          ${(c.ignore ?? []).join(', ') || 'none'}       /ignore, /unignore`,
       `Licences flagged ${(c.deny ?? []).join(', ') || 'none'}       /deny`,
+      `Code ignored     ${(c.codeIgnore ?? []).join(', ') || 'none'}       x in Code; "codeIgnore" in the file`,
+      `Supply ignored   ${(c.supplyIgnore ?? []).join(', ') || 'none'}       x in Packages; "supplyIgnore" in the file (a rule, a package, or rule:package)`,
       `Update checks    ${on(c.checkForUpdates)}       "checkForUpdates" in the file`,
       `Auto-update      ${on(c.autoUpdate)}       "autoUpdate" in the file`,
       `History          ${(c.history ?? []).length} lines`,

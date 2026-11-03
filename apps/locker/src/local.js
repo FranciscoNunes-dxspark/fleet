@@ -5,6 +5,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
+import { execFile } from 'node:child_process';
 
 /**
  * A .env file's settings, in order: [{ key, value, line }] (line counted from 1). `export`, quotes
@@ -185,6 +186,16 @@ export function createLocal({ dir = process.cwd(), ...opts } = {}) {
     kind: 'local',
     dir: root,
     sources: async () => readLocal(root, opts),
+    /**
+     * The files git tracks in the folder, as paths from it ('/'-separated): what the hygiene check
+     * asks of a file holding a secret. Null when the folder isn't in a git checkout (or git isn't there).
+     */
+    tracked: () =>
+      new Promise((done) => {
+        execFile('git', ['ls-files', '-z'], { cwd: root, windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024 * 1024 }, (e, stdout) => done(e ? null : String(stdout).split('\0').filter(Boolean)));
+      }),
+    /** A file's text (to find the line of a key in it), or null. */
+    text: async (file) => read(resolve(root, file)),
     /** Adds `key=value` to the .env file `file` (a name in the folder), creating it when it isn't there. */
     async addToEnv(file, key, value) {
       const name = basename(file);

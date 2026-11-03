@@ -323,3 +323,59 @@ export function changesLines({ result, hours, windows = [1, 6, 24], cursor = 0, 
   const at = n && cursor > 0 ? first + cursor : null;
   return { lines, focus: at != null ? [at, at] : (focus ?? [0, 0]) };
 }
+
+const SEVERITY_TAG = { critical: 'CRIT', high: 'HIGH', medium: 'MED ', low: 'LOW ', unknown: '?   ' };
+const severitySgr = (s) => ({ critical: RED_BOLD, high: RED, medium: YELLOW, low: DIM })[s] ?? DIM;
+
+/**
+ * The security panel's rows: a line per app's check (its counts, or why it couldn't run or was left
+ * out), then the findings worst first with their app, `cursor` on one and `open` showing its why and
+ * fix. `overview` is security.js's (null before the first run), `running` { done, total } while the
+ * checks run.
+ */
+export function securityLines({ overview, running = null, cursor = 0, open = false, width = 80, spaces = [], truecolor = true, now = Date.now() } = {}) {
+  const lines = [];
+  if (running) lines.push([{ text: `Running the checks… ${running.done}/${running.total}`, sgr: `${BOLD}${YELLOW}` }], []);
+  if (!overview) {
+    if (!running) {
+      lines.push([{ text: 'No overview yet.', sgr: BOLD }], [], ...prose('r runs every app\'s security check for this project: Bilge (dependencies, the code, the supply chain), Splice (secrets in the history) and Chart (infrastructure as code) always; Hail, Sonar, Locker, Mooring, Wharf and Keel when .fleet/project.json\'s "security" section names what they look at. They only read: nothing is changed, and Hail\'s scan is only for an app you own.', width - 1));
+    }
+    return { lines, focus: [0, 0] };
+  }
+  lines.push([{ text: `Checked ${ago(Date.parse(overview.at), now)}`, sgr: DIM }, { text: overview.environment ? `  ${overview.environment.name}${overview.environment.prod ? ' (production)' : ''}` : '', sgr: overview.environment?.prod ? RED_BOLD : DIM }]);
+  const labelW = Math.max(8, ...overview.checks.map((c) => stringWidth(c.label)));
+  for (const c of overview.checks) {
+    const counts = c.ok ? ['critical', 'high', 'medium', 'low'].filter((s) => c.counts[s]).map((s) => ({ text: `${c.counts[s]} ${s}  `, sgr: severitySgr(s) })) : [];
+    lines.push([
+      { text: '  ' },
+      { text: ` ${titleOf(spaces, c.app).padEnd(labelW)} `, sgr: accentOf(spaces, c.app, truecolor) },
+      { text: '  ' },
+      ...(c.ok ? (counts.length ? counts : [{ text: 'nothing found', sgr: GREEN }]) : [{ text: `couldn't run: ${c.error}`, sgr: RED }]),
+    ]);
+  }
+  for (const l of overview.left ?? []) lines.push([{ text: `   ${titleOf(spaces, l.app).padEnd(labelW)}   `, sgr: DIM }, { text: l.why, sgr: DIM }]);
+  lines.push([]);
+  if (!overview.findings.length) {
+    lines.push([{ text: 'Nothing found.', sgr: GREEN }]);
+    return { lines, focus: [0, 0] };
+  }
+  let focus = [0, 0];
+  overview.findings.forEach((f, i) => {
+    const here = i === cursor;
+    const from = lines.length;
+    const place = f.line ? `${f.where}:${f.line}` : String(f.where);
+    lines.push([
+      { text: here ? '› ' : '  ', sgr: BOLD },
+      { text: SEVERITY_TAG[f.severity] ?? '?   ', sgr: severitySgr(f.severity) },
+      { text: ` ${titleOf(spaces, f.app).padEnd(8)}`, sgr: accentOf(spaces, f.app, truecolor) },
+      { text: ` ${f.title}`, sgr: here ? BOLD : '' },
+      { text: `  ${place}`, sgr: DIM },
+    ]);
+    if (here && open) {
+      if (f.why) lines.push(...prose(f.why, width - 1, '      '));
+      if (f.fix) lines.push(...prose(`Fix: ${f.fix}`, width - 1, '      ').map((l) => l.map((s) => ({ ...s, sgr: '' }))));
+    }
+    if (here) focus = [from, lines.length - 1];
+  });
+  return { lines, focus };
+}

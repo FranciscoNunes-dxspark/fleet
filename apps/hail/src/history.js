@@ -15,8 +15,11 @@ const SENSITIVE = /^(authorization|proxy-authorization|cookie|set-cookie|x-api-k
 /** Where `httpFile`'s history is kept. */
 export const historyFile = (httpFile, dir = join(configDir(), 'history')) => join(dir, `${createHash('sha1').update(httpFile).digest('hex').slice(0, 16)}.jsonl`);
 
+/** Whether a header named `name` carries a credential: what's hidden here, dropped by /scan's missing-auth check. */
+export const isCredentialHeader = (name) => SENSITIVE.test(String(name ?? ''));
+
 /** `text` with each of `secrets` blanked out. */
-const blank = (text, secrets) => secrets.reduce((t, s) => (s && s.length >= 4 ? t.split(s).join(HIDDEN) : t), String(text ?? ''));
+export const blank = (text, secrets) => secrets.reduce((t, s) => (s && s.length >= 4 ? t.split(s).join(HIDDEN) : t), String(text ?? ''));
 
 /**
  * What's kept of one response: { label, name, at, request, response, checks } with the secrets used

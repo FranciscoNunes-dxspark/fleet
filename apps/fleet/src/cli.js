@@ -38,6 +38,7 @@ for it: .sql in Trawl, .http in Hail.
   ctrl+b e                    the project's environment (.fleet/project.json)
   ctrl+b w                    what changed lately, and Claude on why it broke
   ctrl+b P                    Claude's proposals: ↵ types one into its app
+  ctrl+b S                    security: every app's check for the project
   ctrl+b ctrl+b               send ctrl+b to the app
   ctrl+b q                    quit, stopping every app
   ctrl+b ?                    the keys
@@ -51,7 +52,10 @@ Trawl" (or any sibling) goes straight to that app's prompt.
 
 fleet mcp [--project <dir>] runs Fleet as an MCP server for Claude Code, which
 reads every app's world through it, read-only but for proposing a line for you
-to hand to an app (claude mcp add fleet -- fleet mcp).`);
+to hand to an app (claude mcp add fleet -- fleet mcp).
+
+fleet security [folder] [--only bilge,splice] [--json] [--sarif [file]] [--fail-on level]
+runs every app's security check for the project as one overview, without the screen.`);
   process.exit(0);
 }
 

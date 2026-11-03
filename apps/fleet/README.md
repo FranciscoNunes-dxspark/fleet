@@ -111,10 +111,11 @@ say `ctrl+b`; read yours there.
 | `ctrl+b` `e` | The project's environment, for every app at once ([Environments](#environments)) |
 | `ctrl+b` `w` | What changed lately, and Claude's take on why something broke ([What changed?](#what-changed)) |
 | `ctrl+b` `P` | Claude's proposals: lines for an app's prompt, handed over with `↵` ([Claude proposes](#claude-proposes-you-press-)) |
+| `ctrl+b` `S` | Security: every app's check for the project, as one overview ([Security](#security)) |
 | `ctrl+b` `q` | Quit Fleet, stopping every app (it asks first when any is running) |
 | `ctrl+b` `?` | The keys |
 
-`P` and `R` are capitals: `p` is the previous space and `r` the runbooks. Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
+`P`, `R` and `S` are capitals: `p` is the previous space, `r` the runbooks and `s` Splice. Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
 
 ## Split
 
@@ -291,6 +292,37 @@ drops off after an hour.
 | `x` | Dismiss it |
 | `esc` | Close |
 
+## Security
+
+Each app checks what it knows for security problems, and Fleet adds them up for the project: `ctrl+b` `S` shows the last overview (`r` runs the checks again, in the background; `↵` on a finding says why it matters and how to fix it), and `fleet security` does the same without the screen, for a pipeline.
+
+| App | What it checks | Runs |
+|---|---|---|
+| Bilge | Known vulnerabilities in the dependencies, secrets and risky code in the project's files, the supply chain (typosquats, install scripts, packages from outside the registry) | always |
+| Splice | Secrets ever committed, in the git history | always |
+| Chart | Insecure infrastructure in `.tf` and `.bicep` files (public storage, open ports, TLS) | always |
+| Hail | The running web app: TLS, headers, cookies, CORS, exposed paths, endpoints answering without their credentials. Only for an app you own or may test | `"hail": "https://…"` or a `.http` file |
+| Sonar | The Azure subscription's setup: storage, NSGs, App Service, SQL, Key Vault, Redis, registries, Defender | `"sonar": { "subscription": "…", "resourceGroup": "…" }` |
+| Locker | Expiring and stale vault secrets, plain-text secrets in app settings, secrets in files git tracks | `"locker": true` or `{ "app", "vault" }` |
+| Mooring | A server over SSH: public ports, sshd, updates, firewall, accounts, end of life | `"mooring": ["web1", "deploy@db1"]` |
+| Wharf | Containers as they run: privileged, the Docker socket mounted, public databases, secrets in their environment | `"wharf": true` or `{ "compose": "compose.yaml" }` (from a checkout only) |
+| Keel | Azure DevOps: plain-text secret variables, branches without policies, connections open to every pipeline | `"keel": "Project"` (from a checkout only) |
+
+What runs comes from a `"security"` section in `.fleet/project.json`, and the chosen environment's own `"security"` over it (so `prod` can name another address for Hail); `"skip": ["chart"]` leaves a check out. Every check only reads; Hail's sends the requests a scan needs (GET, HEAD, OPTIONS, TRACE), and refuses a production environment headless unless its section says `"production": true`.
+
+```json
+{
+  "environments": { "dev": {}, "prod": { "prod": true, "security": { "hail": "https://shop.example.com" } } },
+  "security": { "hail": "https://dev.shop.example.com", "sonar": { "subscription": "Contoso" }, "mooring": ["web1"] }
+}
+```
+
+```
+fleet security [folder] [--only bilge,splice] [--json] [--sarif [file]] [--fail-on critical|high|medium|low|none] [--demo]
+```
+
+It prints a line per check and the findings worst first, and exits `1` when one is as bad as `--fail-on` (`high` by default), `2` when a check couldn't run (each one says why: not signed in, no answer). `--json` is `{ project, environment, at, checks, left, counts, findings }`, each finding with its `app`; `--sarif` is one file with a run per app, for GitHub's or Azure DevOps' code scanning. `--demo` runs each app on its demo data. The last overview is kept in `~/.fleet/security/`, for `ctrl+b` `S` and `fleet mcp`'s `security_overview`. Each app also has its own check (`bilge security`, `splice security`, `hail security`, … and a view or command inside it); their READMEs say more.
+
 ## Following a request
 
 `ctrl+b` `f` asks for a request, operation or trace id (offering the last one a hand-off carried, as
@@ -328,6 +360,7 @@ It reads for the folder Claude Code starts it in; `fleet mcp --project <dir>` na
 | `sonar_components`, `sonar_problems`, `sonar_incident`, `sonar_query` | Application Insights, through your `az login`, in Sonar's last subscription: the problems, one told whole (its stack, its operation, the SQL that failed), and any KQL query |
 | `trawl_list_connections`, `trawl_list_tables`, `trawl_describe_table`, `trawl_run_query` | Trawl's own MCP tools (`trawl mcp`, below the surface), with every rule they have: your saved connections, each one's Claude access level, writes refused, every query rolled back, all of it in Trawl's History |
 | `family_timeline`, `family_moods`, `family_wiring` | What the apps did that changed something (this project's, or every project's), how their mascots feel and why (a quick read of what's wrong now), and what the project points at (addresses and connection strings, masked) |
+| `security_overview` | The last [security overview](#security): each app's check with its counts, then the findings worst first with their fix (`app`, `severity` and `limit` narrow it). It doesn't run the checks |
 | `what_changed` | [What changed?](#what-changed) as text: the worried apps on top, then the activity log, commits and merges, and Bosun's crashes and restarts of the last `hours` (6 by default, a week at most), newest first |
 | `propose`, `proposal_status` | A line for one app's prompt, with why, for you to hand over in Fleet or dismiss ([Claude proposes](#claude-proposes-you-press-)); and what became of it |
 

@@ -9,6 +9,7 @@ import { metricInterval } from './metrics.js';
 import { functionUrl, invocation, isHttp } from './functions.js';
 import { storageRoleNeeded } from './blobs.js';
 import { changesFrom, commitOf } from './markers.js';
+import { demoGraph, postureState } from './demoposture.js';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -506,6 +507,8 @@ export function workspaceQuery(kql, now, hours = 24, items = []) {
 /** The demo provider. `now` fixes the clock and `delay` (ms) makes every call that slow, for trying the spinner. */
 export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
   const state = initialState(now);
+  // What the posture check sees (demoposture.js): ARM's JSON for the resources above, and contoso-legacy's.
+  state.posture = postureState(state);
   const wait = async (signal) => {
     if (delay) await new Promise((r, reject) => {
       const t = setTimeout(r, delay);
@@ -803,7 +806,28 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
     },
     async firewallRules(server, { signal } = {}) {
       await wait(signal);
+      // contoso-legacy's server is only in the posture check's view of the subscription.
+      const legacy = state.posture.sqlRules[server.name];
+      if (legacy && !state.sqlServers.some((x) => x.id === server.id)) return legacy.map((r) => ({ ...r }));
       return sqlServer(server).rules.map((r) => ({ ...r }));
+    },
+    async sqlAuditing(server, { signal } = {}) {
+      await wait(signal);
+      return { state: state.posture.auditing[server.name] ?? 'Enabled' };
+    },
+    async resourceGraph(sub, query, { signal } = {}) {
+      await wait(signal);
+      return demoGraph(state.posture, sub, query);
+    },
+    async siteConfig(target, { signal } = {}) {
+      await wait(signal);
+      const r = state.posture.resources.find((x) => x.id === target.id);
+      if (!r) throw new Error(`${target.name}: not found`);
+      return structuredClone(r.config ?? null);
+    },
+    async storageContainers(account, { signal } = {}) {
+      await wait(signal);
+      return (state.posture.containers[account.name] ?? []).map((c) => ({ ...c }));
     },
     async addFirewallRule(server, { name, start, end }, { signal } = {}) {
       await wait(signal);

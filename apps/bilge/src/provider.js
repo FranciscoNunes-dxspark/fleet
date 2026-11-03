@@ -3,7 +3,7 @@
 // `needs(pkg, version)` and `fitting(pkg, fits)` (what a version needs to run, and the newest that
 // fits), `run(command, { cwd })` (a fix, git and the tests for /upgrade, through the kit's run.js),
 // `tests(manifests, root)` (what tests a project has), `usages(root, pkg)` and `claude(prompt)`
-// (/breaking), `image(ref)` (a container image's system packages, through docker) and `writeFile` (an
+// (/breaking), `code(root)` (the folder's own files read for secrets and risky code: codescan.js), `image(ref)` (a container image's system packages, through docker) and `writeFile` (an
 // SBOM). demo.js's
 // demoBilge() has the same interface for --demo and the tests.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -16,6 +16,7 @@ import { createOsv } from '@fleet/kit/osv.js';
 import { createRegistry } from './registry.js';
 import { testPlan } from './upgrade.js';
 import { findUsages } from './breaking.js';
+import { scanCode } from '@fleet/kit/codescan.js';
 import { imageManifest, safeContainerId, safeImage, tarText } from './image.js';
 import { FAST, clip, runClaude } from '@fleet/kit/claude-cli.js';
 
@@ -93,6 +94,8 @@ export function createBilge({ fetchImpl = globalThis.fetch, run = runCommand, ho
         await run(`docker rm -f ${id}`).catch(() => {});
       }
     },
+    /** The folder's own files through codescan.js's rules: { root, files, findings, truncated, at }. Reads only. */
+    code: (root, { signal, onProgress } = {}) => scanCode(root, { signal, onProgress }),
     /** The lines under `root` that import `pkg` (breaking.js's findUsages): [{ path, line, text }]. */
     usages: async (root, pkg, { signal } = {}) => findUsages(root, pkg, { signal }),
     /**

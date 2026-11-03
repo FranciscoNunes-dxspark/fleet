@@ -9,7 +9,7 @@ import { applyTheme } from './theme.js';
 import { App } from './ui/App.jsx';
 import { createBilge } from './provider.js';
 import { demoBilge } from './demo.js';
-import { runHeadless } from './headless.js';
+import { HEADLESS, runHeadless } from './headless.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
 import { terminalMouse } from '@fleet/kit/mouse.js';
@@ -27,7 +27,10 @@ if (args.includes('-v') || args.includes('--version')) {
 
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`bilge [folder] [--demo]
-bilge audit [folder] [--fail-on critical|high|medium|low|none] [--json]
+bilge audit [folder] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file]]
+bilge code [folder] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file]]
+bilge supply [folder] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file]]
+bilge security [folder] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file]]
 bilge sbom [folder] [-o file]
 bilge report [folder] [-o file]
 
@@ -39,7 +42,10 @@ a package to the version that fixes it, run where its manifest is (asked first).
   --demo   run against an in-memory project, to look around (nothing is read, asked or run)
 
 bilge audit prints the findings and exits 1 when one is as bad as --fail-on (high by default), for
-a pipeline; bilge sbom writes a CycloneDX bill of materials. Only the packages' names and versions
+a pipeline; bilge code does the same for the folder's own files (secrets, risky code and config,
+read on this machine only); bilge supply flags typosquats, install scripts and packages from
+somewhere other than npm's registry; bilge security is all three; --sarif writes SARIF for GitHub's
+or Azure DevOps' code scanning (a folder goes before it); bilge sbom writes a CycloneDX bill of materials. Only the packages' names and versions
 leave the machine, to api.osv.dev (and, for /outdated, the npm and NuGet registries).
 
 Inside: press ? for shortcuts, / for commands, ! to run a shell command.`);
@@ -48,7 +54,7 @@ Inside: press ? for shortcuts, / for commands, ! to run a shell command.`);
 
 const config = loadConfig();
 
-if (rest[0] === 'audit' || rest[0] === 'sbom' || rest[0] === 'report') {
+if (HEADLESS.includes(rest[0])) {
   const code = await runHeadless(rest, { provider: demo ? demoBilge() : createBilge(), config, version: VERSION });
   process.exit(code);
 }

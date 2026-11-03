@@ -70,6 +70,17 @@ export const HELP = [
     ],
   },
   {
+    title: 'Hygiene',
+    about: '/hygiene: what is wrong with how secrets are kept, worst first, never a value (/hygiene all: the whole subscription)',
+    rows: [
+      ['↵', 'What it is, why it matters and the fix (an az command to run yourself)'],
+      ['y', 'Copy its name (the secret, setting or file)'],
+      ['f', 'Copy its fix'],
+      ['s', 'Show it in its view: the secret in Vault, the setting\'s row in Drift'],
+      ['r', 'Rotate a vault secret (/rotate)'],
+    ],
+  },
+  {
     title: 'Sources',
     about: 'what Locker read: the folder\'s .env files, appsettings*.json, user secrets and Hail\'s env files, the app, the vault',
     views: ['sources'],

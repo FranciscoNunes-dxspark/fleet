@@ -1,19 +1,21 @@
 // Everything Chart reads and runs goes through one object with one interface: `detect(dir)` (what the
 // folder holds), `plan` and `state` (terraform or tofu, through their command lines), `whatIf` (az's
 // what-if of a Bicep or ARM file), `init`, `readFile` (a saved plan) and `locate` (where a resource is
-// declared), `prices` (the Azure Retail Prices API). Two things change anything, and only after the
+// declared), `sources` (the .tf, .tfvars, .bicep and .bicepparam files' text, for security.js's static
+// checks), `prices` (the Azure Retail Prices API). Two things change anything, and only after the
 // person has typed the name of where they go: `apply` (terraform apply of a plan file this provider
 // saved itself, and no other) and `deploy` (az deployment create). The command lines run through the
 // kit's run.js (apply's with its `onLine`, so its output comes as it's written), so whatever
 // they're signed in to and set up for is what Chart uses; nothing may wait on a prompt
 // (-input=false). Everything put in a command line is checked first by safeArg(). demo.js's
 // demoChart() has the same interface.
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { run as runCommand } from '@fleet/kit/run.js';
 import { parseAny, parseTerraformPlan, parseTerraformState, parseWhatIf } from './plan.js';
+import { isSourceFile } from './security.js';
 
 const SKIP = new Set(['.terraform', '.git', 'node_modules', 'bin', 'obj', 'dist']);
 export const BINARIES = ['terraform', 'tofu'];
@@ -45,6 +47,40 @@ export function detectFolder(dir, depth = 3) {
       if (/\.bicep$/i.test(f) || /^(azuredeploy|main|template)\.json$/i.test(f)) out.bicep.push(p);
       else if (/\.bicepparam$|\.parameters\.json$/i.test(f)) out.params.push(p);
       else if (/(plan|what-?if).*\.json$/i.test(f)) out.saved.push(p);
+    }
+    if (level >= depth) return;
+    for (const e of entries) if (e.isDirectory() && !SKIP.has(e.name) && !e.name.startsWith('.')) walk(join(d, e.name), level + 1);
+  };
+  walk(dir, 0);
+  return out;
+}
+
+// Enough for any infrastructure folder; a file bigger than this isn't hand-written.
+const MAX_SOURCES = 2000;
+const MAX_SOURCE_BYTES = 512 * 1024;
+
+/**
+ * The infrastructure source files under `dir` (.tf, .tfvars, .bicep, .bicepparam), six folders deep,
+ * as [{ path (relative, /-separated), text }]. Reads only; nothing is run.
+ */
+export function readSources(dir, depth = 6) {
+  const out = [];
+  const walk = (d, level) => {
+    let entries;
+    try {
+      entries = readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries.filter((x) => x.isFile() && isSourceFile(x.name)).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (out.length >= MAX_SOURCES) return;
+      const full = join(d, e.name);
+      try {
+        if (statSync(full).size > MAX_SOURCE_BYTES) continue;
+        out.push({ path: rel(dir, full), text: readFileSync(full, 'utf8') });
+      } catch {
+        // Unreadable: left out.
+      }
     }
     if (level >= depth) return;
     for (const e of entries) if (e.isDirectory() && !SKIP.has(e.name) && !e.name.startsWith('.')) walk(join(d, e.name), level + 1);
@@ -285,6 +321,10 @@ export function createChart({ run = runCommand, stream = runCommand, fetch: fetc
     },
     async readFile(path) {
       return parseAny(readFileSync(path, 'utf8'));
+    },
+    /** The folder's infrastructure source files, for the static security checks: [{ path, text }]. */
+    async sources(dir) {
+      return readSources(dir);
     },
     async locate(dir, change) {
       return change.type && change.name && !change.type.includes('/') ? locateResource(dir, change.type, change.name) : null;

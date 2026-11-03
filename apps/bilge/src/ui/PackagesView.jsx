@@ -5,6 +5,7 @@ import { denied, licenceKind } from '../audit.js';
 import { FILTERS, SEVERITY_LABEL, bumpTone, licenceOf, licenceTone, packageRows, severityTone } from '../rows.js';
 import { bumpOf } from '../versions.js';
 import { updateProblems } from '../compat.js';
+import { SUPPLY_LABEL } from '../supply.js';
 import { theme } from '../theme.js';
 import { fit } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
@@ -12,15 +13,18 @@ import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
 
 /**
  * Every package, the direct ones first: its version, the newest one (once asked, with a ! when it
- * wouldn't fit the project), its licence, and its advisories.
+ * wouldn't fit the project), its licence, its advisories, and the worst of its supply-chain findings
+ * (typo?, http, source, script).
  */
-export function PackagesView({ data, found, filter, deny, ctx, width, height, active }) {
+export function PackagesView({ data, found, supply = [], filter, deny, ctx, width, height, active }) {
   const innerH = height - 2;
   const latest = data?.latest ?? null;
-  const list = data ? packageRows(data.packages, { filter: filter.filter, manifest: filter.manifest, latest, found, deny }) : [];
+  const list = data ? packageRows(data.packages, { filter: filter.filter, manifest: filter.manifest, latest, found, deny, supply }) : [];
   const nav = useListNav(list.length, innerH, { keyOf: (i) => list[i]?.key, resetKey: `${filter.filter}:${filter.manifest}` });
   const sel = list[nav.index];
   const findingOf = (p) => found.find((f) => f.key === p.key);
+  // supply is worst first, so a package's first is its worst.
+  const supplyOf = (p) => supply.find((f) => f.key === p.key);
   // Worked out again only when what was read or asked changes.
   const blocked = useMemo(() => updateProblems(data), [data]);
 
@@ -33,6 +37,7 @@ export function PackagesView({ data, found, filter, deny, ctx, width, height, ac
     if (!sel) return;
     if (key.return || input === 'l') a.showPackage(ctx, sel);
     else if (input === 'f') return findingOf(sel) ? a.fix(ctx, findingOf(sel)) : ctx.note(`${sel.name} ${sel.version} has no known advisories.`);
+    else if (input === 'x') return supplyOf(sel) ? a.ignoreSupply(ctx, sel) : ctx.note(`${sel.name} ${sel.version} has no supply-chain finding to ignore (/ignore leaves an advisory out).`);
     else if (input === 'o') a.open(ctx, sel);
     else if (input === 't') a.shareWhere(ctx, sel);
     else if (input === 'y') ctx.copy(`${sel.name}@${sel.version}`);
@@ -44,8 +49,8 @@ export function PackagesView({ data, found, filter, deny, ctx, width, height, ac
   });
 
   const inner = width - 4;
-  const nameW = Math.max(18, Math.min(44, inner - 66));
-  const hint = [`${list.length} ${filter.filter === 'all' ? 'packages' : filter.filter}`, filter.manifest ? `in ${filter.manifest} (esc: all)` : '', 'a changes', latest ? '' : 'u newest versions', blocked.size ? `! ${blocked.size} won't fit (↵ says why)` : ''].filter(Boolean).join(' · ');
+  const nameW = Math.max(18, Math.min(44, inner - 73));
+  const hint = [`${list.length} ${filter.filter === 'all' ? 'packages' : filter.filter}`, filter.manifest ? `in ${filter.manifest} (esc: all)` : '', 'a changes', latest ? '' : 'u newest versions', filter.filter !== 'supply' && supply.length ? `${supply.length} supply-chain` : '', blocked.size ? `! ${blocked.size} won't fit (↵ says why)` : ''].filter(Boolean).join(' · ');
   const empty = !data ? '  Reading the lock files…' : !list.length ? (filter.filter === 'outdated' && !latest ? '  u asks the registries for the newest versions.' : '  None.') : null;
   return (
     <Panel title="Packages" hint={hint} width={width} height={height} focused={active}>
@@ -56,6 +61,7 @@ export function PackagesView({ data, found, filter, deny, ctx, width, height, ac
         const licence = licenceOf(p, latest);
         const kind = licenceKind(licence);
         const f = findingOf(p);
+        const s = supplyOf(p);
         return (
           <Row
             key={p.key}
@@ -70,6 +76,7 @@ export function PackagesView({ data, found, filter, deny, ctx, width, height, ac
               { text: ` ${fit(licence ?? (latest ? '?' : ''), 16)}`, color: denied(licence, deny) ? theme.del : licenceTone(kind) },
               { text: ` ${fit(p.ecosystem, 6)}`, color: theme.dim },
               { text: p.dev ? ' dev' : '    ', color: theme.dim },
+              { text: s ? ` ${fit(SUPPLY_LABEL[s.rule], 6)}` : '       ', color: s ? severityTone(s.severity) : undefined, bold: s?.severity === 'high' },
               ...(f ? [{ text: ` ${SEVERITY_LABEL[f.severity]}`, color: severityTone(f.severity), bold: true }] : []),
             ]}
           />

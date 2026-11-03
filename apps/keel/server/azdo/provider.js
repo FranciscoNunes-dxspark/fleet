@@ -1422,5 +1422,50 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
       });
       return { id: b.id, webUrl: b._links?.web?.href };
     },
+
+    /**
+     * What a project's security review judges (domain/devopssecurity.js), as Azure DevOps answers it:
+     * the project, its pipelines' definitions (with their variables; secret ones come back without a
+     * value), variable groups, secure files, service connections, which of those every pipeline may
+     * use, repositories, branch policies, and the agents of its self-hosted pools. Read only. What the
+     * token can't read (each needs its own scope: Variable Groups, Service Connections, Agent Pools)
+     * is listed in `gaps`, and the rest is still judged.
+     */
+    async readSecuritySettings(projectId) {
+      const gaps = [];
+      const read = (what, fn, fallback) => fn().catch((err) => {
+        gaps.push({ what, error: err.message });
+        return fallback;
+      });
+      const p = seg(projectId);
+      const values = (d) => d?.value ?? [];
+      const [project, definitions, variableGroups, secureFiles, endpoints, repos, policies, queues] = await Promise.all([
+        read('the project', () => api(`_apis/projects/${p}`), null),
+        read('pipelines', () => listAll(`${p}/_apis/build/definitions`, { query: { includeAllProperties: true, $top: 500 } }), []),
+        read('variable groups', () => api(`${p}/_apis/distributedtask/variablegroups`, { apiVersion: '7.1-preview.2' }).then(values), []),
+        read('secure files', () => api(`${p}/_apis/distributedtask/securefiles`, { apiVersion: '7.1-preview.1' }).then(values), []),
+        read('service connections', () => api(`${p}/_apis/serviceendpoint/endpoints`, { query: { includeDetails: true }, apiVersion: '7.1-preview.4' }).then(values), []),
+        read('repositories', () => api(`${p}/_apis/git/repositories`).then(values), []),
+        read('branch policies', () => listAll(`${p}/_apis/policy/configurations`), []),
+        read('agent queues', () => api(`${p}/_apis/distributedtask/queues`, { apiVersion: '7.1-preview.1' }).then(values), []),
+      ]);
+      // Who may use each service connection, variable group and secure file: one call each, so at most 200.
+      const resources = [
+        ...endpoints.map((e) => ['endpoint', e.id]),
+        ...variableGroups.map((g) => ['variablegroup', g.id]),
+        ...secureFiles.map((f) => ['securefile', f.id]),
+      ].slice(0, 200);
+      let refused = null;
+      const permissions = (await Promise.all(resources.map(([type, id]) => api(`${p}/_apis/pipelines/pipelinepermissions/${type}/${seg(String(id))}`, { apiVersion: '7.1-preview.1' })
+        .catch((err) => {
+          refused ??= err.message;
+          return null;
+        })))).filter(Boolean);
+      if (refused) gaps.push({ what: 'pipeline permissions', error: refused });
+      // Agents of the self-hosted pools this project's queues use (at most 10 pools).
+      const pools = [...new Map(queues.filter((q) => q.pool && !q.pool.isHosted).map((q) => [String(q.pool.id), q.pool])).values()].slice(0, 10);
+      const agents = Object.fromEntries(await Promise.all(pools.map((pool) => read(`the agents of ${pool.name}`, () => api(`_apis/distributedtask/pools/${seg(String(pool.id))}/agents`).then((d) => [String(pool.id), values(d)]), [String(pool.id), []]))));
+      return { org, project, definitions, variableGroups, secureFiles, endpoints, permissions, repos, policies, queues, agents, gaps };
+    },
   };
 }

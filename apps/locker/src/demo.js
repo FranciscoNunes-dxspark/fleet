@@ -1,7 +1,9 @@
 // An in-memory Azure and project folder with the interfaces of azure/arm.js's provider and local.js's
 // createLocal, for --demo and the tests: a shop's .env, appsettings and user secrets, an App Service app
 // with a slot whose settings have drifted from them, Key Vault references (one to a secret that isn't
-// there, one to a secret that has expired), and two vaults with a secret about to expire. A new
+// there, one to a secret that has expired), and two vaults with a secret about to expire; for the
+// hygiene check, a plain-text password the production app shares with .env, a slot that refers to the
+// vault for it, a stale secret, a certificate days from expiring and a vault without purge protection. A new
 // operation in either needs one here too. `state.calls` records what was asked, never a value.
 import { addToDotenv, flatten, isExample, parseDotenv } from './local.js';
 
@@ -36,7 +38,8 @@ const USER_SECRETS = { 'Stripe:ApiKey': 'sk_test_local_4242', 'Db:Password': 'de
 /** The demo project folder: its sources as readLocal makes them, from demoFiles(); adding to .env changes the file in memory. */
 export function demoLocal({ dir = DEMO_DIR } = {}) {
   const files = demoFiles();
-  const state = { files, calls: [] };
+  // What git tracks in the demo's checkout: .env is ignored, as it should be; appsettings.json isn't.
+  const state = { files, calls: [], tracked: ['.env.example', 'appsettings.json', 'appsettings.Development.json', 'http-client.env.json', 'Shop.Api.csproj'] };
   const join = (f) => `${dir}${dir.includes('\\') ? '\\' : '/'}${f}`;
   return {
     kind: 'demo',
@@ -52,6 +55,8 @@ export function demoLocal({ dir = DEMO_DIR } = {}) {
       }
       return out;
     },
+    tracked: async () => [...state.tracked],
+    text: async (file) => files[String(file).split(/[\\/]/).pop()] ?? null,
     async addToEnv(file, key, value) {
       const name = String(file).split(/[\\/]/).pop();
       if (!name.startsWith('.env')) throw new Error(`${name} isn't a .env file.`);
@@ -72,7 +77,7 @@ const site = (name, kind = 'app', slot = null) => ({
   hostName: `${name}${slot ? `-${slot}` : ''}.azurewebsites.net`,
 });
 
-const vault = (name, rg = 'shop') => ({ id: `${RG}/${rg}/providers/Microsoft.KeyVault/vaults/${name}`, name, uri: `https://${name}.vault.azure.net/`, resourceGroup: rg, location: 'westeurope' });
+const vault = (name, rg = 'shop', posture = undefined) => ({ id: `${RG}/${rg}/providers/Microsoft.KeyVault/vaults/${name}`, name, uri: `https://${name}.vault.azure.net/`, resourceGroup: rg, location: 'westeurope', ...(posture ? { posture } : {}) });
 
 const ref = (v, s) => `@Microsoft.KeyVault(SecretUri=https://${v}.vault.azure.net/secrets/${s}/)`;
 
@@ -92,8 +97,9 @@ export function demoAzure({ now = Date.now() } = {}) {
   const api = site('shop-api');
   const staging = site('shop-api', 'app', 'staging');
   const fn = site('shop-functions', 'function');
-  const kvShop = vault('kv-shop');
-  const kvShared = vault('kv-shared', 'shared');
+  // kv-shop without purge protection and open to every network; kv-shared locked down.
+  const kvShop = vault('kv-shop', 'shop', { purgeProtection: false, publicNetworkAccess: 'Enabled', defaultAction: 'Allow', rules: 0 });
+  const kvShared = vault('kv-shared', 'shared', { purgeProtection: true, publicNetworkAccess: 'Enabled', defaultAction: 'Deny', rules: 2 });
   const secret = (name, { expires = null, enabled = true, contentType = '', updated = -40 } = {}) => ({ kind: 'secret', name, enabled, contentType, created: at(-200), updated: at(updated), expires, notBefore: null, managed: false });
   const state = {
     sites: [api, fn],
@@ -108,6 +114,8 @@ export function demoAzure({ now = Date.now() } = {}) {
         Stripe__ApiKey: '@Microsoft.KeyVault(VaultName=kv-shop;SecretName=Stripe--ApiKey)',
         Smtp__Password: ref('kv-shop', 'smtp-password'),
         Legacy__Token: ref('kv-shop', 'old-token'),
+        // Plain text where it should be a reference, and the very value .env has for development.
+        Redis__Password: 'local-redis',
         APPLICATIONINSIGHTS_CONNECTION_STRING: 'InstrumentationKey=11111111-2222-3333-4444-555555555555;IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/',
       },
       [staging.id]: {
@@ -116,6 +124,8 @@ export function demoAzure({ now = Date.now() } = {}) {
         Features__Search: 'false',
         Db__Password: ref('kv-shop', 'db-password'),
         Stripe__ApiKey: ref('kv-shop', 'Stripe--ApiKey'),
+        // The slot reads it from the vault; the app beside it holds it as plain text.
+        Redis__Password: ref('kv-shop', 'Redis--Password'),
       },
       // The function app reads db-password's version pinned: a rotation can't reach it by a restart.
       [fn.id]: { FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated', AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=shopfn;AccountKey=ZGVtby1rZXk=;EndpointSuffix=core.windows.net', Db__Password: ref('kv-shop', `db-password/${DB_VERSION}`) },
@@ -143,14 +153,16 @@ export function demoAzure({ now = Date.now() } = {}) {
         secret('Redis--Password', { updated: -10 }),
         secret('Stripe--ApiKey', { expires: at(5), contentType: 'text/plain', updated: -360 }),
       ],
-      'kv-shared': [secret('Sendgrid--ApiKey', { expires: at(90) }), secret('Shared--Salt')],
+      // Shared--Salt hasn't changed in well over a year.
+      'kv-shared': [secret('Sendgrid--ApiKey', { expires: at(90) }), secret('Shared--Salt', { updated: -420 })],
     },
     certificates: {
       'kv-shop': [
         { kind: 'certificate', name: 'shop-tls', enabled: true, contentType: 'certificate', created: at(-345), updated: at(-345), expires: at(20), notBefore: at(-345), thumbprint: 'q1w2e3' },
         { kind: 'certificate', name: 'api-client', enabled: true, contentType: 'certificate', created: at(-30), updated: at(-30), expires: at(335), notBefore: at(-30), thumbprint: 'r4t5y6' },
       ],
-      'kv-shared': [],
+      // A partner's client certificate, days from running out.
+      'kv-shared': [{ kind: 'certificate', name: 'partner-tls', enabled: true, contentType: 'certificate', created: at(-361), updated: at(-361), expires: at(4), notBefore: at(-361), thumbprint: 'u7i8o9' }],
     },
     values: new Map([
       ['kv-shop/db-password', 'Pr0d-db-S3cret!'],

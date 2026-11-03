@@ -2,7 +2,7 @@
 
 <img src="assets/logo.svg" alt="Plot, the Chart puffin" width="96" align="right">
 
-Infrastructure as code, in the terminal. Chart asks Terraform (or OpenTofu) for a plan, or Azure for a Bicep or ARM what-if, and lists what would change: what is destroyed or replaced first, in red, with why, then each resource attribute by attribute, sensitive values never shown. It shows what changed outside Terraform since the last apply (drift), what the state holds, and writes the plan as Markdown for a pull request. `chart check` does the same in a pipeline and fails it when a plan destroys something.
+Infrastructure as code, in the terminal. Chart asks Terraform (or OpenTofu) for a plan, or Azure for a Bicep or ARM what-if, and lists what would change: what is destroyed or replaced first, in red, with why, then each resource attribute by attribute, sensitive values never shown. It shows what changed outside Terraform since the last apply (drift), what the state holds, and writes the plan as Markdown for a pull request. It reads what a plan would deploy for misconfigurations (a storage account with public blobs, SSH open to the internet, a database firewall open to everyone, a password written into the code), so an insecure resource is caught in the pull request. `chart check` does the same in a pipeline and fails it when a plan destroys something; `chart security` fails it when what it deploys is insecure.
 
 It covers what Terraform Cloud's or Spacelift's plan view, env0 or a drift detector are bought for, for a team that runs Terraform or Bicep itself. It runs `terraform`, `tofu` and `az` through their command lines, signed in and set up as they are; **it plans, and applies only what you have seen**: `/apply` takes nothing but a plan Chart saved itself (or the what-if on screen), shows what it does with the destroys first, and goes ahead once you type the name of the environment or workspace it goes to.
 
@@ -12,6 +12,7 @@ chart ../infra            # another folder
 chart --demo              # a made-up Azure estate, to look around: nothing is run
 chart check --fail-on destroy        # in a pipeline: plan, and exit 1 when something is destroyed
 chart check plan.json --markdown     # a saved plan, as a pull request's comment
+chart security infra --sarif chart.sarif   # misconfigurations in the .tf and .bicep files, for code scanning
 ```
 
 Press `?` inside for every key and command, `/` for the commands, `!` to run a shell command in the folder (`!terraform validate`).
@@ -48,11 +49,11 @@ When Chart opens, it only looks at the folder: a plan can take a while and signs
 
 ## Views
 
-`1` Changes · `2` Drift · `3` State · `4` Log (what Chart has run) · `5` Depends. `tab` goes round.
+`1` Changes · `2` Drift · `3` State · `4` Log (what Chart has run) · `5` Depends · `6` Security. `tab` goes round.
 
 ### Changes
 
-What the plan does, worst first: `-` destroy and `±` replace in red (with why: an argument that forces replacement changed, no longer in the configuration, tainted…), `~` update yellow, `+` create green; how many attributes change; `app` on an App Service app. What doesn't change is hidden (`a` shows it). The header sums it up (`-1 ±1 ~2 +2`) with how many drifted.
+What the plan does, worst first: `-` destroy and `±` replace in red (with why: an argument that forces replacement changed, no longer in the configuration, tainted…), `~` update yellow, `+` create green; how many attributes change; `! high` (in red, or `! med` yellow…) on what it would deploy insecurely, its worst finding and `+n` more (Security, below); `app` on an App Service app. What doesn't change is hidden (`a` shows it). The header sums it up (`-1 ±1 ~2 +2`) with how many drifted.
 
 | Key | |
 |---|---|
@@ -93,9 +94,36 @@ Every resource Terraform keeps track of, the root module's first, then each modu
 
 What depends on what, as an indented tree: the resources nothing depends on at the top, and under each the ones that depend on it (a resource under several is drawn in full once and marked `(above)` under the others). It comes from the plan's own configuration (the references each resource's arguments make, `depends_on`, and what a module is given); for a plan that came without one, `/graph` asks `terraform graph` and reads its DOT; for a what-if, a child resource sits under its parent (a slot under its app, a database under its server). What is destroyed or replaced is red, with how many depend on it (`replace: affects 1`); what depends on one of those is yellow with which (`← replacing azurerm_linux_web_app.admin`). The same "replacing X affects Y, Z" is in the change's detail (`↵`), and under it in what `/apply` shows before it asks. `g` in Changes opens it on the selected resource; `↵` shows a change, `y` copies its address.
 
+### Security
+
+What the plan on screen would deploy, read for misconfigurations: each resource's planned state after the apply (Terraform's, what it marks sensitive or known only after apply left unread; or the what-if's), then the folder's `.tf`, `.tfvars`, `.bicep` and `.bicepparam` files as they are written, each finding with its file and line. The files are read the first time the view is shown (or with `/security [folder]`); nothing is run for them. Worst first under each heading: the severity, what, which resource or `path:line`, and what was seen (`min_tls_version = "TLS1_0"`).
+
+| Key | |
+|---|---|
+| `↵` or `l` | What it is, where (and, for the plan's, what the plan does to the resource and where it is declared), what was seen, why it matters and what to set |
+| `t` | Copy the line it is on, or where its resource is declared, for Splice |
+| `y` | Copy where it is (`path:line`, or the resource's address) |
+
+| Rule | Severity | Terraform | Bicep / ARM |
+|---|---|---|---|
+| Storage: public blobs, plain HTTP | high | `azurerm_storage_account` `allow_nested_items_to_be_public = true`, `https_traffic_only_enabled = false` | `Microsoft.Storage/storageAccounts` `allowBlobPublicAccess: true`, `supportsHttpsTrafficOnly: false` |
+| Storage: TLS older than 1.2; open to every network | medium; low | `min_tls_version`; `public_network_access_enabled` without `network_rules` denying (or an `azurerm_storage_account_network_rules`) | `minimumTlsVersion`; `publicNetworkAccess` without `networkAcls` denying |
+| NSG: inbound Allow from `*`, `Internet` or `0.0.0.0/0` to 22, 3389, 1433, 3306, 5432, 6379 or 27017; to every port | high; critical | `azurerm_network_security_rule`, `azurerm_network_security_group`'s `security_rule` | `Microsoft.Network/networkSecurityGroups` `securityRules`, `…/securityRules` |
+| App Service and Function apps: plain HTTP; TLS older than 1.2, FTP allowed, remote debugging | high; medium | `azurerm_linux_web_app`, `azurerm_windows_web_app`, the function apps and slots: `https_only`, `site_config` `minimum_tls_version`, `ftps_state = "AllAllowed"`, `remote_debugging_enabled` | `Microsoft.Web/sites` (and slots) `httpsOnly`, `siteConfig` |
+| SQL: a firewall rule 0.0.0.0–255.255.255.255; public network access | critical; low | `azurerm_mssql_firewall_rule` (and PostgreSQL's, MySQL's); `azurerm_mssql_server` `public_network_access_enabled` | `Microsoft.Sql/servers/firewallRules`; `publicNetworkAccess` |
+| Key Vault: no purge protection; network ACLs default Allow | medium; low | `azurerm_key_vault` | `Microsoft.KeyVault/vaults` |
+| Redis: the non-TLS port; TLS older than 1.2 | high; medium | `azurerm_redis_cache` | `Microsoft.Cache/Redis` |
+| Container registry: anonymous pull; the admin user | high; medium | `azurerm_container_registry` | `Microsoft.ContainerRegistry/registries` |
+| AWS: a public S3 ACL, a public access block with a flag off or none for a bucket, a security group open to SSH or RDP (every port: critical), a public database | high | `aws_s3_bucket(_acl)`, `aws_s3_bucket_public_access_block`, `aws_security_group(_rule)`, `aws_vpc_security_group_ingress_rule`, `aws_db_instance` | |
+| AWS: database storage not encrypted | medium | `aws_db_instance`, `aws_rds_cluster` `storage_encrypted = false` | |
+| A password written into the code | high | `administrator_login_password = "…"`, a `variable` named like a secret with a default, a `.tfvars` value | a property, or a parameter's default; a `.bicepparam` value |
+| A secret parameter without `@secure()` | medium | | `param adminPassword string` |
+
+The kit's secret rules (keys, tokens, connection strings) read the same files. A password found is shown cut to its first characters, never whole. A line saying `chart-ignore` (or `bilge-ignore`), or the line above it, is left alone; so is a file saying `chart-ignore-file` near its top. `securityIgnore` in the settings leaves out a rule (`"app-ftp"`) or one rule on one thing (`"app-ftp:azurerm_linux_web_app.api"`, `"iac-plain-password:env/dev.tfvars"`). `↵` on a change says what was found in it too, and `/report` has a Security section.
+
 ## Slash commands
 
-`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/apply`, `/deploy`, `/open`, `/show <address>`, `/graph [folder]` (what depends on what from `terraform graph`, for a plan that came without its configuration), `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, the drift; `alt+y` copies it), `/tool [terraform|tofu]`, `/currency [code]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/plan`, `/drift`, `/state`, `/init`, `/whatif`, `/apply`, `/deploy`, `/open`, `/show <address>`, `/graph [folder]` (what depends on what from `terraform graph`, for a plan that came without its configuration), `/report` (the plan as Markdown: what is destroyed called out, a row per change, each change's attributes in a folded `diff` block, what it would deploy insecurely, the drift; `alt+y` copies it), `/security [folder]` (the folder's source files read for the Security view), `/tool [terraform|tofu]`, `/currency [code]`, `/env [name]`, `/move <folder>`, `/take`, `/run`, `/last`, `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 ## Environments
 
@@ -133,6 +161,21 @@ A folder is planned now (`--fail-on drift` plans with `-refresh-only`); a file i
 - run: ./chart check infra --fail-on destroy --markdown > plan.md
 ```
 
+A check also says what the plan would deploy insecurely (`Security: 1 critical · 2 high`, and `security`'s counts in `--json`), without failing for it; that is `chart security`'s:
+
+```
+chart security [folder|plan.json|whatif.json] [--plan] [--source folder] [--tofu] [--fail-on critical|high|medium|low|none] [--json] [--sarif [file.sarif]]
+```
+
+A folder's `.tf`, `.tfvars`, `.bicep` and `.bicepparam` files are read as they are: nothing is run and no credentials are needed, so it fits a pull request's first step. `--plan` plans the folder too (as `chart check` does) and adds what the plan would deploy; a plan or what-if file (`terraform show -json plan.tfplan > plan.json`, `az deployment group what-if --no-pretty-print -o json > whatif.json`) is read instead, `--source` adding a folder's files. A finding both have is said once, with the file's line. It prints each finding with what to set, and exits `1` when one is as bad as `--fail-on` (`high` by default), `0` otherwise, `2` when it couldn't run. `--json` prints the fleet's security JSON (`app`, `check`, `counts`, `findings`, never what was seen); `--sarif` SARIF 2.1.0 for GitHub's or Azure DevOps' code scanning, to the file named (ending `.sarif`; the findings are printed too) or alone to the output. A plan's finding is about a resource rather than a line, so in SARIF it points at the repository's root with the resource's address in its message.
+
+```yaml
+- run: ./chart security infra --sarif chart.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  if: always()
+  with: { sarif_file: chart.sarif }
+```
+
 ## The family
 
 A plan and a drift found go to the family's activity log, so `/timeline` in the others shows when the infrastructure was about to change; Plot's mood (worried while a plan destroys something or something drifted) goes to the others' mascots. `t` hands Splice a `file` context (the line a resource is declared on, for its blame); `s` hands Locker a `site` context (an App Service app or slot). Chart takes no sibling's context yet. The `familyMoods` setting turns the moods and the activity log off.
@@ -143,7 +186,7 @@ Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Dr
 
 ## Settings
 
-`~/.chart/config.json` (`CHART_HOME` moves it): `theme`, `accent`, `mouse`, `terraform` (`terraform` or `tofu`), `currency` (USD unless set), `costs` (`false` never asks for prices), `whatIf` (the last what-if's file, group or location and parameters), `checkForUpdates`, `autoUpdate`, `familyMoods`. `,` or `/settings` shows them.
+`~/.chart/config.json` (`CHART_HOME` moves it): `theme`, `accent`, `mouse`, `terraform` (`terraform` or `tofu`), `currency` (USD unless set), `costs` (`false` never asks for prices), `securityIgnore` (the security findings left out, above), `whatIf` (the last what-if's file, group or location and parameters), `checkForUpdates`, `autoUpdate`, `familyMoods`. `,` or `/settings` shows them.
 
 ## Updates
 

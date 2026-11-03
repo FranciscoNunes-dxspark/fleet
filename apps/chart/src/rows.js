@@ -37,7 +37,34 @@ export function findChange(changes, text) {
   return starts.length === 1 ? starts[0] : null;
 }
 
-const WEB_APPS = /^azurerm_(linux_|windows_)?(web|function)_app$|^azurerm_app_service$|^azurerm_function_app$/;
+// A finding's severity, short, and its colour (read while drawing).
+export const SEVERITY_LABEL = { critical: 'CRIT', high: 'HIGH', medium: 'MED', low: 'LOW', unknown: '?' };
+export const severityTone = (s) => ({ critical: theme.del, high: theme.del, medium: theme.warn, low: theme.info })[s] ?? theme.dim;
+const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'unknown'];
+
+/** A plan's security findings by the address of the resource they are about: { address → [findings] }. */
+export function findingsByAddress(findings = []) {
+  const out = {};
+  for (const f of findings) (out[f.resource ?? f.where] ??= []).push(f);
+  return out;
+}
+
+/** The worst severity among `findings`, or null for none. */
+export const worstSeverity = (findings = []) => SEVERITY_ORDER.find((s) => findings.some((f) => f.severity === s)) ?? null;
+
+/**
+ * The Security view's rows: what the plan would deploy first, then what the source files say, each
+ * group worst first under a heading: { heading, count } or { finding }.
+ */
+export function securityRows({ planned = [], source = [] } = {}) {
+  const order = (list) => [...list].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || String(a.where).localeCompare(String(b.where)) || (a.line ?? 0) - (b.line ?? 0));
+  const out = [];
+  if (planned.length) out.push({ heading: 'What the plan would deploy', count: planned.length }, ...order(planned).map((f) => ({ finding: f, from: 'plan' })));
+  if (source.length) out.push({ heading: 'In the source files', count: source.length }, ...order(source).map((f) => ({ finding: f, from: 'source' })));
+  return out;
+}
+
+const WEB_APPS =/^azurerm_(linux_|windows_)?(web|function)_app$|^azurerm_app_service$|^azurerm_function_app$/;
 
 /** The App Service app a change is, as the family's `site` context ({ name, slot?, resourceGroup?, subscription?, id? }), or null. */
 export function siteOf(change) {

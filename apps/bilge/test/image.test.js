@@ -183,7 +183,7 @@ test("/take of an image from Wharf: its system packages audited with the rest, a
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'openssl@3.0.11-1~deb12u1'), 'the image findings');
   assert.deepEqual(app.provider.state.calls.find((c) => c[0] === 'image'), ['image', 'shop-api:latest']);
-  assert.match(app.lastFrame(), /18 packages/);
+  assert.match(app.lastFrame(), /21 packages/);
   app.stdin.write('3');
   await until(shows(app, 'image shop-api:latest'), 'its manifest');
   assert.match(app.lastFrame(), /image shop-api:latest .*image .*4 packages/);
@@ -191,7 +191,7 @@ test("/take of an image from Wharf: its system packages audited with the rest, a
   await type(app.stdin, '/scan');
   app.stdin.write(KEYS.enter);
   await until(() => app.provider.state.calls.filter((c) => c[0] === 'audit').length === 3, 'the audit after the scan');
-  await until(shows(app, '18 packages'), 'the count with the image');
+  await until(shows(app, '21 packages'), 'the count with the image');
   // /outdated asks npm and NuGet about theirs only.
   await type(app.stdin, '/outdated');
   app.stdin.write(KEYS.enter);

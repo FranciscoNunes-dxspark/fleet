@@ -10,6 +10,8 @@ import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { createBilge } from '../provider.js';
 import { SEVERITIES, counts as countOf, findings } from '../audit.js';
 import { severityTone, withoutIgnored } from '../rows.js';
+import { withoutIgnoredCode } from '@fleet/kit/codescan.js';
+import { allSupply, withoutIgnoredSupply } from '../supply.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
@@ -22,6 +24,7 @@ import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { VulnsView } from './VulnsView.jsx';
 import { PackagesView } from './PackagesView.jsx';
 import { ManifestsView } from './ManifestsView.jsx';
+import { CodeView } from './CodeView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
@@ -33,13 +36,15 @@ const VIEWS = [
   { id: 'vulns', label: 'Vulnerabilities' },
   { id: 'packages', label: 'Packages' },
   { id: 'manifests', label: 'Manifests' },
+  { id: 'code', label: 'Code' },
   { id: 'log', label: 'Log' },
 ];
 
 const HINTS = {
   vulns: '↵ details · f fix · o advisory · x ignore · t for Splice · d dev packages · y copy ids',
-  packages: '↵ details · a all/direct/outdated/flagged · u newest versions · f fix · o registry · t for Splice · y copy · /upgrade',
+  packages: '↵ details · a all/direct/outdated/flagged/supply · u newest versions · f fix · x ignore supply flag · o registry · t for Splice · y copy · /upgrade',
   manifests: '↵ its packages · t for Splice · y copy path',
+  code: '↵ details · r read again · x ignore · t for Splice · y copy where',
   log: '↵ all its output · y copy it',
 };
 
@@ -69,11 +74,12 @@ function Header({ data, counts, cwd, env, width, loading, mood, problem }) {
 }
 
 /** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries, found) {
+function tabLabels(entries, found, codeFound) {
   let x = 0;
   return VIEWS.map((v, i) => {
     let label = ` ${i + 1} ${v.label}`;
     if (v.id === 'vulns' && found.length) label += ` ${found.length}`;
+    if (v.id === 'code' && codeFound?.length) label += ` ${codeFound.length}`;
     if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
     label += ' ';
     const from = x;
@@ -82,9 +88,9 @@ function tabLabels(entries, found) {
   });
 }
 
-function Tabs({ view, entries, found, width }) {
+function Tabs({ view, entries, found, codeFound, width }) {
   const segs = [];
-  for (const t of tabLabels(entries, found)) {
+  for (const t of tabLabels(entries, found, codeFound)) {
     const on = t.id === view;
     segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
   }
@@ -123,6 +129,9 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   const { columns, rows } = useTerminalSize();
   const [config, setConfigState] = useState(initialConfig);
   const [data, setDataState] = useState(null);
+  // What /code found in the folder's own files (codescan.js), until Bilge reads another folder.
+  const [code, setCodeState] = useState(null);
+  const codeRef = useRef(null);
   const [cwd, setCwdState] = useState(startDir);
   const [loading, setLoading] = useState(true);
   const [problem, setProblem] = useState(null);
@@ -206,6 +215,10 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     dataRef.current = typeof next === 'function' ? next(dataRef.current) : next;
     setDataState(dataRef.current);
   };
+  const setCode = (next) => {
+    codeRef.current = next;
+    setCodeState(next);
+  };
   const setConfig = (next) => {
     const value = typeof next === 'function' ? next(configRef.current) : next;
     configRef.current = value;
@@ -225,18 +238,20 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     setPromptState(promptRef.current);
   };
 
-  // The findings as shown: OSV's answer for the packages read, without what the config ignores. Worked
-  // out again only when one of those changes.
+  // The findings as shown: OSV's answer for the packages read, and the lock files' supply-chain
+  // findings, without what the config ignores. Worked out again only when one of those changes.
   const derived = useRef({});
   const derive = () => {
     const d = dataRef.current;
     const ignore = configRef.current.ignore ?? [];
+    const supplyIgnore = configRef.current.supplyIgnore ?? [];
     const was = derived.current;
-    if (was.audit === d?.audit && was.packages === d?.packages && was.ignore === ignore) return was;
+    if (was.audit === d?.audit && was.packages === d?.packages && was.ignore === ignore && was.manifests === d?.manifests && was.supplyIgnore === supplyIgnore) return was;
     const all = d?.audit ? findings(d.packages, d.audit.ids, d.audit.details) : [];
     const found = withoutIgnored(all, ignore);
     const advisories = (list) => list.reduce((n, f) => n + f.advisories.length, 0);
-    derived.current = { audit: d?.audit, packages: d?.packages, ignore, found, counts: countOf(found), ignored: advisories(all) - advisories(found) };
+    const supply = withoutIgnoredSupply(allSupply(d?.manifests), supplyIgnore);
+    derived.current = { audit: d?.audit, packages: d?.packages, manifests: d?.manifests, ignore, supplyIgnore, found, counts: countOf(found), ignored: advisories(all) - advisories(found), supply };
     return derived.current;
   };
 
@@ -335,6 +350,14 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
       get counts() {
         return derive().counts;
       },
+      // The lock files' supply-chain findings (supply.js), without the config's supplyIgnore.
+      get supply() {
+        return derive().supply;
+      },
+      // The last /code's result ({ root, files, findings, truncated, at }), or null.
+      get code() {
+        return codeRef.current;
+      },
       // { name, prod, ... } from .fleet/project.json, or null when the project names no environments.
       get env() {
         return envRef.current;
@@ -350,9 +373,11 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
       cwdRef.current = dir;
       setCwdState(dir);
       setData(null);
+      setCode(null);
       setConfig((c) => ({ ...c, recent: remember(c.recent ?? [], dir) }));
     },
     setData,
+    setCode,
     task,
     note,
     confirm,
@@ -491,7 +516,8 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     setTitle?.(title);
   }, [title]);
 
-  const { found, counts, ignored } = derive();
+  const { found, counts, ignored, supply } = derive();
+  const codeFound = code ? withoutIgnoredCode(code.findings, config.codeIgnore ?? []) : [];
   const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data, found, config, cwd }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
 
@@ -683,7 +709,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     mainH,
     promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries, found),
+    tabs: tabLabels(entries, found, codeFound),
   };
 
   let main;
@@ -694,7 +720,9 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'packages') {
-    main = <PackagesView data={data} found={found} filter={pkgFilter} deny={config.deny ?? []} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <PackagesView data={data} found={found} supply={supply} filter={pkgFilter} deny={config.deny ?? []} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+  } else if (view === 'code') {
+    main = <CodeView code={code} found={codeFound} counts={countOf(codeFound)} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'manifests') {
     main = <ManifestsView data={data} found={found} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else {
@@ -715,7 +743,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   return (
     <Box flexDirection="column" width={W} height={H}>
       <Header data={data} counts={counts} cwd={cwd} env={env} width={W} loading={loading} mood={mood} problem={problem} />
-      <Tabs view={view} entries={entries} found={found} width={W} />
+      <Tabs view={view} entries={entries} found={found} codeFound={codeFound} width={W} />
       <Box height={mainH} width={W}>
         {main}
       </Box>

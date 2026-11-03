@@ -8,6 +8,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { lockFrameworks, projectFrameworks } from './frameworks.js';
 import { parsePnpmLock, parseYarnLock, isBerryLock, pnpmWorkspaces, yarnWorkspaces } from './jslocks.js';
 import { escape, keyOf, lineOf, parseNpmLock, parseNugetLock, requiredPeers } from '@fleet/kit/lockfiles.js';
+import { lockEntries, nugetSupply, supplyFindings } from './supply.js';
 
 // The parsers of npm's and NuGet's lock files are the kit's (Keel reads them too).
 export { keyOf, parseNpmLock, parseNugetLock, requiredPeers };
@@ -161,7 +162,20 @@ export function findManifests(root, { depth = MAX_DEPTH, max = MAX_MANIFESTS } =
 export const shortPath = (root, file) => relative(root, file).split(sep).join('/') || basename(file);
 
 /**
- * One manifest read: { file, path, ecosystem, kind, packages, note? }. A package.json with no lock file
+ * A manifest's supply-chain findings (supply.js): an npm lock file's own text read for install scripts
+ * and where each package came from (the kit's parser keeps neither), and every name for a typosquat.
+ * One that can't be read gives none rather than losing the manifest.
+ */
+function supplyOf(name, text, path, packages) {
+  try {
+    return packages[0]?.ecosystem === 'NuGet' ? nugetSupply(packages, path) : supplyFindings(lockEntries(name, text), path);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * One manifest read: { file, path, ecosystem, kind, packages, supply, note? }. A package.json with no lock file
  * beside it has no packages (its ranges aren't versions), and says so; so does a lock file that can't
  * be read.
  */
@@ -176,20 +190,20 @@ export function readManifest(root, file) {
       const lock = JSON.parse(text);
       const workspaces = Object.keys(lock.packages ?? {}).filter((k) => k && !k.includes('node_modules/'));
       const node = projectNode(dirname(file), root, readJson(join(dirname(file), 'package.json')) ?? lock.packages?.[''] ?? null);
-      return { ...base, ecosystem: 'npm', kind: 'lock', packages: parseNpmLock(text), workspaces: workspaces.map((w) => join(dirname(file), ...w.split('/'))), ...(node ? { node } : {}) };
+      return { ...base, ecosystem: 'npm', kind: 'lock', packages: parseNpmLock(text), supply: supplyOf(name, text, path, []), workspaces: workspaces.map((w) => join(dirname(file), ...w.split('/'))), ...(node ? { node } : {}) };
     }
     if (name === 'yarn.lock' || name === 'pnpm-lock.yaml') {
       const own = readJson(join(dirname(file), 'package.json'));
       const node = projectNode(dirname(file), root, own);
       if (name === 'pnpm-lock.yaml') {
         const workspaces = pnpmWorkspaces(text).filter((w) => w !== '.').map((w) => join(dirname(file), ...w.split('/')));
-        return { ...base, ecosystem: 'npm', kind: 'lock', tool: 'pnpm', packages: parsePnpmLock(text), workspaces, ...(node ? { node } : {}) };
+        return { ...base, ecosystem: 'npm', kind: 'lock', tool: 'pnpm', packages: parsePnpmLock(text), supply: supplyOf(name, text, path, []), workspaces, ...(node ? { node } : {}) };
       }
       // Yarn 1 doesn't list the workspaces: their package.json files say what each asks for.
       const berry = isBerryLock(text);
       const workspaces = berry ? yarnWorkspaces(text).filter((w) => w !== '.').map((w) => join(dirname(file), ...w.split('/'))) : workspaceFolders(dirname(file), own);
       const packageJsons = [own, ...workspaces.map((w) => readJson(join(w, 'package.json')))];
-      return { ...base, ecosystem: 'npm', kind: 'lock', tool: 'yarn', berry, packages: parseYarnLock(text, packageJsons), workspaces, ...(node ? { node } : {}) };
+      return { ...base, ecosystem: 'npm', kind: 'lock', tool: 'yarn', berry, packages: parseYarnLock(text, packageJsons), supply: supplyOf(name, text, path, []), workspaces, ...(node ? { node } : {}) };
     }
     if (name === 'package.json') {
       // A workspace's own package.json is covered by the root's lock file.
@@ -197,13 +211,14 @@ export function readManifest(root, file) {
     }
     if (name === 'packages.lock.json') {
       const project = readdirSync(dirname(file)).find((n) => PROJECT.test(n));
-      return { ...base, ecosystem: 'NuGet', kind: 'lock', packages: parseNugetLock(text), frameworks: nugetLockFrameworks(text), ...(project ? { project: join(dirname(file), project) } : {}) };
+      const packages = parseNugetLock(text);
+      return { ...base, ecosystem: 'NuGet', kind: 'lock', packages, supply: supplyOf(name, text, path, packages), frameworks: nugetLockFrameworks(text), ...(project ? { project: join(dirname(file), project) } : {}) };
     }
     const { packages, inexact } = parseProject(text, centralFor(dirname(file), root));
     const frameworks = projectFrameworks(text);
     const notes = ['no packages.lock.json: only its own references'];
     if (inexact.length) notes.push(`no exact version for ${inexact.slice(0, 3).join(', ')}${inexact.length > 3 ? ` and ${inexact.length - 3} more` : ''}`);
-    return { ...base, ecosystem: 'NuGet', kind: 'project', project: file, packages, ...(frameworks.length ? { frameworks } : {}), note: notes.join('; ') };
+    return { ...base, ecosystem: 'NuGet', kind: 'project', project: file, packages, supply: supplyOf(name, text, path, packages), ...(frameworks.length ? { frameworks } : {}), note: notes.join('; ') };
   } catch (e) {
     return { ...base, ecosystem: /\.json$|^yarn\.lock$|^pnpm-lock\.yaml$/.test(name) && !/packages\.lock/.test(name) ? 'npm' : 'NuGet', kind: 'broken', packages: [], note: `couldn't be read: ${String(e.message).split('\n')[0]}` };
   }
