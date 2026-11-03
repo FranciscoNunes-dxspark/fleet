@@ -1,9 +1,34 @@
-// Copying whole folders over an SftpClient, one file at a time: the tree is walked first, so the
+// Copying whole folders over an SftpClient, a few files at a time: the tree is walked first, so the
 // progress has a total, and then every file goes by `download` or `upload`. Links and other special
 // files are skipped, never followed (a link out of the folder would copy what isn't in it).
 import fsp from 'node:fs/promises';
 import { join } from 'node:path';
 import { joinRemote } from './sftp.js';
+
+// Files copied at once in a folder's copy. One at a time waited out every file's round trips (open,
+// stat, read, close) in turn: 500 small files at 10 ms a reply took 7 s.
+export const FILES_AT_ONCE = 4;
+
+/**
+ * `fn` over `items`, `limit` at a time, in order. After a failure nothing more is started; those
+ * already going finish, and then the first failure is thrown.
+ */
+export async function eachLimited(items, limit, fn) {
+  let next = 0;
+  let failed = null;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const item = items[next++];
+      try {
+        await fn(item);
+      } catch (e) {
+        failed ??= { e };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (failed) throw failed.e;
+}
 
 /** What's under a remote `path`: { files: [{ remote, rel, size }], dirs: [rel] }, `rel` with `/`. */
 export async function walkRemote(client, path, rel = '', out = { files: [], dirs: [] }) {
@@ -56,7 +81,7 @@ export async function download(client, remote, local, { recursive, signal, onPro
   await fsp.mkdir(local, { recursive: true });
   for (const d of tree.dirs) await fsp.mkdir(join(local, ...d.split('/')), { recursive: true });
   onProgress?.({ bytes: 0, total, file: remote });
-  for (const f of tree.files) await client.download(f.remote, join(local, ...f.rel.split('/')), { signal, onBytes: progress(total, f.remote) });
+  await eachLimited(tree.files, FILES_AT_ONCE, (f) => client.download(f.remote, join(local, ...f.rel.split('/')), { signal, onBytes: progress(total, f.remote) }));
 }
 
 /** Uploads `local` (a file, or a folder's tree with `recursive`) to `remote`, as `download` does. */
@@ -73,5 +98,5 @@ export async function upload(client, local, remote, { recursive, signal, onProgr
   await ensureRemoteDir(client, remote);
   for (const d of tree.dirs) await ensureRemoteDir(client, joinRemote(remote, d));
   onProgress?.({ bytes: 0, total, file: local });
-  for (const f of tree.files) await client.upload(f.local, joinRemote(remote, f.rel), { signal, onBytes: progress(total, f.local) });
+  await eachLimited(tree.files, FILES_AT_ONCE, (f) => client.upload(f.local, joinRemote(remote, f.rel), { signal, onBytes: progress(total, f.local) }));
 }

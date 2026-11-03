@@ -42,6 +42,9 @@ function markedPaths(marks, prefix = [], out = []) {
 }
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// One collator for every sort: localeCompare with options builds a new one for each comparison, which
+// was most of a big plan's parse.
+const byPath = new Intl.Collator(undefined, { numeric: true }).compare;
 const startsWith = (segments, prefix) => prefix.length <= segments.length && prefix.every((p, i) => String(p) === String(segments[i]));
 
 /**
@@ -73,7 +76,7 @@ export function attributeDiff(before, after, { unknown = {}, beforeSensitive = {
       ...(forces.some((f) => startsWith(segments, f)) ? { forces: true } : {}),
     });
   }
-  return out.sort((x, y) => x.path.localeCompare(y.path, undefined, { numeric: true }));
+  return out.sort((x, y) => byPath(x.path, y.path));
 }
 
 /** A value as one line: strings quoted, the rest as JSON, cut at `max`. */

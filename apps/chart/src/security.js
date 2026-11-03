@@ -340,7 +340,9 @@ const finding = (h, { where, resource, line, type }) => {
 function refersTo(b, a, field, dependsOn) {
   if (dependsOn?.[b.address]?.includes(a.address)) return true;
   const v = b.values?.[field];
-  if (isUnknown(v)) return v.text ? new RegExp(`\\b${a.address.replace(/[.[\]"]/g, '\\$&')}\\b`).test(v.text) : !dependsOn;
+  // The address must be in the text before a pattern is made for it: across a big folder this is asked
+  // of every bucket and every block, and making a RegExp for each pair took seconds.
+  if (isUnknown(v)) return v.text ? v.text.includes(a.address) && new RegExp(`\\b${a.address.replace(/[.[\]"]/g, '\\$&')}\\b`).test(v.text) : !dependsOn;
   return typeof v === 'string' && [a.values?.id, a.values?.name, a.values?.bucket, a.values?.arn].filter((x) => typeof x === 'string').includes(v);
 }
 
@@ -742,7 +744,10 @@ export function folderFindings(files) {
     resources.push(...r.resources.filter((x) => x.type.startsWith('aws_') || x.type.startsWith('azurerm_')));
   }
   const closed = closedByRules(resources, null);
-  const kept = all.filter((f) => !(f.rule === 'storage-public-network' && closed(resources.find((r) => r.address === f.resource && r.path === f.where) ?? { address: f.resource, values: {} })));
+  // Each file's resources by address (the first one, as a search would find), looked up for each finding.
+  const byPlace = new Map();
+  for (const r of resources) if (!byPlace.has(`${r.path}\0${r.address}`)) byPlace.set(`${r.path}\0${r.address}`, r);
+  const kept = all.filter((f) => !(f.rule === 'storage-public-network' && closed(byPlace.get(`${f.where}\0${f.resource}`) ?? { address: f.resource, values: {} })));
   const place = (r) => ({ where: r.path, resource: r.address, line: r.line, type: r.type });
   return [...kept, ...crossFindings(resources, { dependsOn: null, place })].sort((a, b) => a.where.localeCompare(b.where) || (a.line ?? 0) - (b.line ?? 0));
 }
