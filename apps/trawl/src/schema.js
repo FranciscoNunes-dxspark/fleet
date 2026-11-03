@@ -170,6 +170,20 @@ const fullName = (o) => `${bracket(o.schema)}.${bracket(o.name)}`;
  * FOREIGN KEY on, with its ON DELETE and the like) and `after` (statements after the foreign keys:
  * the indexes).
  */
+// A schema's foreign keys by the table they're on, made once per schema: scripting every table of a
+// big one looked through all of its keys for each.
+const keysByTable = new WeakMap();
+function foreignKeysOf(schema, name) {
+  if (!schema?.foreignKeys) return [];
+  let byTable = keysByTable.get(schema.foreignKeys);
+  if (!byTable) {
+    byTable = new Map();
+    for (const f of schema.foreignKeys) (byTable.get(f.from) ?? byTable.set(f.from, []).get(f.from)).push(f);
+    keysByTable.set(schema.foreignKeys, byTable);
+  }
+  return byTable.get(name) ?? [];
+}
+
 export function createTableScript(o, schema, { quote = bracket, identity = 'IDENTITY(1,1)', extras = null } = {}) {
   const fullName = (x) => `${quote(x.schema)}.${quote(x.name)}`;
   const cols = o.columns.map((c) => {
@@ -185,8 +199,7 @@ export function createTableScript(o, schema, { quote = bracket, identity = 'IDEN
   if (pk) cols.push(`  ${key?.name ? `CONSTRAINT ${quote(key.name)} ` : ''}PRIMARY KEY ${key?.type ? `${key.type} ` : ''}(${pk})`);
   cols.push(...(extras?.constraints ?? []).map((line) => `  ${line}`));
   const name = objectName(o);
-  const fks = (schema?.foreignKeys ?? [])
-    .filter((f) => f.from === name)
+  const fks = foreignKeysOf(schema, name)
     .map((f) => {
       const [toSchema, ...toName] = f.to.split('.');
       const list = (i) => f.columns.map((c) => quote(c[i])).join(', ');
