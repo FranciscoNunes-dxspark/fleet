@@ -6,6 +6,7 @@ import { KEYS, start, tempHome, type, until } from './helpers.js';
 import { hasLine, latestTrouble, loglineData, matchIn, needleOf } from '../src/share.js';
 import { familyMood, reactionTo } from '../src/moods.js';
 import { demoContainers } from '../src/demo.js';
+import { take } from '../src/actions.js';
 
 let cleanup;
 beforeEach(() => {
@@ -128,6 +129,39 @@ test('/take finds a line by the request it names when its text is not in any log
   app.stdin.write(KEYS.enter);
   await until(shows(app, '/1042 1/1'), 'the request found');
   app.unmount();
+});
+
+test('/take reads the logs a few at once, and opens the first in order that has the line', async () => {
+  const containers = Array.from({ length: 10 }, (_, i) => ({ ...demoContainers()[0], id: `c${i}`.padEnd(12, '0'), name: `web-${i}`, state: 'running' }));
+  const has = new Set(['web-5', 'web-6', 'pod-0']);
+  let open = 0;
+  let most = 0;
+  const read = async (name) => {
+    open++;
+    most = Math.max(most, open);
+    await new Promise((r) => setTimeout(r, name === 'web-5' ? 60 : 10));
+    open--;
+    return has.has(name) ? 'ERROR the needle\n' : 'INFO nothing\n';
+  };
+  const opened = [];
+  const ctx = {
+    data: { containers },
+    kubeData: { pods: [{ name: 'pod-0', namespace: 'shop', status: 'Running' }] },
+    provider: { logs: (id) => read(containers.find((c) => c.id === id).name) },
+    kube: { logs: (p) => read(p.name) },
+    note: () => {},
+    task: async (title, fn) => ({ ok: true, result: await fn(new AbortController().signal) }),
+    showLogs: (c, o) => opened.push([c.name, o.search]),
+    showPodLogs: (p, o) => opened.push([p.name, o.search]),
+  };
+  assert.equal(await take(ctx, `/take ${encodeContext('logline', { process: 'x', text: 'ERROR the needle' })}`), true);
+  // web-6 answers first, but web-5 comes before it.
+  assert.deepEqual(opened, [['web-5', 'error the needle']]);
+  assert.ok(most > 1 && most <= 4, `${most} at once`);
+  has.clear();
+  has.add('pod-0');
+  await take(ctx, `/take ${encodeContext('logline', { process: 'x', text: 'ERROR the needle' })}`);
+  assert.deepEqual(opened[1], ['pod-0', 'error the needle']);
 });
 
 test('v hands Bilge the image of the container under the cursor, and of an image; /scan takes either by name', async () => {
