@@ -10,6 +10,8 @@ import { functionUrl, invocation, isHttp } from './functions.js';
 import { storageRoleNeeded } from './blobs.js';
 import { changesFrom, commitOf } from './markers.js';
 import { demoGraph, postureState } from './demoposture.js';
+import { checkDomain } from '@fleet/kit/webchecks.js';
+import { demoDomainNetwork } from './domains.js';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -125,7 +127,7 @@ function otherResources() {
 function initialState(now) {
   const apps = [
     { sub: 'sub-prod', name: 'contoso-web', kind: 'app', resourceGroup: 'contoso-prod', runtime: 'NODE|22-lts', key: 'k-prod', slots: ['staging'], domain: 'shop.contoso.com' },
-    { sub: 'sub-prod', name: 'contoso-api', kind: 'app', resourceGroup: 'contoso-prod', runtime: 'DOTNETCORE|8.0', key: 'k-prod', slots: ['staging'] },
+    { sub: 'sub-prod', name: 'contoso-api', kind: 'app', resourceGroup: 'contoso-prod', runtime: 'DOTNETCORE|8.0', key: 'k-prod', slots: ['staging'], domain: 'api.contoso.com' },
     { sub: 'sub-prod', name: 'contoso-orders', kind: 'function', resourceGroup: 'contoso-prod', runtime: 'DOTNET-ISOLATED|8.0', key: 'k-prod', slots: [] },
     { sub: 'sub-dev', name: 'contoso-web-dev', kind: 'app', resourceGroup: 'contoso-dev', runtime: 'NODE|22-lts', key: 'k-dev', slots: [] },
     { sub: 'sub-dev', name: 'contoso-jobs-dev', kind: 'function', resourceGroup: 'contoso-dev', runtime: 'NODE|22', key: 'k-dev', slots: [] },
@@ -865,6 +867,11 @@ export function demoAzure({ now = Date.now(), delay = 0 } = {}) {
       site(target);
       const since = new Date(now - (span?.hours ?? 24) * HOUR).toISOString();
       return changesFrom(state.changes.filter((e) => e.eventTimestamp >= since), target);
+    },
+    // A custom domain, checked by the kit's own checks against a stand-in network (domains.js).
+    async domain(host, { signal } = {}) {
+      await wait(signal);
+      return checkDomain(host, { ...demoDomainNetwork(now), now: new Date(now) });
     },
     async deploymentLog(deployment, { signal } = {}) {
       await wait(signal);

@@ -540,6 +540,7 @@ and Trawl.
 | `/route <app> <slot> <percent>` | Send a share of an app's production traffic to a slot; `0` stops it (above) |
 | `/scale [app] <instances\|tier>` | Scale the App Service plan an app runs on (above) |
 | `/deployments [app]` | An app's or slot's deployments, and their logs |
+| `/domains [app]` | An app's custom domains checked from the outside (the kit's web checks, as Lantern's): DNS (A, AAAA, CNAME, CAA, MX), the redirects from `http://` and the bare domain, https enforced or not, the certificate's days left; findings such as `missing-caa`, `no-https-redirect`, `cert-expiring` |
 | `/changes [app]` | What changed an app or slot over the span: deployments, swaps, settings saved, restarts, the family's changes; `↵` one whole (who, when, its commit) |
 | `/locker [app]` | Copy an app or slot for Locker, to compare its settings with the folder's and its key vault |
 | `/trawl [server/db]` | Copy a command that opens a SQL database (or server) in Trawl, for Trawl's prompt |
