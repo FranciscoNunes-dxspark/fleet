@@ -5,7 +5,7 @@
 // findings out, in the kit's findings.js shape with the package's own fields beside it.
 import { indentTree, unquote, valueOf } from './indent.js';
 import { isBerryLock, pnpmKey } from './jslocks.js';
-import { escape, keyOf, lineOf } from '@fleet/kit/lockfiles.js';
+import { jsonKeyLines, keyOf } from '@fleet/kit/lockfiles.js';
 import { rank } from './audit.js';
 import { typosquatOf } from './typosquat.js';
 
@@ -32,17 +32,18 @@ export function origin(resolved) {
  */
 export function npmEntries(text) {
   const lock = JSON.parse(text);
+  const lines = jsonKeyLines(text);
   const out = [];
   if (lock.packages) {
     for (const [path, entry] of Object.entries(lock.packages)) {
       if (!path.includes('node_modules/') || entry.link) continue;
       const name = entry.name ?? path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
-      out.push({ name, version: String(entry.version ?? ''), line: lineOf(text, new RegExp(`"${escape(path)}"\\s*:`)), installScript: entry.hasInstallScript === true, resolved: entry.resolved });
+      out.push({ name, version: String(entry.version ?? ''), line: lines.key(path), installScript: entry.hasInstallScript === true, resolved: entry.resolved });
     }
   } else {
     const walk = (deps) => {
       for (const [name, entry] of Object.entries(deps ?? {})) {
-        out.push({ name, version: String(entry.version ?? ''), line: lineOf(text, new RegExp(`"${escape(name)}"\\s*:\\s*\\{`)), installScript: false, resolved: entry.resolved ?? (/^\d/.test(entry.version ?? '') ? undefined : entry.version) });
+        out.push({ name, version: String(entry.version ?? ''), line: lines.object(name), installScript: false, resolved: entry.resolved ?? (/^\d/.test(entry.version ?? '') ? undefined : entry.version) });
         walk(entry.dependencies);
       }
     };

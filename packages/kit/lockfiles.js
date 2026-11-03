@@ -12,6 +12,46 @@ export function lineOf(text, re) {
   return m ? text.slice(0, m.index).split('\n').length : null;
 }
 
+/**
+ * Where each key of a JSON text is first written, found in one pass: `key(name)` (the first `"name":`),
+ * `object(name)` (the first `"name": {`) and `caseless(name)`, each a 1-based line or null. Strings are
+ * read whole, escapes and all, so a value is never taken for a key. Lock files ask for thousands of
+ * packages' lines: a search of the whole text for each one made a big lock file take seconds.
+ */
+export function jsonKeyLines(text) {
+  const first = new Map();
+  const objects = new Map();
+  const caseless = new Map();
+  const n = text.length;
+  let line = 1;
+  for (let i = 0; i < n; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 10) line++;
+    if (c !== 34) continue;
+    let j = i + 1;
+    while (j < n) {
+      const d = text.charCodeAt(j);
+      if (d === 92) j += 2;
+      else if (d === 34) break;
+      else j++;
+    }
+    let k = j + 1;
+    while (k < n && /[ \t\r\n]/.test(text[k])) k++;
+    if (text[k] === ':') {
+      const name = text.slice(i + 1, j);
+      if (!first.has(name)) first.set(name, line);
+      const lower = name.toLowerCase();
+      if (!caseless.has(lower)) caseless.set(lower, line);
+      let m = k + 1;
+      while (m < n && /[ \t\r\n]/.test(text[m])) m++;
+      if (text[m] === '{' && !objects.has(name)) objects.set(name, line);
+    }
+    // The string's end; the whitespace after it is read by the loop, which counts its lines.
+    i = j;
+  }
+  return { key: (name) => first.get(name) ?? null, object: (name) => objects.get(name) ?? null, caseless: (name) => caseless.get(String(name).toLowerCase()) ?? null };
+}
+
 export const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -21,6 +61,7 @@ export const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  */
 export function parseNpmLock(text) {
   const lock = JSON.parse(text);
+  const lines = jsonKeyLines(text);
   const out = new Map();
   const add = (p) => {
     const key = `${p.name}@${p.version}`;
@@ -45,12 +86,12 @@ export function parseNpmLock(text) {
       if (!/^\d/.test(entry.version)) continue;
       const license = typeof entry.license === 'string' ? entry.license : entry.license?.type;
       const peers = requiredPeers(entry.peerDependencies, entry.peerDependenciesMeta);
-      add({ ecosystem: 'npm', name, version: entry.version, direct: directs.has(name) && path.indexOf('node_modules/') === path.lastIndexOf('node_modules/'), dev: Boolean(entry.dev || entry.devOptional), ...(license ? { license } : {}), ...(peers ? { peers } : {}), line: lineOf(text, new RegExp(`"${escape(path)}"\\s*:`)) });
+      add({ ecosystem: 'npm', name, version: entry.version, direct: directs.has(name) && path.indexOf('node_modules/') === path.lastIndexOf('node_modules/'), dev: Boolean(entry.dev || entry.devOptional), ...(license ? { license } : {}), ...(peers ? { peers } : {}), line: lines.key(path) });
     }
   } else if (lock.dependencies) {
     const walk = (deps, top) => {
       for (const [name, entry] of Object.entries(deps ?? {})) {
-        if (entry.version && /^\d/.test(entry.version)) add({ ecosystem: 'npm', name, version: entry.version, direct: top, dev: Boolean(entry.dev), line: lineOf(text, new RegExp(`"${escape(name)}"\\s*:\\s*\\{`)) });
+        if (entry.version && /^\d/.test(entry.version)) add({ ecosystem: 'npm', name, version: entry.version, direct: top, dev: Boolean(entry.dev), line: lines.object(name) });
         walk(entry.dependencies, false);
       }
     };
@@ -74,6 +115,7 @@ export function requiredPeers(peers, meta = {}) {
  */
 export function parseNugetLock(text) {
   const lock = JSON.parse(text.replace(/^﻿/, ''));
+  const lines = jsonKeyLines(text);
   const out = new Map();
   for (const deps of Object.values(lock.dependencies ?? {})) {
     for (const [name, entry] of Object.entries(deps)) {
@@ -81,7 +123,7 @@ export function parseNugetLock(text) {
       const key = `${name.toLowerCase()}@${entry.resolved}`;
       const had = out.get(key);
       if (had) had.direct ||= entry.type === 'Direct';
-      else out.set(key, { ecosystem: 'NuGet', name, version: entry.resolved, direct: entry.type === 'Direct', dev: false, line: lineOf(text, new RegExp(`"${escape(name)}"\\s*:`, 'i')) });
+      else out.set(key, { ecosystem: 'NuGet', name, version: entry.resolved, direct: entry.type === 'Direct', dev: false, line: lines.caseless(name) });
     }
   }
   return [...out.values()];
