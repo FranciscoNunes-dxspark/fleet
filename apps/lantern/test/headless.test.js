@@ -87,6 +87,29 @@ test('lantern domains: the records, redirects and certificate; --json adds a sum
   assert.deepEqual(j.findings.map((f) => f.rule), ['missing-caa']);
 });
 
+test('lantern domains and security check several at once and print them in the order asked', async () => {
+  const demo = demoLantern();
+  let open = 0;
+  let most = 0;
+  // The first hosts answer last, so the order can't come from who finished first.
+  const slow = (fn) => async (x, i) => {
+    open++;
+    most = Math.max(most, open);
+    await new Promise((r) => setTimeout(r, 30 - i * 2));
+    open--;
+    return fn(x);
+  };
+  const hosts = Array.from({ length: 12 }, (_, i) => `h${i}.shop.example`);
+  const provider = { ...demo, domain: (h) => slow(demo.domain)(h, hosts.indexOf(h)), security: (u) => slow(demo.security)(u, 0) };
+  const j = JSON.parse((await headless(['domains', ...hosts, '--json'], { provider })).out);
+  assert.deepEqual(j.domains.map((d) => d.host), hosts);
+  assert.ok(most > 1 && most <= 6, `${most} at once`);
+  most = 0;
+  const s = JSON.parse((await headless(['security', 'https://shop.example/', 'https://staging.shop.example/', '--json'], { provider })).out);
+  assert.ok(s.findings.length);
+  assert.equal(most, 2);
+});
+
 test('the pages of a folder: lantern.json and the environments, the chosen one\'s by default', async () => {
   const dir = join(process.env.LANTERN_HOME, 'site');
   mkdirSync(join(dir, '.fleet'), { recursive: true });
