@@ -58,3 +58,18 @@ test('prettyLines gives the tokens of indented JSON, as prettyText does', () => 
   assert.deepEqual(lines[2].map((t) => t.kind), ['punct', 'number', 'punct']);
   assert.equal(prettyLines(Array.from({ length: 10 }, (_, i) => i), { max: 3 }).at(-1)[0].text, '… 9 more lines');
 });
+
+test('a big value: the query goes through every item, prettyLines counts what it leaves out, CSV reads quickly', () => {
+  const items = Array.from({ length: 300_000 }, (_, i) => ({ id: i, tags: ['a', 'b'], o: {} }));
+  assert.equal(query({ items }, '.items[].id').values.length, 300_000);
+  const t = performance.now();
+  const lines = prettyLines({ items }, { max: 50 });
+  assert.equal(lines.length, 51);
+  // Each item is 8 lines ({, id, tags' 4, o, }); the object and the array around them 4.
+  assert.equal(lines.at(-1)[0].text, `… ${300_000 * 8 + 4 - 50} more lines`);
+  const csv = ['id,name,note', ...items.map((it) => `${it.id},"item, ${it.id}",say ""hi""`)].join('\n');
+  const read = parseData(csv);
+  assert.equal(read.value.length, 300_000);
+  assert.deepEqual(read.value[7], { id: '7', name: 'item, 7', note: 'say ""hi""' });
+  assert.ok(performance.now() - t < 3000, `${performance.now() - t} ms`);
+});

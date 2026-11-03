@@ -2,10 +2,11 @@
 // codescan.js: the rules on text, the file-level findings and the walk of a folder on disk.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { dockerFindings, fileFindings, gitignored, redact, scanCode, scanText, withoutIgnoredCode } from '../codescan.js';
+import { fileURLToPath } from 'node:url';
+import { RULES, dockerFindings, fileFindings, gitignored, redact, scanCode, scanText, withoutIgnoredCode } from '../codescan.js';
 
 // Made up from pieces, so that no line of this file is a whole one.
 const AWS = ['AKIA', 'Q4ZB7XWM2HNE9TLC'].join('');
@@ -127,4 +128,22 @@ test('scanCode walks the folder: skips installed packages, lock files, binaries 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("a rule's needs hold for every line it matches: the same findings as every pattern on every line", () => {
+  const everyLine = RULES.map(({ needs, ...r }) => r);
+  // This file's lines (less its first, which leaves the file out), in capitals too, and the kit's own
+  // code, read as files of each kind the rules look at.
+  const here = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1).join('\n');
+  const kitDir = fileURLToPath(new URL('..', import.meta.url));
+  const kit = readdirSync(kitDir).filter((f) => f.endsWith('.js')).map((f) => readFileSync(join(kitDir, f), 'utf8'));
+  let found = 0;
+  for (const text of [here, here.toUpperCase(), ...kit]) {
+    for (const path of ['a.js', 'a.py', 'a.cs', 'Dockerfile', '.github/workflows/ci.yml', '.npmrc', 'test/a.js']) {
+      const fast = scanText(path, text);
+      assert.deepEqual(fast, scanText(path, text, { rules: everyLine }), path);
+      found += fast.length;
+    }
+  }
+  assert.ok(found > 100, `the lines find things (${found})`);
 });

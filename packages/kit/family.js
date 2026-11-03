@@ -342,10 +342,26 @@ export function maskValue(key, value) {
   return SECRET_KEY.test(String(key ?? '')) && s ? MASK : s;
 }
 
+const SCHEME_CHAR = /[a-z0-9+.-]/i;
+
+/**
+ * `scheme://user:password@` with the password masked, as /([a-z][a-z0-9+.-]*:\/\/[^/\s:@]*:)[^@\s/]+@/gi
+ * would, but found from each `://` and the scheme looked for behind it: that pattern tried a scheme at
+ * every letter of a long run of them (base64, a minified file) and took seconds over a few hundred KB.
+ */
+function maskUrlPasswords(s) {
+  return s.replace(/:\/\/[^/\s:@]*:[^@\s/]+@/g, (m, at) => {
+    // A scheme is letters, digits, + . - before ://, one of them a letter to start it.
+    let letter = false;
+    for (let k = at - 1; k >= 0 && !letter && SCHEME_CHAR.test(s[k]); k--) letter = /[a-z]/i.test(s[k]);
+    // The user ends at the first : after ://; the password may hold more.
+    return letter ? `${m.slice(0, m.indexOf(':', 3) + 1)}${MASK}@` : m;
+  });
+}
+
 /** Free text with what looks like a secret in it masked: key=value pairs named as secrets, bearer tokens, URL passwords. */
 export function redactSecrets(text) {
-  return String(text ?? '')
-    .replace(/([a-z][a-z0-9+.-]*:\/\/[^/\s:@]*:)[^@\s/]+@/gi, `$1${MASK}@`)
+  return maskUrlPasswords(String(text ?? ''))
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, `$1${MASK}`)
     .replace(/\b((?:pass(?:word)?|pwd|secret|token|api[-_]?key|accountkey|sharedaccesskey)\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s;,&]+)/gi, `$1${MASK}`);
 }

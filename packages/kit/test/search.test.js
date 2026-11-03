@@ -26,3 +26,19 @@ test('markRanges restyles just the ranges, across segment boundaries', () => {
   ]);
   assert.equal(markRanges(segs, [], { bg: 'X' }), segs);
 });
+
+test('markRanges: overlapping and unordered ranges, and a long line with thousands of matches', () => {
+  assert.deepEqual(markRanges([{ text: 'abcdef' }], [[3, 5], [1, 4], [2, 2]], { bg: 'X' }), [
+    { text: 'a' },
+    { text: 'b', bg: 'X' },
+    { text: 'c', bg: 'X' },
+    { text: 'd', bg: 'X' },
+    { text: 'e', bg: 'X' },
+    { text: 'f' },
+  ]);
+  const line = [{ text: 'ab '.repeat(20_000) }];
+  const t = performance.now();
+  const out = markRanges(line, matcher('ab')(line[0].text), { bg: 'X' });
+  assert.equal(out.length, 40_000);
+  assert.ok(performance.now() - t < 1000, `${performance.now() - t} ms`);
+});

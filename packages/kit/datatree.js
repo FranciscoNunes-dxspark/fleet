@@ -21,13 +21,24 @@ export function parseDelimited(text, delimiter) {
   let field = '';
   let quoted = false;
   const s = String(text).replace(/^﻿/, '');
+  // Text between the characters that mean something is taken a run at a time, not a character at a time.
+  const plainEnd = (from) => {
+    let j = from;
+    while (j < s.length && s[j] !== delimiter && s[j] !== '\n' && s[j] !== '\r') j++;
+    return j;
+  };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (quoted) {
       if (c === '"') {
         if (s[i + 1] === '"') (field += '"', i++);
         else quoted = false;
-      } else field += c;
+      } else {
+        const q = s.indexOf('"', i);
+        const end = q < 0 ? s.length : q;
+        field += s.slice(i, end);
+        i = end - 1;
+      }
     } else if (c === '"' && field === '') quoted = true;
     else if (c === delimiter) (row.push(field), (field = ''));
     else if (c === '\n' || c === '\r') {
@@ -36,7 +47,12 @@ export function parseDelimited(text, delimiter) {
       field = '';
       rows.push(row);
       row = [];
-    } else field += c;
+    } else {
+      // A quote after the field's first character is only a character.
+      const end = plainEnd(i + 1);
+      field += s.slice(i, end);
+      i = end - 1;
+    }
   }
   if (field !== '' || row.length) (row.push(field), rows.push(row));
   return rows.filter((r) => !(r.length === 1 && r[0] === ''));
@@ -44,7 +60,15 @@ export function parseDelimited(text, delimiter) {
 
 /** The delimiter (tab, comma, semicolon) the first lines agree on with at least two columns, or null. */
 function delimiterOf(text) {
-  const lines = text.split(/\r?\n/).filter(Boolean).slice(0, 20);
+  // The first 20 lines with something on them, without splitting the whole text.
+  const lines = [];
+  for (let at = 0; at <= text.length && lines.length < 20; ) {
+    const nl = text.indexOf('\n', at);
+    const end = nl < 0 ? text.length : nl;
+    const line = text.slice(at, nl > at && text[nl - 1] === '\r' ? nl - 1 : end);
+    if (line) lines.push(line);
+    at = end + 1;
+  }
   if (lines.length < 2) return null;
   for (const d of ['\t', ',', ';']) {
     const counts = lines.map((l) => parseDelimited(l, d)[0]?.length ?? 0);
@@ -89,11 +113,14 @@ export function parseData(text) {
   try {
     return { kind: 'json', value: JSON.parse(t) };
   } catch (e) {
-    const lines = t.split(/\r?\n/).filter((l) => l.trim());
-    if (lines.length >= 2 && /^[[{]/.test(lines[0])) {
-      try {
-        return { kind: 'jsonl', value: lines.map((l) => JSON.parse(l)) };
-      } catch {}
+    // The text is trimmed, so its first line starts where it does.
+    if (/^[[{]/.test(t)) {
+      const lines = t.split(/\r?\n/).filter((l) => l.trim());
+      if (lines.length >= 2) {
+        try {
+          return { kind: 'jsonl', value: lines.map((l) => JSON.parse(l)) };
+        } catch {}
+      }
     }
     const d = /^[[{"]/.test(t) ? null : delimiterOf(t);
     if (d) {
@@ -146,6 +173,21 @@ export function flatten(value, expanded) {
 /** The text of a scalar as written in JSON. */
 export const scalarText = (v) => (v === undefined ? 'null' : JSON.stringify(v));
 
+/** How many lines prettyLines gives `v`: one for a scalar or an empty container, else its items' and two. */
+function lineCount(v) {
+  if (v === null || typeof v !== 'object') return 1;
+  if (Array.isArray(v)) {
+    if (!v.length) return 1;
+    let n = 2;
+    v.forEach((x) => (n += lineCount(x)));
+    return n;
+  }
+  const keys = Object.keys(v);
+  let n = keys.length ? 2 : 1;
+  for (const k of keys) n += lineCount(v[k]);
+  return n;
+}
+
 /**
  * Pretty-printed JSON as lines of tokens `{ text, kind }`, kind being key, string, number, boolean, null or
  * punct: the viewer picks a colour for each. At most `max` lines (the last then says how many more).
@@ -158,6 +200,8 @@ export function prettyLines(value, { indent = 2, max = 5000 } = {}) {
     if (lines.length < max) lines.push(line);
   };
   const put = (v, pad, lead, trail) => {
+    // Past `max`, the rest is only counted, not built.
+    if (lines.length >= max) return void (total += lineCount(v));
     const kind = kindOf(v);
     const sp = ' '.repeat(pad);
     if (kind !== 'object' && kind !== 'array') return push([...lead, { text: scalarText(v), kind }, ...trail]);
@@ -249,8 +293,10 @@ export function query(value, text) {
         if (v === null || v === undefined) next.push(null);
         else if (!Array.isArray(v)) return { error: `Can't index ${describe(v)} with [${s.index}].` };
         else next.push(v[s.index < 0 ? v.length + s.index : s.index] ?? null);
-      } else if (Array.isArray(v)) next.push(...v);
-      else if (isObject(v)) next.push(...Object.values(v));
+      } else if (Array.isArray(v)) {
+        // One at a time: spread into push, an array of a few hundred thousand overflows the stack.
+        for (const x of v) next.push(x);
+      } else if (isObject(v)) for (const x of Object.values(v)) next.push(x);
       else return { error: `Can't go through the items of ${describe(v)}.` };
     }
     values = next;
