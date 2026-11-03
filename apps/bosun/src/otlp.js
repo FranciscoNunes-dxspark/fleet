@@ -33,17 +33,30 @@ export function readFields(bytes) {
       if (shift > 70n) throw new Error('A protobuf number is too long.');
     }
   };
+  // A key or a length, as a number: the BigInt path for every one of them was most of the time a
+  // large batch took. Past 2^28 (which no key or length in a body this size reaches) it falls back.
+  const small = () => {
+    let n = 0;
+    for (let shift = 0; shift < 28; shift += 7) {
+      if (i >= buf.length) throw new Error('The protobuf ends inside a number.');
+      const b = buf[i++];
+      n |= (b & 0x7f) << shift;
+      if (!(b & 0x80)) return n;
+    }
+    i -= 4;
+    return Number(varint());
+  };
   while (i < buf.length) {
-    const key = varint();
-    const field = Number(key >> 3n);
-    const wire = Number(key & 7n);
+    const key = small();
+    const field = Math.floor(key / 8);
+    const wire = key % 8;
     if (wire === 0) out.push({ field, wire, value: varint() });
     else if (wire === 1) {
       if (i + 8 > buf.length) throw new Error('The protobuf ends inside a fixed64.');
       out.push({ field, wire, value: buf.readBigUInt64LE(i), raw: buf.subarray(i, i + 8) });
       i += 8;
     } else if (wire === 2) {
-      const len = Number(varint());
+      const len = small();
       if (i + len > buf.length) throw new Error('The protobuf ends inside a field.');
       out.push({ field, wire, value: buf.subarray(i, i + len) });
       i += len;
@@ -56,8 +69,10 @@ export function readFields(bytes) {
   return out;
 }
 
-const text = (b) => Buffer.from(b).toString('utf8');
-const hex = (b) => Buffer.from(b).toString('hex');
+// The fields' bytes are views into the request's Buffer already: read them in place, not copied.
+const asBuffer = (b) => (Buffer.isBuffer(b) ? b : Buffer.from(b));
+const text = (b) => asBuffer(b).toString('utf8');
+const hex = (b) => asBuffer(b).toString('hex');
 const nanosToMs = (n) => Number(BigInt(n) / 1000n) / 1000;
 
 // AnyValue: one of string 1, bool 2, int64 3, double 4, ArrayValue 5, KeyValueList 6, bytes 7.

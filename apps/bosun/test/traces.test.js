@@ -4,7 +4,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { gzipSync } from 'node:zlib';
-import { decodeTraceJson, decodeTraceRequest } from '../src/otlp.js';
+import { decodeTraceJson, decodeTraceRequest, readFields } from '../src/otlp.js';
 import { TraceStore, bar, decodeBody, otelEnv, shortDuration, spanHandoff, spanRequest, spanText, startOtlpReceiver, traceSummary, waterfall } from '../src/traces.js';
 import { Supervisor } from '../src/supervisor.js';
 import { contextIn } from '@fleet/kit/family.js';
@@ -112,6 +112,11 @@ test('OTLP protobuf is read into spans: ids, times, kinds, attributes of every t
   assert.deepEqual(db.status, { code: 2, message: 'boom' });
   assert.equal(db.resource['service.name'], 'api');
   assert.throws(() => decodeTraceRequest(Buffer.from([0x0a, 0x10, 0x01])), /ends inside/);
+  // A key five bytes long (a field past 2^25) and a value of 64 bits are read whole, and skipped.
+  const far = Buffer.concat([pb.uint(2 ** 26, 2n ** 63n - 1n), pb.str(2 ** 25, 'far'), PROTO]);
+  assert.deepEqual(readFields(far).slice(0, 2).map((f) => [f.field, f.wire, f.wire === 0 ? f.value : String(f.value)]), [[2 ** 26, 0, 2n ** 63n - 1n], [2 ** 25, 2, 'far']]);
+  assert.equal(decodeTraceRequest(far).length, 3);
+  assert.throws(() => decodeTraceRequest(Buffer.from([0x80, 0x80, 0x80, 0x80, 0x80])), /ends inside/);
 });
 
 test('OTLP JSON is read the same way, with string kinds and codes and 64-bit integers as strings', () => {
