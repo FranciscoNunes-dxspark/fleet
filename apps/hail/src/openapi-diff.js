@@ -133,6 +133,16 @@ const covers = (a, b) => [...b].every((t) => accepts(a, t));
 const typeText = (set) => (set ? [...set].join(' or ') : 'anything');
 const enumOf = (s) => (Array.isArray(s.enum) ? s.enum : s.const !== undefined ? [s.const] : null);
 
+// An enum's values as JSON, what two values are compared by: a Set made once for each list, as a
+// shared schema's enum is compared again for every operation that uses it (each value against each
+// other one, it took most of the time a big description's diff took).
+const ENUM_KEYS = new WeakMap();
+function enumKeys(list) {
+  let keys = ENUM_KEYS.get(list);
+  if (!keys) ENUM_KEYS.set(list, (keys = new Set(list.map((v) => JSON.stringify(v)))));
+  return keys;
+}
+
 // Bounds: a bigger maximum or smaller minimum lets more through.
 const MAXIMA = ['maxLength', 'maximum', 'maxItems', 'maxProperties'];
 const MINIMA = ['minLength', 'minimum', 'minItems', 'minProperties'];
@@ -188,9 +198,10 @@ function compareSchemas(cx, oldRaw, newRaw, dir, path, stack, depth = 0) {
     const oe = enumOf(o);
     const ne = enumOf(n);
     if (oe && ne) {
-      const has = (list, v) => list.some((x) => JSON.stringify(x) === JSON.stringify(v));
-      const gone = oe.filter((v) => !has(ne, v));
-      const added = ne.filter((v) => !has(oe, v));
+      const ok = enumKeys(oe);
+      const nk = enumKeys(ne);
+      const gone = oe.filter((v) => !nk.has(JSON.stringify(v)));
+      const added = ne.filter((v) => !ok.has(JSON.stringify(v)));
       if (gone.length) {
         const text = `enum value${gone.length === 1 ? '' : 's'} ${gone.map(shown).join(', ')} removed`;
         if (req) emit('breaking', 'request-enum-value-removed', path, text);

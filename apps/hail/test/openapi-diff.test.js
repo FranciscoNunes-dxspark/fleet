@@ -289,3 +289,17 @@ test('through the UI: /openapi-diff compares the contract with git, in the viewe
     app.unmount();
   }
 });
+
+test('a big enum shared by many operations is compared value by value, not each value against every other', () => {
+  const values = Array.from({ length: 20000 }, (_, i) => `v${i}`);
+  const doc = (list) => ({
+    openapi: '3.0.3',
+    paths: Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`/r${i}`, { get: { parameters: [{ $ref: '#/components/parameters/kind' }], responses: { 200: { description: 'ok' } } } }])),
+    components: { parameters: { kind: { name: 'kind', in: 'query', schema: { type: 'string', enum: list } } } },
+  });
+  const started = performance.now();
+  const r = diffSpecs(doc(values), doc([...values.slice(1), 'w']));
+  assert.ok(performance.now() - started < 2000);
+  assert.deepEqual([r.counts.breaking, r.counts['non-breaking']], [50, 50]);
+  assert.equal(r.changes[0].text, 'enum value "v0" removed');
+});
