@@ -82,9 +82,13 @@ export function parseStructured(text) {
 // Each line object is read once, however often it's drawn.
 const cache = new WeakMap();
 
-/** A supervisor line ({ text, at, err }) read as structured (parseStructured's), or null; kept per line. */
+/**
+ * A supervisor line ({ text, at, err }) read as structured (parseStructured's), or null; kept per line.
+ * A copy that names its `source` (the merged log's, made again each frame) is read as that line.
+ */
 export function structuredOf(line) {
   if (!line || typeof line !== 'object') return parseStructured(line);
+  if (line.source && line.source.text === line.text) return structuredOf(line.source);
   if (!cache.has(line)) cache.set(line, parseStructured(line.text));
   return cache.get(line);
 }
@@ -120,10 +124,18 @@ export function formatStructured(s) {
   return { parts, text: parts.map((p) => p.text).join('') };
 }
 
+// What a structured line formats as, kept with it: a search or a filter reads every line on each key.
+const formatted = new WeakMap();
+const formattedText = (s) => {
+  let text = formatted.get(s);
+  if (text === undefined) formatted.set(s, (text = formatStructured(s).text));
+  return text;
+};
+
 /** A line's text as the log shows it: a structured one formatted, else as it came. */
 export const shownText = (line) => {
   const s = structuredOf(line);
-  return s ? formatStructured(s).text : line.text;
+  return s ? formattedText(s) : line.text;
 };
 
 /** Whether a line reads as trouble: a structured one at error or worse, else crew.js's words. */
@@ -184,7 +196,7 @@ export function parseFilter(input) {
 export function passes(filter, line) {
   if (!filter?.terms.length) return true;
   const s = structuredOf(line);
-  const shown = s ? formatStructured(s).text : line.text;
+  const shown = s ? formattedText(s) : line.text;
   for (const t of filter.terms) {
     if (t.type === 'text') {
       if (!(t.exact ? shown.includes(t.value) || line.text.includes(t.value) : shown.toLowerCase().includes(t.value) || line.text.toLowerCase().includes(t.value))) return false;

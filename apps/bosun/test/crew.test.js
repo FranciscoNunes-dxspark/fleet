@@ -12,6 +12,7 @@ import { composeProcs, hostPort, isTrouble, loadCrew, parseProcfile, procfilePro
 import { RESTART_TIMES, Supervisor, afterExit, pidsOnPort, portOpen, seconds } from '../src/supervisor.js';
 import { afterStatus, mergedLines, nextTick, statusSegment, portSegments, uptime } from '../src/ui/CrewView.jsx';
 import { whyPrompt } from '../src/actions.js';
+import { structuredOf } from '../src/structured.js';
 import { project } from './helpers.js';
 
 const until = async (check, what, ms = 8000) => {
@@ -102,8 +103,14 @@ test('the rows: uptime, ports, the merged log, and the question for Claude', () 
   assert.deepEqual(portSegments({ port: null }), []);
   const merged = mergedLines([{ name: 'a', lines: [{ at: 1, text: 'one' }, { at: 3, text: 'three' }] }, { name: 'b', lines: [{ at: 2, text: 'two' }] }], 2);
   assert.deepEqual(merged.map((l) => `${l.name}:${l.text}`), ['b:two', 'a:three']);
+  // A merged line is read as structured once, as its process's line, however many frames copy it.
+  const json = { at: 1, text: '{"level":50,"msg":"boom"}' };
+  const read = structuredOf(json);
+  const [copy] = mergedLines([{ name: 'a', lines: [json] }], 1);
+  assert.equal(structuredOf(copy), read);
+  assert.equal(structuredOf({ ...copy, text: 'edited' }), null);
   // The newest lines, as sorting every log's tail by time would give them: ties and short logs too.
-  const sorted = (procs, last) => procs.flatMap((q) => q.lines.slice(-last).map((l) => ({ ...l, name: q.name }))).sort((x, y) => x.at - y.at).slice(-last);
+  const sorted = (procs, last) => procs.flatMap((q) => q.lines.slice(-last).map((l) => ({ ...l, name: q.name, source: l }))).sort((x, y) => x.at - y.at).slice(-last);
   let seed = 7;
   const rnd = (n) => ((seed = (seed * 48271) % 2147483647) % n);
   for (let round = 0; round < 50; round++) {
