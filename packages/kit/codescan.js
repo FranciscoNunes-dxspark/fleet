@@ -1,4 +1,4 @@
-// The Code view and `bilge code`: a look through a folder's own files, not its packages, for what an
+// Bilge's Code view and `bilge code`, and Splice's look through a repository's history: a look through a folder's own files, not its packages, for what an
 // attacker would look for first: secrets written into the code, code that runs what it's given (eval,
 // a shell, SQL built from strings), TLS checks turned off, unsafe deserialisation, a Dockerfile that
 // runs as root, a .env that git would commit, a workflow that puts an issue's title into a shell. It is
@@ -11,7 +11,7 @@
 // bilge-ignore-file: the rules below name what they look for.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { rank } from './audit.js';
+import { rank } from './osv.js';
 
 // Folders that aren't the project's own code: installed packages, builds, tools' caches.
 export const SKIP_DIRS = new Set(['node_modules', '.git', '.hg', '.svn', 'bin', 'obj', 'dist', 'build', 'out', 'coverage', 'vendor', '.next', '.nuxt', '.output', 'target', '__pycache__', '.venv', 'venv', '.terraform', '.idea', '.vs', '.vscode', '.gradle', '.cache', '.yarn', '.pnpm-store', 'bower_components', 'jspm_packages', 'TestResults']);
@@ -93,7 +93,7 @@ const softer = (s) => ({ critical: 'high', high: 'medium', medium: 'low' })[s] ?
 
 /**
  * The findings in one file's text (`path` relative and /-separated): [{ key, rule, kind, severity,
- * title, why, fix, path, line, excerpt, test }]. A line saying `bilge-ignore` (or the line above it)
+ * title, why, fix, path, where (the path, as findings.js reads it), line, excerpt, test }]. A line saying `bilge-ignore` (or the line above it)
  * is skipped, and a file saying `bilge-ignore-file` in its first lines is skipped whole.
  */
 export function scanText(path, text, { rules = RULES } = {}) {
@@ -117,7 +117,7 @@ export function scanText(path, text, { rules = RULES } = {}) {
       let excerpt = line.trim();
       if (secret) excerpt = excerpt.split(secret).join(redact(secret));
       if (excerpt.length > 160) excerpt = `${excerpt.slice(0, 157)}…`;
-      out.push({ key: `${r.id}:${path}:${i + 1}`, rule: r.id, kind: r.kind, severity: test ? softer(r.severity) : r.severity, title: r.title, why: r.why, fix: r.fix, path, line: i + 1, excerpt, test });
+      out.push({ key: `${r.id}:${path}:${i + 1}`, rule: r.id, where: path, kind: r.kind, severity: test ? softer(r.severity) : r.severity, title: r.title, why: r.why, fix: r.fix, path, line: i + 1, excerpt, test });
     }
   });
   return out;
@@ -130,7 +130,7 @@ export function dockerFindings(path, text) {
   const last = users.at(-1);
   if (last && !/^(root|0)(:|$)/.test(last)) return [];
   const line = last ? String(text).split(/\r?\n/).findIndex((l) => /^\s*USER\s+(root|0)\b/i.test(l)) + 1 : 1;
-  return [{ key: `docker-root:${path}`, rule: 'docker-root', kind: 'config', severity: 'medium', title: 'Container runs as root', why: 'A process that breaks out of the app is root in the container, and closer to the host.', fix: 'Add a user and switch to it before CMD: RUN adduser -D app && USER app (or USER node, USER app on the official images).', path, line, excerpt: last ? `USER ${last}` : 'no USER line', test: TESTISH.test(path) }];
+  return [{ key: `docker-root:${path}`, rule: 'docker-root', where: path, kind: 'config', severity: 'medium', title: 'Container runs as root', why: 'A process that breaks out of the app is root in the container, and closer to the host.', fix: 'Add a user and switch to it before CMD: RUN adduser -D app && USER app (or USER node, USER app on the official images).', path, line, excerpt: last ? `USER ${last}` : 'no USER line', test: TESTISH.test(path) }];
 }
 
 /** A .gitignore's patterns as tests on a path (relative, /-separated). Enough of git's rules for what's checked here, not all of them. */
@@ -160,10 +160,10 @@ export function fileFindings(path, { ignored = () => false } = {}) {
   const out = [];
   const test = TESTISH.test(path);
   if (ENV_FILE.test(path) && !ENV_EXAMPLE.test(path) && !ignored(path)) {
-    out.push({ key: `env-committed:${path}`, rule: 'env-committed', kind: 'config', severity: test ? 'medium' : 'high', title: '.env file git doesn\'t ignore', why: 'A .env holds the secrets the app runs with; not ignored, the next git add puts them in the repository.', fix: 'Add .env* (and !.env.example) to .gitignore; if it was committed, rotate what it holds and remove it (git rm --cached).', path, line: 0, excerpt: path, test });
+    out.push({ key: `env-committed:${path}`, rule: 'env-committed', where: path, kind: 'config', severity: test ? 'medium' : 'high', title: '.env file git doesn\'t ignore', why: 'A .env holds the secrets the app runs with; not ignored, the next git add puts them in the repository.', fix: 'Add .env* (and !.env.example) to .gitignore; if it was committed, rotate what it holds and remove it (git rm --cached).', path, line: 0, excerpt: path, test });
   }
   if (KEY_STORE.test(path)) {
-    out.push({ key: `key-store:${path}`, rule: 'key-store', kind: 'secret', severity: test ? 'medium' : 'high', title: 'Certificate with its private key', why: 'A .pfx, .p12 or keystore carries the private key; its password is often weak or beside it.', fix: 'Keep it in Key Vault or a secret store and load it at run time.', path, line: 0, excerpt: path, test });
+    out.push({ key: `key-store:${path}`, rule: 'key-store', where: path, kind: 'secret', severity: test ? 'medium' : 'high', title: 'Certificate with its private key', why: 'A .pfx, .p12 or keystore carries the private key; its password is often weak or beside it.', fix: 'Keep it in Key Vault or a secret store and load it at run time.', path, line: 0, excerpt: path, test });
   }
   return out;
 }

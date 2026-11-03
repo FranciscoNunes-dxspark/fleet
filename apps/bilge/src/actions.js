@@ -21,7 +21,7 @@ import { bumpOf } from './versions.js';
 import { nodeOf, problems, targetsOf } from './compat.js';
 import { branchName, folderLabel, upgradeCandidates } from './upgrade.js';
 import { breakingInput, breakingPrompt } from './breaking.js';
-import { findingWhere, withoutIgnoredCode } from './codescan.js';
+import { findingWhere, withoutIgnoredCode } from '@fleet/kit/codescan.js';
 import { VERSION } from './app.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];

@@ -7,7 +7,7 @@ import { SEVERITIES, countLine, counts, findings, rank } from './audit.js';
 import { SEVERITY_LABEL, label, withoutIgnored } from './rows.js';
 import { cyclonedx } from './sbom.js';
 import { markdownReport } from './share.js';
-import { findingWhere, withoutIgnoredCode } from './codescan.js';
+import { findingWhere, withoutIgnoredCode } from '@fleet/kit/codescan.js';
 
 /** { command, dir, failOn, json, out } from the arguments after `bilge`; an `error` when they don't add up. */
 export function parseArgs(args) {

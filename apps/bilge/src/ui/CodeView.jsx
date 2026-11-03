@@ -2,7 +2,7 @@ import React from 'react';
 import { useInput } from 'ink';
 import * as a from '../actions.js';
 import { countLine } from '../audit.js';
-import { findingWhere } from '../codescan.js';
+import { findingWhere } from '@fleet/kit/codescan.js';
 import { SEVERITY_LABEL, severityTone } from '../rows.js';
 import { theme } from '../theme.js';
 import { fit } from '@fleet/kit/text.js';

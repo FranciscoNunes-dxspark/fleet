@@ -16,7 +16,7 @@ import { createOsv } from '@fleet/kit/osv.js';
 import { createRegistry } from './registry.js';
 import { testPlan } from './upgrade.js';
 import { findUsages } from './breaking.js';
-import { scanCode } from './codescan.js';
+import { scanCode } from '@fleet/kit/codescan.js';
 import { imageManifest, safeContainerId, safeImage, tarText } from './image.js';
 import { FAST, clip, runClaude } from '@fleet/kit/claude-cli.js';
 

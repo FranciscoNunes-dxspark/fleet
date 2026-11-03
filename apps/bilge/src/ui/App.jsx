@@ -10,7 +10,7 @@ import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { createBilge } from '../provider.js';
 import { SEVERITIES, counts as countOf, findings } from '../audit.js';
 import { severityTone, withoutIgnored } from '../rows.js';
-import { withoutIgnoredCode } from '../codescan.js';
+import { withoutIgnoredCode } from '@fleet/kit/codescan.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';

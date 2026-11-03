@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { keyOf, mergePackages } from './lockfiles.js';
 import { testPlan } from './upgrade.js';
 import { imageManifest } from './image.js';
-import { dockerFindings, fileFindings, gitignored, scanText, sortFindings } from './codescan.js';
+import { dockerFindings, fileFindings, gitignored, scanText, sortFindings } from '@fleet/kit/codescan.js';
 
 const npm = (name, version, extra = {}) => ({ ecosystem: 'npm', name, version, direct: false, dev: false, ...extra });
 const nuget = (name, version, extra = {}) => ({ ecosystem: 'NuGet', name, version, direct: false, dev: false, ...extra });
