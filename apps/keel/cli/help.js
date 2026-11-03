@@ -200,6 +200,18 @@ export const HELP = [
     ],
   },
   {
+    title: 'Security review',
+    about: '/security [project]: what the tracked Azure DevOps projects\' own settings leave open, worst first, over the current tab',
+    rows: [
+      ['j k / ↑ ↓', 'Finding (beside the list: where, why, the fix and what was seen; a secret\'s value is never shown)'],
+      ['↵', 'The finding in full, in the viewer (esc comes back to the list)'],
+      ['o', 'Open the place to change it in Azure DevOps'],
+      ['/find <text>', 'Narrow the list (high, a project, a repo, service connection…)'],
+      ['esc', 'Close the review'],
+      'It checks pipeline and variable group variables named like secrets with a value in the clear, variable groups not linked to Key Vault, service connections, variable groups and secure files open to every pipeline, Azure service connections scoped to a whole subscription, with an Owner-like role, signing in with a client secret or shared with other projects, default branches without required reviewers or build validation (or one reviewer whose own vote counts), self-hosted agents far behind, and public projects. keel security does the same without the screen, for a pipeline.',
+    ],
+  },
+  {
     title: 'Weekly summary',
     about: '/summary; /summary last, /summary -3, /summary 2026-10-06 for earlier weeks',
     rows: ['What got finished, merged and deployed that week, and what\'s blocked now: the web app\'s Weekly summary, as the text its "Copy as text" gives, ready to paste into an email or chat.'],

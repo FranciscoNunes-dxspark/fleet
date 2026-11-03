@@ -19,6 +19,7 @@ import { buildSummary, weekRange } from './domain/summary.js';
 import { buildFlow } from './domain/flow.js';
 import { byFlakiness } from './domain/tests.js';
 import { DAY, emailOf } from './domain/prs.js';
+import { combineReviews } from './domain/devopssecurity.js';
 
 const SEVERITY = { high: 0, medium: 1, low: 2 };
 const HEALTH = { failing: 0, unstable: 1, healthy: 2, unknown: 3 };
@@ -147,6 +148,12 @@ export function createMultiService(entries) {
     async advisories() {
       const parts = await each((s) => s.advisories());
       return { ...parts[0].value, repos: parts.flatMap(({ org, value }) => tagAll(org, value.repos)) };
+    },
+    // The security review: every organization's projects (or the one named, wherever it is), as one list.
+    async devopsSecurity(opts) {
+      const parts = await each((s) => s.devopsSecurity(opts));
+      const projects = parts.flatMap(({ org, value }) => value.projects.map((p) => ({ ...p, org: org.key })));
+      return { at: parts[0].value.at, projects, ...combineReviews(projects) };
     },
     async pullRequests() {
       const parts = await each((s) => s.pullRequests());

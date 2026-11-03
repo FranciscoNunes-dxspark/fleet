@@ -165,6 +165,10 @@ export function remoteService({ call }) {
     prRisks: () => call('/prs/risk'),
     dora: (days, { production } = {}) => call(`/dora?days=${days}${production ? `&production=${encodeURIComponent(production)}` : ''}`),
     flakyTests: () => call('/tests/flaky'),
+    devopsSecurity: ({ project, fresh } = {}) => {
+      const q = new URLSearchParams(Object.entries({ project, fresh: fresh ? '1' : '' }).filter(([, v]) => v));
+      return call(`/security/devops${q.size ? `?${q}` : ''}`);
+    },
     closedPullRequests: (days) => call(`/prs/closed?days=${days}`),
     commits: ({ repoId, branch, days } = {}) => {
       const q = new URLSearchParams(Object.entries({ repo: repoId, branch, days }).filter(([, v]) => v));

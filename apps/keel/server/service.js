@@ -26,6 +26,7 @@ import { scorePr } from './domain/risk.js';
 import { buildDiff, parsePatch } from './domain/filediff.js';
 import { DEFAULT_MIN_SEVERITY, MIN_SEVERITIES, advisoryAttention, pickLockFiles, sortAdvisories } from './domain/advisories.js';
 import { eachLimited } from '@fleet/kit/osv.js';
+import { combineReviews, reviewProject } from './domain/devopssecurity.js';
 
 const MIN = 60_000;
 
@@ -861,6 +862,31 @@ export function createService({
       const repo = await trackedRepo(projectId, repoId);
       await advisoryWatch.checkNow(repo, () => this.readLockFiles(projectId, repoId));
       return (await this.advisories()).repos.find((r) => r.projectId === projectId && r.repoId === repoId);
+    },
+
+    /**
+     * The security review of Azure DevOps projects (domain/devopssecurity.js): the tracked ones, or the
+     * one `project` names (by name or id, tracked or not). Each project's settings are read once per
+     * 5 minutes; `fresh` reads them again. Settings' `devopsSecurity.publicProjects` names projects meant
+     * to be public. A GitHub owner has nothing to review.
+     */
+    async devopsSecurity({ project, fresh = false } = {}) {
+      const at = new Date().toISOString();
+      if (github) return { at, projects: [], ...combineReviews([]) };
+      let list = await tracked();
+      if (project) {
+        const q = String(project).trim().toLowerCase();
+        list = (await allProjects()).filter((p) => p.id.toLowerCase() === q || p.name.toLowerCase() === q);
+      }
+      const settings = await store.load();
+      const publicProjects = Array.isArray(settings.devopsSecurity?.publicProjects) ? settings.devopsSecurity.publicProjects : [];
+      if (fresh) cache.invalidate('devsec:');
+      const projects = await eachLimited(list, 2, (p) => cached(`devsec:${p.id}`, async () => {
+        const input = await provider.readSecuritySettings(p.id);
+        if (!input) return { projectId: p.id, projectName: p.name, findings: [], gaps: [] };
+        return { projectId: p.id, projectName: p.name, webUrl: p.webUrl || null, findings: reviewProject({ ...input, projectName: p.name }, { publicProjects }), gaps: input.gaps ?? [] };
+      }, 5 * MIN));
+      return { at, projects, ...combineReviews(projects) };
     },
 
     /** A repo's branches; fresh skips the cache (the Refresh button on the new pull request page). */

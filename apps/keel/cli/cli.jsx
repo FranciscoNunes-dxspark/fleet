@@ -17,6 +17,7 @@ if (args.includes('-h') || args.includes('--help')) {
   console.log(`keel [--demo]
 keel login [address]
 keel logout
+keel security [project] [--json] [--fail-on critical|high|medium|low|none] [--demo]
 
 Keel in the terminal: the Inbox, pull requests, pipelines, work items and production,
 with the same tracked projects and settings as the web app.
@@ -24,6 +25,10 @@ with the same tracked projects and settings as the web app.
   login    sign in with your account on your team's Keel (keel.example.com unless you name
            another), in the browser. Keel then works through it, as you.
   logout   sign this terminal out of that Keel
+  security the security review of your tracked Azure DevOps projects (or the one named):
+           secrets in plain pipeline variables, resources open to every pipeline, service
+           connections, branch policies, agents. Exits 1 when a finding is as bad as
+           --fail-on (high by default), 2 when it can't run; --json prints the findings as JSON.
   --demo   the demo organization, no credentials needed
 
 Without signing in to a Keel, it works with the Azure DevOps organization in
@@ -103,6 +108,27 @@ else if (!server && !process.env.AZDO_ORG_URL?.trim() && !isOn(process.env.AZDO_
   }
 }
 if (!server && !isOn(process.env.AZDO_MOCK) && !process.env.AZDO_PAT?.trim()) process.env.AZDO_AUTH ||= 'az';
+
+// keel security: the review without the screen, so it runs in a pipeline too (headless.js).
+if (args[0] === 'security') {
+  let service;
+  let target;
+  if (server) {
+    if (!process.env.KEEL_TOKEN?.trim()) fail('Run keel login first: this terminal isn’t signed in to its Keel.');
+    service = (await remote.connectKeel({ server, token: process.env.KEEL_TOKEN.trim() }).catch((e) => fail(e.message))).service;
+    target = server;
+  } else {
+    const { openKeel } = await import('./service.js');
+    try {
+      service = openKeel().service;
+    } catch (e) {
+      fail(e.message);
+    }
+    target = process.env.AZDO_ORG_URL?.trim() || service.provider?.orgUrl || 'tracked projects';
+  }
+  const { runSecurity } = await import('./headless.js');
+  process.exit(await runSecurity(args.slice(1), { service, target }));
+}
 
 if (!interactive) fail('keel needs an interactive terminal.');
 
