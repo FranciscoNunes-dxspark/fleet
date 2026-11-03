@@ -197,7 +197,7 @@ starting. `/preflight` runs the checks again any time and shows them in the view
 
 | Key | What it does |
 | --- | --- |
-| `1` `2` / `tab` | Crew, Log (`shift+tab` goes back) |
+| `1` `2` `3` / `tab` | Crew, Log, Traces (`shift+tab` goes back) |
 | `/` or `:` | The command prompt, with completion. Pasting a `/command` (or a `family:v1:` line from a sibling) while the prompt is closed opens it with that line, for you to run with `↵` |
 | `!` | Run a shell command, e.g. `!node --version` |
 | `esc` | Cancel the running command, or clear the activity lines |
@@ -453,6 +453,33 @@ In lists: `j` `k` or the arrows move, `g` `alt+g` go to the top and bottom, `ctr
 copies, `↵` opens. The mouse works too: click a tab, a row or the prompt, double-click for `↵`, scroll
 with the wheel, and drag to select text, which is copied when you let go.
 
+### Traces
+
+Bosun runs a small OpenTelemetry receiver (OTLP over HTTP, protobuf or JSON, gzipped or not) on
+127.0.0.1, port 4318 or the next free one (the Traces port setting changes it), and every process it
+starts gets `OTEL_EXPORTER_OTLP_ENDPOINT` pointing at it, `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`
+and `OTEL_SERVICE_NAME` set to its name in the crew, unless its env files or bosun.json set their own.
+So a process with an OpenTelemetry SDK (Node's, .NET's, Python's, Java's agent) sends its traces to
+Bosun with nothing to configure: the local version of what Sonar shows from Application Insights.
+
+The Traces tab (`3`, `/traces`) lists the traces, slowest first: how long, the first span's name, the
+services it went through (`web → api`), how many spans and how many failed. `↵` opens one as a
+waterfall: each span under the one that called it, with its service, its name and a bar of when it
+ran and for how long within the trace, across the processes (the front end, the API, the database
+calls). A failed span is red, one that ran SQL green.
+
+| Key | What it does |
+| --- | --- |
+| `↵` | A trace's waterfall; on a span, its attributes, its resource's and its events |
+| `t` | On a span: its SQL (`db.query.text`, or the older `db.statement`) to Trawl as a `query`, or its request (`http.request.method` and `url.full`, or the older `http.method` and `http.url`; a server span's parts otherwise) to Hail as a `request`, copied for you to paste there |
+| `y` | Copy the trace's id, or the span's |
+| `c` | Clear the traces |
+| `esc` | Back to the list |
+
+The newest 300 traces of the last 30 minutes are kept, in memory only; metrics and logs sent to the
+receiver are taken and dropped. Turning the Traces setting off starts no receiver and sets nothing,
+from the next start of Bosun.
+
 ### Replay
 
 Every run of the crew is recorded: what each process said, when, and each change of its state (started,
@@ -584,6 +611,7 @@ Trawl.
 | `/reload` | Read `bosun.json` and the env files again: new processes start, changed ones restart |
 | `/move [folder]` | Run another project instead: a path, or a folder beside this one (completed as you type); without one, a list of the projects run lately and the folders beside this one. This one's processes stop first |
 | `/replay` | Play back a recorded run of this project's crew (see Replay) |
+| `/traces` | The traces the crew exported to Bosun, slowest first (see Traces) |
 | `/init` | Write a `bosun.json` from what Bosun worked out (a Procfile, a compose file, package.json) |
 | `/take <family:v1:…>` | Take what a sibling app copied: a log line or exception is looked for in the crew's logs |
 | `/family` | What this project offers Splice, Hail and Trawl, as lines to paste into them; `↵` copies one |
@@ -609,6 +637,8 @@ Trawl.
 | Notify | On (the default), Bosun rings the terminal's bell and raises a desktop notification when a process crashes (once, not again each time it's restarted; never when you stop it), when one gives up restarting, and when a command (`!`, `w`) that took longer than 10 seconds ends. It's OSC 9, which Windows Terminal, iTerm2, WezTerm and kitty show, or OSC 777 in GNOME Terminal and other VTE terminals. A command you cancel says nothing. `"notifyAfter": 30` in the settings file changes the seconds |
 | Memory alert | Off (the default), 512 MB, 1 GB, 2 GB or 4 GB: `↵` goes round them. Once a process (with what it started) is over it and its memory has kept rising for at least 20 seconds, Bosun says so in the activity lines and with a notification (when Notify is on), once each time it starts |
 | Record sessions | On (the default), each run's output and states are recorded for `/replay`; off records nothing. Either counts from the next start |
+| Traces | On (the default), an OTLP receiver on 127.0.0.1 the crew exports its traces to, for the Traces tab; off starts none and gives the processes no `OTEL_` settings. Counts from the next start of Bosun |
+| Traces port | 4318 unless you type another; the next free one when it's taken. From the next start of Bosun |
 | Family moods | On (the default), Squawk writes how it feels for the sibling apps and says when theirs are worried, sad or happy; off does neither |
 | Check for new versions | Once a day, in the downloaded builds |
 | Install them by itself | Off only says a new version is out |

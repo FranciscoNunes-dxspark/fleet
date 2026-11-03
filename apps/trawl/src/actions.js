@@ -2320,15 +2320,20 @@ export async function scriptAll(ctx, rest) {
   if (removed.length) ctx.note(`${summaryLine(plan, removed.length)} in ${root}.`, 'ok');
 }
 
-// The migration scripts under a folder (and EF Core's .cs migrations), with paths relative to it.
-function migrationFiles(root) {
+// The migration scripts under a folder, with paths relative to it: .sql, EF Core's .cs, Knex's
+// JavaScript (only named: Trawl never reads or runs it), Drizzle's meta/_journal.json and its
+// drizzle.config. `bom` says the text had a byte order mark, which Prisma's and Drizzle's hashes count.
+export function migrationFiles(root) {
   const out = [];
   const walk = (dir, rel) => {
     for (const e of readdirSync(dir, { withFileTypes: true }).sort((x, y) => (x.name < y.name ? -1 : 1))) {
       const path = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
-        if (!/^(\.git|node_modules|bin|obj)$/i.test(e.name)) walk(join(dir, e.name), path);
-      } else if (/\.(sql|cs)$/i.test(e.name)) out.push({ path, text: readFileSync(join(dir, e.name), 'utf8').replace(/^﻿/, '') });
+        if (!/^(\.git|node_modules|bin|obj|dist|build)$/i.test(e.name)) walk(join(dir, e.name), path);
+      } else if (/\.(sql|cs)$/i.test(e.name) || /(^|\/)meta\/_journal\.json$/i.test(path) || /^drizzle\.config\.([cm]?[jt]s|json)$/i.test(e.name)) {
+        const text = readFileSync(join(dir, e.name), 'utf8');
+        out.push({ path, text: text.replace(/^﻿/, ''), bom: text.startsWith('﻿') });
+      } else if (/\.([cm]?[jt]s)$/i.test(e.name)) out.push({ path, text: '' });
     }
   };
   walk(root, '');
@@ -2352,7 +2357,7 @@ async function readMigrations(ctx, root) {
     `migrations in ${root}`,
     async (signal) => {
       const found = rowsOf((await session.run(probeSql(dialect.kind), { signal, limit: 100 })).sets[0]);
-      const history = pickHistory(found, { sqlserver: 'dbo', postgres: 'public' }[dialect.kind] ?? session.database);
+      const history = pickHistory(found, { sqlserver: 'dbo', postgres: 'public' }[dialect.kind] ?? session.database, files);
       let rows = [];
       let columns = [];
       if (!history.missing) {
@@ -2375,7 +2380,7 @@ async function readMigrations(ctx, root) {
 function showMigrationStatus(ctx, root, m) {
   // The folder by name: its whole path is in the text below, and in the title it would crowd out R's hint.
   const title = `Migrations: ${basename(root)}`;
-  const text = statusText(m.status, { database: m.database, folder: root, history: m.history, files: m.files.length });
+  const text = statusText(m.status, { database: m.database, folder: root, history: m.history, files: m.status.files ?? m.files.length });
   ctx.rememberOutput(title, text);
   const n = m.status.pending.length;
   ctx.showText(title, text, m.status.runnable && n ? { keys: { R: () => runMigrations(ctx, root) }, hint: `alt+r runs the ${n} pending (/migrations run)` } : {});
