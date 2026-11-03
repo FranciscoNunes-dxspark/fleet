@@ -16,6 +16,10 @@ const RUN = {
   wharf: () => import('../../wharf/src/cli.jsx'),
   keel: () => import('../../keel/cli/cli.jsx'),
   helm: () => import('../../helm/src/cli.jsx'),
+  lantern: () => import('../../lantern/src/cli.jsx'),
+  drill: () => import('../../drill/src/cli.jsx'),
+  ballast: () => import('../../ballast/src/cli.jsx'),
+  lookout: () => import('../../lookout/src/cli.jsx'),
 };
 
 if (process.argv[2] === '--run') {

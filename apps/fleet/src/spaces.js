@@ -1,7 +1,8 @@
 // The spaces: one per app of the family, each with the letter that switches to it and the accent its
 // own theme.js comes with (the bar marks the active tab in it). Sonar's letter is o: s is Splice's;
 // Mooring's is u, as m asks for a folder; Bilge's is g, as b is Bosun's; Wharf's is d (docker), Keel's
-// k and Helm's i (for the ISE it is like). Which of them the bar shows is the person's choice
+// k and Helm's i (for the ISE it is like); Lantern's j, Drill's v (verify), Ballast's z (gzip) and
+// Lookout's y, the letters Fleet's own keys left. Which of them the bar shows is the person's choice
 // (host.json's "apps", the prefix and a): the numbers 1 to 9 go to the ones shown, in this order.
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,10 @@ export const SPACES = [
   { id: 'wharf', title: 'Wharf', letter: 'd', accent: '#3fb8b0' },
   { id: 'keel', title: 'Keel', letter: 'k', accent: '#ff8a65' },
   { id: 'helm', title: 'Helm', letter: 'i', accent: '#4fc3f7' },
+  { id: 'lantern', title: 'Lantern', letter: 'j', accent: '#ffb74d' },
+  { id: 'drill', title: 'Drill', letter: 'v', accent: '#ff8c42' },
+  { id: 'ballast', title: 'Ballast', letter: 'z', accent: '#d4875a' },
+  { id: 'lookout', title: 'Lookout', letter: 'y', accent: '#f4a259' },
 ];
 
 export const IDS = SPACES.map((s) => s.id);
@@ -38,7 +43,7 @@ export function spaceForFile(file) {
 }
 
 // Each app's entry point in the checkout, relative to apps/: what its own `npm start` runs.
-const ENTRIES = { splice: 'splice/bin/splice.js', trawl: 'trawl/bin/trawl.js', sonar: 'sonar/bin/sonar.js', bosun: 'bosun/bin/bosun.js', hail: 'hail/bin/hail.js', keel: 'keel/bin/keel.js', wharf: 'wharf/bin/wharf.js', locker: 'locker/bin/locker.js', mooring: 'mooring/bin/mooring.js', bilge: 'bilge/bin/bilge.js', chart: 'chart/bin/chart.js', helm: 'helm/bin/helm.js' };
+const ENTRIES = { splice: 'splice/bin/splice.js', trawl: 'trawl/bin/trawl.js', sonar: 'sonar/bin/sonar.js', bosun: 'bosun/bin/bosun.js', hail: 'hail/bin/hail.js', keel: 'keel/bin/keel.js', wharf: 'wharf/bin/wharf.js', locker: 'locker/bin/locker.js', mooring: 'mooring/bin/mooring.js', bilge: 'bilge/bin/bilge.js', chart: 'chart/bin/chart.js', helm: 'helm/bin/helm.js', lantern: 'lantern/bin/lantern.js', drill: 'drill/bin/drill.js', ballast: 'ballast/bin/ballast.js', lookout: 'lookout/bin/lookout.js' };
 
 /** apps/ in the checkout this file is in. */
 export const APPS_DIR = fileURLToPath(new URL('../../', import.meta.url));

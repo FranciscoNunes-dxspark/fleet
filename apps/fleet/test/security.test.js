@@ -208,3 +208,43 @@ test('fleet mcp security_overview reads the last overview, by app and severity, 
     else process.env.FLEET_HOME = was;
   }
 });
+
+test('fleet mcp drill_tests reads the last runs Drill kept: failures, flaky ones, or that there are none', async () => {
+  const dir = project();
+  const home = mkdtempSync(join(tmpdir(), 'fleet-drill-'));
+  const was = process.env.DRILL_HOME;
+  process.env.DRILL_HOME = home;
+  try {
+    const s = createFleetServer({ project: dir, trawl: false });
+    assert.match(await s.call('drill_tests', {}), /no runs kept/);
+    const { recordRun, saveHistory } = await import('../../drill/src/flaky.js');
+    const t = (id, status, extra = {}) => ({ id, status, runner: 'vitest', file: 'src/cart.test.js', suite: ['cart'], name: id, line: 12, ...extra });
+    let h = { runs: [], tests: {} };
+    h = recordRun(h, [t('adds', 'passed'), t('totals', 'failed')], 1);
+    h = recordRun(h, [t('adds', 'failed'), t('totals', 'failed')], 2);
+    saveHistory(dir, h);
+    const text = await s.call('drill_tests', {});
+    assert.match(text, /0 passed, 2 failed/);
+    assert.match(text, /vitest {2}src\/cart\.test\.js:12 {2}cart › totals/);
+    assert.match(text, /Flaky[\s\S]*adds {2}1 passed, 1 failed/);
+    s.close();
+  } finally {
+    if (was === undefined) delete process.env.DRILL_HOME;
+    else process.env.DRILL_HOME = was;
+  }
+});
+
+test("the plan's new checks: Lantern's pages and domains, Ballast when a build is there, Lookout's capture", () => {
+  const bare = project();
+  const none = securityPlan(bare, {});
+  assert.ok(none.left.some((l) => l.app === 'ballast' && /no build output/.test(l.why)));
+  assert.ok(none.left.some((l) => l.app === 'lantern' && /not set up/.test(l.why)));
+  mkdirSync(join(bare, 'dist'));
+  assert.deepEqual(securityPlan(bare, {}).run.find((r) => r.app === 'ballast').args.slice(0, 2), ['security', bare]);
+  const { run } = securityPlan(bare, { lantern: 'https://shop.example.com', lookout: 'capture.har' });
+  const args = Object.fromEntries(run.map((r) => [r.label, r.args.slice(0, -3)]));
+  assert.deepEqual(args.lantern, ['security', 'https://shop.example.com']);
+  assert.deepEqual(args['lantern domains'], ['domains', 'shop.example.com']);
+  assert.deepEqual(args.lookout, ['security', join(bare, 'capture.har')]);
+  assert.deepEqual(securityPlan(bare, { lantern: true }).run.find((r) => r.label === 'lantern').args.slice(0, 2), ['security', bare]);
+});

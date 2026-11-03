@@ -34,7 +34,11 @@
       "../chart",
       "../wharf",
       "../keel",
-      "../helm"
+      "../helm",
+      "../lantern",
+      "../drill",
+      "../ballast",
+      "../lookout"
     ],
     "compile": {
       "autoloadDotenv": false,

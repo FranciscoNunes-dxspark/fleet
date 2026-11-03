@@ -29,8 +29,9 @@ fleet alone opens the one you used last. fleet <file> opens a file in the app
 for it: .sql in Trawl, .http in Hail.
 
   ctrl+b 1-9 or a letter      switch: 1-9 the apps in the bar, the letters any app
-                              (s t o b h l u g c d k i: o is Sonar, u Mooring, g Bilge,
-                              d Wharf, k Keel, i Helm)
+                              (s t o b h l u g c d k i j v z y: o is Sonar, u Mooring,
+                              g Bilge, d Wharf, k Keel, i Helm, j Lantern, v Drill,
+                              z Ballast, y Lookout)
   ctrl+b a                    choose which apps the bar shows (kept in ~/.fleet/host.json)
   ctrl+b ] / n / p            next, previous
   ctrl+b | / tab / x          split in two, the other pane, one again
