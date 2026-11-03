@@ -99,11 +99,12 @@ export function prMatches(pr, text) {
  * first in each, under a header row (`header: true`, not selectable). `show` narrows it to one group.
  */
 export function prRows(prs, { show = 'all', filter = '' } = {}) {
-  const left = prs.filter((p) => prMatches(p, filter));
+  let left = prs.filter((p) => prMatches(p, filter));
   const rows = [];
   for (const g of GROUPS) {
     const mine = left.filter(g.test).sort((a, b) => b.ageHours - a.ageHours);
-    for (const p of mine) left.splice(left.indexOf(p), 1);
+    const taken = new Set(mine);
+    left = left.filter((p) => !taken.has(p));
     if (!mine.length || (show !== 'all' && show !== g.id)) continue;
     rows.push({ header: true, title: `${g.title} (${mine.length})` });
     rows.push(...mine.map((pr) => ({ pr })));
