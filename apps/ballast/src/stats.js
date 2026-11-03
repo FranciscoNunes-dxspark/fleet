@@ -121,19 +121,23 @@ export function parseWebpack(stats, root = '') {
   const fileOfChunk = new Map();
   for (const c of stats.chunks ?? []) {
     const files = (c.files ?? []).filter((f) => !isMap(f));
-    // A chunk's modules go to its script; its stylesheet, when it has one, keeps its own size.
-    const main = files.find((f) => /\.m?js$/i.test(f)) ?? files[0];
+    // A chunk's modules go to its script, its stylesheets' to its stylesheet when it has one.
+    const js = files.find((f) => /\.m?js$/i.test(f)) ?? files[0];
+    const css = files.find((f) => /\.css$/i.test(f)) ?? js;
     for (const f of files) if (!byFile.has(f)) byFile.set(f, { name: f, bytes: assetSize.get(f) ?? 0, modules: [], entry: Boolean(c.entry || c.initial) });
-    if (main) fileOfChunk.set(String(c.id), main);
+    if (js) fileOfChunk.set(String(c.id), { js, css });
   }
   const modules = stats.modules ?? (stats.chunks ?? []).flatMap((c) => (c.modules ?? []).map((m) => ({ ...m, chunks: m.chunks ?? [c.id] })));
   const seen = new Set();
   for (const top of modules) {
+    // An orphan is in no chunk; the modules a concatenated one holds are marked orphans too, but ship in it.
+    if (top.orphan) continue;
     for (const m of flatModules(top)) {
-      if (!m.size || m.orphan) continue;
+      if (!m.size) continue;
       const id = cleanId(m.name ?? m.identifier, root);
+      const css = /^css\b/.test(m.moduleType ?? '') || /\.(css|scss|sass|less)$/i.test(id);
       for (const chunkId of m.chunks ?? []) {
-        const file = fileOfChunk.get(String(chunkId));
+        const file = fileOfChunk.get(String(chunkId))?.[css ? 'css' : 'js'];
         if (!file || seen.has(`${file}\0${id}`)) continue;
         seen.add(`${file}\0${id}`);
         byFile.get(file).modules.push({ id, bytes: m.size });

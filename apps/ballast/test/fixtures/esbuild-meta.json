@@ -1,0 +1,180 @@
+{
+  "inputs": {
+    "node_modules/preact/dist/preact.module.js": {
+      "bytes": 11412,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/preact/hooks/dist/hooks.module.js": {
+      "bytes": 4120,
+      "imports": [
+        {
+          "path": "node_modules/preact/dist/preact.module.js",
+          "kind": "import-statement",
+          "original": "preact"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/@preact/signals-core/dist/signals-core.module.js": {
+      "bytes": 6890,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/date-fns/format.js": {
+      "bytes": 14306,
+      "imports": [
+        {
+          "path": "node_modules/date-fns/toDate.js",
+          "kind": "import-statement",
+          "original": "./toDate.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/date-fns/toDate.js": {
+      "bytes": 1980,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/chart.js/dist/chart.js": {
+      "bytes": 401220,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/lib/time.ts": {
+      "bytes": 812,
+      "imports": [
+        {
+          "path": "node_modules/date-fns/format.js",
+          "kind": "import-statement",
+          "original": "date-fns/format"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/components/Report.tsx": {
+      "bytes": 3420,
+      "imports": [
+        {
+          "path": "node_modules/chart.js/dist/chart.js",
+          "kind": "import-statement",
+          "original": "chart.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/app.css": {
+      "bytes": 9120,
+      "imports": []
+    },
+    "src/main.tsx": {
+      "bytes": 2210,
+      "imports": [
+        {
+          "path": "node_modules/preact/dist/preact.module.js",
+          "kind": "import-statement",
+          "original": "preact"
+        },
+        {
+          "path": "src/lib/time.ts",
+          "kind": "import-statement",
+          "original": "./lib/time"
+        },
+        {
+          "path": "src/components/Report.tsx",
+          "kind": "dynamic-import",
+          "original": "./components/Report"
+        },
+        {
+          "path": "src/app.css",
+          "kind": "import-statement",
+          "original": "./app.css"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "dist/main.js.map": {
+      "imports": [],
+      "exports": [],
+      "inputs": {},
+      "bytes": 98211
+    },
+    "dist/main.js": {
+      "imports": [
+        {
+          "path": "dist/chunk-4FQK7ZMW.js",
+          "kind": "import-statement"
+        },
+        {
+          "path": "dist/Report-OJ2QXWBA.js",
+          "kind": "dynamic-import"
+        }
+      ],
+      "exports": [],
+      "entryPoint": "src/main.tsx",
+      "cssBundle": "dist/main.css",
+      "inputs": {
+        "node_modules/preact/hooks/dist/hooks.module.js": {
+          "bytesInOutput": 1462
+        },
+        "node_modules/@preact/signals-core/dist/signals-core.module.js": {
+          "bytesInOutput": 2711
+        },
+        "node_modules/date-fns/toDate.js": {
+          "bytesInOutput": 402
+        },
+        "node_modules/date-fns/format.js": {
+          "bytesInOutput": 5233
+        },
+        "src/lib/time.ts": {
+          "bytesInOutput": 188
+        },
+        "src/main.tsx": {
+          "bytesInOutput": 741
+        }
+      },
+      "bytes": 11102
+    },
+    "dist/chunk-4FQK7ZMW.js": {
+      "imports": [],
+      "exports": ["h", "render"],
+      "inputs": {
+        "node_modules/preact/dist/preact.module.js": {
+          "bytesInOutput": 4312
+        }
+      },
+      "bytes": 4377
+    },
+    "dist/Report-OJ2QXWBA.js": {
+      "imports": [
+        {
+          "path": "dist/chunk-4FQK7ZMW.js",
+          "kind": "import-statement"
+        }
+      ],
+      "exports": ["default"],
+      "entryPoint": "src/components/Report.tsx",
+      "inputs": {
+        "node_modules/chart.js/dist/chart.js": {
+          "bytesInOutput": 205110
+        },
+        "src/components/Report.tsx": {
+          "bytesInOutput": 1210
+        }
+      },
+      "bytes": 206532
+    },
+    "dist/main.css": {
+      "imports": [],
+      "inputs": {
+        "src/app.css": {
+          "bytesInOutput": 6102
+        }
+      },
+      "bytes": 6149
+    }
+  }
+}

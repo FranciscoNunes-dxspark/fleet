@@ -9,7 +9,7 @@ import { budgetLine, checkBudgets, growthFails, growthLine, parseBudget, parseFa
 import { compareMarkdown, compareRuns, runLabel, summarize } from './compare.js';
 import { savedBase } from './base.js';
 import { totals } from './build.js';
-import { MEASURES, formatBytes, formatPercent, sizeIn } from './sizes.js';
+import { MEASURES, formatBytes, formatDelta, formatPercent, sizeIn } from './sizes.js';
 import { sarifOf } from './security.js';
 import { failingFindings, findingsText, parseFailOn as parseLevel, securityJson, withoutIgnoredFindings } from '@fleet/kit/findings.js';
 
@@ -197,7 +197,7 @@ export function compareText(result, base, head) {
   const m = result.measure;
   const lines = [`${result.headline}${result.total.before ? ` (${formatPercent(result.total.delta, result.total.before)})` : ''}`, `Against ${runLabel(base.run, base.name)}; this build ${runLabel(head, head.branch)}.`, ''];
   for (const c of result.chunks.filter((x) => x.status !== 'same')) lines.push(`${c.status === 'added' ? 'new ' : c.status === 'removed' ? 'gone' : c.delta > 0 ? 'more' : 'less'}  ${c.name}  ${c.before ? formatBytes(c.before[m] ?? c.before.raw) : '—'} → ${c.after ? formatBytes(c.after[m] ?? c.after.raw) : '—'}`);
-  if (result.packages.length) lines.push('', 'Packages:', ...result.packages.slice(0, 20).map((p) => `  ${p.delta >= 0 ? '+' : '-'}${formatBytes(Math.abs(p.delta)).padStart(9)}  ${p.reason}`));
+  if (result.packages.length) lines.push('', 'Packages:', ...result.packages.slice(0, 20).map((p) => `  ${formatDelta(p.delta).padStart(10)}  ${p.reason}`));
   return `${lines.join('\n')}\n`;
 }
 

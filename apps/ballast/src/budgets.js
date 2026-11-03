@@ -58,7 +58,8 @@ export function parseFailOn(text) {
     const pct = /^(\d+(?:\.\d+)?)\s*%$/.exec(m[1]);
     if (pct) return { kind: 'growth', percent: Number(pct[1]), text: `growth>${pct[1]}%` };
     const bytes = parseSize(m[1]);
-    if (bytes != null) return { kind: 'growth', bytes, text: `growth>${m[1].replace(/\s+/g, '')}` };
+    // Said as it was written: 10kB, not 10kb.
+    if (bytes != null) return { kind: 'growth', bytes, text: `growth>${String(text).trim().replace(/^growth\s*>\s*/i, '').replace(/\s+/g, '')}` };
   }
   return { error: `--fail-on is budget, growth>5% (or growth>10kB) or none, not ${text}` };
 }

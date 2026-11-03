@@ -11,7 +11,6 @@ import { finishChunk } from './build.js';
 import { summarize } from './compare.js';
 import { readBudgets } from './budgets.js';
 import { bundleSecrets, mapFinding } from './security.js';
-import { lastRun } from './history.js';
 
 export const DEMO_COMMIT = 'c0ffee15e2a94b7d8f3a6c1e0b9d2f4a7c8e5d13';
 export const DEMO_LAST = 'b4d5e6f70a1b2c3d4e5f60718293a4b5c6d7e8f9';
@@ -200,7 +199,6 @@ export function demoBallast({ noStats = false, mainSaved = true, budgets = null 
       state.runs = [summary, ...state.runs.filter((r) => r.key !== summary.key)];
       return state.runs;
     },
-    lastRun: (key) => lastRun(state.runs, key),
     async advisories(list) {
       state.calls.push(['advisories', list.map((p) => `${p.name}@${p.version}`)]);
       return new Map(list.map((p) => [`${p.name}@${p.version}`, ADVISORIES[`${p.name}@${p.version}`] ?? []]));
