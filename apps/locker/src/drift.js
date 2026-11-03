@@ -14,6 +14,26 @@ export const fingerprint = (value) => createHmac('sha256', KEY).update(String(va
 
 const GROUPS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
+// localeCompare's order (a collator with no locale or options is what it uses), made once: thousands of
+// rows sorted through localeCompare take several times as long.
+const byText = new Intl.Collator().compare;
+
+// A vault's listing by name (lower case, the first of a name), made once per listing: a matrix checks
+// thousands of references against thousands of secrets.
+const NAMES = new WeakMap();
+function byName(secrets) {
+  let map = NAMES.get(secrets);
+  if (!map) {
+    map = new Map();
+    for (const s of secrets) {
+      const k = s.name.toLowerCase();
+      if (!map.has(k)) map.set(k, s);
+    }
+    NAMES.set(secrets, map);
+  }
+  return map;
+}
+
 /**
  * Whether a Key Vault reference resolves: { ok, why }. `vaults` maps a vault's name (lower case) to its
  * secrets ([{ name, enabled, expires }]) when Locker could list them; `status` is what App Service itself
@@ -23,7 +43,7 @@ export function checkReference(ref, vaults = new Map(), { status, now = Date.now
   if (!ref || ref.problem) return { ok: false, why: `the reference is written wrong${ref?.problem ? `: ${ref.problem}` : ''}` };
   const secrets = vaults.get(ref.vault);
   if (secrets) {
-    const s = secrets.find((x) => x.name.toLowerCase() === ref.secret.toLowerCase());
+    const s = byName(secrets).get(ref.secret.toLowerCase());
     if (!s) return { ok: false, why: `no secret ${ref.secret} in ${ref.vault}` };
     if (s.enabled === false) return { ok: false, why: `${ref.secret} is disabled in ${ref.vault}` };
     if (isExpired(s, now)) return { ok: false, why: `${ref.secret} has expired in ${ref.vault}` };
@@ -106,7 +126,7 @@ export function driftMatrix(columns, { vaults = new Map(), now = Date.now() } = 
       broken: r.cells.some((x) => x.state === 'broken'),
     });
   }
-  out.sort((a, b) => a.norm.localeCompare(b.norm));
+  out.sort((a, b) => byText(a.norm, b.norm));
   return { columns, rows: out };
 }
 

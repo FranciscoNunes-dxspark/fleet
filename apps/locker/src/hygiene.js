@@ -289,17 +289,61 @@ export function settingFindings(sites = [], { vault } = {}) {
 const isExampleSource = (s) => Boolean(s.example) || /\.(example|sample|template|dist)$/i.test(String(s.label ?? ''));
 
 /** The line of a flattened JSON key in its file's text: the first line naming its last part, from its section's on. */
-export function jsonKeyLine(text, key) {
-  const parts = String(key).split(':').filter((p) => !/^\d+$/.test(p));
+export const jsonKeyLine = (text, key) => jsonKeyLines(text)(key);
+
+/**
+ * jsonKeyLine for many keys of one file: the text is split and indexed once (each `"name":` with the
+ * lines it is on), so an appsettings file of thousands of keys isn't searched whole for every key.
+ */
+export function jsonKeyLines(text) {
   const lines = String(text ?? '').split(/\r?\n/);
-  let from = 0;
-  for (const p of parts) {
+  let index = null;
+  // Every `"name"` followed by a colon, from every quote (as the regex below would try), by its name in lower case.
+  const build = () => {
+    index = new Map();
+    const name = /"([^"]*)"\s*:/y;
+    lines.forEach((l, i) => {
+      for (let q = l.indexOf('"'); q >= 0; q = l.indexOf('"', q + 1)) {
+        name.lastIndex = q;
+        const m = name.exec(l);
+        // A name with other characters never equals a plain ASCII one under the i flag.
+        if (!m || !/^[\x20-\x7e]*$/.test(m[1])) continue;
+        const k = m[1].toLowerCase();
+        const at = index.get(k);
+        if (!at) index.set(k, [i]);
+        else if (at[at.length - 1] !== i) at.push(i);
+      }
+    });
+  };
+  // The first line from `from` on naming `p`: through the index when `p` is plain ASCII without a quote
+  // (where lower case is what the regex's i flag compares), else the regex over the lines.
+  const find = (p, from) => {
+    if (/^[\x20-\x7e]*$/.test(p) && !p.includes('"')) {
+      if (!index) build();
+      const at = index.get(p.toLowerCase());
+      if (!at) return -1;
+      let lo = 0;
+      let hi = at.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (at[mid] < from) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo < at.length ? at[lo] : -1;
+    }
     const re = new RegExp(`"${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*:`, 'i');
-    const at = lines.findIndex((l, i) => i >= from && re.test(l));
-    if (at < 0) return null;
-    from = at;
-  }
-  return parts.length ? from + 1 : null;
+    return lines.findIndex((l, i) => i >= from && re.test(l));
+  };
+  return (key) => {
+    const parts = String(key).split(':').filter((p) => !/^\d+$/.test(p));
+    let from = 0;
+    for (const p of parts) {
+      const at = find(p, from);
+      if (at < 0) return null;
+      from = at;
+    }
+    return parts.length ? from + 1 : null;
+  };
 }
 
 /**

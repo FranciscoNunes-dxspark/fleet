@@ -326,3 +326,24 @@ test("w follows a pod's deployment's rollout; a failing one shows its problems a
   assert.match(app.lastFrame(), /Rollout of shop\/web: Done/);
   app.unmount();
 });
+
+test('a stats read slower than the poll is never started again while it runs', async () => {
+  const provider = demoDocker();
+  const stats = provider.stats;
+  let open = 0;
+  let most = 0;
+  let calls = 0;
+  provider.stats = async () => {
+    calls++;
+    open++;
+    most = Math.max(most, open);
+    await new Promise((r) => setTimeout(r, 400));
+    open--;
+    return stats();
+  };
+  const app = start({ provider, pollEvery: 50 });
+  await until(() => calls >= 2, 'a second stats read');
+  assert.equal(most, 1);
+  await until(shows(app, '%'), 'the CPU column');
+  app.unmount();
+});

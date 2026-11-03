@@ -253,6 +253,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   // Docker, read again: the list and the images together, then each running container's CPU and memory
   // (slower, so it never holds the list up). One read at a time; a failure keeps what was there and says why.
   const reading = useRef(false);
+  const readingStats = useRef(false);
   const alive = useRef(true);
   useEffect(
     () => () => {
@@ -277,10 +278,20 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
           () => {},
         );
       }
-      provider.stats().then(
-        (stats) => alive.current && dataRef.current && setData({ ...dataRef.current, stats }),
-        () => {},
-      );
+      // One stats read at a time: `docker stats --no-stream` over many containers can take longer than
+      // the poll, and each read left running would be another one sampling every container.
+      if (!readingStats.current) {
+        readingStats.current = true;
+        provider
+          .stats()
+          .then(
+            (stats) => alive.current && dataRef.current && setData({ ...dataRef.current, stats }),
+            () => {},
+          )
+          .finally(() => {
+            readingStats.current = false;
+          });
+      }
     } catch (e) {
       if (alive.current) setProblem(dockerProblem(e.message) ?? firstLine(e.message));
     } finally {

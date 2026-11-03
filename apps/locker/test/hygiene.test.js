@@ -4,7 +4,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readActivity } from '@fleet/kit/family.js';
-import { envOfSite, envOfSource, hygieneFindings, isLiteral, isSecretSetting, jsonKeyLine, localFindings, normEnv, plainSecret, secretShape, settingFindings, sharedSecretFindings, thumbprintHex, vaultItemFindings, vaultPostureFindings, vaultUse } from '../src/hygiene.js';
+import { envOfSite, envOfSource, hygieneFindings, isLiteral, isSecretSetting, jsonKeyLine, jsonKeyLines, localFindings, normEnv, plainSecret, secretShape, settingFindings, sharedSecretFindings, thumbprintHex, vaultItemFindings, vaultPostureFindings, vaultUse } from '../src/hygiene.js';
 import { readHygiene, relPath } from '../src/security.js';
 import { parseSecurityArgs, runSecurity } from '../src/headless.js';
 import { fingerprint } from '../src/drift.js';
@@ -194,6 +194,23 @@ test('the folder: a secret in a file git tracks is high, with its line; ignored 
   assert.equal(jsonKeyLine('{}', 'Nope'), null);
 });
 
+test('jsonKeyLines finds what jsonKeyLine does, in any case, past an earlier mention, and fast over a big appsettings file', () => {
+  const text = '{\n  "Db": { "Host": "x" },\n  "Api": {\n    "db": "y",\n    "Key": "k", "Other": 1\n  },\n  "\u00c9t\u00e9": { "Key": 2 }\n}';
+  const lineOf = jsonKeyLines(text);
+  for (const key of ['Db', 'db:host', 'Api:Db', 'API:key', 'Api:Other', 'Api:Nope', 'Db:Key', '0:Api', 'Été:Key', 'Key', 'a"b']) assert.equal(lineOf(key), jsonKeyLine(text, key), key);
+  assert.equal(lineOf('Api:db'), 4);
+  assert.equal(lineOf('Db:Key'), 5);
+  // Thousands of keys: each was a search of the whole file, read again (seconds); now it is indexed once.
+  const big = {};
+  for (let i = 0; i < 8000; i++) (big[`Section${i % 50}`] ??= {})[`Key${i}`] = `v${i}`;
+  const bigText = JSON.stringify(big, null, 2);
+  const lines = bigText.split('\n');
+  const started = Date.now();
+  const find = jsonKeyLines(bigText);
+  for (let i = 0; i < 8000; i++) assert.equal(lines[find(`Section${i % 50}:Key${i}`) - 1].trim().startsWith(`"Key${i}"`), true);
+  assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+});
+
 test('the same secret in two environments, found by its keyed hash: prod and dev medium, two others low, one environment nothing', () => {
   assert.equal(normEnv('Prod'), 'production');
   assert.equal(normEnv('local'), 'development');
@@ -257,6 +274,28 @@ test('over the demo: everything planted is found, from listings and shapes, with
   assert.ok(!provider.state.calls.some(([op]) => op === 'secretValue'), 'a vault value was read');
   noValueIn(JSON.stringify(found));
   noValueIn(JSON.stringify(all));
+});
+
+test('every vault is listed a few at a time, in its order, and one that fails is a problem', async () => {
+  const provider = demoAzure({ now: NOW });
+  const local = demoLocal();
+  for (let i = 0; i < 10; i++) provider.state.vaults.push({ ...provider.state.vaults[0], id: `${provider.state.vaults[0].id}-${i}`, name: `kv-more-${i}` });
+  let open = 0;
+  let most = 0;
+  const secrets = provider.secrets;
+  provider.secrets = async (v, opts) => {
+    open++;
+    most = Math.max(most, open);
+    await new Promise((r) => setTimeout(r, 20));
+    open--;
+    if (v.name === 'kv-more-3') throw new Error('Forbidden\nmore');
+    return secrets(v, opts);
+  };
+  const azure = await loadSubscription(provider);
+  const read = await readHygiene({ provider, local, azure, all: true });
+  assert.deepEqual(read.scope.vaults, azure.vaults.map((v) => v.name).filter((n) => n !== 'kv-more-3'));
+  assert.ok(read.problems.includes('kv-more-3: Forbidden'));
+  assert.ok(most > 1 && most <= 4, `${most} at once`);
 });
 
 test('locker security: text, JSON and SARIF over the demo, the exit code by --fail-on, never a value', async () => {
