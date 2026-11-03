@@ -98,7 +98,7 @@ export function playwrightUrl(text) {
 
 /** The files and folders after `node --test` in a script ("node --test test/ src/**\/*.test.js"), its options left out. */
 export function nodeTestArgs(script) {
-  const m = /\bnode\s+(?:[^|&;]*?\s)?--test\b([^|&;]*)/.exec(String(script ?? ''));
+  const m = /\bnode\s+(?:[^|&;]*?\s)??--test(?![\w-])([^|&;]*)/.exec(String(script ?? ''));
   if (!m) return null;
   return m[1]
     .trim()

@@ -2,7 +2,6 @@
 // other program. Each editor takes a line its own way; the command is built here. A terminal editor
 // (vim, nano…) needs the terminal Drill is drawing on, which run.js never gives a program: for those
 // Drill copies the command instead. Pure.
-import { basename } from 'node:path';
 import { quote, safeFile } from './runners.js';
 
 const TERMINAL = new Set(['vi', 'vim', 'nvim', 'nano', 'pico', 'emacs', 'micro', 'hx', 'helix', 'kak', 'ne', 'joe', 'mcedit', 'ed']);
@@ -24,7 +23,7 @@ export function editorCommand(editor, file, line, { column, platform = process.p
   const program = words[0].replace(/^"|"$/g, '');
   if (!safeFile(program)) return null;
   const options = words.slice(1).filter((w) => w !== '--wait' && w !== '-w' && /^[\w=.:,-]+$/.test(w));
-  const name = basename(program).replace(/\.(?:exe|cmd|bat|sh)$/i, '').toLowerCase();
+  const name = program.split(/[\\/]/).pop().replace(/\.(?:exe|cmd|bat|sh)$/i, '').toLowerCase();
   const q = (a) => quote(a, platform);
   const at = Number(line) > 0 ? Number(line) : null;
   const head = [q(program), ...options];
