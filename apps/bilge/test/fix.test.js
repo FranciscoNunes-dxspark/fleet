@@ -61,10 +61,10 @@ test('bilge audit: the findings, and an exit code by --fail-on; --json; what is 
   assert.deepEqual(json.counts, { critical: 0, high: 4, medium: 1, low: 0, unknown: 0 });
   assert.equal(json.findings[0].package, 'express');
   assert.equal(await runHeadless(['audit', '--fail-on', 'bad'], { provider: demoBilge(), write }), 2);
-  assert.deepEqual(parseArgs(['sbom', 'web', '-o', 'bom.json']), { command: 'sbom', dir: 'web', failOn: 'high', json: false, out: 'bom.json' });
+  assert.deepEqual(parseArgs(['sbom', 'web', '-o', 'bom.json']), { command: 'sbom', dir: 'web', failOn: 'high', json: false, out: 'bom.json', sarif: null });
   const provider = demoBilge();
   assert.equal(await runHeadless(['sbom', '.', '-o', 'bom.json'], { provider, write }), 0);
-  assert.equal(JSON.parse(provider.state.written.text).components.length, 14);
+  assert.equal(JSON.parse(provider.state.written.text).components.length, 17);
   const reporter = demoBilge();
   assert.equal(await runHeadless(['report', '.', '-o', 'r.md'], { provider: reporter, write }), 0);
   assert.match(reporter.state.written.text, /^# Dependencies of /);

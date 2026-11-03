@@ -17,7 +17,7 @@ test('it reads the folder and asks OSV on opening: the findings worst first, the
   const app = start();
   await until(shows(app, 'minimist@1.2.5'), 'the findings');
   const frame = app.lastFrame();
-  assert.match(frame, /14 packages {2}2 critical {2}4 high {2}1 medium/);
+  assert.match(frame, /17 packages {2}2 critical {2}4 high {2}1 medium/);
   assert.ok(frame.indexOf('minimist@1.2.5') < frame.indexOf('lodash@4.17.20'));
   assert.ok(frame.indexOf('lodash@4.17.20') < frame.indexOf('jsonwebtoken@8.5.1'));
   assert.match(frame, /→ 4\.17\.21/);
@@ -85,8 +85,8 @@ test('the Packages view: a changes what it lists, u asks the registries, outdate
   const app = start();
   await until(shows(app, 'minimist@1.2.5'), 'the findings');
   app.stdin.write('2');
-  await until(shows(app, '14 packages'), 'the packages');
-  assert.match(app.lastFrame(), /AGPL-3\.0-only/);
+  await until(shows(app, '17 packages'), 'the packages');
+  assert.match(app.lastFrame(), /crossenv/);
   app.stdin.write('a');
   await until(shows(app, '8 direct'), 'the direct ones');
   assert.ok(!app.lastFrame().includes('minimist'));
@@ -111,7 +111,7 @@ test("u marks a newest version that won't fit the project; ↵ says why and whic
   const app = start();
   await until(shows(app, 'minimist@1.2.5'), 'the findings');
   app.stdin.write('2');
-  await until(shows(app, '14 packages'), 'the packages');
+  await until(shows(app, '17 packages'), 'the packages');
   app.stdin.write('u');
   await until(shows(app, "won't fit"), 'the marks');
   // Express 5 wants Node 18 (the demo says >=16); SqlClient 6 isn't built for net6.0.
@@ -155,7 +155,7 @@ test("the Manifests view: each one's counts; ↵ lists its packages; t copies it
   app.stdin.write('3');
   await until(shows(app, 'src/Api/packages.lock.json'), 'the manifests');
   assert.match(app.lastFrame(), /tools\/legacy\/package\.json .*no lock/);
-  assert.match(app.lastFrame(), /10 packages +5 direct +4 vulnerable/);
+  assert.match(app.lastFrame(), /13 packages +5 direct +4 vulnerable/);
   app.stdin.write('t');
   await until(() => app.copied.length === 1, 'the copy');
   assert.match(app.copied[0], /^\/take family:v1:file:/);
@@ -175,7 +175,7 @@ test('/sbom writes the bill of materials; /report shows the audit as Markdown', 
   app.stdin.write(KEYS.enter);
   await until(() => app.provider.state.written, 'the file');
   assert.match(app.provider.state.written.path, /sbom\.cdx\.json$/);
-  assert.equal(JSON.parse(app.provider.state.written.text).components.length, 14);
+  assert.equal(JSON.parse(app.provider.state.written.text).components.length, 17);
   await type(app.stdin, '/report');
   app.stdin.write(KEYS.enter);
   await until(shows(app, '# Dependencies of shop'), 'the report');
