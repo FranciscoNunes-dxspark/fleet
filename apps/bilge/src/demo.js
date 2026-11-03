@@ -1,5 +1,5 @@
 // An in-memory project with the provider's interface, for `bilge --demo` and the tests: an npm lock
-// file, a NuGet one and a package.json without one, OSV's answers for them, the registries' newest
+// file (with a typosquat, install scripts and a package from git), a NuGet one and a package.json without one, OSV's answers for them, the registries' newest
 // versions and what each needs (a framework the project's .NET doesn't run, a Node newer than it says),
 // and fixes that move a package on. Nothing is read, fetched or run. `state` is the tests'
 // handle: what it holds and `calls`, what was asked of it.
@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { keyOf, mergePackages } from './lockfiles.js';
 import { testPlan } from './upgrade.js';
 import { imageManifest } from './image.js';
+import { nugetSupply, supplyFindings } from './supply.js';
 import { dockerFindings, fileFindings, gitignored, scanText, sortFindings } from '@fleet/kit/codescan.js';
 
 const npm = (name, version, extra = {}) => ({ ecosystem: 'npm', name, version, direct: false, dev: false, ...extra });
@@ -30,6 +31,11 @@ function demoManifests(root) {
         npm('ms', '2.0.0', { license: 'MIT', line: 50 }),
         npm('ghostscript-js', '1.0.4', { license: 'AGPL-3.0-only', line: 27 }),
         npm('mariadb', '3.2.0', { license: 'LGPL-2.1-or-later', line: 44 }),
+        // The supply chain's: a typosquat of cross-env that runs a script on install, a build tool's
+        // install script, and a package from a git repository rather than the registry.
+        npm('crossenv', '7.0.3', { dev: true, license: 'MIT', line: 18, installScript: true }),
+        npm('esbuild', '0.20.2', { dev: true, license: 'MIT', line: 25, installScript: true }),
+        npm('left-pad', '1.3.0', { license: 'WTFPL', line: 38, resolved: 'git+ssh://git@github.com/someone/left-pad.git#5f2e1a9' }),
       ],
       node: { range: '>=16', from: 'engines.node in package.json' },
     },
@@ -47,7 +53,9 @@ function demoManifests(root) {
       ],
     },
     { path: 'tools/legacy/package.json', ecosystem: 'npm', kind: 'manifest', packages: [], note: 'no package-lock.json: npm install makes one' },
-  ].map((m) => ({ ...m, file: join(root, ...m.path.split('/')), dir: join(root, ...m.path.split('/').slice(0, -1)) }));
+  ]
+    .map((m) => ({ ...m, supply: m.ecosystem === 'NuGet' ? nugetSupply(m.packages, m.path) : supplyFindings(m.packages, m.path) }))
+    .map((m) => ({ ...m, file: join(root, ...m.path.split('/')), dir: join(root, ...m.path.split('/').slice(0, -1)) }));
 }
 
 const vuln = (id, name, ecosystem, severity, fixed, summary, { aliases = [], vector } = {}) => ({

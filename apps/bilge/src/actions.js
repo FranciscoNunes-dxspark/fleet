@@ -22,6 +22,7 @@ import { nodeOf, problems, targetsOf } from './compat.js';
 import { branchName, folderLabel, upgradeCandidates } from './upgrade.js';
 import { breakingInput, breakingPrompt } from './breaking.js';
 import { findingWhere, withoutIgnoredCode } from '@fleet/kit/codescan.js';
+import { auditFindings, codeFindings, sarifOf } from './security.js';
 import { VERSION } from './app.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
@@ -168,9 +169,17 @@ export function showPackage(ctx, p) {
     ...fitLines(ctx, p, latest),
     `Found in: ${p.where.map((w) => `${w.path}${w.line ? `:${w.line}` : ''}`).join(', ')}`,
     `Registry: ${packageUrl(p)}`,
+    ...supplyLines(ctx, p),
     '',
-    ...(f ? f.advisories.flatMap((a) => [...advisoryLines(a), '']) : [ctx.data.audit ? 'No known advisories.' : 'Not audited yet (/audit).']),
+    ...(p.unread ? ['Not read as a package (a git or tarball dependency), so not audited.'] : f ? f.advisories.flatMap((a) => [...advisoryLines(a), '']) : [ctx.data.audit ? 'No known advisories.' : 'Not audited yet (/audit).']),
   ].join('\n'));
+}
+
+/** A package's supply-chain findings, for ↵: what each is, why it matters and what to do. */
+function supplyLines(ctx, p) {
+  const list = (ctx.supply ?? []).filter((s) => s.key === p.key);
+  if (!list.length) return [];
+  return ['', 'Supply chain:', ...list.flatMap((s) => [`${SEVERITY_LABEL[s.severity]}  ${s.title.replace(/: [^:]*$/, '')}: ${s.excerpt}`, `  ${s.why}`, `  ${s.fix}`]), 'x leaves these out (asks; kept as supplyIgnore in the settings).'];
 }
 
 /**
@@ -540,6 +549,39 @@ export async function ignoreCode(ctx, f) {
   return true;
 }
 
+/** x on a package with supply-chain findings: those rules for that package left out (kept as `rule:name` in supplyIgnore). */
+export async function ignoreSupply(ctx, p) {
+  const keys = [...new Set((ctx.supply ?? []).filter((s) => s.key === p.key).map((s) => `${s.rule}:${p.name.toLowerCase()}`))];
+  if (!keys.length) return false;
+  const yes = await ctx.confirm({ title: `Ignore ${keys.length === 1 ? 'the supply-chain finding' : plural(keys.length, 'supply-chain finding')} on ${p.name}?`, detail: `${keys.join(', ')}: out of Packages, bilge supply and bilge security until taken out of "supplyIgnore" in ${configFile()}.` });
+  if (!yes) return false;
+  ctx.setConfig((c) => ({ ...c, supplyIgnore: [...new Set([...(c.supplyIgnore ?? []), ...keys])] }));
+  ctx.note(`Ignoring ${keys.join(', ')}`, 'ok');
+  return true;
+}
+
+/**
+ * /sarif [file]: the audit's advisories, the code's findings (/code is run first when it hasn't been)
+ * and the supply chain's, as one SARIF file for GitHub's or Azure DevOps' code scanning (bilge.sarif in
+ * the folder unless named), asking before replacing one.
+ */
+export async function sarif(ctx, file = '') {
+  if (!ctx.data?.audit) return ctx.note('Not audited yet: /audit first.', 'error') ?? false;
+  if (!ctx.code && !(await code(ctx))) return false;
+  const name = file.trim() || 'bilge.sarif';
+  const path = isAbsolute(name) ? name : resolve(ctx.cwd(), name);
+  if (ctx.provider.name !== 'demo' && existsSync(path)) {
+    const yes = await ctx.confirm({ title: `Replace ${name}?`, detail: path, danger: true });
+    if (!yes) return false;
+  }
+  const list = [...auditFindings(found(ctx)), ...codeFindings(codeFound(ctx)), ...(ctx.supply ?? [])];
+  const r = await ctx.task(`sarif ${name}`, async () => {
+    ctx.provider.writeFile(path, `${JSON.stringify(sarifOf(list, VERSION), null, 2)}\n`);
+    return { stdout: `${plural(list.length, 'result')} in ${path}` };
+  }, { label: 'Writing' });
+  return r.ok;
+}
+
 /** /move <folder>: read another folder: a path, or a folder beside this one or in it. */
 export function move(ctx, folder = '') {
   const dir = ctx.cwd();
@@ -643,6 +685,7 @@ export function settings(ctx) {
       `Ignored          ${(c.ignore ?? []).join(', ') || 'none'}       /ignore, /unignore`,
       `Licences flagged ${(c.deny ?? []).join(', ') || 'none'}       /deny`,
       `Code ignored     ${(c.codeIgnore ?? []).join(', ') || 'none'}       x in Code; "codeIgnore" in the file`,
+      `Supply ignored   ${(c.supplyIgnore ?? []).join(', ') || 'none'}       x in Packages; "supplyIgnore" in the file (a rule, a package, or rule:package)`,
       `Update checks    ${on(c.checkForUpdates)}       "checkForUpdates" in the file`,
       `Auto-update      ${on(c.autoUpdate)}       "autoUpdate" in the file`,
       `History          ${(c.history ?? []).length} lines`,

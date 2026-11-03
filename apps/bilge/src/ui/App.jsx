@@ -11,6 +11,7 @@ import { createBilge } from '../provider.js';
 import { SEVERITIES, counts as countOf, findings } from '../audit.js';
 import { severityTone, withoutIgnored } from '../rows.js';
 import { withoutIgnoredCode } from '@fleet/kit/codescan.js';
+import { allSupply, withoutIgnoredSupply } from '../supply.js';
 import { BULLET, theme } from '../theme.js';
 import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
@@ -41,7 +42,7 @@ const VIEWS = [
 
 const HINTS = {
   vulns: '↵ details · f fix · o advisory · x ignore · t for Splice · d dev packages · y copy ids',
-  packages: '↵ details · a all/direct/outdated/flagged · u newest versions · f fix · o registry · t for Splice · y copy · /upgrade',
+  packages: '↵ details · a all/direct/outdated/flagged/supply · u newest versions · f fix · x ignore supply flag · o registry · t for Splice · y copy · /upgrade',
   manifests: '↵ its packages · t for Splice · y copy path',
   code: '↵ details · r read again · x ignore · t for Splice · y copy where',
   log: '↵ all its output · y copy it',
@@ -237,18 +238,20 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     setPromptState(promptRef.current);
   };
 
-  // The findings as shown: OSV's answer for the packages read, without what the config ignores. Worked
-  // out again only when one of those changes.
+  // The findings as shown: OSV's answer for the packages read, and the lock files' supply-chain
+  // findings, without what the config ignores. Worked out again only when one of those changes.
   const derived = useRef({});
   const derive = () => {
     const d = dataRef.current;
     const ignore = configRef.current.ignore ?? [];
+    const supplyIgnore = configRef.current.supplyIgnore ?? [];
     const was = derived.current;
-    if (was.audit === d?.audit && was.packages === d?.packages && was.ignore === ignore) return was;
+    if (was.audit === d?.audit && was.packages === d?.packages && was.ignore === ignore && was.manifests === d?.manifests && was.supplyIgnore === supplyIgnore) return was;
     const all = d?.audit ? findings(d.packages, d.audit.ids, d.audit.details) : [];
     const found = withoutIgnored(all, ignore);
     const advisories = (list) => list.reduce((n, f) => n + f.advisories.length, 0);
-    derived.current = { audit: d?.audit, packages: d?.packages, ignore, found, counts: countOf(found), ignored: advisories(all) - advisories(found) };
+    const supply = withoutIgnoredSupply(allSupply(d?.manifests), supplyIgnore);
+    derived.current = { audit: d?.audit, packages: d?.packages, manifests: d?.manifests, ignore, supplyIgnore, found, counts: countOf(found), ignored: advisories(all) - advisories(found), supply };
     return derived.current;
   };
 
@@ -346,6 +349,10 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
       },
       get counts() {
         return derive().counts;
+      },
+      // The lock files' supply-chain findings (supply.js), without the config's supplyIgnore.
+      get supply() {
+        return derive().supply;
       },
       // The last /code's result ({ root, files, findings, truncated, at }), or null.
       get code() {
@@ -509,7 +516,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     setTitle?.(title);
   }, [title]);
 
-  const { found, counts, ignored } = derive();
+  const { found, counts, ignored, supply } = derive();
   const codeFound = code ? withoutIgnoredCode(code.findings, config.codeIgnore ?? []) : [];
   const suggestions = focus === 'prompt' && !confirmReq ? suggestionsFor(prompt.value, { data, found, config, cwd }) : [];
   const sel = Math.min(sugIndex, Math.max(0, suggestions.length - 1));
@@ -713,7 +720,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   } else if (view === 'log') {
     main = <LogView entries={entries} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'packages') {
-    main = <PackagesView data={data} found={found} filter={pkgFilter} deny={config.deny ?? []} ctx={ctx} width={W} height={mainH} active={viewActive} />;
+    main = <PackagesView data={data} found={found} supply={supply} filter={pkgFilter} deny={config.deny ?? []} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'code') {
     main = <CodeView code={code} found={codeFound} counts={countOf(codeFound)} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   } else if (view === 'manifests') {
