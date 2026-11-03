@@ -3,13 +3,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
 import { createServer } from 'node:net';
+import { PassThrough } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { composeProcs, hostPort, isTrouble, loadCrew, parseProcfile, procfileProcs, readEnvFiles, portInUse, readSpec, specFor, splitConcurrently, stripAnsi, withProfile, words, writeSpec } from '../src/crew.js';
 import { RESTART_TIMES, Supervisor, afterExit, pidsOnPort, portOpen, seconds } from '../src/supervisor.js';
 import { afterStatus, mergedLines, nextTick, statusSegment, portSegments, uptime } from '../src/ui/CrewView.jsx';
 import { whyPrompt } from '../src/actions.js';
+import { structuredOf } from '../src/structured.js';
 import { project } from './helpers.js';
 
 const until = async (check, what, ms = 8000) => {
@@ -100,8 +103,14 @@ test('the rows: uptime, ports, the merged log, and the question for Claude', () 
   assert.deepEqual(portSegments({ port: null }), []);
   const merged = mergedLines([{ name: 'a', lines: [{ at: 1, text: 'one' }, { at: 3, text: 'three' }] }, { name: 'b', lines: [{ at: 2, text: 'two' }] }], 2);
   assert.deepEqual(merged.map((l) => `${l.name}:${l.text}`), ['b:two', 'a:three']);
+  // A merged line is read as structured once, as its process's line, however many frames copy it.
+  const json = { at: 1, text: '{"level":50,"msg":"boom"}' };
+  const read = structuredOf(json);
+  const [copy] = mergedLines([{ name: 'a', lines: [json] }], 1);
+  assert.equal(structuredOf(copy), read);
+  assert.equal(structuredOf({ ...copy, text: 'edited' }), null);
   // The newest lines, as sorting every log's tail by time would give them: ties and short logs too.
-  const sorted = (procs, last) => procs.flatMap((q) => q.lines.slice(-last).map((l) => ({ ...l, name: q.name }))).sort((x, y) => x.at - y.at).slice(-last);
+  const sorted = (procs, last) => procs.flatMap((q) => q.lines.slice(-last).map((l) => ({ ...l, name: q.name, source: l }))).sort((x, y) => x.at - y.at).slice(-last);
   let seed = 7;
   const rnd = (n) => ((seed = (seed * 48271) % 2147483647) % n);
   for (let round = 0; round < 50; round++) {
@@ -182,6 +191,33 @@ test('a port already taken is spotted in the log', async () => {
   } finally {
     sup.dispose();
     holder.close();
+  }
+});
+
+test('output comes into the log a line at a time however it is cut, and a long run without a newline is quick', () => {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => {};
+  const sup = new Supervisor(readSpec({ procs: { api: { run: 'node api.js' } } }).procs, { dir: tmpdir(), spawnImpl: () => child });
+  try {
+    sup.start('api');
+    const say = (text) => child.stdout.emit('data', text);
+    say('one\ntw');
+    say('o');
+    say('\nthree\nfo');
+    const p = sup.get('api');
+    assert.deepEqual(p.lines.slice(1).map((l) => l.text), ['one', 'two', 'three']);
+    // A progress bar redrawn with \r, never a newline, 50,000 times: it once took seconds.
+    const started = performance.now();
+    for (let i = 0; i < 50000; i++) say(`\r ${i % 100}%`);
+    say('ur\n');
+    assert.ok(performance.now() - started < 1000, 'within a second');
+    assert.equal(p.lines.length, 5);
+    assert.ok(p.lines[4].text.startsWith('fo 0% 1%'));
+    assert.ok(p.lines[4].text.endsWith(' 99%ur'));
+  } finally {
+    sup.dispose();
   }
 });
 

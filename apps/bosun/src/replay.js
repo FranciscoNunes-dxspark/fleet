@@ -34,9 +34,14 @@ const RUNNING = new Set(['starting', 'running', 'stopping']);
  * pieces draw them, and leaves `profile` and `git` as they were then. `keep` lines per process.
  */
 export class Replayer {
-  constructor(session, { keep = 3000 } = {}) {
+  constructor(session, { keep = 3000, every = 2000 } = {}) {
     this.session = session;
     this.keep = keep;
+    // The crew as it was after each `every` events, kept as they're passed: going back in time starts
+    // from the last one before the moment rather than from the session's start, which for a long
+    // recording was most of a second for each step back.
+    this.every = every;
+    this.checkpoints = [];
     this.reset();
   }
 
@@ -50,15 +55,42 @@ export class Replayer {
     for (const p of this.session.header?.procs ?? []) this.add(p);
   }
 
+  // The state as it is now, copied so that what's applied after doesn't change it.
+  snapshot() {
+    const procs = new Map();
+    for (const [name, p] of this.procs) procs.set(name, { ...p, lines: [...p.lines] });
+    return { index: this.index, profile: this.profile, git: this.git, procs };
+  }
+
+  // Back to the last checkpoint whose events all came by `t` (or the start when there's none).
+  rewind(t) {
+    const { events } = this.session;
+    let c = null;
+    for (let i = this.checkpoints.length - 1; i >= 0; i--) {
+      if (events[this.checkpoints[i].index - 1].t <= t) {
+        c = this.checkpoints[i];
+        break;
+      }
+    }
+    this.reset();
+    if (!c) return;
+    const copy = { ...c, procs: new Map() };
+    for (const [name, p] of c.procs) copy.procs.set(name, { ...p, lines: [...p.lines] });
+    Object.assign(this, { index: copy.index, profile: copy.profile, git: copy.git, procs: copy.procs });
+  }
+
   add({ name, port = null, run = '' }) {
     if (!this.procs.has(name)) this.procs.set(name, { name, port, spec: { run, port }, status: 'stopped', code: null, portOpen: null, health: null, restartAt: null, gaveUp: false, tests: null, lines: [], trouble: null, child: null });
     return this.procs.get(name);
   }
 
   at(t) {
-    if (t < this.t) this.reset();
+    if (t < this.t) this.rewind(t);
     const { events } = this.session;
-    while (this.index < events.length && events[this.index].t <= t) this.apply(events[this.index++]);
+    while (this.index < events.length && events[this.index].t <= t) {
+      this.apply(events[this.index++]);
+      if (this.index % this.every === 0 && this.index / this.every > this.checkpoints.length) this.checkpoints.push(this.snapshot());
+    }
     this.t = t;
     return [...this.procs.values()].map((p) => ({ ...p, lines: p.lines }));
   }

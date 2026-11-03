@@ -97,6 +97,23 @@ test('the reader: the crew at any moment, forwards and back, and the marks betwe
   assert.equal(clock(3_725_000), '1:02:05');
 });
 
+test('the reader steps back through a long session from its checkpoints, as it was read from the start', () => {
+  const lines = [JSON.stringify({ type: 'session', v: 1, project: '/p', start: 0, procs: [{ name: 'api', port: 3000, run: 'node api.js' }, { name: 'web', run: 'vite' }] })];
+  for (let i = 0; i < 60000; i++) {
+    const p = i % 3 ? 'api' : 'web';
+    if (i % 5000 === 0) lines.push(JSON.stringify({ t: i, type: 'state', p, status: i % 10000 ? 'crashed' : 'running', code: i % 10000 ? 1 : null }));
+    lines.push(JSON.stringify({ t: i, type: 'line', p, text: i % 7000 === 1 ? `TypeError: ${i}` : `line ${i}` }));
+  }
+  const s = parseSession(lines.join('\n'));
+  const r = new Replayer(s, { keep: 100 });
+  r.at(s.end);
+  for (const t of [59000, 41234, 41233, 30000, 12001, 1999, 2000, 0, 45000, 44999]) assert.deepEqual(r.at(t), new Replayer(s, { keep: 100 }).at(t), `at ${t}`);
+  let back = performance.now();
+  for (let t = s.end; t > s.end - 500; t--) r.at(t);
+  back = performance.now() - back;
+  assert.ok(back < 1000, `500 steps back took ${back} ms`);
+});
+
 test('a supervisor records its processes\' lines and states', async () => {
   const lines = [];
   const states = [];

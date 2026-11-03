@@ -126,6 +126,24 @@ test('esc stops a running script through the session', async () => {
   app.unmount();
 });
 
+test('a script printing a hundred thousand lines shows the last of them quickly, in order', async () => {
+  const session = fakeSession();
+  session.run = async (code, onLine) => {
+    for (let i = 0; i < 100000; i++) onLine(`row ${i}`);
+    return { stopped: false };
+  };
+  const app = render(React.createElement(App, { session }));
+  await sleep(30);
+  await type(app, 'x');
+  const started = performance.now();
+  app.stdin.write('\x1b[15~');
+  await until(() => app.lastFrame().includes('row 99999'), 'the last line');
+  assert.ok(performance.now() - started < 1000, 'within a second');
+  const frame = app.lastFrame();
+  assert.ok(frame.indexOf('row 99998') < frame.indexOf('row 99999'));
+  app.unmount();
+});
+
 test('a real PowerShell session keeps variables between runs and marks errors (skipped without one)', async (t) => {
   const bin = await locate();
   if (!bin) return t.skip('no PowerShell');

@@ -63,7 +63,22 @@ export function App({ session, file, cwd = process.cwd(), setTitle }) {
     setPrompt(promptRef.current);
   };
 
-  const say = (kind, text) => setOutput((o) => [...o, { kind, text }].slice(-MAX_OUTPUT));
+  // Lines wait for the end of the current turn and go in together: a script printing tens of thousands
+  // of lines would otherwise copy the whole pane for each one.
+  const saying = useRef([]);
+  const say = (kind, text) => {
+    if (!saying.current.length)
+      queueMicrotask(() => {
+        const lines = saying.current;
+        saying.current = [];
+        setOutput((o) => (o.length + lines.length > MAX_OUTPUT ? [...o, ...lines].slice(-MAX_OUTPUT) : [...o, ...lines]));
+      });
+    saying.current.push({ kind, text });
+  };
+  const clearOutput = () => {
+    saying.current.length = 0;
+    setOutput([]);
+  };
 
   // Layout: header, the script pane, the output pane, the prompt (three rows), the footer.
   const body = Math.max(8, rows - 5);
@@ -239,7 +254,7 @@ export function App({ session, file, cwd = process.cwd(), setTitle }) {
       setDirty(false);
       return setTop(0);
     }
-    if (key.ctrl && input === 'l') return setOutput([]);
+    if (key.ctrl && input === 'l') return clearOutput();
     if ((key.ctrl && input === 't') || (key.tab && key.shift)) return pathMode ? undefined : setFocus((f) => (f === 'script' ? 'console' : 'script'));
     return focus === 'script' ? scriptKeys(input, key) : promptKeys(input, key);
   });
