@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApi, useApp } from '../context.js';
 import { useSticky } from '../sticky.js';
 import {
-  LIMITS, buildPrompt, cliLink, desktopLink, folderProblem, lastRepoFor, loadFolders, rememberRepo, saveFolder,
+  LIMITS, buildPrompt, cliLink, desktopLink, folderProblem, lastRepoFor, loadFolders, loadRules, rememberRepo, saveFolder,
 } from '../claude.js';
 import { t, tj } from '../i18n.js';
 
@@ -27,6 +27,7 @@ export default function ClaudeStart({ w }) {
   const repo = repos.find((r) => r.id === repoId) || null;
   const folder = repo ? folders[repo.id] || '' : '';
   const problem = folderProblem(draft);
+  const rules = loadRules();
 
   const saveDraft = () => {
     if (problem) return;
@@ -37,7 +38,7 @@ export default function ClaudeStart({ w }) {
   const opened = () => repo && rememberRepo(w.projectName, repo.id);
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(buildPrompt(w, repo, LIMITS.desktop));
+      await navigator.clipboard.writeText(buildPrompt(w, repo, LIMITS.desktop, rules));
       toast(t('Prompt copied'));
     } catch {
       toast(t('Couldn’t copy. Your browser blocked the clipboard.'), 'bad');
@@ -81,8 +82,8 @@ export default function ClaudeStart({ w }) {
         {repo && !folder && !editing && <p className="muted small">{t('Without a folder, Claude Code opens in your home folder and Claude Desktop asks you to pick one.')}</p>}
 
         <div className="detail-actions">
-          <a className="btn btn-small btn-primary" href={cliLink(folder, buildPrompt(w, repo, LIMITS.cli))} onClick={opened}>Claude Code (CLI)</a>
-          <a className="btn btn-small" href={desktopLink(folder, buildPrompt(w, repo, LIMITS.desktop))} onClick={opened}>Claude Desktop</a>
+          <a className="btn btn-small btn-primary" href={cliLink(folder, buildPrompt(w, repo, LIMITS.cli, rules))} onClick={opened}>Claude Code (CLI)</a>
+          <a className="btn btn-small" href={desktopLink(folder, buildPrompt(w, repo, LIMITS.desktop, rules))} onClick={opened}>Claude Desktop</a>
           <button type="button" className="btn btn-small btn-ghost" onClick={copy}>{t('Copy prompt')}</button>
         </div>
         <p className="muted small">

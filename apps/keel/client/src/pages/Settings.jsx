@@ -10,7 +10,8 @@ import OrgSettings from './OrgSettings.jsx';
 import ChannelSettings from './ChannelSettings.jsx';
 import { useOrgKind, useProjectLabel } from '../orgs.js';
 import { age, dateTime } from '../format.js';
-import { folderProblem, loadFolders, saveFolder } from '../claude.js';
+import { folderProblem, loadFolders, loadRules, saveFolder, saveRules } from '../claude.js';
+import { pushPref } from '../prefs.js';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
 import { canPromptInstall, currentSubscription, deviceId, disablePush, enablePush, isInstalled, promptInstall, pushAvailability } from '../pwa.js';
 
@@ -228,6 +229,7 @@ export default function Settings() {
           })}
         </ul>
         {hiddenCount > 0 && <p className="muted small">{t(hiddenCount === 1 ? '{n} more project. Search to find them.' : '{n} more projects. Search to find them.', { n: hiddenCount })}</p>}
+        <ClaudeRules />
       </Section>
 
       <Section id="flags" title={t('When to flag things')}>
@@ -698,6 +700,39 @@ function TerminalSignIns() {
           </Confirm>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Your own "How to work" instructions for Start in Claude. Saved with your account
+ * (prefs); empty means the defaults, which end with "don't commit".
+ */
+function ClaudeRules() {
+  const { toast } = useApp();
+  const [saved, setSaved] = useState(loadRules);
+  const [value, setValue] = useState(saved);
+  const save = () => {
+    const v = value.trim();
+    if (v === saved) return;
+    saveRules(v);
+    pushPref('claudeRules', { text: v });
+    setSaved(v);
+    toast(t(v ? 'Instructions saved' : 'Instructions reset to the default'));
+  };
+  return (
+    <div className="claude-rules">
+      <h3 className="small">{t('Start in Claude: how to work')}</h3>
+      <p className="muted small">{t('Replaces the default instructions at the end of the prompt, which ask Claude to plan first, use a new branch, run the tests and not commit. Leave empty for the default. Saved with your account.')}</p>
+      <textarea
+        className="input"
+        rows={5}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        placeholder={t('For example: Read the code first. Don’t commit or push.')}
+        aria-label={t('Start in Claude: how to work')}
+      />
     </div>
   );
 }

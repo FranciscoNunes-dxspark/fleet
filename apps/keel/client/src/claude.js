@@ -32,6 +32,11 @@ export function saveFolder(repoId, folder) {
   write(FOLDERS_KEY, all);
 }
 
+/** Your own "How to work" lines ('' = the defaults). They follow the account: prefs.js syncs this key. */
+export const RULES_KEY = 'keel.claudeRules.v1';
+export const loadRules = () => (typeof read(RULES_KEY).text === 'string' ? read(RULES_KEY).text : '');
+export const saveRules = (text) => write(RULES_KEY, { text });
+
 export const lastRepoFor = (projectName) => read(LAST_REPO_KEY)[projectName] || null;
 export const rememberRepo = (projectName, repoId) => write(LAST_REPO_KEY, { ...read(LAST_REPO_KEY), [projectName]: repoId });
 
@@ -50,8 +55,16 @@ export const branchFor = (w) => `${w.type === 'Bug' ? 'bugfix' : 'feature'}/${w.
 
 const clip = (text, max) => (text.length > max ? `${text.slice(0, max).trimEnd()}… (truncated, see the work item)` : text);
 
-/** The prompt, shortened field by field until it fits Claude's limit. */
-export function buildPrompt(w, repo, limit = LIMITS.cli) {
+/** The "How to work" lines used when a person hasn't written their own (Settings, per account). */
+export const defaultRules = (w, repo) => [
+  '1. Read the relevant code first, then give me a short plan before changing anything.',
+  `2. Work on a new branch ${branchFor(w)}${repo?.defaultBranch ? ` from ${repo.defaultBranch}` : ''}.`,
+  '3. Run the tests.',
+  `4. Don’t commit, push or open a pull request. Leave the changes uncommitted for me to review (the work item is AB#${w.id}).`,
+];
+
+/** The prompt, shortened field by field until it fits Claude's limit. `rules` replaces the default "How to work" lines. */
+export function buildPrompt(w, repo, limit = LIMITS.cli, rules = '') {
   const build = (cap) => {
     const lines = [
       `Let's work on Azure DevOps ${w.type} ${w.id}: ${w.title}`,
@@ -75,14 +88,7 @@ export function buildPrompt(w, repo, limit = LIMITS.cli) {
       lines.push('', 'Recent comments:');
       for (const c of comments) lines.push(`- ${c.author?.displayName || 'Someone'}: ${clip(c.text.replace(/\s+/g, ' '), Math.round(cap / 3))}`);
     }
-    lines.push(
-      '',
-      'How to work:',
-      '1. Read the relevant code first, then give me a short plan before changing anything.',
-      `2. Work on a new branch ${branchFor(w)}${repo?.defaultBranch ? ` from ${repo.defaultBranch}` : ''}.`,
-      `3. Mention AB#${w.id} in commit messages so Azure DevOps links them to the work item.`,
-      '4. Run the tests. Don’t push or open a pull request until I say so.',
-    );
+    lines.push('', 'How to work:', ...(rules?.trim() ? [rules.trim()] : defaultRules(w, repo)));
     return lines.filter((l) => l !== false && l !== null && l !== undefined).join('\n');
   };
   for (const cap of [4000, 2400, 1500, 900, 500, 250]) {

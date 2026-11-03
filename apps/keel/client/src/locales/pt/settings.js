@@ -358,6 +358,11 @@ export default {
   'team areas only': 'só as áreas das equipas',
   // Repo folders for Start in Claude, in Projects and repositories
   'Local folder, for Start in Claude': 'Pasta local, para Começar no Claude',
+  'Start in Claude: how to work': 'Começar no Claude: como trabalhar',
+  'Replaces the default instructions at the end of the prompt, which ask Claude to plan first, use a new branch, run the tests and not commit. Leave empty for the default. Saved with your account.': 'Substitui as instruções por omissão no fim do pedido, que pedem ao Claude para planear primeiro, usar um novo ramo, executar os testes e não fazer commit. Deixe vazio para usar as predefinidas. Guardado na sua conta.',
+  'For example: Read the code first. Don’t commit or push.': 'Por exemplo: Leia primeiro o código. Não faça commit nem push.',
+  'Instructions saved': 'Instruções guardadas',
+  'Instructions reset to the default': 'Instruções repostas para as predefinidas',
   'saved in this browser': 'guardada neste browser',
   'Local folder for {name}': 'Pasta local de {name}',
   'Work item type colors': 'Cores dos tipos de work item',
