@@ -1,5 +1,6 @@
 // Secrets in the history: the kit's secret rules (codescan.js) read over the lines each commit added, for
-// /secrets and `splice security`. Pure but `readHistory`, which runs git and reads the working tree.
+// /secrets, `splice security` and the check before a push (pushcheck.js). Pure but `readHistory`, which runs
+// git and reads the working tree.
 //
 // A secret found is never kept whole: a finding's `excerpt` is codescan's, redacted. `readHistory` holds
 // the value only while it looks for it in the working tree, and nothing it returns carries it.
@@ -194,7 +195,7 @@ function fileSecrets(file, commit) {
 
 const secretsOf = (commit) => diffFiles(commit.patch).flatMap((f) => fileSecrets(f, commit));
 
-/** The secrets a commit adds, as findings with { commit, author, date, subject }. */
+/** The secrets a commit adds, as findings with { commit, author, date, subject }: for the check before a push too. */
 export const commitFindings = (commit) => secretsOf(commit).map((s) => s.finding);
 
 // The same secret on the same line, met again (a rebased copy, a cherry-pick): reported once.

@@ -290,7 +290,7 @@ export const HELP = [
       ['↵', 'The finding whole: commit, author, file, the line (the secret cut short), whether it\'s still in the working tree, and what to do: rotate it, and how to take it out of the history (git filter-repo, as text; Splice never rewrites it)'],
       ['d', 'The commit\'s diff of that file'],
       ['y', 'Copy the commit\'s hash'],
-      'splice security [folder] [--json] [--sarif [file]] [--fail-on level] [--all] does it without the screen, for a pipeline.',
+      'A push looks through its own commits with the same rules first, and asks before sending a secret (Check before pushing, in /settings). splice security [folder] [--json] [--sarif [file]] [--fail-on level] [--all] does it without the screen, for a pipeline.',
     ],
   },
   {

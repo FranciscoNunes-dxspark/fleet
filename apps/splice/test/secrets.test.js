@@ -317,3 +317,29 @@ test('/secrets lists what the history holds; ↵ shows one whole with how to pur
     app.unmount();
   }
 });
+
+test('a push with a secret in its commits shows it cut short and asks, by the same rules', async () => {
+  const { dir, g, commit } = makeRepo('push-repo');
+  const origin = join(base, 'push-repo.git');
+  execFileSync('git', ['init', '-q', '--bare', origin]);
+  commit('First', { 'README.md': 'hello\n' });
+  g('remote', 'add', 'origin', origin);
+  g('push', '-q', '-u', 'origin', 'main');
+  commit('Connect', { 'src/db.js': `const url = 'postgres://app:S3cr3tPw0rd@db.internal:5432/app';\n` });
+  lastApp = render(React.createElement(App, { initialPath: dir, config: { recent: [], roots: [], history: [] } }));
+  const app = lastApp;
+  const frame = () => app.lastFrame() ?? '';
+  const remoteHead = () => execFileSync('git', ['--git-dir', origin, 'log', '-1', '--format=%s', 'main'], { encoding: 'utf8' }).trim();
+  try {
+    await until(() => frame().includes('Connect'), 'the graph');
+    app.stdin.write('\x1bp');
+    await until(() => frame().includes('Push anyway, with what looks like a secret?'), 'the question');
+    assert.match(frame(), /src\/db\.js:1 {2}Password in a URL/);
+    assert.doesNotMatch(frame(), /S3cr3tPw0rd/);
+    app.stdin.write('2');
+    await until(() => !frame().includes('Push anyway'), 'the question gone');
+    assert.equal(remoteHead(), 'First');
+  } finally {
+    app.unmount();
+  }
+});

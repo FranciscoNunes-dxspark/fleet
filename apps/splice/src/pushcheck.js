@@ -1,6 +1,7 @@
 // The check before pushing: files too big for GitHub, and what look like secrets in the lines the commits
 // add. Pure: the log arguments, parsing what git says, the scan and its report. actions.js runs it before
 // P and /push, unless "Check before pushing" is off in /settings.
+import { commitFindings } from './secrets.js';
 
 export const MB = 1024 * 1024;
 export const BIG_FILE = 50 * MB;
@@ -27,7 +28,7 @@ export function pushLogArgs(range, { patch = true, max = MAX_COMMITS } = {}) {
     '--no-ext-diff',
     '--raw',
     '--no-abbrev',
-    ...(patch ? ['-p', '-U0'] : []),
+    ...(patch ? ['-p', '-U0', '--no-textconv', '--src-prefix=a/', '--dst-prefix=b/'] : []),
     `--format=${LOG_RECORD}`,
     ...range,
     '--',
@@ -99,88 +100,12 @@ export function bigFiles(commits, sizes, limit = BIG_FILE) {
   return out.sort((a, b) => b.size - a.size);
 }
 
-// A value that's an example or a lookup, not a secret: "changeme", "<password>", "${DB_PASS}", "xxxxxxxx".
-const PLACEHOLDER = /^(?:\$|%|<|\{\{|#\{)|\$\{|^(?:x+|\*+|\.+|-+|_+|0+)$|change.?me|example|placeholder|password|passw|secret|dummy|sample|your|redacted|todo|fixme|test|fake|hunter2/i;
-
 /**
- * A key/password assignment's value is worth reporting: long enough, varied, with a digit, a symbol or mixed
- * case, and not a placeholder, a path, a dotted name (config.apiKey) or an environment variable's name.
+ * The added lines of a commit's patch (-U0) that hold a secret, by the kit's rules (secrets.js, as /secrets
+ * reads the history), and the key stores and .env files it adds: findings with { hash, subject }, each
+ * excerpt redacted.
  */
-function looksReal(value) {
-  if (value.length < 8 || PLACEHOLDER.test(value) || new Set(value).size < 5) return false;
-  if (/[\\/]/.test(value) || /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(value) || /^[A-Z][A-Z0-9_]+$/.test(value)) return false;
-  return /[0-9]/.test(value) || /[^A-Za-z0-9]/.test(value) || (/[a-z]/.test(value) && /[A-Z]/.test(value));
-}
-
-/**
- * What a line can give away: { id, what, find(line) → the matching text or null }. Kept to patterns with
- * few false alarms: the shapes AWS, GitHub and Slack give their keys and tokens, private key files, and
- * passwords or keys assigned in quotes. Long random-looking strings alone aren't reported.
- */
-export const SECRET_RULES = [
-  { id: 'aws', what: 'an AWS access key', re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/ },
-  { id: 'private-key', what: 'a private key', re: /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/ },
-  { id: 'github', what: 'a GitHub token', re: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,})\b/ },
-  { id: 'slack', what: 'a Slack token', re: /\bxox[abposr]-[A-Za-z0-9]+-[A-Za-z0-9-]{6,}/ },
-  {
-    id: 'password',
-    what: 'a password or key',
-    re: /\b[\w.-]*(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?key|auth[_-]?token|access[_-]?token|client[_-]?secret|private[_-]?key)["']?\s*(?:=|:=|:|=>)\s*(["'`])([^"'`\s]{8,})\1/i,
-    value: 2,
-    check: looksReal,
-  },
-];
-
-/** The rule a line breaks and what matched, or null. */
-export function findSecret(line) {
-  for (const rule of SECRET_RULES) {
-    const m = rule.re.exec(line);
-    if (!m) continue;
-    if (rule.check && !rule.check(m[rule.value])) continue;
-    return { rule, match: m[0], value: rule.value ? m[rule.value] : m[0] };
-  }
-  return null;
-}
-
-/** A secret with all but its start hidden, so the report doesn't spread it further. */
-export function masked(rule, value) {
-  if (rule.id === 'private-key') return value;
-  return `${value.slice(0, rule.id === 'password' ? 2 : 4)}…`;
-}
-
-/** The added lines of a commit's patch (-U0) that look like secrets: [{ what, path, line, shown, hash, subject }]. */
-export function scanCommit(commit) {
-  const out = [];
-  let path = null;
-  let line = 0;
-  let inHeader = false;
-  for (const l of commit.patch.split('\n')) {
-    if (l.startsWith('diff --git ')) {
-      inHeader = true;
-      path = null;
-      continue;
-    }
-    if (inHeader) {
-      if (l.startsWith('+++ ')) path = l === '+++ /dev/null' ? null : l.slice(4).replace(/^b\//, '').replace(/\t$/, '');
-      const h = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(l);
-      if (h) {
-        inHeader = false;
-        line = Number(h[1]);
-      }
-      continue;
-    }
-    const h = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(l);
-    if (h) {
-      line = Number(h[1]);
-      continue;
-    }
-    if (l[0] !== '+') continue;
-    const found = path && findSecret(l.slice(1));
-    if (found) out.push({ what: found.rule.what, path, line, shown: masked(found.rule, found.value), hash: commit.hash, subject: commit.subject });
-    line++;
-  }
-  return out;
-}
+export const scanCommit = (commit) => commitFindings(commit).map((f) => ({ ...f, hash: commit.hash, subject: commit.subject }));
 
 /** Everything the check found in the commits: { big, secrets, commits }. */
 export function checkCommits(commits, sizes) {
@@ -218,11 +143,12 @@ export function pushCheckText(found) {
   }
   if (found.secrets.length) {
     out.push(`Possible secrets (${found.secrets.length})`);
-    for (const s of found.secrets) out.push(`  ${s.path}:${s.line}  ${s.what} (${s.shown})`, `      in ${at(s)}`);
+    for (const s of found.secrets) out.push(`  ${s.line ? `${s.where}:${s.line}` : s.where}  ${s.title}${s.line ? `: ${s.excerpt}` : ''}`, `      in ${at(s)}`);
     out.push(
       '',
       '  Once pushed, a secret is out: anyone who can read the repository has it, in its history too. If it',
-      '  is real, take it out of the commit before pushing, and if it was ever pushed, change it.',
+      '  is real, take it out of the commit before pushing (z undoes the last one; i in the graph edits an',
+      '  older one), and if it was ever pushed, change it. /secrets looks through the whole history.',
       '',
     );
   }

@@ -1,5 +1,6 @@
 // The check before pushing: the pure scanner, then P against a throwaway repository with a bare remote.
 // Secret-looking strings are built from pieces, so this file itself has none for a scanner to find.
+// The rules themselves are the kit's (codescan.js), tested there and in secrets.test.js.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -9,48 +10,12 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { removeTemp } from './temp.js';
-import { MB, bigFiles, checkCommits, findSecret, foundSummary, masked, parseBatchCheck, parsePushLog, pushCheckText, pushLogArgs, pushRange, scanCommit } from '../src/pushcheck.js';
+import { MB, bigFiles, checkCommits, foundSummary, parseBatchCheck, parsePushLog, pushCheckText, pushLogArgs, pushRange, scanCommit } from '../src/pushcheck.js';
 import { App } from '../src/ui/App.jsx';
 
 const AWS = 'AK' + 'IA' + 'Q3EGRT5MZ7WX4N2B';
 const GH = 'gh' + 'p_' + 'Zx9Qw2'.repeat(6);
-const GH_PAT = 'github' + '_pat_' + 'A1b2C3d4E5'.repeat(6);
 const KEY = '-----BEGIN ' + 'OPENSSH PRIVATE' + ' KEY-----';
-const SLACK = 'xo' + 'xb-' + '1234567890-' + 'AbCdEfGhIjKl';
-
-test('what looks like a secret, and what doesn\'t', () => {
-  const kind = (line) => findSecret(line)?.rule.id ?? null;
-  assert.equal(kind(`aws_access_key_id = ${AWS}`), 'aws');
-  assert.equal(kind(`const token = '${GH}';`), 'github');
-  assert.equal(kind(`TOKEN=${GH_PAT}`), 'github');
-  assert.equal(kind(KEY), 'private-key');
-  assert.equal(kind(`"slack": "${SLACK}"`), 'slack');
-  assert.equal(kind('db_password = "Tr0ub4dor&3"'), 'password');
-  assert.equal(kind('"apiKey": "f81Kq9zPl0Xw"'), 'password');
-  assert.equal(kind("client_secret => 'h7Gk2LmQ9z'"), 'password');
-  // Placeholders, lookups, names and plain words are left alone.
-  for (const line of [
-    'password = "changeme123"',
-    'password: "${DB_PASSWORD}"',
-    'password = "<your password>"',
-    'apiKey: config.apiKey',
-    'const pwd = process.env.PWD;',
-    'secret = "aaaaaaaaaaaa"',
-    'api_key = "MY_API_KEY_NAME"',
-    'password = "correcthorse"',
-    'private_key = "/etc/ssl/private/site.pem"',
-    'token = "settings.auth.token"',
-    'AKIA is how AWS keys start',
-    'passwordHash = "x"',
-  ]) {
-    assert.equal(findSecret(line), null, line);
-  }
-  // Only the start of it is shown.
-  const f = findSecret(`key = ${AWS}`);
-  assert.equal(masked(f.rule, f.value), 'AKIA…');
-  const p = findSecret('db_password = "Tr0ub4dor&3"');
-  assert.equal(masked(p.rule, p.value), 'Tr…');
-});
 
 const ZERO = '0'.repeat(40);
 const LOG = [
@@ -105,9 +70,9 @@ test('the log of the commits to push: their files, and the secrets in the lines 
       ['Tidy', ['M src/x.js f']],
     ],
   );
-  // The removed token doesn't count; the added key does, on its line of the new file.
-  assert.deepEqual(scanCommit(commits[0]).map((s) => [s.what, s.path, s.line, s.shown]), [['an AWS access key', 'config/app.env', 2, 'AKIA…']]);
-  assert.deepEqual(scanCommit(commits[1]).map((s) => [s.what, s.path, s.line]), [['a private key', 'src/x.js', 22]]);
+  // The removed token doesn't count; the added key does, on its line of the new file, cut short (the kit's rules, as /secrets).
+  assert.deepEqual(scanCommit(commits[0]).map((s) => [s.title, s.where, s.line, s.excerpt]), [['AWS access key', 'config/app.env', 2, 'AWS_KEY=AKIA••••••••']]);
+  assert.deepEqual(scanCommit(commits[1]).map((s) => [s.title, s.where, s.line, s.hash[0]]), [['Private key', 'src/x.js', 22, '2']]);
 
   const sizes = parseBatchCheck(`${'a'.repeat(40)} blob 120\n${'c'.repeat(40)} blob ${120 * MB}\n${'f'.repeat(40)} blob 51\nnope missing\n`);
   assert.deepEqual(bigFiles(commits, sizes).map((f) => [f.path, f.size, f.subject]), [['data/dump.sql', 120 * MB, 'Add the config']]);
@@ -115,7 +80,7 @@ test('the log of the commits to push: their files, and the secrets in the lines 
   assert.equal(foundSummary(found), 'a file over 50 MB and 2 things that look like secrets');
   const text = pushCheckText(found);
   assert.match(text, /data\/dump\.sql {2}120 MB, over GitHub's 100 MB limit/);
-  assert.match(text, /config\/app\.env:2 {2}an AWS access key \(AKIA…\)\n {6}in 1111111 Add the config/);
+  assert.match(text, /config\/app\.env:2 {2}AWS access key: AWS_KEY=AKIA•+\n {6}in 1111111 Add the config/);
   assert.match(text, /Looked at 2 commits/);
   assert.doesNotMatch(text, new RegExp(AWS));
 });
@@ -185,7 +150,7 @@ test('P with a secret in the commits to push lists it and asks; no keeps it here
     await until(() => frame().includes('Deploy script'), 'the graph');
     app.stdin.write('\x1bp');
     await until(() => frame().includes('Push anyway, with what looks like a secret?'), 'the question');
-    assert.match(frame(), /deploy\.sh:2 {2}an AWS access key \(AKIA…\)/);
+    assert.match(frame(), /deploy\.sh:2 {2}AWS access key: export AWS_ACCESS_KEY_ID=AKIA•+/);
     assert.match(frame(), /in [0-9a-f]{7} Deploy script/);
     app.stdin.write('2');
     await until(() => !frame().includes('Push anyway'), 'the question gone');
