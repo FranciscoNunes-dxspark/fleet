@@ -47,18 +47,34 @@ const noExt = (p) => p.replace(/\.[^./]+$/, '');
  * or its text uses the class (`new Price(`, `Price.Format`).
  */
 export function testsTouching(changed, testFiles) {
+  // What each changed file is, worked out once rather than for every test file it's compared with.
+  const each = changed.map((c) => ({
+    c,
+    dotnet: /\.(?:cs|fs|vb)$/.test(c),
+    js: /\.[cm]?[jt]sx?$/.test(c),
+    stem: stem(c),
+    name: basename(c),
+    cls: basename(c, extname(c)),
+    top: dirname(c).split('/')[0],
+    module: noExt(c).replace(/\/index$/, ''),
+  }));
+  for (const x of each) if (x.dotnet && x.cls.length > 2) x.uses = new RegExp(`\\b${x.cls}\\b`);
   const out = [];
   for (const t of testFiles) {
     let why = null;
-    for (const c of changed) {
+    const tStem = stem(t.path);
+    const tDotnet = /\.(?:cs|fs|vb)$/.test(t.path);
+    // A test file's imports, read from its text once, and only when a changed file needs them.
+    let imports = null;
+    for (const x of each) {
+      const c = x.c;
       if (c === t.path) why = 'changed';
-      else if (/\.(?:cs|fs|vb)$/.test(c) && /\.(?:cs|fs|vb)$/.test(t.path)) {
-        const cls = basename(c, extname(c));
-        if (stem(c) === stem(t.path)) why = `tests ${basename(c)}`;
-        else if (cls.length > 2 && new RegExp(`\\b${cls}\\b`).test(t.text ?? '')) why = `uses ${cls}`;
-      } else if (/\.[cm]?[jt]sx?$/.test(c)) {
-        if (stem(c) === stem(t.path) && dirname(c).split('/')[0] === dirname(t.path).split('/')[0]) why = `tests ${basename(c)}`;
-        else if (importsOf(t.path, t.text).has(noExt(c).replace(/\/index$/, ''))) why = `imports ${basename(c)}`;
+      else if (x.dotnet && tDotnet) {
+        if (x.stem === tStem) why = `tests ${x.name}`;
+        else if (x.uses?.test(t.text ?? '')) why = `uses ${x.cls}`;
+      } else if (x.js) {
+        if (x.stem === tStem && x.top === dirname(t.path).split('/')[0]) why = `tests ${x.name}`;
+        else if ((imports ??= importsOf(t.path, t.text)).has(x.module)) why = `imports ${x.name}`;
       }
       if (why) break;
     }

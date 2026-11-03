@@ -144,6 +144,16 @@ test('changed files to tests: the file itself, its name, its imports; C# by clas
   assert.deepEqual(classesIn('namespace Shop.Tests;\npublic class CartTests { }\nclass Helper {}'), ['Shop.Tests.CartTests', 'Shop.Tests.Helper']);
 });
 
+test('changed files against thousands of test files: each test file read once, in a moment', () => {
+  const files = Array.from({ length: 2000 }, (_, i) => ({ path: `src/m${i}/a${i}.test.js`, text: `${Array.from({ length: 30 }, (_, k) => `import x${k} from '../lib/l${(i * 7 + k) % 5000}.js';`).join('\n')}\n${'x'.repeat(5000)}` }));
+  const changed = Array.from({ length: 200 }, (_, i) => `src/lib/l${i * 13}.js`);
+  const started = performance.now();
+  const touching = testsTouching(changed, files);
+  assert.ok(performance.now() - started < 2000, 'it took too long');
+  assert.equal(touching.length, 1117);
+  assert.deepEqual(touching[1], { path: 'src/m1/a1.test.js', why: 'imports l13.js' });
+});
+
 test('which suite runs a test file: the one that ran it, else by name and place', () => {
   const suites = [
     { id: 'vitest:.', runner: 'vitest', dir: '' },
