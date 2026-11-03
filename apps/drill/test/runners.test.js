@@ -194,6 +194,20 @@ test('flaky: passed and failed in the last runs, a retried pass counting as both
   }
 });
 
+test('flaky: thirty runs of 20,000 tests recorded and read in a moment, the oldest run dropped', () => {
+  const tests = Array.from({ length: 20_000 }, (_, i) => makeTest({ runner: 'vitest', file: `f${i % 100}.test.ts`, name: `t${i}`, status: 'passed' }));
+  let h = { runs: [], tests: {} };
+  const started = performance.now();
+  for (let r = 0; r < 31; r++) h = recordRun(h, r === 0 ? tests.slice(0, 10) : tests.map((t, i) => (i % 1000 === r ? { ...t, status: 'failed' } : t)), r);
+  const f = flakyTests(h);
+  assert.ok(performance.now() - started < 3000, 'it took too long');
+  assert.equal(h.runs.length, 30);
+  assert.equal(Object.keys(h.tests).length, 20_000);
+  // Failed in one of its last ten runs and passed in the rest: the ones that failed in runs 21 to 30.
+  assert.equal(f.length, 200);
+  assert.equal(f[0].marks.length, 10);
+});
+
 test("the editor's command: each editor's way of taking a line, terminal editors told apart", () => {
   const f = '/w/src/a.ts';
   assert.deepEqual(editorCommand('code --wait', f, 12, { column: 3, platform: 'linux' }), { command: "'code' -g '/w/src/a.ts:12:3'", terminal: false });
