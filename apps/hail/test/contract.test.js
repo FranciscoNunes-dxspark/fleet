@@ -120,3 +120,14 @@ test('Swagger 2: basePath, definitions, x-nullable, default, oneOf and additiona
   assert.throws(() => parseContract('{"hello": 1}'), /no paths/);
   assert.deepEqual(validate({}, { type: ['string', 'null'] }, null), []);
 });
+
+test('a big body that differs in every item is checked whole and quickly', () => {
+  const spec = { openapi: '3.0.0', paths: { '/items': { get: { responses: { 200: { content: { 'application/json': { schema: { type: 'object', properties: { items: { type: 'array', items: { $ref: '#/components/schemas/Item' } } } } } } } } } } }, components: { schemas: { Item: { type: 'object', required: ['id', 'gone'], properties: { id: { type: 'integer' } } } } } };
+  // 60,000 items, each one missing a field and with two the contract hasn't: 180,000 differences,
+  // more than a spread into push() can take.
+  const body = JSON.stringify({ items: Array.from({ length: 60000 }, (_, i) => ({ id: i, name: 'x', extra: true })) });
+  const started = performance.now();
+  const result = checkContract(spec, { method: 'GET', url: '/items' }, { status: 200, headers: [['content-type', 'application/json']], body });
+  assert.ok(performance.now() - started < 3000);
+  assert.deepEqual(result.issues.map((i) => [i.path, i.count]), [['$.items[].gone', 60000], ['$.items[].name', 60000], ['$.items[].extra', 60000]]);
+});
