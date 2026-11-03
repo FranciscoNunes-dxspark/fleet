@@ -50,3 +50,23 @@ test('columns only one side has, and a changed foreign key, become ALTER stateme
 test('lineDiff keeps the common lines and marks the rest', () => {
   assert.deepEqual(lineDiff('a\nb\nc', 'a\nx\nc'), [[' ', 'a'], ['-', 'b'], ['+', 'x'], [' ', 'c']]);
 });
+
+test('a few thousand new tables, each referring to the one before, are scripted in a moment and in order', () => {
+  const col = (name, type, extra = {}) => ({ name, type, nullable: false, identity: false, pk: false, ...extra });
+  const n = 1500;
+  // Read newest first, so each table comes before the one it refers to.
+  const objects = Array.from({ length: n }, (_, k) => ({ schema: 'dbo', name: `T${n - 1 - k}`, kind: 'table', columns: [col('Id', 'int', { pk: true }), col('ParentId', 'int'), col('Name', 'nvarchar(50)')] }));
+  const foreignKeys = Array.from({ length: n - 1 }, (_, i) => ({ name: `FK_${i + 1}`, from: `dbo.T${i + 1}`, to: `dbo.T${i}`, columns: [['ParentId', 'Id']] }));
+  const indexes = objects.map((o) => ({ table: `dbo.${o.name}`, name: `IX_${o.name}`, unique: false, type: 'NONCLUSTERED', columns: '[Name]' }));
+  const defaults = new Map(objects.map((o) => [`dbo.${o.name.toLowerCase()}.name`, { name: `DF_${o.name}`, definition: "('')" }]));
+  const right = { schema: { objects, foreignKeys }, definitions: new Map(), indexes, defaults };
+  const started = performance.now();
+  const changes = schemaDiff({ schema: { objects: [], foreignKeys: [] }, definitions: new Map(), indexes: [], defaults: new Map() }, right);
+  diffText(changes, { left: 'empty', right: 'big' });
+  const script = syncScript(changes, { left: 'empty', right: 'big', rightSchema: right.schema, rightIndexes: indexes, rightDefaults: defaults });
+  assert.ok(performance.now() - started < 1000, 'compared and scripted in under a second');
+  const at = (name) => script.indexOf(`CREATE TABLE [dbo].[${name}]`);
+  for (let i = 1; i < n; i += 97) assert.ok(at(`T${i - 1}`) >= 0 && at(`T${i - 1}`) < at(`T${i}`), `T${i - 1} before T${i}`);
+  assert.match(script, /CREATE TABLE \[dbo\]\.\[T7\] \([^;]*\[Name\] nvarchar\(50\) NOT NULL CONSTRAINT \[DF_T7\] DEFAULT \(''\)/);
+  assert.match(script, /CREATE NONCLUSTERED INDEX \[IX_T7\] ON \[dbo\]\.\[T7\] \(\[Name\]\);/);
+});

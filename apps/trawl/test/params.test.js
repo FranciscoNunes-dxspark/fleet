@@ -39,6 +39,15 @@ test('values become literals: numbers and NULL as they are, text quoted', () => 
   assert.equal(bindVariables('SELECT * FROM t WHERE a = @a AND b = @B -- @a', new Map([['@A', '5'], ['@b', "O'Neil"]])), "SELECT * FROM t WHERE a = 5 AND b = N'O''Neil' -- @a");
 });
 
+test('a big script using its @variables thousands of times binds in a moment', () => {
+  const script = Array.from({ length: 20000 }, (_, i) => `INSERT INTO dbo.T (a, b) VALUES (${i}, @p); -- @p\nUPDATE dbo.T SET b = @P WHERE a = @q;`).join('\n');
+  const started = performance.now();
+  const bound = bindVariables(script, new Map([['@p', "O'x"], ['@q', '7']]));
+  assert.ok(performance.now() - started < 1000, 'bound in under a second');
+  assert.equal(bound.split("N'O''x'").length - 1, 40000);
+  assert.ok(bound.startsWith("INSERT INTO dbo.T (a, b) VALUES (0, N'O''x'); -- @p\nUPDATE dbo.T SET b = N'O''x' WHERE a = 7;\n"));
+});
+
 test('sqlcmd: :setvar gives values, $(name) without one is asked for, and the lines become comments', () => {
   const script = ':setvar Env "prod"\nSELECT \'$(Env)\', $(Other), $(other)';
   const { defined, needed } = sqlcmdVariables(script);

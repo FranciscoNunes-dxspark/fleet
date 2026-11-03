@@ -35,6 +35,41 @@ test('a long text masked again after an edit is masked as it would be from scrat
   }
 });
 
+test('a long text split again after an edit is split as it would be from scratch', () => {
+  // Splitting a short text first leaves nothing to start from.
+  const fresh = (text) => (splitStatements(''), splitStatements(text));
+  const unit = "BEGIN TRY\n  SELECT 'a;b' -- x;\nEND\n  TRY\nBEGIN CATCH\n  SELECT 2;\nEND\n  CATCH\nUPDATE t SET x = (1;\n\n2);\nSELECT CASE WHEN a = 1 THEN 2 END;\nGO\nCREATE VIEW v AS\nSELECT 1;\nSELECT 2\ngo\n\n";
+  const base = unit.repeat(30);
+  const at = unit.length * 15;
+  const edits = ["'", ')', ';', '\n\n', 'BEGIN ', 'END', 'CATCH', '--', 'GO\n', 'CREATE PROC p AS '];
+  for (const add of edits) {
+    for (const where of [0, 1, ...Array.from({ length: unit.length + 1 }, (_, k) => at + k), base.length - 1, base.length]) {
+      const after = base.slice(0, where) + add + base.slice(where);
+      const removed = base.slice(0, where) + base.slice(where + add.length);
+      const expected = [fresh(after), fresh(removed), fresh(base)];
+      splitStatements(base);
+      assert.deepEqual(splitStatements(after), expected[0], `${JSON.stringify(add)} added at ${where}`);
+      splitStatements(base);
+      assert.deepEqual(splitStatements(removed), expected[1], `${add.length} removed at ${where}`);
+      // And back, from the edited text to the first.
+      assert.deepEqual(splitStatements(base), expected[2]);
+    }
+  }
+});
+
+test('typing in a long console splits only around the change', () => {
+  let text = Array.from({ length: 16000 }, (_, i) => `-- step ${i}\nINSERT INTO dbo.T (Id) VALUES (${i});\nUPDATE dbo.T SET Goals = ${i} WHERE Id = ${i};`).join('\n');
+  splitStatements(text);
+  const started = performance.now();
+  for (let k = 0; k < 40; k++) {
+    const at = Math.floor((k / 40) * text.length);
+    text = text.slice(0, at) + 'x' + text.slice(at);
+    splitStatements(text);
+  }
+  assert.ok(performance.now() - started < 1000, 'forty keys in under a second');
+  assert.equal(splitStatements(text).length, 32000);
+});
+
 test('statements split the same way across lines: a CATCH lines below its END, words after the fourth, a lower-case go', () => {
   const sql = "BEGIN TRY\n  SELECT 1;\nEND\n  TRY\nBEGIN\n  CATCH\n  SELECT 2;\nEND\n\n  CATCH SELECT 3\nSELECT a$b, @x#y, x1 FROM t WHERE CASE WHEN a = 1 THEN 2 END = 2;\n  go 2\nUPDATE t SET x = (1;\n\n2);";
   assert.deepEqual(splitStatements(sql).map((s) => [s.text, s.line, s.endLine, s.label]), [

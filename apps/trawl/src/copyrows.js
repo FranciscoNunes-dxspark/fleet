@@ -240,16 +240,26 @@ export function selfOrder(obj, set, fks) {
   const self = fks.filter((f) => f.from.toLowerCase() === objectName(obj).toLowerCase() && f.to.toLowerCase() === objectName(obj).toLowerCase());
   if (!self.length) return set.rows;
   const keyOf = (row, cols) => tupleKey(cols.map((c) => cell(set, row, c)));
+  // Per foreign key, the first row holding each value it can refer to: looking for it among every row,
+  // for every row on every pass, took seconds for a couple of thousand.
+  const referred = self.map((f) => {
+    const cols = f.columns.map(([, to]) => to);
+    const first = new Map();
+    for (const r of set.rows) {
+      const k = keyOf(r, cols);
+      if (!first.has(k)) first.set(k, r);
+    }
+    return first;
+  });
   const placed = new Set();
   const out = [];
   let left = [...set.rows];
   while (left.length) {
     const ready = left.filter((row) =>
-      self.every((f) => {
+      self.every((f, i) => {
         const refs = f.columns.map(([from]) => cell(set, row, from));
         if (refs.some((v) => v == null)) return true;
-        const target = tupleKey(refs);
-        const there = set.rows.find((r) => keyOf(r, f.columns.map(([, to]) => to)) === target);
+        const there = referred[i].get(tupleKey(refs));
         return !there || there === row || placed.has(there);
       }),
     );

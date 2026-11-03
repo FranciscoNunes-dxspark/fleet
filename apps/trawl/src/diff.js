@@ -221,11 +221,13 @@ export function diffText(changes, { left, right }) {
   for (const c of changes) if (c.table) (tableParts.get(key(c.table)) ?? tableParts.set(key(c.table), []).get(key(c.table))).push(c);
   for (const kind of KIND_ORDER) {
     const whole = changes.filter((c) => c.kind === kind && !c.table);
+    const first = new Map();
+    for (const c of whole) if (!first.has(key(c.name))) first.set(key(c.name), c);
     const names = [...new Set([...whole.map((c) => key(c.name)), ...(kind === 'table' ? tableParts.keys() : [])])].sort();
     if (!names.length) continue;
     lines.push(SECTION[kind]);
     for (const n of names) {
-      const w = whole.find((c) => key(c.name) === n);
+      const w = first.get(n);
       const parts = kind === 'table' ? (tableParts.get(n) ?? []) : [];
       if (w) {
         lines.push(`  ${MARK[w.change]} ${w.name}${w.change === 'changed' ? ': the definitions differ' : ''}`);
@@ -367,12 +369,21 @@ export function alterRisk(from, to) {
 // The new tables in an order where a table comes after those it refers to (a circle keeps its order).
 function tablesInOrder(list, schema) {
   const names = new Set(list.map((c) => key(c.name)));
-  const deps = new Map(list.map((c) => [key(c.name), new Set((schema?.foreignKeys ?? []).filter((f) => key(f.from) === key(c.name) && names.has(key(f.to)) && key(f.to) !== key(c.name)).map((f) => key(f.to)))]));
+  // Each table's foreign keys found once, and those placed kept in a set: looking them up in every
+  // list for every table took most of a minute for a few thousand new tables.
+  const refers = new Map();
+  for (const f of schema?.foreignKeys ?? []) {
+    const from = key(f.from);
+    if (names.has(from) && names.has(key(f.to)) && key(f.to) !== from) (refers.get(from) ?? refers.set(from, new Set()).get(from)).add(key(f.to));
+  }
   const out = [];
-  const left = [...list];
+  const placed = new Set();
+  const left = list.map((c) => ({ c, k: key(c.name), refers: [...(refers.get(key(c.name)) ?? [])] }));
   while (left.length) {
-    const i = left.findIndex((c) => [...deps.get(key(c.name))].every((d) => out.some((o) => key(o.name) === d)));
-    out.push(...left.splice(i < 0 ? 0 : i, 1));
+    const i = left.findIndex((t) => t.refers.every((d) => placed.has(d)));
+    const [t] = left.splice(i < 0 ? 0 : i, 1);
+    out.push(t.c);
+    placed.add(t.k);
   }
   return out;
 }
@@ -412,13 +423,28 @@ export function syncScript(changes, { left, right, rightSchema, rightDefinitions
   const indexSql = (i) => `CREATE ${i.unique ? 'UNIQUE ' : ''}${/^(CLUSTERED|NONCLUSTERED)$/.test(i.type) ? `${i.type} ` : ''}INDEX ${quoteIdent(i.name)} ON ${qname(i.table)} (${i.columns})${i.included ? ` INCLUDE (${i.included})` : ''}${i.filter ? ` WHERE ${i.filter}` : ''};`;
   const columnSql = (c) => `${quoteIdent(c.name)} ${c.type} ${c.nullable ? 'NULL' : 'NOT NULL'}`;
   const definition = (o) => rightDefinitions?.get(key(objectName(o)));
-  const defaultsOf = (table) => new Map([...(rightDefaults ?? new Map())].filter(([k]) => k.startsWith(`${key(table)}.`)).map(([k, v]) => [k.slice(key(table).length + 1), v]));
+  // The right side's defaults and indexes by table, the defaults' keys being "schema.table.column".
+  const defaultList = [...(rightDefaults ?? new Map())].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+  const defaultsOf = (table) => {
+    const prefix = `${key(table)}.`;
+    let lo = 0;
+    for (let hi = defaultList.length; lo < hi; ) {
+      const mid = (lo + hi) >> 1;
+      if (defaultList[mid][0] < prefix) lo = mid + 1;
+      else hi = mid;
+    }
+    const out = new Map();
+    for (let i = lo; i < defaultList.length && defaultList[i][0].startsWith(prefix); i++) out.set(defaultList[i][0].slice(prefix.length), defaultList[i][1]);
+    return out;
+  };
+  const indexesOf = new Map();
+  for (const i of rightIndexes) (indexesOf.get(key(i.table)) ?? indexesOf.set(key(i.table), []).get(key(i.table))).push(i);
   // What these changes drop anyway, and the columns an ALTER COLUMN changes, by table.
   const gone = new Set();
   const altered = new Map();
   for (const c of tablesInOrder(changes.filter((c) => c.kind === 'table' && c.change === 'right'), rightSchema)) {
     tables.push(createTableScript(c.right, rightSchema, { extras: { defaults: defaultsOf(c.name) } }));
-    for (const i of rightIndexes.filter((i) => key(i.table) === key(c.name))) makeIndexes.push(indexSql(i));
+    for (const i of indexesOf.get(key(c.name)) ?? []) makeIndexes.push(indexSql(i));
   }
   for (const c of changes) {
     if (c.kind === 'table') {

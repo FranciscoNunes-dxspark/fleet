@@ -46,7 +46,16 @@ const KINDS = { U: 'table', V: 'view', P: 'procedure', FN: 'function', IF: 'func
 /** Rows of a result set as objects keyed by column name. */
 export function rowsOf(set) {
   if (!set) return [];
-  return set.rows.map((row) => Object.fromEntries(set.columns.map((c, i) => [c.name, row[i]])));
+  const names = set.columns.map((c) => c.name);
+  // A column called __proto__ would set the prototype when assigned, not be a property.
+  if (names.includes('__proto__')) return set.rows.map((row) => Object.fromEntries(names.map((n, i) => [n, row[i]])));
+  // A property at a time, in the columns' order, so every row has the same shape: through
+  // Object.fromEntries, the catalog of a database of thousands of tables took several hundred milliseconds.
+  return set.rows.map((row) => {
+    const o = {};
+    for (let i = 0; i < names.length; i++) o[names[i]] = row[i];
+    return o;
+  });
 }
 
 /**
@@ -170,6 +179,20 @@ const fullName = (o) => `${bracket(o.schema)}.${bracket(o.name)}`;
  * FOREIGN KEY on, with its ON DELETE and the like) and `after` (statements after the foreign keys:
  * the indexes).
  */
+// A schema's foreign keys by the table they're on, made once per schema: scripting every table of a
+// big one looked through all of its keys for each.
+const keysByTable = new WeakMap();
+function foreignKeysOf(schema, name) {
+  if (!schema?.foreignKeys) return [];
+  let byTable = keysByTable.get(schema.foreignKeys);
+  if (!byTable) {
+    byTable = new Map();
+    for (const f of schema.foreignKeys) (byTable.get(f.from) ?? byTable.set(f.from, []).get(f.from)).push(f);
+    keysByTable.set(schema.foreignKeys, byTable);
+  }
+  return byTable.get(name) ?? [];
+}
+
 export function createTableScript(o, schema, { quote = bracket, identity = 'IDENTITY(1,1)', extras = null } = {}) {
   const fullName = (x) => `${quote(x.schema)}.${quote(x.name)}`;
   const cols = o.columns.map((c) => {
@@ -185,8 +208,7 @@ export function createTableScript(o, schema, { quote = bracket, identity = 'IDEN
   if (pk) cols.push(`  ${key?.name ? `CONSTRAINT ${quote(key.name)} ` : ''}PRIMARY KEY ${key?.type ? `${key.type} ` : ''}(${pk})`);
   cols.push(...(extras?.constraints ?? []).map((line) => `  ${line}`));
   const name = objectName(o);
-  const fks = (schema?.foreignKeys ?? [])
-    .filter((f) => f.from === name)
+  const fks = foreignKeysOf(schema, name)
     .map((f) => {
       const [toSchema, ...toName] = f.to.split('.');
       const list = (i) => f.columns.map((c) => quote(c[i])).join(', ');

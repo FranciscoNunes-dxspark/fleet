@@ -101,22 +101,38 @@ export function fold(line, width) {
   const indent = l.match(/^ */)[0];
   const lead = indent.length < width / 2 ? indent : '';
   const out = [];
-  let rest = l;
+  // What is left is `pre` (the lead, after the first line) and `l` from `p`. Each line is cut from a
+  // window of the rest a few times the width long, not from all of it: measuring and splitting the
+  // whole rest for every line took seconds for a value of a few hundred thousand characters.
+  let p = 0;
+  let pre = '';
   let first = true;
-  while (stringWidth(rest) > width) {
-    const chars = [...rest];
+  const span = 4 * width + 16;
+  for (;;) {
+    let rest = pre + l.slice(p, p + span);
+    const whole = p + span >= l.length;
+    if (!(stringWidth(rest) > width || (!whole && stringWidth(pre + l.slice(p)) > width))) break;
+    let chars = [...rest];
     let w = 0;
     let cut = 0;
     while (cut < chars.length && w + stringWidth(chars[cut]) <= width) w += stringWidth(chars[cut++]);
+    // Zero-width characters can fill a window without filling the width: then the whole rest.
+    if (cut === chars.length && !whole) {
+      rest = pre + l.slice(p);
+      chars = [...rest];
+      while (cut < chars.length && w + stringWidth(chars[cut]) <= width) w += stringWidth(chars[cut++]);
+    }
     const head = chars.slice(0, cut).join('');
     // The last space past the indent, if it isn't too far back.
     const space = head.lastIndexOf(' ');
     const at = space > (first ? indent.length : lead.length) && space > cut / 2 ? space : head.length;
     out.push(head.slice(0, at).trimEnd());
-    rest = lead + rest.slice(at).replace(/^ +/, '');
+    p += at - pre.length;
+    while (l[p] === ' ') p++;
+    pre = lead;
     first = false;
   }
-  out.push(rest);
+  out.push(pre + l.slice(p));
   return out;
 }
 
