@@ -1,0 +1,29 @@
+{
+  "name": "ballast",
+  "version": "0.1.0",
+  "private": true,
+  "description": "What a production build ships and what it weighs, in the terminal: chunks, the modules and packages in them, duplicates, the change against the last build or main, and budgets for a pipeline",
+  "type": "module",
+  "bin": {
+    "ballast": "bin/ballast.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bin/ballast.js",
+    "demo": "node bin/ballast.js --demo",
+    "test": "node --import @fleet/kit/register.js --import ./src/app.js --test --test-concurrency=3 test/*.test.js",
+    "build": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js",
+    "build:all": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js --all"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fleet/kit": "file:../../packages/kit",
+    "ink": "^6.8.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "ink-testing-library": "^4.0.0"
+  }
+}
