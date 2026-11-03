@@ -37,12 +37,142 @@ const placeholder = (v) => !v || PLACEHOLDER.test(v) || /^(.)\1+$/.test(v);
 /** `secret` cut to its first characters, so a finding shows which one without holding it. */
 export const redact = (secret) => (secret.length <= 6 ? '•'.repeat(secret.length) : `${secret.slice(0, 4)}${'•'.repeat(Math.min(8, secret.length - 4))}`);
 
-// The rules, each `{ id, kind, severity, title, why, fix, pattern, needs?, files?, secret?, accept?, code? }`:
+// ——— Frontend environment leaks ———
+//
+// A bundler inlines every variable with one of these prefixes into the JavaScript it sends to the
+// browser (Vite's import.meta.env, Next's and Nuxt's public config, Create React App, Expo, Gatsby,
+// Vue CLI, Storybook, SvelteKit's and Astro's public env): its value is read by anyone who opens the
+// site's sources. A secret in one has leaked as soon as the site is built.
+
+/** The prefixes a bundler inlines into the browser's code, longest first (NEXT_PUBLIC_ before PUBLIC_). */
+export const FRONTEND_PREFIXES = ['NEXT_PUBLIC_', 'NUXT_PUBLIC_', 'EXPO_PUBLIC_', 'REACT_APP_', 'STORYBOOK_', 'VUE_APP_', 'GATSBY_', 'VITE_', 'PUBLIC_'];
+const FE = `(?:${FRONTEND_PREFIXES.join('|')})`;
+/** The prefix of `name` a bundler inlines (`VITE_`), or null. */
+export const frontendPrefix = (name) => FRONTEND_PREFIXES.find((p) => String(name ?? '').startsWith(p)) ?? null;
+
+// Names that say a secret, in what follows the prefix (VITE_STRIPE_SECRET_KEY → STRIPE_SECRET_KEY).
+const SECRET_NAME = /SECRET|PRIVATE|PASSWORD|PASSWD|PWD|SERVICE_?ROLE|CREDENTIAL|SIGNING_?KEY|MASTER_?KEY|ADMIN_?(?:KEY|TOKEN)|AUTH_?TOKEN|REFRESH_?TOKEN|BEARER/i;
+// Names that say an identifier or an address, public by nature: for the entropy test, never against a known key format.
+const PUBLIC_NAME = /PUBLISHABLE|ANON|SITE_?KEY|DSN|MEASUREMENT|SEARCH_?(?:ONLY_?)?(?:API_?)?KEY|PUBLIC_?KEY|(?:^|_)(?:ID|URL|URI|HOST|DOMAIN|ORIGIN|ENDPOINT|PATH|VERSION|SHA|COMMIT|HASH|BUILD|ENV|MODE|REGION|BUCKET|NAME|LOCALE)$/i;
+
+const JWT = /^eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/;
+const jwtRole = (v) => {
+  if (!JWT.test(v)) return null;
+  try {
+    return JSON.parse(Buffer.from(v.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'))?.role ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Keys made to be in the browser, never a leak however they look: `{ id, title, why, test(name, value) }`.
+ * Each one's secret half (Stripe's sk_, Supabase's service_role key, Mapbox's sk.) is still a leak.
+ */
+export const PUBLIC_BY_DESIGN = [
+  { id: 'publishable-key', title: 'Stripe or Clerk publishable key', why: 'pk_live_ and pk_test_ keys are made for the browser; the secret half is the sk_ one.', test: (n, v) => /^pk_(?:live|test)_/.test(v) },
+  { id: 'google-browser-key', title: 'Firebase web or Google Maps browser key', why: 'It names the project to Google and every visitor sends it; restrict it to your sites (HTTP referrers) and its APIs in the Cloud console.', test: (n, v) => /^AIza[0-9A-Za-z_-]{35}$/.test(v) },
+  { id: 'supabase-anon', title: 'Supabase anon or publishable key', why: 'Row-level security guards the data from it; the service_role (or sb_secret_) key is the one to keep out.', test: (n, v) => /^sb_publishable_/.test(v) || jwtRole(v) === 'anon' },
+  { id: 'sentry-dsn', title: 'Sentry DSN', why: 'A DSN only lets a client send events to its project.', test: (n, v) => /^https?:\/\/[0-9a-f]{32}@[\w.-]+(?::\d+)?\/\d+$/i.test(v) },
+  { id: 'mapbox-public', title: 'Mapbox public token', why: 'pk. tokens are made for the browser (restrict them to your sites in Mapbox); sk. tokens are secret.', test: (n, v) => /^pk\.eyJ/.test(v) },
+  { id: 'posthog-project', title: 'PostHog project key', why: 'A phc_ key only sends events; the personal phx_ key is secret.', test: (n, v) => /^phc_/.test(v) },
+  { id: 'site-key', title: 'reCAPTCHA, Turnstile or hCaptcha site key', why: 'The site key goes in the page; its secret key stays on the server.', test: (n) => /SITE_?KEY$/i.test(n) },
+  { id: 'search-only-key', title: 'Algolia or Meilisearch search-only key', why: 'A search-only key can only search the indexes it was given.', test: (n) => /SEARCH_?(?:ONLY_?)?(?:API_?)?KEY$/i.test(n) },
+];
+
+// Values some services hand out as secrets, which the general rules leave to their context.
+const SECRET_VALUES = [
+  { title: 'Supabase service_role key', test: (v) => /^sb_secret_/.test(v) || jwtRole(v) === 'service_role' },
+  { title: 'Stripe secret key', test: (v) => /^(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{10,}/.test(v) },
+  { title: 'Mapbox secret token', test: (v) => /^sk\.eyJ/.test(v) },
+  { title: 'PostHog personal key', test: (v) => /^phx_/.test(v) },
+];
+
+// A value that only refers to another: a workflow's ${{ secrets.X }}, a shell's $X or ${X}, process.env.X.
+const REFERENCE = /^(?:\$\{\{\s*(secrets|vars|env|inputs|steps|needs|github)\.([\w.-]+)\s*\}\}|\$\{([A-Za-z_]\w*)(?:[:?-][^}]*)?\}|\$([A-Za-z_]\w*)|(?:process\.env|import\.meta\.env)\.([A-Za-z_]\w*)|%([A-Za-z_]\w*)%)/;
+
+/** `what` after a or an, as it is said (an AWS key, an npm token, a Stripe key). */
+const aOrAn = (what) => `${/^(?:[aeiou]|npm\b)/i.test(what) ? 'an' : 'a'} ${what}`;
+
+/** Shannon entropy of `v`, in bits a character. */
+const entropy = (v) => {
+  const n = new Map();
+  for (const c of v) n.set(c, (n.get(c) ?? 0) + 1);
+  let e = 0;
+  for (const k of n.values()) e -= (k / v.length) * Math.log2(k / v.length);
+  return e;
+};
+
+/** Whether `v` reads as made by a random generator: long, a key's alphabet only, mixed case and digits, high entropy; or 32+ hex digits that aren't a UUID. */
+export function looksRandom(v) {
+  const s = String(v ?? '');
+  if (s.length < 20 || s.length > 1024 || !/^[A-Za-z0-9+/=_.~-]+$/.test(s)) return false;
+  if (/^[0-9a-f-]+$/i.test(s)) return !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) && s.replace(/-/g, '').length >= 32 && entropy(s) >= 3.4;
+  const classes = [/[a-z]/, /[A-Z]/, /\d/].filter((r) => r.test(s)).length;
+  return classes >= 3 && entropy(s) >= Math.min(4, Math.log2(s.length) - 0.5);
+}
+
+/**
+ * Whether a variable the bundler sends to the browser holds a secret. Pure, and the one judge for
+ * every app (Bilge's Code view through the `frontend-secret` rule, Locker's key table and hygiene,
+ * Ballast's look at built files). `name` is the variable (`VITE_STRIPE_KEY`), `value` as written
+ * (quotes taken off; a reference such as `${{ secrets.X }}` or `process.env.X` is judged by what it
+ * names). Null when the name has no browser prefix, or the value is empty, a placeholder or a key made
+ * to be public (`PUBLIC_BY_DESIGN`); otherwise `{ prefix, name, reason, what }`: `reason` is `shape`
+ * (a known key format), `reference` (fed from a secret), `name` (named like a secret) or `entropy`
+ * (random enough to be a key), `what` a few words for it. The value is never in the answer.
+ */
+export function frontendLeak(name, value) {
+  const n = String(name ?? '').trim();
+  const prefix = frontendPrefix(n);
+  if (!prefix) return null;
+  const rest = n.slice(prefix.length);
+  let v = String(value ?? '').trim();
+  if (/^(["'`]).*\1$/.test(v)) v = v.slice(1, -1).trim();
+  if (!v) return null;
+  const said = (reason, what) => ({ prefix, name: n, reason, what });
+  const ref = REFERENCE.exec(v);
+  if (ref) {
+    const named = ref[2] ?? ref[3] ?? ref[4] ?? ref[5] ?? ref[6] ?? '';
+    if (PUBLIC_NAME.test(named) || PUBLIC_NAME.test(rest) || PUBLIC_BY_DESIGN.some((p) => p.test(n, '') || p.test(named, ''))) return null;
+    if (ref[1] === 'secrets') return said('reference', `a value from the pipeline's secrets (${named})`);
+    if (SECRET_NAME.test(named) || SECRET_NAME.test(rest)) return said('reference', `a value from ${named}, named like a secret`);
+    return null;
+  }
+  if (placeholder(v) || /\$\{|\{\{|^<.*>$/.test(v)) return null;
+  if (PUBLIC_BY_DESIGN.some((p) => p.test(n, v))) return null;
+  const known = SECRET_VALUES.find((s) => s.test(v));
+  if (known) return said('shape', aOrAn(known.title));
+  for (const r of secretShapes()) {
+    const m = r.pattern.exec(v);
+    if (m && (!r.accept || r.accept(m, v))) return said('shape', aOrAn(r.title.replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase())));
+  }
+  if (SECRET_NAME.test(rest) && v.length >= 6 && !/^\d+$/.test(v) && !/^[a-z]+(?:[._ -][a-z]+)*$/i.test(v)) return said('name', 'a value named like a secret');
+  if (!PUBLIC_NAME.test(rest) && !v.includes('://') && looksRandom(v)) return said('entropy', 'a random-looking value, as keys are');
+  return null;
+}
+
+// The secret-shaped rules that read any text (not the ones for one kind of file), once RULES is made.
+let shapes = null;
+const secretShapes = () => (shapes ??= RULES.filter((r) => r.kind === 'secret' && !r.files));
+
+// The files that set a browser variable: .env files, and the configs that put one in the build
+// (Vite's define, next.config's env, Nuxt's and Astro's configs, Expo's app.json, package.json's
+// scripts, a Dockerfile's ARG and ENV, compose's build args and environment, a workflow's env).
+const ENV_FILE = /(^|\/)\.env(\.[^/]+)?$/;
+const FRONTEND_CONFIG = /(^|\/)(?:(?:vite|vitest|next|nuxt|astro|svelte|remix|webpack|rsbuild|rspack|quasar|vue|react-router)\.config\.[mc]?[jt]s|app\.config\.[jt]s|app\.json|eas\.json|package\.json|(?:docker-)?compose[^/]*\.ya?ml|netlify\.toml|vercel\.json|turbo\.json)$/i;
+const FRONTEND_FILES = { test: (p) => FRONTEND_CONFIG.test(p) || DOCKERFILE.test(p) || WORKFLOW.test(p) };
+const FRONTEND_NEEDS = FRONTEND_PREFIXES.map((p) => p.toLowerCase());
+const FRONTEND_WHY = 'The bundler writes this variable into the JavaScript every visitor downloads: anyone can read it in the site\'s sources, so it is no longer a secret.';
+const FRONTEND_FIX = 'Keep it on the server: drop the browser prefix and read it in an API route or server function, and rotate it, as every build since it was set has published it. A key made for the browser (a publishable or anon key) is fine here.';
+
+// The rules, each `{ id, kind, severity, title, why, fix, pattern, needs?, files?, secret?, accept?, code?, alongside? }`:
 // `pattern` is tried on each line of a file whose path `files` matches (any file without it); `needs`
 // are words in lower case one of which every match holds (the line, lowered, is looked through for them
 // first, so it must be true of every line the pattern can match: test/codescan.test.js checks it on
 // the tests' lines); `secret` is the group holding a secret (0 for the whole match), redacted in the
-// excerpt; `accept(m, line)` can turn a match down; `code` rules skip lines that are only a comment.
+// excerpt; `accept(m, line)` can turn a match down; `code` rules skip lines that are only a comment;
+// an `alongside` secret rule is found besides the line's other secret, not instead of it.
 export const RULES = [
   // Secrets: a key or password written into a file is anyone's who can read the repository, and its history keeps it after it's removed.
   { id: 'private-key', kind: 'secret', severity: 'critical', title: 'Private key', needs: ['private key'], pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----/, secret: 0, why: 'A private key in the repository lets anyone who can read it act as its owner.', fix: 'Remove it, make a new key pair (this one is out), and load the key from a secret store or a file git ignores.' },
@@ -62,6 +192,11 @@ export const RULES = [
   { id: 'connection-password', kind: 'secret', severity: 'high', title: 'Password in a connection string', needs: ['password', 'pwd'], pattern: /\b(?:Password|Pwd)\s*=\s*([^;"'\s]{4,})/i, secret: 1, accept: (m, line) => /(Server|Data Source|Host|User ?Id|Uid|Database|Initial Catalog)\s*=/i.test(line) && !placeholder(m[1]), why: 'A database password in a connection string.', fix: 'Use integrated or managed-identity sign-in, or read the password from a secret store (user secrets, Key Vault).' },
   { id: 'hardcoded-secret', kind: 'secret', severity: 'medium', title: 'Hard-coded secret', needs: ['password', 'passwd', 'pwd', 'secret', 'api', 'token', 'private'], pattern: /\b[\w.-]*(?:password|passwd|pwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)[\w-]*["']?\s*(?::=|=>|[:=])\s*["'`]([^"'`\s]{8,})["'`]/i, secret: 1, accept: (m) => !placeholder(m[1]) && !/^[a-z]+(?:[._ -][a-z]+)*$/i.test(m[1]) && !/^[A-Z][A-Z0-9_]+$/.test(m[1]), why: 'A value named like a secret, written into the code.', fix: 'Read it from the environment or a secret store, and rotate it if it was real.' },
   { id: 'docker-secret', kind: 'secret', severity: 'high', title: 'Secret in a Dockerfile', needs: ['password', 'secret', 'token', 'api', 'private'], files: DOCKERFILE, pattern: /^\s*(?:ENV|ARG)\s+[\w]*(?:PASSWORD|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY)[\w]*(?:\s*=\s*|\s+)(\S+)/i, secret: 1, accept: (m) => !placeholder(m[1].replace(/^["']|["']$/g, '')), why: 'ENV and ARG values are kept in the image\'s layers and history, for anyone who pulls it.', fix: 'Pass it at run time, or use a build secret (RUN --mount=type=secret).' },
+  // A secret in a variable the bundler sends to the browser (frontendLeak judges it). It is a leak of
+  // its own, so it is found alongside the line's other secret: a Stripe key in a committed .env is in
+  // the repository and, under VITE_, in every visitor's browser too.
+  { id: 'frontend-secret', kind: 'secret', severity: 'high', title: 'Secret in a browser variable', alongside: true, needs: FRONTEND_NEEDS, files: ENV_FILE, pattern: new RegExp(`^\\s*(?:export\\s+)?(${FE}[A-Za-z0-9_]*)\\s*=\\s*(["'\`]?)(.*?)\\2\\s*(?:#.*)?$`), secret: 3, accept: (m) => Boolean(frontendLeak(m[1], m[3])), why: FRONTEND_WHY, fix: FRONTEND_FIX },
+  { id: 'frontend-secret', kind: 'secret', severity: 'high', title: 'Secret in a browser variable', alongside: true, needs: FRONTEND_NEEDS, files: FRONTEND_FILES, pattern: new RegExp(`(?<![\\w$])(?:import\\.meta\\.env\\.|process\\.env\\.)?(${FE}[A-Za-z0-9_]*)["'\`]?\\s*(?:[:=]|\\s+(?=[^\\s:=]))\\s*(?:JSON\\.stringify\\(\\s*)?(?:(["'\`])([^"'\`]*)\\2|(\\$\\{\\{[^}]*\\}\\}|[^\\s"'\`,;)}\\]]+))`), secret: 3, accept: (m) => Boolean(frontendLeak(m[1], m[3] ?? m[4])), why: FRONTEND_WHY, fix: FRONTEND_FIX },
 
   // Code that runs what it's given.
   { id: 'eval', kind: 'code', severity: 'high', title: 'eval or new Function', needs: ['eval', 'function'], files: JS, code: true, pattern: /(?<![\w.$])(?:eval\s*\(|new\s+Function\s*\()/, why: 'Code made from a string runs whatever reaches that string.', fix: 'Parse the data (JSON.parse) or look the behaviour up in a table rather than running text.' },
@@ -86,6 +221,9 @@ export const RULES = [
   { id: 'docker-latest', kind: 'config', severity: 'low', title: 'Base image without a fixed version', needs: ['from'], files: DOCKERFILE, pattern: /^\s*FROM\s+(?:--platform=\S+\s+)?([^\s:@]+(?::latest)?)(?:\s+AS\s+\S+)?\s*$/i, accept: (m) => m[1] !== 'scratch' && !/^\$\{?\w/.test(m[1]), why: 'A build picks up whatever the image is today, advisories and all, and can\'t be repeated.', fix: 'Name a version, or better a digest (image:tag@sha256:…).' },
   { id: 'docker-add-url', kind: 'config', severity: 'low', title: 'ADD from a URL', needs: ['add'], files: DOCKERFILE, pattern: /^\s*ADD\s+(?:--\S+\s+)*https?:\/\//i, why: 'The file isn\'t checked against anything.', fix: 'ADD --checksum=sha256:…, or RUN curl and check it.' },
 ];
+
+/** The rules about browser variables alone: what an ignored .env is read for, and what Ballast reads built files' sources for. */
+export const FRONTEND_RULES = RULES.filter((r) => r.id === 'frontend-secret');
 
 /** Whether a line is only a comment, in the languages the code rules read. */
 const commentOnly = (line) => /^\s*(?:\/\/|#(?!!)|\*|\/\*|<!--|--|')/.test(line);
@@ -162,10 +300,10 @@ export function scanText(path, text, { rules = RULES } = {}) {
     for (const r of mine) {
       if (r.needs && !onLines.get(r)?.[i]) continue;
       if (r.code && commentOnly(line)) continue;
-      if (secretFound && r.kind === 'secret') continue;
+      if (secretFound && r.kind === 'secret' && !r.alongside) continue;
       const m = r.pattern.exec(line);
       if (!m || (r.accept && !r.accept(m, line))) continue;
-      if (r.kind === 'secret') secretFound = true;
+      if (r.kind === 'secret' && !r.alongside) secretFound = true;
       const secret = r.secret === undefined ? null : (m[r.secret] ?? m[r.secret + 1] ?? m[0]);
       let excerpt = line.trim();
       if (secret) excerpt = excerpt.split(secret).join(redact(secret));
@@ -203,8 +341,7 @@ export function gitignored(text) {
   return (path) => rules.reduce((hit, r) => (r.re.test(path) ? !r.negate : hit), false);
 }
 
-// A .env (and .env.production, .env.local…) that isn't an example of one.
-const ENV_FILE = /(^|\/)\.env(\.[^/]+)?$/;
+// A .env (and .env.production, .env.local…) that isn't an example of one (ENV_FILE is above).
 const ENV_EXAMPLE = /\.(example|sample|template|dist|defaults?|tmpl)$/i;
 const KEY_STORE = /\.(pfx|p12|jks|keystore)$/i;
 
@@ -277,8 +414,9 @@ export async function scanCode(root, { signal, onProgress, maxFiles = MAX_FILES 
       }
       findings.push(...fileFindings(path, { ignored: isIgnored }));
       if (BINARY.test(e.name) || LOCK_FILES.has(e.name) || /\.min\.(js|css)$/i.test(e.name)) continue;
-      // A .env git ignores stays on this machine: what's in it is where secrets belong.
-      if (ENV_FILE.test(path) && isIgnored(path)) continue;
+      // A .env git ignores stays on this machine: what's in it is where secrets belong, but for a
+      // browser variable, which the build still sends to every visitor.
+      const ignoredEnv = ENV_FILE.test(path) && isIgnored(path);
       const full = join(dir, e.name);
       let text;
       try {
@@ -289,7 +427,8 @@ export async function scanCode(root, { signal, onProgress, maxFiles = MAX_FILES 
       } catch {
         continue;
       }
-      findings.push(...scanText(path, text), ...dockerFindings(path, text));
+      if (ignoredEnv) findings.push(...scanText(path, text, { rules: FRONTEND_RULES }));
+      else findings.push(...scanText(path, text), ...dockerFindings(path, text));
     }
     if (truncated) break;
   }

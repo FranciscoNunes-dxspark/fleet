@@ -152,6 +152,8 @@ const DEMO_FILES = {
   'src/Api/Program.cs': 'var hash = MD5.Create().ComputeHash(bytes);\n',
   'Dockerfile': 'FROM node:latest\nCOPY . /app\nCMD ["node", "src/server.js"]\n',
   '.env': 'STRIPE_KEY=sk_test_51demo\n',
+  // A secret the build writes into the browser's code, beside a publishable key that is meant to be there.
+  'web/vite.config.js': `export default {\n  define: {\n    'import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY': JSON.stringify('pk_live_51demo'),\n    'import.meta.env.VITE_ADMIN_SECRET': JSON.stringify('${['q8ZtW2kP', '9xLmR4vN'].join('')}'),\n  },\n};\n`,
 };
 
 /** What codescan.js finds in DEMO_FILES, as the provider's `code` would on the disk. */
