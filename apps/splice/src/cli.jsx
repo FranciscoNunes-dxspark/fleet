@@ -14,6 +14,7 @@ import { terminalMouse } from '@fleet/kit/mouse.js';
 import { appTerminal } from '@fleet/kit/hosted.js';
 import { notification } from './notify.js';
 import { familyDir } from '@fleet/kit/family.js';
+import { SECURITY_USAGE, runSecurity } from './headless.js';
 
 const args = process.argv.slice(2);
 
@@ -24,13 +25,26 @@ if (args.includes('-v') || args.includes('--version')) {
 
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`splice [path]
+${SECURITY_USAGE}
 
 A keyboard-driven git client. Opens the repository at [path] (default: the
 current folder). If that isn't a repository, it lists the ones it finds there;
 with no [path], it opens the repository you had open last instead.
 
+splice security looks through the current branch's history (--all: every branch
+and tag) for keys, tokens and passwords the commits added, and exits 1 when one
+is as bad as --fail-on (high by default), for a pipeline; --json and --sarif for
+tools. Secrets are shown cut short, and it reads only: nothing is rewritten.
+
 Inside: press ? for shortcuts, / for commands, ! to run any git command.`);
   process.exit(0);
+}
+
+// Headless, before anything wants a terminal. Into a pipe stdout writes later, so exit once it has.
+if (args[0] === 'security') {
+  const code = await runSecurity(args.slice(1), { version: VERSION });
+  await new Promise((done) => process.stdout.write('', done));
+  process.exit(code);
 }
 
 // The terminal, or inside Fleet the host's pipes made to look like one (the kit's hosted.js).

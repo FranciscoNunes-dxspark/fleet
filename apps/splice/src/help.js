@@ -284,6 +284,16 @@ export const HELP = [
     ],
   },
   {
+    title: 'Secrets',
+    about: '/secrets [all|<range>]: what the commits added that looks like a key, a token or a password (the newest 5,000 commits of the current branch, every branch and tag, or a range), each once, in the commit that added it',
+    rows: [
+      ['↵', 'The finding whole: commit, author, file, the line (the secret cut short), whether it\'s still in the working tree, and what to do: rotate it, and how to take it out of the history (git filter-repo, as text; Splice never rewrites it)'],
+      ['d', 'The commit\'s diff of that file'],
+      ['y', 'Copy the commit\'s hash'],
+      'splice security [folder] [--json] [--sarif [file]] [--fail-on level] [--all] does it without the screen, for a pipeline.',
+    ],
+  },
+  {
     title: 'Doctor',
     about: '/doctor: a health check of the repository, in the viewer, each finding with what to do about it',
     rows: [
