@@ -7,6 +7,7 @@ import { theme } from '../theme.js';
 import { fit } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { severityTone } from '../security.js';
 
 const STATE_W = 11;
 const CPU_W = 6;
@@ -17,7 +18,7 @@ const MEM_W = 6;
  * Beside each running container its CPU and memory, when there's room. `onlyRunning` (a, kept by App)
  * leaves out the stopped.
  */
-export function ContainersView({ containers, stats, onlyRunning, ctx, width, height, active }) {
+export function ContainersView({ containers, stats, security, onlyRunning, ctx, width, height, active }) {
   const innerH = height - 2;
   const rows = containerRows(containers, { onlyRunning });
   const nav = useListNav(rows.length, innerH, { selectable: (i) => Boolean(rows[i]?.c), keyOf: (i) => rows[i]?.c?.id ?? `# ${rows[i]?.heading}` });
@@ -44,6 +45,7 @@ export function ContainersView({ containers, stats, onlyRunning, ctx, width, hei
     else if (input === 'y') a.copyId(ctx, sel);
     else if (input === 'e') a.shell(ctx, sel.id);
     else if (input === 'v') a.scanImage(ctx, sel.id);
+    else if (input === 'S') a.security(ctx, sel.name);
   };
   useInput(keys, { isActive: active });
   useMouse(ctx, (e) => {
@@ -58,11 +60,13 @@ export function ContainersView({ containers, stats, onlyRunning, ctx, width, hei
   const nameW = Math.max(12, Math.min(28, Math.floor(inner * 0.26)));
   const portsW = showPorts ? Math.max(10, Math.min(24, Math.floor(inner * 0.16))) : 0;
   const usageW = showUsage ? CPU_W + MEM_W + 2 : 0;
-  const imageW = showImage ? Math.max(8, inner - 3 - nameW - STATE_W - portsW - usageW - 2) : 0;
+  const imageW = showImage ? Math.max(8, inner - 4 - nameW - STATE_W - portsW - usageW - 2) : 0;
   const running = containers.filter((c) => c.state === 'running').length;
+  // The security check's worst finding per container: a mark for critical, high and medium ones.
+  const atRisk = containers.filter((c) => ['critical', 'high'].includes(security?.get(c.name))).length;
 
   return (
-    <Panel title="Containers" hint={`${running}/${containers.length} running${onlyRunning ? ' · only running' : ''}`} width={width} height={height} focused={active}>
+    <Panel title="Containers" hint={`${running}/${containers.length} running${onlyRunning ? ' · only running' : ''}${atRisk ? ` · ${atRisk} at risk (/security)` : ''}`} width={width} height={height} focused={active}>
       {containers.length === 0 ? <Row pointer={false} width={width - 2} segments={[{ text: '  No containers. /pull fetches an image; !docker run -d … starts one.', color: theme.dim }]} /> : null}
       {containers.length > 0 && rows.length === 0 ? <Row pointer={false} width={width - 2} segments={[{ text: '  None running: a shows every container.', color: theme.dim }]} /> : null}
       {rows.slice(nav.offset, nav.offset + innerH).map(({ c, heading, members }, i) => {
@@ -82,6 +86,8 @@ export function ContainersView({ containers, stats, onlyRunning, ctx, width, hei
         }
         const use = stats?.get(c.id.slice(0, 12));
         const tone = theme[stateTone(c)];
+        const risk = security?.get(c.name);
+        const mark = risk && ['critical', 'high', 'medium'].includes(risk) ? { text: '!', color: theme[severityTone(risk)], bold: true } : { text: ' ' };
         return (
           <Row
             key={c.id}
@@ -91,6 +97,7 @@ export function ContainersView({ containers, stats, onlyRunning, ctx, width, hei
             segments={[
               { text: '● ', color: tone },
               { text: fit(c.service ?? c.name, nameW), strong: true },
+              mark,
               { text: ` ${fit(stateLabel(c), STATE_W)}`, color: tone },
               ...(showImage ? [{ text: ` ${fit(c.image, imageW)}`, color: theme.dim }] : []),
               ...(showPorts ? [{ text: ` ${fit(shortPorts(c.ports), portsW)}`, color: theme.info }] : []),

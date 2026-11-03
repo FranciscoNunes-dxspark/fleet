@@ -10,6 +10,9 @@ import { latestTrouble, loglineData, matchIn, needleOf } from './share.js';
 import * as k from './kubeactions.js';
 import { dockerShell } from './shell.js';
 import { askFirst } from '@fleet/kit/environments.js';
+import { countFindings, findingsLine } from '@fleet/kit/findings.js';
+import { securityCheck } from './headless.js';
+import { findingDetail } from './security.js';
 
 const containers = (ctx) => ctx.data?.containers ?? [];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -293,6 +296,53 @@ export function scanImage(ctx, name) {
   ctx.copy(line, `${image} for Bilge`);
   ctx.note(copiedNote('bilge', line));
   return true;
+}
+
+/**
+ * /security (alt+s on a container): how containers run, judged (security.js). Nothing named: every
+ * container, in one docker inspect; a container: that one; a compose project: its compose files (where
+ * its labels say they are); anything else: a compose file's path, from where Wharf runs. The findings
+ * open over the view, worst first. A check of every container also refreshes the list's markers.
+ */
+export async function security(ctx, arg = '') {
+  const name = String(arg ?? '').trim();
+  const all = containers(ctx);
+  let request;
+  let title;
+  if (!name) {
+    request = {};
+    title = 'Security · every container';
+  } else if (findContainer(all, name)) {
+    const c = findContainer(all, name);
+    request = { ids: [c.id] };
+    title = `Security · ${c.name}`;
+  } else if (all.some((c) => c.project === name && c.configFiles)) {
+    const files = all.find((c) => c.project === name && c.configFiles).configFiles.split(',').filter(Boolean);
+    request = { compose: files };
+    title = `Security · ${name}'s compose file${files.length === 1 ? '' : 's'}`;
+  } else {
+    request = { compose: [name] };
+    title = `Security · ${name}`;
+  }
+  let result;
+  const r = await ctx.task(
+    title.replace('Security · ', 'security '),
+    async (signal) => {
+      result = await securityCheck(ctx.provider, { ...request, cwd: ctx.cwd, ignore: ctx.config.securityIgnore ?? [], signal }).catch((e) => Promise.reject(request.compose ? e : explain(e)));
+      const line = findingsLine(countFindings(result.findings));
+      return { stdout: line ? `${line} in ${result.checked} ${result.check === 'compose' ? 'compose file' : 'container'}${result.checked === 1 ? '' : 's'}` : 'Nothing found.' };
+    },
+    { label: 'Checking' },
+  );
+  if (!r.ok) return false;
+  if (!name) ctx.setSecurity?.(result.findings);
+  ctx.showSecurity({ title, findings: result.findings, arg: name });
+  return true;
+}
+
+/** y in the security list: a finding as text, the fix with it. */
+export function copyFinding(ctx, f) {
+  ctx.copy(findingDetail(f), `${f.title} (${f.where}${f.line ? `:${f.line}` : ''})`);
 }
 
 /**

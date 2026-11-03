@@ -10,6 +10,7 @@ import { createDocker } from './docker.js';
 import { createKube } from './kube.js';
 import { demoDocker, demoShell } from './demo.js';
 import { demoKube } from './demokube.js';
+import { runHeadless } from './headless.js';
 import { checkForUpdate, installUpdate, removeOldExecutables } from '@fleet/kit/update.js';
 import { copyToClipboard } from '@fleet/kit/clipboard.js';
 import { terminalMouse } from '@fleet/kit/mouse.js';
@@ -26,6 +27,7 @@ if (args.includes('-v') || args.includes('--version')) {
 
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`wharf [--demo]
+wharf security [--compose file]... [--fail-on critical|high|medium|low|none] [--json]
 
 Containers and pods in the terminal: what's running (a compose project's together), CPU and memory,
 live logs, and starting, stopping, restarting and removing them. It talks to Docker and kubectl
@@ -36,8 +38,19 @@ current context) is what Wharf shows.
 
 Quitting leaves every container as it was.
 
+wharf security judges how the containers run (one docker inspect): privileged, the Docker socket or
+the host's folders mounted, root, databases published on every interface, passwords in environment
+variables and more; with --compose, a compose file's services instead, Docker not asked. It exits 1
+when a finding is as bad as --fail-on (high by default), for a pipeline.
+
 Inside: press ? for shortcuts, / for commands, ! to run a shell command.`);
   process.exit(0);
+}
+
+// wharf security runs without a terminal (a pipeline's), before the check for one.
+const rest = args.filter((a) => a !== '--demo');
+if (rest[0] === 'security') {
+  process.exit(await runHeadless(rest, { provider: args.includes('--demo') ? demoDocker() : createDocker(), config: loadConfig() }));
 }
 
 // The terminal, or inside Fleet the host's pipes made to look like one (the kit's hosted.js).

@@ -1,7 +1,12 @@
 // An in-memory Docker with the interface of docker.js's provider, for --demo and the tests: a compose
 // project, a few standalone containers (one that crashed, one unhealthy) and some images. A new
-// operation in the provider needs one here too.
+// operation in the provider needs one here too. Its containers' inspect has something for the security
+// check to find: a privileged CI runner with the Docker socket, a Redis on every interface, a database
+// password in the environment, and its compose file one too.
+//
+// bilge-ignore-file: the demo's passwords are made up, and made from pieces.
 import { EventEmitter } from 'node:events';
+import { readFile } from 'node:fs/promises';
 import { PassThrough, Writable } from 'node:stream';
 
 const box = (id, name, image, state, extra = {}) => ({
@@ -33,6 +38,7 @@ export function demoContainers() {
     box('e5f6a1b2c3d4', 'redis-cache', 'redis:7', 'running', { ...publish(6379, 6379) }),
     box('f6a1b2c3d4e5', 'mailpit', 'axllent/mailpit', 'running', { ...publish(8025, 8025), health: 'unhealthy', status: 'Up 5 minutes (unhealthy)' }),
     box('0a1b2c3d4e5f', 'old-experiment', 'alpine:3.20', 'exited'),
+    box('1b2c3d4e5f6a', 'ci-runner', 'gitlab/gitlab-runner:latest', 'running'),
   ];
   // A compose project's containers all know where its files are.
   for (const c of all) if (c.project === 'shop') Object.assign(c, { workingDir: '/srv/shop', configFiles: '/srv/shop/compose.yaml' });
@@ -48,6 +54,102 @@ export function demoImages() {
     { id: '555555555555', repo: null, tag: null, size: '212MB', created: '3 days ago', dangling: true },
   ];
 }
+
+// A made-up password, in pieces so nothing reads it as one.
+const DEMO_PASSWORD = ['hunter', '2', '-shop', '-db'].join('');
+
+// What `docker inspect` says beyond the list, per demo container: how each one runs.
+const HOW = {
+  'shop-web-1': { User: '101', ReadonlyRootfs: true, Memory: 256 * 1024 * 1024, PidsLimit: 200 },
+  'shop-api-1': { User: 'node', Env: ['NODE_ENV=production', 'PORT=3000'] },
+  'shop-db-1': { Env: ['POSTGRES_USER=shop', `POSTGRES_PASSWORD=${DEMO_PASSWORD}`, 'PGDATA=/var/lib/postgresql/data'], Mounts: [{ Type: 'volume', Name: 'shop_db', Source: '/var/lib/docker/volumes/shop_db/_data', Destination: '/var/lib/postgresql/data', RW: true }] },
+  'shop-worker-1': { User: 'node' },
+  'redis-cache': { Memory: 512 * 1024 * 1024 },
+  mailpit: { User: '1000' },
+  'ci-runner': {
+    Privileged: true,
+    Mounts: [
+      { Type: 'bind', Source: '/var/run/docker.sock', Destination: '/var/run/docker.sock', Mode: '', RW: true },
+      { Type: 'bind', Source: '/srv/gitlab-runner/config', Destination: '/etc/gitlab-runner', Mode: '', RW: true },
+    ],
+  },
+};
+
+/** A demo container as `docker inspect` prints it (the fields Wharf reads, as Docker names them). */
+export function demoInspect(c) {
+  const how = HOW[c.name] ?? {};
+  const ports = {};
+  for (const part of c.ports.split(',').map((p) => p.trim()).filter(Boolean)) {
+    const m = /^(.*):(\d+)->(\d+\/\w+)$/.exec(part);
+    if (m) (ports[m[3]] ??= []).push({ HostIp: m[1], HostPort: m[2] });
+    else ports[part] ??= null;
+  }
+  const mounts = how.Mounts ?? [];
+  return {
+    Id: `${c.id}${'0'.repeat(52)}`,
+    Name: `/${c.name}`,
+    State: { Status: c.state, Running: c.state === 'running', ExitCode: c.exitCode ?? 0 },
+    Image: `sha256:${'ab'.repeat(32)}`,
+    Config: {
+      Hostname: c.id,
+      User: how.User ?? '',
+      Env: ['PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', ...(how.Env ?? [])],
+      Image: c.image,
+      Labels: c.project ? { 'com.docker.compose.project': c.project, 'com.docker.compose.service': c.service, 'com.docker.compose.project.working_dir': c.workingDir, 'com.docker.compose.project.config_files': c.configFiles } : {},
+    },
+    HostConfig: {
+      Binds: mounts.filter((m) => m.Type === 'bind').map((m) => `${m.Source}:${m.Destination}${m.RW ? '' : ':ro'}`),
+      NetworkMode: c.project ? `${c.project}_default` : 'bridge',
+      PortBindings: Object.fromEntries(Object.entries(ports).filter(([, b]) => b).map(([k, b]) => [k, b.filter((x) => x.HostIp === '0.0.0.0').map((x) => ({ HostIp: '', HostPort: x.HostPort }))])),
+      RestartPolicy: { Name: c.project ? 'unless-stopped' : 'no', MaximumRetryCount: 0 },
+      CapAdd: null,
+      CapDrop: null,
+      IpcMode: 'private',
+      PidMode: '',
+      Privileged: Boolean(how.Privileged),
+      ReadonlyRootfs: Boolean(how.ReadonlyRootfs),
+      SecurityOpt: null,
+      Memory: how.Memory ?? 0,
+      PidsLimit: how.PidsLimit ?? null,
+    },
+    Mounts: mounts,
+    NetworkSettings: { Ports: c.state === 'running' ? ports : {} },
+  };
+}
+
+/** The demo compose project's file, with what a compose file gets wrong. */
+export const DEMO_COMPOSE = `name: shop
+services:
+  web:
+    image: shop/web:1.4
+    user: "101"
+    read_only: true
+    mem_limit: 256m
+    pids_limit: 200
+    ports:
+      - "8080:80"
+  api:
+    image: shop/api:1.4
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: \${DATABASE_URL}
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=shop
+      - POSTGRES_PASSWORD=${DEMO_PASSWORD}
+    volumes:
+      - shop_db:/var/lib/postgresql/data
+  worker:
+    image: shop/api:1.4
+    command: node worker.js
+volumes:
+  shop_db:
+`;
+
+const DEMO_FILES = { '/srv/shop/compose.yaml': DEMO_COMPOSE };
 
 const LOG = (name, n) => {
   const at = (i) => new Date(Date.UTC(2026, 9, 27, 9, 0, i * 7)).toISOString();
@@ -86,7 +188,16 @@ export function demoDocker() {
       return c.state === 'created' ? '' : LOG(c.name, Math.min(tail, 60));
     },
     async inspect(id) {
-      return JSON.stringify([{ Id: here(id).id, Name: `/${here(id).name}`, Config: { Image: here(id).image }, State: { Status: here(id).state } }], null, 2);
+      return JSON.stringify([demoInspect(here(id))], null, 2);
+    },
+    async inspectAll(ids) {
+      return ids.map((id) => demoInspect(here(id)));
+    },
+    // The demo's files (its compose project's), then the disk's: a test may write a compose file of its own.
+    async readFile(path) {
+      const p = String(path).replace(/\\/g, '/').replace(/^[A-Za-z]:/, '');
+      if (DEMO_FILES[p] != null) return DEMO_FILES[p];
+      return readFile(path, 'utf8');
     },
     async act(verb, ids) {
       state.calls.push([verb, ...ids]);

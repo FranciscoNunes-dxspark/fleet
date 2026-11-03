@@ -2,6 +2,7 @@
 // is the one provider the app talks to; demo.js has the same interface for --demo and the tests, so
 // a new operation needs both. The parsers are pure: they read `docker ... --format "{{json .}}"`,
 // which prints a JSON object per line.
+import { readFile as fsReadFile } from 'node:fs/promises';
 import { run as kitRun } from '@fleet/kit/run.js';
 
 /** The JSON objects of a `--format "{{json .}}"` listing, one per line; lines that aren't JSON are dropped. */
@@ -176,6 +177,16 @@ export function createDocker({ run = kitRun } = {}) {
     async inspect(id) {
       const { stdout } = await run(`docker inspect ${need(id)}`);
       return stdout;
+    },
+    // Every container's `docker inspect` in one call, parsed: what the security check judges.
+    async inspectAll(ids, { signal } = {}) {
+      if (!ids.length) return [];
+      const { stdout } = await run(`docker inspect ${ids.map(need).join(' ')}`, { signal });
+      return JSON.parse(stdout || '[]');
+    },
+    // A compose file's text, read from the disk (no shell): for the security check.
+    async readFile(path) {
+      return fsReadFile(path, 'utf8');
     },
     async act(verb, ids, { signal } = {}) {
       if (!VERBS.has(verb)) throw new Error(`Unknown action: ${verb}`);

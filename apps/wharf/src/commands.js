@@ -29,6 +29,7 @@ export const COMMANDS = [
   { name: 'pull', args: '<image>', desc: 'Pull an image, e.g. /pull redis:7', run: (ctx, s) => a.pull(ctx, s) },
   { name: 'rmi', args: '<image>', desc: 'Remove an image (asks first)', complete: 'images', run: (ctx, s) => a.removeImage(ctx, s) },
   { name: 'prune', args: '[containers|images]', desc: 'Remove every stopped container, or the images nothing uses (asks first)', complete: 'prunable', run: (ctx, s) => a.prune(ctx, s || 'containers') },
+  { name: 'security', args: '[container|project|compose file]', desc: 'How containers run, judged: privileged, the Docker socket or host folders mounted, root, databases on every interface, passwords in the environment (a compose project or file: its services)', complete: 'security', run: (ctx, s) => a.security(ctx, s) },
   { name: 'scan', args: '<container|image>', desc: 'Hand Bilge the image a container was made from (or an image) to look for known vulnerabilities', complete: 'scannable', run: (ctx, s) => a.scanImage(ctx, s) },
   { name: 'env', args: '[name]', desc: 'The project\'s environment (.fleet/project.json), or switch every app to another; Wharf\'s section names a kube context and namespace', complete: 'environments', run: (ctx, s) => env(ctx, s) },
   { name: 'take', args: '<family:v1:…>', desc: 'Take what a sibling copied: a log line is looked for in the running containers and pods', run: (ctx, s) => a.take(ctx, s) },
@@ -63,6 +64,7 @@ function completions(kind, data, kube, envs) {
   if (kind === 'contexts') return kube?.contexts ?? [];
   if (kind === 'images') return (data?.images ?? []).filter((i) => i.repo).map((i) => `${i.repo}${i.tag ? `:${i.tag}` : ''}`);
   if (kind === 'scannable') return [...(data?.containers ?? []).map((c) => c.name), ...completions('images', data)];
+  if (kind === 'security') return [...(data?.containers ?? []).map((c) => c.name), ...new Set((data?.containers ?? []).filter((c) => c.configFiles).map((c) => c.project))];
   if (kind === 'prunable') return ['containers', 'images'];
   if (kind === 'themes') return ['dark', 'light', 'auto'];
   if (kind === 'onoff') return ['on', 'off'];

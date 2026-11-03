@@ -9,6 +9,7 @@ It talks to Docker and `kubectl` through their command lines, so whatever they a
 ```
 wharf            # the containers on this machine
 wharf --demo     # a made-up Docker, to look around: nothing is touched
+wharf security   # how the containers run, judged, for a pipeline (see Security)
 ```
 
 Press `?` inside for every key and command, `/` for the commands, `!` to run a shell command (`!docker compose ps`).
@@ -21,7 +22,7 @@ Wharf is one of the fleet's apps: it needs Node 22 or newer from a checkout (`np
 
 ### Containers
 
-Every container, a compose project's under its name, the standalone ones last, the running ones first. For the running ones: CPU and memory (when the terminal is wide enough). Green is running, yellow starting, paused or restarting, red unhealthy or exited with an error, grey stopped.
+Every container, a compose project's under its name, the standalone ones last, the running ones first. For the running ones: CPU and memory (when the terminal is wide enough). Green is running, yellow starting, paused or restarting, red unhealthy or exited with an error, grey stopped. A `!` after a name is the security check's (see Security): red for something critical or high, yellow for medium; the panel's corner counts the containers at risk.
 
 | Key | |
 |---|---|
@@ -35,6 +36,7 @@ Every container, a compose project's under its name, the standalone ones last, t
 | `p` | Pause it, or let it run again |
 | `a` | Only the running ones, or all of them |
 | `v` | Hand Bilge its image to scan for known vulnerabilities (see The family) |
+| `alt+s` | How it runs, judged for security (see Security) |
 | `y` | Copy its id |
 
 ### The log
@@ -103,9 +105,39 @@ without a terminal) and, pressed again within 2 seconds, stops the shell; `esc` 
 Once the shell has ended, `↵` starts another. `/shell <container|pod> [container]` does the same from
 the prompt. `--demo` has a pretend shell.
 
+### Security
+
+How containers run, judged for what would let one hurt its host or leak: read from one `docker inspect` of every container (Podman's inspect works the same), or from a compose file's services before they run. What an image holds, its packages and its Dockerfile, is Bilge's (`v`); this is how it is run.
+
+| Severity | Found |
+|---|---|
+| critical | Privileged (`--privileged`, `privileged: true`); the Docker, Podman or containerd socket mounted (worse read-write) |
+| high | `SYS_ADMIN`, `NET_ADMIN`, `ALL` (and `SYS_PTRACE`, `SYS_MODULE`, `DAC_READ_SEARCH`) added; seccomp or AppArmor unconfined; the host's pid, network or ipc; the host's own folders (`/`, `/etc`, `/root`, `/var/run`, `/proc`, `/sys` …) mounted writable; a database, cache, queue or admin port (3306, 5432, 6379, 27017, 9200, 2375, 15672 …) published on every interface |
+| medium | Runs as root (no user, `0` or `root`; in a compose file only an explicit `user: root`, as without one it's the image's); a variable named like a secret (`*PASSWORD*`, `*SECRET*`, `*TOKEN*`, `*KEY*`) with a value written out, not `${…}` |
+| low | A writable root filesystem; no memory or process limit; other ports on every interface; an image on `latest` or without a tag, or not pinned to a digest |
+
+`/security` checks every container and lists the findings over the view, worst first; `/security <container>` (or `alt+s` on one) checks one, `/security <project>` the compose files its labels name, `/security <path>` any compose file (a path from where Wharf runs, its findings with their lines). A secret is never shown whole: its value is cut to its first characters.
+
+| Key | |
+|---|---|
+| `↵` or `l` | The finding: what was seen, why it matters and the fix, which names the `docker run` flag and the compose key |
+| `y` | Copy it |
+| `r` | Check again |
+| `esc` | Close (in a finding, back to the list) |
+
+The list's markers come from the same check, run quietly whenever the containers are others than last time.
+
+Without the screen, for a pipeline:
+
+```
+wharf security [--compose file]... [--fail-on critical|high|medium|low|none] [--json]
+```
+
+checks every container, or with `--compose` (`-f`, as often as needed) the compose files named and nothing else (Docker isn't asked). It prints the findings and their fixes, and exits 1 when one is as bad as `--fail-on` (high by default), 0 when none is, 2 when it couldn't run. `--json` prints the fleet's shape (`app`, `check`, `target`, `at`, `counts`, `findings`, each with `rule`, `severity`, `title`, `where`, `line`, `why`, `fix`), without the excerpts. `"securityIgnore"` in the settings leaves out a rule (`"root"`) or a rule on one thing (`"public-port:mailpit"`), here and in the app.
+
 ## Slash commands
 
-`/start`, `/stop`, `/restart`, `/kill` take a container, a compose project's name, or `all`; stopping, killing or restarting several asks first. `/up` and `/down` run `docker compose up -d` or `down` for a project, where its files are (`/down` asks first; volumes are kept). `/exec <container> <command>` runs one command inside a running container with no terminal, so nothing interactive. `/shell <name> [container]` opens a shell in a running container or pod (see Shells). `/pause` and `/unpause` take a container. `/rm` removes (asks). `/logs`, `/inspect`, `/open` take a container. `/scan <container|image>` hands Bilge an image (as `v`). `/pull <image>`, `/rmi <image>` (asks), `/prune [containers|images]` (asks). `/run <command>` is `!`. `/last` shows the last command's whole output. `/refresh` reads Docker again now (it does every few seconds). `/env [name]` says or switches the project's environment (see Environments). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
+`/start`, `/stop`, `/restart`, `/kill` take a container, a compose project's name, or `all`; stopping, killing or restarting several asks first. `/up` and `/down` run `docker compose up -d` or `down` for a project, where its files are (`/down` asks first; volumes are kept). `/exec <container> <command>` runs one command inside a running container with no terminal, so nothing interactive. `/shell <name> [container]` opens a shell in a running container or pod (see Shells). `/pause` and `/unpause` take a container. `/rm` removes (asks). `/logs`, `/inspect`, `/open` take a container. `/scan <container|image>` hands Bilge an image (as `v`). `/security [container|project|compose file]` checks how containers run (see Security). `/pull <image>`, `/rmi <image>` (asks), `/prune [containers|images]` (asks). `/run <command>` is `!`. `/last` shows the last command's whole output. `/refresh` reads Docker again now (it does every few seconds). `/env [name]` says or switches the project's environment (see Environments). `/settings`, `/theme`, `/accent`, `/mouse`, `/update`, `/help`, `/quit`.
 
 A name can be a prefix when it's unambiguous, an id, or `project/service`.
 
@@ -136,7 +168,7 @@ Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Dr
 
 ## Settings
 
-Kept in `~/.wharf/config.json` (`WHARF_HOME` moves it): `theme` (`dark`, `light`, `auto`), `kubeNamespace`, `accent` (`#rrggbb`), `familyMoods`, `mouse`, `checkForUpdates`, `autoUpdate`, `history`. `/settings` shows them.
+Kept in `~/.wharf/config.json` (`WHARF_HOME` moves it): `theme` (`dark`, `light`, `auto`), `kubeNamespace`, `accent` (`#rrggbb`), `familyMoods`, `mouse`, `checkForUpdates`, `autoUpdate`, `history`, `securityIgnore` (rules, or `rule:where`, the security check leaves out). `/settings` shows them.
 
 ## Updates
 
