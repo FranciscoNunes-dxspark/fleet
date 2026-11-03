@@ -87,7 +87,7 @@ This machine's folder on the left, the server's on the right; the focused pane h
 
 `/watch` keeps uploading what changes in the left pane's folder to the right pane's, as it changes (a moment after the last write, so a save is one upload), with the same ignore list, until `/watch off`; the header says `⟳ watching <folder>`. Deletions aren't carried over: `/sync up --delete` does that.
 
-Folders are copied whole, file by file; links and special files in them are skipped, never followed (a link out of the folder would copy what isn't in it). A copy keeps each file's modification time.
+Folders are copied whole, four files at a time; links and special files in them are skipped, never followed (a link out of the folder would copy what isn't in it). A copy keeps each file's modification time.
 
 ### Transfers
 

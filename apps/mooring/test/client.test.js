@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openClient } from '../src/sftp-client.js';
-import { download, upload } from '../src/transfer.js';
+import { FILES_AT_ONCE, download, eachLimited, upload } from '../src/transfer.js';
 import { serverSpawn, tempDir } from './helpers.js';
 
 const open = (root, env, options) => openClient({ host: 'h' }, { command: process.execPath, argsFor: () => [], spawn: serverSpawn(root, env), ...options });
@@ -121,6 +121,58 @@ test('an upload arrives whole, with progress and the time, and a folder goes wit
     src.done();
     back.done();
   }
+});
+
+test('a folder of many files goes a few files at a time, each whole, the progress over all of them', async () => {
+  const { dir, done } = tempDir();
+  const back = tempDir();
+  const client = await open(dir, { FAKE_SLOW: '5' });
+  try {
+    for (let d = 0; d < 4; d++) {
+      mkdirSync(join(dir, 'many', `d${d}`), { recursive: true });
+      for (let i = 0; i < 15; i++) writeFileSync(join(dir, 'many', `d${d}`, `f${i}`), bytes(1000 + d * 100 + i));
+    }
+    const seen = [];
+    await download(client, '/many', join(back.dir, 'many'), { recursive: true, onProgress: (p) => seen.push(p) });
+    const total = Array.from({ length: 60 }, (_, k) => 1000 + Math.floor(k / 15) * 100 + (k % 15)).reduce((a, b) => a + b, 0);
+    assert.deepEqual([seen.at(-1).bytes, seen.at(-1).total], [total, total]);
+    for (let d = 0; d < 4; d++) for (let i = 0; i < 15; i++) assert.ok(readFileSync(join(back.dir, 'many', `d${d}`, `f${i}`)).equals(bytes(1000 + d * 100 + i)));
+    await upload(client, join(back.dir, 'many'), '/again', { recursive: true });
+    for (let d = 0; d < 4; d++) for (let i = 0; i < 15; i++) assert.ok(readFileSync(join(dir, 'again', `d${d}`, `f${i}`)).equals(bytes(1000 + d * 100 + i)));
+  } finally {
+    client.close();
+    done();
+    back.done();
+  }
+});
+
+test('a few at a time, in order; after a failure nothing more starts, and the first failure is thrown once the rest finish', async () => {
+  const started = [];
+  let running = 0;
+  let most = 0;
+  const work = async (n) => {
+    started.push(n);
+    most = Math.max(most, ++running);
+    await new Promise((r) => setTimeout(r, 2 + (n % 3)));
+    running--;
+  };
+  await eachLimited(Array.from({ length: 20 }, (_, i) => i), FILES_AT_ONCE, work);
+  assert.deepEqual(started, Array.from({ length: 20 }, (_, i) => i));
+  assert.equal(most, FILES_AT_ONCE);
+
+  started.length = 0;
+  const finished = [];
+  const failing = async (n) => {
+    started.push(n);
+    await new Promise((r) => setTimeout(r, n === 1 ? 1 : 20));
+    if (n === 1) throw new Error('one failed');
+    if (n === 2) throw new Error('two failed later');
+    finished.push(n);
+  };
+  await assert.rejects(eachLimited(Array.from({ length: 10 }, (_, i) => i), 2, failing), /one failed/);
+  assert.deepEqual(started, [0, 1], 'nothing started after the failure');
+  assert.deepEqual(finished, [0], 'what was going finished first');
+  await eachLimited([], 4, failing);
 });
 
 test('a link in a folder being copied is skipped, not followed', async (t) => {
