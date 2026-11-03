@@ -20,6 +20,8 @@ test('claude prompt carries the item, the repo and how to work', () => {
   assert.match(p, /Lena: Watch the currency rounding/);
   assert.match(p, /new branch feature\/4126-refund-endpoint-partial-refunds from main/);
   assert.match(p, /AB#4126/);
+  assert.match(p.split('\n').pop(), /Don’t commit, push or open a pull request/); // the last instruction
+  assert.match(buildPrompt(item(), repo, LIMITS.cli, 'Only review.'), /How to work:\nOnly review\.$/);
   assert.equal(branchFor(item({ type: 'Bug', title: '!!!' })), 'bugfix/4126-work');
 });
 

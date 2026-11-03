@@ -256,6 +256,10 @@ function MonitorCard({ m }) {
             </div>
           )}
           <div className="fact"><dt>{t('Exceptions, 1h')}</dt><dd>{ai.exceptions.toLocaleString()}</dd><dd className="muted small">Application Insights</dd></div>
+          {ai.db && <>
+            <div className="fact"><dt>{t('Database calls, 1h')}</dt><dd>{ai.db.calls.toLocaleString()}</dd><dd className="muted small">p95 {ms(ai.db.p95)}</dd></div>
+            <div className="fact"><dt>{t('Database failing, 1h')}</dt><dd className={ai.db.failRate >= 0.05 ? 'text-bad' : ''}>{pct(ai.db.failRate)}</dd><dd className="muted small">{t(ai.db.failed === 1 ? '{n} failed call' : '{n} failed calls', { n: ai.db.failed.toLocaleString() })}</dd></div>
+          </>}
         </>}
       </dl>
 
@@ -278,9 +282,27 @@ function MonitorCard({ m }) {
             format={(v) => pct(v)}
           />
         )}
+        {ai?.db?.series?.length > 1 && (
+          <TimeChart
+            title={t('Database response time (p95), 24h')}
+            points={ai.db.series.map((b) => ({ at: b.at, value: b.p95, detail: t('{calls} calls, {failed} failed', { calls: b.calls, failed: b.failed }) }))}
+            markers={markers}
+            format={ms}
+          />
+        )}
       </div>
 
       <div className="monitor-lists">
+        {ai?.db?.topSlow?.length > 0 && (
+          <div>
+            <h3 className="small">{t('Slowest database queries, 1h')}</h3>
+            <ul className="mini-list">
+              {ai.db.topSlow.map((q) => (
+                <li key={`${q.target}${q.name}`} title={q.target}><span className="mono small truncate">{q.name}</span><span className="muted small">p95 {ms(q.p95)} · {q.count} ×</span></li>
+              ))}
+            </ul>
+          </div>
+        )}
         {ai?.topFailures?.length > 0 && (
           <div>
             <h3 className="small">{t('Top failing operations, 1h')}</h3>

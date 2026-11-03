@@ -562,6 +562,10 @@ export function monitorFullText(m, target, now = Date.now()) {
   const out = [m.name, m.url || '', '', `${monitorState(m).label}  ${monitorNumbers(m)}`];
   for (const i of m.issues ?? []) out.push(`  • ${i.text}`);
   if (m.ai?.topFailures?.length) out.push('', 'Failing most (last hour)', ...m.ai.topFailures.map((f) => `  ${f.count}× ${f.name}${f.code ? ` (${f.code})` : ''}`));
+  if (m.ai?.db) {
+    const d = m.ai.db;
+    out.push('', `Database (last hour): ${d.calls} calls · ${pct(d.failRate)} failing · p95 ${d.p95 == null ? '—' : `${Math.round(d.p95)}ms`}`, ...d.topSlow.map((q) => `  p95 ${Math.round(q.p95)}ms · ${q.count}× ${q.name}`));
+  }
   if (m.ai?.topNotFound?.length) out.push('', 'Missing pages asked for (404s, not counted as failures)', ...m.ai.topNotFound.map((f) => `  ${f.count}× ${f.name}`));
   if (m.markers?.length) out.push('', 'Deploys', ...m.markers.map((d) => `  ${d.label}  ${d.status} · ${ago(d.at, now)} ago${d.by ? ` · ${d.by}` : ''}`));
   if (target) {

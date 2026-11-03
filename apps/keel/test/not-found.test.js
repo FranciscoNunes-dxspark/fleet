@@ -42,7 +42,8 @@ test('Application Insights: failures are 5xx, 404s are counted apart', async (t)
     assert.deepEqual(res.ai, { ok: true, total: 1000 });
     assert.ok(queries.some((q) => q.includes('failed=countif(toint(resultCode) >= 500)')), 'failures are server errors');
     assert.ok(queries.some((q) => q.includes('notFound=countif(resultCode == "404")')));
-    assert.ok(!queries.some((q) => q.includes('success == false')), 'not "any unsuccessful request"');
+    assert.ok(!queries.some((q) => q.startsWith('requests') && q.includes('success == false')), 'not "any unsuccessful request"');
+    assert.ok(queries.some((q) => q.startsWith('dependencies') && q.includes('countif(success == false)')), 'database failures are unsuccessful calls');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

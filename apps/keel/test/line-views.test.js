@@ -68,3 +68,11 @@ test('the timeline: the last day only, newest first, each deploy once, merges bu
   assert.equal(events.find((e) => e.code === 'approval').mine, true);
   assert.equal(events.filter((e) => e.code === 'deploy').length, 1);
 });
+
+test('a service tile carries the database figures only when the monitor has them', () => {
+  const m = (ai) => ({ id: 'a', name: 'A', state: 'up', ai });
+  const [withDb] = serviceTiles({ production: { monitors: [m({ db: { p95: 40, failRate: 0.02, calls: 90 } })] } });
+  assert.deepEqual(withDb.db, { p95: 40, failRate: 0.02, calls: 90 });
+  const [without] = serviceTiles({ production: { monitors: [m({})] } });
+  assert.equal(without.db, null);
+});

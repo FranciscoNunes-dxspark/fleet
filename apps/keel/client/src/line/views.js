@@ -49,6 +49,7 @@ export function serviceTiles({ production, pending } = {}, now = Date.now()) {
       deploying: m.deploy ? { label: m.deploy.label, at: m.deploy.startedAt } : null,
       waiting: target?.waiting ?? null, oldestAt: target?.oldestAt ?? null,
       issues: (m.issues || []).length,
+      db: m.ai?.db ? { p95: m.ai.db.p95 ?? null, failRate: m.ai.db.failRate ?? 0, calls: m.ai.db.calls ?? 0 } : null,
     };
   }).sort((a, b) => (rank[a.state] ?? 5) - (rank[b.state] ?? 5) || a.name.localeCompare(b.name));
 }
