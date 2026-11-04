@@ -48,6 +48,9 @@
 
 /* The app fills the window; Radix's root is just the carrier. */
 .radix-themes:where([data-is-root-theme='true']) { min-height: 100vh; background: var(--canvas); }
+/* Radix's root makes a stacking layer of its own at 0, which put the toasts (inside it) under the details panel (outside it, in a portal). */
+.radix-themes:where([data-is-root-theme='true']) { z-index: auto; }
+.toasts { z-index: 80; pointer-events: auto; } /* a modal panel turns the page's pointer events off; the toasts' buttons still work */
 
 /* Overlays drawn in a portal sit above the app's own layers. */
 .drawer-layer, .palette-layer { color: var(--ink); font-family: var(--font); }
@@ -66,3 +69,7 @@
 /* Floating layers (a select's list, a tooltip) sit above the details panel (20) and the search (30):
    Radix copies a content's z-index to its positioning wrapper. */
 .rt-SelectContent, .rt-TooltipContent, .rt-PopoverContent, .rt-DropdownMenuContent { z-index: 60; }
+
+/* Radix's text area and radio group, laid out as the plain ones were. */
+.rt-TextAreaRoot { width: 100%; }
+.complete-when.rt-RadioGroupRoot { flex-direction: row; align-items: center; }
