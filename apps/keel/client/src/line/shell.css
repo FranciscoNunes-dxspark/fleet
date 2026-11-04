@@ -70,8 +70,6 @@
 /* The Line, slim, on every page of Delivery, Code and Work: where change is, as context. */
 .ls-dock .line-rail-compact { padding: 12px 24px 2px; }
 
-/* The Desk, home: the window's height under the top bar and the tabs. */
-.ls-desk .desk { grid-template-columns: 200px minmax(320px, 420px) minmax(0, 1fr); }
 
 /* ------------------------------------------------------------------ phones: bottom tabs */
 .tabbar-wrap { display: none; }

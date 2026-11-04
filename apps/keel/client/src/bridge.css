@@ -73,3 +73,8 @@
 /* Radix's text area and radio group, laid out as the plain ones were. */
 .rt-TextAreaRoot { width: 100%; }
 .complete-when.rt-RadioGroupRoot { flex-direction: row; align-items: center; }
+
+/* A checkbox with a long label: the label's words flow as text beside the box (not as separate
+   flex columns, which broke "Override branch policies" into three narrow pieces on a phone). */
+.complete-form > .check, .new-pr .detail-section > .check, .detail-section > .check { display: block; }
+.check .rt-CheckboxRoot { vertical-align: -3px; margin-right: 8px; }
