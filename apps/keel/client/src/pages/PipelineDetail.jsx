@@ -8,6 +8,7 @@ import { Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { useProjectLabel, useSourceName } from '../orgs.js';
 import { FlakyTests } from './Pipelines.jsx';
 import { RunTimesChart } from '../charts.jsx';
+import { Button, TextField } from '@radix-ui/themes';
 
 // Pipeline details (drawer): the pipeline's latest runs, and for one run its
 // stages, jobs and steps, the failed steps' errors and last log lines, the
@@ -223,8 +224,8 @@ export default function PipelineDetail({ target }) {
         {can('pipelines.run') && branch && (
           <Confirm text={t('Run on {branch}?', { branch })} onConfirm={queue} className="btn btn-small btn-primary">{t('Run')}</Confirm>
         )}
-        {can('pipelines.run') && !runningOn && <button type="button" className="btn btn-small" onClick={() => { setRunningOn(true); setScheduling(false); }}>{t('Run on…')}</button>}
-        {can('pipelines.run') && !scheduling && <button type="button" className="btn btn-small" onClick={() => { setScheduling(true); setRunningOn(false); }}>{t('Run at…')}</button>}
+        {can('pipelines.run') && !runningOn && <Button size="1" variant="outline" color="gray" type="button" onClick={() => { setRunningOn(true); setScheduling(false); }}>{t('Run on…')}</Button>}
+        {can('pipelines.run') && !scheduling && <Button size="1" variant="outline" color="gray" type="button" onClick={() => { setScheduling(true); setRunningOn(false); }}>{t('Run at…')}</Button>}
         {/* The pipeline's own page, in whichever organization it belongs to. */}
         <ExternalLink href={p?.webUrl || `${meta.orgUrl}/${encodeURIComponent(projectName || projectId)}/_build?definitionId=${definitionId}`} />
       </section>
@@ -255,16 +256,16 @@ function ScheduleRunForm({ projectId, repoId, branch: home, now, onCancel, onSch
       <h3>{now ? t('Run on a branch') : t('Run at a set time')}</h3>
       <p className="muted small">{now ? t('Keel starts one run now, as you, on the branch you pick.') : t('Keel starts one run then, as you, on the branch you pick. For runs that repeat (every night, say), use a schedule in the pipeline itself.')}</p>
       <label className="field">{t('Branch')}
-        <input className="input mono" list="schedule-run-branches" value={branch} onChange={(e) => setBranch(e.target.value)} spellCheck={false} required />
+        <TextField.Root className="mono" variant="surface" color="gray" list="schedule-run-branches" value={branch} onChange={(e) => setBranch(e.target.value)} spellCheck={false} required />
         <datalist id="schedule-run-branches">{(branches || []).map((b) => <option key={b.name} value={b.name} />)}</datalist>
       </label>
       {!now && <label className="field">{t('When')}
-        <input className="input" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} required aria-describedby="run-at-zone" />
+        <TextField.Root variant="surface" color="gray" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} required aria-describedby="run-at-zone" />
         {localZone() && <span className="muted small" id="run-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
       </label>}
       <div className="complete-actions">
-        <button type="submit" className="btn btn-small btn-primary" disabled={busy || !branch.trim() || (!now && !at)}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</button>
-        <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>{t('Cancel')}</button>
+        <Button size="1" variant="solid" type="submit" disabled={busy || !branch.trim() || (!now && !at)}>{now ? (busy ? t('Starting…') : t('Run')) : busy ? t('Scheduling…') : t('Schedule run')}</Button>
+        <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>
     </form>
   );

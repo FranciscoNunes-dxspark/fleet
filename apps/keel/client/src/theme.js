@@ -48,6 +48,8 @@ export function applyTheme(theme = loadTheme()) {
   root.dataset.mode = mode;
   root.dataset.accent = theme.accent;
   root.style.colorScheme = mode;
+  // The Radix <Theme> in main.jsx follows: it reads the mode and accent from here.
+  window.dispatchEvent(new CustomEvent('keel:theme', { detail: { mode, accent: theme.accent } }));
   return mode;
 }
 
@@ -68,3 +70,6 @@ export function watchSystemTheme() {
   mq?.addEventListener?.('change', onChange);
   return () => mq?.removeEventListener?.('change', onChange);
 }
+
+// Radix Themes' own colour for each of Keel's accents (the scales behind --accent-1…12).
+export const RADIX_ACCENT = { buoy: 'orange', green: 'jade', blue: 'blue', violet: 'violet', teal: 'teal', magenta: 'plum', coral: 'tomato', sand: 'bronze' };

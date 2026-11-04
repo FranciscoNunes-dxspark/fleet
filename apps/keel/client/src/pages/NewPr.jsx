@@ -8,6 +8,8 @@ import { Icon } from '../icons.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import { t, tj } from '../i18n.js';
 import { useOrgKind, wiPath } from '../orgs.js';
+import { Button, TextArea, TextField } from '@radix-ui/themes';
+import { Checkbox, Select } from '../ui.jsx';
 
 const MAX_DESCRIPTION = 4000;
 const repoKey = (r) => `${r.projectId}|${r.id}`;
@@ -232,21 +234,21 @@ export default function NewPr({ preset = {} }) {
       <section className="detail-section">
         <div className="form-grid form-grid-wide">
           <label>{t('Repository')}
-            <select className="input" value={repo} onChange={(e) => { setRepo(e.target.value); setTitleTouched(false); setDescTouched(false); }}>
+            <Select className="input" value={repo} onChange={(e) => { setRepo(e.target.value); setTitleTouched(false); setDescTouched(false); }}>
               {[...new Set(repoList.map((r) => r.projectName))].map((p) => (
                 <optgroup key={p} label={p}>
                   {repoList.filter((r) => r.projectName === p).map((r) => <option key={r.id} value={repoKey(r)}>{r.name}</option>)}
                 </optgroup>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
         {!branches ? <Loading label={t('Loading branches…')} /> : (
           <div className="branch-pick">
             <label>{t('From')}
-              <select className="input mono" value={source} onChange={(e) => setSource(e.target.value)} aria-label={t('Source branch')}>
+              <Select className="input mono" value={source} onChange={(e) => setSource(e.target.value)} aria-label={t('Source branch')}>
                 {branchOptions(target)}
-              </select>
+              </Select>
             </label>
             <button
               type="button"
@@ -259,9 +261,9 @@ export default function NewPr({ preset = {} }) {
               <Icon name="swap" size={16} />
             </button>
             <label>{t('Into')}
-              <select className="input mono" value={target} onChange={(e) => setTarget(e.target.value)} aria-label={t('Target branch')}>
+              <Select className="input mono" value={target} onChange={(e) => setTarget(e.target.value)} aria-label={t('Target branch')}>
                 {branchOptions(source)}
-              </select>
+              </Select>
             </label>
             <button
               type="button"
@@ -308,7 +310,7 @@ export default function NewPr({ preset = {} }) {
 
       <section className="detail-section">
         <label className="field">{t('Title')}
-          <input className="input" value={title} maxLength={400} onChange={(e) => { setTitle(e.target.value); setTitleTouched(true); }} required />
+          <TextField.Root variant="surface" color="gray" value={title} maxLength={400} onChange={(e) => { setTitle(e.target.value); setTitleTouched(true); }} required />
         </label>
         <div className="field">
           <div className="field-head">
@@ -320,7 +322,7 @@ export default function NewPr({ preset = {} }) {
           </div>
           {preview
             ? <div className="md-preview"><Markdown text={description || t('_Nothing to preview._')} people={people || []} /></div>
-            : <textarea className="input" rows={10} value={description} onChange={(e) => { setDescription(e.target.value); setDescTouched(true); }} aria-label={t('Description (Markdown)')} />}
+            : <TextArea variant="surface" color="gray" rows={10} value={description} onChange={(e) => { setDescription(e.target.value); setDescTouched(true); }} aria-label={t('Description (Markdown)')} />}
           <span className={`small ${tooLong ? 'text-bad' : 'muted'}`}>{t('{count} / {max} characters · Markdown', { count: description.length.toLocaleString(), max: MAX_DESCRIPTION.toLocaleString() })}</span>
         </div>
       </section>
@@ -333,14 +335,14 @@ export default function NewPr({ preset = {} }) {
               <span className="mono muted">{w.id}</span> <span>{w.title}</span>
               <Chip tone={CATEGORY_TONE[w.stateCategory] || 'muted'}>{w.state}</Chip>
               {w.suggested && <span className="muted small">{t('suggested from branch or commits')}</span>}
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => setWorkItems((l) => l.filter((x) => x.id !== w.id))} aria-label={t('Unlink {id}', { id: w.id })}>{t('Remove')}</button>
+              <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setWorkItems((l) => l.filter((x) => x.id !== w.id))} aria-label={t('Unlink {id}', { id: w.id })}>{t('Remove')}</Button>
             </li>
           ))}
           {!workItems.length && <li className="muted small">{t('None linked. Many branch policies require at least one.')}</li>}
         </ul>
         <div className="inline-form">
-          <input className="input" inputMode="numeric" placeholder={t('Work item ID')} value={wiInput} onChange={(e) => setWiInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addWorkItem(e)} aria-label={t('Work item ID to link')} />
-          <button type="button" className="btn btn-small" onClick={addWorkItem} disabled={!wiInput.trim()}>{t('Link')}</button>
+          <TextField.Root variant="surface" color="gray" inputMode="numeric" placeholder={t('Work item ID')} value={wiInput} onChange={(e) => setWiInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addWorkItem(e)} aria-label={t('Work item ID to link')} />
+          <Button size="1" variant="outline" color="gray" type="button" onClick={addWorkItem} disabled={!wiInput.trim()}>{t('Link')}</Button>
         </div>
       </section>}
 
@@ -351,34 +353,34 @@ export default function NewPr({ preset = {} }) {
             <li key={r.id}>
               <Avatar person={r} size={22} />
               <span className="truncate">{r.displayName}</span>
-              <label className="check small"><input type="checkbox" checked={r.isRequired} onChange={(e) => setReviewers((l) => l.map((x) => (x.id === r.id ? { ...x, isRequired: e.target.checked } : x)))} /> {t('Required')}</label>
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => setReviewers((l) => l.filter((x) => x.id !== r.id))}>{t('Remove')}</button>
+              <label className="check small"><Checkbox  checked={r.isRequired} onChange={(e) => setReviewers((l) => l.map((x) => (x.id === r.id ? { ...x, isRequired: e.target.checked } : x)))} /> {t('Required')}</label>
+              <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setReviewers((l) => l.filter((x) => x.id !== r.id))}>{t('Remove')}</Button>
             </li>
           ))}
         </ul>
         <SuggestedReviewers suggestions={(suggested || []).filter((x) => !reviewers.some((r) => r.id === x.person.id))} onAdd={(p) => setReviewers((l) => [...l, { ...p, isRequired: false }])} />
         <div className="inline-form">
           {candidates.length > 0 && (
-            <select className="input" value="" onChange={(e) => { const p = candidates.find((c) => c.id === e.target.value); if (p) setReviewers((l) => [...l, { ...p, isRequired: false }]); }} aria-label={t('Add a reviewer')}>
+            <Select className="input" value="" onChange={(e) => { const p = candidates.find((c) => c.id === e.target.value); if (p) setReviewers((l) => [...l, { ...p, isRequired: false }]); }} aria-label={t('Add a reviewer')}>
               <option value="">{t('Add a reviewer…')}</option>
               {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-            </select>
+            </Select>
           )}
           {/* "me" is resolved on the server, in the repo's organization. */}
           {!reviewers.some((r) => r.id === 'me') && (
-            <button type="button" className="btn btn-small btn-ghost" title={t('Add yourself as a reviewer')} onClick={() => setReviewers((l) => [...l, { ...meta.me, id: 'me', isRequired: false }])}>{t('Add me')}</button>
+            <Button size="1" variant="ghost" color="gray" type="button" title={t('Add yourself as a reviewer')} onClick={() => setReviewers((l) => [...l, { ...meta.me, id: 'me', isRequired: false }])}>{t('Add me')}</Button>
           )}
         </div>
       </section>
 
       <section className="detail-section">
-        <label className="check"><input type="checkbox" checked={isDraft} onChange={(e) => setIsDraft(e.target.checked)} /> {t('Create as draft')} <span className="muted small">{t("(reviewers aren't notified until you publish)")}</span></label>
-        <label className="check"><input type="checkbox" checked={autoComplete && !isDraft} disabled={isDraft} onChange={(e) => setAutoComplete(e.target.checked)} /> {github ? <>{t('Turn on auto-merge')} <span className="muted small">{t('(merges when its required checks and reviews pass, using your Settings defaults)')}</span></> : <>{t('Set auto-complete')} <span className="muted small">{t('(completes when policies pass, using your Settings defaults)')}</span></>}</label>
+        <label className="check"><Checkbox  checked={isDraft} onChange={(e) => setIsDraft(e.target.checked)} /> {t('Create as draft')} <span className="muted small">{t("(reviewers aren't notified until you publish)")}</span></label>
+        <label className="check"><Checkbox  checked={autoComplete && !isDraft} disabled={isDraft} onChange={(e) => setAutoComplete(e.target.checked)} /> {github ? <>{t('Turn on auto-merge')} <span className="muted small">{t('(merges when its required checks and reviews pass, using your Settings defaults)')}</span></> : <>{t('Set auto-complete')} <span className="muted small">{t('(completes when policies pass, using your Settings defaults)')}</span></>}</label>
       </section>
 
       <ErrorBox error={submitError} />
       <section className="detail-actions sticky-actions">
-        <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? t('Creating…') : isDraft ? t('Create draft pull request') : t('Create pull request')}</button>
+        <Button size="2" variant="solid" type="submit" disabled={!canSubmit}>{busy ? t('Creating…') : isDraft ? t('Create draft pull request') : t('Create pull request')}</Button>
         {existing.length > 0 && <span className="small muted">{t('A pull request for these branches already exists.')}</span>}
         {tooLong && <span className="small text-bad">{t('Shorten the description to 4,000 characters to create the pull request.')}</span>}
         {!title.trim() && <span className="small muted">{t('Add a title to create the pull request.')}</span>}
@@ -411,7 +413,7 @@ export function SuggestedReviewers({ suggestions, onAdd, busy = false }) {
                 {' · '}<span className={x.overloaded ? 'text-warn' : ''}>{t(x.reviewsOwed === 1 ? '{n} review owed' : '{n} reviews owed', { n: x.reviewsOwed })}</span>
               </span>
             </span>
-            <button type="button" className="btn btn-small" onClick={() => onAdd(x.person)} disabled={busy}>{t('Add')}</button>
+            <Button size="1" variant="outline" color="gray" type="button" onClick={() => onAdd(x.person)} disabled={busy}>{t('Add')}</Button>
           </li>
         ))}
       </ul>

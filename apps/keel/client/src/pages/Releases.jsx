@@ -5,6 +5,8 @@ import { age, bytes, dateTime } from '../format.js';
 import { Chip, Confirm, Empty } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { approvalPath } from '../orgs.js';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 const HEALTH = {
   failing: { tone: 'bad', label: 'Failing' },
@@ -71,11 +73,11 @@ export function ApprovalsPanel({ approvals }) {
             </div>
             {a.canDecide && canDecide ? (
               <div className="approval-actions">
-                <input
-                  className="input" placeholder={t('Comment (optional)')} value={comments[a.key] || ''}
+                <TextField.Root variant="surface" color="gray"
+                  placeholder={t('Comment (optional)')} value={comments[a.key] || ''}
                   onChange={(e) => setComments((c) => ({ ...c, [a.key]: e.target.value }))} aria-label={t('Comment for {name}', { name: a.pipeline })}
                 />
-                <button type="button" className="btn btn-small btn-primary" disabled={busy === a.key} onClick={() => decide(a, 'approved')}>{busy === a.key ? '…' : t('Approve')}</button>
+                <Button size="1" variant="solid" type="button" disabled={busy === a.key} onClick={() => decide(a, 'approved')}>{busy === a.key ? '…' : t('Approve')}</Button>
                 <Confirm text={a.stage ? t('Reject the {stage} deployment?', { stage: a.stage }) : t('Reject the stage deployment?')} onConfirm={() => decide(a, 'rejected')} className="btn btn-small btn-ghost text-bad">{t('Reject')}</Confirm>
               </div>
             ) : <span className="small muted">{t('Assigned to others. Open it in Azure DevOps to see who.')}</span>}
@@ -149,7 +151,7 @@ export function ReleasesTab({ defs, github = [] }) {
   return (
     <>
       <div className="filters">
-        <input type="search" className="input" placeholder={github.length ? t('Search releases, stages, repos or files') : t('Search release pipeline or stage')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search release pipelines')} />
+        <TextField.Root variant="surface" color="gray" type="search" placeholder={github.length ? t('Search releases, stages, repos or files') : t('Search release pipeline or stage')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search release pipelines')} />
       </div>
       {defs.length > 0 && <div className="table-wrap">
         <table className="table">
@@ -188,12 +190,12 @@ export function ReleasesTab({ defs, github = [] }) {
                         </td>
                         <td className="row-actions">
                           {canRun && <Confirm text={t('Create a new release of {name} from the latest artifacts?', { name: d.name })} onConfirm={() => createRelease(d)} className="btn btn-small btn-ghost">{t('Create release')}</Confirm>}
-                          {canRun && <button
-                            type="button" className="btn btn-small btn-ghost" aria-expanded={deploying === d.key} disabled={!d.releases.length}
+                          {canRun && <Button size="1" variant="ghost" color="gray"
+                            type="button" aria-expanded={deploying === d.key} disabled={!d.releases.length}
                             onClick={() => setDeploying((k) => (k === d.key ? null : d.key))}
                           >
                             {t('Deploy…')}
-                          </button>}
+                          </Button>}
                         </td>
                       </tr>
                       {deploying === d.key && (
@@ -247,9 +249,9 @@ function GithubReleases({ repos }) {
                   {r.releases.length > first && (
                     <tr>
                       <td colSpan={2}>
-                        <button type="button" className="btn btn-small btn-ghost" aria-expanded={!!open[key]} onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))}>
+                        <Button size="1" variant="ghost" color="gray" type="button" aria-expanded={!!open[key]} onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))}>
                           {open[key] ? t('Show fewer') : t(r.releases.length - first === 1 ? '{n} older release' : '{n} older releases', { n: r.releases.length - first })}
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   )}
@@ -323,17 +325,17 @@ function DeployForm({ def, onDone }) {
   return (
     <div className="deploy-form">
       <label>{t('Release')}
-        <select className="input" value={releaseId} onChange={(e) => { setReleaseId(e.target.value); setStageId(''); }}>
+        <Select className="input" value={releaseId} onChange={(e) => { setReleaseId(e.target.value); setStageId(''); }}>
           {def.releases.map((r) => <option key={r.id} value={r.id}>{r.name} · {t('{age} ago', { age: age(r.createdOn) })}</option>)}
-        </select>
+        </Select>
       </label>
       <label>{t('Stage')}
-        <select className="input" value={stage ? String(stage.id) : ''} onChange={(e) => setStageId(e.target.value)}>
+        <Select className="input" value={stage ? String(stage.id) : ''} onChange={(e) => setStageId(e.target.value)}>
           {stages.map((s) => <option key={s.id} value={s.id}>{s.name} ({stageLabel(s.status)})</option>)}
-        </select>
+        </Select>
       </label>
       <label className="grow">{t('Comment')}
-        <input className="input" value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t('Optional')} />
+        <TextField.Root variant="surface" color="gray" value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t('Optional')} />
       </label>
       <div className="deploy-actions">
         <Confirm
@@ -345,7 +347,7 @@ function DeployForm({ def, onDone }) {
         >
           {busy ? t('Starting…') : t(verb)}
         </Confirm>
-        <button type="button" className="btn btn-small btn-ghost" onClick={onDone}>{t('Cancel')}</button>
+        <Button size="1" variant="ghost" color="gray" type="button" onClick={onDone}>{t('Cancel')}</Button>
       </div>
     </div>
   );

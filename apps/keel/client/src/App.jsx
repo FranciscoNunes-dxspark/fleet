@@ -37,6 +37,7 @@ import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/
 import Users from './pages/Users.jsx';
 import TerminalSignIn from './pages/TerminalSignIn.jsx';
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
+import { loadHome } from './home.js';
 import { applyTheme } from './theme.js';
 import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
 
@@ -297,8 +298,8 @@ function Console({ authMode, onSignedOut }) {
     <AppContext.Provider value={ctx}>
       <LineShell>
         <Routes>
-          <Route path="/" element={<LineHome />} />
-          <Route path="/line" element={<Navigate to="/" replace />} />
+          <Route path="/" element={<Navigate to={loadHome()} replace />} />
+          <Route path="/line" element={<LineHome />} />
           <Route path="/line/:stage" element={<StageCards />} />
           <Route path="/desk" element={<Desk />} />
           <Route path="/control" element={<Control />} />

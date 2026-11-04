@@ -5,6 +5,7 @@ import { useApi, useApp } from '../context.js';
 import { dateTime } from '../format.js';
 import { Chip, Empty, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
+import { Button } from '@radix-ui/themes';
 
 const RANK = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4 };
 const TONE = { critical: 'bad', high: 'bad', medium: 'warn', low: 'info', unknown: 'muted' };
@@ -67,9 +68,9 @@ export default function Advisories() {
                 {r.checkedAt && ` · ${r.lockFiles.length ? t(r.lockFiles.length === 1 ? '1 lock file, {n} packages' : '{files} lock files, {n} packages', { files: r.lockFiles.length, n: r.packages ?? 0 }) : t('No lock files')}`}
               </span>
               {data.available && data.enabled && (
-                <button type="button" className="btn btn-small" disabled={!!checking || !r.defaultBranch} onClick={() => check(r)}>
+                <Button size="1" variant="outline" color="gray" type="button" disabled={!!checking || !r.defaultBranch} onClick={() => check(r)}>
                   {checking === key ? t('Checking…') : t('Check now')}
-                </button>
+                </Button>
               )}
             </div>
             {r.error && <p className="text-bad small">{t("Couldn't check it: {error}", { error: tx(r.error) })}</p>}

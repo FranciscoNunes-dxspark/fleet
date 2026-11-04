@@ -9,6 +9,7 @@ export const PREF_KEYS = {
   language: 'keel.language.v1',
   views: 'keel.views.v1',
   production: 'keel.production.v1',
+  home: 'keel.home.v1', // { path }: the page Keel opens on
   claudeRules: 'keel.claudeRules.v1', // { text }: replaces the "How to work" lines of Start in Claude
 };
 

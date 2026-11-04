@@ -7,6 +7,8 @@ import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { SavedViews } from '../views.jsx';
 import { RiskScore, useRisks } from '../risk.jsx';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 const DAYS = [7, 30, 90];
 const OUTCOME = { completed: { tone: 'ok', label: 'Completed' }, abandoned: { tone: 'muted', label: 'Abandoned' } };
@@ -140,7 +142,7 @@ export default function PullRequests() {
           ? t(data.repos.length === 1 ? '{n} closed in the last {days} days across {repos} repo' : '{n} closed in the last {days} days across {repos} repos', { n: data.prs.length, days, repos: data.repos.length })
           : t(data.repos.length === 1 ? '{n} active across {repos} repo' : '{n} active across {repos} repos', { n: data.prs.length, repos: data.repos.length })}
       >
-        {can('prs.write') && <button type="button" className="btn btn-primary" onClick={() => openDrawer({ type: 'newpr' })}>{t('New pull request')}</button>}
+        {can('prs.write') && <Button size="2" variant="solid" type="button" onClick={() => openDrawer({ type: 'newpr' })}>{t('New pull request')}</Button>}
       </PageHeader>
       <CodeTabs />
 
@@ -160,24 +162,24 @@ export default function PullRequests() {
           />
         )}
         {closed && (
-          <select className="input" value={days} onChange={(e) => setParam('days', e.target.value === '30' ? '' : e.target.value)} aria-label={t('Closed in the last')}>
+          <Select className="input" value={days} onChange={(e) => setParam('days', e.target.value === '30' ? '' : e.target.value)} aria-label={t('Closed in the last')}>
             {DAYS.map((d) => <option key={d} value={d}>{t('Closed in the last {n} days', { n: d })}</option>)}
-          </select>
+          </Select>
         )}
-        <input type="search" className="input" placeholder={t('Search title, branch, repo, ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search pull requests')} />
-        <select className="input" value={project} onChange={(e) => { setProject(e.target.value); setRepo(''); }} aria-label={t('Project')}>
+        <TextField.Root variant="surface" color="gray" type="search" placeholder={t('Search title, branch, repo, ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search pull requests')} />
+        <Select className="input" value={project} onChange={(e) => { setProject(e.target.value); setRepo(''); }} aria-label={t('Project')}>
           <option value="">{t('All projects')}</option>
           {projects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
-        <select className="input" value={repo} onChange={(e) => setRepo(e.target.value)} aria-label={t('Repository')}>
+        </Select>
+        <Select className="input" value={repo} onChange={(e) => setRepo(e.target.value)} aria-label={t('Repository')}>
           <option value="">{t('All repos')}</option>
           {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
-        <select className="input" value={author} onChange={(e) => setParam('author', e.target.value)} aria-label={t('Author')}>
+        </Select>
+        <Select className="input" value={author} onChange={(e) => setParam('author', e.target.value)} aria-label={t('Author')}>
           <option value="">{t('Any author')}</option>
           {data.people.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
           {author && !data.people.some((p) => p.id === author) && <option value={author}>{authorName || t('Selected author')}</option>}
-        </select>
+        </Select>
       </div>
       {closed ? (
         <div className="toggles">

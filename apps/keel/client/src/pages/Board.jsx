@@ -7,6 +7,8 @@ import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle, TypeLabel }
 import { locale, t, tj } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 // Used only when a team has no board configuration we can read.
 // Labels are getters so they follow the current language.
@@ -260,16 +262,16 @@ export default function Board() {
     <div className="page page-wide">
       <PageHeader title={t('Board')} sub={`${data.project.name} · ${data.project.teamName} · ${scopeText}`}>
         {movable && (
-          <button
+          <Button size="1" variant="solid"
             type="button"
-            className="btn btn-small btn-primary"
+           
             onClick={() => openDrawer({ type: 'newworkitem', projectId: data.project.id, teamId: data.project.teamId, types: data.board?.types || null, iteration: mode === 'sprint' ? 'sprint' : 'backlog' })}
           >
             {t('New item')}
-          </button>
+          </Button>
         )}
         {data.options.length > 1 && (
-          <select
+          <Select
             className="input"
             value={`${data.project.id}|${data.project.teamId}`}
             onChange={(e) => {
@@ -289,7 +291,7 @@ export default function Board() {
                 ))}
               </optgroup>
             ))}
-          </select>
+          </Select>
         )}
       </PageHeader>
 
@@ -309,16 +311,16 @@ export default function Board() {
           <button type="button" role="tab" aria-selected={mode === 'sprint'} className={mode === 'sprint' ? 'on' : ''} onClick={() => setParam('mode', 'sprint')}>{t('Current sprint')}</button>
         </div>
         {mode === 'open' && (
-          <select className="input" value={doneDays} onChange={(e) => setParam('done', e.target.value === '14' ? '' : e.target.value)} aria-label={t('Show done from the last')}>
+          <Select className="input" value={doneDays} onChange={(e) => setParam('done', e.target.value === '14' ? '' : e.target.value)} aria-label={t('Show done from the last')}>
             {[7, 14, 30].map((d) => <option key={d} value={d}>{t('Done in last {n} days', { n: d })}</option>)}
-          </select>
+          </Select>
         )}
-        <input type="search" className="input" placeholder={t('Search cards')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search cards')} />
-        <select className="input" value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label={t('Assigned to')}>
+        <TextField.Root variant="surface" color="gray" type="search" placeholder={t('Search cards')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search cards')} />
+        <Select className="input" value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label={t('Assigned to')}>
           <option value="">{t('Anyone')}</option>
           <option value="none">{t('Unassigned')}</option>
           {people.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-        </select>
+        </Select>
         {!configured && <Toggle checked={showTasks} onChange={setShowTasks} count={tasks.length}>{t('Show tasks as cards')}</Toggle>}
       </div>
 
@@ -415,9 +417,9 @@ export default function Board() {
                       ))}
                       {!cards.length && <p className="muted small column-empty">{dragging && canDrop ? t('Drop here') : ''}</p>}
                       {capped && (
-                        <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowAllDone(true)}>
+                        <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setShowAllDone(true)}>
                           {t('Show {n} more', { n: cards.length - DONE_CAP })}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   );

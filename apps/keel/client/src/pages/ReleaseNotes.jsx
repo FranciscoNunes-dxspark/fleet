@@ -5,6 +5,8 @@ import { date } from '../format.js';
 import { CodeTabs, Chip, Empty, ErrorBox, Loading, PageHeader } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
+import { Button, TextArea, TextField } from '@radix-ui/themes';
+import { Checkbox } from '../ui.jsx';
 
 const iso = (d) => d.toISOString().slice(0, 10);
 
@@ -72,9 +74,9 @@ export default function ReleaseNotes() {
       {head}
       <form className="panel release-form" onSubmit={generate}>
         <div className="form-row">
-          <label>{t('From')}<input type="date" className="input" value={from} max={to} onChange={(e) => setFrom(e.target.value)} required /></label>
-          <label>{t('To')}<input type="date" className="input" value={to} min={from} onChange={(e) => setTo(e.target.value)} required /></label>
-          <label className="grow">{t('Title')}<input className="input" placeholder={t('Release notes')} value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+          <label>{t('From')}<TextField.Root variant="surface" color="gray" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} required /></label>
+          <label>{t('To')}<TextField.Root variant="surface" color="gray" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} required /></label>
+          <label className="grow">{t('Title')}<TextField.Root variant="surface" color="gray" placeholder={t('Release notes')} value={title} onChange={(e) => setTitle(e.target.value)} /></label>
         </div>
         <fieldset className="repo-pick">
           <legend>{t('Repositories')} <span className="muted small">{repoIds.length ? t('{n} selected', { n: repoIds.length }) : t('all tracked repos')}</span></legend>
@@ -82,12 +84,12 @@ export default function ReleaseNotes() {
             <div key={p.key} className="repo-group">
               <span className="muted small">{p.label}</span>
               {prData.repos.filter((r) => `${r.org || ''}:${r.projectId}` === p.key).map((r) => (
-                <label key={r.id} className="check"><input type="checkbox" checked={repoIds.includes(r.id)} onChange={() => toggleRepo(r.id)} /> {r.name}</label>
+                <label key={r.id} className="check"><Checkbox  checked={repoIds.includes(r.id)} onChange={() => toggleRepo(r.id)} /> {r.name}</label>
               ))}
             </div>
           ))}
         </fieldset>
-        <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('Building…') : t('Build release notes')}</button>
+        <Button size="2" variant="solid" type="submit" disabled={busy}>{busy ? t('Building…') : t('Build release notes')}</Button>
       </form>
 
       <ErrorBox error={genError} />
@@ -121,11 +123,11 @@ export default function ReleaseNotes() {
               <div className="md-head">
                 <h2 className="section-title">Markdown</h2>
                 <div className="page-actions">
-                  <button type="button" className="btn btn-small" onClick={copy}>{t('Copy')}</button>
-                  <button type="button" className="btn btn-small btn-ghost" onClick={() => downloadText(`release-notes-${from}-to-${to}.md`, result.markdown)}>{t('Download .md')}</button>
+                  <Button size="1" variant="outline" color="gray" type="button" onClick={copy}>{t('Copy')}</Button>
+                  <Button size="1" variant="ghost" color="gray" type="button" onClick={() => downloadText(`release-notes-${from}-to-${to}.md`, result.markdown)}>{t('Download .md')}</Button>
                 </div>
               </div>
-              <textarea className="input markdown-out" readOnly value={result.markdown} aria-label={t('Release notes in Markdown')} />
+              <TextArea variant="surface" color="gray" className="markdown-out" readOnly value={result.markdown} aria-label={t('Release notes in Markdown')} />
             </section>
           </div>
         )

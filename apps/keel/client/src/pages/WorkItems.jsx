@@ -8,6 +8,8 @@ import { t } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
 import { SavedViews } from '../views.jsx';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 const DAY = 86_400_000;
 
@@ -107,7 +109,7 @@ export default function WorkItems() {
   return (
     <div className="page page-wide">
       <PageHeader title={t('Work items')} sub={t(data.items.length === 1 ? '{n} open item across tracked projects' : '{n} open items across tracked projects', { n: data.items.length })}>
-        {editable && <button type="button" className="btn btn-small btn-primary" onClick={() => openDrawer({ type: 'newworkitem' })}>{t('New work item')}</button>}
+        {editable && <Button size="1" variant="solid" type="button" onClick={() => openDrawer({ type: 'newworkitem' })}>{t('New work item')}</Button>}
       </PageHeader>
       <WorkTabs />
 
@@ -128,19 +130,19 @@ export default function WorkItems() {
             options={[['priority', t('Priority')], ['changed', t('Updated')], ['state', t('State')], ['title', t('Title')], ['assignee', t('Assigned to')], ['id', 'ID']]}
           />
         )}
-        <input type="search" className="input" placeholder={t('Search title, ID, tag, person')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search work items')} />
-        <select className="input" value={project} onChange={(e) => setProject(e.target.value)} aria-label={t('Project')}>
+        <TextField.Root variant="surface" color="gray" type="search" placeholder={t('Search title, ID, tag, person')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search work items')} />
+        <Select className="input" value={project} onChange={(e) => setProject(e.target.value)} aria-label={t('Project')}>
           <option value="">{t('All projects')}</option>
           {projects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
-        <select className="input" value={type} onChange={(e) => setType(e.target.value)} aria-label={t('Type')}>
+        </Select>
+        <Select className="input" value={type} onChange={(e) => setType(e.target.value)} aria-label={t('Type')}>
           <option value="">{t('All types')}</option>
           {types.map((ty) => <option key={ty}>{ty}</option>)}
-        </select>
-        <select className="input" value={assignee} onChange={(e) => setParam('assignee', e.target.value)} aria-label={t('Assigned to')}>
+        </Select>
+        <Select className="input" value={assignee} onChange={(e) => setParam('assignee', e.target.value)} aria-label={t('Assigned to')}>
           <option value="">{t('Anyone')}</option>
           {data.people.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-        </select>
+        </Select>
       </div>
       <SavedViews page="work" filters={filters} apply={applyFilters} />
       </FilterFold>
@@ -189,7 +191,7 @@ export default function WorkItems() {
                       </div>
                     </td>
                     <td>
-                      <select
+                      <Select
                         className={`input input-inline state-${w.stateCategory}`}
                         value={w.state}
                         disabled={!editable || saving === w.id}
@@ -197,10 +199,10 @@ export default function WorkItems() {
                         aria-label={t('State of {id}', { id: w.id })}
                       >
                         {(states.length ? states : [{ name: w.state }]).map((s) => <option key={s.name}>{s.name}</option>)}
-                      </select>
+                      </Select>
                     </td>
                     <td>
-                      <select
+                      <Select
                         className="input input-inline"
                         value={w.assignedTo?.uniqueName || ''}
                         disabled={!editable || saving === w.id}
@@ -212,7 +214,7 @@ export default function WorkItems() {
                           <option value={w.assignedTo.uniqueName}>{w.assignedTo.displayName}</option>
                         )}
                         {data.people.map((p) => <option key={p.id} value={p.uniqueName}>{p.displayName}</option>)}
-                      </select>
+                      </Select>
                     </td>
                     <td className={`num ${w.priority === 1 ? 'text-bad strong' : ''}`}>{w.priority ?? '—'}</td>
                     <td className={`num ${stuck(w) ? 'text-warn' : 'muted'}`}>{age(w.changedAt)}</td>
@@ -249,7 +251,7 @@ function WorkCard({ w, states, people, editable, saving, blocked, stuck, blocked
         )}
       </button>
       <div className="list-card-edit">
-        <select
+        <Select
           className={`input input-inline state-${w.stateCategory}`}
           value={w.state}
           disabled={!editable || saving}
@@ -257,8 +259,8 @@ function WorkCard({ w, states, people, editable, saving, blocked, stuck, blocked
           aria-label={t('State of {id}', { id: w.id })}
         >
           {(states.length ? states : [{ name: w.state }]).map((s) => <option key={s.name}>{s.name}</option>)}
-        </select>
-        <select
+        </Select>
+        <Select
           className="input input-inline"
           value={w.assignedTo?.uniqueName || ''}
           disabled={!editable || saving}
@@ -268,7 +270,7 @@ function WorkCard({ w, states, people, editable, saving, blocked, stuck, blocked
           <option value="">{t('Unassigned')}</option>
           {w.assignedTo && !people.some((p) => p.uniqueName === w.assignedTo.uniqueName) && <option value={w.assignedTo.uniqueName}>{w.assignedTo.displayName}</option>}
           {people.map((p) => <option key={p.id} value={p.uniqueName}>{p.displayName}</option>)}
-        </select>
+        </Select>
       </div>
     </li>
   );

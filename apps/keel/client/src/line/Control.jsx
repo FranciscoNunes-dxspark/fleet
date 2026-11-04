@@ -12,6 +12,7 @@ import { Icon } from '../icons.jsx';
 import { locale, t } from '../i18n.js';
 import { buildTimeline, serviceTiles } from './views.js';
 import { useLine } from './LineShell.jsx';
+import { Button } from '@radix-ui/themes';
 
 const stateName = (s) => ({ up: t('Up'), down: t('Down'), degraded: t('Degraded'), deploying: t('Deploying'), settling: t('Just deployed') })[s] || t('Not checked yet');
 const time = (iso) => new Date(iso).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
@@ -80,9 +81,9 @@ export default function Control() {
           <div><dt>{t('Merged today')}</dt><dd>{today('merged')}</dd></div>
           <div><dt>{t('Failed runs today')}</dt><dd className={today('run', (e) => e.result === 'failed') ? 'text-bad' : ''}>{today('run', (e) => e.result === 'failed')}</dd></div>
         </dl>
-        <button type="button" className="btn btn-small control-full" onClick={toggleFull}>
+        <Button size="1" variant="outline" color="gray" className="control-full" type="button" onClick={toggleFull}>
           <Icon name={full ? 'collapse' : 'expand'} size={14} /> {full ? t('Leave full screen') : t('Full screen')}
-        </button>
+        </Button>
       </header>
 
       <div className="control-body">

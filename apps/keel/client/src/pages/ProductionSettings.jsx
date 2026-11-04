@@ -4,6 +4,8 @@ import { useApi, useApp } from '../context.js';
 import { Chip, Loading, Section } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 const blank = () => ({ key: Math.random(), id: null, name: '', url: '', appInsightsAppId: '', apiKey: undefined, hasApiKey: false, link: null, projectId: null, latencyWarnMs: 2000, totalsKey: undefined, hasTotalsKey: false, totalsEvery: 24, totalsSeason: 'current' });
 const EVERY = [1, 6, 12, 24];
@@ -137,8 +139,8 @@ export default function ProductionSettings() {
                   {authMode === 'login' && <Chip tone={r.projectId ? undefined : 'info'}>{r.projectId ? projectName(r.projectId) : t('Everyone')}</Chip>}
                 </div>
                 <div className="monitor-line-actions">
-                  <button type="button" className="btn btn-small btn-ghost" onClick={() => test(r)} disabled={result?.running || (!r.url && !r.appInsightsAppId)}>{result?.running ? t('Testing…') : t('Test')}</button>
-                  <button type="button" className="btn btn-small" aria-expanded={editing} onClick={toggle}>{editing ? t('Close') : t('Edit')}</button>
+                  <Button size="1" variant="ghost" color="gray" type="button" onClick={() => test(r)} disabled={result?.running || (!r.url && !r.appInsightsAppId)}>{result?.running ? t('Testing…') : t('Test')}</Button>
+                  <Button size="1" variant="outline" color="gray" type="button" aria-expanded={editing} onClick={toggle}>{editing ? t('Close') : t('Edit')}</Button>
                 </div>
               </div>
               {result && !result.running && (
@@ -153,34 +155,34 @@ export default function ProductionSettings() {
                 <div className="monitor-editor">
                   <fieldset className="monitor-group">
                     <legend>{t('Check')}</legend>
-                    <label>{t('Name')}<input className="input" value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder={t('Sports (production)')} /></label>
-                    <label className="wide">{t('URL to check')}<input className="input" value={r.url} onChange={(e) => set(r.key, { url: e.target.value })} placeholder="https://sports.example.com/health" inputMode="url" /></label>
-                    <label>{t('Slow above (ms)')}<input className="input" type="number" min={100} max={30000} value={r.latencyWarnMs} onChange={(e) => set(r.key, { latencyWarnMs: Number(e.target.value) })} /></label>
+                    <label>{t('Name')}<TextField.Root variant="surface" color="gray" value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder={t('Sports (production)')} /></label>
+                    <label className="wide">{t('URL to check')}<TextField.Root variant="surface" color="gray" value={r.url} onChange={(e) => set(r.key, { url: e.target.value })} placeholder="https://sports.example.com/health" inputMode="url" /></label>
+                    <label>{t('Slow above (ms)')}<TextField.Root variant="surface" color="gray" type="number" min={100} max={30000} value={r.latencyWarnMs} onChange={(e) => set(r.key, { latencyWarnMs: Number(e.target.value) })} /></label>
                     <label className="wide">{t('Deploys come from')}
-                      <select className="input" value={linkValue(r.link)} onChange={(e) => { const l = linkOptions.find((o) => o.value === e.target.value)?.link; set(r.key, { link: l ? { ...l, ...(r.link?.branch ? { branch: r.link.branch } : {}), ...(r.link?.devBranch ? { devBranch: r.link.devBranch } : {}) } : null, projectId: l ? l.projectId : r.projectId }); }}>
+                      <Select className="input" value={linkValue(r.link)} onChange={(e) => { const l = linkOptions.find((o) => o.value === e.target.value)?.link; set(r.key, { link: l ? { ...l, ...(r.link?.branch ? { branch: r.link.branch } : {}), ...(r.link?.devBranch ? { devBranch: r.link.devBranch } : {}) } : null, projectId: l ? l.projectId : r.projectId }); }}>
                         <option value="">{t('Not linked')}</option>
                         {['Release stages', 'Pipelines'].map((g) => (
                           <optgroup key={g} label={t(g)}>
                             {linkOptions.filter((o) => o.group === g).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </optgroup>
                         ))}
-                      </select>
+                      </Select>
                     </label>
                     <label className="wide">{t('Project')}
                       {r.link
                         ? <span className="input-note">{t('{project}, which deploys it', { project: projectName(r.link.projectId) })}</span>
                         : (
-                          <select className="input" value={r.projectId || ''} onChange={(e) => set(r.key, { projectId: e.target.value || null })}>
+                          <Select className="input" value={r.projectId || ''} onChange={(e) => set(r.key, { projectId: e.target.value || null })}>
                             <option value="">{t('None: everyone sees it')}</option>
                             {projects.map((p) => <option key={p.id} value={p.id}>{projectLabel(p.name, p.org)}</option>)}
-                          </select>
+                          </Select>
                         )}
                       <span className="muted small">{t('People who track this project see the monitor, its alerts and its deploys.')}</span>
                     </label>
                     {r.link && (
                       <label className="wide">{t('Production branch')}
-                        <input
-                          className="input mono"
+                        <TextField.Root className="mono" variant="surface" color="gray"
+                         
                           value={r.link.branch || ''}
                           onChange={(e) => set(r.key, { link: { ...r.link, branch: e.target.value } })}
                           placeholder={learnedBranch(r.link) ? t('Automatic: {branch}', { branch: learnedBranch(r.link) }) : t('Automatic: the branch the last deploy came from')}
@@ -191,8 +193,8 @@ export default function ProductionSettings() {
                     )}
                     {r.link && (
                       <label className="wide">{t('Development branch')}
-                        <input
-                          className="input mono"
+                        <TextField.Root className="mono" variant="surface" color="gray"
+                         
                           value={r.link.devBranch || ''}
                           onChange={(e) => set(r.key, { link: { ...r.link, devBranch: e.target.value } })}
                           placeholder={t('Not set: waiting is what came after the last deploy')}
@@ -204,26 +206,26 @@ export default function ProductionSettings() {
                   </fieldset>
                   <fieldset className="monitor-group">
                     <legend>Application Insights <span className="muted small">{t('(optional)')}</span></legend>
-                    <label>App ID<input className="input mono" value={r.appInsightsAppId} onChange={(e) => set(r.key, { appInsightsAppId: e.target.value })} placeholder="00000000-0000-0000-0000-000000000000" /></label>
+                    <label>App ID<TextField.Root className="mono" variant="surface" color="gray" value={r.appInsightsAppId} onChange={(e) => set(r.key, { appInsightsAppId: e.target.value })} placeholder="00000000-0000-0000-0000-000000000000" /></label>
                     <KeyField label={t('API key')} has={r.hasApiKey} value={r.apiKey} onChange={(v) => set(r.key, { apiKey: v })} placeholder={t('Paste the API key')} />
                   </fieldset>
                   <fieldset className="monitor-group">
                     <legend>{t('Platform totals')} <span className="muted small">{t('(optional)')}</span></legend>
                     <KeyField label={t('Platform totals key')} has={r.hasTotalsKey} value={r.totalsKey} onChange={(v) => set(r.key, { totalsKey: v })} placeholder={t("The site's X-Totals-Key")} />
                     <label>{t('Fetch totals')}
-                      <select className="input" value={r.totalsEvery} onChange={(e) => set(r.key, { totalsEvery: Number(e.target.value) })} disabled={!hasTotals}>
+                      <Select className="input" value={r.totalsEvery} onChange={(e) => set(r.key, { totalsEvery: Number(e.target.value) })} disabled={!hasTotals}>
                         {EVERY.map((h) => <option key={h} value={h}>{t(h === 1 ? 'Every hour' : 'Every {n} hours', { n: h })}</option>)}
-                      </select>
+                      </Select>
                     </label>
                     <label>{t('Totals for')}
-                      <select className="input" value={r.totalsSeason} onChange={(e) => set(r.key, { totalsSeason: e.target.value })} disabled={!hasTotals}>
+                      <Select className="input" value={r.totalsSeason} onChange={(e) => set(r.key, { totalsSeason: e.target.value })} disabled={!hasTotals}>
                         <option value="current">{t('The current season')}</option>
                         <option value="all">{t('All seasons together')}</option>
-                      </select>
+                      </Select>
                     </label>
                   </fieldset>
                   <div className="monitor-editor-foot">
-                    <button type="button" className="btn btn-small btn-ghost text-bad" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>{t('Remove monitor')}</button>
+                    <Button size="1" variant="ghost" color="red" type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>{t('Remove monitor')}</Button>
                   </div>
                 </div>
               )}
@@ -233,16 +235,16 @@ export default function ProductionSettings() {
       </ul>
       {!rows.length && <p className="muted small">{t('No monitors yet.')}</p>}
       <div className="section-foot">
-        <button type="button" className="btn btn-small" onClick={() => {
+        <Button size="1" variant="outline" color="gray" type="button" onClick={() => {
           const row = blank();
           setRows((rs) => [...rs, row]);
           setOpen((o) => new Set(o).add(row.key));
         }}
         >
           {t('Add monitor')}
-        </button>
+        </Button>
         {dirty && <span className="small text-warn">{t('Unsaved changes')}</span>}
-        <button type="button" className="btn btn-primary btn-small" onClick={save} disabled={busy || !dirty}>{busy ? t('Saving…') : t('Save monitors')}</button>
+        <Button size="1" variant="solid" type="button" onClick={save} disabled={busy || !dirty}>{busy ? t('Saving…') : t('Save monitors')}</Button>
       </div>
     </Section>
   );
@@ -256,8 +258,8 @@ export function KeyField({ label, has, value, onChange, placeholder, texts = {},
   const { saved = t('Saved. Type a new key to replace it'), remove = t('Remove saved key'), removing = t('The saved key will be removed when you save.') } = texts;
   return (
     <label>{label}
-      <input
-        className="input mono"
+      <TextField.Root className="mono" variant="surface" color="gray"
+       
         type="password"
         autoComplete="off"
         value={value || ''}

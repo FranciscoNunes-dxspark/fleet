@@ -5,6 +5,8 @@ import { hours, pct } from '../format.js';
 import { Chip, ErrorBox, Loading } from '../ui.jsx';
 import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 // DORA performance bands (server/domain/delivery.js bands), as the Delivery tab shows them.
 const BAND = {
@@ -65,15 +67,15 @@ function ProductionForm({ settings, onSaved }) {
     <form className="filters dora-form" onSubmit={save}>
       <label className="small">
         {t('Production is')}{' '}
-        <input className="input" value={names} onChange={(e) => setNames(e.target.value)} placeholder={t('stages named like prod (default)')} aria-label={t('Production environments, comma-separated')} />
+        <TextField.Root variant="surface" color="gray" value={names} onChange={(e) => setNames(e.target.value)} placeholder={t('stages named like prod (default)')} aria-label={t('Production environments, comma-separated')} />
       </label>
       <label className="small">
         {t('A failure counts against a deploy within')}{' '}
-        <select className="input" value={windowHours} onChange={(e) => setWindowHours(e.target.value)} aria-label={t('Failure window')}>
+        <Select className="input" value={windowHours} onChange={(e) => setWindowHours(e.target.value)} aria-label={t('Failure window')}>
           {WINDOWS.map((h) => <option key={h} value={h}>{h < 48 ? t('{n} hours', { n: h }) : t('{n} days', { n: h / 24 })}</option>)}
-        </select>
+        </Select>
       </label>
-      <button type="submit" className="btn" disabled={!dirty || saving}>{saving ? t('Saving…') : t('Save')}</button>
+      <Button size="2" variant="outline" color="gray" type="submit" disabled={!dirty || saving}>{saving ? t('Saving…') : t('Save')}</Button>
     </form>
   );
 }
@@ -117,9 +119,9 @@ export default function Dora({ days }) {
       </p>
       {scopes.length > 1 && (
         <div className="filters">
-          <select className="input" value={`${scope.org || ''}:${scope.key}`} onChange={(e) => setScopeKey(e.target.value)} aria-label={t('Project or team')}>
+          <Select className="input" value={`${scope.org || ''}:${scope.key}`} onChange={(e) => setScopeKey(e.target.value)} aria-label={t('Project or team')}>
             {scopes.map((s) => <option key={`${s.org || ''}:${s.key}`} value={`${s.org || ''}:${s.key}`}>{s.kind === 'team' ? t('Team: {name}', { name: scopeName(s) }) : scopeName(s)}</option>)}
-          </select>
+          </Select>
         </div>
       )}
       <dl className="fact-row">

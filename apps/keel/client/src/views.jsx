@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { PREF_KEYS, pushPref } from './prefs.js';
 import { useApp } from './context.js';
 import { t } from './i18n.js';
+import { Button, TextField } from '@radix-ui/themes';
 
 const KEY = PREF_KEYS.views;
 const MAX = 12; // per page
@@ -118,14 +119,14 @@ export function SavedViews({ page, filters, apply }) {
       ))}
       {naming ? (
         <form className="inline-form saved-view-form" onSubmit={add}>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Name this view')} aria-label={t('Name this view')} autoFocus maxLength={60} onKeyDown={(e) => e.key === 'Escape' && setNaming(false)} />
-          <button type="submit" className="btn btn-small btn-primary" disabled={!name.trim()}>{t('Save')}</button>
-          <button type="button" className="btn btn-small btn-ghost" onClick={() => setNaming(false)}>{t('Cancel')}</button>
+          <TextField.Root variant="surface" color="gray" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Name this view')} aria-label={t('Name this view')} autoFocus maxLength={60} onKeyDown={(e) => e.key === 'Escape' && setNaming(false)} />
+          <Button size="1" variant="solid" type="submit" disabled={!name.trim()}>{t('Save')}</Button>
+          <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setNaming(false)}>{t('Cancel')}</Button>
         </form>
       ) : (
         <>
-          <button type="button" className="btn btn-small btn-ghost" onClick={() => setNaming(true)} disabled={empty} title={empty ? t('Pick some filters first') : undefined}>{t('Save view')}</button>
-          <button type="button" className="btn btn-small btn-ghost" onClick={copyLink} disabled={empty}>{t('Copy link')}</button>
+          <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setNaming(true)} disabled={empty} title={empty ? t('Pick some filters first') : undefined}>{t('Save view')}</Button>
+          <Button size="1" variant="ghost" color="gray" type="button" onClick={copyLink} disabled={empty}>{t('Copy link')}</Button>
         </>
       )}
     </div>

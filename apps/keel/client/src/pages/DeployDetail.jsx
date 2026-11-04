@@ -3,6 +3,7 @@ import { downloadText } from './ReleaseNotes.jsx';
 import { age, dateTime } from '../format.js';
 import { Chip, ErrorBox, ExternalLink, Loading, TypeLabel } from '../ui.jsx';
 import { t } from '../i18n.js';
+import { Button } from '@radix-ui/themes';
 
 const enc = encodeURIComponent;
 // Deploy outcomes from release stages and pipeline runs; labels are translated where shown.
@@ -137,7 +138,7 @@ export default function DeployDetail({ target }) {
       <section className="detail-actions">
         {!data.unknown && (
           <>
-            <button type="button" className="btn btn-small" onClick={async () => {
+            <Button size="1" variant="outline" color="gray" type="button" onClick={async () => {
               try {
                 await navigator.clipboard.writeText(deployNotes(data));
                 toast(t('Release notes copied as Markdown'));
@@ -147,8 +148,8 @@ export default function DeployDetail({ target }) {
             }}
             >
               {t('Copy release notes')}
-            </button>
-            <button type="button" className="btn btn-small btn-ghost" onClick={() => downloadText(`${deploy.label}-release-notes.md`.replace(/[^\w.-]+/g, '-'), deployNotes(data))}>{t('Download .md')}</button>
+            </Button>
+            <Button size="1" variant="ghost" color="gray" type="button" onClick={() => downloadText(`${deploy.label}-release-notes.md`.replace(/[^\w.-]+/g, '-'), deployNotes(data))}>{t('Download .md')}</Button>
           </>
         )}
         <ExternalLink href={deploy.webUrl} />
