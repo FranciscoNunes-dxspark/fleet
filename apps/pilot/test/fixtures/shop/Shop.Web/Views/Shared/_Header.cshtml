@@ -1,0 +1,7 @@
+<header class="site-header">
+    <nav class="site-nav">
+        @Html.ActionLink("Orders", "Index", "Orders", null, new { @class = "nav-link active" })
+        <a href="/Home/About" class="nav-link">About</a>
+    </nav>
+    @Html.Action("CartSummary", "Orders")
+</header>

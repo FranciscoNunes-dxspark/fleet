@@ -1,0 +1,4 @@
+@model OrderRow
+<tr class="order-row @(Model.Late ? "late" : "")" data-order-id="@Model.Id">
+    <td>@Model.Number</td>
+</tr>

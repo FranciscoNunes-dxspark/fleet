@@ -1,0 +1,3 @@
+.product-card { display: grid; }
+.product-card .price { font-weight: bold; }
+.mini-cart { float: right; }

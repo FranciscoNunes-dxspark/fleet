@@ -1,0 +1,10 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+<div class="admin-shell">
+    @RenderBody()
+</div>
+@section Scripts {
+    <script src="~/Scripts/app/admin.js"></script>
+    @RenderSection("Scripts", required: false)
+}
