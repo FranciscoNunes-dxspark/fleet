@@ -1,6 +1,6 @@
-/* Keel — a calm triage desk on a dark neutral ground. Green marks
-   where you are and what you can do; red and amber are spent only on
-   severity, so they always mean "look here". */
+/* Keel — a tide chart for change. Pale sea-glass paper and keel-blue ink, with one buoy-orange
+   signal for where you are and what you can do; red and amber are spent only on severity, so they
+   always mean "look here". Dark keeps its original slate and green. */
 
 :root {
   /* Approved palette for work item types (dark steps): checked for 3:1 on the
@@ -41,8 +41,8 @@
   --info-soft: #1c2a36;
   --sev-low: #6c7077;
 
-  --radius: 10px;
-  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-sm: 5px;
   --shadow-drawer: -12px 0 40px rgba(0, 0, 0, 0.55);
   --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -51,14 +51,19 @@
      In dark mode a faint top edge catches the light, as raised things do. */
   --edge: inset 0 1px 0 rgba(255, 255, 255, 0.055);
   /* How strongly the accent glows behind the page and under primary buttons. */
-  --glow: 10%;
+  --glow: 0%;
   --elev-1: var(--edge), 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.22);
   --elev-2: var(--edge), 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 28px rgba(0, 0, 0, 0.34);
   --card-border: #252932;
   --header-glass: rgba(17, 20, 25, 0.84);
   --frame: 10px;
-  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Headings and the big numbers: a grotesque with some weight and width to it. */
+  --display: "Bricolage Grotesque Variable", "Bricolage Grotesque", var(--font);
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  /* The sidebar's hull: slate in dark. */
+  --hull: #0e1116; --hull-line: #262a33; --hull-hi: #1c2028; --hull-mark: #3ec486; --hull-ink: #74dcaa;
+  --rule: #3b404b; --tick: rgba(232, 234, 239, 0.22);
   color-scheme: dark;
 }
 
@@ -76,40 +81,44 @@
   --tc-violet: #6250d6;
   --tc-red: #e34948;
   --tc-gray: #8a8f98;
-  --bg: #e3e7ed;
-  --canvas: #f5f7fa;
-  --surface: #ffffff;
-  --surface-2: #eef1f5;
-  --ink: #1a1c1f;
-  --ink-2: #454a52;
-  --muted: #687079;
-  --line: #dde2e8;
-  --line-strong: #c4cad3;
-  --accent: #1f8f5a;
-  --accent-soft: #e1f3e9;
-  --accent-ink: #17734a;
+  --bg: #d3e1de;
+  --canvas: #e8f0ee;
+  --surface: #f8fbfa;
+  --surface-2: #dce8e5;
+  --ink: #0d2837;
+  --ink-2: #33505f;
+  --muted: #4f6975;
+  --line: #c3d4d0;
+  --line-strong: #a5bdb8;
+  --accent: #d2440c;
+  --accent-soft: #fce4d8;
+  --accent-ink: #a83507;
   --on-accent: #ffffff;
-  --bad: #c2372c;
-  --bad-soft: #fbe8e6;
-  --warn: #9a5800;
-  --warn-soft: #fbefd9;
-  --ok: #237a45;
-  --ok-soft: #e2f3e8;
-  --info: #1f68a8;
-  --info-soft: #e2eef8;
+  --bad: #a5201a;
+  --bad-soft: #f8deda;
+  --warn: #84520a;
+  --warn-soft: #f6e7c8;
+  --ok: #1a6a42;
+  --ok-soft: #d7eedf;
+  --info: #155e92;
+  --info-soft: #d6e8f5;
   --sev-low: #8b9099;
-  --shadow-drawer: -12px 0 40px rgba(16, 24, 40, 0.18);
-  --shadow-pop: 0 8px 24px rgba(16, 24, 40, 0.14);
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.12);
-  --shadow-up: 0 -8px 16px -10px rgba(16, 24, 40, 0.2);
+  --shadow-drawer: -12px 0 40px rgba(13, 40, 55, 0.2);
+  --shadow-pop: 0 8px 24px rgba(13, 40, 55, 0.16);
+  --shadow-sm: 0 1px 2px rgba(13, 40, 55, 0.14);
+  --shadow-up: 0 -8px 16px -10px rgba(13, 40, 55, 0.22);
   --edge: inset 0 0 0 0 transparent;
-  --elev-1: 0 1px 2px rgba(16, 24, 40, 0.06), 0 2px 8px rgba(16, 24, 40, 0.05);
-  --elev-2: 0 2px 4px rgba(16, 24, 40, 0.08), 0 12px 28px rgba(16, 24, 40, 0.11);
-  --card-border: #dfe3e9;
-  --header-glass: rgba(245, 247, 250, 0.84);
-  --glow: 14%;
+  --elev-1: 0 1px 0 rgba(13, 40, 55, 0.05);
+  --elev-2: 0 1px 0 rgba(13, 40, 55, 0.06), 0 10px 22px -10px rgba(13, 40, 55, 0.28);
+  --card-border: #c6d6d2;
+  --header-glass: rgba(232, 240, 238, 0.88);
+  --glow: 0%;
+  /* The sidebar's hull: keel blue in light. */
+  --hull: #0b2231; --hull-line: #24475a; --hull-hi: #17394d; --hull-mark: #ff7f4a; --hull-ink: #ffb08a;
+  --rule: #0d2837; --tick: rgba(13, 40, 55, 0.34);
   color-scheme: light;
 }
+:root[data-accent='green'] { --accent: #3ec486; --accent-soft: #1b3127; --accent-ink: #74dcaa; --on-accent: #0c1a13; }
 :root[data-accent='blue'] { --accent: #5b9cf5; --accent-soft: #1a2740; --accent-ink: #93bdf9; --on-accent: #0b1526; }
 :root[data-accent='violet'] { --accent: #a78bfa; --accent-soft: #272040; --accent-ink: #c4b5fd; --on-accent: #160f2b; }
 :root[data-accent='teal'] { --accent: #2ec4c4; --accent-soft: #123131; --accent-ink: #72dede; --on-accent: #041a1a; }
@@ -118,6 +127,7 @@
 /* Sand: Pinch's pale shell rim, toned down, for a quieter accent that still sits with the logo.
    Leans pink rather than yellow so it stays apart from the warning amber. */
 :root[data-accent='sand'] { --accent: #dbab96; --accent-soft: #30231f; --accent-ink: #ecc9b9; --on-accent: #2b150e; }
+:root[data-mode='light'][data-accent='green'] { --accent: #187a4c; --accent-soft: #e1f3e9; --accent-ink: #146a42; --on-accent: #ffffff; }
 :root[data-mode='light'][data-accent='blue'] { --accent: #2563eb; --accent-soft: #e3ecfd; --accent-ink: #1d4fbf; --on-accent: #ffffff; }
 :root[data-mode='light'][data-accent='violet'] { --accent: #7445d6; --accent-soft: #efe8fc; --accent-ink: #5d33b8; --on-accent: #ffffff; }
 :root[data-mode='light'][data-accent='teal'] { --accent: #0e8789; --accent-soft: #dcf2f2; --accent-ink: #0a6c6e; --on-accent: #ffffff; }
@@ -259,7 +269,7 @@ textarea.input { width: 100%; resize: vertical; }
   border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); font-size: 13px; cursor: pointer;
 }
 .toggle.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.toggle-count { font-variant-numeric: tabular-nums; opacity: 0.75; }
+.toggle-count { font-variant-numeric: tabular-nums; }
 
 .segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; margin-bottom: 18px; background: var(--surface-2); border-radius: var(--radius); }
 /* A page's tabs (Work items | Epics…) are a row of their own, apart from the page's own choices under them. */
@@ -1327,7 +1337,8 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
    behind the page, tables with a proper header row. Tones come from the same
    tokens, so every accent and both modes follow. */
 h1, h2, h3 { letter-spacing: -0.015em; }
-.page-header h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.025em; }
+h1, h2 { font-family: var(--display); font-weight: 600; }
+.page-header h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
 
 /* Sidebar: section labels as small caps, the current page as an accent pill fading out. */
 
@@ -1483,3 +1494,59 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .devops-security-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .devops-security-when { margin-left: auto; }
 @media (max-width: 900px) { .devops-security-when { margin-left: 0; flex-basis: 100%; } }
+
+/* ======================================================= the chart sheet
+   How every page is laid out: a masthead over a tide gauge, content as ruled sheets and ledgers
+   (a heavy rule on top, hairlines inside) rather than rounded boxes on boxes, tabs as underlines.
+   Later than the rules above on purpose: it is the page-level layer over the shared parts. */
+.page-icon { display: none; }
+.page-eyebrow { font-size: 12.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--muted); margin-bottom: 0; }
+.page-header h1 { font-family: var(--display); font-size: 26px; font-weight: 600; line-height: 1.1; letter-spacing: -0.025em; }
+.page-header-stuck h1 { font-size: 20px; }
+.page-sub { margin-top: 2px; font-size: 13.5px; }
+.page-header { padding-top: 10px; padding-bottom: 18px; }
+/* The tide gauge under every masthead: a tick every 12px, a longer one every fifth. */
+.page-header::after {
+  content: ''; position: absolute; left: 36px; right: 36px; bottom: 6px; height: 9px; pointer-events: none; opacity: 0.7;
+  background:
+    repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 60px) top / 100% 9px no-repeat,
+    repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 12px) top / 100% 5px no-repeat;
+}
+.page-header-stuck::after { opacity: 0; }
+@media (max-width: 900px) { .ls .page-header::after { left: 16px; right: 16px; } .page-header h1 { font-size: 22px; } }
+
+.section-title { display: flex; align-items: center; gap: 14px; margin: 36px 0 14px; font-family: var(--display); font-size: 21px; font-weight: 600; letter-spacing: -0.015em; }
+.section-title::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.group-title { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; }
+
+/* Ledgers: tables sit straight on the page between a heavy rule and a hairline. */
+.table-wrap { background: none; border: 0; border-top: 2px solid var(--rule); border-bottom: 1px solid var(--line); border-radius: 0; }
+.table th { background: var(--canvas); color: var(--ink-2); font-size: 12.5px; font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+.table td { padding: 11px 12px; }
+.table tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.table td:first-child .row-link, .table .cell-title .row-link { font-weight: 600; }
+
+/* Sheets: panels and charts are ruled on top, square at the head, softly rounded at the foot. */
+.panel, .chart, .widget { background: var(--surface); border: 0; border-top: 2px solid var(--rule); border-radius: 0 0 var(--radius) var(--radius); box-shadow: var(--elev-1); }
+.panel h2, .panel h3, .chart h2, .chart h3 { font-family: var(--display); }
+
+/* Choices are text with an underline, as a page's own tabs are. */
+.segmented { gap: 22px; padding: 0; background: none; border-radius: 0; box-shadow: inset 0 -1px var(--line); }
+.segmented button { position: relative; padding: 6px 0 10px; border-radius: 0; color: var(--muted); font-weight: 500; }
+.segmented button:hover:not(:disabled) { color: var(--ink); }
+.segmented button.on { background: none; box-shadow: none; color: var(--ink); }
+.segmented button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--accent); }
+.segmented-compact { box-shadow: none; gap: 14px; }
+
+.btn { border-radius: 4px; font-weight: 600; }
+.input { border-radius: 4px; }
+.empty { border-style: solid; border-radius: 0; background: none; border-width: 1px 0; }
+.empty-title { font-family: var(--display); font-size: 18px; }
+
+/* Charts: history in keel ink, the latest in the signal colour, a fine dashed grid. */
+.fade-bars .fade-top { stop-color: var(--ink-2); stop-opacity: 0.85; }
+.fade-bars .fade-bottom { stop-color: var(--ink-2); stop-opacity: 0.35; }
+.chart-svg .bar-now { fill: var(--accent); }
+.chart-svg .grid { stroke-dasharray: 2 4; stroke-opacity: 1; }
+.chart-svg .axis { fill: var(--ink-2); }
+.chart-title { font-family: var(--display); font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }

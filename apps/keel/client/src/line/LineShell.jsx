@@ -4,7 +4,7 @@
 // the path change takes), on a stage's pages that stage's tabs, then the page. A phone has no
 // sidebar: its menu, a button in the bottom right corner, holds the views and all the pages.
 // The rules that place change on the line are in stages.js; the stage names and pages in names.js.
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
@@ -126,10 +126,13 @@ export default function LineShell({ children }) {
               <NavLink to="/inbox" className={({ isActive }) => `line-needs-label${isActive ? ' on' : ''}`}>
                 <Icon name="inbox" size={15} /> {t('Needs you')}{s?.high ? <span className="line-needs-n">{s.high}</span> : null}
               </NavLink>
-              {needs.length ? needs.map((n) => (
-                <button key={n.label} type="button" className={`line-need line-need-${n.tone}`} onClick={() => { setOnlyMine(!!n.mine); navigate(`/line/${n.stage}`); }}>
+              {needs.length ? needs.map((n, i) => (
+                <Fragment key={n.label}>
+                  {i > 0 && needs[i - 1].mine && !n.mine && <span className="line-needs-sep" aria-hidden="true" />}
+                  <button type="button" className={`line-need line-need-${n.tone}`} onClick={() => { setOnlyMine(!!n.mine); navigate(`/line/${n.stage}`); }}>
                   {n.label}
                 </button>
+                </Fragment>
               )) : attention.data && <span className="line-need line-need-ok">{t('All clear')}</span>}
             </div>
 
