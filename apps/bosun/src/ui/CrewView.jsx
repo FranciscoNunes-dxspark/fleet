@@ -15,6 +15,40 @@ import { formatStructured, levelTone, parseFilter, passes, shownText, structured
 
 const STATUS_COLOUR = () => ({ running: theme.add, starting: theme.warn, stopping: theme.warn, crashed: theme.del, exited: theme.dim, stopped: theme.dim });
 
+/** A line's segments cut into rows of `width` columns, each keeping its colour. */
+export function chunkSegments(segments, width) {
+  const rows = [[]];
+  let used = 0;
+  for (const seg of segments) {
+    let text = '';
+    for (const ch of Array.from(seg.text)) {
+      const w = stringWidth(ch);
+      if (used + w > width && used > 0) {
+        if (text) rows.at(-1).push({ ...seg, text });
+        text = '';
+        rows.push([]);
+        used = 0;
+      }
+      text += ch;
+      used += w;
+    }
+    if (text) rows.at(-1).push({ ...seg, text });
+  }
+  return rows;
+}
+
+/** The last `height` rows of the lines before `end`, each wrapped to `width` (at most 12 rows a line). */
+function rowsFor(list, end, height, width, segmentsOf, find, markStyle) {
+  const out = [];
+  for (let i = end - 1; i >= 0 && out.length < height; i--) {
+    let line = segmentsOf(list[i]);
+    if (find) line = markRanges(line, find(line.map((x) => x.text).join('')), { bg: markStyle(i), color: theme.ink });
+    const parts = chunkSegments(line, Math.max(10, width)).slice(0, 12);
+    for (let k = parts.length - 1; k >= 0; k--) out.push({ at: i, first: k === 0, segments: parts[k] });
+  }
+  return out.reverse().slice(-height);
+}
+
 /** How long it has been up, or how long ago it ended: 42s, 5m, 2h. */
 export function uptime(ms, now = Date.now()) {
   const s = Math.max(0, Math.floor((now - ms) / 1000));
@@ -327,8 +361,7 @@ export function CrewView({ procs, ctx, width, height, active }) {
   const colour = STATUS_COLOUR();
   const now = Date.now();
   const lineW = logW - 3;
-  const from = Math.max(0, list.length - back - innerH);
-  const visible = list.slice(from, Math.max(0, list.length - back));
+  const end = Math.max(0, list.length - back);
   const tagW = merged ? nameW + 1 : 0;
   const paneTitle = merged ? 'All' : logTitle(sel, logW >= 60 ? 10 : 0);
   const find = matcher(search.query);
@@ -376,22 +409,18 @@ export function CrewView({ procs, ctx, width, height, active }) {
         )}
       </Panel>
       <Panel title={paneTitle} hint={logHint} width={logW} height={height}>
-        {visible.map((l, i) => {
-          const line = lineSegments(l);
-          const text = fit(line.map((x) => x.text).join(''), lineW - tagW);
-          return (
-            <Row
-              key={i}
-              pointer={false}
-              width={logW - 2}
-              segments={[
-                { text: ' ' },
-                ...(merged ? [{ text: fit(l.name, nameW) + ' ', color: theme.accent }] : []),
-                ...(find ? markRanges(line, find(text), { bg: from + i === here ? theme.matchHere : theme.match, color: theme.ink }) : line),
-              ]}
-            />
-          );
-        })}
+        {rowsFor(list, end, innerH, lineW - tagW, (l) => lineSegments(l), find, (n) => (n === here ? theme.matchHere : theme.match)).map((r, i) => (
+          <Row
+            key={i}
+            pointer={false}
+            width={logW - 2}
+            segments={[
+              { text: ' ' },
+              ...(merged ? [{ text: r.first ? fit(list[r.at].name, nameW) + ' ' : ' '.repeat(tagW), color: theme.accent }] : []),
+              ...r.segments,
+            ]}
+          />
+        ))}
       </Panel>
     </>
   );

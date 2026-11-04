@@ -67,10 +67,15 @@ export function parseTap(text, { root, version } = {}) {
   // Finished results per depth, waiting for their parent's result line.
   const pending = [[]];
   const errors = [];
+  // The `# ` lines before a result: what a test file printed to stderr, which is where a file that
+  // threw while loading says why (its result only says 'test failed').
+  let said = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const m = /^(\s*)(not ok|ok) \d+(?: - (.*?))?(?:\s+# (SKIP|TODO)\b.*)?$/i.exec(line);
     if (!m) {
+      const c = /^# (.*)$/.exec(line);
+      if (c && !/^(?:Subtest:|(?:tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) \S+$)/.test(c[1])) said.push(c[1]);
       if (/^Bail out!/.test(line.trim())) errors.push(line.trim());
       continue;
     }
@@ -86,7 +91,8 @@ export function parseTap(text, { root, version } = {}) {
     while (pending.length < depth + 2) pending.push([]);
     const children = pending[depth + 1];
     pending[depth + 1] = [];
-    const node = { name: unescapeName(m[3] ?? ''), ok: m[2].toLowerCase() === 'ok', directive: m[4]?.toUpperCase() ?? null, diag, children };
+    const node = { name: unescapeName(m[3] ?? ''), ok: m[2].toLowerCase() === 'ok', directive: m[4]?.toUpperCase() ?? null, diag, children, said: said.join('\n').trim() };
+    said = [];
     pending[depth].push(node);
   }
   const found = [];
@@ -108,6 +114,9 @@ export function parseTap(text, { root, version } = {}) {
     const status = node.directive ? 'skipped' : node.ok ? 'passed' : 'failed';
     const fileOf = here ?? (/[\\/]/.test(node.name) ? node.name : null);
     const d = node.diag;
+    // A file that died (a throw while loading) has only 'test failed' of its own: its stderr is the reason.
+    const died = status === 'failed' && !d.stack && /^test failed$/i.test(String(d.error ?? '')) && node.said;
+    const reason = died ? (node.said.split('\n').find((l) => /^[\w.]*(?:Error|Exception)\b/.test(l)) ?? node.said.split('\n').filter(Boolean).at(-1)) : '';
     const values = 'expected' in d || 'actual' in d ? { expected: d.expected, actual: d.actual } : {};
     found.push({
       top,
@@ -119,7 +128,7 @@ export function parseTap(text, { root, version } = {}) {
         status,
         duration: typeof d.duration_ms === 'number' ? d.duration_ms : 0,
         ...(loc ? { line: loc.line } : {}),
-        ...(status === 'failed' ? { failure: makeFailure({ message: [d.name && d.name !== 'Error' && !String(d.error ?? '').startsWith(d.name) ? `${d.name}: ` : '', String(d.error ?? 'Failed')].join(''), stack: String(d.stack ?? ''), root, ...values }) } : {}),
+        ...(status === 'failed' ? { failure: makeFailure({ message: died ? reason : [d.name && d.name !== 'Error' && !String(d.error ?? '').startsWith(d.name) ? `${d.name}: ` : '', String(d.error ?? 'Failed')].join(''), stack: died ? node.said : String(d.stack ?? ''), root, ...values }) } : {}),
       },
     });
   };
