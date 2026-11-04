@@ -2,8 +2,7 @@
 // views each returns, its HTTP verbs and attribute routes), view components, System.Web.Optimization
 // bundles (BundleConfig) and conventional routes (MapRoute, MapControllerRoute). Regular expressions
 // and a brace matcher, not Roslyn.
-import { lineIndex, matchBrace, stripComments } from '../text.js';
-import { callArgs } from './razor.js';
+import { callArgs, lineIndex, matchBrace, stripComments } from '../text.js';
 
 /** The attributes ([HttpPost], [Route("x")]) written just before `offset`. */
 function attributesBefore(text, offset) {

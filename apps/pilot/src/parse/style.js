@@ -38,13 +38,42 @@ export function composeSelectors(parents, prelude) {
   return out;
 }
 
+/**
+ * The section headings a stylesheet's comments make: `// ===== Orders =====`, `/* --- Header --- *\/`,
+ * or a title between two lines of `=`/`-`/`*`. [{ line, title }]
+ */
+export function sectionHeaders(source) {
+  const lines = source.split('\n');
+  const out = [];
+  const deco = (s) => /^\s*(?:\/\/|\/\*+|\*+\/?)?\s*[=\-#*~_]{3,}\s*(?:\*+\/)?\s*$/.test(s);
+  const titleOf = (s) => {
+    const m = /^\s*(?:\/\/+|\/\*+|\*+)?\s*[=\-#*~_|>]*\s*([A-Za-z0-9][^=#*~_|<]{1,58}?)\s*[=\-#*~_|<]*\s*(?:\*+\/)?\s*$/.exec(s);
+    return m ? m[1].trim() : null;
+  };
+  let inBlock = false;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const wasInBlock = inBlock;
+    if (/\/\*/.test(l) && !/\*\//.test(l.slice(l.indexOf('/*') + 2))) inBlock = true;
+    else if (/\*\//.test(l)) inBlock = false;
+    if (!wasInBlock && !/^\s*(\/\/|\/\*|\*)/.test(l)) continue;
+    const title = titleOf(l);
+    if (!title || /[;{}:]\s*$/.test(title) || title.split(/\s+/).length > 7) continue;
+    // Decorated itself (// ==== Orders ====), or framed by decoration lines above or below.
+    const decorated = /[=#*~_\-]{3,}/.test(l.replace(/^\s*\/\*+|\*+\/\s*$/g, ''));
+    if (decorated || deco(lines[i - 1] ?? '') || deco(lines[i + 1] ?? '')) out.push({ line: i + 1, title: title.replace(/^[\d.\s]+(?=[A-Za-z])/, '').trim() });
+  }
+  return out;
+}
+
 export function parseStyle(source, dialect = 'less') {
-  const out = { imports: [], vars: [], varUses: [], mixins: [], mixinCalls: [], rules: [], classes: [], ids: [] };
+  const out = { imports: [], vars: [], varUses: [], mixins: [], mixinCalls: [], rules: [], classes: [], ids: [], blocks: [], headers: sectionHeaders(source) };
   const text = stripComments(source, { lineComments: dialect !== 'css', templates: false });
   const lineOf = lineIndex(text);
   const sigil = dialect === 'scss' ? '$' : '@';
   const stack = [{ selectors: [''], rule: false }];
   let start = 0;
+  let open = null;
 
   const varUses = (s, offset, except) => {
     const re = dialect === 'scss' ? /\$([\w-]+)/g : /@@?\{?([\w-]+)\}?/g;
@@ -61,6 +90,10 @@ export function parseStyle(source, dialect = 'less') {
     if (!s) return;
     const at = offset + lead;
     const line = lineOf(at);
+    if (stack.length === 1) {
+      const type = /^@import\b|^@use\b|^@forward\b/.test(s) ? 'import' : /^[@$][\w-]+\s*:/.test(s) || /^--[\w-]+\s*:/.test(s) ? 'var' : 'statement';
+      out.blocks.push({ type, start: line, end: lineOf(at + s.length), selector: s.slice(0, 120) });
+    }
     let m;
     if ((m = /^@import\s*(?:\(([^)]*)\)\s*)?(?:url\(\s*)?["']?([^"');]+)["']?\s*\)?/.exec(s))) {
       for (const spec of s.slice(m.index + '@import'.length).match(/["'][^"']+["']/g)?.map((q) => q.slice(1, -1)) ?? [m[2].trim()]) {
@@ -118,6 +151,10 @@ export function parseStyle(source, dialect = 'less') {
       const at = start + lead;
       const line = lineOf(at);
       const parent = stack[stack.length - 1];
+      if (stack.length === 1) {
+        const type = /^@(?:-\w+-)?keyframes\b/.test(prelude) ? 'keyframes' : /^@font-face\b/.test(prelude) ? 'font-face' : /^@(media|supports|container)\b/.test(prelude) ? 'media' : /^@mixin\b|^[.#][\w-]+\s*\(/.test(prelude) ? 'mixin' : /^@[\w-]+\s*:/.test(prelude) ? 'var' : prelude.startsWith('@') ? 'at' : 'rule';
+        open = { type, start: line, selector: prelude.slice(0, 120), rules: out.rules.length, classes: out.classes.length, ids: out.ids.length };
+      }
       let m;
       if (prelude.startsWith('@')) {
         // @media, @supports, @keyframes, a detached ruleset (@x: {): their selectors are the parent's.
@@ -157,6 +194,11 @@ export function parseStyle(source, dialect = 'less') {
     } else if (c === '}') {
       statement(text.slice(start, i), start);
       if (stack.length > 1) stack.pop();
+      if (stack.length === 1 && open) {
+        // A top-level block, with the ranges of the rules, classes and ids inside it.
+        out.blocks.push({ ...open, end: lineOf(i), rules: [open.rules, out.rules.length], classes: [open.classes, out.classes.length], ids: [open.ids, out.ids.length] });
+        open = null;
+      }
       start = i + 1;
     }
   }

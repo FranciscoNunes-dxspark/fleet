@@ -112,3 +112,43 @@ export function matchBrace(text, open) {
   }
   return text.length;
 }
+
+/** The top-level arguments of a call whose `(` is at `open`: [{ text, literal }], and the offset after `)`. */
+export function callArgs(text, open) {
+  const args = [];
+  let depth = 0;
+  let start = open + 1;
+  let i = open;
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const q = c;
+      i++;
+      while (i < text.length && text[i] !== q && text[i] !== '\n') {
+        if (text[i] === '\\') i++;
+        i++;
+      }
+    } else if (c === '(' || c === '{' || c === '[') depth++;
+    else if (c === ')' || c === '}' || c === ']') {
+      depth--;
+      if (depth === 0) {
+        args.push(text.slice(start, i));
+        break;
+      }
+    } else if (c === ',' && depth === 1) {
+      args.push(text.slice(start, i));
+      start = i + 1;
+    }
+    if (i - open > 2000) break;
+  }
+  return {
+    args: args
+      .map((a) => a.trim())
+      .filter((a, n) => a || n > 0)
+      .map((a) => {
+        const m = /^(?:\w+\s*:\s*)?(?:@?"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')$/.exec(a);
+        return { text: a, literal: m ? (m[1] ?? m[2]) : null, named: /^(\w+)\s*:/.exec(a)?.[1] ?? null };
+      }),
+    end: i + 1,
+  };
+}

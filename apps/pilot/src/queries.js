@@ -3,6 +3,7 @@
 // long lists cut with a count of what was left out.
 import { posix } from 'node:path';
 import { lineText } from './text.js';
+import { pageModel, pageModelText } from './analysis.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -18,13 +19,13 @@ function cut(list, max, fn, indent = '  ') {
 }
 
 /** A node's place: a file, or an action's controller file and line. */
-function where(idx, id) {
+export function where(idx, id) {
   const node = idx.nodes.get(id);
   if (node) return at(node.file, node.line);
   return id;
 }
 
-function actionLabel(idx, id) {
+export function actionLabel(idx, id) {
   const n = idx.nodes.get(id);
   if (!n || n.kind !== 'action') return id;
   const { controller: c, action: a } = n;
@@ -34,7 +35,7 @@ function actionLabel(idx, id) {
 }
 
 /** The URL an action answers on, as people type it. */
-function urlOf(idx, id) {
+export function urlOf(idx, id) {
   const n = idx.nodes.get(id);
   if (!n) return null;
   const { controller: c, action: a } = n;
@@ -171,20 +172,26 @@ export function layoutChain(idx, rel) {
 const sectionAt = (data, line) => data?.sections.find((s) => line >= s.line && line <= s.end)?.name ?? null;
 
 /**
- * The page a view makes, drawn as a tree from the outermost layout down, with the assets in the
- * order the browser meets them. Returns { tree: [lines], assets: [...], warnings: [...] }.
+ * The page a view makes, as a tree from the outermost layout down, with the assets in the order the
+ * browser meets them. Each tree node is { type: 'root'|'body'|'section'|'partial'|'template'|
+ * 'component'|'child-action'|'view', file?, action?, name?, from?, line?, how?, again?, own, depth,
+ * children }; `own` marks what belongs to this page rather than to its layouts (the view, what it
+ * renders, and its sections' content). Returns { chain, root, tree: [text lines], assets, warnings,
+ * files: Map(file → own) }.
  */
 export function renderTree(idx, view, { depth: maxDepth = 8 } = {}) {
   const chain = layoutChain(idx, view);
   const outer = [view, ...chain.map((c) => c.file)].reverse();
-  const lines = [];
   const assets = [];
   const warnings = [];
   const shown = new Set();
+  const files = new Map();
   const ITEM_KINDS = new Set(['partial', 'template', 'component', 'child-action', 'script', 'style']);
+  const seen = (file, own) => files.set(file, (files.get(file) ?? false) || own);
 
-  const draw = (rel, childIndex, section, depth, prefix) => {
+  const draw = (rel, childIndex, section, depth, own, parent) => {
     const f = idx.files.get(rel);
+    seen(rel, own);
     if (!f?.data || depth > maxDepth) return;
     const items = idx
       .out(rel)
@@ -197,45 +204,81 @@ export function renderTree(idx, view, { depth: maxDepth = 8 } = {}) {
     items.sort((a, b) => a.line - b.line);
     for (const it of items) {
       const child = childIndex != null ? outer[childIndex] : null;
+      const next = childIndex != null && childIndex + 1 < outer.length ? childIndex + 1 : null;
+      // What the view itself puts in the layout's body or sections is the page's own.
+      const childOwn = own || child === view;
       if (it.body) {
-        lines.push(`${prefix}▸ body ← ${child}`);
-        draw(child, childIndex + 1 < outer.length ? childIndex + 1 : null, null, depth + 1, prefix + '  ');
+        const node = { type: 'body', file: child, own: childOwn, depth, children: [] };
+        parent.children.push(node);
+        draw(child, next, null, depth + 1, childOwn, node);
       } else if (it.section) {
         const def = idx.files.get(child)?.data?.sections.find((s) => lower(s.name) === lower(it.section.name));
         if (def) {
-          lines.push(`${prefix}▸ section ${it.section.name} ← ${at(child, def.line)}`);
-          draw(child, childIndex + 1 < outer.length ? childIndex + 1 : null, def.name, depth + 1, prefix + '  ');
+          const node = { type: 'section', name: it.section.name, file: child, line: def.line, own: childOwn, depth, children: [] };
+          parent.children.push(node);
+          draw(child, next, def.name, depth + 1, childOwn, node);
         } else if (it.section.required) warnings.push(`${at(rel, it.section.line)}: section "${it.section.name}" is required but ${child} doesn't define it`);
       } else {
         const e = it.e;
         if (e.kind === 'script' || e.kind === 'style') {
-          for (const a of expandAsset(idx, e)) assets.push({ ...a, from: at(rel, e.line), section });
+          for (const a of expandAsset(idx, e)) assets.push({ ...a, from: at(rel, e.line), section, own });
           continue;
         }
         if (e.kind === 'child-action') {
-          lines.push(`${prefix}├ child action ${actionLabel(idx, e.to)} (${where(idx, e.to)})  @ ${at(rel, e.line)}`);
+          const node = { type: 'child-action', action: e.to, from: rel, line: e.line, own, depth, children: [] };
+          parent.children.push(node);
           for (const r of idx.out(e.to).filter((x) => x.kind === 'renders' || x.kind === 'renders-partial')) {
-            lines.push(`${prefix}│  └ ${r.to}`);
-            if (!shown.has(r.to)) {
+            const again = shown.has(r.to);
+            const v = { type: 'view', file: r.to, own, depth: depth + 1, again, children: [] };
+            node.children.push(v);
+            if (!again) {
               shown.add(r.to);
-              draw(r.to, null, null, depth + 1, prefix + '│    ');
+              draw(r.to, null, null, depth + 2, own, v);
             }
           }
           continue;
         }
-        const label = e.kind === 'component' ? `component ${e.name}` : e.kind === 'template' ? `template ${e.name}` : `partial ${e.name ?? ''}`.trim();
         const again = shown.has(e.to);
-        lines.push(`${prefix}├ ${label} → ${e.to}${e.how === 'guess' ? ' (guessed)' : ''}  @ ${at(rel, e.line)}${again ? ' (again)' : ''}`);
+        const node = { type: e.kind, name: e.name ?? null, file: e.to, from: rel, line: e.line, how: e.how, again, own, depth, children: [] };
+        parent.children.push(node);
         if (!again) {
           shown.add(e.to);
-          draw(e.to, null, null, depth + 1, prefix + '│  ');
+          draw(e.to, null, null, depth + 1, own, node);
         }
       }
     }
   };
-  lines.push(outer[0]);
-  draw(outer[0], outer.length > 1 ? 1 : null, null, 0, '  ');
-  return { chain, tree: lines, assets, warnings };
+  const root = { type: 'root', file: outer[0], own: outer[0] === view, depth: 0, children: [] };
+  draw(outer[0], outer.length > 1 ? 1 : null, null, 0, outer[0] === view, root);
+  return { chain, root, tree: treeLines(idx, root), assets, warnings, files };
+}
+
+/** A render tree as the text lines `page` prints. */
+export function treeLines(idx, root) {
+  const lines = [root.file];
+  const walk = (node, prefix) => {
+    for (const n of node.children) {
+      if (n.type === 'body') {
+        lines.push(`${prefix}▸ body ← ${n.file}`);
+        walk(n, prefix + '  ');
+      } else if (n.type === 'section') {
+        lines.push(`${prefix}▸ section ${n.name} ← ${at(n.file, n.line)}`);
+        walk(n, prefix + '  ');
+      } else if (n.type === 'child-action') {
+        lines.push(`${prefix}├ child action ${actionLabel(idx, n.action)} (${where(idx, n.action)})  @ ${at(n.from, n.line)}`);
+        for (const v of n.children) {
+          lines.push(`${prefix}│  └ ${v.file}`);
+          walk(v, prefix + '│    ');
+        }
+      } else {
+        const label = n.type === 'component' ? `component ${n.name}` : n.type === 'template' ? `template ${n.name}` : `partial ${n.name ?? ''}`.trim();
+        lines.push(`${prefix}├ ${label} → ${n.file}${n.how === 'guess' ? ' (guessed)' : ''}  @ ${at(n.from, n.line)}${n.again ? ' (again)' : ''}`);
+        walk(n, prefix + '│  ');
+      }
+    }
+  };
+  walk(root, '  ');
+  return lines;
 }
 
 /** A script or style edge as what's loaded: the file, its sources (TypeScript, LESS) and bundle members. */
@@ -299,6 +342,9 @@ export function page(idx, target) {
     if (tree.warnings.length) lines.push('', 'Warnings:', ...tree.warnings.map((w) => `  ${w}`));
     const dyn = [v, ...tree.chain.map((c) => c.file)].flatMap((x) => (idx.files.get(x)?.data?.dynamic ?? []).map((d) => `${at(x, d.line)} ${d.what}`));
     if (dyn.length) lines.push('', 'Decided at run time (not followed):', ...cut(dyn, 10, (d) => `  ${d}`));
+    const model = pageModel(idx, v);
+    Object.assign(data.views.at(-1), { scripts: model.scripts, calls: model.calls, widgets: model.widgets, metrics: model.metrics });
+    lines.push(...pageModelText(idx, model));
   }
   return { data, text: lines.join('\n') };
 }

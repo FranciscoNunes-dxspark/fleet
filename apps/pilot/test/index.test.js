@@ -23,6 +23,7 @@ test('controllers and actions, with ids naming the project when there are severa
     'action:Shop.Web:Orders/CartSummary',
     'action:Shop.Web:Orders/Edit',
     'action:Shop.Web:Orders/Index',
+    'action:Shop.Web:Orders/Row',
     'action:Shop.Web:Orders/Save',
   ]);
   assert.deepEqual(out('action:Shop.Web:Home/About', 'renders'), ['Shop.Web/Views/Home/Index.cshtml']);
@@ -84,7 +85,10 @@ test('assets: bundles and members, compiled outputs to sources, tsconfig outDir,
 test('imports: TypeScript and LESS', () => {
   assert.deepEqual(out('Shop.Web/Scripts/app/orders.ts', 'import'), ['Shop.Web/Scripts/app/grid.ts']);
   assert.deepEqual(out('Shop.Web/Content/site.less', 'import'), ['Shop.Web/Content/variables.less', 'Shop.Web/Content/orders.less']);
-  assert.deepEqual(out('Shop.Web/Scripts/app/orders.ts', 'calls'), ['action:Shop.Web:Orders/Save']);
+  assert.deepEqual(out('Shop.Web/Scripts/app/orders.ts', 'calls'), ['action:Shop.Web:Orders/Save', 'action:Shop.Web:Orders/Row']);
+  const row = idx.out('Shop.Web/Scripts/app/orders.ts').find((e) => e.kind === 'calls' && e.to.endsWith('/Row'));
+  assert.deepEqual([row.method, row.url, row.via, row.target], ['GET', '/Orders/Row', 'jquery', '#orders']);
+  assert.deepEqual(out('action:Shop.Web:Orders/Row', 'renders-partial'), ['Shop.Web/Views/Orders/_OrderRow.cshtml']);
 });
 
 test('dependents: a shared partial reaches every page through the layouts', () => {
@@ -97,8 +101,8 @@ test('dependents: a shared partial reaches every page through the layouts', () =
 
 test('symbols: classes styled, marked up and scripted; variables and mixins', () => {
   const roles = (name) => [...new Set((idx.symbols.classes.get(name) ?? []).map((u) => `${u.role}:${u.file.split('/').pop()}`))].sort();
-  assert.deepEqual(roles('order-row'), ['markup:_OrderRow.cshtml', 'script:orders.ts', 'style:orders.less']);
-  assert.deepEqual(roles('btn-save'), ['markup:Index.cshtml', 'script:orders.ts', 'style:orders.less']);
+  assert.deepEqual(roles('order-row'), ['markup:_OrderRow.cshtml', 'script:orders.ts', 'style:everything.less', 'style:orders.less']);
+  assert.deepEqual(roles('btn-save'), ['markup:Index.cshtml', 'script:orders.ts', 'style:everything.less', 'style:orders.less']);
   // The compiled site.css and grid.js say nothing their sources don't.
   assert.deepEqual(roles('selected'), ['script:grid.ts', 'style:orders.less']);
   assert.deepEqual(roles('ready'), ['script:Index.cshtml']);

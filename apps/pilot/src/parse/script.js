@@ -3,7 +3,8 @@
 // methods, globals), the CSS classes, ids and data- attributes it selects or sets (jQuery, the DOM,
 // classList, markup in strings), and the server routes it calls ('/Orders/Save'). Regular
 // expressions over the text with comments blanked: what's computed at run time isn't seen.
-import { isToken, lineIndex, literals, stripComments } from '../text.js';
+import { callArgs, isToken, lineIndex, literals, stripComments } from '../text.js';
+import { findWidgets } from './widgets.js';
 
 const KEYWORDS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'new', 'else', 'do', 'try', 'with', 'constructor', 'super', 'import', 'await', 'yield']);
 const NOT_CLASSES = /^\.(js|jsx|ts|tsx|mjs|cjs|css|less|scss|html?|cshtml|json|png|jpe?g|gif|svg|ico|map|min|txt|xml|pdf|woff2?|ttf|eot)$/i;
@@ -27,8 +28,93 @@ const looksLikeSelector = (s) => /^\s*(?:[a-z][\w-]*)?[.#][A-Za-z_-][\w-]*(?:[\s
 /** Whether a string literal reads as a server route rather than a file: '/Orders/Save', '~/api/items'. */
 const looksLikeRoute = (s) => /^~?\/[A-Za-z][\w-]*(?:\/[\w{}:-]*)*\/?(?:\?.*)?$/.test(s) && !/\.\w{1,5}(\?|$)/.test(s);
 
+/**
+ * Where a call's URL argument points: a literal ('/Orders/Row'), the literal start of a concatenation
+ * or template ('/Orders/Row/' + id, `/Orders/Row/${id}`), or Razor in an inline script
+ * ('@Url.Action("Row", "Orders")'). Returns { url } or { action, controller, area }, or
+ * { dynamic: text } when it's a variable.
+ */
+export function urlOf(expr) {
+  const e = String(expr ?? '').trim();
+  const razor = /^(['"`]?)@Url\.Action\(\s*"(\w+)"(?:\s*,\s*"(\w+)")?([^)]*)\)/.exec(e);
+  if (razor) {
+    const area = /\barea\s*=\s*"(\w*)"/i.exec(razor[4])?.[1];
+    return { action: razor[2], controller: razor[3] ?? null, ...(area != null ? { area } : {}) };
+  }
+  const content = /^(['"`]?)@Url\.Content\(\s*"([^"]+)"\s*\)/.exec(e);
+  const lit = content ? content[2] : /^(['"`])((?:(?!\1)[^\\$]|\\.|\$(?!\{))*)/.exec(e)?.[2];
+  if (lit == null) return e ? { dynamic: e.slice(0, 80) } : null;
+  let url = lit.replace(/^~/, '').replace(/[?#].*$/, '');
+  if (!url.startsWith('/') && /^[A-Za-z][\w-]*\/[A-Za-z]/.test(url)) url = `/${url}`;
+  url = url.replace(/\/+$/, '');
+  if (!/^\/[A-Za-z]/.test(url) || /\.\w{1,5}$/.test(url)) return { dynamic: e.slice(0, 80) };
+  return { url };
+}
+
+// Calls to the server: [pattern, method or null (from the options), how]. The match ends at the `(`.
+const AJAX = [
+  [/(?:\$|\bjQuery)\.(get|post|getJSON|getScript)\s*\(/g, null, 'jquery'],
+  [/(?:\$|\bjQuery)\.ajax\s*\(/g, null, 'ajax'],
+  [/\.load\s*\(/g, 'GET', 'load'],
+  [/\bfetch\s*\(/g, null, 'fetch'],
+  [/\baxios(?:\.(get|post|put|delete|patch))?\s*\(/g, null, 'axios'],
+  [/\b(?:this\.)?http(?:Client)?\.(get|post|put|delete|patch)\s*(?:<[^>()]*>)?\s*\(/g, null, 'http'],
+  [/\.open\s*\(\s*['"](GET|POST|PUT|DELETE|PATCH)['"]\s*,/g, null, 'xhr'],
+];
+
+/** Where a response goes, from the code after the call: $('#x').html(data), el.innerHTML = … */
+function responseTarget(after) {
+  const m = /(?:\$|jQuery)\(\s*['"]([^'"]+)['"]\s*\)\s*(?:\.\s*(?:find|children)\s*\([^()]*\)\s*)*\.\s*(?:html|append|prepend|replaceWith|after|before)\s*\(/.exec(after)
+    ?? /document\.(?:getElementById\(\s*['"]([^'"]+)['"]\s*\)|querySelector\(\s*['"]([^'"]+)['"]\s*\))\.(?:innerHTML|outerHTML)\s*=/.exec(after)
+    ?? /document\.(?:getElementById\(\s*['"]([^'"]+)['"]\s*\)|querySelector\(\s*['"]([^'"]+)['"]\s*\))\.insertAdjacentHTML\s*\(/.exec(after);
+  if (!m) return null;
+  if (m[1] && m[0].startsWith('document.getElementById')) return `#${m[1]}`;
+  return m[1] ?? (m[2] ?? null) ?? (m[3] ?? null);
+}
+
+/** The server calls in `text`: [{ url | action+controller | dynamic, method, target?, via, line }]. */
+export function ajaxCalls(text, lineOf) {
+  const out = [];
+  for (const [re, fixed, via] of AJAX) {
+    for (const m of text.matchAll(re)) {
+      const open = m.index + m[0].length - 1;
+      const { args, end } = via === 'xhr' ? { args: [{ text: text.slice(open + 1, open + 300).split(/[,)]/)[0] }], end: open + 1 } : callArgs(text, open);
+      let expr = args[0]?.text;
+      let method = fixed ?? (m[1] ? m[1].toUpperCase().replace(/^GET(JSON|SCRIPT)$/, 'GET') : null);
+      if (via === 'xhr') method = m[1];
+      // $.ajax({ url: …, type: 'POST' }), axios({ url, method }), fetch(url, { method: 'POST' })
+      const options = expr?.startsWith('{') ? expr : args[1]?.text ?? '';
+      if (expr?.startsWith('{')) expr = /\burl\s*:\s*([^,\n}]+)/.exec(expr)?.[1];
+      method ??= /\b(?:type|method)\s*:\s*['"](\w+)['"]/i.exec(options)?.[1]?.toUpperCase() ?? (via === 'fetch' || via === 'axios' ? 'GET' : via === 'ajax' ? 'GET' : null);
+      if (expr == null) continue;
+      const where = urlOf(expr);
+      if (!where) continue;
+      // .load is jQuery's only when called on a selection: $('#x').load(url).
+      let target = null;
+      if (via === 'load') {
+        const before = text.slice(Math.max(0, m.index - 200), m.index);
+        const sel = /(?:\$|jQuery)\(\s*['"]([^'"]+)['"]\s*\)\s*$/.exec(before);
+        if (!sel && !/[\w$)\]]\s*$/.test(before)) continue;
+        if (where.dynamic && !sel) continue;
+        target = sel?.[1] ?? null;
+      } else {
+        // The response is handled in the call's own callbacks or in .done(…)/.then(…) chained to it.
+        let to = end;
+        for (let k = 0; k < 4; k++) {
+          const chain = /^\s*\.\s*(?:done|then|success|always|subscribe|complete)\s*\(/.exec(text.slice(to, to + 80));
+          if (!chain) break;
+          to = callArgs(text, to + chain[0].length - 1).end;
+        }
+        target = responseTarget(text.slice(open, to));
+      }
+      out.push({ ...where, method, via, line: lineOf(m.index), ...(target ? { target } : {}) });
+    }
+  }
+  return out;
+}
+
 export function parseScript(source) {
-  const out = { imports: [], defs: [], classes: [], ids: [], attrs: [], urls: [] };
+  const out = { imports: [], defs: [], classes: [], ids: [], attrs: [], urls: [], calls: [], widgets: [] };
   const lineOf = lineIndex(source);
   for (const m of source.matchAll(/^\s*\/\/\/\s*<reference\s+path\s*=\s*["']([^"']+)["']/gm)) out.imports.push({ spec: m[1], line: lineOf(m.index), kind: 'reference' });
   const text = stripComments(source);
@@ -99,5 +185,13 @@ export function parseScript(source) {
   }
   // Template literals with a route in them: `/Orders/Edit/${id}`.
   for (const m of text.matchAll(/`(~?\/[A-Za-z][\w-]*(?:\/[A-Za-z][\w-]*)+)\/?\$\{/g)) out.urls.push({ url: m[1].replace(/^~/, ''), line: lineOf(m.index) });
+  // The calls themselves, with their method and where the response goes; a route-shaped string
+  // already read as a call isn't listed again.
+  out.calls = ajaxCalls(text, lineOf);
+  out.calls.sort((a, b) => a.line - b.line);
+  const key = (line, url) => `${line}|${url.toLowerCase().replace(/\/+$/, '')}`;
+  const called = new Set(out.calls.filter((c) => c.url).map((c) => key(c.line, c.url)));
+  out.urls = out.urls.filter((u) => !called.has(key(u.line, u.url)));
+  out.widgets = findWidgets(text);
   return out;
 }

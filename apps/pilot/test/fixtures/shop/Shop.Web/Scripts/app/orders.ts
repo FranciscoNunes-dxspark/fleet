@@ -9,4 +9,13 @@ namespace Orders {
         document.getElementById('order-form');
         $(document).on('click', '.btn-save', () => save());
     }
+
+    export function addRow(id: number) {
+        $.get('/Orders/Row/' + id, (html: string) => {
+            $('#orders').append(html);
+        });
+    }
+
+    $('#orders').DataTable({ paging: true });
+    $('.date-picker').datepicker();
 }

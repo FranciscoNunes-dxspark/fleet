@@ -132,7 +132,8 @@ $(el).data('orderId');
   assert.deepEqual(names(s.classes), ['btn-save', 'head', 'hot', 'is-busy', 'item', 'new', 'open', 'order-row', 'panel', 'row', 'selected']);
   assert.deepEqual(names(s.ids), ['orders', 'total']);
   assert.deepEqual(names(s.attrs), ['data-id', 'data-order-id']);
-  assert.deepEqual(s.urls.map((u) => u.url), ['/Orders/Save', '/api/orders']);
+  assert.deepEqual(s.calls.map((c) => `${c.method} ${c.url} ${c.via}`), ['POST /Orders/Save jquery', 'GET /api/orders fetch']);
+  assert.deepEqual(s.urls, []);
   assert.deepEqual(selectorTokens('a.btn[href$=".pdf"]:not(#x)'), { classes: ['btn'], ids: ['x'], attrs: ['href'] });
 });
 
@@ -253,4 +254,119 @@ test('configs: bundleconfig, compilerconfig, tsconfig with comments, webpack ent
   assert.ok(globRegExp('Scripts/**/*.js').test('Scripts/a/b/c.js'));
   assert.ok(globRegExp('Scripts/**/*.js').test('Scripts/c.js'));
   assert.ok(!globRegExp('Scripts/*.js').test('Scripts/a/c.js'));
+});
+
+test('scripts: requests with their method, how they are made and where the answer goes', async () => {
+  const { parseScript, urlOf } = await import('../src/parse/script.js');
+  const s = parseScript(`
+$.get('/Orders/Row/' + id, function (html) { $('#orders tbody').append(html); });
+$('#details').load('@Url.Action("Details", "Orders")?id=' + id);
+$.ajax({ url: 'Orders/Save', type: 'POST' }).done(function (r) { $('#msg').html(r); });
+fetch(\`/api/orders/\${id}\`, { method: 'DELETE' });
+axios.put('/Orders/Rename', data);
+this.http.get<Order[]>('/api/orders').subscribe();
+xhr.open('POST', '/Orders/Upload');
+fetch(url);
+someObject.load(thing);
+document.getElementById('box').innerHTML = 'not a response';
+`);
+  assert.deepEqual(s.calls.map((c) => [c.method, c.url ?? `${c.controller}/${c.action}` ?? c.dynamic, c.via, c.target ?? null]), [
+    ['GET', '/Orders/Row', 'jquery', '#orders tbody'],
+    ['GET', 'Orders/Details', 'load', '#details'],
+    ['POST', '/Orders/Save', 'ajax', '#msg'],
+    ['DELETE', '/api/orders', 'fetch', null],
+    ['PUT', '/Orders/Rename', 'axios', null],
+    ['GET', '/api/orders', 'http', null],
+    ['POST', '/Orders/Upload', 'xhr', null],
+    ['GET', 'undefined/undefined', 'fetch', null],
+  ]);
+  assert.equal(s.calls.at(-1).dynamic, 'url');
+  assert.deepEqual(urlOf("'@Url.Action(\"Row\", \"Orders\", new { area = \"Admin\" })'"), { action: 'Row', controller: 'Orders', area: 'Admin' });
+  assert.deepEqual(urlOf("'/scripts/app.js'"), { dynamic: "'/scripts/app.js'" });
+});
+
+test('views: requests from data-ajax, htmx, data-url, Ajax.BeginForm and inline scripts', () => {
+  const v = parseRazor(`<div id="lines" data-url="@Url.Action("Lines", "Orders")"></div>
+<a href="/Orders/Row/1" data-ajax="true" data-ajax-update="#row">x</a>
+<button hx-post="/Orders/Save" hx-target="#msg">Save</button>
+@using (Ajax.BeginForm("Search", "Orders", new AjaxOptions { UpdateTargetId = "results", HttpMethod = "Get" })) { }
+<script>
+  var rowUrl = '@Url.Action("Row")';
+  $.post('@Url.Action("Save", "Orders")', data);
+</script>`);
+  assert.deepEqual(v.calls.map((c) => [c.via, c.method, c.url ?? `${c.controller}/${c.action}`, c.target ?? null]), [
+    ['data-url', 'GET', 'Orders/Lines', null],
+    ['href', 'GET', '/Orders/Row/1', '#row'],
+    ['hx-post', 'POST', '/Orders/Save', '#msg'],
+    ['Ajax.BeginForm', 'GET', 'Orders/Search', '#results'],
+    ['script', null, 'null/Row', null],
+    ['script', null, 'Orders/Save', null],
+  ]);
+  assert.deepEqual(v.inline.script.calls.map((c) => [c.method, c.controller, c.action]), [['POST', 'Orders', 'Save']]);
+  // A link that is also a request is listed once, as the request.
+  assert.deepEqual(v.links, []);
+});
+
+test('widgets: library calls with their targets, server-side helpers and markup', async () => {
+  const { findWidgets } = await import('../src/parse/widgets.js');
+  const js = findWidgets(`
+$('#orders').DataTable({ paging: true });
+$("#start, #end").datepicker();
+$(this).find('.js-pick').select2();
+$('#dlg').modal('hide');
+$('#dlg').modal({ backdrop: 'static' });
+var cal = new FullCalendar.Calendar(document.getElementById('calendar'), {});
+new Chart(document.getElementById('sales'), {});
+tinymce.init({ selector: '#body' });
+flatpickr('#when');
+new agGrid.Grid(document.querySelector('#grid'), opts);
+`);
+  assert.deepEqual(js.map((w) => `${w.kind}|${w.lib}|${w.target ?? ''}`), [
+    'data table|DataTables|#orders',
+    'date picker|jQuery UI / bootstrap-datepicker|#start, #end',
+    'select|select2|.js-pick',
+    'modal|Bootstrap|#dlg',
+    'calendar|FullCalendar|calendar',
+    'date picker|flatpickr|#when',
+    'data table|ag-Grid|#grid',
+    'chart|Chart.js|sales',
+    'rich editor|TinyMCE|#body',
+  ]);
+  const html = findWidgets(`@(Html.Kendo().Grid<Order>()
+    .Name("ordersGrid"))
+<table class="table datatable" id="list"></table>
+<div class="modal fade" id="confirm"></div>
+<input type="date" name="d" />
+<form method="post"></form>`, { markup: true, scripts: false });
+  assert.deepEqual(html.map((w) => `${w.kind}|${w.lib}|${w.target ?? ''}`), [
+    'data table|Kendo UI (MVC)|#ordersGrid',
+    'data table|DataTables (markup)|#list',
+    'date picker|HTML input|',
+    'modal|Bootstrap|#confirm',
+    'form|HTML|',
+    'table|HTML|',
+  ]);
+});
+
+test('LESS: top-level blocks with their ranges, and section headings', () => {
+  const l = parseStyle(`// ===== Variables =====
+@brand: red;
+@import "x";
+/* ------------------------------
+   Orders page
+   ------------------------------ */
+.orders {
+  .row { a: b; }
+}
+.m(@x) { a: @x; }
+// --- Buttons ---
+@media (max-width: 1px) { .btn { x: y; } }
+@keyframes spin { from { a: b; } }
+@font-face { font-family: X; }
+// just a comment about colours
+.btn { c: d; }
+`);
+  assert.deepEqual(l.blocks.map((b) => `${b.type} ${b.start}-${b.end}`), ['var 2-2', 'import 3-3', 'rule 7-9', 'mixin 10-10', 'media 12-12', 'keyframes 13-13', 'font-face 14-14', 'rule 16-16']);
+  assert.deepEqual(l.blocks[2].classes, [0, 2]);
+  assert.deepEqual(l.headers, [{ line: 1, title: 'Variables' }, { line: 5, title: 'Orders page' }, { line: 11, title: 'Buttons' }]);
 });

@@ -1,0 +1,39 @@
+// ===== Variables =====
+@gray: #777;
+@radius: 4px;
+
+.shadow(@d: 2px) { box-shadow: 0 @d @d rgba(0,0,0,.2); }
+
+@font-face { font-family: Brand; src: url(brand.woff2); }
+
+// ===== Base =====
+body { font-family: Brand, sans-serif; }
+h1, h2 { margin: 0; }
+
+// ===== Header =====
+.site-header {
+    .shadow();
+    .site-nav { display: flex; }
+}
+.nav-link { color: @gray; }
+
+// ===== Orders =====
+.order-table { border-collapse: collapse; }
+.order-row {
+    &.late { color: red; }
+}
+#order-form { padding: 8px; }
+
+// ===== Buttons =====
+.btn { border-radius: @radius; }
+.btn-save { font-weight: bold; }
+
+// ===== Old stuff =====
+.legacy-banner { display: none; }
+.promo-box { color: pink; }
+
+@keyframes pulse { from { opacity: .5; } to { opacity: 1; } }
+
+@media (max-width: 600px) {
+    .order-table { font-size: 12px; }
+}

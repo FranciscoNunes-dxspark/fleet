@@ -18,8 +18,10 @@ server is connected, its tools have the same names and answers.
 1. \`pilot overview\`: the projects, areas, layouts, top-level stylesheets, bundles.
 2. \`pilot page <url | Controller.Action | view>\`: for the screen the user means. It gives the action,
    the view, its layouts, the render tree (partials, components, templates, child actions, sections,
-   in the order they render) and the scripts and styles in load order, each with the file to edit:
-   a .ts for a compiled .js, a .less for a compiled .css, the members of a bundle.
+   in the order they render), the scripts and styles in load order, each with the file to edit
+   (a .ts for a compiled .js, a .less for a compiled .css, the members of a bundle), the requests
+   its scripts and markup make with the action and partial answering each and the element the
+   answer goes into, its UI components (data tables, calendars, pickers…) and a complexity score.
 3. \`pilot selector .some-class\` (or \`#id\`, \`[data-x]\`, \`btn-*\`): before changing or adding a style
    or markup. It lists every rule styling it, with the full nested LESS selector, every view marking
    it up and every script selecting or toggling it.
@@ -29,7 +31,11 @@ server is connected, its tools have the same names and answers.
 6. \`pilot style @variable\` (or \`.mixin\`, \`--custom-prop\`): to reuse the project's variables and mixins
    instead of new literal values.
 
-Also: \`pilot find <name>\`, \`pilot routes [filter]\`, \`pilot problems [filter]\`. Add \`--json\` for data.
+Also: \`pilot path <from> <to>\` (how a script reaches a partial, a page a stylesheet…),
+\`pilot widgets [kind]\`, \`pilot complexity\`, \`pilot stylesheets\` and \`pilot split <file>\` (how to
+break up a large LESS file by where its rules are used), \`pilot find <name>\`, \`pilot routes\`,
+\`pilot problems\`. Add \`--json\` for data. \`pilot ui\` opens the same in a browser, with graphs,
+for the user.
 
 ## Rules of thumb
 
@@ -39,6 +45,10 @@ Also: \`pilot find <name>\`, \`pilot routes [filter]\`, \`pilot problems [filter
   the variables the project defines (style). Check the stylesheet is loaded on the page (page's
   Styles list) before relying on it.
 - Scripts: a class or id renamed in a view must be renamed in every script selector selector lists.
+- Partials returned to AJAX requests: \`page\` and \`path\` show which script inserts them where;
+  markup changed in such a partial must still fit the element it lands in and the script's selectors.
+- Splitting stylesheets: follow \`split\`'s import order, and keep the order-sensitive classes it
+  lists in the same relative order.
 - Pilot reads with patterns, not a compiler: names built at run time are reported as such, and a
   "(guessed)" match was found by name outside MVC's usual view folders. Check those by reading.
 `;

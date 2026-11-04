@@ -36,7 +36,7 @@ test('page: action, view, layouts, render tree and assets in load order with the
   assert.match(text, /Shop\.Web\/Scripts\/app\/grid\.js ← edit Shop\.Web\/Scripts\/app\/grid\.ts via bundle ~\/bundles\/app/);
   // The view's section Scripts goes where the layout renders it, after the bundles.
   const orders = page(idx, 'Orders.Index').data.views[0];
-  assert.deepEqual(orders.assets.at(-1), { kind: 'script', url: '~/Scripts/app/orders.js', file: 'Shop.Web/Scripts/app/orders.js', built: true, vendor: false, sources: ['Shop.Web/Scripts/app/orders.ts'], from: 'Shop.Web/Views/Orders/Index.cshtml:15', section: 'Scripts' });
+  assert.deepEqual(orders.assets.at(-1), { kind: 'script', url: '~/Scripts/app/orders.js', file: 'Shop.Web/Scripts/app/orders.js', built: true, vendor: false, sources: ['Shop.Web/Scripts/app/orders.ts'], from: 'Shop.Web/Views/Orders/Index.cshtml:15', section: 'Scripts', own: true });
   assert.match(page(idx, 'Orders.Save').text, /returns JSON, no view/);
   assert.match(page(idx, 'Orders/Edit').text, /Html\.Partial\(Model\.PartialName\)/);
   assert.match(page(idx, '/products/3').text, /component MiniCart → Shop\.Core\/Views\/Shared\/Components\/MiniCart\/Default\.cshtml/);
@@ -44,7 +44,7 @@ test('page: action, view, layouts, render tree and assets in load order with the
 
 test('file: a view, a script, a stylesheet and a controller in context', () => {
   const view = file(idx, 'Shop.Web/Views/Orders/Index.cshtml').text;
-  assert.match(view, /^ {2}\.order-table {2}Shop\.Web\/Content\/orders\.less:1$/m);
+  assert.match(view, /^ {2}\.order-table {2}Shop\.Web\/Content\/everything\.less:21, Shop\.Web\/Content\/everything\.less:38, Shop\.Web\/Content\/orders\.less:1$/m);
   assert.match(view, /onclick="Orders\.save\(\)" line 11 → Shop\.Web\/Scripts\/app\/orders\.ts:5/);
   assert.match(view, /Shown on 1 page/);
   const ts = file(idx, 'orders.ts').text;
@@ -68,7 +68,7 @@ test('impact: a LESS partial reaches the stylesheet, the bundle, the layout and 
 
 test('selector: styled (nested, in media), marked up, scripted; wildcards; not found', () => {
   const row = selector(idx, '.order-row', { snippets: false }).text;
-  assert.match(row, /Styled in \(1\):\n {4}Shop\.Web\/Content\/orders\.less:7 {2}\.order-table \.order-row:hover/);
+  assert.match(row, /Styled in \(2\):\n {4}Shop\.Web\/Content\/everything\.less:22 {2}\.order-row\n {4}Shop\.Web\/Content\/orders\.less:7 {2}\.order-table \.order-row:hover/);
   assert.match(row, /Marked up in \(1\):\n {4}Shop\.Web\/Views\/Orders\/_OrderRow\.cshtml:2/);
   assert.match(row, /Used by scripts in \(1\):\n {4}Shop\.Web\/Scripts\/app\/orders\.ts:6/);
   assert.match(selector(idx, '#orders').text, /orders\.less:19 {2}#orders {2}\(in @media \(max-width: 600px\)\)/);
@@ -89,8 +89,8 @@ test('style, find, routes, problems, overview', () => {
   assert.equal(problems(idx).data.problems.length, 2);
   const o = overview(idx);
   assert.deepEqual(o.data.counts.views, 19);
-  assert.deepEqual([o.data.counts.layouts, o.data.counts.partials, o.data.counts.actions], [3, 6, 9]);
-  assert.deepEqual(o.data.rootStylesheets, ['Shop.Web/Content/site.less']);
+  assert.deepEqual([o.data.counts.layouts, o.data.counts.partials, o.data.counts.actions], [3, 6, 10]);
+  assert.deepEqual(o.data.rootStylesheets.sort(), ['Shop.Web/Content/everything.less', 'Shop.Web/Content/site.less']);
 });
 
 test('the command line: arguments, text, --json, exit codes, init', async () => {
@@ -120,7 +120,7 @@ test('the MCP server: tools, answers, errors as results', async () => {
   const server = createServer({ root: ROOT, build: (root) => buildIndex(root, { cache: false }) });
   const handle = mcpHandler({ name: 'pilot', version: 'test', tools: TOOLS, call: server.call });
   const list = await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
-  assert.deepEqual(list.result.tools.map((t) => t.name), ['overview', 'page', 'file', 'impact', 'selector', 'style', 'find', 'routes', 'problems']);
+  assert.deepEqual(list.result.tools.map((t) => t.name), ['overview', 'page', 'file', 'impact', 'selector', 'style', 'find', 'path', 'widgets', 'complexity', 'stylesheets', 'split', 'routes', 'problems']);
   assert.ok(list.result.tools.every((t) => t.annotations.readOnlyHint));
   const call = (name, args) => handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } });
   const sel = await call('selector', { selector: '.late' });

@@ -5,49 +5,12 @@
 // Inline <script> and <style> blocks are read by the script and style parsers, with their lines kept.
 // Regular expressions over the text, not a Razor compiler: a dynamic name (`Html.Partial(name)`)
 // isn't followed, and the index reports it as such.
-import { isToken, lineIndex, literals, matchBrace, stripRazorComments } from '../text.js';
-import { parseScript } from './script.js';
+import { callArgs, isToken, lineIndex, literals, matchBrace, stripRazorComments } from '../text.js';
+import { parseScript, urlOf } from './script.js';
 import { parseStyle } from './style.js';
+import { findWidgets } from './widgets.js';
 
-/** The top-level arguments of a call whose `(` is at `open`: [{ text, literal }], and the offset after `)`. */
-export function callArgs(text, open) {
-  const args = [];
-  let depth = 0;
-  let start = open + 1;
-  let i = open;
-  for (; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"' || c === "'") {
-      const q = c;
-      i++;
-      while (i < text.length && text[i] !== q && text[i] !== '\n') {
-        if (text[i] === '\\') i++;
-        i++;
-      }
-    } else if (c === '(' || c === '{' || c === '[') depth++;
-    else if (c === ')' || c === '}' || c === ']') {
-      depth--;
-      if (depth === 0) {
-        args.push(text.slice(start, i));
-        break;
-      }
-    } else if (c === ',' && depth === 1) {
-      args.push(text.slice(start, i));
-      start = i + 1;
-    }
-    if (i - open > 2000) break;
-  }
-  return {
-    args: args
-      .map((a) => a.trim())
-      .filter((a, n) => a || n > 0)
-      .map((a) => {
-        const m = /^(?:\w+\s*:\s*)?(?:@?"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')$/.exec(a);
-        return { text: a, literal: m ? (m[1] ?? m[2]) : null, named: /^(\w+)\s*:/.exec(a)?.[1] ?? null };
-      }),
-    end: i + 1,
-  };
-}
+export { callArgs };
 
 /** `new { area = "Admin", controller = "X" }` → { area: 'Admin', controller: 'X' }. */
 function routeValues(text) {
@@ -137,6 +100,8 @@ export function parseRazor(source) {
     attrs: [],
     handlers: [],
     links: [],
+    calls: [],
+    widgets: [],
     inline: { script: null, style: null },
     dynamic: [],
   };
@@ -148,6 +113,10 @@ export function parseRazor(source) {
   if (layout) out.layout = { value: layout[2] ? null : layout[1], line: at(layout.index) };
   const title = /(?:ViewBag\.Title|ViewData\[\s*"Title"\s*\])\s*=\s*"([^"]*)"/.exec(text);
   if (title) out.title = title[1];
+
+  // Where the inline scripts are: a link written inside one (var url = '@Url.Action("Row")') is a call.
+  const scriptRanges = [...text.matchAll(/<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => [at(m.index), at(m.index + m[0].length)]);
+  const inScript = (line) => scriptRanges.some(([a, b]) => line >= a && line <= b);
 
   // Partials, templates, child actions, components: the Html helpers and their tag-helper forms.
   for (const m of text.matchAll(/\b(Html\.(?:Render)?Partial(?:Async)?|RenderPage|Html\.(?:Render)?Action|Html\.(?:Editor|Display)(?:For)?(?:Model)?|Component\.InvokeAsync|Component\.Invoke|Url\.Action|Html\.ActionLink|Html\.BeginForm|Ajax\.BeginForm|Ajax\.ActionLink|Html\.BeginRouteForm)\s*(<\s*(\w+)\s*>)?\s*\(/g)) {
@@ -176,9 +145,18 @@ export function parseRazor(source) {
       // Links and forms: Url.Action(action, controller), ActionLink(text, action, controller), BeginForm(action, controller).
       const first = /ActionLink/.test(via) ? 1 : 0;
       if (via === 'Html.BeginRouteForm') continue;
-      const values = routeValues(args.map((a) => a.text).join(','));
+      const all = args.map((a) => a.text).join(',');
+      const values = routeValues(all);
       const action = lit(first);
-      if (action) out.links.push({ action, controller: lit(first + 1) ?? values.controller ?? null, area: values.area ?? null, line, via });
+      if (!action) continue;
+      const link = { action, controller: lit(first + 1) ?? values.controller ?? null, area: values.area ?? null, line, via };
+      if (/^Ajax\./.test(via)) {
+        // Ajax.BeginForm / Ajax.ActionLink: a request whose answer replaces UpdateTargetId.
+        const target = /UpdateTargetId\s*=\s*"([^"]+)"/.exec(all)?.[1];
+        const method = /HttpMethod\s*=\s*"(\w+)"/.exec(all)?.[1]?.toUpperCase() ?? (/BeginForm/.test(via) ? 'POST' : 'GET');
+        out.calls.push({ ...link, method, ...(target ? { target: `#${target}` } : {}) });
+      } else if (via === 'Url.Action' && inScript(line)) out.calls.push({ ...link, method: null, via: 'script' });
+      else out.links.push(link);
     }
   }
   for (const m of text.matchAll(/<partial\b([^>]*)>/g)) {
@@ -247,6 +225,17 @@ export function parseRazor(source) {
       if (attrs.length > 80) break;
     }
     const get = (n) => attrs.find((a) => a.name === n);
+    // Requests the markup itself makes: unobtrusive Ajax (data-ajax="true"), htmx, and data-url-style
+    // attributes a script reads.
+    const ajaxAttr = attrs.find((a) => /^(?:data-ajax-url|data-url|data-src|data-load-url|data-href|data-source|data-action-url|data-remote|hx-(?:get|post|put|delete|patch))$/.test(a.name) && a.value);
+    const unobtrusive = get('data-ajax')?.value === 'true' ? get('href') ?? get('action') : null;
+    for (const a of [ajaxAttr, unobtrusive].filter(Boolean)) {
+      const where = urlOf(a.value.startsWith('@') ? a.value : JSON.stringify(a.value));
+      if (!where || where.dynamic) continue;
+      const target = get('data-ajax-update')?.value ?? get('hx-target')?.value ?? null;
+      const method = /^hx-(\w+)$/.exec(a.name)?.[1]?.toUpperCase() ?? get('data-ajax-method')?.value?.toUpperCase() ?? (name === 'form' ? (get('method')?.value ?? 'POST').toUpperCase() : 'GET');
+      out.calls.push({ ...where, method, via: a.name, line: at(a.at), ...(target ? { target } : {}) });
+    }
     for (const a of attrs) {
       const line = at(a.at);
       if (a.name === 'class' && a.value != null) for (const c of classTokens(a.value)) out.classes.push([c, line]);
@@ -297,10 +286,16 @@ export function parseRazor(source) {
   for (const m of text.matchAll(/new\s*\{[^}]*?\bid\s*=\s*"([\w-]+)"/g)) out.ids.push([m[1], at(m.index)]);
   for (const m of text.matchAll(/\bdata_([\w_]+)\s*=/g)) out.attrs.push([`data-${m[1].replace(/_/g, '-').toLowerCase()}`, at(m.index)]);
 
+  out.widgets = findWidgets(text, { markup: true, scripts: false });
+  out.calls.sort((a, b) => a.line - b.line);
+  // A link that is also a call (data-url="@Url.Action(…)", an Ajax.ActionLink's href) is listed once, as the call.
+  const same = (l, c) => l.line === c.line && (l.url && c.url ? l.url.toLowerCase() === c.url.toLowerCase() : l.action && c.action && l.action.toLowerCase() === c.action.toLowerCase());
+
   // Links written out: href="/Orders/Edit" (not assets, not external).
   for (const m of text.matchAll(/\b(?:href|action)\s*=\s*"(~?\/[A-Za-z][\w-]*(?:\/[\w-]*)*)\/?(?:[?#][^"]*)?"/g)) {
     out.links.push({ url: m[1].replace(/^~/, ''), line: at(m.index), via: 'href' });
   }
+  out.links = out.links.filter((l) => !out.calls.some((c) => same(l, c)));
   return out;
 }
 

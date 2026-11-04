@@ -15,7 +15,7 @@ import { parseScript } from './parse/script.js';
 import { parseStyle } from './parse/style.js';
 import { isVendor, walk } from './walk.js';
 
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 const MAX_PARSE = 1_500_000;
 
 /** Where the parsed files are kept between runs: PILOT_CACHE, else the platform's cache folder. */
@@ -128,16 +128,19 @@ export class ProjectIndex {
       const vendor = isVendor(f.rel);
       let data = null;
       let error = null;
+      let lines = null;
       // A library is read only for what links it to the rest (its imports), never its selectors.
       const skip = f.size > MAX_PARSE || f.kind === 'project' || (vendor && f.kind !== 'config' && !this.vendor);
       if (!skip) {
         try {
-          data = parseFile(f.rel, f.kind, readFileSync(join(this.root, f.rel), 'utf8'));
+          const text = readFileSync(join(this.root, f.rel), 'utf8');
+          lines = text.length ? text.split('\n').length - (text.endsWith('\n') ? 1 : 0) : 0;
+          data = parseFile(f.rel, f.kind, text);
         } catch (e) {
           error = e.message;
         }
       }
-      files.set(f.rel, { rel: f.rel, kind: f.kind, size: f.size, mtime: f.mtime, vendor, data, ...(error ? { error } : {}), ...(f.size > MAX_PARSE ? { skipped: 'too large' } : {}) });
+      files.set(f.rel, { rel: f.rel, kind: f.kind, size: f.size, mtime: f.mtime, vendor, lines, data, ...(error ? { error } : {}), ...(f.size > MAX_PARSE ? { skipped: 'too large' } : {}) });
       parsed++;
       if (parsed % 500 === 0) progress(`${n + 1}/${listed.length} files`);
     });
@@ -485,7 +488,8 @@ export class ProjectIndex {
         if (node) this.edge(v.rel, node.id, 'link', l.line, { via: l.via });
       }
       this.linkAssets(v.rel, v.data);
-      if (v.data.inline.script) this.linkScriptRefs(v.rel, v.data.inline.script);
+      this.linkScriptRefs(v.rel, { calls: v.data.calls }, place);
+      if (v.data.inline.script) this.linkScriptRefs(v.rel, v.data.inline.script, place);
     }
     // Layouts: what the view sets, else the nearest _ViewStart's (partials get none).
     this.viewStarts = new Map();
@@ -643,11 +647,26 @@ export class ProjectIndex {
     }
   }
 
-  /** A script's calls to the server ('/Orders/Save') as links to actions. */
-  linkScriptRefs(rel, data) {
+  /**
+   * A script's (or a view's) requests to the server as `calls` edges to actions, each with its method,
+   * how it's made and the element its answer goes into; a route-shaped string elsewhere in a script
+   * ('/Orders/Data' in a grid's options) is a call too, of unknown method. `place` is a view's
+   * controller and area, for @Url.Action("Row") without a controller.
+   */
+  linkScriptRefs(rel, data, place = {}) {
+    const project = this.projectOf(rel);
+    for (const c of data.calls ?? []) {
+      if (c.dynamic) continue;
+      const node = c.url
+        ? this.routeToAction(c.url, project)[0]
+        : this.action(c.area ?? place.area ?? null, c.controller ?? place.controller ?? '', c.action, project) ?? this.action(null, c.controller ?? place.controller ?? '', c.action, project);
+      const label = c.url ?? `${c.controller ?? place.controller ?? '?'}/${c.action}`;
+      if (node) this.edge(rel, node.id, 'calls', c.line, { url: label, method: c.method ?? null, via: c.via, ...(c.target ? { target: c.target } : {}) });
+      else if (c.action || /^\/(?!api\b)/i.test(c.url)) this.problem(rel, c.line, `request to ${label} reaches no action Pilot knows`);
+    }
     for (const u of data.urls ?? []) {
-      const node = this.routeToAction(u.url, this.projectOf(rel))[0];
-      if (node) this.edge(rel, node.id, 'calls', u.line, { url: u.url });
+      const node = this.routeToAction(u.url, project)[0];
+      if (node) this.edge(rel, node.id, 'calls', u.line, { url: u.url, method: null, via: 'string' });
     }
   }
 
@@ -746,7 +765,7 @@ export class ProjectIndex {
   // ─── Symbols: classes, ids, attributes, variables, mixins, definitions ──────────────────────
 
   buildSymbols() {
-    const sym = { classes: new Map(), ids: new Map(), attrs: new Map(), vars: new Map(), mixins: new Map(), defs: new Map() };
+    const sym = { classes: new Map(), ids: new Map(), attrs: new Map(), vars: new Map(), mixins: new Map(), defs: new Map(), widgets: [] };
     const seen = new Set();
     const put = (map, name, entry) => {
       // One place per file, line and role: a selector can be read twice on a line ($('.x') is also a '.x' literal).
@@ -767,6 +786,7 @@ export class ProjectIndex {
         for (const [n, line] of d.ids) put(sym.ids, n, { file: f.rel, line, role: 'markup' });
         for (const [n, line] of d.attrs) put(sym.attrs, n, { file: f.rel, line, role: 'markup' });
         for (const h of d.handlers) put(sym.defs, h.fn.split('.').pop(), { file: f.rel, line: h.line, role: 'called', kind: h.event });
+        for (const w of [...(d.widgets ?? []), ...(d.inline.script?.widgets ?? [])]) sym.widgets.push({ ...w, file: f.rel });
         const s = d.inline.script;
         if (s) {
           for (const [n, line] of s.classes) put(sym.classes, n, { file: f.rel, line, role: 'script' });
@@ -784,6 +804,7 @@ export class ProjectIndex {
         for (const [n, line] of d.ids) put(sym.ids, n, { file: f.rel, line, role: 'script' });
         for (const [n, line] of d.attrs) put(sym.attrs, n, { file: f.rel, line, role: 'script' });
         for (const x of d.defs) put(sym.defs, x.name.split('.').pop(), { file: f.rel, line: x.line, role: 'def', kind: x.kind, name: x.name });
+        for (const w of d.widgets ?? []) sym.widgets.push({ ...w, file: f.rel });
       } else if (f.kind === 'style' && own) {
         const rule = (i) => (d.rules[i] ? `${d.rules[i].selector}${d.rules[i].media ? `  (in ${d.rules[i].media})` : ''}` : undefined);
         for (const [n, line, i] of d.classes) put(sym.classes, n, { file: f.rel, line, role: 'style', selector: rule(i), vendor: f.vendor });

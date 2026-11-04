@@ -18,8 +18,16 @@ Usage: pilot [--root <dir>] <command> [arguments] [--json]
                                 (.btn-save, #orders, [data-order-id], btn-*; --vendor adds libraries)
   style <name>                  a LESS/SCSS variable, custom property or mixin: definitions and uses
   find <name>                   views, partials, actions, components, bundles, functions, variables, files
+  complexity [filter]           every page with a complexity score (views, depth, markup, scripts,
+                                widgets, requests), highest first
+  widgets [kind]                the UI components: data tables, calendars, date pickers, charts, selects,
+                                modals… by library, with where each is and its pages
+  stylesheets                   the project's stylesheets, largest first
+  split <stylesheet>            how to split a large LESS/SCSS/CSS file: by where its rules are used
+  path <from> <to>              how two things are connected (files, URLs, Controller.Action)
   routes [filter]               URLs, actions and the views they return
   problems [filter]             references Pilot couldn't resolve, and names decided at run time
+  ui                            the web UI: graphs, pages, components, stylesheets (--port, --no-open)
   mcp                           serve these as MCP tools over stdio:
                                   claude mcp add pilot -- pilot mcp --root <dir>
   init                          add Pilot's Claude Code skill to the project (.claude/skills/pilot)
@@ -33,7 +41,7 @@ Options:
   --version, --help`;
 
 export function parseArgs(argv) {
-  const opts = { root: process.cwd(), json: false, cache: true, vendor: false, ignore: [], rest: [] };
+  const opts = { root: process.cwd(), json: false, cache: true, vendor: false, ignore: [], rest: [], open: true, port: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--root' || a === '-r') opts.root = argv[++i];
@@ -42,6 +50,8 @@ export function parseArgs(argv) {
     else if (a === '--no-cache') opts.cache = false;
     else if (a === '--vendor') opts.vendor = true;
     else if (a === '--ignore') opts.ignore.push(...String(argv[++i] ?? '').split(',').filter(Boolean));
+    else if (a === '--port') opts.port = Number(argv[++i]);
+    else if (a === '--no-open') opts.open = false;
     else if (a === '--help' || a === '-h') opts.help = true;
     else if (a === '--version' || a === '-v') opts.version = true;
     else opts.rest.push(a);
@@ -71,6 +81,11 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     serve({ root: opts.root });
     return null;
   }
+  if (opts.command === 'ui') {
+    const { startUi } = await import('./web/server.js');
+    await startUi({ root: opts.root, port: opts.port, open: opts.open, vendor: opts.vendor, ignore: opts.ignore, log: (s) => error(`${s}\n`) });
+    return null;
+  }
   if (opts.command === 'init') {
     const { SKILL } = await import('./skill.js');
     const dir = join(opts.root, '.claude', 'skills', 'pilot');
@@ -80,6 +95,7 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     return 0;
   }
   const q = await import('./queries.js');
+  const a = await import('./analysis.js');
   const arg = opts.args.join(' ');
   const needs = (what) => {
     if (!arg) throw Object.assign(new Error(`pilot ${opts.command} needs ${what}.`), { usage: true });
@@ -93,6 +109,14 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     selector: (idx) => q.selector(idx, needs('a selector'), { vendor: opts.vendor }),
     style: (idx) => q.styleSymbol(idx, needs('a variable or mixin')),
     find: (idx) => q.find(idx, needs('a name')),
+    complexity: (idx) => a.complexity(idx, { filter: arg }),
+    widgets: (idx) => a.widgets(idx, { kind: arg }),
+    stylesheets: (idx) => a.stylesheets(idx),
+    split: (idx) => a.split(idx, needs('a stylesheet')),
+    path: (idx) => {
+      if (opts.args.length !== 2) throw Object.assign(new Error('pilot path needs two things: pilot path <from> <to>'), { usage: true });
+      return a.path(idx, opts.args[0], opts.args[1]);
+    },
     routes: (idx) => q.routes(idx, { filter: arg }),
     problems: (idx) => q.problems(idx, { filter: arg }),
   };

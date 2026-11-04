@@ -6,9 +6,11 @@ import { ToolError, mcpHandler, quietConsole, serveMcp } from '@fleet/kit/mcp.js
 import { VERSION } from './app.js';
 import { buildIndex } from './index.js';
 import { file, find, impact, overview, page, problems, routes, selector, styleSymbol } from './queries.js';
+import { complexity, path as pathBetween, split, stylesheets, widgets } from './analysis.js';
 
 export const INSTRUCTIONS = `Pilot maps an ASP.NET MVC / ASP.NET Core project (.cshtml views, controllers, view components, bundles, TypeScript, JavaScript, LESS, SCSS, CSS) as one graph, so you can find what to change for a UI improvement without reading the whole tree.
-Start with overview. For a screen the user names by URL, controller action or view, call page: it gives the action, the view, its layouts, every partial, component, template and child action in the order they render, and the scripts and styles the page loads, each with the source file to edit (.ts for a compiled .js, .less for a compiled .css, bundle members).
+Start with overview. For a screen the user names by URL, controller action or view, call page: it gives the action, the view, its layouts, every partial, component, template and child action in the order they render, the scripts and styles the page loads, each with the source file to edit (.ts for a compiled .js, .less for a compiled .css, bundle members), the requests its scripts and markup make (AJAX, fetch, data-ajax, htmx, Ajax.BeginForm) with the action and partial view answering each and the element it lands in, the UI components on it (data tables, calendars, pickers, charts…) and its complexity score.
+path shows how two things connect (a script to the partial its request returns); widgets lists the UI components by kind; complexity ranks pages; stylesheets and split help break up a large LESS file by where its rules are used.
 Before changing a CSS class or id, call selector: it lists where it is styled (with the full nested LESS selector), marked up and used by scripts. Before changing a shared partial, layout, script or stylesheet, call impact to see which pages it reaches.
 file shows one file in context; style follows a LESS/SCSS variable or mixin; find looks anything up by name; routes lists URLs and actions; problems lists references Pilot could not resolve.
 Every place is given as path:line from the project root. Pilot reads files with patterns, not a compiler: names built at run time are reported as such, and a "(guessed)" match is one found by name outside MVC's usual folders.`;
@@ -28,6 +30,11 @@ export const TOOLS = [
   },
   { name: 'style', description: 'A LESS or SCSS variable (@brand, $brand), CSS custom property (--brand) or mixin (.rounded): where it is defined, every use, and which top-level stylesheets compile it in.', inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
   { name: 'find', description: 'Anything by name: views, partials, controllers, actions, view components, bundles, script functions and classes, style variables and mixins, files.', inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'number' } }, required: ['query'] } },
+  { name: 'path', description: 'How two things are connected, step by step: files, URLs or Controller.Action (e.g. a script → the action it calls → the partial it returns).', inputSchema: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } }, required: ['from', 'to'] } },
+  { name: 'widgets', description: 'The UI components in the project (data tables, calendars, date pickers, charts, selects, modals, tabs, editors, uploads, trees…) by kind and library, where each is set up, the element it binds to and the pages it is on.', inputSchema: { type: 'object', properties: { kind: { type: 'string', description: 'Only this kind or library, e.g. "data table", "DataTables", "calendar"' } } } },
+  { name: 'complexity', description: 'Every page with a complexity score 0-100 (own views and partials, nesting, markup and script lines, widgets, server requests, child actions), highest first.', inputSchema: { type: 'object', properties: { filter: { type: 'string' } } } },
+  { name: 'stylesheets', description: 'The project stylesheets, largest first, with rules and imports: to find the one to split.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'split', description: 'How to split a large LESS/SCSS/CSS file: each top-level block assigned to a new file by what it is (variables, mixins, fonts, element styles) or where its classes are used (one controller, a shared partial, the layout, a class family, unused), with line ranges and an import order that keeps the cascade.', inputSchema: { type: 'object', properties: { path }, required: ['path'] } },
   { name: 'routes', description: 'URLs, the actions answering them and the views they return.', inputSchema: { type: 'object', properties: { filter: { type: 'string', description: 'Only rows containing this text' } } } },
   { name: 'problems', description: 'References Pilot could not resolve (missing partials, layouts, scripts, styles, imports) and those decided at run time.', inputSchema: { type: 'object', properties: { filter: { type: 'string', description: 'Only problems in files or messages containing this text' } } } },
 ].map((t) => ({ ...t, annotations: { readOnlyHint: true, openWorldHint: false } }));
@@ -55,6 +62,11 @@ export function createServer({ root, fresh = 2000, build = buildIndex } = {}) {
       style: () => styleSymbol(current(), need(args, 'name')),
       find: () => find(current(), need(args, 'query'), { limit: Number(args.limit) || 40 }),
       routes: () => routes(current(), { filter: args.filter ?? '' }),
+      path: () => pathBetween(current(), need(args, 'from'), need(args, 'to')),
+      widgets: () => widgets(current(), { kind: args.kind ?? '' }),
+      complexity: () => complexity(current(), { filter: args.filter ?? '' }),
+      stylesheets: () => stylesheets(current()),
+      split: () => split(current(), need(args, 'path')),
       problems: () => problems(current(), { filter: args.filter ?? '' }),
     }[name];
     if (!run) return undefined;

@@ -25,6 +25,11 @@ namespace Shop.Web.Controllers
             return Json(new { ok = true, message = "Saved {0}" });
         }
 
+        public PartialViewResult Row(int id)
+        {
+            return PartialView("_OrderRow", new OrderRow { Id = id });
+        }
+
         [ChildActionOnly]
         public PartialViewResult CartSummary()
         {
