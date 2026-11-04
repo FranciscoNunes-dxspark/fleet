@@ -79,6 +79,7 @@ export default {
   'System': 'Sistema',
   'Dark': 'Escuro',
   'Light': 'Claro',
+  'Keel': 'Keel',
   'Green': 'Verde',
   'Blue': 'Azul',
   'Violet': 'Violeta',

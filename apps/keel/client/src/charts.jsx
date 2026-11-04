@@ -60,7 +60,7 @@ export function ColumnChart({ data, label, valueLabel, formatX = (x) => x, heigh
             const h = H - pad.b - top;
             return (
               <g key={d.key}>
-                {h > 0 && <path d={roundedTop(x, top, w, h, Math.min(4, w / 2, h))} className="bar" style={{ fill: `url(#${fade})` }} />}
+                {h > 0 && <path d={roundedTop(x, top, w, h, Math.min(4, w / 2, h))} className={i === data.length - 1 ? 'bar bar-now' : 'bar'} style={i === data.length - 1 ? undefined : { fill: `url(#${fade})` }} />}
                 <rect
                   x={pad.l + i * bw} y={pad.t} width={bw} height={H - pad.t - pad.b}
                   className="hit" tabIndex={0}
