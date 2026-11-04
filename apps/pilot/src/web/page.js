@@ -34,14 +34,14 @@ input[type=text], input[type=search], select { background: var(--panel); border:
 input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 14px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; }
-.brand small { color: var(--dim); font-weight: 400; max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand small { color: var(--dim); font-weight: 400; max-width: 14vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 nav { display: flex; gap: 2px; flex-wrap: wrap; }
-nav a { padding: 6px 10px; border-radius: 6px; color: var(--dim); }
+nav a { padding: 5px 7px; border-radius: 6px; color: var(--dim); font-size: 13.5px; }
 nav a.on { background: var(--accent-soft); color: var(--accent); text-decoration: none; }
 nav a:hover { text-decoration: none; color: var(--text); }
 .grow { flex: 1; }
 .search { position: relative; }
-.search input { width: 260px; }
+.search input { width: 220px; }
 .results { position: absolute; right: 0; top: 36px; width: 520px; max-width: 92vw; max-height: 70vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); z-index: 30; }
 .results div { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
 .results div:hover, .results div.on { background: var(--accent-soft); }
@@ -120,6 +120,7 @@ pre.block { background: var(--panel2); border: 1px solid var(--line); border-rad
 .page-head { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 13px; }
 .kv > :nth-child(odd) { color: var(--dim); }
+@media (max-width: 1600px) { .brand small { display: none; } }
 @media (max-width: 900px) { .graph-wrap { grid-template-columns: 1fr; } .side { display: none; } .search input { width: 160px; } }
 `;
 

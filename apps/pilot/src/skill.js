@@ -37,6 +37,28 @@ break up a large LESS file by where its rules are used), \`pilot find <name>\`, 
 \`pilot problems\`. Add \`--json\` for data. \`pilot ui\` opens the same in a browser, with graphs,
 for the user.
 
+## Around a change
+
+- Before: \`pilot context <page>\` gives the page's code in one document, the parts that matter only.
+  With the site running, \`pilot shot <page> --url http://localhost:5000\` keeps a "before".
+- A style that doesn't apply: \`pilot cascade <page> .class\` shows every rule in order, what wins,
+  and rules in stylesheets the page doesn't load.
+- Renaming a class or id: \`pilot rename .old .new\` previews every line; \`--apply\` writes them.
+- After: \`pilot changes\` lists the pages the edits reach; \`pilot shot <page>\` again compares
+  with the before (read the diff PNG it names).
+- Housekeeping: \`pilot dead\`, \`pilot design\` (use the variables it names instead of literal
+  colours), \`pilot repeats\`, \`pilot a11y\`, \`pilot weight\`; \`pilot diagram <page>\` for a PR.
+
+## On a new project, and with the site running
+
+- \`pilot doctor\` first: how much Pilot understood, so you know how far to trust it.
+- \`pilot styleguide\` before adding styles: reuse the project's colours, variables and components.
+- With the site running: \`pilot inspect <page> .class\` (what really styles it), \`pilot coverage
+  <pages>\` (CSS and JS really used), \`pilot responsive <page>\` (each breakpoint), \`pilot shots
+  changed\` (every page your edits reach, compared).
+- Refactors: \`pilot split <file> --apply\` and \`pilot extract <n> --apply\` (preview without
+  \`--apply\`; both back up what they change).
+
 ## Rules of thumb
 
 - Edit sources, not outputs: Pilot says "built from … edit that instead" for compiled .js/.css and

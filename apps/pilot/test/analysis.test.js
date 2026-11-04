@@ -19,7 +19,7 @@ test("a page's requests: the script, the action, the partial it returns and wher
   ]);
   assert.ok(m.calls.every((c) => c.own));
   // orders.ts imports grid.ts: both are the page's scripts.
-  assert.deepEqual(m.scripts.filter((s) => s.own).map((s) => s.file).sort(), ['Shop.Web/Scripts/app/grid.ts', 'Shop.Web/Scripts/app/orders.ts']);
+  assert.deepEqual(m.scripts.filter((s) => s.own && !s.vendor).map((s) => s.file).sort(), ['Shop.Web/Scripts/app/grid.ts', 'Shop.Web/Scripts/app/orders.ts']);
   // The layout's bundle loads grid.js too, and its util.js is the layout's alone.
   assert.equal(m.scripts.find((s) => s.file === 'Shop.Web/Scripts/shared/util.js').own, false);
   const text = page(idx, '/Orders').text;
@@ -71,7 +71,8 @@ test('split: a stylesheet grouped by what each block is and where its classes ar
   });
   assert.deepEqual(data.headers.map((h) => h.title), ['Variables', 'Base', 'Header', 'Orders', 'Buttons', 'Old stuff']);
   assert.match(text, /@import "base\/variables";\n {2}@import "base\/mixins";/);
-  assert.doesNotMatch(text, /@import "unused"/);
+  // unused is imported last, marked: the split reorganises; deleting is decided after.
+  assert.match(text, /@import "pages\/orders";\n {2}@import "unused"; \/\/ check, then delete/);
   // A file that only imports others points at the largest of them.
   assert.deepEqual(split(idx, 'site.less').data.imports.map((i) => i.file), ['Shop.Web/Content/orders.less', 'Shop.Web/Content/variables.less']);
   assert.equal(stylesheets(idx).data.stylesheets[0].file, 'Shop.Web/Content/everything.less');

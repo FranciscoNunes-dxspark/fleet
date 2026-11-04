@@ -20,6 +20,15 @@ const KINDS = {
   '.scss': 'style',
   '.css': 'style',
   '.csproj': 'project',
+  '.png': 'image',
+  '.jpg': 'image',
+  '.jpeg': 'image',
+  '.gif': 'image',
+  '.svg': 'image',
+  '.webp': 'image',
+  '.avif': 'image',
+  '.ico': 'image',
+  '.bmp': 'image',
 };
 const CONFIGS = new Set(['bundleconfig.json', 'compilerconfig.json', 'tsconfig.json', 'webpack.config.js']);
 

@@ -26,7 +26,7 @@ const VERBS = ['HttpGet', 'HttpPost', 'HttpPut', 'HttpDelete', 'HttpPatch'];
 export function parseCSharp(source) {
   const text = stripComments(source);
   const lineOf = lineIndex(text);
-  const out = { controllers: [], components: [], bundles: [], routes: [] };
+  const out = { controllers: [], components: [], bundles: [], routes: [], models: [] };
 
   for (const m of text.matchAll(/\bclass\s+(\w+?)(Controller|ViewComponent)\b\s*(?:<[^>]*>)?\s*(?::\s*([^{]+))?\{/g)) {
     const [, name, suffix, bases = ''] = m;
@@ -146,6 +146,19 @@ export function parseCSharp(source) {
     const areaName = m[1] === 'MapAreaControllerRoute' ? args.find((a) => a.named === 'areaName')?.literal ?? args[1]?.literal : null;
     if (areaName) defaults.area = areaName;
     out.routes.push({ template, defaults, line: lineOf(m.index) });
+  }
+  // Classes with properties (view models, DTOs, entities): what a view's @model can read.
+  for (const m of text.matchAll(/\bclass\s+(\w+)\s*(?:<[^>]*>)?\s*(?::\s*([^{]+))?\{/g)) {
+    if (/(Controller|ViewComponent)$/.test(m[1])) continue;
+    const open = m.index + m[0].length - 1;
+    const body = text.slice(open, matchBrace(text, open));
+    const props = [];
+    for (const p of body.matchAll(/\bpublic\s+(?:(?:virtual|override|required|static|new)\s+)*([\w<>[\]?,.\s]+?)\s+(\w+)\s*\{\s*(?:get|init|set)\b/g)) {
+      // Only the class's own properties, not a nested class's.
+      const depth = (body.slice(0, p.index).match(/\{/g) ?? []).length - (body.slice(0, p.index).match(/\}/g) ?? []).length;
+      if (depth === 1) props.push({ name: p[2], type: p[1].trim(), line: lineOf(open + p.index) });
+    }
+    if (props.length) out.models.push({ name: m[1], line: lineOf(m.index), base: m[2]?.split(',')[0].trim().replace(/<.*$/, '') || null, props });
   }
   return out;
 }

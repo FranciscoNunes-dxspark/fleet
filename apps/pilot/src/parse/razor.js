@@ -102,6 +102,12 @@ export function parseRazor(source) {
     links: [],
     calls: [],
     widgets: [],
+    inlineStyles: [],
+    a11y: [],
+    modelUses: [],
+    texts: [],
+    localized: 0,
+    images: [],
     inline: { script: null, style: null },
     dynamic: [],
   };
@@ -189,6 +195,40 @@ export function parseRazor(source) {
     for (const a of list) if (a.literal) out.bundles.push({ path: a.literal, kind: m[1] === 'Scripts' ? 'script' : 'style', line: at(m.index) });
   }
 
+  // Accessibility, read from the markup alone: what a screen reader or a keyboard can't use.
+  const inputs = [];
+  const labelFor = new Set();
+  const labelAspFor = new Set();
+  const dynamic = (v) => v != null && /@/.test(v);
+  function a11yTag(name, get, attrs, text, end, line) {
+    const has = (n) => attrs.some((a) => a.name === n);
+    const named = has('aria-label') || has('aria-labelledby') || has('title');
+    if (name === 'html' && !has('lang')) out.a11y.push({ rule: 'html-lang', line, what: '<html> without lang' });
+    if (name === 'img' && !has('alt') && !has('role')) out.a11y.push({ rule: 'img-alt', line, what: `<img src="${(get('src')?.value ?? '').slice(0, 60)}"> without alt` });
+    if (name === 'label') {
+      if (get('for')?.value) labelFor.add(get('for').value);
+      if (get('asp-for')?.value) labelAspFor.add(get('asp-for').value);
+    }
+    if ((name === 'input' || name === 'select' || name === 'textarea') && !named) {
+      const type = (get('type')?.value ?? 'text').toLowerCase();
+      if (!['hidden', 'submit', 'button', 'reset', 'image'].includes(type)) {
+        // Wrapped in a <label> on the same or the line before: labelled.
+        const before = text.slice(Math.max(0, text.lastIndexOf('<', Math.max(0, text.lastIndexOf('\n', end - 1) - 1)) - 200), end);
+        if (!/<label\b(?![^>]*\bfor=)[^>]*>(?![\s\S]*<\/label>)/i.test(before)) inputs.push({ id: dynamic(get('id')?.value) ? null : get('id')?.value, aspFor: get('asp-for')?.value, line, what: `<${name}${get('name')?.value ? ` name="${get('name').value}"` : get('id')?.value ? ` id="${get('id').value}"` : ''}>` });
+      }
+    }
+    if ((name === 'button' || name === 'a') && !named) {
+      const close = text.indexOf(`</${name}`, end);
+      const inner = close === -1 || close - end > 2000 ? null : text.slice(end + 1, close);
+      if (inner != null && !/@/.test(inner) && !/<img\b[^>]*\balt="[^"]+"/i.test(inner) && !inner.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, '').trim() && (name === 'button' || has('href'))) {
+        out.a11y.push({ rule: name === 'button' ? 'empty-button' : 'empty-link', line, what: `<${name}> with no text or label` });
+      }
+    }
+    if ((name === 'div' || name === 'span' || name === 'li' || name === 'td' || name === 'i') && has('onclick') && !has('role') && !has('tabindex')) out.a11y.push({ rule: 'click-no-keyboard', line, what: `<${name} onclick> without role and tabindex` });
+    const tabindex = get('tabindex')?.value;
+    if (tabindex && /^[1-9]\d*$/.test(tabindex)) out.a11y.push({ rule: 'tabindex-positive', line, what: `tabindex="${tabindex}"` });
+  }
+
   // Elements: scripts, styles, classes, ids, data- attributes, event handlers.
   const tagRe = /<([a-zA-Z][\w:-]*)\b/g;
   let t;
@@ -248,6 +288,20 @@ export function parseRazor(source) {
       }
     }
     const line = at(t.index);
+    const style = get('style');
+    if (style?.value) {
+      out.inlineStyles.push([line, style.value.trim().slice(0, 120)]);
+      for (const u of style.value.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)) if (!/^(data:|https?:|\/\/)/i.test(u[1])) out.images.push([staticUrl(u[1]) ?? u[1], line]);
+    }
+    if (name === 'img' || (name === 'source' && get('srcset')) || (name === 'link' && /icon/i.test(get('rel')?.value ?? ''))) {
+      const src = staticUrl(get('src')?.value ?? get('href')?.value ?? (get('srcset')?.value ?? '').split(/[\s,]/)[0] ?? '');
+      if (src && !/^(data:|https?:|\/\/)/i.test(src)) out.images.push([src, line]);
+    }
+    // Text people read, written into the markup rather than through a resource.
+    for (const a of attrs) {
+      if (['placeholder', 'title', 'alt', 'aria-label'].includes(a.name) && a.value && !a.value.includes('@') && /\p{L}{2,}/u.test(a.value)) out.texts.push([a.value.trim().slice(0, 80), at(a.at), a.name]);
+    }
+    a11yTag(name, get, attrs, text, i, line);
     if (name === 'script') {
       const src = get('src');
       const include = get('asp-src-include');
@@ -286,8 +340,34 @@ export function parseRazor(source) {
   for (const m of text.matchAll(/new\s*\{[^}]*?\bid\s*=\s*"([\w-]+)"/g)) out.ids.push([m[1], at(m.index)]);
   for (const m of text.matchAll(/\bdata_([\w_]+)\s*=/g)) out.attrs.push([`data-${m[1].replace(/_/g, '-').toLowerCase()}`, at(m.index)]);
 
+  // Inputs whose label couldn't be found in the view: a <label for>, an asp-for label, or ARIA.
+  for (const input of inputs) {
+    if (input.id && labelFor.has(input.id)) continue;
+    if (input.aspFor && labelAspFor.has(input.aspFor)) continue;
+    out.a11y.push({ rule: 'input-label', line: input.line, what: input.what });
+  }
+  const seenIds = new Map();
+  for (const [id, line] of out.ids) {
+    if (seenIds.has(id) && seenIds.get(id) !== line) out.a11y.push({ rule: 'duplicate-id', line, what: `#${id} (also line ${seenIds.get(id)})` });
+    else seenIds.set(id, line);
+  }
   out.widgets = findWidgets(text, { markup: true, scripts: false });
   out.calls.sort((a, b) => a.line - b.line);
+
+  // The view model's properties the view reads: Model.X, m => m.X in helpers, asp-for="X".
+  for (const m of text.matchAll(/\bModel\??\.(\w+)/g)) out.modelUses.push([m[1], at(m.index)]);
+  for (const m of text.matchAll(/\(\s*(\w+)\s*=>\s*\1\??\.(\w+)/g)) out.modelUses.push([m[2], at(m.index)]);
+  for (const m of text.matchAll(/\basp-for\s*=\s*"(?:@?Model\.)?(\w+)/g)) out.modelUses.push([m[1], at(m.index)]);
+  // Text between tags, outside scripts, styles and code: what a translation would have to cover.
+  const skip = [...text.matchAll(/<(script|style)\b[\s\S]*?<\/\1>/g)].map((m) => [m.index, m.index + m[0].length]);
+  for (const m of text.matchAll(/>([^<>]+)</g)) {
+    // `=>` is a lambda (m => m.Phone), not the end of a tag.
+    if (text[m.index - 1] === '=' || skip.some(([a, b]) => m.index > a && m.index < b)) continue;
+    const plain = m[1].replace(/@await\s+/g, '@').replace(/@\((?:[^()]|\([^()]*\))*\)|@[\w.]+(?:\?\.[\w.]+)*(?:\([^)]*\)|\[[^\]]*\])?|&[#\w]+;/g, ' ').trim();
+    if (!/\p{L}{2,}/u.test(plain) || /[{};=]|^\s*(if|else|foreach|for|var|using|return)\b/.test(plain)) continue;
+    out.texts.push([plain.replace(/\s+/g, ' ').slice(0, 80), at(m.index + 1), 'text']);
+  }
+  out.localized = (text.match(/\b(?:Localizer|ViewLocalizer|SharedLocalizer|L)\[|\bResources?\.\w+\.\w+|@Html\.Resource\b|@T\(|\bStrings\.\w+|GetLocalizedString\(|\bResx\.\w+/g) ?? []).length;
   // A link that is also a call (data-url="@Url.Action(…)", an Ajax.ActionLink's href) is listed once, as the call.
   const same = (l, c) => l.line === c.line && (l.url && c.url ? l.url.toLowerCase() === c.url.toLowerCase() : l.action && c.action && l.action.toLowerCase() === c.action.toLowerCase());
 

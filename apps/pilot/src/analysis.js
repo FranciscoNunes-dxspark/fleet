@@ -433,7 +433,8 @@ export function split(idx, target) {
     lines.push(`      lines ${g.ranges.map(([a, b]) => (a === b ? `${a}` : `${a}-${b}`)).slice(0, 12).join(', ')}${g.ranges.length > 12 ? ` … +${g.ranges.length - 12}` : ''}`);
   }
   lines.push('', `Then ${rel} keeps its own imports and becomes, in this order (the cascade stays as it was within each file):`);
-  for (const g of list.filter((x) => !x.file.startsWith('unused'))) lines.push(`  @import "${g.file.replace(ext, '')}";`);
+  // unused last: a split reorganises without deleting; dropping it is a choice made after checking.
+  for (const g of [...list.filter((x) => !x.file.startsWith('unused')), ...list.filter((x) => x.file.startsWith('unused'))]) lines.push(`  @import "${g.file.replace(ext, '')}";${g.file.startsWith('unused') ? ' // check, then delete the file and this line' : ''}`);
   if (groups.has('unused')) lines.push('', `unused${ext}: rules whose classes no view or script uses. Check for classes built at run time before deleting them.`);
   if (pageOnly.length) lines.push('', `Page-only styles (${pageOnly.reduce((n, g) => n + g.lines, 0)} lines) could be loaded only on their pages, in a section or bundle of their own, instead of everywhere.`);
   if (orderSensitive.length) lines.push('', `Order-sensitive: ${plural(orderSensitive.length, 'class', 'classes')} styled in more than one new file; keep the import order above:`, ...cut(orderSensitive, 10, (o) => `  .${o.class}: ${o.files.join(', ')}`));
