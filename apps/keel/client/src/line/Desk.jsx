@@ -20,6 +20,7 @@ import { ApprovalsPanel } from '../pages/Releases.jsx';
 import { DESK_QUEUES, deskQueues, monitorIdOf, serviceTiles } from './views.js';
 import { useLine } from './LineShell.jsx';
 import { ServiceTile } from './Control.jsx';
+import { Button } from '@radix-ui/themes';
 
 const ICONS = { production: 'production', approval: 'pipelines', review: 'pullRequests', pr: 'pullRequests', work: 'workItems', pipeline: 'pipelines', team: 'team' };
 
@@ -162,7 +163,7 @@ function Detail({ item, data, onSnooze }) {
   const bar = (
     <div className="desk-detail-bar">
       <span className="desk-detail-kind">{kindLabel(item.kind)}</span>
-      <button type="button" className="btn btn-small btn-ghost" onClick={onSnooze}>{t('Snooze a day')}</button>
+      <Button size="1" variant="ghost" color="gray" type="button" onClick={onSnooze}>{t('Snooze a day')}</Button>
       <ExternalLink href={item.webUrl} />
     </div>
   );
@@ -186,7 +187,7 @@ function Detail({ item, data, onSnooze }) {
       {tile && <ol className="tiles tiles-one"><ServiceTile tile={tile} /></ol>}
       {where && (
         <div className="detail-actions">
-          <button type="button" className="btn" onClick={() => openInboxItem(item, openDrawer, navigate)}>{t('Go to {page}', { page: where })} →</button>
+          <Button size="2" variant="outline" color="gray" type="button" onClick={() => openInboxItem(item, openDrawer, navigate)}>{t('Go to {page}', { page: where })} →</Button>
         </div>
       )}
     </div>

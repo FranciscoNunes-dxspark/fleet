@@ -10,7 +10,7 @@ export default function NotFound() {
       <Pinch mood="worried" width={128} />
       <h1>{t("There's no page here.")}</h1>
       <p className="muted">{t("Keel has nothing at {path}. The link may be old, or the page may have moved.", { path: pathname })}</p>
-      <Link to="/" className="btn btn-primary">{t('Go to the Line')}</Link>
+      <Link to="/" className="btn btn-primary">{t('Go to Keel')}</Link>
     </div>
   );
 }

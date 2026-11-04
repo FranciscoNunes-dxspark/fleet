@@ -5,6 +5,7 @@ import { Chip, ErrorBox, Loading, TypeLabel } from '../ui.jsx';
 import { locale, t, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { useSticky } from '../sticky.js';
+import { Select } from '../ui.jsx';
 
 const perWeek = (n) => (n == null ? '—' : n >= 10 ? Math.round(n).toString() : n.toFixed(1));
 const points = (n) => (Number.isInteger(n) ? n : n.toFixed(1));
@@ -41,10 +42,10 @@ export default function Flow({ days }) {
     <section aria-busy={loading}>
       <div className="toolbar">
         <label className="flow-type">{t('Type')}
-          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
+          <Select className="input" value={type} onChange={(e) => setType(e.target.value)}>
             <option value="">{t('All types')}</option>
             {types.map((x) => <option key={x.type} value={x.type}>{t('{type} ({finished} finished, {wip} in progress)', { type: x.type, finished: x.finished, wip: x.wip })}</option>)}
-          </select>
+          </Select>
         </label>
         <span className="muted small">{type ? t('{type} items: how long they take once someone starts them, and which ones in progress are taking longer than usual.', { type }) : t('Work items of every type: how long they take once someone starts them, and which ones in progress are taking longer than usual.')}</span>
       </div>

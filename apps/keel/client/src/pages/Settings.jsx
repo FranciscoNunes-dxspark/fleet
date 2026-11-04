@@ -14,6 +14,9 @@ import { folderProblem, loadFolders, loadRules, saveFolder, saveRules } from '..
 import { pushPref } from '../prefs.js';
 import { CATEGORIES, desktopPermission, desktopSupported, loadPrefs, requestDesktop, savePrefs, showDesktop } from '../notify.js';
 import { canPromptInstall, currentSubscription, deviceId, disablePush, enablePush, isInstalled, promptInstall, pushAvailability } from '../pwa.js';
+import { Button, TextArea, TextField } from '@radix-ui/themes';
+import { Checkbox, Radio, Select } from '../ui.jsx';
+import { HOMES, loadHome, saveHome } from '../home.js';
 
 const THRESHOLDS = [
   ['myReviewHours', 'Escalate a review waiting on me after', 'hours'],
@@ -127,8 +130,8 @@ export default function Settings() {
 
       <Section id="projects" title={t('Projects and repositories')}>
         <p className="muted small">{t("Pick the teams you lead in each project. Their members appear on the Team page and each team's sprint is on the Sprint page. If the project is shared with other teams, you can limit work items to your teams' area paths.")}</p>
-        <input
-          type="search" className="input project-search" placeholder={t(data.projects.length === 1 ? 'Search {n} project' : 'Search {n} projects', { n: data.projects.length })}
+        <TextField.Root className="project-search" variant="surface" color="gray"
+          type="search" placeholder={t(data.projects.length === 1 ? 'Search {n} project' : 'Search {n} projects', { n: data.projects.length })}
           value={projectQuery} onChange={(e) => setProjectQuery(e.target.value)} aria-label={t('Search projects')}
         />
         <ul className="project-list">
@@ -139,15 +142,15 @@ export default function Settings() {
               <li key={p.id} className={`${cfg.tracked ? 'tracked' : ''}${cfg.tracked && openProjects.has(p.id) ? ' open' : ''}`}>
                 <div className="project-line">
                   <label className="check strong">
-                    <input type="checkbox" checked={!!cfg.tracked} onChange={(e) => { setProject(p.id, { tracked: e.target.checked }); toggleProject(p.id, e.target.checked); }} /> {projectLabel(p.name, p.org)}
+                    <Checkbox  checked={!!cfg.tracked} onChange={(e) => { setProject(p.id, { tracked: e.target.checked }); toggleProject(p.id, e.target.checked); }} /> {projectLabel(p.name, p.org)}
                   </label>
                   {cfg.tracked
                     ? <span className="small muted project-summary">{projectSummary(cfg, opt, orgKind(p.org) === 'github')}</span>
                     : p.description && <span className="small muted project-summary">{p.description}</span>}
                   {cfg.tracked && (
-                    <button type="button" className="btn btn-small" aria-expanded={openProjects.has(p.id)} onClick={() => toggleProject(p.id)}>
+                    <Button size="1" variant="outline" color="gray" type="button" aria-expanded={openProjects.has(p.id)} onClick={() => toggleProject(p.id)}>
                       {openProjects.has(p.id) ? t('Close') : t('Edit')}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {cfg.tracked && openProjects.has(p.id) && (
@@ -162,8 +165,8 @@ export default function Settings() {
                             const on = selected.some((s) => s.id === team.id);
                             return (
                               <label key={team.id} className="check">
-                                <input
-                                  type="checkbox"
+                                <Checkbox
+                                  
                                   checked={on}
                                   onChange={(e) => setProject(p.id, {
                                     teams: e.target.checked ? [...selected, { id: team.id, name: team.name }] : selected.filter((s) => s.id !== team.id),
@@ -175,7 +178,7 @@ export default function Settings() {
                             );
                           })}
                         </div>
-                        <label className="check"><input type="checkbox" disabled={!teamsOf(cfg).length} checked={!!cfg.scopeToTeamArea} onChange={(e) => setProject(p.id, { scopeToTeamArea: e.target.checked })} /> {t("Only work items in these teams' area paths")}</label>
+                        <label className="check"><Checkbox  disabled={!teamsOf(cfg).length} checked={!!cfg.scopeToTeamArea} onChange={(e) => setProject(p.id, { scopeToTeamArea: e.target.checked })} /> {t("Only work items in these teams' area paths")}</label>
                       </fieldset>}
                       <fieldset className="repo-pick line-limits">
                         <legend>{t('When this project counts as stuck on the Line')} <span className="muted small">{t('Empty uses the defaults under When to flag things.')}</span></legend>
@@ -186,8 +189,8 @@ export default function Settings() {
                               <label key={k}>
                                 <span>{t(label)}</span>
                                 <span className="threshold-input">
-                                  <input
-                                    type="number" min={1} className="input" placeholder={String(draft.thresholds[k] ?? '')}
+                                  <TextField.Root variant="surface" color="gray"
+                                    type="number" min={1} placeholder={String(draft.thresholds[k] ?? '')}
                                     value={cfg.line?.[k] ?? ''}
                                     onChange={(e) => setProject(p.id, { line: { ...(cfg.line || {}), [k]: e.target.value ? Number(e.target.value) : null } })}
                                   /> {t(unit)}
@@ -199,8 +202,8 @@ export default function Settings() {
                       </fieldset>
                       <div className="repo-pick">
                         <div className="repo-group">
-                          <label className="check"><input type="radio" name={`repos-${p.id}`} checked={cfg.repos === 'all' || !Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: 'all' })} /> {t('All repos ({n})', { n: opt.repos.length })}</label>
-                          <label className="check"><input type="radio" name={`repos-${p.id}`} checked={Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: opt.repos.map((r) => r.id) })} /> {t('Only these:')}</label>
+                          <label className="check"><Radio checked={cfg.repos === 'all' || !Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: 'all' })} /> {t('All repos ({n})', { n: opt.repos.length })}</label>
+                          <label className="check"><Radio checked={Array.isArray(cfg.repos)} onChange={() => setProject(p.id, { repos: opt.repos.map((r) => r.id) })} /> {t('Only these:')}</label>
                         </div>
                         <div className="repo-rows">
                           <div className="repo-row repo-row-head small muted">
@@ -213,7 +216,7 @@ export default function Settings() {
                             return (
                               <div key={r.id} className={`repo-row${on ? '' : ' off'}`}>
                                 {only
-                                  ? <label className="check"><input type="checkbox" checked={on} onChange={(e) => setProject(p.id, { repos: e.target.checked ? [...cfg.repos, r.id] : cfg.repos.filter((x) => x !== r.id) })} /> {r.name}</label>
+                                  ? <label className="check"><Checkbox  checked={on} onChange={(e) => setProject(p.id, { repos: e.target.checked ? [...cfg.repos, r.id] : cfg.repos.filter((x) => x !== r.id) })} /> {r.name}</label>
                                   : <span className="repo-name">{r.name}</span>}
                                 <RepoFolder repo={r} />
                               </div>
@@ -237,16 +240,16 @@ export default function Settings() {
           {THRESHOLDS.map(([k, label, unit]) => (
             <label key={k} className="threshold">
               <span>{t(label)}</span>
-              <span className="threshold-input"><input type="number" min={1} className="input" value={draft.thresholds[k]} onChange={(e) => setThreshold(k, e.target.value)} /> {t(unit)}</span>
+              <span className="threshold-input"><TextField.Root variant="surface" color="gray" type="number" min={1} value={draft.thresholds[k]} onChange={(e) => setThreshold(k, e.target.value)} /> {t(unit)}</span>
             </label>
           ))}
           <label className="threshold">
             <span>{t('Treat work items with this tag or state as blocked')}</span>
-            <span className="threshold-input"><input className="input" value={draft.blockedTag} onChange={(e) => setDraft((d) => ({ ...d, blockedTag: e.target.value }))} /></span>
+            <span className="threshold-input"><TextField.Root variant="surface" color="gray" value={draft.blockedTag} onChange={(e) => setDraft((d) => ({ ...d, blockedTag: e.target.value }))} /></span>
           </label>
           <label className="threshold">
             <span>{tj('Check Azure DevOps for changes every {note}', { note: <span className="muted small">{t('(only while the console is open; 15–600)')}</span> })}</span>
-            <span className="threshold-input"><input type="number" min={15} max={600} className="input" value={draft.refreshSeconds} onChange={(e) => setDraft((d) => ({ ...d, refreshSeconds: Number(e.target.value) }))} /> {t('seconds')}</span>
+            <span className="threshold-input"><TextField.Root variant="surface" color="gray" type="number" min={15} max={600} value={draft.refreshSeconds} onChange={(e) => setDraft((d) => ({ ...d, refreshSeconds: Number(e.target.value) }))} /> {t('seconds')}</span>
           </label>
         </div>
       </Section>
@@ -255,12 +258,12 @@ export default function Settings() {
         <p className="muted small">{t('Used when you set auto-complete on a pull request from the console.')}</p>
         <div className="form-row">
           <label>{t('Merge type')}
-            <select className="input" value={draft.autoComplete.mergeStrategy} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, mergeStrategy: e.target.value } }))}>
+            <Select className="input" value={draft.autoComplete.mergeStrategy} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, mergeStrategy: e.target.value } }))}>
               {MERGE.map(([v, l]) => <option key={v} value={v}>{t(l)}</option>)}
-            </select>
+            </Select>
           </label>
-          <label className="check"><input type="checkbox" checked={draft.autoComplete.deleteSourceBranch} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, deleteSourceBranch: e.target.checked } }))} /> {t('Delete source branch')}</label>
-          <label className="check"><input type="checkbox" checked={draft.autoComplete.transitionWorkItems} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, transitionWorkItems: e.target.checked } }))} /> {t('Complete linked work items')}</label>
+          <label className="check"><Checkbox  checked={draft.autoComplete.deleteSourceBranch} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, deleteSourceBranch: e.target.checked } }))} /> {t('Delete source branch')}</label>
+          <label className="check"><Checkbox  checked={draft.autoComplete.transitionWorkItems} onChange={(e) => setDraft((d) => ({ ...d, autoComplete: { ...d.autoComplete, transitionWorkItems: e.target.checked } }))} /> {t('Complete linked work items')}</label>
         </div>
       </Section>
 
@@ -268,11 +271,11 @@ export default function Settings() {
       <Section id="advisories" title={t('Security advisories')}>
         <p className="muted small">{t("Once a day the server reads the npm and NuGet lock files on each tracked repository's default branch and asks osv.dev about their packages (only names and versions leave the server). New advisories go to your inbox and notifications.")}</p>
         <div className="form-row">
-          <label className="check"><input type="checkbox" checked={draft.advisories?.enabled !== false} onChange={(e) => setDraft((d) => ({ ...d, advisories: { ...d.advisories, enabled: e.target.checked } }))} /> {t('Watch my repositories for new advisories')}</label>
+          <label className="check"><Checkbox  checked={draft.advisories?.enabled !== false} onChange={(e) => setDraft((d) => ({ ...d, advisories: { ...d.advisories, enabled: e.target.checked } }))} /> {t('Watch my repositories for new advisories')}</label>
           <label>{t('Tell me about advisories from')}
-            <select className="input" value={draft.advisories?.minSeverity || 'high'} disabled={draft.advisories?.enabled === false} onChange={(e) => setDraft((d) => ({ ...d, advisories: { ...d.advisories, minSeverity: e.target.value } }))}>
+            <Select className="input" value={draft.advisories?.minSeverity || 'high'} disabled={draft.advisories?.enabled === false} onChange={(e) => setDraft((d) => ({ ...d, advisories: { ...d.advisories, minSeverity: e.target.value } }))}>
               {ADVISORY_SEVERITIES.map(([v, l]) => <option key={v} value={v}>{t(l)}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
       </Section>
@@ -298,8 +301,8 @@ export default function Settings() {
       {dirty && (
         <div className="save-bar" role="region" aria-label={t('Unsaved changes')}>
           <span>{t('Unsaved changes to projects, flags, auto-complete or advisories.')}</span>
-          <button type="button" className="btn btn-small btn-ghost" onClick={() => setDraft(structuredClone(data.settings))} disabled={saving}>{t('Discard')}</button>
-          <button type="button" className="btn btn-small btn-primary" onClick={save} disabled={saving}>{saving ? t('Saving…') : t('Save settings')}</button>
+          <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setDraft(structuredClone(data.settings))} disabled={saving}>{t('Discard')}</Button>
+          <Button size="1" variant="solid" type="button" onClick={save} disabled={saving}>{saving ? t('Saving…') : t('Save settings')}</Button>
         </div>
       )}
 
@@ -340,28 +343,28 @@ function NotificationSettings() {
     <Section id="notifications" title={t('Notifications')} note={<span className="saved-note">{t('Saved automatically')}</span>}>
       <p className="muted small">{t('Saved in this browser right away. Pop-ups and desktop notifications need the console open (a background tab is fine); push notifications arrive even when it is closed.')}</p>
       <div className="notify-grid">
-        <label className="check"><input type="checkbox" checked={prefs.inApp} onChange={(e) => update({ inApp: e.target.checked })} /> {t('Show a pop-up in the console')}</label>
+        <label className="check"><Checkbox  checked={prefs.inApp} onChange={(e) => update({ inApp: e.target.checked })} /> {t('Show a pop-up in the console')}</label>
         <div className="notify-desktop">
           {!desktopSupported() ? <span className="muted small">{t("This browser doesn't support desktop notifications.")}</span>
             : permission === 'granted' ? (
-              <label className="check"><input type="checkbox" checked={prefs.desktop} onChange={(e) => update({ desktop: e.target.checked })} /> {t('Desktop notifications')}</label>
+              <label className="check"><Checkbox  checked={prefs.desktop} onChange={(e) => update({ desktop: e.target.checked })} /> {t('Desktop notifications')}</label>
             ) : permission === 'denied' ? (
               <span className="small text-warn">{t("Desktop notifications are blocked for this site. Allow them in your browser's site settings, then reload.")}</span>
             ) : (
-              <button type="button" className="btn btn-small" onClick={turnOnDesktop}>{t('Turn on desktop notifications')}</button>
+              <Button size="1" variant="outline" color="gray" type="button" onClick={turnOnDesktop}>{t('Turn on desktop notifications')}</Button>
             )}
         </div>
         {permission === 'granted' && prefs.desktop && (
-          <label className="check"><input type="checkbox" checked={prefs.onlyWhenHidden} onChange={(e) => update({ onlyWhenHidden: e.target.checked })} /> {t("Only on the desktop when the console isn't in front")}</label>
+          <label className="check"><Checkbox  checked={prefs.onlyWhenHidden} onChange={(e) => update({ onlyWhenHidden: e.target.checked })} /> {t("Only on the desktop when the console isn't in front")}</label>
         )}
       </div>
       <h3 className="small notify-h">{t('Notify me about')}</h3>
       <div className="notify-cats">
         {CATEGORIES.map((c) => (
-          <label key={c.id} className="check"><input type="checkbox" checked={prefs.categories[c.id] !== false} onChange={(e) => update({ categories: { [c.id]: e.target.checked } })} /> {c.label}</label>
+          <label key={c.id} className="check"><Checkbox  checked={prefs.categories[c.id] !== false} onChange={(e) => update({ categories: { [c.id]: e.target.checked } })} /> {c.label}</label>
         ))}
       </div>
-      <button type="button" className="btn btn-small btn-ghost" onClick={test}>{t('Send a test notification')}</button>
+      <Button size="1" variant="ghost" color="gray" type="button" onClick={test}>{t('Send a test notification')}</Button>
       <PushSettings />
     </Section>
   );
@@ -439,11 +442,11 @@ function PushSettings() {
           {on ? (
             <>
               <span className="chip chip-ok">{t('On for this device')}</span>
-              <button type="button" className="btn btn-small" onClick={test} disabled={busy}>{t('Send a test')}</button>
-              <button type="button" className="btn btn-small btn-ghost" onClick={turnOff} disabled={busy}>{t('Turn off on this device')}</button>
+              <Button size="1" variant="outline" color="gray" type="button" onClick={test} disabled={busy}>{t('Send a test')}</Button>
+              <Button size="1" variant="ghost" color="gray" type="button" onClick={turnOff} disabled={busy}>{t('Turn off on this device')}</Button>
             </>
           ) : (
-            <button type="button" className="btn btn-small btn-primary" onClick={turnOn} disabled={busy || here === undefined}>{t('Turn on push on this device')}</button>
+            <Button size="1" variant="solid" type="button" onClick={turnOn} disabled={busy || here === undefined}>{t('Turn on push on this device')}</Button>
           )}
         </div>
       )}
@@ -459,14 +462,14 @@ function PushSettings() {
                 </div>
                 {d.lastError && <div className="small text-warn">{tx(d.lastError)}</div>}
               </div>
-              <button type="button" className="btn btn-small btn-ghost" onClick={remove(d)} disabled={busy}>{t('Remove')}</button>
+              <Button size="1" variant="ghost" color="gray" type="button" onClick={remove(d)} disabled={busy}>{t('Remove')}</Button>
             </li>
           ))}
         </ul>
       )}
       {/* Chrome, Edge and Android can install from here; iPhones were told how above. */}
       {!isInstalled() && installable && (
-        <p className="push-install"><button type="button" className="btn btn-small" onClick={() => promptInstall()}>{t('Install Keel as an app')}</button></p>
+        <p className="push-install"><Button size="1" variant="outline" color="gray" type="button" onClick={() => promptInstall()}>{t('Install Keel as an app')}</Button></p>
       )}
     </div>
   );
@@ -475,6 +478,7 @@ function PushSettings() {
 /** Light/dark/system and accent color; saved in this browser and applied instantly. */
 function AppearanceSettings() {
   const [theme, setTheme] = useState(loadTheme);
+  const [home, setHome] = useState(loadHome);
   const update = (patch) => {
     const next = { ...theme, ...patch };
     setTheme(next);
@@ -503,6 +507,12 @@ function AppearanceSettings() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="appearance-row">
+          <span className="appearance-label">{t('Home page')}</span>
+          <Select value={home} onChange={(e) => { setHome(e.target.value); saveHome(e.target.value); }} aria-label={t('Home page')}>
+            {HOMES.map(([path, name]) => <option key={path} value={path}>{name()}</option>)}
+          </Select>
         </div>
         <div className="appearance-row">
           <span className="appearance-label">{t('Accent')}</span>
@@ -627,9 +637,9 @@ function AccountSettings() {
         >
           <h3 className="small">{t('Replace your Azure DevOps token')}</h3>
           <p className="muted small">{t("Use this when your token is about to expire. It's checked with Azure DevOps before it replaces the old one.")}</p>
-          <input className="input" type="password" autoComplete="off" spellCheck={false} placeholder={t('Paste a new token')} value={pat} onChange={(e) => setPat(e.target.value)} aria-label={t('New personal access token')} />
+          <TextField.Root variant="surface" color="gray" type="password" autoComplete="off" spellCheck={false} placeholder={t('Paste a new token')} value={pat} onChange={(e) => setPat(e.target.value)} aria-label={t('New personal access token')} />
           <div className="account-actions">
-            <button type="submit" className="btn btn-small btn-primary" disabled={!pat.trim() || busy === 'token'}>{busy === 'token' ? t('Checking…') : t('Replace token')}</button>
+            <Button size="1" variant="solid" type="submit" disabled={!pat.trim() || busy === 'token'}>{busy === 'token' ? t('Checking…') : t('Replace token')}</Button>
             <Confirm
               text={t("Disconnect Azure DevOps? You'll be asked for a token again.")}
               onConfirm={async () => {
@@ -651,10 +661,10 @@ function AccountSettings() {
           }}
         >
           <h3 className="small">{t('Change password')}</h3>
-          <input className="input" type="password" autoComplete="current-password" placeholder={t('Current password')} value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} aria-label={t('Current password')} required />
-          <input className="input" type="password" autoComplete="new-password" placeholder={t('New password (10+ characters)')} minLength={10} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} aria-label={t('New password')} required />
+          <TextField.Root variant="surface" color="gray" type="password" autoComplete="current-password" placeholder={t('Current password')} value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} aria-label={t('Current password')} required />
+          <TextField.Root variant="surface" color="gray" type="password" autoComplete="new-password" placeholder={t('New password (10+ characters)')} minLength={10} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} aria-label={t('New password')} required />
           <div className="account-actions">
-            <button type="submit" className="btn btn-small" disabled={busy === 'password'}>{busy === 'password' ? t('Saving…') : t('Change password')}</button>
+            <Button size="1" variant="outline" color="gray" type="submit" disabled={busy === 'password'}>{busy === 'password' ? t('Saving…') : t('Change password')}</Button>
           </div>
         </form>
       </div>
@@ -724,8 +734,8 @@ function ClaudeRules() {
     <div className="claude-rules">
       <h3 className="small">{t('Start in Claude: how to work')}</h3>
       <p className="muted small">{t('Replaces the default instructions at the end of the prompt, which ask Claude to plan first, use a new branch, run the tests and not commit. Leave empty for the default. Saved with your account.')}</p>
-      <textarea
-        className="input"
+      <TextArea variant="surface" color="gray"
+       
         rows={5}
         value={value}
         onChange={(e) => setValue(e.target.value)}
@@ -756,8 +766,8 @@ function RepoFolder({ repo }) {
   };
   return (
     <div className="repo-folder">
-      <input
-        className="input mono"
+      <TextField.Root className="mono" variant="surface" color="gray"
+       
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={save}

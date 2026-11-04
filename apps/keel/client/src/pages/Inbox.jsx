@@ -7,6 +7,7 @@ import { age } from '../format.js';
 import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, sameTarget, typeSlug, useTypeColor } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useSourceName } from '../orgs.js';
+import { Button } from '@radix-ui/themes';
 
 // Labels are getters so they follow the current language.
 const KINDS = [
@@ -218,7 +219,7 @@ function SnoozeMenu({ onPick }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="menu-wrap">
-      <button type="button" className="btn btn-ghost btn-small" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{t('Snooze')}</button>
+      <Button size="1" variant="ghost" color="gray" type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{t('Snooze')}</Button>
       {open && (
         <span className="menu" role="menu" onMouseLeave={() => setOpen(false)}>
           {[[1, 'Until tomorrow'], [3, 'For 3 days'], [7, 'For a week']].map(([d, label]) => (

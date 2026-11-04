@@ -10,6 +10,8 @@ import MergeStatus from './MergeStatus.jsx';
 import { SuggestedReviewers } from './NewPr.jsx';
 import Trace from '../line/Trace.jsx';
 import { RiskReasons, useRisks } from '../risk.jsx';
+import { RadioGroup, Button, TextArea, TextField } from '@radix-ui/themes';
+import { Checkbox, Select } from '../ui.jsx';
 
 // Labels are getters so they follow the current language.
 const FILE_KIND = {
@@ -327,14 +329,14 @@ export default function PrDetail({ target }) {
         {writable && !github && pr.status === 'active' && (candidates.length > 0 || canAddMe) && (
           <form className="inline-form" onSubmit={async (e) => { e.preventDefault(); if (reviewer && await act({ type: 'addReviewer', reviewerId: reviewer }, t('Reviewer added'))) setReviewer(''); }}>
             {candidates.length > 0 && <>
-              <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>
+              <Select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>
                 <option value="">{t('Add a reviewer…')}</option>
                 {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-              </select>
-              <button type="submit" className="btn btn-small" disabled={!reviewer || !!busy}>{t('Add')}</button>
+              </Select>
+              <Button size="1" variant="outline" color="gray" type="submit" disabled={!reviewer || !!busy}>{t('Add')}</Button>
             </>}
             {/* "me" is resolved on the server, in this pull request's organization. */}
-            {canAddMe && <button type="button" className="btn btn-small btn-ghost" disabled={!!busy} title={t('Add yourself as a reviewer')} onClick={() => act({ type: 'addReviewer', reviewerId: 'me' }, t('You were added as a reviewer'))}>{t('Add me')}</button>}
+            {canAddMe && <Button size="1" variant="ghost" color="gray" type="button" disabled={!!busy} title={t('Add yourself as a reviewer')} onClick={() => act({ type: 'addReviewer', reviewerId: 'me' }, t('You were added as a reviewer'))}>{t('Add me')}</Button>}
           </form>
         )}
         {writable && !github && pr.status === 'active' && pr.files?.items?.length > 0 && (
@@ -385,8 +387,8 @@ export default function PrDetail({ target }) {
         </ul>
         {writable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', content: comment }, t('Comment posted'))) setComment(''); }}>
-          <textarea className="input" rows={3} placeholder={t('Leave a comment (Markdown supported)')} value={comment} onChange={(e) => setComment(e.target.value)} aria-label={t('Comment')} />
-          <button type="submit" className="btn btn-primary btn-small" disabled={!comment.trim() || !!busy}>{t('Post comment')}</button>
+          <TextArea variant="surface" color="gray" rows={3} placeholder={t('Leave a comment (Markdown supported)')} value={comment} onChange={(e) => setComment(e.target.value)} aria-label={t('Comment')} />
+          <Button size="1" variant="solid" type="submit" disabled={!comment.trim() || !!busy}>{t('Post comment')}</Button>
         </form>
         )}
       </section>
@@ -403,9 +405,9 @@ export default function PrDetail({ target }) {
         {pr.status === 'active' && <FlowSteps flow={pr.flow} github={github} />}
         {pr.status !== 'active' && <span className="small muted">{pr.status === 'completed' ? t('This pull request is completed.') : pr.status === 'abandoned' ? t('This pull request is abandoned.') : t('This pull request is {status}.', { status: pr.status })}</span>}
         {/* The current step's button leads (publish, then approve, then complete); later ones wait their turn. */}
-        {writable && pr.status === 'active' && pr.isDraft && <button type="button" className="btn btn-small btn-primary" disabled={!!busy} onClick={() => act({ type: 'publish' }, t('Published'))}>{github ? t('Ready for review') : t('Publish draft')}</button>}
+        {writable && pr.status === 'active' && pr.isDraft && <Button size="1" variant="solid" type="button" disabled={!!busy} onClick={() => act({ type: 'publish' }, t('Published'))}>{github ? t('Ready for review') : t('Publish draft')}</Button>}
         {writable && pr.flow.step === 'approval' && !ownGithub && !pr.isMine && !(pr.myVote >= 5) && (
-          <button type="button" className="btn btn-small btn-primary" disabled={!!busy} onClick={() => act({ type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{busy === 'vote10' ? '…' : t('Approve')}</button>
+          <Button size="1" variant="solid" type="button" disabled={!!busy} onClick={() => act({ type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{busy === 'vote10' ? '…' : t('Approve')}</Button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && !completing && (
           <button
@@ -420,13 +422,13 @@ export default function PrDetail({ target }) {
         )}
         {writable && pr.status === 'active' && !pr.isDraft && (github
           ? pr.autoComplete
-            ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-merge turned off'))}>{t('Turn off auto-merge')}</button>
-            : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-merge on'))}>{t('Turn on auto-merge')}</button>
+            ? <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-merge turned off'))}>{t('Turn off auto-merge')}</Button>
+            : <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-merge on'))}>{t('Turn on auto-merge')}</Button>
           : pr.autoComplete
-            ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-complete cancelled'))}>{t('Cancel auto-complete')}</button>
-            : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</button>)}
+            ? <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-complete cancelled'))}>{t('Cancel auto-complete')}</Button>
+            : <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</Button>)}
         {writable && !github && pr.status === 'active' && pr.mergeStatus === 'succeeded' && (
-          <button type="button" className="btn btn-small btn-ghost" disabled={!!busy} title={t('Restart merge checks again without a push, for example after the target branch changed.')} onClick={() => act({ type: 'restartMerge' }, t('Merge restarted'))}>{t('Restart merge')}</button>
+          <Button size="1" variant="ghost" color="gray" type="button" disabled={!!busy} title={t('Restart merge checks again without a push, for example after the target branch changed.')} onClick={() => act({ type: 'restartMerge' }, t('Merge restarted'))}>{t('Restart merge')}</Button>
         )}
         {writable && pr.status === 'active' && (github
           ? <Confirm text={t('Close this pull request without merging?')} onConfirm={() => act({ type: 'abandon' }, t('Pull request closed'))} className="btn btn-small btn-ghost text-bad">{t('Close')}</Confirm>
@@ -550,12 +552,12 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = fal
   return (
     <section className="detail-section complete-form" aria-label={t('Complete pull request')} ref={formRef}>
       <h3>{t('Complete pull request')}</h3>
-      <div className="complete-when" role="radiogroup" aria-label={t('When')}>
-        <label className="check"><input type="radio" name="complete-when" checked={!later} onChange={() => setWhen('now')} /> {t('Now')}</label>
-        <label className="check"><input type="radio" name="complete-when" checked={later} onChange={() => setWhen('at')} /> {t('At')}</label>
-        <input className="input" type="datetime-local" value={at} onChange={(e) => { setAt(e.target.value); setWhen('at'); }} aria-label={t('Complete at')} aria-describedby="complete-at-zone" />
+      <RadioGroup.Root className="complete-when" value={later ? 'at' : 'now'} onValueChange={setWhen} aria-label={t('When')}>
+        <label className="check"><RadioGroup.Item value="now" /> {t('Now')}</label>
+        <label className="check"><RadioGroup.Item value="at" /> {t('At')}</label>
+        <TextField.Root variant="surface" color="gray" type="datetime-local" value={at} onChange={(e) => { setAt(e.target.value); setWhen('at'); }} aria-label={t('Complete at')} aria-describedby="complete-at-zone" />
         {localZone() && <span className="muted small" id="complete-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
-      </div>
+      </RadioGroup.Root>
       {later && <p className="muted small">{t('Keel completes it then, as you, if it is approved, its required checks have passed and it has no conflicts; otherwise it tells you why not. Policies are never overridden.')}</p>}
       {!later && pending.length > 0 && (
         <p className="callout small">
@@ -567,33 +569,33 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = fal
         </p>
       )}
       <label className="field">{t('Merge type')}
-        <select className="input" value={mergeStrategy} onChange={(e) => setMergeStrategy(e.target.value)}>
+        <Select className="input" value={mergeStrategy} onChange={(e) => setMergeStrategy(e.target.value)}>
           {types.map(([v, label, hint]) => <option key={v} value={v}>{t(label)}: {t(hint)}</option>)}
-        </select>
+        </Select>
       </label>
       {usesMessage && (
         <label className="field">{t('Merge commit message')}
-          <textarea className="input" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
+          <TextArea variant="surface" color="gray" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
         </label>
       )}
-      <label className="check"><input type="checkbox" checked={deleteSourceBranch} onChange={(e) => setDeleteSourceBranch(e.target.checked)} /> {tj('Delete {branch} after merging', { branch: <code className="branch">{pr.sourceBranch}</code> })}</label>
-      {!github && <label className="check"><input type="checkbox" checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> {t('Complete linked work items')}{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>}
-      {!later && !github && <label className="check"><input type="checkbox" checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>}
+      <label className="check"><Checkbox  checked={deleteSourceBranch} onChange={(e) => setDeleteSourceBranch(e.target.checked)} /> {tj('Delete {branch} after merging', { branch: <code className="branch">{pr.sourceBranch}</code> })}</label>
+      {!github && <label className="check"><Checkbox  checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> {t('Complete linked work items')}{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>}
+      {!later && !github && <label className="check"><Checkbox  checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>}
       {!later && bypassPolicy && (
         <label className="field">{t('Reason for overriding')}
-          <input className="input" value={bypassReason} onChange={(e) => setBypassReason(e.target.value)} placeholder={t('e.g. Hotfix for production incident')} />
+          <TextField.Root variant="surface" color="gray" value={bypassReason} onChange={(e) => setBypassReason(e.target.value)} placeholder={t('e.g. Hotfix for production incident')} />
         </label>
       )}
       <div className="complete-actions">
         {later ? (
-          <button
+          <Button size="1" variant="solid"
             type="button"
-            className="btn btn-small btn-primary"
+           
             disabled={busy || !at}
             onClick={() => onSchedule({ at: new Date(at).toISOString(), mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems })}
           >
             {busy ? t('Scheduling…') : t('Schedule completion')}
-          </button>
+          </Button>
         ) : (
           <button
             type="button"
@@ -604,7 +606,7 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = fal
             {busy ? t('Completing…') : bypassPolicy ? t('Override and complete merge') : t('Complete merge')}
           </button>
         )}
-        <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>{t('Cancel')}</button>
+        <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>
     </section>
   );

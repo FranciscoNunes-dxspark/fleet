@@ -5,6 +5,7 @@ import { isBlocked } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle, TypeLabel, WorkTabs } from '../ui.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
 import { t } from '../i18n.js';
+import { Button, TextField } from '@radix-ui/themes';
 
 const isContainer = (w) => /^(epic|feature)$/i.test(w.type);
 
@@ -124,11 +125,11 @@ export default function Epics() {
       </PageHeader>
       <WorkTabs />
       <div className="filters">
-        <input type="search" className="input" placeholder={t('Search epics, features, items or ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search epics')} />
+        <TextField.Root variant="surface" color="gray" type="search" placeholder={t('Search epics, features, items or ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search epics')} />
         <Toggle checked={includeClosed} onChange={setIncludeClosed}>{t('Include closed epics')}</Toggle>
         <Toggle checked={hideEmpty} onChange={setHideEmpty}>{t('Hide empty epics')}</Toggle>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setExpanded(new Set(allIds))}>{t('Expand all')}</button>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setExpanded(new Set())}>{t('Collapse all')}</button>
+        <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setExpanded(new Set(allIds))}>{t('Expand all')}</Button>
+        <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setExpanded(new Set())}>{t('Collapse all')}</Button>
       </div>
 
       {!projects.some((p) => p.epics.length) && (

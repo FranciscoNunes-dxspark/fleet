@@ -3,6 +3,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useApp } from './context.js';
 import { t } from './i18n.js';
+import { TextArea } from '@radix-ui/themes';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -67,7 +68,7 @@ export function MarkdownInput({ value, onChange, label, rows = 4, people, ...res
       </div>
       {preview
         ? <div className="md-preview" style={{ minHeight: `${rows * 1.5}em` }}><Markdown text={value || t('_Nothing to preview._')} people={people} /></div>
-        : <textarea className="input" rows={rows} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} {...rest} />}
+        : <TextArea variant="surface" color="gray" rows={rows} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} {...rest} />}
     </div>
   );
 }

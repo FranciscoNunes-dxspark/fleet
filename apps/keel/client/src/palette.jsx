@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Dialog, VisuallyHidden } from 'radix-ui';
+import { Theme } from '@radix-ui/themes';
 import { useNavigate } from 'react-router-dom';
 import { api } from './api.js';
 import { useApp } from './context.js';
@@ -44,14 +46,14 @@ const KIND = {
 function pages(can, authMode) {
   const p = (to, title, keywords = []) => ({ key: `page:${to}`, kind: 'page', title, sub: to, keywords, to, boost: 1 });
   return [
-    p('/', t('The Line'), ['home', 'flow', 'stuck', 'stages']),
+    p('/line', t('The Line'), ['home', 'flow', 'stuck', 'stages']),
     p('/line/planned', `${t('The Line')} · ${t('Planned')}`, ['backlog', 'not started']),
     p('/line/building', `${t('The Line')} · ${t('Building')}`, ['in progress', 'active']),
     p('/line/review', `${t('The Line')} · ${t('In review')}`, ['pull requests', 'reviews']),
     p('/line/merged', `${t('The Line')} · ${t('Merged')}`, ['waiting to ship', 'undeployed']),
     p('/line/deploying', `${t('The Line')} · ${t('Deploying')}`, ['approvals', 'releases', 'red pipelines']),
     p('/line/live', `${t('The Line')} · ${t('Live')}`, ['production', 'monitors']),
-    p('/desk', t('Desk'), ['triage', 'queue', 'inbox', 'keyboard']),
+    p('/desk', t('Now (the Desk)'), ['triage', 'queue', 'inbox', 'keyboard']),
     p('/control', t('Control room'), ['wall', 'status', 'timeline', 'live', 'tv']),
     p('/inbox', t('Inbox'), ['attention', 'needs me', 'triage']),
     p('/summary', t('Weekly summary'), ['week', 'report']),
@@ -203,9 +205,17 @@ export function CommandPalette() {
   const recent = !parseQuery(q).words.length && readRecent().length > 0;
 
   return (
-    <div className="palette-layer">
-      <div className="drawer-scrim" onClick={() => setOpen(false)} aria-hidden="true" />
-      <div className="palette" role="dialog" aria-modal="true" aria-label={t('Search Keel')}>
+    <Dialog.Root open onOpenChange={setOpen}>
+      <Dialog.Portal>
+        <Theme asChild>
+         <div className="palette-layer">
+          <Dialog.Overlay className="drawer-scrim" />
+          <Dialog.Content
+            className="palette" aria-describedby={undefined}
+            onOpenAutoFocus={(e) => { e.preventDefault(); input.current?.focus(); }}
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
+            <VisuallyHidden.Root asChild><Dialog.Title>{t('Search Keel')}</Dialog.Title></VisuallyHidden.Root>
         <div className="palette-input">
           <Icon name="search" />
           <input
@@ -247,7 +257,10 @@ export function CommandPalette() {
           {!results.length && <li className="palette-empty muted">{t('Nothing matches. Try fewer words, or a work item number like #4107.')}</li>}
         </ul>
         <div className="palette-foot small muted">{t('↑↓ to move · Enter to open · Ctrl+K to close')}</div>
-      </div>
-    </div>
+          </Dialog.Content>
+         </div>
+        </Theme>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

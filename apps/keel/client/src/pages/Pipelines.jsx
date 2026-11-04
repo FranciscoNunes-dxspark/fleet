@@ -7,6 +7,7 @@ import { Chip, Confirm, Empty, ErrorBox, ExternalLink, Loading, PageHeader, Togg
 import { ApprovalsPanel, ReleasesTab } from './Releases.jsx';
 import { Trend } from './PipelineDetail.jsx';
 import { t, tj } from '../i18n.js';
+import { TextField } from '@radix-ui/themes';
 
 export default function Pipelines() {
   const builds = useApi('/pipelines');
@@ -154,7 +155,7 @@ function BuildsTab({ data }) {
   return (
     <>
       <div className="filters">
-        <input type="search" className="input" placeholder={t('Search pipeline, repo or folder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search pipelines')} />
+        <TextField.Root variant="surface" color="gray" type="search" placeholder={t('Search pipeline, repo or folder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search pipelines')} />
         <Toggle checked={byFolder} onChange={setByFolder}>{t('Group by folder')}</Toggle>
         <Toggle checked={onlyProblems} onChange={setOnlyProblems} count={data.filter((p) => p.health === 'failing' || p.health === 'unstable').length}>{t('Only failing or unstable')}</Toggle>
       </div>

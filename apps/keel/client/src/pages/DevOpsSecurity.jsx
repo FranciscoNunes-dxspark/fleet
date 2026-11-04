@@ -3,6 +3,7 @@ import { useApi } from '../context.js';
 import { dateTime } from '../format.js';
 import { Chip, Empty, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
+import { Button } from '@radix-ui/themes';
 
 const TONE = { critical: 'bad', high: 'bad', medium: 'warn', low: 'info', unknown: 'muted' };
 // Labels are getters so they follow the current language.
@@ -46,7 +47,7 @@ export default function DevOpsSecurity() {
         <span className="muted small devops-security-when">
           {t('{n} projects', { n: data.projects.length })} · {t('Reviewed {when}', { when: dateTime(data.at) })}
         </span>
-        <button type="button" className="btn btn-small" disabled={loading} onClick={() => setFresh((n) => n + 1)}>{loading ? t('Reviewing…') : t('Review again')}</button>
+        <Button size="1" variant="outline" color="gray" type="button" disabled={loading} onClick={() => setFresh((n) => n + 1)}>{loading ? t('Reviewing…') : t('Review again')}</Button>
       </div>
       {data.gaps.length > 0 && (
         <div className="small">

@@ -1,0 +1,68 @@
+/* Radix Themes is Keel's theme now: mode, accent and the gray, radius and shadow scales come from
+   the <Theme> in main.jsx (and its accent and gray colours). This file hands those to the tokens
+   styles.css and the pages still read (--surface, --ink, --accent …), so the whole app follows the
+   theme without each rule being rewritten. Set on .radix-themes, which a portal's own <Theme asChild>
+   carries too, so a drawer or a menu drawn outside the page has them. The hull (the dock's deep
+   blue) and the type colours stay Keel's own. */
+
+.radix-themes {
+  --default-font-family: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --heading-font-family: "Bricolage Grotesque Variable", "Bricolage Grotesque", var(--default-font-family);
+  --code-font-family: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  --bg: var(--gray-2);
+  --canvas: var(--gray-1);
+  --surface: var(--color-panel-solid);
+  --surface-2: var(--gray-3);
+  --ink: var(--gray-12);
+  --ink-2: color-mix(in srgb, var(--gray-12) 82%, var(--gray-1));
+  --muted: var(--gray-11);
+  --line: var(--gray-5);
+  --line-strong: var(--gray-7);
+  --card-border: var(--gray-5);
+  --header-glass: color-mix(in srgb, var(--gray-1) 86%, transparent);
+
+  --accent: var(--accent-9);
+  --accent-soft: var(--accent-3);
+  --accent-ink: var(--accent-11);
+  --on-accent: var(--accent-contrast);
+
+  --bad: var(--red-10);
+  --bad-soft: var(--red-3);
+  --warn: var(--amber-11);
+  --warn-soft: var(--amber-3);
+  --ok: var(--green-10);
+  --ok-soft: var(--green-3);
+  --info: var(--blue-10);
+  --info-soft: var(--blue-3);
+
+  --radius: var(--radius-3);
+  --radius-sm: var(--radius-2);
+  --shadow-pop: var(--shadow-5);
+  --shadow-sm: var(--shadow-2);
+  --shadow-drawer: var(--shadow-6);
+  --font: var(--default-font-family);
+  --display: var(--heading-font-family);
+  --mono: var(--code-font-family);
+}
+
+/* The app fills the window; Radix's root is just the carrier. */
+.radix-themes:where([data-is-root-theme='true']) { min-height: 100vh; background: var(--canvas); }
+
+/* Overlays drawn in a portal sit above the app's own layers. */
+.drawer-layer, .palette-layer { color: var(--ink); font-family: var(--font); }
+
+/* Radix controls inside Keel's forms: the same height and width as the inputs beside them. */
+.rt-SelectTrigger { min-width: 0; max-width: 100%; }
+.sort-pick { display: inline-flex; gap: 6px; align-items: center; }
+.check { display: inline-flex; align-items: center; gap: 8px; }
+.check .rt-CheckboxRoot, .check .rt-RadioGroupItem { flex: none; }
+/* A question asked of the page or the details panel: above both. */
+.rt-BaseDialogOverlay { z-index: 50; }
+.rt-AlertDialogContent.confirm-pop { position: relative; z-index: auto; width: auto; max-width: 340px; padding: var(--space-4); border: 0; box-shadow: var(--shadow-6); display: grid; gap: 14px; }
+.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.rt-Tooltip { font-size: 12px; }
+
+/* Floating layers (a select's list, a tooltip) sit above the details panel (20) and the search (30):
+   Radix copies a content's z-index to its positioning wrapper. */
+.rt-SelectContent, .rt-TooltipContent, .rt-PopoverContent, .rt-DropdownMenuContent { z-index: 60; }

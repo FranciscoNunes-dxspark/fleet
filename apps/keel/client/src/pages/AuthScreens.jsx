@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { Loading, Pinch } from '../ui.jsx';
 import { t, tj } from '../i18n.js';
+import { Button, TextField } from '@radix-ui/themes';
 
 // Scope names and access levels as Azure DevOps shows them on its token page (kept in English).
 const SCOPES = [
@@ -52,7 +53,7 @@ function useSubmit(fn) {
 }
 
 const Field = ({ label, hint, ...props }) => (
-  <label className="field">{label}{hint && <span className="muted small"> {hint}</span>}<input className="input" {...props} /></label>
+  <label className="field">{label}{hint && <span className="muted small"> {hint}</span>}<TextField.Root variant="surface" color="gray" {...props} /></label>
 );
 
 /** Email + password. */
@@ -70,7 +71,7 @@ export function SignIn({ orgUrl, reason, onDone }) {
       <Field label={t('Email')} type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
       <Field label={t('Password')} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       {error && <p className="text-bad small" role="alert">{error}</p>}
-      <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('Signing in…') : t('Sign in')}</button>
+      <Button size="2" variant="solid" type="submit" disabled={busy}>{busy ? t('Signing in…') : t('Sign in')}</Button>
       <p className="muted small signin-foot">{t('No account yet? Ask your Keel admin for an invite link. Forgot your password? Your admin can send you a reset link.')}</p>
     </Card>
   );
@@ -92,7 +93,7 @@ export function SetupScreen({ orgUrl, onDone }) {
       <Field label={t('Email')} type="email" value={form.email} onChange={set('email')} autoComplete="username" required />
       <Field label={t('Password')} hint={t('(at least 10 characters)')} type="password" value={form.password} onChange={set('password')} autoComplete="new-password" minLength={10} required />
       {error && <p className="text-bad small" role="alert">{error}</p>}
-      <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('Creating…') : t('Create admin account')}</button>
+      <Button size="2" variant="solid" type="submit" disabled={busy}>{busy ? t('Creating…') : t('Create admin account')}</Button>
     </Card>
   );
 }
@@ -116,7 +117,7 @@ export function LinkAccept({ orgUrl, token, onDone }) {
     return (
       <Card orgUrl={orgUrl} title={t('Link not valid')} onSubmit={(e) => { e.preventDefault(); onDone(); }}>
         <p className="text-bad small">{loadError}</p>
-        <button type="submit" className="btn">{t('Go to sign in')}</button>
+        <Button size="2" variant="outline" color="gray" type="submit">{t('Go to sign in')}</Button>
       </Card>
     );
   }
@@ -131,7 +132,7 @@ export function LinkAccept({ orgUrl, token, onDone }) {
       {!reset && <Field label={t('Your name')} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />}
       <Field label={t('Password')} hint={t('(at least 10 characters)')} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={10} required autoFocus />
       {error && <p className="text-bad small" role="alert">{error}</p>}
-      <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('Saving…') : reset ? t('Save password') : t('Create my account')}</button>
+      <Button size="2" variant="solid" type="submit" disabled={busy}>{busy ? t('Saving…') : reset ? t('Save password') : t('Create my account')}</Button>
     </Card>
   );
 }
@@ -155,7 +156,7 @@ export function ConnectAzure({ orgUrl, user, reason, onDone, onSignOut }) {
       </p>
       <Field label={t('Personal access token')} type="password" autoComplete="off" spellCheck={false} value={pat} onChange={(e) => setPat(e.target.value)} placeholder={t('Paste your token')} required autoFocus />
       {error && <p className="text-bad small" role="alert">{error}</p>}
-      <button type="submit" className="btn btn-primary" disabled={busy || !pat.trim()}>{busy ? t('Checking with Azure DevOps…') : t('Connect')}</button>
+      <Button size="2" variant="solid" type="submit" disabled={busy || !pat.trim()}>{busy ? t('Checking with Azure DevOps…') : t('Connect')}</Button>
       <details className="signin-help">
         <summary>{t('How to create a token')}</summary>
         <ol className="small">
