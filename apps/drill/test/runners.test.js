@@ -239,7 +239,8 @@ test('the provider runs a suite: its output as it comes, the report parsed with 
     const seen = [];
     const run = async (command, { onLine }) => {
       seen.push(command);
-      const report = /'--outputFile\.json=([^']+)'/.exec(command)?.[1];
+      // Quoted with ' off Windows and " on it.
+      const report = /['"]--outputFile\.json=([^'"]+)['"]/.exec(command)?.[1];
       onLine?.('\x1b[31m FAIL\x1b[0m src/sum.test.ts');
       writeFileSync(report, fixture('vitest-1.json').replaceAll('/work/shop', dir.replace(/\\/g, '/')));
       throw Object.assign(new Error('tests failed'), { code: 1 });

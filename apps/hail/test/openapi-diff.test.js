@@ -273,7 +273,8 @@ test('through the UI: /openapi-diff compares the contract with git, in the viewe
     await type(app.stdin, 'openapi-diff git:v1');
     app.stdin.write(KEYS.enter);
     await until(() => f().includes('API changes: 9 breaking'), 'the viewer');
-    assert.match(f(), /git:v1:.*openapi\.yaml \(Shop 1\.0\.0, OpenAPI 3\.0\.3\)/);
+    // A long temp folder (Windows') cuts the line after "OpenAPI 3.".
+    assert.match(f(), /git:v1:.*openapi\.yaml \(Shop 1\.0\.0, OpenAPI 3\./);
     assert.match(f(), /DELETE \/orders\/\{id\}/);
     assert.match(f(), /m copy as Markdown/);
     app.stdin.write('m');

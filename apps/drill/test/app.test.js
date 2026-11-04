@@ -43,7 +43,7 @@ test('↵ goes into a failure; ↵ on a frame opens its file at its line in the 
   await new Promise((r) => setTimeout(r, 100));
   app.stdin.write(KEYS.enter);
   await until(() => app.provider.state.launched.length === 1, 'the editor');
-  assert.match(app.provider.state.launched[0], /^'code' -g '.*[\\/]shop[\\/]src[\\/]cart\.ts:30:10'$/);
+  assert.match(app.provider.state.launched[0], /^(['"])code\1 -g (['"]).*[\\/]shop[\\/]src[\\/]cart\.ts:30:10\2$/);
   assert.match(app.lastFrame(), /Opening src\/cart\.ts:30 in code/);
   app.stdin.write('h');
   await until(shows(app, '↵ into it'), 'back on the list');
@@ -57,7 +57,7 @@ test('a terminal editor gets its command copied, as it needs the terminal Drill 
   await until(shows(app, 'j k frames'), 'the failure focused');
   app.stdin.write(KEYS.enter);
   await until(() => app.copied.length === 1, 'the copy');
-  assert.match(app.copied[0], /^'nvim' \+12 '.*cart\.test\.ts'$/);
+  assert.match(app.copied[0], /^(['"])nvim\1 \+12 (['"]).*cart\.test\.ts\2$/);
   assert.equal(app.provider.state.launched.length, 0);
   app.unmount();
 });
@@ -130,10 +130,11 @@ test('o opens a Playwright failure\'s trace; its screenshot, video and trace are
   await until(shows(app, 'j k frames'), 'the failure focused');
   app.stdin.write('\x1bg');
   await until(shows(app, 'Screenshot'), 'the attachments');
-  assert.match(app.lastFrame(), /❯ Trace +.*trace\.zip {2}o opens it/);
+  // A long temp folder (Windows') cuts the row before the file's name.
+  assert.match(app.lastFrame(), /❯ Trace +.*(trace\.zip {2}o opens it|…)/);
   app.stdin.write('o');
   await until(() => app.provider.state.launched.length === 1, 'the trace viewer');
-  assert.match(app.provider.state.launched[0], /^npx --no playwright show-trace '.*trace\.zip'$/);
+  assert.match(app.provider.state.launched[0], /^npx --no playwright show-trace (['"]).*trace\.zip\1$/);
   app.unmount();
 });
 

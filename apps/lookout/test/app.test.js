@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { contextIn } from '@fleet/kit/family.js';
+import { contextIn, quoteArg } from '@fleet/kit/family.js';
 import { KEYS, eventually, origins, start, tempHome, type, unmountAll, until, viaProxy } from './helpers.js';
 import { loadConfig } from '../src/config.js';
 import { createLookout } from '../src/provider.js';
@@ -96,7 +96,7 @@ test('h writes the request to lookout.http with {{token}} in place of the token,
   assert.match(text, /Authorization: Bearer \{\{token\}\}/);
   assert.match(text, /Cookie: \{\{cookie\}\}/);
   assert.ok(!text.includes(JWT_START) && !text.includes('s3ss10n'));
-  assert.deepEqual(app.copied, [`/open ${file.includes(' ') ? `"${file}"` : file}`]);
+  assert.deepEqual(app.copied, [`/open ${quoteArg(file)}`]);
   await until(shows(app, 'Copied for Hail'), 'the note');
   // Again: a name of its own, added after the first.
   app.stdin.write('h');
@@ -147,7 +147,8 @@ test('/intercept on asks before making the CA, then the Setup view says how to t
   await until(() => app.copied.includes('HTTPS_PROXY=http://127.0.0.1:8888'), 'the line copied');
   // alt+g: the bottom (a capital letter is alt's, so caps lock can't fire it).
   app.stdin.write('\x1bg');
-  await until(shows(app, 'take it out again'), 'the trust steps, at the end');
+  // The other systems come last: Linux's steps on Windows and macOS, macOS's on Linux.
+  await until(() => /take it out again|sudo trust anchor/.test(app.lastFrame()), 'the trust steps, at the end');
   app.unmount();
 });
 
