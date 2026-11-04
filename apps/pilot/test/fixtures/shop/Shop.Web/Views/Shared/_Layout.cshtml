@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>@ViewBag.Title - Shop</title>
+    @Styles.Render("~/Content/css")
+    <link href="https://cdn.example.com/icons.css" rel="stylesheet" />
+</head>
+<body>
+    @Html.Partial("_Header")
+    <main class="site-main">
+        @RenderBody()
+    </main>
+    @* @Html.Partial("_Commented") *@
+    @Scripts.Render("~/bundles/jquery", "~/bundles/app")
+    @RenderSection("Scripts", required: false)
+</body>
+</html>

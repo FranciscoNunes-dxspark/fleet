@@ -1,0 +1,19 @@
+@model OrdersViewModel
+@{
+    ViewBag.Title = "Orders";
+}
+<table class="order-table" id="orders">
+    @foreach (var o in Model.Orders)
+    {
+        @Html.Partial("_OrderRow", o)
+    }
+</table>
+<button type="button" class="btn btn-save" onclick="Orders.save()">Save</button>
+<a href="@Url.Action("Edit", "Orders", new { id = 0 })">New</a>
+
+@section Scripts {
+    <script src="@Url.Content("~/Scripts/app/orders.js")"></script>
+    <script>
+        $(function () { $('#orders').addClass('ready'); });
+    </script>
+}

@@ -1,0 +1,7 @@
+@model OrderViewModel
+@using (Html.BeginForm("Save", "Orders", FormMethod.Post, new { id = "order-form" }))
+{
+    @Html.EditorFor(m => m.Date, "DatePicker")
+    @Html.Partial(Model.PartialName)
+    @Html.Partial("_Missing")
+}

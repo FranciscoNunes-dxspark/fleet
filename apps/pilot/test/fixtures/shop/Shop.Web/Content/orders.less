@@ -1,0 +1,20 @@
+.order-table {
+    width: 100%;
+    tr {
+        &.selected { background: @brand; }
+        &.late { color: @brand-dark; }
+    }
+    .order-row:hover { background: #eee; }
+}
+
+.btn {
+    padding: 4px;
+    &-save {
+        .rounded(6px);
+        color: white;
+    }
+}
+
+@media (max-width: 600px) {
+    #orders { font-size: 12px; }
+}
