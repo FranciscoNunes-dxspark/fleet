@@ -71,7 +71,8 @@ test('split: a stylesheet grouped by what each block is and where its classes ar
   });
   assert.deepEqual(data.headers.map((h) => h.title), ['Variables', 'Base', 'Header', 'Orders', 'Buttons', 'Old stuff']);
   assert.match(text, /@import "base\/variables";\n {2}@import "base\/mixins";/);
-  assert.doesNotMatch(text, /@import "unused"/);
+  // unused is imported last, marked: the split reorganises; deleting is decided after.
+  assert.match(text, /@import "pages\/orders";\n {2}@import "unused"; \/\/ check, then delete/);
   // A file that only imports others points at the largest of them.
   assert.deepEqual(split(idx, 'site.less').data.imports.map((i) => i.file), ['Shop.Web/Content/orders.less', 'Shop.Web/Content/variables.less']);
   assert.equal(stylesheets(idx).data.stylesheets[0].file, 'Shop.Web/Content/everything.less');

@@ -67,7 +67,7 @@ export function sectionHeaders(source) {
 }
 
 export function parseStyle(source, dialect = 'less') {
-  const out = { imports: [], vars: [], varUses: [], mixins: [], mixinCalls: [], rules: [], classes: [], ids: [], blocks: [], headers: sectionHeaders(source), colors: [], zindex: [], important: [], media: [] };
+  const out = { imports: [], vars: [], varUses: [], mixins: [], mixinCalls: [], rules: [], classes: [], ids: [], blocks: [], headers: sectionHeaders(source), colors: [], zindex: [], important: [], media: [], urls: [], fonts: [], fontSizes: [] };
   // A declaration: kept on its rule (for the cascade), and its colours, z-index and !important for the audit.
   const declaration = (s, line) => {
     const m = /^([\w-]+)\s*:\s*([\s\S]*)$/.exec(s);
@@ -78,6 +78,9 @@ export function parseStyle(source, dialect = 'less') {
     const top = stack[stack.length - 1];
     if (top.rule && out.rules[top.index]) out.rules[top.index].props.push({ p: prop, v: value.replace(/\s*!\s*important\b/i, '').slice(0, 80), l: line, ...(important ? { i: 1 } : {}) });
     for (const c of value.matchAll(/#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)/g)) out.colors.push([c[0].toLowerCase(), line, prop]);
+    for (const u of value.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)) if (!/^(data:|#|https?:|\/\/)/i.test(u[1])) out.urls.push([u[1].trim(), line]);
+    if (/^font(-family)?$/.test(prop)) out.fonts.push([value.replace(/\s*!important/i, '').slice(0, 100), line]);
+    if (prop === 'font-size') out.fontSizes.push([value.replace(/\s*!important/i, ''), line]);
     if (prop === 'z-index') out.zindex.push([value.replace(/\s*!important/i, ''), line]);
     if (important) out.important.push([prop, line]);
   };

@@ -83,7 +83,7 @@ test('the Claude Code card: whether the skill and the .mcp.json entry are there'
     mkdirSync(join(dir, '.claude', 'skills', 'pilot'), { recursive: true });
     writeFileSync(join(dir, '.claude', 'skills', 'pilot', 'SKILL.md'), 'x');
     writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { pilot: { command: 'pilot', args: ['mcp'] } } }));
-    assert.deepEqual(claudeSetup(dir), { root: dir, skill: true, mcp: true });
+    assert.deepEqual(claudeSetup(dir), { root: dir, skill: true, mcp: true, hook: false });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

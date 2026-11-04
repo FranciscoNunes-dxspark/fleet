@@ -24,7 +24,9 @@ Usage: pilot [--root <dir>] <command> [arguments] [--json]
   widgets [kind]                the UI components: data tables, calendars, date pickers, charts, selects,
                                 modals… by library, with where each is and its pages
   stylesheets                   the project's stylesheets, largest first
-  split <stylesheet>            how to split a large LESS/SCSS/CSS file: by where its rules are used
+  split <stylesheet> [--apply]  how to split a large LESS/SCSS/CSS file: by where its rules are used;
+                                --apply writes the files (checked with lessc/sass when installed)
+  extract [n] [--apply]         block n of repeats made one partial (--name, --force if copies differ)
   path <from> <to>              how two things are connected (files, URLs, Controller.Action)
   changes [--base <ref>]        the pages what git says changed reaches (uncommitted, and since <ref>)
   context <page> [--budget n]   the code that matters for a page, in one Markdown document (n chars)
@@ -40,14 +42,28 @@ Usage: pilot [--root <dir>] <command> [arguments] [--json]
                                 (--format dot for Graphviz)
   shot <page>                   a screenshot of the running site (--url once, --widths 1280,mobile,
                                 --cookie name=value, --as before|after): before, then after and a diff
+  doctor                        how much of the project Pilot understood, and what it couldn't follow
+  models [filter]               view models: which views use them, which properties they read
+  text [filter]                 text written into views rather than through resources
+  images                        images missing, heavy or unused
+  styleguide                    the project's colours, variables, fonts, breakpoints and components
+  report [--out file]           everything as one HTML file to share (.pilot/report.html)
+  inspect <page> <selector>     the real element on the running site: box, computed styles, the rules
+                                that style it and what wins
+  coverage <page…>              the CSS rules and script bytes those pages really use
+  responsive <page>             the page at each breakpoint: screenshots, sideways scrolling, culprits
+  shots [changed|all|<page…>]   screenshots of many pages, compared, with a report (--threshold n
+                                exits 1 when a page changed more than n%)
+  hook                          Claude Code's PostToolUse hook (pilot init --hook installs it)
   routes [filter]               URLs, actions and the views they return
   problems [filter]             references Pilot couldn't resolve, and names decided at run time
   ui                            the web UI: graphs, pages, components, stylesheets (--port, --no-open)
   mcp                           serve these as MCP tools over stdio:
                                   claude mcp add pilot -- pilot mcp --root <dir>
-  init [--mcp] [--command <c>]  add Pilot's Claude Code skill to the project (.claude/skills/pilot);
-                                --mcp also adds the MCP server to the project's .mcp.json, run as
-                                <c> (default: pilot, from the PATH)
+  init [--mcp] [--hook]         add Pilot's Claude Code skill to the project (.claude/skills/pilot);
+                                --mcp also adds the MCP server to the project's .mcp.json, --hook a
+                                hook telling Claude what each edit reaches (--shots: and screenshots),
+                                run as --command <c> (default: pilot, from the PATH)
 
 Options:
   --root <dir>                  the project or solution folder (default: the current one)
@@ -82,6 +98,13 @@ export function parseArgs(argv) {
     else if (a === '--mobile') opts.widths = [...(opts.widths ?? [1280]), 'mobile'];
     else if (a === '--as') opts.as = argv[++i];
     else if (a === '--cookie') opts.cookies.push(argv[++i]);
+    else if (a === '--force') opts.force = true;
+    else if (a === '--name') opts.name = argv[++i];
+    else if (a === '--threshold') opts.threshold = Number(argv[++i]);
+    else if (a === '--out') opts.out = argv[++i];
+    else if (a === '--limit') opts.limit = Number(argv[++i]);
+    else if (a === '--hook') opts.hook = true;
+    else if (a === '--shots') opts.shots = true;
     else if (a === '--command') opts.mcpCommand = argv[++i];
     else if (a === '--help' || a === '-h') opts.help = true;
     else if (a === '--version' || a === '-v') opts.version = true;
@@ -117,12 +140,36 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     await startUi({ root: opts.root, port: opts.port, open: opts.open, vendor: opts.vendor, ignore: opts.ignore, log: (s) => error(`${s}\n`) });
     return null;
   }
+  if (opts.command === 'hook') {
+    // Claude Code's PostToolUse hook: its JSON on stdin, what to tell Claude on stdout (or nothing).
+    const [{ runHook }, { buildIndex }] = await Promise.all([import('./hook.js'), import('./index.js')]);
+    let input = '';
+    for await (const chunk of process.stdin) input += chunk;
+    try {
+      const out = await runHook({ input, build: (root) => buildIndex(root, { progress: () => {} }) });
+      if (out) write(`${out}\n`);
+    } catch (e) {
+      error(`Pilot's hook: ${e.message}\n`);
+    }
+    return 0;
+  }
   if (opts.command === 'init') {
     const { SKILL } = await import('./skill.js');
     const dir = join(opts.root, '.claude', 'skills', 'pilot');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'SKILL.md'), SKILL);
     write(`Wrote ${join(dir, 'SKILL.md')}: Claude Code picks the skill up in this project.\n`);
+    if (opts.hook) {
+      const { installHook } = await import('./hook.js');
+      const server = mcpServer(opts.mcpCommand);
+      const command = [server.command, ...server.args.slice(0, -1)].map((x) => (/\s/.test(x) ? `"${x}"` : x)).join(' ');
+      try {
+        write(`Added the hook to ${installHook(opts.root, command, { shots: !!opts.shots })}: after each edit, Claude hears which pages the file is on and what looks wrong${opts.shots ? ', and how much those pages changed in screenshots (pages that have a before; the site must be running)' : ''}.\n`);
+      } catch (e) {
+        error(`${e.message}\n`);
+        return 2;
+      }
+    }
     if (opts.mcp) {
       let result;
       try {
@@ -140,6 +187,7 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     }
     return 0;
   }
+  const liveCookies = () => [...opts.cookies, ...String(process.env.PILOT_COOKIE ?? '').split(';').map((x) => x.trim()).filter(Boolean)];
   const q = await import('./queries.js');
   const a = await import('./analysis.js');
   const arg = opts.args.join(' ');
@@ -158,7 +206,21 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     complexity: (idx) => a.complexity(idx, { filter: arg }),
     widgets: (idx) => a.widgets(idx, { kind: arg }),
     stylesheets: (idx) => a.stylesheets(idx),
-    split: (idx) => a.split(idx, needs('a stylesheet')),
+    split: async (idx) => (opts.apply ? (await import('./refactor.js')).splitApply(idx, needs('a stylesheet'), { apply: true, force: !!opts.force }) : a.split(idx, needs('a stylesheet'))),
+    extract: async (idx) => (await import('./refactor.js')).extractPartial(idx, Number(opts.args[0]) || 1, { name: opts.name ?? null, apply: !!opts.apply, force: !!opts.force }),
+    doctor: async (idx) => (await import('./insight.js')).doctor(idx),
+    models: async (idx) => (await import('./insight.js')).models(idx, { filter: arg }),
+    text: async (idx) => (await import('./insight.js')).texts(idx, { filter: arg }),
+    images: async (idx) => (await import('./insight.js')).images(idx),
+    styleguide: async (idx) => (await import('./insight.js')).styleguide(idx),
+    report: async (idx) => (await import('./report.js')).report(idx, { out: opts.out ?? null }),
+    inspect: async (idx) => {
+      if (opts.args.length !== 2) throw Object.assign(new Error('pilot inspect needs a page and a selector: pilot inspect /Orders .btn-save'), { usage: true });
+      return (await import('./live.js')).inspect(idx, opts.args[0], opts.args[1], { url: opts.url ?? null, mobile: (opts.widths ?? []).includes('mobile'), cookies: liveCookies() });
+    },
+    coverage: async (idx) => (await import('./live.js')).coverage(idx, opts.args.length ? opts.args : [needs('one or more pages')], { url: opts.url ?? null, cookies: liveCookies() }),
+    responsive: async (idx) => (await import('./live.js')).responsive(idx, needs('a page'), { url: opts.url ?? null, widths: opts.widths?.filter((w) => typeof w === 'number') ?? null, cookies: liveCookies() }),
+    shots: async (idx) => (await import('./live.js')).shots(idx, opts.args.length && !['all', 'changed'].includes(opts.args[0]) ? opts.args : opts.args[0] ?? 'changed', { url: opts.url ?? null, widths: opts.widths ?? [1280], as: opts.as ?? null, cookies: liveCookies(), limit: opts.limit || 40, threshold: Number.isFinite(opts.threshold) ? opts.threshold : null, base: opts.base ?? null }),
     path: (idx) => {
       if (opts.args.length !== 2) throw Object.assign(new Error('pilot path needs two things: pilot path <from> <to>'), { usage: true });
       return a.path(idx, opts.args[0], opts.args[1]);

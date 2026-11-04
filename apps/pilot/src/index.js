@@ -15,7 +15,7 @@ import { parseScript } from './parse/script.js';
 import { parseStyle } from './parse/style.js';
 import { isVendor, walk } from './walk.js';
 
-const CACHE_VERSION = 6;
+const CACHE_VERSION = 8;
 const MAX_PARSE = 1_500_000;
 
 /** Where the parsed files are kept between runs: PILOT_CACHE, else the platform's cache folder. */
@@ -31,7 +31,7 @@ export function parseFile(rel, kind, text) {
   if (kind === 'view') return parseRazor(text);
   if (kind === 'cs') {
     // Only what can hold controllers, view components, bundles or routes is worth the time.
-    if (!/Controller\b|ViewComponent\b|Bundle\s*\(|Map(?:Area)?(?:Controller)?Route\s*\(/.test(text)) return null;
+    if (!/Controller\b|ViewComponent\b|Bundle\s*\(|Map(?:Area)?(?:Controller)?Route\s*\(|\{\s*get\b/.test(text)) return null;
     return parseCSharp(text);
   }
   if (kind === 'script') return parseScript(text);
@@ -130,7 +130,7 @@ export class ProjectIndex {
       let error = null;
       let lines = null;
       // A library is read only for what links it to the rest (its imports), never its selectors.
-      const skip = f.size > MAX_PARSE || f.kind === 'project' || (vendor && f.kind !== 'config' && !this.vendor);
+      const skip = f.size > MAX_PARSE || f.kind === 'project' || f.kind === 'image' || (vendor && f.kind !== 'config' && !this.vendor);
       if (!skip) {
         try {
           const text = readFileSync(join(this.root, f.rel), 'utf8');
@@ -138,6 +138,15 @@ export class ProjectIndex {
           data = parseFile(f.rel, f.kind, text);
         } catch (e) {
           error = e.message;
+        }
+      } else if (vendor && f.kind === 'style' && !this.vendor && f.size < 4_000_000) {
+        // A library's stylesheet (bootstrap, font-awesome): only the classes it defines, so markup
+        // using them counts as styled. Cheap: no rules, no lines.
+        try {
+          const text = readFileSync(join(this.root, f.rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{[^{}]*\}/g, '{}');
+          data = { libraryClasses: [...new Set([...text.matchAll(/\.(-?[A-Za-z_][\w-]*)/g)].map((m) => m[1]))] };
+        } catch {
+          // Unreadable: it just isn't counted.
         }
       }
       files.set(f.rel, { rel: f.rel, kind: f.kind, size: f.size, mtime: f.mtime, vendor, lines, data, ...(error ? { error } : {}), ...(f.size > MAX_PARSE ? { skipped: 'too large' } : {}) });
@@ -178,6 +187,8 @@ export class ProjectIndex {
     this.linkViews();
     this.linkScripts();
     this.linkStyles();
+    this.linkImages();
+    this.linkModels();
     this.buildSymbols();
   }
 
@@ -695,6 +706,35 @@ export class ProjectIndex {
     }
   }
 
+  // Images: <img src>, url() in styles and style="…", to the image files (missing ones are problems).
+  linkImages() {
+    for (const f of this.files.values()) {
+      if (!f.data) continue;
+      const refs = f.kind === 'view' ? f.data.images ?? [] : f.kind === 'style' ? f.data.urls ?? [] : [];
+      for (const [url, line] of refs) {
+        const clean = url.replace(/[?#].*$/, '');
+        if (!/\.(png|jpe?g|gif|svg|webp|avif|ico|bmp)$/i.test(clean)) continue;
+        // A stylesheet's url() is relative to the CSS it compiles to, which usually sits beside it.
+        const near = f.kind === 'style' && !/^[~/]/.test(clean) ? [joinRel(dirOf(f.rel), clean), ...(this.outputs.get(f.rel) ?? []).map((o) => joinRel(dirOf(o), clean))] : [];
+        const hit = [...near, ...this.appPaths(f.rel, clean)].map((p) => this.exists(p)).find(Boolean);
+        if (hit) this.edge(f.rel, hit, 'image', line, { url });
+        else {
+          this.edge(f.rel, null, 'image', line, { url, missing: true });
+          this.problem(f.rel, line, `image "${url}" not found in the project`);
+        }
+      }
+    }
+  }
+
+  // View models: the classes with properties, by name, for the views' @model.
+  linkModels() {
+    this.models = new Map();
+    for (const f of this.files.values()) {
+      if (f.kind !== 'cs' || !f.data?.models) continue;
+      for (const m of f.data.models) if (!this.models.has(m.name)) this.models.set(m.name, { ...m, file: f.rel });
+    }
+  }
+
   // ─── Routes ───────────────────────────────────────────────────────────────────────────────────
 
   /** The actions a URL reaches: attribute routes first, then {area}/{controller}/{action}; `project`'s first. */
@@ -805,6 +845,8 @@ export class ProjectIndex {
         for (const [n, line] of d.attrs) put(sym.attrs, n, { file: f.rel, line, role: 'script' });
         for (const x of d.defs) put(sym.defs, x.name.split('.').pop(), { file: f.rel, line: x.line, role: 'def', kind: x.kind, name: x.name });
         for (const w of d.widgets ?? []) sym.widgets.push({ ...w, file: f.rel });
+      } else if (f.kind === 'style' && d.libraryClasses) {
+        for (const n of d.libraryClasses) put(sym.classes, n, { file: f.rel, line: 0, role: 'style', vendor: true, selector: `.${n} (library)` });
       } else if (f.kind === 'style' && own) {
         const rule = (i) => (d.rules[i] ? `${d.rules[i].selector}${d.rules[i].media ? `  (in ${d.rules[i].media})` : ''}` : undefined);
         for (const [n, line, i] of d.classes) put(sym.classes, n, { file: f.rel, line, role: 'style', selector: rule(i), vendor: f.vendor });

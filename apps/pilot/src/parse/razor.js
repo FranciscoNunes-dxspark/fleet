@@ -104,6 +104,10 @@ export function parseRazor(source) {
     widgets: [],
     inlineStyles: [],
     a11y: [],
+    modelUses: [],
+    texts: [],
+    localized: 0,
+    images: [],
     inline: { script: null, style: null },
     dynamic: [],
   };
@@ -285,7 +289,18 @@ export function parseRazor(source) {
     }
     const line = at(t.index);
     const style = get('style');
-    if (style?.value) out.inlineStyles.push([line, style.value.trim().slice(0, 120)]);
+    if (style?.value) {
+      out.inlineStyles.push([line, style.value.trim().slice(0, 120)]);
+      for (const u of style.value.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)) if (!/^(data:|https?:|\/\/)/i.test(u[1])) out.images.push([staticUrl(u[1]) ?? u[1], line]);
+    }
+    if (name === 'img' || (name === 'source' && get('srcset')) || (name === 'link' && /icon/i.test(get('rel')?.value ?? ''))) {
+      const src = staticUrl(get('src')?.value ?? get('href')?.value ?? (get('srcset')?.value ?? '').split(/[\s,]/)[0] ?? '');
+      if (src && !/^(data:|https?:|\/\/)/i.test(src)) out.images.push([src, line]);
+    }
+    // Text people read, written into the markup rather than through a resource.
+    for (const a of attrs) {
+      if (['placeholder', 'title', 'alt', 'aria-label'].includes(a.name) && a.value && !a.value.includes('@') && /\p{L}{2,}/u.test(a.value)) out.texts.push([a.value.trim().slice(0, 80), at(a.at), a.name]);
+    }
     a11yTag(name, get, attrs, text, i, line);
     if (name === 'script') {
       const src = get('src');
@@ -338,6 +353,21 @@ export function parseRazor(source) {
   }
   out.widgets = findWidgets(text, { markup: true, scripts: false });
   out.calls.sort((a, b) => a.line - b.line);
+
+  // The view model's properties the view reads: Model.X, m => m.X in helpers, asp-for="X".
+  for (const m of text.matchAll(/\bModel\??\.(\w+)/g)) out.modelUses.push([m[1], at(m.index)]);
+  for (const m of text.matchAll(/\(\s*(\w+)\s*=>\s*\1\??\.(\w+)/g)) out.modelUses.push([m[2], at(m.index)]);
+  for (const m of text.matchAll(/\basp-for\s*=\s*"(?:@?Model\.)?(\w+)/g)) out.modelUses.push([m[1], at(m.index)]);
+  // Text between tags, outside scripts, styles and code: what a translation would have to cover.
+  const skip = [...text.matchAll(/<(script|style)\b[\s\S]*?<\/\1>/g)].map((m) => [m.index, m.index + m[0].length]);
+  for (const m of text.matchAll(/>([^<>]+)</g)) {
+    // `=>` is a lambda (m => m.Phone), not the end of a tag.
+    if (text[m.index - 1] === '=' || skip.some(([a, b]) => m.index > a && m.index < b)) continue;
+    const plain = m[1].replace(/@await\s+/g, '@').replace(/@\((?:[^()]|\([^()]*\))*\)|@[\w.]+(?:\?\.[\w.]+)*(?:\([^)]*\)|\[[^\]]*\])?|&[#\w]+;/g, ' ').trim();
+    if (!/\p{L}{2,}/u.test(plain) || /[{};=]|^\s*(if|else|foreach|for|var|using|return)\b/.test(plain)) continue;
+    out.texts.push([plain.replace(/\s+/g, ' ').slice(0, 80), at(m.index + 1), 'text']);
+  }
+  out.localized = (text.match(/\b(?:Localizer|ViewLocalizer|SharedLocalizer|L)\[|\bResources?\.\w+\.\w+|@Html\.Resource\b|@T\(|\bStrings\.\w+|GetLocalizedString\(|\bResx\.\w+/g) ?? []).length;
   // A link that is also a call (data-url="@Url.Action(…)", an Ajax.ActionLink's href) is listed once, as the call.
   const same = (l, c) => l.line === c.line && (l.url && c.url ? l.url.toLowerCase() === c.url.toLowerCase() : l.action && c.action && l.action.toLowerCase() === c.action.toLowerCase());
 

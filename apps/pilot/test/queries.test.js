@@ -87,7 +87,7 @@ test('style, find, routes, problems, overview', () => {
   assert.match(styleSymbol(idx, '.rounded').text, /^mixin \.rounded/);
   assert.deepEqual(find(idx, 'cart').data.results.map((r) => `${r.kind} ${r.name}`).slice(0, 3), ['action Orders.CartSummary', 'view Shop.Web/Views/Orders/CartSummary.cshtml', 'view component MiniCart']);
   assert.match(routes(idx).text, /^ {2}\/products\/\{id:int\} +ProductsController\.Details \[GET\] +Shop\.Core\/Views\/Products\/Details\.cshtml$/m);
-  assert.equal(problems(idx).data.problems.length, 2);
+  assert.equal(problems(idx).data.problems.length, 3);
   const o = overview(idx);
   assert.deepEqual(o.data.counts.views, 19);
   assert.deepEqual([o.data.counts.layouts, o.data.counts.partials, o.data.counts.actions], [3, 6, 10]);
@@ -121,9 +121,9 @@ test('the MCP server: tools, answers, errors as results', async () => {
   const server = createServer({ root: ROOT, build: (root) => buildIndex(root, { cache: false }) });
   const handle = mcpHandler({ name: 'pilot', version: 'test', tools: TOOLS, call: server.call });
   const list = await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
-  assert.deepEqual(list.result.tools.map((t) => t.name), ['overview', 'page', 'file', 'impact', 'selector', 'style', 'find', 'path', 'widgets', 'complexity', 'stylesheets', 'split', 'routes', 'problems', 'changes', 'context', 'rename', 'cascade', 'dead_code', 'design', 'repeats', 'accessibility', 'weight', 'diagram', 'screenshot']);
-  // Everything only reads but rename (with apply) and screenshot (a browser, files under .pilot).
-  assert.deepEqual(list.result.tools.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name), ['rename', 'screenshot']);
+  assert.deepEqual(list.result.tools.map((t) => t.name), ['overview', 'page', 'file', 'impact', 'selector', 'style', 'find', 'path', 'widgets', 'complexity', 'stylesheets', 'split_apply', 'extract_partial', 'doctor', 'view_models', 'hard_coded_text', 'images', 'styleguide', 'inspect', 'coverage', 'responsive', 'screenshots', 'report', 'split', 'routes', 'problems', 'changes', 'context', 'rename', 'cascade', 'dead_code', 'design', 'repeats', 'accessibility', 'weight', 'diagram', 'screenshot']);
+  // Everything only reads but the tools that write files (with apply) or take screenshots (under .pilot).
+  assert.deepEqual(list.result.tools.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name).sort(), ['extract_partial', 'rename', 'report', 'responsive', 'screenshot', 'screenshots', 'split_apply']);
   const call = (name, args) => handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } });
   const sel = await call('selector', { selector: '.late' });
   assert.match(sel.result.content[0].text, /orders\.less:5 {2}\.order-table tr\.late/);

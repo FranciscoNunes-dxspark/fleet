@@ -106,7 +106,7 @@ export function client(BOOT) {
   }
 
   // ─── The frame ────────────────────────────────────────────────────────────────────────────
-  const NAV = [['overview', 'Overview'], ['pages', 'Pages'], ['graph', 'Graph'], ['components', 'Components'], ['styles', 'Stylesheets'], ['selectors', 'Selectors'], ['changes', 'Changes'], ['audit', 'Audit'], ['problems', 'Problems']];
+  const NAV = [['overview', 'Overview'], ['pages', 'Pages'], ['graph', 'Graph'], ['components', 'Components'], ['styles', 'Stylesheets'], ['selectors', 'Selectors'], ['styleguide', 'Style guide'], ['changes', 'Changes'], ['audit', 'Audit'], ['live', 'Live'], ['doctor', 'Doctor']];
   const searchBox = h('input', { type: 'search', placeholder: 'Find a page, view, action, class…', 'aria-label': 'Find' });
   const results = h('div', { class: 'results', hidden: true });
   const navEl = h('nav');
@@ -116,6 +116,7 @@ export function client(BOOT) {
     h('div', { class: 'brand' }, h('span', {}, '☸ Pilot'), h('small', { title: BOOT.root }, BOOT.root)),
     navEl, h('div', { class: 'grow' }),
     h('div', { class: 'search' }, searchBox, results),
+    h('button', { title: 'Everything Pilot found, as one HTML file to share', onclick: () => window.open('/report.html', '_blank') }, 'Report'),
     h('button', { title: 'Read the project again', onclick: async (ev) => { ev.target.disabled = true; try { await api('/api/refresh'); route(); } finally { ev.target.disabled = false; } } }, 'Re-index'),
     h('button', { title: 'Light or dark', onclick: () => {
       const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -155,6 +156,56 @@ export function client(BOOT) {
     openSource(r.place.replace(/:\d+$/, ''), Number(/:(\d+)$/.exec(r.place)?.[1]));
   }
 
+  // ─── Actions ──────────────────────────────────────────────────────────────────────────────
+  /** Runs an action on the server (a POST with the header pages elsewhere can't send). */
+  async function act(name, body) {
+    const res = await fetch(`/api/action/${name}`, { method: 'POST', headers: { 'x-pilot': '1', 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+    return res.json();
+  }
+  /** A button that runs `run` with a busy state, showing what it returns (text) in `out`. */
+  function actionButton(label, run, out, { primary = false, confirmText = null } = {}) {
+    const btn = h('button', { class: primary ? 'primary' : '', onclick: async () => {
+      if (confirmText && !window.confirm(confirmText)) return;
+      btn.disabled = true;
+      const was = btn.textContent;
+      btn.textContent = `${was}…`;
+      try {
+        const r = await run();
+        if (out && r) put(out, resultBox(r));
+      } catch (e) {
+        if (out) put(out, h('div', { class: 'warn' }, e.message));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = was;
+      }
+    } }, label);
+    return btn;
+  }
+  const resultBox = (r) => h('pre', { class: 'block', style: { maxHeight: '60vh', borderColor: r.error ? 'var(--warn)' : '' } }, r.text ?? r.error ?? JSON.stringify(r, null, 2));
+
+  // ─── Live updates ─────────────────────────────────────────────────────────────────────────
+  const banner = h('div', { style: { position: 'fixed', bottom: '16px', left: '16px', zIndex: 40 }, hidden: true });
+  $app.append(banner);
+  try {
+    const es = new EventSource('/api/events');
+    es.onmessage = (ev) => {
+      const d = JSON.parse(ev.data);
+      const name = location.hash.split('/')[1] ?? 'overview';
+      // Views that only show data follow the files at once; the graph and the forms ask first.
+      if (['overview', 'pages', 'page', 'changes', 'audit', 'doctor', 'styleguide', 'components', 'selectors'].includes(name) && !drawerEl.firstChild) {
+        route();
+        put(banner, h('div', { class: 'card', style: { padding: '8px 12px' } }, `${d.files.length} changed: ${d.files.slice(0, 3).map(base).join(', ')}${d.files.length > 3 ? '…' : ''}. Updated.`));
+        banner.hidden = false;
+        setTimeout(() => (banner.hidden = true), 3000);
+      } else {
+        put(banner, h('div', { class: 'card flow', style: { padding: '8px 12px' } }, `${d.files.length} file${d.files.length === 1 ? '' : 's'} changed.`, h('button', { class: 'primary', onclick: () => { banner.hidden = true; route(); } }, 'Refresh'), h('button', { onclick: () => (banner.hidden = true) }, '✕')));
+        banner.hidden = false;
+      }
+    };
+  } catch {
+    // No live updates: the views read changes when they're opened.
+  }
+
   // ─── Source drawer ────────────────────────────────────────────────────────────────────────
   async function openSource(file, line, { all = false } = {}) {
     put(drawerEl, h('div', { class: 'drawer' }, loading()));
@@ -187,7 +238,7 @@ export function client(BOOT) {
     put(navEl, ...NAV.map(([k, label]) => h('a', { href: `#/${k}`, class: k === name || (name === 'page' && k === 'pages') ? 'on' : '' }, label)));
     mainEl.className = name === 'graph' ? 'full' : '';
     put(mainEl, loading());
-    const views = { overview: viewOverview, pages: viewPages, page: viewPage, graph: viewGraph, components: viewComponents, styles: viewStyles, selectors: viewSelectors, changes: viewChanges, audit: viewAudit, problems: viewProblems };
+    const views = { overview: viewOverview, pages: viewPages, page: viewPage, graph: viewGraph, components: viewComponents, styles: viewStyles, selectors: viewSelectors, changes: viewChanges, audit: viewAudit, problems: viewDoctor, doctor: viewDoctor, styleguide: viewStyleguide, live: viewLive };
     try {
       await (views[name] ?? viewOverview)(arg);
     } catch (e) {
@@ -230,7 +281,18 @@ export function client(BOOT) {
       step(cc.skill && cc.mcp, 'Add the skill and the MCP server to the project', `cd ${q(cc.root)}\npilot init --mcp`, 'Writes .claude/skills/pilot/SKILL.md and adds Pilot to .mcp.json. Commit both for the team; Claude Code asks once whether to trust the server.'),
       step(false, 'Or the server just for you', `claude mcp add pilot -- pilot mcp --root ${q(cc.root)}`, 'Use the full path to pilot if it isn\'t on the PATH.'),
       step(false, 'Check it', 'claude mcp list', 'It should say pilot ✔ Connected; in Claude Code, /mcp shows it too. Then ask, for example: "Use pilot to find what makes up /Orders and tighten its spacing on phones."'),
-      step(false, 'Optional: no prompts for its read-only tools', '{ "permissions": { "allow": ["mcp__pilot", "Bash(pilot *)"] } }', 'In .claude/settings.json (or settings.local.json, just for you).'));
+      step(false, 'Optional: no prompts for its read-only tools', '{ "permissions": { "allow": ["mcp__pilot", "Bash(pilot *)"] } }', 'In .claude/settings.json (or settings.local.json, just for you).'),
+      step(false, 'Optional: a hook, so Claude hears what each edit reaches', 'pilot init --hook', 'After every edit Claude makes, Pilot tells it which pages the file is on and what looks wrong; with --shots it also takes those pages again and says how much they changed.'),
+      (() => {
+        const out = h('div');
+        const shots = h('label', { class: 'chip' }, h('input', { type: 'checkbox' }), 'hook takes screenshots');
+        return h('div', { style: { paddingTop: '10px' } },
+          h('div', { class: 'flow' },
+            actionButton('Add the skill and MCP server here', () => act('init', { mcp: true }).then((r) => (route(), r)), out, { primary: true }),
+            actionButton('Add the hook', () => act('init', { hook: true, shots: shots.querySelector('input').checked }).then((r) => (route(), r)), out),
+            shots),
+          out);
+      })());
     const toggle = h('a', { onclick: () => { body.hidden = !body.hidden; toggle.textContent = body.hidden ? 'Show how' : 'Hide'; } }, ready ? 'Show how' : 'Hide');
     return h('div', { class: 'card', style: { marginTop: '14px' } },
       h('div', { class: 'flow', style: { justifyContent: 'space-between' } },
@@ -238,6 +300,7 @@ export function client(BOOT) {
         h('span', { class: 'flow' },
           h('span', { class: 'pill', style: { color: cc.skill ? 'var(--good)' : '' } }, cc.skill ? '✓ skill' : 'no skill'),
           h('span', { class: 'pill', style: { color: cc.mcp ? 'var(--good)' : '' } }, cc.mcp ? '✓ .mcp.json' : 'not in .mcp.json'),
+          h('span', { class: 'pill', style: { color: cc.hook ? 'var(--good)' : '' } }, cc.hook ? '✓ hook' : 'no hook'),
           toggle)),
       body);
   }
@@ -709,13 +772,25 @@ export function client(BOOT) {
         h('td', {}, `${g.lines} (${g.share}%)`),
         h('td', { class: 'dim' }, g.why.join('; ')),
         h('td', {}, g.ranges.slice(0, 8).map(([a, b]) => h('a', { class: 'mono', style: { marginRight: '8px' }, onclick: () => openSource(file, a) }, a === b ? `${a}` : `${a}-${b}`)), g.ranges.length > 8 ? `+${g.ranges.length - 8}` : '')))));
-    const imports = d.groups.filter((g) => !g.file.startsWith('unused')).map((g) => `@import "${g.file.replace(/\.(less|scss|css)$/, '')}";`).join('\n');
+    const imports = [...d.groups.filter((g) => !g.file.startsWith('unused')), ...d.groups.filter((g) => g.file.startsWith('unused'))].map((g) => `@import "${g.file.replace(/\.(less|scss|css)$/, '')}";${g.file.startsWith('unused') ? ' // check, then delete the file and this line' : ''}`).join('\n');
     put(right, 
       h('div', { class: 'card' },
         h('h3', {}, `Splitting ${d.file} (${d.lines} lines) into ${d.groups.length} files`),
         h('div', { class: 'split' }, strip, h('div', { style: { flex: '1', minWidth: '0', overflow: 'auto' } }, table))),
       h('div', { class: 'cols', style: { marginTop: '14px' } },
         h('div', { class: 'card' }, h('h3', {}, 'The main file becomes'), h('pre', { class: 'block' }, imports), h('button', { onclick: () => navigator.clipboard?.writeText(imports) }, 'Copy'),
+          (() => {
+            const out = h('div');
+            return h('div', { style: { marginTop: '10px' } },
+              h('div', { class: 'flow' },
+                actionButton('Preview the files', () => act('split', { file }), out),
+                actionButton('Split it', async () => {
+                  const r = await act('split', { file, apply: true });
+                  if (r.error === 'css changed' && window.confirm('The compiled CSS would change (see the details). Split anyway?')) return act('split', { file, apply: true, force: true });
+                  return r;
+                }, out, { primary: true, confirmText: `Split ${file} into the files above? The original is backed up in .pilot/backup, and with lessc or sass installed the compiled CSS is checked before and after.` })),
+              out);
+          })(),
           h('p', { class: 'faint' }, 'In this order the cascade within each new file stays as it was: base first, then layout, components and pages.')),
         h('div', { class: 'card' },
           d.orderSensitive.length ? [h('h3', {}, 'Order-sensitive classes'), d.orderSensitive.slice(0, 20).map((o) => h('div', {}, h('a', { onclick: () => go(`#/selectors/${enc(`.${o.class}`)}`) }, `.${o.class}`), ' ', h('span', { class: 'faint' }, o.files.join(', '))))] : h('p', { class: 'faint' }, 'No class is styled in two of the new files.'),
@@ -741,7 +816,14 @@ export function client(BOOT) {
         const list = r.uses.filter((u) => u.role === role);
         return h('div', { class: 'card' }, h('h3', {}, `${title} (${list.length})`), list.length ? list.slice(0, 200).map((u) => h('div', { style: { padding: '3px 0' } }, loc(u.file, u.line), u.vendor ? h('span', { class: 'pill' }, 'library') : null, u.selector ? h('div', { class: 'faint mono' }, u.selector) : null)) : h('div', { class: 'faint' }, role === 'style' ? 'Not styled in the project' : 'None'));
       };
-      out.append(h('h2', { class: 'mono' }, r.name), h('div', { class: 'cols' }, col('style', 'Styled in'), col('markup', 'Marked up in'), col('script', 'Used by scripts in')));
+      const renameOut = h('div');
+      const to = h('input', { type: 'text', placeholder: `new name for ${r.name}`, style: { width: '240px' } });
+      out.append(h('h2', { class: 'mono' }, r.name),
+        h('div', { class: 'toolbar' }, to,
+          actionButton('Preview rename', () => act('rename', { from: r.name, to: to.value.trim() }), renameOut),
+          actionButton('Rename everywhere', () => act('rename', { from: r.name, to: to.value.trim(), apply: true }), renameOut, { primary: true, confirmText: `Rename ${r.name} in every stylesheet, view and script listed below? (Preview first to see each line.)` })),
+        renameOut,
+        h('div', { class: 'cols' }, col('style', 'Styled in'), col('markup', 'Marked up in'), col('script', 'Used by scripts in')));
     }
   }
 
@@ -781,7 +863,8 @@ export function client(BOOT) {
     const input = h('input', { type: 'search', placeholder: '.class or #id', list: 'pilot-sel' });
     input.addEventListener('keydown', (ev) => ev.key === 'Enter' && input.value.trim() && pick(input.value.trim()));
     return h('div', {},
-      h('div', { class: 'toolbar' }, input, h('datalist', { id: 'pilot-sel' }, names.map((n) => h('option', { value: n }))), h('button', { onclick: () => input.value.trim() && pick(input.value.trim()) }, 'Show')),
+      h('div', { class: 'toolbar' }, input, h('datalist', { id: 'pilot-sel' }, names.map((n) => h('option', { value: n }))), h('button', { onclick: () => input.value.trim() && pick(input.value.trim()) }, 'Show'),
+        actionButton('Inspect on the running site', () => act('inspect', { page: target, selector: input.value.trim() }), out)),
       h('div', { class: 'flow', style: { marginBottom: '10px' } }, names.slice(0, 40).map((n) => h('a', { class: 'chip mono', onclick: () => { input.value = n; pick(n); } }, n))),
       out);
   }
@@ -848,6 +931,14 @@ export function client(BOOT) {
     const d = await api('/api/changes', { base: base || '' });
     const head = [h('h1', {}, 'Changes'), h('p', { class: 'dim' }, 'The files git says changed (uncommitted and untracked; with a base, everything since it too), and the pages they reach: what to check after a change.'), h('div', { class: 'toolbar' }, input, h('button', { onclick: () => go(`#/changes/${enc(input.value.trim())}`) }, 'Compare'))];
     if (d.error) return put(mainEl, head, h('div', { class: 'empty' }, d.error));
+    const shotOut = h('div');
+    const site = h('input', { type: 'text', placeholder: 'http://localhost:5000 (the running site)', style: { width: '260px' } });
+    api('/api/site').then((s) => s.url && !site.value && (site.value = s.url)).catch(() => {});
+    head.push(h('div', { class: 'toolbar' }, site, actionButton(`Screenshot these ${d.pages.length} pages`, async () => {
+      const r = await act('shots', { which: 'changed', url: site.value.trim() || null, base: base || null });
+      if (r.report) r.text += '\n\nOpen the report: /shots/report.html';
+      return r;
+    }, shotOut, { primary: true }), h('a', { href: '/shots/report.html', target: '_blank' }, 'Last report')), shotOut);
     put(mainEl, head,
       h('div', { class: 'cols' },
         h('div', { class: 'card' }, h('h3', {}, `Pages to check (${d.pages.length})`), d.pages.length ? h('table', {}, h('tbody', {}, d.pages.map((p) => h('tr', { class: 'click', onclick: () => go(`#/page/${enc(p.action)}`) }, h('td', { class: 'mono' }, p.url), h('td', {}, p.label), h('td', { class: 'faint' }, p.because.map(base).join(', ')))))) : h('div', { class: 'empty' }, 'No page reached.')),
@@ -856,12 +947,12 @@ export function client(BOOT) {
 
   // ─── Audit ────────────────────────────────────────────────────────────────────────────────
   async function viewAudit(kind = 'dead') {
-    const KINDS = [['dead', 'Dead code'], ['design', 'Design'], ['repeats', 'Repeated markup'], ['a11y', 'Accessibility'], ['weight', 'Page weight']];
+    const KINDS = [['dead', 'Dead code'], ['design', 'Design'], ['repeats', 'Repeated markup'], ['a11y', 'Accessibility'], ['weight', 'Page weight'], ['images', 'Images'], ['texts', 'Hard-coded text'], ['models', 'View models']];
     kind = KINDS.some(([k]) => k === kind) ? kind : 'dead';
     const tabs = h('div', { class: 'tabs' }, KINDS.map(([k, label]) => h('a', { class: k === kind ? 'on' : '', href: `#/audit/${k}` }, label)));
     put(mainEl, h('h1', {}, 'Audit'), tabs, loading());
     const d = await api('/api/audit', { kind });
-    const list = (title, items, fn, note) => h('div', { class: 'card', style: { marginBottom: '12px' } }, h('h3', {}, `${title} (${items.length})`), note ? h('p', { class: 'faint' }, note) : null, items.length ? items.slice(0, 300).map(fn) : h('div', { class: 'faint' }, 'None.'), items.length > 300 ? h('div', { class: 'faint' }, `… ${items.length - 300} more`) : null);
+    const list = (title, items, fn, note) => h('div', { class: 'card', style: { marginBottom: '12px' } }, h('h3', {}, `${title} (${items.length})`), note ? h('p', { class: 'faint' }, note) : null, items.length ? items.slice(0, 300).map((x, i) => fn(x, i)) : h('div', { class: 'faint' }, 'None.'), items.length > 300 ? h('div', { class: 'faint' }, `… ${items.length - 300} more`) : null);
     const row = (...kids) => h('div', { class: 'flow', style: { padding: '3px 0' } }, kids);
     const place = (p) => loc(p.replace(/:\d+$/, ''), Number(/:(\d+)$/.exec(p)?.[1]));
     const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
@@ -886,7 +977,35 @@ export function client(BOOT) {
         list('Inline styles in views', d.inline, (x) => row(h('b', {}, x.places.length), loc(x.file, x.places[0][0]), h('code', { class: 'faint' }, x.places[0][1]))))];
     } else if (kind === 'repeats') {
       body = [h('p', { class: 'dim' }, `Blocks of ${d.min}+ lines of markup shaped alike in several views: each could be one partial.`),
-        list('Repeated blocks', d.blocks, (b) => h('div', { class: 'card', style: { margin: '8px 0' } }, h('div', { class: 'flow' }, h('b', {}, `~${b.lines} lines in ${b.files} views`), h('span', { class: 'pill' }, `${b.partial}.cshtml`)), h('pre', { class: 'block' }, b.sample), b.places.map((p) => h('div', {}, loc(p.file, p.ranges[0][0], `${p.file}:${p.ranges.map(([a, z]) => `${a}-${z}`).join(', ')}`)))))];
+        list('Repeated blocks', d.blocks, (b, i) => {
+          const out = h('div');
+          const name = h('input', { type: 'text', value: b.partial, style: { width: '200px' }, title: 'The partial\'s name' });
+          return h('div', { class: 'card', style: { margin: '8px 0' } }, h('div', { class: 'flow' }, h('b', {}, `~${b.lines} lines in ${b.files} views`), h('span', { class: 'pill' }, `${b.partial}.cshtml`)), h('pre', { class: 'block' }, b.sample), b.places.map((p) => h('div', {}, loc(p.file, p.ranges[0][0], `${p.file}:${p.ranges.map(([a, z]) => `${a}-${z}`).join(', ')}`))),
+            h('div', { class: 'flow', style: { marginTop: '8px' } }, name,
+              actionButton('Preview', () => act('extract', { n: i + 1, name: name.value }), out),
+              actionButton('Extract partial', async () => {
+                const r = await act('extract', { n: i + 1, name: name.value, apply: true });
+                if (r.error === 'copies differ' && window.confirm('The copies differ (see the details): use the first copy everywhere?')) return act('extract', { n: i + 1, name: name.value, apply: true, force: true });
+                return r;
+              }, out, { primary: true, confirmText: `Write ${name.value}.cshtml and replace the ${b.files} copies with a call to it? The views are backed up in .pilot/backup.` })),
+            out);
+        })];
+    } else if (kind === 'images') {
+      const kbs = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+      body = [h('div', { class: 'cols' },
+        list('Referenced but missing', d.missing, (m) => row(loc(m.file, m.line), h('code', {}, m.url))),
+        list('Heavy', d.heavy, (x) => row(h('b', {}, kbs(x.bytes)), loc(x.file), x.uses ? null : h('span', { class: 'pill' }, 'unused?'))),
+        list('Unused by views and styles', d.unused, (x) => row(loc(x.file), h('span', { class: 'faint' }, kbs(x.bytes))), 'A script or the database may still name them.'))];
+    } else if (kind === 'texts') {
+      body = [h('p', { class: 'dim' }, `${d.total} pieces of text written into views; ${d.localizing} views use resources or a localizer.${d.localizing ? '' : ' This is what a translation would need to cover.'}`),
+        d.views.filter((v) => v.texts.length).map((v) => list(`${v.file}${v.localized ? ` · ${v.localized} localized` : ''}`, v.texts, (t) => row(loc(v.file, t.line, `line ${t.line}`), t.where !== 'text' ? h('span', { class: 'pill' }, t.where) : null, h('span', {}, t.text))))];
+    } else if (kind === 'models') {
+      body = [h('p', { class: 'dim' }, 'The view models views use (@model), and which of their properties the markup reads.'),
+        d.models.map((m) => h('div', { class: 'card', style: { marginBottom: '12px' } },
+          h('div', { class: 'flow' }, h('b', { class: 'mono' }, m.name), m.class ? loc(m.class.file, m.class.line) : h('span', { class: 'pill' }, 'class not in the project'), h('span', { class: 'faint' }, `${m.views.length} views`)),
+          m.properties.length ? h('div', { class: 'flow', style: { margin: '8px 0' } }, m.properties.map((p) => h('span', { class: 'chip mono', title: `${p.type}, line ${p.line}`, style: { opacity: p.used ? '1' : '.45' } }, p.name))) : null,
+          m.views.map((v) => row(loc(v.file, v.line), h('span', { class: 'faint mono' }, v.uses.join(', ') || '(no property read)'))),
+          m.unknown.length ? h('div', { class: 'warn' }, `Read but not on the class: ${m.unknown.join(', ')}`) : null))];
     } else if (kind === 'a11y') {
       const by = new Map();
       for (const x of d.issues) by.set(x.rule, [...(by.get(x.rule) ?? []), x]);
@@ -901,13 +1020,89 @@ export function client(BOOT) {
     put(mainEl, h('h1', {}, 'Audit'), tabs, body);
   }
 
-  // ─── Problems ─────────────────────────────────────────────────────────────────────────────
-  async function viewProblems() {
-    const d = await api('/api/problems');
-    put(mainEl, h('h1', {}, `Unresolved (${d.problems.length})`),
+  // ─── Doctor ───────────────────────────────────────────────────────────────────────────────
+  async function viewDoctor() {
+    const d = await api('/api/doctor');
+    put(mainEl, h('h1', {}, `Doctor: Pilot followed ${d.score}% of ${d.total} references`),
+      h('p', { class: 'dim' }, 'How much of the project Pilot understood, and the patterns it couldn\'t follow. A pattern that recurs is one Pilot can learn: send this page to whoever maintains it.'),
+      h('div', { class: 'card' }, h('table', {}, h('thead', {}, h('tr', {}, ['What', 'Found', 'Guessed', 'Missing', 'Run time', ''].map((t) => h('th', {}, t)))),
+        h('tbody', {}, d.rows.map((r) => h('tr', {}, h('td', {}, r.what), h('td', {}, r.found), h('td', {}, r.guessed || ''), h('td', { class: r.missing ? 'warn' : '' }, r.missing || ''), h('td', {}, r.dynamic || ''),
+          h('td', { style: { width: '30%' } }, r.total ? h('div', { class: 'bar' }, h('i', { style: { width: `${(100 * r.found) / r.total}%`, background: 'var(--good)' } })) : null)))))),
+      d.patterns.length ? [h('h2', {}, 'What it couldn\'t follow, by pattern'), h('div', { class: 'card' }, d.patterns.slice(0, 40).map((x) => h('div', { style: { padding: '6px 0', borderBottom: '1px solid var(--line)' } }, h('div', { class: 'flow' }, h('b', {}, x.count), h('code', {}, x.key)), h('div', { class: 'faint mono' }, x.examples.join(' · ')))))] : null,
+      d.hints.length ? [h('h2', {}, 'Notes'), h('div', { class: 'card' }, d.hints.map((x) => h('div', {}, x)))] : null,
+      h('h2', {}, `Unresolved (${d.problems.length})`),
       h('div', { class: 'card' }, d.problems.length ? h('table', {}, h('tbody', {}, d.problems.map((p) => h('tr', {}, h('td', {}, loc(p.file, p.line)), h('td', {}, p.message))))) : h('div', { class: 'empty' }, 'Everything resolved.')),
       h('h2', {}, `Decided at run time (${d.dynamic.length})`),
       h('div', { class: 'card' }, d.dynamic.length ? h('table', {}, h('tbody', {}, d.dynamic.map((p) => h('tr', {}, h('td', {}, loc(p.file, p.line)), h('td', {}, h('code', {}, p.message.replace('decided at run time: ', ''))))))) : h('div', { class: 'empty' }, 'None.')));
+  }
+
+  // ─── Style guide ──────────────────────────────────────────────────────────────────────────
+  async function viewStyleguide() {
+    const d = await api('/api/styleguide');
+    const sw = (value, name, sub) => h('div', { class: 'card', style: { padding: '0', overflow: 'hidden' } },
+      h('div', { style: { height: '56px', background: /^[#\w(),.\s%-]+$/.test(value) ? value : 'var(--panel2)', borderBottom: '1px solid var(--line)' } }),
+      h('div', { style: { padding: '8px 10px' } }, h('div', { class: 'mono' }, name), h('div', { class: 'faint mono', style: { fontSize: '11px' } }, sub)));
+    const vars = (list) => h('table', {}, h('tbody', {}, list.map((v) => h('tr', {}, h('td', { class: 'mono' }, v.name), h('td', { class: 'mono' }, v.value), h('td', { class: 'faint' }, `${v.uses} uses`), h('td', {}, place(v.at))))));
+    const place = (p) => loc(p.replace(/:\d+$/, ''), Number(/:(\d+)$/.exec(p)?.[1]));
+    put(mainEl, h('h1', {}, 'Style guide'),
+      h('p', { class: 'dim' }, 'The project\'s own design system, as its stylesheets and views have it: reuse these before adding new values.'),
+      d.colours.length ? [h('h2', {}, 'Colour variables'), h('div', { class: 'cards' }, d.colours.map((v) => sw(v.value, v.name, `${v.value} · ${v.uses} uses`)))] : null,
+      d.literalColours.length ? [h('h2', {}, 'Colours written out (no variable)'), h('div', { class: 'cards' }, d.literalColours.map((c) => sw(c.value, c.value, `${c.uses} uses`)))] : null,
+      h('div', { class: 'cols', style: { marginTop: '14px' } },
+        d.sizes.length ? h('div', { class: 'card' }, h('h3', {}, 'Size variables'), vars(d.sizes)) : null,
+        d.otherVariables.length ? h('div', { class: 'card' }, h('h3', {}, 'Other variables'), vars(d.otherVariables)) : null,
+        h('div', { class: 'card' },
+          h('h3', {}, 'Fonts'), d.fonts.map((f) => h('div', { class: 'mono' }, `${f.value} (${f.uses})`)),
+          h('h3', {}, 'Font sizes'), h('div', { class: 'flow' }, d.fontSizes.map((f) => h('span', { class: 'chip mono' }, `${f.value} ×${f.uses}`))),
+          h('h3', {}, 'Breakpoints'), h('div', { class: 'flow' }, d.breakpoints.map((b) => h('span', { class: 'chip mono' }, `${b.query} ×${b.places.length}`))),
+          h('h3', {}, 'UI libraries'), h('div', { class: 'flow' }, d.widgets.map((w) => h('span', { class: 'chip' }, `${w.kind} · ${w.lib} ×${w.count}`))))),
+      d.components.length ? [h('h2', {}, 'Components'), h('div', { class: 'cols' }, d.components.map((c) => h('div', { class: 'card' },
+        h('div', { class: 'flow' }, h('b', { class: 'mono' }, `.${c.name}`), h('span', { class: 'faint' }, `${c.uses} uses`)),
+        h('div', { class: 'flow', style: { margin: '6px 0' } }, c.classes.slice(0, 16).map((x) => h('a', { class: 'chip mono', onclick: () => go(`#/selectors/${enc(`.${x}`)}`) }, `.${x}`))),
+        c.example ? [h('pre', { class: 'block' }, c.example.markup), loc(c.example.file, c.example.line)] : null)))] : null);
+  }
+
+  // ─── Live: the running site ───────────────────────────────────────────────────────────────
+  async function viewLive() {
+    const s = await api('/api/site').catch(() => ({}));
+    const site = h('input', { type: 'text', value: s.url ?? '', placeholder: 'http://localhost:5000', style: { width: '280px' } });
+    const url = () => site.value.trim() || null;
+    const card = (title, note, ...kids) => h('div', { class: 'card' }, h('h3', {}, title), h('p', { class: 'faint' }, note), ...kids);
+    const field = (ph, w = '220px') => h('input', { type: 'text', placeholder: ph, style: { width: w } });
+    const ip = field('/Orders or Orders.Index');
+    const isel = field('.btn-save or #orders', '180px');
+    const iout = h('div');
+    const cp = field('/Orders, /Orders/Edit/1 …', '360px');
+    const cout = h('div');
+    const rp = field('/Orders');
+    const rout = h('div');
+    const rshots = h('div', { style: { marginTop: '14px' } });
+    const which = h('select', {}, h('option', { value: 'changed' }, 'the pages changes reach'), h('option', { value: 'all' }, 'every page (first 40)'));
+    const threshold = h('input', { type: 'number', placeholder: '% to flag', style: { width: '110px' } });
+    const sout = h('div');
+    put(mainEl, h('h1', {}, 'Live'),
+      h('p', { class: 'dim' }, 'The running site, through the Chrome or Edge on this machine: what really styles an element, what CSS and script a page really uses, how it holds up at each breakpoint, and screenshots of many pages at once.'),
+      h('div', { class: 'toolbar' }, h('b', {}, 'Site:'), site),
+      h('div', { class: 'cols' },
+        card('Inspect an element', 'The element a selector finds on the page: its box, computed styles, and every rule that styles it, weakest first, with what wins: exact, unlike the Cascade tab, which assumes every rule applies.',
+          h('div', { class: 'toolbar' }, ip, isel, actionButton('Inspect', () => act('inspect', { page: ip.value.trim(), selector: isel.value.trim(), url: url() }), iout, { primary: true })), iout),
+        card('CSS and JavaScript coverage', 'The rules and script bytes these pages really use. Rules no page used are evidence for dead CSS and a better basis for splitting a stylesheet (hover and focus rules aside).',
+          h('div', { class: 'toolbar' }, cp, actionButton('Measure', () => act('coverage', { pages: cp.value, url: url() }), cout, { primary: true })), cout),
+        card('Responsive check', 'The page at each of the project\'s breakpoints: a screenshot, whether it scrolls sideways, and the elements that stick out, traced to the markup.',
+          h('div', { class: 'toolbar' }, rp, actionButton('Check', async () => {
+            const r = await act('responsive', { page: rp.value.trim(), url: url() });
+            if (r.results) {
+              const slug = r.results[0]?.shot.split('/')[2];
+              // The widths side by side under the cards, each cropped to its top: click one for the whole page.
+              put(rshots, h('div', { class: 'card' }, h('h3', {}, 'At each width'), h('div', { style: { display: 'flex', gap: '12px', overflowX: 'auto', alignItems: 'flex-start' } }, r.results.map((x) => h('div', { style: { flex: 'none' } },
+                h('div', { class: 'flow' }, h('b', {}, `${x.width}px`), x.scrolls ? h('span', { class: 'pill warn' }, 'scrolls sideways') : null),
+                h('a', { href: `/api/shot-image?slug=${enc(slug)}&name=responsive-${x.width}.png`, target: '_blank' }, h('img', { src: `/api/shot-image?slug=${enc(slug)}&name=responsive-${x.width}.png&t=${Date.now()}`, alt: `${x.width}px`, style: { width: `${Math.min(x.width, 420) * 0.6}px`, maxHeight: '420px', objectFit: 'cover', objectPosition: 'top', border: '1px solid var(--line)', borderRadius: '6px' } })))))));
+            }
+            return r;
+          }, rout, { primary: true })), rout),
+        card('Screenshots of many pages', 'One browser for all: before the first time, then after and compared. The report shows each page\'s before, after and diff.',
+          h('div', { class: 'toolbar' }, which, threshold, actionButton('Take them', () => act('shots', { which: which.value, url: url(), threshold: threshold.value ? Number(threshold.value) : null }), sout, { primary: true }), h('a', { href: '/shots/report.html', target: '_blank' }, 'Report')), sout)),
+      rshots);
   }
 
   route();

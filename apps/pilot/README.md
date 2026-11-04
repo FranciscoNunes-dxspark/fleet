@@ -160,6 +160,13 @@ Ask in plain words; Claude picks the tools. For example:
 - *"I've changed the header partial: which pages should I check, and how do they look now?"* →
   `changes`, `screenshot` (with the site running locally).
 - *"Clean up: what's unused, and which colours should use our variables?"* → `dead_code`, `design`.
+- *"How much of this project do you understand?"* → `doctor`.
+- *"Why is the save button white on /Orders?"* (site running) → `inspect`.
+- *"Which CSS does nobody use? Check the main pages first."* → `coverage`.
+- *"Does /Orders work on a phone?"* → `responsive`.
+- *"Split site.less as you suggested, and check the CSS stays the same."* → `split_apply`.
+- *"The info card is copied in five views: make it a partial."* → `repeats`, `extract_partial`.
+- *"Add a new card to the dashboard in our own style."* → `styleguide`, then `page`.
 
 Keep `pilot ui` open in another terminal to follow along in the browser: it reads the same index.
 
@@ -208,6 +215,19 @@ Keep `pilot ui` open in another terminal to follow along in the browser: it read
 | `pilot weight [filter]` | What each page loads and weighs, libraries loaded twice on a page, the heaviest files and how many pages load them |
 | `pilot diagram <target>` | A page (or a file's neighbourhood with `--depth`, or a path with `--to`) as a Mermaid diagram to paste into a pull request or wiki; `--format dot` for Graphviz |
 | `pilot shot <page>` | A screenshot of the running site (below) |
+| `pilot shots [changed\|all\|<page…>]` | Screenshots of many pages with one browser, each compared with its before, and an HTML report (`.pilot/shots/report.html`); `--threshold n` exits 1 when a page changed more than n% (for CI) |
+| `pilot inspect <page> <selector>` | On the running site: the element(s) the selector finds, their box and computed styles, and every rule that styles them in cascade order with what wins and where each rule is written in the project. Exact, where `cascade` has to assume every rule applies |
+| `pilot coverage <page…>` | On the running site: the CSS rules and script bytes those pages really use, per stylesheet and script, and the classes styled but used by none of them (`:hover` and `:focus` rules aside) |
+| `pilot responsive <page>` | On the running site: the page at each of the project's breakpoints (or 360, 768, 1280): a screenshot, whether it scrolls sideways, the elements that stick out (traced to the markup), and a missing `<meta name="viewport">` |
+| `pilot split <file> --apply` | Writes the split `split` proposes: the new files beside the stylesheet, its own imports kept and the new ones added (`unused` last, marked), the original in `.pilot/backup`. With `lessc` or `sass` installed (the project's or on the PATH), compiles before and after and puts everything back if the CSS would change (`--force` keeps it) |
+| `pilot extract [n] --apply` | Block `n` of `repeats` made one partial (`--name _InfoCard`): its elements balanced, written once (in the views' folder, else `Views/Shared`), and each copy replaced with `@Html.Partial(…)` (MVC 5) or `<partial name>` (Core). When the copies differ, the differences are listed and nothing is written without `--force` |
+| `pilot doctor` | How much of the project Pilot understood: partials, components, child actions, layouts, views, assets, imports, requests and images found, guessed, missing or decided at run time, and what it couldn't follow, grouped by pattern. Run it first on a new project |
+| `pilot models [filter]` | The view models views use: their class, the views, the properties the markup reads, never reads, or reads but the class doesn't have |
+| `pilot text [filter]` | Text written into views (between tags, and `placeholder`, `title`, `alt`, `aria-label`) rather than through resources or a localizer |
+| `pilot images` | Images referenced but missing, heavy ones, and ones no view or stylesheet uses |
+| `pilot styleguide` | The project's own design system: colour and size variables with their uses, colours written out, fonts and sizes, breakpoints, component class families with example markup, UI libraries |
+| `pilot report [--out file]` | Everything as one self-contained HTML file to share (default `.pilot/report.html`) |
+| `pilot hook` | Claude Code's PostToolUse hook (`pilot init --hook` installs it; below) |
 | `pilot routes [filter]` | URLs, the actions answering them and their views |
 | `pilot problems [filter]` | References Pilot couldn't resolve (missing partials, layouts, scripts, styles, imports) and names decided at run time |
 | `pilot mcp` | Serves the queries as MCP tools over stdio |
@@ -278,6 +298,21 @@ The files are in `<project>/.pilot/shots/<page>/` (`before-1280.png`, `after-128
 `.pilot/` keeps itself out of git. Claude reads the PNGs to see the page; the UI shows them side by
 side in a page's **Screenshots** tab, with a button to take one.
 
+## The Claude Code hook
+
+`pilot init --hook` adds a hook to the project's `.claude/settings.json` (beside any other hooks):
+after Claude edits or writes a file, Pilot runs in the background and tells Claude, on its next
+turn:
+
+- which pages the file is on (or that no page loads it, for a stylesheet or script);
+- references that broke in it, classes it uses that no stylesheet styles, classes a stylesheet
+  styles that nothing uses, accessibility problems, inline styles;
+- with `pilot init --hook --shots` and the site running (a URL given once to `pilot shot`), how much
+  each of those pages changed in a screenshot against its before.
+
+It never blocks Claude and says nothing when there's nothing to say. Remove it by deleting its entry
+under `hooks.PostToolUse` in `.claude/settings.json`.
+
 ## The web UI
 
 `pilot ui` indexes the project, serves a page on `http://127.0.0.1:4170` (the next free port if that
@@ -303,10 +338,26 @@ loaded from the network. It listens on this machine only, answers only requests 
   files with their line ranges and why, the `@import` list to replace it with, and the classes whose
   order matters.
 - **Selectors**: where a class or id is styled, marked up and scripted.
-- **Changes**: what git says changed and the pages it reaches, optionally since a branch.
+- **Style guide**: the project's colours (as swatches), variables, fonts, sizes, breakpoints, UI
+  libraries and component families with example markup.
+- **Changes**: what git says changed and the pages it reaches, optionally since a branch; a button
+  screenshots those pages.
 - **Audit**: dead code, design consistency (with colour swatches), repeated markup, accessibility,
-  page weight.
+  page weight, images, hard-coded text, view models.
+- **Live**: the running site: inspect an element, CSS and JavaScript coverage, the responsive
+  check (each width side by side), screenshots of many pages with their report.
+- **Doctor**: how much of the project Pilot understood, the patterns it couldn't follow, and what's
+  unresolved.
 - **Problems**: what couldn't be resolved, and what's decided at run time.
+
+**Actions** (each previews first where it writes, asks before writing, and keeps a backup in
+`.pilot/backup`): **Rename everywhere** on a selector, **Split it** on a stylesheet, **Extract
+partial** on a repeated block, **Inspect on the running site** in a page's Cascade tab, **Take
+screenshot** on a page, **Screenshot these pages** on Changes, the four tools on Live, and on the
+Overview **Add the skill and MCP server here** and **Add the hook**. Actions are POSTs that need a
+header other sites can't send, so no page elsewhere can trigger them. **Report** in the header opens
+the shareable report. The UI follows the files: when they change it reads them again and the views
+update (the graph and forms ask first).
 
 A page also has **Cascade** (pick one of its classes or ids: the rules in order, the losing
 declarations struck out, rules in stylesheets it doesn't load), **Context for Claude** (the

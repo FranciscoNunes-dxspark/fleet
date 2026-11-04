@@ -113,6 +113,7 @@ test('symbols: classes styled, marked up and scripted; variables and mixins', ()
 test('problems: what could not be resolved', () => {
   assert.deepEqual(idx.problems.map((p) => `${p.file}:${p.line} ${p.message}`).sort(), [
     'Shop.Web/Scripts/app/orders.ts:1 import "../typings/jquery.d.ts" not found',
+    'Shop.Web/Views/Home/Index.cshtml:18 image "/images/logo.png" not found in the project',
     'Shop.Web/Views/Orders/Edit.cshtml:6 partial "_Missing" not found',
   ]);
 });

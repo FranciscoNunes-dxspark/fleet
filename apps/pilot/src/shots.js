@@ -51,7 +51,7 @@ export function pagePath(idx, target) {
 export const slugOf = (path) => (String(path).replace(/^https?:\/\/[^/]+/i, '').replace(/[?#].*$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'home');
 
 /** A browser started headless, and a way to talk to one page in it over the DevTools protocol. */
-async function openBrowser(chrome, { timeout = 20000 } = {}) {
+export async function openBrowser(chrome, { timeout = 20000 } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'pilot-chrome-'));
   const args = ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars', '--mute-audio', '--disable-extensions'];
   if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox');
@@ -106,48 +106,72 @@ async function openBrowser(chrome, { timeout = 20000 } = {}) {
 }
 
 /**
- * A full-page PNG of `url` at `width` (and a phone's viewport with `mobile`). `cookies` are
- * "name=value" pairs set for the site first (a signed-in session), `headers` extra request headers.
+ * Opens `url` in a tab of `browser` (or a browser of its own, closed after) and runs `fn(send)` once
+ * it has loaded and settled; `send(method, params)` talks to that tab. `before(send)` runs before
+ * the page loads (to start tracking coverage). `cookies` are "name=value" pairs set for the site
+ * first (a signed-in session), `headers` extra request headers.
  */
-export async function capture(url, { chrome = findChrome(), width = 1280, height = 900, mobile = false, cookies = [], headers = {}, settle = 600, timeout = 30000 } = {}) {
-  if (!chrome) throw Object.assign(new Error('No Chrome, Chromium or Edge found: install one, or set PILOT_CHROME to its path.'), { usage: true });
-  const b = await openBrowser(chrome);
+export async function withPage(url, fn, { browser = null, chrome = findChrome(), width = 1280, height = 900, mobile = false, cookies = [], headers = {}, settle = 600, timeout = 30000, before = null } = {}) {
+  if (!browser && !chrome) throw Object.assign(new Error('No Chrome, Chromium or Edge found: install one, or set PILOT_CHROME to its path.'), { usage: true });
+  const b = browser ?? (await openBrowser(chrome));
+  let targetId;
   try {
-    const { targetId } = await b.send('Target.createTarget', { url: 'about:blank' });
+    ({ targetId } = await b.send('Target.createTarget', { url: 'about:blank' }));
     const { sessionId } = await b.send('Target.attachToTarget', { targetId, flatten: true });
     const s = (m, p) => b.send(m, p, sessionId);
+    s.on = (fn2) => b.on((msg) => msg.sessionId === sessionId && fn2(msg));
     await s('Page.enable');
     await s('Network.enable');
-    const w = mobile ? 390 : width;
-    await s('Emulation.setDeviceMetricsOverride', { width: w, height: mobile ? 844 : height, deviceScaleFactor: 1, mobile });
+    await s('Emulation.setDeviceMetricsOverride', { width: mobile ? 390 : width, height: mobile ? 844 : height, deviceScaleFactor: 1, mobile });
     if (Object.keys(headers).length) await s('Network.setExtraHTTPHeaders', { headers });
     for (const c of cookies) {
       const [name, ...rest] = c.split('=');
       await s('Network.setCookie', { name: name.trim(), value: rest.join('=').trim(), url });
     }
+    if (before) await before(s);
     const loaded = new Promise((ok) => {
-      const fn = (msg) => {
+      const fn2 = (msg) => {
         if (msg.sessionId === sessionId && msg.method === 'Page.loadEventFired') {
-          b.off(fn);
+          b.off(fn2);
           ok();
         }
       };
-      b.on(fn);
+      b.on(fn2);
     });
     const nav = await s('Page.navigate', { url });
     if (nav.errorText) throw new Error(`Couldn't open ${url}: ${nav.errorText}. Is the site running?`);
     await Promise.race([loaded, new Promise((_, fail) => setTimeout(() => fail(new Error(`${url} didn't finish loading in ${timeout / 1000} s.`)), timeout))]);
-    // Let scripts draw (grids, charts) and fonts arrive before the picture.
+    // Let scripts draw (grids, charts) and fonts arrive.
     await new Promise((ok) => setTimeout(ok, settle));
+    return await fn(s);
+  } finally {
+    if (browser) {
+      if (targetId) await b.send('Target.closeTarget', { targetId }).catch(() => {});
+    } else b.close();
+  }
+}
+
+/** A full-page PNG of `url` at `width` (a phone's viewport with `mobile`). */
+export async function capture(url, opts = {}) {
+  const w = opts.mobile ? 390 : opts.width ?? 1280;
+  return withPage(url, async (s) => {
     const metrics = await s('Page.getLayoutMetrics');
     const size = metrics.cssContentSize ?? metrics.contentSize;
     const full = Math.min(12000, Math.ceil(size.height));
     const shot = await s('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width: w, height: full, scale: 1 } });
     const { result } = await s('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
     return { png: Buffer.from(shot.data, 'base64'), width: w, height: full, title: result?.value ?? '' };
-  } finally {
-    b.close();
-  }
+  }, opts);
+}
+
+/** The page's full URL: a URL as given, else the site's base URL and the page's path. { url } or { error }. */
+export function pageUrl(idx, target, given = null) {
+  const p = pagePath(idx, target);
+  if (p.error) return { error: p.error };
+  if (p.url) return { url: p.url };
+  const base = baseUrl(idx.root, given);
+  if (!base) return { error: 'Where does the site run? Give it once with --url http://localhost:5000 (it\'s remembered), or set PILOT_URL.' };
+  return { url: `${base}${p.path}` };
 }
 
 /** The base URL of the running site: given, else PILOT_URL, else the one remembered in .pilot/config.json. */
@@ -175,7 +199,7 @@ export function listShots(root, slug) {
   const dir = join(root, SHOTS_DIR, slug);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => /^(before|after|diff)-(\d+|mobile)\.png$/.test(f))
+    .filter((f) => /^(before|after|diff|responsive)-(\d+|mobile)\.png$/.test(f))
     .map((f) => {
       const [, label, width] = /^(\w+)-(\w+)\.png$/.exec(f);
       const st = statSync(join(dir, f));
@@ -198,7 +222,7 @@ export function compareShots(root, slug, width) {
  * `pilot shot`: takes the page at each width, as `as` ('before' or 'after'; by default before the
  * first time and after from then on), and compares when both are there.
  */
-export async function shot(idx, target, { url = null, widths = [1280], as = null, cookies = [], headers = {}, capture: take = capture } = {}) {
+export async function shot(idx, target, { url = null, widths = [1280], as = null, cookies = [], headers = {}, capture: take = capture, browser = null } = {}) {
   const p = pagePath(idx, target);
   if (p.error) return { data: { error: p.error }, text: p.error };
   let full = p.url;
@@ -216,7 +240,7 @@ export async function shot(idx, target, { url = null, widths = [1280], as = null
   for (const w of widths) {
     const key = w === 'mobile' ? 'mobile' : String(w);
     const label = as ?? (existsSync(join(dir, `before-${key}.png`)) ? 'after' : 'before');
-    const s = await take(full, { width: w === 'mobile' ? 390 : Number(w), mobile: w === 'mobile', cookies, headers });
+    const s = await take(full, { width: w === 'mobile' ? 390 : Number(w), mobile: w === 'mobile', cookies, headers, browser });
     const file = join(dir, `${label}-${key}.png`);
     writeFileSync(file, s.png);
     results.push({ width: key, label, file: join(SHOTS_DIR, slug, `${label}-${key}.png`).replace(/\\/g, '/'), size: [s.width, s.height], title: s.title, compare: label === 'after' ? compareShots(idx.root, slug, key) : null });
