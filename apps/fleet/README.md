@@ -4,9 +4,9 @@
 
 The family's terminal apps in one terminal: [Splice](../splice) (git), [Trawl](../trawl) (SQL),
 [Sonar](../sonar) (Azure), [Bosun](../bosun) (a project's processes), [Hail](../hail) (HTTP),
-[Locker](../locker) (secrets and configuration), [Mooring](../mooring) (files and commands on a server over SSH), [Bilge](../bilge) (a project's dependencies: advisories, licences, what's behind) and [Chart](../chart) (infrastructure as code: a Terraform plan or a Bicep what-if, drift, state). Each runs exactly as it does by itself, with its own
+[Locker](../locker) (secrets and configuration), [Mooring](../mooring) (files and commands on a server over SSH), [Bilge](../bilge) (a project's dependencies: advisories, licences, what's behind), [Chart](../chart) (infrastructure as code: a Terraform plan or a Bicep what-if, drift, state), [Wharf](../wharf) (containers), [Keel](../keel) (Azure DevOps, its terminal app), [Helm](../helm) (PowerShell scripts), [Lantern](../lantern) (a web page audited in a headless Chrome, and its domains), [Drill](../drill) (a project's tests, failures first), [Ballast](../ballast) (what a production build ships and weighs) and [Lookout](../lookout) (the HTTP and HTTPS traffic a browser or a server sends). Each runs exactly as it does by itself, with its own
 settings, sign-ins and keys; Fleet shows one at a time and switches between them with `ctrl+b`, as
-tmux does with its windows. A bar at the bottom shows them all.
+tmux does with its windows. A bar at the bottom shows the ones you choose ([Choosing the apps](#choosing-the-apps)): every one, until you choose.
 
 ```
  1 Splice ●  2 Trawl ●  3 Sonar ○  4 Bosun ○  5 Hail ✕1  6 Locker ○  7 Mooring ○  8 Bilge ○  9 Chart ○   ctrl+b ? help
@@ -51,7 +51,7 @@ Started some other way on Windows, as the bare `fleet-windows-x64.exe` opens in 
 whose one font lacks many of the apps' characters: Fleet draws lookalikes in their place there.
 
 **Elsewhere**, or for the bare executable, download `fleet` for your platform from the [latest release](https://github.com/FranciscoNunes-dxspark/fleet/releases?q=fleet-v&expanded=true)
-and put it on your PATH. It is one executable with all nine apps inside, so it's the only download you
+and put it on your PATH. It is one executable with all sixteen apps inside, so it's the only download you
 need. It checks for a new version once a day and installs it by itself; the new version starts the
 next time you open Fleet. (The apps inside don't update themselves: Fleet updates them together. `/update` in any of them asks Fleet to look for a new version now and install it, saying "Installing Fleet <version>…" in the bar while it does.)
 
@@ -96,8 +96,9 @@ say `ctrl+b`; read yours there.
 | Keys | What they do |
 | --- | --- |
 | `alt+1`–`alt+9` | Switch to that space (no prefix; terminals don't send `ctrl+alt` with a digit) |
-| `ctrl+b` `1`–`8` | Switch to that space |
-| `ctrl+b` `s` `t` `o` `b` `h` `l` `u` `g` `c` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Locker, Mooring (u), Bilge (g), Chart (c) |
+| `ctrl+b` `1`–`9` | Switch to that space, counting the ones the bar shows |
+| `ctrl+b` `s` `t` `o` `b` `h` `l` `u` `g` `c` `d` `k` `i` `j` `v` `z` `y` | Switch to Splice, Trawl, Sonar (o), Bosun, Hail, Locker, Mooring (u), Bilge (g), Chart (c), Wharf (d), Keel (k), Helm (i), Lantern (j), Drill (v), Ballast (z), Lookout (y): any app, shown in the bar or not |
+| `ctrl+b` `a` | Choose which apps the bar shows ([Choosing the apps](#choosing-the-apps)) |
 | `ctrl+b` `]` or `n` | The next space |
 | `ctrl+b` `p` | The previous space |
 | `ctrl+b` `\|` or `\` | Split the screen: the app on screen and the one before it side by side (`\|` again puts it back) |
@@ -116,6 +117,14 @@ say `ctrl+b`; read yours there.
 | `ctrl+b` `?` | The keys |
 
 `P`, `R` and `S` are capitals: `p` is the previous space, `r` the runbooks and `s` Splice. Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
+
+## Choosing the apps
+
+`ctrl+b` `a` lists every app with a box beside it: `space` or `↵` shows or hides the one under the cursor in the bar, and the choice is kept in `~/.fleet/host.json` (`"apps": ["splice", "bilge", …]`). The numbers `1`–`9` and `n` `p` go through the apps shown, in their order. A hidden app is still there: its letter (`ctrl+b` `k` for Keel), a sibling handing it something, a runbook's step or `fleet keel` opens it, and it shows in the bar while it runs. One app at least stays in the bar.
+
+```
+ 1 Splice ●  2 Bilge ○  3 Hail ○  4 Keel ●   ctrl+b ? help
+```
 
 ## Split
 
@@ -305,8 +314,11 @@ Each app checks what it knows for security problems, and Fleet adds them up for 
 | Sonar | The Azure subscription's setup: storage, NSGs, App Service, SQL, Key Vault, Redis, registries, Defender | `"sonar": { "subscription": "…", "resourceGroup": "…" }` |
 | Locker | Expiring and stale vault secrets, plain-text secrets in app settings, secrets in files git tracks | `"locker": true` or `{ "app", "vault" }` |
 | Mooring | A server over SSH: public ports, sshd, updates, firewall, accounts, end of life | `"mooring": ["web1", "deploy@db1"]` |
-| Wharf | Containers as they run: privileged, the Docker socket mounted, public databases, secrets in their environment | `"wharf": true` or `{ "compose": "compose.yaml" }` (from a checkout only) |
-| Keel | Azure DevOps: plain-text secret variables, branches without policies, connections open to every pipeline | `"keel": "Project"` (from a checkout only) |
+| Wharf | Containers as they run: privileged, the Docker socket mounted, public databases, secrets in their environment | `"wharf": true` or `{ "compose": "compose.yaml" }` |
+| Keel | Azure DevOps: plain-text secret variables, branches without policies, connections open to every pipeline | `"keel": "Project"` |
+| Lantern | The web app's pages from outside (security headers, cookies, the certificate, mixed content, source maps served) and its domains (DNS and CAA, redirects to HTTPS) | `"lantern": true` (the pages in `lantern.json` and the environments' `"lantern"` sections) or `"https://…"` |
+| Ballast | The production build: source maps shipped, secrets in the built files | a build output (`dist/`, `build/`, `out/`) or `ballast.json` in the project, else `"ballast": true` |
+| Lookout | The traffic it captured: tokens over plain HTTP, cookies without `Secure`, credentials in query strings | `"lookout": true` (its last session) or `"capture.har"` |
 
 What runs comes from a `"security"` section in `.fleet/project.json`, and the chosen environment's own `"security"` over it (so `prod` can name another address for Hail); `"skip": ["chart"]` leaves a check out. Every check only reads; Hail's sends the requests a scan needs (GET, HEAD, OPTIONS, TRACE), and refuses a production environment headless unless its section says `"production": true`.
 
@@ -360,6 +372,7 @@ It reads for the folder Claude Code starts it in; `fleet mcp --project <dir>` na
 | `sonar_components`, `sonar_problems`, `sonar_incident`, `sonar_query` | Application Insights, through your `az login`, in Sonar's last subscription: the problems, one told whole (its stack, its operation, the SQL that failed), and any KQL query |
 | `trawl_list_connections`, `trawl_list_tables`, `trawl_describe_table`, `trawl_run_query` | Trawl's own MCP tools (`trawl mcp`, below the surface), with every rule they have: your saved connections, each one's Claude access level, writes refused, every query rolled back, all of it in Trawl's History |
 | `family_timeline`, `family_moods`, `family_wiring` | What the apps did that changed something (this project's, or every project's), how their mascots feel and why (a quick read of what's wrong now), and what the project points at (addresses and connection strings, masked) |
+| `drill_tests` | What the tests did in [Drill](../drill)'s last runs: passed and failed counts, the tests that failed (runner, file and line, name) and the flaky ones. It runs nothing |
 | `security_overview` | The last [security overview](#security): each app's check with its counts, then the findings worst first with their fix (`app`, `severity` and `limit` narrow it). It doesn't run the checks |
 | `what_changed` | [What changed?](#what-changed) as text: the worried apps on top, then the activity log, commits and merges, and Bosun's crashes and restarts of the last `hours` (6 by default, a week at most), newest first |
 | `propose`, `proposal_status` | A line for one app's prompt, with why, for you to hand over in Fleet or dismiss ([Claude proposes](#claude-proposes-you-press-)); and what became of it |

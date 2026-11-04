@@ -80,3 +80,16 @@ test('an octopus merge draws one line across to each branch it merged, each in i
   assert.deepEqual([top[1].color, top[3].color], [top[2].color, top[4].color]);
   assert.notEqual(top[2].color, top[4].color);
 });
+
+test('a long history of merged pull requests lays out quickly, every branch in the one column beside the default', () => {
+  // 20,000 merges of one-commit branches: each branch is checked against its column's last, not every branch before it.
+  const list = [];
+  for (let i = 20000; i > 0; i--) list.push([`m${i}`, `m${i - 1}`, `f${i}`], [`f${i}`, `m${i - 1}`]);
+  list.push(['m0']);
+  const started = performance.now();
+  const out = layoutGraph(rows(list, { m20000: ['main'] }), { main: 'main' }).rows;
+  const took = performance.now() - started;
+  assert.ok(took < 2000, `took ${Math.round(took)} ms`);
+  assert.deepEqual(out.slice(0, 5).map(text), ['○<╮', '│ │', '│ ●', '├─╯', '○<╮']);
+  assert.equal(Math.max(...out.map((r) => r.graph.length)), 3);
+});

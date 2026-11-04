@@ -32,17 +32,29 @@ export function matchingLines(lines, query) {
 /** `segments` with the parts inside `ranges` ([from, to) offsets into their joined text) restyled with `style`. */
 export function markRanges(segments, ranges, style) {
   if (!ranges?.length) return segments;
-  const inside = (at) => ranges.some(([a, b]) => at >= a && at < b);
+  // Every range's ends in order, and the ranges merged, each walked once as the segments go by: a long
+  // line with thousands of matches (a minified file) took each match through every other one.
+  const ends = [...new Set(ranges.flat())].sort((x, y) => x - y);
+  const union = [];
+  for (const [a, b] of ranges.filter(([a, b]) => a < b).sort((x, y) => x[0] - y[0])) {
+    const last = union.at(-1);
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else union.push([a, b]);
+  }
+  let e = 0;
+  let u = 0;
+  const inside = (at) => {
+    while (u < union.length && union[u][1] <= at) u++;
+    return u < union.length && union[u][0] <= at;
+  };
   const out = [];
   let pos = 0;
   for (const s of segments) {
     const end = pos + s.text.length;
-    const cuts = new Set([pos, end]);
-    for (const [a, b] of ranges) {
-      if (a > pos && a < end) cuts.add(a);
-      if (b > pos && b < end) cuts.add(b);
-    }
-    const points = [...cuts].sort((x, y) => x - y);
+    const points = [pos];
+    while (e < ends.length && ends[e] <= pos) e++;
+    for (; e < ends.length && ends[e] < end; e++) points.push(ends[e]);
+    points.push(end);
     for (let k = 0; k < points.length - 1; k++) {
       const text = s.text.slice(points[k] - pos, points[k + 1] - pos);
       if (text) out.push(inside(points[k]) ? { ...s, ...style, text } : { ...s, text });

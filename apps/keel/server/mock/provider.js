@@ -114,10 +114,15 @@ const uploads = new Map();
 
 /** Some items carry files: bugs a screenshot and a log, a few others a spreadsheet. By id, so the demo stays the same. */
 function demoAttachments(id, type, created) {
+  // A file's size is worked out when someone first looks at it: drawing every bug's screenshot
+  // for it as the demo started took most of its start-up.
+  const sizes = {};
   const file = (n, name, by) => ({
     id: `00000000-0000-4000-8000-${String(id * 10 + n).padStart(12, '0')}`,
     name,
-    size: demoFile(name, id).length,
+    get size() {
+      return (sizes[name] ??= demoFile(name, id).length);
+    },
     comment: '',
     addedAt: iso(created + (n + 1) * H),
     by,

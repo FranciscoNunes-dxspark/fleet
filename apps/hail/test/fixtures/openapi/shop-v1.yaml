@@ -1,0 +1,102 @@
+# The shop's API before: OpenAPI 3.0, with components reached through $refs.
+openapi: 3.0.3
+info:
+  title: Shop
+  version: 1.0.0
+servers:
+  - url: https://shop.example.com/api
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 100 }
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/Status'
+      responses:
+        '200':
+          description: The orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+    post:
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewOrder'
+      responses:
+        '201':
+          description: Made
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+    delete:
+      operationId: deleteOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Gone
+components:
+  schemas:
+    Status:
+      type: string
+      enum: [open, paid, shipped]
+    Order:
+      type: object
+      required: [id, status, total]
+      properties:
+        id: { type: string }
+        status:
+          $ref: '#/components/schemas/Status'
+        total: { type: integer }
+        note: { type: string }
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/Line'
+    Line:
+      type: object
+      properties:
+        sku: { type: string }
+        quantity: { type: integer }
+        parent:
+          $ref: '#/components/schemas/Line'
+    NewOrder:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/Line'
+        coupon: { type: string, maxLength: 20 }

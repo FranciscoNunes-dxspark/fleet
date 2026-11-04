@@ -1,18 +1,25 @@
 // /migrations: a folder of migration scripts against the history table a migration tool keeps in the
 // database: Flyway's flyway_schema_history (V<version>__<description>.sql, with its CRC32
 // checksums), EF Core's __EFMigrationsHistory (listed only: its migrations are C#), DbUp's
-// SchemaVersions (script names), or Trawl's own trawl_migrations (any .sql, in name order). What's
-// applied, what's pending, and what was applied but is missing or changed; and the SQL that records
-// a run as the tool would. Pure: actions.js reads the folder and the table, and runs them.
+// SchemaVersions (script names), Prisma's _prisma_migrations (<name>/migration.sql, SHA-256
+// checksums), Knex's knex_migrations (listed only: its migrations are JavaScript), Drizzle's
+// __drizzle_migrations (meta/_journal.json and its .sql files, SHA-256 hashes), or Trawl's own
+// trawl_migrations (any .sql, in name order). What's applied, what's pending, and what was applied but
+// is missing or changed; and the SQL that records a run as the tool would. Pure: actions.js reads the
+// folder and the table, and runs them.
+import { createHash, randomUUID } from 'node:crypto';
 
 export const TOOLS = {
   flyway: { label: 'Flyway', table: 'flyway_schema_history' },
   ef: { label: 'EF Core', table: '__EFMigrationsHistory' },
   dbup: { label: 'DbUp', table: 'SchemaVersions' },
+  prisma: { label: 'Prisma', table: '_prisma_migrations' },
+  knex: { label: 'Knex', table: 'knex_migrations' },
+  drizzle: { label: 'Drizzle', table: '__drizzle_migrations' },
   plain: { label: 'Trawl', table: 'trawl_migrations' },
 };
-// Which history wins when a database has several.
-const ORDER = ['flyway', 'ef', 'dbup', 'plain'];
+// Which history wins when a database has several (and the folder doesn't say which it is).
+const ORDER = ['flyway', 'ef', 'dbup', 'prisma', 'knex', 'drizzle', 'plain'];
 
 const CRC_TABLE = (() => {
   const t = new Int32Array(256);
@@ -54,6 +61,35 @@ export function parseFlywayName(file) {
   return { prefix, version: m[2] ? m[2].replace(/_/g, '.') : null, description: m[3].replace(/_/g, ' ') };
 }
 
+const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest();
+
+/** Prisma's checksum of a migration.sql: SHA-256 of its text (a byte order mark kept), in hex. */
+export const prismaChecksum = (text) => sha256(text).toString('hex');
+
+/**
+ * Whether a migration.sql still matches the checksum Prisma recorded, as Prisma decides: the text as
+ * it is or with its line ends turned the other way (CRLF to LF, else LF to CRLF), and, for a checksum
+ * that isn't 64 characters long, the hex without leading zeros that early Prisma versions wrote.
+ */
+export function prismaMatches(text, stored) {
+  const want = String(stored ?? '');
+  const flipped = text.includes('\r\n') ? text.replace(/\r\n/g, '\n') : text.replace(/\n/g, '\r\n');
+  return [text, flipped].some((t) => {
+    const digest = sha256(t);
+    const hex = want && want.length !== 64 ? [...digest].map((b) => b.toString(16)).join('') : digest.toString('hex');
+    return hex === want;
+  });
+}
+
+/** Drizzle's hash of a migration file: SHA-256 of its text, in hex, as its migrator records it. */
+export const drizzleHash = (text) => sha256(text).toString('hex');
+
+/** The folder a drizzle.config names as its `out` (where the migrations go), or null. */
+export function drizzleOut(configText) {
+  const m = String(configText ?? '').match(/["']?\bout["']?\s*:\s*["'`]([^"'`]+)["'`]/);
+  return m ? m[1] : null;
+}
+
 /** Compares Flyway versions part by part as numbers: 1.10 comes after 1.9, and 1.0 is 1. */
 export function compareVersions(a, b) {
   const x = String(a).split('.').map((p) => BigInt(p || 0));
@@ -65,27 +101,52 @@ export function compareVersions(a, b) {
   return 0;
 }
 
-const sq = (s) => `'${String(s).replace(/'/g, "''")}'`;
+/** A version as compareVersions sees it, one key for versions it calls the same: 1.0 and 1 are "1". */
+function versionKey(v) {
+  const parts = String(v).split('.').map((p) => BigInt(p || 0));
+  while (parts.length > 1 && parts.at(-1) === 0n) parts.pop();
+  return parts.join('.');
+}
+
+const sq =(s) => `'${String(s).replace(/'/g, "''")}'`;
 const names = Object.values(TOOLS).map((t) => t.table.toLowerCase());
 
 /** The query that finds which of the history tables this database has (marked for the demo). */
 export function probeSql(kind) {
   const list = names.map((n) => (kind === 'postgres' || kind === 'mysql' ? sq(n) : `N${sq(n)}`)).join(', ');
-  if (kind === 'postgres') return `-- trawl:migrations-probe\nSELECT table_schema AS "schema", table_name AS name FROM information_schema.tables WHERE lower(table_name) IN (${list}) AND table_schema = ANY (current_schemas(false)) ORDER BY (table_schema = current_schema()) DESC, table_schema;`;
+  if (kind === 'postgres') return `-- trawl:migrations-probe\nSELECT table_schema AS "schema", table_name AS name FROM information_schema.tables WHERE lower(table_name) IN (${list}) AND (table_schema = ANY (current_schemas(false)) OR table_schema = 'drizzle') ORDER BY (table_schema = current_schema()) DESC, table_schema;`;
   if (kind === 'mysql') return `-- trawl:migrations-probe\nSELECT table_schema AS \`schema\`, table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND LOWER(table_name) IN (${list});`;
   return `-- trawl:migrations-probe\nSELECT s.name AS [schema], t.name FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE LOWER(t.name) IN (${list}) ORDER BY CASE WHEN s.name = SCHEMA_NAME() THEN 0 ELSE 1 END, s.name;`;
 }
 
 /**
- * Which tool's history to compare with: the first of Flyway, EF Core, DbUp and Trawl's own whose
- * table the probe found ({ tool, schema, table }), or Trawl's own, not yet made ({ …, missing: true }).
+ * Which tool's history to compare with: of the tables the probe found, the first (Flyway, EF Core,
+ * DbUp, Prisma, Knex, Drizzle, Trawl's own) whose kind of files the folder has, when `files` are
+ * given, else the first found ({ tool, schema, table }); or Trawl's own, not yet made ({ …, missing: true }).
  */
-export function pickHistory(found, defaultSchema) {
-  for (const tool of ORDER) {
-    const hit = found.find((f) => String(f.name).toLowerCase() === TOOLS[tool].table.toLowerCase());
-    if (hit) return { tool, schema: hit.schema, table: hit.name };
-  }
+export function pickHistory(found, defaultSchema, files = null) {
+  const hits = ORDER.map((tool) => ({ tool, hit: found.find((f) => String(f.name).toLowerCase() === TOOLS[tool].table.toLowerCase()) })).filter((h) => h.hit);
+  const chosen = (files && hits.length > 1 && hits.find((h) => fitsFolder(h.tool, files))) || hits[0];
+  if (chosen) return { tool: chosen.tool, schema: chosen.hit.schema, table: chosen.hit.name };
   return { tool: 'plain', schema: defaultSchema, table: TOOLS.plain.table, missing: true };
+}
+
+const SCRIPT = /\.(js|ts|cjs|mjs|cts|mts)$/i;
+const isSql = (f) => /\.sql$/i.test(f.path);
+const isPrisma = (f) => /(^|\/)[^/]+\/migration\.sql$/i.test(f.path);
+const isJournal = (f) => /(^|\/)meta\/_journal\.json$/i.test(f.path);
+const isDrizzleConfig = (f) => /^drizzle\.config\.([cm]?[jt]s|json)$/i.test(base(f.path));
+// Knex's: scripts in the folder itself, or in a folder named migrations under it (not a project's every file).
+const isKnex = (f) => SCRIPT.test(f.path) && !/\.d\.[cm]?ts$/i.test(f.path) && !isDrizzleConfig(f) && (!f.path.includes('/') || /(^|\/)migrations\//i.test(f.path));
+
+/** Whether the folder has the kind of files `tool` keeps. */
+export function fitsFolder(tool, files) {
+  if (tool === 'flyway') return files.some((f) => ['V', 'R'].includes(parseFlywayName(base(f.path))?.prefix));
+  if (tool === 'ef') return files.some((f) => /^\d{14}_\w+\.cs$/.test(base(f.path)));
+  if (tool === 'prisma') return files.some(isPrisma);
+  if (tool === 'knex') return files.some(isKnex);
+  if (tool === 'drizzle') return files.some(isJournal);
+  return files.some(isSql);
 }
 
 /** The query that reads the history table, every row (marked for the demo). */
@@ -114,12 +175,16 @@ const byText = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
  * or below Flyway's baseline). `pending` are the entries to run, in order; `runnable` is false for
  * EF Core, whose pending migrations Trawl only lists.
  */
-export function migrationStatus({ tool, files, rows = [] }) {
+export function migrationStatus({ tool, files: all, rows = [] }) {
   const history = rows.map(lowerKeys);
-  if (tool === 'flyway') return flyway(files, history);
-  if (tool === 'ef') return ef(files, history);
-  if (tool === 'dbup') return dbup(files, history);
-  return plain(files, history);
+  // A file's text as its tool reads it: with the byte order mark the folder's reader took off.
+  const files = all.map((f) => ({ ...f, raw: f.bom ? `﻿${f.text}` : f.text }));
+  // The others read SQL (and EF Core its C#), never a JavaScript migration or a journal.
+  const theirs = files.filter((f) => /\.(sql|cs)$/i.test(f.path));
+  const status = { prisma, knex, drizzle }[tool]?.(files, history) ?? (tool === 'flyway' ? flyway(theirs, history) : tool === 'ef' ? ef(theirs, history) : tool === 'dbup' ? dbup(theirs, history) : plain(theirs, history));
+  // How many of the folder's files are this tool's, for the status line.
+  status.files = { prisma: files.filter(isPrisma).length, knex: files.filter(isKnex).length, drizzle: files.filter((f) => isJournal(f) || status.entries.some((e) => e.file === f)).length }[tool] ?? theirs.length;
+  return status;
 }
 
 function flyway(files, history) {
@@ -140,12 +205,23 @@ function flyway(files, history) {
   const applied = rowsOk.filter((r) => truthy(r.success) && String(r.type).toUpperCase() !== 'BASELINE');
   const newest = applied.map((r) => String(r.version)).sort(compareVersions).at(-1) ?? null;
   const versioned = parsed.filter((p) => p.prefix === 'V').sort((x, y) => compareVersions(x.version, y.version));
+  // The files of each version and the last row that isn't the baseline, by the version as
+  // compareVersions sees it, looked up rather than searched for each file (2,000 files against 2,000
+  // rows took 4.5 s).
+  const filesOf = new Map();
+  for (const p of versioned) {
+    const v = versionKey(p.version);
+    if (!filesOf.has(v)) filesOf.set(v, []);
+    filesOf.get(v).push(p);
+  }
+  const rowOf = new Map();
+  for (const r of rowsOk) if (String(r.type).toUpperCase() !== 'BASELINE') rowOf.set(versionKey(String(r.version)), r);
   const seen = new Set();
   for (const p of versioned) {
-    const key = versioned.filter((q) => compareVersions(q.version, p.version) === 0);
+    const key = filesOf.get(versionKey(p.version));
     if (key.length > 1 && !seen.has(p.version)) notes.push(`Version ${p.version} is in ${key.length} files: ${key.map((q) => q.file.path).join(', ')}. Flyway refuses that.`);
     seen.add(p.version);
-    const row = [...rowsOk].reverse().find((r) => compareVersions(String(r.version), p.version) === 0 && String(r.type).toUpperCase() !== 'BASELINE');
+    const row = rowOf.get(versionKey(p.version));
     const e = { script: p.file.path, file: p.file, version: p.version, description: p.description, checksum: p.checksum, kind: 'versioned' };
     if (row && !truthy(row.success)) entries.push({ ...e, status: 'failed', detail: `failed on ${dateText(row.installed_on)}: fix it, then flyway repair` });
     else if (row) {
@@ -155,7 +231,7 @@ function flyway(files, history) {
     else entries.push({ ...e, status: 'pending', detail: newest && compareVersions(p.version, newest) < 0 ? `older than ${newest}, the newest applied (Flyway runs it only with outOfOrder)` : '' });
   }
   for (const r of applied) {
-    if (versioned.some((p) => compareVersions(p.version, String(r.version)) === 0)) continue;
+    if (filesOf.has(versionKey(String(r.version)))) continue;
     entries.push({ script: r.script, version: String(r.version), description: r.description, status: 'missing', detail: `applied ${dateText(r.installed_on)}, no file` });
   }
   // Repeatable migrations run again whenever their checksum changes.
@@ -206,13 +282,25 @@ function dbup(files, history) {
   const sql = files.filter((f) => /\.sql$/i.test(f.path)).sort((x, y) => byText(base(x.path), base(y.path)));
   const applied = history.map((r) => ({ ...r, script: String(r.scriptname ?? '') }));
   // DbUp names an embedded script by its resource name (MyApp.Scripts.Script0001.sql), a file by its name.
-  const matches = (script, file) => script.toLowerCase() === file.toLowerCase() || script.toLowerCase().endsWith(`.${file.toLowerCase()}`);
+  // A script is a file's when, lower-cased, it is the file's name or ends with . and the name: so each
+  // script stands for itself and for what follows each of its dots. The first row for each of those,
+  // and the files' names, are looked up rather than searched for each file and each row (2,000 of
+  // each took 1.1 s).
+  const namesOf = (script) => {
+    const s = script.toLowerCase();
+    const out = [s];
+    for (let i = s.indexOf('.'); i >= 0; i = s.indexOf('.', i + 1)) out.push(s.slice(i + 1));
+    return out;
+  };
+  const rowFor = new Map();
+  for (const r of applied) for (const n of namesOf(r.script)) if (!rowFor.has(n)) rowFor.set(n, r);
+  const fileNames = new Set(sql.map((f) => base(f.path).toLowerCase()));
   const entries = [];
   for (const f of sql) {
-    const row = applied.find((r) => matches(r.script, base(f.path)));
+    const row = rowFor.get(base(f.path).toLowerCase());
     entries.push({ script: base(f.path), file: f, version: null, description: '', status: row ? 'applied' : 'pending', detail: row ? dateText(row.applied) : '' });
   }
-  for (const r of applied) if (!sql.some((f) => matches(r.script, base(f.path)))) entries.push({ script: r.script, version: null, description: '', status: 'missing', detail: `applied ${dateText(r.applied)}, no file` });
+  for (const r of applied) if (!namesOf(r.script).some((n) => fileNames.has(n))) entries.push({ script: r.script, version: null, description: '', status: 'missing', detail: `applied ${dateText(r.applied)}, no file` });
   return { tool: 'dbup', entries, pending: entries.filter((e) => e.status === 'pending'), notes: ["DbUp keeps no checksums, so a script changed since it ran can't be told; scripts run in name order."], runnable: true };
 }
 
@@ -231,6 +319,111 @@ function plain(files, history) {
   return { tool: 'plain', entries, pending: entries.filter((e) => e.status === 'pending'), notes: [], runnable: true };
 }
 
+function prisma(files, history) {
+  const notes = [];
+  const migs = files
+    .filter(isPrisma)
+    .map((f) => ({ name: f.path.split('/').at(-2), file: f }))
+    .sort((x, y) => byText(x.name, y.name));
+  if (files.some((f) => /^migration\.sql$/i.test(f.path))) notes.push('A migration.sql right in the folder has no migration name (its folder\'s): give /migrations the folder of migrations (prisma/migrations), or the project.');
+  // One rolled back (prisma migrate resolve --rolled-back) counts as not applied; of the rest, the latest.
+  const live = history.filter((r) => r.rolled_back_at == null);
+  const rowOf = (name) => live.filter((r) => String(r.migration_name) === name).sort((x, y) => new Date(x.started_at) - new Date(y.started_at)).at(-1);
+  const entries = [];
+  for (const m of migs) {
+    const row = rowOf(m.name);
+    const checksum = prismaChecksum(m.file.raw);
+    const e = { script: m.name, file: m.file, version: null, description: '', checksum };
+    if (!row) entries.push({ ...e, status: 'pending', detail: history.some((r) => String(r.migration_name) === m.name) ? 'rolled back before' : '' });
+    else if (row.finished_at == null) entries.push({ ...e, status: 'failed', detail: `failed on ${dateText(row.started_at)}: fix it, then prisma migrate resolve` });
+    else if (row.checksum != null && !prismaMatches(m.file.raw, row.checksum)) entries.push({ ...e, status: 'changed', detail: `checksum ${checksum.slice(0, 12)}… now, ${String(row.checksum).slice(0, 12)}… when applied` });
+    else entries.push({ ...e, status: 'applied', detail: dateText(row.finished_at) });
+  }
+  const names = new Set(migs.map((m) => m.name));
+  for (const name of [...new Set(live.map((r) => String(r.migration_name)))].sort(byText)) {
+    if (names.has(name)) continue;
+    const row = rowOf(name);
+    const done = row.finished_at != null;
+    entries.push({ script: name, version: null, description: '', status: done ? 'missing' : 'failed', detail: done ? `applied ${dateText(row.finished_at)}, no folder` : `failed on ${dateText(row.started_at)}, no folder` });
+  }
+  return { tool: 'prisma', entries, pending: entries.filter((e) => e.status === 'pending'), notes, runnable: true };
+}
+
+function knex(files, history) {
+  const scripts = files.filter(isKnex).sort((x, y) => byText(base(x.path), base(y.path)));
+  const stem = (n) => String(n).replace(SCRIPT, '');
+  // Knex records the file's name; a TypeScript project run compiled records .js names for its .ts
+  // files: a row is a file's when its name is the file's, else when their stems are the same. The
+  // first row by name and by stem, and the files' names and stems, are looked up rather than searched
+  // for each file and each row (2,000 of each took 2 s).
+  const byName = new Map();
+  const byStem = new Map();
+  for (const r of history) {
+    if (!byName.has(String(r.name))) byName.set(String(r.name), r);
+    if (!byStem.has(stem(r.name))) byStem.set(stem(r.name), r);
+  }
+  const names = new Set(scripts.map((f) => base(f.path)));
+  const stems = new Set([...names].map(stem));
+  const entries = [];
+  for (const f of scripts) {
+    const row = byName.get(base(f.path)) ?? byStem.get(stem(base(f.path)));
+    entries.push({ script: base(f.path), version: null, description: '', status: row ? 'applied' : 'pending', detail: row ? `batch ${row.batch ?? '?'}, ${dateText(row.migration_time)}` : `in ${f.path}` });
+  }
+  for (const r of history) if (!names.has(String(r.name)) && !stems.has(stem(r.name))) entries.push({ script: String(r.name), version: null, description: '', status: 'missing', detail: `applied ${dateText(r.migration_time)} (batch ${r.batch ?? '?'}), no file` });
+  const notes = ["Knex keeps no checksums, so a migration changed since it ran can't be told.", "Knex's migrations are JavaScript, so Trawl lists them but doesn't run them: npx knex migrate:latest applies them."];
+  // Listed as pending, but not for Trawl to run.
+  return { tool: 'knex', entries, pending: entries.filter((e) => e.status === 'pending'), notes, runnable: false };
+}
+
+function drizzle(files, history) {
+  const notes = [];
+  const journals = files.filter(isJournal);
+  const dirOf = (path) => path.split('/').slice(0, -1).join('/');
+  const joined = (...parts) => parts.join('/').split('/').filter((p) => p && p !== '.').join('/');
+  // Of several journals, the one drizzle.config's "out" names.
+  const config = files.find(isDrizzleConfig);
+  const out = config ? drizzleOut(config.text) : null;
+  const wanted = out ? joined(dirOf(config.path), out, 'meta/_journal.json') : null;
+  const journal = journals.find((j) => j.path === wanted) ?? journals[0];
+  if (!journal) notes.push('No meta/_journal.json in the folder or under it: drizzle-kit generate writes it beside the migrations.');
+  else if (journals.length > 1) notes.push(`${journals.length} journals here; compared with ${journal.path}${journal.path === wanted ? " (drizzle.config's out)" : ''}.`);
+  let list = [];
+  if (journal) {
+    try {
+      list = [...(JSON.parse(journal.text).entries ?? [])].sort((x, y) => Number(x.when) - Number(y.when));
+    } catch (e) {
+      notes.push(`${journal.path} isn't JSON: ${e.message}`);
+    }
+  }
+  const folder = journal ? dirOf(dirOf(journal.path)) : '';
+  // Drizzle's migrator runs what's newer than the newest created_at it recorded (each migration's
+  // journal "when"); the hash is only kept, so a row is matched by its when, else by its hash.
+  const rows = history.map((r) => ({ hash: String(r.hash ?? ''), when: Number(r.created_at) }));
+  const whens = rows.map((r) => r.when).filter((n) => !Number.isNaN(n));
+  const newest = whens.length ? Math.max(...whens) : null;
+  const used = new Set();
+  const entries = [];
+  for (const j of list) {
+    const path = joined(folder, `${j.tag}.sql`);
+    const f = files.find((x) => x.path === path);
+    const when = Number(j.when);
+    const hash = f ? drizzleHash(f.raw) : null;
+    const row = rows.find((r) => !used.has(r) && r.when === when) ?? (hash ? rows.find((r) => !used.has(r) && r.hash === hash) : null);
+    if (row) used.add(row);
+    if (!f) {
+      if (row) entries.push({ script: path, version: null, description: '', status: 'missing', detail: 'applied, in the journal, no file' });
+      else notes.push(`The journal names ${path}, which isn't there.`);
+      continue;
+    }
+    const e = { script: path, file: f, version: null, description: '', checksum: hash, when };
+    if (row && row.hash && row.hash !== hash) entries.push({ ...e, status: 'changed', detail: `hash ${hash.slice(0, 12)}… now, ${row.hash.slice(0, 12)}… when applied` });
+    else if (row) entries.push({ ...e, status: 'applied', detail: `made ${dateText(when)}` });
+    else entries.push({ ...e, status: 'pending', detail: newest != null && when <= newest ? `older than the newest applied (Drizzle's migrator skips it)` : '' });
+  }
+  for (const r of rows) if (!used.has(r)) entries.push({ script: `hash ${r.hash.slice(0, 12)}…`, version: null, description: '', status: 'missing', detail: `applied (made ${dateText(r.when)}), not in the journal` });
+  return { tool: 'drizzle', entries, pending: entries.filter((e) => e.status === 'pending'), notes, runnable: true };
+}
+
 function dateText(v) {
   if (v == null) return '';
   const d = v instanceof Date ? v : new Date(v);
@@ -244,10 +437,12 @@ const nowFn = { sqlserver: 'GETDATE()', postgres: 'now()', mysql: 'NOW()' };
 /**
  * The INSERT that records `entry` as run, as its tool would: Flyway's row (installed_rank, version,
  * description, type 'SQL', script, checksum, installed_by, execution_time, success), DbUp's
- * (ScriptName, Applied), or Trawl's own. `columns`: the history table's own column names, whose
+ * (ScriptName, Applied), Prisma's (id, a new UUID unless `id` is given; checksum, migration_name,
+ * started_at, finished_at, applied_steps_count), Drizzle's (hash, created_at: the journal's when), or
+ * Trawl's own. `columns`: the history table's own column names, whose
  * spelling is kept (Postgres folds them to lower case). Marked for the demo.
  */
-export function recordSql(dialect, h, entry, { ms, rank = 1, columns = [] }) {
+export function recordSql(dialect, h, entry, { ms, rank = 1, columns = [], id = randomUUID() }) {
   const table = `${dialect.quote(h.schema)}.${dialect.quote(h.table)}`;
   const name = (want) => columns.find((c) => c.toLowerCase() === want.toLowerCase()) ?? want;
   const insert = (pairs) => `-- trawl:migration-record\nINSERT INTO ${table} (${pairs.map(([c]) => dialect.quote(name(c))).join(', ')})\nVALUES (${pairs.map(([, v]) => v).join(', ')});`;
@@ -265,6 +460,18 @@ export function recordSql(dialect, h, entry, { ms, rank = 1, columns = [] }) {
       ['success', sqlTrue],
     ]);
   }
+  const now = nowFn[dialect.kind] ?? nowFn.sqlserver;
+  if (h.tool === 'prisma') {
+    return insert([
+      ['id', string(dialect, id)],
+      ['checksum', string(dialect, entry.checksum)],
+      ['migration_name', string(dialect, entry.script)],
+      ['started_at', now],
+      ['finished_at', now],
+      ['applied_steps_count', '1'],
+    ]);
+  }
+  if (h.tool === 'drizzle') return insert([['hash', string(dialect, entry.checksum)], ['created_at', String(entry.when)]]);
   if (h.tool === 'dbup') return insert([['ScriptName', string(dialect, entry.script)], ['Applied', nowFn[dialect.kind] ?? nowFn.sqlserver]]);
   return insert([
     ['script', string(dialect, entry.script)],
@@ -277,6 +484,17 @@ export function recordSql(dialect, h, entry, { ms, rank = 1, columns = [] }) {
 /** Flyway's next installed_rank: one past the highest there is. */
 export const nextRank = (rows) => Math.max(0, ...rows.map(lowerKeys).map((r) => Number(r.installed_rank) || 0)) + 1;
 
+// How each tool's files are told apart from what was applied.
+const COMPARED = {
+  flyway: "Checksums: Flyway's CRC-32 over each file's lines",
+  plain: "Checksums: Flyway's CRC-32 over each file's lines",
+  ef: 'By migration id (EF Core keeps no checksums)',
+  dbup: 'By script name',
+  prisma: 'Checksums: SHA-256 of each <name>/migration.sql, as Prisma keeps them',
+  knex: 'By file name (Knex keeps no checksums)',
+  drizzle: 'From meta/_journal.json; hashes: SHA-256 of each file, as Drizzle keeps them',
+};
+
 const MARK = { applied: '✓', pending: '•', changed: '~', missing: '?', failed: '✗', baseline: '·' };
 
 /** The status as the viewer shows it: what was compared, a line per migration, and the counts. */
@@ -284,7 +502,7 @@ export function statusText(status, { database, folder, history, files }) {
   const t = TOOLS[status.tool];
   const lines = [
     `${t.label} · ${history.missing ? `${history.table} isn't in ${database} yet` : `${history.schema}.${history.table} in ${database}`} · ${files} file${files === 1 ? '' : 's'} in ${folder}`,
-    status.tool === 'flyway' || status.tool === 'plain' ? "Checksums: Flyway's CRC-32 over each file's lines" : status.tool === 'ef' ? 'By migration id (EF Core keeps no checksums)' : 'By script name',
+    COMPARED[status.tool],
     '',
   ];
   const vw = Math.max(0, ...status.entries.map((e) => (e.version ? `V${e.version}`.length : 0)));

@@ -28,7 +28,9 @@ export function DriftView({ matrix, filter, ctx, width, height, active, loading 
 
   const inner = width - 4;
   const cols = matrix.columns;
-  const keyW = Math.max(12, Math.min(40, Math.floor(inner * 0.36), Math.max(8, ...rows.map((r) => stringWidth(r.key))) + 1));
+  // A key the browser would get as a secret (VITE_…) has a ! after it, in its own two columns.
+  const mark = matrix.rows.some((r) => r.leak) ? 2 : 0;
+  const keyW = Math.max(12, Math.min(40, Math.floor(inner * 0.36), Math.max(8, ...rows.map((r) => stringWidth(r.key))) + 1 + mark));
   const fits = Math.max(1, Math.floor((inner - 2 - keyW) / (CELL_W + 1)));
   // The app's and the vault's columns stay at the right; the folder's scroll past them when they don't all fit.
   const pinned = cols.map((c, i) => i).filter((i) => cols[i].kind !== 'local');
@@ -68,6 +70,7 @@ export function DriftView({ matrix, filter, ctx, width, height, active, loading 
     counts.differs ? `${counts.differs} differ` : '',
     counts.broken ? `${counts.broken} broken` : '',
     counts.missing ? `${counts.missing} missing somewhere` : '',
+    counts.leaks ? `! ${counts.leaks} secret${counts.leaks === 1 ? '' : 's'} sent to the browser` : '',
     more ? `h l: columns ${off + 1}-${Math.min(scrolling.length, off + room)} of the folder's ${scrolling.length}` : '',
   ].filter(Boolean);
   const empty = !cols.length
@@ -100,7 +103,8 @@ export function DriftView({ matrix, filter, ctx, width, height, active, loading 
           selected={nav.offset + i === nav.index}
           focused={active}
           segments={[
-            { text: fit(r.key, keyW), strong: true, color: r.broken ? theme.del : r.differs ? theme.warn : undefined },
+            { text: fit(r.key, keyW - mark), strong: true, color: r.broken || r.leak ? theme.del : r.differs ? theme.warn : undefined },
+            ...(mark ? [{ text: r.leak ? ' !' : '  ', color: theme.del, bold: true }] : []),
             ...shown.map((i) => {
               const cell = r.cells[i];
               const m = cellMark(cell, r);

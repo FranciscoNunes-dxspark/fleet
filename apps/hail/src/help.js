@@ -75,7 +75,7 @@ export const HELP = [
       ['↵', 'Send the request again'],
       ['/', 'Search the response: matches show as you type, ↵ keeps it (a capital letter makes it match case)'],
       ['n alt+n', 'Next, previous match · esc clears the search'],
-      ['event streams', 'A text/event-stream response streams in live, event by event (JSON indented), newest on screen\nesc stops it, keeping what came · # @timeout bounds an endless one in a run'],
+      ['event streams', 'A text/event-stream response streams in live, event by event (JSON indented), newest on screen\nesc stops it, keeping what came · # @timeout bounds an endless one in a run\nSSE url: a GET asking for one (Accept: text/event-stream), read as a stream'],
     ],
   },
   {
@@ -164,6 +164,8 @@ export const HELP = [
       ['Contract section', 'With each response: + a field the contract doesn\'t have · − a required one missing · ≠ a wrong type or value · a status or path it doesn\'t document'],
       ['⚠', 'In Requests, beside a response that drifted; /send all lists the differences under each request'],
       ['--contract-strict', 'hail test counts drift as a failure only with it (--contract <file> uses another contract)'],
+      ['/openapi-diff [old] [new]', "What changed between two versions: ✗ breaking · ! may break · + non-breaking, by operation · m copies it as Markdown\na file, a URL or git:<ref>:<path> · alone, the contract in git's HEAD against the file now · git:main alone, the contract on main"],
+      ['hail openapi-diff', 'The same without the UI, for CI: --fail-on breaking|may-break|none · --json · --markdown · exits 1 on a breaking change'],
     ],
   },
   {

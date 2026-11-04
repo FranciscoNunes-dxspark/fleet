@@ -28,7 +28,11 @@ shows them all. fleet <app> opens that one (and starts it with args…);
 fleet alone opens the one you used last. fleet <file> opens a file in the app
 for it: .sql in Trawl, .http in Hail.
 
-  ctrl+b 1-9 or s t o b h l u g c switch (o is Sonar, u Mooring, g Bilge)
+  ctrl+b 1-9 or a letter      switch: 1-9 the apps in the bar, the letters any app
+                              (s t o b h l u g c d k i j v z y: o is Sonar, u Mooring,
+                              g Bilge, d Wharf, k Keel, i Helm, j Lantern, v Drill,
+                              z Ballast, y Lookout)
+  ctrl+b a                    choose which apps the bar shows (kept in ~/.fleet/host.json)
   ctrl+b ] / n / p            next, previous
   ctrl+b | / tab / x          split in two, the other pane, one again
   ctrl+b m                    move every app to another folder
@@ -104,6 +108,9 @@ const host = new Host({
   // The folders moved to lately, for the move's list (newest first).
   folders: Array.isArray(state.folders) ? state.folders.filter((f) => typeof f === 'string') : [],
   onFolders: (folders) => saveState({ folders }),
+  // The apps the bar shows (the prefix and a), every one until a choice is made.
+  chosen: Array.isArray(state.apps) ? state.apps : null,
+  onChosen: (apps) => saveState({ apps }),
   onUpdate: () => updateFleet(true),
 });
 

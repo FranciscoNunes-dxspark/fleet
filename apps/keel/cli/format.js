@@ -99,11 +99,12 @@ export function prMatches(pr, text) {
  * first in each, under a header row (`header: true`, not selectable). `show` narrows it to one group.
  */
 export function prRows(prs, { show = 'all', filter = '' } = {}) {
-  const left = prs.filter((p) => prMatches(p, filter));
+  let left = prs.filter((p) => prMatches(p, filter));
   const rows = [];
   for (const g of GROUPS) {
     const mine = left.filter(g.test).sort((a, b) => b.ageHours - a.ageHours);
-    for (const p of mine) left.splice(left.indexOf(p), 1);
+    const taken = new Set(mine);
+    left = left.filter((p) => !taken.has(p));
     if (!mine.length || (show !== 'all' && show !== g.id)) continue;
     rows.push({ header: true, title: `${g.title} (${mine.length})` });
     rows.push(...mine.map((pr) => ({ pr })));
@@ -357,10 +358,16 @@ export function wiMatches(w, text) {
 /** The list for a view: in progress first, then resolved, then new; by priority within each, then newest change. */
 export function wiRows(data, meta, { view = 'all', filter = '' } = {}, now = Date.now()) {
   const v = wiViews(data, meta, now).find((x) => x.id === view) ?? wiViews(data, meta, now)[0];
-  const cat = (w) => (CATEGORY_ORDER.indexOf(w.stateCategory) + 4) % 4;
+  // Each item's sort keys are worked out once, not in every comparison: thousands of items sort on each key typed into the filter.
+  const keys = new Map();
+  const key = (w) => keys.get(w) ?? keys.set(w, { cat: (CATEGORY_ORDER.indexOf(w.stateCategory) + 4) % 4, changed: Date.parse(w.changedAt) }).get(w);
   return (data?.items ?? [])
     .filter((w) => v.test(w) && wiMatches(w, filter))
-    .sort((a, b) => cat(a) - cat(b) || (a.priority ?? 9) - (b.priority ?? 9) || Date.parse(b.changedAt) - Date.parse(a.changedAt));
+    .sort((a, b) => {
+      const x = key(a);
+      const y = key(b);
+      return x.cat - y.cat || (a.priority ?? 9) - (b.priority ?? 9) || y.changed - x.changed;
+    });
 }
 
 /** The detail pane of a work item from the list, as lines of segments. */

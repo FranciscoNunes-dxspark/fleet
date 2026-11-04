@@ -1,0 +1,77 @@
+{
+  "hash": "b8f4d2c61a7e09f35d21",
+  "version": "5.94.0",
+  "time": 8412,
+  "builtAt": 1762172400000,
+  "publicPath": "/",
+  "outputPath": "/home/runner/work/storefront/storefront/build",
+  "assetsByChunkName": {
+    "main": ["static/css/main.6f1d3a2b.css", "static/js/main.3f9a1c2e.js"],
+    "vendors": ["static/js/vendors.8c2d4e6f.js"]
+  },
+  "assets": [
+    { "type": "asset", "name": "static/js/vendors.8c2d4e6f.js", "size": 180412, "emitted": true, "chunkNames": ["vendors"], "chunkIdHints": [], "auxiliaryChunkNames": [], "auxiliaryChunkIdHints": [], "chunks": [216], "auxiliaryChunks": [], "info": { "immutable": true, "contenthash": "8c2d4e6f", "javascriptModule": false, "minimized": true, "size": 180412, "related": { "sourceMap": "static/js/vendors.8c2d4e6f.js.map" } } },
+    { "type": "asset", "name": "static/js/main.3f9a1c2e.js", "size": 41230, "emitted": true, "chunkNames": ["main"], "chunks": [792], "auxiliaryChunks": [], "info": { "immutable": true, "contenthash": "3f9a1c2e", "minimized": true, "size": 41230 } },
+    { "type": "asset", "name": "static/js/412.a1b2c3d4.chunk.js", "size": 22018, "emitted": true, "chunkNames": [], "chunks": [412], "auxiliaryChunks": [], "info": { "immutable": true, "contenthash": "a1b2c3d4", "minimized": true, "size": 22018 } },
+    { "type": "asset", "name": "static/css/main.6f1d3a2b.css", "size": 9310, "emitted": true, "chunkNames": ["main"], "chunks": [792], "auxiliaryChunks": [], "info": { "immutable": true, "contenthash": "6f1d3a2b", "minimized": true, "size": 9310 } },
+    { "type": "asset", "name": "static/media/logo.4b2e8f1a.svg", "size": 2630, "emitted": true, "chunkNames": [], "chunks": [], "auxiliaryChunks": [792], "info": { "immutable": true, "sourceFilename": "src/logo.svg", "size": 2630 } },
+    { "type": "asset", "name": "static/js/vendors.8c2d4e6f.js.map", "size": 812004, "emitted": true, "chunkNames": [], "chunks": [], "auxiliaryChunks": [216], "info": { "development": true, "size": 812004 } }
+  ],
+  "chunks": [
+    { "rendered": true, "initial": true, "entry": true, "recorded": false, "size": 64120, "sizes": { "javascript": 52310, "css/mini-extract": 11810 }, "names": ["main"], "idHints": [], "runtime": ["main"], "files": ["static/css/main.6f1d3a2b.css", "static/js/main.3f9a1c2e.js"], "auxiliaryFiles": ["static/media/logo.4b2e8f1a.svg"], "hash": "e1d2c3b4a5f6", "childrenByOrder": {}, "id": 792, "siblings": [216], "parents": [], "children": [412], "origins": [{ "module": "", "moduleName": "", "loc": "main", "request": "./src/index.js" }] },
+    { "rendered": true, "initial": true, "entry": false, "recorded": false, "size": 621880, "sizes": { "javascript": 621880 }, "names": ["vendors"], "idHints": ["vendors"], "runtime": ["main"], "files": ["static/js/vendors.8c2d4e6f.js"], "auxiliaryFiles": ["static/js/vendors.8c2d4e6f.js.map"], "hash": "9f8e7d6c5b4a", "id": 216, "siblings": [792], "parents": [], "children": [] },
+    { "rendered": true, "initial": false, "entry": false, "recorded": false, "size": 71500, "sizes": { "javascript": 71500 }, "names": [], "idHints": [], "runtime": ["main"], "files": ["static/js/412.a1b2c3d4.chunk.js"], "auxiliaryFiles": [], "hash": "0a1b2c3d4e5f", "id": 412, "siblings": [], "parents": [792], "children": [] }
+  ],
+  "modules": [
+    {
+      "type": "module",
+      "moduleType": "javascript/esm",
+      "layer": null,
+      "size": 18420,
+      "sizes": { "javascript": 18420 },
+      "built": true,
+      "codeGenerated": true,
+      "cached": false,
+      "identifier": "/home/runner/work/storefront/storefront/node_modules/babel-loader/lib/index.js??ruleSet[1].rules[1].oneOf[3]!/home/runner/work/storefront/storefront/src/index.js|0a7c2e4f6b8d1e3a5c7f",
+      "name": "./src/index.js + 4 modules",
+      "nameForCondition": "/home/runner/work/storefront/storefront/src/index.js",
+      "chunks": [792],
+      "orphan": false,
+      "modules": [
+        { "type": "module", "moduleType": "javascript/esm", "size": 2310, "identifier": "/home/runner/work/storefront/storefront/node_modules/babel-loader/lib/index.js??ruleSet[1].rules[1].oneOf[3]!/home/runner/work/storefront/storefront/src/index.js", "name": "./src/index.js", "chunks": [], "orphan": true },
+        { "type": "module", "moduleType": "javascript/esm", "size": 6820, "identifier": "/home/runner/work/storefront/storefront/node_modules/babel-loader/lib/index.js??ruleSet[1].rules[1].oneOf[3]!/home/runner/work/storefront/storefront/src/App.js", "name": "./src/App.js", "chunks": [], "orphan": true },
+        { "type": "module", "moduleType": "javascript/esm", "size": 4410, "identifier": "/home/runner/work/storefront/storefront/node_modules/babel-loader/lib/index.js??ruleSet[1].rules[1].oneOf[3]!/home/runner/work/storefront/storefront/src/components/Header.js", "name": "./src/components/Header.js", "chunks": [], "orphan": true },
+        { "type": "module", "moduleType": "javascript/esm", "size": 3880, "identifier": "/home/runner/work/storefront/storefront/node_modules/babel-loader/lib/index.js??ruleSet[1].rules[1].oneOf[3]!/home/runner/work/storefront/storefront/src/api/client.js", "name": "./src/api/client.js", "chunks": [], "orphan": true },
+        { "type": "module", "moduleType": "javascript/esm", "size": 1000, "identifier": "/home/runner/work/storefront/storefront/node_modules/babel-loader/lib/index.js??ruleSet[1].rules[1].oneOf[3]!/home/runner/work/storefront/storefront/src/reportWebVitals.js", "name": "./src/reportWebVitals.js", "chunks": [], "orphan": true }
+      ]
+    },
+    {
+      "type": "module",
+      "moduleType": "css/mini-extract",
+      "size": 11810,
+      "identifier": "css /home/runner/work/storefront/storefront/node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[1].oneOf[5].use[1]!/home/runner/work/storefront/storefront/src/index.css|0||||}",
+      "name": "css ./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[1].oneOf[5].use[1]!./src/index.css",
+      "chunks": [792],
+      "orphan": false
+    },
+    {
+      "type": "module",
+      "moduleType": "runtime",
+      "size": 4080,
+      "identifier": "webpack/runtime/jsonp chunk loading",
+      "name": "webpack/runtime/jsonp chunk loading",
+      "chunks": [792],
+      "orphan": false
+    },
+    { "type": "module", "moduleType": "javascript/auto", "size": 131892, "identifier": "/home/runner/work/storefront/storefront/node_modules/react-dom/cjs/react-dom.production.min.js", "name": "./node_modules/react-dom/cjs/react-dom.production.min.js", "nameForCondition": "/home/runner/work/storefront/storefront/node_modules/react-dom/cjs/react-dom.production.min.js", "chunks": [216], "orphan": false },
+    { "type": "module", "moduleType": "javascript/auto", "size": 6940, "identifier": "/home/runner/work/storefront/storefront/node_modules/react/cjs/react.production.min.js", "name": "./node_modules/react/cjs/react.production.min.js", "chunks": [216], "orphan": false },
+    { "type": "module", "moduleType": "javascript/auto", "size": 544098, "identifier": "/home/runner/work/storefront/storefront/node_modules/lodash/lodash.js", "name": "./node_modules/lodash/lodash.js", "chunks": [216], "orphan": false },
+    { "type": "module", "moduleType": "javascript/auto", "size": 71480, "identifier": "/home/runner/work/storefront/storefront/node_modules/chart-kit/node_modules/lodash/lodash.min.js", "name": "./node_modules/chart-kit/node_modules/lodash/lodash.min.js", "chunks": [412], "orphan": false },
+    { "type": "module", "moduleType": "javascript/esm", "size": 20, "identifier": "/home/runner/work/storefront/storefront/node_modules/chart-kit/index.js", "name": "./node_modules/chart-kit/index.js", "chunks": [412], "orphan": false },
+    { "type": "module", "moduleType": "javascript/auto", "size": 0, "identifier": "ignored|/home/runner/work/storefront/storefront/node_modules/chart-kit|fs", "name": "fs (ignored)", "chunks": [412], "orphan": false }
+  ],
+  "errors": [],
+  "errorsCount": 0,
+  "warnings": [],
+  "warningsCount": 0
+}

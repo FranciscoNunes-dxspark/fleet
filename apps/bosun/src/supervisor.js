@@ -23,6 +23,7 @@ import { errorPage } from './errorpage.js';
 import { ServiceChild, serviceControl } from './service.js';
 import { PROCDUMP_HINT, dumpEnv, dumpNote, isDumpOf, procdumpArgs, procdumpSays } from './dumps.js';
 import { findOnPath } from './which.js';
+import { otelEnv } from './traces.js';
 
 // A folder that's still there: Windows reports one whose files changed as changed itself, and the files
 // it holds report themselves, so it's no change of its own (one removed isn't there, and counts).
@@ -140,8 +141,11 @@ export const seconds = (ms) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
  * first start until it's stopped.
  */
 export class Supervisor {
-  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, projectEnv = {}, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs, debugOutput, appSettings = writeAppSettings, services = null, fetchImpl = httpStatus, warmWait = 90_000, dumpDir = join(tmpdir(), 'bosun-dumps'), dumpEvery = 3000, procdumpSpawn = spawn, findTool = findOnPath } = {}) {
+  constructor(procs, { dir, onChange = () => {}, onEvent = () => {}, spawnImpl = spawn, tunnelSpawn = spawn, tls = null, httpsProxy = startHttpsProxy, env = process.env, projectEnv = {}, restartTimes = RESTART_TIMES, debounce = 300, watchImpl = fsWatch, treeWatch = walksTree(), recorder = null, iis = null, iisTimes = {}, tail = tailLogs, debugOutput, appSettings = writeAppSettings, services = null, fetchImpl = httpStatus, warmWait = 90_000, dumpDir = join(tmpdir(), 'bosun-dumps'), dumpEvery = 3000, procdumpSpawn = spawn, findTool = findOnPath, otel = null } = {}) {
     this.dir = dir;
+    // Bosun's OTLP receiver (traces.js), as the address a process exports its traces to; null when the
+    // Traces setting is off. Each start from now has it, unless the env files or bosun.json set their own.
+    this.otel = otel;
     // "service" processes: service.js's serviceControl (made when the first one starts; tests pass a fake).
     this.services = services;
     // The health checks' and warm-ups' requests (httpStatus; tests may pass their own), and how long a warm-up waits.
@@ -323,9 +327,9 @@ export class Supervisor {
           windowsHide: true,
           detached: !WIN,
           // FORCE_COLOR off: colours would be stripped anyway, and some tools write less without them.
-          // The terminal's, then the env files', the project environment's, then bosun.json's own.
+          // The terminal's, Bosun's traces receiver, then the env files', the project environment's, then bosun.json's own.
           // "dump": a .NET runtime writes its own when it crashes.
-          env: { ...this.env, ...p.spec.fileEnv, ...this.projectEnv, ...env, ...(dumps ? dumpEnv(dumps, p.name) : {}), FORCE_COLOR: '0' },
+          env: { ...this.env, ...(this.otel ? otelEnv(this.otel, p.name) : {}), ...p.spec.fileEnv, ...this.projectEnv, ...env, ...(dumps ? dumpEnv(dumps, p.name) : {}), FORCE_COLOR: '0' },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
     p.child = child;
@@ -334,10 +338,14 @@ export class Supervisor {
     if (p.spec.logs?.length) this.tailFor(p, child);
     if (p.spec.trace) this.traceFor(p, child);
     let buffered = { out: '', err: '' };
-    const take = (which, err) => (d) => {
+    const take = (which, err) => (chunk) => {
+      const d = String(chunk);
+      // Only the new chunk is looked through for the line's end: a progress bar redrawn with \r and
+      // no newline for minutes would otherwise have the whole of what it said searched each time.
+      const inChunk = d.lastIndexOf('\n');
+      if (inChunk < 0) return void (buffered[which] += d);
+      const cut = buffered[which].length + inChunk;
       buffered[which] += d;
-      const cut = buffered[which].lastIndexOf('\n');
-      if (cut < 0) return;
       const { status, trouble } = p;
       this.push(p, buffered[which].slice(0, cut), err);
       buffered[which] = buffered[which].slice(cut + 1);

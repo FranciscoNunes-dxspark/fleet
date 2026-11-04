@@ -40,6 +40,16 @@ if (args[0] === 'security') {
   process.exit(code);
 }
 
+// hail openapi-diff old.yaml new.yaml [--fail-on breaking] [--json | --markdown]: an API's breaking changes, for CI.
+if (args[0] === 'openapi-diff') {
+  const { runOpenapiDiff } = await import('./headless.js');
+  const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+  const code = await runOpenapiDiff(args.slice(1), { color });
+  await new Promise((r) => process.stdout.write('', r));
+  await new Promise((r) => process.stderr.write('', r));
+  process.exit(code);
+}
+
 // hail mock api.http [--port 4010] [--env dev]: the kept responses served until ctrl+c (Bosun can run it).
 if (args[0] === 'mock') {
   const { runMock } = await import('./headless.js');
@@ -67,6 +77,7 @@ if (args.includes('-h') || args.includes('--help')) {
 hail test [file.http] [--env <name>] [--contract <openapi>] [--contract-strict]
 hail mock [file.http] [--port 4010] [--env <name>]
 hail security <url|file.http> [--env <name>] [--json] [--sarif [file]] [--fail-on <level>]
+hail openapi-diff <old> [new] [--fail-on breaking|may-break|none] [--json | --markdown]
 
 An HTTP client for the terminal, over .http files. Opens [file.http], or the
 first .http file in the current folder (or the folders under it).
@@ -81,6 +92,9 @@ contract's examples) on http://127.0.0.1:4010, until ctrl+c.
 hail security scans a web app you own or are authorised to test (TLS, headers,
 cookies, CORS, exposed files, TRACE, verbose errors, routes that answer without
 their credentials) and exits with 1 on a finding as bad as --fail-on (high).
+
+hail openapi-diff compares two versions of an OpenAPI or Swagger description
+(files, URLs or git:<ref>:<path>) and exits with 1 on a breaking change.
 
 Inside: ↵ sends the request under the cursor, e picks the environment,
 ? shows every key, / the commands.`);

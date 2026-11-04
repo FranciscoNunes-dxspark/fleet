@@ -38,7 +38,7 @@ test("where a pull request's branch may be: each remote's copy, origin first, th
 });
 
 test('the kinds Splice takes, as the family says', () => {
-  assert.deepEqual(TAKES, ['exception', 'commit', 'file', 'pullrequest']);
+  assert.deepEqual(TAKES, ['exception', 'commit', 'file', 'pullrequest', 'test']);
 });
 
 let base;

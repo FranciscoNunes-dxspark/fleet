@@ -3,7 +3,8 @@
 // with a slot whose settings have drifted from them, Key Vault references (one to a secret that isn't
 // there, one to a secret that has expired), and two vaults with a secret about to expire; for the
 // hygiene check, a plain-text password the production app shares with .env, a slot that refers to the
-// vault for it, a stale secret, a certificate days from expiring and a vault without purge protection. A new
+// vault for it, a stale secret, a certificate days from expiring, a vault without purge protection and a
+// secret in a VITE_ variable the web front end's build would send to the browser. A new
 // operation in either needs one here too. `state.calls` records what was asked, never a value.
 import { addToDotenv, flatten, isExample, parseDotenv } from './local.js';
 
@@ -16,7 +17,7 @@ export const DEMO_DIR = process.platform === 'win32' ? 'C:\\src\\shop-api' : '/h
 /** The demo project's files, by name. */
 export function demoFiles() {
   return {
-    '.env': ['# Local development', 'ASPNETCORE_ENVIRONMENT=Development', 'Api__BaseUrl=http://localhost:5000', 'Db__Password=dev-password', 'Redis__Password=local-redis', 'Features__Search=true', ''].join('\n'),
+    '.env': ['# Local development', 'ASPNETCORE_ENVIRONMENT=Development', 'Api__BaseUrl=http://localhost:5000', 'Db__Password=dev-password', 'Redis__Password=local-redis', 'Features__Search=true', '# The web front end (Vite)', 'VITE_STRIPE_PUBLISHABLE_KEY=pk_test_demo4242', 'VITE_ADMIN_SECRET=adm-7Hq2-dev', ''].join('\n'),
     '.env.example': ['ASPNETCORE_ENVIRONMENT=Development', 'Api__BaseUrl=', 'Db__Password=', 'Stripe__ApiKey=', 'Redis__Password=', 'Smtp__Password=', ''].join('\n'),
     'appsettings.json': JSON.stringify(
       {

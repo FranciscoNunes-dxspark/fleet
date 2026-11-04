@@ -1,4 +1,4 @@
-// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf, keel, locker, mooring, bilge, chart) share about each other: what one copies
+// What the sibling apps (splice, trawl, sonar, bosun, hail, wharf, keel, locker, mooring, bilge, chart, lantern, drill, ballast, lookout) share about each other: what one copies
 // for another, the project a folder is and what it points at, the mascots' moods, and what each app
 // did. The same file in every app (scripts/shared-check.js), so it names no app as "this".
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync } from 'node:fs';
@@ -6,10 +6,10 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { handOff } from './hosted.js';
 
-export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf', 'keel', 'locker', 'mooring', 'bilge', 'chart'];
+export const FAMILY = ['splice', 'trawl', 'sonar', 'bosun', 'hail', 'wharf', 'keel', 'locker', 'mooring', 'bilge', 'chart', 'lantern', 'drill', 'ballast', 'lookout'];
 
 /** What each app is for, in a picker's words. */
-export const ROLES = { splice: 'GIT', trawl: 'SQL', sonar: 'AZURE', bosun: 'PROCS', hail: 'HTTP', wharf: 'DOCKER', keel: 'DEVOPS', locker: 'VAULT', mooring: 'SSH', bilge: 'DEPS', chart: 'IAC' };
+export const ROLES = { splice: 'GIT', trawl: 'SQL', sonar: 'AZURE', bosun: 'PROCS', hail: 'HTTP', wharf: 'DOCKER', keel: 'DEVOPS', locker: 'VAULT', mooring: 'SSH', bilge: 'DEPS', chart: 'IAC', lantern: 'WEB', drill: 'TESTS', ballast: 'BUNDLE', lookout: 'PROXY' };
 
 // ---------------------------------------------------------------------------------------------------
 // Sharing: what one app hands another is a command line, copied for you to paste into the other app's
@@ -52,8 +52,8 @@ export const takeLine = (kind, data) => shareLine('take', [encodeContext(kind, d
 export const contextIn = (line) => decodeContext(String(line ?? '').trim().replace(/^\/?take\s+/, ''));
 
 /** The apps' names as they're written, and their mascots'. */
-export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf', keel: 'Keel', locker: 'Locker', mooring: 'Mooring', bilge: 'Bilge', chart: 'Chart' };
-export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark', keel: 'Pinch', locker: 'Hush', mooring: 'Tug', bilge: 'Nibs', chart: 'Plot' };
+export const APP_NAMES = { splice: 'Splice', trawl: 'Trawl', sonar: 'Sonar', bosun: 'Bosun', hail: 'Hail', wharf: 'Wharf', keel: 'Keel', locker: 'Locker', mooring: 'Mooring', bilge: 'Bilge', chart: 'Chart', lantern: 'Lantern', drill: 'Drill', ballast: 'Ballast', lookout: 'Lookout' };
+export const PET_NAMES = { splice: 'Twig', trawl: 'Glim', sonar: 'Ping', bosun: 'Squawk', hail: 'Hoot', wharf: 'Bark', keel: 'Pinch', locker: 'Hush', mooring: 'Tug', bilge: 'Nibs', chart: 'Plot', lantern: 'Flit', drill: 'Peck', ballast: 'Plod', lookout: 'Peep' };
 
 /** Which apps take each kind of context with /take. */
 export const TAKEN_BY = {
@@ -68,6 +68,10 @@ export const TAKEN_BY = {
   pipeline: ['keel'],
   site: ['locker'],
   image: ['bilge'],
+  // A web page and what was found on it (Lantern's): a URL another app points at, to audit.
+  page: ['lantern'],
+  // A test and how it failed (Drill's): Splice shows the file's history at that line, Drill runs it again.
+  test: ['splice', 'drill'],
 };
 
 const either = (apps) => apps.map((a) => APP_NAMES[a] ?? a).join(' or ');
@@ -133,7 +137,7 @@ export function trawlLine(db, name) {
 //   site      { name, slot?, resourceGroup?, subscription?, id? }   an App Service app or slot
 
 const PREFIX = 'family:v1:';
-export const CONTEXT_KINDS = ['exception', 'request', 'rows', 'query', 'commit', 'file', 'logline', 'pullrequest', 'pipeline', 'site', 'image'];
+export const CONTEXT_KINDS = ['exception', 'request', 'rows', 'query', 'commit', 'file', 'logline', 'pullrequest', 'pipeline', 'site', 'image', 'page', 'test'];
 
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64url = (s) => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
@@ -171,6 +175,8 @@ export function describeContext({ kind, data }) {
     case 'pipeline': return `pipeline ${data.definition ?? data.definitionId ?? ''}${data.run ? ` ${data.run}` : ''}${data.step ? `, failed at ${data.step}` : ''}${data.test ? ` (${data.test})` : ''}`;
     case 'site': return `app ${data.name ?? ''}${data.slot ? `/${data.slot}` : ''}`;
     case 'image': return `image ${data.image ?? ''}`.trim();
+    case 'page': return `page ${data.url ?? ''}${data.findings ? ` (${data.findings} found)` : ''}`.trim();
+    case 'test': return `test ${data.name ?? ''}${data.file ? ` in ${data.file}${data.line ? `:${data.line}` : ''}` : ''}${data.message ? `: ${data.message}` : ''}`.trim();
     default: return kind;
   }
 }
@@ -342,10 +348,26 @@ export function maskValue(key, value) {
   return SECRET_KEY.test(String(key ?? '')) && s ? MASK : s;
 }
 
+const SCHEME_CHAR = /[a-z0-9+.-]/i;
+
+/**
+ * `scheme://user:password@` with the password masked, as /([a-z][a-z0-9+.-]*:\/\/[^/\s:@]*:)[^@\s/]+@/gi
+ * would, but found from each `://` and the scheme looked for behind it: that pattern tried a scheme at
+ * every letter of a long run of them (base64, a minified file) and took seconds over a few hundred KB.
+ */
+function maskUrlPasswords(s) {
+  return s.replace(/:\/\/[^/\s:@]*:[^@\s/]+@/g, (m, at) => {
+    // A scheme is letters, digits, + . - before ://, one of them a letter to start it.
+    let letter = false;
+    for (let k = at - 1; k >= 0 && !letter && SCHEME_CHAR.test(s[k]); k--) letter = /[a-z]/i.test(s[k]);
+    // The user ends at the first : after ://; the password may hold more.
+    return letter ? `${m.slice(0, m.indexOf(':', 3) + 1)}${MASK}@` : m;
+  });
+}
+
 /** Free text with what looks like a secret in it masked: key=value pairs named as secrets, bearer tokens, URL passwords. */
 export function redactSecrets(text) {
-  return String(text ?? '')
-    .replace(/([a-z][a-z0-9+.-]*:\/\/[^/\s:@]*:)[^@\s/]+@/gi, `$1${MASK}@`)
+  return maskUrlPasswords(String(text ?? ''))
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, `$1${MASK}`)
     .replace(/\b((?:pass(?:word)?|pwd|secret|token|api[-_]?key|accountkey|sharedaccesskey)\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s;,&]+)/gi, `$1${MASK}`);
 }

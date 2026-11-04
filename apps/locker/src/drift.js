@@ -6,6 +6,7 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { isReference, normKey, parseReference, referenceText } from './keys.js';
 import { isExpired } from './expiry.js';
+import { frontendLeak } from '@fleet/kit/codescan.js';
 
 const KEY = randomBytes(32);
 
@@ -13,6 +14,26 @@ const KEY = randomBytes(32);
 export const fingerprint = (value) => createHmac('sha256', KEY).update(String(value ?? '')).digest('hex').slice(0, 16);
 
 const GROUPS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+// localeCompare's order (a collator with no locale or options is what it uses), made once: thousands of
+// rows sorted through localeCompare take several times as long.
+const byText = new Intl.Collator().compare;
+
+// A vault's listing by name (lower case, the first of a name), made once per listing: a matrix checks
+// thousands of references against thousands of secrets.
+const NAMES = new WeakMap();
+function byName(secrets) {
+  let map = NAMES.get(secrets);
+  if (!map) {
+    map = new Map();
+    for (const s of secrets) {
+      const k = s.name.toLowerCase();
+      if (!map.has(k)) map.set(k, s);
+    }
+    NAMES.set(secrets, map);
+  }
+  return map;
+}
 
 /**
  * Whether a Key Vault reference resolves: { ok, why }. `vaults` maps a vault's name (lower case) to its
@@ -23,7 +44,7 @@ export function checkReference(ref, vaults = new Map(), { status, now = Date.now
   if (!ref || ref.problem) return { ok: false, why: `the reference is written wrong${ref?.problem ? `: ${ref.problem}` : ''}` };
   const secrets = vaults.get(ref.vault);
   if (secrets) {
-    const s = secrets.find((x) => x.name.toLowerCase() === ref.secret.toLowerCase());
+    const s = byName(secrets).get(ref.secret.toLowerCase());
     if (!s) return { ok: false, why: `no secret ${ref.secret} in ${ref.vault}` };
     if (s.enabled === false) return { ok: false, why: `${ref.secret} is disabled in ${ref.vault}` };
     if (isExpired(s, now)) return { ok: false, why: `${ref.secret} has expired in ${ref.vault}` };
@@ -85,6 +106,13 @@ export function driftMatrix(columns, { vaults = new Map(), now = Date.now() } = 
         r.cells[c] = { state: check.ok ? 'ref' : 'broken', why: check.why, ref: referenceText(ref), key: e.key };
       } else {
         r.cells[c] = { state: 'value', hash: fingerprint(e.value), key: e.key };
+        // A variable the bundler sends to the browser (VITE_…) holding a secret: the row says so and
+        // what the value looked like, never the value.
+        const leak = col.kind === 'local' && (col.source?.kind ?? 'env') === 'env' ? frontendLeak(e.key, e.value) : null;
+        if (leak) {
+          r.leak ??= { prefix: leak.prefix, what: leak.what, reason: leak.reason, in: [] };
+          r.leak.in.push(col.label);
+        }
       }
     }
   });
@@ -106,7 +134,7 @@ export function driftMatrix(columns, { vaults = new Map(), now = Date.now() } = 
       broken: r.cells.some((x) => x.state === 'broken'),
     });
   }
-  out.sort((a, b) => a.norm.localeCompare(b.norm));
+  out.sort((a, b) => byText(a.norm, b.norm));
   return { columns, rows: out };
 }
 
@@ -119,10 +147,17 @@ export function filterRows(rows, filter = 'all') {
   return rows;
 }
 
-/** How many rows differ, are broken and are missing somewhere: { differs, broken, missing }. */
+/** How many rows differ, are broken, are missing somewhere and leak into the browser: { differs, broken, missing, leaks }. */
 export function driftCounts(rows) {
-  return { differs: rows.filter((r) => r.differs).length, broken: rows.filter((r) => r.broken).length, missing: rows.filter((r) => r.missing).length };
+  return { differs: rows.filter((r) => r.differs).length, broken: rows.filter((r) => r.broken).length, missing: rows.filter((r) => r.missing).length, leaks: rows.filter((r) => r.leak).length };
 }
+
+/** What a row's `leak` means, as short lines: the bundler sends the variable to the browser, and what its value looked like. */
+export const leakWords = (row) => [
+  `Sent to the browser: the bundler writes ${row.leak.prefix} variables into the code every visitor downloads.`,
+  `This one holds ${row.leak.what} (${row.leak.in.join(', ')}).`,
+  'Keep it on the server, without the prefix, and rotate it.',
+];
 
 /** A cell of `row` as the matrix draws it: { text, tone } (tone a theme colour's name). */
 export function cellMark(cell, row) {

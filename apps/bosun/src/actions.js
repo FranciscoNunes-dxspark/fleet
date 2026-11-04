@@ -22,6 +22,7 @@ import { afterTree, namedProcs, treeLine } from './groups.js';
 import { levelTone, shownText, structuredOf, troubled } from './structured.js';
 import { nextMemoryAlert, shortBytes, shortCpu, sparkline } from './usage.js';
 import { SYSTEM_PIDS } from './supervisor.js';
+import { OTLP_PORT } from './traces.js';
 import { appcmdProblem, bindingUrl, newBinding, poolRows, poolRuntime } from './iis.js';
 import { crewFolders, webConfigDatabases } from './webconfig.js';
 import { hostsNames, withHosts } from './hosts.js';
@@ -879,6 +880,17 @@ async function changeSetting(ctx, row) {
       const { memoryAlert: _, ...rest } = c;
       const next = nextMemoryAlert(c.memoryAlert);
       return next ? { ...rest, memoryAlert: next } : rest;
+    });
+    return redrawSettings(ctx);
+  }
+  if (row.action === 'port') {
+    const typed = await ctx.askText({ title: 'The port the traces receiver listens on', detail: `On 127.0.0.1; the next free one when it's taken. Empty puts back ${OTLP_PORT}. From the next start of Bosun.`, value: String(ctx.config.tracesPort ?? '') });
+    if (typed == null) return;
+    const port = Number(typed.trim());
+    if (typed.trim() && !(Number.isInteger(port) && port > 0 && port < 65536)) return ctx.note(`${typed.trim()} isn't a port (1 to 65535).`, 'error');
+    ctx.setConfig((c) => {
+      const { tracesPort: _, ...rest } = c;
+      return typed.trim() ? { ...rest, tracesPort: port } : rest;
     });
     return redrawSettings(ctx);
   }

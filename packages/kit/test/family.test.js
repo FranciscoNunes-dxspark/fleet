@@ -120,6 +120,13 @@ test('secrets are masked wherever a value or a line could carry one', async () =
   assert.equal(maskValue('API_KEY', 'xyz'), MASK);
   assert.equal(maskValue('API_URL', 'https://api.example.com'), 'https://api.example.com');
   assert.equal(redactSecrets('curl -H "Authorization: Bearer abc.def" https://u:pw@h/ password=hunter2 token: t0k'), `curl -H "Authorization: Bearer ${MASK}" https://u:${MASK}@h/ password=${MASK} token: ${MASK}`);
+  // The scheme is the run of scheme characters before ://, from its first letter; the user ends at the first colon.
+  assert.equal(redactSecrets('x1+svn+ssh://me:a:b@h 9.db://u:p@h 1.2://u:p@h'), `x1+svn+ssh://me:${MASK}@h 9.db://u:${MASK}@h 1.2://u:p@h`);
+  // A long run of letters and digits (base64, a minified file) once took seconds: every letter was tried as a scheme.
+  const blob = `"sha512-${'Qm9vZ'.repeat(40_000)}" postgres://app:pw@db`;
+  const t = performance.now();
+  assert.ok(redactSecrets(blob).endsWith(`postgres://app:${MASK}@db`));
+  assert.ok(performance.now() - t < 500, `${performance.now() - t} ms`);
 });
 
 test('what a project points at, masked', async () => {

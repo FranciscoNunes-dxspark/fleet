@@ -94,8 +94,8 @@ export function createBilge({ fetchImpl = globalThis.fetch, run = runCommand, ho
         await run(`docker rm -f ${id}`).catch(() => {});
       }
     },
-    /** The folder's own files through codescan.js's rules: { root, files, findings, truncated, at }. Reads only. */
-    code: (root, { signal, onProgress } = {}) => scanCode(root, { signal, onProgress }),
+    /** The folder's own files through codescan.js's rules and its translation check (`i18n`, the settings' options or false): { root, files, findings, truncated, at }. Reads only. */
+    code: (root, { signal, onProgress, i18n } = {}) => scanCode(root, { signal, onProgress, i18n: i18n ?? {} }),
     /** The lines under `root` that import `pkg` (breaking.js's findUsages): [{ path, line, text }]. */
     usages: async (root, pkg, { signal } = {}) => findUsages(root, pkg, { signal }),
     /**

@@ -31,6 +31,7 @@ import { BULLET, applyTheme, defaultAccent, isColour, setAccent, theme } from '.
 import { fit, relTime } from '@fleet/kit/text.js';
 import { countFindings, findingsLine, sortFindings, withoutIgnoredFindings } from '@fleet/kit/findings.js';
 import { postureCheck, readLine } from './posture/check.js';
+import { customDomains, domainsText } from './domains.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
@@ -306,6 +307,32 @@ export async function deploymentLog(ctx, target, d) {
       ]),
     ];
     ctx.showText(title, text, { lines, token });
+  } catch (e) {
+    if (still()) ctx.closeOverlay();
+    ctx.note(e.message, 'error');
+  }
+}
+
+/**
+ * /domains [app]: an app's custom domains checked from the outside (the kit's webchecks.js): DNS (A,
+ * AAAA, CNAME, CAA, MX), the redirects from http:// and the bare domain, https enforced or not, the
+ * certificate's days left, and what is wrong (missing-caa, no-https-redirect, cert-expiring...).
+ */
+export async function domains(ctx, which) {
+  const target = need(ctx, typeof which === 'object' ? which : targetNamed(ctx, which));
+  if (!target) return;
+  if (target.type) return ctx.note(`Only web and function apps have custom domains here; ${target.name} is a ${typeLabel(target)}.`, 'error');
+  const hosts = customDomains(target);
+  if (!hosts.length) return ctx.note(`${label(target)} has no custom domain, only ${target.host ?? 'its azurewebsites.net name'}.`);
+  const title = `Domains of ${label(target)}`;
+  const token = {};
+  ctx.showText(title, '', { loading: true, token });
+  const still = () => ctx.overlay()?.token === token;
+  try {
+    const checked = await Promise.all(hosts.map((h) => ctx.provider.domain(h)));
+    if (!still()) return;
+    const found = checked.flatMap((d) => d.findings);
+    ctx.showText(title, domainsText(checked), { token, hint: findingsLine(countFindings(found)) || 'nothing found' });
   } catch (e) {
     if (still()) ctx.closeOverlay();
     ctx.note(e.message, 'error');

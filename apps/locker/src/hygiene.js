@@ -9,7 +9,7 @@
 // already holds, never by reading a vault secret's value. A finding is findings.js's shape and never
 // holds a value: what was seen is cut to its first characters (codescan.js's `redact`), and a value is
 // compared with another only by drift.js's keyed hash, made before it gets here.
-import { RULES, redact } from '@fleet/kit/codescan.js';
+import { RULES, frontendLeak, redact } from '@fleet/kit/codescan.js';
 import { sortFindings } from '@fleet/kit/findings.js';
 import { isSecretName } from '@fleet/kit/family.js';
 import { isReference, normKey, parseReference, vaultName } from './keys.js';
@@ -289,17 +289,61 @@ export function settingFindings(sites = [], { vault } = {}) {
 const isExampleSource = (s) => Boolean(s.example) || /\.(example|sample|template|dist)$/i.test(String(s.label ?? ''));
 
 /** The line of a flattened JSON key in its file's text: the first line naming its last part, from its section's on. */
-export function jsonKeyLine(text, key) {
-  const parts = String(key).split(':').filter((p) => !/^\d+$/.test(p));
+export const jsonKeyLine = (text, key) => jsonKeyLines(text)(key);
+
+/**
+ * jsonKeyLine for many keys of one file: the text is split and indexed once (each `"name":` with the
+ * lines it is on), so an appsettings file of thousands of keys isn't searched whole for every key.
+ */
+export function jsonKeyLines(text) {
   const lines = String(text ?? '').split(/\r?\n/);
-  let from = 0;
-  for (const p of parts) {
+  let index = null;
+  // Every `"name"` followed by a colon, from every quote (as the regex below would try), by its name in lower case.
+  const build = () => {
+    index = new Map();
+    const name = /"([^"]*)"\s*:/y;
+    lines.forEach((l, i) => {
+      for (let q = l.indexOf('"'); q >= 0; q = l.indexOf('"', q + 1)) {
+        name.lastIndex = q;
+        const m = name.exec(l);
+        // A name with other characters never equals a plain ASCII one under the i flag.
+        if (!m || !/^[\x20-\x7e]*$/.test(m[1])) continue;
+        const k = m[1].toLowerCase();
+        const at = index.get(k);
+        if (!at) index.set(k, [i]);
+        else if (at[at.length - 1] !== i) at.push(i);
+      }
+    });
+  };
+  // The first line from `from` on naming `p`: through the index when `p` is plain ASCII without a quote
+  // (where lower case is what the regex's i flag compares), else the regex over the lines.
+  const find = (p, from) => {
+    if (/^[\x20-\x7e]*$/.test(p) && !p.includes('"')) {
+      if (!index) build();
+      const at = index.get(p.toLowerCase());
+      if (!at) return -1;
+      let lo = 0;
+      let hi = at.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (at[mid] < from) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo < at.length ? at[lo] : -1;
+    }
     const re = new RegExp(`"${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*:`, 'i');
-    const at = lines.findIndex((l, i) => i >= from && re.test(l));
-    if (at < 0) return null;
-    from = at;
-  }
-  return parts.length ? from + 1 : null;
+    return lines.findIndex((l, i) => i >= from && re.test(l));
+  };
+  return (key) => {
+    const parts = String(key).split(':').filter((p) => !/^\d+$/.test(p));
+    let from = 0;
+    for (const p of parts) {
+      const at = find(p, from);
+      if (at < 0) return null;
+      from = at;
+    }
+    return parts.length ? from + 1 : null;
+  };
 }
 
 /**
@@ -414,6 +458,41 @@ export function sharedSecretFindings(holders = []) {
   return out;
 }
 
+// ——— Secrets the browser gets ———
+
+/**
+ * The folder's .env files read for variables a bundler writes into the browser's code (VITE_,
+ * NEXT_PUBLIC_, REACT_APP_ …) holding a secret: the kit's `frontendLeak` judges each, the one judge
+ * Bilge's Code view uses too. Tracked by git or not, as the build reads both; example files are left
+ * out, as their values are placeholders. High: every visitor of the built site has the value.
+ */
+export function frontendFindings(sources = [], { rel = (f) => f } = {}) {
+  const out = [];
+  for (const s of sources) {
+    if (s.kind !== 'env' || isExampleSource(s)) continue;
+    const path = rel(s.file);
+    for (const e of s.entries ?? []) {
+      const leak = frontendLeak(e.key, e.value);
+      if (!leak) continue;
+      out.push({
+        rule: 'frontend-secret',
+        severity: 'high',
+        kind: 'secret',
+        scope: 'file',
+        key: e.key,
+        source: s.id,
+        title: 'Secret in a browser variable',
+        where: path,
+        ...(e.line ? { line: e.line } : {}),
+        why: `The bundler writes ${leak.prefix} variables into the JavaScript every visitor downloads, and ${e.key} holds ${leak.what}: anyone can read it in the site's sources.`,
+        fix: `Keep it on the server: rename it without ${leak.prefix} and read it in an API route or server function, then rotate it, as every build since it was set has published it.`,
+        excerpt: `${e.key}=${redact(String(e.value ?? '').trim())}`,
+      });
+    }
+  }
+  return out;
+}
+
 /**
  * Every hygiene finding, worst first, from what was read (security.js's readHygiene): { vaults: [{
  * vault, secrets, certificates }], sites: [{ site, settings, strings }], local: sources, tracked,
@@ -425,6 +504,7 @@ export function hygieneFindings(read, { now = Date.now() } = {}) {
     ...(read.vaults ?? []).flatMap((v) => [...vaultPostureFindings(v.vault), ...vaultItemFindings(v, { use, now })]),
     ...settingFindings(read.sites ?? [], { vault: read.vault }),
     ...localFindings(read.local ?? [], { tracked: read.tracked, rel: read.rel }),
+    ...frontendFindings(read.local ?? [], { rel: read.rel }),
     ...sharedSecretFindings(read.holders ?? []),
   ]);
 }

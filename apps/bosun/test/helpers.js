@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { App } from '../src/ui/App.jsx';
+import { startOtlpReceiver } from '../src/traces.js';
 
 export const KEYS = { down: '\x1b[B', up: '\x1b[A', enter: '\r', esc: '\x1b', backspace: '\x7f', tab: '\t' };
 
@@ -56,6 +57,8 @@ export function start(props = {}) {
       runHail: async () => ({ missing: true }),
       // No look at the machine's processes unless a test gives its own.
       sampleUsage: async () => new Map(),
+      // The traces receiver on a port of the OS's choosing, never a collector's 4318.
+      startOtlp: (opts) => startOtlpReceiver({ ...opts, port: 0 }),
       ...props,
     }),
   );

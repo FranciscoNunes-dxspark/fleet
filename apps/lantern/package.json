@@ -1,0 +1,30 @@
+{
+  "name": "lantern",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A web page audited in the terminal: Core Web Vitals in a headless Chrome, accessibility with axe-core, SEO basics, broken links, security headers and certificates, and a domain's DNS and redirects",
+  "type": "module",
+  "bin": {
+    "lantern": "bin/lantern.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bin/lantern.js",
+    "demo": "node bin/lantern.js --demo",
+    "test": "node --import @fleet/kit/register.js --import ./src/app.js --test --test-concurrency=3 test/*.test.js",
+    "build": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js",
+    "build:all": "npx --yes bun@1.4.2 ../../packages/kit/scripts/build.js --all"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fleet/kit": "file:../../packages/kit",
+    "axe-core": "^4.11.0",
+    "ink": "^6.8.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "ink-testing-library": "^4.0.0"
+  }
+}

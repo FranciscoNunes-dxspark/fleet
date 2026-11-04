@@ -12,7 +12,7 @@
 //                 "locker": true, "wharf": { "compose": "compose.yaml" }, "keel": "Commerce", "skip": ["chart"] }
 import { spawn as nodeSpawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { currentEnvironment, findProjectFile } from '@fleet/kit/environments.js';
 import { countFindings, failingFindings, findingPlace, findingsLine, sortFindings, toSarif } from '@fleet/kit/findings.js';
@@ -30,11 +30,14 @@ export const CHECKS = [
   { app: 'mooring', what: 'a server, over SSH' },
   { app: 'wharf', what: 'containers as they run' },
   { app: 'keel', what: 'Azure DevOps pipelines, repos and connections' },
+  { app: 'lantern', what: "the web app's pages and domains, from outside" },
+  { app: 'ballast', what: 'the production build: source maps and secrets shipped' },
+  { app: 'lookout', what: 'the traffic Lookout captured' },
 ];
 const ALWAYS = ['bilge', 'splice', 'chart'];
-// Wharf and Keel aren't in the compiled build (package.json's "includes"): only a checkout runs them.
-const NOT_IN_BUILD = new Set(['wharf', 'keel']);
 const NO_DEMO = new Set(['splice', 'hail']);
+// Where a build Ballast can read sits.
+const BUILD_DIRS = ['ballast.json', 'dist', 'build', 'out', '.next/static'];
 
 const asObject = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 
@@ -70,16 +73,30 @@ export function securityPlan(root, config = {}, { only = null, demo = false, com
       left.push({ app, why: 'skipped in .fleet/project.json' });
       continue;
     }
-    if (compiled && NOT_IN_BUILD.has(app)) {
-      if (config[app] || demo) left.push({ app, why: "not in Fleet's build: run it from its own executable" });
-      continue;
-    }
     const c = config[app];
     if (ALWAYS.includes(app)) {
       add(app, ['security', root]);
       continue;
     }
+    // Ballast reads a build that's already there: a project with one (or a budget file) is checked unasked.
+    if (app === 'ballast' && !c && !demo && !BUILD_DIRS.some((d) => existsSync(join(root, d)))) {
+      left.push({ app, why: 'no build output (dist/, build/, out/) or ballast.json here' });
+      continue;
+    }
+    if (app === 'ballast' && !c && !demo) {
+      add(app, ['security', root]);
+      continue;
+    }
     if (demo) {
+      if (app === 'lantern') {
+        add(app, ['security', root]);
+        add(app, ['domains', root], 'lantern domains');
+        continue;
+      }
+      if (app === 'ballast') {
+        add(app, ['security', root]);
+        continue;
+      }
       // Hail has no demo: it scans a real address, so it runs only when one is named.
       if (app === 'hail' && !c) left.push({ app, why: 'needs an address: "security": { "hail": "https://…" }' });
       else if (app === 'hail') add(app, hailArgs(c, at));
@@ -105,6 +122,13 @@ export function securityPlan(root, config = {}, { only = null, demo = false, com
       const o = asObject(c);
       add(app, ['security', ...[o.compose ?? []].flat().flatMap((f) => ['--compose', at(f)])]);
     } else if (app === 'keel') add(app, ['security', ...(typeof c === 'string' ? [c] : asObject(c).project ? [String(asObject(c).project)] : [])]);
+    else if (app === 'lantern') {
+      // Its pages and hosts come from lantern.json and the environments' "lantern" sections; a URL here adds one.
+      const urls = [c].flat().filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
+      add(app, ['security', ...(urls.length ? urls : [root])]);
+      add(app, ['domains', ...(urls.length ? urls.map((u) => new URL(u).hostname) : [root])], 'lantern domains');
+    } else if (app === 'ballast') add(app, ['security', root]);
+    else if (app === 'lookout') add(app, ['security', ...(typeof c === 'string' ? [at(c)] : [])]);
   }
   return { run, left };
 }

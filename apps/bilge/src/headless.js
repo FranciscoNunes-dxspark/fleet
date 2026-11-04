@@ -120,7 +120,7 @@ export async function runHeadless(args, { provider, config = {}, write = (s) => 
  * codeIgnore entries. Exits as audit does: 1 when a finding is as bad as --fail-on.
  */
 async function runCode(opts, dir, io) {
-  const result = await io.provider.code(dir);
+  const result = await io.provider.code(dir, { i18n: io.config.i18n });
   const found = withoutIgnoredCode(result.findings, io.config.codeIgnore ?? []);
   const failing = opts.failOn === 'none' ? [] : found.filter((f) => rank(f.severity) <= rank(opts.failOn));
   const text = () => {
@@ -151,7 +151,8 @@ async function runSecurity(opts, dir, io) {
       const { ids, details } = await provider.audit(scan.packages, { fresh: true });
       all.push(...auditFindings(withoutIgnored(findings(scan.packages, ids, details), config.ignore ?? [])));
     }
-    const code = await provider.code(dir);
+    // Translation coverage is the Code view's, not a security finding: left out here (and from Fleet's sum).
+    const code = await provider.code(dir, { i18n: false });
     all.push(...codeFindings(withoutIgnoredCode(code.findings, config.codeIgnore ?? [])));
     said.push(`${code.files} files read${code.truncated ? ' (stopped early)' : ''}`);
   }

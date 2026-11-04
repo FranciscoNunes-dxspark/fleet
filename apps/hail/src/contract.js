@@ -199,35 +199,49 @@ function merged(spec, schema, depth) {
  * doesn't have), 'missing' (a required one that isn't there), 'type' or 'enum'. `spec` resolves $refs.
  */
 export function validate(spec, schema, value, path = '$', depth = 0) {
+  return check(spec, schema, value, path, depth, []);
+}
+
+// validate's work, adding to `out` and returning it. One array for the whole body, rather than each
+// level spreading its children's into its own: a list of 50,000 items that each differ has 150,000
+// differences, which `push(...)` can't take as arguments, and copying them at every level was most
+// of the time.
+function check(spec, schema, value, path, depth, out) {
   let s = deref(spec, schema);
-  if (!s || typeof s !== 'object' || depth > 60) return [];
+  if (!s || typeof s !== 'object' || depth > 60) return out;
   if (s.allOf) s = merged(spec, s, 0);
   const actual = typeOf(value);
   const types = Array.isArray(s.type) ? s.type : s.type ? [s.type] : s.properties ? ['object'] : s.items ? ['array'] : null;
   if (value === null) {
-    if (s.nullable || s['x-nullable'] || !types || types.includes('null') || s.enum?.includes(null)) return [];
+    if (s.nullable || s['x-nullable'] || !types || types.includes('null') || s.enum?.includes(null)) return out;
   }
   const branches = s.oneOf ?? s.anyOf;
   if (branches) {
-    const tries = branches.map((b) => validate(spec, b, value, path, depth + 1));
-    if (!tries.some((t) => t.length === 0)) return tries.reduce((best, t) => (t.length < best.length ? t : best));
+    const tries = branches.map((b) => check(spec, b, value, path, depth + 1, []));
+    if (!tries.some((t) => t.length === 0)) {
+      for (const i of tries.reduce((best, t) => (t.length < best.length ? t : best))) out.push(i);
+      return out;
+    }
   }
   if (types && !types.some((t) => t === actual || (t === 'number' && actual === 'integer'))) {
-    return [{ kind: 'type', path, text: `${actual}, the contract says ${types.join(' or ')}` }];
+    out.push({ kind: 'type', path, text: `${actual}, the contract says ${types.join(' or ')}` });
+    return out;
   }
-  if (s.enum && !s.enum.some((e) => same(e, value))) return [{ kind: 'enum', path, text: `${shown(value)} isn't one of ${s.enum.map(shown).join(', ')}` }];
-  const out = [];
+  if (s.enum && !s.enum.some((e) => same(e, value))) {
+    out.push({ kind: 'enum', path, text: `${shown(value)} isn't one of ${s.enum.map(shown).join(', ')}` });
+    return out;
+  }
   if (actual === 'object') {
     const props = s.properties ?? {};
     for (const r of s.required ?? []) if (!(r in value)) out.push({ kind: 'missing', path: at(path, r), text: 'required, and missing' });
     const extra = s.additionalProperties;
     for (const [k, v] of Object.entries(value)) {
-      if (props[k] !== undefined) out.push(...validate(spec, props[k], v, at(path, k), depth + 1));
-      else if (extra && typeof extra === 'object') out.push(...validate(spec, extra, v, at(path, k), depth + 1));
+      if (props[k] !== undefined) check(spec, props[k], v, at(path, k), depth + 1, out);
+      else if (extra && typeof extra === 'object') check(spec, extra, v, at(path, k), depth + 1, out);
       else if (extra !== true && (s.properties || extra === false)) out.push({ kind: 'added', path: at(path, k), text: "not in the contract" });
     }
   } else if (actual === 'array' && s.items) {
-    value.forEach((v, n) => out.push(...validate(spec, s.items, v, `${path}[${n}]`, depth + 1)));
+    for (let n = 0; n < value.length; n++) check(spec, s.items, value[n], `${path}[${n}]`, depth + 1, out);
   }
   return out;
 }

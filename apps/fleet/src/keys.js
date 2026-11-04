@@ -56,7 +56,7 @@ export function keyLength(s, i) {
 const PANE_KEYS = new Set(['\t', '\x1b[C', '\x1b[D', '\x1bOC', '\x1bOD']);
 
 /** The action a key after the prefix (`started`, the byte typed) stands for, or null (it cancels the prefix). */
-export function prefixAction(key, spaces = SPACES, started = PREFIX) {
+export function prefixAction(key, spaces = SPACES, started = PREFIX, all = spaces) {
   if (key === started) return { type: 'send', data: started };
   if (/^[1-9]$/.test(key) && spaces[Number(key) - 1]) return { type: 'switch', id: spaces[Number(key) - 1].id };
   // Capitals first: lowercased, P would be the previous space, R the runbooks and S Splice.
@@ -64,7 +64,8 @@ export function prefixAction(key, spaces = SPACES, started = PREFIX) {
   if (key === 'R') return { type: 'record' };
   if (key === 'S') return { type: 'security' };
   const k = key.length === 1 ? key.toLowerCase() : key;
-  const space = spaces.find((s) => s.letter === k);
+  // A letter reaches any app, shown in the bar or not; the numbers only the ones shown.
+  const space = all.find((s) => s.letter === k);
   if (space) return { type: 'switch', id: space.id };
   if (key === ']' || k === 'n') return { type: 'move', by: 1 };
   if (k === 'p') return { type: 'move', by: -1 };
@@ -78,6 +79,7 @@ export function prefixAction(key, spaces = SPACES, started = PREFIX) {
   if (k === 'f') return { type: 'trace' };
   if (k === 'e') return { type: 'environment' };
   if (k === 'w') return { type: 'changes' };
+  if (k === 'a') return { type: 'apps' };
   return null;
 }
 
@@ -87,7 +89,7 @@ export function prefixAction(key, spaces = SPACES, started = PREFIX) {
  * and { type: 'prefix', on } when the prefix starts or ends (the bar shows it). `prefixes` are the
  * bytes that start it (prefixesFor's).
  */
-export function readKeys(state, input, spaces = SPACES, prefixes = prefixesFor()) {
+export function readKeys(state, input, spaces = SPACES, prefixes = prefixesFor(), all = spaces) {
   const actions = [];
   let prefix = state?.prefix === true ? PREFIX : state?.prefix || false;
   let pending = '';
@@ -103,7 +105,7 @@ export function readKeys(state, input, spaces = SPACES, prefixes = prefixesFor()
       const started = prefix;
       prefix = false;
       actions.push({ type: 'prefix', on: false });
-      const action = prefixAction(key, spaces, started);
+      const action = prefixAction(key, spaces, started, all);
       if (action?.type === 'send') pending += action.data;
       else if (action) {
         flush();

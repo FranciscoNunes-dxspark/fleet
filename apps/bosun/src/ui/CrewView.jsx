@@ -113,7 +113,10 @@ export function lineSegments(line) {
   );
 }
 
-/** The lines of every process, in the order they came, each with its name in front: the `a` log. */
+/**
+ * The lines of every process, in the order they came, each with its name in front: the `a` log. Each
+ * is a copy naming its `source`, so what structured.js read of the line is read once, not each frame.
+ */
 export function mergedLines(procs, last) {
   // Each log is in time order already (unless the clock went back), so the newest `last` are taken
   // from the logs' ends, newest first, rather than sorting them all on every frame. A tie goes to the
@@ -126,7 +129,8 @@ export function mergedLines(procs, last) {
     let pick = -1;
     for (let k = tails.length - 1; k >= 0; k--) if (at[k] >= 0 && (pick < 0 || tails[k][at[k]].at > tails[pick][at[pick]].at)) pick = k;
     if (pick < 0) break;
-    out.push({ ...tails[pick][at[pick]--], name: procs[pick].name });
+    const line = tails[pick][at[pick]--];
+    out.push({ ...line, name: procs[pick].name, source: line });
   }
   return out.reverse();
 }
@@ -138,7 +142,7 @@ const inOrder = (lines) => {
 
 const slowMerge = (procs, tails, last) =>
   tails
-    .flatMap((t, k) => t.map((l) => ({ ...l, name: procs[k].name })))
+    .flatMap((t, k) => t.map((l) => ({ ...l, name: procs[k].name, source: l })))
     .sort((x, y) => x.at - y.at)
     .slice(-last);
 

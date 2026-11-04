@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAzdoProvider } from '../server/azdo/provider.js';
@@ -57,6 +58,11 @@ test('the demo screenshot is a valid PNG', () => {
   assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   assert.equal(png.readUInt32BE(16), 480);
   assert.equal(png.subarray(png.length - 8, png.length - 4).toString('ascii'), 'IEND');
+  // The same bytes as ever, and quick to draw: the demo draws one for every bug as it starts.
+  assert.equal(createHash('sha256').update(png).digest('hex'), '3565518582b96f7918ab5b39282a882a1517a1221e258b5136d0f38e9afbe2a6');
+  const start = performance.now();
+  for (let seed = 0; seed < 10; seed++) screenshotPng(seed);
+  assert.ok(performance.now() - start < 400, `ten took ${Math.round(performance.now() - start)} ms`);
 });
 
 test('uploading stores the file in the project, then links it to the work item', async () => {
@@ -102,4 +108,14 @@ test('in the demo, an attached file is listed and downloads as it was uploaded',
   assert.ok((await demo.listAttachments(4107)).some((a) => a.id === added.id && a.name === 'notes.txt' && a.size === 10));
   const file = await demo.downloadAttachment(added.id, 'notes.txt');
   assert.equal(await new Response(file.stream).text(), 'hello demo');
+});
+
+test("in the demo, a bug's own files are listed with the size they download at", async () => {
+  const demo = createMockProvider();
+  const ids = Array.from({ length: 200 }, (_, i) => 4100 + i);
+  const files = (await Promise.all(ids.map((id) => demo.listAttachments(id).catch(() => [])))).flat();
+  const png = files.find((a) => a.name.endsWith('.png'));
+  assert.ok(png, 'a screenshot');
+  assert.ok(png.size > 0);
+  assert.equal((await demo.downloadAttachment(png.id, png.name)).length, png.size);
 });

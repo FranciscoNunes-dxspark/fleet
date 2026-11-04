@@ -531,3 +531,42 @@ test('what changed: the symptoms on top and the timeline, - and + the window, an
   keys('y');
   await done;
 });
+
+test('the bar shows the apps chosen; a hidden one opens by its letter and shows while it runs; the prefix and a chooses, and the choice is kept', async () => {
+  const { chosenIds } = await import('../src/host.js');
+  const spaces = [...SPACES, { id: 'three', title: 'Three', letter: 'h', accent: '#e8445a' }];
+  assert.deepEqual([...chosenIds(spaces, ['three', 'nope'])], ['three']);
+  assert.deepEqual([...chosenIds(spaces, [])], ['one', 'two', 'three']);
+  assert.deepEqual([...chosenIds(spaces, null)], ['one', 'two', 'three']);
+
+  const kept = [];
+  const { host, term, keys, done } = startHost({ spaces, columns: 90, rows: 20 });
+  host.chosen = chosenIds(spaces, ['one', 'three']);
+  host.onChosen = (apps) => kept.push(apps);
+  host.drawBar();
+  const { screen } = term;
+  await until(() => screen.row(0) === 'one 90x19' && /^ 1 One ● {2}2 Three ○ /.test(screen.row(-1)), 'only the chosen apps in the bar', { term });
+  assert.doesNotMatch(screen.row(-1), /Two/);
+  // 2 is the second app shown, Three; Two, hidden, by its letter, and then it shows while it runs.
+  keys(`${PREFIX}2`);
+  await until(() => screen.row(0) === 'three 90x19', 'the second app shown', { term });
+  keys(`${PREFIX}w`);
+  await until(() => screen.row(0) === 'two 90x19' && /1 One ● {2}2 Two ● {2}3 Three ●/.test(screen.row(-1)), 'a hidden app by its letter, in the bar while it runs', { term });
+
+  keys(`${PREFIX}a`);
+  await until(() => term.text().includes('Apps in the bar') && /\[x\] +One/.test(term.text()) && /\[ \] +Two/.test(term.text()), 'the apps panel', { term });
+  // The cursor starts on the app on screen, Two: space shows it.
+  keys(' ');
+  await until(() => kept.length === 1, 'the choice kept', { term });
+  assert.deepEqual(kept[0], ['one', 'two', 'three']);
+  await until(() => /\[x\] +Two/.test(term.text()), 'Two ticked', { term });
+  // The last one can't go: hiding all three says so.
+  keys('k k k ');
+  assert.ok(host.chosen.size >= 1);
+  keys('\x1b');
+  await until(() => !term.text().includes('Apps in the bar'), 'closed', { term });
+  keys(`${PREFIX}q`);
+  await until(() => screen.row(-1).includes('Quit Fleet?'), 'the question', { term });
+  keys('y');
+  await done;
+});

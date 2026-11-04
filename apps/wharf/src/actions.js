@@ -362,15 +362,15 @@ export async function take(ctx, text) {
   const r = await ctx.task(
     `take ${describeContext(context)}`,
     async (signal) => {
-      for (const c of running) {
-        const log = await ctx.provider.logs(c.id, { tail: 1000, signal }).catch(() => '');
-        const query = matchIn(log, context.data);
-        if (query) return { stdout: `Found in ${c.name}`, found: { container: c, query } };
-      }
-      for (const p of cluster) {
-        const log = await ctx.kube.logs(p, { tail: 1000, signal }).catch(() => '');
-        const query = matchIn(log, context.data);
-        if (query) return { stdout: `Found in ${p.name}`, found: { pod: p, query } };
+      // Four logs read at once, looked through in order, so the first that has it is still the one opened.
+      const places = [...running.map((container) => ({ container, name: container.name, read: () => ctx.provider.logs(container.id, { tail: 1000, signal }) })), ...cluster.map((pod) => ({ pod, name: pod.name, read: () => ctx.kube.logs(pod, { tail: 1000, signal }) }))];
+      for (let i = 0; i < places.length; i += 4) {
+        const batch = places.slice(i, i + 4);
+        const logs = await Promise.all(batch.map((p) => p.read().catch(() => '')));
+        for (const [j, p] of batch.entries()) {
+          const query = matchIn(logs[j], context.data);
+          if (query) return { stdout: `Found in ${p.name}`, found: p.container ? { container: p.container, query } : { pod: p.pod, query } };
+        }
       }
       return { stdout: 'Not in the last 1000 lines of any running container or pod.', found: null };
     },

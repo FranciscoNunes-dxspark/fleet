@@ -97,14 +97,23 @@ function maskText(src, from = 0, stop = null) {
         } else j++;
       }
       fill(i, Math.min(j + 1, n));
-    } else {
+    } else if (stop) {
       out += ch;
       i++;
-      if (stop?.(i)) return { out, at: i };
+      if (stop(i)) return { out, at: i };
+    } else {
+      // Up to the next character that could start a run, kept as it is in one piece: a character
+      // at a time, a script of a megabyte or two took a few hundred milliseconds.
+      MAY_START.lastIndex = i + 1;
+      const next = MAY_START.exec(src)?.index ?? n;
+      out += src.slice(i, next);
+      i = next;
     }
   }
   return { out, at: n };
 }
+
+const MAY_START = /[-/'"[]/g;
 
 const GO_LINE = /^[ \t]*go(?:[ \t]+(\d+))?[ \t\u0001]*$/i;
 const hasCode = (masked) => /[^\s\u0001;]/.test(masked);
@@ -112,7 +121,7 @@ const hasCode = (masked) => /[^\s\u0001;]/.test(masked);
 function lineIndex(src) {
   const starts = [0];
   for (let i = src.indexOf('\n'); i >= 0; i = src.indexOf('\n', i + 1)) starts.push(i + 1);
-  return (offset) => {
+  return Object.assign((offset) => {
     let lo = 0;
     let hi = starts.length - 1;
     while (lo < hi) {
@@ -121,10 +130,14 @@ function lineIndex(src) {
       else hi = mid - 1;
     }
     return lo + 1;
-  };
+  }, { count: starts.length });
 }
 
-const normalise = (text) => String(text ?? '').replace(/\r\n?/g, '\n');
+const normalise = (text) => {
+  const s = String(text ?? '');
+  // Most text has no \r, and looking for one is quicker than replacing nothing in a long script.
+  return s.includes('\r') ? s.replace(/\r\n?/g, '\n') : s;
+};
 
 /**
  * Splits a script into the batches SQL Server runs one at a time: `GO` on a line of its own
@@ -171,10 +184,11 @@ function isModuleHeader(words) {
  * A procedure, function, trigger or view runs on to the next `GO`, as SQL Server requires.
  * Each is { text, line, endLine, label }, with `label` the statement's first line of code.
  * The console asks this of the same text several times a keystroke (the gutter, the suggestions,
- * the syntax line), so the last answer is kept; callers only read it.
+ * the syntax line), so the last answer is kept; callers only read it. A long text is most often
+ * the last one after a key, so only the statements around the change are split again.
  */
 export function splitStatements(text) {
-  if (text !== lastSplit.text) lastSplit = { text, statements: split(text) };
+  if (text !== lastSplit.text) lastSplit = split(text, lastSplit);
   return lastSplit.statements;
 }
 
@@ -184,12 +198,86 @@ const WORD_AFTER = /[\s\u0001]*(\w+)/y;
 const wordStart = (c) => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 64 || c === 35;
 const wordChar = (c) => wordStart(c) || (c >= 48 && c <= 57) || c === 36;
 
-function split(text) {
+/**
+ * Where splitting `src` can start over from `before` (the last split, of a text that differs from it
+ * in one place): { lineStart, start, out, marks, resync }, or null when either is short.
+ *
+ * Splitting keeps `marks`, the line starts at which nothing is open ({ at, start, count }: `start`
+ * where the next statement starts, `count` the statements before it). From such a line on, the
+ * statements depend only on the text from there, so splitting resumes at the last one before the
+ * change, and `resync(at, start)` says, at each one after it, whether the rest is the old split's.
+ */
+function resumeFrom(before, src, m, lines) {
+  if (before.src == null || before.src.length < LONG || src.length < LONG) return null;
+  const old = before.src;
+  const oldMask = before.mask;
+  const n = Math.min(old.length, src.length);
+  // A character's mask depends on the text up to the one after it, so the masks agree up to the one
+  // before the first change; at the end they can differ for longer (a quote opened), so both are compared.
+  const p = Math.max(0, common(n, (k) => old.slice(0, k) === src.slice(0, k)) - 1);
+  const same = common(n - p, (k) => old.slice(old.length - k) === src.slice(src.length - k));
+  const tail = common(same, (k) => oldMask.slice(oldMask.length - k) === m.slice(m.length - k));
+  const shift = src.length - old.length;
+  const sameFrom = src.length - tail;
+  // The last mark before the change, whose line looks at nothing past it: the END on a line before
+  // a mark reads the next word (ELSE, TRY, CATCH), so the first line of code after it must be whole.
+  const settled = (at) => {
+    const code = m.slice(at, p).search(/[^\s\u0001]/);
+    if (code < 0) return false;
+    const nl = m.indexOf('\n', at + code);
+    return nl >= 0 && nl < p;
+  };
+  let k = before.marks.length - 1;
+  while (k >= 0 && (before.marks[k].at > p || !settled(before.marks[k].at))) k--;
+  // None: from the top, as a split from nothing does, though the rest can still be the old split's.
+  const from = k < 0 ? { at: 0, start: 0, count: 0 } : before.marks[k];
+  const lineShift = lines - before.lines;
+  return {
+    lineStart: from.at,
+    start: from.start,
+    out: before.statements.slice(0, from.count),
+    marks: before.marks.slice(0, Math.max(0, k)),
+    // Past the change, a mark the old split has at the same place: the rest of it, moved along.
+    resync(at, start, out, marks) {
+      if (start < sameFrom) return false;
+      const j = markAt(before.marks, at - shift);
+      if (j < 0 || before.marks[j].start !== start - shift) return false;
+      const count = before.marks[j].count;
+      const moved = out.length - count;
+      for (let i = count; i < before.statements.length; i++) {
+        const s = before.statements[i];
+        out.push(lineShift ? { ...s, line: s.line + lineShift, endLine: s.endLine + lineShift } : s);
+      }
+      for (let i = j; i < before.marks.length; i++) {
+        const mk = before.marks[i];
+        marks.push({ at: mk.at + shift, start: mk.start + shift, count: mk.count + moved });
+      }
+      return true;
+    },
+  };
+}
+
+// The index of the mark at `at`, or -1.
+function markAt(marks, at) {
+  let lo = 0;
+  let hi = marks.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (marks[mid].at === at) return mid;
+    if (marks[mid].at < at) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return -1;
+}
+
+function split(text, before = {}) {
   const src = normalise(text);
   const m = mask(src);
   const lineOf = lineIndex(src);
-  const out = [];
-  let start = 0;
+  const resume = resumeFrom(before, src, m, lineOf.count);
+  const out = resume?.out ?? [];
+  const marks = resume?.marks ?? [];
+  let start = resume?.start ?? 0;
   let paren = 0;
   let blocks = [];
   let whole = false;
@@ -221,8 +309,13 @@ function split(text) {
     words = [];
   };
 
-  // Line by line over the mask, a character code at a time: this runs over the whole console on every key.
-  for (let lineStart = 0; lineStart <= m.length; ) {
+  const done = () => ({ text, src, mask: m, lines: lineOf.count, statements: out, marks });
+  // Line by line over the mask, a character code at a time.
+  for (let lineStart = resume?.lineStart ?? 0; lineStart <= m.length; ) {
+    if (!paren && !blocks.length && !whole && !words.length) {
+      if (resume?.resync(lineStart, start, out, marks)) return done();
+      marks.push({ at: lineStart, start, count: out.length });
+    }
     const nl = m.indexOf('\n', lineStart);
     const lineEnd = nl < 0 ? m.length : nl;
     const off = lineEnd + 1;
@@ -278,7 +371,7 @@ function split(text) {
     lineStart = off;
   }
   flush(src.length);
-  return out;
+  return done();
 }
 
 /** The statement covering 1-based `line`, or the nearest one above it. */
@@ -694,6 +787,15 @@ export function applySqlcmd(text, values = new Map()) {
 }
 
 const VARIABLE = /(?<![\w@$#])@(?!@)([A-Za-z_#$][\w@#$]*)/g;
+const VARIABLE_KEYWORDS = /(?<![\w@#$])(?:DECLARE|EXEC|EXECUTE)(?![\w@#$])/gi;
+
+/** The tokens of masked `text` from `from` on, as scriptVariables reads them: words, ( ) , ; and =. */
+function* tokensFrom(text, from) {
+  const token = /[\w@#$]+|[(),;=]/g;
+  token.lastIndex = from;
+  for (let t; (t = token.exec(text)); ) yield { u: t[0], at: t.index };
+}
+
 const DECLARE_ENDS = new Set([...STARTS, 'SET', 'WITH', 'BEGIN', 'END', 'WHILE', 'RETURN', 'FETCH', 'OPEN', 'CLOSE', 'DEALLOCATE', 'USE', 'GO']);
 
 /**
@@ -712,43 +814,49 @@ export function scriptVariables(text) {
     const from = base;
     base += piece.length;
     if (GO_LINE.test(piece) && !piece.includes('\n')) continue;
-    const words = [...piece.matchAll(/[\w@#$]+/g)].slice(0, 4).map((w) => w[0].toUpperCase());
+    // Only the first four words, without finding every other one in the batch first.
+    const words = [];
+    for (const w of piece.matchAll(/[\w@#$]+/g)) if (words.push(w[0].toUpperCase()) === 4) break;
     if (isModuleHeader(words)) continue;
-    const toks = [...piece.matchAll(/[\w@#$]+|[(),;=]/g)];
     const declared = new Set();
     const argNames = new Set();
-    let depth = 0;
-    for (let i = 0; i < toks.length; i++) {
-      const t = toks[i][0];
-      if (t === '(') depth++;
-      else if (t === ')') depth = Math.max(0, depth - 1);
-      const w = t.toUpperCase();
-      if (w === 'DECLARE') {
+    // Only what follows a DECLARE or an EXEC is read token by token, from a depth of 0 there: the
+    // depth only matters relative to the keyword's. Tokenizing the whole batch first took most of a
+    // second for a script of a megabyte or two, which every run of it paid twice.
+    for (const k of piece.matchAll(VARIABLE_KEYWORDS)) {
+      const after = k.index + k[0].length;
+      if (k[0].toUpperCase() === 'DECLARE') {
         // DECLARE @a int = 1, @b TABLE (…): the names at its own depth, first and after each comma.
-        let d = depth;
+        let d = 0;
         let expect = true;
-        for (let j = i + 1; j < toks.length; j++) {
-          const u = toks[j][0];
+        for (const { u } of tokensFrom(piece, after)) {
           if (u === '(') d++;
           else if (u === ')') d--;
-          else if (d === depth && u === ';') break;
-          else if (d === depth && u === ',') expect = true;
-          else if (d === depth && expect && u.startsWith('@')) {
+          else if (d === 0 && u === ';') break;
+          else if (d === 0 && u === ',') expect = true;
+          else if (d === 0 && expect && u.startsWith('@')) {
             declared.add(u.toLowerCase());
             expect = false;
-          } else if (d === depth && DECLARE_ENDS.has(u.toUpperCase()) && !expect) break;
-          else if (d === depth) expect = false;
+          } else if (d === 0 && DECLARE_ENDS.has(u.toUpperCase()) && !expect) break;
+          else if (d === 0) expect = false;
         }
-      } else if (w === 'EXEC' || w === 'EXECUTE') {
+      } else {
         // EXEC [@ret =] proc @Arg = value, …: the argument names are the procedure's, not variables.
         // An argument name is "@x =" after the procedure's name or a comma; "@ret =" straight after EXEC is a variable.
-        let d = depth;
-        for (let j = i + 1; j < toks.length; j++) {
-          const u = toks[j][0];
+        let d = 0;
+        let j = 0;
+        let prev = null;
+        let pending = null;
+        for (const { u, at } of tokensFrom(piece, after)) {
+          // The "@x" before is an argument's name when this is its "=".
+          if (pending != null && u === '=') argNames.add(`${from + pending}`);
+          pending = null;
+          j++;
           if (u === '(') d++;
           else if (u === ')') d--;
-          if (d < depth || (d === depth && (u === ';' || (STARTS.has(u.toUpperCase()) && j > i + 1)))) break;
-          if (d === depth && j > i + 1 && u.startsWith('@') && toks[j + 1]?.[0] === '=' && toks[j - 1][0] !== '=') argNames.add(`${from + toks[j].index}`);
+          if (d < 0 || (d === 0 && (u === ';' || (STARTS.has(u.toUpperCase()) && j > 1)))) break;
+          if (d === 0 && j > 1 && u.startsWith('@') && prev !== '=') pending = at;
+          prev = u;
         }
       }
     }
@@ -781,7 +889,14 @@ export function bindVariables(text, values) {
     if (!value) continue;
     for (const at of v.at) edits.push([at, v.name.length, parameterLiteral(value[1])]);
   }
-  let out = src;
-  for (const [at, len, lit] of edits.sort((x, y) => y[0] - x[0])) out = out.slice(0, at) + lit + out.slice(at + len);
-  return out;
+  // Put together in one pass, front to back: splicing each use into the whole text copied it every
+  // time, which in a big seed script using @variables thousands of times took seconds.
+  const out = [];
+  let from = 0;
+  for (const [at, len, lit] of edits.sort((x, y) => x[0] - y[0])) {
+    out.push(src.slice(from, at), lit);
+    from = at + len;
+  }
+  out.push(src.slice(from));
+  return out.join('');
 }

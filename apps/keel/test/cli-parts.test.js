@@ -57,6 +57,15 @@ test('pull requests: waiting on your review, then yours, then the rest, oldest f
   assert.equal(prRows([pr(6, { isMine: true, needsMyReview: true })]).filter((r) => r.pr).length, 1);
 });
 
+test('pull requests: a list of tens of thousands groups in well under a second', () => {
+  const many = Array.from({ length: 40000 }, (_, i) => pr(i, { ageHours: i % 500, needsMyReview: i % 9 === 0, isMine: i % 13 === 0 }));
+  const start = performance.now();
+  const rows = prRows(many);
+  assert.ok(performance.now() - start < 500, `took ${Math.round(performance.now() - start)} ms`);
+  assert.equal(rows.filter((r) => r.pr).length, many.length, 'each pull request once');
+  assert.deepEqual(rows.filter((r) => r.header).map((r) => r.title), ['Waiting on your review (4445)', 'Yours (2735)', 'Everyone else (32820)']);
+});
+
 test('pull requests: the filter matches title, repo, branch, author or !id', () => {
   const p = pr(817, { title: 'Implement refund endpoint' });
   for (const q of ['refund', 'WEB', 'feature/x', 'ana', '!817', '817']) assert.ok(prMatches(p, q), q);

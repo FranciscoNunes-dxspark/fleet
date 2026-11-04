@@ -32,6 +32,15 @@ test('sorting puts folders (and links to them) first, then names by case-insensi
     { name: 'latest', kind: 'link', isDir: true },
   ]);
   assert.deepEqual(sorted.map((e) => e.name), ['app', 'latest', 'Zed', 'A.txt', 'b.txt']);
+  // A folder of 20,000 files sorts as a locale comparison does, in well under a second.
+  const many = Array.from({ length: 20000 }, (_, i) => ({ name: `${i % 3 ? 'File' : 'file'}-${(i * 7919) % 20000}.log`, kind: i % 10 ? 'file' : 'dir' }));
+  const t0 = performance.now();
+  const big = sortEntries(many);
+  assert.ok(performance.now() - t0 < 1000, `took ${Math.round(performance.now() - t0)} ms`);
+  assert.equal(big.length, many.length);
+  const some = many.slice(0, 2000);
+  const expected = [...some].sort((a, b) => (a.kind === 'dir' ? 0 : 1) - (b.kind === 'dir' ? 0 : 1) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  assert.deepEqual(sortEntries(some).map((e) => e.name), expected.map((e) => e.name));
 });
 
 test('errors, with what to do about them', () => {

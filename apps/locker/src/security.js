@@ -11,7 +11,7 @@ import { label } from './azure/arm.js';
 import { fingerprint } from './drift.js';
 import { normKey } from './keys.js';
 import { loadTarget, loadVault, mapLimited, referencedVaults } from './load.js';
-import { hygieneFindings, jsonKeyLine, secretHolders } from './hygiene.js';
+import { hygieneFindings, jsonKeyLines, secretHolders } from './hygiene.js';
 import { rotateSecret } from './rotate.js';
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
@@ -44,7 +44,9 @@ export async function readHygiene({ provider, local, azure = null, target = null
     sources.map(async (s) => {
       if (s.kind !== 'appsettings' || !local.text) return s;
       const text = await local.text(s.file).catch(() => null);
-      return text ? { ...s, entries: s.entries.map((e) => ({ ...e, line: jsonKeyLine(text, e.key) ?? undefined })) } : s;
+      if (!text) return s;
+      const lineOf = jsonKeyLines(text);
+      return { ...s, entries: s.entries.map((e) => ({ ...e, line: lineOf(e.key) ?? undefined })) };
     }),
   );
   const list = local.tracked ? await local.tracked().catch(() => null) : null;
@@ -68,18 +70,20 @@ export async function readHygiene({ provider, local, azure = null, target = null
     });
     sites = read.filter(Boolean);
     const names = new Set(all ? azure.vaults.map((v) => v.name.toLowerCase()) : [vault?.name?.toLowerCase(), ...sites.flatMap((s) => referencedVaults(s))].filter(Boolean));
-    for (const v of azure.vaults.filter((x) => names.has(x.name.toLowerCase()))) {
+    // Four vaults at a time (each listing is a round trip or more of its own), kept in their order.
+    const listed = await mapLimited(azure.vaults.filter((x) => names.has(x.name.toLowerCase())), 4, async (v) => {
       const had = known.get(v.name);
-      if (had?.secrets) {
-        vaults.push({ vault: v, secrets: had.secrets, certificates: had.certificates ?? [] });
-        continue;
-      }
+      if (had?.secrets) return { vault: v, secrets: had.secrets, certificates: had.certificates ?? [] };
       try {
-        vaults.push({ vault: v, ...(await loadVault(provider, v, { signal })) });
+        return { vault: v, ...(await loadVault(provider, v, { signal })) };
       } catch (e) {
         if (e.cancelled || signal?.aborted) throw e;
-        problems.push(`${v.name}: ${firstLine(e.message)}`);
+        return { vault: v, problem: `${v.name}: ${firstLine(e.message)}` };
       }
+    });
+    for (const r of listed) {
+      if (r.problem) problems.push(r.problem);
+      else vaults.push(r);
     }
   }
   const holders = secretHolders({ local: sources, sites, rel, hash: fingerprint });

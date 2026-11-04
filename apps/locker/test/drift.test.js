@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isReference, isVaultName, normKey, parseReference, referenceText, vaultName } from '../src/keys.js';
-import { cellMark, checkReference, driftCounts, driftMatrix, filterRows, fingerprint } from '../src/drift.js';
+import { cellMark, checkReference, driftCounts, driftMatrix, filterRows, fingerprint, leakWords } from '../src/drift.js';
 import { expiring, expiryNotice, expiryTone, expiryWords, isExpired, shortExpiry } from '../src/expiry.js';
 import { appEntries, driftColumns, isShown, pickTarget, referencedVaults } from '../src/load.js';
 
@@ -46,6 +46,20 @@ test('a reference resolves when its secret is there, enabled and current', () =>
   assert.match(checkReference({ vault: 'elsewhere', secret: 'x' }, vaults).why, /not checked/);
   assert.equal(checkReference({ vault: 'elsewhere', secret: 'x' }, vaults, { status: 'SecretNotFound' }).ok, false);
   assert.equal(checkReference({ problem: 'bad' }, vaults).ok, false);
+});
+
+test('a matrix of thousands of references checked against a vault of thousands of secrets, in key order', () => {
+  // The first secret of a name decides, in any case, as a search of the listing did.
+  const twice = new Map([['kv', [{ name: 'Dup', enabled: false }, { name: 'dup', enabled: true }]]]);
+  assert.match(checkReference({ vault: 'kv', secret: 'DUP' }, twice).why, /disabled/);
+  const secrets = Array.from({ length: 4000 }, (_, i) => ({ name: `Secret-${i}`, enabled: i % 2 === 0, expires: null }));
+  const entries = Array.from({ length: 4000 }, (_, i) => ({ key: `Key${4000 - i}`, value: `@Microsoft.KeyVault(VaultName=kv;SecretName=secret-${i})` }));
+  const started = Date.now();
+  const { rows } = driftMatrix([{ id: 'app', label: 'app', kind: 'app', entries }], { vaults: new Map([['kv', secrets]]), now: NOW });
+  assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+  assert.equal(rows.filter((r) => r.broken).length, 2000);
+  assert.deepEqual(rows.slice(0, 3).map((r) => r.key), ['Key1', 'Key10', 'Key100']);
+  assert.deepEqual(rows.map((r) => r.norm), rows.map((r) => r.norm).sort((a, b) => a.localeCompare(b)));
 });
 
 const columns = () => [
@@ -92,10 +106,26 @@ test('the matrix: a row per key, values grouped by letter, references checked, v
   assert.equal(driftMatrix([columns()[0], columns()[4]], { now: NOW }).rows.find((r) => r.norm === 'same').missing, false);
   assert.equal(row('old').broken, true);
   assert.equal(row('stripe:apikey').cells[4].state, 'present');
-  assert.deepEqual(driftCounts(m.rows), { differs: 1, broken: 2, missing: 5 });
+  assert.deepEqual(driftCounts(m.rows), { differs: 1, broken: 2, missing: 5, leaks: 0 });
   assert.deepEqual(filterRows(m.rows, 'diff').map((r) => r.norm), ['api:baseurl', 'old', 'smtp:password']);
   assert.equal(filterRows(m.rows, 'missing').length, 5);
   assert.equal(filterRows(m.rows, 'all').length, 6);
+});
+
+test('the matrix marks a browser variable holding a secret, from the folder only, and never holds the value', () => {
+  const env = (label, entries) => ({ id: `env:${label}`, label, kind: 'local', entries, source: { kind: 'env' } });
+  const cols = [
+    env('.env', [{ key: 'VITE_ADMIN_SECRET', value: 'adm-7Hq2-dev' }, { key: 'VITE_STRIPE_PUBLISHABLE_KEY', value: 'pk_test_demo4242' }, { key: 'VITE_API_URL', value: 'http://localhost:5000' }]),
+    env('.env.production', [{ key: 'VITE_ADMIN_SECRET', value: 'adm-9Zp4-prod' }]),
+    { id: 'app', label: 'shop-api', kind: 'app', entries: [{ key: 'VITE_ADMIN_SECRET', value: 'adm-7Hq2-dev' }] },
+  ];
+  const m = driftMatrix(cols, { now: NOW });
+  const leak = m.rows.find((r) => r.key === 'VITE_ADMIN_SECRET').leak;
+  assert.deepEqual(leak, { prefix: 'VITE_', what: 'a value named like a secret', reason: 'name', in: ['.env', '.env.production'] });
+  assert.equal(m.rows.filter((r) => r.leak).length, 1);
+  assert.equal(driftCounts(m.rows).leaks, 1);
+  assert.match(leakWords(m.rows.find((r) => r.leak)).join(' '), /VITE_ variables .* a value named like a secret \(\.env, \.env\.production\)/);
+  assert.ok(!JSON.stringify(m.rows).includes('adm-'));
 });
 
 test('the matrix never holds a value, and a hash means nothing outside this run', () => {

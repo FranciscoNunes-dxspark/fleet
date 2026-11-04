@@ -1,0 +1,171 @@
+{
+  "config": {
+    "configFile": "/work/shop/playwright.config.ts",
+    "rootDir": "/work/shop/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": { "actualWorkers": 2 },
+    "preserveOutput": "always",
+    "reporter": [["list", null], ["json", null]],
+    "reportSlowTests": { "max": 5, "threshold": 15000 },
+    "quiet": false,
+    "projects": [
+      { "outputDir": "/work/shop/test-results", "repeatEach": 1, "retries": 1, "metadata": {}, "id": "chromium", "name": "chromium", "testDir": "/work/shop/e2e", "testIgnore": [], "testMatch": ["**/*.@(spec|test).?(c|m)[jt]s?(x)"], "timeout": 30000 }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "version": "1.48.2",
+    "workers": 2,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "checkout.spec.ts",
+      "file": "checkout.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "checkout",
+          "file": "checkout.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "pays with a card",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 5210,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nLocator: getByRole('heading')\nExpected string: \u001b[32m\"Thank you\"\u001b[39m\nReceived string: \u001b[31m\"Payment failed\"\u001b[39m\nCall log:\n  \u001b[2m- expect.toHaveText with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading')\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n    at /work/shop/e2e/checkout.spec.ts:14:47",
+                        "location": { "file": "/work/shop/e2e/checkout.spec.ts", "column": 47, "line": 14 },
+                        "snippet": "  12 |     await page.getByRole('button', { name: 'Pay' }).click();\n  13 |\n> 14 |     await expect(page.getByRole('heading')).toHaveText('Thank you');\n     |                                               ^"
+                      },
+                      "errors": [
+                        { "location": { "file": "/work/shop/e2e/checkout.spec.ts", "column": 47, "line": 14 }, "message": "Error: expect(locator).toHaveText(expected)" }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-10-31T09:00:01.000Z",
+                      "attachments": [
+                        { "name": "screenshot", "contentType": "image/png", "path": "/work/shop/test-results/checkout-checkout-pays-with-a-card-chromium/test-failed-1.png" },
+                        { "name": "video", "contentType": "video/webm", "path": "/work/shop/test-results/checkout-checkout-pays-with-a-card-chromium/video.webm" },
+                        { "name": "trace", "contentType": "application/zip", "path": "/work/shop/test-results/checkout-checkout-pays-with-a-card-chromium/trace.zip" }
+                      ],
+                      "errorLocation": { "file": "/work/shop/e2e/checkout.spec.ts", "column": 47, "line": 14 }
+                    },
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 5105,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nLocator: getByRole('heading')\nExpected string: \u001b[32m\"Thank you\"\u001b[39m\nReceived string: \u001b[31m\"Payment failed\"\u001b[39m\n",
+                        "stack": "Error: expect(locator).toHaveText(expected)\n    at /work/shop/e2e/checkout.spec.ts:14:47",
+                        "location": { "file": "/work/shop/e2e/checkout.spec.ts", "column": 47, "line": 14 }
+                      },
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 1,
+                      "startTime": "2026-10-31T09:00:07.000Z",
+                      "attachments": [
+                        { "name": "screenshot", "contentType": "image/png", "path": "/work/shop/test-results/checkout-checkout-pays-with-a-card-chromium-retry1/test-failed-1.png" },
+                        { "name": "video", "contentType": "video/webm", "path": "/work/shop/test-results/checkout-checkout-pays-with-a-card-chromium-retry1/video.webm" },
+                        { "name": "trace", "contentType": "application/zip", "path": "/work/shop/test-results/checkout-checkout-pays-with-a-card-chromium-retry1/trace.zip" }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "8c1e6f-a1b2c3",
+              "file": "checkout.spec.ts",
+              "line": 10,
+              "column": 7
+            },
+            {
+              "title": "shows the basket",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    { "workerIndex": 0, "parallelIndex": 0, "status": "failed", "duration": 2100, "error": { "message": "TimeoutError: locator.click: Timeout 2000ms exceeded.", "stack": "TimeoutError: locator.click: Timeout 2000ms exceeded.\n    at /work/shop/e2e/checkout.spec.ts:6:41" }, "errors": [], "stdout": [], "stderr": [], "retry": 0, "startTime": "2026-10-31T09:00:01.000Z", "attachments": [ { "name": "trace", "contentType": "application/zip", "path": "/work/shop/test-results/checkout-shows-the-basket-chromium/trace.zip" } ] },
+                    { "workerIndex": 1, "parallelIndex": 0, "status": "passed", "duration": 900, "errors": [], "stdout": [], "stderr": [], "retry": 1, "startTime": "2026-10-31T09:00:04.000Z", "attachments": [] }
+                  ],
+                  "status": "flaky"
+                }
+              ],
+              "id": "8c1e6f-d4e5f6",
+              "file": "checkout.spec.ts",
+              "line": 5,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "home.spec.ts",
+      "file": "home.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "has a title",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            { "timeout": 30000, "annotations": [], "expectedStatus": "passed", "projectId": "chromium", "projectName": "chromium", "results": [ { "workerIndex": 0, "parallelIndex": 0, "status": "passed", "duration": 640, "errors": [], "stdout": [], "stderr": [], "retry": 0, "startTime": "2026-10-31T09:00:00.500Z", "attachments": [] } ], "status": "expected" }
+          ],
+          "id": "11aa22-33bb44",
+          "file": "home.spec.ts",
+          "line": 3,
+          "column": 5
+        },
+        {
+          "title": "signs in with SSO",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            { "timeout": 30000, "annotations": [ { "type": "skip", "description": "SSO only in staging" } ], "expectedStatus": "skipped", "projectId": "chromium", "projectName": "chromium", "results": [ { "workerIndex": -1, "parallelIndex": -1, "status": "skipped", "duration": 0, "errors": [], "stdout": [], "stderr": [], "retry": 0, "startTime": "2026-10-31T09:00:00.500Z", "attachments": [] } ], "status": "skipped" }
+          ],
+          "id": "11aa22-55cc66",
+          "file": "home.spec.ts",
+          "line": 8,
+          "column": 6
+        }
+      ],
+      "suites": []
+    }
+  ],
+  "errors": [],
+  "stats": { "startTime": "2026-10-31T09:00:00.000Z", "duration": 12740.5, "expected": 2, "skipped": 1, "unexpected": 1, "flaky": 1 }
+}

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TestRun id="9e3f2a1b-0000-4000-8000-000000000201" name="runner@build 2026-10-31 09:20:00" runUser="runner" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-31T09:20:00.0000000+00:00" queuing="2026-10-31T09:20:00.0000000+00:00" start="2026-10-31T09:20:00.1000000+00:00" finish="2026-10-31T09:20:00.9000000+00:00" />
+  <Results>
+    <UnitTestResult executionId="ee000001-0000-0000-0000-000000000001" testId="ff000001-0000-0000-0000-000000000001" testName="SendsTheReceipt" computerName="build" duration="00:00:01.5000000" startTime="2026-10-31T09:20:00.2000000+00:00" endTime="2026-10-31T09:20:01.7000000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee000001-0000-0000-0000-000000000001">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.AreEqual failed. Expected:&lt;sent&gt;. Actual:&lt;queued&gt;. </Message>
+          <StackTrace>   at Mail.Tests.ReceiptTests.SendsTheReceipt() in /work/mail/Mail.Tests/ReceiptTests.cs:line 31
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="ee000002-0000-0000-0000-000000000002" testId="ff000002-0000-0000-0000-000000000002" testName="TimesOut" computerName="build" duration="00:00:05.0000000" startTime="2026-10-31T09:20:01.8000000+00:00" endTime="2026-10-31T09:20:06.8000000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Timeout" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee000002-0000-0000-0000-000000000002" />
+    <UnitTestResult executionId="ee000003-0000-0000-0000-000000000003" testId="ff000003-0000-0000-0000-000000000003" testName="FormatsTheSubject" computerName="build" duration="00:00:00.0040000" startTime="2026-10-31T09:20:06.9000000+00:00" endTime="2026-10-31T09:20:06.9040000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee000003-0000-0000-0000-000000000003" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SendsTheReceipt" storage="/work/mail/mail.tests/bin/debug/net8.0/mail.tests.dll" id="ff000001-0000-0000-0000-000000000001">
+      <Execution id="ee000001-0000-0000-0000-000000000001" />
+      <TestMethod codeBase="/work/mail/Mail.Tests/bin/Debug/net8.0/Mail.Tests.dll" adapterTypeName="executor://mstestadapter/v2" className="Mail.Tests.ReceiptTests" name="SendsTheReceipt" />
+    </UnitTest>
+    <UnitTest name="TimesOut" storage="/work/mail/mail.tests/bin/debug/net8.0/mail.tests.dll" id="ff000002-0000-0000-0000-000000000002">
+      <Execution id="ee000002-0000-0000-0000-000000000002" />
+      <TestMethod codeBase="/work/mail/Mail.Tests/bin/Debug/net8.0/Mail.Tests.dll" adapterTypeName="executor://mstestadapter/v2" className="Mail.Tests.ReceiptTests" name="TimesOut" />
+    </UnitTest>
+    <UnitTest name="FormatsTheSubject" storage="/work/mail/mail.tests/bin/debug/net8.0/mail.tests.dll" id="ff000003-0000-0000-0000-000000000003">
+      <Execution id="ee000003-0000-0000-0000-000000000003" />
+      <TestMethod codeBase="/work/mail/Mail.Tests/bin/Debug/net8.0/Mail.Tests.dll" adapterTypeName="executor://mstestadapter/v2" className="Mail.Tests.SubjectTests" name="FormatsTheSubject" />
+    </UnitTest>
+  </TestDefinitions>
+  <ResultSummary outcome="Failed">
+    <Counters total="3" executed="3" passed="1" failed="1" error="0" timeout="1" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>

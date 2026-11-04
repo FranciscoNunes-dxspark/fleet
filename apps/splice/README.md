@@ -357,6 +357,7 @@ Splice has siblings: Trawl (SQL), Sonar (Azure), Bosun (your project's processes
 
 - **An exception** (from Sonar, say): its stack frames are matched to the files of the repository, and blame opens on the line of the first one that is. When several frames are, they're listed, top frame first, and `↵` blames the one picked.
 - **A file**, with a line: blame, with the cursor on that line; without one, the file's history.
+- **A failed test** (from Drill): blame of the test's file at its line, so you see who wrote it and when.
 - **A commit**: its diff. When the repository doesn't have it, Splice offers to fetch and look again. Keel's `alt+y` on a pipeline whose run failed copies its commit when the failure names no file (and the file and line when it does, which opens blame).
 - **A pull request** (from Keel, `alt+y` in its Pull requests tab): what its source branch adds to its target branch, as `/compare` shows it (the diff from where they forked), from the remote's copies of the branches, else local ones of those names. When either isn't here, Splice offers to fetch from the remote and look again.
 

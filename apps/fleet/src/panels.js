@@ -12,7 +12,7 @@ import { ask as askClaude, clip } from '@fleet/kit/claude-cli.js';
 import { currentEnvironment, readProject, setEnvironment } from '@fleet/kit/environments.js';
 import { APP_NAMES, familyDir as kitFamilyDir, readActivity, TAKEN_BY } from '@fleet/kit/family.js';
 import { keyLength } from './keys.js';
-import { boxRows, boxSize, changesLines, envLines, folderLines, pickerLines, placeBox, proposalLines, runbookLines, securityLines, traceAskLines, traceLines } from './overlay.js';
+import { appsLines, boxRows, boxSize, changesLines, envLines, folderLines, pickerLines, placeBox, proposalLines, runbookLines, securityLines, traceAskLines, traceLines } from './overlay.js';
 import { COMPILED } from './app.js';
 import { loadOverview, securityConfig, securityOverview } from './security.js';
 import { folderPicks, shortFolder } from './folder.js';
@@ -66,6 +66,7 @@ export class Panels {
     this.changesPanel = new ChangesPanel(this);
     this.proposalPanel = new ProposalPanel(this);
     this.securityPanel = new SecurityPanel(this);
+    this.appsPanel = new AppsPanel(this);
   }
 
   get cwd() {
@@ -85,6 +86,11 @@ export class Panels {
   /** The prefix and P: what Claude proposed. */
   proposals() {
     this.proposalPanel.open();
+  }
+
+  /** The prefix and a: which apps the bar shows. */
+  apps() {
+    this.appsPanel.open();
   }
 
   /** The prefix and S: every app's security check for the project, the last overview until r runs them again. */
@@ -592,5 +598,34 @@ class SecurityPanel {
         this.running = null;
         this.redraw();
       });
+  }
+}
+
+/** Which apps the bar shows: every app, space or ↵ shows or hides the one under the cursor (kept in host.json). */
+class AppsPanel {
+  constructor(panels) {
+    this.panels = panels;
+    this.host = panels.host;
+    this.cursor = 0;
+  }
+
+  open() {
+    this.cursor = Math.max(0, this.host.spaces.findIndex((s) => s.id === this.host.active));
+    this.host.showOverlay(this);
+  }
+
+  render(size) {
+    const view = appsLines({ spaces: this.host.spaces, chosen: this.host.chosen, cursor: this.cursor, width: this.panels.inner(size), truecolor: this.host.truecolor, prefix: this.host.prefixLabel });
+    return this.panels.box({ title: 'Apps in the bar', hint: 'space or ↵ show or hide · j k move · esc close', ...view }, size);
+  }
+
+  keys(text) {
+    for (const key of panelKeys(text)) {
+      if (key === 'esc' || key === 'q') return this.host.closeOverlay();
+      const to = moveIn(key, this.cursor, this.host.spaces.length);
+      if (to != null) this.cursor = to;
+      else if (key === ' ' || key === 'enter') this.host.toggleChosen(this.host.spaces[this.cursor].id);
+    }
+    this.host.showOverlay(this);
   }
 }

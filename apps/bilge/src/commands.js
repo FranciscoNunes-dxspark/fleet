@@ -9,7 +9,7 @@ import { FILTERS } from './rows.js';
 export const COMMANDS = [
   { name: 'scan', desc: 'Read the folder\'s lock files and projects again, then ask OSV about them', run: (ctx) => a.scan(ctx) },
   { name: 'audit', args: '[fresh]', desc: 'Ask OSV (osv.dev) for the advisories against every package found (its answers of the last 6 hours are kept; fresh asks again)', complete: 'fresh', run: (ctx, s) => a.audit(ctx, { fresh: /^fresh$/i.test(s.trim()) }) },
-  { name: 'code', desc: "Read the folder's own files for secrets, risky code (eval, shell and SQL built from values, TLS checks off…) and config (a root container, a .env git would commit); nothing leaves the machine", run: (ctx) => a.code(ctx) },
+  { name: 'code', desc: "Read the folder's own files for secrets, risky code (eval, shell and SQL built from values, TLS checks off…) and config (a root container, a .env git would commit), and translation coverage; nothing leaves the machine", run: (ctx) => a.code(ctx) },
   { name: 'outdated', args: '[all]', desc: 'Ask npm and NuGet for the newest versions, whether they fit, and the licences of the direct packages (all: every package)', complete: 'outdated', run: (ctx, s) => a.outdated(ctx, s) },
   { name: 'fix', args: '<package|advisory>', desc: 'Move a vulnerable package to the version that fixes it (npm, yarn, pnpm or dotnet add; asks first)', complete: 'findings', run: (ctx, s) => a.fix(ctx, s) },
   { name: 'upgrade', desc: 'Update every direct package with a newer version that fits, on a branch of its own (bilge/updates-<date>), run the tests and commit (asks first)', run: (ctx) => a.upgrade(ctx) },

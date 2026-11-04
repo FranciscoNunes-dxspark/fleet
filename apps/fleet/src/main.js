@@ -1,5 +1,5 @@
 // The entry point, from a checkout (bin/fleet.js) and in the compiled build. It imports nothing up
-// front: `fleet --run <app> [args]`, which is how the compiled build starts an app (it holds all nine),
+// front: `fleet --run <app> [args]`, which is how the compiled build starts an app (it holds every app),
 // makes this process that app, and the app's cli must be the first to say which app the process is
 // (the kit's configureApp). `fleet mcp` is the MCP server for Claude Code (mcp/server.js), `fleet security`
 // every app's security check as one overview (securitycli.js). Anything else is the host (cli.js).
@@ -13,6 +13,13 @@ const RUN = {
   mooring: () => import('../../mooring/src/cli.jsx'),
   bilge: () => import('../../bilge/src/cli.jsx'),
   chart: () => import('../../chart/src/cli.jsx'),
+  wharf: () => import('../../wharf/src/cli.jsx'),
+  keel: () => import('../../keel/cli/cli.jsx'),
+  helm: () => import('../../helm/src/cli.jsx'),
+  lantern: () => import('../../lantern/src/cli.jsx'),
+  drill: () => import('../../drill/src/cli.jsx'),
+  ballast: () => import('../../ballast/src/cli.jsx'),
+  lookout: () => import('../../lookout/src/cli.jsx'),
 };
 
 if (process.argv[2] === '--run') {
