@@ -1,8 +1,9 @@
 // Pilot's command line. Every query runs headless and prints text for Claude (or --json), then exits;
 // `pilot mcp` serves the same queries over MCP; `pilot init` adds Pilot's skill to a project.
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { VERSION } from './app.js';
+import { fileURLToPath } from 'node:url';
+import { COMPILED, VERSION } from './app.js';
 
 const HELP = `Pilot ${VERSION}: an ASP.NET MVC project mapped for Claude Code
 
@@ -30,7 +31,9 @@ Usage: pilot [--root <dir>] <command> [arguments] [--json]
   ui                            the web UI: graphs, pages, components, stylesheets (--port, --no-open)
   mcp                           serve these as MCP tools over stdio:
                                   claude mcp add pilot -- pilot mcp --root <dir>
-  init                          add Pilot's Claude Code skill to the project (.claude/skills/pilot)
+  init [--mcp] [--command <c>]  add Pilot's Claude Code skill to the project (.claude/skills/pilot);
+                                --mcp also adds the MCP server to the project's .mcp.json, run as
+                                <c> (default: pilot, from the PATH)
 
 Options:
   --root <dir>                  the project or solution folder (default: the current one)
@@ -52,6 +55,8 @@ export function parseArgs(argv) {
     else if (a === '--ignore') opts.ignore.push(...String(argv[++i] ?? '').split(',').filter(Boolean));
     else if (a === '--port') opts.port = Number(argv[++i]);
     else if (a === '--no-open') opts.open = false;
+    else if (a === '--mcp') opts.mcp = true;
+    else if (a === '--command') opts.mcpCommand = argv[++i];
     else if (a === '--help' || a === '-h') opts.help = true;
     else if (a === '--version' || a === '-v') opts.version = true;
     else opts.rest.push(a);
@@ -91,7 +96,22 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     const dir = join(opts.root, '.claude', 'skills', 'pilot');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'SKILL.md'), SKILL);
-    write(`Wrote ${join(dir, 'SKILL.md')}.\nFor the MCP tools as well, run in the project:\n  claude mcp add pilot -- pilot mcp --root "${opts.root}"\n`);
+    write(`Wrote ${join(dir, 'SKILL.md')}: Claude Code picks the skill up in this project.\n`);
+    if (opts.mcp) {
+      let result;
+      try {
+        result = writeMcpJson(opts.root, mcpServer(opts.mcpCommand));
+      } catch (e) {
+        error(`${e.message}\n`);
+        return 2;
+      }
+      const { file, server, merged } = result;
+      write(`${merged ? 'Added Pilot to' : 'Wrote'} ${file}: ${[server.command, ...server.args].join(' ')}\n`);
+      if (server.command === 'node') write('That command holds this checkout\'s path: fine for you, but give teammates `--command pilot` before checking it in.\n');
+      write('Claude Code asks once whether to use it; /mcp in Claude Code shows it connected.\n');
+    } else {
+      write(`For the MCP tools too: pilot init --mcp (the project's .mcp.json), or for you alone:\n  claude mcp add pilot -- pilot mcp --root "${opts.root}"\n`);
+    }
     return 0;
   }
   const q = await import('./queries.js');
@@ -135,4 +155,32 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     error(`${e.usage ? e.message : `Pilot failed: ${e.stack ?? e.message}`}\n`);
     return 2;
   }
+}
+
+/**
+ * How Claude Code should start Pilot's MCP server: `command` as given, else `pilot` from the PATH,
+ * or (run from a checkout) node with this checkout's bin/pilot.js. No --root: Claude Code starts the
+ * server in the project's folder.
+ */
+export function mcpServer(command = null, { compiled = COMPILED } = {}) {
+  if (command) return { command, args: ['mcp'] };
+  if (compiled) return { command: 'pilot', args: ['mcp'] };
+  return { command: 'node', args: [fileURLToPath(new URL('../bin/pilot.js', import.meta.url)), 'mcp'] };
+}
+
+/** Puts `server` in `root`/.mcp.json as "pilot", keeping every other server there. */
+export function writeMcpJson(root, server) {
+  const file = join(root, '.mcp.json');
+  let json = {};
+  const merged = existsSync(file);
+  if (merged) {
+    try {
+      json = JSON.parse(readFileSync(file, 'utf8'));
+    } catch {
+      throw Object.assign(new Error(`${file} isn't valid JSON; fix it or add Pilot with: claude mcp add pilot --scope project -- pilot mcp`), { usage: true });
+    }
+  }
+  json.mcpServers = { ...(json.mcpServers ?? {}), pilot: { type: 'stdio', ...server } };
+  writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
+  return { file, server, merged };
 }

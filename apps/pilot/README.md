@@ -35,21 +35,137 @@ partial or stylesheet costs more than the change itself. It works with MVC 5 (.N
 (attribute routes, tag helpers, `<partial>`, `<vc:…>`, `wwwroot`, `bundleconfig.json`, tsconfig
 `outDir`, webpack entries), and with solutions holding several web projects.
 
-## Install and use with Claude Code
+## Connect to Claude Code
+
+Claude Code can use Pilot two ways, and works best with both:
+
+- **The skill** (`.claude/skills/pilot/SKILL.md`): tells Claude when to reach for Pilot and in what
+  order, and runs the `pilot` command line. It needs nothing but `pilot` on the PATH.
+- **The MCP server** (`pilot mcp`): the same queries as tools Claude calls directly (`overview`,
+  `page`, `file`, `impact`, `selector`, `style`, `find`, `path`, `widgets`, `complexity`,
+  `stylesheets`, `split`, `routes`, `problems`), all read-only. It keeps the index in memory and
+  re-reads only the files that changed before each call, so it sees Claude's own edits and answers
+  in milliseconds on a large project.
+
+### 1. Get Pilot
+
+**A release.** Download the file for your machine from the repository's Releases (tags
+`pilot-v…`): `pilot-windows-x64.exe`, `pilot-linux-x64`, `pilot-linux-arm64`, `pilot-macos-x64` or
+`pilot-macos-arm64`. The repository is private, so sign in to GitHub in the browser, or use
+`gh release download pilot-v<version> -R FranciscoNunes-dxspark/fleet -p 'pilot-windows-x64.exe'`.
+Rename it to `pilot` (`pilot.exe` on Windows) and put it in a folder on your PATH:
 
 ```bash
-pilot init                                   # in the project: adds .claude/skills/pilot/SKILL.md
-claude mcp add pilot -- pilot mcp --root .   # optional: the same queries as MCP tools
+# macOS / Linux
+chmod +x pilot-macos-arm64 && mv pilot-macos-arm64 /usr/local/bin/pilot
+xattr -d com.apple.quarantine /usr/local/bin/pilot   # macOS only, if it refuses to start
 ```
 
-The skill tells Claude when to reach for Pilot and in what order; it calls the CLI, so it works
-without the MCP server. With the server, Claude gets the tools `overview`, `page`, `file`, `impact`,
-`selector`, `style`, `find`, `routes` and `problems`, with the same answers. The server keeps the
-index in memory and re-reads the files that changed (at most every two seconds) before a call, so
-it sees Claude's own edits.
+```powershell
+# Windows: a folder of your own, added to the user PATH once
+mkdir $HOME\bin -Force; Move-Item .\pilot-windows-x64.exe $HOME\bin\pilot.exe
+[Environment]::SetEnvironmentVariable('Path', "$env:Path;$HOME\bin", 'User')   # then open a new terminal
+```
 
-From a checkout of this repository: `node apps/pilot/bin/pilot.js …` (Node 22+); `npm run build`
-in `apps/pilot` makes a standalone executable.
+**Or from a checkout** of this repository (Node 22+): `npm install` at its root, then
+`node apps/pilot/bin/pilot.js` stands for `pilot` everywhere below; or `npm run build` in
+`apps/pilot` makes the executable for your machine in `apps/pilot/dist`.
+
+Check it: `pilot --version`, then `pilot overview` in your project's folder (the one with the
+`.sln`, or a web project's folder). The first run reads every file; later runs use the cache.
+
+### 2. Add it to the project
+
+In the project's root folder:
+
+```bash
+pilot init --mcp
+```
+
+This writes `.claude/skills/pilot/SKILL.md` (the skill) and adds Pilot to the project's `.mcp.json`
+(keeping any other servers in it), as `pilot mcp`. Commit both files and everyone on the team who
+has `pilot` on their PATH gets it. Claude Code asks each of them once whether to trust the project's
+MCP servers. Run from a checkout, `init --mcp` writes the checkout's `node …/bin/pilot.js` path
+instead, which only works on your machine: use `pilot init --mcp --command pilot` for a file you
+check in. Without `--mcp`, only the skill is written.
+
+Other ways to add the server, with Claude Code's own command (run in the project's folder):
+
+```bash
+claude mcp add pilot -- pilot mcp                    # just you, just this project
+claude mcp add pilot --scope user -- pilot mcp       # just you, every project (Pilot reads the folder Claude starts in)
+claude mcp add pilot --scope project -- pilot mcp    # the same as init --mcp: .mcp.json, for the team
+```
+
+On Windows, give the full path when it isn't on the PATH:
+`claude mcp add pilot -- C:\Users\you\bin\pilot.exe mcp`, or from a checkout
+`claude mcp add pilot -- node C:\src\fleet\apps\pilot\bin\pilot.js mcp`. Add `--root <folder>`
+after `mcp` to point it at another folder than the one Claude Code starts in, and
+`--ignore <a,b>` to leave folders out (generated code, a copy of another site).
+
+### 3. Check it's connected
+
+```bash
+claude mcp list          # pilot: … ✓ Connected
+claude mcp get pilot     # its command, scope and status
+```
+
+In Claude Code, `/mcp` lists `pilot` with its tools, and asking *"Use pilot's overview tool"* should
+answer with the project's layouts, stylesheets and bundles.
+
+### 4. Optional: fewer prompts, and a line in CLAUDE.md
+
+Every Pilot tool only reads, so you can let Claude call them without asking each time. In the
+project's `.claude/settings.json` (shared) or `.claude/settings.local.json` (just you):
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__pilot", "Bash(pilot:*)"]
+  }
+}
+```
+
+`mcp__pilot` allows every tool of the server; `Bash(pilot:*)` the command line the skill runs.
+
+The skill already tells Claude when to use Pilot. To make it a rule of the project, add to its
+`CLAUDE.md`:
+
+```markdown
+## Finding what to change in the UI
+Before editing a view, partial, layout, script or stylesheet, use Pilot (the `pilot` MCP tools, or
+the `pilot` command): `page` for the screen in question, `selector` before renaming or restyling a
+class, `impact` before changing a shared file, `split` before reorganising LESS.
+```
+
+### 5. Use it
+
+Ask in plain words; Claude picks the tools. For example:
+
+- *"The orders list page (/Orders) looks cramped on small screens. Find what makes it up and fix the
+  spacing."* → `page`, then `selector` for the classes involved.
+- *"Restyle the save buttons everywhere, but not in the admin area."* → `selector .btn-save`, `impact`.
+- *"What does orders.ts load into the page, and from where?"* → `page` / `path`.
+- *"Which pages use a date picker, and which library?"* → `widgets`.
+- *"site.less is 4,000 lines. Propose how to split it, then do it."* → `stylesheets`, `split`.
+- *"Which pages are the most complex? Start simplifying the worst one."* → `complexity`, `page`.
+
+Keep `pilot ui` open in another terminal to follow along in the browser: it reads the same index.
+
+### Troubleshooting
+
+- **`pilot: command not found` / the server shows "failed".** Claude Code didn't find `pilot` on its
+  PATH: give the full path to the executable in `claude mcp add`, or in `.mcp.json`'s `command`.
+  Running `pilot mcp` yourself should wait silently for input (ctrl+c to stop); an error there is
+  the reason.
+- **"No pages found", or answers about the wrong folder.** The server reads the folder Claude Code
+  was started in; start Claude Code in the project's root, or add `--root <folder>` after `mcp`.
+- **Slow first answer on a huge project.** The first index reads everything; afterwards only
+  changed files are read again. Leave out folders Pilot shouldn't read with `--ignore`.
+- **Something looks out of date.** The server re-reads changed files before each call;
+  `pilot overview --no-cache` reads everything again, and `PILOT_CACHE` moves the cache.
+- **Claude doesn't use it.** Check `/mcp` shows it connected, that `.claude/skills/pilot/SKILL.md`
+  exists in the project, or ask for it by name: *"use pilot to…"*.
 
 ## Commands
 

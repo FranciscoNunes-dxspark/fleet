@@ -3,7 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { buildIndex } from '../src/index.js';
-import { handler } from '../src/web/server.js';
+import { claudeSetup, handler } from '../src/web/server.js';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { pageHtml } from '../src/web/page.js';
 import { client } from '../src/web/client.js';
 
@@ -69,5 +72,19 @@ test("only this machine, and only the project's files", async () => {
   for (const f of ['../../../package.json', '/etc/passwd', 'Shop.Web/../../../../package.json']) {
     const r = JSON.parse((await get(`/api/source?file=${encodeURIComponent(f)}`)).body);
     assert.equal(r.error, 'not a file of the project', f);
+  }
+});
+
+test('the Claude Code card: whether the skill and the .mcp.json entry are there', async () => {
+  const fresh = JSON.parse((await get('/api/claude')).body);
+  assert.deepEqual([fresh.skill, fresh.mcp], [false, false]);
+  const dir = mkdtempSync(join(tmpdir(), 'pilot-cc-'));
+  try {
+    mkdirSync(join(dir, '.claude', 'skills', 'pilot'), { recursive: true });
+    writeFileSync(join(dir, '.claude', 'skills', 'pilot', 'SKILL.md'), 'x');
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { pilot: { command: 'pilot', args: ['mcp'] } } }));
+    assert.deepEqual(claudeSetup(dir), { root: dir, skill: true, mcp: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

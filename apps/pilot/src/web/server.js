@@ -4,7 +4,7 @@
 // The index is kept and refreshed before a request when it's older than two seconds, so edits show
 // up on the next click.
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join, resolve } from 'node:path';
 import { VERSION } from '../app.js';
@@ -74,10 +74,22 @@ function source(idx, rel, line, context = 14) {
   return { file: f.rel, line: line || null, start, lines: all.slice(start - 1, end), total: all.length };
 }
 
+/** Whether the project is set up for Claude Code: the skill, and Pilot in its .mcp.json. */
+export function claudeSetup(root) {
+  let mcp = false;
+  try {
+    mcp = !!JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8'))?.mcpServers?.pilot;
+  } catch {
+    // No .mcp.json, or not JSON: not set up there.
+  }
+  return { root, skill: existsSync(join(root, '.claude', 'skills', 'pilot', 'SKILL.md')), mcp };
+}
+
 /** The API's routes: path → (index, query params) → JSON. */
 export function routes() {
   return {
     '/api/overview': (idx) => overview(idx).data,
+    '/api/claude': (idx) => claudeSetup(idx.root),
     '/api/pages': (idx, q) => complexity(idx, { filter: q.get('filter') ?? '', limit: 100000 }).data,
     '/api/page': (idx, q) => pageData(idx, q.get('target') ?? ''),
     '/api/graph': (idx, q) => graph(idx, q.get('focus') ?? '', { depth: Number(q.get('depth')) || 2, kinds: q.get('kinds') ? q.get('kinds').split(',') : null, max: Number(q.get('max')) || 250, vendor: q.get('vendor') === '1' }).data,

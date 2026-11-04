@@ -198,7 +198,7 @@ export function client(BOOT) {
 
   // ─── Overview ─────────────────────────────────────────────────────────────────────────────
   async function viewOverview() {
-    const [o, pages, w, st] = await Promise.all([api('/api/overview'), api('/api/pages'), api('/api/widgets'), api('/api/stylesheets')]);
+    const [o, pages, w, st, cc] = await Promise.all([api('/api/overview'), api('/api/pages'), api('/api/widgets'), api('/api/stylesheets'), api('/api/claude')]);
     const c = o.counts;
     const stat = (n, label, href) => h('div', { class: 'card stat', style: { cursor: href ? 'pointer' : '' }, onclick: href ? () => go(href) : null }, h('b', {}, n), h('span', {}, label));
     put(mainEl, 
@@ -214,7 +214,32 @@ export function client(BOOT) {
           h('h3', {}, 'Layouts'), ...o.layouts.map((l) => h('div', { class: 'flow', style: { padding: '4px 0' } }, nodeChip({ id: l.file, type: 'layout', label: base(l.file), sub: `${l.views} views` }))),
           h('h3', {}, 'Components'), h('div', { class: 'flow' }, ...w.kinds.map((k) => h('a', { class: 'chip', onclick: () => go(`#/components/${enc(k.kind)}`) }, `${k.kind} · ${k.count}`))),
           h('h3', {}, 'Largest stylesheets'), ...st.stylesheets.slice(0, 6).map((x) => h('div', { class: 'flow', style: { padding: '3px 0' } }, h('a', { onclick: () => go(`#/styles/${enc(x.file)}`), class: 'mono' }, x.file), h('span', { class: 'faint' }, `${x.lines} lines`))))),
+      claudeCard(cc),
       h('p', { class: 'faint' }, `${o.root} · ${o.projects.join(', ')} · indexed ${o.index.files} files in ${o.index.ms} ms · Pilot ${BOOT.version}`));
+  }
+
+  /** How to connect Claude Code to this project, with what's already in place ticked. */
+  function claudeCard(cc) {
+    const q = (p) => (/[\s"]/.test(p) ? `"${p}"` : p);
+    const step = (done, title, cmd, note) => h('div', { style: { padding: '8px 0', borderBottom: '1px solid var(--line)' } },
+      h('div', { class: 'flow' }, h('b', { style: { color: done ? 'var(--good)' : 'var(--faint)' } }, done ? '✓' : '○'), h('b', {}, title)),
+      cmd ? h('div', { class: 'flow', style: { marginTop: '4px' } }, h('pre', { class: 'block', style: { flex: '1', margin: '0' } }, cmd), h('button', { onclick: () => navigator.clipboard?.writeText(cmd) }, 'Copy')) : null,
+      note ? h('div', { class: 'faint', style: { marginTop: '4px' } }, note) : null);
+    const ready = cc.skill && cc.mcp;
+    const body = h('div', { hidden: ready },
+      step(cc.skill && cc.mcp, 'Add the skill and the MCP server to the project', `cd ${q(cc.root)}\npilot init --mcp`, 'Writes .claude/skills/pilot/SKILL.md and adds Pilot to .mcp.json. Commit both for the team; Claude Code asks once whether to trust the server.'),
+      step(false, 'Or the server just for you', `claude mcp add pilot -- pilot mcp --root ${q(cc.root)}`, 'Use the full path to pilot if it isn\'t on the PATH.'),
+      step(false, 'Check it', 'claude mcp list', 'In Claude Code, /mcp lists pilot and its tools. Then ask, for example: "Use pilot to find what makes up /Orders and tighten its spacing on phones."'),
+      step(false, 'Optional: no prompts for its read-only tools', '{ "permissions": { "allow": ["mcp__pilot", "Bash(pilot:*)"] } }', 'In .claude/settings.json (or settings.local.json, just for you).'));
+    const toggle = h('a', { onclick: () => { body.hidden = !body.hidden; toggle.textContent = body.hidden ? 'Show how' : 'Hide'; } }, ready ? 'Show how' : 'Hide');
+    return h('div', { class: 'card', style: { marginTop: '14px' } },
+      h('div', { class: 'flow', style: { justifyContent: 'space-between' } },
+        h('h3', { style: { margin: '0' } }, 'Connect Claude Code'),
+        h('span', { class: 'flow' },
+          h('span', { class: 'pill', style: { color: cc.skill ? 'var(--good)' : '' } }, cc.skill ? '✓ skill' : 'no skill'),
+          h('span', { class: 'pill', style: { color: cc.mcp ? 'var(--good)' : '' } }, cc.mcp ? '✓ .mcp.json' : 'not in .mcp.json'),
+          toggle)),
+      body);
   }
 
   // ─── Pages ────────────────────────────────────────────────────────────────────────────────

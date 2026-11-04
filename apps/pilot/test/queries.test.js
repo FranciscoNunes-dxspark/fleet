@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildIndex } from '../src/index.js';
 import { file, find, impact, overview, page, problems, resolveTarget, routes, selector, styleSymbol } from '../src/queries.js';
-import { parseArgs, run } from '../src/cli.js';
+import { mcpServer, parseArgs, run, writeMcpJson } from '../src/cli.js';
+import { writeFileSync } from 'node:fs';
 import { TOOLS, createServer } from '../src/mcp.js';
 import { mcpHandler } from '@fleet/kit/mcp.js';
 
@@ -130,4 +131,29 @@ test('the MCP server: tools, answers, errors as results', async () => {
   assert.equal(err.result.content[0].text, 'path is required.');
   const unknown = await call('nope', {});
   assert.equal(unknown.error.code, -32602);
+});
+
+test('init --mcp: the skill, and Pilot added to .mcp.json beside the servers already there', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pilot-mcp-'));
+  const io = { write: () => {}, error: () => {} };
+  try {
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { other: { command: 'x', args: [] } } }));
+    assert.equal(await run(['--root', dir, 'init', '--mcp', '--command', 'pilot'], io), 0);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')).mcpServers, { other: { command: 'x', args: [] }, pilot: { type: 'stdio', command: 'pilot', args: ['mcp'] } });
+    assert.ok(readFileSync(join(dir, '.claude', 'skills', 'pilot', 'SKILL.md'), 'utf8').length > 100);
+    // Again: replaced, not added twice.
+    writeMcpJson(dir, { command: 'C:\\tools\\pilot.exe', args: ['mcp'] });
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')).mcpServers), ['other', 'pilot']);
+    writeFileSync(join(dir, '.mcp.json'), '{ not json');
+    assert.equal(await run(['--root', dir, 'init', '--mcp'], io), 2);
+    assert.equal(readFileSync(join(dir, '.mcp.json'), 'utf8'), '{ not json', 'a broken file is left alone');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // A build runs as `pilot` from the PATH; a checkout through node and its own bin/pilot.js.
+  assert.deepEqual(mcpServer(null, { compiled: true }), { command: 'pilot', args: ['mcp'] });
+  const fromCheckout = mcpServer(null, { compiled: false });
+  assert.equal(fromCheckout.command, 'node');
+  assert.match(fromCheckout.args[0], /bin[\\/]pilot\.js$/);
+  assert.deepEqual(mcpServer('/opt/pilot'), { command: '/opt/pilot', args: ['mcp'] });
 });
