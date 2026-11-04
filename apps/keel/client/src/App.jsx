@@ -147,7 +147,8 @@ function Console({ authMode, onSignedOut }) {
 
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
   const dismiss = useCallback((id) => setToasts((list) => list.filter((x) => x.id !== id)), []);
-  const toast = useCallback((text, tone = 'ok', { action, body, ttl = 4000 } = {}) => {
+  // An error stays longer than a confirmation: it's the one you have to read.
+  const toast = useCallback((text, tone = 'ok', { action, body, ttl = tone === 'bad' ? 9000 : 4000 } = {}) => {
     const id = Math.random();
     setToasts((list) => [...list.slice(-4), { id, text, tone, action, body }]);
     setTimeout(() => dismiss(id), ttl);
