@@ -15,7 +15,7 @@ import { parseScript } from './parse/script.js';
 import { parseStyle } from './parse/style.js';
 import { isVendor, walk } from './walk.js';
 
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 6;
 const MAX_PARSE = 1_500_000;
 
 /** Where the parsed files are kept between runs: PILOT_CACHE, else the platform's cache folder. */

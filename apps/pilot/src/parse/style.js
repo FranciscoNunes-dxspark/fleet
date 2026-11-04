@@ -67,7 +67,20 @@ export function sectionHeaders(source) {
 }
 
 export function parseStyle(source, dialect = 'less') {
-  const out = { imports: [], vars: [], varUses: [], mixins: [], mixinCalls: [], rules: [], classes: [], ids: [], blocks: [], headers: sectionHeaders(source) };
+  const out = { imports: [], vars: [], varUses: [], mixins: [], mixinCalls: [], rules: [], classes: [], ids: [], blocks: [], headers: sectionHeaders(source), colors: [], zindex: [], important: [], media: [] };
+  // A declaration: kept on its rule (for the cascade), and its colours, z-index and !important for the audit.
+  const declaration = (s, line) => {
+    const m = /^([\w-]+)\s*:\s*([\s\S]*)$/.exec(s);
+    if (!m) return;
+    const prop = m[1].toLowerCase();
+    const value = m[2].trim();
+    const important = /!\s*important\b/i.test(value);
+    const top = stack[stack.length - 1];
+    if (top.rule && out.rules[top.index]) out.rules[top.index].props.push({ p: prop, v: value.replace(/\s*!\s*important\b/i, '').slice(0, 80), l: line, ...(important ? { i: 1 } : {}) });
+    for (const c of value.matchAll(/#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)/g)) out.colors.push([c[0].toLowerCase(), line, prop]);
+    if (prop === 'z-index') out.zindex.push([value.replace(/\s*!important/i, ''), line]);
+    if (important) out.important.push([prop, line]);
+  };
   const text = stripComments(source, { lineComments: dialect !== 'css', templates: false });
   const lineOf = lineIndex(text);
   const sigil = dialect === 'scss' ? '$' : '@';
@@ -116,7 +129,10 @@ export function parseStyle(source, dialect = 'less') {
       if (m[2]) varUses(m[2], at, null);
     } else if ((m = /^&?:extend\(([^)]*)\)/.exec(s))) {
       for (const c of selectorTokens(m[1]).classes) out.mixinCalls.push([`.${c}`, line]);
-    } else varUses(s, at, null);
+    } else {
+      varUses(s, at, null);
+      declaration(s, line);
+    }
   };
 
   for (let i = 0; i < text.length; i++) {
@@ -160,6 +176,7 @@ export function parseStyle(source, dialect = 'less') {
         // @media, @supports, @keyframes, a detached ruleset (@x: {): their selectors are the parent's.
         varUses(prelude, at, null);
         const keyframes = /^@(?:-\w+-)?keyframes\b/.test(prelude);
+        if (/^@media\b/.test(prelude)) out.media.push([prelude.slice(6).trim(), line]);
         const media = /^@(media|supports|container)\b/.test(prelude) ? [parent.media, prelude].filter(Boolean).join(' and ') : parent.media;
         stack.push({ selectors: parent.selectors, rule: false, skip: keyframes || parent.skip, media, mixin: parent.mixin });
         if (dialect === 'scss' && (m = /^@mixin\s+([\w-]+)/.exec(prelude))) out.mixins.push({ name: m[1], line });
@@ -174,7 +191,7 @@ export function parseStyle(source, dialect = 'less') {
         const selectors = composeSelectors(parent.selectors, prelude);
         varUses(prelude, at, null);
         const index = out.rules.length;
-        out.rules.push({ selector: selectors.join(', ').slice(0, 300), line, ...(parent.media ? { media: parent.media.slice(0, 120) } : {}) });
+        out.rules.push({ selector: selectors.join(', ').slice(0, 300), line, end: line, props: [], ...(parent.media ? { media: parent.media.slice(0, 120) } : {}) });
         const classes = new Set();
         const ids = new Set();
         for (const s of selectors) {
@@ -188,12 +205,15 @@ export function parseStyle(source, dialect = 'less') {
         for (const x of classes) if (!inherited.has(x) || own.classes.includes(x)) out.classes.push([x, line, index]);
         const inheritedIds = new Set(parent.selectors.flatMap((s) => selectorTokens(s).ids));
         for (const x of ids) if (!inheritedIds.has(x) || own.ids.includes(x)) out.ids.push([x, line, index]);
-        stack.push({ selectors, rule: true, mixin: parent.mixin, media: parent.media });
+        stack.push({ selectors, rule: true, index, mixin: parent.mixin, media: parent.media });
       }
       start = i + 1;
     } else if (c === '}') {
       statement(text.slice(start, i), start);
-      if (stack.length > 1) stack.pop();
+      if (stack.length > 1) {
+        const closed = stack.pop();
+        if (closed.rule && out.rules[closed.index]) out.rules[closed.index].end = lineOf(i);
+      }
       if (stack.length === 1 && open) {
         // A top-level block, with the ranges of the rules, classes and ids inside it.
         out.blocks.push({ ...open, end: lineOf(i), rules: [open.rules, out.rules.length], classes: [open.classes, out.classes.length], ids: [open.ids, out.ids.length] });

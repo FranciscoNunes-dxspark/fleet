@@ -75,7 +75,7 @@ test('assets: bundles and members, compiled outputs to sources, tsconfig outDir,
   assert.deepEqual(out('Shop.Web/Scripts/app/grid.js', 'source'), ['Shop.Web/Scripts/app/grid.ts']);
   assert.deepEqual(out('Shop.Web/Content/site.css', 'source'), ['Shop.Web/Content/site.less']);
   // orders.js isn't built: the view's <script> reaches its TypeScript directly.
-  assert.deepEqual(idx.out('Shop.Web/Views/Orders/Index.cshtml').filter((e) => e.kind === 'script').map((e) => [e.to, e.built]), [['Shop.Web/Scripts/app/orders.ts', 'Shop.Web/Scripts/app/orders.js']]);
+  assert.deepEqual(idx.out('Shop.Web/Views/Orders/Index.cshtml').filter((e) => e.kind === 'script').map((e) => [e.to, e.built]), [['Shop.Web/Scripts/app/orders.ts', 'Shop.Web/Scripts/app/orders.js'], ['Shop.Web/Scripts/jquery-3.4.1.js', undefined]]);
   assert.deepEqual(out('Shop.Core/Views/Products/Details.cshtml', 'script'), ['Shop.Core/src/products.ts']);
   assert.deepEqual(out('Shop.Core/Views/Shared/_Layout.cshtml', 'style'), ['Shop.Core/wwwroot/css/site.css']);
   assert.deepEqual(idx.sourcesOf('Shop.Core/wwwroot/js/products.js').map((s) => [s.file, s.how]), [['Shop.Core/src/products.ts', 'tsconfig outDir']]);

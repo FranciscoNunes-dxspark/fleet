@@ -12,6 +12,7 @@ export const INSTRUCTIONS = `Pilot maps an ASP.NET MVC / ASP.NET Core project (.
 Start with overview. For a screen the user names by URL, controller action or view, call page: it gives the action, the view, its layouts, every partial, component, template and child action in the order they render, the scripts and styles the page loads, each with the source file to edit (.ts for a compiled .js, .less for a compiled .css, bundle members), the requests its scripts and markup make (AJAX, fetch, data-ajax, htmx, Ajax.BeginForm) with the action and partial view answering each and the element it lands in, the UI components on it (data tables, calendars, pickers, charts…) and its complexity score.
 path shows how two things connect (a script to the partial its request returns); widgets lists the UI components by kind; complexity ranks pages; stylesheets and split help break up a large LESS file by where its rules are used.
 Before changing a CSS class or id, call selector: it lists where it is styled (with the full nested LESS selector), marked up and used by scripts. Before changing a shared partial, layout, script or stylesheet, call impact to see which pages it reaches.
+Before editing a page, context gives its code in one document. After editing, changes lists the pages to check; screenshot takes the page (before, then after with a diff) when the site runs locally. cascade explains why a style doesn't apply; rename renames a class or id everywhere (preview first). dead_code, design, repeats, accessibility and weight audit the project; diagram draws a page or path as Mermaid.
 file shows one file in context; style follows a LESS/SCSS variable or mixin; find looks anything up by name; routes lists URLs and actions; problems lists references Pilot could not resolve.
 Every place is given as path:line from the project root. Pilot reads files with patterns, not a compiler: names built at run time are reported as such, and a "(guessed)" match is one found by name outside MVC's usual folders.`;
 
@@ -37,7 +38,18 @@ export const TOOLS = [
   { name: 'split', description: 'How to split a large LESS/SCSS/CSS file: each top-level block assigned to a new file by what it is (variables, mixins, fonts, element styles) or where its classes are used (one controller, a shared partial, the layout, a class family, unused), with line ranges and an import order that keeps the cascade.', inputSchema: { type: 'object', properties: { path }, required: ['path'] } },
   { name: 'routes', description: 'URLs, the actions answering them and the views they return.', inputSchema: { type: 'object', properties: { filter: { type: 'string', description: 'Only rows containing this text' } } } },
   { name: 'problems', description: 'References Pilot could not resolve (missing partials, layouts, scripts, styles, imports) and those decided at run time.', inputSchema: { type: 'object', properties: { filter: { type: 'string', description: 'Only problems in files or messages containing this text' } } } },
-].map((t) => ({ ...t, annotations: { readOnlyHint: true, openWorldHint: false } }));
+  { name: 'changes', description: 'The pages the changed files reach (git: uncommitted and untracked files, and with base everything since that branch/commit), most affected first: what to check after a change.', inputSchema: { type: 'object', properties: { base: { type: 'string', description: 'A branch, tag or commit, e.g. main' } } } },
+  { name: 'context', description: 'The code that matters for one page in a single Markdown document within a budget: the view and its partials whole, the controller actions (the page\'s and those its requests reach), the script parts touching its markup, the CSS rules for its classes, its layouts last. Read this instead of opening files one by one.', inputSchema: { type: 'object', properties: { target, budget: { type: 'number', description: 'Characters, default 60000' } }, required: ['target'] } },
+  { name: 'rename', description: 'Renames a CSS class or id in styles, views and scripts. A preview unless apply is true; warns where it can\'t be done by text (LESS &-suffix names, names built at run time, collisions, built files).', inputSchema: { type: 'object', properties: { from: { type: 'string', description: '.old-class or #old-id' }, to: { type: 'string' }, apply: { type: 'boolean', description: 'Write the files (default false: preview)' } }, required: ['from', 'to'] }, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } },
+  { name: 'cascade', description: 'Every rule that can style a class or id on a page, in the order the browser applies them (LESS imports inlined), with specificity, declarations, which value wins per property, and rules in stylesheets the page does not load. Use when a style change "does not show".', inputSchema: { type: 'object', properties: { page: target, selector: { type: 'string', description: '.class or #id' } }, required: ['page', 'selector'] } },
+  { name: 'dead_code', description: 'Views, scripts, stylesheets, LESS variables and mixins, and styled classes that nothing uses.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'design', description: 'Design consistency: colours written out that a variable holds, look-alike colours, breakpoints, z-index values, !important, inline styles in views.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'repeats', description: 'Markup repeated across views (min lines shaped alike), with a partial name to extract it into.', inputSchema: { type: 'object', properties: { min: { type: 'number' } } } },
+  { name: 'accessibility', description: 'Accessibility problems the markup shows: images without alt, unlabelled fields, empty buttons and links, clickable elements without keyboard access, positive tabindex, missing lang, duplicate ids.', inputSchema: { type: 'object', properties: { rule: { type: 'string', description: 'Only one rule, e.g. img-alt' } } } },
+  { name: 'weight', description: 'What each page loads and weighs (scripts, styles), libraries loaded twice, and the heaviest files.', inputSchema: { type: 'object', properties: { filter: { type: 'string' } } } },
+  { name: 'diagram', description: 'A page (or a file\'s neighbourhood, or a path with to) as a Mermaid diagram, for a pull request or docs; format dot for Graphviz.', inputSchema: { type: 'object', properties: { target, to: { type: 'string' }, depth: { type: 'number' }, format: { type: 'string', enum: ['mermaid', 'dot'] } }, required: ['target'] } },
+  { name: 'screenshot', description: 'A full-page screenshot of a page of the running site with the local Chrome/Edge: the first is kept as before, later ones as after with a diff (share changed, regions, diff PNG). Read the PNG files it names to see them. Needs the site running: give url once.', inputSchema: { type: 'object', properties: { page: { type: 'string', description: 'A path (/Orders/Edit/5), URL or Controller.Action' }, url: { type: 'string', description: 'The running site, e.g. http://localhost:5000 (remembered)' }, widths: { type: 'array', items: { type: ['number', 'string'] }, description: 'e.g. [1280, "mobile"]' }, as: { type: 'string', enum: ['before', 'after'] }, cookies: { type: 'array', items: { type: 'string' }, description: 'name=value, for a signed-in session' } }, required: ['page'] }, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true } },
+].map((t) => ({ ...t, annotations: t.annotations ?? { readOnlyHint: true, openWorldHint: false } }));
 
 /** The server's state: the index of `root`, refreshed before a call when it's older than `fresh` ms. */
 export function createServer({ root, fresh = 2000, build = buildIndex } = {}) {
@@ -67,10 +79,21 @@ export function createServer({ root, fresh = 2000, build = buildIndex } = {}) {
       complexity: () => complexity(current(), { filter: args.filter ?? '' }),
       stylesheets: () => stylesheets(current()),
       split: () => split(current(), need(args, 'path')),
+      changes: async () => (await import('./changes.js')).changes(current(), { base: args.base ?? null }),
+      context: async () => (await import('./context.js')).context(current(), need(args, 'target'), { budget: Number(args.budget) || 60000 }),
+      rename: async () => (await import('./rename.js')).rename(current(), need(args, 'from'), need(args, 'to'), { apply: args.apply === true }),
+      cascade: async () => (await import('./cascade.js')).cascade(current(), need(args, 'page'), need(args, 'selector')),
+      dead_code: async () => (await import('./audit.js')).deadCode(current()),
+      design: async () => (await import('./audit.js')).design(current()),
+      repeats: async () => (await import('./audit.js')).repeats(current(), { min: Number(args.min) || 6 }),
+      accessibility: async () => (await import('./audit.js')).a11y(current(), { rule: args.rule ?? '' }),
+      weight: async () => (await import('./audit.js')).weight(current(), { filter: args.filter ?? '' }),
+      diagram: async () => (await import('./diagram.js')).diagram(current(), need(args, 'target'), { to: args.to ?? null, depth: Number(args.depth) || 1, format: args.format === 'dot' ? 'dot' : 'mermaid' }),
+      screenshot: async () => (await import('./shots.js')).shot(current(), need(args, 'page'), { url: args.url ?? null, widths: Array.isArray(args.widths) && args.widths.length ? args.widths : [1280], as: args.as ?? null, cookies: Array.isArray(args.cookies) ? args.cookies : [] }),
       problems: () => problems(current(), { filter: args.filter ?? '' }),
     }[name];
     if (!run) return undefined;
-    return run().text;
+    return (await run()).text;
   };
   return { call, index: current };
 }

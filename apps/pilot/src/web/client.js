@@ -106,7 +106,7 @@ export function client(BOOT) {
   }
 
   // ─── The frame ────────────────────────────────────────────────────────────────────────────
-  const NAV = [['overview', 'Overview'], ['pages', 'Pages'], ['graph', 'Graph'], ['components', 'Components'], ['styles', 'Stylesheets'], ['selectors', 'Selectors'], ['problems', 'Problems']];
+  const NAV = [['overview', 'Overview'], ['pages', 'Pages'], ['graph', 'Graph'], ['components', 'Components'], ['styles', 'Stylesheets'], ['selectors', 'Selectors'], ['changes', 'Changes'], ['audit', 'Audit'], ['problems', 'Problems']];
   const searchBox = h('input', { type: 'search', placeholder: 'Find a page, view, action, class…', 'aria-label': 'Find' });
   const results = h('div', { class: 'results', hidden: true });
   const navEl = h('nav');
@@ -187,7 +187,7 @@ export function client(BOOT) {
     put(navEl, ...NAV.map(([k, label]) => h('a', { href: `#/${k}`, class: k === name || (name === 'page' && k === 'pages') ? 'on' : '' }, label)));
     mainEl.className = name === 'graph' ? 'full' : '';
     put(mainEl, loading());
-    const views = { overview: viewOverview, pages: viewPages, page: viewPage, graph: viewGraph, components: viewComponents, styles: viewStyles, selectors: viewSelectors, problems: viewProblems };
+    const views = { overview: viewOverview, pages: viewPages, page: viewPage, graph: viewGraph, components: viewComponents, styles: viewStyles, selectors: viewSelectors, changes: viewChanges, audit: viewAudit, problems: viewProblems };
     try {
       await (views[name] ?? viewOverview)(arg);
     } catch (e) {
@@ -297,6 +297,9 @@ export function client(BOOT) {
       ['components', `Components (${v.widgets.length})`, () => widgetList(v.widgets)],
       ['assets', `Scripts & styles (${v.assets.length})`, () => assets(v)],
       ['score', 'Score', () => scoreView(m)],
+      ['cascade', 'Cascade', () => cascadeView(target, v)],
+      ['context', 'Context for Claude', () => contextView(target)],
+      ['shots', 'Screenshots', () => shotsView(target)],
     ];
     const show = (key) => {
       put(tabsEl, ...TABS.map(([k, label]) => h('a', { class: k === key ? 'on' : '', onclick: () => show(k) }, label)));
@@ -310,7 +313,7 @@ export function client(BOOT) {
             ...data.actions.flatMap((a) => ['Action', h('span', {}, a.label, ' ', loc(a.at.replace(/:\d+$/, ''), Number(/:(\d+)$/.exec(a.at)?.[1])))]),
             'View', loc(v.view), ...(v.model ? ['Model', h('code', {}, v.model)] : []),
             'Layouts', v.layouts.length ? h('span', { class: 'flow' }, v.layouts.map((l) => loc(l.file))) : h('span', { class: 'faint' }, 'none'))),
-        h('div', { class: 'page-head' }, gauge(m.score, m.level), h('button', { class: 'primary', onclick: () => go(`#/graph/${enc(v.view)}`) }, 'Graph'))),
+        h('div', { class: 'page-head' }, gauge(m.score, m.level), copyDiagram(target, 'Copy Mermaid'), h('button', { class: 'primary', onclick: () => go(`#/graph/${enc(v.view)}`) }, 'Graph'))),
       tabsEl, body);
     show('structure');
   }
@@ -411,7 +414,7 @@ export function client(BOOT) {
     const types = h('div', { class: 'legend', style: { marginLeft: 'auto' } }, ['view', 'partial', 'layout', 'action', 'script', 'style', 'bundle', 'cs'].map((t) => h('span', { class: 'chip' }, h('i', { class: 'dot', style: { background: color(t) } }), typeName(t))));
     put(mainEl, h('div', { class: 'graph-wrap' },
       h('div', { class: 'graph-main' },
-        h('div', { class: 'toolbar' }, focusInput, depth, mode, vendor, pathTo, h('button', { onclick: () => fit() }, 'Fit'), types),
+        h('div', { class: 'toolbar' }, focusInput, depth, mode, vendor, pathTo, h('button', { onclick: () => fit() }, 'Fit'), copyDiagram(focus, 'Mermaid', { depth: () => g.depth, to: () => pathTo.value.trim() || null }), types),
         h('div', { class: 'toolbar', style: { paddingTop: '0' } }, legend),
         svg),
       side));
@@ -740,6 +743,162 @@ export function client(BOOT) {
       };
       out.append(h('h2', { class: 'mono' }, r.name), h('div', { class: 'cols' }, col('style', 'Styled in'), col('markup', 'Marked up in'), col('script', 'Used by scripts in')));
     }
+  }
+
+  /** A button that copies a diagram of `target` as Mermaid, to paste into a pull request or a wiki. */
+  function copyDiagram(target, label, { depth = () => 1, to = () => null } = {}) {
+    const btn = h('button', { title: 'Copy as a Mermaid diagram (GitHub and Azure DevOps draw it)', onclick: async () => {
+      const d = await api('/api/diagram', { target, depth: depth(), to: to() });
+      if (d.error) return;
+      await navigator.clipboard?.writeText(`\`\`\`mermaid\n${d.diagram}\n\`\`\``);
+      btn.textContent = 'Copied';
+      setTimeout(() => (btn.textContent = label), 1500);
+    } }, label);
+    return btn;
+  }
+
+  // ─── A page's cascade, context and screenshots ────────────────────────────────────────────
+  function cascadeView(target, v) {
+    const out = h('div');
+    const pick = async (sel) => {
+      put(out, loading());
+      const d = await api('/api/cascade', { page: target, selector: sel });
+      if (d.error) return put(out, h('div', { class: 'empty' }, d.error));
+      const rows = d.rules.map((r, i) => h('div', { class: 'card', style: { marginBottom: '8px' } },
+        h('div', { class: 'flow' }, h('b', {}, `${i + 1}.`), loc(r.file, r.line), h('code', {}, r.selector), h('span', { class: 'pill', title: 'specificity: ids, classes, elements' }, `(${r.specificity.join(',')})`), r.media ? h('span', { class: 'pill' }, r.media) : null),
+        h('div', { class: 'mono', style: { marginTop: '6px' } }, r.props.map((p) => {
+          const w = d.winners[p.p];
+          const won = w && w.file === r.file && w.line === p.l;
+          return h('div', { style: { opacity: won ? '1' : '.5', textDecoration: won ? '' : 'line-through' }, title: won ? 'wins' : `overridden by ${w?.file}:${w?.line}` }, `${p.p}: ${p.v}${p.i ? ' !important' : ''}`);
+        }))));
+      put(out,
+        h('p', { class: 'dim' }, `${d.selector} on ${d.page}: rules in the order the browser applies them. Struck-out declarations lose to a later or stronger rule.`),
+        rows.length ? rows : h('div', { class: 'empty' }, 'No rule for it in the stylesheets this page loads.'),
+        d.elsewhere.length ? h('div', { class: 'card warn', style: { marginTop: '10px' } }, h('b', {}, 'In stylesheets this page does not load (a change there won\'t show here):'), d.elsewhere.map((u) => h('div', {}, loc(u.file, u.line), ' ', h('span', { class: 'faint' }, u.selector ?? '')))) : null,
+        h('p', { class: 'faint' }, `Stylesheets, in order: ${d.sheets.join(', ') || 'none'}`));
+    };
+    const names = [...v.classes, ...v.ids];
+    const input = h('input', { type: 'search', placeholder: '.class or #id', list: 'pilot-sel' });
+    input.addEventListener('keydown', (ev) => ev.key === 'Enter' && input.value.trim() && pick(input.value.trim()));
+    return h('div', {},
+      h('div', { class: 'toolbar' }, input, h('datalist', { id: 'pilot-sel' }, names.map((n) => h('option', { value: n }))), h('button', { onclick: () => input.value.trim() && pick(input.value.trim()) }, 'Show')),
+      h('div', { class: 'flow', style: { marginBottom: '10px' } }, names.slice(0, 40).map((n) => h('a', { class: 'chip mono', onclick: () => { input.value = n; pick(n); } }, n))),
+      out);
+  }
+
+  function contextView(target) {
+    const out = h('div', {}, loading());
+    const budget = h('select', {}, [20000, 40000, 60000, 120000].map((b) => h('option', { value: b, selected: b === 60000 }, `${b / 1000}k characters`)));
+    const load = async () => {
+      const d = await api('/api/context', { target, budget: budget.value });
+      if (d.error) return put(out, h('div', { class: 'empty' }, d.text));
+      put(out,
+        h('div', { class: 'flow', style: { marginBottom: '8px' } }, h('span', { class: 'dim' }, `${d.files.length} files, ${Math.round(d.chars / 1000)}k characters${d.omitted.length ? `, ${d.omitted.length} left out` : ''}.`),
+          h('button', { class: 'primary', onclick: () => navigator.clipboard?.writeText(d.text) }, 'Copy for Claude')),
+        h('pre', { class: 'block', style: { maxHeight: '60vh' } }, d.text));
+    };
+    budget.addEventListener('change', load);
+    load();
+    return h('div', {}, h('p', { class: 'dim' }, 'The code that matters for this page, in one document: paste it into a chat, or let Claude call the context tool itself.'), h('div', { class: 'toolbar' }, budget), out);
+  }
+
+  function shotsView(target) {
+    const out = h('div', {}, loading());
+    const site = h('input', { type: 'text', placeholder: 'http://localhost:5000', style: { width: '260px' } });
+    const mobile = h('label', { class: 'chip' }, h('input', { type: 'checkbox' }), 'and mobile');
+    const status = h('span', { class: 'dim' });
+    const show = async () => {
+      const d = await api('/api/shots', { page: target });
+      if (d.url && !site.value) site.value = d.url;
+      if (d.error) return put(out, h('div', { class: 'empty' }, d.error));
+      const by = new Map();
+      for (const s of d.shots) by.set(s.width, { ...(by.get(s.width) ?? {}), [s.label]: s });
+      if (!by.size) return put(out, h('div', { class: 'empty' }, `No screenshots of ${d.path} yet. The first one is kept as "before"; take another after a change to compare.`));
+      put(out, [...by].map(([width, set]) => h('div', { class: 'card', style: { marginBottom: '12px' } },
+        h('h3', {}, width === 'mobile' ? 'Mobile' : `${width} px`),
+        h('div', { class: 'cols' }, ['before', 'after', 'diff'].filter((l) => set[l]).map((l) => h('div', {},
+          h('div', { class: 'flow' }, h('b', {}, l), h('span', { class: 'faint' }, new Date(set[l].at).toLocaleString())),
+          h('a', { href: `/api/shot-image?slug=${enc(d.slug)}&name=${enc(set[l].name)}`, target: '_blank' }, h('img', { src: `/api/shot-image?slug=${enc(d.slug)}&name=${enc(set[l].name)}&t=${enc(set[l].at)}`, alt: `${l} at ${width}`, style: { width: '100%', border: '1px solid var(--line)', borderRadius: '6px' } }))))))));
+    };
+    const take = async (ev) => {
+      ev.target.disabled = true;
+      put(status, 'Taking it…');
+      try {
+        const res = await fetch('/api/shoot', { method: 'POST', headers: { 'x-pilot': '1', 'content-type': 'application/json' }, body: JSON.stringify({ page: target, url: site.value.trim() || null, widths: mobile.querySelector('input').checked ? [1280, 'mobile'] : [1280] }) });
+        const d = await res.json();
+        put(status, d.error ?? d.shots.map((x) => (x.compare ? `${x.width}: ${(x.compare.share * 100).toFixed(2)}% changed` : `${x.width}: saved as ${x.label}`)).join(' · '));
+        await show();
+      } catch (e) {
+        put(status, e.message);
+      } finally {
+        ev.target.disabled = false;
+      }
+    };
+    show();
+    return h('div', {},
+      h('p', { class: 'dim' }, 'Screenshots of this page on the running site, with the Chrome or Edge on this machine. The first is the "before"; the next ones are "after", compared with it (changes in red).'),
+      h('div', { class: 'toolbar' }, site, mobile, h('button', { class: 'primary', onclick: take }, 'Take screenshot'), status),
+      out);
+  }
+
+  // ─── Changes ──────────────────────────────────────────────────────────────────────────────
+  async function viewChanges(base) {
+    const input = h('input', { type: 'text', value: base ?? '', placeholder: 'and since… (main, a tag, a commit)', style: { width: '260px' } });
+    input.addEventListener('keydown', (ev) => ev.key === 'Enter' && go(`#/changes/${enc(input.value.trim())}`));
+    const d = await api('/api/changes', { base: base || '' });
+    const head = [h('h1', {}, 'Changes'), h('p', { class: 'dim' }, 'The files git says changed (uncommitted and untracked; with a base, everything since it too), and the pages they reach: what to check after a change.'), h('div', { class: 'toolbar' }, input, h('button', { onclick: () => go(`#/changes/${enc(input.value.trim())}`) }, 'Compare'))];
+    if (d.error) return put(mainEl, head, h('div', { class: 'empty' }, d.error));
+    put(mainEl, head,
+      h('div', { class: 'cols' },
+        h('div', { class: 'card' }, h('h3', {}, `Pages to check (${d.pages.length})`), d.pages.length ? h('table', {}, h('tbody', {}, d.pages.map((p) => h('tr', { class: 'click', onclick: () => go(`#/page/${enc(p.action)}`) }, h('td', { class: 'mono' }, p.url), h('td', {}, p.label), h('td', { class: 'faint' }, p.because.map(base).join(', ')))))) : h('div', { class: 'empty' }, 'No page reached.')),
+        h('div', { class: 'card' }, h('h3', {}, `Changed files (${d.files.length})`), d.files.map((f) => h('div', { class: 'flow', style: { padding: '4px 0' } }, h('span', { class: 'pill' }, f.status), f.kind ? h('a', { class: 'mono', onclick: () => go(`#/graph/${enc(f.file)}`) }, f.file) : h('span', { class: 'mono faint' }, f.file), f.kind ? h('span', { class: 'faint' }, `${f.pages.length} pages`) : h('span', { class: 'faint' }, f.note))))));
+  }
+
+  // ─── Audit ────────────────────────────────────────────────────────────────────────────────
+  async function viewAudit(kind = 'dead') {
+    const KINDS = [['dead', 'Dead code'], ['design', 'Design'], ['repeats', 'Repeated markup'], ['a11y', 'Accessibility'], ['weight', 'Page weight']];
+    kind = KINDS.some(([k]) => k === kind) ? kind : 'dead';
+    const tabs = h('div', { class: 'tabs' }, KINDS.map(([k, label]) => h('a', { class: k === kind ? 'on' : '', href: `#/audit/${k}` }, label)));
+    put(mainEl, h('h1', {}, 'Audit'), tabs, loading());
+    const d = await api('/api/audit', { kind });
+    const list = (title, items, fn, note) => h('div', { class: 'card', style: { marginBottom: '12px' } }, h('h3', {}, `${title} (${items.length})`), note ? h('p', { class: 'faint' }, note) : null, items.length ? items.slice(0, 300).map(fn) : h('div', { class: 'faint' }, 'None.'), items.length > 300 ? h('div', { class: 'faint' }, `… ${items.length - 300} more`) : null);
+    const row = (...kids) => h('div', { class: 'flow', style: { padding: '3px 0' } }, kids);
+    const place = (p) => loc(p.replace(/:\d+$/, ''), Number(/:(\d+)$/.exec(p)?.[1]));
+    const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
+    let body;
+    if (kind === 'dead') {
+      body = [h('p', { class: 'dim' }, 'Nothing Pilot can see uses these. Check before deleting: names built at run time, View(name) and files loaded from outside the project aren\'t seen.'),
+        h('div', { class: 'cols' },
+          list('Views', d.views, (v) => row(loc(v.file), h('span', { class: 'faint' }, `${v.lines ?? '?'} lines`), v.maybe ? h('span', { class: 'pill' }, `maybe: ${v.maybe}`) : null)),
+          list('Scripts', d.scripts, (v) => row(loc(v.file), h('span', { class: 'faint' }, `${v.lines ?? '?'} lines`))),
+          list('Stylesheets', d.styles, (v) => row(loc(v.file), h('span', { class: 'faint' }, `${v.lines ?? '?'} lines`))),
+          list('Variables', d.vars, (v) => row(h('code', {}, v.name), v.at.slice(0, 2).map(place))),
+          list('Mixins', d.mixins, (v) => row(h('code', {}, `.${v.name}`), v.at.slice(0, 2).map(place))),
+          list('Classes styled but never used', d.classes, (v) => row(h('a', { class: 'mono', onclick: () => go(`#/selectors/${enc(`.${v.name}`)}`) }, `.${v.name}`), v.at.slice(0, 2).map(place))))];
+    } else if (kind === 'design') {
+      const swatch = (c) => h('i', { class: 'dot', style: { background: c, border: '1px solid var(--line)', width: '14px', height: '14px' } });
+      body = [h('div', { class: 'cols' },
+        list('Colours a variable already holds', d.useVariable, (u) => row(swatch(u.color), h('code', {}, u.color), '→', h('code', {}, u.variables.join(' / ')), h('span', { class: 'faint' }, `${u.uses.length} places`), u.uses.slice(0, 2).map((x) => loc(x.file, x.line))), 'Write the variable instead of the value.'),
+        list('Colours that look the same', d.near, (n) => row(swatch(n.a), h('code', {}, n.a), '≈', swatch(n.b), h('code', {}, n.b), h('span', { class: 'faint' }, `${n.uses} uses`))),
+        list('Breakpoints', d.breakpoints, (b) => row(h('code', {}, b.query), h('span', { class: 'faint' }, `${b.places.length} places`), b.places.length === 1 ? place(b.places[0]) : null), 'Few and named is the aim.'),
+        list('z-index', d.zindex, (z) => row(h('code', {}, z.value), z.places.slice(0, 3).map(place))),
+        list('!important', d.important, (x) => row(h('b', {}, x.count), loc(x.file))),
+        list('Inline styles in views', d.inline, (x) => row(h('b', {}, x.places.length), loc(x.file, x.places[0][0]), h('code', { class: 'faint' }, x.places[0][1]))))];
+    } else if (kind === 'repeats') {
+      body = [h('p', { class: 'dim' }, `Blocks of ${d.min}+ lines of markup shaped alike in several views: each could be one partial.`),
+        list('Repeated blocks', d.blocks, (b) => h('div', { class: 'card', style: { margin: '8px 0' } }, h('div', { class: 'flow' }, h('b', {}, `~${b.lines} lines in ${b.files} views`), h('span', { class: 'pill' }, `${b.partial}.cshtml`)), h('pre', { class: 'block' }, b.sample), b.places.map((p) => h('div', {}, loc(p.file, p.ranges[0][0], `${p.file}:${p.ranges.map(([a, z]) => `${a}-${z}`).join(', ')}`)))))];
+    } else if (kind === 'a11y') {
+      const by = new Map();
+      for (const x of d.issues) by.set(x.rule, [...(by.get(x.rule) ?? []), x]);
+      body = [h('p', { class: 'dim' }, 'What the markup alone shows. Check a page in a browser too (Lantern, axe).'),
+        [...by].map(([rule, items]) => list(rule, items, (x) => row(loc(x.file, x.line), h('code', { class: 'faint' }, x.what)), d.rules[rule]))];
+    } else {
+      body = [h('div', { class: 'card' }, h('table', {}, h('thead', {}, h('tr', {}, ['Total', 'URL', 'Scripts', 'Styles', 'Notes'].map((t) => h('th', {}, t)))),
+        h('tbody', {}, d.pages.map((p) => h('tr', { class: 'click', onclick: () => go(`#/page/${enc(p.view)}`) }, h('td', {}, h('b', {}, kb(p.total))), h('td', { class: 'mono' }, p.url), h('td', {}, kb(p.scripts)), h('td', {}, kb(p.styles)),
+          h('td', {}, p.duplicates.map((x) => h('span', { class: 'pill warn' }, `${x.name} twice`)), p.external ? h('span', { class: 'pill' }, `+${p.external} external`) : null, p.items.some((x) => x.estimate) ? h('span', { class: 'pill', title: 'from the sources: the built file isn\'t there' }, '~') : null)))))),
+        list('Heaviest files', d.files, (f) => row(h('b', {}, kb(f.bytes)), loc(f.file), h('span', { class: 'faint' }, `${f.pages} pages`)))];
+    }
+    put(mainEl, h('h1', {}, 'Audit'), tabs, body);
   }
 
   // ─── Problems ─────────────────────────────────────────────────────────────────────────────

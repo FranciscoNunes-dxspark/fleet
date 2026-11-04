@@ -12,6 +12,12 @@ import { buildIndex } from '../index.js';
 import { file, find, overview, problems, resolveTarget, selector, urlOf, actionLabel, where } from '../queries.js';
 import { complexity, graph, nodeInfo, pageModel, path, split, stylesheets, widgets } from '../analysis.js';
 import { pageHtml } from './page.js';
+import { changes } from '../changes.js';
+import { context } from '../context.js';
+import { cascade } from '../cascade.js';
+import { a11y, deadCode, design, repeats, weight } from '../audit.js';
+import { diagram } from '../diagram.js';
+import { SHOTS_DIR, baseUrl, listShots, pagePath, shot, slugOf } from '../shots.js';
 
 /** The page model, made fit to send: the tree as it is, without the index's Maps. */
 function pageData(idx, target) {
@@ -40,6 +46,8 @@ function pageData(idx, target) {
         calls: m.calls,
         widgets: m.widgets,
         metrics: m.metrics,
+        classes: [...new Set(m.views.filter((x) => x.own).flatMap((x) => (idx.files.get(x.file)?.data?.classes ?? []).map(([c]) => `.${c}`)))].sort(),
+        ids: [...new Set(m.views.filter((x) => x.own).flatMap((x) => (idx.files.get(x.file)?.data?.ids ?? []).map(([i]) => `#${i}`)))].sort(),
         dynamic: [...m.tree.files.keys()].flatMap((f) => (idx.files.get(f)?.data?.dynamic ?? []).map((x) => ({ file: f, ...x }))),
       };
     }),
@@ -90,6 +98,27 @@ export function routes() {
   return {
     '/api/overview': (idx) => overview(idx).data,
     '/api/claude': (idx) => claudeSetup(idx.root),
+    '/api/changes': (idx, q) => {
+      try {
+        return changes(idx, { base: q.get('base') || null }).data;
+      } catch (e) {
+        return { error: e.message };
+      }
+    },
+    '/api/audit': (idx, q) => ({ dead: deadCode, design, repeats, a11y, weight }[q.get('kind')]?.(idx)?.data ?? { error: 'unknown audit' }),
+    '/api/cascade': (idx, q) => cascade(idx, q.get('page') ?? '', q.get('selector') ?? '').data,
+    '/api/context': (idx, q) => {
+      const r = context(idx, q.get('target') ?? '', { budget: Number(q.get('budget')) || 60000 });
+      return { ...r.data, text: r.text };
+    },
+    '/api/diagram': (idx, q) => diagram(idx, q.get('target') ?? '', { to: q.get('to') || null, depth: Number(q.get('depth')) || 1, format: q.get('format') === 'dot' ? 'dot' : 'mermaid' }).data,
+    '/api/shots': (idx, q) => {
+      const p = pagePath(idx, q.get('page') ?? '');
+      const base = baseUrl(idx.root);
+      if (p.error) return { error: p.error, url: base };
+      const slug = slugOf(p.url ?? `${base ?? ''}${p.path}`);
+      return { slug, url: base, path: p.path ?? p.url, shots: listShots(idx.root, slug) };
+    },
     '/api/pages': (idx, q) => complexity(idx, { filter: q.get('filter') ?? '', limit: 100000 }).data,
     '/api/page': (idx, q) => pageData(idx, q.get('target') ?? ''),
     '/api/graph': (idx, q) => graph(idx, q.get('focus') ?? '', { depth: Number(q.get('depth')) || 2, kinds: q.get('kinds') ? q.get('kinds').split(',') : null, max: Number(q.get('max')) || 250, vendor: q.get('vendor') === '1' }).data,
@@ -106,7 +135,7 @@ export function routes() {
 }
 
 /** The request handler over an index getter; `port` for the Host check. */
-export function handler({ index, refresh, root, port }) {
+export function handler({ index, refresh, root, port, shoot = null }) {
   const api = routes();
   const page = pageHtml({ root, version: VERSION });
   return (req, res) => {
@@ -121,9 +150,38 @@ export function handler({ index, refresh, root, port }) {
       res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
       res.end(body);
     };
+    if (url.pathname === '/api/shoot') {
+      // It starts a browser and writes files: a POST with a header a page elsewhere can't send.
+      if (req.method !== 'POST' || req.headers['x-pilot'] !== '1') return send(403, JSON.stringify({ error: 'POST with X-Pilot: 1 only' }));
+      let body = '';
+      req.on('data', (d) => {
+        body += d;
+      });
+      req.on('end', async () => {
+        try {
+          const { page: target, url: site, widths } = JSON.parse(body || '{}');
+          const r = await (shoot ?? shot)(index(), String(target ?? ''), { url: site || null, widths: Array.isArray(widths) && widths.length ? widths : [1280] });
+          send(200, JSON.stringify(r.data));
+        } catch (e) {
+          send(200, JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
     if (req.method !== 'GET') return send(405, JSON.stringify({ error: 'GET only' }));
+    if (url.pathname === '/api/shot-image') {
+      const slug = url.searchParams.get('slug') ?? '';
+      const name = url.searchParams.get('name') ?? '';
+      if (!/^[a-z0-9-]+$/.test(slug) || !/^(before|after|diff)-(\d+|mobile)\.png$/.test(name)) return send(404, JSON.stringify({ error: 'not found' }));
+      try {
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+        return res.end(readFileSync(join(index().root, SHOTS_DIR, slug, name)));
+      } catch {
+        return send(404, JSON.stringify({ error: 'not found' }));
+      }
+    }
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      res.setHeader('content-security-policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:");
+      res.setHeader('content-security-policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data: 'self'");
       return send(200, page, 'text/html; charset=utf-8');
     }
     if (url.pathname === '/api/refresh') {

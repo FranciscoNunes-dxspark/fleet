@@ -26,6 +26,20 @@ Usage: pilot [--root <dir>] <command> [arguments] [--json]
   stylesheets                   the project's stylesheets, largest first
   split <stylesheet>            how to split a large LESS/SCSS/CSS file: by where its rules are used
   path <from> <to>              how two things are connected (files, URLs, Controller.Action)
+  changes [--base <ref>]        the pages what git says changed reaches (uncommitted, and since <ref>)
+  context <page> [--budget n]   the code that matters for a page, in one Markdown document (n chars)
+  rename <old> <new> [--apply]  a class or id renamed in styles, views and scripts (a preview first)
+  cascade <page> <selector>     every rule styling it on that page, in order, and what wins
+  dead                          views, scripts, stylesheets, variables, mixins and classes nothing uses
+  design                        colours that have a variable, look-alike colours, breakpoints, z-index,
+                                !important, inline styles
+  repeats [--min n]             markup repeated across views: candidates for a partial
+  a11y [rule]                   accessibility problems the markup shows
+  weight [filter]               what each page loads and weighs; libraries loaded twice
+  diagram <target>              a page, a file's neighbourhood (--depth) or a path (--to) as Mermaid
+                                (--format dot for Graphviz)
+  shot <page>                   a screenshot of the running site (--url once, --widths 1280,mobile,
+                                --cookie name=value, --as before|after): before, then after and a diff
   routes [filter]               URLs, actions and the views they return
   problems [filter]             references Pilot couldn't resolve, and names decided at run time
   ui                            the web UI: graphs, pages, components, stylesheets (--port, --no-open)
@@ -44,7 +58,7 @@ Options:
   --version, --help`;
 
 export function parseArgs(argv) {
-  const opts = { root: process.cwd(), json: false, cache: true, vendor: false, ignore: [], rest: [], open: true, port: null };
+  const opts = { root: process.cwd(), json: false, cache: true, vendor: false, ignore: [], rest: [], open: true, port: null, cookies: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--root' || a === '-r') [opts.root, opts.rootGiven] = [argv[++i], true];
@@ -56,6 +70,18 @@ export function parseArgs(argv) {
     else if (a === '--port') opts.port = Number(argv[++i]);
     else if (a === '--no-open') opts.open = false;
     else if (a === '--mcp') opts.mcp = true;
+    else if (a === '--base') opts.base = argv[++i];
+    else if (a === '--budget') opts.budget = Number(argv[++i]);
+    else if (a === '--apply') opts.apply = true;
+    else if (a === '--min') opts.min = Number(argv[++i]);
+    else if (a === '--to') opts.to = argv[++i];
+    else if (a === '--depth') opts.depth = Number(argv[++i]);
+    else if (a === '--format') opts.format = argv[++i];
+    else if (a === '--url') opts.url = argv[++i];
+    else if (a === '--widths' || a === '--width') opts.widths = String(argv[++i]).split(',').map((w) => (/^\d+$/.test(w) ? Number(w) : w));
+    else if (a === '--mobile') opts.widths = [...(opts.widths ?? [1280]), 'mobile'];
+    else if (a === '--as') opts.as = argv[++i];
+    else if (a === '--cookie') opts.cookies.push(argv[++i]);
     else if (a === '--command') opts.mcpCommand = argv[++i];
     else if (a === '--help' || a === '-h') opts.help = true;
     else if (a === '--version' || a === '-v') opts.version = true;
@@ -137,6 +163,26 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
       if (opts.args.length !== 2) throw Object.assign(new Error('pilot path needs two things: pilot path <from> <to>'), { usage: true });
       return a.path(idx, opts.args[0], opts.args[1]);
     },
+    changes: async (idx) => (await import('./changes.js')).changes(idx, { base: opts.base ?? null }),
+    context: async (idx) => (await import('./context.js')).context(idx, needs('a page'), { budget: opts.budget || 60000 }),
+    rename: async (idx) => {
+      if (opts.args.length !== 2) throw Object.assign(new Error('pilot rename needs the old and the new name: pilot rename .old .new [--apply]'), { usage: true });
+      return (await import('./rename.js')).rename(idx, opts.args[0], opts.args[1], { apply: !!opts.apply });
+    },
+    cascade: async (idx) => {
+      if (opts.args.length !== 2) throw Object.assign(new Error('pilot cascade needs a page and a class or id: pilot cascade /Orders .btn-save'), { usage: true });
+      return (await import('./cascade.js')).cascade(idx, opts.args[0], opts.args[1]);
+    },
+    dead: async (idx) => (await import('./audit.js')).deadCode(idx),
+    design: async (idx) => (await import('./audit.js')).design(idx),
+    repeats: async (idx) => (await import('./audit.js')).repeats(idx, { min: opts.min || 6 }),
+    a11y: async (idx) => (await import('./audit.js')).a11y(idx, { rule: arg }),
+    weight: async (idx) => (await import('./audit.js')).weight(idx, { filter: arg }),
+    diagram: async (idx) => (await import('./diagram.js')).diagram(idx, needs('a page, file or action'), { to: opts.to ?? null, depth: opts.depth || 1, format: opts.format === 'dot' ? 'dot' : 'mermaid' }),
+    shot: async (idx) => {
+      const cookies = [...opts.cookies, ...String(process.env.PILOT_COOKIE ?? '').split(';').map((x) => x.trim()).filter(Boolean)];
+      return (await import('./shots.js')).shot(idx, needs('a page'), { url: opts.url ?? null, widths: opts.widths ?? [1280], as: opts.as ?? null, cookies });
+    },
     routes: (idx) => q.routes(idx, { filter: arg }),
     problems: (idx) => q.problems(idx, { filter: arg }),
   };
@@ -148,7 +194,7 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
   try {
     const { buildIndex } = await import('./index.js');
     const idx = buildIndex(opts.root, { cache: opts.cache, vendor: opts.vendor, ignore: opts.ignore, progress: (m) => error(`\rReading ${m}`) });
-    const result = command(idx);
+    const result = await command(idx);
     write(opts.json ? `${JSON.stringify(result.data, null, 2)}\n` : `${result.text}\n`);
     return result.data?.error ? 1 : 0;
   } catch (e) {

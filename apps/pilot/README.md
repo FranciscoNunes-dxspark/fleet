@@ -43,7 +43,10 @@ Claude Code can use Pilot two ways, and works best with both:
   order, and runs the `pilot` command line. It needs nothing but `pilot` on the PATH.
 - **The MCP server** (`pilot mcp`): the same queries as tools Claude calls directly (`overview`,
   `page`, `file`, `impact`, `selector`, `style`, `find`, `path`, `widgets`, `complexity`,
-  `stylesheets`, `split`, `routes`, `problems`), all read-only. It keeps the index in memory and
+  `stylesheets`, `split`, `routes`, `problems`, `changes`, `context`, `cascade`, `dead_code`,
+  `design`, `repeats`, `accessibility`, `weight`, `diagram`, `rename`, `screenshot`). All of them
+  only read, except `rename` with `apply` (it edits the files it lists) and `screenshot` (it starts
+  a browser and writes under `.pilot/`). It keeps the index in memory and
   re-reads only the files that changed before each call, so it sees Claude's own edits and answers
   in milliseconds on a large project.
 
@@ -117,7 +120,8 @@ answer with the project's layouts, stylesheets and bundles.
 
 ### 4. Optional: fewer prompts, and a line in CLAUDE.md
 
-Every Pilot tool only reads, so you can let Claude call them without asking each time. In the
+Pilot's tools only read (but for `rename` with `apply`, and `screenshot`), so you can let Claude
+call them without asking each time. In the
 project's `.claude/settings.json` (shared) or `.claude/settings.local.json` (just you):
 
 ```json
@@ -151,6 +155,11 @@ Ask in plain words; Claude picks the tools. For example:
 - *"Which pages use a date picker, and which library?"* → `widgets`.
 - *"site.less is 4,000 lines. Propose how to split it, then do it."* → `stylesheets`, `split`.
 - *"Which pages are the most complex? Start simplifying the worst one."* → `complexity`, `page`.
+- *"Why doesn't my padding on .order-table show on /Orders?"* → `cascade`.
+- *"Rename .btn-save to .button-primary everywhere."* → `rename` (a preview, then `apply`).
+- *"I've changed the header partial: which pages should I check, and how do they look now?"* →
+  `changes`, `screenshot` (with the site running locally).
+- *"Clean up: what's unused, and which colours should use our variables?"* → `dead_code`, `design`.
 
 Keep `pilot ui` open in another terminal to follow along in the browser: it reads the same index.
 
@@ -188,6 +197,17 @@ Keep `pilot ui` open in another terminal to follow along in the browser: it read
 | `pilot stylesheets` | The stylesheets, largest first |
 | `pilot split <stylesheet>` | How to split a large LESS/SCSS/CSS file (below) |
 | `pilot ui` | The web UI (below); `--port`, `--no-open` |
+| `pilot changes [--base main]` | The pages what git says changed reaches (uncommitted and untracked files; with `--base`, everything since that branch or commit too), most affected first: what to check after a change |
+| `pilot context <page> [--budget n]` | The code that matters for one page in one Markdown document of at most `n` characters (default 60,000): the view and its partials whole, the controller actions (the page's, and those its requests reach), the parts of its scripts that touch its markup or call the server, the CSS rules for its classes and ids, its layouts last. What doesn't fit is listed by name |
+| `pilot rename <old> <new> [--apply]` | A class or id renamed in the rules styling it, the views marking it up and the scripts using it. A preview without `--apply`; warnings where text can't be trusted: a LESS name built with `&-save`, a name built at run time (`'btn-' + kind`), a name that already exists, built files to rebuild |
+| `pilot cascade <page> <selector>` | Every rule that can style a class or id on that page, in the order the browser applies them (stylesheets as loaded, LESS imports inlined), with specificity, declarations and the value that wins for each property; and the rules in stylesheets the page doesn't load, the usual reason a change "doesn't show" |
+| `pilot dead` | Views no action returns and no view renders, scripts and stylesheets nothing loads, LESS variables and mixins never used, classes styled but used by no view or script |
+| `pilot design` | Colours written out that a variable already holds, colours that look the same, breakpoints, z-index values, `!important`, inline `style="…"` in views |
+| `pilot repeats [--min n]` | Blocks of markup (6 lines or more, alike in shape) repeated across views, with a partial name to extract them into |
+| `pilot a11y [rule]` | Accessibility problems the markup shows: images without `alt`, fields without a label, empty buttons and links, clickable `div`s without keyboard access, positive `tabindex`, `<html>` without `lang`, duplicate ids |
+| `pilot weight [filter]` | What each page loads and weighs, libraries loaded twice on a page, the heaviest files and how many pages load them |
+| `pilot diagram <target>` | A page (or a file's neighbourhood with `--depth`, or a path with `--to`) as a Mermaid diagram to paste into a pull request or wiki; `--format dot` for Graphviz |
+| `pilot shot <page>` | A screenshot of the running site (below) |
 | `pilot routes [filter]` | URLs, the actions answering them and their views |
 | `pilot problems [filter]` | References Pilot couldn't resolve (missing partials, layouts, scripts, styles, imports) and names decided at run time |
 | `pilot mcp` | Serves the queries as MCP tools over stdio |
@@ -237,6 +257,27 @@ Libraries (`wwwroot/lib`, `*.min.js`, `jquery-*.js`, `bootstrap*`, `.d.ts`…) a
 references resolve, but not read for selectors unless `--vendor` is given. `bin`, `obj`,
 `node_modules`, `packages` and hidden folders are skipped.
 
+## Screenshots
+
+`pilot shot <page>` takes a full-page screenshot of the running site with the Chrome, Chromium or
+Edge already on the machine (`PILOT_CHROME` names another), driven over the DevTools protocol:
+nothing is downloaded or bundled. The page is a path (`/Orders/Edit/5`), a URL, or an action
+(`Orders.Index`, when its URL needs no parameter).
+
+```bash
+pilot shot /Orders --url http://localhost:5000    # the first: kept as "before"; the URL is remembered
+# … change the page …
+pilot shot /Orders                                 # "after", compared: % changed, regions, a diff image
+pilot shot /Orders --widths 1280,mobile            # also a phone's viewport (390 px)
+pilot shot /Orders --as before                     # a new baseline
+pilot shot /Admin/Users --cookie ".AspNet.Cookies=…"   # a signed-in page (or PILOT_COOKIE="a=1; b=2")
+```
+
+The files are in `<project>/.pilot/shots/<page>/` (`before-1280.png`, `after-1280.png`,
+`diff-1280.png`: the after faded, changes in red, height only one of them has in yellow), and
+`.pilot/` keeps itself out of git. Claude reads the PNGs to see the page; the UI shows them side by
+side in a page's **Screenshots** tab, with a button to take one.
+
 ## The web UI
 
 `pilot ui` indexes the project, serves a page on `http://127.0.0.1:4170` (the next free port if that
@@ -262,7 +303,15 @@ loaded from the network. It listens on this machine only, answers only requests 
   files with their line ranges and why, the `@import` list to replace it with, and the classes whose
   order matters.
 - **Selectors**: where a class or id is styled, marked up and scripted.
+- **Changes**: what git says changed and the pages it reaches, optionally since a branch.
+- **Audit**: dead code, design consistency (with colour swatches), repeated markup, accessibility,
+  page weight.
 - **Problems**: what couldn't be resolved, and what's decided at run time.
+
+A page also has **Cascade** (pick one of its classes or ids: the rules in order, the losing
+declarations struck out, rules in stylesheets it doesn't load), **Context for Claude** (the
+context pack, to copy) and **Screenshots**; **Copy Mermaid** on a page and in the Graph copies a
+diagram for a pull request.
 
 Any `file:line` opens the file there, in a panel beside the page.
 

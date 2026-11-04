@@ -19,7 +19,7 @@ test("a page's requests: the script, the action, the partial it returns and wher
   ]);
   assert.ok(m.calls.every((c) => c.own));
   // orders.ts imports grid.ts: both are the page's scripts.
-  assert.deepEqual(m.scripts.filter((s) => s.own).map((s) => s.file).sort(), ['Shop.Web/Scripts/app/grid.ts', 'Shop.Web/Scripts/app/orders.ts']);
+  assert.deepEqual(m.scripts.filter((s) => s.own && !s.vendor).map((s) => s.file).sort(), ['Shop.Web/Scripts/app/grid.ts', 'Shop.Web/Scripts/app/orders.ts']);
   // The layout's bundle loads grid.js too, and its util.js is the layout's alone.
   assert.equal(m.scripts.find((s) => s.file === 'Shop.Web/Scripts/shared/util.js').own, false);
   const text = page(idx, '/Orders').text;

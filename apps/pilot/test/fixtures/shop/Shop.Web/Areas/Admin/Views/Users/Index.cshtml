@@ -2,3 +2,13 @@
 <h2 class="admin-title">Users</h2>
 <table id="users" class="table @(Model.Any() ? "has-rows" : "is-empty")">
 </table>
+<div class="info-card">
+    <div class="info-card-header">
+        <h3 class="info-card-title">@Model.Title</h3>
+        <span class="badge">@Model.Count</span>
+    </div>
+    <div class="info-card-body">
+        <p>@Model.Summary</p>
+        <a class="info-card-link" href="@Model.Url">More</a>
+    </div>
+</div>

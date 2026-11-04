@@ -40,7 +40,7 @@ test('the page: one HTML file, the client inline and valid, a strict CSP, nothin
   assert.equal(r.status, 200);
   assert.match(r.headers['content-type'], /text\/html/);
   assert.match(r.headers['content-security-policy'], /default-src 'none'/);
-  assert.doesNotMatch(r.body, /https?:\/\/(?!www\.w3\.org)/, 'no external URL');
+  assert.doesNotMatch(r.body, /https?:\/\/(?!www\.w3\.org|localhost[:/])/, 'no external URL');
   assert.doesNotThrow(() => new Function(`return (${client.toString()})`));
   // The project's path can't end the script early.
   assert.doesNotMatch(pageHtml({ root: '</script><b>', version: '1' }), /<\/script><b>/);
@@ -87,4 +87,17 @@ test('the Claude Code card: whether the skill and the .mcp.json entry are there'
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('screenshots over the API: listed, served only by name, taken only by a POST with the header', async () => {
+  const shots = JSON.parse((await get('/api/shots?page=%2FOrders')).body);
+  assert.deepEqual([shots.slug, shots.shots], ['orders', []]);
+  assert.equal((await get('/api/shot-image?slug=..&name=before-1280.png')).status, 404);
+  assert.equal((await get('/api/shot-image?slug=orders&name=..%2F..%2Fx.png')).status, 404);
+  // A GET (an <img> on some page elsewhere) can't make it take one.
+  assert.equal((await get('/api/shoot?page=%2FOrders')).status, 403);
+  for (const kind of ['dead', 'design', 'repeats', 'a11y', 'weight']) assert.ok(!JSON.parse((await get(`/api/audit?kind=${kind}`)).body).error, kind);
+  assert.equal(JSON.parse((await get('/api/cascade?page=%2FOrders&selector=.order-table')).body).rules.length, 6);
+  assert.match(JSON.parse((await get('/api/diagram?target=%2FOrders')).body).diagram, /^---\ntitle: \/Orders/);
+  assert.match(JSON.parse((await get('/api/context?target=%2FOrders&budget=2000')).body).text, /^# Context for \/Orders/);
 });

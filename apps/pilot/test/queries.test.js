@@ -37,7 +37,7 @@ test('page: action, view, layouts, render tree and assets in load order with the
   assert.match(text, /Shop\.Web\/Scripts\/app\/grid\.js ← edit Shop\.Web\/Scripts\/app\/grid\.ts via bundle ~\/bundles\/app/);
   // The view's section Scripts goes where the layout renders it, after the bundles.
   const orders = page(idx, 'Orders.Index').data.views[0];
-  assert.deepEqual(orders.assets.at(-1), { kind: 'script', url: '~/Scripts/app/orders.js', file: 'Shop.Web/Scripts/app/orders.js', built: true, vendor: false, sources: ['Shop.Web/Scripts/app/orders.ts'], from: 'Shop.Web/Views/Orders/Index.cshtml:15', section: 'Scripts', own: true });
+  assert.deepEqual(orders.assets.find((a) => a.file === 'Shop.Web/Scripts/app/orders.js'), { kind: 'script', url: '~/Scripts/app/orders.js', file: 'Shop.Web/Scripts/app/orders.js', built: true, vendor: false, sources: ['Shop.Web/Scripts/app/orders.ts'], from: 'Shop.Web/Views/Orders/Index.cshtml:15', section: 'Scripts', own: true });
   assert.match(page(idx, 'Orders.Save').text, /returns JSON, no view/);
   assert.match(page(idx, 'Orders/Edit').text, /Html\.Partial\(Model\.PartialName\)/);
   assert.match(page(idx, '/products/3').text, /component MiniCart → Shop\.Core\/Views\/Shared\/Components\/MiniCart\/Default\.cshtml/);
@@ -72,10 +72,10 @@ test('selector: styled (nested, in media), marked up, scripted; wildcards; not f
   assert.match(row, /Styled in \(2\):\n {4}Shop\.Web\/Content\/everything\.less:22 {2}\.order-row\n {4}Shop\.Web\/Content\/orders\.less:7 {2}\.order-table \.order-row:hover/);
   assert.match(row, /Marked up in \(1\):\n {4}Shop\.Web\/Views\/Orders\/_OrderRow\.cshtml:2/);
   assert.match(row, /Used by scripts in \(1\):\n {4}Shop\.Web\/Scripts\/app\/orders\.ts:6/);
-  assert.match(selector(idx, '#orders').text, /orders\.less:19 {2}#orders {2}\(in @media \(max-width: 600px\)\)/);
+  assert.match(selector(idx, '#orders').text, /orders\.less:20 {2}#orders {2}\(in @media \(max-width: 600px\)\)/);
   assert.match(selector(idx, 'orders').text, /^#orders:/m);
   assert.match(selector(idx, '.btn-save').text, /Shop\.Web\/Views\/Orders\/Index\.cshtml:11 {3}<button type="button" class="btn btn-save"/);
-  assert.deepEqual(selector(idx, '.order-*').data.matches.map((m) => m.name), ['.order-row', '.order-table']);
+  assert.deepEqual(selector(idx, '.order-*').data.matches.map((m) => m.name), ['.order-flag', '.order-row', '.order-table']);
   assert.deepEqual(selector(idx, '[data-order-id]').data.results[0].uses.map((u) => u.role), ['markup']);
   assert.match(selector(idx, '.nothing-like-it').text, /isn't used, styled or scripted anywhere/);
 });
@@ -121,8 +121,9 @@ test('the MCP server: tools, answers, errors as results', async () => {
   const server = createServer({ root: ROOT, build: (root) => buildIndex(root, { cache: false }) });
   const handle = mcpHandler({ name: 'pilot', version: 'test', tools: TOOLS, call: server.call });
   const list = await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
-  assert.deepEqual(list.result.tools.map((t) => t.name), ['overview', 'page', 'file', 'impact', 'selector', 'style', 'find', 'path', 'widgets', 'complexity', 'stylesheets', 'split', 'routes', 'problems']);
-  assert.ok(list.result.tools.every((t) => t.annotations.readOnlyHint));
+  assert.deepEqual(list.result.tools.map((t) => t.name), ['overview', 'page', 'file', 'impact', 'selector', 'style', 'find', 'path', 'widgets', 'complexity', 'stylesheets', 'split', 'routes', 'problems', 'changes', 'context', 'rename', 'cascade', 'dead_code', 'design', 'repeats', 'accessibility', 'weight', 'diagram', 'screenshot']);
+  // Everything only reads but rename (with apply) and screenshot (a browser, files under .pilot).
+  assert.deepEqual(list.result.tools.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name), ['rename', 'screenshot']);
   const call = (name, args) => handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } });
   const sel = await call('selector', { selector: '.late' });
   assert.match(sel.result.content[0].text, /orders\.less:5 {2}\.order-table tr\.late/);
