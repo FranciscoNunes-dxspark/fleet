@@ -93,24 +93,26 @@ Other ways to add the server, with Claude Code's own command (run in the project
 
 ```bash
 claude mcp add pilot -- pilot mcp                    # just you, just this project
-claude mcp add pilot --scope user -- pilot mcp       # just you, every project (Pilot reads the folder Claude starts in)
+claude mcp add pilot --scope user -- pilot mcp       # just you, every project
 claude mcp add pilot --scope project -- pilot mcp    # the same as init --mcp: .mcp.json, for the team
 ```
 
 On Windows, give the full path when it isn't on the PATH:
 `claude mcp add pilot -- C:\Users\you\bin\pilot.exe mcp`, or from a checkout
-`claude mcp add pilot -- node C:\src\fleet\apps\pilot\bin\pilot.js mcp`. Add `--root <folder>`
-after `mcp` to point it at another folder than the one Claude Code starts in, and
+`claude mcp add pilot -- node C:\src\fleet\apps\pilot\bin\pilot.js mcp`. Without `--root`, the
+server reads the project Claude Code is working in (it says which in `CLAUDE_PROJECT_DIR`), else the
+folder it was started in; add `--root <folder>` after `mcp` to fix one, and
 `--ignore <a,b>` to leave folders out (generated code, a copy of another site).
 
 ### 3. Check it's connected
 
 ```bash
-claude mcp list          # pilot: … ✓ Connected
+claude mcp list          # pilot: … ✔ Connected
 claude mcp get pilot     # its command, scope and status
 ```
 
-In Claude Code, `/mcp` lists `pilot` with its tools, and asking *"Use pilot's overview tool"* should
+In Claude Code, `/mcp` shows `pilot` connected with its 14 tools (`⏸ Pending approval` until you
+accept the project's servers; `claude mcp reset-project-choices` asks again), and asking *"Use pilot's overview tool"* should
 answer with the project's layouts, stylesheets and bundles.
 
 ### 4. Optional: fewer prompts, and a line in CLAUDE.md
@@ -121,12 +123,12 @@ project's `.claude/settings.json` (shared) or `.claude/settings.local.json` (jus
 ```json
 {
   "permissions": {
-    "allow": ["mcp__pilot", "Bash(pilot:*)"]
+    "allow": ["mcp__pilot", "Bash(pilot *)"]
   }
 }
 ```
 
-`mcp__pilot` allows every tool of the server; `Bash(pilot:*)` the command line the skill runs.
+`mcp__pilot` allows every tool of the server; `Bash(pilot *)` the command line the skill runs.
 
 The skill already tells Claude when to use Pilot. To make it a rule of the project, add to its
 `CLAUDE.md`:
@@ -158,12 +160,14 @@ Keep `pilot ui` open in another terminal to follow along in the browser: it read
   PATH: give the full path to the executable in `claude mcp add`, or in `.mcp.json`'s `command`.
   Running `pilot mcp` yourself should wait silently for input (ctrl+c to stop); an error there is
   the reason.
-- **"No pages found", or answers about the wrong folder.** The server reads the folder Claude Code
-  was started in; start Claude Code in the project's root, or add `--root <folder>` after `mcp`.
+- **"No pages found", or answers about the wrong folder.** The server reads the project Claude Code
+  is working in; start Claude Code in the project's root, or add `--root <folder>` after `mcp`.
 - **Slow first answer on a huge project.** The first index reads everything; afterwards only
   changed files are read again. Leave out folders Pilot shouldn't read with `--ignore`.
 - **Something looks out of date.** The server re-reads changed files before each call;
   `pilot overview --no-cache` reads everything again, and `PILOT_CACHE` moves the cache.
+- **`⏸ Pending approval`.** The project's `.mcp.json` servers wait until you accept them in an
+  interactive session; `claude mcp reset-project-choices` asks again if you declined.
 - **Claude doesn't use it.** Check `/mcp` shows it connected, that `.claude/skills/pilot/SKILL.md`
   exists in the project, or ask for it by name: *"use pilot to…"*.
 

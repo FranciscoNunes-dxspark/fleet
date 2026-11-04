@@ -47,8 +47,8 @@ export function parseArgs(argv) {
   const opts = { root: process.cwd(), json: false, cache: true, vendor: false, ignore: [], rest: [], open: true, port: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--root' || a === '-r') opts.root = argv[++i];
-    else if (a.startsWith('--root=')) opts.root = a.slice(7);
+    if (a === '--root' || a === '-r') [opts.root, opts.rootGiven] = [argv[++i], true];
+    else if (a.startsWith('--root=')) [opts.root, opts.rootGiven] = [a.slice(7), true];
     else if (a === '--json') opts.json = true;
     else if (a === '--no-cache') opts.cache = false;
     else if (a === '--vendor') opts.vendor = true;
@@ -83,7 +83,7 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
   }
   if (opts.command === 'mcp') {
     const { serve } = await import('./mcp.js');
-    serve({ root: opts.root });
+    serve({ root: mcpRoot(opts) });
     return null;
   }
   if (opts.command === 'ui') {
@@ -159,13 +159,22 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
 
 /**
  * How Claude Code should start Pilot's MCP server: `command` as given, else `pilot` from the PATH,
- * or (run from a checkout) node with this checkout's bin/pilot.js. No --root: Claude Code starts the
- * server in the project's folder.
+ * or (run from a checkout) node with this checkout's bin/pilot.js. No --root: the server reads the
+ * project Claude Code names in CLAUDE_PROJECT_DIR (mcpRoot).
  */
 export function mcpServer(command = null, { compiled = COMPILED } = {}) {
   if (command) return { command, args: ['mcp'] };
   if (compiled) return { command: 'pilot', args: ['mcp'] };
   return { command: 'node', args: [fileURLToPath(new URL('../bin/pilot.js', import.meta.url)), 'mcp'] };
+}
+
+/**
+ * The folder `pilot mcp` reads: --root, else the project Claude Code names in CLAUDE_PROJECT_DIR
+ * (it doesn't promise to start servers there), else the current folder.
+ */
+export function mcpRoot(opts, env = process.env) {
+  if (opts.rootGiven || !env.CLAUDE_PROJECT_DIR) return opts.root;
+  return resolve(env.CLAUDE_PROJECT_DIR);
 }
 
 /** Puts `server` in `root`/.mcp.json as "pilot", keeping every other server there. */
@@ -180,7 +189,7 @@ export function writeMcpJson(root, server) {
       throw Object.assign(new Error(`${file} isn't valid JSON; fix it or add Pilot with: claude mcp add pilot --scope project -- pilot mcp`), { usage: true });
     }
   }
-  json.mcpServers = { ...(json.mcpServers ?? {}), pilot: { type: 'stdio', ...server } };
+  json.mcpServers = { ...(json.mcpServers ?? {}), pilot: { ...server } };
   writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
   return { file, server, merged };
 }

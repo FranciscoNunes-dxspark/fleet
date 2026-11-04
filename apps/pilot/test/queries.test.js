@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildIndex } from '../src/index.js';
 import { file, find, impact, overview, page, problems, resolveTarget, routes, selector, styleSymbol } from '../src/queries.js';
-import { mcpServer, parseArgs, run, writeMcpJson } from '../src/cli.js';
+import { mcpRoot, mcpServer, parseArgs, run, writeMcpJson } from '../src/cli.js';
 import { writeFileSync } from 'node:fs';
 import { TOOLS, createServer } from '../src/mcp.js';
 import { mcpHandler } from '@fleet/kit/mcp.js';
@@ -139,7 +139,7 @@ test('init --mcp: the skill, and Pilot added to .mcp.json beside the servers alr
   try {
     writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { other: { command: 'x', args: [] } } }));
     assert.equal(await run(['--root', dir, 'init', '--mcp', '--command', 'pilot'], io), 0);
-    assert.deepEqual(JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')).mcpServers, { other: { command: 'x', args: [] }, pilot: { type: 'stdio', command: 'pilot', args: ['mcp'] } });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8')).mcpServers, { other: { command: 'x', args: [] }, pilot: { command: 'pilot', args: ['mcp'] } });
     assert.ok(readFileSync(join(dir, '.claude', 'skills', 'pilot', 'SKILL.md'), 'utf8').length > 100);
     // Again: replaced, not added twice.
     writeMcpJson(dir, { command: 'C:\\tools\\pilot.exe', args: ['mcp'] });
@@ -156,4 +156,9 @@ test('init --mcp: the skill, and Pilot added to .mcp.json beside the servers alr
   assert.equal(fromCheckout.command, 'node');
   assert.match(fromCheckout.args[0], /bin[\\/]pilot\.js$/);
   assert.deepEqual(mcpServer('/opt/pilot'), { command: '/opt/pilot', args: ['mcp'] });
+  // The server reads --root, else the project Claude Code names, else the current folder.
+  const here = parseArgs(['mcp']);
+  assert.equal(mcpRoot(here, { CLAUDE_PROJECT_DIR: ROOT }), ROOT);
+  assert.equal(mcpRoot(here, {}), here.root);
+  assert.equal(mcpRoot(parseArgs(['--root', tmpdir(), 'mcp']), { CLAUDE_PROJECT_DIR: ROOT }), tmpdir());
 });

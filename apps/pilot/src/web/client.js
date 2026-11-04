@@ -229,8 +229,8 @@ export function client(BOOT) {
     const body = h('div', { hidden: ready },
       step(cc.skill && cc.mcp, 'Add the skill and the MCP server to the project', `cd ${q(cc.root)}\npilot init --mcp`, 'Writes .claude/skills/pilot/SKILL.md and adds Pilot to .mcp.json. Commit both for the team; Claude Code asks once whether to trust the server.'),
       step(false, 'Or the server just for you', `claude mcp add pilot -- pilot mcp --root ${q(cc.root)}`, 'Use the full path to pilot if it isn\'t on the PATH.'),
-      step(false, 'Check it', 'claude mcp list', 'In Claude Code, /mcp lists pilot and its tools. Then ask, for example: "Use pilot to find what makes up /Orders and tighten its spacing on phones."'),
-      step(false, 'Optional: no prompts for its read-only tools', '{ "permissions": { "allow": ["mcp__pilot", "Bash(pilot:*)"] } }', 'In .claude/settings.json (or settings.local.json, just for you).'));
+      step(false, 'Check it', 'claude mcp list', 'It should say pilot ✔ Connected; in Claude Code, /mcp shows it too. Then ask, for example: "Use pilot to find what makes up /Orders and tighten its spacing on phones."'),
+      step(false, 'Optional: no prompts for its read-only tools', '{ "permissions": { "allow": ["mcp__pilot", "Bash(pilot *)"] } }', 'In .claude/settings.json (or settings.local.json, just for you).'));
     const toggle = h('a', { onclick: () => { body.hidden = !body.hidden; toggle.textContent = body.hidden ? 'Show how' : 'Hide'; } }, ready ? 'Show how' : 'Hide');
     return h('div', { class: 'card', style: { marginTop: '14px' } },
       h('div', { class: 'flow', style: { justifyContent: 'space-between' } },
