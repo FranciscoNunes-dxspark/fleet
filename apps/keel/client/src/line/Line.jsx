@@ -203,7 +203,7 @@ export function StageCards() {
               {t('Only what needs me')} <span className="muted">{mine}</span>
             </label>
           )}
-          {deeper.map(([label, to]) => <Link key={to} to={to} className="btn btn-small">{label} →</Link>)}
+          {deeper.map(([label, to]) => <Button key={to} asChild size="1" variant="outline" color="gray"><Link to={to}>{label} →</Link></Button>)}
         </div>
       </header>
       {!stage.cards.length && <p className="stage-empty">{loading ? t('Loading') : t('Nothing here')}</p>}

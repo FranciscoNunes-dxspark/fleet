@@ -46,7 +46,7 @@ export default function TerminalSignIn() {
       <>
         <h1>{done === 'allowed' ? t('Your terminal is signed in') : t('Sign-in refused')}</h1>
         <p className="signin-lead">{done === 'allowed' ? t('Go back to your terminal: Keel starts there in a moment. You can sign it out at any time in Settings → Your account.') : t("That terminal isn't signed in. If you didn't start it, you don't need to do anything else.")}</p>
-        <Link to="/" className="btn">{t('Go to Keel')}</Link>
+        <Button asChild size="2" variant="outline" color="gray"><Link to="/">{t('Go to Keel')}</Link></Button>
       </>
     );
   } else if (login) {

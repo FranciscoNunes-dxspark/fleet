@@ -570,7 +570,7 @@ function TerminalAppSettings() {
     <Section id="terminal-app" title={t('Terminal app')}>
       <p className="muted small">{t('Keel in the terminal: the Inbox, pull requests, pipelines, work items and production, from the keyboard. One file with nothing else to install, and it keeps itself up to date.')}</p>
       <div className="terminal-download">
-        {mine && <a className="btn btn-small btn-primary" href={href(mine)}>{t('Download for {platform}', { platform: t(mine.label) })}</a>}
+        {mine && <Button asChild size="1" variant="solid"><a href={href(mine)}>{t('Download for {platform}', { platform: t(mine.label) })}</a></Button>}
         <span className="small">
           <span className="muted">{mine ? t('Also for') : t('Download for')} </span>
           {others.map((b, i) => (

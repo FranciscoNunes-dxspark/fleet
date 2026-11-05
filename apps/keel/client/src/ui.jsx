@@ -337,11 +337,32 @@ export function sameTarget(a, b) {
     && String(a.repoId ?? '') === String(b.repoId ?? '') && (a.org || '') === (b.org || '');
 }
 
+/**
+ * Radix Button props for the class names callers have always passed (`btn btn-small btn-ghost text-bad`…),
+ * so every button in the app is a Radix one: btn-small is size 1, btn-primary solid in the accent, btn-danger
+ * solid red, btn-ghost ghost, text-bad red, anything else outline gray. Other classes pass through.
+ */
+export function buttonLook(className = '') {
+  const has = (c) => className.split(/\s+/).includes(c);
+  const rest = className.split(/\s+/).filter((c) => c && !['btn', 'btn-small', 'btn-primary', 'btn-ghost', 'btn-danger', 'text-bad'].includes(c)).join(' ');
+  const look = { size: has('btn-small') ? '1' : '2' };
+  if (has('btn-primary')) look.variant = 'solid';
+  else if (has('btn-danger')) Object.assign(look, { variant: 'solid', color: 'red' });
+  else Object.assign(look, { variant: has('btn-ghost') ? 'ghost' : 'outline', color: has('text-bad') ? 'red' : 'gray' });
+  // Radix pulls a ghost button out by its padding; these sit side by side in rows that count on their box.
+  const classes = [rest, look.variant === 'ghost' && 'ghost-boxed'].filter(Boolean).join(' ');
+  if (classes) look.className = classes;
+  return look;
+}
+
 export function ExternalLink({ href, children, className = 'btn btn-ghost btn-small' }) {
   const sourceName = useSourceName();
   if (!href) return null;
   children ??= sourceName(href) === 'GitHub' ? t('Open in GitHub') : t('Open in Azure DevOps');
-  return <a className={className} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
+  const link = (props) => <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
+  // A plain link when asked for one (className "small"…), else a Radix button wearing the link.
+  if (!/\bbtn\b/.test(className)) return link({ className });
+  return <Button asChild {...buttonLook(className)}>{link({})}</Button>;
 }
 
 /**
@@ -356,8 +377,10 @@ export function FilterFold({ active = 0, lead = null, children }) {
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <div className="filter-fold-bar">
         {lead}
-        <Collapsible.Trigger className={`btn btn-small filter-fold-btn${active ? ' on' : ''}`}>
-          <Icon name="search" size={14} /> {t('Filters')}{active > 0 && <span className="filter-fold-n">{active}</span>}
+        <Collapsible.Trigger asChild>
+          <Button type="button" size="1" variant="outline" color={active ? undefined : 'gray'} className="filter-fold-btn">
+            <Icon name="search" size={14} /> {t('Filters')}{active > 0 && <span className="filter-fold-n">{active}</span>}
+          </Button>
         </Collapsible.Trigger>
       </div>
       <Collapsible.Content className="filter-fold">{children}</Collapsible.Content>
@@ -537,7 +560,7 @@ export function pinInView(el, ms = 6000) {
 export function Confirm({ text, onConfirm, children, className = 'btn btn-small' }) {
   return (
     <AlertDialog.Root>
-      <AlertDialog.Trigger><button type="button" className={className}>{children}</button></AlertDialog.Trigger>
+      <AlertDialog.Trigger><Button type="button" {...buttonLook(className)}>{children}</Button></AlertDialog.Trigger>
       <AlertDialog.Content size="1" maxWidth="340px" className="confirm-pop" aria-describedby={undefined}>
         <AlertDialog.Title size="3" mb="0">{text}</AlertDialog.Title>
         <span className="confirm-actions">

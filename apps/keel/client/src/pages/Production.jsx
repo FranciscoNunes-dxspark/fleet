@@ -9,6 +9,7 @@ import { deployStatus } from './DeployDetail.jsx';
 import { api } from '../api.js';
 import { regressionBug } from '../regressionBug.js';
 import { PREF_KEYS, pushPref } from '../prefs.js';
+import { Button } from '@radix-ui/themes';
 
 const STATE = {
   up: { tone: 'ok', label: 'Up' },
@@ -73,7 +74,7 @@ export default function Production() {
             <button type="button" role="radio" aria-checked={view === 'detailed'} className={view === 'detailed' ? 'on' : ''} onClick={() => pick('detailed')}>{t('Detailed')}</button>
           </div>
         )}
-        <Link className="btn btn-small" to="/settings#production">{t('Manage monitors')}</Link>
+        <Button asChild size="1" variant="outline" color="gray"><Link to="/settings#production">{t('Manage monitors')}</Link></Button>
       </PageHeader>
       <ProductionTabs />
 

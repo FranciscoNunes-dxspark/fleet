@@ -174,7 +174,7 @@ function TotalsOverview() {
         {can('monitors.manage') && enabled.length > 0 && (
           <Button size="1" variant="outline" color="gray" type="button" onClick={fetchAll} disabled={starting || busy}>{busy ? t('Fetching…') : t('Fetch all')}</Button>
         )}
-        {can('monitors.manage') && <Link className="btn btn-small" to="/settings#production">{t('Manage sites')}</Link>}
+        {can('monitors.manage') && <Button asChild size="1" variant="outline" color="gray"><Link to="/settings#production">{t('Manage sites')}</Link></Button>}
       </PageHeader>
       <ProductionTabs />
 
@@ -296,7 +296,7 @@ function SiteTotals({ id }) {
         title={data.name}
         sub={[latest?.product, latest?.site, latest?.version && t('version {v}', { v: latest.version }), latest?.season?.name ? t('season {name}', { name: latest.season.name }) : latest?.season?.scope === 'all' ? t('all seasons') : null].filter(Boolean).join(' · ') || data.url}
       >
-        <Link className="btn btn-small btn-ghost" to="/totals">{t('All sites')}</Link>
+        <Button asChild size="1" variant="ghost" color="gray"><Link to="/totals">{t('All sites')}</Link></Button>
         {can('monitors.manage') && data.enabled && (
           <Button size="1" variant="outline" color="gray" type="button" onClick={fetchNow} disabled={starting || data.fetching}>{data.fetching ? t('Fetching…') : data.queued ? t('Queued') : t('Fetch now')}</Button>
         )}

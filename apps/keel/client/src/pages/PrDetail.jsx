@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { api, prPath } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, REVIEW_STATE, VOTES } from '../format.js';
-import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
+import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading, buttonLook } from '../ui.jsx';
 import { Markdown } from '../markdown.jsx';
 import { t, tj, tx } from '../i18n.js';
 import { useOrgKind, useProjectLabel } from '../orgs.js';
@@ -143,6 +143,9 @@ export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file chang
   );
 }
 
+/** The Radix colour a chosen vote fills with, by its tone. */
+const VOTE_COLOR = { ok: 'green', warn: 'amber', bad: 'red' };
+
 const VOTE_BUTTONS = [
   { vote: 10, get label() { return t('Approve'); }, tone: 'ok' },
   { vote: 5, get label() { return t('Approve with suggestions'); }, tone: 'ok' },
@@ -274,16 +277,17 @@ export default function PrDetail({ target }) {
           )}
           {!ownGithub && <div className="vote-row">
             {(github ? GITHUB_VOTE_BUTTONS : VOTE_BUTTONS).map((b) => (
-              <button
+              <Button
                 key={b.vote}
                 type="button"
-                className={`btn btn-small vote-btn vote-btn-${b.tone} ${pr.myVote === b.vote && b.vote !== 0 ? 'selected' : ''}`}
+                size="1"
+                {...(pr.myVote === b.vote && b.vote !== 0 ? { variant: 'solid', color: VOTE_COLOR[b.tone] } : { variant: 'outline', color: 'gray' })}
                 disabled={!!busy}
                 aria-pressed={pr.myVote === b.vote}
                 onClick={() => act({ type: 'vote', vote: b.vote }, b.vote === 0 ? t('Vote reset') : t('Voted: {vote}', { vote: b.label }))}
               >
                 {busy === `vote${b.vote}` ? '…' : b.label}
-              </button>
+              </Button>
             ))}
           </div>}
         </section>
@@ -410,15 +414,15 @@ export default function PrDetail({ target }) {
           <Button size="1" variant="solid" type="button" disabled={!!busy} onClick={() => act({ type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{busy === 'vote10' ? '…' : t('Approve')}</Button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && !completing && (
-          <button
+          <Button
             type="button"
-            className={`btn btn-small ${pr.flow.step === 'complete' && !held ? 'btn-primary' : ''}`}
+            {...buttonLook(`btn btn-small ${pr.flow.step === 'complete' && !held ? 'btn-primary' : ''}`)}
             disabled={!!busy || pr.hasConflicts || !!held}
             title={pr.hasConflicts ? t('Resolve the merge conflicts first') : held || (pr.flow.step === 'approval' ? t('Not approved yet: branch policies may refuse it') : undefined)}
             onClick={() => setCompleting(true)}
           >
             {t('Complete…')}
-          </button>
+          </Button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && (github
           ? pr.autoComplete
@@ -597,14 +601,14 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = fal
             {busy ? t('Scheduling…') : t('Schedule completion')}
           </Button>
         ) : (
-          <button
+          <Button
             type="button"
-            className={`btn btn-small ${bypassPolicy ? 'btn-danger' : 'btn-primary'}`}
+            {...buttonLook(`btn btn-small ${bypassPolicy ? 'btn-danger' : 'btn-primary'}`)}
             disabled={busy || (bypassPolicy && !bypassReason.trim())}
             onClick={() => onComplete({ mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems, bypassPolicy, bypassReason })}
           >
             {busy ? t('Completing…') : bypassPolicy ? t('Override and complete merge') : t('Complete merge')}
-          </button>
+          </Button>
         )}
         <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>
