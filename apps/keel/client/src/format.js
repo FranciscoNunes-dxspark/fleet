@@ -14,20 +14,34 @@ export function hours(h) {
   return `${Math.round(h / 24)}d`;
 }
 
+// toLocaleString(locale, options) builds a new Intl.DateTimeFormat on every call, which a table of
+// runs or commits does hundreds of times a render; one formatter per language and options instead.
+const formatters = new Map();
+/** A date formatted in the app's language with `options`, through a formatter made once. */
+export function formatDate(value, options = {}) {
+  const key = `${locale()}|${JSON.stringify(options)}`;
+  let f = formatters.get(key);
+  if (!f) { f = new Intl.DateTimeFormat(locale(), options); formatters.set(key, f); }
+  return f.format(value instanceof Date ? value : new Date(value));
+}
+const FULL = { dateStyle: 'medium', timeStyle: 'short' };
+/** The full date and time, for a tooltip. */
+export const fullDateTime = (iso) => (iso ? formatDate(iso, FULL) : '');
+
 export function date(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(locale(), { month: 'short', day: 'numeric' });
+  return formatDate(iso, { month: 'short', day: 'numeric' });
 }
 
 export function dateTime(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return formatDate(iso, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /** The same with its time zone ("19 Oct, 18:00 WEST"): where it matters which clock it's on (schedules). */
 export function dateTimeZone(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+  return formatDate(iso, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
 }
 
 /** This device's time zone ("Europe/Lisbon"): a date-and-time field means a time on this clock. */

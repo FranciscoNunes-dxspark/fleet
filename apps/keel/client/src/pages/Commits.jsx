@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSticky } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
-import { dateTime } from '../format.js';
+import { dateTime, formatDate } from '../format.js';
 import { CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person } from '../ui.jsx';
-import { locale, t } from '../i18n.js';
+import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { SavedViews } from '../views.jsx';
 import { TextField } from '@radix-ui/themes';
@@ -22,7 +22,7 @@ function dayLabel(iso) {
   yesterday.setDate(today.getDate() - 1);
   if (d.toDateString() === today.toDateString()) return t('Today');
   if (d.toDateString() === yesterday.toDateString()) return t('Yesterday');
-  return d.toLocaleDateString(locale(), { weekday: 'long', month: 'short', day: 'numeric', ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) });
+  return formatDate(d, { weekday: 'long', month: 'short', day: 'numeric', ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) });
 }
 
 // Git authors are a name and an email, not Azure DevOps accounts; Person only needs a name.
@@ -176,7 +176,7 @@ export default function Commits() {
                       </span>
                     ) : <span className="commit-changes" />}
                     <time className="commit-time muted small" dateTime={c.author?.date} title={dateTime(c.author?.date)}>
-                      {new Date(c.author?.date).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })}
+                      {formatDate(c.author?.date, { hour: '2-digit', minute: '2-digit' })}
                     </time>
                   </li>
                 ))}

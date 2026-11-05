@@ -16,7 +16,13 @@ export default defineConfig({
   root: 'client',
   plugins: [react(), buildId],
   define: { __KEEL_BUILD__: JSON.stringify(build) },
-  build: { outDir: '../dist', emptyOutDir: true },
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+    // Fonts stay files: the server's Content-Security-Policy allows fonts from 'self' only, so a small
+    // font subset inlined as a data: URL was refused and that subset never drew.
+    assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
+  },
   server: {
     port: 5173,
     strictPort: true,

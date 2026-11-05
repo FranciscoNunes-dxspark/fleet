@@ -3,7 +3,7 @@ import { useSticky } from '../sticky.js';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age } from '../format.js';
+import { age, fullDateTime } from '../format.js';
 import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, sameTarget, typeSlug, useTypeColor } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useSourceName } from '../orgs.js';
@@ -190,7 +190,7 @@ export default function Inbox() {
                         </ul>
                       </div>
                       <div className="strip-side">
-                        {item.at && <span className="strip-age" title={new Date(item.at).toLocaleString()}>{age(item.at)}</span>}
+                        {item.at && <span className="strip-age" title={fullDateTime(item.at)}>{age(item.at)}</span>}
                         <div className="strip-actions">
                           <ExternalLink href={item.webUrl}>{sourceName(item.webUrl)}</ExternalLink>
                           <SnoozeMenu onPick={(d) => snooze(item, d)} />

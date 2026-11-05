@@ -1,45 +1,51 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api.js';
-import { AppContext } from './context.js';
+import { AppContext, forgetApiCache } from './context.js';
 import { Drawer, ErrorBox, Loading } from './ui.jsx';
 import { loadPrefs, showDesktop } from './notify.js';
-import Inbox from './pages/Inbox.jsx';
-import PullRequests from './pages/PullRequests.jsx';
-import PrDetail from './pages/PrDetail.jsx';
-import WorkItems from './pages/WorkItems.jsx';
-import WorkItemDetail from './pages/WorkItemDetail.jsx';
-import PipelineDetail from './pages/PipelineDetail.jsx';
-import Commits from './pages/Commits.jsx';
-import CommitDetail from './pages/CommitDetail.jsx';
-import DeployDetail from './pages/DeployDetail.jsx';
-import Summary from './pages/Summary.jsx';
-import NewWorkItem from './pages/NewWorkItem.jsx';
-import NewPr from './pages/NewPr.jsx';
-import Board from './pages/Board.jsx';
-import Epics from './pages/Epics.jsx';
-import NotFound from './pages/NotFound.jsx';
-import Pipelines from './pages/Pipelines.jsx';
-import Production from './pages/Production.jsx';
-import Totals from './pages/Totals.jsx';
-import Shipping from './pages/Shipping.jsx';
-import ReleaseNotes from './pages/ReleaseNotes.jsx';
-import Team from './pages/Team.jsx';
-import Insights from './pages/Insights.jsx';
-import Settings from './pages/Settings.jsx';
 import { CommandPalette } from './palette.jsx';
 import LineShell from './line/LineShell.jsx';
 import { LineHome, StageCards } from './line/Line.jsx';
-import Desk from './line/Desk.jsx';
-import Control from './line/Control.jsx';
-import People from './line/People.jsx';
 import { ConnectAzure, LinkAccept, SetupScreen as Setup, SignIn } from './pages/AuthScreens.jsx';
-import Users from './pages/Users.jsx';
-import TerminalSignIn from './pages/TerminalSignIn.jsx';
 import { adoptServerPrefs, seedServerPrefs } from './prefs.js';
 import { loadHome } from './home.js';
 import { applyTheme } from './theme.js';
 import { applySavedLanguage, getLanguage, t, tj, tx } from './i18n.js';
+
+// Each page and each details view is its own chunk, fetched the first time it's opened: the first
+// load carries the frame and the Line (the usual home), not the whole app.
+const Inbox = lazy(() => import('./pages/Inbox.jsx'));
+const PullRequests = lazy(() => import('./pages/PullRequests.jsx'));
+const PrDetail = lazy(() => import('./pages/PrDetail.jsx'));
+const WorkItems = lazy(() => import('./pages/WorkItems.jsx'));
+const WorkItemDetail = lazy(() => import('./pages/WorkItemDetail.jsx'));
+const PipelineDetail = lazy(() => import('./pages/PipelineDetail.jsx'));
+const Commits = lazy(() => import('./pages/Commits.jsx'));
+const CommitDetail = lazy(() => import('./pages/CommitDetail.jsx'));
+const DeployDetail = lazy(() => import('./pages/DeployDetail.jsx'));
+const Summary = lazy(() => import('./pages/Summary.jsx'));
+const NewWorkItem = lazy(() => import('./pages/NewWorkItem.jsx'));
+const NewPr = lazy(() => import('./pages/NewPr.jsx'));
+const Board = lazy(() => import('./pages/Board.jsx'));
+const Epics = lazy(() => import('./pages/Epics.jsx'));
+const NotFound = lazy(() => import('./pages/NotFound.jsx'));
+const Pipelines = lazy(() => import('./pages/Pipelines.jsx'));
+const Production = lazy(() => import('./pages/Production.jsx'));
+const Totals = lazy(() => import('./pages/Totals.jsx'));
+const Shipping = lazy(() => import('./pages/Shipping.jsx'));
+const ReleaseNotes = lazy(() => import('./pages/ReleaseNotes.jsx'));
+const Team = lazy(() => import('./pages/Team.jsx'));
+const Insights = lazy(() => import('./pages/Insights.jsx'));
+const Settings = lazy(() => import('./pages/Settings.jsx'));
+const Users = lazy(() => import('./pages/Users.jsx'));
+const TerminalSignIn = lazy(() => import('./pages/TerminalSignIn.jsx'));
+const Desk = lazy(() => import('./line/Desk.jsx'));
+const Control = lazy(() => import('./line/Control.jsx'));
+const People = lazy(() => import('./line/People.jsx'));
+
+// Once the app is idle, fetch the details views people open most, so the first click opens at once.
+const warmDetails = () => { import('./pages/PrDetail.jsx'); import('./pages/WorkItemDetail.jsx'); import('./pages/PipelineDetail.jsx'); };
 
 /**
  * Auth gate. In login mode (hosted), shows sign-in until there's a session,
@@ -84,6 +90,7 @@ function AuthGate() {
 
   useEffect(() => {
     const onSignedOut = (e) => {
+      forgetApiCache(); // the next person to sign in on this browser starts from their own data
       setReason(e.detail?.reason || 'signin-required');
       setAuth((a) => (a?.mode === 'login' ? { ...a, signedIn: false } : a));
     };
@@ -132,11 +139,15 @@ function AuthGate() {
     if (!auth.signedIn) return <SignIn orgUrl={auth.orgUrl} reason={reason} onDone={restart} />;
     if (auth.needsToken) return <ConnectAzure orgUrl={auth.orgUrl} user={auth.user} reason={reason} onDone={restart} onSignOut={signOut} />;
   }
-  return <Console key={session} authMode={auth.mode} onSignedOut={() => { setReason(null); setAuth((a) => ({ ...a, signedIn: false })); }} />;
+  return <Console key={session} authMode={auth.mode} onSignedOut={() => { forgetApiCache(); setReason(null); setAuth((a) => ({ ...a, signedIn: false })); }} />;
 }
 
 function Console({ authMode, onSignedOut }) {
   const [refreshKey, setRefreshKey] = useState(0);
+  useEffect(() => {
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
+    idle(warmDetails);
+  }, []);
   const [drawer, setDrawer] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [meta, setMeta] = useState(null);
@@ -291,13 +302,14 @@ function Console({ authMode, onSignedOut }) {
   if (here === '/terminal') {
     return (
       <AppContext.Provider value={ctx}>
-        <TerminalSignIn />
+        <Suspense fallback={<div className="boot"><Loading /></div>}><TerminalSignIn /></Suspense>
       </AppContext.Provider>
     );
   }
   return (
     <AppContext.Provider value={ctx}>
       <LineShell>
+        <Suspense fallback={<Loading />}>
         <Routes>
           <Route path="/" element={<Navigate to={loadHome()} replace />} />
           <Route path="/line" element={<LineHome />} />
@@ -328,9 +340,11 @@ function Console({ authMode, onSignedOut }) {
           {/* Unknown paths get a page saying so. */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </Suspense>
       </LineShell>
       <CommandPalette />
       <Drawer open={!!drawer} onClose={() => setDrawer(null)} label={t('Details')} docked={docked}>
+        <Suspense fallback={<Loading />}>
         {drawer?.type === 'pr' && <PrDetail target={drawer} />}
         {drawer?.type === 'workitem' && <WorkItemDetail key={`${drawer.org || ''}:${drawer.id}`} id={drawer.id} org={drawer.org} />}
         {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
@@ -338,6 +352,7 @@ function Console({ authMode, onSignedOut }) {
         {drawer?.type === 'deploy' && <DeployDetail key={`${drawer.target}:${drawer.id}`} target={drawer} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
         {drawer?.type === 'newworkitem' && <NewWorkItem key={JSON.stringify(drawer)} preset={drawer} />}
+        </Suspense>
       </Drawer>
       <div className="toasts" aria-live="polite">
         {toasts.map((item) => (

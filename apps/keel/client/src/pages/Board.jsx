@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import { useSticky, useStickyParams } from '../sticky.js';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age, isBlocked } from '../format.js';
+import { age, formatDate, isBlocked } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle, TypeLabel } from '../ui.jsx';
-import { locale, t, tj } from '../i18n.js';
+import { t, tj } from '../i18n.js';
 import { wiActionsPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
 import { Button, TextField } from '@radix-ui/themes';
@@ -44,7 +44,7 @@ function placement(cards, w, dropAt) {
   return { previousId: prev?.id || 0, nextId: next?.id || 0, value: orderBetween(prev?.backlogOrder, next?.backlogOrder, w.backlogOrder), explicit: at >= 0 };
 }
 const DONE_CAP = 20;
-const fullDate = (iso) => (iso ? new Date(iso).toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+const fullDate = (iso) => (iso ? formatDate(iso, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 
 /**
  * Column model shared by both layouts:

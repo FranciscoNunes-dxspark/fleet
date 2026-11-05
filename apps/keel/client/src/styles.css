@@ -248,9 +248,10 @@ button { font: inherit; color: inherit; }
 .boot { max-width: 640px; padding: 0 16px; min-height: 100vh; margin: 0 auto; display: grid; place-content: center; }
 
 /* ------------------------------------------------------------- controls */
-/* A row's controls share one height: a small button beside a field or a select, and every button in a
-   page's header, stand 32px tall like the field. */
-:where(.page-actions, *:has(> .input, > .rt-TextFieldRoot, > .rt-SelectTrigger)) > .rt-Button.rt-r-size-1 {
+/* A row's controls share one height: a small button after a field or a select, and every button in a
+   page's header, stand 32px tall like the field. (Sibling selectors, not :has(), which the browser
+   re-checks across the page on every change.) */
+:is(.page-actions > *, .input ~ *, .rt-TextFieldRoot ~ *, .rt-SelectTrigger ~ *).rt-Button.rt-r-size-1 {
   --base-button-height: var(--space-6); padding-inline: var(--space-3); gap: var(--space-2);
   font-size: var(--font-size-2); line-height: var(--line-height-2); letter-spacing: var(--letter-spacing-2);
 }
