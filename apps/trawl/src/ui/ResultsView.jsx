@@ -116,7 +116,9 @@ export function ResultsView({ results, changes, setIndex, view, ctx, width, heig
   }
   if (editable && hasChanges(pending)) notes.unshift({ text: `${changesText(pending)} not saved · s saves · u undoes the row · alt+u all`, color: theme.warn });
   const noteLines = Math.min(3, notes.length);
-  const gridH = Math.max(1, innerH - 2 - noteLines);
+  // With several result sets, a strip of tabs sits above the grid.
+  const tabRows = sets.length > 1 ? 1 : 0;
+  const gridH = Math.max(1, innerH - 2 - noteLines - tabRows);
   const nav = useListNav(shownRows.length, gridH, { resetKey: `${results?.id}:${setIndex}:${sort?.col}:${sort?.dir}:${filter}` });
   // Editable rows have a cell cursor; other results just scroll, the first column shown standing in for it.
   const cur = Math.min(hasCursor ? col : colOffset, Math.max(0, widths.length - 1));
@@ -316,17 +318,25 @@ export function ResultsView({ results, changes, setIndex, view, ctx, width, heig
     colFree.current = hasCursor;
     setColOffset((o) => Math.max(0, Math.min(widths.length - 1, o + n)));
   };
+  const tabLabels = sets.map((s, i) => ` ${i + 1}: ${s.columns.length ? `${s.rows.length}${s.truncated ? '+' : ''} row${s.rows.length === 1 ? '' : 's'}` : 'no rows'} `);
+  const tabStarts = tabLabels.reduce((acc, l, i) => [...acc, i ? acc[i - 1] + stringWidth(tabLabels[i - 1]) + 1 : 0], []);
   // The grid's rows start under the border, the column names and the line under them; its cells
   // after the border and the ❯, each followed by a separator (a click on one goes to the cell before).
   useMouse(
     ctx,
     (e) => {
+      if (e.wheel && !set) return;
+      if (tabRows && !e.wheel && e.y === 1) {
+        const at = tabStarts.findLastIndex((x) => e.x - 1 >= x);
+        if (at >= 0 && at !== setIndex) (ctx.setResultIndex(at), setColOffset(0), setCol(0));
+        return;
+      }
       if (!set) return;
       if (e.wheel) return e.shift ? scrollCols(e.wheel) : nav.scrollBy(e.wheel * 3);
       leaveCell.current();
       // Under the console: a click there is about the results, so typing stops.
       if (top) ctx.setEditing(false);
-      if (!nav.pick(e.y - 3)) return;
+      if (!nav.pick(e.y - 3 - tabRows)) return;
       if (hasCursor) {
         let x = 3;
         const starts = shown.map(({ w }) => {
@@ -391,6 +401,13 @@ export function ResultsView({ results, changes, setIndex, view, ctx, width, heig
 
   return (
     <Panel title={title} hint={parts.join(' · ')} width={width} height={height} focused={active}>
+      {tabRows ? (
+        <Row
+          pointer={false}
+          width={innerW}
+          segments={tabLabels.flatMap((l, i) => [...(i ? [{ text: ' ' }] : []), i === setIndex ? { text: l, color: theme.ink, bg: theme.accent, bold: true } : { text: l, color: theme.dim }])}
+        />
+      ) : null}
       {set ? (
         <Box key={gridKey(set)} flexDirection="column">
           <Row
