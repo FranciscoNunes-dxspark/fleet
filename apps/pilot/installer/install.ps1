@@ -34,7 +34,7 @@ function Download($asset, [string]$to) {
   }
 }
 
-# The release: the version asked for, else the newest pilot-v… that isn't a draft or a pre-release.
+# The release: the version asked for, else the newest pilot-v... that isn't a draft or a pre-release.
 if ($Version) {
   $script:tag = "pilot-v$($Version.TrimStart('v'))"
 } else {
@@ -50,7 +50,7 @@ if (-not $exeAsset -or -not $sumAsset) { throw "$script:tag has no $File or SHA2
 $work = Join-Path ([IO.Path]::GetTempPath()) ("pilot-install-" + [Guid]::NewGuid())
 New-Item -ItemType Directory $work | Out-Null
 try {
-  Write-Host "Downloading $File from $script:tag…"
+  Write-Host "Downloading $File from $script:tag..."
   Download $exeAsset (Join-Path $work $File)
   Download $sumAsset (Join-Path $work 'SHA256SUMS.txt')
   $line = Get-Content (Join-Path $work 'SHA256SUMS.txt') | Where-Object { $_ -match "^([0-9a-f]{64}) [ *]$([regex]::Escape($File))$" } | Select-Object -First 1

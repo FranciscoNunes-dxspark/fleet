@@ -36,6 +36,17 @@ test('the install scripts name the release files the build makes', () => {
   assert.match(read('install.ps1'), new RegExp(`\\$File = '${assetName('win32', 'x64').replace('.', '\\.')}'`));
 });
 
+test('the PowerShell scripts avoid what Windows PowerShell misreads, on every system', () => {
+  for (const f of ['install.ps1', 'build.ps1']) {
+    const text = read(f);
+    // Without a BOM, Windows PowerShell 5.1 reads a script as the ANSI code page: UTF-8's dashes and
+    // quotes turn into quote characters there.
+    assert.ok(!/[^\x00-\x7f]/.test(text), `${f} is ASCII only`);
+    // "$exe: ..." is a scope or drive prefix (like $env:) to PowerShell, and a syntax error: "${exe}: ...".
+    for (const m of text.matchAll(/\$([A-Za-z_]\w*):(?![A-Za-z_])/g)) assert.fail(`${f}: $${m[1]}: needs braces`);
+  }
+});
+
 test('the PowerShell scripts parse', { skip: !windows && 'PowerShell is checked on Windows' }, () => {
   for (const f of ['install.ps1', 'build.ps1']) {
     const out = execFileSync('powershell', ['-NoProfile', '-Command', `$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('${join(dir, f)}', [ref]$null, [ref]$e); $e.Count`], { encoding: 'utf8' });
