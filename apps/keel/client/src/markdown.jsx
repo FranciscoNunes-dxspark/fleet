@@ -52,23 +52,35 @@ export function Markdown({ text, html, people = [] }) {
   return <div className="markdown" dangerouslySetInnerHTML={{ __html: safe }} />;
 }
 
-/** A Markdown textarea with Write / Preview tabs. Extra props go to the textarea. */
-export function MarkdownInput({ value, onChange, label, rows = 4, people, ...rest }) {
+/**
+ * A Markdown textarea with Write / Preview tabs. It grows with what's written (up to most of the
+ * window), can be dragged taller, and Expand gives it most of the window at once; Ctrl or ⌘ + Enter
+ * sends the form it's in. Extra props go to the textarea.
+ */
+export function MarkdownInput({ value, onChange, label, rows = 5, people, ...rest }) {
   const [preview, setPreview] = useState(false);
-  // Back to writing once the text is posted or cleared.
-  useEffect(() => { if (!value) setPreview(false); }, [value]);
+  const [expanded, setExpanded] = useState(false);
+  // Back to writing, at its own size, once the text is posted or cleared.
+  useEffect(() => { if (!value) { setPreview(false); setExpanded(false); } }, [value]);
+  const send = (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); }
+  };
   return (
-    <div className="md-input">
+    <div className={`md-input${expanded ? ' md-expanded' : ''}`}>
       <div className="md-input-bar">
         <span className="segmented segmented-compact" role="tablist" aria-label={label}>
           <button type="button" role="tab" aria-selected={!preview} className={!preview ? 'on' : ''} onClick={() => setPreview(false)}>{t('Write')}</button>
           <button type="button" role="tab" aria-selected={preview} className={preview ? 'on' : ''} onClick={() => setPreview(true)}>{t('Preview')}</button>
         </span>
-        <a className="small muted" href="https://learn.microsoft.com/azure/devops/project/wiki/markdown-guidance" target="_blank" rel="noreferrer noopener">{t('Markdown supported')}</a>
+        <span className="md-input-tools">
+          <a className="small muted" href="https://learn.microsoft.com/azure/devops/project/wiki/markdown-guidance" target="_blank" rel="noreferrer noopener">{t('Markdown supported')}</a>
+          <button type="button" className="link-btn small" aria-pressed={expanded} onClick={() => setExpanded((x) => !x)}>{expanded ? t('Shrink') : t('Expand')}</button>
+        </span>
       </div>
       {preview
         ? <div className="md-preview" style={{ minHeight: `${rows * 1.5}em` }}><Markdown text={value || t('_Nothing to preview._')} people={people} /></div>
-        : <TextArea variant="surface" color="gray" rows={rows} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} {...rest} />}
+        : <TextArea variant="surface" color="gray" resize="vertical" rows={rows} value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={send} aria-label={label} {...rest} />}
+      {!preview && <span className="md-input-hint small muted">{t('Ctrl + Enter to send')}</span>}
     </div>
   );
 }

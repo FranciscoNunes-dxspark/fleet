@@ -385,7 +385,7 @@ html.inspector-open .ls { padding-right: calc(var(--inspector-w) + var(--frame))
 .desk-row-reason.reason-medium { color: var(--warn); }
 .desk-row-reason::before { display: none; }
 
-.desk-detail { position: relative; padding: 0 28px; background: var(--surface); outline: none; border-left: 2px solid var(--rule); }
+.desk-detail { --pane-pad: 28px; position: relative; padding: 0 var(--pane-pad); background: var(--surface); outline: none; border-left: 2px solid var(--rule); }
 .desk-detail > .loading { position: absolute; inset: 0; }
 .desk-detail-bar {
   position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 0 -28px 16px; padding: 10px 28px;

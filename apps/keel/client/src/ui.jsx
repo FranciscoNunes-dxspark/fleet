@@ -261,8 +261,17 @@ export function TeamTabs() {
  * page keeps scrolling and stays clickable, and the focus stays where it was, so a list can be
  * walked with the keyboard while the panel follows.
  */
+// Whether the modal panel is opened wide; each viewer's own choice, kept in this browser.
+const WIDE_KEY = 'keel.drawer.wide';
+const readWide = () => { try { return localStorage.getItem(WIDE_KEY) === '1'; } catch { return false; } };
+
 export function Drawer({ open, onClose, children, label, docked = false }) {
   const ref = useRef(null);
+  const [wide, setWide] = useState(readWide);
+  const toggleWide = () => setWide((w) => {
+    try { localStorage.setItem(WIDE_KEY, w ? '0' : '1'); } catch { /* private window: this visit only */ }
+    return !w;
+  });
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   // The page behind stays put while the panel is open: one scrollbar, the panel's. Docked, the
@@ -272,18 +281,32 @@ export function Drawer({ open, onClose, children, label, docked = false }) {
     const onKey = (e) => e.key === 'Escape' && docked && closeRef.current();
     window.addEventListener('keydown', onKey);
     const cls = docked ? 'inspector-open' : 'drawer-open';
-    document.documentElement.classList.add(cls);
+    const root = document.documentElement;
+    root.classList.add(cls);
+    // Wide sets the panel's width on the page, where the toasts beside it read it too.
+    root.classList.toggle('drawer-wide-open', wide && !docked);
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.documentElement.classList.remove(cls);
+      root.classList.remove(cls, 'drawer-wide-open');
     };
-  }, [open, docked]);
+  }, [open, docked, wide]);
   if (!open) return null;
-  const close = <button type="button" className="drawer-close" onClick={onClose} aria-label={t('Close panel')}>✕</button>;
+  // The panel's own buttons, pinned to its top corner while its contents scroll under them.
+  const tools = (
+    <div className="drawer-tools">
+      {!docked && (
+        <button type="button" className="drawer-tool drawer-widen" onClick={toggleWide} aria-pressed={wide}
+          aria-label={wide ? t('Narrow the panel') : t('Widen the panel')} title={wide ? t('Narrow the panel') : t('Widen the panel')}>
+          <Icon name={wide ? 'narrow' : 'widen'} size={15} />
+        </button>
+      )}
+      <button type="button" className="drawer-tool" onClick={onClose} aria-label={t('Close panel')} title={t('Close panel')}><Icon name="close" size={16} /></button>
+    </div>
+  );
   if (docked) {
     return (
       <aside className="drawer drawer-docked" aria-label={label} tabIndex={-1} ref={ref}>
-        {close}
+        {tools}
         {children}
       </aside>
     );
@@ -296,11 +319,11 @@ export function Drawer({ open, onClose, children, label, docked = false }) {
          <div className="drawer-layer">
           <Dialog.Overlay className="drawer-scrim" />
           <Dialog.Content
-            className="drawer" aria-describedby={undefined} tabIndex={-1} ref={ref}
+            className={`drawer${wide ? ' drawer-wide' : ''}`} aria-describedby={undefined} tabIndex={-1} ref={ref}
             onOpenAutoFocus={(e) => { e.preventDefault(); ref.current?.focus({ preventScroll: true }); }}
           >
             <VisuallyHidden.Root asChild><Dialog.Title>{label}</Dialog.Title></VisuallyHidden.Root>
-            {close}
+            {tools}
             {children}
           </Dialog.Content>
          </div>

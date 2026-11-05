@@ -3,7 +3,7 @@ import { api, prPath } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, REVIEW_STATE, VOTES } from '../format.js';
 import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading, buttonLook } from '../ui.jsx';
-import { Markdown } from '../markdown.jsx';
+import { Markdown, MarkdownInput } from '../markdown.jsx';
 import { t, tj, tx } from '../i18n.js';
 import { useOrgKind, useProjectLabel } from '../orgs.js';
 import MergeStatus from './MergeStatus.jsx';
@@ -391,8 +391,8 @@ export default function PrDetail({ target }) {
         </ul>
         {writable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', content: comment }, t('Comment posted'))) setComment(''); }}>
-          <TextArea variant="surface" color="gray" rows={3} placeholder={t('Leave a comment (Markdown supported)')} value={comment} onChange={(e) => setComment(e.target.value)} aria-label={t('Comment')} />
-          <Button size="1" variant="solid" type="submit" disabled={!comment.trim() || !!busy}>{t('Post comment')}</Button>
+          <MarkdownInput placeholder={t('Leave a comment')} value={comment} onChange={setComment} label={t('Comment')} people={mentionable} />
+          <Button size="2" variant="solid" type="submit" disabled={!comment.trim() || !!busy}>{t('Post comment')}</Button>
         </form>
         )}
       </section>

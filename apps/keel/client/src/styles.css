@@ -469,34 +469,49 @@ tr.saving { opacity: 0.55; }
 .toasts { position: fixed; bottom: 18px; display: grid; gap: 6px; z-index: 50; left: auto; right: 18px; transform: none; width: min(380px, calc(100vw - 32px)); }
 .toast { padding: 8px 16px; border-radius: var(--radius); background: var(--ink); color: var(--bg); font-size: var(--text-md); box-shadow: var(--shadow-pop); display: flex; gap: 10px; align-items: flex-start; }
 .toast-bad { background: var(--bad); color: var(--on-accent); }
+/* With the panel open, toasts stand beside it rather than over its action bar. */
+@media (min-width: 901px) { html.drawer-open .toasts { right: calc(var(--drawer-w) + 18px); } html.inspector-open .toasts { right: calc(var(--inspector-w) + var(--frame) + 18px); } }
 
 /* --------------------------------------------------------------- drawer */
 .drawer-layer { position: fixed; inset: 0; z-index: 20; }
 .drawer-scrim { position: absolute; inset: 0; background: var(--scrim); animation: fade var(--dur-slow) ease-out; }
+/* The details panel: 760px by default, wide (up to 1200px) when its own button says so; the padding is
+   --pane-pad, which the sticky action bar at its foot reaches out to. */
+:root { --drawer-w: min(760px, 100vw); }
+html.drawer-wide-open { --drawer-w: min(1200px, calc(100vw - 64px)); }
 .drawer {
+  --pane-pad: 36px;
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(620px, 100vw);
+  width: var(--drawer-w);
+  transition: width var(--dur-slow) ease-out;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--surface);
   box-shadow: var(--shadow-drawer);
-  padding: 22px 26px 0;
+  padding: 24px var(--pane-pad) 0;
   outline: none;
   animation: slide-in var(--dur-slow) ease-out;
   border-left: 1px solid var(--line);
 }
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }
 @keyframes fade { from { opacity: 0; } }
-.drawer-close { position: sticky; top: 0; float: right; border: 0; background: var(--surface-2); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; z-index: 1; }
+.drawer-tools { position: sticky; top: 0; float: right; z-index: 3; display: flex; gap: 4px; margin: -4px -12px 0 16px; padding: 4px; border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 88%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.drawer-tool { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--muted); cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast); }
+.drawer-tool:hover { background: var(--surface-2); border-color: var(--line); color: var(--ink); }
+/* Widening is for a pointer and a big screen; a phone's panel is the whole width already. */
+@media (max-width: 900px) { .drawer-widen { display: none; } .drawer { --pane-pad: 16px; } }
 .detail-kicker { color: var(--muted); font-size: var(--text-md); }
-.detail-title { font-size: var(--text-2xl); line-height: 1.3; margin: 4px 40px 10px 0; }
+.detail-title { font-family: var(--display); font-size: var(--text-3xl); line-height: 1.25; letter-spacing: -0.015em; margin: 4px 0 12px; }
 .detail-meta { color: var(--ink-2); display: block; margin: 10px 0 0; line-height: 1.9; }
 .detail-meta .avatar { vertical-align: middle; margin-right: 4px; }
-.detail-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
-.detail-section h3 { font-size: var(--text-base); margin-bottom: 10px; display: flex; gap: 10px; align-items: baseline; }
+.detail-section { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 22px; }
+.detail-section h3 { font-family: var(--display); font-size: var(--text-lg); margin-bottom: 14px; display: flex; gap: 10px; align-items: baseline; }
+.detail-section h3 .small, .detail-section h3 .muted { font-family: var(--font); font-weight: 400; }
+/* Headings someone wrote in a description sit below the panel's own section headings. */
+.drawer .markdown h1, .drawer .markdown h2, .drawer .markdown h3, .desk-detail .markdown h1, .desk-detail .markdown h2, .desk-detail .markdown h3 { font-family: var(--font); font-size: var(--text-base); margin: 16px 0 6px; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .vote-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .vote-text-ok { color: var(--ok); }
@@ -525,6 +540,15 @@ tr.saving { opacity: 0.55; }
 .md-input { display: grid; gap: 6px; width: 100%; }
 .md-input-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .md-input .input { width: 100%; }
+.md-input-tools { display: inline-flex; align-items: center; gap: 12px; }
+/* The comment box grows with what's written, up to most of the window, and can be dragged taller;
+   expanded, it takes most of the window at once. */
+.md-input .rt-TextAreaInput { field-sizing: content; min-height: 7.5em; max-height: 60vh; }
+.md-input.md-expanded .rt-TextAreaInput { min-height: 55vh; max-height: none; }
+.md-input .md-preview { max-height: 60vh; overflow-y: auto; }
+.md-input.md-expanded .md-preview { min-height: 55vh !important; max-height: none; }
+.md-input-hint { justify-self: end; margin-top: -2px; }
+@media (pointer: coarse) { .md-input-hint { display: none; } }
 .comment-form .md-preview { width: 100%; }
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 18px; margin: 16px 0 0; }
 .facts dt { font-size: var(--text-sm); color: var(--muted); }
@@ -766,7 +790,7 @@ button.tree-caret:hover { background: var(--surface-2); color: var(--ink); }
 .sticky-actions {
   position: sticky; bottom: 0; z-index: 2;
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-  margin: 20px -26px 0; padding: 12px 26px 16px;
+  margin: 28px calc(-1 * var(--pane-pad, 26px)) 0; padding: 12px var(--pane-pad, 26px) 16px;
   background: var(--surface); border-top: 1px solid var(--line);
   box-shadow: var(--shadow-up);
 }
@@ -1522,6 +1546,7 @@ h1, h2 { font-family: var(--display); font-weight: 600; }
   background: var(--surface); box-shadow: var(--elev-2);
 }
 .drawer-docked:focus { outline: none; }
+.drawer.drawer-docked { --pane-pad: 24px; }
 
 /* Inbox triage: the keyboard's cursor is a ring, the entry the panel shows is lit in the accent. */
 

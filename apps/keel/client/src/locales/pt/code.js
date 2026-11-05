@@ -214,7 +214,7 @@ export default {
   'Active': 'Ativo',
   'No comments yet.': 'Ainda sem comentários.',
   'Comment posted': 'Comentário publicado',
-  'Leave a comment (Markdown supported)': 'Deixe um comentário (suporta Markdown)',
+  'Leave a comment': 'Deixe um comentário',
   'Comment': 'Comentário',
   'Post comment': 'Publicar comentário',
   'Pull request !{id} completed': 'Pull request !{id} concluído',
