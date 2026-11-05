@@ -49,9 +49,10 @@
   --mono: var(--code-font-family);
 }
 
-/* Radix's own larger steps (its dialogs, popovers and cards) stop at the same 6px as Keel's cards.
+/* Radix's own steps join Keel's: its smallest (size 1 buttons, checkboxes) is 4px like Keel's controls, and
+   its larger ones (dialogs, popovers, cards) stop at the same 6px as Keel's cards.
    [data-radius] too, because a component given its own radius recomputes the scale on itself. */
-.radix-themes, [data-radius] { --radius-4: var(--radius-3); --radius-5: var(--radius-3); --radius-6: var(--radius-3); }
+.radix-themes, [data-radius] { --radius-1: var(--radius-2); --radius-4: var(--radius-3); --radius-5: var(--radius-3); --radius-6: var(--radius-3); }
 
 /* The app fills the window; Radix's root is just the carrier. */
 .radix-themes:where([data-is-root-theme='true']) { min-height: 100vh; background: var(--canvas); }
