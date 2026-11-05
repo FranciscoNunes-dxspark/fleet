@@ -1,5 +1,0 @@
-{
-  // TypeScript writes into wwwroot/js.
-  "compilerOptions": { "outDir": "wwwroot/js", "rootDir": "src", "target": "es2017", },
-  "include": ["src"]
-}
