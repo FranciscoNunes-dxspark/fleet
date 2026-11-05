@@ -336,7 +336,7 @@ function Dock({ section, sectionTo, summary: s, mood, attention, spinning, setSp
   const tone = !live.connected ? 'amber' : !live.ok && live.error ? 'red' : 'green';
   // Collapsed, a name is on hover instead.
   const tip = (label, node) => (collapsed ? <Tip label={label}>{node}</Tip> : node);
-  const badge = (c) => (c?.n > 0 ? <Badge className="sb-n" size="1" radius="full" variant="solid" color={c.tone === 'bad' ? 'red' : undefined}>{c.n}</Badge> : null);
+  const badge = (c) => (c?.n > 0 ? <Badge className="sb-n" size="1" variant="solid" color={c.tone === 'bad' ? 'red' : undefined}>{c.n}</Badge> : null);
   return (
     <nav className="sb" aria-label={t('Main')}>
       <div className="sb-brand">
