@@ -19,7 +19,6 @@
   --muted: var(--gray-11);
   --line: var(--gray-5);
   --line-strong: var(--gray-7);
-  --card-border: var(--gray-5);
   --header-glass: color-mix(in srgb, var(--gray-1) 86%, transparent);
 
   --accent: var(--accent-9);
@@ -36,6 +35,10 @@
   --info: var(--blue-10);
   --info-soft: var(--blue-3);
 
+  /* One radius scale, kept tight: 2px for bars and ticks, 4px for controls, chips and anything
+     inside a card, 6px for cards, sheets, menus and dialogs. Nothing rounds past 6px, and nothing
+     is a pill but a dot or an avatar (50%). */
+  --radius-xs: 2px;
   --radius: var(--radius-3);
   --radius-sm: var(--radius-2);
   --shadow-pop: var(--shadow-5);
@@ -45,6 +48,10 @@
   --display: var(--heading-font-family);
   --mono: var(--code-font-family);
 }
+
+/* Radix's own larger steps (its dialogs, popovers and cards) stop at the same 6px as Keel's cards.
+   [data-radius] too, because a component given its own radius recomputes the scale on itself. */
+.radix-themes, [data-radius] { --radius-4: var(--radius-3); --radius-5: var(--radius-3); --radius-6: var(--radius-3); }
 
 /* The app fills the window; Radix's root is just the carrier. */
 .radix-themes:where([data-is-root-theme='true']) { min-height: 100vh; background: var(--canvas); }
