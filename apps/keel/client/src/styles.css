@@ -1413,17 +1413,69 @@ kbd {
 .file-toggle { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .file-toggle::before { content: '▸'; display: inline-block; width: 12px; color: var(--muted); }
 .file-toggle[aria-expanded="true"]::before { content: '▾'; }
-.file-ext { margin-left: auto; text-decoration: none; flex: none; }
+.file-ext { text-decoration: none; flex: none; }
+.file-view { margin-left: auto; flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); cursor: pointer; }
+.file-view:hover { background: var(--surface-2); color: var(--ink); }
+.files-view-all { margin-left: auto; font-family: var(--font); font-weight: 500; }
 .file-diff { margin: 4px 0 8px 28px; border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; font-family: var(--mono); font-size: var(--text-sm); }
 .file-diff-stat { padding: 3px 8px; border-bottom: 1px solid var(--line); }
-.file-diff table { border-collapse: collapse; width: 100%; }
-.file-diff td { padding: 0 6px; white-space: pre; vertical-align: top; }
-.file-diff .diff-no { color: var(--muted); text-align: right; user-select: none; width: 1%; min-width: 36px; }
-.file-diff .diff-text span { display: inline-block; width: 1.5ch; color: var(--muted); user-select: none; }
-.file-diff .diff-add { background: var(--ok-soft); }
-.file-diff .diff-del { background: var(--bad-soft); }
-.file-diff .diff-hunk td { color: var(--muted); background: var(--line); padding: 2px 8px; }
 .file-diff-note { margin: 4px 0 8px 28px; }
+
+/* A diff's table, inline under a file and in the changes window alike. */
+.diff-table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.55; }
+.diff-table td { padding: 0 8px; white-space: pre; vertical-align: top; }
+.diff-table .diff-no { color: var(--muted); text-align: right; user-select: none; width: 1%; min-width: 44px; }
+.diff-table .diff-text span { display: inline-block; width: 1.5ch; color: var(--muted); user-select: none; }
+.diff-table .diff-add { background: var(--ok-soft); }
+.diff-table .diff-del { background: var(--bad-soft); }
+.diff-table .diff-no.diff-add { background: color-mix(in srgb, var(--ok) 22%, var(--surface)); }
+.diff-table .diff-no.diff-del { background: color-mix(in srgb, var(--bad) 22%, var(--surface)); }
+.diff-table .diff-gap { background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--line) 60%, transparent) 6px 7px); }
+.diff-table .diff-hunk td { color: var(--muted); background: var(--surface-2); padding: 4px 12px; }
+/* Side by side: two halves of equal width, long lines wrapping inside their half. */
+.diff-split { table-layout: fixed; }
+.diff-split .diff-no-col { width: 52px; }
+.diff-split .diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-split .diff-side { border-left: 1px solid var(--line); }
+
+/* The changes window: every file of a pull request or commit, most of the screen for its diff. */
+.diff-viewer-layer { position: fixed; inset: 0; z-index: 40; color: var(--ink); font-family: var(--font); }
+.diff-viewer {
+  position: absolute; inset: 24px; display: grid; grid-template: auto 1fr auto / minmax(220px, 300px) minmax(0, 1fr);
+  grid-template-areas: 'head head' 'files body' 'foot foot';
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-pop);
+  overflow: hidden; outline: none; animation: fade var(--dur-fast) ease-out;
+}
+.diff-viewer-head { grid-area: head; display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 20px; border-bottom: 1px solid var(--line); }
+.diff-viewer-title { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--display); font-size: var(--text-lg); font-weight: 600; }
+.diff-viewer-mode { margin-left: auto; }
+.diff-viewer-files { grid-area: files; overflow-y: auto; border-right: 1px solid var(--line); background: var(--canvas); }
+.diff-viewer-files ol { list-style: none; margin: 0; padding: 6px; display: grid; gap: 1px; }
+.diff-viewer-files button {
+  display: grid; grid-template-columns: 8px minmax(0, 1fr); column-gap: 10px; align-items: center; width: 100%; padding: 6px 10px;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.diff-viewer-files button:hover { background: var(--surface-2); }
+.diff-viewer-files button.on { background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
+.diff-kind { grid-row: span 2; width: 8px; height: 8px; border-radius: 50%; background: var(--info); }
+.diff-kind-added { background: var(--ok); }
+.diff-kind-deleted { background: var(--bad); }
+.diff-kind-renamed { background: var(--warn); }
+.diff-file-name { font-family: var(--mono); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-file-dir { grid-column: 2; font-size: var(--text-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.diff-viewer-body { grid-area: body; overflow: auto; overscroll-behavior: contain; }
+.diff-viewer-file { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.diff-viewer-out { margin-left: auto; }
+.diff-viewer-body .diff-table { font-size: var(--text-md); }
+.diff-viewer-note { padding: 24px 16px; margin: 0; }
+.diff-viewer-foot { grid-area: foot; display: flex; gap: 18px; padding: 8px 20px; border-top: 1px solid var(--line); }
+.diff-viewer-foot > span { display: inline-flex; align-items: center; gap: 4px; }
+/* A phone: the whole screen, the files as a strip above the diff. */
+@media (max-width: 900px) {
+  .diff-viewer { inset: 0; border-radius: 0; border: 0; grid-template: auto auto 1fr / minmax(0, 1fr); grid-template-areas: 'head' 'files' 'body'; }
+  .diff-viewer-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .diff-viewer-foot, .diff-viewer-mode { display: none; }
+}
 
 /* =================================================================== refresh
    Colour and structure on top of the planes above: a soft glow of the accent
