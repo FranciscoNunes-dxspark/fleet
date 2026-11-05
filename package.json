@@ -32,8 +32,7 @@
     "test:lantern": "npm test -w apps/lantern",
     "test:drill": "npm test -w apps/drill",
     "test:ballast": "npm test -w apps/ballast",
-    "test:lookout": "npm test -w apps/lookout",
-    "test:pilot": "npm test -w apps/pilot"
+    "test:lookout": "npm test -w apps/lookout"
   },
   "devDependencies": {
     "patch-package": "^8.0.1"

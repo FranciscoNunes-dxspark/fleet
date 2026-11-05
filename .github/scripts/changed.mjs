@@ -17,7 +17,7 @@ export const APPS = readdirSync(new URL('../../apps/', import.meta.url), { withF
 
 const SHARED = [/^packages\/kit\//, /^patches\//, /^package(-lock)?\.json$/];
 // The app that holds the others: the changes of those built into it (its package.json's
-// "fleet.includes") are its changes. An app it doesn't hold (Pilot, headless) is left to itself.
+// "fleet.includes") are its changes. An app it doesn't hold is left to itself.
 const HOST = 'fleet';
 const HOSTED = (() => {
   try {
