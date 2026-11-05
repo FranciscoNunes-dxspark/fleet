@@ -7,7 +7,8 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join, resolve } from 'node:path';
-import { VERSION } from '../app.js';
+import { COMPILED, VERSION } from '../app.js';
+import { homedir } from 'node:os';
 import { buildIndex } from '../index.js';
 import { file, find, overview, problems, resolveTarget, selector, urlOf, actionLabel, where } from '../queries.js';
 import { complexity, graph, nodeInfo, pageModel, path, split, stylesheets, widgets } from '../analysis.js';
@@ -315,7 +316,24 @@ function openBrowser(url) {
 }
 
 /** Starts the UI: builds the index, listens on 127.0.0.1 (from `port`, or 4170 and up), opens the browser. */
-export async function startUi({ root, port = null, open = true, vendor = false, ignore = [], log = console.error, fresh = 2000 } = {}) {
+/**
+ * A downloaded Pilot keeps itself current: once a day `pilot ui` asks GitHub for the newest release and
+ * installs it beside itself (the kit's updater: checksums checked, the old one moved aside on Windows),
+ * to run from the next start. PILOT_NO_UPDATE=1 turns it off; a checkout updates with git pull.
+ */
+export async function autoUpdate(log, env = process.env) {
+  if (!COMPILED || env.PILOT_NO_UPDATE === '1') return;
+  const u = await import('@fleet/kit/update.js');
+  await u.removeOldExecutables();
+  const store = u.lastCheckStore(join(env.PILOT_CACHE ?? (process.platform === 'win32' ? join(env.LOCALAPPDATA ?? homedir(), 'pilot') : join(env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'pilot')), 'update.json'));
+  const { checked, newer } = await u.checkForUpdate(await store.load());
+  await store.save(checked);
+  if (!newer) return;
+  const done = await u.installUpdate(checked.latest);
+  if (done === 'installed') log(`Pilot ${checked.latest} is installed: it runs from the next start (stop this one with ctrl+c and start pilot ui again).`);
+}
+
+export async function startUi({ root, port = null, open = true, vendor = false, ignore = [], log = console.error, fresh = 2000, update = true } = {}) {
   root = resolve(root);
   log(`Indexing ${root}…`);
   let idx = buildIndex(root, { vendor, ignore, progress: () => {} });
@@ -373,6 +391,7 @@ export async function startUi({ root, port = null, open = true, vendor = false, 
   }
   const url = `http://127.0.0.1:${bound}/`;
   log(`Pilot is at ${url}  (ctrl+c to stop)`);
+  if (update) autoUpdate(log).catch(() => {});
   if (open) openBrowser(url);
   return { server, url, port: bound };
 }

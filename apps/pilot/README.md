@@ -52,23 +52,43 @@ Claude Code can use Pilot two ways, and works best with both:
 
 ### 1. Get Pilot
 
-**A release.** Download the file for your machine from the repository's Releases (tags
-`pilot-v…`): `pilot-windows-x64.exe`, `pilot-linux-x64`, `pilot-linux-arm64`, `pilot-macos-x64` or
-`pilot-macos-arm64`. The repository is private, so sign in to GitHub in the browser, or use
-`gh release download pilot-v<version> -R FranciscoNunes-dxspark/fleet -p 'pilot-windows-x64.exe'`.
-Rename it to `pilot` (`pilot.exe` on Windows) and put it in a folder on your PATH:
+Each release (tags `pilot-v…` in the repository's Releases) has an installer for Windows and
+install scripts for every system. The repository is private: sign in to GitHub in the browser to
+download, and the scripts download through `gh` signed in (`gh auth login`) or a token in
+`GITHUB_TOKEN` that can read it.
+
+**Windows: the setup program.** Download `pilot-windows-x64-setup.exe` and run it. No administrator is
+needed: it installs for you, into `%LOCALAPPDATA%\Programs\Pilot`. It asks which project to open and
+then:
+
+- puts `pilot` on your PATH, so terminals and Claude Code find it (open a new terminal after);
+- adds **Pilot** to the Start menu, opening the UI on that project (closing its window stops it);
+- adds **Open in Pilot** to folders in Explorer's right-click menu, for any other project;
+- optionally sets up Claude Code in that project (`pilot init --mcp`: the skill and the MCP server);
+- optionally a desktop shortcut.
+
+Uninstall it from Installed apps, which also takes it off the PATH and the right-click menu.
+
+**macOS and Linux: the install script.** Download `pilot-install.sh` from the release, then:
 
 ```bash
-# macOS / Linux
-chmod +x pilot-macos-arm64 && mv pilot-macos-arm64 /usr/local/bin/pilot
-xattr -d com.apple.quarantine /usr/local/bin/pilot   # macOS only, if it refuses to start
+sh pilot-install.sh          # the newest release into ~/.local/bin (PILOT_INSTALL_DIR for another)
+sh pilot-install.sh 0.1.2    # a given version
 ```
 
-```powershell
-# Windows: a folder of your own, added to the user PATH once
-mkdir $HOME\bin -Force; Move-Item .\pilot-windows-x64.exe $HOME\bin\pilot.exe
-[Environment]::SetEnvironmentVariable('Path', "$env:Path;$HOME\bin", 'User')   # then open a new terminal
-```
+It picks the build for your machine, checks it against the release's `SHA256SUMS.txt`, clears macOS's
+quarantine mark, and says how to add the folder to your PATH if it isn't on it.
+
+**Windows without the setup program:** `pilot-install.ps1` does the same as the setup, without the
+shortcuts: `powershell -ExecutionPolicy Bypass -File pilot-install.ps1`.
+
+**By hand:** download `pilot-windows-x64.exe`, `pilot-linux-x64`, `pilot-linux-arm64`,
+`pilot-macos-x64` or `pilot-macos-arm64`, rename it to `pilot` (`pilot.exe`), make it executable
+(`chmod +x`) and put it in a folder on your PATH.
+
+**Updates.** An installed Pilot keeps itself up to date: `pilot ui` checks once a day and installs a
+newer release beside itself (it runs from the next start), and `pilot update` does it now. Both check
+the download against the release's checksums. `PILOT_NO_UPDATE=1` turns the daily check off.
 
 **Or from a checkout** of this repository (Node 22+): `npm install` at its root, then
 `node apps/pilot/bin/pilot.js` stands for `pilot` everywhere below; or `npm run build` in
@@ -228,6 +248,7 @@ Keep `pilot ui` open in another terminal to follow along in the browser: it read
 | `pilot styleguide` | The project's own design system: colour and size variables with their uses, colours written out, fonts and sizes, breakpoints, component class families with example markup, UI libraries |
 | `pilot report [--out file]` | Everything as one self-contained HTML file to share (default `.pilot/report.html`) |
 | `pilot hook` | Claude Code's PostToolUse hook (`pilot init --hook` installs it; below) |
+| `pilot update` | Installs the newest release over this one (the UI also checks once a day) |
 | `pilot routes [filter]` | URLs, the actions answering them and their views |
 | `pilot problems [filter]` | References Pilot couldn't resolve (missing partials, layouts, scripts, styles, imports) and names decided at run time |
 | `pilot mcp` | Serves the queries as MCP tools over stdio |

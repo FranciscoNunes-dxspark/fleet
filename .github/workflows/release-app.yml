@@ -97,13 +97,20 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `dir=${pkg.fleet?.out ?? "dist"}\n`);
           ' "${{ needs.version.outputs.version }}"
       - run: bun ../../packages/kit/scripts/build.js ${{ matrix.targets }}
-      # Fleet's Windows installer, with the Windows Terminal it opens in (apps/fleet/installer).
-      - name: Fleet's installer
-        if: inputs.app == 'fleet' && matrix.os == 'windows-latest'
+      # An app's Windows installer, where it has one (apps/<app>/installer/build.ps1, with Inno Setup):
+      # Fleet's, with the Windows Terminal it opens in, and Pilot's.
+      - name: The installer
+        if: matrix.os == 'windows-latest' && hashFiles(format('apps/{0}/installer/build.ps1', inputs.app)) != ''
         shell: pwsh
         run: |
           choco install innosetup --no-progress -y
           ./installer/build.ps1 -Version ${{ needs.version.outputs.version }}
+      # Install scripts, where an app has them (Pilot's), published as <app>-install.sh and .ps1.
+      - name: Install scripts
+        if: matrix.os == 'ubuntu-latest' && hashFiles(format('apps/{0}/installer/install.sh', inputs.app)) != ''
+        run: |
+          cp installer/install.sh "${{ steps.out.outputs.dir }}/${{ inputs.app }}-install.sh"
+          cp installer/install.ps1 "${{ steps.out.outputs.dir }}/${{ inputs.app }}-install.ps1"
       # The icon the installer's shortcuts use, beside the executable: an updating Fleet replaces the one it has.
       - name: Fleet's icon
         if: inputs.app == 'fleet' && matrix.os == 'windows-latest'
