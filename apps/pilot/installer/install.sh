@@ -103,5 +103,6 @@ case ":$PATH:" in
 esac
 say ""
 say "Next, in a project's folder:"
+say "  pilot app                 Pilot's window: recent projects, Open a folder"
 say "  pilot ui                  the UI in your browser"
 say "  pilot init --mcp          connect Claude Code (the skill and the MCP server)"

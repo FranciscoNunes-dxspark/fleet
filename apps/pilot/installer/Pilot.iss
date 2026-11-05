@@ -1,7 +1,8 @@
 ; Pilot's installer, for Windows: pilot.exe for you alone (no administrator), on your PATH so terminals
-; and Claude Code find it, a Start menu shortcut that opens Pilot's UI on the project picked here, and
-; "Open in Pilot" on folders in Explorer. It can also set up Claude Code in that project (the skill and
-; the MCP server). Pilot keeps itself up to date from there (pilot update; the UI checks once a day).
+; and Claude Code find it, a Start menu shortcut that opens Pilot in its own window (Edge's app window:
+; a start page of recent projects and a folder picker, as Visual Studio opens), and "Open in Pilot" on
+; folders and .sln files in Explorer. Pilot keeps itself up to date from there (pilot update; the window
+; checks once a day).
 ; installer\build.ps1 builds it after `npm run build`:
 ;   iscc /DVersion=<version> installer\Pilot.iss   (writes dist\pilot-windows-x64-setup.exe)
 
@@ -32,35 +33,37 @@ OutputDir=..\dist
 OutputBaseFilename=pilot-windows-x64-setup
 
 [Messages]
-FinishedLabel=Pilot is installed. Open its UI from the Start menu (it opens in your browser; close its window to stop it), or right-click a project folder and choose Open in Pilot. In a new terminal, pilot works anywhere: pilot init --mcp in a project connects Claude Code.
+FinishedLabel=Pilot is installed. Open it from the Start menu and pick your project's folder (File, Open folder), or right-click a project folder or a .sln and choose Open in Pilot. Its menu Claude Code, Set up connects Claude Code to the project; in a new terminal, pilot works anywhere.
 
 [Tasks]
 Name: path; Description: "Add pilot to my PATH (for terminals and Claude Code)"
-Name: openwith; Description: "Add ""Open in Pilot"" to folders in Explorer"
-Name: claude; Description: "Set up Claude Code in the project picked next (the skill and the MCP server, in .claude\ and .mcp.json)"; Flags: unchecked
+Name: openwith; Description: "Add ""Open in Pilot"" to folders and .sln files in Explorer"
 Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Registry]
-; Explorer: on a folder, and on the empty space inside one. Opens the UI with that folder as the project
-; ("%V\.": a drive's own path ends in \, which would escape the closing quote).
+; Explorer: on a folder, on the empty space inside one, and on a solution. Opens Pilot's window on that
+; project ("%V\.": a drive's own path ends in \, which would escape the closing quote).
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\Pilot"; ValueType: string; ValueData: "Open in Pilot"; Flags: uninsdeletekey; Tasks: openwith
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\Pilot"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\pilot.ico"; Tasks: openwith
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\Pilot\command"; ValueType: string; ValueData: """{app}\pilot.exe"" ui --root ""%V\."""; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\Pilot\command"; ValueType: string; ValueData: """{app}\pilot.exe"" app --root ""%V\."""; Tasks: openwith
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\Pilot"; ValueType: string; ValueData: "Open in Pilot"; Flags: uninsdeletekey; Tasks: openwith
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\Pilot"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\pilot.ico"; Tasks: openwith
-Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\Pilot\command"; ValueType: string; ValueData: """{app}\pilot.exe"" ui --root ""%V\."""; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\Pilot\command"; ValueType: string; ValueData: """{app}\pilot.exe"" app --root ""%V\."""; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.sln\shell\Pilot"; ValueType: string; ValueData: "Open in Pilot"; Flags: uninsdeletekey; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.sln\shell\Pilot"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\pilot.ico"; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.sln\shell\Pilot\command"; ValueType: string; ValueData: """{app}\pilot.exe"" app --root ""%1"""; Tasks: openwith
 
 [Files]
 Source: "..\dist\pilot-windows-x64.exe"; DestDir: "{app}"; DestName: "pilot.exe"; Flags: ignoreversion
 Source: "..\assets\logo.ico"; DestDir: "{app}"; DestName: "pilot.ico"; Flags: ignoreversion
 
 [Icons]
-; The UI for the project picked here; its window shows where it runs, and closing it stops Pilot.
-Name: "{userprograms}\Pilot"; Filename: "{app}\pilot.exe"; Parameters: "ui"; WorkingDir: "{code:ProjectFolder}"; IconFilename: "{app}\pilot.ico"; Flags: runminimized
-Name: "{userdesktop}\Pilot"; Filename: "{app}\pilot.exe"; Parameters: "ui"; WorkingDir: "{code:ProjectFolder}"; IconFilename: "{app}\pilot.ico"; Flags: runminimized; Tasks: desktopicon
+; Pilot's window, on its start page. pilot app starts its server apart and returns at once, so the
+; console it starts in only shows (minimized) for a moment; closing the window stops Pilot.
+Name: "{userprograms}\Pilot"; Filename: "{app}\pilot.exe"; Parameters: "app"; WorkingDir: "{app}"; IconFilename: "{app}\pilot.ico"; Flags: runminimized
+Name: "{userdesktop}\Pilot"; Filename: "{app}\pilot.exe"; Parameters: "app"; WorkingDir: "{app}"; IconFilename: "{app}\pilot.ico"; Flags: runminimized; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\pilot.exe"; Parameters: "init --mcp --command pilot"; WorkingDir: "{code:ProjectFolder}"; Flags: runhidden waituntilterminated; StatusMsg: "Setting up Claude Code in the project…"; Tasks: claude
 Filename: "{userprograms}\Pilot.lnk"; Description: "Open Pilot"; Flags: shellexec nowait postinstall skipifsilent
 
 [UninstallDelete]
@@ -69,28 +72,6 @@ Type: files; Name: "{app}\*.old.*"
 Type: filesandordirs; Name: "{app}\.pilot-update-*"
 
 [Code]
-var
-  FolderPage: TInputDirWizardPage;
-
-procedure InitializeWizard();
-begin
-  FolderPage := CreateInputDirPage(wpSelectTasks, 'Your project', 'Which project should Pilot open?',
-    'The Start menu shortcut opens Pilot on this folder: the solution''s, or a web project''s. (Any other folder opens with right-click, Open in Pilot.) Pick it, then click Next.',
-    False, '');
-  FolderPage.Add('');
-  FolderPage.Values[0] := GetPreviousData('Folder', GetEnv('USERPROFILE'));
-end;
-
-procedure RegisterPreviousData(PreviousDataKey: Integer);
-begin
-  SetPreviousData(PreviousDataKey, 'Folder', FolderPage.Values[0]);
-end;
-
-function ProjectFolder(Param: String): String;
-begin
-  Result := FolderPage.Values[0];
-end;
-
 // The user's PATH, with the install folder added once (and taken out again on uninstall).
 const
   EnvKey = 'Environment';

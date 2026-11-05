@@ -25,9 +25,10 @@ JavaScript, LESS, SCSS and CSS, and links them into one graph. Claude (or you) c
 - **How could this big stylesheet be split?** By where its rules are used, with line ranges and an
   import order that keeps the cascade.
 
-And `pilot ui` shows all of it in the browser: an interactive dependency graph, the pages ranked by
-complexity, each page's structure, requests, components and assets, the components, the stylesheets
-and their split, selectors, and the source of any `file:line`.
+And Pilot shows all of it in a window of its own (`pilot app`, the Start menu's Pilot on Windows) or
+in the browser (`pilot ui`): an interactive dependency graph, the pages ranked by complexity, each
+page's structure, requests, components and assets, the components, the stylesheets and their split,
+selectors, and the source of any `file:line`.
 
 It is made for UI work on large projects, where reading folders by hand to find the right
 partial or stylesheet costs more than the change itself. It works with MVC 5 (.NET Framework:
@@ -58,14 +59,16 @@ download, and the scripts download through `gh` signed in (`gh auth login`) or a
 `GITHUB_TOKEN` that can read it.
 
 **Windows: the setup program.** Download `pilot-windows-x64-setup.exe` and run it. No administrator is
-needed: it installs for you, into `%LOCALAPPDATA%\Programs\Pilot`. It asks which project to open and
-then:
+needed: it installs for you, into `%LOCALAPPDATA%\Programs\Pilot`, and:
 
 - puts `pilot` on your PATH, so terminals and Claude Code find it (open a new terminal after);
-- adds **Pilot** to the Start menu, opening the UI on that project (closing its window stops it);
-- adds **Open in Pilot** to folders in Explorer's right-click menu, for any other project;
-- optionally sets up Claude Code in that project (`pilot init --mcp`: the skill and the MCP server);
+- adds **Pilot** to the Start menu: Pilot's own window, opening on its start page of recent projects
+  and **Open a folder** ([Pilot's window](#pilots-window), below);
+- adds **Open in Pilot** to folders and `.sln` files in Explorer's right-click menu;
 - optionally a desktop shortcut.
+
+Then **Claude Code → Set up the skill and MCP server** in Pilot's menu connects Claude Code to the
+project open (the same as `pilot init --mcp` there).
 
 Uninstall it from Installed apps, which also takes it off the PATH and the right-click menu.
 
@@ -86,8 +89,9 @@ shortcuts: `powershell -ExecutionPolicy Bypass -File pilot-install.ps1`.
 `pilot-macos-x64` or `pilot-macos-arm64`, rename it to `pilot` (`pilot.exe`), make it executable
 (`chmod +x`) and put it in a folder on your PATH.
 
-**Updates.** An installed Pilot keeps itself up to date: `pilot ui` checks once a day and installs a
-newer release beside itself (it runs from the next start), and `pilot update` does it now. Both check
+**Updates.** An installed Pilot keeps itself up to date: its window and `pilot ui` check once a day and install a
+newer release beside itself (it runs from the next start), and `pilot update` (or **Help → Check for
+updates**) does it now. Both check
 the download against the release's checksums. `PILOT_NO_UPDATE=1` turns the daily check off.
 
 **Or from a checkout** of this repository (Node 22+): `npm install` at its root, then
@@ -223,7 +227,8 @@ Keep `pilot ui` open in another terminal to follow along in the browser: it read
 | `pilot complexity [filter]` | Every page with its complexity score, highest first |
 | `pilot stylesheets` | The stylesheets, largest first |
 | `pilot split <stylesheet>` | How to split a large LESS/SCSS/CSS file (below) |
-| `pilot ui` | The web UI (below); `--port`, `--no-open` |
+| `pilot app` | Pilot's own window (below): the UI in an Edge or Chrome app window, with menus and a start page; `--root <folder or .sln>` opens that project at once |
+| `pilot ui` | The web UI in your browser (below); `--port`, `--no-open` |
 | `pilot changes [--base main]` | The pages what git says changed reaches (uncommitted and untracked files; with `--base`, everything since that branch or commit too), most affected first: what to check after a change |
 | `pilot context <page> [--budget n]` | The code that matters for one page in one Markdown document of at most `n` characters (default 60,000): the view and its partials whole, the controller actions (the page's, and those its requests reach), the parts of its scripts that touch its markup or call the server, the CSS rules for its classes and ids, its layouts last. What doesn't fit is listed by name |
 | `pilot rename <old> <new> [--apply]` | A class or id renamed in the rules styling it, the views marking it up and the scripts using it. A preview without `--apply`; warnings where text can't be trusted: a LESS name built with `&-save`, a name built at run time (`'btn-' + kind`), a name that already exists, built files to rebuild |
@@ -334,13 +339,43 @@ turn:
 It never blocks Claude and says nothing when there's nothing to say. Remove it by deleting its entry
 under `hooks.PostToolUse` in `.claude/settings.json`.
 
+## Pilot's window
+
+`pilot app` (the Start menu's **Pilot**, and **Open in Pilot** in Explorer) opens Pilot in a window of
+its own: Microsoft Edge's app window (Chrome's where there's no Edge), with no tabs or address bar,
+in a browser profile of Pilot's own. It opens the way Visual Studio does:
+
+- **The start page**: **Open recent** (newest first, grouped by day, with a search; pin a project to
+  keep it on top, ✕ to take it off the list; the solution's name when the folder has a `.sln`), and
+  **Get started**: **Open a folder** (Windows' own folder dialog; macOS's, or zenity's or kdialog's
+  on Linux), **Browse folders** (Pilot's own folder list, which works everywhere and marks the
+  folders that look like projects), and **Open a path** (a folder or a `.sln`, pasted).
+- **The menus**:
+
+  | Menu | |
+  |---|---|
+  | **File** | Open folder… (Ctrl+O), Browse folders…, Start page, the last projects, Re-index (F5), Export report, Close project, Exit |
+  | **View** | Overview, Pages, Graph, Components, Stylesheets, Selectors, Style guide, Changes, Audit (Ctrl+1 … Ctrl+9), Live, Doctor; Find… (Ctrl+K); Light or dark |
+  | **Tools** | Rename a class or id, Split a stylesheet, Extract repeated markup, Screenshots of changed pages, Inspect / coverage / responsive, Audit, Doctor |
+  | **Claude Code** | Set up the skill and MCP server, Add the hook, Copy context for this page, Copy a diagram of this page, How to connect |
+  | **Help** | Getting started, Keyboard shortcuts (F1), Check for updates, About Pilot |
+
+  Alt+F, Alt+V, Alt+T, Alt+C and Alt+H open them; the arrow keys and Enter move in them.
+
+`pilot app` starts its server apart and returns at once (from a shortcut, its console only shows for
+a moment); the server stops a few seconds after its window closes, and logs to `pilot-app.log` in
+Pilot's cache folder. Each window is a server of its own on the next free port, so two projects can
+be open side by side. `PILOT_BROWSER` names another Chromium browser; with none at all, `pilot app`
+opens the UI in your browser instead. The window is the web UI below, with the menus and the start
+page; `pilot ui` shows the same in a browser tab, for the project in its folder.
+
 ## The web UI
 
 `pilot ui` indexes the project, serves a page on `http://127.0.0.1:4170` (the next free port if that
 one's taken) and opens the browser. Everything is in Pilot itself, with no build step and nothing
 loaded from the network. It listens on this machine only, answers only requests addressed to
 `127.0.0.1` or `localhost`, and only shows files of the project. Edits show up on the next click
-(files that changed are read again); **Re-index** reads everything again.
+(files that changed are read again); **File → Re-index** reads everything again.
 
 - **Overview**: counts, the most complex pages, layouts, components, the largest stylesheets.
 - **Pages**: every page with its score, views, depth, script lines, widgets and requests; sort and
@@ -376,8 +411,8 @@ loaded from the network. It listens on this machine only, answers only requests 
 partial** on a repeated block, **Inspect on the running site** in a page's Cascade tab, **Take
 screenshot** on a page, **Screenshot these pages** on Changes, the four tools on Live, and on the
 Overview **Add the skill and MCP server here** and **Add the hook**. Actions are POSTs that need a
-header other sites can't send, so no page elsewhere can trigger them. **Report** in the header opens
-the shareable report. The UI follows the files: when they change it reads them again and the views
+header other sites can't send, so no page elsewhere can trigger them. **File → Export report** opens
+the shareable report, and **File → Re-index** (F5) reads everything again. The UI follows the files: when they change it reads them again and the views
 update (the graph and forms ask first).
 
 A page also has **Cascade** (pick one of its classes or ids: the rules in order, the losing

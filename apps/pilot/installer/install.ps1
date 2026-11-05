@@ -77,5 +77,6 @@ if (-not (($path -split ';') -contains $Dir)) {
 Write-Host "Installed $(& $exe --version) in $exe."
 Write-Host ''
 Write-Host 'Next, in a project''s folder:'
+Write-Host '  pilot app                 Pilot''s window: recent projects, Open a folder'
 Write-Host '  pilot ui                  the UI in your browser'
 Write-Host '  pilot init --mcp          connect Claude Code (the skill and the MCP server)'

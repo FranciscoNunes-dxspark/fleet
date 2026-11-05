@@ -14,6 +14,8 @@ export function client(BOOT) {
     renders: '#f59f00', 'renders-partial': '#fab005', script: '#c9a227', style: '#e64980', import: '#868e96', source: '#adb5bd', calls: '#e03131', link: '#94a3b8',
   };
   const DEFAULT_KINDS = Object.keys(EDGES).filter((k) => k !== 'link');
+  // The project open now (null: none, and the start page shows), as the server last told us.
+  const PROJECT = { root: BOOT.root, name: BOOT.name, recent: [], fixed: false };
   const state = { theme: localGet('pilot.theme'), graph: { depth: 2, mode: 'layered', kinds: new Set(localGet('pilot.kinds')?.split(',') ?? DEFAULT_KINDS), vendor: false } };
   if (state.theme) document.documentElement.dataset.theme = state.theme;
 
@@ -61,6 +63,10 @@ export function client(BOOT) {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== ''));
     const res = await fetch(`${path}${q.toString() ? `?${q}` : ''}`);
     const data = await res.json();
+    if (res.status === 409 && data?.noProject) {
+      PROJECT.root = null;
+      go('#/start');
+    }
     if (!res.ok) throw new Error(data?.error ?? res.statusText);
     return data;
   };
@@ -112,17 +118,24 @@ export function client(BOOT) {
   const navEl = h('nav');
   const mainEl = h('main');
   const drawerEl = h('div');
-  const head = h('header', {},
-    h('div', { class: 'brand' }, h('span', {}, '☸ Pilot'), h('small', { title: BOOT.root }, BOOT.root)),
-    navEl, h('div', { class: 'grow' }),
-    h('div', { class: 'search' }, searchBox, results),
-    h('button', { title: 'Everything Pilot found, as one HTML file to share', onclick: () => window.open('/report.html', '_blank') }, 'Report'),
-    h('button', { title: 'Read the project again', onclick: async (ev) => { ev.target.disabled = true; try { await api('/api/refresh'); route(); } finally { ev.target.disabled = false; } } }, 'Re-index'),
-    h('button', { title: 'Light or dark', onclick: () => {
-      const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.dataset.theme = dark ? 'light' : 'dark';
-      localSet('pilot.theme', document.documentElement.dataset.theme);
-    } }, '◐'));
+  const menusEl = h('div', { class: 'menus', role: 'menubar' });
+  const projectEl = h('div', { class: 'project' });
+  const head = h('header', { class: 'top' },
+    h('div', { class: 'menubar' },
+      h('span', { class: 'logo', title: `Pilot ${BOOT.version}` }, '☸'), menusEl, h('div', { class: 'grow' }),
+      h('div', { class: 'search' }, searchBox, results), h('div', { class: 'grow' }), projectEl),
+    navEl);
+  // The header's height, for what sits under it (sticky table heads, the drawer, the graph).
+  try {
+    new ResizeObserver(() => document.documentElement.style.setProperty('--top', `${head.offsetHeight}px`)).observe(head);
+  } catch {
+    /* an old browser: the default height */
+  }
+  function toggleTheme() {
+    const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+    localSet('pilot.theme', document.documentElement.dataset.theme);
+  }
   $app.append(head, mainEl, drawerEl);
 
   let searchTimer = null;
@@ -190,6 +203,7 @@ export function client(BOOT) {
     const es = new EventSource('/api/events');
     es.onmessage = (ev) => {
       const d = JSON.parse(ev.data);
+      if (!d.files || !PROJECT.root) return;
       const name = location.hash.split('/')[1] ?? 'overview';
       // Views that only show data follow the files at once; the graph and the forms ask first.
       if (['overview', 'pages', 'page', 'changes', 'audit', 'doctor', 'styleguide', 'components', 'selectors'].includes(name) && !drawerEl.firstChild) {
@@ -228,17 +242,349 @@ export function client(BOOT) {
     }
   }
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') put(drawerEl);
+    if (ev.key === 'Escape' && !dialogOpen()) put(drawerEl);
+  });
+
+  // ─── Dialogs and notes ────────────────────────────────────────────────────────────────────
+  const layer = h('div');
+  $app.append(layer);
+  /** A modal box over the page; resolves when it closes. `wide` for the folder browser. */
+  function dialog(title, body, { wide = false, buttons = null } = {}) {
+    let done;
+    const closed = new Promise((ok) => (done = ok));
+    const close = (v) => {
+      put(layer);
+      done(v);
+    };
+    const box = h('div', { class: `dialog${wide ? ' wide' : ''}`, role: 'dialog', 'aria-label': title },
+      h('div', { class: 'dialog-head' }, h('b', {}, title), h('div', { class: 'grow' }), h('button', { class: 'ghost', 'aria-label': 'Close', onclick: () => close(null) }, '✕')),
+      h('div', { class: 'dialog-body' }, body),
+      buttons ? h('div', { class: 'dialog-foot' }, buttons(close)) : null);
+    put(layer, h('div', { class: 'overlay', onmousedown: (ev) => ev.target === ev.currentTarget && close(null) }, box));
+    box.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') {
+        ev.stopPropagation();
+        close(null);
+      }
+    });
+    setTimeout(() => (box.querySelector('input') ?? box.querySelector('button.primary') ?? box.querySelector('button'))?.focus(), 0);
+    return { closed, close, box };
+  }
+  const dialogOpen = () => !!layer.firstChild;
+  /** A note at the bottom of the window for a few seconds (or until closed, when `stay`). */
+  function note(text, { stay = false, warn = false } = {}) {
+    put(banner, h('div', { class: 'card flow', style: { padding: '8px 12px', maxWidth: '640px', borderColor: warn ? 'var(--warn)' : '' } },
+      h('span', { style: { whiteSpace: 'pre-wrap' } }, text), h('button', { class: 'ghost', onclick: () => (banner.hidden = true) }, '✕')));
+    banner.hidden = false;
+    clearTimeout(note.timer);
+    if (!stay) note.timer = setTimeout(() => (banner.hidden = true), 5000);
+  }
+  async function copy(text, what) {
+    try {
+      await navigator.clipboard.writeText(text);
+      note(`${what} copied.`);
+    } catch {
+      dialog(what, h('pre', { class: 'block', style: { maxHeight: '60vh' } }, text));
+    }
+  }
+
+  // ─── Projects: open, recent, the folder browser ──────────────────────────────────────────
+  async function loadProject() {
+    Object.assign(PROJECT, await api('/api/project'));
+    return PROJECT;
+  }
+  /** Opens a project in this window: Pilot reads it (from its cache when it has read it before). */
+  async function openProject(path) {
+    if (!path) return;
+    const wait = dialog('Opening', h('div', { class: 'flow' }, h('span', { class: 'spinner' }), h('span', {}, `Reading ${path}…`), h('div', { class: 'faint', style: { width: '100%' } }, 'The first time takes longest: then Pilot reads only what changed.')));
+    const r = await act('open', { path });
+    wait.close();
+    if (r.error) return note(`Couldn't open ${path}: ${r.error}`, { stay: true, warn: true });
+    Object.assign(PROJECT, r);
+    location.hash = '#/overview';
+    location.reload();
+  }
+  /** File, Open folder: the system's folder picker, or Pilot's own folder browser where there's none. */
+  async function openFolder() {
+    if (BOOT.picker) {
+      note('Choose the folder in the window that opened (the solution\'s folder, or a web project\'s).');
+      const r = await act('pick', { start: PROJECT.root ?? PROJECT.recent?.[0]?.path ?? null });
+      banner.hidden = true;
+      if (r.path) return openProject(r.path);
+      if (!r.unsupported) return;
+    }
+    browseFolders();
+  }
+  async function closeProject() {
+    await act('close');
+    PROJECT.root = null;
+    PROJECT.name = null;
+    location.hash = '#/start';
+    location.reload();
+  }
+  /** Pilot's own folder browser: works everywhere, also where the system has no picker to show. */
+  function browseFolders(start) {
+    const pathInput = h('input', { type: 'text', class: 'mono', style: { flex: '1' }, 'aria-label': 'Folder' });
+    const list = h('div', { class: 'folders' });
+    const drives = h('div', { class: 'flow' });
+    const here = h('div', { class: 'faint' });
+    let at = null;
+    async function show(path) {
+      put(list, loading());
+      const d = await api('/api/dirs', { path }).catch((e) => ({ error: e.message, folders: [] }));
+      at = d;
+      pathInput.value = d.path ?? '';
+      put(drives, (d.drives ?? []).map((x) => h('button', { onclick: () => show(x) }, x)), d.home ? h('button', { onclick: () => show(d.home) }, 'Home') : null);
+      put(here, d.here?.web ? `This looks like a project${d.here.solution ? ` (${d.here.solution})` : ''}.` : 'Pick the solution\'s folder, or a web project\'s.');
+      put(list,
+        d.parent ? h('div', { class: 'folder', onclick: () => show(d.parent) }, h('span', { class: 'ico' }, '↰'), '..') : null,
+        d.error ? h('div', { class: 'warn' }, d.error) : null,
+        d.folders.map((f) => h('div', { class: 'folder', title: f.path, onclick: () => show(f.path) }, h('span', { class: 'ico' }, '▸'), h('span', { class: 'grow' }, f.name), f.web ? h('span', { class: 'pill' }, 'project') : null)),
+        !d.error && !d.folders.length ? h('div', { class: 'faint', style: { padding: '8px' } }, 'No folders in here.') : null);
+    }
+    pathInput.addEventListener('keydown', (ev) => ev.key === 'Enter' && show(pathInput.value.trim()));
+    const dlg = dialog('Open a folder', h('div', {},
+      h('div', { class: 'flow', style: { flexWrap: 'nowrap' } }, h('button', { title: 'Up', onclick: () => at?.parent && show(at.parent) }, '↑'), pathInput, h('button', { onclick: () => show(pathInput.value.trim()) }, 'Go')),
+      h('div', { style: { margin: '8px 0' } }, drives), list, here), {
+      wide: true,
+      buttons: (close) => [h('button', { onclick: () => close(null) }, 'Cancel'), h('button', { class: 'primary', onclick: () => close(at?.path) }, 'Open this folder')],
+    });
+    dlg.closed.then((path) => path && openProject(path));
+    show(start ?? PROJECT.root ?? PROJECT.recent?.[0]?.path ?? '');
+  }
+
+  // ─── The start page: recent projects, and getting started ─────────────────────────────────
+  async function viewStart() {
+    await loadProject();
+    const filter = h('input', { type: 'search', placeholder: 'Search recent', 'aria-label': 'Search recent projects', style: { width: '100%' } });
+    const listEl = h('div', { class: 'recent' });
+    const when = (iso) => {
+      const d = new Date(iso);
+      const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 86400000);
+      return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : days < 7 ? 'This week' : days < 31 ? 'This month' : 'Older';
+    };
+    const stamp = (iso) => {
+      const d = new Date(iso);
+      return when(iso) === 'Today' || when(iso) === 'Yesterday' ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString();
+    };
+    function draw() {
+      const q = filter.value.trim().toLowerCase();
+      const items = PROJECT.recent.filter((p) => !q || `${p.name} ${p.path}`.toLowerCase().includes(q));
+      const groups = [];
+      for (const p of items) {
+        const g = p.pinned ? 'Pinned' : when(p.at);
+        if (groups.at(-1)?.[0] !== g) groups.push([g, []]);
+        groups.at(-1)[1].push(p);
+      }
+      put(listEl, items.length ? groups.map(([g, ps]) => [h('div', { class: 'group' }, g), ps.map((p) => h('div', { class: `item${p.missing ? ' missing' : ''}`, tabindex: 0, title: p.missing ? `${p.path} isn't there any more` : p.path,
+        onclick: () => !p.missing && openProject(p.path), onkeydown: (ev) => ev.key === 'Enter' && !p.missing && openProject(p.path) },
+        h('span', { class: 'ico' }, p.solution ? '◆' : '▣'),
+        h('div', { class: 'grow', style: { minWidth: '0' } }, h('b', {}, p.name), h('div', { class: 'faint mono path' }, p.path)),
+        h('span', { class: 'faint when' }, p.missing ? 'not found' : stamp(p.at)),
+        h('button', { class: `ghost pin${p.pinned ? ' on' : ''}`, title: p.pinned ? 'Unpin' : 'Pin to the top', onclick: async (ev) => { ev.stopPropagation(); Object.assign(PROJECT, await act('pin', { path: p.path, pinned: !p.pinned })); draw(); } }, '📌'),
+        h('button', { class: 'ghost', title: 'Remove from the list', onclick: async (ev) => { ev.stopPropagation(); Object.assign(PROJECT, await act('forget', { path: p.path })); draw(); } }, '✕')))])
+        : h('div', { class: 'faint', style: { padding: '18px 4px' } }, PROJECT.recent.length ? 'None match.' : 'The projects you open show here.'));
+    }
+    filter.addEventListener('input', draw);
+    draw();
+    const big = (icon, title, sub, run) => h('button', { class: 'big', onclick: run }, h('span', { class: 'ico' }, icon), h('span', {}, h('b', {}, title), h('small', {}, sub)));
+    const pathInput = h('input', { type: 'text', class: 'mono', placeholder: 'C:\\src\\Shop or C:\\src\\Shop\\Shop.sln', style: { flex: '1' } });
+    pathInput.addEventListener('keydown', (ev) => ev.key === 'Enter' && openProject(pathInput.value.trim()));
+    put(mainEl, h('div', { class: 'start-page' },
+      h('div', { class: 'start-title' }, h('span', { class: 'logo big-logo' }, '☸'), h('div', {}, h('h1', {}, 'Pilot'), h('div', { class: 'dim' }, `An ASP.NET MVC project's pages, views, scripts and styles as one map · ${BOOT.version}`))),
+      h('div', { class: 'start-cols' },
+        h('section', {}, h('h2', {}, 'Open recent'), filter, listEl),
+        h('section', {}, h('h2', {}, 'Get started'),
+          big('📂', 'Open a folder', 'The solution\'s folder, or a web project\'s. Pilot reads the views, scripts and styles under it.', openFolder),
+          big('🗂', 'Browse folders', 'Find the project in Pilot\'s own folder list.', () => browseFolders()),
+          h('div', { class: 'card', style: { marginTop: '10px' } }, h('b', {}, 'Open a path'), h('div', { class: 'flow', style: { flexWrap: 'nowrap', marginTop: '6px' } }, pathInput, h('button', { class: 'primary', onclick: () => openProject(pathInput.value.trim()) }, 'Open'))),
+          PROJECT.root ? h('p', {}, h('a', { href: '#/overview' }, `Back to ${PROJECT.name} →`)) : null))));
+    filter.focus();
+  }
+
+  // ─── Menus ────────────────────────────────────────────────────────────────────────────────
+  /** The page's target for Claude: the page or node shown now, or one asked for. */
+  function currentTarget(what) {
+    const [, name, ...rest] = location.hash.replace(/^#/, '').split('/');
+    const arg = decodeURIComponent(rest.join('/'));
+    if (['page', 'graph'].includes(name) && arg) return arg;
+    return window.prompt(`${what}: which page, view, action or file? (Orders/Edit, Views/Orders/Edit.cshtml…)`)?.trim() || null;
+  }
+  async function copyContext() {
+    const t = currentTarget('Context for Claude');
+    if (!t) return;
+    const d = await api('/api/context', { target: t });
+    if (d.error) return note(d.error, { warn: true });
+    copy(d.text, `Context for ${t}`);
+  }
+  async function copyDiagram() {
+    const t = currentTarget('A diagram');
+    if (!t) return;
+    const d = await api('/api/diagram', { target: t });
+    if (d.error) return note(d.error, { warn: true });
+    copy(`\`\`\`mermaid\n${d.diagram}\n\`\`\``, `The diagram of ${t}`);
+  }
+  async function reindex() {
+    note('Reading the project again…', { stay: true });
+    try {
+      await api('/api/refresh');
+      note('Read again.');
+      route();
+    } catch (e) {
+      note(e.message, { warn: true });
+    }
+  }
+  async function quit() {
+    await act('quit').catch(() => null);
+    window.close();
+    setTimeout(() => put(mainEl, h('div', { class: 'empty' }, 'Pilot has stopped: close this window.')), 400);
+  }
+  async function checkUpdate() {
+    note('Asking GitHub for the newest Pilot…', { stay: true });
+    const r = await act('update');
+    note(r.text ?? r.error, { stay: true, warn: !!r.error });
+  }
+  function aboutBox() {
+    dialog('About Pilot', kv(['Version', BOOT.version], ['Project', PROJECT.root ?? 'none open'],
+      ['Files read', PROJECT.stats ? `${PROJECT.stats.files} in ${PROJECT.stats.ms} ms` : '—'],
+      ['Runs', BOOT.app ? 'in its own window: closing it stops Pilot' : 'in your browser: ctrl+c in its terminal stops it'],
+      ['Claude Code', 'pilot mcp, or pilot init --mcp in the project']));
+  }
+  const SHORTCUTS = [['Ctrl+O', 'Open a folder'], ['F5', 'Read the project again'], ['Ctrl+K', 'Find a page, view, action or class'], ['Ctrl+1 … Ctrl+9', 'Overview, Pages, Graph, … (the View menu\'s order)'],
+    ['Alt+F, Alt+V, Alt+T, Alt+C, Alt+H', 'Open a menu (then the arrow keys and Enter)'], ['Esc', 'Close a menu, dialog or the source drawer'], ['F1', 'These shortcuts']];
+  const kv = (...rows) => h('div', { class: 'kv' }, rows.map(([k, v]) => [h('span', {}, k), h('span', { style: { overflowWrap: 'anywhere' } }, v)]));
+  const shortcutsBox = () => dialog('Keyboard shortcuts', kv(...SHORTCUTS));
+  function gettingStarted() {
+    dialog('Getting started', h('div', { class: 'prose' },
+      h('p', {}, h('b', {}, 'Open the project: '), 'File, Open folder, and pick the folder with the solution (or the web project). Pilot reads every view, partial, script, stylesheet and controller under it, and keeps a cache, so the next time is quick.'),
+      h('p', {}, h('b', {}, 'Find your way: '), 'Pages ranks every page by complexity; a page shows its layout, partials, scripts, the actions its scripts call and the partials those return. Graph draws any of them with what it reaches.'),
+      h('p', {}, h('b', {}, 'Change things safely: '), 'Tools has the rename of a class, the split of a big stylesheet and the extraction of repeated markup, each previewed first; Live inspects the running site.'),
+      h('p', {}, h('b', {}, 'Give it to Claude Code: '), 'Claude Code, Set up adds Pilot\'s skill and MCP server to the project, so Claude asks Pilot where things are before it edits them.')));
+  }
+  function menuDefs() {
+    const has = !!PROJECT.root;
+    const recent = (PROJECT.recent ?? []).filter((p) => !p.missing && p.path !== PROJECT.root).slice(0, 6);
+    return [
+      ['File', 'f', [
+        { label: 'Open folder…', key: 'Ctrl+O', run: openFolder },
+        { label: 'Browse folders…', run: () => browseFolders() },
+        { label: 'Start page', run: () => go('#/start') },
+        recent.length ? '-' : null,
+        ...recent.map((p) => ({ label: p.name, hint: p.path, run: () => openProject(p.path) })),
+        '-',
+        { label: 'Re-index', key: 'F5', run: reindex, off: !has },
+        { label: 'Export report', run: () => window.open('/report.html', '_blank'), off: !has },
+        { label: 'Close project', run: closeProject, off: !has || PROJECT.fixed },
+        BOOT.app ? '-' : null,
+        BOOT.app ? { label: 'Exit', key: 'Alt+F4', run: quit } : null,
+      ]],
+      ['View', 'v', [
+        ...NAV.map(([k, label], i) => ({ label, key: i < 9 ? `Ctrl+${i + 1}` : null, run: () => go(`#/${k}`), off: !has })),
+        '-',
+        { label: 'Find…', key: 'Ctrl+K', run: () => searchBox.focus(), off: !has },
+        { label: 'Light or dark', run: toggleTheme },
+      ]],
+      ['Tools', 't', [
+        { label: 'Rename a class or id…', run: () => go('#/selectors'), off: !has },
+        { label: 'Split a stylesheet…', run: () => go('#/styles'), off: !has },
+        { label: 'Extract repeated markup…', run: () => go('#/audit/repeats'), off: !has },
+        '-',
+        { label: 'Screenshots of changed pages…', run: () => go('#/changes'), off: !has },
+        { label: 'Inspect, coverage, responsive…', run: () => go('#/live'), off: !has },
+        '-',
+        { label: 'Audit', run: () => go('#/audit'), off: !has },
+        { label: 'Doctor', run: () => go('#/doctor'), off: !has },
+      ]],
+      ['Claude Code', 'c', [
+        { label: 'Set up the skill and MCP server', run: async () => { const r = await act('init', { mcp: true }); note(r.text ?? r.error, { warn: !!r.error }); }, off: !has },
+        { label: 'Add the hook', run: async () => { const r = await act('init', { skill: false, hook: true }); note(r.text ?? r.error, { warn: !!r.error }); }, off: !has },
+        '-',
+        { label: 'Copy context for this page', run: copyContext, off: !has },
+        { label: 'Copy a diagram of this page', run: copyDiagram, off: !has },
+        '-',
+        { label: 'How to connect…', run: () => go('#/overview'), off: !has },
+      ]],
+      ['Help', 'h', [
+        { label: 'Getting started', run: gettingStarted },
+        { label: 'Keyboard shortcuts', key: 'F1', run: shortcutsBox },
+        { label: 'Check for updates', run: checkUpdate },
+        '-',
+        { label: 'About Pilot', run: aboutBox },
+      ]],
+    ];
+  }
+  let openIndex = -1;
+  function closeMenus() {
+    openIndex = -1;
+    for (const m of menusEl.children) m.classList.remove('open');
+  }
+  function openMenuAt(i, focusFirst = false) {
+    const all = [...menusEl.children];
+    openIndex = (i + all.length) % all.length;
+    all.forEach((m, j) => m.classList.toggle('open', j === openIndex));
+    if (focusFirst) all[openIndex].querySelector('.mi:not([disabled])')?.focus();
+  }
+  function renderMenus() {
+    put(menusEl, menuDefs().map(([title, , items], i) => {
+      const list = h('div', { class: 'dropdown', role: 'menu' }, items.filter(Boolean).map((it) => (it === '-' ? h('div', { class: 'sep' })
+        : h('button', { class: 'mi', role: 'menuitem', disabled: it.off ? true : null, title: it.hint ?? null, onclick: () => { closeMenus(); it.run(); } },
+          h('span', { class: 'grow' }, it.label), it.key ? h('span', { class: 'key' }, it.key) : null))));
+      return h('div', { class: 'menu' },
+        h('button', { class: 'mt', onclick: () => (openIndex === i ? closeMenus() : openMenuAt(i)), onmouseenter: () => openIndex >= 0 && openIndex !== i && openMenuAt(i) }, title),
+        list);
+    }));
+  }
+  document.addEventListener('mousedown', (ev) => {
+    if (openIndex >= 0 && !menusEl.contains(ev.target)) closeMenus();
+  });
+  menusEl.addEventListener('keydown', (ev) => {
+    if (openIndex < 0) return;
+    const items = [...menusEl.children[openIndex].querySelectorAll('.mi:not([disabled])')];
+    const at = items.indexOf(document.activeElement);
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      items[(at + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+    } else if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
+      ev.preventDefault();
+      openMenuAt(openIndex + (ev.key === 'ArrowRight' ? 1 : -1), true);
+    } else if (ev.key === 'Escape') {
+      closeMenus();
+    }
+  });
+  // The window's own shortcuts, before the browser's (Ctrl+O would open a file, F5 reload the page).
+  document.addEventListener('keydown', (ev) => {
+    const ctrl = ev.ctrlKey || ev.metaKey;
+    const k = ev.key.toLowerCase();
+    let run = null;
+    if (ctrl && !ev.shiftKey && k === 'o') run = openFolder;
+    else if (ev.key === 'F5' && PROJECT.root) run = reindex;
+    else if (ctrl && k === 'k' && PROJECT.root) run = () => searchBox.focus();
+    else if (ctrl && !ev.shiftKey && /^[1-9]$/.test(ev.key) && PROJECT.root && NAV[Number(ev.key) - 1]) run = () => go(`#/${NAV[Number(ev.key) - 1][0]}`);
+    else if (ev.key === 'F1') run = shortcutsBox;
+    else if (ev.altKey && !ctrl) {
+      const i = menuDefs().findIndex(([, letter]) => letter === k);
+      if (i >= 0) run = () => openMenuAt(i, true);
+    }
+    if (!run || (dialogOpen() && ev.key !== 'F1')) return;
+    ev.preventDefault();
+    run();
   });
 
   // ─── Routing ──────────────────────────────────────────────────────────────────────────────
   async function route() {
-    const [, name = 'overview', ...rest] = location.hash.replace(/^#/, '').split('/');
+    let [, name = 'overview', ...rest] = location.hash.replace(/^#/, '').split('/');
+    if (!PROJECT.root) name = 'start';
     const arg = decodeURIComponent(rest.join('/'));
+    closeMenus();
+    document.title = PROJECT.name ? `${PROJECT.name} - Pilot` : 'Pilot';
+    put(projectEl, PROJECT.root ? h('span', { class: 'pill', title: PROJECT.root }, PROJECT.name) : null);
+    navEl.hidden = !PROJECT.root;
+    searchBox.parentElement.hidden = !PROJECT.root;
     put(navEl, ...NAV.map(([k, label]) => h('a', { href: `#/${k}`, class: k === name || (name === 'page' && k === 'pages') ? 'on' : '' }, label)));
-    mainEl.className = name === 'graph' ? 'full' : '';
+    mainEl.className = name === 'graph' ? 'full' : name === 'start' ? 'start' : '';
     put(mainEl, loading());
-    const views = { overview: viewOverview, pages: viewPages, page: viewPage, graph: viewGraph, components: viewComponents, styles: viewStyles, selectors: viewSelectors, changes: viewChanges, audit: viewAudit, problems: viewDoctor, doctor: viewDoctor, styleguide: viewStyleguide, live: viewLive };
+    renderMenus();
+    const views = { start: viewStart, overview: viewOverview, pages: viewPages, page: viewPage, graph: viewGraph, components: viewComponents, styles: viewStyles, selectors: viewSelectors, changes: viewChanges, audit: viewAudit, problems: viewDoctor, doctor: viewDoctor, styleguide: viewStyleguide, live: viewLive };
     try {
       await (views[name] ?? viewOverview)(arg);
     } catch (e) {
@@ -1105,5 +1451,9 @@ export function client(BOOT) {
       rshots);
   }
 
-  route();
+  // The project open now, then the view: the start page when there's none.
+  loadProject().catch(() => null).finally(() => {
+    if (!PROJECT.root && !/^#\/start/.test(location.hash)) history.replaceState(null, '', '#/start');
+    route();
+  });
 }

@@ -58,6 +58,8 @@ Usage: pilot [--root <dir>] <command> [arguments] [--json]
   routes [filter]               URLs, actions and the views they return
   problems [filter]             references Pilot couldn't resolve, and names decided at run time
   ui                            the web UI: graphs, pages, components, stylesheets (--port, --no-open)
+  app                           the UI in a window of its own (Edge's or Chrome's), with menus and a
+                                start page of recent projects; --root opens that folder or .sln at once
   update                        install the newest release over this one (the UI checks once a day)
   mcp                           serve these as MCP tools over stdio:
                                   claude mcp add pilot -- pilot mcp --root <dir>
@@ -135,6 +137,10 @@ export async function run(argv, { write = (s) => process.stdout.write(s), error 
     const { serve } = await import('./mcp.js');
     serve({ root: mcpRoot(opts) });
     return null;
+  }
+  if (opts.command === 'app') {
+    const { launchApp } = await import('./web/server.js');
+    return launchApp({ argv, root: opts.rootGiven ? opts.root : null, port: opts.port, vendor: opts.vendor, ignore: opts.ignore, log: (s) => error(`${s}\n`) });
   }
   if (opts.command === 'ui') {
     const { startUi } = await import('./web/server.js');

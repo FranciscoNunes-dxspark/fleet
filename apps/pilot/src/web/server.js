@@ -4,7 +4,7 @@
 // The index is kept and refreshed before a request when it's older than two seconds, so edits show
 // up on the next click.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, readFileSync, watch, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join, resolve } from 'node:path';
 import { COMPILED, VERSION } from '../app.js';
@@ -28,6 +28,8 @@ import { installHook } from '../hook.js';
 import { mcpServer, writeMcpJson } from '../cli.js';
 import { SKILL } from '../skill.js';
 import { kindOf } from '../walk.js';
+import { findChrome } from '../shots.js';
+import { describeFolder, forgetProject, listFolders, pickFolder, pickerKind, pinProject, projectFolder, recentProjects, rememberProject, stateDir } from './projects.js';
 
 /** The page model, made fit to send: the tree as it is, without the index's Maps. */
 function pageData(idx, target) {
@@ -190,9 +192,14 @@ export const ACTIONS = {
   },
 };
 
-export function handler({ index, refresh, root, port, shoot = null, events = null }) {
+/**
+ * The request handler. `session` is the project open now (createSession: one can be opened, closed
+ * and switched from the UI); without one, `index`/`refresh`/`root` are a project fixed for good.
+ * `port` is for the Host check.
+ */
+export function handler({ index, refresh, root, port, shoot = null, events = null, session = null }) {
+  session ??= fixedSession({ index, refresh, root, events });
   const api = routes();
-  const page = pageHtml({ root, version: VERSION });
   return (req, res) => {
     // Only this machine, by name too: a page elsewhere can't reach the API through DNS rebinding.
     const host = String(req.headers.host ?? '').toLowerCase();
@@ -208,33 +215,39 @@ export function handler({ index, refresh, root, port, shoot = null, events = nul
     if (url.pathname.startsWith('/api/action/')) {
       // Actions change files or start a browser: a POST with a header a page elsewhere can't send.
       if (req.method !== 'POST' || req.headers['x-pilot'] !== '1') return send(403, JSON.stringify({ error: 'POST with X-Pilot: 1 only' }));
-      const action = ACTIONS[url.pathname.slice('/api/action/'.length)];
-      if (!action) return send(404, JSON.stringify({ error: 'no such action' }));
+      const name = url.pathname.slice('/api/action/'.length);
+      const action = Object.hasOwn(ACTIONS, name) ? ACTIONS[name] : null;
+      const own = Object.hasOwn(SESSION_ACTIONS, name) ? SESSION_ACTIONS[name] : null;
+      if (!action && !own) return send(404, JSON.stringify({ error: 'no such action' }));
       let body = '';
       req.on('data', (d) => {
         body += d;
       });
       req.on('end', async () => {
         try {
-          const r = await action(index(), JSON.parse(body || '{}'), { refresh });
+          const b = JSON.parse(body || '{}');
+          if (own) return send(200, JSON.stringify(await own(session, b)));
+          const r = await action(session.index(), b, { refresh: () => session.refresh() });
           send(200, JSON.stringify({ ...r.data, text: r.text }));
         } catch (e) {
-          send(200, JSON.stringify({ error: e.message, text: e.message }));
+          send(e.code === 'NO_PROJECT' ? 409 : 200, JSON.stringify({ error: e.message, text: e.message, noProject: e.code === 'NO_PROJECT' || undefined }));
         }
       });
       return;
     }
     if (url.pathname === '/api/events') {
       // Server-sent events: each time the project's files change, the UI hears which.
-      if (!events) return send(404, JSON.stringify({ error: 'no live updates here' }));
+      if (!session.events) return send(404, JSON.stringify({ error: 'no live updates here' }));
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
       res.write(': connected\n\n');
-      const listener = (files) => res.write(`data: ${JSON.stringify({ files, at: Date.now() })}\n\n`);
-      events.add(listener);
+      const listener = (what) => res.write(`data: ${JSON.stringify({ ...(Array.isArray(what) ? { files: what } : what), at: Date.now() })}\n\n`);
+      session.events.add(listener);
+      session.watching?.(1);
       const ping = setInterval(() => res.write(': ping\n\n'), 25000);
       req.on('close', () => {
-        events.delete(listener);
+        session.events.delete(listener);
         clearInterval(ping);
+        session.watching?.(-1);
       });
       return;
     }
@@ -242,7 +255,7 @@ export function handler({ index, refresh, root, port, shoot = null, events = nul
     const shotFile = /^\/shots\/(?:report\.html|([a-z0-9-]+)\/((?:before|after|diff|responsive)-(?:\d+|mobile)\.png))$/.exec(url.pathname);
     if (shotFile) {
       try {
-        const body = readFileSync(join(index().root, SHOTS_DIR, shotFile[1] ? join(shotFile[1], shotFile[2]) : 'report.html'));
+        const body = readFileSync(join(session.index().root, SHOTS_DIR, shotFile[1] ? join(shotFile[1], shotFile[2]) : 'report.html'));
         res.writeHead(200, { 'content-type': shotFile[1] ? 'image/png' : 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'" });
         return res.end(body);
       } catch {
@@ -250,8 +263,12 @@ export function handler({ index, refresh, root, port, shoot = null, events = nul
       }
     }
     if (url.pathname === '/report.html') {
-      const r = report(index());
-      return send(200, readFileSync(r.data.file, 'utf8'), 'text/html; charset=utf-8');
+      try {
+        const r = report(session.index());
+        return send(200, readFileSync(r.data.file, 'utf8'), 'text/html; charset=utf-8');
+      } catch (e) {
+        return send(e.code === 'NO_PROJECT' ? 409 : 500, JSON.stringify({ error: e.message }));
+      }
     }
     if (url.pathname === '/api/shoot') {
       // It starts a browser and writes files: a POST with a header a page elsewhere can't send.
@@ -263,7 +280,7 @@ export function handler({ index, refresh, root, port, shoot = null, events = nul
       req.on('end', async () => {
         try {
           const { page: target, url: site, widths } = JSON.parse(body || '{}');
-          const r = await (shoot ?? shot)(index(), String(target ?? ''), { url: site || null, widths: Array.isArray(widths) && widths.length ? widths : [1280] });
+          const r = await (shoot ?? shot)(session.index(), String(target ?? ''), { url: site || null, widths: Array.isArray(widths) && widths.length ? widths : [1280] });
           send(200, JSON.stringify(r.data));
         } catch (e) {
           send(200, JSON.stringify({ error: e.message }));
@@ -278,30 +295,34 @@ export function handler({ index, refresh, root, port, shoot = null, events = nul
       if (!/^[a-z0-9-]+$/.test(slug) || !/^(before|after|diff|responsive)-(\d+|mobile)\.png$/.test(name)) return send(404, JSON.stringify({ error: 'not found' }));
       try {
         res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
-        return res.end(readFileSync(join(index().root, SHOTS_DIR, slug, name)));
+        return res.end(readFileSync(join(session.index().root, SHOTS_DIR, slug, name)));
       } catch {
         return send(404, JSON.stringify({ error: 'not found' }));
       }
     }
     if (url.pathname === '/' || url.pathname === '/index.html') {
       res.setHeader('content-security-policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data: 'self'");
-      return send(200, page, 'text/html; charset=utf-8');
+      const r = session.root();
+      return send(200, pageHtml({ root: r, name: r ? describeFolder(r).name : null, version: VERSION, app: !!session.app, picker: !!session.picker }), 'text/html; charset=utf-8');
     }
+    if (url.pathname === '/api/project') return send(200, JSON.stringify(projectInfo(session)));
+    if (url.pathname === '/api/dirs') return send(200, JSON.stringify(listFolders(url.searchParams.get('path') || session.root() || null)));
+    const failed = (e) => send(e.code === 'NO_PROJECT' ? 409 : 500, JSON.stringify({ error: e.message, noProject: e.code === 'NO_PROJECT' || undefined }));
     if (url.pathname === '/api/refresh') {
       try {
-        const idx = refresh();
+        const idx = session.refresh();
         return send(200, JSON.stringify({ ok: true, stats: idx.stats }));
       } catch (e) {
-        return send(500, JSON.stringify({ error: e.message }));
+        return failed(e);
       }
     }
     const route = api[url.pathname];
     if (!route) return send(404, JSON.stringify({ error: 'not found' }));
     try {
-      const data = route(index(), url.searchParams);
+      const data = route(session.index(), url.searchParams);
       send(200, JSON.stringify(data ?? null));
     } catch (e) {
-      send(500, JSON.stringify({ error: e.message }));
+      failed(e);
     }
   };
 }
@@ -315,7 +336,6 @@ function openBrowser(url) {
   }
 }
 
-/** Starts the UI: builds the index, listens on 127.0.0.1 (from `port`, or 4170 and up), opens the browser. */
 /**
  * A downloaded Pilot keeps itself current: once a day `pilot ui` asks GitHub for the newest release and
  * installs it beside itself (the kit's updater: checksums checked, the old one moved aside on Windows),
@@ -325,7 +345,7 @@ export async function autoUpdate(log, env = process.env) {
   if (!COMPILED || env.PILOT_NO_UPDATE === '1') return;
   const u = await import('@fleet/kit/update.js');
   await u.removeOldExecutables();
-  const store = u.lastCheckStore(join(env.PILOT_CACHE ?? (process.platform === 'win32' ? join(env.LOCALAPPDATA ?? homedir(), 'pilot') : join(env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'pilot')), 'update.json'));
+  const store = u.lastCheckStore(join(stateDir(env), 'update.json'));
   const { checked, newer } = await u.checkForUpdate(await store.load());
   await store.save(checked);
   if (!newer) return;
@@ -333,45 +353,156 @@ export async function autoUpdate(log, env = process.env) {
   if (done === 'installed') log(`Pilot ${checked.latest} is installed: it runs from the next start (stop this one with ctrl+c and start pilot ui again).`);
 }
 
-export async function startUi({ root, port = null, open = true, vendor = false, ignore = [], log = console.error, fresh = 2000, update = true } = {}) {
-  root = resolve(root);
-  log(`Indexing ${root}…`);
-  let idx = buildIndex(root, { vendor, ignore, progress: () => {} });
-  log(`Indexed ${idx.stats.files} files in ${idx.stats.ms} ms.`);
-  const index = () => {
-    if (Date.now() - idx.builtAt > fresh) idx.build({ ignore });
-    return idx;
-  };
-  const refresh = () => {
-    idx = buildIndex(root, { vendor, ignore, cache: false });
-    return idx;
-  };
-  let bound = null;
-  // Live updates: the project's files watched; a burst of changes read again at once and announced.
+function noProject() {
+  return Object.assign(new Error('No project is open: open one first.'), { code: 'NO_PROJECT' });
+}
+
+/** A project given once and never changed (the tests', and handler's callers that pass an index). */
+function fixedSession({ index, refresh, root, events }) {
+  return { root: () => root ?? index().root, index, refresh, events, open: () => { throw new Error('This UI shows one project.'); }, close: () => {}, fixed: true };
+}
+
+/**
+ * The project open in the UI, which the start window can open, close and switch: its index (read
+ * again before a request when it's older than `fresh` ms), its files watched (a burst of changes read
+ * at once and announced on `events`), and the recent list kept as it's opened.
+ */
+export function createSession({ root = null, vendor = false, ignore = [], fresh = 2000, log = () => {}, env = process.env, watchFiles = true, app = false, picker = pickerKind() } = {}) {
+  let idx = null;
+  let watcher = null;
   const events = new Set();
-  let pending = new Set();
-  let timer = null;
-  try {
-    watch(root, { recursive: true }, (_, name) => {
-      const rel = String(name ?? '').replace(/\\/g, '/');
-      if (!rel || /(^|\/)(\.pilot|\.git|\.vs|node_modules|bin|obj)(\/|$)/.test(rel) || !kindOf(rel.split('/').pop())) return;
-      pending.add(rel);
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        const files = [...pending];
-        pending = new Set();
-        try {
-          idx.build({ ignore });
-        } catch {
-          // A file mid-write: the next change reads it again.
-        }
-        for (const l of events) l(files);
-      }, 400);
-    });
-  } catch {
-    // No recursive watching here: the UI still reads changes on its next request.
-  }
-  const server = createServer(handler({ index, refresh, root, port: () => bound, events }));
+  const announce = (what) => {
+    for (const l of events) l(what);
+  };
+  const watchProject = (dir) => {
+    let pending = new Set();
+    let timer = null;
+    try {
+      watcher = watch(dir, { recursive: true }, (_, name) => {
+        const rel = String(name ?? '').replace(/\\/g, '/');
+        if (!rel || /(^|\/)(\.pilot|\.git|\.vs|node_modules|bin|obj)(\/|$)/.test(rel) || !kindOf(rel.split('/').pop())) return;
+        pending.add(rel);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          const files = [...pending];
+          pending = new Set();
+          if (!idx || idx.root !== dir) return;
+          try {
+            idx.build({ ignore });
+          } catch {
+            // A file mid-write: the next change reads it again.
+          }
+          announce(files);
+        }, 400);
+      });
+      watcher.on('error', () => {});
+    } catch {
+      // No recursive watching here: the UI still reads changes on its next request.
+    }
+  };
+  const session = {
+    events,
+    app,
+    picker,
+    env,
+    root: () => idx?.root ?? null,
+    index() {
+      if (!idx) throw noProject();
+      if (Date.now() - idx.builtAt > fresh) idx.build({ ignore });
+      return idx;
+    },
+    refresh() {
+      if (!idx) throw noProject();
+      idx = buildIndex(idx.root, { vendor, ignore, cache: false });
+      return idx;
+    },
+    /** Opens a folder (or the folder of a file in it, like a .sln) in place of the project open now. */
+    open(path) {
+      const dir = projectFolder(path);
+      if (!dir) throw new Error(`There's no folder ${path}.`);
+      log(`Indexing ${dir}…`);
+      const next = buildIndex(dir, { vendor, ignore, progress: () => {} });
+      log(`Indexed ${next.stats.files} files in ${next.stats.ms} ms.`);
+      session.close();
+      idx = next;
+      if (watchFiles) watchProject(dir);
+      try {
+        rememberProject(dir, env);
+      } catch {
+        // A recent list that can't be written: the project is open all the same.
+      }
+      announce({ project: dir });
+      return idx;
+    },
+    close() {
+      watcher?.close();
+      watcher = null;
+      idx = null;
+    },
+  };
+  if (root) session.open(root);
+  return session;
+}
+
+/** What the start window and the title bar show: the project open (if any), the recent ones, and Pilot itself. */
+export function projectInfo(session) {
+  const root = session.root();
+  return {
+    root,
+    name: root ? describeFolder(root).name : null,
+    recent: session.fixed ? [] : recentProjects(session.env),
+    version: VERSION,
+    compiled: COMPILED,
+    app: !!session.app,
+    picker: !!session.picker,
+    fixed: !!session.fixed,
+    stats: root ? session.index().stats : null,
+  };
+}
+
+/** The actions on the session itself (opening, closing, the recent list), which need no project open. */
+export const SESSION_ACTIONS = {
+  open: async (session, b) => {
+    const idx = session.open(String(b.path ?? ''));
+    return { ...projectInfo(session), stats: idx.stats };
+  },
+  close: async (session) => {
+    if (session.fixed) throw new Error('This UI shows one project.');
+    session.close();
+    return projectInfo(session);
+  },
+  pick: async (session, b) => {
+    if (!session.picker) return { unsupported: true };
+    const path = await pickFolder({ start: b.start || session.root() || null, kind: session.picker === true ? undefined : session.picker });
+    return path?.unsupported ? { unsupported: true } : { path };
+  },
+  forget: async (session, b) => {
+    forgetProject(String(b.path ?? ''), session.env);
+    return projectInfo(session);
+  },
+  pin: async (session, b) => {
+    pinProject(String(b.path ?? ''), b.pinned === true, session.env);
+    return projectInfo(session);
+  },
+  update: async () => {
+    const u = await import('@fleet/kit/update.js');
+    const latest = await u.fetchLatest({ current: VERSION });
+    if (!COMPILED || !latest || !u.isNewer(latest.version, VERSION)) return { text: u.updateAdvice({ latest, current: VERSION, compiled: COMPILED }).join('\n') };
+    const done = await u.installUpdate(latest.version);
+    return { installed: latest.version, text: done === 'already' ? `Pilot ${latest.version} is already installed: it runs from the next start.` : `Pilot ${latest.version} is installed: it runs the next time you open Pilot.` };
+  },
+  quit: async (session) => {
+    if (!session.app) throw new Error('Only Pilot\'s own window quits from here: stop pilot ui with ctrl+c.');
+    setTimeout(() => session.quit?.(), 100);
+    return { ok: true };
+  },
+};
+
+/** Starts the UI: opens the project (or none: the start window), listens on 127.0.0.1 (from `port`, or 4170 and up), opens the browser. */
+export async function startUi({ root, port = null, open = true, vendor = false, ignore = [], log = console.error, fresh = 2000, update = true, app = false, env = process.env } = {}) {
+  const session = createSession({ root: root ? resolve(root) : null, vendor, ignore, fresh, log, env, app });
+  let bound = null;
+  const server = createServer(handler({ session, port: () => bound }));
   const listen = (p) =>
     new Promise((ok, fail) => {
       server.once('error', fail);
@@ -386,12 +517,92 @@ export async function startUi({ root, port = null, open = true, vendor = false, 
       bound = await listen(p);
       break;
     } catch (e) {
-      if (e.code !== 'EADDRINUSE' || port != null || p > first + 20) throw e;
+      if (e.code !== 'EADDRINUSE' || port != null || p > first + 50) throw e;
     }
   }
   const url = `http://127.0.0.1:${bound}/`;
-  log(`Pilot is at ${url}  (ctrl+c to stop)`);
-  if (update) autoUpdate(log).catch(() => {});
+  log(app ? `Pilot's window shows ${url}` : `Pilot is at ${url}  (ctrl+c to stop)`);
+  if (update) autoUpdate(log, env).catch(() => {});
   if (open) openBrowser(url);
-  return { server, url, port: bound };
+  return { server, url, port: bound, session };
+}
+
+/**
+ * Pilot's own window: Edge (Chrome where there's no Edge) as an app window, with no tabs or address
+ * bar, its own profile, over `pilot ui`'s server. The server stops when its last window has gone.
+ */
+export function findAppBrowser(env = process.env, platform = process.platform, exists = existsSync) {
+  if (env.PILOT_BROWSER) return env.PILOT_BROWSER;
+  if (platform === 'win32') {
+    for (const base of [env['PROGRAMFILES(X86)'], env.PROGRAMFILES, env.LOCALAPPDATA].filter(Boolean)) {
+      const edge = join(base, 'Microsoft', 'Edge', 'Application', 'msedge.exe');
+      if (exists(edge)) return edge;
+    }
+  }
+  if (platform === 'darwin' && exists('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge')) return '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
+  return findChrome(env, platform, exists);
+}
+
+/** The browser's arguments for an app window on `url`, in a profile of Pilot's own. */
+export function appWindowArgs(url, profile) {
+  return [`--app=${url}`, `--user-data-dir=${profile}`, '--window-size=1440,920', '--no-first-run', '--no-default-browser-check', '--disable-features=Translate,msEdgeSidebarV2,msHubApps'];
+}
+
+/**
+ * Keeps the server while a window is connected: once the last one has gone (and not come back in
+ * `grace` ms, as a reload does) it calls `quit`; it also quits when none connected within `wait` ms.
+ */
+export function lifecycle(quit, { grace = 4000, wait = 120000 } = {}) {
+  let clients = 0;
+  let timer = setTimeout(quit, wait);
+  return (delta) => {
+    clients += delta;
+    clearTimeout(timer);
+    timer = clients > 0 ? null : setTimeout(quit, grace);
+    return clients;
+  };
+}
+
+/**
+ * `pilot app`: from a terminal or a shortcut, starts a copy of itself apart (so no console stays
+ * open) that serves the UI and opens the window; that copy logs to pilot-app.log beside the cache.
+ */
+export async function launchApp({ argv, root = null, port = null, vendor = false, ignore = [], log = console.error, env = process.env } = {}) {
+  const browser = findAppBrowser(env);
+  if (!browser) {
+    log('Pilot needs Edge or Chrome for its window: opening it in your browser instead.');
+    await startUi({ root, port, vendor, ignore, log, env });
+    return null;
+  }
+  if (env.PILOT_APP_CHILD !== '1') {
+    mkdirSync(stateDir(env), { recursive: true });
+    const out = openSync(join(stateDir(env), 'pilot-app.log'), 'a');
+    const args = COMPILED ? argv : [process.argv[1], ...argv];
+    spawn(process.execPath, args, { detached: true, stdio: ['ignore', out, out], windowsHide: true, env: { ...env, PILOT_APP_CHILD: '1' } }).unref();
+    log('Pilot is opening in its own window.');
+    return 0;
+  }
+  const stamp = (s) => log(`${new Date().toISOString()} ${s}`);
+  let ui;
+  try {
+    ui = await startUi({ root, port, open: false, vendor, ignore, log: stamp, app: true, env });
+  } catch (e) {
+    // A project that can't be read still opens the window, on the start page.
+    stamp(`Couldn't open ${root}: ${e.message}`);
+    ui = await startUi({ root: null, port, open: false, vendor, ignore, log: stamp, app: true, env });
+  }
+  const quit = () => {
+    stamp('The window has closed: stopping.');
+    ui.server.close();
+    process.exit(0);
+  };
+  ui.session.quit = quit;
+  ui.session.watching = lifecycle(quit);
+  const win = spawn(browser, appWindowArgs(ui.url, join(stateDir(env), 'app-profile')), { detached: true, stdio: 'ignore' });
+  win.on('error', (e) => {
+    stamp(`Couldn't start ${browser}: ${e.message}`);
+    openBrowser(ui.url);
+  });
+  win.unref();
+  return null;
 }
