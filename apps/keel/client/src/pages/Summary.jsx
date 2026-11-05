@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
-import { dateTime } from '../format.js';
+import { dateTime, formatDate } from '../format.js';
 import { Chip, Empty, ErrorBox, Loading, PageHeader, TypeLabel } from '../ui.jsx';
-import { locale, t } from '../i18n.js';
+import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { DEPLOY_STATUS } from './DeployDetail.jsx';
 import { Button } from '@radix-ui/themes';
@@ -11,7 +11,7 @@ import { Button } from '@radix-ui/themes';
 const DAY = 86_400_000;
 // Longer lists show this many until you ask for the rest.
 const SHORT = 6;
-const day = (iso, opts = {}) => new Date(iso).toLocaleDateString(locale(), { day: 'numeric', month: 'short', timeZone: 'UTC', ...opts });
+const day = (iso, opts = {}) => formatDate(iso, { day: 'numeric', month: 'short', timeZone: 'UTC', ...opts });
 const shiftWeek = (week, n) => new Date(Date.parse(week) + n * 7 * DAY).toISOString().slice(0, 10);
 
 /** Deploys by environment, the environment deployed most recently first. */

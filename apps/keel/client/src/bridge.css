@@ -14,6 +14,9 @@
   --canvas: var(--gray-1);
   --surface: var(--color-panel-solid);
   --surface-2: var(--gray-3);
+  /* A hovered row on --surface-2: one step up. */
+  --surface-3: var(--gray-4);
+  --scrim: rgba(0, 0, 0, 0.45);
   --ink: var(--gray-12);
   --ink-2: color-mix(in srgb, var(--gray-12) 82%, var(--gray-1));
   --muted: var(--gray-11);

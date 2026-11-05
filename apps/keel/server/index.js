@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
+import compression from 'compression';
 import { config } from './config.js';
 import { createService } from './service.js';
 import { apiRouter } from './routes.js';
@@ -26,6 +27,10 @@ app.disable('x-powered-by');
 if (config.trustProxy) app.set('trust proxy', /^\d+$/.test(config.trustProxy) ? Number(config.trustProxy) : config.trustProxy);
 app.use(hostGuard);
 app.use(securityHeaders);
+// The web app's scripts and styles and the API's JSON go out gzipped (a third of the bytes or less).
+// The live event stream is marked no-transform (watcher.js), which compression leaves alone, so
+// its events still arrive one by one.
+app.use(compression());
 
 // Production checks run once per server and are shared by everyone using it.
 const monitoring = createMonitoring();
@@ -103,6 +108,8 @@ if (fs.existsSync(path.join(dist, 'index.html'))) {
     // The service worker, manifest and build id are checked on every visit, so an update reaches installed apps.
     setHeaders: (res, file) => {
       if (/[\\/](sw\.js|manifest\.webmanifest|build\.json)$/.test(file)) res.setHeader('Cache-Control', 'no-cache');
+      // Vite names what it builds by its content, so a file under assets/ never changes: keep it for a year.
+      else if (/[\\/]assets[\\/]/.test(file)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     },
   }));
   app.get('/{*splat}', (req, res) => res.sendFile(path.join(dist, 'index.html')));

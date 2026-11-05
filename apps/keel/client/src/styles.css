@@ -21,6 +21,8 @@
   --canvas: #111419;
   --surface: #191c22;
   --surface-2: #22262e;
+  --surface-3: #2a2f38;
+  --scrim: rgba(0, 0, 0, 0.45);
   --ink: #e8eaef;
   --ink-2: #b5bac4;
   --muted: #868d99;
@@ -54,6 +56,9 @@
   --text-3xl: 22px;
   --text-4xl: 26px;
   --text-5xl: 30px;
+  /* Two speeds: --dur-fast for hovers and colour, --dur-slow for things that move or change size. */
+  --dur-fast: 0.12s;
+  --dur-slow: 0.18s;
   /* Spacing keeps to even pixels, odd ones only for hairline adjustments (1px, 3px).
      The same radius scale as bridge.css's, for anything drawn outside Radix's root. */
   --radius: 6px;
@@ -100,6 +105,7 @@
   --canvas: #e8f0ee;
   --surface: #f8fbfa;
   --surface-2: #dce8e5;
+  --surface-3: #cfdeda;
   --ink: #0d2837;
   --ink-2: #33505f;
   --muted: #4f6975;
@@ -210,7 +216,7 @@ button { font: inherit; color: inherit; }
   font: inherit; color: inherit; cursor: pointer; text-align: left;
 }
 .fold-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
-.fold-chevron { flex: none; color: var(--muted); transform: rotate(90deg); transition: transform 0.15s; }
+.fold-chevron { flex: none; color: var(--muted); transform: rotate(90deg); transition: transform var(--dur-slow); }
 .fold.folded .fold-chevron { transform: none; }
 @media (prefers-reduced-motion: reduce) { .fold-chevron { transition: none; } }
 /* Floats over the top of the page, so it's seen wherever you've scrolled to. */
@@ -234,46 +240,23 @@ button { font: inherit; color: inherit; }
   padding: 8px 10px 8px 16px; border: 1px solid var(--accent); border-radius: var(--radius);
   background: var(--surface); color: var(--ink); font-size: var(--text-md); box-shadow: var(--shadow-pop);
 }
-.page-header { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; position: sticky; top: 0; z-index: 6; margin: -14px -32px 6px; padding: 14px 32px 12px; background: var(--header-glass); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); border-bottom: 1px solid transparent; transition: padding 0.15s, border-color 0.15s, box-shadow 0.15s; align-items: center; padding-top: 10px; padding-bottom: 18px; }
-.page-header h1 { transition: font-size 0.15s; font-family: var(--display); font-size: var(--text-4xl); font-weight: 600; line-height: 1.1; letter-spacing: -0.025em; }
+.page-header { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; position: sticky; top: 0; z-index: 6; margin: -14px -32px 6px; padding: 14px 32px 12px; background: var(--header-glass); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); border-bottom: 1px solid transparent; transition: padding var(--dur-slow), border-color var(--dur-slow), box-shadow var(--dur-slow); align-items: center; padding-top: 10px; padding-bottom: 18px; }
+.page-header h1 { transition: font-size var(--dur-slow); font-family: var(--display); font-size: var(--text-4xl); font-weight: 600; line-height: 1.1; letter-spacing: -0.025em; }
 .page-sub { margin: 4px 0 0; color: var(--ink-2); max-width: 75ch; margin-top: 2px; font-size: var(--text-md); }
 .page-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .section-title { display: flex; align-items: center; gap: 14px; margin: 36px 0 14px; font-family: var(--display); font-size: var(--text-3xl); font-weight: 600; letter-spacing: -0.015em; }
 .boot { max-width: 640px; padding: 0 16px; min-height: 100vh; margin: 0 auto; display: grid; place-content: center; }
 
 /* ------------------------------------------------------------- controls */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 5px 12px;
-  line-height: 20px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--ink);
-  cursor: pointer;
-  white-space: nowrap;
-  font-weight: 600;
-}
-.btn:hover:not(:disabled) { border-color: var(--ink-2); text-decoration: none; }
-.btn:disabled { opacity: 0.55; cursor: default; }
-/* Buttons and fields share Radix's heights beside its selects: 32px, and 24px small. */
-.btn-small { min-height: 24px; padding: 1px 8px; font-size: var(--text-md); }
-/* A row's controls share one height: a small button beside a field or a select, and every button in a
-   page's header, stand 32px tall like the field (Keel's own and Radix's alike). */
-:where(.page-actions, *:has(> .input, > .rt-TextFieldRoot, > .rt-SelectTrigger)) > .btn-small { min-height: 32px; padding-inline: 12px; }
-:where(.page-actions, *:has(> .input, > .rt-TextFieldRoot, > .rt-SelectTrigger)) > .rt-Button.rt-r-size-1 {
+/* A row's controls share one height: a small button after a field or a select, and every button in a
+   page's header, stand 32px tall like the field. (Sibling selectors, not :has(), which the browser
+   re-checks across the page on every change.) */
+:is(.page-actions > *, .input ~ *, .rt-TextFieldRoot ~ *, .rt-SelectTrigger ~ *).rt-Button.rt-r-size-1 {
   --base-button-height: var(--space-6); padding-inline: var(--space-3); gap: var(--space-2);
   font-size: var(--font-size-2); line-height: var(--line-height-2); letter-spacing: var(--letter-spacing-2);
 }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0)); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 6px 16px -6px color-mix(in srgb, var(--accent) 70%, transparent) !important; }
-.btn-primary:hover:not(:disabled) { border-color: var(--accent-ink); background: var(--accent-ink); }
-.btn-ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
-.btn-ghost:hover:not(:disabled) { background: var(--surface-2); border-color: transparent; }
-.btn-danger { background: var(--bad); border-color: var(--bad); color: var(--on-accent); }
+/* A ghost button that keeps its box (ui.jsx buttonLook): side by side in a row, Radix's pull-out would run them together. */
+.rt-Button.rt-variant-ghost.ghost-boxed { margin: 0; height: var(--base-button-height); padding-block: 0; }
 .ext { font-size: 0.85em; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--accent-ink); cursor: pointer; text-align: left; }
 .link-btn:hover { text-decoration: underline; }
@@ -295,7 +278,7 @@ button { font: inherit; color: inherit; }
   line-height: 20px;
   min-width: 0;
   background: color-mix(in srgb, var(--surface) 70%, var(--bg));
-  transition: border-color 0.12s;
+  transition: border-color var(--dur-fast);
 }
 .input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 textarea.input { width: 100%; resize: vertical; }
@@ -319,7 +302,7 @@ textarea.input { width: 100%; resize: vertical; }
   color: var(--ink-2);
   font-size: var(--text-md);
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
 }
 .toggle.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 4px 12px -6px color-mix(in srgb, var(--accent) 80%, transparent); }
 .toggle-count { font-variant-numeric: tabular-nums; }
@@ -335,7 +318,7 @@ textarea.input { width: 100%; resize: vertical; }
   background: transparent;
   font-size: var(--text-md);
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
+  transition: color var(--dur-fast), background var(--dur-fast);
   position: relative;
   padding: 6px 0 10px;
   border-radius: 0;
@@ -372,7 +355,7 @@ label { font-size: var(--text-md); color: var(--ink-2); }
   position: relative;
   border-color: var(--line);
   box-shadow: var(--elev-1);
-  transition: box-shadow 0.12s, transform 0.12s, border-color 0.12s;
+  transition: box-shadow var(--dur-fast), transform var(--dur-fast), border-color var(--dur-fast);
   scroll-margin: 132px 0 24px;
 }
 /* The stripe is rounded itself (no overflow: hidden on the row), so menus can open past the row. */
@@ -487,39 +470,51 @@ tr.saving { opacity: 0.55; }
 .toasts { position: fixed; bottom: 18px; display: grid; gap: 6px; z-index: 50; left: auto; right: 18px; transform: none; width: min(380px, calc(100vw - 32px)); }
 .toast { padding: 8px 16px; border-radius: var(--radius); background: var(--ink); color: var(--bg); font-size: var(--text-md); box-shadow: var(--shadow-pop); display: flex; gap: 10px; align-items: flex-start; }
 .toast-bad { background: var(--bad); color: var(--on-accent); }
+/* With the panel open, toasts stand beside it rather than over its action bar. */
+@media (min-width: 901px) { html.drawer-open .toasts { right: calc(var(--drawer-w) + 18px); } html.inspector-open .toasts { right: calc(var(--inspector-w) + var(--frame) + 18px); } }
 
 /* --------------------------------------------------------------- drawer */
 .drawer-layer { position: fixed; inset: 0; z-index: 20; }
-.drawer-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); animation: fade 0.15s ease-out; }
+.drawer-scrim { position: absolute; inset: 0; background: var(--scrim); animation: fade var(--dur-slow) ease-out; }
+/* The details panel: 760px by default, wide (up to 1200px) when its own button says so; the padding is
+   --pane-pad, which the sticky action bar at its foot reaches out to. */
+:root { --drawer-w: min(760px, 100vw); }
+html.drawer-wide-open { --drawer-w: min(1200px, calc(100vw - 64px)); }
 .drawer {
+  --pane-pad: 36px;
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(620px, 100vw);
+  width: var(--drawer-w);
+  transition: width var(--dur-slow) ease-out;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--surface);
   box-shadow: var(--shadow-drawer);
-  padding: 22px 26px 0;
+  padding: 24px var(--pane-pad) 0;
   outline: none;
-  animation: slide-in 0.18s ease-out;
+  animation: slide-in var(--dur-slow) ease-out;
   border-left: 1px solid var(--line);
 }
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }
 @keyframes fade { from { opacity: 0; } }
-.drawer-close { position: sticky; top: 0; float: right; border: 0; background: var(--surface-2); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; z-index: 1; }
+.drawer-tools { position: sticky; top: 0; float: right; z-index: 3; display: flex; gap: 4px; margin: -4px -12px 0 16px; padding: 4px; border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 88%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.drawer-tool { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--muted); cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast); }
+.drawer-tool:hover { background: var(--surface-2); border-color: var(--line); color: var(--ink); }
+/* Widening is for a pointer and a big screen; a phone's panel is the whole width already. */
+@media (max-width: 900px) { .drawer-widen { display: none; } .drawer { --pane-pad: 16px; } }
 .detail-kicker { color: var(--muted); font-size: var(--text-md); }
-.detail-title { font-size: var(--text-2xl); line-height: 1.3; margin: 4px 40px 10px 0; }
+.detail-title { font-family: var(--display); font-size: var(--text-3xl); line-height: 1.25; letter-spacing: -0.015em; margin: 4px 0 12px; }
 .detail-meta { color: var(--ink-2); display: block; margin: 10px 0 0; line-height: 1.9; }
 .detail-meta .avatar { vertical-align: middle; margin-right: 4px; }
-.detail-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
-.detail-section h3 { font-size: var(--text-base); margin-bottom: 10px; display: flex; gap: 10px; align-items: baseline; }
+.detail-section { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 22px; }
+.detail-section h3 { font-family: var(--display); font-size: var(--text-lg); margin-bottom: 14px; display: flex; gap: 10px; align-items: baseline; }
+.detail-section h3 .small, .detail-section h3 .muted { font-family: var(--font); font-weight: 400; }
+/* Headings someone wrote in a description sit below the panel's own section headings. */
+.drawer .markdown h1, .drawer .markdown h2, .drawer .markdown h3, .desk-detail .markdown h1, .desk-detail .markdown h2, .desk-detail .markdown h3 { font-family: var(--font); font-size: var(--text-base); margin: 16px 0 6px; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .vote-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.vote-btn.selected.vote-btn-ok { background: var(--ok); border-color: var(--ok); color: var(--on-accent); }
-.vote-btn.selected.vote-btn-warn { background: var(--warn); border-color: var(--warn); color: var(--on-accent); }
-.vote-btn.selected.vote-btn-bad { background: var(--bad); border-color: var(--bad); color: var(--on-accent); }
 .vote-text-ok { color: var(--ok); }
 .vote-text-warn { color: var(--warn); }
 .vote-text-bad { color: var(--bad); }
@@ -546,6 +541,15 @@ tr.saving { opacity: 0.55; }
 .md-input { display: grid; gap: 6px; width: 100%; }
 .md-input-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .md-input .input { width: 100%; }
+.md-input-tools { display: inline-flex; align-items: center; gap: 12px; }
+/* The comment box grows with what's written, up to most of the window, and can be dragged taller;
+   expanded, it takes most of the window at once. */
+.md-input .rt-TextAreaInput { field-sizing: content; min-height: 7.5em; max-height: 60vh; }
+.md-input.md-expanded .rt-TextAreaInput { min-height: 55vh; max-height: none; }
+.md-input .md-preview { max-height: 60vh; overflow-y: auto; }
+.md-input.md-expanded .md-preview { min-height: 55vh !important; max-height: none; }
+.md-input-hint { justify-self: end; margin-top: -2px; }
+@media (pointer: coarse) { .md-input-hint { display: none; } }
 .comment-form .md-preview { width: 100%; }
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 18px; margin: 16px 0 0; }
 .facts dt { font-size: var(--text-sm); color: var(--muted); }
@@ -565,10 +569,10 @@ tr.saving { opacity: 0.55; }
 .sprint-facts > div { display: grid; }
 .sprint-facts strong { font-size: var(--text-2xl); font-variant-numeric: tabular-nums; }
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; align-items: start; }
-.column { border-radius: var(--radius); padding: 10px; display: grid; gap: 8px; transition: background-color 0.12s ease-out; min-height: 120px; background: color-mix(in srgb, var(--surface-2) 60%, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); }
+.column { border-radius: var(--radius); padding: 10px; display: grid; gap: 8px; transition: background-color var(--dur-fast) ease-out; min-height: 120px; background: color-mix(in srgb, var(--surface-2) 60%, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); }
 .column-title { font-size: var(--text-md); display: flex; justify-content: space-between; padding: 0 2px 2px; }
 .column-empty { padding: 6px 2px; margin: 0; }
-.card { text-align: left; display: grid; gap: 6px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); position: relative; cursor: grab; transition: box-shadow 0.12s ease-out, transform 0.12s ease-out, border-color 0.12s; }
+.card { text-align: left; display: grid; gap: 6px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); position: relative; cursor: grab; transition: box-shadow var(--dur-fast) ease-out, transform var(--dur-fast) ease-out, border-color var(--dur-fast); }
 .card:hover { box-shadow: var(--elev-2); transform: translateY(-1px); border-color: var(--line-strong); }
 .card.card-blocked { box-shadow: inset 3px 0 var(--bad), var(--elev-1); }
 .card-top { display: flex; justify-content: space-between; }
@@ -587,7 +591,7 @@ tr.saving { opacity: 0.55; }
 /* Facts wrap onto as many rows as they need, and those in a row that isn't full stretch across it,
    so a short last row never leaves a grey gap. --fact-min is how narrow one may get. */
 .fact-row { --fact-min: 190px; display: flex; flex-wrap: wrap; gap: 1px; margin: 0 0 18px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.fact { flex: 1 1 var(--fact-min); min-width: 0; background: var(--surface); padding: 12px 16px; transition: background 0.12s; }
+.fact { flex: 1 1 var(--fact-min); min-width: 0; background: var(--surface); padding: 12px 16px; transition: background var(--dur-fast); }
 .fact dt { font-size: var(--text-sm); color: var(--muted); }
 .fact dd { margin: 0; }
 .fact dd:nth-of-type(1) { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; font-size: var(--text-5xl); }
@@ -602,7 +606,7 @@ tr.saving { opacity: 0.55; }
 .chart-svg .hit { fill: transparent; cursor: default; outline: none; }
 .chart-svg .hit:hover, .chart-svg .hit:focus { fill: var(--accent); fill-opacity: 0.08; }
 .chart-svg .ref-line { stroke: var(--muted); stroke-dasharray: 4 4; }
-.chart-svg .dot { fill: var(--accent); fill-opacity: 0.85; stroke: var(--surface); stroke-width: 1.5; cursor: pointer; outline: none; transition: r 0.1s; }
+.chart-svg .dot { fill: var(--accent); fill-opacity: 0.85; stroke: var(--surface); stroke-width: 1.5; cursor: pointer; outline: none; transition: r var(--dur-fast); }
 .chart-svg .dot-warn { fill: var(--warn); }
 .chart-svg .dot-bad { fill: var(--bad); }
 .chart-svg .dot:focus-visible { stroke: var(--ink); stroke-width: 2; }
@@ -763,7 +767,7 @@ button.tree-caret:hover { background: var(--surface-2); color: var(--ink); }
 .branch-swap {
   display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 1px; padding: 0;
   border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface);
-  color: var(--ink-2); cursor: pointer; box-shadow: var(--shadow-sm); transition: color 0.12s, border-color 0.12s;
+  color: var(--ink-2); cursor: pointer; box-shadow: var(--shadow-sm); transition: color var(--dur-fast), border-color var(--dur-fast);
 }
 .branch-swap:hover:not(:disabled) { color: var(--accent-ink); border-color: var(--accent); }
 .branch-swap:disabled { opacity: 0.45; cursor: default; }
@@ -787,7 +791,7 @@ button.tree-caret:hover { background: var(--surface-2); color: var(--ink); }
 .sticky-actions {
   position: sticky; bottom: 0; z-index: 2;
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-  margin: 20px -26px 0; padding: 12px 26px 16px;
+  margin: 28px calc(-1 * var(--pane-pad, 26px)) 0; padding: 12px var(--pane-pad, 26px) 16px;
   background: var(--surface); border-top: 1px solid var(--line);
   box-shadow: var(--shadow-up);
 }
@@ -906,7 +910,6 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .signin-lead { margin: 0; color: var(--ink-2); }
 .signin-card .field { display: grid; gap: 6px; font-size: var(--text-md); color: var(--ink-2); }
 .signin-card .field .input { width: 100%; font-family: var(--mono); }
-.signin-card .btn-primary { min-height: 36px; }
 .signin-help summary { cursor: pointer; color: var(--accent-ink); font-size: var(--text-md); }
 .signin-help ol { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); }
 .signin-help ul { margin: 4px 0 0; padding-left: 18px; }
@@ -1020,6 +1023,8 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .link-row .input { flex: 1; min-width: 0; }
 
 /* ------------------------------------------------------- start in Claude */
+/* Settings' own instructions for Claude: apart from the project list above them. */
+.claude-rules { margin-top: 24px; }
 .claude-start { display: grid; gap: 8px; }
 .claude-start h3 { margin-bottom: 0; }
 .claude-start .fold-chevron { transform: rotate(90deg); }
@@ -1297,7 +1302,7 @@ kbd {
 .palette {
   position: relative; width: min(640px, 100%); max-height: 70vh; display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--edge), var(--shadow-pop); overflow: hidden;
-  animation: fade 0.12s ease-out;
+  animation: fade var(--dur-fast) ease-out;
 }
 .palette-input { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--muted); }
 .palette-input input { flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--ink); font: inherit; font-size: var(--text-lg); }
@@ -1356,11 +1361,9 @@ kbd {
 
 .card-blocked:hover { box-shadow: inset 3px 0 var(--bad), var(--elev-2); }
 .card-moving, .card-moving:hover { transform: none; }
-.btn:not(.btn-ghost) { box-shadow: var(--shadow-sm); transition: border-color 0.12s, background 0.12s, transform 0.08s; }
-.btn:not(.btn-ghost):active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
-.table tbody tr { transition: background 0.1s; }
+.table tbody tr { transition: background var(--dur-fast); }
 /* Rows in a list that open something lift out of the list a touch. */
-.commit-row, .deploy-row { transition: background 0.1s, box-shadow 0.12s; }
+.commit-row, .deploy-row { transition: background var(--dur-fast), box-shadow var(--dur-fast); }
 
 
 /* Status washes: a card's state reads from across the room, not only from its edge. */
@@ -1410,17 +1413,69 @@ kbd {
 .file-toggle { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .file-toggle::before { content: '▸'; display: inline-block; width: 12px; color: var(--muted); }
 .file-toggle[aria-expanded="true"]::before { content: '▾'; }
-.file-ext { margin-left: auto; text-decoration: none; flex: none; }
+.file-ext { text-decoration: none; flex: none; }
+.file-view { margin-left: auto; flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); cursor: pointer; }
+.file-view:hover { background: var(--surface-2); color: var(--ink); }
+.files-view-all { margin-left: auto; font-family: var(--font); font-weight: 500; }
 .file-diff { margin: 4px 0 8px 28px; border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; font-family: var(--mono); font-size: var(--text-sm); }
 .file-diff-stat { padding: 3px 8px; border-bottom: 1px solid var(--line); }
-.file-diff table { border-collapse: collapse; width: 100%; }
-.file-diff td { padding: 0 6px; white-space: pre; vertical-align: top; }
-.file-diff .diff-no { color: var(--muted); text-align: right; user-select: none; width: 1%; min-width: 36px; }
-.file-diff .diff-text span { display: inline-block; width: 1.5ch; color: var(--muted); user-select: none; }
-.file-diff .diff-add { background: var(--ok-soft); }
-.file-diff .diff-del { background: var(--bad-soft); }
-.file-diff .diff-hunk td { color: var(--muted); background: var(--line); padding: 2px 8px; }
 .file-diff-note { margin: 4px 0 8px 28px; }
+
+/* A diff's table, inline under a file and in the changes window alike. */
+.diff-table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.55; }
+.diff-table td { padding: 0 8px; white-space: pre; vertical-align: top; }
+.diff-table .diff-no { color: var(--muted); text-align: right; user-select: none; width: 1%; min-width: 44px; }
+.diff-table .diff-text span { display: inline-block; width: 1.5ch; color: var(--muted); user-select: none; }
+.diff-table .diff-add { background: var(--ok-soft); }
+.diff-table .diff-del { background: var(--bad-soft); }
+.diff-table .diff-no.diff-add { background: color-mix(in srgb, var(--ok) 22%, var(--surface)); }
+.diff-table .diff-no.diff-del { background: color-mix(in srgb, var(--bad) 22%, var(--surface)); }
+.diff-table .diff-gap { background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--line) 60%, transparent) 6px 7px); }
+.diff-table .diff-hunk td { color: var(--muted); background: var(--surface-2); padding: 4px 12px; }
+/* Side by side: two halves of equal width, long lines wrapping inside their half. */
+.diff-split { table-layout: fixed; }
+.diff-split .diff-no-col { width: 52px; }
+.diff-split .diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-split .diff-side { border-left: 1px solid var(--line); }
+
+/* The changes window: every file of a pull request or commit, most of the screen for its diff. */
+.diff-viewer-layer { position: fixed; inset: 0; z-index: 40; color: var(--ink); font-family: var(--font); }
+.diff-viewer {
+  position: absolute; inset: 24px; display: grid; grid-template: auto 1fr auto / minmax(220px, 300px) minmax(0, 1fr);
+  grid-template-areas: 'head head' 'files body' 'foot foot';
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-pop);
+  overflow: hidden; outline: none; animation: fade var(--dur-fast) ease-out;
+}
+.diff-viewer-head { grid-area: head; display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 20px; border-bottom: 1px solid var(--line); }
+.diff-viewer-title { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--display); font-size: var(--text-lg); font-weight: 600; }
+.diff-viewer-mode { margin-left: auto; }
+.diff-viewer-files { grid-area: files; overflow-y: auto; border-right: 1px solid var(--line); background: var(--canvas); }
+.diff-viewer-files ol { list-style: none; margin: 0; padding: 6px; display: grid; gap: 1px; }
+.diff-viewer-files button {
+  display: grid; grid-template-columns: 8px minmax(0, 1fr); column-gap: 10px; align-items: center; width: 100%; padding: 6px 10px;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.diff-viewer-files button:hover { background: var(--surface-2); }
+.diff-viewer-files button.on { background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
+.diff-kind { grid-row: span 2; width: 8px; height: 8px; border-radius: 50%; background: var(--info); }
+.diff-kind-added { background: var(--ok); }
+.diff-kind-deleted { background: var(--bad); }
+.diff-kind-renamed { background: var(--warn); }
+.diff-file-name { font-family: var(--mono); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-file-dir { grid-column: 2; font-size: var(--text-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.diff-viewer-body { grid-area: body; overflow: auto; overscroll-behavior: contain; }
+.diff-viewer-file { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.diff-viewer-out { margin-left: auto; }
+.diff-viewer-body .diff-table { font-size: var(--text-md); }
+.diff-viewer-note { padding: 24px 16px; margin: 0; }
+.diff-viewer-foot { grid-area: foot; display: flex; gap: 18px; padding: 8px 20px; border-top: 1px solid var(--line); }
+.diff-viewer-foot > span { display: inline-flex; align-items: center; gap: 4px; }
+/* A phone: the whole screen, the files as a strip above the diff. */
+@media (max-width: 900px) {
+  .diff-viewer { inset: 0; border-radius: 0; border: 0; grid-template: auto auto 1fr / minmax(0, 1fr); grid-template-areas: 'head' 'files' 'body'; }
+  .diff-viewer-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .diff-viewer-foot, .diff-viewer-mode { display: none; }
+}
 
 /* =================================================================== refresh
    Colour and structure on top of the planes above: a soft glow of the accent
@@ -1432,10 +1487,7 @@ h1, h2 { font-family: var(--display); font-weight: 600; }
 
 /* Sidebar: section labels as small caps, the current page as an accent pill fading out. */
 
-/* Buttons: the primary one carries a faint highlight and glows in its own colour. */
 
-/* :where keeps this at a plain .btn's weight, so a chosen vote's fill (.vote-btn.selected…) still wins. */
-.btn:where(:not(.btn-ghost, .btn-primary, .btn-danger, .selected)):hover:not(:disabled) { background: var(--surface-2); }
 
 /* Filters and tabs */
 
@@ -1499,7 +1551,7 @@ h1, h2 { font-family: var(--display); font-weight: 600; }
   color: var(--accent-ink);
   background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 26%, var(--surface)), color-mix(in srgb, var(--accent) 8%, var(--surface)));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), var(--shadow-sm);
-  transition: width 0.15s, height 0.15s, border-radius 0.15s;
+  transition: width var(--dur-slow), height var(--dur-slow), border-radius var(--dur-slow);
   display: none;
 }
 .page-eyebrow { font-size: var(--text-sm); font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--muted); margin-bottom: 0; }
@@ -1513,7 +1565,7 @@ h1, h2 { font-family: var(--display); font-weight: 600; }
 }
 .page-tabs a {
   position: relative; padding: 4px 0 12px; color: var(--muted); font-size: var(--text-md); font-weight: 500; text-decoration: none;
-  transition: color 0.12s;
+  transition: color var(--dur-fast);
 }
 .page-tabs a:hover { color: var(--ink); text-decoration: none; }
 .page-tabs a.on { color: var(--ink); }
@@ -1547,6 +1599,7 @@ h1, h2 { font-family: var(--display); font-weight: 600; }
   background: var(--surface); box-shadow: var(--elev-2);
 }
 .drawer-docked:focus { outline: none; }
+.drawer.drawer-docked { --pane-pad: 24px; }
 
 /* Inbox triage: the keyboard's cursor is a ring, the entry the panel shows is lit in the accent. */
 

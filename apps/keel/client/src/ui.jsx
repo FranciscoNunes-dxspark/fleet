@@ -261,8 +261,17 @@ export function TeamTabs() {
  * page keeps scrolling and stays clickable, and the focus stays where it was, so a list can be
  * walked with the keyboard while the panel follows.
  */
+// Whether the modal panel is opened wide; each viewer's own choice, kept in this browser.
+const WIDE_KEY = 'keel.drawer.wide';
+const readWide = () => { try { return localStorage.getItem(WIDE_KEY) === '1'; } catch { return false; } };
+
 export function Drawer({ open, onClose, children, label, docked = false }) {
   const ref = useRef(null);
+  const [wide, setWide] = useState(readWide);
+  const toggleWide = () => setWide((w) => {
+    try { localStorage.setItem(WIDE_KEY, w ? '0' : '1'); } catch { /* private window: this visit only */ }
+    return !w;
+  });
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   // The page behind stays put while the panel is open: one scrollbar, the panel's. Docked, the
@@ -272,18 +281,32 @@ export function Drawer({ open, onClose, children, label, docked = false }) {
     const onKey = (e) => e.key === 'Escape' && docked && closeRef.current();
     window.addEventListener('keydown', onKey);
     const cls = docked ? 'inspector-open' : 'drawer-open';
-    document.documentElement.classList.add(cls);
+    const root = document.documentElement;
+    root.classList.add(cls);
+    // Wide sets the panel's width on the page, where the toasts beside it read it too.
+    root.classList.toggle('drawer-wide-open', wide && !docked);
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.documentElement.classList.remove(cls);
+      root.classList.remove(cls, 'drawer-wide-open');
     };
-  }, [open, docked]);
+  }, [open, docked, wide]);
   if (!open) return null;
-  const close = <button type="button" className="drawer-close" onClick={onClose} aria-label={t('Close panel')}>✕</button>;
+  // The panel's own buttons, pinned to its top corner while its contents scroll under them.
+  const tools = (
+    <div className="drawer-tools">
+      {!docked && (
+        <button type="button" className="drawer-tool drawer-widen" onClick={toggleWide} aria-pressed={wide}
+          aria-label={wide ? t('Narrow the panel') : t('Widen the panel')} title={wide ? t('Narrow the panel') : t('Widen the panel')}>
+          <Icon name={wide ? 'narrow' : 'widen'} size={15} />
+        </button>
+      )}
+      <button type="button" className="drawer-tool" onClick={onClose} aria-label={t('Close panel')} title={t('Close panel')}><Icon name="close" size={16} /></button>
+    </div>
+  );
   if (docked) {
     return (
       <aside className="drawer drawer-docked" aria-label={label} tabIndex={-1} ref={ref}>
-        {close}
+        {tools}
         {children}
       </aside>
     );
@@ -296,11 +319,11 @@ export function Drawer({ open, onClose, children, label, docked = false }) {
          <div className="drawer-layer">
           <Dialog.Overlay className="drawer-scrim" />
           <Dialog.Content
-            className="drawer" aria-describedby={undefined} tabIndex={-1} ref={ref}
+            className={`drawer${wide ? ' drawer-wide' : ''}`} aria-describedby={undefined} tabIndex={-1} ref={ref}
             onOpenAutoFocus={(e) => { e.preventDefault(); ref.current?.focus({ preventScroll: true }); }}
           >
             <VisuallyHidden.Root asChild><Dialog.Title>{label}</Dialog.Title></VisuallyHidden.Root>
-            {close}
+            {tools}
             {children}
           </Dialog.Content>
          </div>
@@ -337,11 +360,32 @@ export function sameTarget(a, b) {
     && String(a.repoId ?? '') === String(b.repoId ?? '') && (a.org || '') === (b.org || '');
 }
 
+/**
+ * Radix Button props for the class names callers have always passed (`btn btn-small btn-ghost text-bad`…),
+ * so every button in the app is a Radix one: btn-small is size 1, btn-primary solid in the accent, btn-danger
+ * solid red, btn-ghost ghost, text-bad red, anything else outline gray. Other classes pass through.
+ */
+export function buttonLook(className = '') {
+  const has = (c) => className.split(/\s+/).includes(c);
+  const rest = className.split(/\s+/).filter((c) => c && !['btn', 'btn-small', 'btn-primary', 'btn-ghost', 'btn-danger', 'text-bad'].includes(c)).join(' ');
+  const look = { size: has('btn-small') ? '1' : '2' };
+  if (has('btn-primary')) look.variant = 'solid';
+  else if (has('btn-danger')) Object.assign(look, { variant: 'solid', color: 'red' });
+  else Object.assign(look, { variant: has('btn-ghost') ? 'ghost' : 'outline', color: has('text-bad') ? 'red' : 'gray' });
+  // Radix pulls a ghost button out by its padding; these sit side by side in rows that count on their box.
+  const classes = [rest, look.variant === 'ghost' && 'ghost-boxed'].filter(Boolean).join(' ');
+  if (classes) look.className = classes;
+  return look;
+}
+
 export function ExternalLink({ href, children, className = 'btn btn-ghost btn-small' }) {
   const sourceName = useSourceName();
   if (!href) return null;
   children ??= sourceName(href) === 'GitHub' ? t('Open in GitHub') : t('Open in Azure DevOps');
-  return <a className={className} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
+  const link = (props) => <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
+  // A plain link when asked for one (className "small"…), else a Radix button wearing the link.
+  if (!/\bbtn\b/.test(className)) return link({ className });
+  return <Button asChild {...buttonLook(className)}>{link({})}</Button>;
 }
 
 /**
@@ -356,8 +400,10 @@ export function FilterFold({ active = 0, lead = null, children }) {
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <div className="filter-fold-bar">
         {lead}
-        <Collapsible.Trigger className={`btn btn-small filter-fold-btn${active ? ' on' : ''}`}>
-          <Icon name="search" size={14} /> {t('Filters')}{active > 0 && <span className="filter-fold-n">{active}</span>}
+        <Collapsible.Trigger asChild>
+          <Button type="button" size="1" variant="outline" color={active ? undefined : 'gray'} className="filter-fold-btn">
+            <Icon name="search" size={14} /> {t('Filters')}{active > 0 && <span className="filter-fold-n">{active}</span>}
+          </Button>
         </Collapsible.Trigger>
       </div>
       <Collapsible.Content className="filter-fold">{children}</Collapsible.Content>
@@ -537,7 +583,7 @@ export function pinInView(el, ms = 6000) {
 export function Confirm({ text, onConfirm, children, className = 'btn btn-small' }) {
   return (
     <AlertDialog.Root>
-      <AlertDialog.Trigger><button type="button" className={className}>{children}</button></AlertDialog.Trigger>
+      <AlertDialog.Trigger><Button type="button" {...buttonLook(className)}>{children}</Button></AlertDialog.Trigger>
       <AlertDialog.Content size="1" maxWidth="340px" className="confirm-pop" aria-describedby={undefined}>
         <AlertDialog.Title size="3" mb="0">{text}</AlertDialog.Title>
         <span className="confirm-actions">

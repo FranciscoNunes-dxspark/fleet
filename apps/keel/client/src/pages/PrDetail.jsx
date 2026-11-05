@@ -2,8 +2,10 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { api, prPath } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, REVIEW_STATE, VOTES } from '../format.js';
-import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
-import { Markdown } from '../markdown.jsx';
+import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading, buttonLook } from '../ui.jsx';
+import { Markdown, MarkdownInput } from '../markdown.jsx';
+import { DiffTable, DiffViewer, diffNote } from '../diffview.jsx';
+import { Icon } from '../icons.jsx';
 import { t, tj, tx } from '../i18n.js';
 import { useOrgKind, useProjectLabel } from '../orgs.js';
 import MergeStatus from './MergeStatus.jsx';
@@ -49,12 +51,15 @@ function fileTree(items) {
   return compact(root);
 }
 
+/** The files in the order the tree shows them, folders first, so j and k walk the list as it reads. */
+const treeOrder = (node) => [...node.folders.flatMap(treeOrder), ...node.files];
+
 // Where a file's diff opens in Azure DevOps: a PR's Files tab by default (commits pass their own).
 const prFileHref = (webUrl, path) => `${webUrl}?_a=files&path=${encodeURIComponent(path)}`;
 // GitHub: the pull request's Files changed tab.
 export const githubPrFileHref = (webUrl) => `${webUrl}/files`;
 
-function FileRow({ f, webUrl, fileHref = prFileHref, github = false, diffPath }) {
+function FileRow({ f, webUrl, fileHref = prFileHref, github = false, diffPath, onView }) {
   const kind = FILE_KIND[f.kind] || FILE_KIND.edited;
   const [open, setOpen] = useState(false);
   const external = github ? t('Open the diff for {path} on GitHub', { path: f.path }) : t('Open the diff for {path} in Azure DevOps', { path: f.path });
@@ -66,6 +71,11 @@ function FileRow({ f, webUrl, fileHref = prFileHref, github = false, diffPath })
           ? <button type="button" className="file-name file-toggle" aria-expanded={open} onClick={() => setOpen(!open)} title={t('Show what changed in {path}', { path: f.path })}>{f.name}</button>
           : <a className="file-name" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={external}>{f.name}</a>}
         {f.originalPath && <span className="muted small file-from" title={f.originalPath}>{t('from {name}', { name: f.originalPath.split('/').pop() })}</span>}
+        {onView && (
+          <button type="button" className="file-view" onClick={() => onView(f.path)} title={t('Open {path} in the changes window', { path: f.path })} aria-label={t('Open {path} in the changes window', { path: f.path })}>
+            <Icon name="widen" size={13} />
+          </button>
+        )}
         {diffPath && <a className="file-ext muted small" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={external} aria-label={external}>↗</a>}
       </div>
       {open && diffPath && <FileDiff url={diffPath(f)} />}
@@ -80,53 +90,41 @@ export const diffQuery = (f) => `?path=${encodeURIComponent(f.path)}${f.original
 function FileDiff({ url }) {
   const { data: d, error, reload } = useApi(url);
   if (!d) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
-  if (d.skipped) return <p className="muted small file-diff-note">{d.skipped === 'binary' ? t('A binary file: there is no text to compare.') : t('Too large to show here: open it in the browser instead.')}</p>;
-  if (!d.hunks.length) return <p className="muted small file-diff-note">{t('No lines changed (the file was moved or its mode changed).')}</p>;
+  const note = diffNote(d);
+  if (note) return <p className="muted small file-diff-note">{note}</p>;
   return (
     <div className="file-diff" role="region" aria-label={t('Changes')}>
       <div className="file-diff-stat small"><span className="text-ok">+{d.added}</span> <span className="text-bad">−{d.removed}</span></div>
-      <table>
-        <tbody>
-          {d.hunks.map((h, i) => (
-            <Fragment key={i}>
-              <tr className="diff-hunk"><td colSpan={3}>{h.header}</td></tr>
-              {h.lines.map((l, j) => (
-                <tr key={j} className={`diff-${l.t === '+' ? 'add' : l.t === '-' ? 'del' : 'ctx'}`}>
-                  <td className="diff-no">{l.a ?? ''}</td>
-                  <td className="diff-no">{l.b ?? ''}</td>
-                  <td className="diff-text"><span aria-hidden="true">{l.t === ' ' ? ' ' : l.t}</span>{l.text}</td>
-                </tr>
-              ))}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+      <DiffTable d={d} />
     </div>
   );
 }
 
-function Folder({ node, webUrl, depth, fileHref, github, diffPath }) {
+function Folder({ node, webUrl, depth, fileHref, github, diffPath, onView }) {
   return (
     <li>
       <details open={depth < 3 || node.count <= 8}>
         <summary className="folder-row"><span className="folder-name">{node.name}/</span><span className="muted small">{node.count}</span></summary>
-        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} github={github} diffPath={diffPath} />
+        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} github={github} diffPath={diffPath} onView={onView} />
       </details>
     </li>
   );
 }
 
-function FolderBody({ node, webUrl, depth, fileHref, github, diffPath }) {
+function FolderBody({ node, webUrl, depth, fileHref, github, diffPath, onView }) {
   return (
     <ul className="file-tree">
-      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} github={github} diffPath={diffPath} />)}
-      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} github={github} diffPath={diffPath} />)}
+      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} github={github} diffPath={diffPath} onView={onView} />)}
+      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} github={github} diffPath={diffPath} onView={onView} />)}
     </ul>
   );
 }
 
 /** Changed files as a folder tree; also used by the commit panel (CommitDetail.jsx). */
-export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.'), github = false, diffPath }) {
+export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.'), github = false, diffPath, title }) {
+  // The file the changes window shows, or null while it's shut.
+  const [viewing, setViewing] = useState(null);
+  const href = fileHref || prFileHref;
   const counts = Object.entries(FILE_KIND)
     .map(([k, v]) => [v.count, files.items.filter((f) => f.kind === k).length])
     .filter(([, n]) => n)
@@ -134,14 +132,25 @@ export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file chang
   const tree = fileTree(files.items);
   return (
     <section className="detail-section">
-      <h3>{t('Files changed')} <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span></h3>
+      <h3>
+        {t('Files changed')} <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span>
+        {diffPath && files.items.length > 0 && (
+          <button type="button" className="link-btn small files-view-all" onClick={() => setViewing(files.items[0].path)}>{t('View all changes')}</button>
+        )}
+      </h3>
       {files.error && <p className="text-bad small">{t("Couldn't load the file list: {error}", { error: tx(files.error) })}</p>}
       {!files.error && !files.items.length && <p className="muted small">{empty}</p>}
-      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} github={github} diffPath={diffPath} />
+      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} github={github} diffPath={diffPath} onView={diffPath ? setViewing : undefined} />
+      {viewing && (
+        <DiffViewer files={treeOrder(tree)} initialPath={viewing} diffPath={diffPath} fileHref={href} webUrl={webUrl} title={title} onClose={() => setViewing(null)} />
+      )}
       {files.truncated && <p className="muted small">{github ? t('GitHub returned the first 3,000 files only.') : t('Azure DevOps returned the first 2,000 files only.')}</p>}
     </section>
   );
 }
+
+/** The Radix colour a chosen vote fills with, by its tone. */
+const VOTE_COLOR = { ok: 'green', warn: 'amber', bad: 'red' };
 
 const VOTE_BUTTONS = [
   { vote: 10, get label() { return t('Approve'); }, tone: 'ok' },
@@ -274,16 +283,17 @@ export default function PrDetail({ target }) {
           )}
           {!ownGithub && <div className="vote-row">
             {(github ? GITHUB_VOTE_BUTTONS : VOTE_BUTTONS).map((b) => (
-              <button
+              <Button
                 key={b.vote}
                 type="button"
-                className={`btn btn-small vote-btn vote-btn-${b.tone} ${pr.myVote === b.vote && b.vote !== 0 ? 'selected' : ''}`}
+                size="1"
+                {...(pr.myVote === b.vote && b.vote !== 0 ? { variant: 'solid', color: VOTE_COLOR[b.tone] } : { variant: 'outline', color: 'gray' })}
                 disabled={!!busy}
                 aria-pressed={pr.myVote === b.vote}
                 onClick={() => act({ type: 'vote', vote: b.vote }, b.vote === 0 ? t('Vote reset') : t('Voted: {vote}', { vote: b.label }))}
               >
                 {busy === `vote${b.vote}` ? '…' : b.label}
-              </button>
+              </Button>
             ))}
           </div>}
         </section>
@@ -367,7 +377,7 @@ export default function PrDetail({ target }) {
         </section>
       )}
 
-      {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} github={github} diffPath={(f) => `${prPath(pr)}/diff${diffQuery(f)}`} fileHref={github ? githubPrFileHref : undefined} />}
+      {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} github={github} diffPath={(f) => `${prPath(pr)}/diff${diffQuery(f)}`} fileHref={github ? githubPrFileHref : undefined} title={`!${pr.id} ${pr.title}`} />}
 
       <section className="detail-section">
         <h3>{t('Discussion')} <span className="muted small">{t(pr.threads.total === 1 ? '{open} open of {total} thread' : '{open} open of {total} threads', { open: pr.threads.active, total: pr.threads.total })}</span></h3>
@@ -387,8 +397,8 @@ export default function PrDetail({ target }) {
         </ul>
         {writable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', content: comment }, t('Comment posted'))) setComment(''); }}>
-          <TextArea variant="surface" color="gray" rows={3} placeholder={t('Leave a comment (Markdown supported)')} value={comment} onChange={(e) => setComment(e.target.value)} aria-label={t('Comment')} />
-          <Button size="1" variant="solid" type="submit" disabled={!comment.trim() || !!busy}>{t('Post comment')}</Button>
+          <MarkdownInput placeholder={t('Leave a comment')} value={comment} onChange={setComment} label={t('Comment')} people={mentionable} />
+          <Button size="2" variant="solid" type="submit" disabled={!comment.trim() || !!busy}>{t('Post comment')}</Button>
         </form>
         )}
       </section>
@@ -410,15 +420,15 @@ export default function PrDetail({ target }) {
           <Button size="1" variant="solid" type="button" disabled={!!busy} onClick={() => act({ type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{busy === 'vote10' ? '…' : t('Approve')}</Button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && !completing && (
-          <button
+          <Button
             type="button"
-            className={`btn btn-small ${pr.flow.step === 'complete' && !held ? 'btn-primary' : ''}`}
+            {...buttonLook(`btn btn-small ${pr.flow.step === 'complete' && !held ? 'btn-primary' : ''}`)}
             disabled={!!busy || pr.hasConflicts || !!held}
             title={pr.hasConflicts ? t('Resolve the merge conflicts first') : held || (pr.flow.step === 'approval' ? t('Not approved yet: branch policies may refuse it') : undefined)}
             onClick={() => setCompleting(true)}
           >
             {t('Complete…')}
-          </button>
+          </Button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && (github
           ? pr.autoComplete
@@ -597,14 +607,14 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = fal
             {busy ? t('Scheduling…') : t('Schedule completion')}
           </Button>
         ) : (
-          <button
+          <Button
             type="button"
-            className={`btn btn-small ${bypassPolicy ? 'btn-danger' : 'btn-primary'}`}
+            {...buttonLook(`btn btn-small ${bypassPolicy ? 'btn-danger' : 'btn-primary'}`)}
             disabled={busy || (bypassPolicy && !bypassReason.trim())}
             onClick={() => onComplete({ mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems, bypassPolicy, bypassReason })}
           >
             {busy ? t('Completing…') : bypassPolicy ? t('Override and complete merge') : t('Complete merge')}
-          </button>
+          </Button>
         )}
         <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>

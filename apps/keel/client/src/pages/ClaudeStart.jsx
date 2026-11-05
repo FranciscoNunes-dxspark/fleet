@@ -84,8 +84,8 @@ export default function ClaudeStart({ w }) {
         {repo && !folder && !editing && <p className="muted small">{t('Without a folder, Claude Code opens in your home folder and Claude Desktop asks you to pick one.')}</p>}
 
         <div className="detail-actions">
-          <a className="btn btn-small btn-primary" href={cliLink(folder, buildPrompt(w, repo, LIMITS.cli, rules))} onClick={opened}>Claude Code (CLI)</a>
-          <a className="btn btn-small" href={desktopLink(folder, buildPrompt(w, repo, LIMITS.desktop, rules))} onClick={opened}>Claude Desktop</a>
+          <Button asChild size="1" variant="solid"><a href={cliLink(folder, buildPrompt(w, repo, LIMITS.cli, rules))} onClick={opened}>Claude Code (CLI)</a></Button>
+          <Button asChild size="1" variant="outline" color="gray"><a href={desktopLink(folder, buildPrompt(w, repo, LIMITS.desktop, rules))} onClick={opened}>Claude Desktop</a></Button>
           <Button size="1" variant="ghost" color="gray" type="button" onClick={copy}>{t('Copy prompt')}</Button>
         </div>
         <p className="muted small">

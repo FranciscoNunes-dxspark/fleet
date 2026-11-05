@@ -181,8 +181,8 @@ export default function WorkItemDetail({ id, org }) {
         </ul>
         {editable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', text: comment }, t('Comment posted'))) setComment(''); }}>
-          <MarkdownInput rows={3} placeholder={t('Add a comment')} value={comment} onChange={setComment} label={t('Comment')} people={people || []} />
-          <Button size="1" variant="solid" type="submit" disabled={!comment.trim() || busy}>{t('Post comment')}</Button>
+          <MarkdownInput placeholder={t('Add a comment')} value={comment} onChange={setComment} label={t('Comment')} people={people || []} />
+          <Button size="2" variant="solid" type="submit" disabled={!comment.trim() || busy}>{t('Post comment')}</Button>
         </form>
         )}
       </section>
