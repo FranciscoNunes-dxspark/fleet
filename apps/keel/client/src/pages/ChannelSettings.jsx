@@ -30,7 +30,7 @@ const zone = () => {
     return 'UTC';
   }
 };
-const blank = () => ({ key: Math.random(), id: null, name: '', kind: 'teams', url: '', hasUrl: false, events: ['production', 'pipeline', 'approval', 'advisory'], projects: [], weekly: { enabled: true, weekday: 1, hour: 9 }, daily: { enabled: false, hour: 9 }, timeZone: zone(), language: getLanguage() });
+const blank = () => ({ key: Math.random(), id: null, name: '', kind: 'teams', url: '', hasUrl: false, events: ['production', 'pipeline', 'approval', 'advisory'], projects: [], weekly: { enabled: true, weekday: 1, hour: 9 }, daily: { enabled: false, hour: 9 }, standup: { enabled: false, hour: 9 }, timeZone: zone(), language: getLanguage() });
 const snapshot = (rows) => JSON.stringify((rows || []).map(({ key, lastPostAt, lastError, lastErrorAt, lastWeekly, ...rest }) => rest));
 // Monday first, in the current language.
 const weekdays = () => [1, 2, 3, 4, 5, 6, 7].map((d) => ({ d, label: new Date(Date.UTC(2024, 0, d)).toLocaleDateString(locale(), { weekday: 'long', timeZone: 'UTC' }) }));
@@ -53,7 +53,7 @@ export default function ChannelSettings() {
   const projectLabel = useProjectLabel();
 
   const adopt = (res) => {
-    const loaded = res.channels.map((c) => ({ ...c, projects: c.projects || [], daily: c.daily || { enabled: false, hour: 9 }, key: c.id, url: undefined }));
+    const loaded = res.channels.map((c) => ({ ...c, projects: c.projects || [], daily: c.daily || { enabled: false, hour: 9 }, standup: c.standup || { enabled: false, hour: 9 }, key: c.id, url: undefined }));
     setRows(loaded);
     setInfo(res);
     setBaseline(snapshot(loaded));
@@ -85,7 +85,7 @@ export default function ChannelSettings() {
     try {
       adopt(await api('/channels', {
         method: 'PUT',
-        body: { channels: rows.map(({ id, name, kind, url, events, projects: picked, weekly, daily, timeZone, language }) => ({ id, name, kind, url: url || undefined, events, projects: picked, weekly, daily, timeZone, language })) },
+        body: { channels: rows.map(({ id, name, kind, url, events, projects: picked, weekly, daily, standup, timeZone, language }) => ({ id, name, kind, url: url || undefined, events, projects: picked, weekly, daily, standup, timeZone, language })) },
       }));
       setOpen(new Set());
       toast(t('Channels saved'));
@@ -99,9 +99,9 @@ export default function ChannelSettings() {
   const run = async (r, what) => {
     setTests((ts) => ({ ...ts, [r.key]: { running: what } }));
     try {
-      if (what === 'weekly' || what === 'daily') await api(`/channels/${encodeURIComponent(r.id)}/${what}`, { method: 'POST' });
+      if (what === 'weekly' || what === 'daily' || what === 'standup') await api(`/channels/${encodeURIComponent(r.id)}/${what}`, { method: 'POST' });
       else await api('/channels/test', { method: 'POST', body: { id: r.id, kind: r.kind, url: r.url || undefined, language: r.language } });
-      const done = { weekly: t("Last week's summary was posted."), daily: t("The Line's digest was posted.") }[what] || t('Test message posted. Check the channel.');
+      const done = { weekly: t("Last week's summary was posted."), daily: t("The Line's digest was posted."), standup: t('The standup was posted.') }[what] || t('Test message posted. Check the channel.');
       setTests((ts) => ({ ...ts, [r.key]: { ok: done } }));
     } catch (e) {
       setTests((ts) => ({ ...ts, [r.key]: { error: e.message } }));
@@ -138,6 +138,7 @@ export default function ChannelSettings() {
                   {r.projects.length > 0 && <Chip>{r.projects.length === 1 ? projectLabel(projects.find((p) => p.id === r.projects[0])?.name || '…', projects.find((p) => p.id === r.projects[0])?.org) : t('{n} projects', { n: r.projects.length })}</Chip>}
                   {r.weekly.enabled && <Chip tone="info">{t('Weekly summary')}</Chip>}
                   {r.daily?.enabled && <Chip tone="info">{t("The Line's daily digest")}</Chip>}
+                  {r.standup?.enabled && <Chip tone="info">{t('Standup')}</Chip>}
                   {r.ownerName && authMode === 'login' && <Chip>{t('as {name}', { name: r.ownerName })}</Chip>}
                 </div>
                 <div className="monitor-line-actions">
@@ -219,9 +220,19 @@ export default function ChannelSettings() {
                       </Select>
                     </label>
                   </fieldset>
+                  <fieldset className="monitor-group">
+                    <legend>{t('Standup')}</legend>
+                    <label className="check"><Checkbox  checked={r.standup.enabled} onChange={(e) => set(r.key, { standup: { ...r.standup, enabled: e.target.checked } })} /> {t('Post the standup each weekday: what moved for each person since the previous working day, what they hold, and the blockers')}</label>
+                    <label>{t('Time')}
+                      <Select className="input" value={r.standup.hour} disabled={!r.standup.enabled} onChange={(e) => set(r.key, { standup: { ...r.standup, hour: Number(e.target.value) } })}>
+                        {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{`${String(h).padStart(2, '0')}:00`}</option>)}
+                      </Select>
+                    </label>
+                  </fieldset>
                   <div className="monitor-editor-foot">
                     {r.id && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => run(r, 'weekly')} disabled={!!result?.running || dirty}>{result?.running === 'weekly' ? t('Sending…') : t('Post the summary now')}</Button>}
                     {r.id && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => run(r, 'daily')} disabled={!!result?.running || dirty}>{result?.running === 'daily' ? t('Sending…') : t('Post the digest now')}</Button>}
+                    {r.id && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => run(r, 'standup')} disabled={!!result?.running || dirty}>{result?.running === 'standup' ? t('Sending…') : t('Post the standup now')}</Button>}
                     <Button size="1" variant="ghost" color="red" type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>{t('Remove channel')}</Button>
                   </div>
                 </div>

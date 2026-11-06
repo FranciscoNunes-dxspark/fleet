@@ -19,7 +19,7 @@ import { comingNext, commitCarriers, commitRefs, landedAt, mergeCommits, reposNa
 import { deployMarkers, deployNote, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { DEFAULT_WINDOW_HOURS, buildDora, isProduction } from './domain/dora.js';
-import { buildSummary, weekRange } from './domain/summary.js';
+import { buildSummary, finishedAt, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
 import { changedFolders, suggestReviewers } from './domain/reviewers.js';
 import { findFlakyTests } from './domain/tests.js';
@@ -1254,6 +1254,46 @@ export function createService({
       const range = weekRange(week);
       if (range.from < Date.now() - 180 * DAY) throw Object.assign(new Error('Summaries go back 26 weeks'), { status: 400 });
       return buildSummary({ ...range, ...(await this.summaryData(range)) });
+    },
+
+    /**
+     * What moved since `since` (ms, at most a week back), for Standup mode (client/src/line/standup.js):
+     * work items finished, open ones whose state changed, pull requests opened, and pull requests
+     * completed with the reviewers who voted on them. Each { key, person, at, … }, with only what a
+     * slide shows.
+     */
+    async standupData({ since }) {
+      const from = Math.max(Number(since) || 0, Date.now() - 7 * DAY);
+      const days = Math.ceil((Date.now() - from) / DAY) + 1;
+      const [projects, open, active, closed] = await Promise.all([workProjects(), openItems(), activePRs(), closedPRs(days)]);
+      const finished = await cached(`wi:done:standup:${days}`, async () => {
+        const lists = await Promise.all(projects.map(async (p) => {
+          const { areaPaths } = await scope(p);
+          const items = await provider.queryWorkItems(p.id, { doneWithinDays: days, areaPaths, categories: ['requirement', 'bug', 'task', 'feature', 'epic'] });
+          return items.map((w) => ({ ...w, projectId: p.id }));
+        }));
+        return lists.flat();
+      }, 5 * MIN);
+      const who = (p) => (p ? { id: p.id, displayName: p.displayName, uniqueName: p.uniqueName, imageUrl: p.imageUrl } : null);
+      const after = (iso) => Date.parse(iso) >= from;
+      const item = (w, at) => ({
+        key: `wi:${w.id}`, id: w.id, title: w.title, type: w.type, state: w.state, projectName: w.projectName,
+        person: who(w.assignedTo), at, open: { type: 'workitem', id: w.id },
+      });
+      const pr = (p, at) => ({
+        key: `pr:${p.key}`, id: p.id, title: p.title, repoName: p.repoName, person: who(p.author), at,
+        open: { type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id },
+      });
+      return {
+        since: new Date(from).toISOString(),
+        finished: finished.filter((w) => w.stateCategory === 'Completed' && after(finishedAt(w))).map((w) => item(w, finishedAt(w))),
+        changed: open.filter((w) => w.stateChangedAt && after(w.stateChangedAt) && !(w.createdAt && w.stateChangedAt === w.createdAt)).map((w) => item(w, w.stateChangedAt)),
+        opened: active.filter((p) => after(p.createdAt)).map((p) => pr(p, p.createdAt)),
+        merged: closed.filter((p) => p.status === 'completed' && after(p.closedAt)).map((p) => ({
+          ...pr(p, p.closedAt),
+          reviewers: (p.reviewers || []).filter((r) => !r.isContainer && r.vote).map((r) => ({ person: who(r), vote: r.vote })),
+        })),
+      };
     },
 
     /** Raw material for work item flow: work items of every type finished in the last `days` days, and open work now. */

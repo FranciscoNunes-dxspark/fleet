@@ -1,5 +1,6 @@
 import { FAILED } from './delivery.js';
 import { STAGE_NAMES, reasonText } from '../../client/src/line/reasons.js';
+import { slideCounts } from '../../client/src/line/standup.js';
 
 // Posts for Microsoft Teams and Slack channels: which inbox entries are worth
 // a post, and how a post is written for each kind of webhook. Pure, so the
@@ -135,6 +136,44 @@ export function lineDigestMessage(stages, before, { t }, { keelUrl = null } = {}
 
 /** What a digest remembers for the next one to compare with. */
 export const digestCounts = (stages) => Object.fromEntries(stages.map((s) => [s.id, { count: s.count, stuck: s.stuck.bad + s.stuck.warn }]));
+
+/**
+ * The standup post (a channel's choice, Settings → Teams and Slack): a line per person with what
+ * moved for them since `since` and what they hold, from Standup mode's slides
+ * (client/src/line/standup.js), then the blockers stuck the longest.
+ */
+export function standupMessage(slides, blockers, { t, locale }, { since, timeZone, keelUrl = null } = {}) {
+  let day;
+  try {
+    day = new Date(since).toLocaleDateString(locale, { weekday: 'long', ...(timeZone ? { timeZone } : {}) });
+  } catch {
+    day = new Date(since).toLocaleDateString(locale, { weekday: 'long' });
+  }
+  const lines = slides.map((s) => {
+    const n = slideCounts(s);
+    const parts = [
+      n.finished && `${t('Finished')} ${n.finished}`,
+      n.merged && `${t('Merged')} ${n.merged}`,
+      n.changed && `${t('Moved')} ${n.changed}`,
+      n.opened && `${t('Opened')} ${n.opened}`,
+      n.reviewed && `${t('Reviewed')} ${n.reviewed}`,
+      n.holding && `${t('On the Line')} ${n.holding}`,
+      n.stuck && t(n.stuck === 1 ? '1 stuck' : '{n} stuck', { n: n.stuck }),
+      n.reviews && `${t('Reviews owed')} ${n.reviews}`,
+    ].filter(Boolean);
+    return `${s.person?.displayName || '?'}: ${parts.length ? parts.join(' · ') : t('Nothing moved.')}`;
+  });
+  const stuck = blockers.slice(0, 6).map((c) => `${c.stuck === 'bad' ? '🔴' : '🟠'} ${c.title} (${t(STAGE_NAMES[c.stageId])}${c.person?.displayName ? `, ${c.person.displayName}` : ''}): ${reasonText(c.reason, t)}`);
+  return {
+    title: t('Standup: since {day}', { day }),
+    tone: blockers.some((c) => c.stuck === 'bad') ? 'warn' : 'info',
+    sections: [
+      { lines: lines.length ? lines : [t('Nothing on the Line, and nothing moved.')] },
+      ...(stuck.length ? [{ heading: t('Blockers'), lines: stuck }] : []),
+    ],
+    links: keelUrl ? [{ label: t('Start standup'), url: `${keelUrl}/standup` }] : [],
+  };
+}
 
 const clip = (lines) => (lines.length > MAX_LINES ? [...lines.slice(0, MAX_LINES - 1), `… +${lines.length - MAX_LINES + 1}`] : lines);
 const slackEscape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

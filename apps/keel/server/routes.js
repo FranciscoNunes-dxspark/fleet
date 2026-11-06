@@ -280,6 +280,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   r.post('/channels/test', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().test(req.body || {})));
   r.post('/channels/:id/weekly', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendWeekly(req.params.id, req.ctx.service)));
   r.post('/channels/:id/daily', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendDaily(req.params.id, req.ctx.service)));
+  r.post('/channels/:id/standup', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendStandup(req.params.id, req.ctx.service)));
   // Team page: hide someone from your own view, or take them out of a team in Azure DevOps.
   r.post('/team/hidden', async (req, res) => res.json(await req.ctx.service.setHidden(req.body?.person, !!req.body?.hidden)));
   r.post('/team/remove', need('team.manage'), async (req, res) => {
@@ -322,6 +323,12 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   });
   // One week's summary for everyone: ?week=YYYY-MM-DD (any day of the week; this week when absent).
   r.get('/summary', async (req, res) => res.json(await req.ctx.service.summary(req.query.week ? String(req.query.week) : undefined)));
+  // What moved since ?since= (an ISO time, at most a week back), for Standup mode.
+  r.get('/standup', async (req, res) => {
+    const since = Date.parse(String(req.query.since || ''));
+    if (!Number.isFinite(since)) return res.status(400).json({ error: 'since must be a date and time' });
+    res.json(await req.ctx.service.standupData({ since }));
+  });
 
   r.get('/team', async (req, res) => res.json(await req.ctx.service.team()));
   r.get('/insights', async (req, res) => {
