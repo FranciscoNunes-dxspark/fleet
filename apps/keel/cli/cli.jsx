@@ -18,6 +18,7 @@ if (args.includes('-h') || args.includes('--help')) {
 keel login [address]
 keel logout
 keel security [project] [--json] [--fail-on critical|high|medium|low|none] [--demo]
+keel mcp [--demo]
 
 Keel in the terminal: the Inbox, pull requests, pipelines, work items and production,
 with the same tracked projects and settings as the web app.
@@ -29,6 +30,9 @@ with the same tracked projects and settings as the web app.
            secrets in plain pipeline variables, resources open to every pipeline, service
            connections, branch policies, agents. Exits 1 when a finding is as bad as
            --fail-on (high by default), 2 when it can't run; --json prints the findings as JSON.
+  mcp      Keel as an MCP server on stdio, for Claude Code: claude mcp add keel -- keel mcp.
+           Its tools only read: the Line, the Inbox, pull requests and their risk, pipeline
+           runs and why they failed, what's waiting to ship, production, DORA, work items.
   --demo   the demo organization, no credentials needed
 
 Without signing in to a Keel, it works with the Azure DevOps organization in
@@ -109,8 +113,9 @@ else if (!server && !process.env.AZDO_ORG_URL?.trim() && !isOn(process.env.AZDO_
 }
 if (!server && !isOn(process.env.AZDO_MOCK) && !process.env.AZDO_PAT?.trim()) process.env.AZDO_AUTH ||= 'az';
 
-// keel security: the review without the screen, so it runs in a pipeline too (headless.js).
-if (args[0] === 'security') {
+// keel security: the review without the screen, so it runs in a pipeline too (headless.js), and
+// keel mcp: Keel's tools for Claude Code over stdio (mcp.js). Both take the service without the screen.
+if (args[0] === 'security' || args[0] === 'mcp') {
   let service;
   let target;
   if (server) {
@@ -126,8 +131,15 @@ if (args[0] === 'security') {
     }
     target = process.env.AZDO_ORG_URL?.trim() || service.provider?.orgUrl || 'tracked projects';
   }
-  const { runSecurity } = await import('./headless.js');
-  process.exit(await runSecurity(args.slice(1), { service, target }));
+  if (args[0] === 'mcp') {
+    const { serve } = await import('./mcp.js');
+    serve({ service, describe: demo || isOn(process.env.AZDO_MOCK) ? 'the demo organization' : target });
+    // Served until Claude closes stdin (serveMcp exits then): the screen below never starts.
+    await new Promise(() => {});
+  } else {
+    const { runSecurity } = await import('./headless.js');
+    process.exit(await runSecurity(args.slice(1), { service, target }));
+  }
 }
 
 if (!interactive) fail('keel needs an interactive terminal.');

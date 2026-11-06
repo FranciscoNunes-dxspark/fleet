@@ -1,10 +1,11 @@
-// Draws Pinch, Keel's crab, into every icon Keel ships, from the pixels in client/src/pinch.js,
-// with a pixel-art Azure DevOps mark as a badge in the bottom-right corner, the way Tiller and
-// Trawl badge theirs with Git and SQL:
+// Draws Keel's icons. The web app's are the mark in client/src/mark.js, a K on a graphite tile
+// with its lower part below a waterline; the terminal app's are Pinch, Keel's crab, from the pixels
+// in client/src/pinch.js, with a pixel-art Azure DevOps mark as a badge in the bottom-right corner,
+// the way Tiller and Trawl badge theirs with Git and SQL:
 //   assets/pinch.svg, pinch.png               the README and social preview
 //   assets/pinch-transparent.svg, .png        just the crab and badge, for light pages and slides
 //   assets/pinch.ico                           the terminal app's Windows executable
-//   client/public/favicon.svg                 the browser tab and desktop notifications
+//   client/public/favicon.svg                 the mark: the browser tab and desktop notifications
 //   client/public/icons/icon-192/512.png      the installed app
 //   client/public/icons/apple-touch-icon.png  iOS Home Screen (opaque, iOS rounds the corners)
 //   client/public/icons/maskable-512.png      Android adaptive icon, kept inside the safe circle
@@ -13,6 +14,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { BG, PALETTE, pinchPixels } from '../client/src/pinch.js';
+import { MARK } from '../client/src/mark.js';
 
 const root = new URL('../', import.meta.url);
 const out = (path, data) => {
@@ -25,7 +27,7 @@ const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), pa
 
 // The Azure DevOps mark in white on its blue rounded square. It's drawn at twice Pinch's
 // resolution, the coarsest the mark still reads at.
-const COLOURS = { ...PALETTE, A: '#0078d4', S: '#ffffff' };
+const COLOURS = { ...PALETTE, A: '#0078d4' };
 const ADO = [
   '.AAAAAAAAAAAAA.',
   'AAAAAAAAAAAAAAA',
@@ -82,15 +84,8 @@ function square(size) {
 
 // The dark square: 40 half-pixels across.
 const SQUARE = square(40);
-// iOS: 45 across, so 180 px keeps the pixels whole (4 each), with the same layout.
-const APPLE = square(45);
-// Android's maskable icon may be cropped to a circle of 80% of its width: 64 across leaves the
-// badge's far corner just inside it, at 8 px a cell in 512.
-const MASKABLE = square(64);
 // The crab cropped to the drawing, with room right and below for the badge to sit on.
 const CROPPED = grid(GW, GH, 0, 0, GW - BW, GH - BH);
-// The notification badge: just the crab, undoubled, 4 px a pixel in 96, centred.
-const BADGE = Array.from({ length: 24 }, (_, y) => Array.from({ length: 24 }, (_, x) => (px[y - 7]?.[x - 4] ?? '.') === '.' ? '.' : 'S').join(''));
 
 /** A grid drawn at `scale` image pixels per cell, as RGBA rows; `inside(x, y)` limits it to a shape. */
 function paint(cells, scale, bg = [0, 0, 0, 0], inside = () => true) {
@@ -222,10 +217,81 @@ out('assets/pinch.png', png(canvas(512)));
 out('assets/pinch.ico', ico([16, 24, 32, 40, 48, 64, 80, 128, 256]));
 out('assets/pinch-transparent.svg', svg({ background: false }));
 out('assets/pinch-transparent.png', png(paint(CROPPED, 16)));
-out('client/public/favicon.svg', svg());
-out('client/public/icons/icon-192.png', png(canvas(192)));
-out('client/public/icons/icon-512.png', png(canvas(512)));
-out('client/public/icons/apple-touch-icon.png', png(paint(APPLE, 4, hex(BG))));
-out('client/public/icons/maskable-512.png', png(paint(MASKABLE, 8, hex(BG))));
-out('client/public/icons/badge-96.png', png(paint(BADGE, 4)));
+// The web app's mark. Drawn from shapes rather than pixels, so each image samples every pixel at
+// 4 × 4 points and blends what it hits: smooth edges at any size, with no dependency to render SVG.
+
+const inRound = (x, y, { x: rx, y: ry, w, h, r }) => {
+  if (x < rx || y < ry || x > rx + w || y > ry + h) return false;
+  const dx = Math.max(rx + r - x, x - (rx + w - r), 0);
+  const dy = Math.max(ry + r - y, y - (ry + h - r), 0);
+  return dx * dx + dy * dy <= r * r;
+};
+const inPolygon = (x, y, points) => {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [xi, yi] = points[i];
+    const [xj, yj] = points[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+
+/**
+ * The mark as RGBA rows, `size` pixels square. `tile` is 'round' (transparent corners), 'square'
+ * (opaque to the edge) or 'none'; `scale` shrinks the K about the centre (the maskable icon's safe
+ * circle); `colour` paints the K in one colour (the notification badge's silhouette).
+ */
+function markRows(size, { tile = 'round', scale = 1, colour } = {}) {
+  const S = MARK.size;
+  const tileShape = { x: 0, y: 0, w: S, h: S, r: tile === 'round' ? MARK.tile.radius : 0 };
+  const sample = (u, v) => {
+    // The K's own coordinates: scaled about the centre.
+    const gx = S / 2 + (u - S / 2) / scale;
+    const gy = S / 2 + (v - S / 2) / scale;
+    const side = gy < MARK.waterline ? 'above' : 'below';
+    const cut = gy >= MARK.waterline && gy < MARK.waterline + MARK.gap;
+    if (!cut && inRound(gx, gy, MARK.bar)) return hex(colour || MARK.colours.bar[side]);
+    if (!cut && inPolygon(gx, gy, MARK.chevron)) return hex(colour || MARK.colours.chevron[side]);
+    if (tile !== 'none' && inRound(u, v, tileShape)) return hex(MARK.tile.fill);
+    return null;
+  };
+  const N = 4;
+  const rows = [];
+  for (let y = 0; y < size; y++) {
+    const row = [];
+    for (let x = 0; x < size; x++) {
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let sy = 0; sy < N; sy++) for (let sx = 0; sx < N; sx++) {
+        const c = sample(((x + (sx + 0.5) / N) * S) / size, ((y + (sy + 0.5) / N) * S) / size);
+        if (c) { r += c[0]; g += c[1]; b += c[2]; a += 1; }
+      }
+      row.push(...(a ? [Math.round(r / a), Math.round(g / a), Math.round(b / a), Math.round((a / (N * N)) * 255)] : [0, 0, 0, 0]));
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+/** The mark as SVG, on its rounded tile: the two halves of the K clipped either side of the waterline. */
+function markSvg() {
+  const { size: S, tile, waterline: w, gap, bar, chevron, colours } = MARK;
+  const k = (side) => `<rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" rx="${bar.r}" fill="${colours.bar[side]}"/>`
+    + `<path d="M${chevron.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${colours.chevron[side]}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}">
+<title>Keel</title>
+<defs><clipPath id="above"><rect width="${S}" height="${w}"/></clipPath><clipPath id="below"><rect y="${w + gap}" width="${S}" height="${S - w - gap}"/></clipPath></defs>
+<rect width="${S}" height="${S}" rx="${tile.radius}" fill="${tile.fill}"/>
+<g clip-path="url(#above)">${k('above')}</g>
+<g clip-path="url(#below)">${k('below')}</g>
+</svg>
+`;
+}
+
+out('client/public/favicon.svg', markSvg());
+out('client/public/icons/icon-192.png', png(markRows(192)));
+out('client/public/icons/icon-512.png', png(markRows(512)));
+out('client/public/icons/apple-touch-icon.png', png(markRows(180, { tile: 'square' })));
+// Android may crop the maskable icon to a circle of 80% of its width: at 0.78 the K's corners sit inside it.
+out('client/public/icons/maskable-512.png', png(markRows(512, { tile: 'square', scale: 0.78 })));
+out('client/public/icons/badge-96.png', png(markRows(96, { tile: 'none', scale: 1.15, colour: '#ffffff' })));
 console.log('assets/pinch.svg, pinch.png, pinch.ico, pinch-transparent.svg, pinch-transparent.png; client/public/favicon.svg, icons/*.png');

@@ -43,6 +43,7 @@ const TerminalSignIn = lazy(() => import('./pages/TerminalSignIn.jsx'));
 const Desk = lazy(() => import('./line/Desk.jsx'));
 const Control = lazy(() => import('./line/Control.jsx'));
 const People = lazy(() => import('./line/People.jsx'));
+const Standup = lazy(() => import('./line/Standup.jsx'));
 
 // Once the app is idle, fetch the details views people open most, so the first click opens at once.
 const warmDetails = () => { import('./pages/PrDetail.jsx'); import('./pages/WorkItemDetail.jsx'); import('./pages/PipelineDetail.jsx'); };
@@ -334,6 +335,7 @@ function Console({ authMode, onSignedOut }) {
           <Route path="/totals/:id" element={<Totals />} />
           <Route path="/team" element={<Team />} />
           <Route path="/people" element={<People />} />
+          <Route path="/standup" element={<Standup />} />
           <Route path="/insights" element={<Insights />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/users" element={<Users />} />

@@ -4,6 +4,7 @@
 //   (an outage, a red default branch, a deployment waiting on approval…)
 // - the weekly summary, on the weekday and hour the channel asks for
 // - the Line's daily digest, on weekday mornings at the hour it asks for
+// - the standup: what moved for each person since the previous working day, on weekday mornings
 // It runs whether or not anyone has Keel open. Azure DevOps is read with the
 // token of the person who set the channel up (with sign-in) or the server's
 // own (locally), for the projects the channel picked (none picked: the ones
@@ -16,7 +17,8 @@ import { decrypt, encrypt, getKey } from './secrets.js';
 import { runnerLock, sharedJson } from './jsonfile.js';
 import { assertPublicUrl } from './monitoring.js';
 import { translator } from './i18n.js';
-import { CHANNEL_EVENTS, CHANNEL_KINDS, DEFAULT_EVENTS, burstMessage, channelEvents, digestCounts, eventMessage, lineDigestMessage, payloadFor, summaryMessage } from './domain/messages.js';
+import { CHANNEL_EVENTS, CHANNEL_KINDS, DEFAULT_EVENTS, burstMessage, channelEvents, digestCounts, eventMessage, lineDigestMessage, payloadFor, standupMessage, summaryMessage } from './domain/messages.js';
+import { standupSinceMs, standupSlides, teamBlockers } from '../client/src/line/standup.js';
 import { lineOf } from './line.js';
 
 const MIN = 60_000;
@@ -55,6 +57,14 @@ export function dailyDue(channel, lastDaily, ms) {
   if (!d?.enabled) return null;
   const now = localTime(ms, channel.timeZone);
   return now.weekday <= 5 && now.hour >= d.hour && lastDaily !== now.date ? now.date : null;
+}
+
+/** Is the standup post due now: a weekday, at or after the hour, and not sent yet today. */
+export function standupDue(channel, lastStandup, ms) {
+  const d = channel.standup;
+  if (!d?.enabled) return null;
+  const now = localTime(ms, channel.timeZone);
+  return now.weekday <= 5 && now.hour >= d.hour && lastStandup !== now.date ? now.date : null;
 }
 
 export function createChannels({
@@ -112,6 +122,14 @@ export function createChannels({
     const lastWeek = new Date(ms - 7 * DAY).toISOString().slice(0, 10);
     const summary = await service.summary(lastWeek);
     return summaryMessage(summary, translator(c.language), { timeZone: c.timeZone, keelUrl });
+  }
+
+  /** The standup post: each person's slide since the previous working day in the channel's time zone. */
+  async function standupPost(c, view, ms = Date.now()) {
+    const since = standupSinceMs(ms, localTime(ms, c.timeZone).weekday);
+    const [{ stages }, raw] = await Promise.all([lineOf(view), view.standupData({ since })]);
+    const slides = standupSlides({ stages, raw, since });
+    return standupMessage(slides, teamBlockers(stages), translator(c.language), { since, timeZone: c.timeZone, keelUrl });
   }
 
   let busy = false;
@@ -172,6 +190,15 @@ export function createChannels({
               note(c.id, { lastError: `The Line's digest: ${err.message}`, lastErrorAt: new Date().toISOString() });
             }
           }
+          const standup = standupDue(c, s.lastStandup, ms);
+          if (standup) {
+            note(c.id, { lastStandup: standup }); // once per day, even if posting fails
+            try {
+              await deliver(c, await standupPost(c, viewFor(service, c), ms));
+            } catch (err) {
+              note(c.id, { lastError: `The standup: ${err.message}`, lastErrorAt: new Date().toISOString() });
+            }
+          }
           const due = weeklyDue(c, s.lastWeekly, ms);
           if (due) {
             note(c.id, { lastWeekly: due }); // once per day, even if posting fails
@@ -218,6 +245,7 @@ export function createChannels({
     if (!url) throw bad(`Paste the webhook address for ${name}.`);
     const weekly = input.weekly || {};
     const daily = input.daily || {};
+    const standup = input.standup || {};
     return {
       id: existing?.id || crypto.randomUUID(),
       name,
@@ -232,6 +260,10 @@ export function createChannels({
       daily: {
         enabled: !!daily.enabled,
         hour: Math.min(23, Math.max(0, Math.round(Number(daily.hour ?? 9)))),
+      },
+      standup: {
+        enabled: !!standup.enabled,
+        hour: Math.min(23, Math.max(0, Math.round(Number(standup.hour ?? 9)))),
       },
       timeZone: validZone(input.timeZone) ? input.timeZone : existing?.timeZone || 'UTC',
       language: input.language === 'pt' ? 'pt' : 'en',
@@ -293,6 +325,15 @@ export function createChannels({
       const service = (await Promise.resolve(resolveService(c.ownerId || null)).catch(() => null)) || fallback;
       const { stages } = await lineOf(viewFor(service, c));
       await post(c, lineDigestMessage(stages, (state.get()[c.id] || {}).lastDigest || null, translator(c.language), { keelUrl }));
+      return { ok: true };
+    },
+
+    /** Post the standup now (Admins checking how it looks), as sendDaily does. */
+    async sendStandup(id, fallback) {
+      const c = all().find((x) => x.id === id);
+      if (!c) throw Object.assign(new Error('Unknown channel'), { status: 404 });
+      const service = (await Promise.resolve(resolveService(c.ownerId || null)).catch(() => null)) || fallback;
+      await post(c, await standupPost(c, viewFor(service, c)));
       return { ok: true };
     },
 

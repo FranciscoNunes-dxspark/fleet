@@ -217,6 +217,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     doneDays: Math.min(90, Math.max(1, Number(req.query.doneDays) || 14)),
   })));
   r.get('/epics', async (req, res) => res.json(await req.ctx.service.epics({ includeClosed: req.query.closed === '1' })));
+  // Each project's pace for the epics' forecasts, apart from /epics so the tree never waits for it.
+  r.get('/epics/pace', async (req, res) => res.json(await req.ctx.service.forecastPace(90)));
   r.get('/pipelines', async (req, res) => res.json(await req.ctx.service.pipelines()));
   r.get('/pipelines/:projectId/:definitionId/runs', async (req, res) => res.json(await req.ctx.service.pipelineRuns(req.params.projectId, req.params.definitionId)));
   r.get('/commits/:hash/carriers', async (req, res) => res.json(await req.ctx.service.commitUsage(req.params.hash, { repo: req.query.repo ? String(req.query.repo) : undefined })));
@@ -278,6 +280,7 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   r.post('/channels/test', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().test(req.body || {})));
   r.post('/channels/:id/weekly', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendWeekly(req.params.id, req.ctx.service)));
   r.post('/channels/:id/daily', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendDaily(req.params.id, req.ctx.service)));
+  r.post('/channels/:id/standup', need('channels.manage'), async (req, res) => res.json(await channelsOrFail().sendStandup(req.params.id, req.ctx.service)));
   // Team page: hide someone from your own view, or take them out of a team in Azure DevOps.
   r.post('/team/hidden', async (req, res) => res.json(await req.ctx.service.setHidden(req.body?.person, !!req.body?.hidden)));
   r.post('/team/remove', need('team.manage'), async (req, res) => {
@@ -309,6 +312,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   )));
   // What's merged but not deployed yet, per production environment.
   r.get('/deploys/pending', async (req, res) => res.json(await req.ctx.service.undeployed()));
+  // Go / no-go for what's waiting, per production environment and per pending approval (kept apart: it takes longer).
+  r.get('/deploys/readiness', async (req, res) => res.json(await req.ctx.service.readiness()));
   r.get('/delivery', async (req, res) => res.json(await req.ctx.service.delivery(Math.min(90, Math.max(7, Number(req.query.days) || 30)))));
   // DORA per project and team: 30 or 90 days against the period before; ?production= names override the settings'.
   r.get('/dora', async (req, res) => {
@@ -318,6 +323,12 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   });
   // One week's summary for everyone: ?week=YYYY-MM-DD (any day of the week; this week when absent).
   r.get('/summary', async (req, res) => res.json(await req.ctx.service.summary(req.query.week ? String(req.query.week) : undefined)));
+  // What moved since ?since= (an ISO time, at most a week back), for Standup mode.
+  r.get('/standup', async (req, res) => {
+    const since = Date.parse(String(req.query.since || ''));
+    if (!Number.isFinite(since)) return res.status(400).json({ error: 'since must be a date and time' });
+    res.json(await req.ctx.service.standupData({ since }));
+  });
 
   r.get('/team', async (req, res) => res.json(await req.ctx.service.team()));
   r.get('/insights', async (req, res) => {

@@ -488,7 +488,7 @@ const releaseApprovals = [];
   const store = RELEASE_DEFS[0];
   const r = store.releases[0];
   releaseApprovals.push({
-    kind: 'release', id: 5001, projectId: store.project.id, projectName: store.project.name, pipeline: store.name, stage: 'Production',
+    kind: 'release', id: 5001, projectId: store.project.id, projectName: store.project.name, pipeline: store.name, definitionId: store.id, stage: 'Production', postDeploy: false,
     run: { name: r.name, webUrl: r.webUrl }, createdOn: ago(5 * H), instructions: 'Check the Staging smoke tests first.', minRequired: 1,
     approvers: [ME], canDecide: null, _release: r, _env: r.envs[2],
   });

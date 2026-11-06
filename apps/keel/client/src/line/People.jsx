@@ -2,6 +2,8 @@
 // hold there and how much of it is stuck, and the reviews waiting on them. A cell opens its
 // cards under the table. Where one person holds most of a jammed stage is where to help.
 import { useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Button } from '@radix-ui/themes';
 import { useApi, useApp } from '../context.js';
 import { Avatar, Loading, PageHeader, TeamTabs, useMedia, useTypeColor } from '../ui.jsx';
 import { t } from '../i18n.js';
@@ -18,7 +20,9 @@ export default function People() {
   const team = useApi('/team');
   const open = useOpenCard();
   const typeColor = useTypeColor();
-  const [teamKey, setTeamKey] = useState('');
+  // The team picked comes back with you from Standup mode (?team=).
+  const [params] = useSearchParams();
+  const [teamKey, setTeamKey] = useState(() => params.get('team') || '');
   const [picked, setPicked] = useState(null); // { key, stage } or { key, stage: 'reviews' }
   // A phone has no room for the table: a card per person, with the same cells as buttons.
   const phone = useMedia('(max-width: 900px)');
@@ -48,6 +52,9 @@ export default function People() {
             {teams.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
           </Select>
         )}
+        <Button asChild size="2" variant="solid">
+          <Link to={teamKey ? `/standup?team=${encodeURIComponent(teamKey)}` : '/standup'}>{t('Start standup')}</Link>
+        </Button>
       </PageHeader>
       <TeamTabs />
 

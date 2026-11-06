@@ -518,7 +518,8 @@ export function monitorNumbers(m) {
   ].filter(Boolean).join(' · ');
 }
 
-const DEPLOY_STATE = { running: 'Deploying now', approval: 'Waiting for approval', queued: 'Queued' };
+/** A deploy under way, in words: "Waiting for approval". */
+export const DEPLOY_STATE = { running: 'Deploying now', approval: 'Waiting for approval', queued: 'Queued' };
 
 /** What a production environment has waiting (service.undeployed's target), as lines. */
 function waitingLines(t, now) {

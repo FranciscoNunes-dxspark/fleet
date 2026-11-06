@@ -1,0 +1,27 @@
+// Filled in by area; see ../pt.js.
+// Area "forecast": the delivery forecast on the Epics page (pages/EpicForecast.jsx).
+export default {
+  "Each open one has a delivery forecast from its project's pace: open it for the odds and a what-if.": 'Cada um em aberto tem uma previsão de entrega ao ritmo do seu projeto: abra-a para ver as probabilidades e simular cenários.',
+  '85%: {date}': '85%: {date}',
+  'No forecast': 'Sem previsão',
+  '85% likely to be done by {date}. Open it for the odds and a what-if.': '85% provável estar pronto até {date}. Abra para ver as probabilidades e simular cenários.',
+  'Why there is no forecast': 'Porque não há previsão',
+  'Not enough history to forecast: {project} finished {n} backlog items in the last {days} days, and a forecast needs at least {min}.': 'Não há histórico suficiente para prever: {project} concluiu {n} itens de backlog nos últimos {days} dias, e uma previsão precisa de pelo menos {min}.',
+  'At this pace some runs never finish: there is far more work left than the team has been finishing.': 'A este ritmo, algumas simulações nunca terminam: há muito mais trabalho por fazer do que a equipa tem concluído.',
+  'Nothing left to forecast: every remaining item is left out.': 'Nada a prever: todos os itens por fazer foram deixados de fora.',
+  'When will this land?': 'Quando fica pronto?',
+  'What-if': 'Cenário',
+  '{runs} simulated runs, each drawing days at random from the last {days} days of {project}: {n} backlog items finished, by {people} people. Half the runs were done by the 50% date, 85 in 100 by the 85% date and 95 in 100 by the 95% date.': '{runs} simulações, cada uma a sortear dias dos últimos {days} dias de {project}: {n} itens de backlog concluídos, por {people} pessoas. Metade das simulações terminou até à data dos 50%, 85 em cada 100 até à dos 85% e 95 em cada 100 até à dos 95%.',
+  "It assumes the whole project's pace goes to this work; if the team works on other things too, give it a share below.": 'Assume que todo o ritmo do projeto vai para este trabalho; se a equipa também trabalha noutras coisas, indique abaixo a parte que lhe cabe.',
+  "Share of the team's pace": 'Parte do ritmo da equipa',
+  'People added': 'Pessoas a mais',
+  'Reset': 'Repor',
+  'Leave items out ({n} of {total})': 'Deixar itens de fora ({n} de {total})',
+  'Leave out {title}': 'Deixar de fora {title}',
+  '{n} item left': '{n} item por fazer',
+  '{n} items left': '{n} itens por fazer',
+  'in {n} day': 'daqui a {n} dia',
+  'in {n} days': 'daqui a {n} dias',
+  '+{n} person': '+{n} pessoa',
+  '+{n} people': '+{n} pessoas',
+};

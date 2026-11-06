@@ -2,7 +2,8 @@
 // assigned, the pull requests they wrote) and the reviews waiting on them. Pure, from the
 // stages buildLine makes (stages.js); the Team page draws it (line/People.jsx).
 
-const keyOf = (p) => String(p?.uniqueName || p?.id || p?.displayName || '').toLowerCase();
+/** How a person is matched across lists: account name, else id, else display name. */
+export const keyOf = (p) =>String(p?.uniqueName || p?.id || p?.displayName || '').toLowerCase();
 const NOBODY = '';
 
 /**

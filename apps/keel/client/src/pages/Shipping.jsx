@@ -5,6 +5,7 @@ import { Chip, Empty, ErrorBox, ExternalLink, Loading, PageHeader, ProductionTab
 import { t, tj, tx } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { ChangeSections, deployStatus } from './DeployDetail.jsx';
+import { Readiness, useReadiness } from '../readiness.jsx';
 
 const DAY = 86_400_000;
 
@@ -29,6 +30,7 @@ export const byWaiting = (a, b) => uncounted(a) - uncounted(b)
  */
 export default function Shipping() {
   const { data, error, reload } = useApi('/deploys/pending');
+  const readiness = useReadiness(!!data?.targets.length);
   return (
     <div className="page page-wide">
       <PageHeader title={t('Production')} sub={t("What's merged but not deployed yet, per production environment.")} />
@@ -40,7 +42,7 @@ export default function Shipping() {
         </Empty>
       ) : (
         <div className="monitor-list">
-          {[...data.targets].sort(byWaiting).map((env) => <Environment key={`${env.org || ''}:${env.key}`} env={env} />)}
+          {[...data.targets].sort(byWaiting).map((env) => <Environment key={`${env.org || ''}:${env.key}`} env={env} readiness={readiness.ofTarget(env)} />)}
         </div>
       )}
     </div>
@@ -123,7 +125,7 @@ function unknownWhy(why) {
   }
 }
 
-function Environment({ env }) {
+function Environment({ env, readiness }) {
   const { openDrawer, can } = useApp();
   const projectLabel = useProjectLabel();
   // Changes, as the server counts them: each merged PR once, plus commits pushed without one.
@@ -261,6 +263,8 @@ function Environment({ env }) {
         </dl>
       )}
 
+      {/* Go / no-go for the next deploy: shown when something is going out, or something stands in its way. */}
+      {readiness && (waiting > 0 || env.deploy || readiness.verdict !== 'green') && <Readiness r={readiness} />}
       {waiting > 0 && (
         <details className="ship-changes" open={waiting <= 12}>
           <summary className="small">{env.devBranch ? t('On {dev}, not yet on {branch}', { dev: env.devBranch, branch: env.branch }) : t('What goes out with the next deploy')}{env.authors?.length ? <span className="muted"> · {env.authors.join(', ')}</span> : null}</summary>
