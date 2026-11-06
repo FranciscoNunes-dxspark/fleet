@@ -14,6 +14,7 @@ import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
+import { dailyThroughput } from '../client/src/forecast.js';
 import { comingNext, commitCarriers, commitRefs, landedAt, mergeCommits, reposNamed, sameCommit, waitingChanges } from './domain/commits.js';
 import { deployMarkers, deployNote, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
@@ -1675,6 +1676,22 @@ export function createService({
         return { projectId: p.id, projectName: p.name, epics: buildEpicTree({ ...h, blockedTag: settings.blockedTag }) };
       }));
       return { projects: perProject };
+    },
+
+    /**
+     * Each project's pace for the Epics page's forecasts: backlog items finished a day over the
+     * last `days` days (client/src/forecast.js dailyThroughput), from the same query as Flow.
+     */
+    async forecastPace(days = 90) {
+      const [projects, { finished }] = await Promise.all([workProjects(), this.flowData(days)]);
+      return {
+        days,
+        projects: projects.map((p) => ({
+          projectId: p.id,
+          projectName: p.name,
+          ...dailyThroughput(finished.filter((w) => w.projectId === p.id), { days }),
+        })),
+      };
     },
 
     async pipelines() {

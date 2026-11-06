@@ -217,6 +217,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     doneDays: Math.min(90, Math.max(1, Number(req.query.doneDays) || 14)),
   })));
   r.get('/epics', async (req, res) => res.json(await req.ctx.service.epics({ includeClosed: req.query.closed === '1' })));
+  // Each project's pace for the epics' forecasts, apart from /epics so the tree never waits for it.
+  r.get('/epics/pace', async (req, res) => res.json(await req.ctx.service.forecastPace(90)));
   r.get('/pipelines', async (req, res) => res.json(await req.ctx.service.pipelines()));
   r.get('/pipelines/:projectId/:definitionId/runs', async (req, res) => res.json(await req.ctx.service.pipelineRuns(req.params.projectId, req.params.definitionId)));
   r.get('/commits/:hash/carriers', async (req, res) => res.json(await req.ctx.service.commitUsage(req.params.hash, { repo: req.query.repo ? String(req.query.repo) : undefined })));

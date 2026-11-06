@@ -330,6 +330,9 @@ export function createMultiService(entries) {
     async epics(opts) {
       return { projects: (await each((s) => s.epics(opts))).flatMap(({ org, value }) => tagAll(org, value.projects)) };
     },
+    async forecastPace(days) {
+      return { days, projects: (await each((s) => s.forecastPace(days))).flatMap(({ org, value }) => tagAll(org, value.projects)) };
+    },
 
     async pipelines() {
       const rows = (await each((s) => s.pipelines())).flatMap(({ org, value }) => tagAll(org, value));

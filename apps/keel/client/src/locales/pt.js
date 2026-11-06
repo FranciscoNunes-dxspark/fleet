@@ -23,8 +23,9 @@ import risk from './pt/risk.js';
 import advisories from './pt/advisories.js';
 import devopssecurity from './pt/devopssecurity.js';
 import readiness from './pt/readiness.js';
+import forecast from './pt/forecast.js';
 
-export default { ...server, ...advisories, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow, ...palette, ...channels, ...assist, ...tests, ...notes, ...views, ...line, ...dora, ...risk, ...devopssecurity, ...readiness };
+export default { ...server, ...advisories, ...shell, ...settings, ...code, ...work, ...totals, ...runs, ...orgs, ...ship, ...flow, ...palette, ...channels, ...assist, ...tests, ...notes, ...views, ...line, ...dora, ...risk, ...devopssecurity, ...readiness, ...forecast };
 
 // Text the server sends: its templates are the only ones tx() matches against.
 export { server as serverText };
