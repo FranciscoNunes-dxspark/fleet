@@ -29,7 +29,7 @@ function PinchPixels({ mood, dx = 0, dy = 0 }) {
   );
 }
 
-/** Keel's mark: Pinch the crab on its dark square, without the Azure DevOps badge the app icons carry (same pixels as public/favicon.svg). */
+/** Pinch the crab on its dark square, the sidebar's logo, showing its mood (the favicon and app icons are the K in mark.js). */
 export function Logo({ size = 28, mood = 'idle', title }) {
   return (
     <svg className="brand-mark" width={size} height={size} viewBox="0 0 20 20" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
