@@ -249,8 +249,9 @@ function markRows(size, { tile = 'round', scale = 1, colour } = {}) {
     const gx = S / 2 + (u - S / 2) / scale;
     const gy = S / 2 + (v - S / 2) / scale;
     const side = gy < MARK.waterline ? 'above' : 'below';
-    if (inRound(gx, gy, MARK.bar)) return hex(colour || MARK.colours.bar[side]);
-    if (inPolygon(gx, gy, MARK.chevron)) return hex(colour || MARK.colours.chevron[side]);
+    const cut = gy >= MARK.waterline && gy < MARK.waterline + MARK.gap;
+    if (!cut && inRound(gx, gy, MARK.bar)) return hex(colour || MARK.colours.bar[side]);
+    if (!cut && inPolygon(gx, gy, MARK.chevron)) return hex(colour || MARK.colours.chevron[side]);
     if (tile !== 'none' && inRound(u, v, tileShape)) return hex(MARK.tile.fill);
     return null;
   };
@@ -271,14 +272,14 @@ function markRows(size, { tile = 'round', scale = 1, colour } = {}) {
   return rows;
 }
 
-/** The mark as SVG, on its rounded tile: the two halves of the K clipped at the waterline. */
+/** The mark as SVG, on its rounded tile: the two halves of the K clipped either side of the waterline. */
 function markSvg() {
-  const { size: S, tile, waterline: w, bar, chevron, colours } = MARK;
+  const { size: S, tile, waterline: w, gap, bar, chevron, colours } = MARK;
   const k = (side) => `<rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" rx="${bar.r}" fill="${colours.bar[side]}"/>`
     + `<path d="M${chevron.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${colours.chevron[side]}"/>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}">
 <title>Keel</title>
-<defs><clipPath id="above"><rect width="${S}" height="${w}"/></clipPath><clipPath id="below"><rect y="${w}" width="${S}" height="${S - w}"/></clipPath></defs>
+<defs><clipPath id="above"><rect width="${S}" height="${w}"/></clipPath><clipPath id="below"><rect y="${w + gap}" width="${S}" height="${S - w - gap}"/></clipPath></defs>
 <rect width="${S}" height="${S}" rx="${tile.radius}" fill="${tile.fill}"/>
 <g clip-path="url(#above)">${k('above')}</g>
 <g clip-path="url(#below)">${k('below')}</g>

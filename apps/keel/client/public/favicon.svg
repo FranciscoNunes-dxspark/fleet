@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <title>Keel</title>
-<defs><clipPath id="above"><rect width="64" height="38"/></clipPath><clipPath id="below"><rect y="38" width="64" height="26"/></clipPath></defs>
+<defs><clipPath id="above"><rect width="64" height="37"/></clipPath><clipPath id="below"><rect y="40.5" width="64" height="23.5"/></clipPath></defs>
 <rect width="64" height="64" rx="13" fill="#16181d"/>
 <g clip-path="url(#above)"><rect x="15" y="13" width="9" height="38" rx="2" fill="#ffffff"/><path d="M49 13 L37.5 13 L27 32 L37.5 51 L49 51 L38.5 32 Z" fill="#4c8dff"/></g>
-<g clip-path="url(#below)"><rect x="15" y="13" width="9" height="38" rx="2" fill="#9fb3c8"/><path d="M49 13 L37.5 13 L27 32 L37.5 51 L49 51 L38.5 32 Z" fill="#2c5fb8"/></g>
+<g clip-path="url(#below)"><rect x="15" y="13" width="9" height="38" rx="2" fill="#bec0c2"/><path d="M49 13 L37.5 13 L27 32 L37.5 51 L49 51 L38.5 32 Z" fill="#3d6cc0"/></g>
 </svg>
