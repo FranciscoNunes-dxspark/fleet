@@ -958,11 +958,11 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .ls-main:has(> .loading) { display: flex; flex-direction: column; }
 .ls-main > .loading { flex: 1; }
 
-/* Pinch glances about where a whole page is loading (and while Keel starts); everywhere
-   else, in widgets and panels, a plain spinner keeps it quiet. */
-.loading .pinch { display: none; }
+/* Keel's mark, its cursor blinking, where a whole page is loading (and while Keel starts);
+   everywhere else, in widgets and panels, a plain spinner keeps it quiet. */
+.loading .brand-mark { display: none; }
 .main > .loading, .page > .loading, .boot .loading { flex-direction: column; gap: 14px; }
-.main > .loading .pinch, .page > .loading .pinch, .boot .loading .pinch { display: block; }
+.main > .loading .brand-mark, .page > .loading .brand-mark, .boot .loading .brand-mark { display: block; }
 .main > .loading .spinner, .page > .loading .spinner, .boot .loading .spinner { display: none; }
 .drawer > .loading { position: absolute; inset: 0; pointer-events: none; }
 

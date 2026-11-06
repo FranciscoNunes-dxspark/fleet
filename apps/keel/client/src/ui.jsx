@@ -61,7 +61,7 @@ export function Logo({ size = 28, mood = 'idle', title }) {
   );
 }
 
-/** Pinch on its own, `width` pixels wide, for empty states, loading and errors. */
+/** Pinch on its own, `width` pixels wide, for empty states and errors. */
 export function Pinch({ mood = 'idle', width = 64, title }) {
   return (
     <svg className={`pinch pinch-${mood}`} width={width} height={(width * 10) / 16} viewBox="0 0 16 10" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
@@ -138,9 +138,9 @@ export function TypeLabel({ type, color }) {
 
 export const Chip = ({ tone = 'muted', children, title }) => <span className={`chip chip-${tone}`} title={title}>{children}</span>;
 
-/** A spinner, or a glancing Pinch when it holds a whole page (the CSS picks which). */
+/** A spinner, or Keel's mark with its cursor blinking when it holds a whole page (the CSS picks which). */
 export function Loading({ label = t('Loading…') }) {
-  return <div className="loading" role="status"><Pinch mood="look" width={48} /><span className="spinner" aria-hidden="true" />{label}</div>;
+  return <div className="loading" role="status"><Logo mood="look" size={48} /><span className="spinner" aria-hidden="true" />{label}</div>;
 }
 
 export function ErrorBox({ error, onRetry }) {
