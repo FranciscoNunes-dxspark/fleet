@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@radix-ui/themes';
-import { forecast, paceScale, remainingUnder, MIN_FINISHED } from '../forecast.js';
+import { claudeScale, forecast, paceScale, remainingUnder, MIN_FINISHED } from '../forecast.js';
 import { formatDate } from '../format.js';
 import { Checkbox, Chip, Select, TypeLabel } from '../ui.jsx';
 import { t } from '../i18n.js';
@@ -10,6 +10,9 @@ import { t } from '../i18n.js';
 const RUNS = 2000;
 const SHARES = [1, 0.75, 0.5, 0.25];
 const ADDED = [0, 1, 2, 3];
+// Claude Code: the share of the items left it takes on, and how much faster those go.
+const CLAUDE_SHARES = [0, 0.25, 0.5, 0.75, 1];
+const CLAUDE_SPEEDS = [1.5, 2, 3, 5];
 
 const dayDate = (iso) => formatDate(`${iso}T12:00:00Z`, { day: 'numeric', month: 'short', year: 'numeric' });
 // The row's short form: the year only when it isn't this one.
@@ -46,16 +49,19 @@ function reasonText(f, pace, project) {
 
 /**
  * The forecast in full under its row: the three dates and what they mean, and a what-if (leave
- * items out, a share of the team's pace, people added) that reruns it as you change it.
+ * items out, a share of the team's pace, people added, Claude Code taking on some of the items)
+ * that reruns it as you change it.
  */
 export function ForecastPanel({ node, left, pace, project }) {
   const [excluded, setExcluded] = useState(() => new Set());
   const [share, setShare] = useState(1);
   const [added, setAdded] = useState(0);
-  const scale = paceScale({ share, added, people: pace.people });
+  const [claudeShare, setClaudeShare] = useState(0);
+  const [claudeSpeed, setClaudeSpeed] = useState(2);
+  const scale = paceScale({ share, added, people: pace.people }) * claudeScale({ share: claudeShare, speed: claudeSpeed });
   const remaining = left.filter((w) => !excluded.has(w.id)).length;
   const f = useMemo(() => forecast({ remaining, daily: pace.daily, seed: node.item.id, runs: RUNS, scale }), [remaining, pace, node.item.id, scale]);
-  const changed = excluded.size > 0 || share !== 1 || added !== 0;
+  const changed = excluded.size > 0 || share !== 1 || added !== 0 || claudeShare !== 0;
   const toggle = (id) => setExcluded((s) => {
     const next = new Set(s);
     if (next.has(id)) next.delete(id);
@@ -98,8 +104,29 @@ export function ForecastPanel({ node, left, pace, project }) {
             {ADDED.map((n) => <option key={n} value={String(n)}>{n === 0 ? t('None') : t(n === 1 ? '+{n} person' : '+{n} people', { n })}</option>)}
           </Select>
         </label>
-        {changed && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => { setExcluded(new Set()); setShare(1); setAdded(0); }}>{t('Reset')}</Button>}
+        <label className="field-inline">
+          <span className="small">{t('Claude Code takes on')}</span>
+          <Select className="input" value={String(claudeShare)} onChange={(e) => setClaudeShare(Number(e.target.value))} aria-label={t('Claude Code takes on')}>
+            {CLAUDE_SHARES.map((s) => <option key={s} value={String(s)}>{s === 0 ? t('Nothing more') : s === 1 ? t('Every item') : t('{n}% of the items', { n: Math.round(s * 100) })}</option>)}
+          </Select>
+        </label>
+        {claudeShare > 0 && (
+          <label className="field-inline">
+            <span className="small">{t('Those go')}</span>
+            <Select className="input" value={String(claudeSpeed)} onChange={(e) => setClaudeSpeed(Number(e.target.value))} aria-label={t('How much faster the items Claude Code takes on go')}>
+              {CLAUDE_SPEEDS.map((v) => <option key={v} value={String(v)}>{t('{n}× faster', { n: v })}</option>)}
+            </Select>
+          </label>
+        )}
+        {changed && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => { setExcluded(new Set()); setShare(1); setAdded(0); setClaudeShare(0); setClaudeSpeed(2); }}>{t('Reset')}</Button>}
       </div>
+      {claudeShare > 0 && (
+        <p className="muted small">
+          {t('With Claude Code taking on {share}% of the items at {speed}× the pace, the work goes {gain}% faster overall: the rest still takes the team\'s time. It\'s your estimate, not a measure, and if the team already works with Claude Code, its past pace includes it: count only what it would take on beyond that.', {
+            share: Math.round(claudeShare * 100), speed: claudeSpeed, gain: Math.round((claudeScale({ share: claudeShare, speed: claudeSpeed }) - 1) * 100),
+          })}
+        </p>
+      )}
       {left.length > 0 && (
         <details className="forecast-items">
           <summary className="small">{t('Leave items out ({n} of {total})', { n: excluded.size, total: left.length })}</summary>

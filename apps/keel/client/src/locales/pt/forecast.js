@@ -24,4 +24,12 @@ export default {
   'in {n} days': 'daqui a {n} dias',
   '+{n} person': '+{n} pessoa',
   '+{n} people': '+{n} pessoas',
+  'Claude Code takes on': 'O Claude Code assume',
+  'Nothing more': 'Nada mais',
+  'Every item': 'Todos os itens',
+  '{n}% of the items': '{n}% dos itens',
+  'Those go': 'Esses vão',
+  'How much faster the items Claude Code takes on go': 'Quão mais depressa vão os itens que o Claude Code assume',
+  '{n}× faster': '{n}× mais depressa',
+  "With Claude Code taking on {share}% of the items at {speed}× the pace, the work goes {gain}% faster overall: the rest still takes the team's time. It's your estimate, not a measure, and if the team already works with Claude Code, its past pace includes it: count only what it would take on beyond that.": 'Com o Claude Code a assumir {share}% dos itens a {speed}× o ritmo, o trabalho vai {gain}% mais depressa no total: o resto continua a levar o tempo da equipa. É uma estimativa sua, não uma medida, e se a equipa já trabalha com o Claude Code, o ritmo passado já o inclui: conte só o que ele assumiria além disso.',
 };

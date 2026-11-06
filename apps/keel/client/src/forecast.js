@@ -120,3 +120,15 @@ export function paceScale({ share = 1, added = 0, people = 0 } = {}) {
   const perPerson = people > 0 ? (people + added) / people : 1 + added;
   return Math.max(0, share * perPerson);
 }
+
+/**
+ * How much faster the work goes with Claude Code taking on `share` of the items left (0 to 1),
+ * each of those `speed` times as fast as the team alone: the rest still takes the team's time, so
+ * half the items at twice the speed is 1 / (0.5 + 0.25), a third faster, not twice. An assumption
+ * the person picks, not a measure: the history only knows how fast the team has been.
+ */
+export function claudeScale({ share = 0, speed = 1 } = {}) {
+  if (!(share > 0) || !(speed > 0)) return 1;
+  const s = Math.min(1, share);
+  return 1 / ((1 - s) + s / speed);
+}

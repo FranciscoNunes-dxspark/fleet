@@ -272,6 +272,7 @@ It assumes the whole project's pace goes to this work. The **what-if** under the
 - **Share of the team's pace**: 100%, 75%, 50% or 25%, for a team that works on other things too.
 - **People added**: one to three more, each at the average pace per person over the history (the pace times people plus added, over the people who finished items in it).
 - **Leave items out**: tick items that won't be part of this delivery.
+- **Claude Code takes on**: a share of the items left (25%, 50%, 75% or all of them), and how much faster those go (1.5× to 5×). Only that share speeds up, since the rest still takes the team's time: half the items at twice the speed makes the work a third faster, not twice. It's an estimate you make, not something Keel measures. If the team already works with Claude Code, the past pace includes it, so count only what it would take on beyond that.
 
 With less than 14 days of history or fewer than 5 items finished in it, Keel says there isn't enough to forecast rather than showing a date. The same goes when the work left is far beyond the pace (some runs wouldn't finish within ten years). The forecast is seeded by the item, so its dates hold still between visits until the work or the history changes. The pace comes from `/api/epics/pace`, loaded apart from the tree; the simulation runs in the browser.
 
