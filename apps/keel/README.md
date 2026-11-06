@@ -193,6 +193,29 @@ Teams and area paths are still picked in the web app.
 
 Not in the terminal yet: epics, new pull requests and release notes (**o** takes you to Azure DevOps, or use the web app). Its text is in English only.
 
+### For Claude Code: `keel mcp`
+
+`keel mcp` runs Keel as an [MCP](https://modelcontextprotocol.io) server on stdio, so Claude Code (or any MCP client) can see delivery the way Keel does: why a pull request is stuck, why a pipeline is red and the log lines where it broke, what goes out in the next deploy to production. Add it once:
+
+```bash
+claude mcp add keel -- keel mcp          # keel mcp --demo for the demo organization
+```
+
+It connects the way the terminal app does (through your team's Keel after `keel login`, or straight with Azure DevOps from the `.env`), sees the same tracked projects, and answers in the terminal app's words, as plain text. Every tool only reads: nothing it offers votes, merges, deploys or changes a work item.
+
+| Tool | What it answers |
+|---|---|
+| `line` | The Line: each stage with how many cards it holds and how many are stuck, and its most stuck cards with why and for how long (`stage` for one stage) |
+| `inbox` | The Inbox, ranked, with each item's reasons (`kind` for one kind) |
+| `pull_requests` | Active pull requests, riskiest first, with their review state and risk score (`filter`, `mine`) |
+| `pull_request` | One pull request in full: what it waits on, its risk with every reason, policies, reviewers, work items, files and comments (`id`, and `repo` for a closed one) |
+| `pipelines` | Tracked pipelines, failing first, with pass rate, failures in a row and last green (`failing`, `filter`) |
+| `pipeline_run` | One run in full: stages, jobs and steps, the failed steps' errors and last log lines, tests and commits (`pipeline`; `run` for a recent one, `failed` for the latest red one) |
+| `waiting_to_ship` | Per production environment, what's merged and not deployed: pull requests, direct commits, the work items they deliver, any deploy under way |
+| `production` | Production monitors, those that need you first; with `monitor`, one in full with what's failing most, its deploys and what's waiting to ship to it |
+| `dora` | The four DORA measures against the period before, with how each was counted (`days`, `scope`, `production`) |
+| `work_item` | One work item in full (`id`) |
+
 ## Pull request risk
 
 Every active pull request gets a risk score from 0 to 100: the sum of the reasons below, capped at 100. It's **low** under 30, **medium** from 30 and **high** from 60. The list shows the number (on the web in its own column, and on a phone's card; in the terminal after the pull request's number), and the pull request's panel lists the reasons with the points each adds, biggest first. It's worked out on the Keel server, apart from the list (the first time takes a moment): a pull request's files are read once for each push to it, and its folders' history is the one **Suggested reviewers** reads.
