@@ -20,7 +20,7 @@ function Card({ orgUrl, title, children, onSubmit }) {
   return (
     <div className="signin">
       <form className="signin-card" onSubmit={onSubmit}>
-        <div className="signin-pinch">
+        <div className="signin-brand">
           <Logo size={72} />
           <div>
             <div className="brand-name">Keel</div>

@@ -211,10 +211,9 @@ export default {
   'Opens Claude with this item as the prompt. Nothing runs until you press Enter. If nothing opens: for the CLI, send one prompt in an interactive {cmd} session first; for Desktop, install Claude Desktop.': 'Abre o Claude com este item como prompt. Nada corre até premir Enter. Se nada abrir: para a CLI, envie primeiro um prompt numa sessão interativa do {cmd}; para o Desktop, instale o Claude Desktop.',
   'Expand menu': 'Expandir menu',
   'Collapse menu': 'Recolher menu',
-  // Pinch, the crab (ui.jsx, Dashboard, Inbox, NotFound)
+  // The logo's tooltip (ui.jsx statusLine) and the install banner (line/InstallBanner.jsx)
   "Can't reach Azure DevOps: {error}": 'Não é possível ligar ao Azure DevOps: {error}',
   'Checking Azure DevOps…': 'A verificar o Azure DevOps…',
-  'Nothing needs you, so Pinch is having a nap.': 'Nada precisa de si, por isso o Pinch está a fazer uma sesta.',
   'Keeping an eye on Azure DevOps.': 'A vigiar o Azure DevOps.',
   'Install Keel': 'Instalar o Keel',
   Install: 'Instalar',

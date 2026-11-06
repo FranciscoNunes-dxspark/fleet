@@ -1,6 +1,6 @@
-// Pinch, Keel's crab. One pixel drawing feeds the web app's empty states, the terminal app's icon
-// and assets/ (scripts/logo.mjs) and its pet (cli/), the same way Tiller's otter and Trawl's anglerfish do.
-// The web app's logo, favicon and app icons are the mark in mark.js instead.
+// Pinch, Keel's crab: the terminal app's pet (cli/) and its icon and assets/ (scripts/logo.mjs), the
+// same way Tiller's otter and Trawl's anglerfish do. The web app doesn't show it: its logo, favicon
+// and app icons are the mark in mark.js.
 // A crab sees all around it without turning its head, which is roughly what a console does.
 
 export const PALETTE = {
@@ -42,16 +42,4 @@ const MOODS = {
 export function pinchPixels(mood = 'idle') {
   const over = MOODS[mood] ?? {};
   return BASE.map((row, i) => over[i] ?? row);
-}
-
-/**
- * How Pinch looks in the web app: worried while Azure DevOps answers the live checks with an
- * error, glancing about during a refresh, asleep when nothing needs you, and otherwise watching.
- * (Losing the connection to Keel's own server is the live badge's to show, not a worry.)
- */
-export function pinchMood({ attention, live, busy } = {}) {
-  if (live?.connected && live.ok === false && live.error) return 'worried';
-  if (busy) return 'look';
-  if (attention && !attention.items?.length) return 'sleep';
-  return 'idle';
 }
