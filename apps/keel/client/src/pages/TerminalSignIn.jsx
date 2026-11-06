@@ -98,7 +98,7 @@ export default function TerminalSignIn() {
   return (
     <div className="signin terminal-signin">
       <div className="signin-card">
-        <div className="signin-pinch">
+        <div className="signin-brand">
           <Logo size={56} />
         </div>
         {body}

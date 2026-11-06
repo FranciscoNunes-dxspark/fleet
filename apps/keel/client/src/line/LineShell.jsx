@@ -12,7 +12,7 @@ import { Avatar, Logo, Tip, statusLine, useMedia } from '../ui.jsx';
 import { useSticky } from '../sticky.js';
 import { isHomeable, saveHome } from '../home.js';
 import { Icon } from '../icons.jsx';
-import { pinchMood } from '../pinch.js';
+import { logoMood } from '../mark.js';
 import { t, tj, tx } from '../i18n.js';
 import { updateNow, useNewVersion } from '../version.js';
 import InstallBanner from './InstallBanner.jsx';
@@ -89,8 +89,8 @@ export default function LineShell({ children }) {
   useEffect(() => {
     document.title = s?.high ? `(${s.high}) Keel` : 'Keel';
   }, [s?.high]);
-  // Pinch in the corner reacts to what Keel sees, and says why on hover.
-  const mood = pinchMood({ attention: attention.data, live, busy: spinning });
+  // The logo in the corner reacts to what Keel sees, and says why on hover.
+  const mood = logoMood({ attention: attention.data, live, busy: spinning });
 
   const home = pathname === '/line';
   const here = stageOfPath(pathname);

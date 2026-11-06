@@ -58,7 +58,7 @@ export default function DevOpsSecurity() {
         </div>
       )}
       {!data.projects.length && <Empty title={t('No tracked Azure DevOps projects')} />}
-      {data.projects.length > 0 && !data.findings.length && <Empty title={t("Nothing found: these projects pass every check Keel makes.")} mood="nap" />}
+      {data.projects.length > 0 && !data.findings.length && <Empty title={t("Nothing found: these projects pass every check Keel makes.")} />}
       {shown.length > 0 && (
         <div className="table-wrap">
           <table className="table">

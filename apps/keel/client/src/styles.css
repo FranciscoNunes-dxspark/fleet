@@ -144,7 +144,7 @@
 :root[data-accent='teal'] { --accent: #2ec4c4; --accent-soft: #123131; --accent-ink: #72dede; --on-accent: #041a1a; }
 :root[data-accent='magenta'] { --accent: #d96bd0; --accent-soft: #351d33; --accent-ink: #eaa1e4; --on-accent: #22061f; }
 :root[data-accent='coral'] { --accent: #f5826b; --accent-soft: #3a211c; --accent-ink: #f9b2a3; --on-accent: #2a0d07; }
-/* Sand: Pinch's pale shell rim, toned down, for a quieter accent that still sits with the logo.
+/* Sand: a pale warm tone, toned down, for a quieter accent.
    Leans pink rather than yellow so it stays apart from the warning amber. */
 :root[data-accent='sand'] { --accent: #dbab96; --accent-soft: #30231f; --accent-ink: #ecc9b9; --on-accent: #2b150e; }
 :root[data-mode='light'][data-accent='green'] { --accent: #187a4c; --accent-soft: #e1f3e9; --accent-ink: #146a42; --on-accent: #ffffff; }
@@ -192,13 +192,6 @@ button { font: inherit; color: inherit; }
 .brand-mark-look .mark-cursor { animation: mark-blink 1s steps(1) infinite; }
 .brand-mark .mark-alert { fill: var(--bad); }
 @keyframes mark-blink { 50% { opacity: 0.25; } }
-/* Pinch, Keel's crab (pinch.js): pixel art with sharp edges, drawn at whole multiples of its 16 pixels. */
-.pinch { flex: none; display: block; shape-rendering: crispEdges; }
-.pinch-frame-b { opacity: 0; animation: pinch-glance-b 0.9s linear infinite; }
-.pinch-frame-a { animation: pinch-glance-a 0.9s linear infinite; }
-
-@keyframes pinch-glance-a { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
-@keyframes pinch-glance-b { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
 
 .icon { flex: none; display: block; }
 
@@ -474,9 +467,8 @@ tr.saving { opacity: 0.55; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; display: inline-block; }
 .error-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px; margin: 12px 0; border-radius: var(--radius); background: var(--bad-soft); color: var(--bad); }
 .empty { padding: 44px 16px; text-align: center; border: 1px dashed var(--line-strong); border-style: solid; border-radius: 0; background: none; border-width: 1px 0; }
-.empty .pinch { margin: 0 auto 14px; }
 .not-found { display: grid; justify-items: center; gap: 12px; text-align: center; padding-top: 12vh; }
-.not-found .pinch { margin-bottom: 8px; }
+.not-found .brand-mark { margin-bottom: 8px; }
 .not-found p { margin: 0; max-width: 52ch; }
 .empty-title { font-weight: 600; margin: 0 0 4px; font-family: var(--display); font-size: var(--text-xl); }
 .empty-body { color: var(--muted); }
@@ -934,10 +926,10 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .brand { display: flex; gap: 10px; align-items: center; padding: 0 8px; }
 .brand-name { font-weight: 600; }
 .brand-org { font-size: var(--text-sm); color: var(--muted); max-width: 160px; }
-.signin-pinch .brand-name { font-size: var(--text-xl); }
-.signin-pinch .brand-org { max-width: none; }
+.signin-brand .brand-name { font-size: var(--text-xl); }
+.signin-brand .brand-org { max-width: none; }
 
-.signin-pinch { display: grid; justify-items: center; gap: 10px; text-align: center; padding-bottom: 4px; }
+.signin-brand { display: grid; justify-items: center; gap: 10px; text-align: center; padding-bottom: 4px; }
 
 .signin-card h1 { font-size: var(--text-3xl); margin-top: 6px; }
 .signin-lead { margin: 0; color: var(--ink-2); }
@@ -958,11 +950,11 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .ls-main:has(> .loading) { display: flex; flex-direction: column; }
 .ls-main > .loading { flex: 1; }
 
-/* Pinch glances about where a whole page is loading (and while Keel starts); everywhere
-   else, in widgets and panels, a plain spinner keeps it quiet. */
-.loading .pinch { display: none; }
+/* Keel's mark, its cursor blinking, where a whole page is loading (and while Keel starts);
+   everywhere else, in widgets and panels, a plain spinner keeps it quiet. */
+.loading .brand-mark { display: none; }
 .main > .loading, .page > .loading, .boot .loading { flex-direction: column; gap: 14px; }
-.main > .loading .pinch, .page > .loading .pinch, .boot .loading .pinch { display: block; }
+.main > .loading .brand-mark, .page > .loading .brand-mark, .boot .loading .brand-mark { display: block; }
 .main > .loading .spinner, .page > .loading .spinner, .boot .loading .spinner { display: none; }
 .drawer > .loading { position: absolute; inset: 0; pointer-events: none; }
 

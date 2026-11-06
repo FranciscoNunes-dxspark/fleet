@@ -10,31 +10,13 @@ import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
 import { Icon } from './icons.jsx';
 import { stageName, stageOfPath } from './line/names.js';
-import { PALETTE, pinchPixels } from './pinch.js';
 import { MARK } from './mark.js';
-
-// One rect per run of same-coloured pixels, for each mood. Built once each: the drawing never changes.
-const RUNS = {};
-const pinchRuns = (mood) => (RUNS[mood] ??= pinchPixels(mood).flatMap((row, y) =>
-  [...row.matchAll(/([^.])\1*/g)].map((m) => ({ x: m.index, y, w: m[0].length, fill: PALETTE[m[1]] }))));
-
-/** Pinch's pixels at (dx, dy). "look" glances from side to side: two frames swapped by CSS, a still one with reduced motion. */
-function PinchPixels({ mood, dx = 0, dy = 0 }) {
-  const rects = (m) => pinchRuns(m).map((r) => <rect key={`${r.x},${r.y}`} x={r.x + dx} y={r.y + dy} width={r.w} height="1.02" fill={r.fill} />);
-  if (mood !== 'look') return rects(mood);
-  return (
-    <>
-      <g className="pinch-frame-a">{rects('look')}</g>
-      <g className="pinch-frame-b">{rects('idle')}</g>
-    </>
-  );
-}
 
 const CHEVRON = `M${MARK.chevron.map(([x, y]) => `${x} ${y}`).join(' L')} Z`;
 
 /**
  * Keel's mark (mark.js, the same drawing as public/favicon.svg): the prompt and its cursor, cut at the
- * waterline. `mood` (pinchMood) shows on it: the cursor blinks while Keel checks Azure DevOps, and a red
+ * waterline. `mood` (mark.js logoMood) shows on it: the cursor blinks while Keel checks Azure DevOps, and a red
  * dot shows when it can't reach it.
  */
 export function Logo({ size = 28, mood = 'idle', title }) {
@@ -61,17 +43,7 @@ export function Logo({ size = 28, mood = 'idle', title }) {
   );
 }
 
-/** Pinch on its own, `width` pixels wide, for empty states, loading and errors. */
-export function Pinch({ mood = 'idle', width = 64, title }) {
-  return (
-    <svg className={`pinch pinch-${mood}`} width={width} height={(width * 10) / 16} viewBox="0 0 16 10" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
-      {title && <title>{title}</title>}
-      <PinchPixels mood={mood} />
-    </svg>
-  );
-}
-
-/** What the logo's mood (see pinchMood) means, for its tooltip. */
+/** What the logo's mood (mark.js logoMood) means, for its tooltip. */
 export function statusLine(mood, { attention, live } = {}) {
   if (mood === 'worried') return t("Can't reach Azure DevOps: {error}", { error: tx(live?.error || '') });
   if (mood === 'look') return t('Checking Azure DevOps…');
@@ -138,27 +110,25 @@ export function TypeLabel({ type, color }) {
 
 export const Chip = ({ tone = 'muted', children, title }) => <span className={`chip chip-${tone}`} title={title}>{children}</span>;
 
-/** A spinner, or a glancing Pinch when it holds a whole page (the CSS picks which). */
+/** A spinner, or Keel's mark with its cursor blinking when it holds a whole page (the CSS picks which). */
 export function Loading({ label = t('Loading…') }) {
-  return <div className="loading" role="status"><Pinch mood="look" width={48} /><span className="spinner" aria-hidden="true" />{label}</div>;
+  return <div className="loading" role="status"><Logo mood="look" size={48} /><span className="spinner" aria-hidden="true" />{label}</div>;
 }
 
 export function ErrorBox({ error, onRetry }) {
   if (!error) return null;
   return (
     <div className="error-box" role="alert">
-      <Pinch mood="worried" width={32} />
       <strong>{t("Couldn't load this view.")}</strong> {error.message}
       {onRetry && <Button size="1" variant="outline" color="gray" type="button" onClick={onRetry}>{t('Try again')}</Button>}
     </div>
   );
 }
 
-/** An empty list's message; `mood` adds Pinch above it (asleep on Inbox zero). */
-export function Empty({ title, mood, children }) {
+/** An empty list's message. */
+export function Empty({ title, children }) {
   return (
     <div className="empty">
-      {mood && <Pinch mood={mood} width={64} />}
       <p className="empty-title">{title}</p>
       {children && <div className="empty-body">{children}</div>}
     </div>

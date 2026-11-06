@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/pinch.svg" width="128" alt="Pinch, the Keel crab"></p>
+<p align="center"><img src="client/public/favicon.svg" width="128" alt="Keel"></p>
 
 # Keel
 
@@ -580,7 +580,7 @@ Teammates create their own token from the "How to create a token" steps shown af
 
 **Settings → Appearance** sets the color mode (System, Dark or Light) and an accent color (Green, Blue, Violet, Teal, Magenta, Coral or Sand). The choice is saved in your browser, and with sign-in it also follows your account to other devices.
 
-**Pinch,** the crab in Keel's logo, shows how things are. In the top bar's corner it watches; it looks worried while Azure DevOps answers Keel's live checks with an error, glances about during a refresh, and naps when your Inbox is empty (hover over the logo for what it means). It also glances about while a whole page loads, sits worried by error messages, and appears on the sign-in screen and on a "There's no page here" page for an address Keel doesn't have (which used to go home instead). With reduced motion turned on in your system, it keeps still.
+**The logo** shows how things are. In the top bar's corner its cursor blinks while Keel checks Azure DevOps, and a red dot appears while Azure DevOps answers Keel's live checks with an error (hover over the logo for what it means). It also blinks while a whole page loads. With reduced motion turned on in your system, it keeps still.
 
 **Language:** English or Português (Portugal), in the same place. It follows your account like the theme; the first visit uses the browser's language. Text from Azure DevOps (titles, names, states, board columns) is shown as it is there. Translations live in `client/src/locales/pt/`, keyed by the English text; text the server sends is matched by templates in `server.js` there.
 
