@@ -1271,6 +1271,11 @@ a.stage:hover { text-decoration: none; border-color: var(--line-strong); }
 .risk-score { display: inline-block; min-width: 3.2ch; text-align: center; font-variant-numeric: tabular-nums; }
 .risk-reasons ul { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; }
 .risk-points { display: inline-block; min-width: 3.5ch; text-align: right; }
+/* A release's go / no-go: its verdict as a chip, and the reasons behind it, under Waiting to ship's facts and an approval. */
+.readiness { margin: 0 0 10px; }
+.readiness > summary { cursor: pointer; }
+.readiness-title { font-weight: 600; }
+.readiness-reasons { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; }
 /* DORA: what production is and the failure window, in one line above the measures. */
 .dora-form { align-items: center; }
 .dora-form label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }

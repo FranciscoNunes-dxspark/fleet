@@ -309,6 +309,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
   )));
   // What's merged but not deployed yet, per production environment.
   r.get('/deploys/pending', async (req, res) => res.json(await req.ctx.service.undeployed()));
+  // Go / no-go for what's waiting, per production environment and per pending approval (kept apart: it takes longer).
+  r.get('/deploys/readiness', async (req, res) => res.json(await req.ctx.service.readiness()));
   r.get('/delivery', async (req, res) => res.json(await req.ctx.service.delivery(Math.min(90, Math.max(7, Number(req.query.days) || 30)))));
   // DORA per project and team: 30 or 90 days against the period before; ?production= names override the settings'.
   r.get('/dora', async (req, res) => {

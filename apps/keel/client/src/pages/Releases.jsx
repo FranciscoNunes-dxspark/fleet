@@ -7,6 +7,7 @@ import { t } from '../i18n.js';
 import { approvalPath } from '../orgs.js';
 import { Button, TextField } from '@radix-ui/themes';
 import { Select } from '../ui.jsx';
+import { Readiness, useReadiness } from '../readiness.jsx';
 
 const HEALTH = {
   failing: { tone: 'bad', label: 'Failing' },
@@ -33,6 +34,8 @@ export function ApprovalsPanel({ approvals }) {
   const [comments, setComments] = useState({});
   const [busy, setBusy] = useState(null);
   const mine = approvals.filter((a) => a.canDecide && canDecide);
+  // The go / no-go of the production environment each one deploys to, beside Approve.
+  const readiness = useReadiness(approvals.length > 0);
 
   const decide = async (a, status) => {
     setBusy(a.key);
@@ -70,6 +73,7 @@ export function ApprovalsPanel({ approvals }) {
                 {a.minRequired > 1 && <> · {t('needs {n}', { n: a.minRequired })}</>}
               </div>
               {a.instructions && <p className="approval-instructions small">“{a.instructions}”</p>}
+              <Readiness r={readiness.ofApproval(a)} forName={readiness.ofApproval(a)?.name} />
             </div>
             {a.canDecide && canDecide ? (
               <div className="approval-actions">

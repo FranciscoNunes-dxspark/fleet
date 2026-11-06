@@ -210,6 +210,13 @@ export function createMultiService(entries) {
     async undeployed() {
       return { targets: (await each((s) => s.undeployed())).flatMap(({ org, value }) => tagAll(org, value.targets)) };
     },
+    async readiness() {
+      const parts = await each((s) => s.readiness());
+      return {
+        targets: parts.flatMap(({ org, value }) => tagAll(org, value.targets)),
+        approvals: parts.flatMap(({ org, value }) => tagAll(org, value.approvals)),
+      };
+    },
 
     /** Delivery metrics computed once over every organization's production environments. */
     async delivery(days) {
