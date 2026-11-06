@@ -25,6 +25,7 @@ import { changedFolders, suggestReviewers } from './domain/reviewers.js';
 import { findFlakyTests } from './domain/tests.js';
 import { scorePr } from './domain/risk.js';
 import { approvalTarget, judgeReadiness } from './domain/readiness.js';
+import { incidentStart, incidentTimeline, lastGoodDeploy, redeployPlan, suspectDeploys } from './domain/incident.js';
 import { buildDiff, parsePatch } from './domain/filediff.js';
 import { DEFAULT_MIN_SEVERITY, MIN_SEVERITIES, advisoryAttention, pickLockFiles, sortAdvisories } from './domain/advisories.js';
 import { eachLimited } from '@fleet/kit/osv.js';
@@ -391,6 +392,23 @@ export function createService({
   }
   const pipelineKeys = (links) => new Set(links.filter((l) => l?.type === 'pipeline').map((l) => `${l.projectId}:${l.definitionId}`));
 
+  /**
+   * One pull request's risk (domain/risk.js): its files (read once per pushed commit), the history of
+   * its busiest folders on the branch it goes into, and its required reviewers. Active pull requests
+   * (prRisks) and merged ones (what an incident's suspect deploy shipped) alike.
+   */
+  async function riskOf(pr) {
+    const since = new Date(Date.now() - RISK_HISTORY_DAYS * DAY).toISOString();
+    const files = await cached(`prfiles:${pr.key}:${pr.sourceCommit || ''}`, () => provider.getPullRequestFiles(pr.projectId, pr.repoId, pr.id), 24 * 60 * MIN)
+      .then((f) => (f.error ? null : f.items), () => null);
+    const folders = files ? changedFolders(files.map((f) => f.path), RISK_FOLDERS) : [];
+    const history = await Promise.all(folders.map(async (f) => ({
+      dir: f.dir,
+      commits: await cached(`history:${pr.repoId}:${pr.targetBranch || ''}:${f.dir}`, () => provider.listCommits(pr.projectId, pr.repoId, { branch: pr.targetBranch || undefined, path: f.dir, since, top: 100 }), 30 * MIN).catch(() => []),
+    })));
+    return { key: pr.key, projectId: pr.projectId, repoId: pr.repoId, id: pr.id, ...scorePr({ pr, files, history, historyDays: RISK_HISTORY_DAYS }) };
+  }
+
   /** Production monitors with their deploy markers and health verdict. */
   async function production() {
     if (!monitoring) return [];
@@ -687,22 +705,6 @@ export function createService({
       changes.push({ kind: 'commit', id: c.id, firstCommitAt: c.author?.date || null, author: { displayName: c.author?.name || '', email: c.author?.email || '' } });
     }
     return changes;
-  }
-
-  /**
-   * One pull request's risk (domain/risk.js): its files, cached per source commit, and the history of
-   * its busiest folders on the branch it targets. Active and merged ones alike.
-   */
-  async function riskOf(pr) {
-    const since = new Date(Date.now() - RISK_HISTORY_DAYS * DAY).toISOString();
-    const files = await cached(`prfiles:${pr.key}:${pr.sourceCommit || ''}`, () => provider.getPullRequestFiles(pr.projectId, pr.repoId, pr.id), 24 * 60 * MIN)
-      .then((f) => (f.error ? null : f.items), () => null);
-    const folders = files ? changedFolders(files.map((f) => f.path), RISK_FOLDERS) : [];
-    const history = await Promise.all(folders.map(async (f) => ({
-      dir: f.dir,
-      commits: await cached(`history:${pr.repoId}:${pr.targetBranch || ''}:${f.dir}`, () => provider.listCommits(pr.projectId, pr.repoId, { branch: pr.targetBranch || undefined, path: f.dir, since, top: 100 }), 30 * MIN).catch(() => []),
-    })));
-    return scorePr({ pr, files, history, historyDays: RISK_HISTORY_DAYS });
   }
 
   /** Pending approvals from classic releases and YAML environment checks, in one list. */
@@ -1435,8 +1437,7 @@ export function createService({
     async prRisks() {
       return cached('prs:risk', async () => {
         const prs = await activePRs();
-        const risks = await Promise.all(prs.map(async (pr) => ({ key: pr.key, projectId: pr.projectId, repoId: pr.repoId, id: pr.id, ...(await riskOf(pr)) })));
-        return { risks };
+        return { risks: await Promise.all(prs.map(riskOf)) };
       }, 5 * MIN);
     },
 
@@ -1772,6 +1773,48 @@ export function createService({
 
     async production() {
       return { enabled: !!monitoring, monitors: await production() };
+    },
+
+    /**
+     * What broke production: for a monitor that's down or degraded, when it turned bad, the deploys into
+     * its environment just before (domain/incident.js), what the latest of them shipped with each pull
+     * request's risk, who approved them, the timeline, and how to go back to the last good release.
+     * A monitor that's fine answers `active: false`; one not linked to what deploys it, `unlinked`.
+     */
+    async incident(monitorId) {
+      const m = (await production()).find((x) => x.id === monitorId);
+      if (!m) throw Object.assign(new Error('No such monitor.'), { status: 404 });
+      const now = Date.now();
+      const start = incidentStart(m, now);
+      const head = { monitor: { id: m.id, name: m.name, url: m.url || null, state: m.state, issues: m.issues, start }, at: new Date(now).toISOString() };
+      if (!start) return { ...head, active: false };
+      const target = m.link ? (await productionTargets()).find((x) => x.key === m.targetKey) : null;
+      if (!target) return { ...head, active: true, unlinked: true, suspects: [], timeline: incidentTimeline({ monitor: m, start, now }) };
+      const history = await deployHistory(target, 90);
+      const found = suspectDeploys(history, start);
+      const lastGood = lastGoodDeploy(history, start, found);
+      const [changes, approvals, defs] = await Promise.all([
+        found[0] ? this.deployChanges(target.projectId, target.key, found[0].id).catch(() => null) : null,
+        Promise.all(found.map((d) => provider.getDeployApprovals(target, d.id).catch(() => []))),
+        target.type === 'release' ? releases().catch(() => []) : [],
+      ]);
+      const suspects = found.map((d, i) => ({ id: d.id, label: d.label, at: d.at, startedAt: d.startedAt || null, status: d.status, by: d.by || null, webUrl: d.webUrl || null, gapMs: d.gapMs, approvals: approvals[i] }));
+      // Each pull request the latest suspect shipped, with its risk as it was read for its review.
+      const pullRequests = await Promise.all((changes?.pullRequests || []).slice(0, 10).map(async (p) => {
+        const pr = await cached(`pr:${p.projectId}/${p.repoId}/${p.id}`, () => provider.getPullRequest(p.projectId, p.repoId, p.id), 30 * MIN).catch(() => null);
+        const risk = pr ? await riskOf({ ...pr, key: pr.key || `${p.projectId}/${p.repoId}/${p.id}` }).catch(() => null) : null;
+        return { ...p, risk: risk ? { score: risk.score, level: risk.level, reasons: risk.reasons } : null };
+      }));
+      return {
+        ...head,
+        active: true,
+        environment: { key: target.key, name: target.name, type: target.type, projectId: target.projectId, projectName: target.projectName },
+        suspects,
+        shipped: changes ? { deployId: found[0].id, pullRequests, workItems: changes.workItems || [], directCommits: changes.directCommits || [], authors: changes.authors || [], unknown: !!changes.unknown, partial: !!changes.partial } : null,
+        lastGood: lastGood ? { id: lastGood.id, label: lastGood.label, at: lastGood.at, webUrl: lastGood.webUrl || null } : null,
+        redeploy: redeployPlan(target, lastGood, defs),
+        timeline: incidentTimeline({ monitor: m, start, suspects, pullRequests, env: target.name, now }),
+      };
     },
 
     monitors: () => {

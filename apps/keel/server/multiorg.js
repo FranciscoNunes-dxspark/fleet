@@ -398,6 +398,7 @@ export function createMultiService(entries) {
 
     // Production monitors are shared by the server; the primary organization owns them.
     production: () => primary.service.production(),
+    incident: (id) => primary.service.incident(id),
     monitors: () => primary.service.monitors(),
     platformTotals: () => primary.service.platformTotals(),
     platformTotalsFor: (id) => primary.service.platformTotalsFor(id),

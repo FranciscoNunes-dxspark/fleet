@@ -24,6 +24,7 @@ const PipelineDetail = lazy(() => import('./pages/PipelineDetail.jsx'));
 const Commits = lazy(() => import('./pages/Commits.jsx'));
 const CommitDetail = lazy(() => import('./pages/CommitDetail.jsx'));
 const DeployDetail = lazy(() => import('./pages/DeployDetail.jsx'));
+const IncidentDetail = lazy(() => import('./pages/IncidentDetail.jsx'));
 const Summary = lazy(() => import('./pages/Summary.jsx'));
 const NewWorkItem = lazy(() => import('./pages/NewWorkItem.jsx'));
 const NewPr = lazy(() => import('./pages/NewPr.jsx'));
@@ -352,6 +353,7 @@ function Console({ authMode, onSignedOut }) {
         {drawer?.type === 'pipeline' && <PipelineDetail key={`${drawer.key}:${drawer.buildId || ''}`} target={drawer} />}
         {drawer?.type === 'commit' && <CommitDetail key={`${drawer.repoId}:${drawer.id}`} target={drawer} />}
         {drawer?.type === 'deploy' && <DeployDetail key={`${drawer.target}:${drawer.id}`} target={drawer} />}
+        {drawer?.type === 'incident' && <IncidentDetail key={drawer.id} target={drawer} />}
         {drawer?.type === 'newpr' && <NewPr key={JSON.stringify(drawer)} preset={drawer} />}
         {drawer?.type === 'newworkitem' && <NewWorkItem key={JSON.stringify(drawer)} preset={drawer} />}
         </Suspense>

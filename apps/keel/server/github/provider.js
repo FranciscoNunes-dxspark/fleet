@@ -526,6 +526,15 @@ export function createGithubProvider({ org, token, client } = {}) {
         }));
     },
 
+    /** Who reviewed a run's deployment to an environment (GitHub doesn't say when). */
+    async getDeployApprovals(target, deployId) {
+      if (target.type !== 'pipeline') return [];
+      const repo = await runRepo(deployId);
+      const list = await api(`${repoPath(repo)}/actions/runs/${Number(deployId)}/approvals`).catch(() => []);
+      return (list || []).filter((a) => a.state === 'approved' || a.state === 'rejected')
+        .map((a) => ({ by: a.user?.login || null, at: null, status: a.state, comment: a.comment || null }));
+    },
+
     /** Environment reviews waiting on someone, from the project's running runs. */
     async listPipelineApprovals(_projectId, _projectName, runningBuilds = []) {
       const lists = await Promise.all(runningBuilds.filter((b) => b.repoId).map((b) => api(`${repoPath(b.repoId)}/actions/runs/${b.id}/pending_deployments`)

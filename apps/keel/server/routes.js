@@ -246,6 +246,8 @@ export function apiRouter({ channels = null, push = null, schedules = null } = {
     fresh: req.query.fresh === '1',
   })));
   r.get('/production', async (req, res) => res.json(await req.ctx.service.production()));
+  // What broke production: one down or degraded monitor's incident (domain/incident.js).
+  r.get('/production/incident/:id', async (req, res) => res.json(await req.ctx.service.incident(req.params.id)));
   r.get('/production/monitors', (req, res) => res.json(req.ctx.service.monitors().list()));
   r.put('/production/monitors', need('monitors.manage'), async (req, res) => {
     const saved = await req.ctx.service.monitors().save(req.body?.monitors);

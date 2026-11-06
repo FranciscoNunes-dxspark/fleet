@@ -259,10 +259,11 @@ export function Card({ card, onOpen, drawer, typeColor }) {
 /**
  * What can be done right from a card, without opening it: decide an approval waiting on you,
  * approve a pull request waiting on your review, turn on auto-complete for an approved one, run a
- * red pipeline again. Each only where your role allows it; the rest open the card as before.
+ * red pipeline again, see what broke a production app that is down or degraded. Each only where
+ * your role allows it; the rest open the card as before.
  */
 function CardActions({ card }) {
-  const { can, refresh, toast } = useApp();
+  const { can, refresh, toast, openDrawer } = useApp();
   const [busy, setBusy] = useState(false);
   const run = async (path, body, done) => {
     setBusy(true);
@@ -291,6 +292,9 @@ function CardActions({ card }) {
   }
   if (pr && card.reviewState === 'approved' && !card.autoComplete && !card.draft && can('prs.write')) {
     actions.push(<Button size="1" variant="outline" color="gray" key="auto" type="button" disabled={busy} onClick={() => run(prPath, { type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</Button>);
+  }
+  if (card.incident) {
+    actions.push(<Button size="1" variant="solid" color="red" key="incident" type="button" onClick={() => openDrawer({ type: 'incident', id: card.incident })}>{t('What broke?')}</Button>);
   }
   if (card.rerun && can('pipelines.run')) {
     const { branch } = card.rerun;
