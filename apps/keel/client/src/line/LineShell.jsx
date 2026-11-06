@@ -8,13 +8,14 @@ import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMem
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { Avatar, Logo, Tip, pinchLine, useMedia } from '../ui.jsx';
+import { Avatar, Logo, Tip, statusLine, useMedia } from '../ui.jsx';
 import { useSticky } from '../sticky.js';
 import { isHomeable, saveHome } from '../home.js';
 import { Icon } from '../icons.jsx';
 import { pinchMood } from '../pinch.js';
 import { t, tj, tx } from '../i18n.js';
 import { updateNow, useNewVersion } from '../version.js';
+import InstallBanner from './InstallBanner.jsx';
 import { STAGES, trackTones } from './stages.js';
 import { stageHint, stageName, stageOfPath, stagePages } from './names.js';
 import './line.css';
@@ -125,7 +126,7 @@ export default function LineShell({ children }) {
         <div className="ls-body">
           <header className="line-top">
             {/* Wide screens have Keel at the top of the sidebar instead. */}
-            {phone && <Link to="/" className="line-brand" title={pinchLine(mood, { attention: attention.data, live })}>
+            {phone && <Link to="/" className="line-brand" title={statusLine(mood, { attention: attention.data, live })}>
               <Logo mood={mood} size={30} />
               <span className="line-brand-text">
                 <strong>Keel</strong>
@@ -163,6 +164,7 @@ export default function LineShell({ children }) {
               <Button size="1" variant="solid" type="button" onClick={updateNow}>{t('Update')}</Button>
             </div>
           )}
+          <InstallBanner />
           {meta.mock && !demoHidden && (
             <div className="demo-banner demo-banner-mock">
               <span className="demo-banner-text">
@@ -340,7 +342,7 @@ function Dock({ section, sectionTo, summary: s, mood, attention, spinning, setSp
   return (
     <nav className="sb" aria-label={t('Main')}>
       <div className="sb-brand">
-        <Link to="/" className="sb-logo" title={pinchLine(mood, { attention, live })}><Logo mood={mood} size={30} /></Link>
+        <Link to="/" className="sb-logo" title={statusLine(mood, { attention, live })}><Logo mood={mood} size={30} /></Link>
         <div className="sb-name">
           <Text as="div" size="3" weight="bold" className="sb-title">Keel</Text>
           <Text as="div" size="1" color="gray" truncate title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>{org}</Text>

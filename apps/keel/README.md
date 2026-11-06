@@ -373,7 +373,7 @@ Notifications show as pop-ups in the console. Desktop notifications are optional
 
 ### Install as an app, with push notifications
 
-Keel can be installed on a phone or computer like an app, with its own icon, opening full screen:
+Keel can be installed on a phone or computer like an app, with its own icon, opening full screen. Until it is, a banner in the bottom corner offers it: **Install** where the browser can install it (Chrome and Edge on a computer, Android), or the steps where it can't (Safari on iPhone, iPad and Mac). **Not now** hides it in that browser for a month, and it never shows inside the installed app.
 - **Android, Chrome or Edge:** **Install Keel as an app** in **Settings → Notifications**, or "Install app" / "Add to Home screen" in the browser menu.
 - **iPhone and iPad (iOS 16.4 or later):** in Safari, tap **Share → Add to Home Screen**, then open Keel from the Home Screen.
 

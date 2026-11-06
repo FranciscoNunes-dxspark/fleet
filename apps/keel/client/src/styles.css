@@ -188,6 +188,10 @@ button { font: inherit; color: inherit; }
 /* ---------------------------------------------------------------- shell */
 
 .brand-mark { flex: none; display: block; border-radius: var(--radius-sm); }
+/* The logo's moods (ui.jsx Logo): the cursor blinks while Keel checks, a red dot when it can't reach Azure DevOps. */
+.brand-mark-look .mark-cursor { animation: mark-blink 1s steps(1) infinite; }
+.brand-mark .mark-alert { fill: var(--bad); }
+@keyframes mark-blink { 50% { opacity: 0.25; } }
 /* Pinch, Keel's crab (pinch.js): pixel art with sharp edges, drawn at whole multiples of its 16 pixels. */
 .pinch { flex: none; display: block; shape-rendering: crispEdges; }
 .pinch-frame-b { opacity: 0; animation: pinch-glance-b 0.9s linear infinite; }
@@ -240,6 +244,16 @@ button { font: inherit; color: inherit; }
   padding: 8px 10px 8px 16px; border: 1px solid var(--accent); border-radius: var(--radius);
   background: var(--surface); color: var(--ink); font-size: var(--text-md); box-shadow: var(--shadow-pop);
 }
+.install-banner {
+  position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 55;
+  display: flex; align-items: center; gap: 12px; max-width: min(460px, calc(100vw - 32px));
+  padding: 12px 12px 12px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); font-size: var(--text-sm); box-shadow: var(--shadow-pop);
+}
+.install-banner-text { flex: 1; min-width: 0; line-height: 1.4; }
+.install-banner-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; flex: none; }
+/* Phones: across the bottom, above the tab bar. */
+@media (max-width: 900px) { .install-banner { left: 12px; right: 12px; max-width: none; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); } }
 .page-header { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; position: sticky; top: 0; z-index: 6; margin: -14px -32px 6px; padding: 14px 32px 12px; background: var(--header-glass); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); border-bottom: 1px solid transparent; transition: padding var(--dur-slow), border-color var(--dur-slow), box-shadow var(--dur-slow); align-items: center; padding-top: 10px; padding-bottom: 18px; }
 .page-header h1 { transition: font-size var(--dur-slow); font-family: var(--display); font-size: var(--text-4xl); font-weight: 600; line-height: 1.1; letter-spacing: -0.025em; }
 .page-sub { margin: 4px 0 0; color: var(--ink-2); max-width: 75ch; margin-top: 2px; font-size: var(--text-md); }

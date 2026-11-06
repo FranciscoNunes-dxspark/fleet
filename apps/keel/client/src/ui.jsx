@@ -1,4 +1,4 @@
-import { Children, Fragment, isValidElement, useCallback, useEffect, useRef, useState } from 'react';
+import { Children, Fragment, isValidElement, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Collapsible, Dialog, Toggle as RxToggle, VisuallyHidden } from 'radix-ui';
 import { AlertDialog, Button, Checkbox as RtCheckbox, Select as RtSelect, Theme, Tooltip as RtTooltip } from '@radix-ui/themes';
@@ -10,7 +10,8 @@ import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
 import { Icon } from './icons.jsx';
 import { stageName, stageOfPath } from './line/names.js';
-import { BG, PALETTE, pinchPixels } from './pinch.js';
+import { PALETTE, pinchPixels } from './pinch.js';
+import { MARK } from './mark.js';
 
 // One rect per run of same-coloured pixels, for each mood. Built once each: the drawing never changes.
 const RUNS = {};
@@ -29,13 +30,33 @@ function PinchPixels({ mood, dx = 0, dy = 0 }) {
   );
 }
 
-/** Pinch the crab on its dark square, the sidebar's logo, showing its mood (the favicon and app icons are the mark in mark.js). */
+const CHEVRON = `M${MARK.chevron.map(([x, y]) => `${x} ${y}`).join(' L')} Z`;
+
+/**
+ * Keel's mark (mark.js, the same drawing as public/favicon.svg): the prompt and its cursor, cut at the
+ * waterline. `mood` (pinchMood) shows on it: the cursor blinks while Keel checks Azure DevOps, and a red
+ * dot shows when it can't reach it.
+ */
 export function Logo({ size = 28, mood = 'idle', title }) {
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const { tile, waterline, gap, bar, colours } = MARK;
+  const k = (side) => (
+    <>
+      <rect className="mark-cursor" x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={bar.r} fill={colours.bar[side]} />
+      <path d={CHEVRON} fill={colours.chevron[side]} />
+    </>
+  );
   return (
-    <svg className="brand-mark" width={size} height={size} viewBox="0 0 20 20" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
+    <svg className={`brand-mark brand-mark-${mood}`} width={size} height={size} viewBox={`0 0 ${MARK.size} ${MARK.size}`} focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
       {title && <title>{title}</title>}
-      <rect width="20" height="20" rx="3.6" fill={BG} />
-      <PinchPixels mood={mood} dx={2} dy={5} />
+      <defs>
+        <clipPath id={`${id}a`}><rect width={MARK.size} height={waterline} /></clipPath>
+        <clipPath id={`${id}b`}><rect y={waterline + gap} width={MARK.size} height={MARK.size - waterline - gap} /></clipPath>
+      </defs>
+      <rect width={MARK.size} height={MARK.size} rx={tile.radius} fill={tile.fill} />
+      <g clipPath={`url(#${id}a)`}>{k('above')}</g>
+      <g clipPath={`url(#${id}b)`}>{k('below')}</g>
+      {mood === 'worried' && <circle className="mark-alert" cx="54" cy="10" r="8" stroke={tile.fill} strokeWidth="3" />}
     </svg>
   );
 }
@@ -50,12 +71,12 @@ export function Pinch({ mood = 'idle', width = 64, title }) {
   );
 }
 
-/** What Pinch has to say about its mood (see pinchMood), for the logo's tooltip. */
-export function pinchLine(mood, { attention, live } = {}) {
-  if (mood === 'worried') return t("Pinch can't reach Azure DevOps: {error}", { error: tx(live?.error || '') });
-  if (mood === 'look') return t('Pinch is checking Azure DevOps…');
-  if (mood === 'sleep') return t('Nothing needs you, so Pinch is having a nap.');
-  if (!attention) return t('Pinch is keeping an eye on Azure DevOps.');
+/** What the logo's mood (see pinchMood) means, for its tooltip. */
+export function statusLine(mood, { attention, live } = {}) {
+  if (mood === 'worried') return t("Can't reach Azure DevOps: {error}", { error: tx(live?.error || '') });
+  if (mood === 'look') return t('Checking Azure DevOps…');
+  if (mood === 'sleep') return t('Nothing needs you right now.');
+  if (!attention) return t('Keeping an eye on Azure DevOps.');
   const n = attention.summary?.high || 0;
   if (n === 1) return t('One thing needs you now.');
   if (n) return t('{n} things need you now.', { n });
