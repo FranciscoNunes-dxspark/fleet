@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dailyThroughput, forecast, paceScale, remainingUnder, seededRandom, MIN_FINISHED } from '../client/src/forecast.js';
+import { claudeScale, dailyThroughput, forecast, paceScale, remainingUnder, seededRandom, MIN_FINISHED } from '../client/src/forecast.js';
 
 const D = 864e5;
 const NOW = Date.parse('2026-10-17T12:00:00Z');
@@ -87,4 +87,18 @@ test('forecast: the random generator repeats for a seed and stays in [0, 1)', ()
   const xs = Array.from({ length: 100 }, () => a());
   assert.deepEqual(xs, Array.from({ length: 100 }, () => b()));
   assert.ok(xs.every((x) => x >= 0 && x < 1));
+});
+
+test('Claude Code speeds up only the share of the items it takes on', () => {
+  assert.equal(claudeScale(), 1);
+  assert.equal(claudeScale({ share: 0, speed: 3 }), 1);
+  // Half the items at twice the speed: 1 / (0.5 + 0.25), a third faster rather than twice.
+  assert.ok(Math.abs(claudeScale({ share: 0.5, speed: 2 }) - 4 / 3) < 1e-9);
+  assert.equal(claudeScale({ share: 1, speed: 3 }), 3);
+  assert.equal(claudeScale({ share: 0.5, speed: 1 }), 1);
+  // It shortens the forecast, and combines with the team's own what-ifs.
+  const daily = Array.from({ length: 60 }, (_, i) => i % 3);
+  const p85 = (scale) => forecast({ remaining: 30, daily, seed: 7, scale }).odds.find((o) => o.p === 85).days;
+  assert.ok(p85(claudeScale({ share: 0.5, speed: 2 })) < p85(1));
+  assert.ok(p85(paceScale({ share: 0.5, people: 2 }) * claudeScale({ share: 0.5, speed: 2 })) < p85(paceScale({ share: 0.5, people: 2 })));
 });
