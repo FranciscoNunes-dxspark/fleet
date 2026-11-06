@@ -12,32 +12,35 @@ import { Icon } from './icons.jsx';
 import { stageName, stageOfPath } from './line/names.js';
 import { MARK } from './mark.js';
 
-const CHEVRON = `M${MARK.chevron.map(([x, y]) => `${x} ${y}`).join(' L')} Z`;
+const CHEVRON = `M${MARK.chevron.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z`;
 
 /**
- * Keel's mark (mark.js, the same drawing as public/favicon.svg): the prompt and its cursor, cut at the
- * waterline. `mood` (mark.js logoMood) shows on it: the cursor blinks while Keel checks Azure DevOps, and a red
+ * Keel's mark (mark.js, the same drawing as public/favicon.svg): the prompt and its cursor, each cut
+ * across. `mood` (mark.js logoMood) shows on it: the cursor blinks while Keel checks Azure DevOps, and a red
  * dot shows when it can't reach it.
  */
 export function Logo({ size = 28, mood = 'idle', title }) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const { tile, waterline, gap, bar, colours } = MARK;
-  const k = (side) => (
+  const { tile, gap, bar, chevron } = MARK;
+  const clips = (key, cut) => (
     <>
-      <rect className="mark-cursor" x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={bar.r} fill={colours.bar[side]} />
-      <path d={CHEVRON} fill={colours.chevron[side]} />
+      <clipPath id={`${id}${key}a`}><rect width={MARK.size} height={cut} /></clipPath>
+      <clipPath id={`${id}${key}b`}><rect y={cut + gap} width={MARK.size} height={MARK.size - cut - gap} /></clipPath>
+    </>
+  );
+  const halves = (key, shape, draw) => (
+    <>
+      <g clipPath={`url(#${id}${key}a)`}>{draw(shape.colours.above)}</g>
+      <g clipPath={`url(#${id}${key}b)`}>{draw(shape.colours.below)}</g>
     </>
   );
   return (
     <svg className={`brand-mark brand-mark-${mood}`} width={size} height={size} viewBox={`0 0 ${MARK.size} ${MARK.size}`} focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
       {title && <title>{title}</title>}
-      <defs>
-        <clipPath id={`${id}a`}><rect width={MARK.size} height={waterline} /></clipPath>
-        <clipPath id={`${id}b`}><rect y={waterline + gap} width={MARK.size} height={MARK.size - waterline - gap} /></clipPath>
-      </defs>
+      <defs>{clips('c', chevron.cut)}{clips('b', bar.cut)}</defs>
       <rect width={MARK.size} height={MARK.size} rx={tile.radius} fill={tile.fill} />
-      <g clipPath={`url(#${id}a)`}>{k('above')}</g>
-      <g clipPath={`url(#${id}b)`}>{k('below')}</g>
+      {halves('c', chevron, (fill) => <path d={CHEVRON} fill={fill} />)}
+      {halves('b', bar, (fill) => <rect className="mark-cursor" x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={bar.r} fill={fill} />)}
       {mood === 'worried' && <circle className="mark-alert" cx="54" cy="10" r="8" stroke={tile.fill} strokeWidth="3" />}
     </svg>
   );

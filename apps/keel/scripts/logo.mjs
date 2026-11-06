@@ -1,5 +1,5 @@
-// Draws Keel's icons. The web app's are the mark in client/src/mark.js, a K on a graphite tile
-// with its lower part below a waterline; the terminal app's are Pinch, Keel's crab, from the pixels
+// Draws Keel's icons. The web app's are the mark in client/src/mark.js, a K turned round into a
+// prompt on a graphite tile, each of its shapes cut across; the terminal app's are Pinch, Keel's crab, from the pixels
 // in client/src/pinch.js, with a pixel-art Azure DevOps mark as a badge in the bottom-right corner,
 // the way Tiller and Trawl badge theirs with Git and SQL:
 //   assets/pinch.svg, pinch.png               the README and social preview
@@ -248,10 +248,13 @@ function markRows(size, { tile = 'round', scale = 1, colour } = {}) {
     // The K's own coordinates: scaled about the centre.
     const gx = S / 2 + (u - S / 2) / scale;
     const gy = S / 2 + (v - S / 2) / scale;
-    const side = gy < MARK.waterline ? 'above' : 'below';
-    const cut = gy >= MARK.waterline && gy < MARK.waterline + MARK.gap;
-    if (!cut && inRound(gx, gy, MARK.bar)) return hex(colour || MARK.colours.bar[side]);
-    if (!cut && inPolygon(gx, gy, MARK.chevron)) return hex(colour || MARK.colours.chevron[side]);
+    // Each shape has its own cut: nothing in it, its two tones either side.
+    const paint = (shape) => {
+      if (gy >= shape.cut && gy < shape.cut + MARK.gap) return null;
+      return hex(colour || shape.colours[gy < shape.cut ? 'above' : 'below']);
+    };
+    if (inRound(gx, gy, MARK.bar)) return paint(MARK.bar) ?? (tile !== 'none' && inRound(u, v, tileShape) ? hex(MARK.tile.fill) : null);
+    if (inPolygon(gx, gy, MARK.chevron.points)) return paint(MARK.chevron) ?? (tile !== 'none' && inRound(u, v, tileShape) ? hex(MARK.tile.fill) : null);
     if (tile !== 'none' && inRound(u, v, tileShape)) return hex(MARK.tile.fill);
     return null;
   };
@@ -272,17 +275,19 @@ function markRows(size, { tile = 'round', scale = 1, colour } = {}) {
   return rows;
 }
 
-/** The mark as SVG, on its rounded tile: the two halves of the K clipped either side of the waterline. */
+/** The mark as SVG, on its rounded tile: each shape clipped either side of its own cut. */
 function markSvg() {
-  const { size: S, tile, waterline: w, gap, bar, chevron, colours } = MARK;
-  const k = (side) => `<rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" rx="${bar.r}" fill="${colours.bar[side]}"/>`
-    + `<path d="M${chevron.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${colours.chevron[side]}"/>`;
+  const { size: S, tile, gap, bar, chevron } = MARK;
+  const rect = (fill) => `<rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" rx="${bar.r}" fill="${fill}"/>`;
+  const path = (fill) => `<path d="M${chevron.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${fill}"/>`;
+  const clips = (id, cut) => `<clipPath id="${id}-a"><rect width="${S}" height="${cut}"/></clipPath><clipPath id="${id}-b"><rect y="${cut + gap}" width="${S}" height="${S - cut - gap}"/></clipPath>`;
+  const halves = (id, shape, draw) => `<g clip-path="url(#${id}-a)">${draw(shape.colours.above)}</g><g clip-path="url(#${id}-b)">${draw(shape.colours.below)}</g>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}">
 <title>Keel</title>
-<defs><clipPath id="above"><rect width="${S}" height="${w}"/></clipPath><clipPath id="below"><rect y="${w + gap}" width="${S}" height="${S - w - gap}"/></clipPath></defs>
+<defs>${clips('chevron', chevron.cut)}${clips('bar', bar.cut)}</defs>
 <rect width="${S}" height="${S}" rx="${tile.radius}" fill="${tile.fill}"/>
-<g clip-path="url(#above)">${k('above')}</g>
-<g clip-path="url(#below)">${k('below')}</g>
+${halves('chevron', chevron, path)}
+${halves('bar', bar, rect)}
 </svg>
 `;
 }
