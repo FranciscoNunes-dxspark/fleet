@@ -1,6 +1,6 @@
-// Pinch, Keel's crab. One pixel drawing feeds the logo in the app's sidebar, the terminal app's icon
+// Pinch, Keel's crab. One pixel drawing feeds the web app's empty states, the terminal app's icon
 // and assets/ (scripts/logo.mjs) and its pet (cli/), the same way Tiller's otter and Trawl's anglerfish do.
-// The web app's favicon and app icons are the mark in mark.js instead.
+// The web app's logo, favicon and app icons are the mark in mark.js instead.
 // A crab sees all around it without turning its head, which is roughly what a console does.
 
 export const PALETTE = {

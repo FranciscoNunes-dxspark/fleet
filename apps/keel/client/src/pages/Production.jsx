@@ -227,7 +227,12 @@ function MonitorCard({ m }) {
             </div>
           )}
         </div>
-        <Chip tone={s.tone}>{t(s.label)}</Chip>
+        <span className="monitor-head-actions">
+          {(m.state === 'down' || m.state === 'degraded') && (
+            <Button size="1" variant="solid" color="red" type="button" onClick={() => openDrawer({ type: 'incident', id: m.id })}>{t('What broke?')}</Button>
+          )}
+          <Chip tone={s.tone}>{t(s.label)}</Chip>
+        </span>
       </header>
 
       {m.issues.length > 0 && (

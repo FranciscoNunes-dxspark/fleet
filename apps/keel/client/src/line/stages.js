@@ -138,6 +138,8 @@ export function buildLine({ workitems, prs, pending, pipelines, approvals, produ
       state: m.state, age: since(m.downSince, now), latency: m.last?.ms != null ? Math.round(m.last.ms) : null, uptime: m.uptime24h ?? null,
       stuck: m.state === 'down' ? 'bad' : m.state === 'degraded' ? 'warn' : null,
       reason: { code: `monitor-${m.state}` }, mine: false, link: '/production',
+      // Down or degraded: "What broke?" opens its incident (IncidentDetail.jsx) from the card.
+      incident: m.state === 'down' || m.state === 'degraded' ? m.id : null,
     });
   }
 

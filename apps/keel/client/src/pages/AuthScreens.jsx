@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { Loading, Pinch } from '../ui.jsx';
+import { Loading, Logo } from '../ui.jsx';
 import { t, tj } from '../i18n.js';
 import { Button, TextField } from '@radix-ui/themes';
 
@@ -21,7 +21,7 @@ function Card({ orgUrl, title, children, onSubmit }) {
     <div className="signin">
       <form className="signin-card" onSubmit={onSubmit}>
         <div className="signin-pinch">
-          <Pinch width={96} />
+          <Logo size={72} />
           <div>
             <div className="brand-name">Keel</div>
             <div className="brand-org">{org}</div>

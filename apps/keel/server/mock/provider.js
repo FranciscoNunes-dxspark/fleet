@@ -1087,6 +1087,17 @@ export function createMockProvider() {
       return delay(demoDeployHistory(target).filter((d) => Date.parse(d.at) >= from).map((d) => ({ ...d })));
     },
 
+    /** A demo release stage after the first was approved by hand, half an hour before it finished. */
+    getDeployApprovals(target, deployId) {
+      if (target.type !== 'release') return delay([]);
+      const def = RELEASE_DEFS.find((d) => d.id === Number(target.definitionId));
+      const r = def?.releases.find((x) => x.id === Number(deployId));
+      const i = r ? r.envs.findIndex((e) => !target.stage || e.name === target.stage) : -1;
+      if (i <= 0 || !['succeeded', 'partiallySucceeded'].includes(r.envs[i].status)) return delay([]);
+      const by = DEVS[r.id % DEVS.length].displayName;
+      return delay([{ by, at: iso(Date.parse(r.envs[i].at) - 30 * 60_000), status: 'approved', comment: null }]);
+    },
+
     getCommit(projectId, repoId, commitId) {
       const repo = ALL_REPOS.find((r) => r.id === repoId);
       if (!repo) throw notFound('Repository');

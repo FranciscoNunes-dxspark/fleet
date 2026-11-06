@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApp } from '../context.js';
 import { dateTime } from '../format.js';
-import { Pinch } from '../ui.jsx';
+import { Logo } from '../ui.jsx';
 import { t, tj } from '../i18n.js';
 import { Button, TextField } from '@radix-ui/themes';
 
@@ -99,7 +99,7 @@ export default function TerminalSignIn() {
     <div className="signin terminal-signin">
       <div className="signin-card">
         <div className="signin-pinch">
-          <Pinch width={72} mood={done === 'allowed' ? 'happy' : 'idle'} />
+          <Logo size={56} />
         </div>
         {body}
       </div>
