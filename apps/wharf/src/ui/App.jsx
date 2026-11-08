@@ -817,6 +817,8 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   let said = { face: FACES[mood], message: moodLine(mood, data) };
   if (flash) said = { face: FACES[mood], message: flash.text };
   else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  // While the prompt has focus, its keys matter more than the welcome or Bark's mood.
+  else if (focus === 'prompt') said = { face: FACES[mood], message: '' };
   else if (!data && problem) said = { face: FACES[mood], message: problem, tone: 'warn' };
   else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) said = { face: FACES[mood], message: welcomeLine('Wharf', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
