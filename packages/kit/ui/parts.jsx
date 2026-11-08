@@ -325,6 +325,9 @@ export function PromptBox({ value, cursor, focused, width, placeholder, bang = t
   );
 }
 
+/** The rows a Panel `height` tall gives its children: its title and bottom border taken off, or only the title row in the shell look. */
+export const paneRows = (height) => Math.max(0, height - (shellLook() ? 1 : 2));
+
 /** The rows PromptBox takes: three in a box, one in the shell look. */
 export const promptHeight = () => (shellLook() ? 1 : 3);
 

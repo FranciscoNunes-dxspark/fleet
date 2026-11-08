@@ -16,36 +16,87 @@ export const barColor = () => theme.bar ?? (theme.mode === 'light' ? BAR.light :
 
 const width = (segs) => segs.reduce((n, s) => n + stringWidth(s.text), 0);
 
-/**
- * The top line's segments, and where each view's label landed ({ id, x, width }, columns from the
- * left) for clicks. `views` is [{ id, label, key?, count?, countColor? }]: `key` (the digit that
- * picks it) is drawn dim before the label, `count` after it. `context` is segments drawn at the
- * right (a branch, an environment, "6/8 running"); it gives way first when the line is too narrow.
- */
-export function topLine({ face, title, views = [], view, context = [], width: W }) {
+/** The left side: face, title and views (with their digits when `keys`), and where each view landed. */
+function leftSide({ face, faceColor, title, views, view, keys = true }) {
   const left = [];
-  if (face) left.push({ text: `${face} `, color: theme.accent, bold: true });
+  if (face) left.push({ text: `${face} `, color: faceColor ?? theme.accent, bold: true });
   left.push({ text: title, bold: true }, { text: '   ' });
   const tabs = [];
   for (const v of views) {
     const on = v.id === view;
     const x = width(left);
-    if (v.key != null) left.push({ text: `${v.key} `, color: theme.dim });
+    if (keys && v.key != null) left.push({ text: `${v.key} `, color: theme.dim });
     left.push({ text: v.label, color: on ? theme.accent : theme.dim, bold: on, underline: on });
     if (v.count) left.push({ text: ` ${v.count}`, color: v.countColor ?? theme.warn });
     tabs.push({ id: v.id, x, width: width(left) - x });
     left.push({ text: '   ' });
   }
   left.pop();
+  return { left, tabs };
+}
+
+// How much of the context a compact top line keeps room for: its parts marked `need`, with a gap each.
+const neededWidth = (context) => context.filter((s) => s?.need && s.text.trim()).reduce((n, s) => n + stringWidth(s.text) + 2, 0);
+
+// Whitespace-only parts (the gaps between facts) that no longer sit between two facts go.
+function tidyGaps(segs) {
+  const out = [];
+  for (const s of segs) {
+    const blank = !s.text.trim();
+    if (blank && (!out.length || !out[out.length - 1].text.trim())) continue;
+    out.push(s);
+  }
+  while (out.length && !out[out.length - 1].text.trim()) out.pop();
+  return out;
+}
+
+/** The context cut to `room`: optional parts go from the end first, the ones marked `need` last. */
+function fitContext(context, room) {
+  let right = tidyGaps(context);
+  while (right.length && width(right) > room) {
+    const at = right.findLastIndex((s) => s.text.trim() && !s.need);
+    right = tidyGaps(at < 0 ? right.slice(0, -1) : [...right.slice(0, at), ...right.slice(at + 1)]);
+  }
+  return right;
+}
+
+/**
+ * The top line's segments, and where each view's label landed ({ id, x, width }, columns from the
+ * left) for clicks. `views` is [{ id, label, key?, count?, countColor? }]: `key` (the digit that
+ * picks it) is drawn dim before the label, `count` after it. `context` is segments drawn at the
+ * right (a branch, an environment, "6/8 running"); it gives way first when the line is too narrow,
+ * whole parts from its end. `faceColor` colours the face (the accent by default).
+ *
+ * With `compact`, the views give way before the facts that must stay: when they and the context's parts
+ * marked `need: true` don't fit, the views' digits go first, then every view but the one shown. The
+ * other parts drop from the end first, the needed ones last. A context with nothing marked never makes
+ * the views give way. `compact` in the result says which: 'none', 'keys' or 'views'.
+ */
+export function topLine({ face, faceColor, title, views = [], view, context = [], width: W, compact = false }) {
+  let shape = 'none';
+  let built = leftSide({ face, faceColor, title, views, view });
+  if (compact) {
+    const need = neededWidth(context.filter((s) => s?.text));
+    const fits = (b) => width(b.left) + 2 + need <= W;
+    if (!fits(built)) {
+      const bare = leftSide({ face, faceColor, title, views, view, keys: false });
+      if (fits(bare)) [built, shape] = [bare, 'keys'];
+      else [built, shape] = [leftSide({ face, faceColor, title, views: views.filter((v) => v.id === view), view, keys: false }), 'views'];
+    }
+  }
+  const { left, tabs } = built;
   const used = width(left);
   const room = W - used - 2;
   // The context shows whole parts or none: "6/8 ru…" says less than nothing.
   let right = context.filter((s) => s?.text);
-  while (right.length && width(right) > room) right = right.slice(0, -1);
-  while (right.length && !right[right.length - 1].text.trim()) right = right.slice(0, -1);
+  if (compact) right = fitContext(right, room);
+  else {
+    while (right.length && width(right) > room) right = right.slice(0, -1);
+    while (right.length && !right[right.length - 1].text.trim()) right = right.slice(0, -1);
+  }
   const gap = right.length ? W - used - width(right) : 0;
   const segments = used >= W ? fitSegments(left, W) : [...left, ...(gap > 0 ? [{ text: ' '.repeat(gap) }] : []), ...right];
-  return { segments, tabs: tabs.filter((t) => t.x < W) };
+  return { segments, tabs: tabs.filter((t) => t.x < W), compact: shape };
 }
 
 /** The top line: the pet's face, the app's name, its views (the one shown underlined), its context. */
@@ -93,17 +144,22 @@ function fitKeys(keys, room) {
 const TONES = { danger: () => theme.del, warn: () => theme.warn };
 
 /**
- * The status line's segments, as wide as `width`: the face on the accent (or `tone`'s colour:
- * "warn", "danger"), `message` (a string or segments, first to get room), then `keys` (a hint
+ * The status line's segments, as wide as `width`: the face on the accent (or `faceColor`, or `tone`'s
+ * colour: "warn", "danger"), `message` (a string or segments, first to get room), then `keys` (a hint
  * string, "↵ log · e shell", cut to whole keys) and `right` (the same, at the right, whole, or left
  * out when the message needs its room). Everything but the face sits on the bar's background.
+ *
+ * `news` says the message is news (a flash, a sibling's remark) rather than a resting one (the welcome,
+ * the pet's mood). With `typing` (the prompt or an editor has the keys) only news is said, so the
+ * typing keys stay. At rest, `minKeys` keeps room for that many keys whatever the message's length.
  */
-export function statusLine({ face, message, tone, keys, right, width: W }) {
+export function statusLine({ face, faceColor, message, tone, keys, right, width: W, news = false, typing = false, minKeys = 0 }) {
   const bg = barColor();
   const lead = [];
-  if (face) lead.push({ text: ` ${face} `, color: theme.ink, bg: TONES[tone]?.() ?? theme.accent, bold: true });
+  if (face) lead.push({ text: ` ${face} `, color: theme.ink, bg: faceColor ?? TONES[tone]?.() ?? theme.accent, bold: true });
   lead.push({ text: ' ' });
-  const msgSegs = typeof message === 'string' ? (message ? [{ text: message, color: TONES[tone]?.() ?? theme.dim }] : []) : message ?? [];
+  let msgSegs = typeof message === 'string' ? (message ? [{ text: message, color: TONES[tone]?.() ?? theme.dim }] : []) : message ?? [];
+  if (typing && !news) msgSegs = [];
   const rightSegs = keySegments(parseKeys(right));
   const rightW = width(rightSegs) + 1;
   // The right side stays only when what the pet says still fits whole beside it.
@@ -111,12 +167,15 @@ export function statusLine({ face, message, tone, keys, right, width: W }) {
   let room = W - width(lead) - (keepRight ? rightW + 2 : 0);
   const body = [];
   if (msgSegs.length) {
-    // What the pet says is news; the keys are in ? too, so they get what's left.
-    const shown = fitSegments(msgSegs, Math.max(0, Math.min(width(msgSegs), room)), false);
+    // What the pet says is news; the keys are in ? too, so they get what's left. A resting message
+    // leaves room for `minKeys` of them.
+    const parsed = parseKeys(keys);
+    const reserve = !news && minKeys > 0 && parsed.length ? width(keySegments(parsed.slice(0, minKeys))) + 3 + (parsed.length > minKeys ? 3 : 0) : 0;
+    const shown = fitSegments(msgSegs, Math.max(0, Math.min(width(msgSegs), room - reserve)), false);
     body.push(...shown);
     room -= width(shown);
     // The divider only when at least one key fits after it.
-    const fitted = keys ? fitKeys(parseKeys(keys), room - 3) : [];
+    const fitted = keys ? fitKeys(parsed, room - 3) : [];
     if (fitted.length) body.push({ text: ' │ ', color: theme.border }, ...fitted);
   } else if (keys && room > 0) body.push(...fitKeys(parseKeys(keys), room));
   const left = [...lead, ...body];

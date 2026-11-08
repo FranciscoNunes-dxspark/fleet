@@ -6,7 +6,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { theme } from '../theme.js';
 import { look, setLook, shellLook } from '../look.js';
-import { Panel, PromptBox, promptHeight } from '../ui/parts.jsx';
+import { Panel, PromptBox, paneRows, promptHeight } from '../ui/parts.jsx';
 import { parseKeys, statusLine, topLine } from '../ui/shell.jsx';
 import { stringWidth } from '../text.js';
 
@@ -93,4 +93,54 @@ test('in the shell look the prompt is one row', () => {
   assert.deepEqual(out, [' > / for commands']);
   setLook('classic');
   assert.equal(promptHeight(), 3);
+});
+
+test('topLine with compact gives up the digits, then the other views, before the context it needs', () => {
+  const views = [1, 2, 3, 4, 5, 6].map((i) => ({ id: `v${i}`, key: i, label: `View${i}` }));
+  const context = [{ text: 'PROD', need: true }, { text: '  ' }, { text: 'shop-db', need: true }, { text: '  ' }, { text: '/a/long/file.sql' }];
+  const at = (width) => topLine({ title: 'Trawl', views, view: 'v2', context, width, compact: true });
+  const wide = at(140);
+  assert.equal(wide.compact, 'none');
+  assert.ok(text(wide.segments).includes('1 View1') && text(wide.segments).endsWith('/a/long/file.sql'));
+  const keys = at(75);
+  assert.equal(keys.compact, 'keys');
+  assert.ok(text(keys.segments).includes('View1   View2') && !text(keys.segments).includes('1 View1'));
+  assert.ok(text(keys.segments).endsWith('PROD  shop-db'), 'the optional part went, the needed ones stayed');
+  const one = at(40);
+  assert.equal(one.compact, 'views');
+  assert.ok(text(one.segments).startsWith('Trawl   View2') && text(one.segments).trimEnd().endsWith('PROD  shop-db'));
+  assert.deepEqual(one.tabs.map((t) => t.id), ['v2'], 'the click map is the views shown');
+  // Without compact, the context goes first, as it always did.
+  assert.equal(topLine({ title: 'Trawl', views, view: 'v2', context, width: 80 }).compact, 'none');
+  // Nothing marked: the views never give way, and the context drops from its end as it always did.
+  const plain = topLine({ title: 'T', views, view: 'v1', context: [{ text: 'x'.repeat(30) }], width: 90, compact: true });
+  assert.equal(plain.compact, 'none');
+  // A needed part in the middle stays while the optional ones around it go, gaps and all.
+  const middle = topLine({ title: 'T', views: views.slice(0, 1), view: 'v1', context: [{ text: 'plan -1 +5' }, { text: '  ' }, { text: '1 drifted', need: true }, { text: '  ' }, { text: 'infra' }], width: 30, compact: true });
+  assert.ok(text(middle.segments).endsWith('1 drifted'), text(middle.segments));
+});
+
+test('faceColor colours the face on both lines', () => {
+  assert.equal(topLine({ face: '(o)', faceColor: '#ffd75f', title: 'T', width: 20 }).segments[0].color, '#ffd75f');
+  assert.equal(statusLine({ face: '(o)', faceColor: '#ffd75f', width: 20 })[0].bg, '#ffd75f');
+});
+
+test('statusLine while typing says only news, and at rest keeps room for minKeys keys', () => {
+  const keys = 'enter run · tab complete · esc back';
+  const resting = 'Glim the anglerfish here, down in ClubA on demo, and very happy about it all.';
+  assert.ok(!text(statusLine({ face: '(o)', message: resting, keys, typing: true, width: 70 })).includes('Glim'));
+  assert.ok(text(statusLine({ face: '(o)', message: 'Copied 3 lines', news: true, keys, typing: true, width: 70 })).includes('Copied 3 lines'));
+  const crowded = text(statusLine({ face: '(o)', message: resting, keys, width: 70 }));
+  assert.ok(!crowded.includes('enter run'), 'without minKeys the message takes the room');
+  const kept = text(statusLine({ face: '(o)', message: resting, keys, minKeys: 2, width: 70 }));
+  assert.ok(kept.includes('enter run  tab complete'), kept);
+  assert.ok(kept.includes('Glim'), 'the message keeps what is left');
+  // News isn't held back by minKeys.
+  assert.ok(text(statusLine({ face: '(o)', message: resting, news: true, keys, minKeys: 2, width: 70 })).includes('very happy'));
+});
+
+test('paneRows is the rows a Panel gives its children in either look', () => {
+  assert.equal(paneRows(10), 8);
+  setLook('shell');
+  assert.equal(paneRows(10), 9);
 });
