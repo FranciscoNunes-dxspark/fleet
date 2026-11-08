@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: Fleet's own commands (start, write, resize, stop) and the events they send; notifications, the open-folder dialog and its questions, and links opened in the browser.",
+  "description": "The main window: Fleet's own commands (start, write, resize, stop) and the events they send; notifications, the open-folder dialog and its questions, links opened in the browser, and updates (when the build has the updater).",
   "windows": ["main"],
-  "permissions": ["core:default", "notification:default", "dialog:allow-open", "dialog:allow-ask", "opener:allow-open-url"]
+  "permissions": ["core:default", "notification:default", "dialog:allow-open", "dialog:allow-ask", "opener:allow-open-url", "updater:default"]
 }

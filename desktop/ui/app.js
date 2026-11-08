@@ -771,11 +771,46 @@ async function begin() {
   }
 }
 
+// ---- updates -----------------------------------------------------------------------------------------
+
+/**
+ * Looks for a newer Fleet once the window is up, when this build has the updater (the Desktop workflow
+ * gives it a public key and where to look; a build without them never asks). A newer one is said as a
+ * toast; a click downloads it, checks its signature and starts it.
+ */
+async function lookForUpdate() {
+  const updater = plugin('updater');
+  if (!updater) return;
+  let update;
+  try {
+    update = await updater.check();
+  } catch {
+    return; // Not configured, or offline: next start.
+  }
+  if (!update) return;
+  const node = el('button', { type: 'button', className: 'toast' }, el('span', { className: 'app', textContent: 'Fleet' }), ' ', el('span', { className: 'what', textContent: `${update.version} is out (you have ${update.currentVersion})` }), '  ', el('span', { className: 'go', textContent: '↵ install and restart' }));
+  node.querySelector('.app').style.color = '#e6c07b';
+  node.addEventListener('click', async () => {
+    node.querySelector('.go').textContent = 'downloading…';
+    try {
+      await update.downloadAndInstall();
+      await invoke('stop');
+      await plugin('process')?.relaunch?.();
+      node.querySelector('.go').textContent = 'installed: it starts next time';
+    } catch (e) {
+      node.querySelector('.go').textContent = `couldn't: ${e}`;
+    }
+  });
+  $('toasts').prepend(node);
+}
+
 $('again').addEventListener('click', async () => {
   await invoke('stop');
   bar = null;
   commands = null;
   begin();
+setTimeout(lookForUpdate, 10_000);
 });
 
 begin();
+setTimeout(lookForUpdate, 10_000);
