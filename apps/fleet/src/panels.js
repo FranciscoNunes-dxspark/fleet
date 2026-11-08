@@ -125,6 +125,11 @@ export class Panels {
   }
 
   box({ title, hint, lines, focus }, size) {
+    // The desktop window draws the panel itself, from its content: nothing goes into the grid.
+    if (this.host.desktop) {
+      this.host.panelView = { title, hint, lines: lines.map((row) => row.map((seg) => ({ text: seg.text, sgr: seg.sgr ?? '' }))), focus };
+      return '';
+    }
     const box = boxSize(size);
     return placeBox(boxRows({ title, hint, lines, focus, size: box }), box);
   }

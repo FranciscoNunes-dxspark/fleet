@@ -100,6 +100,28 @@ test('in the desktop window the apps get every row, and the bar goes to the wind
   keys('\x02');
   await until(() => states().at(-1).prefix === true, 'the prefix waiting, for the window to show its keys', { term });
   assert.match(states().at(-1).hint, /1-9 or a letter/);
+
+  // A panel goes to the window as content, never into the grid; a click on a row moves its cursor there.
+  keys('a');
+  await until(() => states().at(-1).panel?.lines.length, 'the apps panel sent to the window', { term });
+  const panel = states().at(-1).panel;
+  assert.ok(panel.title && panel.hint, 'a title and a hint');
+  assert.ok(!screen.text().includes(panel.title), 'no box drawn in the grid');
+  const [row] = panel.focus;
+  const other = row > 0 ? row - 1 : row + 1;
+  keys(`\x1b]5381;${JSON.stringify({ pick: other })}\x07`);
+  await until(() => states().at(-1).panel?.focus[0] === other, 'the cursor on the row picked', { term });
+  assert.equal(screen.row(0), 'two 70x14', 'the message reached no app');
+  keys(`\x1b]5381;${JSON.stringify({ close: true })}\x07`);
+  await until(() => states().at(-1).panel === null, 'the panel closed by the window', { term });
+
+  // The help too, and a message cut between two reads still arrives whole.
+  keys('\x02?');
+  await until(() => states().at(-1).panel?.help, 'the help sent to the window', { term });
+  const close = `\x1b]5381;${JSON.stringify({ close: true })}\x07`;
+  keys(close.slice(0, 7));
+  keys(close.slice(7));
+  await until(() => states().at(-1).panel === null, 'the help closed', { term });
 });
 
 test('an app that exits says so in its tab and on its screen, and ↵ starts it again', async () => {

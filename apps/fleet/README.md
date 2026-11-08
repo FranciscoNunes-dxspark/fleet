@@ -120,7 +120,7 @@ say `ctrl+b`; read yours there.
 
 ## In its own window
 
-`desktop/` at the repository's root is a prototype of Fleet in a window of its own (a Tauri app, its README says how to run it). There the bar isn't a row of the terminal: the window draws it as tabs along the top, with the environment, `● REC` and the proposals beside them, and a strip along the bottom that carries the notices, the prefix's keys, the folder being asked for and the quit question, with buttons for what changed, following a request, the runbooks, security, the environment, the split and the help. A click on any of them types the prefix and its key, so everything the keys do still works. The apps get the terminal's every row.
+`desktop/` at the repository's root is a prototype of Fleet in a window of its own (a Tauri app, its README says how to run it). There the bar isn't a row of the terminal: the window draws it as tabs along the top, with the environment, `● REC` and the proposals beside them, and a strip along the bottom that carries the notices, the prefix's keys, the folder being asked for and the quit question, with buttons for what changed, following a request, the runbooks, security, the environment, the split and the help. A click on any of them types the prefix and its key, so everything the keys do still works. The panels (the environment, what changed, the runbooks, the proposals, security, the apps, a request followed) and the help open as the window's own overlays rather than boxes in the terminal: a click on a row moves to it, a double click opens it as `↵` would, and each key in the panel's hint is a button. The apps get the terminal's every row.
 
 ## Choosing the apps
 

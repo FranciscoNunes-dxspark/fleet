@@ -133,6 +133,12 @@ export class Host {
     Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders, onChosen, desktop });
     // The bar's state as last sent to the desktop window, so the same state isn't sent again.
     this.sentBar = null;
+    // In the desktop window: the panel or help on screen as content ({ title, hint, lines, focus })
+    // for the window to draw as its own overlay (Panels.box), what's left of a message from the window
+    // cut between reads, and whether the bar's state waits (while a pick moves a panel's cursor).
+    this.panelView = null;
+    this.inbox = '';
+    this.barHeld = false;
     this.prefixes = prefixesFor(prefix);
     this.prefixLabel = prefixName(prefix);
     this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '', badge: null }));
@@ -247,6 +253,7 @@ export class Host {
       status: this.status,
       cwd: shortFolder(this.cwd, this.home),
       asking: this.asking ? { label: this.asking.from ? `${this.asking.from} asks to move the fleet to` : 'Move the fleet to', text: this.asking.line.text, cursor: this.asking.line.cursor, hint: this.asking.hint || '↵ moves every app there · tab completes · esc cancels' } : null,
+      panel: (this.overlay || this.help) && this.panelView ? this.panelView : null,
       confirming: this.confirming ? `Quit Fleet? ${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} running and will stop.` : null,
     };
   }
@@ -260,6 +267,7 @@ export class Host {
   }
 
   drawBar() {
+    if (this.barHeld) return;
     this.output.write(this.barString());
   }
 
@@ -380,6 +388,72 @@ export class Host {
     this.notice(`Recorded ${lines.length} step${lines.length === 1 ? '' : 's'} in ${relative(cwd, file) || file}`);
   }
 
+  /**
+   * The desktop window's messages taken out of the input: `ESC ] 5381 ; <json> BEL`, which the window
+   * types into the pseudo-terminal as it types keys. `{ pick: row, open }` is a click on a row of the
+   * panel on screen (a double click opens it, as ↵ would); `{ close: true }` its close button.
+   */
+  takeWindowMessages(text) {
+    let data = this.inbox + text;
+    this.inbox = '';
+    let out = '';
+    for (;;) {
+      const at = data.indexOf('\x1b]5381;');
+      if (at < 0) break;
+      const end = data.indexOf('\x07', at);
+      out += data.slice(0, at);
+      if (end < 0) {
+        // Cut between reads: the rest comes with the next one.
+        this.inbox = data.slice(at);
+        return out;
+      }
+      try {
+        this.windowMessage(JSON.parse(data.slice(at + '\x1b]5381;'.length, end)));
+      } catch {
+        // Not one of the window's: dropped.
+      }
+      data = data.slice(end + 1);
+    }
+    return out + data;
+  }
+
+  windowMessage(msg) {
+    if (msg?.close) {
+      if (this.help) return this.closeHelp();
+      if (this.overlay) return this.closeOverlay();
+    }
+    if (Number.isInteger(msg?.pick) && this.overlay) this.pickRow(msg.pick, Boolean(msg.open));
+  }
+
+  /**
+   * Moves the panel's cursor to the item on row `row` of its lines, a step at a time as the arrow keys
+   * do (every panel knows those, and no text field takes them), until its focus is that row or stops
+   * moving; then ↵ when `open`. The bar's state waits until it's there, so the window sees one change.
+   */
+  pickRow(row, open) {
+    const panel = this.overlay;
+    const focus = () => {
+      panel.render(this.appSize());
+      return this.panelView?.focus?.[0] ?? 0;
+    };
+    this.barHeld = true;
+    try {
+      let at = focus();
+      for (let steps = 0; at !== row && steps < 500; steps++) {
+        panel.keys(row > at ? '\x1b[B' : '\x1b[A');
+        if (this.overlay !== panel) return;
+        const next = focus();
+        if (next === at) break;
+        at = next;
+      }
+      if (open && at === row) panel.keys('\r');
+    } finally {
+      this.barHeld = false;
+    }
+    if (this.overlay) this.showOverlay(this.overlay);
+    else this.drawBar();
+  }
+
   /** You looked at space `id`: its badge goes, and what it said so far is old news. */
   looked(id) {
     const space = this.space(id);
@@ -390,6 +464,7 @@ export class Host {
   // ---- keys -------------------------------------------------------------------------------------
 
   handleInput(text) {
+    if (this.desktop) text = this.takeWindowMessages(text);
     if (!text || this.quitting) return;
     if (this.asking) return this.editFolder(text);
     const { state, actions } = readKeys(this.keys, text, this.barSpaces(), this.prefixes, this.spaces);
@@ -531,6 +606,17 @@ export class Host {
 
   showHelp() {
     this.help = true;
+    if (this.desktop) {
+      // The window draws it: the keys and what they do, as the panels' rows are.
+      this.panelView = {
+        title: 'Fleet: the family in one terminal',
+        hint: 'any key closes this',
+        lines: helpRows(this.prefixLabel).map(([k, d]) => (k ? [{ text: k, sgr: '\x1b[1m' }, { text: `  ${d}` }] : [])),
+        focus: [0, 0],
+        help: true,
+      };
+      return this.drawBar();
+    }
     const { columns } = this.size();
     const { rows } = this.appSize();
     const help = helpRows(this.prefixLabel);
@@ -559,11 +645,13 @@ export class Host {
 
   closeOverlay() {
     this.overlay = null;
+    if (!this.help) this.panelView = null;
     this.redraw();
   }
 
   closeHelp() {
     this.help = false;
+    this.panelView = null;
     this.redraw();
   }
 

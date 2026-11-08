@@ -133,11 +133,125 @@ function drawStrip(state) {
   }
 }
 
+// ---- a panel, from the host's content -------------------------------------------------------------
+
+// xterm's 256 colours: the 16 of the theme, the 6×6×6 cube, the greys.
+const BASE16 = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white', 'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite'].map((n) => theme[n]);
+const STEPS = [0, 95, 135, 175, 215, 255];
+const hex = (r, g, b) => `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+function colour256(n) {
+  if (n < 16) return BASE16[n];
+  if (n < 232) return hex(STEPS[Math.floor((n - 16) / 36)], STEPS[Math.floor((n - 16) / 6) % 6], STEPS[(n - 16) % 6]);
+  const v = 8 + (n - 232) * 10;
+  return hex(v, v, v);
+}
+
+/** A segment's SGR (the host's colours, "\x1b[1m\x1b[38;5;114m") as CSS for a span. */
+function sgrStyle(sgr) {
+  const style = {};
+  for (const [, body] of sgr.matchAll(/\x1b\[([\d;]*)m/g)) {
+    const p = body.split(';').map(Number);
+    for (let i = 0; i < p.length; i++) {
+      const n = p[i];
+      if (n === 0 || Number.isNaN(n)) for (const k of Object.keys(style)) delete style[k];
+      else if (n === 1) style.fontWeight = '700';
+      else if (n === 2) style.opacity = '0.62';
+      else if (n === 3) style.fontStyle = 'italic';
+      else if (n === 4) style.textDecoration = 'underline';
+      else if (n === 22) {
+        delete style.fontWeight;
+        delete style.opacity;
+      }
+      else if ((n === 38 || n === 48) && p[i + 1] === 5) {
+        style[n === 38 ? 'color' : 'background'] = colour256(p[i + 2]);
+        i += 2;
+      } else if ((n === 38 || n === 48) && p[i + 1] === 2) {
+        style[n === 38 ? 'color' : 'background'] = hex(p[i + 2], p[i + 3], p[i + 4]);
+        i += 4;
+      } else if (n >= 30 && n <= 37) style.color = BASE16[n - 30];
+      else if (n >= 90 && n <= 97) style.color = BASE16[n - 82];
+    }
+  }
+  return style;
+}
+
+/** Tells the host something (`ESC ] 5381 ; <json> BEL`, typed as keys are: the host takes it out). */
+const tell = (msg) => send(`\x1b]5381;${JSON.stringify(msg)}\x07`);
+
+// What a key in a panel's hint types when its chip is clicked.
+const KEY_TYPES = { '↵': '\r', esc: '\x1b', space: ' ', tab: '\t', '←': '\x1b[D', '→': '\x1b[C', '↑': '\x1b[A', '↓': '\x1b[B', '-': '-', '+': '+' };
+const typed = (key) => KEY_TYPES[key] ?? (key.length === 1 ? key : null);
+
+let shownPanel = '';
+
+function drawPanel(panel) {
+  const scrim = $('scrim');
+  if (!panel) {
+    scrim.hidden = true;
+    shownPanel = '';
+    return;
+  }
+  const json = JSON.stringify(panel);
+  if (json === shownPanel) return;
+  shownPanel = json;
+  scrim.hidden = false;
+  $('panel-title').textContent = panel.title ?? '';
+  const [from, to] = panel.focus ?? [0, 0];
+  const body = $('panel-body');
+  const rows = panel.lines.map((line, i) => {
+    const row = el('div', { className: `row${!panel.help && i >= from && i <= to ? ' focus' : ''}` });
+    if (!line.length) row.textContent = ' ';
+    for (const seg of line) {
+      const span = el('span', { textContent: seg.text });
+      Object.assign(span.style, sgrStyle(seg.sgr ?? ''));
+      row.append(span);
+    }
+    if (!panel.help) {
+      row.setAttribute('role', 'option');
+      row.addEventListener('click', () => (tell({ pick: i }), term.focus()));
+      row.addEventListener('dblclick', () => (tell({ pick: i, open: true }), term.focus()));
+    }
+    return row;
+  });
+  body.replaceChildren(...rows);
+  rows[from]?.scrollIntoView({ block: 'nearest' });
+  // The panel's keys, each one a button that types it, and what they do: "↵ open", "j k move",
+  // "- + the window" (a run of keys before the words shares them).
+  const chips = String(panel.hint ?? '')
+    .split(' · ')
+    .filter(Boolean)
+    .map((part) => {
+      const words = part.split(' ');
+      let n = 0;
+      while (n < words.length - 1 && (KEY_TYPES[words[n]] || words[n].length === 1)) n++;
+      if (n === 0) n = 1;
+      const chip = el('span', { className: 'chip' });
+      for (const key of words.slice(0, n)) {
+        const data = typed(key);
+        const k = el(data ? 'button' : 'span', { className: 'key', ...(data ? { type: 'button', title: `Types ${key}` } : {}) }, el('kbd', { textContent: key }));
+        if (data) k.addEventListener('click', () => (send(data), term.focus()));
+        chip.append(k);
+      }
+      chip.append(words.slice(n).join(' '));
+      return chip;
+    });
+  $('panel-keys').replaceChildren(...chips);
+}
+
+$('panel-close').addEventListener('click', () => (tell({ close: true }), term.focus()));
+$('scrim').addEventListener('mousedown', (e) => {
+  // A click outside the panel closes it, as esc would.
+  if (e.target === $('scrim')) tell({ close: true });
+});
+// The wheel scrolls the panel's rows here; its cursor stays where the host has it.
+$('panel').addEventListener('mouseup', () => queueMicrotask(() => term.focus()));
+
 function drawBar(state) {
   bar = state;
   drawTabs(state);
   drawStatus(state);
   drawStrip(state);
+  drawPanel(state.panel);
 }
 
 term.parser.registerOscHandler(5380, (data) => {

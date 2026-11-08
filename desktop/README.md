@@ -13,7 +13,16 @@ A click types the prefix and its key into Fleet, so the window adds no new way i
 
 ![Fleet in its window](screenshot.png)
 
-Next: the palette, the panels and the toasts as the window's own overlays rather than boxes drawn in the grid.
+Fleet's panels (the environment, what changed, the runbooks, Claude's proposals, security, the apps on the bar, a request followed) and its help are the window's own overlays too. The host sends each panel's content as part of that state (its rows, with the host's colours), and the window draws it with the selected row highlighted.
+
+- **Mouse:** a click on a row moves the panel's cursor there, a double click opens it as `↵` would, and clicking outside the panel or on × closes it.
+- **Keys:** each key in the panel's hint is a button.
+
+Those clicks go back to the host as `OSC 5381`, typed into Fleet like keys and taken out before Fleet reads them.
+
+![A panel as an overlay](overlay.png)
+
+Next: a command palette (ctrl+k) over every app's commands, and toasts.
 
 ## Running it
 
@@ -72,7 +81,7 @@ Nothing is signed yet. Windows SmartScreen and macOS Gatekeeper will warn before
 ## How it fits together
 
 - `src-tauri/src/main.rs`: the pseudo-terminal, through WezTerm's `portable-pty` crate. It handles four commands from the web view (`start`, `write`, `resize`, `stop`) and sends back two events: `pty-data` carries Fleet's output, base64-encoded so a UTF-8 character split across two reads comes through whole; `pty-exit` reports that Fleet has ended.
-- `ui/`: the window's page. `app.js` connects xterm.js to those commands and events, and draws the bar from the host's `OSC 5380` (xterm.js's `registerOscHandler`). `style.css` uses the kit's shell-look colours (`packages/kit/look.js`). `vendor/` is filled by `scripts/vendor.mjs` and isn't committed.
+- `ui/`: the window's page. `app.js` connects xterm.js to those commands and events, draws the bar and the panels from the host's `OSC 5380` (xterm.js's `registerOscHandler`), the panels' colours turned from their SGR into CSS, and tells the host about clicks on a panel with `OSC 5381`. `style.css` uses the kit's shell-look colours (`packages/kit/look.js`). `vendor/` is filled by `scripts/vendor.mjs` and isn't committed.
 - `src-tauri/tauri.conf.json`: the window, the content security policy and the bundle's icons (Fleet's ship, from `apps/fleet/assets`).
 
 This folder sits outside `apps/` on purpose. CI tests and releases every folder in `apps/` with Bun, and a Tauri app is built with cargo. When the window becomes a product, it gets a workflow of its own: a cargo build per platform, the Tauri CLI's installers, and signing.
