@@ -144,14 +144,6 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Pty::default())
-        .setup(|app| {
-            // The updater only when this build was given its public key and where to look (updater.json,
-            // merged in by the Desktop workflow): an unconfigured updater has nothing to check against.
-            if app.config().plugins.0.contains_key("updater") {
-                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
-            }
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![start, write, resize, stop])
         .run(tauri::generate_context!())
         .expect("Fleet's window couldn't start");

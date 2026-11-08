@@ -1,8 +1,6 @@
 # Fleet's desktop window (desktop/, a prototype): its installers, built on each platform with Fleet's
-# own executable inside (desktop/scripts/sidecar.mjs), and kept as the run's artifacts. It runs when
-# desktop/ or this file changes, or by hand. Signing, notarisation and the updater switch on by
-# themselves once their secrets exist (desktop/docs/release.md lists them); without them the build is
-# the plain, unsigned one.
+# own executable inside (desktop/scripts/sidecar.mjs), unsigned, and kept as the run's artifacts. It
+# runs when desktop/ or this file changes, or by hand.
 name: Desktop
 
 on:
@@ -27,8 +25,6 @@ jobs:
             name: macos-arm64
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    env:
-      HAS_WINDOWS_CERT: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,52 +37,17 @@ jobs:
       # The runners come with rustup; stable is what the window is built with.
       - run: rustup default stable
       - run: npm ci
-      - name: The Windows certificate, into the runner's store
-        if: runner.os == 'Windows' && env.HAS_WINDOWS_CERT == 'true'
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          $pfx = Join-Path $env:RUNNER_TEMP 'fleet.pfx'
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-          $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
-          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
-          Remove-Item $pfx
-          "WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
       - name: Fleet, then the window and its installers
         working-directory: desktop
-        shell: bash
-        env:
-          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
-          FLEET_UPDATE_URL: ${{ vars.FLEET_UPDATE_URL }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          # A secret that isn't set arrives as an empty variable, which the Tauri CLI would take as one
-          # given: those are taken away, so a build without them is simply unsigned.
-          for v in TAURI_UPDATER_PUBKEY FLEET_UPDATE_URL TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!v}" ]; then unset "$v"; fi
-          done
-          node scripts/vendor.mjs
-          node scripts/sidecar.mjs
-          node scripts/ci-config.mjs
-          npx --yes @tauri-apps/cli@2.12.3 build --config src-tauri/tauri.bundle.json --config src-tauri/ci.json
+        run: npm run bundle
       - uses: actions/upload-artifact@v4
         with:
           name: fleet-desktop-${{ matrix.name }}
           path: |
             desktop/src-tauri/target/release/bundle/deb/*.deb
             desktop/src-tauri/target/release/bundle/rpm/*.rpm
-            desktop/src-tauri/target/release/bundle/appimage/*.AppImage*
-            desktop/src-tauri/target/release/bundle/msi/*.msi*
-            desktop/src-tauri/target/release/bundle/nsis/*.exe*
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
             desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz*
           if-no-files-found: error
