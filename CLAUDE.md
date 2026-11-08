@@ -13,7 +13,7 @@ patches/                patch-package's patches, applied to the root node_module
 packages/kit/           @fleet/kit: the shared files and their tests
 apps/<app>/             splice, trawl, sonar, bosun, hail, keel, wharf, locker, mooring, bilge, chart, helm, lantern, drill, ballast, lookout: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
 apps/fleet/             the host (@fleet/host, binary fleet): the apps in one terminal, each its own process in hosted mode
-desktop/                a prototype: Fleet in a window of its own (Tauri, xterm.js over a pseudo-terminal); built with cargo, outside the workspaces, CI and releases (its README)
+desktop/                Fleet in a window of its own (Tauri, xterm.js over a pseudo-terminal); built with cargo, outside the workspaces and the apps' CI, released by its own workflow (desktop.yml: desktop-v… releases, desktop-latest's latest.json for its updater; its README)
 .github/workflows/      test.yml, release.yml (+ release-app.yml), release-keel-android.yml
 .github/scripts/        changed.mjs: which apps a change touches
 ```
@@ -65,7 +65,7 @@ Every push to main (except Markdown-only ones) runs `release.yml`, which release
 
 Keel's Android app is released by hand (`release-keel-android.yml`) as `keel-android-v<run number + 100>`, not marked latest.
 
-The apps update themselves from these releases (the kit's `update.js`, only in compiled builds): once a day they list `GET /repos/FranciscoNunes-dxspark/fleet/releases?per_page=100` (through `gh api` when that fails, as the repository is private), take the newest release whose tag starts `<app>-v` that isn't a draft or a pre-release, download `releases/download/<app>-v<version>/<file>` next to the executable and check it against `SHA256SUMS.txt` before swapping it in. GitHub's own "latest release" means nothing here: it is whichever app released last.
+The apps update themselves from these releases (the kit's `update.js`, only in compiled builds): once a day they list `GET /repos/FranciscoNunes-dxspark/fleet/releases?per_page=100` (through `gh api` when that fails, as when the anonymous rate limit is spent), take the newest release whose tag starts `<app>-v` that isn't a draft or a pre-release, download `releases/download/<app>-v<version>/<file>` next to the executable and check it against `SHA256SUMS.txt` before swapping it in. GitHub's own "latest release" means nothing here: it is whichever app released last.
 
 ## Conventions
 

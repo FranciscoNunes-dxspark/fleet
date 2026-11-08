@@ -86,6 +86,22 @@ Each platform builds its own. The Desktop workflow (`.github/workflows/desktop.y
 
 The installers aren't signed: Windows SmartScreen and macOS Gatekeeper warn before opening them the first time (on a Mac, right-click and Open). The window's program is named `fleet-desktop`, not `Fleet`, because on Windows `Fleet.exe` and the bundled `fleet.exe` would be the same file.
 
+## Updates
+
+An installed window updates itself, Fleet and every app with it, from this repository's releases:
+
+1. **Building.** The Desktop workflow builds the installers on every push to `main` that changes the window, an app, the kit or `patches/`, since all of them are inside.
+2. **Releasing.** Each of those runs is also a release, `desktop-v<version>`, holding the installers and their signatures. The version is the last one's patch raised, or `tauri.conf.json`'s when that's higher; raise it there for a minor or a major version.
+3. **Pointing.** The workflow puts `latest.json` on the `desktop-latest` release. That file names the newest version and, for each platform, the file to install and its signature: the AppImage, the NSIS setup, or the macOS app archive.
+4. **Checking.** Ten seconds after opening, the window reads that file (tauri.conf.json's `plugins.updater`). If it names a newer version, a toast says so.
+5. **Installing.** A click on the toast downloads it and checks the signature against the public key built into the window. It refuses a file that wasn't signed with the matching private key. Then it installs it, stops Fleet and its apps, and starts again on the new version.
+
+Desktop releases are never marked "latest" on GitHub, because the apps' own updater goes by their tags (`trawl-v…`) and the latest release is whichever app released last.
+
+The private key is the repository secret `TAURI_SIGNING_PRIVATE_KEY`. It has no password, so `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is unset. Until that secret exists, the workflow still builds the installers on `main`, but doesn't release them, and says so in its log. **Losing the private key means the installed windows can't be updated any more.** Reinstall them with a window built with a new key pair (`npx @tauri-apps/cli signer generate`, and the new public key in `tauri.conf.json`).
+
+`tauri.release.json` (the updater's signed files) is only used for a release, since it needs the private key. `npm run bundle` builds the plain installers without it.
+
 ## How it fits together
 
 - `src-tauri/src/main.rs`: the pseudo-terminal, through WezTerm's `portable-pty` crate. It handles four commands from the web view (`start`, `write`, `resize`, `stop`).

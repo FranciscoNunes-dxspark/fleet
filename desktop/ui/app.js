@@ -771,6 +771,45 @@ async function begin() {
   }
 }
 
+// ---- updates -----------------------------------------------------------------------------------------
+
+/**
+ * Looks for a newer Fleet once the window is up: the Desktop workflow publishes each one as a release
+ * (desktop-v…) and keeps latest.json on the desktop-latest release, which tauri.conf.json points the
+ * updater at. A newer one is said as a toast; a click downloads it, checks its signature against the
+ * public key built into this window, installs it and starts it. Fleet's apps come with it.
+ */
+async function lookForUpdate() {
+  const updater = plugin('updater');
+  if (!updater) return;
+  let update;
+  try {
+    update = await updater.check();
+  } catch {
+    return; // Offline, or no release yet: the next start looks again.
+  }
+  if (!update) return;
+  const go = el('span', { className: 'go', textContent: '↵ install and restart' });
+  const node = el('button', { type: 'button', className: 'toast' }, el('span', { className: 'app', textContent: 'Fleet' }), ' ', el('span', { className: 'what', textContent: `${update.version} is out (you have ${update.currentVersion})` }), '  ', go);
+  node.querySelector('.app').style.color = '#e6c07b';
+  node.addEventListener('click', async () => {
+    if (node.dataset.busy) return;
+    node.dataset.busy = '1';
+    go.textContent = 'downloading…';
+    try {
+      await update.downloadAndInstall();
+      go.textContent = 'restarting…';
+      // Fleet and its apps stop with the old window; the new one starts them again.
+      await invoke('stop');
+      await plugin('process').relaunch();
+    } catch (e) {
+      go.textContent = `couldn't: ${e}`;
+      delete node.dataset.busy;
+    }
+  });
+  $('toasts').prepend(node);
+}
+
 $('again').addEventListener('click', async () => {
   await invoke('stop');
   bar = null;
@@ -779,3 +818,4 @@ $('again').addEventListener('click', async () => {
 });
 
 begin();
+setTimeout(lookForUpdate, 10_000);
