@@ -11,13 +11,13 @@ import { VirtualTerminal } from '@fleet/kit/vt.js';
 import { createDrill } from '../provider.js';
 import { flakyTests } from '../flaky.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { recordCommand } from '@fleet/kit/recording.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { remember } from '@fleet/kit/folders.js';
-import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { FailuresView } from './FailuresView.jsx';
 import { TreeView } from './TreeView.jsx';
@@ -25,7 +25,7 @@ import { FlakyView } from './FlakyView.jsx';
 import { OutputView } from './OutputView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
+import { updateLine } from './Pet.jsx';
 import { FACES, moodFor } from '../pet.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
@@ -53,51 +53,39 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, run, cwd, env, width, loading, mood, problem, watching }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Drill', bold: true },
-    { text: '  │  ', color: theme.border },
-    { text: basename(cwd) || cwd, color: theme.dim },
-  ];
-  // The project's environment, when it names them: red and bold for a production one.
-  if (env) segs.push({ text: '  │  ', color: theme.border }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
+// What the top line says at its right, most important first, as what doesn't fit gives way from the
+// end: what went wrong, the project's environment (red for production), the failures, watching, the
+// other counts, then the folder.
+function headerContext({ data, run, cwd, env, loading, problem, watching }) {
+  const segs = [];
+  const gap = () => segs.push({ text: '  ' });
+  if (problem) segs.push({ text: firstLine(problem), color: theme.warn }), gap();
+  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod }), gap();
   if (run) {
     const c = run.counts;
-    segs.push({ text: '  │  ', color: theme.border }, { text: `${c.total} tests`, color: theme.dim });
-    if (c.failed) segs.push({ text: `  ${c.failed} failed`, color: theme.del, bold: true });
-    if (c.passed) segs.push({ text: `  ${c.passed} passed`, color: theme.add });
-    if (c.skipped) segs.push({ text: `  ${c.skipped} skipped`, color: theme.dim });
-  } else if (data) segs.push({ text: '  │  ', color: theme.border }, { text: `${data.suites.length} suite${data.suites.length === 1 ? '' : 's'}, not run`, color: theme.dim });
-  else if (loading) segs.push({ text: '  looking…', color: theme.dim });
-  if (watching) segs.push({ text: '  │  ', color: theme.border }, { text: '● watching', color: theme.accent });
-  if (problem) segs.push({ text: '  │  ', color: theme.border }, { text: firstLine(problem), color: theme.warn });
-  return <Row pointer={false} width={width} segments={segs} />;
-}
-
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries, run, flaky) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (v.id === 'failures' && run?.counts.failed) label += ` ${run.counts.failed}`;
-    if (v.id === 'flaky' && flaky.length) label += ` ${flaky.length}`;
-    if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
-
-function Tabs({ view, entries, run, flaky, width }) {
-  const segs = [];
-  for (const t of tabLabels(entries, run, flaky)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
+    if (c.failed) segs.push({ text: `${c.failed} failed`, color: theme.del, bold: true }), gap();
+    if (watching) segs.push({ text: '● watching', color: theme.accent }), gap();
+    if (c.passed) segs.push({ text: `${c.passed} passed`, color: theme.add }), gap();
+    if (c.skipped) segs.push({ text: `${c.skipped} skipped`, color: theme.dim }), gap();
+    segs.push({ text: `${c.total} tests`, color: theme.dim }), gap();
+  } else {
+    if (watching) segs.push({ text: '● watching', color: theme.accent }), gap();
+    if (data) segs.push({ text: `${data.suites.length} suite${data.suites.length === 1 ? '' : 's'}, not run`, color: theme.dim }), gap();
+    else if (loading) segs.push({ text: 'looking…', color: theme.dim }), gap();
   }
-  return <Row pointer={false} width={width} segments={segs} />;
+  segs.push({ text: basename(cwd) || cwd, color: theme.dim });
+  return segs;
 }
+
+// The views in the top line, the digit that picks each before it and its count after it.
+const viewTabs = (entries, run, flaky) =>
+  VIEWS.map((v, i) => {
+    const tab = { id: v.id, key: i + 1, label: v.label };
+    if (v.id === 'failures' && run?.counts.failed) Object.assign(tab, { count: run.counts.failed, countColor: theme.del });
+    if (v.id === 'flaky' && flaky.length) Object.assign(tab, { count: flaky.length, countColor: theme.warn });
+    if (v.id === 'log' && entries.length) Object.assign(tab, { count: entries.length, countColor: theme.dim });
+    return tab;
+  });
 
 // The last two results, Claude Code style: "● Run every test" then "  ⎿  output".
 function activityRows(entries) {
@@ -699,15 +687,15 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
+    if (e.y === promptTop) {
       // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
       return setFocus('prompt');
     }
-    const row = e.y - promptTop - 3;
+    const row = e.y - promptTop - 1;
     if (row >= 0 && row < sugCount) {
       setSugIndex(row);
       // As ↵ would, on the suggestion under the pointer.
@@ -725,24 +713,23 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
   const H = Math.max(12, rows - 1);
   // esc hides the activity lines; the Log view keeps them all.
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const mood = moodFor({ run, busy, lastEntry: entries.at(-1) });
   // How Peck feels, for the siblings (family.js's writeMood), whenever that changes.
   const feeling = familyMood({ mood, run, lastEntry: entries.at(-1), busy });
   useEffect(() => {
     if (config.familyMoods !== false) writeMood('drill', feeling);
   }, [feeling.mood, feeling.reason, config.familyMoods]);
-  // The welcome box only appears when the terminal has room for it next to a useful view.
-  const showWelcome = welcome && H >= 28;
-  const reacting = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Drill', views: viewTabs(entries, run, flaky), view, context: headerContext({ data, run, cwd, env, loading, problem, watching: Boolean(watching) }), width: W });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
-    mainTop: 2,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    promptTop: 1 + mainH + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries, run, flaky),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   let main;
@@ -762,36 +749,33 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
     main = <FailuresView run={run} data={data} pick={pick} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
         : overlay
           ? 'j/k scroll · space page · / search · y copy · esc close'
           : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, or the welcome until the first
+  // command (short, so the keys still show beside it). Otherwise nothing, so the keys have the room (the
+  // face still shows Peck's mood); and while typing in the prompt only a flash.
+  const typing = focus === 'prompt';
+  let said = { face: FACES[mood], message: '' };
+  if (flash) said = { face: FACES[mood], message: flash.text };
+  else if (typing) said = { face: FACES[mood], message: '' };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) said = { face: FACES[mood], message: welcomeLine('Drill', VERSION) };
+  // The prompt's placeholder already names / ! and ?, so these show only while it holds text and nothing
+  // is being said, which needs the room more.
+  const right = typing || !prompt.value || said.message ? '' : '/ commands · ! shell · , settings · ? help';
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} run={run} cwd={cwd} env={env} width={W} loading={loading} mood={mood} problem={problem} watching={Boolean(watching)} />
-      <Tabs view={view} entries={entries} run={run} flaky={flaky} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} data={data} run={run} width={W} update={update} problem={null} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reaction.text },
-            { text: '  esc', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -806,11 +790,7 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...said} keys={keys} right={right} width={W} />
     </Box>
   );
 }

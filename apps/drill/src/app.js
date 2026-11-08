@@ -8,6 +8,7 @@ export const APP = configureApp({
   title: 'Drill',
   version: process.env.DRILL_VERSION,
   packageUrl: new URL('../package.json', import.meta.url),
+  look: 'shell',
 });
 
 export const { VERSION, COMPILED } = APP;

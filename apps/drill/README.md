@@ -104,7 +104,7 @@ What Drill has run, newest at the bottom; `↵` shows all of an entry's output.
 | `r` | The test (or file, or suite) under the cursor |
 | `R` (alt+r) | Every test that failed last time |
 | `c` | Only the tests touching what changed: the files git lists as changed (`git status --porcelain`, what Splice shows), mapped to tests by name (`cart.ts` and `cart.test.ts`, `Price.cs` and `PriceTests.cs`), by import (a test importing `./cart`), and in C# by a test using the class |
-| `w` | Watch: each saved file runs the tests touching it (the header says `● watching`); `w` again stops |
+| `w` | Watch: each saved file runs the tests touching it (the top line says `● watching`); `w` again stops |
 | `ctrl+r` | Find the tests again and run all of them |
 
 A test file goes to the suite that ran it last; one not run yet to the suite its place says (a `.cs` file to the test project holding it, `e2e/` or a `.spec.` file to Playwright when there's one, the rest to the nearest other suite). A re-run's tests take the place of the ones they ran again; the rest stay as they were.
