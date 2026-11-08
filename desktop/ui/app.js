@@ -44,6 +44,15 @@ const term = new Terminal({
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
 term.open(document.getElementById('terminal'));
+// The GPU renderer, several times faster than drawing with the page's own elements; where the web view
+// has no WebGL (or loses it), the terminal goes on with those.
+try {
+  const webgl = new WebglAddon.WebglAddon();
+  webgl.onContextLoss(() => webgl.dispose());
+  term.loadAddon(webgl);
+} catch {
+  // No WebGL here: the DOM renderer it is.
+}
 fit.fit();
 
 const $ = (id) => document.getElementById(id);
@@ -271,14 +280,21 @@ for (const b of document.querySelectorAll('#tools button')) b.addEventListener('
 const ended = $('ended');
 const endedText = $('ended-text');
 
-const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-listen('pty-data', (e) => term.write(bytes(e.payload)));
+// Fleet's output: raw bytes through a channel (main.rs), straight to xterm.js.
+const output = new window.__TAURI__.core.Channel();
+output.onmessage = (data) => term.write(new Uint8Array(data));
 listen('pty-exit', (e) => finished(`Fleet ended${e.payload ? ` (exit ${e.payload})` : ''}.`));
 
 term.onData(send);
 // Old-style mouse reports come as bytes above 127, which onData doesn't carry.
 term.onBinary(send);
-term.onResize(({ cols, rows }) => invoke('resize', { cols, rows }));
+// While the window's edge is dragged the size changes many times a second, and every change makes each
+// running app draw again: the pseudo-terminal hears the size once it has settled.
+let resizeTimer = null;
+term.onResize(({ cols, rows }) => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => invoke('resize', { cols, rows }), 60);
+});
 
 new ResizeObserver(() => fit.fit()).observe($('terminal'));
 
@@ -292,7 +308,7 @@ async function begin() {
   ended.hidden = true;
   term.reset();
   try {
-    await invoke('start', { cols: term.cols, rows: term.rows });
+    await invoke('start', { cols: term.cols, rows: term.rows, output });
     term.focus();
   } catch (err) {
     finished(String(err));

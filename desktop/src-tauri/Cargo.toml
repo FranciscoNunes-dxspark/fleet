@@ -11,7 +11,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 # WezTerm's pseudo-terminal: a pty on Linux and macOS, ConPTY on Windows.
 portable-pty = "0.9"
-base64 = "0.22"
 
 [profile.release]
 strip = true

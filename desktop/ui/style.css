@@ -295,6 +295,7 @@ body.prod .strip {
 
 .ended {
   position: fixed;
+  z-index: 60;
   inset: 38px 0 30px 0;
   display: flex;
   flex-direction: column;
@@ -327,6 +328,8 @@ body.prod .strip {
 /* A panel of Fleet's (runbooks, what changed, security, …), drawn here from the host's content. */
 .scrim {
   position: fixed;
+  /* Above every layer xterm.js stacks (its GPU renderer's canvas among them), so clicks reach the panel. */
+  z-index: 50;
   inset: 38px 0 30px 0;
   display: flex;
   align-items: flex-start;

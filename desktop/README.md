@@ -80,8 +80,10 @@ Nothing is signed yet. Windows SmartScreen and macOS Gatekeeper will warn before
 
 ## How it fits together
 
-- `src-tauri/src/main.rs`: the pseudo-terminal, through WezTerm's `portable-pty` crate. It handles four commands from the web view (`start`, `write`, `resize`, `stop`) and sends back two events: `pty-data` carries Fleet's output, base64-encoded so a UTF-8 character split across two reads comes through whole; `pty-exit` reports that Fleet has ended.
-- `ui/`: the window's page. `app.js` connects xterm.js to those commands and events, draws the bar and the panels from the host's `OSC 5380` (xterm.js's `registerOscHandler`), the panels' colours turned from their SGR into CSS, and tells the host about clicks on a panel with `OSC 5381`. `style.css` uses the kit's shell-look colours (`packages/kit/look.js`). `vendor/` is filled by `scripts/vendor.mjs` and isn't committed.
+- `src-tauri/src/main.rs`: the pseudo-terminal, through WezTerm's `portable-pty` crate. It handles four commands from the web view (`start`, `write`, `resize`, `stop`).
+  - Fleet's output goes back as raw bytes through the channel `start` is given (an ArrayBuffer in the page, with no base64 or JSON in between). That's about 140 times less work per full-screen frame than base64 events, and a third less data. A UTF-8 character split across two reads is put back together by xterm.js.
+  - The `pty-exit` event reports that Fleet has ended.
+- `ui/`: the window's page. `app.js` connects xterm.js to those commands and events, draws the bar and the panels from the host's `OSC 5380` (xterm.js's `registerOscHandler`), the panels' colours turned from their SGR into CSS, and tells the host about clicks on a panel with `OSC 5381`. xterm.js draws with its WebGL renderer, falling back to the page's own elements where the web view has no WebGL, and a resize reaches Fleet once it has settled (60 ms), not at every step of a drag. `style.css` uses the kit's shell-look colours (`packages/kit/look.js`). `vendor/` is filled by `scripts/vendor.mjs` and isn't committed.
 - `src-tauri/tauri.conf.json`: the window, the content security policy and the bundle's icons (Fleet's ship, from `apps/fleet/assets`).
 
 This folder sits outside `apps/` on purpose. CI tests and releases every folder in `apps/` with Bun, and a Tauri app is built with cargo. When the window becomes a product, it gets a workflow of its own: a cargo build per platform, the Tauri CLI's installers, and signing.

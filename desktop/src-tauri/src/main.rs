@@ -3,9 +3,10 @@
 // adds is its own frame, font and colours, and (later) the host's bar, palette and panels as real UI.
 //
 // The web view asks for four things: `start` (open the pty at its size and run Fleet), `write` (keys
-// and pastes), `resize`, and `stop`. Fleet's output comes back as `pty-data` events (base64, since a
-// read can end in the middle of a UTF-8 character and xterm.js puts the bytes back together), and its
-// end as `pty-exit`.
+// and pastes), `resize`, and `stop`. Fleet's output comes back through the channel `start` was given,
+// as raw bytes (an ArrayBuffer on the other side, with no base64 or JSON in between: a read can end in
+// the middle of a UTF-8 character, and xterm.js puts the bytes back together), and its end as the
+// `pty-exit` event.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::io::{Read, Write};
@@ -13,8 +14,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::thread;
 
-use base64::{engine::general_purpose::STANDARD, Engine};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 
 struct Session {
@@ -59,7 +60,7 @@ fn start_folder() -> Option<String> {
 }
 
 #[tauri::command]
-fn start(app: AppHandle, pty: State<Pty>, cols: u16, rows: u16) -> Result<(), String> {
+fn start(app: AppHandle, pty: State<Pty>, cols: u16, rows: u16, output: Channel<InvokeResponseBody>) -> Result<(), String> {
     let mut slot = pty.0.lock().map_err(|e| e.to_string())?;
     if slot.is_some() {
         return Ok(());
@@ -84,14 +85,15 @@ fn start(app: AppHandle, pty: State<Pty>, cols: u16, rows: u16) -> Result<(), St
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let killer = child.clone_killer();
 
-    let out = app.clone();
     thread::spawn(move || {
-        let mut buf = [0u8; 32 * 1024];
+        let mut buf = vec![0u8; 64 * 1024];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    let _ = out.emit("pty-data", STANDARD.encode(&buf[..n]));
+                    if output.send(InvokeResponseBody::Raw(buf[..n].to_vec())).is_err() {
+                        break;
+                    }
                 }
             }
         }

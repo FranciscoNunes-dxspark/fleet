@@ -1,7 +1,7 @@
-// Puts xterm.js and its fit add-on in ui/vendor, from npm, at the versions pinned here. The desktop app
-// isn't one of the repository's npm workspaces (it's built with cargo, not Bun, and released by hand
-// for now), so it has no node_modules of its own: `npm pack` fetches the two packages and their files
-// are copied out.
+// Puts xterm.js and its fit and WebGL add-ons in ui/vendor, from npm, at the versions pinned here.
+// The desktop app isn't one of the repository's npm workspaces (it's built with cargo, not Bun, and
+// released by hand for now), so it has no node_modules of its own: `npm pack` fetches the packages and
+// their files are copied out.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,6 +10,7 @@ import { join } from 'node:path';
 const PACKAGES = {
   '@xterm/xterm@5.5.0': { 'lib/xterm.js': 'xterm.js', 'css/xterm.css': 'xterm.css' },
   '@xterm/addon-fit@0.10.0': { 'lib/addon-fit.js': 'addon-fit.js' },
+  '@xterm/addon-webgl@0.18.0': { 'lib/addon-webgl.js': 'addon-webgl.js' },
 };
 
 const out = new URL('../ui/vendor/', import.meta.url);
