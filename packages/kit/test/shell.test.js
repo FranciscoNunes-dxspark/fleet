@@ -75,6 +75,8 @@ test('statusLine fills the line, keeps the right side whole and cuts the keys to
   assert.ok(segs.every((s) => s.bg), 'every segment has a background');
   assert.equal(segs[0].bg, theme.accent);
   assert.equal(statusLine({ face: '(o)', tone: 'danger', width: 20 })[0].bg, theme.del);
+  const crowded = text(statusLine({ face: '(o)', message: 'a message that takes the room', keys: 'alt+r restart', width: 44 }));
+  assert.ok(!crowded.includes('│'), 'no divider when no key fits after it');
 });
 
 test('in the shell look Panel is a title row and a rule, and its children get one more row', () => {

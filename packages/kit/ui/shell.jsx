@@ -115,12 +115,10 @@ export function statusLine({ face, message, tone, keys, right, width: W }) {
     const shown = fitSegments(msgSegs, Math.max(0, Math.min(width(msgSegs), room)), false);
     body.push(...shown);
     room -= width(shown);
-    if (keys && room > 6) {
-      body.push({ text: ' │ ', color: theme.border });
-      room -= 3;
-    }
-  }
-  if (keys && room > 0) body.push(...fitKeys(parseKeys(keys), room));
+    // The divider only when at least one key fits after it.
+    const fitted = keys ? fitKeys(parseKeys(keys), room - 3) : [];
+    if (fitted.length) body.push({ text: ' │ ', color: theme.border }, ...fitted);
+  } else if (keys && room > 0) body.push(...fitKeys(parseKeys(keys), room));
   const left = [...lead, ...body];
   const fill = Math.max(0, W - width(left) - (keepRight ? rightW : 0));
   const segs = [...left, { text: ' '.repeat(fill) }, ...(keepRight ? [...rightSegs, { text: ' ' }] : [])];
