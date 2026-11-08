@@ -117,7 +117,7 @@ test('g on a change opens what depends on what on it; the replacement and what i
   app.stdin.write('j');
   await until(() => /❯ ± azurerm_linux_web_app\.admin/.test(app.lastFrame()), 'the cursor on the replacement');
   app.stdin.write('g');
-  await until(shows(app, '─ Depends '), 'the dependency view');
+  await until(shows(app, '│ Depends '), 'the dependency view');
   const frame = app.lastFrame();
   assert.match(frame, /2 destroyed or replaced · 1 affected/);
   assert.match(frame, /❯ +└ ± azurerm_linux_web_app\.admin +replace: affects 1/);
@@ -128,7 +128,7 @@ test('g on a change opens what depends on what on it; the replacement and what i
   app.stdin.write(KEYS.esc);
   await until(() => !app.lastFrame().includes('Declared in'), 'the detail closed');
   app.stdin.write('1');
-  await until(shows(app, '─ Changes '), 'back in Changes');
+  await until(shows(app, '│ Changes '), 'back in Changes');
   await run(app, '/show api');
   await until(shows(app, 'Depends on azurerm_linux_web_app.admin, which is destroyed or replaced'), "the dependent's detail");
   app.stdin.write(KEYS.esc);

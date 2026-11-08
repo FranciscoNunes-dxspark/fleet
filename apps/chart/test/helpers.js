@@ -36,6 +36,11 @@ export function start(props = {}) {
       ...props,
     }),
   );
+  // A wider terminal than ink-testing-library's 100 columns, for a test that reads the whole top line.
+  if (props.columns) {
+    Object.defineProperty(lastApp.stdout, 'columns', { get: () => props.columns });
+    lastApp.stdout.emit('resize');
+  }
   return Object.assign(lastApp, { provider, copied, opened });
 }
 
