@@ -149,7 +149,7 @@ A project can name its environments (dev, staging, prod) once for every app of t
 "prod": { "prod": true, "wharf": { "context": "aks-prod", "namespace": "shop" } }
 ```
 
-`context` sends every `kubectl` Wharf runs there with `--context` (kubectl's own current context, which every terminal shares, is left alone, and `/context` says so rather than switching), and `namespace` is what the Pods view lists. `/env` says which environment the project is on, `/env <name>` switches every app to another, and a switch made elsewhere is followed here within a second. The header shows its name; a production one (`"prod": true`) draws the frames red, and stopping, killing, restarting, removing, taking down, pruning, deleting a pod, restarting a deployment and undoing a rollout all ask first.
+`context` sends every `kubectl` Wharf runs there with `--context` (kubectl's own current context, which every terminal shares, is left alone, and `/context` says so rather than switching), and `namespace` is what the Pods view lists. `/env` says which environment the project is on, `/env <name>` switches every app to another, and a switch made elsewhere is followed here within a second. The top line shows its name; a production one (`"prod": true`) draws the frames red, and stopping, killing, restarting, removing, taking down, pruning, deleting a pod, restarting a deployment and undoing a rollout all ask first.
 
 While Fleet records a runbook, each slash command Wharf's prompt runs (and each `/take`) is kept for it; a `!` shell command never is.
 

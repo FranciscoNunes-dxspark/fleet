@@ -10,13 +10,13 @@ import { createDocker, dockerProblem } from '../docker.js';
 import { createKube } from '../kube.js';
 import { explainKube } from '../kubeactions.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { recordCommand } from '@fleet/kit/recording.js';
 import { readProject } from '@fleet/kit/environments.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
-import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { ContainersView } from './ContainersView.jsx';
 import { ImagesView } from './ImagesView.jsx';
@@ -30,8 +30,8 @@ import { securityCheck } from '../headless.js';
 import { worstByContainer } from '../security.js';
 import { commandLine } from '../shell.js';
 import { spawn } from 'node:child_process';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
-import { FACES, moodFor } from '../pet.js';
+import { PET_WIDTH, Pet, updateLine } from './Pet.jsx';
+import { FACES, PET, moodFor, moodLine } from '../pet.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 
@@ -53,44 +53,25 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, width, loading, mood, problem, provider, env }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Wharf', bold: true },
-  ];
-  if (provider !== 'docker') segs.push({ text: `  ${provider}`, color: theme.warn });
-  if (env) segs.push({ text: `  ${env.name}`, color: env.prod ? theme.del : theme.info, bold: env.prod });
+// What the top line says at its right: the provider when it isn't Docker, the environment, how many
+// containers run and how many aren't well, or what went wrong.
+function headerContext({ data, loading, problem, provider, env }) {
+  const segs = [];
+  if (provider !== 'docker') segs.push({ text: provider, color: theme.warn }, { text: '  ' });
+  if (env) segs.push({ text: env.name, color: env.prod ? theme.del : theme.info, bold: env.prod }, { text: '  ' });
+  if (problem) segs.push({ text: firstLine(problem), color: theme.warn }, { text: '  ' });
   if (data) {
     const up = data.containers.filter((c) => c.state === 'running').length;
     const bad = data.containers.filter((c) => c.health === 'unhealthy' || (c.state === 'exited' && c.exitCode > 0)).length;
-    segs.push({ text: '  │  ', color: theme.border }, { text: `${up}/${data.containers.length} running`, color: theme.dim });
-    if (bad) segs.push({ text: `  ${bad} not well`, color: theme.del, bold: true });
-  } else if (loading) segs.push({ text: '  loading…', color: theme.dim });
-  if (problem) segs.push({ text: '  │  ', color: theme.border }, { text: firstLine(problem), color: theme.warn });
-  return <Row pointer={false} width={width} segments={segs} />;
+    if (bad) segs.push({ text: `${bad} not well`, color: theme.del, bold: true }, { text: '  ' });
+    segs.push({ text: `${up}/${data.containers.length} running`, color: theme.dim });
+  } else if (loading) segs.push({ text: 'loading…', color: theme.dim });
+  return segs;
 }
 
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
-
-function Tabs({ view, entries, width }) {
-  const segs = [];
-  for (const t of tabLabels(entries)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
-}
+// The views in the top line, the digit that picks each before it and the log's count after it.
+const viewTabs = (entries) =>
+  VIEWS.map((v, i) => ({ id: v.id, key: i + 1, label: v.label, count: v.id === 'log' && entries.length ? entries.length : 0, countColor: theme.dim }));
 
 // The last two results, Claude Code style: "● docker stop web" then "  ⎿  output".
 function activityRows(entries) {
@@ -740,15 +721,15 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
-      // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
+    if (e.y === promptTop) {
+      // The text starts after a space and "> ", scrolled as PromptBox scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
       return setFocus('prompt');
     }
-    const row = e.y - promptTop - 3;
+    const row = e.y - promptTop - 1;
     if (row >= 0 && row < sugCount) {
       setSugIndex(row);
       // As ↵ would, on the suggestion under the pointer.
@@ -766,24 +747,23 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   const H = Math.max(12, rows - 1);
   // esc hides the activity lines; the Log view keeps them all.
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
   // How Bark feels, for the siblings (family.js's writeMood), whenever that changes.
   const told = familyMood({ mood, data, kubeData, lastEntry: entries.at(-1), busy });
   useEffect(() => {
     if (config.familyMoods !== false) writeMood('wharf', told);
   }, [told.mood, told.reason, config.familyMoods]);
-  // The welcome box only appears when the terminal has room for it next to a useful view.
-  const showWelcome = welcome && H >= 28;
-  const reacting = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Wharf', views: viewTabs(entries), view, context: headerContext({ data, loading, problem: data ? problem : null, provider: provider.name, env }), width: W });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
-    mainTop: 2,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    promptTop: 1 + mainH + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   let main;
@@ -804,7 +784,12 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   } else if (!data) {
     main = (
       <Panel title={VIEWS.find((v) => v.id === view).label} width={W} height={mainH}>
-        <Text color={theme.dim}>{loading ? '  Asking Docker…' : `  ${problem ?? 'Nothing read.'} /refresh tries again.`}</Text>
+        <Box marginTop={1} marginLeft={2}>
+          <Box flexDirection="column" width={PET_WIDTH} marginRight={2}>
+            <Pet mood={mood} />
+          </Box>
+          <Text color={theme.dim}>{loading ? 'Asking Docker…' : `${problem ?? 'Nothing read.'} /refresh tries again.`}</Text>
+        </Box>
       </Panel>
     );
   } else if (view === 'images') {
@@ -813,9 +798,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
     main = <ContainersView containers={data.containers} stats={data.stats} security={security} onlyRunning={onlyRunning} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
@@ -828,27 +811,22 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
         : overlay
           ? 'j/k scroll · space page · y copy · esc close'
           : HINTS[view];
-  const right = focus === 'prompt' || overlay?.kind === 'shell' ? '' : '  / commands · ! shell · , settings · ? help';
+  const right = focus === 'prompt' || overlay?.kind === 'shell' ? '' : '/ commands · ! shell · , settings · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
+  // command, else how Bark sees things.
+  let said = { face: FACES[mood], message: moodLine(mood, data) };
+  if (flash) said = { face: FACES[mood], message: flash.text };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  else if (!data && problem) said = { face: FACES[mood], message: problem, tone: 'warn' };
+  else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) said = { face: FACES[mood], message: welcomeLine('Wharf', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} width={W} loading={loading} mood={mood} problem={data ? problem : null} provider={provider.name} env={env} />
-      <Tabs view={view} entries={entries} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} problem={data ? null : problem} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reaction.text },
-            { text: '  esc', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -863,11 +841,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...said} keys={keys} right={right} width={W} />
     </Box>
   );
 }
