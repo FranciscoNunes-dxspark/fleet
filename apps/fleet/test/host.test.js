@@ -186,6 +186,56 @@ test("the active app's mouse comes back with it, and a click on a tab switches",
   await done;
 });
 
+test("in the desktop window a badge says why and comes as a toast, and the window's palette, settings and moves reach the host", async () => {
+  const family = familyHome();
+  const settings = [];
+  const dir = mkdtempSync(join(tmpdir(), 'fleet-move-'));
+  const { host, term, keys, done } = startHost({ spaces: SPACES, family, desktop: true });
+  host.onSettings = (s) => settings.push(s);
+  const { screen } = term;
+  const states = () => [...term.written.matchAll(/\x1b\]5380;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
+  const tell = (msg) => keys(`\x1b]5381;${JSON.stringify(msg)}\x07`);
+  await until(() => screen.row(0) === 'one 70x14', 'the app', { term });
+
+  writeFileSync(join(family, 'two.mood.json'), JSON.stringify({ app: 'two', mood: 'worried', reason: 'api crashed', at: Date.now() }));
+  await until(() => states().at(-1)?.toast?.text === 'api crashed', 'the toast', { term });
+  const last = states().at(-1);
+  assert.deepEqual([last.toast.app, last.toast.title], ['two', 'Two']);
+  assert.equal(last.spaces.find((s) => s.id === 'two').why, 'api crashed', 'the badge says why');
+
+  // The palette: a line put in an app's prompt, switching to it, as a hand-off.
+  tell({ run: { app: 'two', line: '/hello there' } });
+  await until(() => screen.row(0) === 'two 70x14' && screen.row(1) === 'keys: "/hello there"', 'the line typed into Two', { term });
+
+  // Settings: the bell now, the prefix kept for the next start, a prefix a terminal keeps refused.
+  tell({ settings: { bell: false } });
+  await until(() => states().at(-1).bell === false, 'the bell off', { term });
+  tell({ settings: { prefix: 'ctrl+x' } });
+  tell({ settings: { prefix: 'ctrl+c' } });
+  await until(() => settings.length === 2, 'two settings kept', { term });
+  assert.deepEqual(settings, [{ bell: false }, { prefix: 'ctrl+x' }]);
+  await until(() => /can't be the prefix/.test(states().at(-1).notice), 'ctrl+c refused', { term });
+
+  // A reload asks for everything again: the state and the palette's list (every app's commands).
+  const lists = () => [...term.written.matchAll(/\x1b\]5382;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
+  tell({ hello: true });
+  await until(() => lists().length, 'the palette list', { term });
+  const list = lists().at(-1);
+  assert.deepEqual(list.apps.map((a) => a.id), ['one', 'two']);
+  assert.ok(list.fleet.some((f) => f.key === 'w' && f.keys === 'ctrl+b w'));
+
+  // A folder from the projects list: the fleet moves there.
+  tell({ move: dir });
+  await until(() => realpathSync(host.cwd) === realpathSync(dir), 'the fleet moved', { term });
+  assert.ok(states().at(-1).folders.some((f) => realpathSync(f.path) === realpathSync(dir)));
+  // The apps start again there; quitting then stops them all, the quit question asked in the window.
+  await until(() => host.space('two').state === 'running', 'Two started again in the new folder', { term });
+  keys(`${PREFIX}q`);
+  await until(() => /Quit Fleet\?/.test(states().at(-1).confirming ?? ''), 'the quit question sent to the window', { term });
+  keys('y');
+  await done;
+});
+
 test('a worried app off screen gets a badge and rings the bell once; looking at it clears it', async () => {
   const family = familyHome();
   const { term, keys, done } = startHost({ spaces: SPACES, family });

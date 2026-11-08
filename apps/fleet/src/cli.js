@@ -111,6 +111,8 @@ const host = new Host({
   // The apps the bar shows (the prefix and a), every one until a choice is made.
   chosen: Array.isArray(state.apps) ? state.apps : null,
   onChosen: (apps) => saveState({ apps }),
+  // The desktop window's settings: the bell, and the prefix from the next start.
+  onSettings: (settings) => saveState(settings),
   onUpdate: () => updateFleet(true),
   // Fleet's desktop window (desktop/) sets this: it draws the bar itself, from the state the host sends.
   desktop: process.env.FLEET_DESKTOP === '1',

@@ -124,10 +124,11 @@ export class Panels {
     return this.host.spaces.map((s) => s.id);
   }
 
-  box({ title, hint, lines, focus }, size) {
-    // The desktop window draws the panel itself, from its content: nothing goes into the grid.
+  box({ title, hint, lines, focus, chart }, size) {
+    // The desktop window draws the panel itself, from its content: nothing goes into the grid. `chart`
+    // is data it draws above the rows (what changed as a timeline, a request's path, security by app).
     if (this.host.desktop) {
-      this.host.panelView = { title, hint, lines: lines.map((row) => row.map((seg) => ({ text: seg.text, sgr: seg.sgr ?? '' }))), focus };
+      this.host.panelView = { title, hint, lines: lines.map((row) => row.map((seg) => ({ text: seg.text, sgr: seg.sgr ?? '' }))), focus, ...(chart ? { chart } : {}) };
       return '';
     }
     const box = boxSize(size);
@@ -286,7 +287,8 @@ class TracePanel {
     const width = this.panels.inner(size);
     if (this.asking) return this.panels.box({ title: 'Follow a request', hint: '↵ follow · esc close', ...traceAskLines({ input: this.input, width }) }, size);
     const view = traceLines({ id: this.id, asked: this.asked, timeline: this.timeline, cursor: this.cursor, width, spaces: this.host.spaces, truecolor: this.host.truecolor, prefix: this.host.prefixLabel });
-    return this.panels.box({ title: `Following ${this.id}`, hint: `${this.asked.length ? '↵ go there · j k move · ' : ''}f another · esc close`, ...view }, size);
+    const chart = this.host.desktop && this.timeline?.length ? { kind: 'path', id: this.id, events: this.timeline.map((e) => ({ at: e.at, app: e.app, source: e.source, text: e.text })) } : null;
+    return this.panels.box({ title: `Following ${this.id}`, hint: `${this.asked.length ? '↵ go there · j k move · ' : ''}f another · esc close`, ...view, chart }, size);
   }
 
   keys(text) {
@@ -418,7 +420,9 @@ class ChangesPanel {
     const width = this.panels.inner(size);
     const view = changesLines({ result: this.result, hours: this.hours, windows: this.windows, cursor: this.cursor, ask: this.ask, claude: this.claude, width, spaces: this.host.spaces, truecolor: this.host.truecolor });
     const hint = this.ask ? '↵ ask Claude · esc back' : '- + the window · c ask Claude why · j k move · esc close';
-    return this.panels.box({ title: `What changed: the last ${this.hours}h`, hint, ...view }, size);
+    const r = this.result;
+    const chart = this.host.desktop && r ? { kind: 'timeline', since: r.since, now: r.now, events: r.events.map((e) => ({ at: e.at, app: e.app, kind: e.kind, source: e.source, text: e.text })) } : null;
+    return this.panels.box({ title: `What changed: the last ${this.hours}h`, hint, ...view, chart }, size);
   }
 
   keys(text) {
@@ -561,7 +565,13 @@ class SecurityPanel {
     const width = this.panels.inner(size);
     const view = securityLines({ overview: this.overview, running: this.running, cursor: this.cursor, open: this.openFinding, width, spaces: this.host.spaces, truecolor: this.host.truecolor, now: this.panels.now() });
     const hint = `${this.running ? '' : 'r run the checks · '}${this.overview?.findings.length ? '↵ why and fix · j k move · ' : ''}esc close`;
-    return this.panels.box({ title: 'Security', hint, ...view }, size);
+    let chart = null;
+    if (this.host.desktop && this.overview?.findings.length) {
+      const byApp = {};
+      for (const f of this.overview.findings) (byApp[f.app] ??= {})[f.severity] = (byApp[f.app][f.severity] ?? 0) + 1;
+      chart = { kind: 'severity', byApp };
+    }
+    return this.panels.box({ title: 'Security', hint, ...view, chart }, size);
   }
 
   keys(text) {
