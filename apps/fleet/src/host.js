@@ -222,8 +222,15 @@ export class Host {
       return renderAsk({ label, line, hint: hint || '↵ moves every app there · tab completes · esc cancels', keep: Boolean(hint), width: columns });
     }
     const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
-    this.layout = barLayout({ spaces: this.barSpaces(), active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel, status: statusSegments(this.status) });
-    return renderBar(this.layout, this.spaces, { truecolor: this.truecolor });
+    const spaces = this.barSpaces();
+    // The bar goes in after every chunk an app writes and rarely changes between two: it's drawn again
+    // only when something it shows has.
+    const key = JSON.stringify([columns, this.active, shown, this.keys.prefix, this.noticeText, this.status, spaces.map((s) => [s.id, s.state, s.code, s.badge])]);
+    if (key === this.barKey) return this.barCache;
+    this.layout = barLayout({ spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel, status: statusSegments(this.status) });
+    this.barKey = key;
+    this.barCache = renderBar(this.layout, this.spaces, { truecolor: this.truecolor });
+    return this.barCache;
   }
 
   /** The bar drawn from a saved cursor, so whatever was drawing carries on where it was. */
@@ -914,7 +921,9 @@ export class Host {
     const pane = this.paneOf(space.id);
     if (pane) return this.fromPane(space, pane, text);
     const active = space.id === this.active && !this.help && !this.overlay && !this.split;
-    const out = space.filter.push(text, { active, bar: active ? this.barString() : '' });
+    // The bar goes in after the app's frames only in a terminal: the desktop window's bar isn't in the
+    // grid, and its state is sent when the bar changes (drawBar), not with every chunk an app writes.
+    const out = space.filter.push(text, { active, bar: active && !this.desktop ? this.barString() : '' });
     if (out) this.output.write(out);
   }
 
