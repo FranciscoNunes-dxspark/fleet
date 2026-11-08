@@ -69,7 +69,7 @@ test('the Code view: /code reads the folder, ↵ shows a finding, x ignores it, 
   app.stdin.write(KEYS.enter);
   await until(() => app.lastFrame().includes('AWS access key'), 'the code findings');
   const frame = app.lastFrame();
-  assert.match(frame, /4 Code 12/);
+  assert.match(frame, /Code 12/);
   assert.match(frame, /CRIT secret AWS access key/);
   assert.match(frame, /HIGH secret Secret in a browser var.* web\/vite\.config\.js:4/);
   assert.ok(!frame.includes('q8ZtW2kP9'), 'no browser secret on screen');
@@ -86,7 +86,7 @@ test('the Code view: /code reads the folder, ↵ shows a finding, x ignores it, 
   app.stdin.write('x');
   await until(() => app.lastFrame().includes('Ignore aws access key in src/config.js?'), 'the question');
   app.stdin.write(KEYS.enter);
-  await until(() => app.lastFrame().includes('4 Code 11'), 'one fewer');
+  await until(() => app.lastFrame().includes('Code 11'), 'one fewer');
   assert.ok(!app.lastFrame().includes('AWS access key'));
   app.unmount();
 });
