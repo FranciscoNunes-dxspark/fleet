@@ -25,7 +25,7 @@ test('Hail in hosted mode draws above the bar, takes keys, and is drawn again af
   const { host, term, keys, done } = startHost({ spaces, command, env, cwd: dir, columns: 100, rows: 30 });
   const { screen } = term;
   const shown = (text) => term.text().includes(text);
-  await until(() => shown('Welcome to Hail') && shown('1 request in api.http'), 'Hail', { term, ms: 60_000 });
+  await until(() => shown('Welcome to Hail') && shown('GET    Ping'), 'Hail', { term, ms: 60_000 });
   assert.match(screen.row(-1), /^ 1 Hail HTTP ● {2}2 Two ○/);
   // Its frame stays above the bar: the row above it is Hail's.
   assert.ok(screen.row(-2).length < 100);
@@ -46,7 +46,7 @@ test('Hail in hosted mode draws above the bar, takes keys, and is drawn again af
   await until(() => screen.row(0).slice(50) === 'two 50x29' && left().includes('Hail') && left().includes('api.http'), 'Hail in the left pane', { term, ms: 20_000 });
   assert.ok(Array.from({ length: 29 }, (_, y) => screen.row(y)[49]).every((c) => c === '│'), 'the divider whole');
   keys(`${PREFIX}x`);
-  await until(() => shown('api.http') && !shown('two 50x29') && screen.row(2).length > 90, 'Hail whole again', { term, ms: 20_000 });
+  await until(() => shown('api.http') && !shown('two 50x29') && screen.row(1).length > 90, 'Hail whole again', { term, ms: 20_000 });
 
   const pid = host.space('hail').child.pid;
   keys(`${PREFIX}q`);
