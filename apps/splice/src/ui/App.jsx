@@ -12,7 +12,7 @@ import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { canonical, changeDiff, commitPatch, findRepo, loadRepo, snapshot, stashFileDiff, stashPatch } from '../repo.js';
 import { discover, eachLimited, summarize } from '../repos.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
+import { stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { environmentFor } from '@fleet/kit/environments.js';
@@ -21,7 +21,8 @@ import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/ki
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
-import { Confirm, Panel, PromptBox, Row, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, Panel, PromptBox, Row, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { BranchesView } from './BranchesView.jsx';
 import { ChangesView } from './ChangesView.jsx';
 import { GraphView } from './GraphView.jsx';
@@ -34,8 +35,8 @@ import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { Picker } from './Picker.jsx';
 import { RebaseEditor } from './RebaseEditor.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
-import { FACES, moodFor } from '../pet.js';
+import { PET_WIDTH, Pet, updateLine } from './Pet.jsx';
+import { FACES, PET, moodFor, moodLine } from '../pet.js';
 import { worthNotifying } from '../notify.js';
 import { decodeContext, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { droppedPaths } from '../drop.js';
@@ -79,36 +80,33 @@ const POLL_MS = 3000;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 const showArg = (s) => (/[\s"]/.test(s) || s === '' ? JSON.stringify(s) : s);
 
-function Header({ data, width, loading, mood, environment }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Splice', bold: true },
-  ];
+// What the top line says at its right, most telling first, as it gives way from the end: the repo, the
+// branch and how it stands against its upstream, the changes, a merge or rebase in progress, the
+// environment, a sparse checkout, then the path, which keeps its end (the repo folder) when it is cut.
+// `room` is the columns the context may take.
+function headerContext({ data, loading, environment, room }) {
+  const segs = [];
   if (data) {
     const b = data.status.branch;
-    segs.push({ text: '  │  ', color: theme.border }, { text: data.name, bold: true });
+    segs.push({ text: data.name, bold: true });
     segs.push({ text: '  ⎇ ', color: theme.dim }, { text: b.head ?? `detached at ${(b.oid ?? '').slice(0, 7)}`, color: b.head ? theme.local : theme.warn, bold: true });
     if (b.upstream) segs.push({ text: ` → ${b.upstream}`, color: theme.dim });
     if (b.ahead) segs.push({ text: ` ↑${b.ahead}`, color: theme.add, bold: true });
     if (b.behind) segs.push({ text: ` ↓${b.behind}`, color: theme.warn, bold: true });
     const n = data.status.files.length;
     segs.push({ text: n ? `  ● ${n} change${n === 1 ? '' : 's'}` : '  ✓ clean', color: n ? theme.warn : theme.dim });
-    // Only part of the repository is checked out (/sparse says which).
-    if (data.sparse?.on) segs.push({ text: '  sparse', color: theme.hunk, bold: true });
     if (data.state) segs.push({ text: '  ' }, { text: ` ${data.state.toUpperCase()} `, bg: data.state === 'bisecting' ? theme.hunk : theme.del, color: theme.ink, bold: true });
     // The project's environment (/env), in red when it's production.
-    if (environment) segs.push({ text: '  │  ', color: theme.border }, { text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod });
+    if (environment) segs.push({ text: '  ' }, { text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod });
+    // Only part of the repository is checked out (/sparse says which).
+    if (data.sparse?.on) segs.push({ text: '  sparse', color: theme.hunk, bold: true });
+    const full = data.root;
+    const pathW = Math.min(stringWidth(full), room - segs.reduce((n, s) => n + stringWidth(s.text), 0) - 2);
+    if (pathW >= 12) segs.push({ text: '  ' }, { text: pathW < stringWidth(full) ? `…${full.slice(-(pathW - 1))}` : full, color: theme.dim });
   } else if (loading) {
-    segs.push({ text: '  loading…', color: theme.dim });
+    segs.push({ text: 'loading…', color: theme.dim });
   }
-  // The path gives way first, keeping its end (the repo folder) and losing its start: the branch, the changes
-  // and a merge or rebase in progress matter more, however long the path (as in a Windows temp folder).
-  const full = data ? data.root : '';
-  const room = width - 1 - segs.reduce((n, s) => n + stringWidth(s.text), 0);
-  const pathW = room >= 12 ? Math.min(stringWidth(full), room) : 0;
-  if (!pathW) return <Row pointer={false} width={width} segments={fitSegments(segs, width)} />;
-  const path = pathW < stringWidth(full) ? `…${full.slice(-(pathW - 1))}` : full;
-  return <Row pointer={false} width={width} segments={[...fitSegments(segs, width - pathW - 1), { text: ' ' }, { text: path, color: theme.dim }]} />;
+  return segs;
 }
 
 /** The terminal window's title: the repo and branch, which is what tells one Splice tab from another. */
@@ -118,28 +116,17 @@ export function windowTitle(data) {
   return `${data.name} (${b.head ?? `detached at ${(b.oid ?? '').slice(0, 7)}`}) — Splice`;
 }
 
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(data) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (data && v.id === 'changes' && data.status.files.length) label += ` ${data.status.files.length}`;
-    if (data && v.id === 'stash' && data.stashes.length) label += ` ${data.stashes.length}`;
-    if (data && v.id === 'worktrees' && data.worktrees.length > 1) label += ` ${data.worktrees.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
+const segsWidth = (segs) => segs.reduce((n, s) => n + stringWidth(s.text), 0);
 
-function Tabs({ view, data, width }) {
-  const segs = [];
-  for (const t of tabLabels(data)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
+// The views in the top line, the digit that picks each before it and its count after it.
+function viewTabs(data) {
+  return VIEWS.map((v, i) => {
+    let count = 0;
+    if (data && v.id === 'changes') count = data.status.files.length;
+    if (data && v.id === 'stash') count = data.stashes.length;
+    if (data && v.id === 'worktrees' && data.worktrees.length > 1) count = data.worktrees.length;
+    return { id: v.id, key: i + 1, label: v.label, count, countColor: theme.dim };
+  });
 }
 
 // The last two results, Claude Code style: "● git push" then "  ⎿  output".
@@ -1030,7 +1017,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
       if (focusRef.current === 'prompt') setFocus('view');
       return hit.target.handle({ ...e, y: e.y - mainTop - hit.target.top, from: { x: e.from.x, y: hit.y } });
     }
-    if (e.y === mainTop - 1 && !e.wheel) {
+    if (e.y === 0 && !e.wheel) {
       const tab = tabs.find((t) => e.x >= t.from && e.x < t.to);
       if (!tab) return;
       // Whatever is open over the view closes: a click on a tab should never do nothing.
@@ -1045,15 +1032,15 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
-      // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
+    if (e.y === promptTop) {
+      // The text starts after a space and "> ", scrolled as PromptBox scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
       return setFocus('prompt');
     }
-    const sug = e.y - promptTop - 3;
+    const sug = e.y - promptTop - 1;
     if (sug >= 0 && sug < sugCount) {
       setSugIndex(sug);
       // As ↵ would, on the suggestion under the pointer.
@@ -1079,7 +1066,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
   const W = columns;
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries);
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
   // Twig's mood for the family (family.js), written whenever it changes, and the others' read every half
   // a minute: a worried, sad or happy one from the last 15 minutes gets a line, once. "Family moods" in
@@ -1102,17 +1089,24 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     t.unref?.();
     return () => clearInterval(t);
   }, [moodsOn, familyHome, moodEvery]);
-  const reactionH = reaction ? 1 : 0;
-  // The welcome box only appears when the terminal has room for it next to a useful view.
-  const showWelcome = welcome && H >= 28;
-  const mainH = Math.max(6, H - 2 - reactionH - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  // The repository's facts go at the top line's right when they fit there whole; a narrow terminal gets
+  // them on a row of their own rather than lose the branch or a rebase in progress.
+  const tabsOnly = topLine({ face: FACES[mood], title: 'Splice', views: viewTabs(data), view, width: W });
+  const contextRoom = W - segsWidth(tabsOnly.segments) - 2;
+  const facts = headerContext({ data, loading, environment, room: contextRoom });
+  const oneLine = segsWidth(facts) <= contextRoom;
+  const top = oneLine ? topLine({ face: FACES[mood], title: 'Splice', views: viewTabs(data), view, context: facts, width: W }) : tabsOnly;
+  const factsRow = oneLine ? null : [{ text: ' ' }, ...headerContext({ data, loading, environment, room: W - 1 })];
+  const mainTop = factsRow ? 2 : 1;
+  const mainH = Math.max(6, H - mainTop - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
-    mainTop: 2,
+    mainTop,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reactionH + act.length + (busy ? 1 : 0),
+    promptTop: mainTop + mainH + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(data),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   // The palette's list: this view's keys, yours, then the commands.
@@ -1138,7 +1132,12 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
   } else if (!data) {
     main = (
       <Panel title={VIEWS.find((v) => v.id === view).label} width={W} height={mainH}>
-        <Text color={theme.dim}>{loading ? '  Loading…' : '  No repository open. Press 7 to pick one, or /open <path>.'}</Text>
+        <Box marginTop={1} marginLeft={2}>
+          <Box flexDirection="column" width={PET_WIDTH} marginRight={2}>
+            <Pet mood={mood} />
+          </Box>
+          <Text color={theme.dim}>{loading ? 'Loading…' : 'No repository open. Press 7 to pick one, or /open <path>.'}</Text>
+        </Box>
       </Panel>
     );
   } else {
@@ -1146,9 +1145,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     main = <View data={data} ctx={ctx} width={W} height={mainH} active={viewActive} filter={filter} prVersion={prVersion} jump={jump} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'rebase'
         ? '↵ start the rebase · esc cancel'
@@ -1161,23 +1158,24 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
           : overlay
           ? 'j/k scroll · space page · n/alt+n hunk · / search · esc close'
           : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  f fetch · p pull · alt+p push · z undo · / commands · ! git · ? help';
+  const right = focus === 'prompt' ? '' : 'f fetch · p pull · alt+p push · z undo · / commands · ! git · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
+  // command, else how Twig sees things.
+  let said = { face: FACES[mood], message: moodLine(mood, data) };
+  if (flash) said = { face: FACES[mood], message: flash.text };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  · esc puts it away', color: theme.dim }] };
+  // While the prompt has the keys, its keys are what the line is for.
+  else if (focus === 'prompt') said = { face: FACES[mood], message: '' };
+  else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) said = { face: FACES[mood], message: welcomeLine('Splice', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} environment={environment} width={W} loading={loading} mood={mood} />
-      <Tabs view={view} data={data} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
+      {factsRow ? <Row pointer={false} width={W} segments={factsRow} /> : null}
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[{ text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true }, { text: reaction.text }, { text: '  · esc puts it away', color: theme.dim }]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -1188,11 +1186,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder='Press / for commands (try "/commit fix typo"), ! to run git, ? for shortcuts' />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...said} keys={keys} right={right} width={W} />
     </Box>
   );
 }

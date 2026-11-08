@@ -105,7 +105,7 @@ test('/sparse: off, set (asking first), the header, refusing over changes, add f
   lastApp = render(React.createElement(App, { initialPath: dir, config: { recent: [], roots: [], history: [] } }));
   const app = lastApp;
   const frame = () => app.lastFrame() ?? '';
-  const header = () => frame().split('\n')[0];
+  const header = () => frame().split('\n').slice(0, 2).join('\n');
   try {
     await until(() => frame().includes('Three folders'), 'the graph');
     assert.doesNotMatch(header(), /sparse/);

@@ -92,7 +92,7 @@ test('clicks pick rows and tabs, double-clicks do what ↵ does, the wheel scrol
     // between them could take longer than a double-click may.)
     mouse.click(p.x, p.y);
     mouse.click(p.x, p.y);
-    await until(() => /─ [0-9a-f]{7} Commit number 38 ─.*esc close/.test(frame()), 'the diff of the double-clicked commit');
+    await until(() => /│ [0-9a-f]{7} Commit number 38 .*esc close/.test(frame()), 'the diff of the double-clicked commit');
 
     // A tab closes what's open over the view and switches to it.
     p = at(frame(), '3 Branches');
@@ -121,11 +121,11 @@ test('clicks pick rows and tabs, double-clicks do what ↵ does, the wheel scrol
     // The prompt: a click focuses it, and a click on the view gives the keys back, keeping the text.
     p = at(frame(), 'Press / for commands');
     mouse.click(p.x, p.y);
-    await until(() => frame().includes('enter run · tab complete'), 'the prompt focused');
+    await until(() => frame().includes('enter run  tab complete'), 'the prompt focused');
     app.stdin.write('x');
     p = at(frame(), 'Commit number 36');
     mouse.click(p.x, p.y);
-    await until(() => /❯.*Commit number 36/.test(frame()) && !frame().includes('enter run · tab complete'), 'the view focused again');
+    await until(() => /❯.*Commit number 36/.test(frame()) && !frame().includes('enter run  tab complete'), 'the view focused again');
     assert.match(frame(), /> x/);
 
     // Text selected and copied (mouse.js does that): said for a moment in the bottom line.

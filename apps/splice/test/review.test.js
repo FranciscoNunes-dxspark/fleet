@@ -341,7 +341,7 @@ test('x resolves the picked thread and opens it again', async () => {
     app.stdin.write('x');
     await until(() => calls.length === 1 && frame().includes('┏ 1 comment  resolved'), 'the thread resolved');
     app.stdin.write('x');
-    await until(() => calls.length === 2 && /┏ 1 comment *│/.test(frame()), 'the thread opened again');
+    await until(() => calls.length === 2 && /┏ 1 comment *$/m.test(frame()), 'the thread opened again');
     assert.deepEqual(calls, [[7, 'PRRT_1', true], [7, 'PRRT_1', false]]);
   } finally {
     app.unmount();
