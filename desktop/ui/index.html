@@ -9,10 +9,25 @@
 <body>
   <header class="top">
     <span class="brand"><span class="ship" aria-hidden="true">⛴</span> Fleet</span>
-    <span class="where" id="where">starting…</span>
-    <span class="tag">prototype</span>
+    <nav class="tabs" id="tabs" aria-label="Apps"></nav>
+    <button type="button" class="add" id="add" title="Choose the apps on the bar (prefix a)" aria-label="Choose the apps on the bar">+</button>
+    <span class="spacer"></span>
+    <span class="status" id="status"></span>
+    <span class="where" id="where"></span>
   </header>
   <main id="terminal" aria-label="Fleet"></main>
+  <footer class="strip" id="strip">
+    <span class="say" id="say"></span>
+    <span class="tools" id="tools">
+      <button type="button" data-key="w" title="What changed lately, across the apps (prefix w)">What changed</button>
+      <button type="button" data-key="f" title="Follow a request through every app (prefix f)">Follow</button>
+      <button type="button" data-key="r" title="Runbooks (prefix r)">Runbooks</button>
+      <button type="button" data-key="S" title="Security across the apps (prefix S)">Security</button>
+      <button type="button" data-key="e" title="The project's environment (prefix e)">Environment</button>
+      <button type="button" data-key="|" title="Two apps side by side (prefix |)">Split</button>
+      <button type="button" data-key="?" title="Every key (prefix ?)">?</button>
+    </span>
+  </footer>
   <div class="ended" id="ended" hidden>
     <p id="ended-text">Fleet ended.</p>
     <button type="button" id="again">Start it again</button>

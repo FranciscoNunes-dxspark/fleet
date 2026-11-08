@@ -112,6 +112,8 @@ const host = new Host({
   chosen: Array.isArray(state.apps) ? state.apps : null,
   onChosen: (apps) => saveState({ apps }),
   onUpdate: () => updateFleet(true),
+  // Fleet's desktop window (desktop/) sets this: it draws the bar itself, from the state the host sends.
+  desktop: process.env.FLEET_DESKTOP === '1',
 });
 
 // However the host ends, the apps end with it and the terminal is given back.

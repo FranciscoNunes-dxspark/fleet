@@ -2,7 +2,18 @@
 
 Fleet in a window of its own. The window is a [Tauri](https://tauri.app) app: a small Rust program with the system's web view. It runs the `fleet` host behind a real pseudo-terminal (ConPTY on Windows, a pty elsewhere) and draws it with [xterm.js](https://xtermjs.org), the terminal VS Code uses. The host and the apps are exactly the programs you run in any terminal. What the window adds is its own frame, icon, font and colours, without Windows Terminal or any other terminal in between.
 
-This is step one. Step two moves Fleet's own chrome out of the character grid into the window: the bar becomes real tabs with badges, and the palette, panels, toasts and the production warning become overlays. The host already speaks a JSON control protocol to its apps (`apps/fleet/CLAUDE.md`), and the window can speak the same one to the host.
+Fleet's bar is the window's own: the host, started with `FLEET_DESKTOP=1`, doesn't draw it in the terminal (the apps get every row) and sends its state instead as a private escape sequence (`OSC 5380`, the host's `barState`). The window draws that state as:
+
+- **Tabs along the top:** each app's colour as a dot, its badges, and the app on screen underlined.
+- **Pills beside them:** the environment (the frame turns red for production), `● REC` while a runbook records, and Claude's proposals.
+- **A strip along the bottom:** notices, the prefix's keys while it waits, the folder being asked for, and the quit question with Quit and Stay buttons.
+- **Buttons in that strip:** for what works across apps. These are what changed, following a request, the runbooks, security, the environment, the split and the help.
+
+A click types the prefix and its key into Fleet, so the window adds no new way in, and every key works as in a terminal.
+
+![Fleet in its window](screenshot.png)
+
+Next: the palette, the panels and the toasts as the window's own overlays rather than boxes drawn in the grid.
 
 ## Running it
 
@@ -44,7 +55,7 @@ Installers (`.msi` and `.exe` on Windows, `.dmg` on macOS, `.deb` and `.AppImage
 ## How it fits together
 
 - `src-tauri/src/main.rs`: the pseudo-terminal, through WezTerm's `portable-pty` crate. It handles four commands from the web view (`start`, `write`, `resize`, `stop`) and sends back two events: `pty-data` carries Fleet's output, base64-encoded so a UTF-8 character split across two reads comes through whole; `pty-exit` reports that Fleet has ended.
-- `ui/`: the window's page. `app.js` connects xterm.js to those commands and events. `style.css` uses the kit's shell-look colours (`packages/kit/look.js`). `vendor/` is filled by `scripts/vendor.mjs` and isn't committed.
+- `ui/`: the window's page. `app.js` connects xterm.js to those commands and events, and draws the bar from the host's `OSC 5380` (xterm.js's `registerOscHandler`). `style.css` uses the kit's shell-look colours (`packages/kit/look.js`). `vendor/` is filled by `scripts/vendor.mjs` and isn't committed.
 - `src-tauri/tauri.conf.json`: the window, the content security policy and the bundle's icons (Fleet's ship, from `apps/fleet/assets`).
 
 This folder sits outside `apps/` on purpose. CI tests and releases every folder in `apps/` with Bun, and a Tauri app is built with cargo. When the window becomes a product, it gets a workflow of its own: a cargo build per platform, the Tauri CLI's installers, and signing.

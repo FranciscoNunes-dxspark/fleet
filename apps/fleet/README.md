@@ -118,6 +118,10 @@ say `ctrl+b`; read yours there.
 
 `P`, `R` and `S` are capitals: `p` is the previous space, `r` the runbooks and `s` Splice. Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
 
+## In its own window
+
+`desktop/` at the repository's root is a prototype of Fleet in a window of its own (a Tauri app, its README says how to run it). There the bar isn't a row of the terminal: the window draws it as tabs along the top, with the environment, `● REC` and the proposals beside them, and a strip along the bottom that carries the notices, the prefix's keys, the folder being asked for and the quit question, with buttons for what changed, following a request, the runbooks, security, the environment, the split and the help. A click on any of them types the prefix and its key, so everything the keys do still works. The apps get the terminal's every row.
+
 ## Choosing the apps
 
 `ctrl+b` `a` lists every app with a box beside it: `space` or `↵` shows or hides the one under the cursor in the bar, and the choice is kept in `~/.fleet/host.json` (`"apps": ["splice", "bilge", …]`). The numbers `1`–`9` and `n` `p` go through the apps shown, in their order. A hidden app is still there: its letter (`ctrl+b` `k` for Keel), a sibling handing it something, a runbook's step or `fleet keel` opens it, and it shows in the bar while it runs. One app at least stays in the bar.

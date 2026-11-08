@@ -78,6 +78,30 @@ test('switching starts an app the first time, sends it the keys, repaints it on 
   await until(() => !alive(one) && !alive(two), 'both apps gone');
 });
 
+test('in the desktop window the apps get every row, and the bar goes to the window as its state', async () => {
+  const { term, keys } = startHost({ spaces: SPACES, columns: 70, rows: 14, desktop: true });
+  const { screen } = term;
+  // What the host sent the window (OSC 5380), newest last.
+  const states = () => [...term.written.matchAll(/\x1b\]5380;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
+  await until(() => screen.row(0) === 'one 70x14', 'the first app at the whole height', { term });
+  await until(() => states().at(-1)?.spaces[0].state === 'running', 'the state with the app running', { term });
+  const first = states().at(-1);
+  assert.equal(first.active, 'one');
+  assert.deepEqual(first.spaces.map((s) => [s.id, s.letter, s.accent, s.state]), [['one', 'o', '#5fd787', 'running'], ['two', 'w', '#5fafff', 'idle']]);
+  assert.equal(first.key, '\x02', 'the prefix as the window types it');
+  assert.ok(!screen.text().includes('ctrl+b ? help'), 'no bar drawn in the grid');
+  // The same state is never sent twice in a row.
+  const sent = states().map((s) => JSON.stringify(s));
+  assert.ok(sent.every((s, i) => i === 0 || s !== sent[i - 1]));
+
+  // A tab clicked in the window types the prefix and the space's letter.
+  keys('\x02w');
+  await until(() => screen.row(0) === 'two 70x14' && states().at(-1).active === 'two', 'the switch, and the window told', { term });
+  keys('\x02');
+  await until(() => states().at(-1).prefix === true, 'the prefix waiting, for the window to show its keys', { term });
+  assert.match(states().at(-1).hint, /1-9 or a letter/);
+});
+
 test('an app that exits says so in its tab and on its screen, and ↵ starts it again', async () => {
   const { host, term, keys, done } = startHost({ spaces: SPACES });
   const { screen } = term;

@@ -33,7 +33,7 @@ import { fit, stringWidth } from '@fleet/kit/text.js';
 import { remember } from '@fleet/kit/folders.js';
 import { badgeFor, badgeText, familyReader } from './attention.js';
 import { completeFolder, editLine, isFolder, lineOf, renderAsk, resolveFolder, shortFolder } from './folder.js';
-import { barLayout, colour, renderBar, statusSegments, tabAt } from './bar.js';
+import { barLayout, colour, hintFor, renderBar, statusSegments, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { DEFAULT_PREFIX, prefixByte, prefixName, prefixesFor, readKeys, takeBarClicks } from './keys.js';
 import { Panels } from './panels.js';
@@ -126,8 +126,13 @@ export class Host {
     // The apps the bar shows (host.json's "apps", ids), null for all of them, and keeping a new choice.
     chosen = null,
     onChosen = () => {},
+    // Inside Fleet's desktop window (FLEET_DESKTOP=1): the window draws the bar as tabs and a status
+    // strip from the state the host sends it (barState), so the apps get every row.
+    desktop = false,
   }) {
-    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders, onChosen });
+    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders, onChosen, desktop });
+    // The bar's state as last sent to the desktop window, so the same state isn't sent again.
+    this.sentBar = null;
     this.prefixes = prefixesFor(prefix);
     this.prefixLabel = prefixName(prefix);
     this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '', badge: null }));
@@ -169,14 +174,14 @@ export class Host {
     return this.spaces.find((s) => s.id === id);
   }
 
-  /** The terminal's size, and the part of it the apps get: every row but the bar's. */
+  /** The terminal's size, and the part of it the apps get: every row but the bar's (all of them in the desktop window). */
   size() {
     return { columns: this.output.columns || 80, rows: this.output.rows || 24 };
   }
 
   appSize() {
     const { columns, rows } = this.size();
-    return { columns, rows: Math.max(1, rows - 1) };
+    return { columns, rows: Math.max(1, this.desktop ? rows : rows - 1) };
   }
 
   /** Takes the screen and opens space `id`. Resolves `done` once the host has quit. */
@@ -217,7 +222,41 @@ export class Host {
 
   /** The bar drawn from a saved cursor, so whatever was drawing carries on where it was. */
   barString() {
+    if (this.desktop) return this.barMessage();
     return `\x1b7\x1b[${this.size().rows};1H${this.barText()}\x1b8`;
+  }
+
+  /**
+   * What the desktop window draws the bar from: the spaces on the bar with their states, badges and
+   * accents, the one on screen (and the other pane's), the fleet's own state, and whatever the bar
+   * would say (a notice, the prefix's keys, the folder being asked for, the quit question). `key` is
+   * the prefix as typed, which the window sends before a space's letter when a tab is clicked.
+   */
+  barState() {
+    const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
+    const names = this.spaces.filter((s) => s.child).map((s) => s.title);
+    return {
+      spaces: this.barSpaces().map((s) => ({ id: s.id, title: s.title, letter: s.letter, accent: s.accent, state: s.state, code: s.code, badge: badgeText(s.badge) || '', error: Boolean(s.badge?.error) })),
+      active: this.active,
+      shown,
+      key: this.prefixes[0],
+      prefixLabel: this.prefixLabel,
+      prefix: Boolean(this.keys.prefix),
+      hint: hintFor({ prefix: this.keys.prefix, notice: '', split: Boolean(shown), prefixLabel: this.prefixLabel }),
+      notice: this.noticeText,
+      status: this.status,
+      cwd: shortFolder(this.cwd, this.home),
+      asking: this.asking ? { label: this.asking.from ? `${this.asking.from} asks to move the fleet to` : 'Move the fleet to', text: this.asking.line.text, cursor: this.asking.line.cursor, hint: this.asking.hint || '↵ moves every app there · tab completes · esc cancels' } : null,
+      confirming: this.confirming ? `Quit Fleet? ${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} running and will stop.` : null,
+    };
+  }
+
+  /** The bar's state as a private OSC (5380) for the desktop window, or nothing when it hasn't changed. */
+  barMessage() {
+    const json = JSON.stringify(this.barState());
+    if (json === this.sentBar) return '';
+    this.sentBar = json;
+    return `\x1b]5380;${json}\x07`;
   }
 
   drawBar() {
@@ -380,7 +419,8 @@ export class Host {
 
   deliver(data) {
     if (this.confirming) return this.answerQuit(/^[yY\r]/.test(data));
-    const { data: rest, clicks } = takeBarClicks(data, this.size().rows);
+    // In the desktop window the last row is an app's, and the bar's clicks are the window's own.
+    const { data: rest, clicks } = this.desktop ? { data, clicks: [] } : takeBarClicks(data, this.size().rows);
     for (const x of clicks) {
       const id = this.layout && tabAt(this.layout, x);
       if (id) return this.switchTo(id);
