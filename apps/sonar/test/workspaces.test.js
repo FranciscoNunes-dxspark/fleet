@@ -31,7 +31,7 @@ test('a workspace in Resources: ↵ queries it in Logs, completion knows its tab
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Log Analytics workspace') && frame().includes('30 days'), 'its details');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('╭─ Logs') && frame().includes('ContainerAppConsoleLogs_CL') && frame().includes('AppRequests'), 'its tables in Logs');
+    await until(() => frame().includes('│ Logs') && frame().includes('ContainerAppConsoleLogs_CL') && frame().includes('AppRequests'), 'its tables in Logs');
     assert.match(frame(), /contoso-logs · \d+ rows/);
     app.stdin.write('e');
     await new Promise((r) => setTimeout(r, 100));

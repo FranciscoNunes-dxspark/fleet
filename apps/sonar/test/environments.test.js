@@ -51,7 +51,7 @@ test('/env says which and switches every app; its section picks the app; product
   const frame = () => a.lastFrame() ?? '';
   try {
     await until(() => frame().includes('Contoso Dev') && /❯ ● contoso-web-dev/.test(frame()), "dev's subscription and app");
-    assert.match(frame(), /│ {2}dev/);
+    assert.match(frame(), /dev {2}last /);
     a.stdin.write('/');
     await type(a.stdin, 'env');
     a.stdin.write(KEYS.enter);

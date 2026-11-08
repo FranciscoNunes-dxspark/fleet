@@ -48,7 +48,7 @@ test('Resources flags an app whose reference fails, its details and settings say
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('Settings of contoso-api'), 'the settings closed');
     app.stdin.write('p');
-    await until(() => frame().includes('╭─ Problems') && frame().includes('TimeoutException'), 'its problems');
+    await until(() => frame().includes('│ Problems') && frame().includes('TimeoutException'), 'its problems');
     app.stdin.write('/');
     await type(app.stdin, 'incident Timeout');
     app.stdin.write(KEYS.enter);
