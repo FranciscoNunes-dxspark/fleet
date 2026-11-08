@@ -14,7 +14,6 @@ import { remember } from '../projects.js';
 import { Supervisor, killPids, pidsOnPort } from '../supervisor.js';
 import { ask } from '@fleet/kit/claude-cli.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { environmentFor } from '@fleet/kit/environments.js';
@@ -24,7 +23,8 @@ import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/ki
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
-import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { CrewView } from './CrewView.jsx';
 import { TracesView } from './TracesView.jsx';
@@ -32,8 +32,8 @@ import { OTLP_PORT, TraceStore, startOtlpReceiver } from '../traces.js';
 import { LogView } from './LogView.jsx';
 import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
-import { FACES, moodFor } from '../pet.js';
+import { PET_WIDTH, Pet, updateLine } from './Pet.jsx';
+import { FACES, PET, moodFor, moodLine } from '../pet.js';
 import { exitNews, worthNotifying } from '../notify.js';
 import { copiedNote, decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
@@ -75,46 +75,27 @@ const firstLine = (s) => String(s ?? '').split('\n')[0];
 // Whether a process runs differently now (its command or its settings), so /reload restarts it.
 const changedSpec = (had, now) => had.run !== now.run || had.build !== now.build || JSON.stringify(had.iis ?? null) !== JSON.stringify(now.iis ?? null) || JSON.stringify(had.logs ?? []) !== JSON.stringify(now.logs ?? []) || Boolean(had.trace) !== Boolean(now.trace) || had.service !== now.service || Boolean(had.dump) !== Boolean(now.dump) || had.cwd !== now.cwd || JSON.stringify(had.env) !== JSON.stringify(now.env) || JSON.stringify(had.fileEnv ?? {}) !== JSON.stringify(now.fileEnv ?? {});
 
-function Header({ data, width, loading, mood, environment }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Bosun', bold: true },
-  ];
-  if (data?.dir) segs.push({ text: '  │  ', color: theme.border }, { text: basename(data.dir), bold: true });
+// What the top line says at its right, most important first, as it drops whole parts from the end
+// when the line is narrow: what crashed, the environment, how many run, the profile, where the crew came
+// from, the project.
+function headerContext({ data, loading, environment }) {
+  const parts = [];
   if (data) {
     const up = data.procs.filter((p) => p.child).length;
     const crashed = data.procs.filter((p) => p.status === 'crashed').length;
-    segs.push({ text: '  │  ', color: theme.border }, { text: `${up}/${data.procs.length} running`, color: theme.dim });
-    if (crashed) segs.push({ text: `  ${crashed} crashed`, color: theme.del, bold: true });
-    if (data.from) segs.push({ text: `  │  ${data.from}`, color: theme.dim });
-    if (data.profile) segs.push({ text: `  │  profile ${data.profile}`, color: theme.accent });
-    if (environment) segs.push({ text: '  │  ', color: theme.border }, { text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod });
-  }
-  else if (loading) segs.push({ text: '  loading…', color: theme.dim });
-  return <Row pointer={false} width={width} segments={segs} />;
+    if (crashed) parts.push([{ text: `${crashed} crashed`, color: theme.del, bold: true }]);
+    if (environment) parts.push([{ text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod }]);
+    parts.push([{ text: `${up}/${data.procs.length} running`, color: theme.dim }]);
+    if (data.profile) parts.push([{ text: `profile ${data.profile}`, color: theme.accent }]);
+    if (data.from) parts.push([{ text: data.from, color: theme.dim }]);
+    if (data.dir) parts.push([{ text: basename(data.dir), bold: true }]);
+  } else if (loading) parts.push([{ text: 'loading…', color: theme.dim }]);
+  return parts.flatMap((p, i) => (i ? [{ text: '  ' }, ...p] : p));
 }
 
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
-
-function Tabs({ view, entries, width }) {
-  const segs = [];
-  for (const t of tabLabels(entries)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
-}
+// The views in the top line, the digit that picks each before it and the log's count after it.
+const viewTabs = (entries) =>
+  VIEWS.map((v, i) => ({ id: v.id, key: i + 1, label: v.label, count: v.id === 'log' ? entries.length : 0, countColor: theme.dim }));
 
 // The last two results, Claude Code style: "● node --version" then "  ⎿  output".
 function activityRows(entries) {
@@ -1109,15 +1090,15 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
-      // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
+    if (e.y === promptTop) {
+      // The text starts after a space and "> ", scrolled as PromptBox scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
       return setFocus('prompt');
     }
-    const sug = e.y - promptTop - 3;
+    const sug = e.y - promptTop - 1;
     if (sug >= 0 && sug < sugCount) {
       setSugIndex(sug);
       // As ↵ would, on the suggestion under the pointer.
@@ -1144,24 +1125,23 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   const H = Math.max(12, rows - 1);
   // esc hides the activity lines; the Log view keeps them all.
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
   // How Squawk feels, for the siblings (family.js's writeMood), whenever that changes.
   const told = familyMood({ mood, data, lastEntry: entries.at(-1), busy });
   useEffect(() => {
     if (config.familyMoods !== false) writeMood('bosun', told);
   }, [told.mood, told.reason, config.familyMoods]);
-  // The welcome box only appears when the terminal has room for it next to a useful view.
-  const showWelcome = welcome && H >= 28;
-  const reacting = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Bosun', views: viewTabs(entries), view, context: headerContext({ data, loading, environment }), width: W });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
-    mainTop: 2,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    promptTop: 1 + mainH + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   // The palette's list: this view's keys, yours, then the commands.
@@ -1189,16 +1169,19 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   } else if (!data) {
     main = (
       <Panel title={VIEWS.find((v) => v.id === view).label} width={W} height={mainH}>
-        <Text color={theme.dim}>{loading ? '  Reading the crew…' : '  Nothing read. /reload tries again.'}</Text>
+        <Box marginTop={1} marginLeft={2}>
+          <Box flexDirection="column" width={PET_WIDTH} marginRight={2}>
+            <Pet mood={mood} />
+          </Box>
+          <Text color={theme.dim}>{loading ? 'Reading the crew…' : 'Nothing read. /reload tries again.'}</Text>
+        </Box>
       </Panel>
     );
   } else {
     main = <CrewView procs={data.procs} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
@@ -1211,27 +1194,22 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
           : overlay
             ? 'j/k scroll · space page · y copy · esc close'
             : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+  const right = focus === 'prompt' ? '' : '/ commands · ! shell · , settings · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
+  // command, else how Squawk sees the crew.
+  // While the prompt has the keys, its own keys matter more than Squawk's chatter.
+  let said = { face: FACES[mood], message: focus === 'prompt' ? '' : moodLine(mood, data) };
+  if (flash) said = { face: FACES[mood], message: flash.text };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  else if (focus !== 'prompt' && welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (focus !== 'prompt' && welcome) said = { face: FACES[mood], message: welcomeLine('Bosun', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header environment={environment} data={data} width={W} loading={loading} mood={mood} />
-      <Tabs view={view} entries={entries} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reaction.text },
-            { text: '  esc', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -1246,11 +1224,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...said} keys={keys} right={right} width={W} />
     </Box>
   );
 }
