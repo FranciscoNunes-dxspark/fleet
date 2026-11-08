@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { theme } from '../theme.js';
 import { clean, fit, fitSegments, stringWidth } from '../text.js';
+import { shellLook } from '../look.js';
 
 /**
  * One line of styled segments, cut to `width`. Draws the ❯ cursor and the selection background;
@@ -58,6 +59,7 @@ export const cutHint = () => cutShort;
 export function Panel({ title, hint, width, height, focused = false, children }) {
   // A production environment (environments.js's markProduction) draws every frame red.
   const color = theme.envProd ? theme.del : focused ? theme.accent : theme.border;
+  if (shellLook()) return <Pane {...{ title, hint, width, height, focused, color }}>{children}</Pane>;
   const label = title ? ` ${title} ` : '';
   const room = width - 4;
   // One column is kept for the space after the label, so a long title never pushes the corner off.
@@ -84,6 +86,47 @@ export function Panel({ title, hint, width, height, focused = false, children })
         borderStyle="round"
         borderTop={false}
         borderColor={color}
+        overflow="hidden"
+      >
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+/**
+ * The shell look's pane: a title row and a rule down the left side, in the accent when focused, and no
+ * box. Its children get the same width as inside Panel's box (the rule and one column on the right)
+ * and one row more, since there is no bottom border.
+ */
+function Pane({ title, hint, width, height, focused, color, children }) {
+  const label = title ? ` ${title} ` : '';
+  const room = width - 2;
+  const shownLabel = label ? fit(label, Math.min(stringWidth(label), room - 1)).trimEnd() + ' ' : '';
+  const shownHint = fitHint(hint, room - stringWidth(shownLabel));
+  if (focused) cutShort = hint && shownHint !== ` ${hint} ` ? { title, hint } : null;
+  const fill = Math.max(0, room - stringWidth(shownLabel) - stringWidth(shownHint));
+  return (
+    <Box flexDirection="column" width={width} height={height}>
+      <Text wrap="truncate">
+        <Text color={color}>│</Text>
+        <Text color={focused ? theme.accent : theme.dim} bold={focused}>
+          {shownLabel}
+        </Text>
+        {' '.repeat(fill)}
+        <Text color={theme.dim}>{shownHint}</Text>
+        {' '}
+      </Text>
+      <Box
+        flexDirection="column"
+        width={width}
+        height={height - 1}
+        borderStyle="single"
+        borderTop={false}
+        borderRight={false}
+        borderBottom={false}
+        borderColor={color}
+        paddingRight={1}
         overflow="hidden"
       >
         {children}
@@ -237,7 +280,9 @@ export function PromptBox({ value, cursor, focused, width, placeholder, bang = t
   // "!" runs what follows as it is (SQL, or a git command), and the box takes another colour.
   const bangMode = bang && value.startsWith('!');
   const color = !focused ? theme.border : bangMode ? theme.bangMode : theme.accent;
-  const inner = width - 6;
+  const shell = shellLook();
+  // The shell look's prompt is one row, without the box: the sign, a space, the text.
+  const inner = shell ? width - 3 : width - 6;
   let body;
   if (!focused && !value) {
     body = <Text color={theme.dim}>{fit(placeholder, inner).trimEnd()}</Text>;
@@ -259,15 +304,29 @@ export function PromptBox({ value, cursor, focused, width, placeholder, bang = t
       <Text color={theme.dim}>{clean(visible)}</Text>
     );
   }
+  const sign = (
+    <Text color={focused ? color : theme.dim} bold>
+      {bangMode ? '! ' : '> '}
+    </Text>
+  );
+  if (shell) {
+    return (
+      <Box width={width} paddingLeft={1} height={1} overflow="hidden">
+        {sign}
+        {body}
+      </Box>
+    );
+  }
   return (
     <Box borderStyle="round" borderColor={color} width={width} paddingX={1}>
-      <Text color={focused ? color : theme.dim} bold>
-        {bangMode ? '! ' : '> '}
-      </Text>
+      {sign}
       {body}
     </Box>
   );
 }
+
+/** The rows PromptBox takes: three in a box, one in the shell look. */
+export const promptHeight = () => (shellLook() ? 1 : 3);
 
 /** The slash-command menu under the prompt. */
 export function Suggestions({ items, selected, width }) {

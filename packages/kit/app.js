@@ -7,6 +7,7 @@
 // `version` must be written as `process.env.<NAME>_VERSION` there: the build (scripts/build.js) defines
 // that expression, which a computed name wouldn't match.
 import { readFileSync } from 'node:fs';
+import { setLook } from './look.js';
 
 let current = null;
 
@@ -17,16 +18,18 @@ export const versionVariable = (name) => `${String(name).toUpperCase().replace(/
  * Says which app this is. `name` is lower case (file names, tags, the user agent), `title` as people
  * read it (messages, the credential store's service; it must never change, or saved passwords are
  * lost), `version` the built-in one (undefined from a checkout, which reads `packageUrl`'s package.json).
- * Returns the app: { name, title, versionVariable, VERSION, COMPILED, packageUrl, credentialService }.
+ * `look` is how the kit's parts draw (look.js: "classic", the default, or "shell").
+ * Returns the app: { name, title, versionVariable, VERSION, COMPILED, packageUrl, credentialService, look }.
  */
-export function configureApp({ name, title, version, packageUrl, credentialService = title }) {
+export function configureApp({ name, title, version, packageUrl, credentialService = title, look = 'classic' }) {
   if (!/^[a-z][a-z0-9-]*$/.test(name ?? '')) throw new Error(`configureApp needs a lower-case name, not ${JSON.stringify(name)}`);
   if (!title) throw new Error('configureApp needs a title');
   if (current && current.name !== name) throw new Error(`This process is ${current.title}; it can't also be ${title}.`);
   const variable = versionVariable(name);
   const baked = version ?? process.env[variable];
   const VERSION = baked ?? (packageUrl ? JSON.parse(readFileSync(packageUrl, 'utf8')).version : '0.0.0');
-  current = Object.freeze({ name, title, versionVariable: variable, VERSION, COMPILED: baked != null, packageUrl, credentialService });
+  setLook(look);
+  current = Object.freeze({ name, title, versionVariable: variable, VERSION, COMPILED: baked != null, packageUrl, credentialService, look });
   return current;
 }
 
