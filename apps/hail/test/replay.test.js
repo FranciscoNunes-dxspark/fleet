@@ -149,7 +149,7 @@ test("a request taken from Sonar replayed against the environment and compared w
     await run(app, '/replay :1');
     await until(() => /Couldn't reach|failed|ECONNREFUSED|refused/i.test(frame()), 'a closed port said');
     app.stdin.write('4');
-    await until(() => frame().includes('─ History'), 'History');
+    await until(() => frame().includes('│ History'), 'History');
     app.stdin.write('\x1bR');
     await until(() => frame().includes('send it there and compare'), 'where to, from History');
     app.stdin.write(KEYS.enter);

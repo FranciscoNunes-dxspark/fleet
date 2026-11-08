@@ -23,7 +23,6 @@ import { contextIn, pastedLine, readMoods, writeMood } from '@fleet/kit/family.j
 import { replaceBody } from '../takes.js';
 import { worthNotifying } from '../notify.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { recordCommand } from '@fleet/kit/recording.js';
@@ -32,7 +31,8 @@ import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/ki
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
-import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HistoryView } from './HistoryView.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { LogView } from './LogView.jsx';
@@ -43,7 +43,7 @@ import { EditView } from './EditView.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { DataViewer } from '@fleet/kit/ui/DataViewer.jsx';
 import { SocketView } from './SocketView.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
+import { PET_WIDTH, Pet, updateLine } from './Pet.jsx';
 import { FACES, familyMood, moodFor, reactionLine } from '../pet.js';
 
 const VIEWS = [
@@ -80,48 +80,24 @@ const copiedText = (text) => {
   return n > 1 ? `${n} lines` : `${text.length} character${text.length === 1 ? '' : 's'}`;
 };
 
-function Header({ data, env, project, width, loading, mood, mock }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Hail', bold: true },
-  ];
-  if (data) {
-    segs.push({ text: '  │  ', color: theme.border }, { text: data.name, bold: true });
-    segs.push({ text: '  env ', color: theme.dim }, { text: env ?? (data.environments.names.length ? 'none' : '—'), color: env ? theme.warn : theme.dim, bold: Boolean(env) });
-    // The project's environment (every app's), when it has one: red for production.
-    if (project) segs.push({ text: '  project ', color: theme.dim }, { text: `${project.name}${project.prod ? ' (production)' : ''}`, color: project.prod ? theme.del : theme.dim, bold: project.prod });
-    if (mock) segs.push({ text: '  mock ', color: theme.dim }, { text: `:${mock.port}`, color: theme.accent, bold: true });
-  } else if (loading) segs.push({ text: '  loading…', color: theme.dim });
-  // The segments first, whole when they fit: the environments (a production one above all) matter more
-  // than the folder, whose path gives way from its start when the line is short.
-  const shown = fitSegments(segs, width - 1);
-  const room = width - stringWidth(shown.map((x) => x.text).join('')) - 1;
-  const path = data?.dir ?? '';
-  const tail = stringWidth(path) <= room ? path : room > 8 ? `…${path.slice(-(room - 1))}` : '';
-  return <Row pointer={false} width={width} segments={[...shown, { text: ' ' }, { text: tail, color: theme.dim }]} />;
-}
-
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
-
-function Tabs({ view, entries, width }) {
+// What the top line says at its right, most important first, as what doesn't fit gives way from the
+// end: the project's environment (red for production), the file's, the file's name, the mock server,
+// then the folder.
+function headerContext({ data, env, project, loading, mock }) {
   const segs = [];
-  for (const t of tabLabels(entries)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
+  if (data) {
+    if (project) segs.push({ text: 'project ', color: theme.dim }, { text: `${project.name}${project.prod ? ' (production)' : ''}`, color: project.prod ? theme.del : theme.dim, bold: project.prod }, { text: '  ' });
+    segs.push({ text: 'env ', color: theme.dim }, { text: env ?? (data.environments.names.length ? 'none' : '—'), color: env ? theme.warn : theme.dim, bold: Boolean(env) });
+    segs.push({ text: `  ${data.name}`, bold: true });
+    if (mock) segs.push({ text: '  mock ', color: theme.dim }, { text: `:${mock.port}`, color: theme.accent, bold: true });
+    if (data.dir) segs.push({ text: `  ${data.dir}`, color: theme.dim });
+  } else if (loading) segs.push({ text: 'loading…', color: theme.dim });
+  return segs;
 }
+
+// The views in the top line, the digit that picks each before it and the log's count after it.
+const viewTabs = (entries) =>
+  VIEWS.map((v, i) => ({ id: v.id, key: i + 1, label: v.label, count: v.id === 'log' && entries.length ? entries.length : 0, countColor: theme.dim }));
 
 // The last two results, Claude Code style: "● node --version" then "  ⎿  output".
 function activityRows(entries) {
@@ -1203,15 +1179,15 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
+    if (e.y === promptTop) {
       // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
       return setFocus('prompt');
     }
-    const sug = e.y - promptTop - 3;
+    const sug = e.y - promptTop - 1;
     if (sug >= 0 && sug < sugCount) {
       setSugIndex(sug);
       // As ↵ would, on the suggestion under the pointer.
@@ -1238,24 +1214,23 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
   const H = Math.max(12, rows - 1);
   // esc hides the activity lines; the Log view keeps them all.
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
   // Hoot's mood, for the siblings, written whenever it changes.
   const shared = familyMood(mood, { busy, lastEntry: entries.at(-1) });
   useEffect(() => {
     if (familyOn) writeMood('hail', shared);
   }, [shared.mood, familyOn]);
-  const reactionRow = reaction ? [{ text: reactionLine(reaction), color: theme.accent }, { text: '  esc', color: theme.dim }] : null;
-  // The welcome box only appears when the terminal has room for it next to a useful view.
-  const showWelcome = welcome && H >= 28;
-  const mainH = Math.max(6, H - 2 - (reactionRow ? 1 : 0) - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Hail', views: viewTabs(entries), view, context: headerContext({ data, env: environment(), project: projectEnv, loading, mock: mockServer }), width: W });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
-    mainTop: 2,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + (reactionRow ? 1 : 0) + act.length + (busy ? 1 : 0),
+    promptTop: 1 + mainH + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   // The palette's list: this view's keys, yours, then the commands.
@@ -1283,7 +1258,12 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
   } else if (!data) {
     main = (
       <Panel title={VIEWS.find((v) => v.id === view).label} width={W} height={mainH}>
-        <Text color={theme.dim}>{loading ? '  Loading…' : fileRef.current ? '  The file couldn\'t be read: r tries again.' : '  No .http file open. /new writes an example; /open <file> opens one.'}</Text>
+        <Box marginTop={1} marginLeft={2}>
+          <Box flexDirection="column" width={PET_WIDTH} marginRight={2}>
+            <Pet mood={mood} />
+          </Box>
+          <Text color={theme.dim}>{loading ? 'Loading…' : fileRef.current ? 'The file couldn\'t be read: r tries again.' : 'No .http file open. /new writes an example; /open <file> opens one.'}</Text>
+        </Box>
       </Panel>
     );
   } else if (view === 'history') {
@@ -1297,9 +1277,7 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
     main = <RequestsView data={data} responses={responses} jump={jump} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : focus === 'editor'
         ? 'typing: every key is text · ctrl+r send · ctrl+s save · ctrl+z undo · alt+↑↓ move the line · ctrl+/ comment · esc stop'
@@ -1316,17 +1294,26 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
           : overlay
             ? 'j/k scroll · space page · y copy · esc close'
             : HINTS[view];
-  const right = focus === 'prompt' || focus === 'editor' ? '' : '  / commands · ! shell · , settings · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, or the welcome until the first
+  // command (short, so the keys still show beside it). Otherwise nothing, so the keys have the room (the face still shows Hoot's mood); and while
+  // typing in the prompt or the editor only a flash, as the keys for typing need it.
+  const typing = focus === 'prompt' || focus === 'editor';
+  let said = { face: FACES[mood], message: '' };
+  if (flash) said = { face: FACES[mood], message: flash.text };
+  else if (typing) said = { face: FACES[mood], message: '' };
+  else if (reaction) said = { face: FACES[mood], message: [{ text: reactionLine(reaction) }, { text: '  esc', color: theme.dim }] };
+  else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) said = { face: FACES[mood], message: welcomeLine('Hail', VERSION) };
+  // The prompt's placeholder already names / ! and ?, so these show only while it holds text and nothing
+  // is being said, which needs the room more.
+  const right = typing || !prompt.value || said.message ? '' : '/ commands · ! shell · , settings · ? help';
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} env={environment()} project={projectEnv} width={W} loading={loading} mood={mood} mock={mockServer} />
-      <Tabs view={view} entries={entries} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
-      {reactionRow ? <Row pointer={false} width={W} segments={reactionRow} /> : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -1341,11 +1328,7 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="↵ sends the request · / for commands · e environment · ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...said} keys={keys} right={right} width={W} />
     </Box>
   );
 }

@@ -264,7 +264,7 @@ it means to each app; to Hail, which of its own environments it is:
 project's environment changes (here, in another app, or in Fleet) or a file opens, Hail's variables
 come from the environment of Hail's it names (`production` above); one the file's `http-client.env.json`
 doesn't have is said. `e` and `/env` still pick another of Hail's for the moment, until the project's
-changes again. The header shows both: `env production  project prod (production)`.
+changes again. The top line shows both, the project's first: `project prod (production)  env production`.
 
 The family's other apps call theirs `/env`; in Hail `/env` was already its own environments' command,
 in the `.http` files' own format that other tools read too, so the project's is `/project-env` rather
@@ -430,7 +430,7 @@ itself has in the environment counted (`http://localhost:3000/api` makes it `/ap
 the file has no response for gets the example of the [contract](#contract-drift)'s operation, when there's
 one; anything else a 404 whose JSON lists what is served. It follows the history: send a request again
 and the mock answers with the new response. Credential headers and cookies aren't handed on, and it
-answers browsers' CORS questions. The header shows `mock :4010` while it runs, each request it gets is a
+answers browsers' CORS questions. The top line shows `mock :4010` while it runs, each request it gets is a
 line in the Log, and `/mock` again (or `/mock off`) stops it; it stops when Hail closes.
 
 From the shell, without the screen, until `ctrl+c`:

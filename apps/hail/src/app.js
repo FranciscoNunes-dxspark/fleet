@@ -8,6 +8,7 @@ export const APP = configureApp({
   title: 'Hail',
   version: process.env.HAIL_VERSION,
   packageUrl: new URL('../package.json', import.meta.url),
+  look: 'shell',
 });
 
 export const { VERSION, COMPILED } = APP;

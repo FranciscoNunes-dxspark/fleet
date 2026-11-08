@@ -157,7 +157,7 @@ test('/take logline finds the response whose headers carry its request id, or sa
     await until(() => frame().includes('its x-request-id is'), 'the entry found');
     assert.match(frame(), /GET \/second|Second/);
     app.stdin.write(KEYS.esc);
-    await until(() => frame().includes('─ History'), 'the History view');
+    await until(() => frame().includes('│ History'), 'the History view');
     assert.match(frame(), /❯.*Second/);
     await run(app, takeLine('logline', { process: 'api', text: 'handled request_id=client-aaaa-1111 in 3 ms' }));
     await until(() => frame().includes('First,'), 'the id from the text');
