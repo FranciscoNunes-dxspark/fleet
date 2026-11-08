@@ -31,6 +31,7 @@ Then, from this folder:
 ```bash
 npm run dev      # fetches xterm.js into ui/vendor, then cargo run
 npm run build    # the same, then a release build in src-tauri/target/release/
+npm run bundle   # the installers, with Fleet inside (below)
 ```
 
 ### Which Fleet it runs
@@ -50,7 +51,23 @@ $env:FLEET_COMMAND = "node ..\apps\fleet\bin\fleet.js"; npm run dev   # Windows 
 
 Fleet starts in `FLEET_CWD`, or in your home folder when that isn't set. Inside, everything works as in a terminal: the prefix (`ctrl+b`), the apps, the mouse and the split view. When Fleet ends, the window offers to start it again. Closing the window ends Fleet and its apps.
 
-Installers (`.msi` and `.exe` on Windows, `.dmg` on macOS, `.deb` and `.AppImage` on Linux) come from the Tauri CLI's `tauri build`. That isn't wired up yet, and neither is code signing.
+### Installers
+
+```bash
+npm run bundle
+```
+
+This builds Fleet's own executable (`apps/fleet`'s Bun build, with every app inside), copies it to `src-tauri/binaries/` (`scripts/sidecar.mjs`), and runs the Tauri CLI with `src-tauri/tauri.bundle.json`. That file carries Fleet in each installer as a "sidecar", installed beside the window's program as `fleet`, which is where the window looks first. An installed window needs nothing else: no Node, no checkout, no `FLEET_COMMAND`.
+
+The installers land in `src-tauri/target/release/bundle/`:
+
+- **Linux:** `.deb`, `.rpm` and `.AppImage`.
+- **Windows:** `.msi`, and an `.exe` setup.
+- **macOS:** `.dmg`.
+
+Each platform builds its own. The Desktop workflow (`.github/workflows/desktop.yml`) builds all three on GitHub's machines whenever `desktop/` changes, or by hand, and keeps them as the run's artifacts.
+
+Nothing is signed yet. Windows SmartScreen and macOS Gatekeeper will warn before opening them: on a Mac, right-click and Open the first time. The window's program is named `fleet-desktop`, not `Fleet`, because on Windows `Fleet.exe` and the bundled `fleet.exe` would be the same file.
 
 ## How it fits together
 

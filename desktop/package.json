@@ -5,6 +5,7 @@
   "scripts": {
     "vendor": "node scripts/vendor.mjs",
     "dev": "node scripts/vendor.mjs && cargo run --manifest-path src-tauri/Cargo.toml",
-    "build": "node scripts/vendor.mjs && cargo build --release --manifest-path src-tauri/Cargo.toml"
+    "build": "node scripts/vendor.mjs && cargo build --release --manifest-path src-tauri/Cargo.toml",
+    "bundle": "node scripts/vendor.mjs && node scripts/sidecar.mjs && npx --yes @tauri-apps/cli@2.12.3 build --config src-tauri/tauri.bundle.json"
   }
 }
