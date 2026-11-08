@@ -84,7 +84,7 @@ The installers land in `src-tauri/target/release/bundle/`:
 
 Each platform builds its own. The Desktop workflow (`.github/workflows/desktop.yml`) builds all three on GitHub's machines whenever `desktop/` changes, or by hand, and keeps them as the run's artifacts.
 
-Until the signing secrets are set, nothing is signed. Windows SmartScreen and macOS Gatekeeper will warn before opening the installers (on a Mac, right-click and Open the first time). Signing, notarisation and updates switch on by themselves once their secrets exist: [docs/release.md](docs/release.md) lists what to provide. [docs/product.md](docs/product.md) is the plan for licences, sign-in and team sync, and the decisions they wait on. The window's program is named `fleet-desktop`, not `Fleet`, because on Windows `Fleet.exe` and the bundled `fleet.exe` would be the same file.
+Until the signing secrets are set, nothing is signed. Windows SmartScreen and macOS Gatekeeper will warn before opening the installers (on a Mac, right-click and Open the first time). Signing, notarisation and updates switch on by themselves once their secrets exist: [docs/release.md](docs/release.md) lists what to provide. The window's program is named `fleet-desktop`, not `Fleet`, because on Windows `Fleet.exe` and the bundled `fleet.exe` would be the same file.
 
 ## How it fits together
 

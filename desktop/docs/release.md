@@ -51,7 +51,7 @@ The address must be reachable without signing in, and this repository is private
 
 - **A public releases repository** (`fleet-releases`), with a `latest.json` the workflow publishes beside the installers. This costs nothing, but makes the installers public.
 - **An object store** (S3, R2, Azure Blob) with `latest.json`. Public read for that bucket only.
-- **A small update server** that answers for each target and version, and can check a licence first. It fits the licence plan below.
+- **A small update server** that answers for each target and version.
 
 `latest.json` is Tauri's format: the version, notes, and for each platform the installer's URL and its `.sig` (which the build now makes, beside each installer, once the private key is set). Publishing it from the workflow is the last step, once the choice is made.
 
