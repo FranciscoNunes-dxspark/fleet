@@ -75,7 +75,7 @@ test("Trawl opens on the environment's connection, /env says which, and switchin
   await until(() => frame().includes('Environment: local. /env staging|prod|docs switches every app.'), 'which environment');
   app.stdin.write('/');
   await line(app, 'env staging');
-  await until(() => /staging +│ +dev +demo\/ClubB/.test(header()), 'switched to staging, on dev');
+  await until(() => /staging +dev +demo\/ClubB/.test(header()), 'switched to staging, on dev');
   assert.match(frame(), /Environment staging: switching to dev\./);
   app.stdin.write('/');
   await line(app, 'env nowhere');

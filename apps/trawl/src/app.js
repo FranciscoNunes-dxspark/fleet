@@ -8,6 +8,7 @@ export const APP = configureApp({
   title: 'Trawl',
   version: process.env.TRAWL_VERSION,
   packageUrl: new URL('../package.json', import.meta.url),
+  look: 'shell',
 });
 
 export const { VERSION, COMPILED } = APP;

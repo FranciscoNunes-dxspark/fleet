@@ -20,7 +20,7 @@ import { buildSchema } from '../schema.js';
 import { dialectOf, qualifiedFor } from '../dialects.js';
 import { qualified, splitStatements, statisticsSummary } from '../sql.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
+import { stringWidth } from '@fleet/kit/text.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { environmentFor, readProject } from '@fleet/kit/environments.js';
 import { recordCommand } from '@fleet/kit/recording.js';
@@ -28,7 +28,8 @@ import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/ki
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
-import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { ActivityView } from './ActivityView.jsx';
 import { ConnectionsView } from './ConnectionsView.jsx';
 import { SettingsView } from './SettingsView.jsx';
@@ -41,8 +42,8 @@ import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { TextViewer } from './TextViewer.jsx';
 import { DataViewer } from '@fleet/kit/ui/DataViewer.jsx';
 import { Picker } from './Picker.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Glim.jsx';
-import { FACES, moodFor } from '../glim.js';
+import { GLIM_WIDTH, Glim } from './Glim.jsx';
+import { FACES, moodFor, moodLine } from '../glim.js';
 import { checksDisabled, isDue, isNewer, openUrl, updateAdvice } from '@fleet/kit/update.js';
 import { askClaude as askClaudeCli, canSeeSchema } from '../ai.js';
 import { az as runAz, firewallBlock, publicIp as findPublicIp } from '../azure.js';
@@ -118,60 +119,59 @@ function summarize(res, limit) {
   return [[...parts, ...res.messages.filter((m) => /rows? affected$/.test(m)), `${res.ms} ms`].join(' · '), ...res.messages.filter((m) => !/rows? affected$/.test(m))];
 }
 
-// How far installing a newer release has got, after its version in the header.
+// How far installing a newer release has got, after its version in the top line.
 const UPDATE_STATES = { installing: ' downloading…', installed: ' at next start' };
 
-function Header({ session, tranCount, tranFor = '', writesAllowed, file, width, connecting, mood, update, env }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: mood === 'alert' ? theme.warn : theme.accent, bold: true },
-    { text: 'Trawl', bold: true },
-  ];
-  if (update) segs.push({ text: ` ↑ ${update.version}${UPDATE_STATES[update.state] ?? ''}`, color: update.state === 'installed' ? theme.ok : theme.warn, bold: true });
-  // The project's environment (/env), which every app of the family shares.
-  if (env) segs.push({ text: '  ' }, env.prod ? { text: ` ${env.name} `, bg: theme.del, color: theme.ink, bold: true } : { text: env.name, color: theme.info, bold: true });
+// What the top line says at its right, the most pressing first, as the line drops parts from its end
+// when it is narrow: an open transaction, a dropped connection, production, the environment, the
+// connection and its database, its modes, a newer release, then the file.
+function headerContext({ session, tranCount, tranFor = '', writesAllowed, file, connecting, update, env, width }) {
+  const segs = [];
+  const gap = () => segs.push({ text: '  ' });
   if (session) {
     const { conn } = session;
-    segs.push({ text: '  │  ', color: theme.border }, { text: conn.name, bold: true });
-    segs.push({ text: `  ${describeConn({ ...conn, database: session.database })}`, color: theme.dim });
-    if (conn.prod) segs.push({ text: '  ' }, { text: ' PROD ', bg: theme.del, color: theme.ink, bold: true });
+    // How long it has been open, once that's a minute or more.
+    if (tranCount) segs.push({ text: ` TRANSACTION OPEN${tranFor ? ` ${tranFor}` : ''} `, bg: theme.warn, color: theme.ink, bold: true }), gap();
+    // The server closed it (an idle Azure SQL connection, a laptop asleep): the next run opens another.
+    if (session.closed) segs.push({ text: ' DISCONNECTED ', bg: theme.warn, color: theme.ink, bold: true }, { text: ' reconnects on the next run', color: theme.dim }), gap();
+    if (conn.prod) segs.push({ text: ' PROD ', bg: theme.del, color: theme.ink, bold: true }), gap();
+  }
+  // The project's environment (/env), which every app of the family shares.
+  if (env) (env.prod ? segs.push({ text: ` ${env.name} `, bg: theme.del, color: theme.ink, bold: true }) : segs.push({ text: env.name, color: theme.info, bold: true })), gap();
+  if (session) {
+    const { conn } = session;
+    segs.push({ text: conn.name, bold: true }, { text: ` ${describeConn({ ...conn, database: session.database })}`, color: theme.dim });
     if (isReadOnly(conn)) segs.push({ text: writesAllowed ? '  writes allowed' : '  read-only', color: writesAllowed ? theme.warn : theme.dim });
     // DataGrip's "Tx: Manual": writes wait for /commit.
     if (commitMode(conn) === 'manual') segs.push({ text: '  manual commit', color: theme.dim });
-    // How long it has been open, once that's a minute or more.
-    if (tranCount) segs.push({ text: '  ' }, { text: ` TRANSACTION OPEN${tranFor ? ` ${tranFor}` : ''} `, bg: theme.warn, color: theme.ink, bold: true });
     if (session.stats) segs.push({ text: '  stats on', color: theme.dim });
-    // The server closed it (an idle Azure SQL connection, a laptop asleep): the next run opens another.
-    if (session.closed) segs.push({ text: '  ' }, { text: ' DISCONNECTED ', bg: theme.warn, color: theme.ink, bold: true }, { text: '  reconnects on the next run', color: theme.dim });
-  } else {
-    segs.push({ text: connecting ? '  connecting…' : '  not connected', color: theme.dim });
+  } else segs.push({ text: connecting ? 'connecting…' : 'not connected', color: theme.dim });
+  if (update) segs.push({ text: `  ↑ ${update.version}${UPDATE_STATES[update.state] ?? ''}`, color: update.state === 'installed' ? theme.ok : theme.warn, bold: true });
+  // Up to here is what the top line must keep: viewTop gives up views for it.
+  segs.need = segs.reduce((n, x) => n + stringWidth(x.text), 0);
+  // The file's path, keeping its end, when there is room for it.
+  if (file) {
+    const room = Math.max(0, Math.min(stringWidth(file.path), width - 100));
+    if (room > 8) segs.push({ text: `  ${room < file.path.length ? `…${file.path.slice(-(room - 1))}` : file.path}`, color: theme.dim });
   }
-  // The file path gives way first, keeping its end.
-  const full = file ? file.path : '';
-  const pathW = Math.min(stringWidth(full), Math.max(0, width - 70));
-  const path = pathW < full.length ? `…${full.slice(-(pathW - 1))}` : full;
-  return <Row pointer={false} width={width} segments={[...fitSegments(segs, width - pathW - 1), { text: ' ' }, { text: path, color: theme.dim }]} />;
+  return segs;
 }
 
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(results) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (v.id === 'results' && results?.sets.length > 1) label += ` ${results.sets.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
+// The views in the top line, the digit that picks each before it, and how many result sets there are.
+const viewTabs = (results, keys = true) =>
+  VIEWS.map((v, i) => ({ id: v.id, key: keys ? i + 1 : null, label: v.label, count: v.id === 'results' && results?.sets.length > 1 ? results.sets.length : 0, countColor: theme.dim }));
 
-function Tabs({ view, results, width }) {
-  const segs = [];
-  for (const t of tabLabels(results)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
+// The top line. Six views leave little room on a narrow terminal, and the connection matters more than
+// they do: the digits before their names go first (the help has them), then every view but the one
+// shown.
+function viewTop({ face, results, view, context, width }) {
+  const tiers = [viewTabs(results), viewTabs(results, false), viewTabs(results).filter((v) => v.id === view)];
+  const fits = (views) => {
+    const bare = topLine({ face, title: 'Trawl', views, view, width: Infinity }).segments;
+    return bare.reduce((n, x) => n + stringWidth(x.text), 0) + 2 + (context.need ?? 0) <= width;
+  };
+  const views = tiers.find(fits) ?? tiers.at(-1);
+  return topLine({ face, title: 'Trawl', views, view, context, width });
 }
 
 // The last two results, Claude Code style: "● SELECT …" then "  ⎿  12 rows · 41 ms".
@@ -1644,15 +1644,15 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
-      // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
+    if (e.y === promptTop) {
+      // The text starts after a space and "> ", scrolled as PromptBox scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
       return setFocus('prompt');
     }
-    const sug = e.y - promptTop - 3;
+    const sug = e.y - promptTop - 1;
     if (sug >= 0 && sug < sugCount) {
       setSugIndex(sug);
       // As ↵ would, on the suggestion under the pointer.
@@ -1678,7 +1678,7 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   const W = columns;
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries);
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const mood = moodFor({ session, busy, lastEntry: entries.at(-1), tranCount });
   // Glim's mood for the family (family.js), written whenever it changes, and the others' read every
   // half a minute: a worried, sad or happy one from the last 15 minutes gets a line, once. "Family
@@ -1701,19 +1701,25 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
     t.unref?.();
     return () => clearInterval(t);
   }, [moodsOn, familyHome, moodEvery]);
-  // The welcome box only appears when the terminal has room for it next to a useful view.
-  const showWelcome = welcome && H >= 28;
   // A /watch keeps the spinner's line between its runs, so the layout doesn't jump.
-  const statusLine = busy || watching ? 1 : 0;
-  const reactionH = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reactionH - act.length - statusLine - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  const spinnerH = busy || watching ? 1 : 0;
+  // The top line, then the view, the activity, the spinner, the prompt and its suggestions, then the
+  // status line.
+  const top = viewTop({
+    face: FACES[mood],
+    results,
+    view,
+    context: headerContext({ env: environment, session, tranCount, tranFor: tranCount && tranSince.current ? openFor(Date.now() - tranSince.current) : '', writesAllowed, file, connecting, update, width: W }),
+    width: W,
+  });
+  const mainH = Math.max(6, H - 1 - act.length - spinnerH - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
-    mainTop: 2,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reactionH + act.length + statusLine,
+    promptTop: 1 + mainH + act.length + spinnerH,
     sugCount: suggestions.length,
-    tabs: tabLabels(results),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   // The palette's list: this view's keys (the Query tab's console or file), yours, then the commands.
@@ -1766,16 +1772,19 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   } else if (!schema) {
     main = (
       <Panel title="Explorer" width={W} height={mainH}>
-        <Text color={theme.dim}>{connecting ? '  Connecting…' : '  Not connected. Press 5 for Connections, or /connect <name>.'}</Text>
+        <Box marginTop={1} marginLeft={2}>
+          <Box flexDirection="column" width={GLIM_WIDTH} marginRight={2}>
+            <Glim mood={mood} />
+          </Box>
+          <Text color={theme.dim}>{connecting ? 'Connecting…' : 'Not connected. Press 5 for Connections, or /connect <name>.'}</Text>
+        </Box>
       </Panel>
     );
   } else {
     main = <ExplorerView schema={schema} ctx={ctx} width={W} height={mainH} active={viewActive} filter={filter} />;
   }
 
-  const left = flash
-    ? flash.text
-    : confirmReq?.plain
+  const keys = confirmReq?.plain
     ? 'type the value · ↵ done · esc cancel'
     : confirmReq?.secret
     ? 'type the password (shown as *) · ↵ done · esc cancel'
@@ -1802,30 +1811,36 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
             : view === 'activity' && activityLists.show !== 'sessions'
               ? ACTIVITY_HINTS[activityLists.show]
               : HINTS[view];
-  const right = focus === 'prompt' || focus === 'editor' || focus === 'cell' || confirmReq?.secret ? '' : '  / commands · ! SQL · ? help';
+  const right = focus === 'prompt' || focus === 'editor' || focus === 'cell' || confirmReq?.secret ? '' : '/ commands · ! SQL · ? help';
+  // What the status line says beside Glim's face: a flash, a sibling's news (until esc), the welcome
+  // until the first query, else how Glim sees things.
+  // While something is being typed its keys matter more, so only news is said then.
+  const typing = focus === 'prompt' || focus === 'editor' || focus === 'cell' || Boolean(confirmReq);
+  // Glim's idle line is long, and the keys are worth more than it: it shows when both fit.
+  const idle = moodLine(mood, session);
+  const idleFits = stringWidth(idle) + stringWidth(keys ?? '') + stringWidth(right) + 12 <= W;
+  let said = { face: FACES[mood], message: typing || (!idleFits && mood !== 'alert') ? '' : idle, tone: mood === 'alert' ? 'warn' : undefined };
+  if (flash) said = { face: FACES[mood], message: flash.text };
+  else if (reaction)
+    said = {
+      face: FACES[mood],
+      message: [
+        { text: reaction.text, color: reaction.mood === 'sad' ? theme.del : reaction.mood === 'worried' ? theme.warn : theme.ok },
+        { text: '  esc dismisses', color: theme.dim },
+      ],
+    };
+  // The welcome is for the first screen: once a view or an overlay of its own is up, its keys are.
+  else if (welcome && !typing && !overlay && view === 'explorer') said = { face: FACES[mood], message: welcomeLine('Trawl', VERSION, `Glim the anglerfish here. ${moodLine(mood, session)}`) };
 
   // The prompt's example, in the connection's own SQL (TOP or LIMIT).
   const example = dialectOf(session).selectTop('dbo.Players', 10);
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header env={environment} session={session} tranCount={tranCount} tranFor={tranCount && tranSince.current ? openFor(Date.now() - tranSince.current) : ''} writesAllowed={writesAllowed} file={file} width={W} connecting={connecting} mood={mood} update={update} />
-      <Tabs view={view} results={results} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} session={session} width={W} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-            { text: reaction.text, color: reaction.mood === 'sad' ? theme.del : reaction.mood === 'worried' ? theme.warn : theme.ok },
-            { text: '  esc dismisses', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -1842,11 +1857,7 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder={`Press / for commands, ! to run SQL (try "!${example}"), ? for shortcuts`} />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...said} keys={keys} right={right} width={W} />
     </Box>
   );
 }

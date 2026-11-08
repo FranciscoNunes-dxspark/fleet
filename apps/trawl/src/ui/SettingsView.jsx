@@ -51,7 +51,7 @@ export function SettingsView({ config, ctx, updates, update, width, height, acti
         { text: preset === 0 ? '  (Glim’s)' : '', color: theme.dim },
       ],
       hint: '↵ next colour',
-      about: [`The colour of the selection, the tabs and Glim's welcome box. ↵ goes through ${ACCENTS.map((x) => x.name).join(', ')}.`, 'Any colour works as "accent": "#rrggbb" in config.json.'],
+      about: [`The colour of the selection, the view shown, the focused pane and Glim's face. ↵ goes through ${ACCENTS.map((x) => x.name).join(', ')}.`, 'Any colour works as "accent": "#rrggbb" in config.json.'],
       change: () => {
         const next = ACCENTS[(preset + 1) % ACCENTS.length].color;
         setAccent(next);
