@@ -9,7 +9,7 @@ import { plainOutput } from '@fleet/kit/glyphs.js';
 import { Host, LEAVE } from './host.js';
 import { DEFAULT_PREFIX, prefixByte } from './keys.js';
 import { appSpawner } from './launch.js';
-import { SPACES, spaceForFile, spaceNamed } from './spaces.js';
+import { SPACES, customSpaces, spaceCommand, spaceForFile, spaceNamed } from './spaces.js';
 import { loadState, saveState } from './state.js';
 
 const args = process.argv.slice(2);
@@ -84,7 +84,11 @@ const state = loadState();
 // The prefix: FLEET_PREFIX, else host.json's "prefix", else ctrl+b (one Fleet can't use is said, and ctrl+b taken).
 const prefixWanted = process.env.FLEET_PREFIX || state.prefix;
 const prefix = prefixByte(prefixWanted ?? DEFAULT_PREFIX) ?? prefixByte(DEFAULT_PREFIX);
-const first = named ?? spaceNamed(state.last) ?? SPACES[0];
+// A team's own tools, as tabs beside the family's (host.json's "spaces"); an entry that isn't right is said.
+const tools = customSpaces(state.spaces);
+for (const problem of tools.problems) console.error(`fleet: ${problem}`);
+const spaces = [...SPACES, ...tools.spaces];
+const first = named ?? spaceNamed(state.last) ?? spaces.find((s) => s.id === state.last) ?? SPACES[0];
 const depth = process.stdout.getColorDepth?.() ?? 24;
 
 // Windows only sends the mouse as text in VT input mode, which Node sets with raw mode and the Bun
@@ -98,7 +102,8 @@ plainOutput(process.stdout);
 const host = new Host({
   input: process.stdin,
   output: process.stdout,
-  spawn: appSpawner({ compiled: COMPILED, depth }),
+  spaces,
+  spawn: appSpawner({ compiled: COMPILED, depth, command: spaceCommand(spaces) }),
   args: named ? { [named.id]: appArgs } : {},
   truecolor: depth >= 24,
   // The bell when a tab gets a badge: FLEET_NO_BELL=1, or "bell": false in host.json, keeps it quiet.

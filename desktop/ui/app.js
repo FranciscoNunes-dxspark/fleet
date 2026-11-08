@@ -110,6 +110,13 @@ function prefixed(key) {
   term.focus();
 }
 
+/** The key after the prefix that switches to space `id`: its letter, else (a team's own tool) its number. */
+function keyOf(id) {
+  const i = bar?.spaces.findIndex((s) => s.id === id) ?? -1;
+  const space = bar?.spaces[i];
+  return space?.letter ?? (i >= 0 && i < 9 ? String(i + 1) : '');
+}
+
 const accentOf = (id) => bar?.spaces.find((s) => s.id === id)?.accent ?? commands?.apps.find((a) => a.id === id)?.accent ?? theme.foreground;
 const titleOf = (id) => bar?.spaces.find((s) => s.id === id)?.title ?? commands?.apps.find((a) => a.id === id)?.title ?? id;
 
@@ -121,7 +128,7 @@ function drawTabs(state) {
       const classes = ['tab', s.state];
       if (s.id === state.active) classes.push('active');
       else if (s.id === state.shown) classes.push('shown');
-      const keys = `prefix ${i < 9 ? `${i + 1} or ` : ''}${s.letter}`;
+      const keys = `prefix ${[i < 9 ? String(i + 1) : '', s.letter].filter(Boolean).join(' or ')}`;
       const tab = el(
         'button',
         { type: 'button', className: classes.join(' '), title: s.why ? `${s.title}: ${s.why}  (${keys})` : `${s.title}  (${keys})` },
@@ -134,7 +141,7 @@ function drawTabs(state) {
       tab.style.setProperty('--accent', s.accent);
       tab.setAttribute('role', 'tab');
       tab.setAttribute('aria-selected', String(s.id === state.active));
-      tab.addEventListener('click', () => prefixed(s.letter));
+      tab.addEventListener('click', () => prefixed(keyOf(s.id)));
       return tab;
     }),
   );
@@ -196,7 +203,7 @@ function drawToast(toast) {
   }
   if (!toast || toast.id <= lastToast) return;
   lastToast = toast.id;
-  const go = () => (toast.proposal ? prefixed('P') : prefixed(bar.spaces.find((s) => s.id === toast.app)?.letter ?? ''));
+  const go = () => prefixed(toast.proposal ? 'P' : keyOf(toast.app));
   const node = el(
     'button',
     { type: 'button', className: 'toast' },

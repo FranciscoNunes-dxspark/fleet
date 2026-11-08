@@ -49,7 +49,7 @@ export function barLayout({ spaces, active, shown = null, width: full, prefix = 
   const keep = statusW && statusW + 12 <= full ? status : [];
   const width = full - (keep.length ? statusW : 0);
   const badges = spaces.map((s) => badgeText(s.badge));
-  const labels = (short, roles = false) => spaces.map((s, i) => ` ${i + 1} ${short ? s.letter.toUpperCase() : roles && ROLES[s.id] ? `${s.title} ${ROLES[s.id]}` : s.title} ${stateMark(s)}${badges[i] ? ` ${badges[i]}` : ''} `);
+  const labels = (short, roles = false) => spaces.map((s, i) => ` ${i + 1} ${short ? (s.letter ?? s.title[0]).toUpperCase() : roles && ROLES[s.id] ? `${s.title} ${ROLES[s.id]}` : s.title} ${stateMark(s)}${badges[i] ? ` ${badges[i]}` : ''} `);
   const hint = ` ${hintFor({ prefix, notice, split: Boolean(shown), prefixLabel })} `;
   const total = (ls) => ls.reduce((n, l) => n + stringWidth(l), 0);
   let tabs = labels(false);

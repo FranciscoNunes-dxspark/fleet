@@ -133,6 +133,20 @@ The window adds more of its own:
 
 The window's README has the details.
 
+## Your own tools
+
+A tool of your team's can be a tab too, configured in `~/.fleet/host.json`:
+
+```json
+"spaces": [{ "id": "deploys", "title": "Deploys", "command": ["node", "/opt/tools/deploys.js"] }]
+```
+
+It runs as the family's apps do. Its number on the bar reaches it (`ctrl+b 7`), and so does a click on its tab. Every letter is already taken by an app or by Fleet, so a tool gets none.
+
+- **What it must do:** Fleet gives it pipes, not a terminal. [docs/hosted-apps.md](docs/hosted-apps.md) says what the tool must do there.
+- **Badges:** a mood file of its own gives its tab badges and toasts, as the apps' do.
+- **Example:** [examples/hello-tool.js](examples/hello-tool.js) is a whole tool in sixty lines of Node with no dependencies.
+
 ## Choosing the apps
 
 `ctrl+b` `a` lists every app with a box beside it: `space` or `↵` shows or hides the one under the cursor in the bar, and the choice is kept in `~/.fleet/host.json` (`"apps": ["splice", "bilge", …]`). The numbers `1`–`9` and `n` `p` go through the apps shown, in their order. A hidden app is still there: its letter (`ctrl+b` `k` for Keel), a sibling handing it something, a runbook's step or `fleet keel` opens it, and it shows in the bar while it runs. One app at least stays in the bar.
