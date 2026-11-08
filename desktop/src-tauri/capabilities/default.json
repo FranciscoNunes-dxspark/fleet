@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window: Fleet's own commands (start, write, resize, stop) and the events they send.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

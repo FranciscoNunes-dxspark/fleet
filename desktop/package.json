@@ -1,0 +1,10 @@
+{
+  "name": "fleet-desktop",
+  "private": true,
+  "description": "Fleet in a window of its own (Tauri): a prototype. Not an npm workspace; built with cargo.",
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "dev": "node scripts/vendor.mjs && cargo run --manifest-path src-tauri/Cargo.toml",
+    "build": "node scripts/vendor.mjs && cargo build --release --manifest-path src-tauri/Cargo.toml"
+  }
+}

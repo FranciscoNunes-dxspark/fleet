@@ -1,0 +1,18 @@
+[package]
+name = "fleet-desktop"
+version = "0.1.0"
+description = "Fleet in a window of its own: the host and its apps in a terminal view, behind a real pseudo-terminal"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# WezTerm's pseudo-terminal: a pty on Linux and macOS, ConPTY on Windows.
+portable-pty = "0.9"
+base64 = "0.22"
+
+[profile.release]
+strip = true
+lto = true

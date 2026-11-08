@@ -1,0 +1,98 @@
+/* The window around Fleet: the shell look's colours (the kit's look.js), one strip on top. */
+:root {
+  --ground: #0f1115;
+  --bar: #1a1e24;
+  --rule: #2a313b;
+  --dim: #8a94a3;
+  --ink: #d6dbe3;
+  --brand: #e6c07b;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 34px;
+  padding: 0 14px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--rule);
+  font-size: 13px;
+  user-select: none;
+}
+
+.brand {
+  color: var(--brand);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.where {
+  color: var(--dim);
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  color: var(--dim);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+#terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 4px 0 8px;
+}
+
+.ended {
+  position: fixed;
+  inset: 34px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(15, 17, 21, 0.92);
+}
+
+.ended[hidden] {
+  display: none;
+}
+
+.ended p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 15px;
+  max-width: 560px;
+  text-align: center;
+}
+
+.ended button {
+  font: inherit;
+  font-size: 14px;
+  color: var(--ground);
+  background: var(--brand);
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+}

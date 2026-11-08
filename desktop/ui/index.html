@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fleet</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <span class="brand"><span class="ship" aria-hidden="true">⛴</span> Fleet</span>
+    <span class="where" id="where">starting…</span>
+    <span class="tag">prototype</span>
+  </header>
+  <main id="terminal" aria-label="Fleet"></main>
+  <div class="ended" id="ended" hidden>
+    <p id="ended-text">Fleet ended.</p>
+    <button type="button" id="again">Start it again</button>
+  </div>
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

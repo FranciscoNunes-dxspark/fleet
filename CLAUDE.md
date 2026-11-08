@@ -13,6 +13,7 @@ patches/                patch-package's patches, applied to the root node_module
 packages/kit/           @fleet/kit: the shared files and their tests
 apps/<app>/             splice, trawl, sonar, bosun, hail, keel, wharf, locker, mooring, bilge, chart, helm, lantern, drill, ballast, lookout: each its own package, depending on "@fleet/kit": "file:../../packages/kit"
 apps/fleet/             the host (@fleet/host, binary fleet): the apps in one terminal, each its own process in hosted mode
+desktop/                a prototype: Fleet in a window of its own (Tauri, xterm.js over a pseudo-terminal); built with cargo, outside the workspaces, CI and releases (its README)
 .github/workflows/      test.yml, release.yml (+ release-app.yml), release-keel-android.yml
 .github/scripts/        changed.mjs: which apps a change touches
 ```
