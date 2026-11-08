@@ -67,15 +67,15 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function headerContext({ conn, transfers, loading, demo, watching, env }) {
   const segs = [];
   const gap = () => segs.push({ text: '  ' });
-  if (demo) segs.push({ text: 'demo', color: theme.warn }), gap();
-  if (env) segs.push({ text: env.name, color: env.prod ? theme.del : theme.info, bold: env.prod }), gap();
+  if (demo) segs.push({ text: 'demo', color: theme.warn, need: true }), gap();
+  if (env) segs.push({ text: env.name, color: env.prod ? theme.del : theme.info, bold: env.prod, need: true }), gap();
   if (conn.problem) segs.push({ text: firstLine(conn.problem), color: theme.warn }), gap();
   if (loading) segs.push({ text: 'reading…', color: theme.dim }), gap();
   if (watching) segs.push({ text: `⟳ watching ${watching.localRoot.split(/[\\/]/).filter(Boolean).pop() ?? watching.localRoot}`, color: theme.accent }), gap();
   const running = transfers.filter((t) => t.status === 'running').length;
   const waiting = transfers.filter((t) => t.status === 'queued').length;
   const failed = transfers.filter((t) => t.status === 'failed').length;
-  if (failed) segs.push({ text: `${failed} failed`, color: theme.del, bold: true }), gap();
+  if (failed) segs.push({ text: `${failed} failed`, color: theme.del, bold: true, need: true }), gap();
   if (running || waiting) segs.push({ text: `⇅ ${running} running${waiting ? `, ${waiting} waiting` : ''}`, color: theme.info }), gap();
   if (conn.status === 'connecting') segs.push({ text: `connecting to ${conn.host?.name}…`, color: theme.dim });
   else if (conn.session) segs.push({ text: `${BULLET} ${conn.host.name}`, color: theme.accent, bold: true }, { text: `  ${hostText(conn.host)}`, color: theme.dim });
@@ -1046,7 +1046,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
   }, [said.mood, said.reason, config.familyMoods]);
   const loading = panes.local.loading || panes.remote.loading;
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Mooring', views: viewTabs(entries, transfers), view, context: headerContext({ conn, transfers, loading, demo, watching, env }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Mooring', views: viewTabs(entries, transfers), view, context: headerContext({ conn, transfers, loading, demo, watching, env }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   // What the Console's shell opens at: the room the Console has inside its border.
@@ -1113,8 +1113,8 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
   // command, else how Tug sees things.
   const info = { loaded, connected: Boolean(conn.session), host: conn.host?.name, trouble, running: moving, hosts: (config.hosts ?? []).length };
   let told = { face: FACES[mood], message: moodLine(mood, info) };
-  if (flash) told = { face: FACES[mood], message: flash.text };
-  else if (reaction) told = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  if (flash) told = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) told = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
   else if (welcome && update) told = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) told = { face: FACES[mood], message: welcomeLine('Mooring', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, info)}`) };
 
@@ -1138,7 +1138,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...told} keys={keys} right={right} width={W} />
+      <StatusLine {...told} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

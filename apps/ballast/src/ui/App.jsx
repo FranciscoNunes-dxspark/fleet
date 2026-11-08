@@ -59,9 +59,9 @@ function headerContext({ build, measure, over, compare, cwd, env, loading, probl
   const parts = [];
   if (problem) parts.push([{ text: firstLine(problem), color: theme.warn }]);
   // The project's environment, when it names them: red and bold for a production one.
-  if (env) parts.push([{ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod }]);
+  if (env) parts.push([{ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod, need: true }]);
   if (build?.chunks.length) {
-    if (over) parts.push([{ text: `${over} over budget`, color: theme.del, bold: true }]);
+    if (over) parts.push([{ text: `${over} over budget`, color: theme.del, bold: true, need: true }]);
     const t = compare?.result?.total;
     if (t) parts.push([{ text: `${t.delta ? formatDelta(t.delta) : '±0'} vs ${compare.base === 'last' ? 'last' : compare.name}`, color: t.delta > 0 ? theme.warn : t.delta < 0 ? theme.add : theme.dim }]);
     parts.push([{ text: `${formatBytes(sizeIn(totals(build.chunks), measure))} ${measure}`, bold: true }, { text: ` in ${build.chunks.length} file${build.chunks.length === 1 ? '' : 's'}`, color: theme.dim }]);
@@ -710,6 +710,7 @@ export function App({ config: initialConfig, provider = createBallast(), cwd: st
     view,
     context: headerContext({ build, measure, over: overList.length, compare, cwd, env, loading, problem }),
     width: W,
+    compact: true,
   });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
@@ -749,8 +750,8 @@ export function App({ config: initialConfig, provider = createBallast(), cwd: st
   // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
   // command, else how Plod sees the build.
   let said = { face: FACES[mood], message: moodLine(told) };
-  if (flash) said = { face: FACES[mood], message: flash.text };
-  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
   else if (!build && problem) said = { face: FACES[mood], message: problem, tone: 'warn' };
   else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) said = { face: FACES[mood], message: welcomeLine('Ballast', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(told)}`) };
@@ -775,7 +776,7 @@ export function App({ config: initialConfig, provider = createBallast(), cwd: st
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

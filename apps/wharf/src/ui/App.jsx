@@ -57,13 +57,13 @@ const firstLine = (s) => String(s ?? '').split('\n')[0];
 // containers run and how many aren't well, or what went wrong.
 function headerContext({ data, loading, problem, provider, env }) {
   const segs = [];
-  if (provider !== 'docker') segs.push({ text: provider, color: theme.warn }, { text: '  ' });
-  if (env) segs.push({ text: env.name, color: env.prod ? theme.del : theme.info, bold: env.prod }, { text: '  ' });
+  if (provider !== 'docker') segs.push({ text: provider, color: theme.warn, need: true }, { text: '  ' });
+  if (env) segs.push({ text: env.name, color: env.prod ? theme.del : theme.info, bold: env.prod, need: true }, { text: '  ' });
   if (problem) segs.push({ text: firstLine(problem), color: theme.warn }, { text: '  ' });
   if (data) {
     const up = data.containers.filter((c) => c.state === 'running').length;
     const bad = data.containers.filter((c) => c.health === 'unhealthy' || (c.state === 'exited' && c.exitCode > 0)).length;
-    if (bad) segs.push({ text: `${bad} not well`, color: theme.del, bold: true }, { text: '  ' });
+    if (bad) segs.push({ text: `${bad} not well`, color: theme.del, bold: true, need: true }, { text: '  ' });
     segs.push({ text: `${up}/${data.containers.length} running`, color: theme.dim });
   } else if (loading) segs.push({ text: 'loading…', color: theme.dim });
   return segs;
@@ -755,7 +755,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
     if (config.familyMoods !== false) writeMood('wharf', told);
   }, [told.mood, told.reason, config.familyMoods]);
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Wharf', views: viewTabs(entries), view, context: headerContext({ data, loading, problem: data ? problem : null, provider: provider.name, env }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Wharf', views: viewTabs(entries), view, context: headerContext({ data, loading, problem: data ? problem : null, provider: provider.name, env }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
@@ -815,10 +815,8 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
   // command, else how Bark sees things.
   let said = { face: FACES[mood], message: moodLine(mood, data) };
-  if (flash) said = { face: FACES[mood], message: flash.text };
-  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
-  // While the prompt has focus, its keys matter more than the welcome or Bark's mood.
-  else if (focus === 'prompt') said = { face: FACES[mood], message: '' };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
   else if (!data && problem) said = { face: FACES[mood], message: problem, tone: 'warn' };
   else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) said = { face: FACES[mood], message: welcomeLine('Wharf', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
@@ -843,7 +841,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

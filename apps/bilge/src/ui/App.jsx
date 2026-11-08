@@ -57,25 +57,27 @@ const firstLine = (s) => String(s ?? '').split('\n')[0];
 function headerContext({ data, counts, cwd, env, loading }) {
   const segs = [];
   const gap = () => segs.length && segs.push({ text: '  ' });
-  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
+  // The environment and what the audit found must stay (`need`, the kit's compact top line); the rest
+  // drops from the end when the line is narrow.
+  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod, need: true });
   if (data) {
     if (data.audit) {
       const shown = SEVERITIES.filter((s) => counts[s]);
-      if (!shown.length) gap(), segs.push({ text: 'nothing known', color: theme.add });
-      for (const s of shown) gap(), segs.push({ text: `${counts[s]} ${s}`, color: severityTone(s), bold: s === 'critical' || s === 'high' });
-    } else gap(), segs.push({ text: 'not audited', color: theme.dim });
+      if (!shown.length) gap(), segs.push({ text: 'nothing known', color: theme.add, need: true });
+      for (const s of shown) gap(), segs.push({ text: `${counts[s]} ${s}`, color: severityTone(s), bold: s === 'critical' || s === 'high', need: true });
+    } else gap(), segs.push({ text: 'not audited', color: theme.dim, need: true });
     gap(), segs.push({ text: `${data.packages.length} packages`, color: theme.dim });
   } else if (loading) gap(), segs.push({ text: 'reading…', color: theme.dim });
   gap(), segs.push({ text: basename(cwd) || cwd, color: theme.dim });
   return segs;
 }
 
-// The views in the top line: the digit that picks each before it (on a line wide enough to spare it), and
-// what each found after it.
-const viewTabs = (entries, found, codeFound, digits) =>
+// The views in the top line: the digit that picks each before it (the compact top line drops it when the
+// line is narrow), and what each found after it.
+const viewTabs = (entries, found, codeFound) =>
   VIEWS.map((v, i) => ({
     id: v.id,
-    key: digits ? i + 1 : undefined,
+    key: i + 1,
     label: v.label,
     count: v.id === 'vulns' ? found.length : v.id === 'code' ? codeFound?.length ?? 0 : v.id === 'log' ? entries.length : 0,
     countColor: theme.dim,
@@ -684,7 +686,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     if (config.familyMoods !== false) writeMood('bilge', feeling);
   }, [feeling.mood, feeling.reason, config.familyMoods]);
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Bilge', views: viewTabs(entries, found, codeFound, W >= 120), view, context: headerContext({ data, counts, cwd, env, loading }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Bilge', views: viewTabs(entries, found, codeFound), view, context: headerContext({ data, counts, cwd, env, loading }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
@@ -723,8 +725,8 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   // What the status line says beside the face: a flash, a sibling's news, what went wrong reading the
   // project, the welcome until the first command, else how Nibs sees things.
   let status = { face: FACES[mood], message: moodLine(mood, told) };
-  if (flash) status = { face: FACES[mood], message: flash.text };
-  else if (reaction) status = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  if (flash) status = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) status = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
   else if (problem) status = { face: FACES[mood], message: firstLine(problem), tone: 'warn' };
   else if (welcome && update) status = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) status = { face: FACES[mood], message: welcomeLine('Bilge', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, told)}`) };
@@ -749,7 +751,7 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...status} keys={keys} right={right} width={W} />
+      <StatusLine {...status} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

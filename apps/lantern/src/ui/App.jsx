@@ -60,7 +60,7 @@ const firstLine = (s) => String(s ?? '').split('\n')[0];
 function headerContext({ page, result, cwd, env, chrome }) {
   const segs = [];
   const sep = () => segs.push({ text: '  ' });
-  if (chrome === null) segs.push({ text: 'no Chrome found', color: theme.warn }), sep();
+  if (chrome === null) segs.push({ text: 'no Chrome found', color: theme.warn, need: true }), sep();
   if (page) {
     segs.push({ text: page.url, color: theme.dim });
     if (result) {
@@ -70,7 +70,7 @@ function headerContext({ page, result, cwd, env, chrome }) {
     } else segs.push({ text: '  not audited', color: theme.dim });
     sep();
   }
-  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod }), sep();
+  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod, need: env.prod }), sep();
   segs.push({ text: basename(cwd) || cwd, color: theme.dim });
   return segs;
 }
@@ -646,7 +646,7 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   const tabCounts = { findings: pageFindings.length, domains: domainFindings, pages: pages.length };
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Lantern', views: viewTabs(entries, tabCounts), view, context: headerContext({ page, result, cwd, env, chrome: chromeFound }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Lantern', views: viewTabs(entries, tabCounts), view, context: headerContext({ page, result, cwd, env, chrome: chromeFound }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   layout.current = {
     mainTop: 1,
@@ -682,10 +682,8 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
   // command, else how Flit sees things.
   const told = { pages, result, chrome: chromeFound };
   let said = { face: FACES[mood], message: moodLine(mood, told), tone: chromeFound === null ? 'warn' : undefined };
-  if (flash) said = { face: FACES[mood], message: flash.text };
-  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
-  // While the prompt has the keys, its keys are what the line is for.
-  else if (focus === 'prompt') said = { face: FACES[mood], message: '' };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
   else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) said = { face: FACES[mood], message: welcomeLine('Lantern', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, told)}`) };
 
@@ -709,7 +707,7 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

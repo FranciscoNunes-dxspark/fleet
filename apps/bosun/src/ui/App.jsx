@@ -83,8 +83,8 @@ function headerContext({ data, loading, environment }) {
   if (data) {
     const up = data.procs.filter((p) => p.child).length;
     const crashed = data.procs.filter((p) => p.status === 'crashed').length;
-    if (crashed) parts.push([{ text: `${crashed} crashed`, color: theme.del, bold: true }]);
-    if (environment) parts.push([{ text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod }]);
+    if (crashed) parts.push([{ text: `${crashed} crashed`, color: theme.del, bold: true, need: true }]);
+    if (environment) parts.push([{ text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod, need: true }]);
     parts.push([{ text: `${up}/${data.procs.length} running`, color: theme.dim }]);
     if (data.profile) parts.push([{ text: `profile ${data.profile}`, color: theme.accent }]);
     if (data.from) parts.push([{ text: data.from, color: theme.dim }]);
@@ -1133,7 +1133,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
     if (config.familyMoods !== false) writeMood('bosun', told);
   }, [told.mood, told.reason, config.familyMoods]);
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Bosun', views: viewTabs(entries), view, context: headerContext({ data, loading, environment }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Bosun', views: viewTabs(entries), view, context: headerContext({ data, loading, environment }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
@@ -1198,11 +1198,11 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
   // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
   // command, else how Squawk sees the crew.
   // While the prompt has the keys, its own keys matter more than Squawk's chatter.
-  let said = { face: FACES[mood], message: focus === 'prompt' ? '' : moodLine(mood, data) };
-  if (flash) said = { face: FACES[mood], message: flash.text };
-  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
-  else if (focus !== 'prompt' && welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
-  else if (focus !== 'prompt' && welcome) said = { face: FACES[mood], message: welcomeLine('Bosun', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
+  let said = { face: FACES[mood], message: moodLine(mood, data) };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
+  else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) said = { face: FACES[mood], message: welcomeLine('Bosun', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
@@ -1224,7 +1224,7 @@ export function App({ config: initialConfig, dir = process.cwd(), load = loadCre
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

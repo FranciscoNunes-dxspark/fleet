@@ -65,12 +65,12 @@ function headerContext({ cwd, env, listening, intercept, paused, count, findings
   const segs = [];
   if (problem) segs.push({ text: firstLine(problem), color: theme.warn }, { text: '  ' });
   if (listening) segs.push({ text: `${listening.host}:${listening.port}`, color: theme.accent }, { text: intercept ? '  HTTPS read' : '  HTTPS tunnelled', color: theme.dim }, { text: '  ' });
-  else segs.push({ text: 'not listening', color: theme.warn }, { text: '  ' });
-  if (paused) segs.push({ text: 'paused', color: theme.warn, bold: true }, { text: '  ' });
+  else segs.push({ text: 'not listening', color: theme.warn, need: true }, { text: '  ' });
+  if (paused) segs.push({ text: 'paused', color: theme.warn, bold: true, need: true }, { text: '  ' });
   const line = findingsLine(countFindings(findings));
   if (line) segs.push({ text: line, color: findings.some((f) => f.severity === 'critical' || f.severity === 'high') ? theme.del : theme.warn }, { text: '  ' });
   segs.push({ text: `${count} captured`, color: theme.dim });
-  if (env) segs.push({ text: '  ' }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
+  if (env) segs.push({ text: '  ' }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod, need: env.prod });
   segs.push({ text: '  ' }, { text: basename(cwd) || cwd, color: theme.dim });
   return segs;
 }
@@ -710,6 +710,7 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
     view,
     context: headerContext({ cwd, env, listening, intercept: config.intercept === true, paused, count: list.length, findings, problem }),
     width: W,
+    compact: true,
   });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
@@ -758,10 +759,10 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
   const right = focus === 'prompt' ? '' : '/ commands · ! shell · , settings · ? help';
   // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
   // command, else how Peep sees things. At the prompt its keys come first, so only a flash or a sibling.
-  let bar = { face: FACES[mood], message: focus === 'prompt' ? '' : moodLine(mood, petState) };
-  if (flash) bar = { face: FACES[mood], message: flash.text };
-  else if (reaction) bar = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
-  else if (welcome && focus !== 'prompt')
+  let bar = { face: FACES[mood], message: moodLine(mood, petState) };
+  if (flash) bar = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) bar = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
+  else if (welcome)
     bar = update
       ? { face: FACES[mood], message: updateLine(update), tone: 'warn' }
       : { face: FACES[mood], message: welcomeLine('Lookout', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, petState)}`) };
@@ -786,7 +787,7 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...bar} keys={keys} right={right} width={W} />
+      <StatusLine {...bar} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

@@ -60,10 +60,10 @@ function headerContext({ data, run, cwd, env, loading, problem, watching }) {
   const segs = [];
   const gap = () => segs.push({ text: '  ' });
   if (problem) segs.push({ text: firstLine(problem), color: theme.warn }), gap();
-  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod }), gap();
+  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod, need: true }), gap();
   if (run) {
     const c = run.counts;
-    if (c.failed) segs.push({ text: `${c.failed} failed`, color: theme.del, bold: true }), gap();
+    if (c.failed) segs.push({ text: `${c.failed} failed`, color: theme.del, bold: true, need: true }), gap();
     if (watching) segs.push({ text: '● watching', color: theme.accent }), gap();
     if (c.passed) segs.push({ text: `${c.passed} passed`, color: theme.add }), gap();
     if (c.skipped) segs.push({ text: `${c.skipped} skipped`, color: theme.dim }), gap();
@@ -721,7 +721,7 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
     if (config.familyMoods !== false) writeMood('drill', feeling);
   }, [feeling.mood, feeling.reason, config.familyMoods]);
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Drill', views: viewTabs(entries, run, flaky), view, context: headerContext({ data, run, cwd, env, loading, problem, watching: Boolean(watching) }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Drill', views: viewTabs(entries, run, flaky), view, context: headerContext({ data, run, cwd, env, loading, problem, watching: Boolean(watching) }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
@@ -761,9 +761,8 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
   // face still shows Peck's mood); and while typing in the prompt only a flash.
   const typing = focus === 'prompt';
   let said = { face: FACES[mood], message: '' };
-  if (flash) said = { face: FACES[mood], message: flash.text };
-  else if (typing) said = { face: FACES[mood], message: '' };
-  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
   else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) said = { face: FACES[mood], message: welcomeLine('Drill', VERSION) };
   // The prompt's placeholder already names / ! and ?, so these show only while it holds text and nothing
@@ -790,7 +789,7 @@ export function App({ config: initialConfig, provider = createDrill(), cwd: star
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={typing} keys={keys} right={right} width={W} />
     </Box>
   );
 }

@@ -64,13 +64,14 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // What the top line says at its right: demo, the environment, the app and its vault, what's wrong, the
 // folder. What went wrong reading Azure is the status line's.
 function headerContext({ data, loading, demo, env }) {
-  // Most telling first: the top line drops parts from the end when it runs out of room.
+  // Most telling first: the top line drops parts from the end when it runs out of room, and gives up its
+  // views' digits, then the other views, before the parts marked `need` (the kit's compact top line).
   const segs = [];
   const gap = () => segs.push({ text: '  ' });
-  if (demo) segs.push({ text: 'demo', color: theme.warn }), gap();
-  if (env) segs.push({ text: `${env.name}${env.prod ? ' (production)' : ''}`, color: env.prod ? theme.del : theme.info, bold: env.prod }), gap();
+  if (demo) segs.push({ text: 'demo', color: theme.warn, need: true }), gap();
+  if (env) segs.push({ text: `${env.name}${env.prod ? ' (production)' : ''}`, color: env.prod ? theme.del : theme.info, bold: env.prod, need: true }), gap();
   // The app and its vault as one part, so a narrow line never shows the one without the other.
-  segs.push({ text: `${data.target ? label(data.target) : 'no app'} · ${data.vault ? data.vault.name : 'no vault'}`, color: data.target || data.vault ? theme.info : theme.dim });
+  segs.push({ text: `${data.target ? label(data.target) : 'no app'} · ${data.vault ? data.vault.name : 'no vault'}`, color: data.target || data.vault ? theme.info : theme.dim, need: true });
   if (data.trouble.expiring.length) gap(), segs.push({ text: `${data.trouble.expiring.length} expiring`, color: theme.del, bold: true });
   if (data.trouble.broken.length) gap(), segs.push({ text: `${data.trouble.broken.length} broken`, color: theme.del, bold: true });
   if (data.trouble.drift.length) gap(), segs.push({ text: `${data.trouble.drift.length} differ`, color: theme.warn });
@@ -79,12 +80,12 @@ function headerContext({ data, loading, demo, env }) {
   return segs;
 }
 
-// The views in the top line: the digit that picks each before it (on a line wide enough to spare it), the
-// log's and the expiring count after it.
-const viewTabs = (entries, counts, digits) =>
+// The views in the top line: the digit that picks each before it (the compact top line drops it when the
+// line is narrow), the log's and the expiring count after it.
+const viewTabs = (entries, counts) =>
   VIEWS.map((v, i) => ({
     id: v.id,
-    key: digits ? i + 1 : undefined,
+    key: i + 1,
     label: v.label,
     count: v.id === 'log' ? entries.length : v.id === 'expiry' ? counts.expiring : 0,
     countColor: v.id === 'expiry' ? theme.del : theme.dim,
@@ -915,7 +916,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
   const counts = { expiring: data.expiringItems.length };
   const problem = data.azureProblem ?? data.appProblem;
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Locker', views: viewTabs(entries, counts, W >= 120), view, context: headerContext({ data, loading, demo, env }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Locker', views: viewTabs(entries, counts), view, context: headerContext({ data, loading, demo, env }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   layout.current = {
     mainTop: 1,
@@ -967,8 +968,8 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
   // the welcome until the first command, else how Hush sees things.
   const info = { loaded, trouble: data.trouble, target: data.target, vault: data.vault };
   let status = { face: FACES[mood], message: moodLine(mood, info) };
-  if (flash) status = { face: FACES[mood], message: flash.text };
-  else if (reaction) status = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  if (flash) status = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) status = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
   else if (problem) status = { face: FACES[mood], message: firstLine(problem), tone: 'warn' };
   else if (welcome && update) status = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) status = { face: FACES[mood], message: welcomeLine('Locker', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, info)}`) };
@@ -993,7 +994,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...status} keys={keys} right={right} width={W} />
+      <StatusLine {...status} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

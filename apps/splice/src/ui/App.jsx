@@ -100,6 +100,8 @@ function headerContext({ data, loading, environment, room }) {
     if (environment) segs.push({ text: '  ' }, { text: environment.prod ? `${environment.name} (production)` : environment.name, color: environment.prod ? theme.del : theme.accent, bold: environment.prod });
     // Only part of the repository is checked out (/sparse says which).
     if (data.sparse?.on) segs.push({ text: '  sparse', color: theme.hunk, bold: true });
+    // Everything so far must stay (the kit's compact top line keeps `need` parts); the path may go.
+    for (const x of segs) x.need = true;
     const full = data.root;
     const pathW = Math.min(stringWidth(full), room - segs.reduce((n, s) => n + stringWidth(s.text), 0) - 2);
     if (pathW >= 12) segs.push({ text: '  ' }, { text: pathW < stringWidth(full) ? `…${full.slice(-(pathW - 1))}` : full, color: theme.dim });
@@ -1090,13 +1092,15 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     return () => clearInterval(t);
   }, [moodsOn, familyHome, moodEvery]);
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  // The repository's facts go at the top line's right when they fit there whole; a narrow terminal gets
-  // them on a row of their own rather than lose the branch or a rebase in progress.
+  // The repository's facts go at the top line's right, the views' digits giving way for them (the kit's
+  // compact top line); a terminal too narrow for that gets them on a row of their own rather than lose
+  // the branch, a rebase in progress, or the other views.
   const tabsOnly = topLine({ face: FACES[mood], title: 'Splice', views: viewTabs(data), view, width: W });
   const contextRoom = W - segsWidth(tabsOnly.segments) - 2;
   const facts = headerContext({ data, loading, environment, room: contextRoom });
-  const oneLine = segsWidth(facts) <= contextRoom;
-  const top = oneLine ? topLine({ face: FACES[mood], title: 'Splice', views: viewTabs(data), view, context: facts, width: W }) : tabsOnly;
+  const compact = topLine({ face: FACES[mood], title: 'Splice', views: viewTabs(data), view, context: facts, width: W, compact: true });
+  const oneLine = compact.compact !== 'views' && facts.filter((x) => x.need).every((x) => compact.segments.includes(x));
+  const top = oneLine ? compact : tabsOnly;
   const factsRow = oneLine ? null : [{ text: ' ' }, ...headerContext({ data, loading, environment, room: W - 1 })];
   const mainTop = factsRow ? 2 : 1;
   const mainH = Math.max(6, H - mainTop - act.length - (busy ? 1 : 0) - bottom - 1);
@@ -1162,10 +1166,8 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
   // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
   // command, else how Twig sees things.
   let said = { face: FACES[mood], message: moodLine(mood, data) };
-  if (flash) said = { face: FACES[mood], message: flash.text };
-  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  · esc puts it away', color: theme.dim }] };
-  // While the prompt has the keys, its keys are what the line is for.
-  else if (focus === 'prompt') said = { face: FACES[mood], message: '' };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  · esc puts it away', color: theme.dim }], news: true };
   else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) said = { face: FACES[mood], message: welcomeLine('Splice', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
 
@@ -1186,7 +1188,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder='Press / for commands (try "/commit fix typo"), ! to run git, ? for shortcuts' />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

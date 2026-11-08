@@ -147,8 +147,8 @@ function headerContext({ session, tranCount, tranFor = '', writesAllowed, file, 
     if (session.stats) segs.push({ text: '  stats on', color: theme.dim });
   } else segs.push({ text: connecting ? 'connecting…' : 'not connected', color: theme.dim });
   if (update) segs.push({ text: `  ↑ ${update.version}${UPDATE_STATES[update.state] ?? ''}`, color: update.state === 'installed' ? theme.ok : theme.warn, bold: true });
-  // Up to here is what the top line must keep: viewTop gives up views for it.
-  segs.need = segs.reduce((n, x) => n + stringWidth(x.text), 0);
+  // Up to here is what the top line must keep: the kit's compact top line gives up views for it.
+  for (const x of segs) x.need = true;
   // The file's path, keeping its end, when there is room for it.
   if (file) {
     const room = Math.max(0, Math.min(stringWidth(file.path), width - 100));
@@ -158,21 +158,8 @@ function headerContext({ session, tranCount, tranFor = '', writesAllowed, file, 
 }
 
 // The views in the top line, the digit that picks each before it, and how many result sets there are.
-const viewTabs = (results, keys = true) =>
-  VIEWS.map((v, i) => ({ id: v.id, key: keys ? i + 1 : null, label: v.label, count: v.id === 'results' && results?.sets.length > 1 ? results.sets.length : 0, countColor: theme.dim }));
-
-// The top line. Six views leave little room on a narrow terminal, and the connection matters more than
-// they do: the digits before their names go first (the help has them), then every view but the one
-// shown.
-function viewTop({ face, results, view, context, width }) {
-  const tiers = [viewTabs(results), viewTabs(results, false), viewTabs(results).filter((v) => v.id === view)];
-  const fits = (views) => {
-    const bare = topLine({ face, title: 'Trawl', views, view, width: Infinity }).segments;
-    return bare.reduce((n, x) => n + stringWidth(x.text), 0) + 2 + (context.need ?? 0) <= width;
-  };
-  const views = tiers.find(fits) ?? tiers.at(-1);
-  return topLine({ face, title: 'Trawl', views, view, context, width });
-}
+const viewTabs = (results) =>
+  VIEWS.map((v, i) => ({ id: v.id, key: i + 1, label: v.label, count: v.id === 'results' && results?.sets.length > 1 ? results.sets.length : 0, countColor: theme.dim }));
 
 // The last two results, Claude Code style: "● SELECT …" then "  ⎿  12 rows · 41 ms".
 function activityRows(entries) {
@@ -1705,12 +1692,18 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   const spinnerH = busy || watching ? 1 : 0;
   // The top line, then the view, the activity, the spinner, the prompt and its suggestions, then the
   // status line.
-  const top = viewTop({
+  // Six views leave little room on a narrow terminal, and the connection matters more than they do:
+  // compact, the digits before their names go first (the help has them), then every view but the one
+  // shown. An open transaction turns Glim's face yellow.
+  const top = topLine({
     face: FACES[mood],
-    results,
+    faceColor: tranCount ? theme.warn : undefined,
+    title: 'Trawl',
+    views: viewTabs(results),
     view,
     context: headerContext({ env: environment, session, tranCount, tranFor: tranCount && tranSince.current ? openFor(Date.now() - tranSince.current) : '', writesAllowed, file, connecting, update, width: W }),
     width: W,
+    compact: true,
   });
   const mainH = Math.max(6, H - 1 - act.length - spinnerH - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
@@ -1814,13 +1807,12 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   const right = focus === 'prompt' || focus === 'editor' || focus === 'cell' || confirmReq?.secret ? '' : '/ commands · ! SQL · ? help';
   // What the status line says beside Glim's face: a flash, a sibling's news (until esc), the welcome
   // until the first query, else how Glim sees things.
-  // While something is being typed its keys matter more, so only news is said then.
+  // While something is being typed its keys matter more, so only news is said then (the kit's typing).
   const typing = focus === 'prompt' || focus === 'editor' || focus === 'cell' || Boolean(confirmReq);
-  // Glim's idle line is long, and the keys are worth more than it: it shows when both fit.
-  const idle = moodLine(mood, session);
-  const idleFits = stringWidth(idle) + stringWidth(keys ?? '') + stringWidth(right) + 12 <= W;
-  let said = { face: FACES[mood], message: typing || (!idleFits && mood !== 'alert') ? '' : idle, tone: mood === 'alert' ? 'warn' : undefined };
-  if (flash) said = { face: FACES[mood], message: flash.text };
+  // Glim's idle line is long, and the keys are worth more than it: an alert is news, the rest keeps
+  // room for every key (the kit's minKeys).
+  let said = { face: FACES[mood], message: moodLine(mood, session), tone: mood === 'alert' ? 'warn' : undefined, news: mood === 'alert' };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
   else if (reaction)
     said = {
       face: FACES[mood],
@@ -1828,9 +1820,10 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
         { text: reaction.text, color: reaction.mood === 'sad' ? theme.del : reaction.mood === 'worried' ? theme.warn : theme.ok },
         { text: '  esc dismisses', color: theme.dim },
       ],
+      news: true,
     };
   // The welcome is for the first screen: once a view or an overlay of its own is up, its keys are.
-  else if (welcome && !typing && !overlay && view === 'explorer') said = { face: FACES[mood], message: welcomeLine('Trawl', VERSION, `Glim the anglerfish here. ${moodLine(mood, session)}`) };
+  else if (welcome && !overlay && view === 'explorer') said = { face: FACES[mood], message: welcomeLine('Trawl', VERSION, `Glim the anglerfish here. ${moodLine(mood, session)}`) };
 
   // The prompt's example, in the connection's own SQL (TOP or LIMIT).
   const example = dialectOf(session).selectTop('dbo.Players', 10);
@@ -1857,7 +1850,7 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder={`Press / for commands, ! to run SQL (try "!${example}"), ? for shortcuts`} />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={typing} minKeys={Infinity} keys={keys} right={right} width={W} />
     </Box>
   );
 }

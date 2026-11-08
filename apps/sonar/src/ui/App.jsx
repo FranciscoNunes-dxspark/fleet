@@ -78,9 +78,9 @@ const firstLine = (s) => String(s ?? '').split('\n')[0];
 // a demo, a read still going, the environment, the time span, then the subscription and its apps.
 function headerContext({ data, span, demo, loading, env }) {
   const segs = [];
-  if (demo) segs.push({ text: ' DEMO ', bg: theme.info, color: theme.ink, bold: true }, { text: '  ' });
+  if (demo) segs.push({ text: ' DEMO ', bg: theme.info, color: theme.ink, bold: true, need: true }, { text: '  ' });
   if (loading) segs.push({ text: data ? 'reading…' : 'loading…', color: theme.dim }, { text: '  ' });
-  if (env) segs.push({ text: env.prod ? ` ${env.name} ` : env.name, color: env.prod ? theme.ink : theme.info, bg: env.prod ? theme.del : undefined, bold: true }, { text: '  ' });
+  if (env) segs.push({ text: env.prod ? ` ${env.name} ` : env.name, color: env.prod ? theme.ink : theme.info, bg: env.prod ? theme.del : undefined, bold: true, need: true }, { text: '  ' });
   segs.push({ text: 'last ', color: theme.dim }, { text: span.label, color: theme.warn, bold: true });
   if (data) segs.push({ text: '  ' }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps`, color: theme.dim });
   return segs;
@@ -1280,7 +1280,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Sonar', views: viewTabs(entries), view, context: headerContext({ data, span: TIMESPANS[spanIndex], demo: provider?.kind === 'demo', loading, env }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Sonar', views: viewTabs(entries), view, context: headerContext({ data, span: TIMESPANS[spanIndex], demo: provider?.kind === 'demo', loading, env }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
@@ -1348,8 +1348,8 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const right = focus === 'prompt' ? '' : 't span · / commands · , settings · ? help';
   // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
   // command, else how Ping hears things. At the prompt its keys come first, so only a flash or a sibling.
-  let bar = { face: FACES[mood], message: focus === 'prompt' ? '' : moodLine(mood, data) };
-  if (flash) bar = { face: FACES[mood], message: flash.text };
+  let bar = { face: FACES[mood], message: moodLine(mood, data) };
+  if (flash) bar = { face: FACES[mood], message: flash.text, news: true };
   else if (reaction)
     bar = {
       face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'],
@@ -1357,8 +1357,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
         { text: reactionLine(reaction), color: reaction.mood === 'happy' ? theme.add : theme.warn },
         { text: `  (${APP_NAMES[reaction.app] ?? reaction.app} · esc)`, color: theme.dim },
       ],
+      news: true,
     };
-  else if (welcome && focus !== 'prompt')
+  else if (welcome)
     bar = update
       ? { face: FACES[mood], message: updateLine(update), tone: 'warn' }
       : { face: FACES[mood], message: welcomeLine('Sonar', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
@@ -1383,7 +1384,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="/ for commands (/kql, /sub, /find) · t time span · ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...bar} keys={keys} right={right} width={W} />
+      <StatusLine {...bar} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

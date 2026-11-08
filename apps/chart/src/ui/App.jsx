@@ -71,7 +71,7 @@ function headerContext({ data, cwd, tool, env, loading, problem }) {
     gap();
   } else if (data?.found) segs.push({ text: 'no plan yet', color: theme.dim }), gap();
   else if (loading) segs.push({ text: 'looking…', color: theme.dim }), gap();
-  if (data?.drift?.length) segs.push({ text: `${data.drift.length} drifted`, color: theme.warn, bold: true }), gap();
+  if (data?.drift?.length) segs.push({ text: `${data.drift.length} drifted`, color: theme.warn, bold: true, need: true }), gap();
   segs.push({ text: basename(cwd) || cwd, color: theme.dim }, { text: '  ' });
   if (env) segs.push({ text: env.name, color: env.prod ? theme.del : theme.info, bold: env.prod }, { text: '  ' });
   segs.push({ text: tool, color: theme.dim });
@@ -674,7 +674,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
     if (config.familyMoods !== false) writeMood('chart', feeling);
   }, [feeling.mood, feeling.reason, config.familyMoods]);
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Chart', views: viewTabs(entries, data, config), view, context: headerContext({ data, cwd, tool: config.terraform ?? 'terraform', env, loading, problem }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Chart', views: viewTabs(entries, data, config), view, context: headerContext({ data, cwd, tool: config.terraform ?? 'terraform', env, loading, problem }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
@@ -721,8 +721,8 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
   // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
   // command, else how Plot sees things.
   let said = { face: FACES[mood], message: moodLine(mood, told) };
-  if (flash) said = { face: FACES[mood], message: flash.text };
-  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
   else if (!data && problem) said = { face: FACES[mood], message: problem, tone: 'warn' };
   else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) said = { face: FACES[mood], message: welcomeLine('Chart', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, told)}`) };
@@ -747,7 +747,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

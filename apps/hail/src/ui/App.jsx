@@ -86,7 +86,7 @@ const copiedText = (text) => {
 function headerContext({ data, env, project, loading, mock }) {
   const segs = [];
   if (data) {
-    if (project) segs.push({ text: 'project ', color: theme.dim }, { text: `${project.name}${project.prod ? ' (production)' : ''}`, color: project.prod ? theme.del : theme.dim, bold: project.prod }, { text: '  ' });
+    if (project) segs.push({ text: 'project ', color: theme.dim }, { text: `${project.name}${project.prod ? ' (production)' : ''}`, color: project.prod ? theme.del : theme.dim, bold: project.prod, need: true }, { text: '  ' });
     segs.push({ text: 'env ', color: theme.dim }, { text: env ?? (data.environments.names.length ? 'none' : '—'), color: env ? theme.warn : theme.dim, bold: Boolean(env) });
     segs.push({ text: `  ${data.name}`, bold: true });
     if (mock) segs.push({ text: '  mock ', color: theme.dim }, { text: `:${mock.port}`, color: theme.accent, bold: true });
@@ -1222,7 +1222,7 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
     if (familyOn) writeMood('hail', shared);
   }, [shared.mood, familyOn]);
   // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
-  const top = topLine({ face: FACES[mood], title: 'Hail', views: viewTabs(entries), view, context: headerContext({ data, env: environment(), project: projectEnv, loading, mock: mockServer }), width: W });
+  const top = topLine({ face: FACES[mood], title: 'Hail', views: viewTabs(entries), view, context: headerContext({ data, env: environment(), project: projectEnv, loading, mock: mockServer }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
@@ -1299,9 +1299,8 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
   // typing in the prompt or the editor only a flash, as the keys for typing need it.
   const typing = focus === 'prompt' || focus === 'editor';
   let said = { face: FACES[mood], message: '' };
-  if (flash) said = { face: FACES[mood], message: flash.text };
-  else if (typing) said = { face: FACES[mood], message: '' };
-  else if (reaction) said = { face: FACES[mood], message: [{ text: reactionLine(reaction) }, { text: '  esc', color: theme.dim }] };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[mood], message: [{ text: reactionLine(reaction) }, { text: '  esc', color: theme.dim }], news: true };
   else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
   else if (welcome) said = { face: FACES[mood], message: welcomeLine('Hail', VERSION) };
   // The prompt's placeholder already names / ! and ?, so these show only while it holds text and nothing
@@ -1328,7 +1327,7 @@ export function App({ config: initialConfig, initialFile, cwd = process.cwd(), l
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="↵ sends the request · / for commands · e environment · ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <StatusLine {...said} keys={keys} right={right} width={W} />
+      <StatusLine {...said} typing={typing} keys={keys} right={right} width={W} />
     </Box>
   );
 }
