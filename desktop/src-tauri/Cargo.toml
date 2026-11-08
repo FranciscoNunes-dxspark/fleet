@@ -11,6 +11,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 # WezTerm's pseudo-terminal: a pty on Linux and macOS, ConPTY on Windows.
 portable-pty = "0.9"
+# OS notifications for an app that needs you while the window is in the background, the open-folder
+# dialog, and links opened in the browser.
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
 
 [profile.release]
 strip = true

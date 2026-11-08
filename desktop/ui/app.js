@@ -1,9 +1,13 @@
 // The window's side of Fleet: xterm.js drawing what the pseudo-terminal (src-tauri/src/main.rs) sends,
-// and sending back keys, pastes, mouse reports and the size. Fleet's bar is drawn here, not in the
+// and sending back keys, pastes, mouse reports and the size. Fleet's chrome is drawn here, not in the
 // grid: the host (run with FLEET_DESKTOP=1, which main.rs sets) sends its state as OSC 5380 (the host's
-// barState), and a click on a tab or a tool types the prefix and its key, as a person would.
+// barState: the bar, a panel's content, a toast, the folders, Claude's answer) and the palette's list as
+// OSC 5382. The window answers with keys (a tab clicked types the prefix and its letter, as a person
+// would) and with OSC 5381 messages (a panel's row picked, a palette line, a folder to move to,
+// settings, a question for Claude), which the host takes out of its input before reading keys.
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const plugin = (name) => window.__TAURI__[name];
 
 // The shell look's palette, so Fleet's apps draw on the ground they were designed for.
 const theme = {
@@ -30,9 +34,27 @@ const theme = {
   brightWhite: '#f2f4f7',
 };
 
+// What the window remembers for itself (the font size, notifications): this browser's storage, which
+// may refuse; the defaults stand then.
+const stored = (key, fallback) => {
+  try {
+    const v = localStorage.getItem(`fleet.${key}`);
+    return v == null ? fallback : JSON.parse(v);
+  } catch {
+    return fallback;
+  }
+};
+const store = (key, value) => {
+  try {
+    localStorage.setItem(`fleet.${key}`, JSON.stringify(value));
+  } catch {
+    // Not kept: it lasts until the window closes.
+  }
+};
+
 const term = new Terminal({
   fontFamily: '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
-  fontSize: 14,
+  fontSize: stored('fontSize', 14),
   lineHeight: 1.15,
   theme,
   allowProposedApi: true,
@@ -46,21 +68,40 @@ term.loadAddon(fit);
 term.open(document.getElementById('terminal'));
 // The GPU renderer, several times faster than drawing with the page's own elements; where the web view
 // has no WebGL (or loses it), the terminal goes on with those.
+let webgl = null;
 try {
-  const webgl = new WebglAddon.WebglAddon();
-  webgl.onContextLoss(() => webgl.dispose());
+  webgl = new WebglAddon.WebglAddon();
+  webgl.onContextLoss(() => {
+    webgl.dispose();
+    webgl = null;
+  });
   term.loadAddon(webgl);
 } catch {
   // No WebGL here: the DOM renderer it is.
+  webgl = null;
+}
+// Links an app prints open in the browser; images an app sends (sixel, iTerm's) are drawn.
+term.loadAddon(new WebLinksAddon.WebLinksAddon((_, url) => plugin('opener')?.openUrl(url)));
+try {
+  term.loadAddon(new ImageAddon.ImageAddon());
+} catch {
+  // Without images, the apps' text is all there is.
 }
 fit.fit();
 
 const $ = (id) => document.getElementById(id);
 const send = (data) => invoke('write', { data });
+/** Tells the host something (`ESC ] 5381 ; <json> BEL`, typed as keys are: the host takes it out). */
+const tell = (msg) => send(`\x1b]5381;${JSON.stringify(msg)}\x07`);
 
-// ---- the bar, from the host's state -------------------------------------------------------------
+const el = (tag, props = {}, ...children) => {
+  const node = Object.assign(document.createElement(tag), props);
+  for (const c of children) if (c != null && c !== false) node.append(c);
+  return node;
+};
 
 let bar = null;
+let commands = null;
 
 /** Types the prefix and `key` into Fleet, as the bar's keys would be typed. */
 function prefixed(key) {
@@ -69,25 +110,26 @@ function prefixed(key) {
   term.focus();
 }
 
-const el = (tag, props = {}, ...children) => {
-  const node = Object.assign(document.createElement(tag), props);
-  for (const c of children) if (c != null) node.append(c);
-  return node;
-};
+const accentOf = (id) => bar?.spaces.find((s) => s.id === id)?.accent ?? commands?.apps.find((a) => a.id === id)?.accent ?? theme.foreground;
+const titleOf = (id) => bar?.spaces.find((s) => s.id === id)?.title ?? commands?.apps.find((a) => a.id === id)?.title ?? id;
+
+// ---- the bar ----------------------------------------------------------------------------------------
 
 function drawTabs(state) {
-  const tabs = $('tabs');
-  tabs.replaceChildren(
+  $('tabs').replaceChildren(
     ...state.spaces.map((s, i) => {
       const classes = ['tab', s.state];
       if (s.id === state.active) classes.push('active');
       else if (s.id === state.shown) classes.push('shown');
+      const keys = `prefix ${i < 9 ? `${i + 1} or ` : ''}${s.letter}`;
       const tab = el(
         'button',
-        { type: 'button', className: classes.join(' '), title: `${s.title}  (prefix ${i < 9 ? `${i + 1} or ` : ''}${s.letter})` },
-        el('span', { className: 'dot' }),
+        { type: 'button', className: classes.join(' '), title: s.why ? `${s.title}: ${s.why}  (${keys})` : `${s.title}  (${keys})` },
+        el('span', { className: 'dot', ariaHidden: 'true' }),
         el('span', { textContent: s.title }),
         s.badge ? el('span', { className: `badge${s.error ? ' error' : ''}`, textContent: s.badge }) : null,
+        // A badge says why, in a few words, until you look.
+        s.why && s.id !== state.active ? el('span', { className: 'why', textContent: s.why }) : null,
       );
       tab.style.setProperty('--accent', s.accent);
       tab.setAttribute('role', 'tab');
@@ -102,13 +144,13 @@ function drawStatus(state) {
   const pills = [];
   const { env, recording, proposals } = state.status ?? {};
   if (proposals > 0) {
-    const p = el('button', { type: 'button', className: 'pill proposals', textContent: `◆ ${proposals} proposed`, title: "Claude's proposals (prefix P)" });
+    const p = el('button', { type: 'button', className: 'pill proposals', textContent: `◆${proposals} proposed`, title: "Claude's proposals (prefix P)" });
     p.addEventListener('click', () => prefixed('P'));
     pills.push(p);
   }
   if (recording) pills.push(el('span', { className: 'pill rec', textContent: '● REC' }));
   if (env?.name) {
-    const e = el('button', { type: 'button', className: `pill ${env.prod ? 'prod' : 'env'}`, textContent: env.prod ? `◆ ${env.name.toUpperCase()}` : env.name, title: 'The environment (prefix e)' });
+    const e = el('button', { type: 'button', className: `pill ${env.prod ? 'prod' : 'env'}`, textContent: env.prod ? env.name.toUpperCase() : env.name, title: 'The environment (prefix e)' });
     e.addEventListener('click', () => prefixed('e'));
     pills.push(e);
   }
@@ -123,8 +165,8 @@ function drawStatus(state) {
 function drawStrip(state) {
   const say = $('say');
   if (state.confirming) {
-    const quit = el('button', { type: 'button', className: 'answer danger', textContent: 'Quit' });
-    const stay = el('button', { type: 'button', className: 'answer', textContent: 'Stay' });
+    const quit = el('button', { type: 'button', className: 'answer', textContent: 'y quit' });
+    const stay = el('button', { type: 'button', className: 'answer', textContent: 'n stay' });
     quit.addEventListener('click', () => send('y'));
     stay.addEventListener('click', () => send('n'));
     say.replaceChildren(el('span', { className: 'question', textContent: state.confirming }), quit, stay);
@@ -132,17 +174,60 @@ function drawStrip(state) {
     // The host edits the line (the keys go to it as they always do); this only shows it.
     const { label, text, cursor, hint } = state.asking;
     const field = el('span', { className: 'field' }, text.slice(0, cursor), el('span', { className: 'caret', textContent: text[cursor] ?? ' ' }), text.slice(cursor + 1));
-    say.replaceChildren(el('span', { className: 'label', textContent: label }), field, el('span', { textContent: hint }));
+    say.replaceChildren(el('span', { className: 'label', textContent: `${label}:` }), field, el('span', { textContent: hint }));
   } else if (state.prefix) {
     say.replaceChildren(el('span', { className: 'keys', textContent: `${state.prefixLabel} · ${state.hint}` }));
   } else if (state.notice) {
     say.replaceChildren(el('span', { className: 'notice', textContent: state.notice }));
   } else {
-    say.replaceChildren(el('span', { textContent: `${state.prefixLabel} then a key, or click above · ${state.prefixLabel} ? every key` }));
+    say.replaceChildren(el('span', { textContent: `${state.prefixLabel} then a key · ^K every command · ${state.prefixLabel} ? every key` }));
   }
 }
 
-// ---- a panel, from the host's content -------------------------------------------------------------
+// ---- toasts and notifications -----------------------------------------------------------------------
+
+let lastToast = null;
+
+function drawToast(toast) {
+  // The first state after a (re)load carries the last toast: old news, not shown again.
+  if (lastToast == null) {
+    lastToast = toast?.id ?? 0;
+    return;
+  }
+  if (!toast || toast.id <= lastToast) return;
+  lastToast = toast.id;
+  const go = () => (toast.proposal ? prefixed('P') : prefixed(bar.spaces.find((s) => s.id === toast.app)?.letter ?? ''));
+  const node = el(
+    'button',
+    { type: 'button', className: 'toast' },
+    el('span', { className: 'app', textContent: toast.title }),
+    ' ',
+    el('span', { className: 'what', textContent: toast.text }),
+    '  ',
+    el('span', { className: 'go', textContent: '↵ go there' }),
+  );
+  node.querySelector('.app').style.color = toast.error ? theme.red : accentOf(toast.app);
+  node.addEventListener('click', () => (go(), node.remove()));
+  $('toasts').prepend(node);
+  while ($('toasts').children.length > 4) $('toasts').lastChild.remove();
+  setTimeout(() => node.remove(), 8000);
+  // In the background, the system says it too (once allowed).
+  if (!document.hasFocus() && stored('notify', true)) notify(`${toast.title}: ${toast.text}`);
+}
+
+async function notify(body) {
+  const n = plugin('notification');
+  if (!n) return;
+  try {
+    let ok = await n.isPermissionGranted();
+    if (!ok) ok = (await n.requestPermission()) === 'granted';
+    if (ok) n.sendNotification({ title: 'Fleet', body });
+  } catch {
+    // No notifications here: the toast stays the only word.
+  }
+}
+
+// ---- boxes: a panel of the host's, or one of the window's own (the palette, the settings) ------------
 
 // xterm's 256 colours: the 16 of the theme, the 6×6×6 cube, the greys.
 const BASE16 = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white', 'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite'].map((n) => theme[n]);
@@ -170,8 +255,7 @@ function sgrStyle(sgr) {
       else if (n === 22) {
         delete style.fontWeight;
         delete style.opacity;
-      }
-      else if ((n === 38 || n === 48) && p[i + 1] === 5) {
+      } else if ((n === 38 || n === 48) && p[i + 1] === 5) {
         style[n === 38 ? 'color' : 'background'] = colour256(p[i + 2]);
         i += 2;
       } else if ((n === 38 || n === 48) && p[i + 1] === 2) {
@@ -184,29 +268,60 @@ function sgrStyle(sgr) {
   return style;
 }
 
-/** Tells the host something (`ESC ] 5381 ; <json> BEL`, typed as keys are: the host takes it out). */
-const tell = (msg) => send(`\x1b]5381;${JSON.stringify(msg)}\x07`);
-
-// What a key in a panel's hint types when its chip is clicked.
-const KEY_TYPES = { '↵': '\r', esc: '\x1b', space: ' ', tab: '\t', '←': '\x1b[D', '→': '\x1b[C', '↑': '\x1b[A', '↓': '\x1b[B', '-': '-', '+': '+' };
+// What a key in a hint types when it's clicked.
+const KEY_TYPES = { '↵': '\r', esc: '\x1b', space: ' ', tab: '\t', '←': '\x1b[D', '→': '\x1b[C', '↑': '\x1b[A', '↓': '\x1b[B' };
 const typed = (key) => KEY_TYPES[key] ?? (key.length === 1 ? key : null);
 
-let shownPanel = '';
+/** A hint as the terminal writes it ("↵ open · j k move · esc close"): the keys bright, each a button. */
+function keyParts(hint, onKey) {
+  return String(hint ?? '')
+    .split(' · ')
+    .filter(Boolean)
+    .map((part) => {
+      const words = part.split(' ');
+      let n = 0;
+      while (n < words.length - 1 && (KEY_TYPES[words[n]] || words[n].length === 1 || /^(\^|ctrl\+|alt\+)/.test(words[n]))) n++;
+      if (n === 0) n = 1;
+      const node = el('span', { className: 'keypart' });
+      for (const key of words.slice(0, n)) {
+        const data = onKey && typed(key);
+        const k = el(data ? 'button' : 'span', { className: 'key', textContent: key, ...(data ? { type: 'button', title: `Types ${key}` } : {}) });
+        if (data) k.addEventListener('click', () => onKey(data));
+        node.append(k);
+      }
+      node.append(words.slice(n).join(' '));
+      return node;
+    });
+}
+
+// The box on screen: the host's panel when it has one open, else the window's own, else none.
+let own = null; // { kind: 'palette' | 'settings', ... }
+let shownBox = '';
+
+function openBox({ title, top = null, rows = [], hint = '', onKey = null }) {
+  $('scrim').hidden = false;
+  $('box-title').textContent = title;
+  $('box-top').replaceChildren(...(top ? [top] : []));
+  $('box-body').replaceChildren(...rows);
+  $('box-keys').replaceChildren(...keyParts(hint, onKey));
+}
+
+function closeBox() {
+  $('scrim').hidden = true;
+  shownBox = '';
+}
 
 function drawPanel(panel) {
-  const scrim = $('scrim');
   if (!panel) {
-    scrim.hidden = true;
-    shownPanel = '';
+    if (!own && shownBox) closeBox();
     return;
   }
+  // The host's panel wins over the window's own: it was asked for last.
+  own = null;
   const json = JSON.stringify(panel);
-  if (json === shownPanel) return;
-  shownPanel = json;
-  scrim.hidden = false;
-  $('panel-title').textContent = panel.title ?? '';
+  if (json === shownBox) return;
+  shownBox = json;
   const [from, to] = panel.focus ?? [0, 0];
-  const body = $('panel-body');
   const rows = panel.lines.map((line, i) => {
     const row = el('div', { className: `row${!panel.help && i >= from && i <= to ? ' focus' : ''}` });
     if (!line.length) row.textContent = ' ';
@@ -222,38 +337,343 @@ function drawPanel(panel) {
     }
     return row;
   });
-  body.replaceChildren(...rows);
+  openBox({ title: panel.title ?? '', top: panel.chart ? chart(panel.chart) : null, rows, hint: panel.hint, onKey: (data) => (send(data), term.focus()) });
   rows[from]?.scrollIntoView({ block: 'nearest' });
-  // The panel's keys, each one a button that types it, and what they do: "↵ open", "j k move",
-  // "- + the window" (a run of keys before the words shares them).
-  const chips = String(panel.hint ?? '')
-    .split(' · ')
-    .filter(Boolean)
-    .map((part) => {
-      const words = part.split(' ');
-      let n = 0;
-      while (n < words.length - 1 && (KEY_TYPES[words[n]] || words[n].length === 1)) n++;
-      if (n === 0) n = 1;
-      const chip = el('span', { className: 'chip' });
-      for (const key of words.slice(0, n)) {
-        const data = typed(key);
-        const k = el(data ? 'button' : 'span', { className: 'key', ...(data ? { type: 'button', title: `Types ${key}` } : {}) }, el('kbd', { textContent: key }));
-        if (data) k.addEventListener('click', () => (send(data), term.focus()));
-        chip.append(k);
-      }
-      chip.append(words.slice(n).join(' '));
-      return chip;
-    });
-  $('panel-keys').replaceChildren(...chips);
 }
 
-$('panel-close').addEventListener('click', () => (tell({ close: true }), term.focus()));
+function closeOwn() {
+  own = null;
+  closeBox();
+  term.focus();
+}
+
+$('box-close').addEventListener('click', () => (own ? closeOwn() : (tell({ close: true }), term.focus())));
 $('scrim').addEventListener('mousedown', (e) => {
-  // A click outside the panel closes it, as esc would.
-  if (e.target === $('scrim')) tell({ close: true });
+  // A click outside the box closes it, as esc would.
+  if (e.target !== $('scrim')) return;
+  if (own) closeOwn();
+  else tell({ close: true });
 });
-// The wheel scrolls the panel's rows here; its cursor stays where the host has it.
-$('panel').addEventListener('mouseup', () => queueMicrotask(() => term.focus()));
+// After a click in the host's panel, the keys go back to Fleet; the window's own boxes keep theirs.
+$('box').addEventListener('mouseup', () => queueMicrotask(() => !own && term.focus()));
+
+// ---- charts above a panel's rows ---------------------------------------------------------------------
+
+const SVG = 'http://www.w3.org/2000/svg';
+const svg = (tag, attrs = {}, ...children) => {
+  const node = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  for (const c of children) if (c != null) node.append(c);
+  return node;
+};
+const titled = (node, text) => (node.append(svg('title', {}, text)), node);
+const clock = (at) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const BAD = /crash|error|fail|gave up/i;
+const FAINT = '#5c6573';
+
+function chart(c) {
+  const wrap = el('div', { className: 'chart' });
+  if (c.kind === 'timeline') wrap.append(timelineChart(c));
+  else if (c.kind === 'path') wrap.append(pathChart(c));
+  else if (c.kind === 'severity') wrap.append(severityChart(c));
+  return wrap;
+}
+
+/** What changed, on one time axis: a lane per app, a tick per event, crashes and errors red and tall. */
+function timelineChart({ since, now, events }) {
+  const apps = [...new Set(events.map((e) => e.app))];
+  const W = 900;
+  const lane = 18;
+  const left = 90;
+  const H = Math.max(1, apps.length) * lane + 22;
+  const x = (at) => left + ((at - since) / Math.max(1, now - since)) * (W - left - 10);
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${events.length} changes on a time axis` });
+  apps.forEach((app, i) => {
+    const y = i * lane + 9;
+    root.append(svg('text', { x: 0, y: y + 4, fill: accentOf(app), 'font-size': 11 }, titleOf(app)));
+    root.append(svg('line', { x1: left, x2: W - 10, y1: y, y2: y, stroke: '#2a313b' }));
+  });
+  for (const e of events) {
+    const y = apps.indexOf(e.app) * lane + 9;
+    const bad = BAD.test(e.kind ?? '') || BAD.test(e.text ?? '');
+    root.append(titled(svg('line', { x1: x(e.at), x2: x(e.at), y1: y - (bad ? 7 : 4), y2: y + (bad ? 7 : 4), stroke: bad ? theme.red : accentOf(e.app), 'stroke-width': bad ? 3 : 2 }), `${clock(e.at)}  ${titleOf(e.app)}: ${e.text}`));
+  }
+  const axis = Math.max(1, apps.length) * lane + 16;
+  root.append(svg('text', { x: left, y: axis, fill: FAINT, 'font-size': 10 }, clock(since)));
+  root.append(svg('text', { x: W - 10, y: axis, fill: FAINT, 'font-size': 10, 'text-anchor': 'end' }, `now ${clock(now)}`));
+  if (!events.length) root.append(svg('text', { x: left, y: 12, fill: '#8a94a3', 'font-size': 11 }, 'Nothing changed in this window.'));
+  return root;
+}
+
+/** A request's path through the apps: one row per app, a dot per sighting, joined in time order. */
+function pathChart({ events }) {
+  const sorted = [...events].sort((a, b) => a.at - b.at);
+  const apps = [...new Set(sorted.map((e) => e.app ?? e.source))];
+  const W = 900;
+  const lane = 20;
+  const left = 90;
+  const H = Math.max(1, apps.length) * lane + 22;
+  const first = sorted[0]?.at ?? 0;
+  const last = sorted.at(-1)?.at ?? first + 1;
+  const x = (at) => left + ((at - first) / Math.max(1, last - first)) * (W - left - 14);
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `The request seen ${sorted.length} times` });
+  apps.forEach((app, i) => root.append(svg('text', { x: 0, y: i * lane + 14, fill: accentOf(app), 'font-size': 11 }, titleOf(app))));
+  const points = sorted.map((e) => [x(e.at), apps.indexOf(e.app ?? e.source) * lane + 10]);
+  if (points.length > 1) root.append(svg('polyline', { points: points.map((p) => p.join(',')).join(' '), fill: 'none', stroke: '#343c48', 'stroke-width': 1.5 }));
+  sorted.forEach((e, i) => root.append(titled(svg('circle', { cx: points[i][0], cy: points[i][1], r: 4, fill: BAD.test(e.text ?? '') ? theme.red : accentOf(e.app) }), `${clock(e.at)}  ${e.text}`)));
+  if (sorted.length) {
+    root.append(svg('text', { x: left, y: H - 4, fill: FAINT, 'font-size': 10 }, clock(first)));
+    root.append(svg('text', { x: W - 10, y: H - 4, fill: FAINT, 'font-size': 10, 'text-anchor': 'end' }, `${clock(last)}  (${Math.round((last - first) / 1000)} s)`));
+  }
+  return root;
+}
+
+/** Security by app: a bar each, its findings by severity, worst first. */
+function severityChart({ byApp }) {
+  const ORDER = [
+    ['critical', theme.red],
+    ['high', '#ffaf5f'],
+    ['medium', theme.yellow],
+    ['low', theme.blue],
+    ['info', FAINT],
+  ];
+  const total = (c) => Object.values(c).reduce((s, n) => s + n, 0);
+  const apps = Object.entries(byApp).sort((a, b) => total(b[1]) - total(a[1]));
+  const max = Math.max(1, ...apps.map(([, c]) => total(c)));
+  const W = 900;
+  const lane = 18;
+  const left = 90;
+  const root = svg('svg', { viewBox: `0 0 ${W} ${apps.length * lane + 18}`, role: 'img', 'aria-label': 'Findings by app and severity' });
+  apps.forEach(([app, counts], i) => {
+    const y = i * lane;
+    root.append(svg('text', { x: 0, y: y + 12, fill: accentOf(app), 'font-size': 11 }, titleOf(app)));
+    let at = left;
+    for (const [sev, colour] of ORDER) {
+      const n = counts[sev] ?? 0;
+      if (!n) continue;
+      const w = (n / max) * (W - left - 60);
+      root.append(titled(svg('rect', { x: at, y: y + 3, width: Math.max(2, w), height: 11, fill: colour }), `${n} ${sev}`));
+      at += w;
+    }
+    root.append(svg('text', { x: at + 6, y: y + 12, fill: '#8a94a3', 'font-size': 10 }, String(total(counts))));
+  });
+  root.append(...ORDER.slice(0, 4).map(([sev, colour], i) => svg('text', { x: left + i * 90, y: apps.length * lane + 14, fill: colour, 'font-size': 10 }, `■ ${sev}`)));
+  return root;
+}
+
+// ---- the palette: every app's commands and Fleet's ---------------------------------------------------
+
+/** The palette's entries, the app on screen first: Fleet's actions, the proposals, every app's commands. */
+function paletteEntries() {
+  const out = [];
+  for (const f of commands?.fleet ?? []) out.push({ group: 'FLEET', label: f.desc, end: f.keys, mark: '◆', colour: '#e6c07b', run: () => prefixed(f.key) });
+  if (bar?.status?.proposals > 0) out.push({ group: 'CLAUDE', label: `Claude's proposals (${bar.status.proposals} waiting)`, end: `${bar.prefixLabel} P`, mark: '◆', colour: '#e6c07b', run: () => prefixed('P') });
+  const apps = [...(commands?.apps ?? [])].sort((a, b) => (a.id === bar?.active ? -1 : b.id === bar?.active ? 1 : 0));
+  for (const a of apps) {
+    for (const c of a.commands) {
+      out.push({
+        group: a.id === bar?.active ? a.title.toUpperCase() : 'OTHER APPS',
+        label: `${a.id === bar?.active ? '' : `${a.title}: `}${c.desc || c.name}`,
+        end: `/${c.name}${c.args ? ` ${c.args}` : ''}`,
+        mark: '●',
+        colour: a.accent,
+        // Into the app's prompt, as a hand-off's line: arguments to fill in, ↵ yours to press.
+        run: () => (tell({ run: { app: a.id, line: `/${c.name}${c.args ? ' ' : ''}` } }), term.focus()),
+      });
+    }
+  }
+  return out;
+}
+
+/** Whether `query`'s letters come in `text` in order (a fuzzy match), and how tightly: lower is better. */
+function score(text, query) {
+  if (!query) return 0;
+  const t = text.toLowerCase();
+  const direct = t.indexOf(query);
+  if (direct >= 0) return direct;
+  let at = -1;
+  let spread = 0;
+  for (const ch of query) {
+    const next = t.indexOf(ch, at + 1);
+    if (next < 0) return null;
+    if (at >= 0) spread += next - at - 1;
+    at = next;
+  }
+  return 100 + spread;
+}
+
+/**
+ * How well entry `e` answers `q`, lower first: a command whose own name starts with it, then one that
+ * has it in its name, then its words; the app on screen ahead of the others at the same rank.
+ */
+function rank(e, q) {
+  const words = score(`${e.label} ${e.end}`, q);
+  if (words == null) return null;
+  const name = e.end.split(' ')[0].replace(/^\//, '').toLowerCase();
+  const own = e.group !== 'OTHER APPS' ? -0.5 : 0;
+  if (q && name.startsWith(q)) return -200 + own;
+  if (q && name.includes(q)) return -100 + own;
+  return words + own;
+}
+
+function openPalette() {
+  own = { kind: 'palette', query: '', cursor: 0 };
+  const input = el('input', { autocomplete: 'off', spellcheck: false, placeholder: 'a command, an app, a key…', ariaLabel: 'Search every command' });
+  const count = el('span', { className: 'count' });
+  const top = el('div', { className: 'field-row' }, el('span', { className: 'sign', textContent: '›' }), input, count);
+  const all = paletteEntries();
+  let shown = [];
+  const run = (i) => {
+    const e = shown[i];
+    if (!e) return;
+    own = null;
+    closeBox();
+    e.run();
+  };
+  const draw = () => {
+    const q = own.query.trim().toLowerCase();
+    shown = all
+      .map((e) => ({ e, s: rank(e, q) }))
+      .filter((x) => x.s != null)
+      .sort((a, b) => a.s - b.s)
+      .slice(0, 200)
+      .map((x) => x.e);
+    own.cursor = Math.min(own.cursor, Math.max(0, shown.length - 1));
+    count.textContent = `${shown.length} of ${all.length}`;
+    const rows = [];
+    let group = null;
+    shown.forEach((e, i) => {
+      if (!q && e.group !== group) rows.push(el('div', { className: 'group', textContent: (group = e.group) }));
+      const mark = el('span', { textContent: e.mark });
+      mark.style.color = e.colour;
+      const row = el('div', { className: `row entry${i === own.cursor ? ' focus' : ''}`, title: `${e.label}  ${e.end}` }, el('span', { className: 'label' }, mark, ` ${e.label}`), el('span', { className: 'end', textContent: e.end }));
+      row.addEventListener('click', () => run(i));
+      rows.push(row);
+    });
+    if (!all.length) rows.push(el('div', { className: 'row', textContent: 'The list comes from Fleet once it has started…' }));
+    $('box-body').replaceChildren(...rows);
+    $('box-body').querySelector('.focus')?.scrollIntoView({ block: 'nearest' });
+  };
+  openBox({ title: 'Every command', top, hint: '↑ ↓ move · ↵ into its prompt · esc close' });
+  input.addEventListener('input', () => {
+    own.query = input.value;
+    own.cursor = 0;
+    draw();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      own.cursor = Math.max(0, Math.min(shown.length - 1, own.cursor + (e.key === 'ArrowDown' ? 1 : -1)));
+      draw();
+      e.preventDefault();
+    } else if (e.key === 'Enter') run(own.cursor);
+    else if (e.key === 'Escape') closeOwn();
+  });
+  draw();
+  input.focus();
+}
+
+// ---- settings ----------------------------------------------------------------------------------------
+
+function openSettings() {
+  own = { kind: 'settings' };
+  const setting = (label, control, note = '') => el('div', { className: 'setting' }, el('label', { textContent: label }), control, note ? el('span', { className: 'note', textContent: note }) : null);
+  const size = el('input', { type: 'number', min: 9, max: 28, value: term.options.fontSize, ariaLabel: 'Font size' });
+  size.addEventListener('change', () => {
+    const v = Math.max(9, Math.min(28, Number(size.value) || 14));
+    term.options.fontSize = v;
+    store('fontSize', v);
+    fit.fit();
+  });
+  const bell = el('input', { type: 'checkbox', checked: Boolean(bar?.bell), ariaLabel: 'Bell' });
+  bell.addEventListener('change', () => tell({ settings: { bell: bell.checked } }));
+  const notifyBox = el('input', { type: 'checkbox', checked: stored('notify', true), ariaLabel: 'Notifications' });
+  notifyBox.addEventListener('change', () => store('notify', notifyBox.checked));
+  const prefix = el('input', { type: 'text', value: bar?.prefixLabel ?? 'ctrl+b', size: 10, ariaLabel: 'Prefix' });
+  prefix.addEventListener('change', () => tell({ settings: { prefix: prefix.value.trim() } }));
+  const apps = el('button', { type: 'button', className: 'answer', textContent: 'choose…' });
+  apps.addEventListener('click', () => {
+    own = null;
+    closeBox();
+    prefixed('a');
+  });
+  openBox({
+    title: 'Settings',
+    rows: [
+      setting('Font size', size, 'this window'),
+      setting('Bell when an app needs you', bell, 'kept in host.json'),
+      setting('Notifications in the background', notifyBox, 'this window'),
+      setting('Prefix', prefix, 'from the next start: ctrl and a key'),
+      setting('Apps on the bar', apps),
+    ],
+    hint: 'esc close',
+  });
+  $('box').addEventListener('keydown', function esc(e) {
+    if (e.key !== 'Escape' || own?.kind !== 'settings') return;
+    $('box').removeEventListener('keydown', esc);
+    closeOwn();
+  });
+}
+
+// ---- the side panels: projects and Claude ------------------------------------------------------------
+
+function toggleSide(which) {
+  for (const name of ['projects', 'claude']) {
+    const open = name === which && $(`side-${name}`).hidden;
+    $(`side-${name}`).hidden = !open;
+    $(`toggle-${name}`).setAttribute('aria-pressed', String(open));
+  }
+  requestAnimationFrame(() => fit.fit());
+  if (which === 'claude' && !$('side-claude').hidden) $('claude-input').focus();
+  else term.focus();
+}
+
+async function moveTo(path) {
+  const d = plugin('dialog');
+  const ok = d ? await d.ask(`Move the fleet to ${path}? Every app starts again there.`, { title: 'Fleet', kind: 'warning' }).catch(() => false) : true;
+  if (ok) tell({ move: path });
+  term.focus();
+}
+
+function drawProjects(state) {
+  const cwd = state.cwd;
+  $('projects').replaceChildren(
+    ...(state.folders ?? []).map((f) => {
+      const name = f.short.split(/[\\/]/).filter(Boolean).pop() ?? f.short;
+      const item = el('button', { type: 'button', className: `item${f.short === cwd ? ' current' : ''}`, title: f.path }, name, ' ', el('span', { className: 'sub', textContent: f.short }));
+      if (f.short !== cwd) item.addEventListener('click', () => moveTo(f.path));
+      return item;
+    }),
+  );
+}
+
+function drawClaude(state) {
+  const c = state.claude;
+  const out = [];
+  if (!c) out.push(el('div', { className: 'answer-text', textContent: 'Ask about a symptom. Claude reads what changed across the apps (commits, deploys, crashes and alerts) and says what likely caused it.' }));
+  else {
+    if (c.symptom) out.push(el('div', { className: 'group', textContent: `“${c.symptom}”` }));
+    out.push(el('div', { className: 'answer-text', textContent: c.state === 'asking' ? 'Claude is reading the timeline…' : c.text || c.error || '' }));
+  }
+  $('claude').replaceChildren(...out);
+}
+
+$('toggle-projects').addEventListener('click', () => toggleSide('projects'));
+$('toggle-claude').addEventListener('click', () => toggleSide('claude'));
+$('open-folder').addEventListener('click', async () => {
+  const d = plugin('dialog');
+  const path = d ? await d.open({ directory: true, title: 'Move the fleet to' }).catch(() => null) : null;
+  if (typeof path === 'string') moveTo(path);
+});
+$('claude-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const q = $('claude-input').value.trim();
+  if (!q) return;
+  tell({ ask: q });
+  $('claude-input').value = '';
+});
+$('claude-proposals').addEventListener('click', () => prefixed('P'));
+
+// ---- the host's messages ------------------------------------------------------------------------------
 
 function drawBar(state) {
   bar = state;
@@ -261,21 +681,40 @@ function drawBar(state) {
   drawStatus(state);
   drawStrip(state);
   drawPanel(state.panel);
+  drawToast(state.toast);
+  drawProjects(state);
+  drawClaude(state);
 }
 
-term.parser.registerOscHandler(5380, (data) => {
+const parsed = (fn) => (data) => {
   try {
-    drawBar(JSON.parse(data));
+    fn(JSON.parse(data));
   } catch {
-    // A state cut short or from another program: the last one stays.
+    // A message cut short or from another program: the last one stays.
+  }
+  return true;
+};
+term.parser.registerOscHandler(5380, parsed(drawBar));
+term.parser.registerOscHandler(5382, parsed((list) => (commands = list)));
+
+$('add').addEventListener('click', () => prefixed('a'));
+$('open-palette').addEventListener('click', openPalette);
+$('open-settings').addEventListener('click', openSettings);
+for (const b of document.querySelectorAll('#tools button[data-key]')) b.addEventListener('click', () => prefixed(b.dataset.key));
+
+// ctrl+k (cmd+k on a Mac) opens the palette rather than reaching the app; ctrl+shift+p too.
+term.attachCustomKeyEventHandler((e) => {
+  if (e.type !== 'keydown') return true;
+  const k = e.key.toLowerCase();
+  if (((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && k === 'k') || ((e.ctrlKey || e.metaKey) && e.shiftKey && k === 'p')) {
+    e.preventDefault();
+    openPalette();
+    return false;
   }
   return true;
 });
 
-$('add').addEventListener('click', () => prefixed('a'));
-for (const b of document.querySelectorAll('#tools button')) b.addEventListener('click', () => prefixed(b.dataset.key));
-
-// ---- the pseudo-terminal ------------------------------------------------------------------------
+// ---- the pseudo-terminal -------------------------------------------------------------------------------
 
 const ended = $('ended');
 const endedText = $('ended-text');
@@ -293,7 +732,14 @@ term.onBinary(send);
 let resizeTimer = null;
 term.onResize(({ cols, rows }) => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => invoke('resize', { cols, rows }), 60);
+  resizeTimer = setTimeout(() => {
+    invoke('resize', { cols, rows });
+    // The GPU renderer can keep its old picture after a resize: drawn again once the apps have redrawn.
+    setTimeout(() => {
+      webgl?.clearTextureAtlas();
+      term.refresh(0, term.rows - 1);
+    }, 250);
+  }, 60);
 });
 
 new ResizeObserver(() => fit.fit()).observe($('terminal'));
@@ -307,9 +753,12 @@ function finished(text) {
 async function begin() {
   ended.hidden = true;
   term.reset();
+  lastToast = null;
   try {
     await invoke('start', { cols: term.cols, rows: term.rows, output });
     term.focus();
+    // The palette's list (and the state, again): the host sends them when asked.
+    setTimeout(() => tell({ hello: true }), 1500);
   } catch (err) {
     finished(String(err));
   }
@@ -318,6 +767,7 @@ async function begin() {
 $('again').addEventListener('click', async () => {
   await invoke('stop');
   bar = null;
+  commands = null;
   begin();
 });
 

@@ -140,6 +140,9 @@ fn stop(pty: State<Pty>) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(Pty::default())
         .invoke_handler(tauri::generate_handler![start, write, resize, stop])
         .run(tauri::generate_context!())

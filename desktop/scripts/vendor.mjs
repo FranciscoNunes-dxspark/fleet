@@ -1,4 +1,4 @@
-// Puts xterm.js and its fit and WebGL add-ons in ui/vendor, from npm, at the versions pinned here.
+// Puts xterm.js and its add-ons (fit, WebGL, links, images) in ui/vendor, from npm, at the versions pinned here.
 // The desktop app isn't one of the repository's npm workspaces (it's built with cargo, not Bun, and
 // released by hand for now), so it has no node_modules of its own: `npm pack` fetches the packages and
 // their files are copied out.
@@ -11,6 +11,8 @@ const PACKAGES = {
   '@xterm/xterm@5.5.0': { 'lib/xterm.js': 'xterm.js', 'css/xterm.css': 'xterm.css' },
   '@xterm/addon-fit@0.10.0': { 'lib/addon-fit.js': 'addon-fit.js' },
   '@xterm/addon-webgl@0.18.0': { 'lib/addon-webgl.js': 'addon-webgl.js' },
+  '@xterm/addon-web-links@0.11.0': { 'lib/addon-web-links.js': 'addon-web-links.js' },
+  '@xterm/addon-image@0.8.0': { 'lib/addon-image.js': 'addon-image.js' },
 };
 
 const out = new URL('../ui/vendor/', import.meta.url);

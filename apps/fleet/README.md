@@ -122,6 +122,17 @@ say `ctrl+b`; read yours there.
 
 `desktop/` at the repository's root is a prototype of Fleet in a window of its own (a Tauri app, its README says how to run it). There the bar isn't a row of the terminal: the window draws it as tabs along the top, with the environment, `● REC` and the proposals beside them, and a strip along the bottom that carries the notices, the prefix's keys, the folder being asked for and the quit question, with buttons for what changed, following a request, the runbooks, security, the environment, the split and the help. A click on any of them types the prefix and its key, so everything the keys do still works. The panels (the environment, what changed, the runbooks, the proposals, security, the apps, a request followed) and the help open as the window's own overlays rather than boxes in the terminal: a click on a row moves to it, a double click opens it as `↵` would, and each key in the panel's hint is a button. The apps get the terminal's every row.
 
+The window adds more of its own:
+
+- **Toasts and notifications:** when an app off screen needs you, a toast, and the system's notification when the window is in the background.
+- **Badges that say why:** "Bosun ! api crashed".
+- **A palette** (ctrl+k) over every app's slash commands and Fleet's actions.
+- **Charts** on what changed, a request followed and security.
+- **Side panels:** projects to move the fleet to, and Claude to ask about a symptom.
+- **Settings.**
+
+The window's README has the details.
+
 ## Choosing the apps
 
 `ctrl+b` `a` lists every app with a box beside it: `space` or `↵` shows or hides the one under the cursor in the bar, and the choice is kept in `~/.fleet/host.json` (`"apps": ["splice", "bilge", …]`). The numbers `1`–`9` and `n` `p` go through the apps shown, in their order. A hidden app is still there: its letter (`ctrl+b` `k` for Keel), a sibling handing it something, a runbook's step or `fleet keel` opens it, and it shows in the bar while it runs. One app at least stays in the bar.

@@ -8,43 +8,72 @@
 </head>
 <body>
   <header class="top">
-    <span class="brand"><span class="ship" aria-hidden="true">⛴</span> Fleet</span>
+    <span class="brand">⛴ fleet</span>
     <nav class="tabs" id="tabs" aria-label="Apps"></nav>
     <button type="button" class="add" id="add" title="Choose the apps on the bar (prefix a)" aria-label="Choose the apps on the bar">+</button>
     <span class="spacer"></span>
     <span class="status" id="status"></span>
     <span class="where" id="where"></span>
+    <button type="button" class="side-toggle" id="toggle-projects" aria-pressed="false" title="Projects: the folders the fleet was in">projects</button>
+    <button type="button" class="side-toggle" id="toggle-claude" aria-pressed="false" title="Ask Claude about what changed">claude</button>
   </header>
-  <main id="terminal" aria-label="Fleet"></main>
+  <div class="middle">
+    <main id="terminal" aria-label="Fleet"></main>
+    <aside class="side" id="side-projects" hidden aria-label="Projects">
+      <h3>PROJECTS</h3>
+      <div class="list" id="projects"></div>
+      <div class="actions">
+        <button type="button" class="item" id="open-folder">Open folder…</button>
+      </div>
+    </aside>
+    <aside class="side" id="side-claude" hidden aria-label="Claude">
+      <h3>CLAUDE</h3>
+      <form class="field-row" id="claude-form">
+        <span class="sign" aria-hidden="true">?</span>
+        <input id="claude-input" autocomplete="off" placeholder="what broke, or why…" aria-label="Ask Claude">
+      </form>
+      <div class="list" id="claude"></div>
+      <div class="actions">
+        <button type="button" class="item" id="claude-proposals">Claude's proposals</button>
+      </div>
+    </aside>
+  </div>
   <footer class="strip" id="strip">
     <span class="say" id="say"></span>
     <span class="tools" id="tools">
-      <button type="button" data-key="w" title="What changed lately, across the apps (prefix w)">What changed</button>
-      <button type="button" data-key="f" title="Follow a request through every app (prefix f)">Follow</button>
-      <button type="button" data-key="r" title="Runbooks (prefix r)">Runbooks</button>
-      <button type="button" data-key="S" title="Security across the apps (prefix S)">Security</button>
-      <button type="button" data-key="e" title="The project's environment (prefix e)">Environment</button>
-      <button type="button" data-key="|" title="Two apps side by side (prefix |)">Split</button>
+      <button type="button" id="open-palette" title="Every app's commands and Fleet's (ctrl+k)">^K palette</button>
+      <button type="button" data-key="w" title="What changed lately, across the apps (prefix w)">changed</button>
+      <button type="button" data-key="f" title="Follow a request through every app (prefix f)">follow</button>
+      <button type="button" data-key="r" title="Runbooks (prefix r)">runbooks</button>
+      <button type="button" data-key="S" title="Security across the apps (prefix S)">security</button>
+      <button type="button" data-key="e" title="The project's environment (prefix e)">env</button>
+      <button type="button" data-key="|" title="Two apps side by side (prefix |)">split</button>
+      <button type="button" id="open-settings" title="Settings">settings</button>
       <button type="button" data-key="?" title="Every key (prefix ?)">?</button>
     </span>
   </footer>
   <div class="scrim" id="scrim" hidden>
-    <section class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="panel-title">
-      <header class="panel-head">
-        <h2 id="panel-title"></h2>
-        <button type="button" class="close" id="panel-close" aria-label="Close">×</button>
+    <section class="box" id="box" role="dialog" aria-modal="true" aria-labelledby="box-title">
+      <header class="box-head">
+        <span class="mark" aria-hidden="true">▍</span>
+        <h2 id="box-title"></h2>
+        <button type="button" class="close" id="box-close" aria-label="Close">esc ×</button>
       </header>
-      <div class="panel-body" id="panel-body" role="listbox"></div>
-      <footer class="panel-keys" id="panel-keys"></footer>
+      <div id="box-top"></div>
+      <div class="box-body" id="box-body"></div>
+      <footer class="box-keys" id="box-keys"></footer>
     </section>
   </div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
   <div class="ended" id="ended" hidden>
     <p id="ended-text">Fleet ended.</p>
-    <button type="button" id="again">Start it again</button>
+    <button type="button" id="again">↵ start it again</button>
   </div>
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>
   <script src="vendor/addon-webgl.js"></script>
+  <script src="vendor/addon-web-links.js"></script>
+  <script src="vendor/addon-image.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

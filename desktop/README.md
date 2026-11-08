@@ -2,27 +2,35 @@
 
 Fleet in a window of its own. The window is a [Tauri](https://tauri.app) app: a small Rust program with the system's web view. It runs the `fleet` host behind a real pseudo-terminal (ConPTY on Windows, a pty elsewhere) and draws it with [xterm.js](https://xtermjs.org), the terminal VS Code uses. The host and the apps are exactly the programs you run in any terminal. What the window adds is its own frame, icon, font and colours, without Windows Terminal or any other terminal in between.
 
-Fleet's bar is the window's own: the host, started with `FLEET_DESKTOP=1`, doesn't draw it in the terminal (the apps get every row) and sends its state instead as a private escape sequence (`OSC 5380`, the host's `barState`). The window draws that state as:
+The window is drawn to look like the terminal inside it: one monospace face, square corners, thin rules, and keys as bright characters with their words dim. Fleet's chrome is the window's own. The host, started with `FLEET_DESKTOP=1`, draws none of it in the terminal (the apps get every row). Instead it sends its state as a private escape sequence (`OSC 5380`, the host's `barState`), and the window draws:
 
-- **Tabs along the top:** each app's colour as a dot, its badges, and the app on screen underlined.
-- **Pills beside them:** the environment (the frame turns red for production), `● REC` while a runbook records, and Claude's proposals.
-- **A strip along the bottom:** notices, the prefix's keys while it waits, the folder being asked for, and the quit question with Quit and Stay buttons.
-- **Buttons in that strip:** for what works across apps. These are what changed, following a request, the runbooks, security, the environment, the split and the help.
+- **Tabs along the top.** Each app's state mark in its colour (`●` running, `○` not started, `✕` exited) and its badge. A badge says why, in a few words, until you look ("Bosun ! api crashed"). The environment, `● REC` and Claude's proposals sit at the right, and the frame turns red for production.
+- **Toasts.** When an app off screen needs you, a toast says so, and clicking it goes there. When the window is in the background, the system's own notification says it too (Settings turns that off).
+- **A strip along the bottom.** It carries notices, the prefix's keys while they wait, the folder being asked for, and the quit question. Beside it are buttons for what works across the apps: the palette, what changed, following a request, the runbooks, security, the environment, the split, settings and the help.
+- **Fleet's panels as overlays.** The environment, what changed, the runbooks, Claude's proposals, security, the apps on the bar, a request followed, and the help. A click on a row moves there, a double click opens it as `↵` would, and every key in a panel's hint is a button. Three panels draw a chart above their rows:
+  - **What changed** is a timeline, a lane per app, with crashes and failures red.
+  - **A request followed** is its path through the apps.
+  - **Security** shows each app's findings by severity.
+- **The palette (ctrl+k, or ctrl+shift+p).** Every app's slash commands (about 600, from each app's own table; `apps/fleet/src/commands.json`), Fleet's actions and Claude's proposals, with the app on screen first.
+  - A command whose name starts with what you type comes first.
+  - `↵` puts it in that app's prompt, switching to the app, for you to finish.
+- **Projects**, at the right. The folders the fleet was in, and *Open folder…* (the system's dialog). Either moves the fleet there, after asking.
+- **Claude**, at the right. Ask about a symptom ("checkout is slow since lunch"). Claude reads the timeline of what changed across the apps and answers there. Its proposals are a click away.
+- **Settings.** The font size, the bell, notifications in the background, the prefix (from the next start) and the apps on the bar.
 
-A click types the prefix and its key into Fleet, so the window adds no new way in, and every key works as in a terminal.
+Links an app prints open in the browser, and images an app sends (sixel, iTerm's) are drawn. A click on a tab or a tool types the prefix and its key, as a person would. Everything else goes back to the host as `OSC 5381` messages, typed into Fleet like keys and taken out before Fleet reads them:
 
-![Fleet in its window](screenshot.png)
+- a panel's row picked
+- a palette line for an app
+- a folder to move to
+- a setting
+- a question for Claude
 
-Fleet's panels (the environment, what changed, the runbooks, Claude's proposals, security, the apps on the bar, a request followed) and its help are the window's own overlays too. The host sends each panel's content as part of that state (its rows, with the host's colours), and the window draws it with the selected row highlighted.
+![Fleet in its window, a toast saying Bosun crashed](screenshot.png)
 
-- **Mouse:** a click on a row moves the panel's cursor there, a double click opens it as `↵` would, and clicking outside the panel or on × closes it.
-- **Keys:** each key in the panel's hint is a button.
+![The palette](palette.png)
 
-Those clicks go back to the host as `OSC 5381`, typed into Fleet like keys and taken out before Fleet reads them.
-
-![A panel as an overlay](overlay.png)
-
-Next: a command palette (ctrl+k) over every app's commands, and toasts.
+![What changed, as a timeline](overlay.png)
 
 ## Running it
 
@@ -83,7 +91,8 @@ Nothing is signed yet. Windows SmartScreen and macOS Gatekeeper will warn before
 - `src-tauri/src/main.rs`: the pseudo-terminal, through WezTerm's `portable-pty` crate. It handles four commands from the web view (`start`, `write`, `resize`, `stop`).
   - Fleet's output goes back as raw bytes through the channel `start` is given (an ArrayBuffer in the page, with no base64 or JSON in between). That's about 140 times less work per full-screen frame than base64 events, and a third less data. A UTF-8 character split across two reads is put back together by xterm.js.
   - The `pty-exit` event reports that Fleet has ended.
-- `ui/`: the window's page. `app.js` connects xterm.js to those commands and events, draws the bar and the panels from the host's `OSC 5380` (xterm.js's `registerOscHandler`), the panels' colours turned from their SGR into CSS, and tells the host about clicks on a panel with `OSC 5381`. xterm.js draws with its WebGL renderer, falling back to the page's own elements where the web view has no WebGL, and a resize reaches Fleet once it has settled (60 ms), not at every step of a drag. `style.css` uses the kit's shell-look colours (`packages/kit/look.js`). `vendor/` is filled by `scripts/vendor.mjs` and isn't committed.
+  - Three of Tauri's plugins: notifications, the open-folder dialog (and its questions), and the opener for links. `capabilities/default.json` allows the page just those.
+- `ui/`: the window's page. `app.js` connects xterm.js to those commands and events, draws the bar, the panels (their colours turned from SGR into CSS, their charts as SVG), the toasts, the projects and Claude's answers from the host's `OSC 5380`, and the palette from its `OSC 5382` (xterm.js's `registerOscHandler`). It tells the host what was clicked with `OSC 5381`. xterm.js draws with its WebGL renderer, falling back to the page's own elements where the web view has no WebGL (and is drawn again a moment after a resize, since the GPU renderer can keep its old picture), and a resize reaches Fleet once it has settled (60 ms), not at every step of a drag. `style.css` uses the kit's shell-look colours (`packages/kit/look.js`). `vendor/` is filled by `scripts/vendor.mjs` and isn't committed.
 - `src-tauri/tauri.conf.json`: the window, the content security policy and the bundle's icons (Fleet's ship, from `apps/fleet/assets`).
 
 This folder sits outside `apps/` on purpose. CI tests and releases every folder in `apps/` with Bun, and a Tauri app is built with cargo. When the window becomes a product, it gets a workflow of its own: a cargo build per platform, the Tauri CLI's installers, and signing.
