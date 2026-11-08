@@ -60,13 +60,16 @@ test("a click finds its tab by column, wide characters counted as the terminal d
   assert.equal(tabAt(layout, 119), undefined);
 });
 
-test('the active tab in its accent, as 24-bit colour or the nearest of 256', () => {
+test('the active tab lifted, its dot in its accent, as 24-bit colour or the nearest of 256', () => {
   assert.equal(colour('#5fd787', { background: true }), '\x1b[48;2;95;215;135m');
   assert.equal(colour('#5fd787', { truecolor: false }), `\x1b[38;5;${ansi256('#5fd787')}m`);
   assert.equal(ansi256('#000000'), 16);
   assert.equal(ansi256('#ffffff'), 231);
   const line = renderBar(barLayout({ spaces, active: 'splice', width: 120 }), spaces);
-  assert.ok(line.includes('\x1b[48;2;95;215;135m\x1b[38;5;16m\x1b[1m 1 Splice ● '));
+  // Lifted onto the terminal's background, the name bright and the dot in the accent.
+  assert.ok(line.includes('\x1b[49m\x1b[1m\x1b[38;5;255m 1 Splice \x1b[38;2;95;215;135m●'), JSON.stringify(line));
+  assert.ok(line.startsWith('\x1b[0m\x1b[48;2;26;30;36m'), 'the bar on the status line\'s grey');
+  assert.ok(renderBar(barLayout({ spaces, active: 'splice', width: 120 }), spaces, { truecolor: false }).startsWith('\x1b[0m\x1b[48;5;235m'));
 });
 
 test('a badge follows the state of a tab off screen, in a warning colour, and stays when names shrink', () => {
@@ -78,7 +81,7 @@ test('a badge follows the state of a tab off screen, in a warning colour, and st
   assert.equal(width(letters), 60);
   assert.match(text(letters), / 2 T ○ 1 {2}3 O ✕1 {2}4 B ○ !2 /);
   const line = renderBar(wide, badged);
-  assert.ok(line.includes('4 Bosun ○ \x1b[1m\x1b[38;5;214m!2'));
+  assert.match(line, /4 Bosun \x1b\[38;5;242m○.* \x1b\[1m\x1b\[38;5;214m!2/);
 });
 
 test("split, the other pane's tab is underlined in its accent", () => {

@@ -1,6 +1,7 @@
 // The bar: the host's one line at the bottom of the screen, a tab per space and a hint, pure. A tab
 // says the space's key, its name and its state (○ not started, ● running, ✕ and the code once it has
-// exited), and what the app is for beside its name (ROLES, in capitals) where there's room; the active one is drawn in its app's accent. A space off screen that needs you has a
+// exited), and what the app is for beside its name (ROLES, in capitals) where there's room; the names are quiet, each
+// state mark in its app's accent, and the active one is lifted onto the terminal's background, bright. A space off screen that needs you has a
 // badge after its state (attention.js: `!` for a worried app, a count of alerts), in a warning colour,
 // red when it counts an error or a crash. At the right, before the hint, the fleet's own state: the
 // project's environment (red for production), `● REC` while a runbook is being recorded, and how many
@@ -109,23 +110,42 @@ const BADGE = '\x1b[1m\x1b[38;5;214m';
 const BADGE_ERROR = '\x1b[1m\x1b[38;5;203m';
 const STATUS = { proposals: '\x1b[1m\x1b[38;5;229m', rec: '\x1b[1m\x1b[38;5;196m', env: '\x1b[38;5;153m', 'env-prod': '\x1b[1m\x1b[38;5;231m\x1b[48;5;160m' };
 
+// The bar's grey, a step off the terminal's own: the kit's status line (ui/shell.jsx `barColor`) uses
+// the same, so the apps' last row and the bar under it read as one band.
+const BAR_GREY = '#1a1e24';
+
+/**
+ * A tab's text with its state mark in `markColour` and the rest in `textColour` (both SGR), then
+ * `after`: names stay quiet and the app's colour shows only as its dot, as in the apps' own lines.
+ */
+function tabText(text, mark, textColour, markColour, after) {
+  const at = text.lastIndexOf(mark);
+  if (!mark || at < 0) return `${textColour}${text}${after}`;
+  return `${textColour}${text.slice(0, at)}${markColour}${mark}${after}${textColour}${text.slice(at + mark.length)}${after}`;
+}
+
 /** The bar as one line of ANSI text, `width` columns wide, for `spaces` (with their accents). */
 export function renderBar(layout, spaces, { truecolor = true } = {}) {
-  const BAR = '\x1b[0m\x1b[48;5;236m\x1b[38;5;250m';
+  const BAR = `\x1b[0m${truecolor ? colour(BAR_GREY, { background: true }) : '\x1b[48;5;235m'}\x1b[38;5;250m`;
+  const NAME = '\x1b[38;5;246m';
+  const IDLE = '\x1b[38;5;242m';
   let out = BAR;
   for (const seg of layout.segments) {
     const space = spaces.find((s) => s.id === seg.id);
+    const mark = space ? stateMark(space) : '';
+    const dot = space ? (seg.state === 'idle' ? IDLE : colour(space.accent, { truecolor })) : '';
     // A badge cut off by a narrow line is left as the tab's text.
     const end = ` ${seg.badge} `;
     if (seg.role === 'tab' && seg.badge && seg.text.endsWith(end)) {
       const head = seg.text.slice(0, -end.length);
-      out += `${seg.state === 'idle' ? '\x1b[38;5;244m' : colour(space.accent, { truecolor })}${head} ${seg.error ? BADGE_ERROR : BADGE}${seg.badge}${BAR} `;
+      out += `${tabText(head, mark, seg.state === 'idle' ? IDLE : NAME, dot, BAR)} ${seg.error ? BADGE_ERROR : BADGE}${seg.badge}${BAR} `;
       continue;
     }
-    if (seg.role === 'active') out += `${colour(space.accent, { background: true, truecolor })}\x1b[38;5;16m\x1b[1m${seg.text}${BAR}`;
-    // The other pane's app is on screen too: its accent, underlined, not filled as the focused one's.
+    // The app on screen: lifted off the bar onto the terminal's own background, its name bright.
+    if (seg.role === 'active') out += tabText(seg.text, mark, '\x1b[49m\x1b[1m\x1b[38;5;255m', dot, `\x1b[0m\x1b[49m\x1b[1m\x1b[38;5;255m`) + BAR;
+    // The other pane's app is on screen too: its accent, underlined, not lifted as the focused one's.
     else if (seg.role === 'shown') out += `${colour(space.accent, { truecolor })}\x1b[1m\x1b[4m${seg.text}${BAR}`;
-    else if (seg.role === 'tab') out += seg.state === 'idle' ? `\x1b[38;5;244m${seg.text}${BAR}` : `${colour(space.accent, { truecolor })}${seg.text}${BAR}`;
+    else if (seg.role === 'tab') out += tabText(seg.text, mark, seg.state === 'idle' ? IDLE : NAME, dot, BAR);
     else if (seg.role === 'prefix') out += `\x1b[1m\x1b[38;5;229m${seg.text}${BAR}`;
     else if (seg.role === 'notice') out += `\x1b[38;5;229m${seg.text}${BAR}`;
     else if (seg.role === 'hint') out += `\x1b[38;5;244m${seg.text}${BAR}`;
