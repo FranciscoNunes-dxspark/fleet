@@ -22,9 +22,11 @@ try {
   for (const [spec, files] of Object.entries(PACKAGES)) {
     const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     const tarball = execFileSync(npm, ['pack', spec, '--silent', '--pack-destination', work], { encoding: 'utf8', shell: process.platform === 'win32' }).trim().split('\n').pop();
-    const dir = join(work, spec.replace(/[@/]/g, '_'));
+    const name = spec.replace(/[@/]/g, '_');
+    const dir = join(work, name);
     mkdirSync(dir);
-    execFileSync('tar', ['-xzf', join(work, tarball), '-C', dir]);
+    // Relative paths, from the work folder: Git for Windows' tar takes "C:\…" for a host called C.
+    execFileSync('tar', ['-xzf', tarball, '-C', name], { cwd: work });
     for (const [from, to] of Object.entries(files)) copyFileSync(join(dir, 'package', from), new URL(to, out));
     console.log(`${spec}: ${Object.values(files).join(', ')}`);
   }
