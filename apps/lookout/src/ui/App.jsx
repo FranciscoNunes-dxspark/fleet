@@ -12,13 +12,13 @@ import { filtered, hosts as hostsOf } from '../exchange.js';
 import { trafficFindings } from '../security.js';
 import { countFindings, findingsLine, securityJson } from '@fleet/kit/findings.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { recordCommand } from '@fleet/kit/recording.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { remember } from '@fleet/kit/folders.js';
-import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { DataViewer } from '@fleet/kit/ui/DataViewer.jsx';
 import { RequestsView } from './RequestsView.jsx';
@@ -28,8 +28,8 @@ import { SetupView } from './SetupView.jsx';
 import { DetailView } from './DetailView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
-import { FACES, moodFor } from '../pet.js';
+import { updateLine } from './Pet.jsx';
+import { FACES, PET, moodFor, moodLine } from '../pet.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 
@@ -58,46 +58,25 @@ const DRAW_EVERY = 100;
 const LOG_EVERY = 5 * 60_000;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ cwd, env, width, mood, listening, intercept, paused, count, findings, problem }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Lookout', bold: true },
-    { text: '  │  ', color: theme.border },
-    { text: basename(cwd) || cwd, color: theme.dim },
-  ];
-  if (env) segs.push({ text: '  │  ', color: theme.border }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
-  segs.push({ text: '  │  ', color: theme.border });
-  if (listening) segs.push({ text: `${listening.host}:${listening.port}`, color: theme.accent }, { text: intercept ? '  HTTPS read' : '  HTTPS tunnelled', color: theme.dim });
-  else segs.push({ text: 'not listening', color: theme.warn });
-  if (paused) segs.push({ text: '  paused', color: theme.warn, bold: true });
-  segs.push({ text: `  ${count} captured`, color: theme.dim });
-  const line = findingsLine(countFindings(findings));
-  if (line) segs.push({ text: `  ${line}`, color: findings.some((f) => f.severity === 'critical' || f.severity === 'high') ? theme.del : theme.warn });
-  if (problem) segs.push({ text: '  │  ', color: theme.border }, { text: firstLine(problem), color: theme.warn });
-  return <Row pointer={false} width={width} segments={segs} />;
-}
-
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(counts) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (counts[v.id]) label += ` ${counts[v.id]}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
-
-function Tabs({ view, counts, width }) {
+// What the top line says at its right, most needed first, as what doesn't fit is left off from the end:
+// what went wrong, where it listens, paused, the findings, how many it captured, the environment, the
+// folder.
+function headerContext({ cwd, env, listening, intercept, paused, count, findings, problem }) {
   const segs = [];
-  for (const t of tabLabels(counts)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
+  if (problem) segs.push({ text: firstLine(problem), color: theme.warn }, { text: '  ' });
+  if (listening) segs.push({ text: `${listening.host}:${listening.port}`, color: theme.accent }, { text: intercept ? '  HTTPS read' : '  HTTPS tunnelled', color: theme.dim }, { text: '  ' });
+  else segs.push({ text: 'not listening', color: theme.warn }, { text: '  ' });
+  if (paused) segs.push({ text: 'paused', color: theme.warn, bold: true }, { text: '  ' });
+  const line = findingsLine(countFindings(findings));
+  if (line) segs.push({ text: line, color: findings.some((f) => f.severity === 'critical' || f.severity === 'high') ? theme.del : theme.warn }, { text: '  ' });
+  segs.push({ text: `${count} captured`, color: theme.dim });
+  if (env) segs.push({ text: '  ' }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
+  segs.push({ text: '  ' }, { text: basename(cwd) || cwd, color: theme.dim });
+  return segs;
 }
+
+// The views in the top line, the digit that picks each before it and its count after it.
+const viewTabs = (counts) => VIEWS.map((v, i) => ({ id: v.id, key: i + 1, label: v.label, count: counts[v.id] || 0, countColor: theme.dim }));
 
 // The last two results, Claude Code style: "● listen on 8888" then "  ⎿  output".
 function activityRows(entries) {
@@ -693,14 +672,15 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
+    if (e.y === promptTop) {
+      // The text starts after a space and "> ", scrolled as PromptBox scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
       return setFocus('prompt');
     }
-    const row = e.y - promptTop - 3;
+    const row = e.y - promptTop - 1;
     if (row >= 0 && row < sugCount) {
       setSugIndex(row);
       if (e.double) promptKeys('', { return: true });
@@ -715,23 +695,30 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
   const W = columns;
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const petState = { listening: Boolean(listening), address: listening ? `${listening.host}:${listening.port}` : '', port: listening?.port, count: list.length, open, refused, serious };
   const mood = moodFor({ state: petState, lastEntry: entries.at(-1) });
   const feeling = familyMood({ mood, state: petState, lastEntry: entries.at(-1) });
   useEffect(() => {
     if (config.familyMoods !== false) writeMood('lookout', feeling);
   }, [feeling.mood, feeling.reason, config.familyMoods]);
-  const showWelcome = welcome && H >= 28;
-  const reacting = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({
+    face: FACES[mood],
+    title: 'Lookout',
+    views: viewTabs(tabCounts),
+    view,
+    context: headerContext({ cwd, env, listening, intercept: config.intercept === true, paused, count: list.length, findings, problem }),
+    width: W,
+  });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   layout.current = {
-    mainTop: 2,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    promptTop: 1 + mainH + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(tabCounts),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   const overlayActive = focus === 'view' && !confirmReq;
@@ -759,9 +746,7 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
         }} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
@@ -770,27 +755,23 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
           : overlay
             ? 'j/k scroll · space page · / search · y copy · esc close'
             : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+  const right = focus === 'prompt' ? '' : '/ commands · ! shell · , settings · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
+  // command, else how Peep sees things. At the prompt its keys come first, so only a flash or a sibling.
+  let bar = { face: FACES[mood], message: focus === 'prompt' ? '' : moodLine(mood, petState) };
+  if (flash) bar = { face: FACES[mood], message: flash.text };
+  else if (reaction) bar = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  else if (welcome && focus !== 'prompt')
+    bar = update
+      ? { face: FACES[mood], message: updateLine(update), tone: 'warn' }
+      : { face: FACES[mood], message: welcomeLine('Lookout', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, petState)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header cwd={cwd} env={env} width={W} mood={mood} listening={listening} intercept={config.intercept === true} paused={paused} count={list.length} findings={findings} problem={problem} />
-      <Tabs view={view} counts={tabCounts} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} state={petState} width={W} update={update} problem={null} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reaction.text },
-            { text: '  esc', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -805,11 +786,7 @@ export function App({ config: initialConfig, provider = createLookout(), cwd: st
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...bar} keys={keys} right={right} width={W} />
     </Box>
   );
 }
