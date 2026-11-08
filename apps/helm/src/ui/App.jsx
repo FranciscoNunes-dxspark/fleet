@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, useApp, useInput } from 'ink';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import * as buffer from '../buffer.js';
@@ -8,7 +8,8 @@ import { ERROR_MARK } from '../powershell.js';
 import { theme } from '../theme.js';
 import { VERSION } from '../app.js';
 import { useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
-import { Panel, PromptBox, Row } from '@fleet/kit/ui/parts.jsx';
+import { Panel, PromptBox, Row, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine } from '@fleet/kit/ui/shell.jsx';
 import { fitSegments } from '@fleet/kit/text.js';
 
 const GUTTER = 5;
@@ -23,6 +24,16 @@ const PATH_PLACEHOLDER = { open: 'path of the script to open (esc cancels)', sav
 // ctrl keys that do the same, before anything else sees them.
 const ESC = String.fromCharCode(27);
 const FUNCTION_KEYS = { [`${ESC}[15~`]: String.fromCharCode(18), [`${ESC}[19~`]: String.fromCharCode(5) }; // ctrl+r, ctrl+e
+
+// The top line's right side: the script's file (with * while it has unsaved changes) and the PowerShell
+// that runs it.
+function headerContext({ path, dirty, session, running }) {
+  const segs = [];
+  if (running) segs.push({ text: 'running', color: theme.warn }, { text: '  ' });
+  segs.push({ text: `${path ? basename(path) : 'untitled.ps1'}${dirty ? ' *' : ''}`, color: theme.dim });
+  if (session) segs.push({ text: `  ${session.bin}`, color: theme.dim });
+  return segs;
+}
 
 const OUTPUT_COLOR = { in: () => theme.accent, err: () => theme.del, info: () => theme.dim, out: () => undefined };
 
@@ -41,7 +52,13 @@ export function App({ session, file, cwd = process.cwd(), setTitle }) {
     dirtyRef.current = v;
     setDirtyState(v);
   };
-  const [focus, setFocus] = useState('script');
+  const [focus, setFocusState] = useState('script');
+  // Kept in a ref too: the key after ctrl+t can arrive before React has drawn the switch.
+  const focusRef = useRef('script');
+  const setFocus = (v) => {
+    focusRef.current = typeof v === 'function' ? v(focusRef.current) : v;
+    setFocusState(focusRef.current);
+  };
   const [output, setOutput] = useState(() => [{ kind: 'info', text: session ? `Helm ${VERSION} — PowerShell session in ${cwd}` : 'No PowerShell found: install pwsh (PowerShell 7) to run scripts.' }]);
   const [back, setBack] = useState(0);
   const [prompt, setPrompt] = useState({ value: '', cursor: 0 });
@@ -80,13 +97,14 @@ export function App({ session, file, cwd = process.cwd(), setTitle }) {
     setOutput([]);
   };
 
-  // Layout: header, the script pane, the output pane, the prompt (three rows), the footer.
-  const body = Math.max(8, rows - 5);
+  // Layout: the top line, the script pane, the output pane, the prompt, the status line. A pane's
+  // title row is the only row it spends.
+  const body = Math.max(8, rows - 2 - promptHeight());
   const scriptH = Math.max(4, Math.floor(body * 0.55));
   const outputH = Math.max(4, body - scriptH);
   const inner = columns - 2;
-  const scriptRows = scriptH - 2;
-  const outputRows = outputH - 2;
+  const scriptRows = scriptH - 1;
+  const outputRows = outputH - 1;
   const codeW = Math.max(10, inner - GUTTER);
 
   const edit = (fn) => {
@@ -256,7 +274,7 @@ export function App({ session, file, cwd = process.cwd(), setTitle }) {
     }
     if (key.ctrl && input === 'l') return clearOutput();
     if ((key.ctrl && input === 't') || (key.tab && key.shift)) return pathMode ? undefined : setFocus((f) => (f === 'script' ? 'console' : 'script'));
-    return focus === 'script' ? scriptKeys(input, key) : promptKeys(input, key);
+    return focusRef.current === 'script' ? scriptKeys(input, key) : promptKeys(input, key);
   });
 
   const scriptLines = [];
@@ -273,18 +291,7 @@ export function App({ session, file, cwd = process.cwd(), setTitle }) {
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
-      <Text wrap="truncate">
-        <Text color={theme.accent} bold>
-          {' Helm'}
-        </Text>
-        <Text color={theme.border}>{'  │  '}</Text>
-        <Text color={theme.dim}>
-          {path ? basename(path) : 'untitled.ps1'}
-          {dirty ? ' *' : ''}
-        </Text>
-        <Text color={theme.dim}>{session ? `  ${session.bin}` : ''}</Text>
-        {running ? <Text color={theme.warn}>{'  running… (esc stops)'}</Text> : null}
-      </Text>
+      <Row pointer={false} width={columns} segments={topLine({ title: 'Helm', context: headerContext({ path, dirty, session, running }), width: columns }).segments} />
       <Panel title="Script" hint={`${buf.row + 1}:${buf.col + 1}`} width={columns} height={scriptH} focused={focus === 'script'}>
         {scriptLines}
       </Panel>
@@ -294,9 +301,7 @@ export function App({ session, file, cwd = process.cwd(), setTitle }) {
         ))}
       </Panel>
       <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'console'} width={columns} placeholder={pathMode ? PATH_PLACEHOLDER[pathMode] : 'PowerShell command (ctrl+t to leave the script)'} bang={false} />
-      <Text wrap="truncate" color={theme.dim}>
-        {' ' + (pathMode ? PATH_PLACEHOLDER[pathMode] : HINTS[focus])}
-      </Text>
+      <StatusLine message={pathMode ? PATH_PLACEHOLDER[pathMode] : running ? 'running… (esc stops)' : ''} tone={running && !pathMode ? 'warn' : undefined} keys={pathMode ? '↵ go · esc cancel' : HINTS[focus]} width={columns} />
     </Box>
   );
 }

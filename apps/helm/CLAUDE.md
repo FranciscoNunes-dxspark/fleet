@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Helm is a PowerShell script editor in the terminal, like the ISE: a script pane, an output pane and a console prompt over one long-lived PowerShell session. Keyboard-driven, built with Ink on Node 22+, plain JavaScript ES modules with `.jsx` for components. The README is the user-facing spec; when behaviour changes, update it too. It lives in `apps/helm` and uses the shared kit (`@fleet/kit`; the root CLAUDE.md has its rules); `src/app.js` tells the kit the app's name, and `src/theme.js` fills the kit's theme.
+Helm is a PowerShell script editor in the terminal, like the ISE: a script pane, an output pane and a console prompt over one long-lived PowerShell session. Keyboard-driven, built with Ink on Node 22+, plain JavaScript ES modules with `.jsx` for components. The README is the user-facing spec; when behaviour changes, update it too. It lives in `apps/helm` and uses the shared kit (`@fleet/kit`; the root CLAUDE.md has its rules); `src/app.js` tells the kit the app's name, and `src/theme.js` fills the kit's theme. Helm draws in the kit's shell look (`look: 'shell'` in `src/app.js`, the kit's `look.js`): the top line (`topLine`: the name, and `headerContext` at the right: the file, `*` while unsaved, the PowerShell), the two panes, a one-row prompt and the status line (`StatusLine`: the keys, or what a path prompt asks for).
 
 ## Commands
 
