@@ -85,7 +85,7 @@ This machine's folder on the left, the server's on the right; the focused pane h
 
 `.git` and `node_modules` are never synced, nor what the local folder's `.mooringignore` names, a pattern a line (`*.log`, `/dist`, `cache/tmp`; `#` for a comment): a name without a slash matches anywhere, one with a slash from the folder's top.
 
-`/watch` keeps uploading what changes in the left pane's folder to the right pane's, as it changes (a moment after the last write, so a save is one upload), with the same ignore list, until `/watch off`; the header says `⟳ watching <folder>`. Deletions aren't carried over: `/sync up --delete` does that.
+`/watch` keeps uploading what changes in the left pane's folder to the right pane's, as it changes (a moment after the last write, so a save is one upload), with the same ignore list, until `/watch off`; the top line says `⟳ watching <folder>`. Deletions aren't carried over: `/sync up --delete` does that.
 
 Folders are copied whole, four files at a time; links and special files in them are skipped, never followed (a link out of the folder would copy what isn't in it). A copy keeps each file's modification time.
 
@@ -101,7 +101,7 @@ The queue: what waits, what is moving (two at a time, over the one connection), 
 | `d` | Take it off the list |
 | `c` | Clear the ones that are done |
 
-The panes read again by themselves when a transfer finishes, and the header counts what is moving.
+The panes read again by themselves when a transfer finishes, and the top line counts what is moving.
 
 ### Console
 
@@ -188,7 +188,7 @@ A project can name its environments (dev, staging, prod) once for every app of t
 "prod": { "prod": true, "mooring": { "host": "web", "folder": "/var/www/shop" } }
 ```
 
-`/env` says which environment the project is on, and `/env <name>` switches every app to another; Mooring then opens that host at that folder (as it does at start, when no host is named on the command line). A switch made in another app is followed within a second. The header shows the environment's name; in a production one (`"prod": true`) the frames are red and anything that changes the server asks first: an upload (`c`, `/put`), a delete or a rename there, a `/sync` that uploads or deletes there, and `/watch`.
+`/env` says which environment the project is on, and `/env <name>` switches every app to another; Mooring then opens that host at that folder (as it does at start, when no host is named on the command line). A switch made in another app is followed within a second. The top line shows the environment's name; in a production one (`"prod": true`) the frames are red and anything that changes the server asks first: an upload (`c`, `/put`), a delete or a rename there, a `/sync` that uploads or deletes there, and `/watch`.
 
 While Fleet records a runbook, each slash command Mooring's prompt runs is kept for it, but never one that runs a command (`/ssh`, `/run`, `$`, `!`): Mooring never keeps a command it ran.
 

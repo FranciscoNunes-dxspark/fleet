@@ -7,7 +7,6 @@ import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
 import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { readProject } from '@fleet/kit/environments.js';
@@ -17,10 +16,11 @@ import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/ki
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
-import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
-import { FACES, moodFor, troubles } from '../pet.js';
+import { FACES, PET, moodFor, moodLine, troubles } from '../pet.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { shellQuote } from '../sftp.js';
 import { hostText } from '../hosts.js';
@@ -33,7 +33,7 @@ import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { Picker } from './Picker.jsx';
 import { ConsoleView } from './ConsoleView.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
+import { updateLine } from './Pet.jsx';
 
 const VIEWS = [
   { id: 'files', label: 'Files' },
@@ -62,50 +62,38 @@ const abortable = (promise, signal) =>
   Promise.race([promise, new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { cancelled: true })), { once: true }))]);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Header({ conn, transfers, width, loading, demo, mood, watching, env }) {
-  const segs = [{ text: `${FACES[mood]} `, color: theme.accent, bold: true }, { text: 'Mooring', bold: true }];
-  if (demo) segs.push({ text: '  demo', color: theme.warn });
-  if (env) segs.push({ text: `  ${env.name}`, color: env.prod ? theme.del : theme.info, bold: env.prod });
-  segs.push({ text: '  │  ', color: theme.border });
-  if (conn.status === 'connecting') segs.push({ text: `connecting to ${conn.host?.name}…`, color: theme.dim });
-  else if (conn.session) segs.push({ text: `${BULLET} ${conn.host.name}`, color: theme.accent, bold: true }, { text: `  ${hostText(conn.host)}`, color: theme.dim });
-  else segs.push({ text: 'not connected', color: theme.dim });
+// What the top line says at its right: demo, the environment, the host, the transfers, the watch, or
+// what went wrong.
+function headerContext({ conn, transfers, loading, demo, watching, env }) {
+  const segs = [];
+  const gap = () => segs.push({ text: '  ' });
+  if (demo) segs.push({ text: 'demo', color: theme.warn }), gap();
+  if (env) segs.push({ text: env.name, color: env.prod ? theme.del : theme.info, bold: env.prod }), gap();
+  if (conn.problem) segs.push({ text: firstLine(conn.problem), color: theme.warn }), gap();
+  if (loading) segs.push({ text: 'reading…', color: theme.dim }), gap();
+  if (watching) segs.push({ text: `⟳ watching ${watching.localRoot.split(/[\\/]/).filter(Boolean).pop() ?? watching.localRoot}`, color: theme.accent }), gap();
   const running = transfers.filter((t) => t.status === 'running').length;
   const waiting = transfers.filter((t) => t.status === 'queued').length;
   const failed = transfers.filter((t) => t.status === 'failed').length;
-  if (running || waiting) segs.push({ text: `  ⇅ ${running} running${waiting ? `, ${waiting} waiting` : ''}`, color: theme.info });
-  if (failed) segs.push({ text: `  ${failed} failed`, color: theme.del, bold: true });
-  if (watching) segs.push({ text: `  ⟳ watching ${watching.localRoot.split(/[\\/]/).filter(Boolean).pop() ?? watching.localRoot}`, color: theme.accent });
-  if (loading) segs.push({ text: '  reading…', color: theme.dim });
-  if (conn.problem) segs.push({ text: '  │  ', color: theme.border }, { text: firstLine(conn.problem), color: theme.warn });
-  return <Row pointer={false} width={width} segments={segs} />;
+  if (failed) segs.push({ text: `${failed} failed`, color: theme.del, bold: true }), gap();
+  if (running || waiting) segs.push({ text: `⇅ ${running} running${waiting ? `, ${waiting} waiting` : ''}`, color: theme.info }), gap();
+  if (conn.status === 'connecting') segs.push({ text: `connecting to ${conn.host?.name}…`, color: theme.dim });
+  else if (conn.session) segs.push({ text: `${BULLET} ${conn.host.name}`, color: theme.accent, bold: true }, { text: `  ${hostText(conn.host)}`, color: theme.dim });
+  else segs.push({ text: 'not connected', color: theme.dim });
+  return segs;
 }
 
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries, transfers) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let text = ` ${i + 1} ${v.label}`;
-    if (v.id === 'log' && entries.length) text += ` ${entries.length}`;
-    if (v.id === 'transfers') {
-      const open = transfers.filter((t) => t.status === 'queued' || t.status === 'running').length;
-      if (open) text += ` ${open}`;
-    }
-    text += ' ';
-    const from = x;
-    x += stringWidth(text) + 1;
-    return { id: v.id, label: text, from, to: from + stringWidth(text) };
-  });
-}
-
-function Tabs({ view, entries, transfers, width }) {
-  const segs = [];
+// The views in the top line: the digit that picks each, the log's count, the transfers still to go
+// (red when one failed).
+function viewTabs(entries, transfers) {
+  const open = transfers.filter((t) => t.status === 'queued' || t.status === 'running').length;
   const failed = transfers.some((t) => t.status === 'failed');
-  for (const t of tabLabels(entries, transfers)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : t.id === 'transfers' && failed ? theme.del : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
+  return VIEWS.map((v, i) => {
+    const tab = { id: v.id, key: i + 1, label: v.label, count: 0, countColor: theme.dim };
+    if (v.id === 'log' && entries.length) tab.count = entries.length;
+    if (v.id === 'transfers' && (open || failed)) Object.assign(tab, { count: open || '!', countColor: failed ? theme.del : theme.info });
+    return tab;
+  });
 }
 
 // The last two results, Claude Code style: "● Deleted 3 items" then "  ⎿  output".
@@ -1023,14 +1011,15 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
+    if (e.y === promptTop) {
+      // The text starts after a space and "> ", scrolled as PromptBox scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
       return setFocus('prompt');
     }
-    const row = e.y - promptTop - 3;
+    const row = e.y - promptTop - 1;
     if (row >= 0 && row < sugCount) {
       setSugIndex(row);
       if (e.double) promptKeys('', { return: true });
@@ -1045,7 +1034,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
   const W = columns;
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
   const trouble = troubles({ transfers, conn, health });
   const moving = transfers.filter((t) => t.status === 'running').length;
   const working = moving > 0;
@@ -1055,9 +1044,10 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
   useEffect(() => {
     if (config.familyMoods !== false) writeMood('mooring', said);
   }, [said.mood, said.reason, config.familyMoods]);
-  const showWelcome = welcome && H >= 28;
-  const reacting = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  const loading = panes.local.loading || panes.remote.loading;
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Mooring', views: viewTabs(entries, transfers), view, context: headerContext({ conn, transfers, loading, demo, watching, env }), width: W });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   // What the Console's shell opens at: the room the Console has inside its border.
   shellSize.current = { columns: Math.max(20, W - 2), rows: Math.max(4, mainH - 2) };
@@ -1072,11 +1062,11 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
     } else if (focusRef.current === 'terminal' && view !== 'console') setFocus('view');
   }, [view, conn.session]);
   layout.current = {
-    mainTop: 2,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    promptTop: 1 + mainH + act.length + (busy ? 1 : 0),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries, transfers),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   // The palette's list: this view's keys, yours, then the commands.
@@ -1085,7 +1075,6 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
     [custom, view],
   );
 
-  const loading = panes.local.loading || panes.remote.loading;
   const overlayActive = focus === 'view' && !confirmReq;
   let main;
   if (overlay?.kind === 'help') {
@@ -1108,10 +1097,8 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
     main = <FilesView panes={panes} side={side} conn={conn} hidden={config.showHidden !== false} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'terminal'
-      ? 'typing in the shell on the server · ctrl+\\ leaves it'
+  const keys = focus === 'terminal'
+      ? 'ctrl+\\ leaves the shell on the server'
       : focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
@@ -1121,27 +1108,22 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
           : overlay
             ? 'j/k scroll · space page · y copy · esc close'
             : HINTS[view];
-  const right = focus === 'prompt' || focus === 'terminal' ? '' : '  / commands · ctrl+p palette · ? help';
+  const right = focus === 'prompt' || focus === 'terminal' ? '' : '/ commands · ctrl+p palette · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
+  // command, else how Tug sees things.
+  const info = { loaded, connected: Boolean(conn.session), host: conn.host?.name, trouble, running: moving, hosts: (config.hosts ?? []).length };
+  let told = { face: FACES[mood], message: moodLine(mood, info) };
+  if (flash) told = { face: FACES[mood], message: flash.text };
+  else if (reaction) told = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }] };
+  else if (welcome && update) told = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) told = { face: FACES[mood], message: welcomeLine('Mooring', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, info)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header conn={conn} transfers={transfers} width={W} loading={loading} demo={demo} mood={mood} watching={watching} env={env} />
-      <Tabs view={view} entries={entries} transfers={transfers} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} info={{ loaded, connected: Boolean(conn.session), host: conn.host?.name, trouble, running: moving, hosts: (config.hosts ?? []).length }} width={W} update={update} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reaction.text },
-            { text: '  esc', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -1156,7 +1138,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), local, makeSes
         <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
       {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row pointer={false} width={W} segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]} />
+      <StatusLine {...told} keys={keys} right={right} width={W} />
     </Box>
   );
 }
