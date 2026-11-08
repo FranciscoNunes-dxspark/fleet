@@ -179,7 +179,7 @@ It exits `1` when a finding is as bad as `--fail-on` (`high` by default). `--sar
 
 ## Environments
 
-A project that names its environments in `.fleet/project.json` shows the chosen one in Ballast's header, red for a production one. `/env` says which it is, `/env <name>` switches every app to another. While Fleet records a runbook, every slash command Ballast's prompt runs goes into it.
+A project that names its environments in `.fleet/project.json` shows the chosen one in Ballast's top line, red for a production one. `/env` says which it is, `/env <name>` switches every app to another. While Fleet records a runbook, every slash command Ballast's prompt runs goes into it.
 
 ## Mouse
 
