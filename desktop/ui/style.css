@@ -260,6 +260,18 @@ body.prod .strip {
   overflow: hidden;
 }
 
+/* xterm.js gives its viewport a scrollbar always (overflow-y: scroll), which WebView2 on Windows draws
+   at the right edge as a thin bar even with nothing to scroll: the terminal keeps no scrollback, and
+   the apps take the wheel themselves. Hidden, the fit add-on also gets that column back. */
+#terminal .xterm-viewport {
+  overflow-y: hidden !important;
+  scrollbar-width: none;
+}
+
+#terminal .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
+
 .side {
   flex: none;
   width: 34ch;
