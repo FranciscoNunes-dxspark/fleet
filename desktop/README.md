@@ -4,6 +4,7 @@ Fleet in a window of its own. The window is a [Tauri](https://tauri.app) app: a 
 
 The window is drawn to look like the terminal inside it: one monospace face, square corners, thin rules, and keys as bright characters with their words dim. Fleet's chrome is the window's own. The host, started with `FLEET_DESKTOP=1`, draws none of it in the terminal (the apps get every row). Instead it sends its state as a private escape sequence (`OSC 5380`, the host's `barState`), and the window draws:
 
+- **Its own title bar.** The system's is off: the top line is the title bar. Drag it by its empty parts or the brand, double-click it to maximise, and minimise, maximise and close are its buttons at the right.
 - **Tabs along the top.** Each app's state mark in its colour (`●` running, `○` not started, `✕` exited) and its badge. A badge says why, in a few words, until you look ("Bosun ! api crashed"). The environment, `● REC` and Claude's proposals sit at the right, and the frame turns red for production.
 - **Toasts.** When an app off screen needs you, a toast says so, and clicking it goes there. When the window is in the background, the system's own notification says it too (Settings turns that off).
 - **A strip along the bottom.** It carries notices, the prefix's keys while they wait, the folder being asked for, and the quit question. Beside it are buttons for what works across the apps: the palette, what changed, following a request, the runbooks, security, the environment, the split, settings and the help.

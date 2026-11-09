@@ -1,7 +1,22 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: Fleet's own commands (start, write, resize, stop) and the events they send; notifications, the open-folder dialog and its questions, links opened in the browser, and updates from the repository's releases with the restart after one.",
-  "windows": ["main"],
-  "permissions": ["core:default", "notification:default", "dialog:allow-open", "dialog:allow-ask", "opener:allow-open-url", "updater:default", "process:allow-restart"]
+  "description": "The main window: Fleet's own commands (start, write, resize, stop) and the events they send; the window's own title bar (dragging it, minimising, maximising, closing); notifications, the open-folder dialog and its questions, links opened in the browser, and updates from the repository's releases with the restart after one.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "dialog:allow-open",
+    "dialog:allow-ask",
+    "opener:allow-open-url",
+    "updater:default",
+    "process:allow-restart",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
+  ]
 }

@@ -208,6 +208,32 @@ kbd {
   color: var(--ink);
 }
 
+/* The window's own title bar buttons: the system's is turned off (tauri.conf.json's decorations), so
+   the top line is the title bar, dragged by its empty parts and the brand. */
+.brand img {
+  pointer-events: none;
+}
+
+.caption {
+  display: flex;
+  border-left: 1px solid var(--rule);
+}
+
+.caption button {
+  width: 46px;
+  color: var(--dim);
+}
+
+.caption button:hover {
+  color: var(--bright);
+  background: var(--raised);
+}
+
+.caption .close-window:hover {
+  color: #fff;
+  background: #c42b1c;
+}
+
 /* The production environment: the frame turns red, as the apps' own lines do. */
 body.prod .top {
   background: #2a1215;

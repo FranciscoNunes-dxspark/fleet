@@ -7,15 +7,20 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <span class="brand"><img src="mark.svg" alt="" width="16" height="16"> fleet</span>
+  <header class="top" data-tauri-drag-region>
+    <span class="brand" data-tauri-drag-region><img src="mark.svg" alt="" width="16" height="16"> fleet</span>
     <nav class="tabs" id="tabs" aria-label="Apps"></nav>
     <button type="button" class="add" id="add" title="Choose the apps on the bar (prefix a)" aria-label="Choose the apps on the bar">+</button>
-    <span class="spacer"></span>
+    <span class="spacer" data-tauri-drag-region></span>
     <span class="status" id="status"></span>
     <span class="where" id="where"></span>
     <button type="button" class="side-toggle" id="toggle-projects" aria-pressed="false" title="Projects: the folders the fleet was in">projects</button>
     <button type="button" class="side-toggle" id="toggle-claude" aria-pressed="false" title="Ask Claude about what changed">claude</button>
+    <span class="caption" aria-label="Window">
+      <button type="button" id="win-min" title="Minimise" aria-label="Minimise">─</button>
+      <button type="button" id="win-max" title="Maximise" aria-label="Maximise">□</button>
+      <button type="button" id="win-close" class="close-window" title="Close Fleet" aria-label="Close">✕</button>
+    </span>
   </header>
   <div class="middle">
     <main id="terminal" aria-label="Fleet"></main>
