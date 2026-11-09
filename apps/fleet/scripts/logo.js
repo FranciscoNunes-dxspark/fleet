@@ -1,7 +1,7 @@
-// Draws Fleet's mark: a compass, what a fleet steers by, its ring four arcs in the apps' colours. It's
-// drawn the way Keel's mark is, flat on a graphite tile, each shape cut across at the waterline (the
-// needle's middle) with the piece under the cut in a deeper tone, but it's Fleet's own picture: Keel's is
-// a prompt. The needle's north is the white of Keel's bar, its south Fleet's brass. One drawing, written to:
+// Draws Fleet's mark: a compass, a white needle in a brass ring, what a fleet steers by. It's drawn the
+// way Keel's mark is, flat on a graphite tile in two colours, each shape cut across, but upside down from
+// Keel's: the cut is in the top half and the piece above it is the deeper tone, as if the compass were
+// lit from below. One drawing, written to:
 //   assets/logo.svg, logo.png (512 px)          the README
 //   assets/logo.ico                              the Windows executable and its shortcuts (the kit's
 //                                                scripts/build.js and installer/Fleet.iss)
@@ -12,22 +12,19 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-// A quarter of the ring, between two angles in degrees (0 east, clockwise, as the screen's y runs down),
-// leaving a gap at each of the four points.
-const arc = (from, to, colour) => ({ ring: { cx: 32, cy: 32, inner: 19, outer: 23, from, to }, cut: 31, colours: { above: colour, below: colour } });
+// Each colour's two tones: `above` the cut the deeper one, `below` it the bright one.
+const WHITE = { above: '#bec0c2', below: '#ffffff' };
+const BRASS = { above: '#a87d3c', below: '#e6c07b' };
 
 export const MARK = {
   size: 64,
   tile: { radius: 13, fill: '#16181d' },
   /** How tall each cut is. */
   gap: 3,
-  // The needle, north up, cut at the waterline across the middle; the ring around it in four colours.
+  // The needle, north up, and the ring around it, both cut a little above the middle.
   shapes: [
-    { points: [[32, 8], [39, 32], [32, 56], [25, 32]], cut: 31, colours: { above: '#ffffff', below: '#e6c07b' } },
-    arc(279, 351, '#7fe0d8'),
-    arc(9, 81, '#4c8dff'),
-    arc(99, 171, '#ff6b5f'),
-    arc(189, 261, '#9be564'),
+    { points: [[32, 9], [38, 32], [32, 55], [26, 32]], cut: 24, colours: WHITE },
+    { ring: { cx: 32, cy: 32, inner: 20, outer: 25 }, cut: 24, colours: BRASS },
   ],
 };
 

@@ -1,10 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <title>Fleet</title>
-<defs><clipPath id="above-31"><rect width="64" height="31"/></clipPath><clipPath id="below-31"><rect y="34" width="64" height="30"/></clipPath></defs>
+<defs><clipPath id="above-24"><rect width="64" height="24"/></clipPath><clipPath id="below-24"><rect y="27" width="64" height="37"/></clipPath></defs>
 <rect width="64" height="64" rx="13" fill="#16181d"/>
-<g clip-path="url(#above-31)"><path d="M32 8 L39 32 L32 56 L25 32 Z" fill="#ffffff"/></g><g clip-path="url(#below-31)"><path d="M32 8 L39 32 L32 56 L25 32 Z" fill="#e6c07b"/></g>
-<g clip-path="url(#above-31)"><path d="M35.598 9.283 A23 23 0 0 1 54.717 28.402 L50.766 29.028 A19 19 0 0 0 34.972 13.234 Z" fill="#7fe0d8"/></g><g clip-path="url(#below-31)"><path d="M35.598 9.283 A23 23 0 0 1 54.717 28.402 L50.766 29.028 A19 19 0 0 0 34.972 13.234 Z" fill="#7fe0d8"/></g>
-<g clip-path="url(#above-31)"><path d="M54.717 35.598 A23 23 0 0 1 35.598 54.717 L34.972 50.766 A19 19 0 0 0 50.766 34.972 Z" fill="#4c8dff"/></g><g clip-path="url(#below-31)"><path d="M54.717 35.598 A23 23 0 0 1 35.598 54.717 L34.972 50.766 A19 19 0 0 0 50.766 34.972 Z" fill="#4c8dff"/></g>
-<g clip-path="url(#above-31)"><path d="M28.402 54.717 A23 23 0 0 1 9.283 35.598 L13.234 34.972 A19 19 0 0 0 29.028 50.766 Z" fill="#ff6b5f"/></g><g clip-path="url(#below-31)"><path d="M28.402 54.717 A23 23 0 0 1 9.283 35.598 L13.234 34.972 A19 19 0 0 0 29.028 50.766 Z" fill="#ff6b5f"/></g>
-<g clip-path="url(#above-31)"><path d="M9.283 28.402 A23 23 0 0 1 28.402 9.283 L29.028 13.234 A19 19 0 0 0 13.234 29.028 Z" fill="#9be564"/></g><g clip-path="url(#below-31)"><path d="M9.283 28.402 A23 23 0 0 1 28.402 9.283 L29.028 13.234 A19 19 0 0 0 13.234 29.028 Z" fill="#9be564"/></g>
+<g clip-path="url(#above-24)"><path d="M32 9 L38 32 L32 55 L26 32 Z" fill="#bec0c2"/></g><g clip-path="url(#below-24)"><path d="M32 9 L38 32 L32 55 L26 32 Z" fill="#ffffff"/></g>
+<g clip-path="url(#above-24)"><path d="M7 32 a25 25 0 1 0 50 0 a25 25 0 1 0 -50 0 Z M12 32 a20 20 0 1 0 40 0 a20 20 0 1 0 -40 0 Z" fill-rule="evenodd" fill="#a87d3c"/></g><g clip-path="url(#below-24)"><path d="M7 32 a25 25 0 1 0 50 0 a25 25 0 1 0 -50 0 Z M12 32 a20 20 0 1 0 40 0 a20 20 0 1 0 -40 0 Z" fill-rule="evenodd" fill="#e6c07b"/></g>
 </svg>
