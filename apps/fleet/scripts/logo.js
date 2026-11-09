@@ -1,7 +1,8 @@
 // Draws Fleet's mark: a compass, a white needle in a brass ring, what a fleet steers by. It's drawn the
-// way Keel's mark is, flat on a graphite tile in two colours, each shape cut across, but upside down from
-// Keel's: the cut is in the top half and the piece above it is the deeper tone, as if the compass were
-// lit from below. One drawing, written to:
+// way Keel's mark is, flat on a graphite tile in two colours, each shape cut across with a deeper tone on
+// one side: the ring as Keel's, cut low with the deeper tone under the cut, the needle the other way up,
+// cut high with the deeper tone over it, so the two cuts hold the needle between them. One drawing,
+// written to:
 //   assets/logo.svg, logo.png (512 px)          the README
 //   assets/logo.ico                              the Windows executable and its shortcuts (the kit's
 //                                                scripts/build.js and installer/Fleet.iss)
@@ -12,19 +13,19 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-// Each colour's two tones: `above` the cut the deeper one, `below` it the bright one.
+// The needle's tones, the deeper one `above` its cut, and the ring's, the deeper one `below`.
 const WHITE = { above: '#bec0c2', below: '#ffffff' };
-const BRASS = { above: '#a87d3c', below: '#e6c07b' };
+const BRASS = { above: '#e6c07b', below: '#a87d3c' };
 
 export const MARK = {
   size: 64,
   tile: { radius: 13, fill: '#16181d' },
   /** How tall each cut is. */
   gap: 3,
-  // The needle, north up, and the ring around it, both cut a little above the middle.
+  // The needle, north up, cut a little above the middle; the ring around it, cut as far below it.
   shapes: [
     { points: [[32, 9], [38, 32], [32, 55], [26, 32]], cut: 24, colours: WHITE },
-    { ring: { cx: 32, cy: 32, inner: 20, outer: 25 }, cut: 24, colours: BRASS },
+    { ring: { cx: 32, cy: 32, inner: 20, outer: 25 }, cut: 37, colours: BRASS },
   ],
 };
 
