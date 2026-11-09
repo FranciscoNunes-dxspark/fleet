@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo.svg" width="120" alt="A container ship, its bridge at the stern and a stack of steel boxes forward"></p>
+<p align="center"><img src="assets/logo.svg" width="120" alt="Fleet's mark: two chevrons and a bar, a prompt and its cursor, each cut across like a waterline"></p>
 
 # Fleet
 

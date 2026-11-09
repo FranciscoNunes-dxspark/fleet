@@ -1,122 +1,105 @@
-// Draws Fleet's logo into assets/: a container ship, its bridge at the stern and a stack of boxes
-// forward, the one ship that carries many loads, as Fleet carries the apps. The boxes are steel, one
-// orange, and never one per app, so the drawing stays the same however many apps there are. It's pixel
-// art on a 32-pixel grid, lit from the top left, on the dark rounded square the siblings' icons use.
-// logo.svg (README), logo.png (512 px) and logo.ico (the Windows executable's icon, which the kit's
-// scripts/build.js embeds). Don't edit assets/ by hand: run
+// Draws Fleet's mark: three sails in formation, a fleet. It's drawn the way Keel's mark is, flat on a
+// graphite tile, each shape cut across like a waterline with the piece past the cut in a deeper tone
+// (here each sail's hull), but it's Fleet's own picture: Keel's is a prompt. The nearest sail is the
+// white of Keel's bar, the two behind it Fleet's brass. One drawing, written to:
+//   assets/logo.svg, logo.png (512 px)          the README
+//   assets/logo.ico                              the Windows executable and its shortcuts (the kit's
+//                                                scripts/build.js and installer/Fleet.iss)
+//   ../../desktop/src-tauri/icons/*              the desktop window's icons
+//   ../../desktop/ui/mark.svg                    the mark in the desktop window's top bar
+// Don't edit those by hand: run
 //   node scripts/logo.js
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-const BACKGROUND = '#1c1b22';
-const UNITS = 32; // the drawing's grid; every size is drawn from it
-const RADIUS = 6;
+// A sail: its mast the vertical edge on the left, its foot along the bottom.
+const sail = (x, top, w, foot) => [[x, top], [x + w, foot], [x, foot]];
+const BRASS = { above: '#e6c07b', below: '#a87d3c' };
+
+export const MARK = {
+  size: 64,
+  tile: { radius: 13, fill: '#16181d' },
+  /** How tall each cut is. */
+  gap: 3,
+  // Three sails in formation, the nearest the biggest, each cut near its foot: the piece under the cut is
+  // its hull, in the deeper tone.
+  shapes: [
+    { points: sail(41, 9, 12, 31), cut: 25, colours: BRASS },
+    { points: sail(28, 12, 15, 40), cut: 33, colours: BRASS },
+    { points: sail(11, 16, 21, 51), cut: 43, colours: { above: '#ffffff', below: '#bec0c2' } },
+  ],
+};
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
-const WHITE = rgb('#f4f4f0');
-const WHITE_DARK = rgb('#c8ccd4');
-const GLASS = rgb('#2b3a55');
-const GLASS_LIGHT = rgb('#7ec8ff');
-const NAVY = rgb('#22304f');
-const NAVY_LIGHT = rgb('#3a5080');
-const RED = rgb('#d64545');
-const BLACK = rgb('#121218');
-const WATER = rgb('#3a6b8a');
-const WATER_LIGHT = rgb('#5fafd7');
-const STEEL = '#5f7a99';
-const GREY = '#8a96a3';
-const ORANGE = '#e07b39';
 
-// The ship's measures, in grid pixels; it faces right.
-const BRIDGE = { left: 4, right: 8, top: 5 }; // its roof; the wings stick out a pixel either side
-const DECK = 17; // the hull's top row, which the bridge and the boxes stand on
-const KEEL = 22;
-const HULL = { stern: 2, bow: 29 };
-const BOX = { left: 10, width: 5, height: 3 }; // a pixel's gap between boxes across, none down
-// The stack, bottom row first.
-const BOXES = [
-  [STEEL, ORANGE, STEEL],
-  [GREY, STEEL, GREY],
-  [STEEL, GREY, STEEL],
-];
-const WAVES = 25;
+const inRound = (x, y, { x: rx, y: ry, w, h, r }) => {
+  if (x < rx || y < ry || x > rx + w || y > ry + h) return false;
+  const dx = Math.max(rx + r - x, x - (rx + w - r), 0);
+  const dy = Math.max(ry + r - y, y - (ry + h - r), 0);
+  return dx * dx + dy * dy <= r * r;
+};
 
-/** A container's pixel: ribbed sides, every other column a shade darker, a lit top, the door end in shadow. */
-function box(colour, x, y) {
-  const c = rgb(colour);
-  if (y === 0) return mix(c, WHITE, 0.25);
-  if (x === BOX.width - 1) return mix(c, BLACK, 0.35);
-  return x % 2 ? mix(c, BLACK, 0.15) : c;
-}
-
-/** The ship's colour at grid pixel (x, y), [r, g, b], or null where the background shows. */
-function ship(x, y) {
-  const { left, right, top } = BRIDGE;
-  // The funnel behind the bridge, red with a black top.
-  if (x >= left + 1 && x <= left + 2 && y >= top - 3 && y < top) return y === top - 3 ? BLACK : RED;
-  if (y === top && x >= left - 1 && x <= right + 1) return WHITE_DARK;
-  if (y === top + 1 && x >= left && x <= right) return x === right ? GLASS_LIGHT : GLASS; // the bridge's windows
-  if (y > top + 1 && y < DECK && x >= left && x <= right) {
-    if ((y - top) % 3 === 1 && x > left && x < right) return mix(WHITE_DARK, GLASS, 0.4); // a deck's portholes
-    return x === left ? WHITE_DARK : WHITE;
+const inPolygon = (x, y, points) => {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [xi, yi] = points[i];
+    const [xj, yj] = points[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
   }
-  if (y < DECK && x >= BOX.left) {
-    const row = Math.floor((DECK - 1 - y) / BOX.height);
-    const column = Math.floor((x - BOX.left) / (BOX.width + 1));
-    const bx = (x - BOX.left) % (BOX.width + 1);
-    const colour = BOXES[row]?.[column];
-    if (colour && bx < BOX.width) return box(colour, bx, (y - (DECK - (row + 1) * BOX.height)));
-  }
-  if (y >= DECK && y <= KEEL) {
-    // The bow raked forward at the top, the stern a little under.
-    const k = (y - DECK) / (KEEL - DECK);
-    if (x >= HULL.stern + Math.round(k * 1.5) && x <= HULL.bow - Math.round(k * k * 5)) {
-      return y === DECK ? NAVY_LIGHT : y >= KEEL - 1 ? RED : NAVY;
+  return inside;
+};
+
+/** The mark as RGBA rows, `size` pixels square, on its rounded tile (`tile: false` for none), 4×4 samples a pixel. */
+function markRows(size, { tile = true } = {}) {
+  const S = MARK.size;
+  const tileShape = { x: 0, y: 0, w: S, h: S, r: MARK.tile.radius };
+  const onTile = (u, v) => (tile && inRound(u, v, tileShape) ? rgb(MARK.tile.fill) : null);
+  const sample = (u, v) => {
+    // In a shape's cut there's only the tile; either side of it, the shape's two tones.
+    for (const shape of MARK.shapes) {
+      if (!inPolygon(u, v, shape.points)) continue;
+      if (v >= shape.cut && v < shape.cut + MARK.gap) return onTile(u, v);
+      return rgb(shape.colours[v < shape.cut ? 'above' : 'below']);
     }
-  }
-  if (y === WAVES && x >= 3 && x <= 28 && x % 4 !== 3) return x % 4 === 0 ? WATER_LIGHT : WATER;
-  return null;
-}
-
-const PIXELS = Array.from({ length: UNITS }, (_, y) => Array.from({ length: UNITS }, (_, x) => ship(x, y)));
-
-/** The colour at unit coordinates (u, v), [r, g, b, a]. */
-function at(u, v) {
-  const pixel = PIXELS[Math.floor(v)]?.[Math.floor(u)];
-  if (pixel) return [...pixel, 255];
-  // Outside the rounded square's corners: transparent.
-  const cx = Math.min(Math.max(u, RADIUS), UNITS - RADIUS);
-  const cy = Math.min(Math.max(v, RADIUS), UNITS - RADIUS);
-  if ((u - cx) ** 2 + (v - cy) ** 2 > RADIUS ** 2) return [0, 0, 0, 0];
-  return [...rgb(BACKGROUND), 255];
-}
-
-/**
- * RGBA rows of the logo at `size` px. At a multiple of the grid's 32 every pixel is one colour of the
- * drawing, sampled at its centre; at the sizes in between (the .ico's 16, 24 and 48, which Windows
- * shows in lists and the taskbar) a pixel would fall across the drawing's, and one sample would drop
- * a line of windows or thicken a gap, so each is the average of a grid of samples inside it.
- */
-function canvas(size) {
-  const n = size % UNITS === 0 ? 1 : 8;
+    return onTile(u, v);
+  };
+  const N = 4;
   return Array.from({ length: size }, (_, y) => {
     const row = Buffer.alloc(size * 4);
     for (let x = 0; x < size; x++) {
-      const sum = [0, 0, 0, 0];
-      for (let j = 0; j < n; j++) {
-        for (let i = 0; i < n; i++) {
-          const c = at(((x + (i + 0.5) / n) * UNITS) / size, ((y + (j + 0.5) / n) * UNITS) / size);
-          // Colours weighed by how opaque they are, so the transparent corners don't darken the edge.
-          for (let k = 0; k < 3; k++) sum[k] += c[k] * c[3];
-          sum[3] += c[3];
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      for (let sy = 0; sy < N; sy++) {
+        for (let sx = 0; sx < N; sx++) {
+          const c = sample(((x + (sx + 0.5) / N) * S) / size, ((y + (sy + 0.5) / N) * S) / size);
+          if (!c) continue;
+          r += c[0];
+          g += c[1];
+          b += c[2];
+          a += 1;
         }
       }
-      const a = sum[3];
-      row.set(a ? [...sum.slice(0, 3).map((v) => Math.round(v / a)), Math.round(a / (n * n))] : [0, 0, 0, 0], x * 4);
+      if (a) row.set([Math.round(r / a), Math.round(g / a), Math.round(b / a), Math.round((a / (N * N)) * 255)], x * 4);
     }
     return row;
   });
+}
+
+/** The mark as SVG: each shape clipped either side of its own cut. */
+export function markSvg({ tile = true, title = 'Fleet' } = {}) {
+  const { size: S, gap, shapes } = MARK;
+  const path = (points, fill) => `<path d="M${points.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${fill}"/>`;
+  const cuts = [...new Set(shapes.map((s) => s.cut))];
+  const clips = cuts.map((cut) => `<clipPath id="above-${cut}"><rect width="${S}" height="${cut}"/></clipPath><clipPath id="below-${cut}"><rect y="${cut + gap}" width="${S}" height="${S - cut - gap}"/></clipPath>`).join('');
+  const drawn = shapes.map((s) => `<g clip-path="url(#above-${s.cut})">${path(s.points, s.colours.above)}</g><g clip-path="url(#below-${s.cut})">${path(s.points, s.colours.below)}</g>`).join('\n');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}">
+<title>${title}</title>
+<defs>${clips}</defs>
+${tile ? `<rect width="${S}" height="${S}" rx="${MARK.tile.radius}" fill="${MARK.tile.fill}"/>\n` : ''}${drawn}
+</svg>
+`;
 }
 
 function png(rows) {
@@ -173,7 +156,7 @@ function dib(rows) {
 
 // Bitmaps up to 128 px and a PNG at 256, the usual layout.
 function ico(sizes) {
-  const images = sizes.map((s) => (s >= 256 ? png(canvas(s)) : dib(canvas(s))));
+  const images = sizes.map((s) => (s >= 256 ? png(markRows(s)) : dib(markRows(s))));
   const header = Buffer.alloc(6);
   header.writeUInt16LE(1, 2);
   header.writeUInt16LE(images.length, 4);
@@ -192,30 +175,20 @@ function ico(sizes) {
   return Buffer.concat([header, ...entries, ...images]);
 }
 
-const hex = (c) => '#' + c.map((n) => n.toString(16).padStart(2, '0')).join('');
-// The pixels as one rect per run of a colour along a row.
-const runs = PIXELS.flatMap((row, y) => {
-  const out = [];
-  for (let x = 0; x < UNITS; x++) {
-    if (!row[x]) continue;
-    const colour = hex(row[x]);
-    const last = out.at(-1);
-    if (last && last.colour === colour && last.x + last.w === x) last.w++;
-    else out.push({ x, y, w: 1, colour });
-  }
-  return out;
-});
+const out = (path, data) => {
+  const url = new URL(path, new URL('../', import.meta.url));
+  mkdirSync(new URL('./', url), { recursive: true });
+  writeFileSync(url, data);
+};
 
-const svg = [
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${UNITS} ${UNITS}" width="256" height="256" shape-rendering="crispEdges">`,
-  `  <rect width="${UNITS}" height="${UNITS}" rx="${RADIUS}" fill="${BACKGROUND}"/>`,
-  ...runs.map((p) => `  <rect x="${p.x}" y="${p.y}" width="${p.w}" height="1" fill="${p.colour}"/>`),
-  '</svg>',
-  '',
-].join('\n');
-
-mkdirSync('assets', { recursive: true });
-writeFileSync('assets/logo.svg', svg);
-writeFileSync('assets/logo.png', png(canvas(512)));
-writeFileSync('assets/logo.ico', ico([16, 24, 32, 48, 64, 128, 256]));
-console.log('assets/logo.svg, logo.png, logo.ico');
+const icon = ico([16, 24, 32, 48, 64, 128, 256]);
+out('assets/logo.svg', markSvg());
+out('assets/logo.png', png(markRows(512)));
+out('assets/logo.ico', icon);
+out('../../desktop/src-tauri/icons/32x32.png', png(markRows(32)));
+out('../../desktop/src-tauri/icons/128x128.png', png(markRows(128)));
+out('../../desktop/src-tauri/icons/128x128@2x.png', png(markRows(256)));
+out('../../desktop/src-tauri/icons/icon.png', png(markRows(512)));
+out('../../desktop/src-tauri/icons/icon.ico', icon);
+out('../../desktop/ui/mark.svg', markSvg({ tile: false }));
+console.log('assets/logo.svg, logo.png, logo.ico; desktop/src-tauri/icons/*, desktop/ui/mark.svg');
