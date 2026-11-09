@@ -52,8 +52,11 @@ const store = (key, value) => {
   }
 };
 
+// JetBrains Mono is the window's own (ui/fonts, style.css's @font-face); the rest stand in for the few
+// characters it lacks.
+const FONT = '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace';
 const term = new Terminal({
-  fontFamily: '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
+  fontFamily: FONT,
   fontSize: stored('fontSize', 14),
   lineHeight: 1.15,
   theme,
@@ -110,6 +113,19 @@ try {
   // Without images, the apps' text is all there is.
 }
 fitTerm();
+// A page loads a font of its own on first use, so xterm measured its cells with a stand-in. Once the
+// bundled faces are in, the family is set again (through another, as the same value changes nothing),
+// which measures the cells and draws every glyph again in it.
+Promise.all(['400', '700'].map((weight) => document.fonts.load(`${weight} ${term.options.fontSize}px "JetBrains Mono"`)))
+  .then(() => {
+    term.options.fontFamily = 'monospace';
+    term.options.fontFamily = FONT;
+    webgl?.clearTextureAtlas();
+    fitTerm();
+  })
+  .catch(() => {
+    // The font didn't load: the system's monospace face it is.
+  });
 
 const $ = (id) => document.getElementById(id);
 const send = (data) => invoke('write', { data });

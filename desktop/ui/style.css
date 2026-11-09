@@ -2,6 +2,37 @@
    corners, thin rules, keys as bright characters with their words dim (the kit's shell look and its
    colours, packages/kit/look.js). Fleet's bar is drawn here as tabs on top and a strip below, and its
    panels as overlays, from the state the host sends (app.js). */
+/* JetBrains Mono, bundled (ui/fonts, v2.304, under its OFL.txt), so the window looks the same on every
+   machine rather than taking whatever monospace face the system has. The few characters it lacks (↵, ⎇,
+   the braille spinner) come from the next face in --mono. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-BoldItalic.woff2") format("woff2");
+  font-weight: 700;
+  font-style: italic;
+}
+
 :root {
   --ground: #0f1115;
   --bar: #161a20;
