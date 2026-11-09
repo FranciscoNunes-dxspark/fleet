@@ -57,7 +57,7 @@ test('Activity lists the blocking chain as a tree, and x kills the session at it
   await until(() => frame().includes('blocked by 53') && frame().includes('blocked by 61'), 'the blocking chain');
   assert.match(frame(), /❯\s+53 sleeping\s+▲2/);
   assert.match(frame(), /└\s+61 blocked by 53/);
-  assert.match(frame(), /─ Session 53 ─/);
+  assert.match(frame(), /│ Session 53 /);
   assert.doesNotMatch(frame(), /\b72 sleeping/, 'idle sessions only with a');
   app.stdin.write('a');
   await until(() => /\b72 sleeping/.test(frame()), 'the idle sessions too');
@@ -204,7 +204,7 @@ test('console tabs: + opens one, [ and ] switch, each keeps its own text and fil
   await command(app, '/tab close');
   await until(() => frame().includes('Close the console tab scratch?'), 'the question');
   app.stdin.write('1');
-  await until(() => frame().includes('SELECT 1 AS first') && /╭─ Console ─/.test(frame()), 'back to one tab');
+  await until(() => frame().includes('SELECT 1 AS first') && /│ Console(?! \d)/.test(frame()), 'back to one tab');
   app.unmount();
 });
 
@@ -252,13 +252,13 @@ test('p pins a result, and c after another run shows the rows added, removed and
   const app = start();
   await until(() => frame().includes('Clubs'), 'the explorer');
   await command(app, '!SELECT 1 AS a');
-  await until(() => frame().includes('─ SELECT 1 AS a ─'), 'the first result');
+  await until(() => frame().includes('│ SELECT 1 AS a '), 'the first result');
   app.stdin.write('c');
   await until(() => frame().includes('Pin a result first'), 'nothing pinned yet');
   app.stdin.write('p');
   await until(() => frame().includes('Pinned 1 row of SELECT 1 AS a'), 'pinned');
   await command(app, '!SELECT 2 AS a');
-  await until(() => frame().includes('─ SELECT 2 AS a ─'), 'the second result');
+  await until(() => frame().includes('│ SELECT 2 AS a '), 'the second result');
   app.stdin.write('c');
   await until(() => frame().includes('Compared: SELECT 1 AS a → now'), 'the comparison');
   assert.match(frame(), /change │ a\s+│ was/);
@@ -329,7 +329,7 @@ test('? opens on the section for the view on screen; j k pick another, / searche
   const app = start();
   await until(() => frame().includes('Clubs'), 'the explorer');
   app.stdin.write('3');
-  await until(() => frame().includes('╭─ Results'), 'Results');
+  await until(() => frame().includes('│ Results'), 'Results');
   app.stdin.write('?');
   await until(() => frame().includes('❯ Results') && frame().includes('The row as a record'), 'the Results section');
   app.stdin.write('j');
@@ -356,7 +356,7 @@ test('/grep lists the definitions with the text in them; ↵ puts one in the con
   assert.match(frame(), /A view: 1 match on this line\.[\s\S]*3  FROM dbo\.Players/);
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('CREATE VIEW dbo.vTopScorers AS') && frame().includes('↵/i type'), 'the view in the console, not typing');
-  assert.match(frame(), /─ Console ─+ selected ·/);
+  assert.match(frame(), /│ Console +selected ·/);
   assert.match(frame(), /▌3 FROM dbo\.Players/, 'the cursor on the line with the match');
   await command(app, '/grep nothing like this');
   await until(() => frame().includes('No view, procedure, function or trigger has "nothing like this" in it.'), 'nothing found');
@@ -377,7 +377,7 @@ test('u in the Explorer, or /uses, shows what refers to an object and what it re
   app.stdin.write('\t');
   await until(() => frame().includes('/uses dbo.vTopScorers'), 'completed');
   app.stdin.write(KEYS.enter);
-  await until(() => frame().includes('Uses: dbo.vTopScorers') && /Uses\s+│\s*│\s+Tables\s+│\s*│\s+dbo\.Players/.test(frame()), 'the report on the view');
+  await until(() => frame().includes('Uses: dbo.vTopScorers') && /Uses\s+│\s+Tables\s+│\s+dbo\.Players/.test(frame()), 'the report on the view');
   app.unmount();
 });
 

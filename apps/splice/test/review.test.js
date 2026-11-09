@@ -254,7 +254,7 @@ test("a PR's diff shows its review comments; t picks one and r replies to it", a
     app.stdin.write('t');
     await until(() => frame().includes('┏ 1 comment'), 'the comment picked');
     app.stdin.write('r');
-    await until(() => frame().includes('> /reply'), 'the reply in the prompt');
+    await until(() => frame().includes('» /reply'), 'the reply in the prompt');
     for (const ch of 'Because 2 was wrong') app.stdin.write(ch);
     await new Promise((r) => setTimeout(r, 100));
     app.stdin.write('\r');
@@ -303,7 +303,7 @@ test("c comments on the line under the cursor in a PR's diff; a header can't tak
     await until(() => frame().includes('Only changed lines and those shown around them can be commented on.'), 'the refusal on a header');
     await type(app.stdin, 'jjjjjjj');
     app.stdin.write('c');
-    await until(() => frame().includes('> /review-comment'), 'the comment in the prompt');
+    await until(() => frame().includes('» /review-comment'), 'the comment in the prompt');
     await type(app.stdin, 'Why not 4?');
     app.stdin.write('\r');
     await until(() => posted.length === 1 && frame().includes('Why not 4?') && frame().includes('1 comment · t/alt+t'), 'the comment posted and shown under its line');
@@ -314,7 +314,7 @@ test("c comments on the line under the cursor in a PR's diff; a header can't tak
     app.stdin.write('k');
     await new Promise((r) => setTimeout(r, 50));
     app.stdin.write('c');
-    await until(() => frame().includes('> /review-comment'), 'the second comment in the prompt');
+    await until(() => frame().includes('» /review-comment'), 'the second comment in the prompt');
     await type(app.stdin, 'It was 2');
     app.stdin.write('\r');
     await until(() => posted.length === 2 && frame().includes('2 comments · t/alt+t'), 'the second comment posted');
@@ -341,7 +341,7 @@ test('x resolves the picked thread and opens it again', async () => {
     app.stdin.write('x');
     await until(() => calls.length === 1 && frame().includes('┏ 1 comment  resolved'), 'the thread resolved');
     app.stdin.write('x');
-    await until(() => calls.length === 2 && /┏ 1 comment *│/.test(frame()), 'the thread opened again');
+    await until(() => calls.length === 2 && /┏ 1 comment *$/m.test(frame()), 'the thread opened again');
     assert.deepEqual(calls, [[7, 'PRRT_1', true], [7, 'PRRT_1', false]]);
   } finally {
     app.unmount();

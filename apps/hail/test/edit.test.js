@@ -131,7 +131,7 @@ test('editing the file: typing, suggestions, ctrl+r sends what is on screen, sav
     assert.equal(readFileSync(file, 'utf8'), `@host = ${base}\r\n\r\n### First\r\nGET {{host}}/first\r\n\r\n### Second\r\nGET {{host}}/second/q1\r\nX-Api-Key: {{host}}\r\n`);
     // esc stops typing; ctrl+z undoes the header, a word at a time.
     app.stdin.write(KEYS.esc);
-    await until(() => frame().includes('↵ or i type · ctrl+r send'), 'typing stopped');
+    await until(() => frame().includes('↵ or i type  ctrl+r send'), 'typing stopped');
     app.stdin.write('\x1a');
     await until(() => !frame().includes('X-Api-Key: {{host}}'), 'the variable undone');
     // Changed elsewhere: the file comes in again.

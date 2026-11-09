@@ -202,7 +202,7 @@ test('settings change in place, are saved as they change, and the accent repaint
     await until(() => /❯ Accent colour/.test(frame()), 'the cursor on the accent');
     const setAccentTo = async (value) => {
       app.stdin.write('\r');
-      await until(() => frame().includes('> /accent #'), 'the accent in the prompt');
+      await until(() => frame().includes('» /accent #'), 'the accent in the prompt');
       app.stdin.write('\x15'); // ctrl+u clears the line
       await type(app.stdin, `/accent ${value}`);
       app.stdin.write('\r');

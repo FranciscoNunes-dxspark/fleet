@@ -283,7 +283,7 @@ test('the Traces view: the crew\'s trace slowest first, its waterfall, a span\'s
   try {
     await until(() => frame().includes('exported 200'), 'the trace exported');
     app.stdin.write('3');
-    await until(() => frame().includes('╭─ Traces') && frame().includes('GET /orders'), 'the trace in the list');
+    await until(() => frame().includes('│ Traces') && frame().includes('GET /orders'), 'the trace in the list');
     assert.match(frame(), /240\.0 ms|240 ms/);
     assert.match(frame(), /web → api\s+3 spans/);
     app.stdin.write(KEYS.enter);
@@ -309,7 +309,7 @@ test('the Traces view: the crew\'s trace slowest first, its waterfall, a span\'s
     app.stdin.write(KEYS.esc);
     await until(() => /❯ api\s+ {2}GET \/api\/orders/.test(frame()), 'back on the waterfall, on the same span');
     app.stdin.write(KEYS.esc);
-    await until(() => frame().includes('╭─ Traces'), 'back on the list');
+    await until(() => frame().includes('│ Traces'), 'back on the list');
   } finally {
     app.unmount();
   }

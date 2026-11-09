@@ -120,7 +120,7 @@ test('sending requests, a response used by the next, the full view, curl, enviro
 
     // Another environment: a host with nothing on it.
     app.stdin.write('1');
-    await until(() => frame().includes('╭─ api.http'), 'Requests again');
+    await until(() => frame().includes('│ api.http'), 'Requests again');
     app.stdin.write('e');
     await until(() => frame().includes('Environment') && frame().includes('broken'), 'the environments');
     app.stdin.write('j');

@@ -61,7 +61,7 @@ test("the Explorer lists the server's databases, the current one opened up, and 
   const app = start();
   await until(() => frame().includes('Translations'), 'the explorer');
   // The cursor starts on the first table; the server's own databases come last.
-  assert.match(frame(), /─ demo ─.*6 objects · 3 databases/);
+  assert.match(frame(), /│ demo .*6 objects · 3 databases/);
   assert.match(frame(), /▾ ClubA +current[\s\S]*❯ +T Clubs[\s\S]*Translations[\s\S]*▸ ClubB[\s\S]*▸ master/);
   app.stdin.write('\x1bg');
   await until(() => /❯ master/.test(frame()) && frame().includes('↵ switch to it'), 'the cursor on master');
@@ -237,7 +237,8 @@ test('Settings, an overlay, changes the row limit, the accent and updates, and k
   await until(() => frame().includes('Clubs'), 'the explorer');
   app.stdin.write(',');
   await until(() => frame().includes('Row limit') && frame().includes('500 rows'), 'Settings');
-  assert.match(frame(), /1 Explorer .* 6 Activity\s*$/m, 'no tab of its own');
+  assert.match(frame().split('\n')[0], /Explorer .* Activity /, 'the views');
+  assert.ok(!frame().split('\n')[0].includes('Settings'), 'no view of its own');
   assert.match(frame(), /Check for updates\s+on\s+\(not in a checkout\)/);
   // ↵ on the row limit hands it to /limit, and Settings is still open after.
   app.stdin.write(KEYS.enter);
@@ -305,7 +306,7 @@ test('a line a sibling hands over while typing in the console goes to the prompt
   app.stdin.write('i');
   await until(() => frame().includes('typing SQL'), 'typing mode');
   app.stdin.write('/azure-sql shop.database.windows.net Shop --name shop-Shop');
-  await until(() => !frame().includes('typing SQL') && frame().includes('> /azure-sql shop.database.windows.net Shop'), 'the line in the prompt');
+  await until(() => !frame().includes('typing SQL') && frame().includes('» /azure-sql shop.database.windows.net Shop'), 'the line in the prompt');
   assert.ok(frame().includes('An empty console'), 'the console is still empty');
   app.unmount();
 });
@@ -323,7 +324,7 @@ test('the console: type SQL, ctrl+r runs it with the results underneath, and it 
   app.stdin.write(KEYS.enter);
   await type(app.stdin, 'SELECT TOP (2) * FROM dbo.Clubs');
   app.stdin.write('\x12'); // ctrl+r: only the statement under the cursor runs
-  await until(() => frame().includes('Club A FC') && frame().includes('Console') && frame().includes('─ SELECT TOP (2) * FROM dbo.Clubs ─'), 'the results under the console');
+  await until(() => frame().includes('Club A FC') && frame().includes('Console') && frame().includes('│ SELECT TOP (2) * FROM dbo.Clubs '), 'the results under the console');
   app.stdin.write(KEYS.esc);
   await until(() => frame().includes('↵/i type'), 'out of typing mode');
   app.stdin.write('k');
@@ -477,7 +478,7 @@ test('ctrl+z undoes in the console a word at a time, ctrl+y redoes, and /new can
   await type(app.stdin, 'SELECT 42');
   await until(() => frame().includes('1 SELECT 42'), 'the text');
   app.stdin.write('\x1a'); // ctrl+z
-  await until(() => frame().includes('1 SELECT ') && !frame().includes('SELECT 42'), 'the last word undone');
+  await until(() => /1 SELECT\s*$/m.test(frame()) && !frame().includes('SELECT 42'), 'the last word undone');
   app.stdin.write('\x19'); // ctrl+y
   await until(() => frame().includes('1 SELECT 42'), 'redone');
   app.stdin.write(KEYS.esc);
@@ -507,7 +508,7 @@ test('shift+arrows select in the console, and ctrl+r runs just the selection', a
   app.stdin.write('\x1b[1;2H'); // shift+home
   await until(() => frame().includes('ctrl+r runs just this'), 'the selection');
   app.stdin.write('\x12');
-  await until(() => frame().includes('─ SELECT 1 AS one ─'), 'only the selection run');
+  await until(() => frame().includes('│ SELECT 1 AS one '), 'only the selection run');
   assert.doesNotMatch(frame(), /one\s+│ two/);
   app.stdin.write(KEYS.esc);
   await until(() => frame().includes('typing · ctrl+n'), 'the selection let go');
@@ -524,11 +525,11 @@ test('ctrl+f finds text in the console and n finds the next one', async () => {
   // ctrl+f. When the whole suite loads the machine, the console's keys can start listening a moment
   // after it shows, and a key before then is lost: press it again until the prompt opens (twice only
   // fills the prompt again).
-  for (let n = 0; n < 10 && !frame().includes('> /search'); n++) {
+  for (let n = 0; n < 10 && !frame().includes('» /search'); n++) {
     app.stdin.write('\x06');
     await new Promise((r) => setTimeout(r, 200));
   }
-  await until(() => frame().includes('> /search'), 'the search prompt');
+  await until(() => frame().includes('» /search'), 'the search prompt');
   await type(app.stdin, 'name');
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('ctrl+r runs just this') && /▌3 SELECT Name/.test(frame()), 'the first match');
@@ -638,7 +639,7 @@ test('/stats sums up reads and times after each run, and p shows the plan withou
   await until(() => frame().includes('Clustered Index Scan(OBJECT:([ClubA].[dbo].[Players]'), 'the plan');
   assert.doesNotMatch(frame(), /rows affected/);
   app.stdin.write(KEYS.esc);
-  await until(() => !frame().includes('╭─ Plan:'), 'the plan closed');
+  await until(() => !frame().includes('│ Plan:'), 'the plan closed');
   // SHOWPLAN is off again: a query gives rows, not a plan.
   await type(app.stdin, '!SELECT TOP (2) * FROM dbo.Clubs');
   app.stdin.write(KEYS.enter);
@@ -653,7 +654,7 @@ test('e in History puts the statement in the console to edit', async () => {
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('seven'), 'the result');
   app.stdin.write('4');
-  await until(() => frame().includes('╭─ History'), 'history');
+  await until(() => frame().includes('│ History'), 'history');
   app.stdin.write('e');
   await until(() => frame().includes('typing SQL') && /│\s*▌?\s*\d+ SELECT 7 AS seven/.test(frame()), 'the statement in the console');
   app.unmount();
@@ -786,8 +787,8 @@ test('Results: v shows the whole value of a cell, JSON and XML laid out', async 
   await until(() => frame().includes('1 row ·'), 'the results');
   app.stdin.write('v');
   await until(() => frame().includes('Doc · row 1 of 1 · JSON, 28 characters'), 'the viewer');
-  assert.match(frame(), /│ {2}"players": \[ +│/);
-  assert.match(frame(), /│ {4}2 +│/);
+  assert.match(frame(), /│ {2}"players": \[$/m);
+  assert.match(frame(), /│ {4}2$/m);
   app.stdin.write(KEYS.esc);
   await until(() => !frame().includes('"players": ['), 'the viewer closed');
   app.stdin.write('l');
@@ -795,7 +796,7 @@ test('Results: v shows the whole value of a cell, JSON and XML laid out', async 
   await type(app.stdin, '/cell');
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('Xml · row 1 of 1 · XML'), 'the XML');
-  assert.match(frame(), /│ {2}<name>A<\/name> +│/);
+  assert.match(frame(), /│ {2}<name>A<\/name>$/m);
   app.unmount();
 });
 
@@ -948,7 +949,7 @@ test('a certificate that can’t be verified asks to trust it, and the trust is 
   await until(() => frame().includes('Trust it?'), 'the trust question again');
   again.stdin.write('2');
   await until(() => !frame().includes('Trust it?') && frame().includes('self signed certificate'), 'declined');
-  assert.match(frame(), /Trawl\s+not connected/);
+  assert.match(frame().split('\n')[0], /not connected/);
   again.unmount();
 });
 
@@ -1002,7 +1003,7 @@ test('/password saves one, /folder files a connection, and the window title foll
   app.stdin.write('q');
   await until(() => !frame().includes('Keyboard shortcuts'), 'the help closed');
   app.stdin.write('4');
-  await until(() => frame().includes('Nothing has run yet') || frame().includes('╭─ History'), 'History, so still running');
+  await until(() => frame().includes('Nothing has run yet') || frame().includes('│ History'), 'History, so still running');
   const saved = JSON.parse(readFileSync(join(process.env.TRAWL_HOME, 'config.json'), 'utf8'));
   assert.equal(saved.connections.find((c) => c.name === 'club-sql').folder, 'Clubs/Lisbon');
   app.unmount();
@@ -1043,14 +1044,14 @@ test('--azure-sql adds the connection /add would and connects, or connects to th
   const spec = { server: 'tcp:clubs.database.windows.net,1433', database: 'ClubA', prod: true, folder: 'Azure' };
   let app = startWith([...DEMO_CONNECTIONS], { azureSql: spec, open: azure.open, az: azure.run });
   await until(() => frame().includes('Clubs') && frame().includes('Added clubs-ClubA in Azure/ (production, read-only)'), 'added and connected');
-  assert.match(frame(), /clubs-ClubA .* PROD +read-only/);
+  assert.match(frame(), /PROD .*clubs-ClubA .*read-only/);
   assert.match(frame(), /clubs\.database\.windows\.net\/ClubA · 6 objects · read-only/);
   assert.deepEqual(savedConnections().find((c) => c.name === 'clubs-ClubA'), { name: 'clubs-ClubA', server: 'clubs.database.windows.net', database: 'ClubA', auth: 'azure-cli', prod: true, folder: 'Azure' });
   app.unmount();
   // The same server and database again (another spelling of the server): no second connection.
   const before = savedConnections();
   app = startWith(before, { azureSql: { server: 'CLUBS.database.windows.net', database: 'cluba' }, open: azure.open, az: azure.run });
-  await until(() => frame().includes('Clubs') && frame().includes('Trawl  │  clubs-ClubA'), 'connected to the saved one');
+  await until(() => frame().includes('Clubs') && frame().includes('clubs-ClubA'), 'connected to the saved one');
   assert.doesNotMatch(frame(), /Added/);
   assert.equal(savedConnections().filter((c) => c.server === 'clubs.database.windows.net').length, 1);
   assert.deepEqual(azure.opened, ['clubs-ClubA', 'clubs-ClubA']);

@@ -8,6 +8,7 @@ export const APP = configureApp({
   title: 'Sonar',
   version: process.env.SONAR_VERSION,
   packageUrl: new URL('../package.json', import.meta.url),
+  look: 'shell',
 });
 
 export const { VERSION, COMPILED } = APP;

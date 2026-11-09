@@ -16,6 +16,8 @@
     "./search.js": "./search.js",
     "./commandhint.js": "./commandhint.js",
     "./ui/parts.jsx": "./ui/parts.jsx",
+    "./ui/shell.jsx": "./ui/shell.jsx",
+    "./look.js": "./look.js",
     "./ui/hooks.js": "./ui/hooks.js",
     "./ui/HelpView.jsx": "./ui/HelpView.jsx",
     "./ui/Palette.jsx": "./ui/Palette.jsx",

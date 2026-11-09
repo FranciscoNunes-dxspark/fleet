@@ -250,13 +250,13 @@ The packages are audited like any manifest's, as OSV knows them: by source packa
 
 ## Environments
 
-A project that names its environments in `.fleet/project.json` (dev, staging, prod: the same file every app of the family reads) shows the chosen one in Bilge's header. `/env` says which it is, `/env <name>` switches every app to another. While a production one (`"prod": true`) is chosen, the frames are red, and a fix and `/upgrade` ask once more before they change anything.
+A project that names its environments in `.fleet/project.json` (dev, staging, prod: the same file every app of the family reads) shows the chosen one in Bilge's top line. `/env` says which it is, `/env <name>` switches every app to another. While a production one (`"prod": true`) is chosen, the frames are red, and a fix and `/upgrade` ask once more before they change anything.
 
 While Fleet records a runbook, every slash command and `/take` line Bilge's prompt runs goes into it.
 
 ## Mouse
 
-Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Drag to select text, which is copied when you let go. `/mouse off` leaves the mouse to the terminal.
+Click a tab, a row, or a place in the command box (`/` opens it over the view; a click outside it closes it); double-click does `↵`; the wheel scrolls. Drag to select text, which is copied when you let go. `/mouse off` leaves the mouse to the terminal.
 
 ## Settings
 

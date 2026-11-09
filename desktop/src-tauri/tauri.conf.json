@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Fleet",
+  "mainBinaryName": "fleet-desktop",
+  "version": "0.1.0",
+  "identifier": "com.dxspark.fleet",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Fleet",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 640,
+        "minHeight": 400,
+        "backgroundColor": "#0f1115",
+        "decorations": false,
+        "shadow": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJDNDA3Qzg0MjM1QzI4RjgKUldUNEtGd2poSHhBTE9oWXBvV1BoczVxVGVtU0tKQWNHVnQ4TUpvRDRKYVhUMTh5cnFodm8yckcK",
+      "endpoints": [
+        "https://github.com/FranciscoNunes-dxspark/fleet/releases/download/desktop-latest/latest.json"
+      ]
+    }
+  }
+}

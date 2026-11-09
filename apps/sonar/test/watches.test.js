@@ -62,7 +62,7 @@ test('/watch runs at once and every few minutes, says it once when over, again o
     app.stdin.write(KEYS.enter);
     await until(() => new RegExp(`❯ ${BULLET} busy\\s+40\\s+over 20\\s+contoso-prod-ai\\s+requests \\| count`).test(frame()), 'the watch listed with its last value');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('╭─ Logs') && frame().includes('> requests | count'), 'its query in Logs');
+    await until(() => frame().includes('│ Logs') && frame().includes('> requests | count'), 'its query in Logs');
     app.stdin.write('/');
     await type(app.stdin, 'watches');
     app.stdin.write(KEYS.enter);

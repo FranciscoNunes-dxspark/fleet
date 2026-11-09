@@ -42,7 +42,7 @@ function project(json = SHOP) {
 
 test("/env says which environment, and the plan runs with its workspace and var file; /env prod moves every app", async () => {
   const cwd = project();
-  const app = start({ cwd });
+  const app = start({ cwd, columns: 160 });
   await until(shows(app, '/plan asks terraform'), 'the hint');
   assert.match(app.lastFrame(), /shop {2}dev {2}terraform/);
   await run(app, '/env');
@@ -54,7 +54,7 @@ test("/env says which environment, and the plan runs with its workspace and var 
   await until(shows(app, 'azurerm_mssql_database.reports'), 'the changes');
   await run(app, '/env prod');
   await until(shows(app, 'Environment: prod (production), for every app'), 'the switch');
-  await until(() => /shop {2}prod {2}terraform/.test(app.lastFrame()), 'prod in the header');
+  await until(() => /shop {2}prod {2}terraform/.test(app.lastFrame()), 'prod in the top line');
   assert.ok(readActivity().some((e) => e.app === 'chart' && /Switched shop to prod \(production\)/.test(e.text)));
   await run(app, '/plan');
   await until(() => app.provider.calls.filter((c) => c[0] === 'plan').length === 2, 'the second plan');

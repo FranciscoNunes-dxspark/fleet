@@ -1,0 +1,28 @@
+[package]
+name = "fleet-desktop"
+version = "0.1.0"
+description = "Fleet in a window of its own: the host and its apps in a terminal view, behind a real pseudo-terminal"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# WezTerm's pseudo-terminal: a pty on Linux and macOS, ConPTY on Windows.
+portable-pty = "0.9"
+# OS notifications for an app that needs you while the window is in the background, the open-folder
+# dialog, and links opened in the browser.
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+# Updates from this repository's releases (desktop-latest's latest.json), each checked against the public
+# key in tauri.conf.json before it's installed; and the restart after one.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+# What tauri::generate_context! writes plugins' settings with (the updater's).
+serde_json = "1"
+
+[profile.release]
+strip = true
+lto = true

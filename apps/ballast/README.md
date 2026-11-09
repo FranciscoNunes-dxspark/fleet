@@ -179,11 +179,11 @@ It exits `1` when a finding is as bad as `--fail-on` (`high` by default). `--sar
 
 ## Environments
 
-A project that names its environments in `.fleet/project.json` shows the chosen one in Ballast's header, red for a production one. `/env` says which it is, `/env <name>` switches every app to another. While Fleet records a runbook, every slash command Ballast's prompt runs goes into it.
+A project that names its environments in `.fleet/project.json` shows the chosen one in Ballast's top line, red for a production one. `/env` says which it is, `/env <name>` switches every app to another. While Fleet records a runbook, every slash command Ballast's prompt runs goes into it.
 
 ## Mouse
 
-Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Drag to select text, which is copied when you let go. `/mouse off` leaves the mouse to the terminal.
+Click a tab, a row, or a place in the command box (`/` opens it over the view; a click outside it closes it); double-click does `↵`; the wheel scrolls. Drag to select text, which is copied when you let go. `/mouse off` leaves the mouse to the terminal.
 
 ## Settings
 

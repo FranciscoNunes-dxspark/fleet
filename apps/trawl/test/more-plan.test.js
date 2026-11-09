@@ -135,7 +135,7 @@ test('the actual plan of a write goes through the usual checks: refused on produ
   await command(app, '/plan actual UPDATE dbo.Players SET Goals = 1 WHERE Id = 2');
   await until(() => frame().includes('|--Clustered Index Update(OBJECT:([ClubA].[dbo].[Players]') && frame().includes('TRANSACTION OPEN'), 'the plan, in a transaction');
   app.stdin.write(KEYS.esc);
-  await until(() => !frame().includes('╭─ Actual plan:'), 'the plan closed');
+  await until(() => !frame().includes('│ Actual plan:'), 'the plan closed');
   await command(app, '/rollback');
   await until(() => !frame().includes('TRANSACTION OPEN'), 'rolled back');
   app.unmount();

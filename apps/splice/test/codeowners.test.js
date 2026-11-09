@@ -149,9 +149,9 @@ const type = async (stdin, text) => {
 
 async function command(app, text) {
   app.stdin.write('/');
-  await until(() => app.lastFrame().includes('> /'), 'the prompt');
+  await until(() => app.lastFrame().includes('» /'), 'the prompt');
   await type(app.stdin, text);
-  await until(() => app.lastFrame().includes(`> /${text}`), `/${text} typed`);
+  await until(() => app.lastFrame().includes(`» /${text}`), `/${text} typed`);
   app.stdin.write('\r');
 }
 

@@ -44,7 +44,7 @@ test('clicks pick rows and tabs, and a copy is said', async () => {
 
     let p = at(frame(), 'contoso-api');
     mouse.click(p.x, p.y);
-    await until(() => /❯ ● contoso-api/.test(frame()) && frame().includes('╭─ contoso-api'), 'the cursor on the clicked app, and it beside the list');
+    await until(() => /❯ ● contoso-api/.test(frame()) && frame().includes('│ contoso-api'), 'the cursor on the clicked app, and it beside the list');
 
     p = at(frame(), '6 Log');
     mouse.click(p.x, p.y);

@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo.svg" width="120" alt="A container ship, its bridge at the stern and a stack of steel boxes forward"></p>
+<p align="center"><img src="assets/logo.svg" width="120" alt="Fleet's mark: two chevrons and a bar, a prompt and its cursor, each cut across like a waterline"></p>
 
 # Fleet
 
@@ -117,6 +117,35 @@ say `ctrl+b`; read yours there.
 | `ctrl+b` `?` | The keys |
 
 `P`, `R` and `S` are capitals: `p` is the previous space, `r` the runbooks and `s` Splice. Any other key after `ctrl+b` cancels it. A click on a tab in the bar switches to it, whatever the app on screen does with the mouse: Fleet keeps clicks on for the bar, even for an app with its mouse turned off or one that has exited, and passes clicks on only to an app that wants them. With an app's mouse off, select text the terminal's own way while Fleet runs: most terminals select with shift held down.
+
+## In its own window
+
+`desktop/` at the repository's root is a prototype of Fleet in a window of its own (a Tauri app, its README says how to run it). There the bar isn't a row of the terminal: the window draws it as tabs along the top, with the environment, `● REC` and the proposals beside them, and a strip along the bottom that carries the notices, the prefix's keys, the folder being asked for and the quit question, with buttons for what changed, following a request, the runbooks, security, the environment, the split and the help. A click on any of them types the prefix and its key, so everything the keys do still works. The panels (the environment, what changed, the runbooks, the proposals, security, the apps, a request followed) and the help open as the window's own overlays rather than boxes in the terminal: a click on a row moves to it, a double click opens it as `↵` would, and each key in the panel's hint is a button. The apps get the terminal's every row.
+
+The window adds more of its own:
+
+- **Toasts and notifications:** when an app off screen needs you, a toast, and the system's notification when the window is in the background.
+- **Badges that say why:** "Bosun ! api crashed".
+- **A palette** (ctrl+k) over every app's slash commands and Fleet's actions.
+- **Charts** on what changed, a request followed and security.
+- **Side panels:** projects to move the fleet to, and Claude to ask about a symptom.
+- **Settings.**
+
+The window's README has the details.
+
+## Your own tools
+
+A tool of your team's can be a tab too, configured in `~/.fleet/host.json`:
+
+```json
+"spaces": [{ "id": "deploys", "title": "Deploys", "command": ["node", "/opt/tools/deploys.js"] }]
+```
+
+It runs as the family's apps do. Its number on the bar reaches it (`ctrl+b 7`), and so does a click on its tab. Every letter is already taken by an app or by Fleet, so a tool gets none.
+
+- **What it must do:** Fleet gives it pipes, not a terminal. [docs/hosted-apps.md](docs/hosted-apps.md) says what the tool must do there.
+- **Badges:** a mood file of its own gives its tab badges and toasts, as the apps' do.
+- **Example:** [examples/hello-tool.js](examples/hello-tool.js) is a whole tool in sixty lines of Node with no dependencies.
 
 ## Choosing the apps
 

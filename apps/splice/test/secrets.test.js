@@ -289,12 +289,12 @@ test('splice security prints the kit\'s security JSON, SARIF, and fails on what 
 
 async function command(app, text) {
   app.stdin.write('/');
-  await until(() => app.lastFrame().includes('> /'), 'the prompt');
+  await until(() => app.lastFrame().includes('» /'), 'the prompt');
   for (const ch of text) {
     app.stdin.write(ch);
     await new Promise((r) => setTimeout(r, 5));
   }
-  await until(() => app.lastFrame().includes(`> /${text}`), `/${text} typed`);
+  await until(() => app.lastFrame().includes(`» /${text}`), `/${text} typed`);
   app.stdin.write('\r');
 }
 

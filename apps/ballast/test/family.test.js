@@ -67,7 +67,7 @@ test("/env says the project's environment and switches every app's", async () =>
   const dir = projectWithEnvironments();
   const app = start({ cwd: dir });
   await until(shows(app, 'dist/assets/index-B7xk2Lq9.js'), 'the chunks');
-  assert.match(app.lastFrame(), /shop {2}│ {2}dev/);
+  assert.match(app.lastFrame().split('\n')[0], / {2}dev {2}1 over budget$/);
   await type(app.stdin, '/env prod');
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'prod (production)'), 'the header saying so');

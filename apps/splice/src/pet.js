@@ -90,13 +90,18 @@ export function moodFor({ data, busy, lastEntry, now = Date.now() }) {
   return data.status.files.length ? 'idle' : 'sleep';
 }
 
-/** A sentence for the welcome box. */
+/** A sentence for the status line: what Twig makes of the repository. */
 export function moodLine(mood, data) {
   if (!data) return `Pick a repository and ${PET.name} will keep an eye on it.`;
   const n = data.status.files.length;
   const ahead = data.status.branch.ahead;
-  if (mood === 'worried') return 'Something needs you: there are conflicts to sort out.';
+  if (mood === 'worried') {
+    // Worried by a merge or rebase in progress, conflicts, or the last command failing (moodFor).
+    if (data.changes?.conflicts?.length) return 'Something needs you: there are conflicts to sort out.';
+    if (data.state && data.state !== 'bisecting') return `Something needs you: a ${{ rebasing: 'rebase', merging: 'merge', 'cherry-picking': 'cherry-pick', reverting: 'revert' }[data.state] ?? data.state} is in progress.`;
+    return 'That last one went wrong: the lines above say why.';
+  }
   if (mood === 'wave') return `${ahead} commit${ahead === 1 ? '' : 's'} waiting to be pushed. ${PET.name} is waving them off.`;
   if (mood === 'sleep') return `Everything is committed, so ${PET.name} is having a nap.`;
-  return `${n} change${n === 1 ? '' : 's'} in the working tree.`;
+  return n ? `${n} change${n === 1 ? '' : 's'} in the working tree.` : 'The working tree is clean.';
 }

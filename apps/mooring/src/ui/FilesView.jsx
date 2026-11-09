@@ -1,11 +1,12 @@
 import React from 'react';
-import { useInput } from 'ink';
+import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { dateText, sizeText } from '../format.js';
 import { theme } from '../theme.js';
 import { fit } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { PET_ROWS, Pet } from './Pet.jsx';
 
 const isDir = (e) => e.kind === 'dir' || e.isDir;
 
@@ -119,13 +120,20 @@ export function FilesView({ panes, side, conn, hidden, ctx, width, height, activ
     return `${name}  ${shortPath(panes[s].dir ?? '', Math.max(6, w - name.length - 14))}`;
   };
 
+  // With no server, Tug waits in the empty pane, when there is room for it under the line saying so.
+  const idle = !conn.session && conn.status !== 'connecting' && innerH >= 3 + PET_ROWS;
   return (
     <>
       <Panel title={title('local', left)} hint={hint('local')} width={left} height={height} focused={active && side === 'local'}>
         <PaneRows pane={panes.local} visible={vis.local} nav={navs.local} width={left - 2} height={innerH} focused={active && side === 'local'} status={status('local')} />
       </Panel>
       <Panel title={title('remote', right)} hint={conn.session ? hint('remote') : ''} width={right} height={height} focused={active && side === 'remote'}>
-        <PaneRows pane={panes.remote} visible={conn.session ? vis.remote : []} nav={navs.remote} width={right - 2} height={innerH} focused={active && side === 'remote'} status={status('remote')} />
+        <PaneRows pane={panes.remote} visible={conn.session ? vis.remote : []} nav={navs.remote} width={right - 2} height={idle ? 2 : innerH} focused={active && side === 'remote'} status={status('remote')} />
+        {idle ? (
+          <Box flexDirection="column" marginLeft={2} marginTop={1}>
+            <Pet mood={conn.problem ? 'worried' : 'sleep'} />
+          </Box>
+        ) : null}
       </Panel>
     </>
   );

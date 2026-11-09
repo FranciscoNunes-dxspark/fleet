@@ -31,10 +31,10 @@ test('a audits the page: the vitals in the list, the findings worst first, kept 
   app.stdin.write('a');
   await until(shows(app, 'LCP 1.8 s'), 'the audit');
   assert.deepEqual(app.provider.state.calls.find((c) => c[0] === 'audit'), ['audit', 'https://staging.shop.example/', 3]);
-  assert.match(app.lastFrame(), /1 critical {2}2 high/);
   app.stdin.write('2');
   await until(shows(app, 'Images must have alternative text'), 'the findings');
   const frame = app.lastFrame();
+  assert.match(frame, /1 critical · 2 high/);
   assert.match(frame, /LCP 1\.8 s · CLS 0\.02 · INP <16 ms · TTFB 410 ms {2}\(lab, median of 3\)/);
   assert.ok(frame.indexOf('Images must have alternative text') < frame.indexOf('Plain http'));
   assert.match(frame, /CRIT a11y Images must have alternative text +#hero/);

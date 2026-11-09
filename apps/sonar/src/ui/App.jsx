@@ -15,7 +15,6 @@ import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
 import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { readProject } from '@fleet/kit/environments.js';
@@ -25,7 +24,8 @@ import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/ki
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
-import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, commandBoxFor, commandBoxHit, commandRows, confirmHeight, promptRowFor } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { LiveView } from './LiveView.jsx';
 import { AlertsView } from './AlertsView.jsx';
@@ -35,8 +35,8 @@ import { ResourcesView } from './ResourcesView.jsx';
 import { LogView } from './LogView.jsx';
 import { Picker } from './Picker.jsx';
 import { TextViewer } from './TextViewer.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
-import { FACES, moodFor } from '../pet.js';
+import { PET_WIDTH, Pet, updateLine } from './Pet.jsx';
+import { FACES, PET, moodFor, moodLine } from '../pet.js';
 import { worthNotifying } from '../notify.js';
 import { ask } from '@fleet/kit/claude-cli.js';
 import { APP_NAMES, decodeContext, logActivity, pastedLine, readActivity, readMoods, writeMood } from '@fleet/kit/family.js';
@@ -74,40 +74,21 @@ const webTarget = (t) => (t && !t.type ? t : null);
 
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, span, demo, width, loading, mood, env }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Sonar', bold: true },
-  ];
-  if (demo) segs.push({ text: '  ' }, { text: ' DEMO ', bg: theme.info, color: theme.ink, bold: true });
-  if (data) segs.push({ text: '  │  ', color: theme.border }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps${loading ? ' · reading…' : ''}`, color: theme.dim });
-  else if (loading) segs.push({ text: '  loading…', color: theme.dim });
-  segs.push({ text: '  │  last ', color: theme.dim }, { text: span.label, color: theme.warn, bold: true });
-  if (env) segs.push({ text: '  │  ', color: theme.border }, { text: env.prod ? ` ${env.name} ` : env.name, color: env.prod ? theme.ink : theme.info, bg: env.prod ? theme.del : undefined, bold: true });
-  return <Row pointer={false} width={width} segments={segs} />;
-}
-
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
-
-function Tabs({ view, entries, width }) {
+// What the top line says at its right, most needed first, as what doesn't fit is left off from the end:
+// a demo, a read still going, the environment, the time span, then the subscription and its apps.
+function headerContext({ data, span, demo, loading, env }) {
   const segs = [];
-  for (const t of tabLabels(entries)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
+  if (demo) segs.push({ text: ' DEMO ', bg: theme.info, color: theme.ink, bold: true, need: true }, { text: '  ' });
+  if (loading) segs.push({ text: data ? 'reading…' : 'loading…', color: theme.dim }, { text: '  ' });
+  if (env) segs.push({ text: env.prod ? ` ${env.name} ` : env.name, color: env.prod ? theme.ink : theme.info, bg: env.prod ? theme.del : undefined, bold: true, need: true }, { text: '  ' });
+  segs.push({ text: 'last ', color: theme.dim }, { text: span.label, color: theme.warn, bold: true });
+  if (data) segs.push({ text: '  ' }, { text: data.subscription.name, bold: true }, { text: `  ${data.apps.length} apps`, color: theme.dim });
+  return segs;
 }
+
+// The views in the top line, the digit that picks each before it and the log's count after it.
+const viewTabs = (entries) =>
+  VIEWS.map((v, i) => ({ id: v.id, key: i + 1, label: v.label, count: v.id === 'log' && entries.length ? entries.length : 0, countColor: theme.dim }));
 
 // The last two results, Claude Code style: "● node --version" then "  ⎿  output".
 function activityRows(entries) {
@@ -1239,6 +1220,10 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     // A confirmation's options are picked with keys.
     if (confirmRef.current || !layout.current) return;
     const { mainTop, mainH, promptTop, sugCount, tabs } = layout.current;
+    // While the command box is open over the view, a click in it is its own and one outside it closes it.
+    const inBox = commandBoxHit(layout.current.box, e);
+    if (inBox === false) return e.drag || e.wheel ? undefined : setFocus('view');
+    if (inBox && (e.drag || e.wheel)) return;
     if (e.drag) {
       // A drag the component it started in takes itself (claimDrags below; useMouse's `drags`).
       const hit = mouseTarget(e.from.y - mainTop);
@@ -1254,22 +1239,22 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       setFocus('view');
       return setView(tab.id);
     }
-    if (e.y >= mainTop && e.y < mainTop + mainH) {
+    if (!inBox && e.y >= mainTop && e.y < mainTop + mainH) {
       // Like esc, a click on the view leaves the prompt's text for later.
       if (!e.wheel && focusRef.current === 'prompt') setFocus('view');
       const hit = mouseTarget(e.y - mainTop);
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
-      // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
+    if (e.y === promptTop) {
+      // The text starts after the box's edge and "» ", scrolled as the command box scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = layout.current.box?.inner ?? columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - (layout.current.box?.textX ?? 3))));
       return setFocus('prompt');
     }
-    const sug = e.y - promptTop - 3;
+    const sug = e.y - (layout.current.box?.items ?? promptTop + 1);
     if (sug >= 0 && sug < sugCount) {
       setSugIndex(sug);
       // As ↵ would, on the suggestion under the pointer.
@@ -1296,19 +1281,21 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   const H = Math.max(12, rows - 1);
   // esc hides the activity lines; the Log view keeps them all.
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
-  const reactionRows = reaction ? 1 : 0;
-  // The welcome box only appears when the terminal has room for it next to a useful view.
-  const showWelcome = welcome && H >= 28;
-  const mainH = Math.max(6, H - 2 - reactionRows - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Sonar', views: viewTabs(entries), view, context: headerContext({ data, span: TIMESPANS[spanIndex], demo: provider?.kind === 'demo', loading, env }), width: W, compact: true });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
+  // The command box, over the view while the prompt has the keys (the kit's CommandBox).
+  const cmdBox = commandBoxFor({ open: focus === 'prompt' && !confirmReq, width: W, height: H, count: suggestions.length });
   layout.current = {
-    mainTop: 2,
+    box: cmdBox,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reactionRows + act.length + (busy ? 1 : 0),
+    promptTop: promptRowFor(cmdBox, 1 + mainH + act.length + (busy ? 1 : 0)),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   // The palette's list: this view's keys, yours, then the commands.
@@ -1332,7 +1319,12 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   } else if (!data) {
     main = (
       <Panel title={VIEWS.find((v) => v.id === view).label} width={W} height={mainH}>
-        <Text color={theme.dim}>{loading ? '  Reading the subscription…' : "  Nothing read: the line below says why. r tries again."}</Text>
+        <Box marginTop={1} marginLeft={2}>
+          <Box flexDirection="column" width={PET_WIDTH} marginRight={2}>
+            <Pet mood={mood} />
+          </Box>
+          <Text color={theme.dim}>{loading ? 'Reading the subscription…' : 'Nothing read: the line below says why. r tries again.'}</Text>
+        </Box>
       </Panel>
     );
   } else if (view === 'logs') {
@@ -1347,9 +1339,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     main = <ResourcesView data={data} extras={extras} span={TIMESPANS[spanIndex]} filter={filter} focusId={focusId} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
@@ -1362,27 +1352,31 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
           : overlay
             ? `${overlay.hint && !overlay.loading ? `${overlay.hint} · ` : ''}j/k scroll · space page · y copy · esc close`
             : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  t span · / commands · , settings · ? help';
+  const right = focus === 'prompt' ? '' : 't span · / commands · , settings · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
+  // command, else how Ping hears things. At the prompt its keys come first, so only a flash or a sibling.
+  let bar = { face: FACES[mood], message: moodLine(mood, data) };
+  if (flash) bar = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction)
+    bar = {
+      face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'],
+      message: [
+        { text: reactionLine(reaction), color: reaction.mood === 'happy' ? theme.add : theme.warn },
+        { text: `  (${APP_NAMES[reaction.app] ?? reaction.app} · esc)`, color: theme.dim },
+      ],
+      news: true,
+    };
+  else if (welcome)
+    bar = update
+      ? { face: FACES[mood], message: updateLine(update), tone: 'warn' }
+      : { face: FACES[mood], message: welcomeLine('Sonar', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, data)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} span={TIMESPANS[spanIndex]} demo={provider?.kind === 'demo'} width={W} loading={loading} mood={mood} env={env} />
-      <Tabs view={view} entries={entries} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} data={data} width={W} update={update} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reactionLine(reaction), color: reaction.mood === 'happy' ? theme.add : theme.warn },
-            { text: `  (${APP_NAMES[reaction.app] ?? reaction.app} · esc)`, color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -1394,14 +1388,9 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
           <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
         )
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="/ for commands (/kql, /sub, /find) · t time span · ? for shortcuts" />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} modal items={suggestions} selected={sel} height={H} placeholder="/ for commands (/kql, /sub, /find) · t time span · ? for shortcuts" />
       )}
-      {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...bar} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

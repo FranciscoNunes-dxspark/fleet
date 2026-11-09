@@ -121,7 +121,7 @@ test('/watch runs a read again every few seconds, picks out what changed, and es
   await until(() => frame().includes('watching every 2s · run 1 · SELECT * FROM dbo.Clubs'), 'the first run');
   await until(() => frame().includes('watching every 2s · run 2'), 'the second run', 6000);
   // Clubs has a primary key, so the row is found again and only its Active cell changed.
-  assert.match(frame(), /─ 3 rows · 1 changed ·/);
+  assert.match(frame(), / 3 rows · 1 changed ·/);
   assert.match(frame(), /watching every 2s · run 2 · esc stops/);
   app.stdin.write(KEYS.esc);
   await until(() => frame().includes('Stopped watching after 2 runs.'), 'stopped');

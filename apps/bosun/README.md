@@ -19,7 +19,7 @@ bosun ../shop --profile mock
 
 Opened somewhere with nothing to run (a launcher's folder, your home), it opens the project you ran
 last instead. `/move` takes it to another project: it stops this one's processes (asking first when
-any are running) and starts the other's. The header and the window's title say which project it's in.
+any are running) and starts the other's. The top line and the window's title say which project it's in.
 
 Bosun also runs inside [Fleet](https://github.com/FranciscoNunes-dxspark/fleet/tree/main/apps/fleet), which keeps the family's apps in one terminal and switches between them with `ctrl+b`; a line Bosun copies for a sibling goes straight to that app's prompt there.
 
@@ -147,7 +147,7 @@ Without a `bosun.json`, Bosun works out what to run from the first of these it f
 A project can name its environments once for every app of the family, in `.fleet/project.json` (in
 the project's folder or one above it, up to its checkout's root): dev, staging, prod, and what each
 means to each app. The one chosen is kept for the project, so `/env staging` here (or in a sibling, or
-`ctrl+b e` in Fleet) switches them all, and a `"prod": true` one draws every frame red. The header
+`ctrl+b e` in Fleet) switches them all, and a `"prod": true` one draws every frame red. The top line
 says which one Bosun is in. Bosun's section says two things, both optional:
 
 ```json

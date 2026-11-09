@@ -6,6 +6,8 @@ What a project depends on, in the terminal: the packages in a folder's npm, Yarn
 
 It lives in the fleet repository, in `apps/bilge`, and is built on the fleet's shared kit, `@fleet/kit` (`packages/kit`; the root CLAUDE.md has its rules). Import the kit's files as `@fleet/kit/<file>`; Bilge keeps no copy of any of them, and a change to one is a change to every app, so run every app's tests (`npm test` at the root). `src/app.js` tells the kit which app this is (`configureApp`: the name `bilge`, the title `Bilge`, the version a build bakes in); import `VERSION` and `COMPILED` from it. `src/theme.js` fills the kit's `theme` object with Bilge's palette (green).
 
+Bilge draws in the kit's shell look (`look: 'shell'` in `src/app.js`, the kit's `look.js`): the top line (`topLine`: Nibs's face, the views with what each found and their digits, and `headerContext` at the right, most telling first; compact, so the views' digits, then the other views, give way before the environment and the audit's counts, marked `need`, while the rest drops from the end), the view (with the command box over it while `/`, `:` or `!` has opened it: the kit's modal `PromptBox`, `CommandBox`), the activity, and the status line (`StatusLine`: a flash, a sibling's news, what went wrong reading the project, the welcome until the first command, else Nibs's mood; then the keys).
+
 ## Commands
 
 ```bash
@@ -53,4 +55,4 @@ Releases are automatic, as every app's: a push to main that changes `apps/bilge`
 
 ## Keeping things in sync
 
-Adding or changing a key or command touches several places: the handler (view or `App.jsx`), `src/commands.js` for slash commands, the `?` window's sections in `src/help.js`, the footer `HINTS` in `App.jsx`, and the tables in `README.md`. Commit messages are short sentences describing the change, without type prefixes.
+Adding or changing a key or command touches several places: the handler (view or `App.jsx`), `src/commands.js` for slash commands, the `?` window's sections in `src/help.js`, the status line's `HINTS` in `App.jsx`, and the tables in `README.md`. Commit messages are short sentences describing the change, without type prefixes.

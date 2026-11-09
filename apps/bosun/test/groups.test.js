@@ -88,7 +88,7 @@ test('the list shows groups; ctrl+g shows one at a time; /stop, /start and /rest
     await type(app.stdin, 'graph');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Who starts after whom'), 'the tree');
-    assert.match(frame(), /│ ● db\s+│\n│ └─ ● api\s+\(backend\)\s+│\n│    └─ ● web\s+\(frontend\)\s+│\n│ ● worker\s+\(backend\)/);
+    assert.match(frame(), /│ ● db *\n│ └─ ● api\s+\(backend\) *\n│    └─ ● web\s+\(frontend\) *\n│ ● worker\s+\(backend\)/);
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('Who starts after whom'), 'closed');
 

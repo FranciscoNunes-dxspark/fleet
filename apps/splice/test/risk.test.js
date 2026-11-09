@@ -118,9 +118,9 @@ test('/risk says why; P stops on a high score until you say yes', async () => {
   try {
     await until(() => frame().includes('Rewrite the hot file'), 'the graph');
     app.stdin.write('/');
-    await until(() => frame().includes('> /'), 'the prompt');
+    await until(() => frame().includes('» /'), 'the prompt');
     app.stdin.write('risk');
-    await until(() => frame().includes('> /risk'), 'typed');
+    await until(() => frame().includes('» /risk'), 'typed');
     app.stdin.write('\r');
     await until(() => frame().includes('Risk before push: high'), 'the score');
     assert.match(flat(frame()), /Risk high \(6\): 1 commit, 1 file, 501 lines/);

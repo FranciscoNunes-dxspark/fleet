@@ -63,7 +63,7 @@ test('↵ on a storage account: containers, folders, a blob in the viewer, its a
       app.stdin.write(KEYS.esc);
       await new Promise((r) => setTimeout(r, 60));
     }
-    await until(() => frame().includes('╭─ Contoso Production'), 'back in Resources');
+    await until(() => frame().includes('│ Contoso Production'), 'back in Resources');
     app.stdin.write('/');
     await type(app.stdin, 'sub Contoso Dev');
     app.stdin.write(KEYS.enter);

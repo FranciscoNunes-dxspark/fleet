@@ -174,7 +174,7 @@ test('/bisect run tests each commit with a command (125 skips one), and the curs
     app.stdin.write('\x1bb');
     await until(() => frame().includes('4. Run a command on each commit'), 'the run offered');
     app.stdin.write('4');
-    await until(() => frame().includes('> /bisect run'), 'the prompt');
+    await until(() => frame().includes('» /bisect run'), 'the prompt');
     // Exit 0 good, 1 bad, 125 for the commit that can't be tested. Quoted, so it reaches git as one word.
     const script = "const t = require('fs').readFileSync('a.txt', 'utf8'); process.exit(t.includes('broken') ? 125 : t.includes('bug') ? 1 : 0)";
     await type(app.stdin, `node -e "${script}"`);

@@ -12,15 +12,16 @@ afterEach(() => cleanup());
 
 const failuresShown = (app) => until(shows(app, 'totals the lines'), 'the failures');
 
-test('it finds the suites and runs them on opening: the failures first, the counts in the header', async () => {
+test('it finds the suites and runs them on opening: the failures first, the counts in the top line', async () => {
   const app = start();
   await failuresShown(app);
   await until(shows(app, '5 failed'), 'the counts');
-  // esc puts the welcome box and the activity lines away, for room.
+  // esc puts the welcome and the activity lines away, for room.
   app.stdin.write(KEYS.esc);
   await until(() => !app.lastFrame().includes('Welcome to Drill'), 'the room');
   const frame = app.lastFrame();
-  assert.match(frame, /14 tests {2}5 failed {2}8 passed {2}1 skipped/);
+  // The failures first; the total gives way when the line is short.
+  assert.match(frame, /5 failed {2}8 passed {2}1 skipped/);
   assert.match(frame, /1 Failures 5/);
   // Unit tests first, the .NET project next, the end-to-end tests last, once the app answered.
   assert.deepEqual(app.provider.state.calls.filter((c) => c[0] === 'runSuite' || c[0] === 'appUp').map((c) => c[1]), ['vitest:.', 'dotnet:api/Shop.Tests:Shop.Tests.csproj', 'http://localhost:5173', 'playwright:.']);

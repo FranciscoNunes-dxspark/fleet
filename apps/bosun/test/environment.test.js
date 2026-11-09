@@ -60,7 +60,7 @@ test('/env shows and switches the environment; the running process keeps the old
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('env=dev mode=local profile=- secret=-'), 'started in dev');
-    assert.match(frame(), /│\s+dev/, 'the header names it');
+    assert.match(frame().split('\n')[0], / {2}dev\b/, 'the top line names it');
 
     app.stdin.write(':');
     await type(app.stdin, 'env');

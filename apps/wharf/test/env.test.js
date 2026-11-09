@@ -46,7 +46,7 @@ test('/env switches the environment: the Pods view follows its context and names
   startRecording(root);
   const app = start({ cwd: join(root, 'src') });
   await until(shows(app, 'Standalone'), 'the list');
-  assert.match(app.lastFrame(), /Wharf {2}demo {2}dev/);
+  assert.match(app.lastFrame(), /demo {2}dev/);
   app.stdin.write('3');
   await until(shows(app, 'prometheus-0'), 'the pods of monitoring');
   assert.ok(!app.lastFrame().includes('db-0'));

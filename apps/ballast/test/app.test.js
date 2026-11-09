@@ -14,17 +14,19 @@ afterEach(() => cleanup());
 
 const shows = (app, text) => () => app.lastFrame().includes(text);
 
-test('it reads the build on opening: the chunks biggest first, the budget it is over, the weight in the header', async () => {
+test('it reads the build on opening: the chunks biggest first, the budget it is over, the weight in the pane', async () => {
   const app = start();
   await until(shows(app, 'dist/assets/index-B7xk2Lq9.js'), 'the chunks');
   const frame = app.lastFrame();
-  assert.match(frame, /190\.0 kB gzip in 5 files/);
-  assert.match(frame, /1 over budget/);
+  assert.match(frame, /5 files · 190\.0 kB gzip/);
+  // At 100 columns the top line has room for its most important fact only.
+  assert.match(frame.split('\n')[0], /1 over budget$/);
   assert.match(frame, /OVER 100\.0 kB/);
   assert.ok(frame.indexOf('index-B7xk2Lq9.js') < frame.indexOf('vendor-react'));
   assert.match(frame, /rollup-plugin-visualizer data, dist\/stats\.json/);
   // Compared with the last build read, quietly, and kept for the next.
-  assert.match(frame, /\+465 B vs last/);
+  app.stdin.write('4');
+  await until(shows(app, '+465 B gzip'), 'the change against the last build');
   assert.ok(app.provider.state.calls.some((c) => c[0] === 'saveRun' && c[1] === DEMO_COMMIT));
   assert.equal(app.provider.state.runs[0].key, DEMO_COMMIT);
   app.unmount();
@@ -80,7 +82,7 @@ test('Compare: b against main says what grew and why; m is the Markdown for a pu
   const frame = app.lastFrame();
   assert.match(frame, /\+51\.5 kB gzip/);
   assert.match(frame, /against main \(a1b2c3d/);
-  assert.match(frame, /\+51\.5 kB vs main/);
+  assert.match(frame, /138\.5 kB → 190\.0 kB/);
   app.stdin.write('m');
   await until(shows(app, 'Markdown for a pull request'), 'the markdown');
   assert.match(app.lastFrame(), /### Bundle size: \+51\.5 kB gzip \(\+37\.2%\)/);
@@ -185,7 +187,7 @@ test('/check and /measure: the budgets as ballast check says them, in brotli onc
   await until(() => !app.lastFrame().includes('From ballast.json'), 'the view');
   await type(app.stdin, '/measure brotli');
   app.stdin.write(KEYS.enter);
-  await until(shows(app, 'kB brotli in 5 files'), 'brotli');
+  await until(shows(app, 'kB brotli ·'), 'brotli');
   assert.equal(loadConfig().measure, 'brotli');
   app.unmount();
 });

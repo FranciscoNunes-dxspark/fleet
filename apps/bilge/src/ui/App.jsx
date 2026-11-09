@@ -13,13 +13,13 @@ import { severityTone, withoutIgnored } from '../rows.js';
 import { withoutIgnoredCode } from '@fleet/kit/codescan.js';
 import { allSupply, withoutIgnoredSupply } from '../supply.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { recordCommand } from '@fleet/kit/recording.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { remember } from '@fleet/kit/folders.js';
-import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, PromptBox, Row, SecretPrompt, Spinner, commandBoxFor, commandBoxHit, commandRows, confirmHeight, promptRowFor } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { VulnsView } from './VulnsView.jsx';
 import { PackagesView } from './PackagesView.jsx';
@@ -27,8 +27,8 @@ import { ManifestsView } from './ManifestsView.jsx';
 import { CodeView } from './CodeView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
-import { FACES, moodFor } from '../pet.js';
+import { updateLine } from './Pet.jsx';
+import { FACES, PET, moodFor, moodLine } from '../pet.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 
@@ -52,50 +52,36 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ data, counts, cwd, env, width, loading, mood, problem }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Bilge', bold: true },
-    { text: '  │  ', color: theme.border },
-    { text: basename(cwd) || cwd, color: theme.dim },
-  ];
-  // The project's environment, when it names them: red and bold for a production one.
-  if (env) segs.push({ text: '  │  ', color: theme.border }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
+// What the top line says at its right, most telling first, as the line drops parts from its end: the
+// environment (red and bold for a production one), what the audit found, the packages, the folder.
+function headerContext({ data, counts, cwd, env, loading }) {
+  const segs = [];
+  const gap = () => segs.length && segs.push({ text: '  ' });
+  // The environment and what the audit found must stay (`need`, the kit's compact top line); the rest
+  // drops from the end when the line is narrow.
+  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod, need: true });
   if (data) {
-    segs.push({ text: '  │  ', color: theme.border }, { text: `${data.packages.length} packages`, color: theme.dim });
     if (data.audit) {
       const shown = SEVERITIES.filter((s) => counts[s]);
-      if (!shown.length) segs.push({ text: '  nothing known', color: theme.add });
-      for (const s of shown) segs.push({ text: `  ${counts[s]} ${s}`, color: severityTone(s), bold: s === 'critical' || s === 'high' });
-    } else segs.push({ text: '  not audited', color: theme.dim });
-  } else if (loading) segs.push({ text: '  reading…', color: theme.dim });
-  if (problem) segs.push({ text: '  │  ', color: theme.border }, { text: firstLine(problem), color: theme.warn });
-  return <Row pointer={false} width={width} segments={segs} />;
+      if (!shown.length) gap(), segs.push({ text: 'nothing known', color: theme.add, need: true });
+      for (const s of shown) gap(), segs.push({ text: `${counts[s]} ${s}`, color: severityTone(s), bold: s === 'critical' || s === 'high', need: true });
+    } else gap(), segs.push({ text: 'not audited', color: theme.dim, need: true });
+    gap(), segs.push({ text: `${data.packages.length} packages`, color: theme.dim });
+  } else if (loading) gap(), segs.push({ text: 'reading…', color: theme.dim });
+  gap(), segs.push({ text: basename(cwd) || cwd, color: theme.dim });
+  return segs;
 }
 
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries, found, codeFound) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (v.id === 'vulns' && found.length) label += ` ${found.length}`;
-    if (v.id === 'code' && codeFound?.length) label += ` ${codeFound.length}`;
-    if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
-
-function Tabs({ view, entries, found, codeFound, width }) {
-  const segs = [];
-  for (const t of tabLabels(entries, found, codeFound)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
-}
+// The views in the top line: the digit that picks each before it (the compact top line drops it when the
+// line is narrow), and what each found after it.
+const viewTabs = (entries, found, codeFound) =>
+  VIEWS.map((v, i) => ({
+    id: v.id,
+    key: i + 1,
+    label: v.label,
+    count: v.id === 'vulns' ? found.length : v.id === 'code' ? codeFound?.length ?? 0 : v.id === 'log' ? entries.length : 0,
+    countColor: theme.dim,
+  }));
 
 // The last two results, Claude Code style: "● audit 120 packages" then "  ⎿  output".
 function activityRows(entries) {
@@ -643,6 +629,10 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     // A confirmation's options are picked with keys.
     if (confirmRef.current || !layout.current) return;
     const { mainTop, mainH, promptTop, sugCount, tabs } = layout.current;
+    // While the command box is open over the view, a click in it is its own and one outside it closes it.
+    const inBox = commandBoxHit(layout.current.box, e);
+    if (inBox === false) return e.drag || e.wheel ? undefined : setFocus('view');
+    if (inBox && (e.drag || e.wheel)) return;
     if (e.drag) {
       const hit = mouseTarget(e.from.y - mainTop);
       if (!hit) return;
@@ -657,22 +647,22 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
       setFocus('view');
       return setView(tab.id);
     }
-    if (e.y >= mainTop && e.y < mainTop + mainH) {
+    if (!inBox && e.y >= mainTop && e.y < mainTop + mainH) {
       // Like esc, a click on the view leaves the prompt's text for later.
       if (!e.wheel && focusRef.current === 'prompt') setFocus('view');
       const hit = mouseTarget(e.y - mainTop);
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
-      // The text starts after the border, the padding and "> ", scrolled as PromptBox scrolls it.
+    if (e.y === promptTop) {
+      // The text starts after the box's edge and "» ", scrolled as the command box scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = layout.current.box?.inner ?? columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - (layout.current.box?.textX ?? 3))));
       return setFocus('prompt');
     }
-    const row = e.y - promptTop - 3;
+    const row = e.y - (layout.current.box?.items ?? promptTop + 1);
     if (row >= 0 && row < sugCount) {
       setSugIndex(row);
       // As ↵ would, on the suggestion under the pointer.
@@ -690,8 +680,8 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   const H = Math.max(12, rows - 1);
   // esc hides the activity lines; the Log view keeps them all.
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
-  // What the pet and the welcome box read: the data with the counts as shown.
+  const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
+  // What the pet and the status line read: the data with the counts as shown.
   const told = data ? { ...data, audit: data.audit ? { ...data.audit, counts } : null } : null;
   const mood = moodFor({ data: told, busy, lastEntry: entries.at(-1) });
   // How Nibs feels, for the siblings (family.js's writeMood), whenever that changes.
@@ -699,17 +689,19 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
   useEffect(() => {
     if (config.familyMoods !== false) writeMood('bilge', feeling);
   }, [feeling.mood, feeling.reason, config.familyMoods]);
-  // The welcome box only appears when the terminal has room for it next to a useful view.
-  const showWelcome = welcome && H >= 28;
-  const reacting = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Bilge', views: viewTabs(entries, found, codeFound), view, context: headerContext({ data, counts, cwd, env, loading }), width: W, compact: true });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
+  // The command box, over the view while the prompt has the keys (the kit's CommandBox).
+  const cmdBox = commandBoxFor({ open: focus === 'prompt' && !confirmReq, width: W, height: H, count: suggestions.length });
   layout.current = {
-    mainTop: 2,
+    box: cmdBox,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    promptTop: promptRowFor(cmdBox, 1 + mainH + act.length + (busy ? 1 : 0)),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries, found, codeFound),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   let main;
@@ -729,36 +721,29 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
     main = <VulnsView data={data} found={found} counts={counts} ignored={ignored} showDev={showDev} ctx={ctx} width={W} height={mainH} active={viewActive} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
         : overlay
           ? 'j/k scroll · space page · / search · y copy · esc close'
           : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+  const right = focus === 'prompt' ? '' : '/ commands · ! shell · , settings · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, what went wrong reading the
+  // project, the welcome until the first command, else how Nibs sees things.
+  let status = { face: FACES[mood], message: moodLine(mood, told) };
+  if (flash) status = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) status = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
+  else if (problem) status = { face: FACES[mood], message: firstLine(problem), tone: 'warn' };
+  else if (welcome && update) status = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) status = { face: FACES[mood], message: welcomeLine('Bilge', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, told)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} counts={counts} cwd={cwd} env={env} width={W} loading={loading} mood={mood} problem={problem} />
-      <Tabs view={view} entries={entries} found={found} codeFound={codeFound} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} data={told} width={W} update={update} problem={null} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reaction.text },
-            { text: '  esc', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -770,14 +755,9 @@ export function App({ config: initialConfig, provider = createBilge(), cwd: star
           <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
         )
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} modal items={suggestions} selected={sel} height={H} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
-      {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row
-        pointer={false}
-        width={W}
-        segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]}
-      />
+      <StatusLine {...status} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

@@ -98,9 +98,9 @@ async function until(check, what, ms = 10000) {
 
 async function command(app, text) {
   app.stdin.write('/');
-  await until(() => app.lastFrame().includes('> /'), 'the prompt');
+  await until(() => app.lastFrame().includes('» /'), 'the prompt');
   app.stdin.write(text);
-  await until(() => app.lastFrame().includes(`> /${text}`), `/${text} typed`);
+  await until(() => app.lastFrame().includes(`» /${text}`), `/${text} typed`);
   app.stdin.write('\r');
 }
 

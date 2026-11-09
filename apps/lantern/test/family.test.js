@@ -47,12 +47,13 @@ test('the pages come from the environments; /env switches every app and selects 
   const real = createLantern();
   const app = start({ cwd: dir, provider: { ...demoLantern(), pages: real.pages } });
   await until(shows(app, 'https://shop.example/'), 'the pages');
-  assert.match(app.lastFrame(), /shop {2}│ {2}staging {2}│ {2}https:\/\/staging\.shop\.example\//);
+  assert.match(app.lastFrame(), /pages · staging/);
+  assert.match(app.lastFrame(), /❯ staging +\/ +https:\/\/staging\.shop\.example\//);
   await type(app.stdin, '/env prod');
   app.stdin.write(KEYS.enter);
-  await until(shows(app, 'prod (production)'), 'the header saying so');
+  await until(shows(app, 'pages · prod'), 'the Pages view saying so');
   assert.equal(currentEnvironment(dir).name, 'prod');
-  await until(shows(app, '│  https://shop.example/'), 'its page selected');
+  await until(() => /❯ prod +\/ +https:\/\/shop\.example\//.test(app.lastFrame()), 'its page selected');
   app.stdin.write('a');
   await until(shows(app, 'LCP 2.9 s'), 'the audit');
   await until(() => readActivity().some((e) => /^Audited https:\/\/shop\.example\/: 1 critical · \d+ high · .*, LCP 2\.9 s$/.test(e.text)), 'the audit in the activity log');

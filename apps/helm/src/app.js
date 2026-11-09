@@ -7,6 +7,7 @@ export const APP = configureApp({
   title: 'Helm',
   version: process.env.HELM_VERSION,
   packageUrl: new URL('../package.json', import.meta.url),
+  look: 'shell',
 });
 
 export const { VERSION, COMPILED } = APP;

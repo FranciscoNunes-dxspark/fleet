@@ -78,6 +78,52 @@ test('switching starts an app the first time, sends it the keys, repaints it on 
   await until(() => !alive(one) && !alive(two), 'both apps gone');
 });
 
+test('in the desktop window the apps get every row, and the bar goes to the window as its state', async () => {
+  const { term, keys } = startHost({ spaces: SPACES, columns: 70, rows: 14, desktop: true });
+  const { screen } = term;
+  // What the host sent the window (OSC 5380), newest last.
+  const states = () => [...term.written.matchAll(/\x1b\]5380;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
+  await until(() => screen.row(0) === 'one 70x14', 'the first app at the whole height', { term });
+  await until(() => states().at(-1)?.spaces[0].state === 'running', 'the state with the app running', { term });
+  const first = states().at(-1);
+  assert.equal(first.active, 'one');
+  assert.deepEqual(first.spaces.map((s) => [s.id, s.letter, s.accent, s.state]), [['one', 'o', '#5fd787', 'running'], ['two', 'w', '#5fafff', 'idle']]);
+  assert.equal(first.key, '\x02', 'the prefix as the window types it');
+  assert.ok(!screen.text().includes('ctrl+b ? help'), 'no bar drawn in the grid');
+  // The same state is never sent twice in a row.
+  const sent = states().map((s) => JSON.stringify(s));
+  assert.ok(sent.every((s, i) => i === 0 || s !== sent[i - 1]));
+
+  // A tab clicked in the window types the prefix and the space's letter.
+  keys('\x02w');
+  await until(() => screen.row(0) === 'two 70x14' && states().at(-1).active === 'two', 'the switch, and the window told', { term });
+  keys('\x02');
+  await until(() => states().at(-1).prefix === true, 'the prefix waiting, for the window to show its keys', { term });
+  assert.match(states().at(-1).hint, /1-9 or a letter/);
+
+  // A panel goes to the window as content, never into the grid; a click on a row moves its cursor there.
+  keys('a');
+  await until(() => states().at(-1).panel?.lines.length, 'the apps panel sent to the window', { term });
+  const panel = states().at(-1).panel;
+  assert.ok(panel.title && panel.hint, 'a title and a hint');
+  assert.ok(!screen.text().includes(panel.title), 'no box drawn in the grid');
+  const [row] = panel.focus;
+  const other = row > 0 ? row - 1 : row + 1;
+  keys(`\x1b]5381;${JSON.stringify({ pick: other })}\x07`);
+  await until(() => states().at(-1).panel?.focus[0] === other, 'the cursor on the row picked', { term });
+  assert.equal(screen.row(0), 'two 70x14', 'the message reached no app');
+  keys(`\x1b]5381;${JSON.stringify({ close: true })}\x07`);
+  await until(() => states().at(-1).panel === null, 'the panel closed by the window', { term });
+
+  // The help too, and a message cut between two reads still arrives whole.
+  keys('\x02?');
+  await until(() => states().at(-1).panel?.help, 'the help sent to the window', { term });
+  const close = `\x1b]5381;${JSON.stringify({ close: true })}\x07`;
+  keys(close.slice(0, 7));
+  keys(close.slice(7));
+  await until(() => states().at(-1).panel === null, 'the help closed', { term });
+});
+
 test('an app that exits says so in its tab and on its screen, and ↵ starts it again', async () => {
   const { host, term, keys, done } = startHost({ spaces: SPACES });
   const { screen } = term;
@@ -136,6 +182,56 @@ test("the active app's mouse comes back with it, and a click on a tab switches",
   keys('\x1b[<0;3;2M');
   await until(() => screen.row(1) === 'keys: "M\\u001b[<0;3;2M"', 'the click passed on', { term });
   keys(`${PREFIX}q`);
+  keys('y');
+  await done;
+});
+
+test("in the desktop window a badge says why and comes as a toast, and the window's palette, settings and moves reach the host", async () => {
+  const family = familyHome();
+  const settings = [];
+  const dir = mkdtempSync(join(tmpdir(), 'fleet-move-'));
+  const { host, term, keys, done } = startHost({ spaces: SPACES, family, desktop: true });
+  host.onSettings = (s) => settings.push(s);
+  const { screen } = term;
+  const states = () => [...term.written.matchAll(/\x1b\]5380;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
+  const tell = (msg) => keys(`\x1b]5381;${JSON.stringify(msg)}\x07`);
+  await until(() => screen.row(0) === 'one 70x14', 'the app', { term });
+
+  writeFileSync(join(family, 'two.mood.json'), JSON.stringify({ app: 'two', mood: 'worried', reason: 'api crashed', at: Date.now() }));
+  await until(() => states().at(-1)?.toast?.text === 'api crashed', 'the toast', { term });
+  const last = states().at(-1);
+  assert.deepEqual([last.toast.app, last.toast.title], ['two', 'Two']);
+  assert.equal(last.spaces.find((s) => s.id === 'two').why, 'api crashed', 'the badge says why');
+
+  // The palette: a line put in an app's prompt, switching to it, as a hand-off.
+  tell({ run: { app: 'two', line: '/hello there' } });
+  await until(() => screen.row(0) === 'two 70x14' && screen.row(1) === 'keys: "/hello there"', 'the line typed into Two', { term });
+
+  // Settings: the bell now, the prefix kept for the next start, a prefix a terminal keeps refused.
+  tell({ settings: { bell: false } });
+  await until(() => states().at(-1).bell === false, 'the bell off', { term });
+  tell({ settings: { prefix: 'ctrl+x' } });
+  tell({ settings: { prefix: 'ctrl+c' } });
+  await until(() => settings.length === 2, 'two settings kept', { term });
+  assert.deepEqual(settings, [{ bell: false }, { prefix: 'ctrl+x' }]);
+  await until(() => /can't be the prefix/.test(states().at(-1).notice), 'ctrl+c refused', { term });
+
+  // A reload asks for everything again: the state and the palette's list (every app's commands).
+  const lists = () => [...term.written.matchAll(/\x1b\]5382;(.*?)\x07/g)].map((m) => JSON.parse(m[1]));
+  tell({ hello: true });
+  await until(() => lists().length, 'the palette list', { term });
+  const list = lists().at(-1);
+  assert.deepEqual(list.apps.map((a) => a.id), ['one', 'two']);
+  assert.ok(list.fleet.some((f) => f.key === 'w' && f.keys === 'ctrl+b w'));
+
+  // A folder from the projects list: the fleet moves there.
+  tell({ move: dir });
+  await until(() => realpathSync(host.cwd) === realpathSync(dir), 'the fleet moved', { term });
+  assert.ok(states().at(-1).folders.some((f) => realpathSync(f.path) === realpathSync(dir)));
+  // The apps start again there; quitting then stops them all, the quit question asked in the window.
+  await until(() => host.space('two').state === 'running', 'Two started again in the new folder', { term });
+  keys(`${PREFIX}q`);
+  await until(() => /Quit Fleet\?/.test(states().at(-1).confirming ?? ''), 'the quit question sent to the window', { term });
   keys('y');
   await done;
 });

@@ -95,9 +95,9 @@ const type = async (stdin, text) => {
 
 async function command(app, text) {
   app.stdin.write('/');
-  await until(() => app.lastFrame().includes('> /'), 'the prompt');
+  await until(() => app.lastFrame().includes('» /'), 'the prompt');
   await type(app.stdin, text);
-  await until(() => app.lastFrame().includes(`> /${text}`), `/${text} typed`);
+  await until(() => app.lastFrame().includes(`» /${text}`), `/${text} typed`);
   app.stdin.write('\r');
 }
 
@@ -105,7 +105,7 @@ test('/sparse: off, set (asking first), the header, refusing over changes, add f
   lastApp = render(React.createElement(App, { initialPath: dir, config: { recent: [], roots: [], history: [] } }));
   const app = lastApp;
   const frame = () => app.lastFrame() ?? '';
-  const header = () => frame().split('\n')[0];
+  const header = () => frame().split('\n').slice(0, 2).join('\n');
   try {
     await until(() => frame().includes('Three folders'), 'the graph');
     assert.doesNotMatch(header(), /sparse/);
