@@ -133,9 +133,9 @@ test('signatures stay unchecked until Show signatures is on; /verify lists the u
   const frame = () => app.lastFrame() ?? '';
   const type = async (text) => {
     app.stdin.write('/');
-    await until(() => frame().includes('> /'), 'the prompt');
+    await until(() => frame().includes('» /'), 'the prompt');
     for (const ch of text) app.stdin.write(ch);
-    await until(() => frame().includes(`> /${text}`), `/${text} typed`);
+    await until(() => frame().includes(`» /${text}`), `/${text} typed`);
     app.stdin.write('\r');
   };
   try {

@@ -158,7 +158,7 @@ test('A asks for reviewers, D makes it a draft, E retitles it and B edits its de
     app.stdin.write('6');
     await until(() => /❯.*Bump b/.test(frame()), 'the PR');
     app.stdin.write('\x1ba');
-    await until(() => frame().includes('> /reviewer'), 'the reviewer prompt');
+    await until(() => frame().includes('» /reviewer'), 'the reviewer prompt');
     await type(app.stdin, 'ana, bo');
     app.stdin.write('\r');
     await until(() => calls.length === 1, 'the reviewers');
@@ -169,7 +169,7 @@ test('A asks for reviewers, D makes it a draft, E retitles it and B edits its de
     assert.deepEqual(calls[1], ['draft', 7, true]);
 
     app.stdin.write('\x1be');
-    await until(() => frame().includes('> /title Bump b'), 'the title to edit');
+    await until(() => frame().includes('» /title Bump b'), 'the title to edit');
     await type(app.stdin, ' to 2');
     app.stdin.write('\r');
     await until(() => calls.length === 3, 'the new title');
@@ -180,7 +180,7 @@ test('A asks for reviewers, D makes it a draft, E retitles it and B edits its de
     app.stdin.write('\x1bb');
     const file = join(dir, '.git', 'splice-pr-7.md');
     // The file from the repository's root, so a long temp path (Windows) doesn't scroll the command away.
-    await until(() => existsSync(file) && frame().includes('Edit it in your editor') && /^ > \/body --file \.git\/splice-pr-7\.md *$/m.test(frame()), 'the body file in the prompt');
+    await until(() => existsSync(file) && frame().includes('Edit it in your editor') && /^ » \/body --file \.git\/splice-pr-7\.md *$/m.test(frame()), 'the body file in the prompt');
     assert.equal(readFileSync(file, 'utf8'), 'Old body');
     writeFileSync(file, 'New body\r\n\r\nWith a second paragraph\r\n');
     app.stdin.write('\r');
@@ -209,9 +209,9 @@ test('X asks for changes: GitHub wants the text, then Splice asks before sending
     app.stdin.write('6');
     await until(() => /❯.*Bump b/.test(frame()), 'the PR');
     app.stdin.write('\x1bx');
-    await until(() => frame().includes('> /request-changes'), 'the prompt');
+    await until(() => frame().includes('» /request-changes'), 'the prompt');
     app.stdin.write('\r');
-    await until(() => frame().includes('GitHub needs to be told what to change') && frame().includes('> /request-changes'), 'the text asked for');
+    await until(() => frame().includes('GitHub needs to be told what to change') && frame().includes('» /request-changes'), 'the text asked for');
     await type(app.stdin, 'Tests, please');
     app.stdin.write('\r');
     await until(() => frame().includes('Request changes to #7 "Bump b"?') && frame().includes('saying "Tests, please"'), 'the confirmation');

@@ -24,9 +24,20 @@ function leftSide({ face, faceColor, title, views, view, keys = true }) {
   const tabs = [];
   for (const v of views) {
     const on = v.id === view;
+    if (on) {
+      // The view shown sits on the accent, as the classic look's tab strip had it, a space either
+      // side taken from the gaps beside it, so every other view stays where it was.
+      left[left.length - 1] = { text: '  ' };
+      const x = width(left);
+      const key = keys && v.key != null ? `${v.key} ` : '';
+      left.push({ text: ` ${key}${v.label}${v.count ? ` ${v.count}` : ''} `, color: theme.ink, bg: theme.accent, bold: true });
+      tabs.push({ id: v.id, x, width: width(left) - x });
+      left.push({ text: '  ' });
+      continue;
+    }
     const x = width(left);
     if (keys && v.key != null) left.push({ text: `${v.key} `, color: theme.dim });
-    left.push({ text: v.label, color: on ? theme.accent : theme.dim, bold: on, underline: on });
+    left.push({ text: v.label, color: theme.dim });
     if (v.count) left.push({ text: ` ${v.count}`, color: v.countColor ?? theme.warn });
     tabs.push({ id: v.id, x, width: width(left) - x });
     left.push({ text: '   ' });

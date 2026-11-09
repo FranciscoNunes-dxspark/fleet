@@ -88,7 +88,7 @@ async function until(check, what, ms = 10000) {
 }
 
 const flat = (s) => s.replace(/\s+/g, ' ');
-const prompt = (frame) => /^ > (.*?) *$/m.exec(frame)?.[1] ?? '';
+const prompt = (frame) => /^ » (.*?) *$/m.exec(frame)?.[1] ?? '';
 
 test('a paste opens the prompt; /family copies a line; a sibling\'s mood gets a word from Twig, and Twig\'s is written', async () => {
   writeMood('sonar', { mood: 'worried', reason: 'production has 12 new exceptions' }, { dir: home });
@@ -134,9 +134,9 @@ test('a paste opens the prompt; /family copies a line; a sibling\'s mood gets a 
     await until(() => !frame().includes('package.json |'), 'the viewer closed');
 
     app.stdin.write('/');
-    await until(() => frame().includes('> /'), 'the prompt');
+    await until(() => frame().includes('» /'), 'the prompt');
     app.stdin.write('family');
-    await until(() => frame().includes('> /family'), 'typed');
+    await until(() => frame().includes('» /family'), 'typed');
     app.stdin.write('\r');
     await until(() => frame().includes('What shop offers the other apps'), 'the list');
     assert.match(frame(), /Bosun\s+\/move /);

@@ -126,7 +126,7 @@ test('clicks pick rows and tabs, double-clicks do what ↵ does, the wheel scrol
     p = at(frame(), 'Commit number 36');
     mouse.click(p.x, p.y);
     await until(() => /❯.*Commit number 36/.test(frame()) && !frame().includes('enter run  tab complete'), 'the view focused again');
-    assert.match(frame(), /> x/);
+    assert.match(frame(), /» x/);
 
     // Text selected and copied (mouse.js does that): said for a moment in the bottom line.
     mouse.copy('one\ntwo');

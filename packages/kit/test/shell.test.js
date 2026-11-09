@@ -40,11 +40,12 @@ test('topLine puts the face, the name and the views on the left and the context 
   assert.equal(stringWidth(line), 60);
   assert.ok(line.startsWith('(o) Wharf   1 Containers   2 Images 3'), line);
   assert.ok(line.endsWith('6/8 running'), line);
-  const on = segments.find((s) => s.text === 'Containers');
-  assert.equal(on.underline, true);
-  assert.equal(on.color, theme.accent);
+  // The view shown on the accent, padded by a space either side taken from the gaps: the text is where it was.
+  const on = segments.find((s) => s.text === ' 1 Containers ');
+  assert.equal(on.bg, theme.accent);
+  assert.equal(on.color, theme.ink);
   assert.deepEqual(tabs, [
-    { id: 'c', x: 12, width: 12 },
+    { id: 'c', x: 11, width: 14 },
     { id: 'i', x: 27, width: 10 },
   ]);
   assert.equal(line.slice(tabs[1].x, tabs[1].x + tabs[1].width), '2 Images 3');
@@ -90,7 +91,7 @@ test('in the shell look the prompt is one row', () => {
   setLook('shell');
   assert.equal(promptHeight(), 1);
   const out = frame(React.createElement(PromptBox, { value: '', cursor: 0, focused: false, width: 40, placeholder: '/ for commands' }));
-  assert.deepEqual(out, [' > / for commands']);
+  assert.deepEqual(out, [' » / for commands']);
   setLook('classic');
   assert.equal(promptHeight(), 3);
 });

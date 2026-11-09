@@ -40,7 +40,7 @@ test('a command or a context pasted in a view waits in the prompt; ↵ runs it',
     app.stdin.write('3');
     await until(() => frame().includes('│ Problems'), 'Problems');
     app.stdin.write(`${takeLine('commit', { hash: '9b1c7e2d4f60' })}\r`);
-    await until(() => frame().includes('> /take family:v1:commit:') && frame().includes('enter run'), 'the paste in the prompt');
+    await until(() => frame().includes('» /take family:v1:commit:') && frame().includes('enter run'), 'the paste in the prompt');
     assert.doesNotMatch(frame(), /Deployments of/);
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Deployments of 9b1c7e2d4f'), 'run with ↵');
@@ -49,7 +49,7 @@ test('a command or a context pasted in a view waits in the prompt; ↵ runs it',
     app.stdin.write('2');
     await until(() => frame().includes('│ Logs'), 'Logs');
     app.stdin.write('/kql requests | take 3');
-    await until(() => frame().includes('> /kql requests | take 3'), 'a command pasted in Logs');
+    await until(() => frame().includes('» /kql requests | take 3'), 'a command pasted in Logs');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('3 rows'), 'run');
   } finally {

@@ -306,7 +306,7 @@ test('a line a sibling hands over while typing in the console goes to the prompt
   app.stdin.write('i');
   await until(() => frame().includes('typing SQL'), 'typing mode');
   app.stdin.write('/azure-sql shop.database.windows.net Shop --name shop-Shop');
-  await until(() => !frame().includes('typing SQL') && frame().includes('> /azure-sql shop.database.windows.net Shop'), 'the line in the prompt');
+  await until(() => !frame().includes('typing SQL') && frame().includes('» /azure-sql shop.database.windows.net Shop'), 'the line in the prompt');
   assert.ok(frame().includes('An empty console'), 'the console is still empty');
   app.unmount();
 });
@@ -525,11 +525,11 @@ test('ctrl+f finds text in the console and n finds the next one', async () => {
   // ctrl+f. When the whole suite loads the machine, the console's keys can start listening a moment
   // after it shows, and a key before then is lost: press it again until the prompt opens (twice only
   // fills the prompt again).
-  for (let n = 0; n < 10 && !frame().includes('> /search'); n++) {
+  for (let n = 0; n < 10 && !frame().includes('» /search'); n++) {
     app.stdin.write('\x06');
     await new Promise((r) => setTimeout(r, 200));
   }
-  await until(() => frame().includes('> /search'), 'the search prompt');
+  await until(() => frame().includes('» /search'), 'the search prompt');
   await type(app.stdin, 'name');
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('ctrl+r runs just this') && /▌3 SELECT Name/.test(frame()), 'the first match');

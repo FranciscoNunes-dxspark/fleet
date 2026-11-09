@@ -91,9 +91,9 @@ const type = async (stdin, text) => {
 
 async function command(app, text) {
   app.stdin.write('/');
-  await until(() => app.lastFrame().includes('> /'), 'the prompt');
+  await until(() => app.lastFrame().includes('» /'), 'the prompt');
   await type(app.stdin, text);
-  await until(() => app.lastFrame().includes(`> /${text}`), `/${text} typed`);
+  await until(() => app.lastFrame().includes(`» /${text}`), `/${text} typed`);
   app.stdin.write('\r');
 }
 
@@ -118,7 +118,7 @@ test('/note: shown in the commit pane, added, edited from the prompt, removed an
 
     // Alone: the note goes in the prompt to edit.
     await command(app, 'note');
-    await until(() => frame().includes('> /note Reviewed by Ana'), 'the note in the prompt');
+    await until(() => frame().includes('» /note Reviewed by Ana'), 'the note in the prompt');
     await type(app.stdin, '\\nand Bo');
     app.stdin.write('\r');
     await until(() => noteOf(first) === 'Reviewed by Ana\nand Bo', 'the note changed');

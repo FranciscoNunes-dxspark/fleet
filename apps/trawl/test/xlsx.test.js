@@ -145,7 +145,7 @@ test('x in Results offers Excel, and /export file.xlsx writes the rows as a work
   app.stdin.write(KEYS.down);
   await until(() => /❯ Excel/.test(frame()), 'Excel picked');
   app.stdin.write(KEYS.enter);
-  await until(() => frame().includes('> /export Matches.xlsx'), 'the command in the prompt');
+  await until(() => frame().includes('» /export Matches.xlsx'), 'the command in the prompt');
   // Somewhere of the test's own rather than the working folder.
   app.stdin.write(KEYS.ctrlU);
   const out = join(base, 'matches.xlsx');

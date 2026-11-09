@@ -132,11 +132,11 @@ test('clicks pick rows, cells and tabs, double-clicks do what ↵ does (but neve
     mouse.click(p.x, p.y);
     await until(() => frame().includes('enter run  tab complete'), 'the prompt focused');
     app.stdin.write('x');
-    await until(() => frame().includes('> x'), 'typed into the prompt');
+    await until(() => frame().includes('» x'), 'typed into the prompt');
     p = at('│ History ');
     mouse.click(p.x, p.y + 1);
     await until(() => !frame().includes('enter run  tab complete'), 'the view focused again');
-    assert.match(frame(), /> x/);
+    assert.match(frame(), /» x/);
 
     // Text selected and copied (mouse.js does that): said for a moment in the bottom line.
     mouse.copy('one\ntwo');

@@ -135,16 +135,16 @@ test('a command or a context pasted over a view goes into the prompt, and ↵ ru
   await until(() => frame().includes('Clubs'), 'the explorer');
   const line = takeLine('query', { sql: 'SELECT 2 AS two' });
   app.stdin.write(`${line.replace(/^\/take /, '')}\r`);
-  await until(() => frame().includes('> family:v1:query:'), 'the context in the prompt');
+  await until(() => frame().includes('» family:v1:query:'), 'the context in the prompt');
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('SELECT 2 AS two'), 'taken');
   assert.match(frame(), /didn't say which database it was for/);
   app.stdin.write('1');
   await until(() => frame().includes('Explorer') && !frame().includes('typing SQL'), 'the explorer');
   app.stdin.write('/limit 77\n');
-  await until(() => frame().includes('> /limit 77'), 'the command in the prompt, not run');
+  await until(() => frame().includes('» /limit 77'), 'the command in the prompt, not run');
   app.stdin.write(KEYS.enter);
-  await until(() => /77/.test(frame()) && !frame().includes('> /limit 77'), 'the command run');
+  await until(() => /77/.test(frame()) && !frame().includes('» /limit 77'), 'the command run');
   app.unmount();
 });
 

@@ -304,9 +304,12 @@ export function PromptBox({ value, cursor, focused, width, placeholder, bang = t
       <Text color={theme.dim}>{clean(visible)}</Text>
     );
   }
+  // The shell look's prompt reads as a shell's: » for the app's own commands, $ while "!" runs one as
+  // it is (git, SQL, a shell command). The same two columns as "> ", so a click lands where it did; »
+  // rather than ❯, which marks the selected row in the lists.
   const sign = (
     <Text color={focused ? color : theme.dim} bold>
-      {bangMode ? '! ' : '> '}
+      {shell ? (bangMode ? '$ ' : '» ') : bangMode ? '! ' : '> '}
     </Text>
   );
   if (shell) {

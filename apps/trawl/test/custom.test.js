@@ -97,7 +97,7 @@ test('your own keys: another key in a view, a command anywhere, never while typi
     // In the prompt x is just x.
     app.stdin.write('/');
     await type(app.stdin, 'x');
-    await until(() => frame().includes('> /x'), 'x typed');
+    await until(() => frame().includes('» /x'), 'x typed');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('enter run'), 'out of the prompt');
     // ? shows them.
@@ -140,7 +140,7 @@ test('ctrl+p: the palette lists the view’s keys and the commands, filters as y
     app.stdin.write(KEYS.ctrlP);
     await until(() => frame().includes('Command palette') && /❯ \/describe/.test(frame()), 'the palette from the prompt');
     app.stdin.write(KEYS.enter);
-    await until(() => /> \/describe\s*$/m.test(frame()) && !frame().includes('Command palette'), '/describe waiting in the prompt');
+    await until(() => /» \/describe\s*$/m.test(frame()) && !frame().includes('Command palette'), '/describe waiting in the prompt');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('enter run'), 'out of the prompt');
     // esc closes it, and nothing else happens.

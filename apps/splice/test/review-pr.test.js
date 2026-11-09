@@ -71,11 +71,11 @@ async function until(check, what, ms = 10000) {
 }
 
 // Whether the prompt holds `text`: all of it, or its end, when a long path has scrolled the start out of the box.
-const typed = (frame, text) => [...frame.matchAll(/^ > (.*?) *$/gm)].some(([, shown]) => shown && text.endsWith(shown));
+const typed = (frame, text) => [...frame.matchAll(/^ » (.*?) *$/gm)].some(([, shown]) => shown && text.endsWith(shown));
 
 async function command(app, text) {
   app.stdin.write('/');
-  await until(() => app.lastFrame().includes('> /'), 'the prompt');
+  await until(() => app.lastFrame().includes('» /'), 'the prompt');
   for (const ch of text) {
     app.stdin.write(ch);
     await new Promise((r) => setTimeout(r, 5));

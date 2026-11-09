@@ -84,7 +84,7 @@ async function until(check, what, ms = 10000) {
 /** Types a command line into the prompt (the text in one go, as a paste into it would come) and runs it. */
 async function command(app, text) {
   app.stdin.write('/');
-  await until(() => app.lastFrame().includes('> /'), 'the prompt');
+  await until(() => app.lastFrame().includes('» /'), 'the prompt');
   app.stdin.write(text.replace(/^\//, ''));
   await new Promise((r) => setTimeout(r, 60));
   app.stdin.write('\r');

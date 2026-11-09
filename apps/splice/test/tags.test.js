@@ -116,12 +116,12 @@ test('a GitLab release: published, as GitLab has no drafts, with notes Splice wr
     await until(() => frame().includes('First commit'), 'the graph');
     const command = async (text) => {
       app.stdin.write('/');
-      await until(() => frame().includes('> /'), 'the prompt');
+      await until(() => frame().includes('» /'), 'the prompt');
       for (const ch of text) {
         app.stdin.write(ch);
         await new Promise((r) => setTimeout(r, 5));
       }
-      await until(() => frame().includes(`> /${text}`), text);
+      await until(() => frame().includes(`» /${text}`), text);
       app.stdin.write('\r');
     };
     await command('release v2.0 --draft');

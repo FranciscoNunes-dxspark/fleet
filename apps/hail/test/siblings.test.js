@@ -64,7 +64,7 @@ test('a pasted command or context opens the prompt with it, unrun, from the view
   try {
     await until(() => frame().includes('Ping'), 'the requests');
     app.stdin.write('/send Ping\r');
-    await until(() => frame().includes('> /send Ping'), 'the prompt with the paste');
+    await until(() => frame().includes('» /send Ping'), 'the prompt with the paste');
     assert.doesNotMatch(frame(), /⏺ GET|200 OK/, 'not sent');
     app.stdin.write(KEYS.esc);
     await until(() => frame().includes('↵ send  alt+a send all'), 'back in the view');
@@ -80,7 +80,7 @@ test('a pasted command or context opens the prompt with it, unrun, from the view
     await until(() => frame().includes('/▏'), 'its search');
     const ctx = encodeContext('commit', { hash: 'abc123' });
     app.stdin.write(`${ctx}\n`);
-    await until(() => frame().includes(`> ${ctx.slice(0, 40)}`), 'the context in the prompt, not the search');
+    await until(() => frame().includes(`» ${ctx.slice(0, 40)}`), 'the context in the prompt, not the search');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes("That's commit abc123, for Splice or Sonar"), 'it taken');
     app.stdin.write('1');
