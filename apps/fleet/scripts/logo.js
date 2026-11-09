@@ -1,29 +1,33 @@
-// Draws Fleet's mark: a compass on a brass tile, what a fleet steers by. It's drawn the way Keel's mark
-// is, flat on a rounded tile, each shape cut across at the waterline (the needle's middle) with the piece
-// under the cut in a deeper tone, but it's Fleet's own picture: Keel's is a prompt. The ring and the
-// needle's north are graphite, its south a deeper brass. One drawing, written to:
+// Draws Fleet's mark: a compass, what a fleet steers by, its ring four arcs in the apps' colours. It's
+// drawn the way Keel's mark is, flat on a graphite tile, each shape cut across at the waterline (the
+// needle's middle) with the piece under the cut in a deeper tone, but it's Fleet's own picture: Keel's is
+// a prompt. The needle's north is the white of Keel's bar, its south Fleet's brass. One drawing, written to:
 //   assets/logo.svg, logo.png (512 px)          the README
 //   assets/logo.ico                              the Windows executable and its shortcuts (the kit's
 //                                                scripts/build.js and installer/Fleet.iss)
 //   ../../desktop/src-tauri/icons/*              the desktop window's icons, its installer's and shortcuts'
-//   ../../desktop/ui/mark.svg                    the mark in the desktop window's top bar (on its tile:
-//                                                the graphite would be lost on the bar without it)
+//   ../../desktop/ui/mark.svg                    the mark in the desktop window's top bar
 // Don't edit those by hand: run
 //   node scripts/logo.js
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-const GRAPHITE = '#16181d';
+// A quarter of the ring, between two angles in degrees (0 east, clockwise, as the screen's y runs down),
+// leaving a gap at each of the four points.
+const arc = (from, to, colour) => ({ ring: { cx: 32, cy: 32, inner: 19, outer: 23, from, to }, cut: 31, colours: { above: colour, below: colour } });
 
 export const MARK = {
   size: 64,
-  tile: { radius: 13, fill: '#e6c07b' },
+  tile: { radius: 13, fill: '#16181d' },
   /** How tall each cut is. */
   gap: 3,
-  // The needle, north up, and the ring around it, both cut at the waterline across the middle.
+  // The needle, north up, cut at the waterline across the middle; the ring around it in four colours.
   shapes: [
-    { points: [[32, 8], [39, 32], [32, 56], [25, 32]], cut: 31, colours: { above: GRAPHITE, below: '#8a6430' } },
-    { ring: { cx: 32, cy: 32, inner: 19, outer: 23 }, cut: 31, colours: { above: GRAPHITE, below: GRAPHITE } },
+    { points: [[32, 8], [39, 32], [32, 56], [25, 32]], cut: 31, colours: { above: '#ffffff', below: '#e6c07b' } },
+    arc(279, 351, '#7fe0d8'),
+    arc(9, 81, '#4c8dff'),
+    arc(99, 171, '#ff6b5f'),
+    arc(189, 261, '#9be564'),
   ],
 };
 
@@ -46,9 +50,11 @@ const inPolygon = (x, y, points) => {
   return inside;
 };
 
-const inRing = (x, y, { cx, cy, inner, outer }) => {
+const inRing = (x, y, { cx, cy, inner, outer, from = 0, to = 360 }) => {
   const d = Math.hypot(x - cx, y - cy);
-  return d >= inner && d <= outer;
+  if (d < inner || d > outer) return false;
+  const a = ((Math.atan2(y - cy, x - cx) * 180) / Math.PI + 360) % 360;
+  return a >= from && a <= to;
 };
 
 /** The mark as RGBA rows, `size` pixels square, on its rounded tile (`tile: false` for none), 4×4 samples a pixel. */
@@ -92,10 +98,17 @@ function markRows(size, { tile = true } = {}) {
 /** The mark as SVG: each shape clipped either side of its own cut. */
 export function markSvg({ tile = true, title = 'Fleet' } = {}) {
   const { size: S, gap, shapes } = MARK;
-  // A ring is two circles with the inner one cut out (evenodd).
+  // A ring is two circles with the inner one cut out (evenodd); an arc of one, its two edges joined.
   const circle = (cx, cy, r) => `M${cx - r} ${cy} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
+  const pt = (cx, cy, r, deg) => [cx + r * Math.cos((deg * Math.PI) / 180), cy + r * Math.sin((deg * Math.PI) / 180)].map((n) => +n.toFixed(3)).join(' ');
+  const arcPath = ({ cx, cy, inner, outer, from, to }) => {
+    const big = to - from > 180 ? 1 : 0;
+    return `M${pt(cx, cy, outer, from)} A${outer} ${outer} 0 ${big} 1 ${pt(cx, cy, outer, to)} L${pt(cx, cy, inner, to)} A${inner} ${inner} 0 ${big} 0 ${pt(cx, cy, inner, from)} Z`;
+  };
   const path = (s, fill) =>
-    s.ring
+    s.ring?.from != null
+      ? `<path d="${arcPath(s.ring)}" fill="${fill}"/>`
+      : s.ring
       ? `<path d="${circle(s.ring.cx, s.ring.cy, s.ring.outer)} ${circle(s.ring.cx, s.ring.cy, s.ring.inner)}" fill-rule="evenodd" fill="${fill}"/>`
       : `<path d="M${s.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${fill}"/>`;
   const cuts = [...new Set(shapes.map((s) => s.cut))];
