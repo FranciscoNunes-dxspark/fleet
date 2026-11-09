@@ -1,32 +1,29 @@
-// Draws Fleet's mark: three sails in formation, a fleet. It's drawn the way Keel's mark is, flat on a
-// graphite tile, each shape cut across like a waterline with the piece past the cut in a deeper tone
-// (here each sail's hull), but it's Fleet's own picture: Keel's is a prompt. The nearest sail is the
-// white of Keel's bar, the two behind it Fleet's brass. One drawing, written to:
+// Draws Fleet's mark: a compass on a brass tile, what a fleet steers by. It's drawn the way Keel's mark
+// is, flat on a rounded tile, each shape cut across at the waterline (the needle's middle) with the piece
+// under the cut in a deeper tone, but it's Fleet's own picture: Keel's is a prompt. The ring and the
+// needle's north are graphite, its south a deeper brass. One drawing, written to:
 //   assets/logo.svg, logo.png (512 px)          the README
 //   assets/logo.ico                              the Windows executable and its shortcuts (the kit's
 //                                                scripts/build.js and installer/Fleet.iss)
-//   ../../desktop/src-tauri/icons/*              the desktop window's icons
-//   ../../desktop/ui/mark.svg                    the mark in the desktop window's top bar
+//   ../../desktop/src-tauri/icons/*              the desktop window's icons, its installer's and shortcuts'
+//   ../../desktop/ui/mark.svg                    the mark in the desktop window's top bar (on its tile:
+//                                                the graphite would be lost on the bar without it)
 // Don't edit those by hand: run
 //   node scripts/logo.js
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-// A sail: its mast the vertical edge on the left, its foot along the bottom.
-const sail = (x, top, w, foot) => [[x, top], [x + w, foot], [x, foot]];
-const BRASS = { above: '#e6c07b', below: '#a87d3c' };
+const GRAPHITE = '#16181d';
 
 export const MARK = {
   size: 64,
-  tile: { radius: 13, fill: '#16181d' },
+  tile: { radius: 13, fill: '#e6c07b' },
   /** How tall each cut is. */
   gap: 3,
-  // Three sails in formation, the nearest the biggest, each cut near its foot: the piece under the cut is
-  // its hull, in the deeper tone.
+  // The needle, north up, and the ring around it, both cut at the waterline across the middle.
   shapes: [
-    { points: sail(41, 9, 12, 31), cut: 25, colours: BRASS },
-    { points: sail(28, 12, 15, 40), cut: 33, colours: BRASS },
-    { points: sail(11, 16, 21, 51), cut: 43, colours: { above: '#ffffff', below: '#bec0c2' } },
+    { points: [[32, 8], [39, 32], [32, 56], [25, 32]], cut: 31, colours: { above: GRAPHITE, below: '#8a6430' } },
+    { ring: { cx: 32, cy: 32, inner: 19, outer: 23 }, cut: 31, colours: { above: GRAPHITE, below: GRAPHITE } },
   ],
 };
 
@@ -49,6 +46,11 @@ const inPolygon = (x, y, points) => {
   return inside;
 };
 
+const inRing = (x, y, { cx, cy, inner, outer }) => {
+  const d = Math.hypot(x - cx, y - cy);
+  return d >= inner && d <= outer;
+};
+
 /** The mark as RGBA rows, `size` pixels square, on its rounded tile (`tile: false` for none), 4×4 samples a pixel. */
 function markRows(size, { tile = true } = {}) {
   const S = MARK.size;
@@ -57,7 +59,7 @@ function markRows(size, { tile = true } = {}) {
   const sample = (u, v) => {
     // In a shape's cut there's only the tile; either side of it, the shape's two tones.
     for (const shape of MARK.shapes) {
-      if (!inPolygon(u, v, shape.points)) continue;
+      if (!(shape.ring ? inRing(u, v, shape.ring) : inPolygon(u, v, shape.points))) continue;
       if (v >= shape.cut && v < shape.cut + MARK.gap) return onTile(u, v);
       return rgb(shape.colours[v < shape.cut ? 'above' : 'below']);
     }
@@ -90,10 +92,15 @@ function markRows(size, { tile = true } = {}) {
 /** The mark as SVG: each shape clipped either side of its own cut. */
 export function markSvg({ tile = true, title = 'Fleet' } = {}) {
   const { size: S, gap, shapes } = MARK;
-  const path = (points, fill) => `<path d="M${points.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${fill}"/>`;
+  // A ring is two circles with the inner one cut out (evenodd).
+  const circle = (cx, cy, r) => `M${cx - r} ${cy} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
+  const path = (s, fill) =>
+    s.ring
+      ? `<path d="${circle(s.ring.cx, s.ring.cy, s.ring.outer)} ${circle(s.ring.cx, s.ring.cy, s.ring.inner)}" fill-rule="evenodd" fill="${fill}"/>`
+      : `<path d="M${s.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z" fill="${fill}"/>`;
   const cuts = [...new Set(shapes.map((s) => s.cut))];
   const clips = cuts.map((cut) => `<clipPath id="above-${cut}"><rect width="${S}" height="${cut}"/></clipPath><clipPath id="below-${cut}"><rect y="${cut + gap}" width="${S}" height="${S - cut - gap}"/></clipPath>`).join('');
-  const drawn = shapes.map((s) => `<g clip-path="url(#above-${s.cut})">${path(s.points, s.colours.above)}</g><g clip-path="url(#below-${s.cut})">${path(s.points, s.colours.below)}</g>`).join('\n');
+  const drawn = shapes.map((s) => `<g clip-path="url(#above-${s.cut})">${path(s, s.colours.above)}</g><g clip-path="url(#below-${s.cut})">${path(s, s.colours.below)}</g>`).join('\n');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}">
 <title>${title}</title>
 <defs>${clips}</defs>
@@ -190,5 +197,5 @@ out('../../desktop/src-tauri/icons/128x128.png', png(markRows(128)));
 out('../../desktop/src-tauri/icons/128x128@2x.png', png(markRows(256)));
 out('../../desktop/src-tauri/icons/icon.png', png(markRows(512)));
 out('../../desktop/src-tauri/icons/icon.ico', icon);
-out('../../desktop/ui/mark.svg', markSvg({ tile: false }));
+out('../../desktop/ui/mark.svg', markSvg());
 console.log('assets/logo.svg, logo.png, logo.ico; desktop/src-tauri/icons/*, desktop/ui/mark.svg');

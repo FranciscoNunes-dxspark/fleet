@@ -1,8 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <title>Fleet</title>
-<defs><clipPath id="above-25"><rect width="64" height="25"/></clipPath><clipPath id="below-25"><rect y="28" width="64" height="36"/></clipPath><clipPath id="above-33"><rect width="64" height="33"/></clipPath><clipPath id="below-33"><rect y="36" width="64" height="28"/></clipPath><clipPath id="above-43"><rect width="64" height="43"/></clipPath><clipPath id="below-43"><rect y="46" width="64" height="18"/></clipPath></defs>
-<rect width="64" height="64" rx="13" fill="#16181d"/>
-<g clip-path="url(#above-25)"><path d="M41 9 L53 31 L41 31 Z" fill="#e6c07b"/></g><g clip-path="url(#below-25)"><path d="M41 9 L53 31 L41 31 Z" fill="#a87d3c"/></g>
-<g clip-path="url(#above-33)"><path d="M28 12 L43 40 L28 40 Z" fill="#e6c07b"/></g><g clip-path="url(#below-33)"><path d="M28 12 L43 40 L28 40 Z" fill="#a87d3c"/></g>
-<g clip-path="url(#above-43)"><path d="M11 16 L32 51 L11 51 Z" fill="#ffffff"/></g><g clip-path="url(#below-43)"><path d="M11 16 L32 51 L11 51 Z" fill="#bec0c2"/></g>
+<defs><clipPath id="above-31"><rect width="64" height="31"/></clipPath><clipPath id="below-31"><rect y="34" width="64" height="30"/></clipPath></defs>
+<rect width="64" height="64" rx="13" fill="#e6c07b"/>
+<g clip-path="url(#above-31)"><path d="M32 8 L39 32 L32 56 L25 32 Z" fill="#16181d"/></g><g clip-path="url(#below-31)"><path d="M32 8 L39 32 L32 56 L25 32 Z" fill="#8a6430"/></g>
+<g clip-path="url(#above-31)"><path d="M9 32 a23 23 0 1 0 46 0 a23 23 0 1 0 -46 0 Z M13 32 a19 19 0 1 0 38 0 a19 19 0 1 0 -38 0 Z" fill-rule="evenodd" fill="#16181d"/></g><g clip-path="url(#below-31)"><path d="M9 32 a23 23 0 1 0 46 0 a23 23 0 1 0 -46 0 Z M13 32 a19 19 0 1 0 38 0 a19 19 0 1 0 -38 0 Z" fill-rule="evenodd" fill="#16181d"/></g>
 </svg>
