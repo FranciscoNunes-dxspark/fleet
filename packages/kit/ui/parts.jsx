@@ -351,16 +351,22 @@ export const commandRows = (count) => (shellLook() ? 0 : promptHeight() + count)
 
 /**
  * Where the command box sits in an app `width` × `height` with `count` suggestions: { top, left, width,
- * rows, input, textX, inner }, rows and columns from the app's top left. `input` is the row typed in,
- * the suggestions the rows under it; the text starts at column `textX` and shows `inner` columns. The
- * box keeps its top whatever the suggestions, a quarter of the way down, so it doesn't jump as they change.
+ * rows, input, items, textX, inner, pad }, rows and columns from the app's top left. `input` is the row
+ * typed in, `items` the first suggestion's; the text starts at column `textX` and shows `inner` columns.
+ * The box is a dialog: its border, a header row, the field, the suggestions, a rule and the keys, with a
+ * blank row (`pad`) before the field and after the suggestions when there's room. It keeps its top
+ * whatever the suggestions, a quarter of the way down, so it doesn't jump as they change.
  */
 export function commandBox({ width, height, count = 0 }) {
-  const w = Math.max(24, Math.min(width - 4, 120));
-  const rows = 3 + count;
+  const w = Math.max(30, Math.min(width - 4, 110, Math.max(72, Math.floor(width * 0.7))));
+  // In a short terminal the suggestions shown are as many as fit under the top line and over the status line.
+  const shown = Math.max(1, Math.min(count, height - 8));
+  const pad = 8 + shown <= height - 3 ? 1 : 0;
+  const rows = 6 + Math.min(count, shown) + 2 * pad;
   const top = Math.max(1, Math.min(Math.floor(height / 4), height - rows - 1));
   const left = Math.max(0, Math.floor((width - w) / 2));
-  return { top, left, width: w, rows, input: top + 1, textX: left + 4, inner: w - 6 };
+  const input = top + 2 + pad;
+  return { top, left, width: w, rows, input, items: input + 1, shown: Math.min(count, shown), textX: left + 5, inner: w - 8, pad };
 }
 
 /**
@@ -388,68 +394,93 @@ const BOX_KEYS = [
   ['esc', 'close'],
 ];
 
+// `a` mixed into `b`, `t` of the way (hex colours; `fallback` for anything else, a named colour).
+function mix(a, b, t, fallback) {
+  const hex = (c) => (/^#[0-9a-f]{6}$/i.test(c ?? '') ? [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)) : null);
+  const [x, y] = [hex(a), hex(b)];
+  if (!x || !y) return fallback;
+  return `#${x.map((v, i) => Math.round(y[i] + (v - y[i]) * t).toString(16).padStart(2, '0')).join('')}`;
+}
+
+// The field's background: a well below the dialog, darker than the bar in a dark palette, white in a light one.
+const WELL = { dark: '#0b0d10', light: '#ffffff' };
+
 /**
- * The shell look's command box, over the view: a square box on the bar's background with the app's name
- * in its top border, the prompt (» for the app's own commands, $ while "!" runs one as it is), the
- * suggestions under it, and the keys in its bottom border. Drawn where commandBox places it.
+ * The shell look's command box, over the view, drawn as the confirm dialogs are: in blocks of colour
+ * rather than lines. A border in the accent (the bang colour while "!" runs a line as it is), a header
+ * row tinted with it holding the app's name, the field a darker well with » (or $) and the text, the
+ * suggestions on the dialog's own background (the picked one tinted), and the keys under a thin rule,
+ * a note at their right. Drawn where commandBox places it.
  */
 export function CommandBox({ value, cursor, width, height, items = [], selected = 0, bang = true }) {
   const b = commandBox({ width, height, count: items.length });
   const bg = barColor();
   const bangMode = bang && value.startsWith('!');
   const edge = bangMode ? theme.bangMode : theme.accent;
+  const headBg = mix(edge, bg, 0.22, theme.selBg ?? bg);
+  const pickBg = mix(edge, bg, 0.12, theme.selBg ?? bg);
+  const well = theme.mode === 'light' ? WELL.light : WELL.dark;
   const W = b.width;
-  const line = (segs) => [{ text: '│', color: edge }, ...fitSegments(segs, W - 2, true), { text: '│', color: edge }].map((s) => ({ ...s, bg }));
+  const on = (segs, back) => segs.map((x) => (x.bg ? x : { ...x, bg: back }));
+  // A row inside the border: the border, a space, `segs` cut or padded to the width, a space, the border.
+  const line = (segs, back = bg) => [{ text: '│', color: edge, bg }, ...on([{ text: ' ' }, ...fitSegments(segs, W - 4, true), { text: ' ' }], back), { text: '│', color: edge, bg }];
+  const blank = line([]);
   const title = appConfigured() ? app().title : 'Commands';
-  const mode = bangMode ? 'run as it is' : 'commands';
-  const topFill = Math.max(0, W - 2 - stringWidth(` ${title} `) - stringWidth(` ${mode} `) - 2);
-  const top = [
-    { text: '┌─', color: edge },
-    { text: ` ${title} `, color: edge, bold: true },
-    { text: '─'.repeat(topFill), color: edge },
-    { text: ` ${mode} `, color: theme.dim },
-    { text: '─┐', color: edge },
-  ].map((s) => ({ ...s, bg }));
-  // The text scrolled so the cursor stays in sight, the cursor a block.
+  const top = [{ text: `┌${'─'.repeat(W - 2)}┐`, color: edge, bg }];
+  const head = line([{ text: title, color: edge, bold: true }, { text: bangMode ? '  run a line as it is' : '  commands', color: theme.dim }], headBg);
+  // The field: the text scrolled so the cursor stays in sight, the cursor a block.
   const start = Math.max(0, cursor - b.inner + 1);
   const visible = value.slice(start, start + b.inner);
   const at = cursor - start;
-  const input = line([
-    { text: ' ' },
-    { text: bangMode ? '$ ' : '» ', color: edge, bold: true },
-    { text: clean(visible.slice(0, at)) },
-    { text: visible[at] ?? ' ', inverse: true },
-    { text: clean(visible.slice(at + 1)) },
-  ]);
+  const field = line(
+    on(
+      fitSegments(
+        [
+          { text: ' ' },
+          { text: bangMode ? '$ ' : '» ', color: edge, bold: true },
+          { text: clean(visible.slice(0, at)) },
+          { text: visible[at] ?? ' ', inverse: true },
+          { text: clean(visible.slice(at + 1)) },
+        ],
+        W - 4,
+        true,
+      ),
+      well,
+    ),
+  );
   // The names' column, as wide as the longest up to two fifths of the box; a suggestion with nothing to
   // say about it (a value, a problem's line) takes the whole row.
   const nameW = items.length ? Math.min(Math.max(28, Math.floor(b.inner * 0.4)), Math.max(...items.map((s) => stringWidth(s.label + (s.hint ? ` ${s.hint}` : '')))) + 2) : 0;
-  const rows = items.map((s, i) => {
-    const on = i === selected;
+  // The suggestions that fit, from the first unless the picked one is further down.
+  const from = Math.max(0, Math.min(selected - b.shown + 1, items.length - b.shown));
+  const rows = items.slice(from, from + b.shown).map((s, j) => {
+    const i = from + j;
+    const picked = i === selected;
     const name = s.label + (s.hint ? ` ${s.hint}` : '');
-    const segs = line([
-      { text: on ? ' › ' : '   ', color: edge, bold: true },
-      { text: s.desc ? fit(name, nameW - 2) : name, color: on ? edge : undefined, bold: on },
-      { text: '  ' },
-      { text: s.desc ?? '', color: on ? undefined : theme.dim },
-    ]);
-    return on ? segs.map((x, j) => (j === 0 || j === segs.length - 1 ? x : { ...x, bg: theme.selBg ?? bg })) : segs;
+    return line(
+      [
+        { text: picked ? ' › ' : '   ', color: edge, bold: true },
+        { text: s.desc ? fit(name, nameW - 2) : name, color: picked ? edge : undefined, bold: picked },
+        { text: '  ' },
+        { text: s.desc ?? '', color: picked ? undefined : theme.dim },
+      ],
+      picked ? pickBg : bg,
+    );
   });
   const keys = [];
   BOX_KEYS.forEach(([k, label], i) => {
-    keys.push({ text: i ? '  ' : ' ' }, { text: k, bold: true }, { text: ` ${label}`, color: theme.dim });
+    if (i) keys.push({ text: '  ' });
+    keys.push({ text: k, bold: true }, { text: ` ${label}`, color: theme.dim });
   });
-  keys.push({ text: ' ' });
-  const shownKeys = stringWidth(keys.map((k) => k.text).join('')) <= W - 4 ? keys : [];
-  const bottom = [
-    { text: '└─', color: edge },
-    ...shownKeys,
-    { text: '─'.repeat(Math.max(0, W - 4 - stringWidth(shownKeys.map((k) => k.text).join('')))), color: edge },
-    { text: '─┘', color: edge },
-  ].map((s) => ({ ...s, bg }));
+  const note = bangMode ? 'runs as you typed it' : '! runs a line as it is';
+  const room = W - 4 - stringWidth(keys.map((k) => k.text).join(''));
+  const foot = line(room >= stringWidth(note) + 2 ? [...keys, { text: ' '.repeat(room - stringWidth(note)) }, { text: note, color: theme.dim }] : keys);
+  const rule = [{ text: '├', color: edge, bg }, { text: '─'.repeat(W - 2), color: theme.border, bg }, { text: '┤', color: edge, bg }];
+  const bottom = [{ text: `└${'─'.repeat(W - 2)}┘`, color: edge, bg }];
+  const pad = b.pad ? [blank] : [];
   return (
     <Box position="absolute" marginTop={b.top} marginLeft={b.left} width={W} flexDirection="column">
-      {[top, input, ...rows, bottom].map((segs, i) => (
+      {[top, head, ...pad, field, ...rows, ...pad, rule, foot, bottom].map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
     </Box>

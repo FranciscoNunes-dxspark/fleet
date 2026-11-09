@@ -1254,7 +1254,7 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
       setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - (layout.current.box?.textX ?? 3))));
       return setFocus('prompt');
     }
-    const sug = e.y - promptTop - 1;
+    const sug = e.y - (layout.current.box?.items ?? promptTop + 1);
     if (sug >= 0 && sug < sugCount) {
       setSugIndex(sug);
       // As ↵ would, on the suggestion under the pointer.

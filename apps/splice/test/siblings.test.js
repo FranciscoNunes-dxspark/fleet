@@ -112,7 +112,8 @@ test('a paste opens the prompt; /family copies a line; a sibling\'s mood gets a 
     await until(() => !frame().includes('enter run'), 'back in the view');
     const ctx = encodeContext('commit', { hash: git('rev-parse', 'HEAD') });
     app.stdin.write(`${ctx}\n`);
-    await until(() => prompt(frame()).startsWith('family:v1:commit:'), 'the context in the prompt');
+    // A long line scrolls in the field to its end, where the cursor is.
+    await until(() => prompt(frame()).length > 8 && ctx.endsWith(prompt(frame())), 'the context in the prompt');
     app.stdin.write('\x1b');
     await until(() => !frame().includes('enter run'), 'back in the view again');
 

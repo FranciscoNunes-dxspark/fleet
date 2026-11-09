@@ -650,7 +650,7 @@ export function App({ config: initialConfig, provider = createChart(), cwd: star
       setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - (layout.current.box?.textX ?? 3))));
       return setFocus('prompt');
     }
-    const row = e.y - promptTop - 1;
+    const row = e.y - (layout.current.box?.items ?? promptTop + 1);
     if (row >= 0 && row < sugCount) {
       setSugIndex(row);
       // As ↵ would, on the suggestion under the pointer.

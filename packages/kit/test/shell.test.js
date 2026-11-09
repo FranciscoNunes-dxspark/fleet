@@ -160,20 +160,26 @@ test('a modal PromptBox in the shell look is a command box over the view, and no
   assert.equal(closed[15], '');
   const open = frame(h(Over, { open: true }));
   const b = commandBox({ width: 60, height: 16, count: 2 });
-  assert.deepEqual([b.top, b.left, b.width, b.rows, b.input, b.textX, b.inner], [4, 2, 56, 5, 5, 6, 50]);
-  assert.equal(open[b.top].slice(b.left, b.left + 2), '┌─');
-  assert.equal(open[b.input].slice(b.left, b.textX), '│ » ');
+  assert.deepEqual([b.top, b.left, b.width, b.rows, b.input, b.items, b.textX, b.inner], [4, 2, 56, 10, 7, 8, 7, 48]);
+  // A short terminal shows as many suggestions as fit.
+  const short = commandBox({ width: 60, height: 12, count: 8 });
+  assert.ok(short.shown < 8 && short.top >= 1 && short.top + short.rows <= 11, JSON.stringify(short));
+  assert.equal(open[b.top].slice(b.left, b.left + b.width), `┌${'─'.repeat(54)}┐`);
+  assert.match(open[b.top + 1], /│ Commands  commands +│/);
+  assert.equal(open[b.input].slice(b.left, b.textX), '│  » ');
   assert.equal(open[b.input].slice(b.textX, b.textX + 3), '/lo');
-  assert.match(open[b.input + 1], /│ › \/logs <name> +A log +│/);
-  assert.match(open[b.input + 2], /│ {3}\/look +Look again +│/);
-  assert.match(open[b.top + b.rows - 1], /└─ ↵ run  tab complete  ↑↓ pick  esc close ─+┘/);
-  assert.ok(open[b.top - 1].startsWith('view row 3') && open[b.top + b.rows].startsWith('view row 9'), 'the view around it');
+  assert.match(open[b.items], /│  › \/logs <name> +A log +│/);
+  assert.match(open[b.items + 1], /│ {4}\/look +Look again +│/);
+  assert.match(open[b.top + b.rows - 3], /├─+┤/);
+  assert.match(open[b.top + b.rows - 2], /│ ↵ run  tab complete  ↑↓ pick  esc close +│/);
+  assert.match(open[b.top + b.rows - 1], /└─+┘/);
+  assert.ok(open[b.top - 1].startsWith('view row 3') && open[b.top + b.rows].startsWith('view row 14'), 'the view around it');
   assert.equal(open[b.input].slice(0, b.left), 'vi', 'the view beside it');
   assert.equal(commandRows(2), 0);
   // "!" is a raw command: $ and its own words.
   const bang = frame(h(Over, { open: true, value: '!ls' }));
-  assert.match(bang[b.top], /run as it is/);
-  assert.equal(bang[b.input].slice(b.left, b.textX), '│ $ ');
+  assert.match(bang[b.top + 1], /run a line as it is/);
+  assert.equal(bang[b.input].slice(b.left, b.textX), '│  $ ');
 });
 
 test('the command box for clicks: none in the classic look, null while closed, and what a click hits', () => {
