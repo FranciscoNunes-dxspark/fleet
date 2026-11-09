@@ -180,7 +180,7 @@ test('A asks for reviewers, D makes it a draft, E retitles it and B edits its de
     app.stdin.write('\x1bb');
     const file = join(dir, '.git', 'splice-pr-7.md');
     // The file from the repository's root, so a long temp path (Windows) doesn't scroll the command away.
-    await until(() => existsSync(file) && frame().includes('Edit it in your editor') && /^ » \/body --file \.git\/splice-pr-7\.md *$/m.test(frame()), 'the body file in the prompt');
+    await until(() => existsSync(file) && frame().includes('Edit it in your editor') && /» \/body --file \.git\/splice-pr-7\.md *│/.test(frame()), 'the body file in the prompt');
     assert.equal(readFileSync(file, 'utf8'), 'Old body');
     writeFileSync(file, 'New body\r\n\r\nWith a second paragraph\r\n');
     app.stdin.write('\r');

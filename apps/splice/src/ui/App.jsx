@@ -21,7 +21,7 @@ import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/ki
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
-import { Confirm, Panel, PromptBox, Row, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, Panel, PromptBox, Row, Spinner, commandBoxFor, commandBoxHit, commandRows, confirmHeight, promptRowFor } from '@fleet/kit/ui/parts.jsx';
 import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { BranchesView } from './BranchesView.jsx';
 import { ChangesView } from './ChangesView.jsx';
@@ -1012,6 +1012,10 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     // A confirmation's options are picked with keys.
     if (confirmRef.current || !layout.current) return;
     const { mainTop, mainH, promptTop, sugCount, tabs } = layout.current;
+    // While the command box is open over the view, a click in it is its own and one outside it closes it.
+    const inBox = commandBoxHit(layout.current.box, e);
+    if (inBox === false) return e.drag || e.wheel ? undefined : setFocus('view');
+    if (inBox && (e.drag || e.wheel)) return;
     if (e.drag) {
       // A drag the component it started in takes itself (claimDrags below; useMouse's `drags`).
       const hit = mouseTarget(e.from.y - mainTop);
@@ -1027,7 +1031,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
       setFocus('view');
       return setView(tab.id);
     }
-    if (e.y >= mainTop && e.y < mainTop + mainH) {
+    if (!inBox && e.y >= mainTop && e.y < mainTop + mainH) {
       // Like esc, a click on the view leaves the prompt's text for later.
       if (!e.wheel && focusRef.current === 'prompt') setFocus('view');
       const hit = mouseTarget(e.y - mainTop);
@@ -1035,11 +1039,11 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
     }
     if (e.wheel) return;
     if (e.y === promptTop) {
-      // The text starts after a space and "> ", scrolled as PromptBox scrolls it.
+      // The text starts after the box's edge and "» ", scrolled as the command box scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 3;
+      const inner = layout.current.box?.inner ?? columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - (layout.current.box?.textX ?? 3))));
       return setFocus('prompt');
     }
     const sug = e.y - promptTop - 1;
@@ -1068,7 +1072,7 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
   const W = columns;
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries);
-  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
   // Twig's mood for the family (family.js), written whenever it changes, and the others' read every half
   // a minute: a worried, sad or happy one from the last 15 minutes gets a line, once. "Family moods" in
@@ -1105,10 +1109,13 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
   const mainTop = factsRow ? 2 : 1;
   const mainH = Math.max(6, H - mainTop - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
+  // The command box, over the view while the prompt has the keys (the kit's CommandBox).
+  const cmdBox = commandBoxFor({ open: focus === 'prompt' && !confirmReq, width: W, height: H, count: suggestions.length });
   layout.current = {
+    box: cmdBox,
     mainTop,
     mainH,
-    promptTop: mainTop + mainH + act.length + (busy ? 1 : 0),
+    promptTop: promptRowFor(cmdBox, mainTop + mainH + act.length + (busy ? 1 : 0)),
     sugCount: suggestions.length,
     tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
@@ -1185,9 +1192,8 @@ export function App({ initialPath, reopenLast = false, config: initialConfig, ch
       {confirmReq ? (
         <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder='Press / for commands (try "/commit fix typo"), ! to run git, ? for shortcuts' />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} modal items={suggestions} selected={sel} height={H} placeholder='Press / for commands (try "/commit fix typo"), ! to run git, ? for shortcuts' />
       )}
-      {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
       <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );

@@ -3,6 +3,13 @@ import { Box, Text, useInput } from 'ink';
 import { theme } from '../theme.js';
 import { clean, fit, fitSegments, stringWidth } from '../text.js';
 import { shellLook } from '../look.js';
+import { app, appConfigured } from '../app.js';
+
+// The status line's (and the command box's) background when the app's palette names none (`theme.bar`).
+const BAR = { dark: '#1a1e24', light: '#eceef1' };
+
+/** The status line's background: the palette's `bar`, else a grey a step off the terminal's own. */
+export const barColor = () => theme.bar ?? (theme.mode === 'light' ? BAR.light : BAR.dark);
 
 /**
  * One line of styled segments, cut to `width`. Draws the ❯ cursor and the selection background;
@@ -275,8 +282,13 @@ export function Confirm({ req, width, onDone }) {
 /**
  * The input box. Rendering only: App owns the text and handles the keys (see usePromptKeys).
  * `bang` is false in an app where "!" means nothing at the prompt.
+ *
+ * With `modal`, the shell look draws the prompt as a command box over the view while it has the keys
+ * (CommandBox, with the suggestions `items` and `selected` inside it, placed in an app `height` rows
+ * tall), and nothing at all while it hasn't. It must then be a child of the app's outermost Box.
  */
-export function PromptBox({ value, cursor, focused, width, placeholder, bang = true }) {
+export function PromptBox({ value, cursor, focused, width, placeholder, bang = true, modal = false, items = [], selected = 0, height = 0 }) {
+  if (modal && shellLook()) return focused ? <CommandBox value={value} cursor={cursor} width={width} height={height} items={items} selected={selected} bang={bang} /> : null;
   // "!" runs what follows as it is (SQL, or a git command), and the box takes another colour.
   const bangMode = bang && value.startsWith('!');
   const color = !focused ? theme.border : bangMode ? theme.bangMode : theme.accent;
@@ -333,6 +345,116 @@ export const paneRows = (height) => Math.max(0, height - (shellLook() ? 1 : 2));
 
 /** The rows PromptBox takes: three in a box, one in the shell look. */
 export const promptHeight = () => (shellLook() ? 1 : 3);
+
+/** The rows a modal PromptBox and its `count` suggestions take from the layout: none in the shell look, where they sit over the view. */
+export const commandRows = (count) => (shellLook() ? 0 : promptHeight() + count);
+
+/**
+ * Where the command box sits in an app `width` × `height` with `count` suggestions: { top, left, width,
+ * rows, input, textX, inner }, rows and columns from the app's top left. `input` is the row typed in,
+ * the suggestions the rows under it; the text starts at column `textX` and shows `inner` columns. The
+ * box keeps its top whatever the suggestions, a quarter of the way down, so it doesn't jump as they change.
+ */
+export function commandBox({ width, height, count = 0 }) {
+  const w = Math.max(24, Math.min(width - 4, 120));
+  const rows = 3 + count;
+  const top = Math.max(1, Math.min(Math.floor(height / 4), height - rows - 1));
+  const left = Math.max(0, Math.floor((width - w) / 2));
+  return { top, left, width: w, rows, input: top + 1, textX: left + 4, inner: w - 6 };
+}
+
+/**
+ * The command box an app's clicks are matched against: undefined in the classic look (the prompt is in
+ * the layout), null while it's closed, else commandBox's.
+ */
+export function commandBoxFor({ open, width, height, count = 0 }) {
+  if (!shellLook()) return undefined;
+  return open ? commandBox({ width, height, count }) : null;
+}
+
+/** The prompt's row for clicks: the box's input row, none (-1) while the box is closed, else `row`, where the classic look draws it. */
+export const promptRowFor = (box, row) => (box === undefined ? row : box ? box.input : -1);
+
+/** Whether a click landed in the command box: undefined when there's none open, else true or false. */
+export function commandBoxHit(box, e) {
+  if (!box) return undefined;
+  return e.y >= box.top && e.y < box.top + box.rows && e.x >= box.left && e.x < box.left + box.width;
+}
+
+const BOX_KEYS = [
+  ['↵', 'run'],
+  ['tab', 'complete'],
+  ['↑↓', 'pick'],
+  ['esc', 'close'],
+];
+
+/**
+ * The shell look's command box, over the view: a square box on the bar's background with the app's name
+ * in its top border, the prompt (» for the app's own commands, $ while "!" runs one as it is), the
+ * suggestions under it, and the keys in its bottom border. Drawn where commandBox places it.
+ */
+export function CommandBox({ value, cursor, width, height, items = [], selected = 0, bang = true }) {
+  const b = commandBox({ width, height, count: items.length });
+  const bg = barColor();
+  const bangMode = bang && value.startsWith('!');
+  const edge = bangMode ? theme.bangMode : theme.accent;
+  const W = b.width;
+  const line = (segs) => [{ text: '│', color: edge }, ...fitSegments(segs, W - 2, true), { text: '│', color: edge }].map((s) => ({ ...s, bg }));
+  const title = appConfigured() ? app().title : 'Commands';
+  const mode = bangMode ? 'run as it is' : 'commands';
+  const topFill = Math.max(0, W - 2 - stringWidth(` ${title} `) - stringWidth(` ${mode} `) - 2);
+  const top = [
+    { text: '┌─', color: edge },
+    { text: ` ${title} `, color: edge, bold: true },
+    { text: '─'.repeat(topFill), color: edge },
+    { text: ` ${mode} `, color: theme.dim },
+    { text: '─┐', color: edge },
+  ].map((s) => ({ ...s, bg }));
+  // The text scrolled so the cursor stays in sight, the cursor a block.
+  const start = Math.max(0, cursor - b.inner + 1);
+  const visible = value.slice(start, start + b.inner);
+  const at = cursor - start;
+  const input = line([
+    { text: ' ' },
+    { text: bangMode ? '$ ' : '» ', color: edge, bold: true },
+    { text: clean(visible.slice(0, at)) },
+    { text: visible[at] ?? ' ', inverse: true },
+    { text: clean(visible.slice(at + 1)) },
+  ]);
+  // The names' column, as wide as the longest up to two fifths of the box; a suggestion with nothing to
+  // say about it (a value, a problem's line) takes the whole row.
+  const nameW = items.length ? Math.min(Math.max(28, Math.floor(b.inner * 0.4)), Math.max(...items.map((s) => stringWidth(s.label + (s.hint ? ` ${s.hint}` : '')))) + 2) : 0;
+  const rows = items.map((s, i) => {
+    const on = i === selected;
+    const name = s.label + (s.hint ? ` ${s.hint}` : '');
+    const segs = line([
+      { text: on ? ' › ' : '   ', color: edge, bold: true },
+      { text: s.desc ? fit(name, nameW - 2) : name, color: on ? edge : undefined, bold: on },
+      { text: '  ' },
+      { text: s.desc ?? '', color: on ? undefined : theme.dim },
+    ]);
+    return on ? segs.map((x, j) => (j === 0 || j === segs.length - 1 ? x : { ...x, bg: theme.selBg ?? bg })) : segs;
+  });
+  const keys = [];
+  BOX_KEYS.forEach(([k, label], i) => {
+    keys.push({ text: i ? '  ' : ' ' }, { text: k, bold: true }, { text: ` ${label}`, color: theme.dim });
+  });
+  keys.push({ text: ' ' });
+  const shownKeys = stringWidth(keys.map((k) => k.text).join('')) <= W - 4 ? keys : [];
+  const bottom = [
+    { text: '└─', color: edge },
+    ...shownKeys,
+    { text: '─'.repeat(Math.max(0, W - 4 - stringWidth(shownKeys.map((k) => k.text).join('')))), color: edge },
+    { text: '─┘', color: edge },
+  ].map((s) => ({ ...s, bg }));
+  return (
+    <Box position="absolute" marginTop={b.top} marginLeft={b.left} width={W} flexDirection="column">
+      {[top, input, ...rows, bottom].map((segs, i) => (
+        <Row key={i} pointer={false} width={W} segments={segs} />
+      ))}
+    </Box>
+  );
+}
 
 /** The slash-command menu under the prompt. */
 export function Suggestions({ items, selected, width }) {

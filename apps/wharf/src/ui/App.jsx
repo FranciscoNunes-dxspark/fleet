@@ -15,7 +15,7 @@ import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/u
 import { recordCommand } from '@fleet/kit/recording.js';
 import { readProject } from '@fleet/kit/environments.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
-import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight, promptHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, Panel, PromptBox, Row, SecretPrompt, Spinner, commandBoxFor, commandBoxHit, commandRows, confirmHeight, promptRowFor } from '@fleet/kit/ui/parts.jsx';
 import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { ContainersView } from './ContainersView.jsx';
@@ -700,6 +700,10 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
     // A confirmation's options are picked with keys.
     if (confirmRef.current || !layout.current) return;
     const { mainTop, mainH, promptTop, sugCount, tabs } = layout.current;
+    // While the command box is open over the view, a click in it is its own and one outside it closes it.
+    const inBox = commandBoxHit(layout.current.box, e);
+    if (inBox === false) return e.drag || e.wheel ? undefined : setFocus('view');
+    if (inBox && (e.drag || e.wheel)) return;
     if (e.drag) {
       const hit = mouseTarget(e.from.y - mainTop);
       if (!hit) return;
@@ -714,7 +718,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
       setFocus('view');
       return setView(tab.id);
     }
-    if (e.y >= mainTop && e.y < mainTop + mainH) {
+    if (!inBox && e.y >= mainTop && e.y < mainTop + mainH) {
       // Like esc, a click on the view leaves the prompt's text for later.
       if (!e.wheel && focusRef.current === 'prompt') setFocus('view');
       const hit = mouseTarget(e.y - mainTop);
@@ -722,11 +726,11 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
     }
     if (e.wheel) return;
     if (e.y === promptTop) {
-      // The text starts after a space and "> ", scrolled as PromptBox scrolls it.
+      // The text starts after the box's edge and "» ", scrolled as the command box scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 3;
+      const inner = layout.current.box?.inner ?? columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 3)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - (layout.current.box?.textX ?? 3))));
       return setFocus('prompt');
     }
     const row = e.y - promptTop - 1;
@@ -747,7 +751,7 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   const H = Math.max(12, rows - 1);
   // esc hides the activity lines; the Log view keeps them all.
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : promptHeight() + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
   const mood = moodFor({ data, busy, lastEntry: entries.at(-1) });
   // How Bark feels, for the siblings (family.js's writeMood), whenever that changes.
   const told = familyMood({ mood, data, kubeData, lastEntry: entries.at(-1), busy });
@@ -758,10 +762,13 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
   const top = topLine({ face: FACES[mood], title: 'Wharf', views: viewTabs(entries), view, context: headerContext({ data, loading, problem: data ? problem : null, provider: provider.name, env }), width: W, compact: true });
   const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
   const viewActive = focus === 'view' && !overlay && !confirmReq;
+  // The command box, over the view while the prompt has the keys (the kit's CommandBox).
+  const cmdBox = commandBoxFor({ open: focus === 'prompt' && !confirmReq, width: W, height: H, count: suggestions.length });
   layout.current = {
+    box: cmdBox,
     mainTop: 1,
     mainH,
-    promptTop: 1 + mainH + act.length + (busy ? 1 : 0),
+    promptTop: promptRowFor(cmdBox, 1 + mainH + act.length + (busy ? 1 : 0)),
     sugCount: suggestions.length,
     tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
@@ -838,9 +845,8 @@ export function App({ config: initialConfig, cwd = process.cwd(), provider = cre
           <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
         )
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} modal items={suggestions} selected={sel} height={H} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
-      {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
       <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );

@@ -61,7 +61,7 @@ test('/take finds a sibling\'s log line in the crew\'s logs; other kinds are ano
   try {
     await until(() => frame().includes('req_424242'), 'the log');
     app.stdin.write(takeLine('logline', { process: 'api', text: 'boom', requestId: 'req_424242' }));
-    await until(() => frame().includes('family:v1:logline:') && frame().includes('enter run'), 'the pasted line in the prompt');
+    await until(() => frame().includes('v1:logline:') && frame().includes('enter run'), 'the pasted line in the prompt');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('From api: boom') && /api\s+GET \/orders requestId=req_424242 500/.test(frame()), 'the line that says it');
     app.stdin.write(KEYS.esc);

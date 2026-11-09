@@ -6,13 +6,9 @@
 import React from 'react';
 import { theme } from '../theme.js';
 import { fit, fitSegments, stringWidth } from '../text.js';
-import { Row } from './parts.jsx';
+import { Row, barColor } from './parts.jsx';
 
-// The status line's background when the app's palette names none (`theme.bar`).
-const BAR = { dark: '#1a1e24', light: '#eceef1' };
-
-/** The status line's background: the palette's `bar`, else a grey a step off the terminal's own. */
-export const barColor = () => theme.bar ?? (theme.mode === 'light' ? BAR.light : BAR.dark);
+export { barColor };
 
 const width = (segs) => segs.reduce((n, s) => n + stringWidth(s.text), 0);
 

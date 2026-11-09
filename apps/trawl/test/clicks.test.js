@@ -127,16 +127,18 @@ test('clicks pick rows, cells and tabs, double-clicks do what ↵ does (but neve
     assert.match(frame(), /│ History /);
     assert.equal(frame().split(`${BULLET} SELECT TOP (500)`).length, 2, 'it ran once, from the Explorer');
 
-    // The prompt: a click focuses it, and a click on the view gives the keys back, keeping the text.
-    p = at('Press / for commands');
-    mouse.click(p.x, p.y);
-    await until(() => frame().includes('enter run  tab complete'), 'the prompt focused');
+    // The command box: / opens it over the view, a click in its text moves the cursor there, and a click
+    // outside it closes it.
+    app.stdin.write('/');
+    await until(() => frame().includes('enter run  tab complete'), 'the command box');
     app.stdin.write('x');
-    await until(() => frame().includes('» x'), 'typed into the prompt');
-    p = at('│ History ');
-    mouse.click(p.x, p.y + 1);
-    await until(() => !frame().includes('enter run  tab complete'), 'the view focused again');
-    assert.match(frame(), /» x/);
+    await until(() => frame().includes('» /x'), 'typed into it');
+    p = at('» /x');
+    mouse.click(p.x + 2, p.y);
+    app.stdin.write('y');
+    await until(() => frame().includes('» y/x'), 'typed where the click put the cursor');
+    mouse.click(1, frame().split('\n').length - 1);
+    await until(() => !frame().includes('enter run  tab complete') && !frame().includes('» '), 'the box closed');
 
     // Text selected and copied (mouse.js does that): said for a moment in the bottom line.
     mouse.copy('one\ntwo');
@@ -177,8 +179,9 @@ test('the wheel scrolls a list or the grid and leaves the cursor where it was; s
     await until(() => /❯.*SELECT 2 AS n/.test(firstRow()), 'the cursor one down from where it was, in view');
 
     // The grid, in a terminal too small for all of Players' rows and columns.
-    // One row fewer than the old frame needed, as a pane spends one row on its title, not two.
-    resize(app, 40, 21);
+    // Two rows fewer than the old frame needed: a pane spends one row on its title, not two, and the
+    // command box sits over the view rather than taking a row of its own.
+    resize(app, 40, 20);
     p = at('Explorer');
     mouse.click(p.x, p.y);
     await until(() => /❯ +T Clubs/.test(frame()), 'the explorer again');
@@ -361,7 +364,7 @@ test('clicks under the console go to the results there, and clicking away from a
     mouse.click(p.x, p.y);
     await until(() => /❯.*Union Sud/.test(frame()) && frame().includes('↵/i type'), 'the row picked, typing stopped');
 
-    // In Results: typing into a cell, then a click on the prompt keeps it, as ↵ would.
+    // In Results: typing into a cell, then a click elsewhere keeps it, as ↵ would.
     p = at('Results');
     mouse.click(p.x, p.y);
     await until(() => frame().includes('h/l columns'), 'Results');
@@ -373,14 +376,11 @@ test('clicks under the console go to the results there, and clicking away from a
     app.stdin.write('\x15');
     app.stdin.write('Club Q2');
     await until(() => frame().includes('Club Q2'), 'typed into the cell');
-    p = at('Press / for commands');
-    mouse.click(p.x, p.y);
-    await until(() => frame().includes('1 edited row not saved') && frame().includes('enter run  tab complete'), 'the change staged, the prompt focused');
-
-    // While a question is open, the mouse does nothing: its answers take keys.
     p = at('│ SELECT * FROM dbo.Clubs');
     mouse.click(p.x, p.y + 4);
-    await until(() => !frame().includes('enter run  tab complete'), 'the view focused');
+    await until(() => frame().includes('1 edited row not saved') && !frame().includes('editing the cell'), 'the change staged, the view focused');
+
+    // While a question is open, the mouse does nothing: its answers take keys.
     app.stdin.write('s');
     await until(() => frame().includes('Save 1 edited row to dbo.Clubs on demo?'), 'the question');
     p = at('History');

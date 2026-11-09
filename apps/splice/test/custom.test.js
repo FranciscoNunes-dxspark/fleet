@@ -147,7 +147,7 @@ test('ctrl+p: the palette lists the view’s keys and the commands, filters as y
     await type(app.stdin, 'new branch here');
     await until(() => /❯ b\s+New branch here/.test(frame()), 'b picked');
     app.stdin.write(KEYS.enter);
-    await until(() => /^ » \/branch /m.test(frame()) && !frame().includes('Command palette'), 'b run in the graph');
+    await until(() => /» \/branch /.test(frame()) && !frame().includes('Command palette'), 'b run in the graph');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('enter run'), 'out of the prompt');
     // Your command runs.
@@ -163,7 +163,7 @@ test('ctrl+p: the palette lists the view’s keys and the commands, filters as y
     app.stdin.write(KEYS.ctrlP);
     await until(() => frame().includes('Command palette') && /❯ \/checkout/.test(frame()), 'the palette from the prompt');
     app.stdin.write(KEYS.enter);
-    await until(() => /^ » \/checkout( |$)/m.test(frame()) && !frame().includes('Command palette'), '/checkout waiting in the prompt');
+    await until(() => /» \/checkout( |│)/.test(frame()) && !frame().includes('Command palette'), '/checkout waiting in the prompt');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('enter run'), 'out of the prompt');
     // esc closes it, and nothing else happens: q was text.

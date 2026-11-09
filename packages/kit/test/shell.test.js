@@ -4,9 +4,10 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
+import { Box, Text } from 'ink';
 import { theme } from '../theme.js';
 import { look, setLook, shellLook } from '../look.js';
-import { Panel, PromptBox, paneRows, promptHeight } from '../ui/parts.jsx';
+import { Panel, PromptBox, commandBox, commandBoxFor, commandBoxHit, commandRows, paneRows, promptHeight, promptRowFor } from '../ui/parts.jsx';
 import { parseKeys, statusLine, topLine } from '../ui/shell.jsx';
 import { stringWidth } from '../text.js';
 
@@ -144,4 +145,53 @@ test('paneRows is the rows a Panel gives its children in either look', () => {
   assert.equal(paneRows(10), 8);
   setLook('shell');
   assert.equal(paneRows(10), 9);
+});
+
+test('a modal PromptBox in the shell look is a command box over the view, and nothing while it is closed', () => {
+  setLook('shell');
+  const h = React.createElement;
+  const items = [{ label: '/logs', hint: '<name>', desc: 'A log' }, { label: '/look', desc: 'Look again' }];
+  const Over = ({ open, value = '/lo', cursor = 3 }) =>
+    h(Box, { flexDirection: 'column', width: 60, height: 16 },
+      ...Array.from({ length: 15 }, (_, i) => h(Text, { key: i }, `view row ${i}`.padEnd(60, '.'))),
+      h(PromptBox, { value, cursor, focused: open, width: 60, height: 16, modal: true, items, selected: 0 }));
+  const closed = frame(h(Over, { open: false }));
+  assert.ok(closed.slice(0, 15).every((l) => l.startsWith('view row')), 'no row of its own');
+  assert.equal(closed[15], '');
+  const open = frame(h(Over, { open: true }));
+  const b = commandBox({ width: 60, height: 16, count: 2 });
+  assert.deepEqual([b.top, b.left, b.width, b.rows, b.input, b.textX, b.inner], [4, 2, 56, 5, 5, 6, 50]);
+  assert.equal(open[b.top].slice(b.left, b.left + 2), '┌─');
+  assert.equal(open[b.input].slice(b.left, b.textX), '│ » ');
+  assert.equal(open[b.input].slice(b.textX, b.textX + 3), '/lo');
+  assert.match(open[b.input + 1], /│ › \/logs <name> +A log +│/);
+  assert.match(open[b.input + 2], /│ {3}\/look +Look again +│/);
+  assert.match(open[b.top + b.rows - 1], /└─ ↵ run  tab complete  ↑↓ pick  esc close ─+┘/);
+  assert.ok(open[b.top - 1].startsWith('view row 3') && open[b.top + b.rows].startsWith('view row 9'), 'the view around it');
+  assert.equal(open[b.input].slice(0, b.left), 'vi', 'the view beside it');
+  assert.equal(commandRows(2), 0);
+  // "!" is a raw command: $ and its own words.
+  const bang = frame(h(Over, { open: true, value: '!ls' }));
+  assert.match(bang[b.top], /run as it is/);
+  assert.equal(bang[b.input].slice(b.left, b.textX), '│ $ ');
+});
+
+test('the command box for clicks: none in the classic look, null while closed, and what a click hits', () => {
+  assert.equal(commandBoxFor({ open: true, width: 80, height: 24 }), undefined);
+  assert.equal(promptRowFor(undefined, 20), 20);
+  assert.equal(commandRows(3), 6);
+  setLook('shell');
+  assert.equal(commandBoxFor({ open: false, width: 80, height: 24 }), null);
+  assert.equal(promptRowFor(null, 20), -1);
+  const b = commandBoxFor({ open: true, width: 80, height: 24, count: 1 });
+  assert.equal(promptRowFor(b, 20), b.input);
+  assert.equal(commandBoxHit(null, { x: 0, y: 0 }), undefined);
+  assert.equal(commandBoxHit(b, { x: b.left, y: b.top }), true);
+  assert.equal(commandBoxHit(b, { x: b.left + b.width - 1, y: b.top + b.rows - 1 }), true);
+  assert.equal(commandBoxHit(b, { x: b.left - 1, y: b.input }), false);
+  assert.equal(commandBoxHit(b, { x: b.left, y: b.top + b.rows }), false);
+  // It keeps its top as the suggestions come and go, and stays clear of the status line.
+  assert.equal(commandBox({ width: 80, height: 24, count: 8 }).top, commandBox({ width: 80, height: 24, count: 0 }).top);
+  const tall = commandBox({ width: 80, height: 12, count: 6 });
+  assert.ok(tall.top + tall.rows <= 11 && tall.top >= 1);
 });
