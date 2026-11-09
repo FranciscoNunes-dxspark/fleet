@@ -65,6 +65,28 @@ const term = new Terminal({
 });
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
+
+/**
+ * Sizes the terminal to its box with one row more than shows, the last one clipped (#terminal hides
+ * it). The apps draw a row short of their screen (Ink would clear the whole screen every frame
+ * otherwise) and end each frame on the row below; in a terminal Fleet's bar sat on that row, here it
+ * would be an empty one. With the hidden row, what the apps draw fills everything that shows.
+ */
+function fitTerm() {
+  const size = fit.proposeDimensions();
+  if (!size || !size.cols || !size.rows) return;
+  if (term.cols !== size.cols || term.rows !== size.rows + 1) term.resize(size.cols, size.rows + 1);
+  // The box is rarely a whole number of rows high: the pixels left over would show most of the hidden
+  // row. They go above the terminal instead, so the rows that show end at the box's bottom edge.
+  // xterm's own cell height: the screen's drawn size can still be the one before this resize.
+  const rowHeight = term._core?._renderService?.dimensions?.css?.cell?.height;
+  if (!rowHeight) return;
+  const box = document.getElementById('terminal');
+  const style = getComputedStyle(box);
+  const room = box.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+  const spare = room - size.rows * rowHeight;
+  term.element.style.marginTop = `${Math.max(0, Math.min(Math.floor(spare), Math.floor(rowHeight) - 1))}px`;
+}
 term.open(document.getElementById('terminal'));
 // The GPU renderer, several times faster than drawing with the page's own elements; where the web view
 // has no WebGL (or loses it), the terminal goes on with those.
@@ -87,7 +109,7 @@ try {
 } catch {
   // Without images, the apps' text is all there is.
 }
-fit.fit();
+fitTerm();
 
 const $ = (id) => document.getElementById(id);
 const send = (data) => invoke('write', { data });
@@ -122,7 +144,14 @@ const titleOf = (id) => bar?.spaces.find((s) => s.id === id)?.title ?? commands?
 
 // ---- the bar ----------------------------------------------------------------------------------------
 
+let shownTabs = '';
+
 function drawTabs(state) {
+  // Drawn again only when the tabs changed: the state comes often (a notice, the prefix waiting), and
+  // a tab replaced between the press and the release of a click would lose that click.
+  const key = JSON.stringify([state.spaces, state.active, state.shown]);
+  if (key === shownTabs) return;
+  shownTabs = key;
   $('tabs').replaceChildren(
     ...state.spaces.map((s, i) => {
       const classes = ['tab', s.state];
@@ -141,7 +170,13 @@ function drawTabs(state) {
       tab.style.setProperty('--accent', s.accent);
       tab.setAttribute('role', 'tab');
       tab.setAttribute('aria-selected', String(s.id === state.active));
-      tab.addEventListener('click', () => prefixed(keyOf(s.id)));
+      // On the press, not the click: the switch shouldn't wait for the release, nor depend on it.
+      tab.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        prefixed(keyOf(s.id));
+      });
+      tab.addEventListener('keydown', (e) => e.key === 'Enter' && prefixed(keyOf(s.id)));
       return tab;
     }),
   );
@@ -589,7 +624,7 @@ function openSettings() {
     const v = Math.max(9, Math.min(28, Number(size.value) || 14));
     term.options.fontSize = v;
     store('fontSize', v);
-    fit.fit();
+    fitTerm();
   });
   const bell = el('input', { type: 'checkbox', checked: Boolean(bar?.bell), ariaLabel: 'Bell' });
   bell.addEventListener('change', () => tell({ settings: { bell: bell.checked } }));
@@ -629,7 +664,7 @@ function toggleSide(which) {
     $(`side-${name}`).hidden = !open;
     $(`toggle-${name}`).setAttribute('aria-pressed', String(open));
   }
-  requestAnimationFrame(() => fit.fit());
+  requestAnimationFrame(() => fitTerm());
   if (which === 'claude' && !$('side-claude').hidden) $('claude-input').focus();
   else term.focus();
 }
@@ -749,7 +784,7 @@ term.onResize(({ cols, rows }) => {
   }, 60);
 });
 
-new ResizeObserver(() => fit.fit()).observe($('terminal'));
+new ResizeObserver(() => fitTerm()).observe($('terminal'));
 
 function finished(text) {
   endedText.textContent = text;
@@ -814,6 +849,7 @@ $('again').addEventListener('click', async () => {
   await invoke('stop');
   bar = null;
   commands = null;
+  shownTabs = '';
   begin();
 });
 

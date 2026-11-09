@@ -68,6 +68,7 @@ kbd {
 .brand {
   display: flex;
   align-items: center;
+  gap: 0.8ch;
   white-space: nowrap;
   padding: 0 12px;
   color: var(--brand);
@@ -229,6 +230,8 @@ body.prod .strip {
   flex: 1;
   min-width: 0;
   padding: 6px 4px 0 8px;
+  /* The terminal's last row is below the box on purpose (app.js fitTerm). */
+  overflow: hidden;
 }
 
 .side {
