@@ -20,6 +20,7 @@ import { buildSchema } from '../schema.js';
 import { dialectOf, qualifiedFor } from '../dialects.js';
 import { qualified, splitStatements, statisticsSummary } from '../sql.js';
 import { BULLET, theme } from '../theme.js';
+import { ProgressView } from './ProgressView.jsx';
 import { stringWidth } from '@fleet/kit/text.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { environmentFor, readProject } from '@fleet/kit/environments.js';
@@ -490,13 +491,15 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
   // One thing at a time, with the spinner, esc to cancel, and a line in the activity log.
   // `start(signal)` resolves with the lines to show under the title.
   // `hint(error)` may add a line under a failure (/why after a run).
-  const task = async (title, start, { label = 'Running', quiet = false, hint = null } = {}) => {
+  // `progress: { title, file? }` gives the run a screen of its own (ProgressView) in place of the one-line
+  // spinner, and `start(signal, report)` feeds it the program's lines.
+  const task = async (title, start, { label = 'Running', quiet = false, hint = null, progress = null } = {}) => {
     if (busyRef.current) {
       note(`Wait for "${busyRef.current.label}" to finish (esc cancels it).`, 'error');
       return { ok: false, error: new Error('busy') };
     }
     const controller = new AbortController();
-    const b = { label, started: Date.now(), abort: () => controller.abort() };
+    const b = { label, started: Date.now(), abort: () => controller.abort(), progress: progress && { ...progress, lines: [] } };
     busyRef.current = b;
     setBusy(b);
     const id = quiet ? null : addEntry({ title, status: 'running' });
@@ -504,7 +507,13 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
     // A long run that ends says so, for when you've looked away (Settings' "Notify when done").
     const tell = (lines) => !quiet && notify && worthNotifying(Date.now() - b.started, configRef.current) && notify(`Trawl: ${title}`, lines[0] ?? '');
     try {
-      const lines = await start(controller.signal);
+      const report = (line) => {
+        const text = String(line).trim();
+        if (!b.progress || !text) return;
+        b.progress.lines = [...b.progress.lines.slice(-199), text];
+        setBusy({ ...b });
+      };
+      const lines = await start(controller.signal, report);
       lastOutput.current = { title, text: lines.join('\n') || 'Done' };
       if (id) updateEntry(id, { status: 'ok', lines: lines.length ? lines : ['Done'] });
       tell(lines.length ? lines : ['Done']);
@@ -1737,6 +1746,8 @@ export function App({ config: initialConfig, initialFile, initialConnection, che
     // Over whichever view is open; ↵ on the row limit hands over to the prompt, and the overlay stays.
     const settingsActive = focus === 'view' && !confirmReq;
     main = <SettingsView config={config} ctx={ctx} updates={{ check: Boolean(checkLatest), install: Boolean(installUpdate) }} update={update} width={W} height={mainH} active={settingsActive} onClose={closeOnKey} />;
+  } else if (busy?.progress) {
+    main = <ProgressView busy={busy} progress={busy.progress} width={W} height={mainH} />;
   } else if (overlay?.help) {
     main = <HelpView sections={custom.sections} start={overlay.start} ctx={ctx} width={W} height={mainH} active={focus === 'view' && !confirmReq} onClose={closeOnKey} />;
   } else if (overlay?.palette) {

@@ -3237,13 +3237,13 @@ const fileSize = (p) => {
   }
 };
 
-async function runTool(ctx, tool, kind, command, env, { title, label, cwd }) {
+async function runTool(ctx, tool, kind, command, env, { title, label, cwd, file }) {
   const from = toolsFor(kind)?.from ?? SQLPACKAGE_FROM;
   return ctx.task(
     title,
-    async (signal) => {
+    async (signal, report) => {
       try {
-        await ctx.runProgram(command, { signal, env, cwd });
+        await ctx.runProgram(command, { signal, env, cwd, onLine: (line) => report?.(line) });
       } catch (e) {
         if (e.cancelled) throw e;
         if (notInstalled(e)) throw new Error(`${tool} isn't installed, or isn't on PATH: it comes with ${from}.`);
@@ -3251,7 +3251,7 @@ async function runTool(ctx, tool, kind, command, env, { title, label, cwd }) {
       }
       return [];
     },
-    { label },
+    { label, progress: { title, file } },
   );
 }
 
@@ -3266,7 +3266,7 @@ async function dumpWithTool(ctx, { args, conn, kind }, database) {
     return ctx.note(`Couldn't make ${dirname(full)}: ${firstLine(e.message)}`, 'error');
   }
   const { command, env } = dumpCommand(conn, kind, { database, file: full, password });
-  const r = await runTool(ctx, tools.dump, kind, command, env, { title: `${tools.dump} ${database} on ${conn.name}`, label: `Backing up ${database} with ${tools.dump}`, cwd: dirname(full) });
+  const r = await runTool(ctx, tools.dump, kind, command, env, { title: `${tools.dump} ${database} on ${conn.name}`, label: `Backing up ${database} with ${tools.dump}`, cwd: dirname(full), file: full });
   if (!r.ok) {
     // Half a dump is no backup.
     try {
@@ -3345,7 +3345,7 @@ export async function exportBacpac(ctx, rest = '') {
     return ctx.note(`Couldn't make ${dirname(full)}: ${firstLine(e.message)}`, 'error');
   }
   const { command, env } = sqlpackageCommand(conn, { database, file: full, password });
-  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Export ${database} on ${conn.name} to a .bacpac`, label: `Exporting ${database} with SqlPackage`, cwd: dirname(full) });
+  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Export ${database} on ${conn.name} to a .bacpac`, label: `Exporting ${database} with SqlPackage`, cwd: dirname(full), file: full });
   if (!r.ok) {
     // Half an export is no bacpac.
     try {
