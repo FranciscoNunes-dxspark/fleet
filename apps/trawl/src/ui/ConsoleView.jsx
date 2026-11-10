@@ -38,11 +38,11 @@ function overlay(segs, x, add) {
 
 /**
  * The panel's title, "Console" or with the tabs after it ("Console 1 console [2 query]"), and the
- * columns each tab's label covers ({ from, to }, counted from the panel's left edge, after "╭─ ").
+ * columns each tab's label covers ({ from, to }, counted from the pane's left edge, after "│ ").
  */
 export function consoleTitle(tabs, tab) {
   if (tabs.length < 2) return { title: 'Console', spans: [] };
-  let x = 3 + 'Console '.length;
+  let x = 2 + 'Console '.length;
   const spans = [];
   const labels = tabs.map((t, i) => {
     const label = i === tab ? `[${i + 1} ${t}]` : `${i + 1} ${t}`;

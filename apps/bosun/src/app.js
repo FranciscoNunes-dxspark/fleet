@@ -8,6 +8,7 @@ export const APP = configureApp({
   title: 'Bosun',
   version: process.env.BOSUN_VERSION,
   packageUrl: new URL('../package.json', import.meta.url),
+  look: 'shell',
 });
 
 export const { VERSION, COMPILED } = APP;

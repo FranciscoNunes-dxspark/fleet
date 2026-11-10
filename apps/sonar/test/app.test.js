@@ -56,7 +56,7 @@ test('problems: open while the slots are still read, it looks once when the apps
   try {
     await until(() => frame().includes('contoso-orders') && frame().includes('reading…'), 'the apps while the slots are read');
     app.stdin.write('3');
-    await until(() => frame().includes('╭─ Problems') && /\d+ problems/.test(frame()), 'problems found');
+    await until(() => frame().includes('│ Problems') && /\d+ problems/.test(frame()), 'problems found');
     await new Promise((r) => setTimeout(r, 400));
     open();
     await until(() => !frame().includes('reading…'), 'all read');
@@ -181,7 +181,7 @@ test('logs: an app\'s requests, a query typed with completion, a row whole; prob
   try {
     await until(() => frame().includes('contoso-orders'), 'the apps');
     app.stdin.write('l');
-    await until(() => frame().includes('╭─ Logs') && frame().includes('50 rows'), "the app's latest requests");
+    await until(() => frame().includes('│ Logs') && frame().includes('50 rows'), "the app's latest requests");
     assert.match(frame(), /contoso-prod-ai · contoso-web/);
     assert.match(frame(), /timestamp\s+│ name/);
 
@@ -219,7 +219,7 @@ test('opened from the command line: an address finds its app, Problems about it;
   let app = start({ open: { url: 'https://shop.contoso.com/health', view: 'problems' } });
   let frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('╭─ Problems') && frame().includes('contoso-prod-ai · contoso-web') && /\d+ problems/.test(frame()), 'the problems of the app behind the address');
+    await until(() => frame().includes('│ Problems') && frame().includes('contoso-prod-ai · contoso-web') && /\d+ problems/.test(frame()), 'the problems of the app behind the address');
     app.stdin.write('1');
     await until(() => /❯ ● contoso-web/.test(frame()), 'Resources on that app');
   } finally {
@@ -228,7 +228,7 @@ test('opened from the command line: an address finds its app, Problems about it;
   app = start({ open: { sub: 'Contoso Production', app: 'contoso-api', view: 'logs' }, copy: (t) => copied.push(t) });
   frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('╭─ Logs') && frame().includes('contoso-prod-ai · contoso-api') && frame().includes('50 rows'), "the app's requests");
+    await until(() => frame().includes('│ Logs') && frame().includes('contoso-prod-ai · contoso-api') && frame().includes('50 rows'), "the app's requests");
     app.stdin.write('\x1bh');
     await until(() => frame().includes("Copied for Hail: paste it into Hail's prompt"), 'the request for Hail');
     const { kind, data } = contextIn(copied.at(-1));
@@ -266,7 +266,7 @@ test("live: an app's log as it's written, paused, and stopped once you leave", a
     app.stdin.write('p');
     await until(() => frame().includes('paused (p goes on)'), 'paused');
     app.stdin.write('1');
-    await until(() => frame().includes('╭─ Contoso Production'), 'Resources again');
+    await until(() => frame().includes('│ Contoso Production'), 'Resources again');
     const after = lines;
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(lines, after, 'the stream stopped when Live went off screen');
@@ -351,7 +351,7 @@ test('problems: w asks Claude why, with the latest occurrence on stdin and read-
     app.stdin.write('3');
     await until(() => frame().includes('TimeoutException') && /\d+ problems/.test(frame()), 'the problems');
     app.stdin.write('w');
-    await until(() => frame().includes('╭─ Why ') && frame().includes('raise the HttpClient timeout'), "Claude's answer in the viewer");
+    await until(() => frame().includes('│ Why ') && frame().includes('raise the HttpClient timeout'), "Claude's answer in the viewer");
     const [q] = asked;
     const kind = /^"([^"]+)" is an exception in the Azure app "contoso-web"/.exec(q.prompt)?.[1];
     assert.ok(kind, q.prompt);
@@ -362,7 +362,7 @@ test('problems: w asks Claude why, with the latest occurrence on stdin and read-
     assert.ok(q.input.includes(`exception    ${kind}`), q.input);
     assert.match(q.input, /dependency\s+(POST \/charges|contoso-sql-prod\.database\.windows\.net \| contoso)/);
     app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('╭─ Why '), 'closed');
+    await until(() => !frame().includes('│ Why '), 'closed');
 
     app.stdin.write('/');
     await type(app.stdin, 'why Timeout');
@@ -371,7 +371,7 @@ test('problems: w asks Claude why, with the latest occurrence on stdin and read-
     await until(() => asked.length === 2 && frame().includes('Why System.TimeoutException'), 'the named one asked about');
     assert.match(asked[1].input, /timed out talking to the payments provider/);
     app.stdin.write(KEYS.esc);
-    await until(() => !frame().includes('╭─ Why '), 'closed again');
+    await until(() => !frame().includes('│ Why '), 'closed again');
 
     app.stdin.write('\x1by');
     await until(() => frame().includes("Copied for Splice: paste it into Splice's prompt"), 'the exception for Splice');
@@ -418,7 +418,7 @@ test('alerts: what fires in the subscription, an alert whole, and an availabilit
   try {
     await until(() => frame().includes('contoso-orders'), 'the apps');
     app.stdin.write('5');
-    await until(() => frame().includes('╭─ Alerts') && /2 firing · 24h/.test(frame()) && frame().includes('checkout'), 'the alerts and the tests');
+    await until(() => frame().includes('│ Alerts') && /2 firing · 24h/.test(frame()) && frame().includes('checkout'), 'the alerts and the tests');
     assert.match(frame(), /❯ Sev1\s+contoso-web 5xx over 20\s+contoso-web\s+Metric\s+20m ago/);
     assert.match(frame(), /Sev2\s+Checkout availability below 95%/);
     assert.doesNotMatch(frame(), /Payments timeouts/, 'older than the span');
@@ -427,11 +427,11 @@ test('alerts: what fires in the subscription, an alert whole, and an availabilit
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Alert: contoso-web 5xx over 20') && /rule\s+contoso-web-5xx-over-20/.test(frame()), 'the alert whole');
     app.stdin.write(KEYS.esc);
-    await until(() => frame().includes('╭─ Alerts'), 'back');
+    await until(() => frame().includes('│ Alerts'), 'back');
     app.stdin.write('\x1bg');
     await until(() => /❯\s+(\d+ ✗|✓) shop\.contoso\.com/.test(frame()), 'on a test');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('╭─ Logs') && /\d+ rows/.test(frame()) && frame().includes('location'), 'its results in Logs');
+    await until(() => frame().includes('│ Logs') && /\d+ rows/.test(frame()) && frame().includes('location'), 'its results in Logs');
     app.stdin.write('t');
     app.stdin.write('5');
     await until(() => /3 firing · 7d/.test(frame()), 'more over a longer span');
@@ -453,7 +453,7 @@ test('logs: s saves the query under a name, /queries runs it again or forgets it
   try {
     await until(() => frame().includes('contoso-orders'), 'the apps');
     await command('kql exceptions | take 4');
-    await until(() => frame().includes('╭─ Logs') && frame().includes('4 rows'), 'four exceptions');
+    await until(() => frame().includes('│ Logs') && frame().includes('4 rows'), 'four exceptions');
     app.stdin.write('s');
     await until(() => frame().includes('Save the query as'), 'a name asked for');
     await type(app.stdin, 'four errors');

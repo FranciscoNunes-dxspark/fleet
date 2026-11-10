@@ -14,15 +14,18 @@ import { buildAttention, isBlocked } from './domain/attention.js';
 import { buildInsights } from './domain/insights.js';
 import { buildChangelog } from './domain/changelog.js';
 import { buildEpicTree } from './domain/epics.js';
+import { dailyThroughput } from '../client/src/forecast.js';
 import { comingNext, commitCarriers, commitRefs, landedAt, mergeCommits, reposNamed, sameCommit, waitingChanges } from './domain/commits.js';
 import { deployMarkers, deployNote, deployUnderWay, evaluateMonitor, runningDeploy, targetKeyOf } from './domain/production.js';
 import { buildDelivery } from './domain/delivery.js';
 import { DEFAULT_WINDOW_HOURS, buildDora, isProduction } from './domain/dora.js';
-import { buildSummary, weekRange } from './domain/summary.js';
+import { buildSummary, finishedAt, weekRange } from './domain/summary.js';
 import { buildFlow, buildSprintScope } from './domain/flow.js';
 import { changedFolders, suggestReviewers } from './domain/reviewers.js';
 import { findFlakyTests } from './domain/tests.js';
 import { scorePr } from './domain/risk.js';
+import { approvalTarget, judgeReadiness } from './domain/readiness.js';
+import { incidentStart, incidentTimeline, lastGoodDeploy, redeployPlan, suspectDeploys } from './domain/incident.js';
 import { buildDiff, parsePatch } from './domain/filediff.js';
 import { DEFAULT_MIN_SEVERITY, MIN_SEVERITIES, advisoryAttention, pickLockFiles, sortAdvisories } from './domain/advisories.js';
 import { eachLimited } from '@fleet/kit/osv.js';
@@ -43,6 +46,8 @@ const DORA_PR_COMMITS = 30;
 // A pull request's risk reads the history of its busiest folders, at most this many, over this many days.
 const RISK_FOLDERS = 4;
 const RISK_HISTORY_DAYS = 180;
+// The merged pull requests scored for a release's go / no-go, newest first: enough to find a risky one.
+const READINESS_PRS = 15;
 
 /** Backlog order, then id; items without a rank go last. */
 const byBacklogOrder = (a, b) => {
@@ -386,6 +391,23 @@ export function createService({
     }));
   }
   const pipelineKeys = (links) => new Set(links.filter((l) => l?.type === 'pipeline').map((l) => `${l.projectId}:${l.definitionId}`));
+
+  /**
+   * One pull request's risk (domain/risk.js): its files (read once per pushed commit), the history of
+   * its busiest folders on the branch it goes into, and its required reviewers. Active pull requests
+   * (prRisks) and merged ones (what an incident's suspect deploy shipped) alike.
+   */
+  async function riskOf(pr) {
+    const since = new Date(Date.now() - RISK_HISTORY_DAYS * DAY).toISOString();
+    const files = await cached(`prfiles:${pr.key}:${pr.sourceCommit || ''}`, () => provider.getPullRequestFiles(pr.projectId, pr.repoId, pr.id), 24 * 60 * MIN)
+      .then((f) => (f.error ? null : f.items), () => null);
+    const folders = files ? changedFolders(files.map((f) => f.path), RISK_FOLDERS) : [];
+    const history = await Promise.all(folders.map(async (f) => ({
+      dir: f.dir,
+      commits: await cached(`history:${pr.repoId}:${pr.targetBranch || ''}:${f.dir}`, () => provider.listCommits(pr.projectId, pr.repoId, { branch: pr.targetBranch || undefined, path: f.dir, since, top: 100 }), 30 * MIN).catch(() => []),
+    })));
+    return { key: pr.key, projectId: pr.projectId, repoId: pr.repoId, id: pr.id, ...scorePr({ pr, files, history, historyDays: RISK_HISTORY_DAYS }) };
+  }
 
   /** Production monitors with their deploy markers and health verdict. */
   async function production() {
@@ -1056,6 +1078,63 @@ export function createService({
     },
 
     /**
+     * Go / no-go for each production environment (domain/readiness.js): what's waiting to ship
+     * judged against the risk of its merged pull requests, its work items, the repo's pipelines,
+     * flaky tests and new advisories, and production's monitors now. Kept apart from undeployed(),
+     * like prRisks(), so Waiting to ship never waits for it. `approvals` says which production
+     * environment each pending approval deploys to.
+     */
+    async readiness() {
+      return cached('builds:readiness', async () => {
+        const [{ targets: rows }, targets, pipes, flaky, adv, monitors, appr, raw, rels] = await Promise.all([
+          this.undeployed(), productionTargets().catch(() => []), pipelines().catch(() => []),
+          this.flakyTests().catch(() => ({ tests: [] })), this.advisories().catch(() => ({ repos: [] })),
+          production().catch(() => []), approvals().catch(() => []), rawBuilds().catch(() => []), releases().catch(() => []),
+        ]);
+        const named = targets.map((t) => ({
+          ...t,
+          definitionName: t.type === 'release'
+            ? rels.find((d) => d.projectId === t.projectId && d.id === t.definitionId)?.name
+            : pipes.find((p) => p.projectId === t.projectId && p.definition.id === t.definitionId)?.definition.name,
+        }));
+        const judged = await Promise.all(rows.filter((r) => !r.unlinked).map(async (row) => {
+          const target = named.find((t) => t.key === row.key);
+          const repo = row.repo || null;
+          // The repo's pipelines, and the deploying one itself (a classic release's are its build's).
+          const ownPipes = pipes.filter((p) => (repo && p.repoId === repo.id && p.projectId === repo.projectId)
+            || (target?.type === 'pipeline' && p.projectId === target.projectId && p.definition.id === target.definitionId));
+          const pipeKeys = new Set(ownPipes.map((p) => p.key));
+          const scored = (await Promise.all((row.pullRequests || []).slice(0, READINESS_PRS).map(async (p) => {
+            const pr = await cached(`prmerged:${p.repoId}:${p.id}`, () => provider.getPullRequest(p.projectId, p.repoId, p.id), 24 * 60 * MIN).catch(() => null);
+            return pr ? { id: p.id, ...(await riskOf({ ...pr, key: `${p.projectId}/${p.repoId}/${p.id}` })) } : null;
+          }))).filter(Boolean);
+          // New since the watch first read the repo, whenever it was found: still there, still a reason.
+          const found = repo ? adv.repos.find((r) => r.projectId === repo.projectId && r.repoId === repo.id) : null;
+          return {
+            key: row.key,
+            name: row.name,
+            projectId: row.projectId,
+            waiting: row.waiting ?? null,
+            scored: scored.length,
+            ...judgeReadiness({
+              target: row,
+              risks: scored,
+              pipelines: ownPipes,
+              flaky: (flaky.tests || []).filter((x) => pipeKeys.has(x.pipeline?.key)),
+              advisories: (found?.advisories || []).filter((a) => !a.baseline),
+              monitors: monitors.filter((m) => m.targetKey === row.key),
+              repo: repo?.name || '',
+            }),
+          };
+        }));
+        return {
+          targets: judged,
+          approvals: appr.map((a) => ({ key: a.key, targetKey: approvalTarget(a, named, raw) })).filter((x) => x.targetKey),
+        };
+      }, 2 * MIN);
+    },
+
+    /**
      * Each production environment's deploys over `days` days, with the lead
      * time (commit to production, in hours) of the commits each recent
      * successful deploy shipped. Environments that can't be read are skipped.
@@ -1177,6 +1256,46 @@ export function createService({
       const range = weekRange(week);
       if (range.from < Date.now() - 180 * DAY) throw Object.assign(new Error('Summaries go back 26 weeks'), { status: 400 });
       return buildSummary({ ...range, ...(await this.summaryData(range)) });
+    },
+
+    /**
+     * What moved since `since` (ms, at most a week back), for Standup mode (client/src/line/standup.js):
+     * work items finished, open ones whose state changed, pull requests opened, and pull requests
+     * completed with the reviewers who voted on them. Each { key, person, at, … }, with only what a
+     * slide shows.
+     */
+    async standupData({ since }) {
+      const from = Math.max(Number(since) || 0, Date.now() - 7 * DAY);
+      const days = Math.ceil((Date.now() - from) / DAY) + 1;
+      const [projects, open, active, closed] = await Promise.all([workProjects(), openItems(), activePRs(), closedPRs(days)]);
+      const finished = await cached(`wi:done:standup:${days}`, async () => {
+        const lists = await Promise.all(projects.map(async (p) => {
+          const { areaPaths } = await scope(p);
+          const items = await provider.queryWorkItems(p.id, { doneWithinDays: days, areaPaths, categories: ['requirement', 'bug', 'task', 'feature', 'epic'] });
+          return items.map((w) => ({ ...w, projectId: p.id }));
+        }));
+        return lists.flat();
+      }, 5 * MIN);
+      const who = (p) => (p ? { id: p.id, displayName: p.displayName, uniqueName: p.uniqueName, imageUrl: p.imageUrl } : null);
+      const after = (iso) => Date.parse(iso) >= from;
+      const item = (w, at) => ({
+        key: `wi:${w.id}`, id: w.id, title: w.title, type: w.type, state: w.state, projectName: w.projectName,
+        person: who(w.assignedTo), at, open: { type: 'workitem', id: w.id },
+      });
+      const pr = (p, at) => ({
+        key: `pr:${p.key}`, id: p.id, title: p.title, repoName: p.repoName, person: who(p.author), at,
+        open: { type: 'pr', projectId: p.projectId, repoId: p.repoId, id: p.id },
+      });
+      return {
+        since: new Date(from).toISOString(),
+        finished: finished.filter((w) => w.stateCategory === 'Completed' && after(finishedAt(w))).map((w) => item(w, finishedAt(w))),
+        changed: open.filter((w) => w.stateChangedAt && after(w.stateChangedAt) && !(w.createdAt && w.stateChangedAt === w.createdAt)).map((w) => item(w, w.stateChangedAt)),
+        opened: active.filter((p) => after(p.createdAt)).map((p) => pr(p, p.createdAt)),
+        merged: closed.filter((p) => p.status === 'completed' && after(p.closedAt)).map((p) => ({
+          ...pr(p, p.closedAt),
+          reviewers: (p.reviewers || []).filter((r) => !r.isContainer && r.vote).map((r) => ({ person: who(r), vote: r.vote })),
+        })),
+      };
     },
 
     /** Raw material for work item flow: work items of every type finished in the last `days` days, and open work now. */
@@ -1318,18 +1437,7 @@ export function createService({
     async prRisks() {
       return cached('prs:risk', async () => {
         const prs = await activePRs();
-        const since = new Date(Date.now() - RISK_HISTORY_DAYS * DAY).toISOString();
-        const risks = await Promise.all(prs.map(async (pr) => {
-          const files = await cached(`prfiles:${pr.key}:${pr.sourceCommit || ''}`, () => provider.getPullRequestFiles(pr.projectId, pr.repoId, pr.id), 24 * 60 * MIN)
-            .then((f) => (f.error ? null : f.items), () => null);
-          const folders = files ? changedFolders(files.map((f) => f.path), RISK_FOLDERS) : [];
-          const history = await Promise.all(folders.map(async (f) => ({
-            dir: f.dir,
-            commits: await cached(`history:${pr.repoId}:${pr.targetBranch || ''}:${f.dir}`, () => provider.listCommits(pr.projectId, pr.repoId, { branch: pr.targetBranch || undefined, path: f.dir, since, top: 100 }), 30 * MIN).catch(() => []),
-          })));
-          return { key: pr.key, projectId: pr.projectId, repoId: pr.repoId, id: pr.id, ...scorePr({ pr, files, history, historyDays: RISK_HISTORY_DAYS }) };
-        }));
-        return { risks };
+        return { risks: await Promise.all(prs.map(riskOf)) };
       }, 5 * MIN);
     },
 
@@ -1611,6 +1719,22 @@ export function createService({
       return { projects: perProject };
     },
 
+    /**
+     * Each project's pace for the Epics page's forecasts: backlog items finished a day over the
+     * last `days` days (client/src/forecast.js dailyThroughput), from the same query as Flow.
+     */
+    async forecastPace(days = 90) {
+      const [projects, { finished }] = await Promise.all([workProjects(), this.flowData(days)]);
+      return {
+        days,
+        projects: projects.map((p) => ({
+          projectId: p.id,
+          projectName: p.name,
+          ...dailyThroughput(finished.filter((w) => w.projectId === p.id), { days }),
+        })),
+      };
+    },
+
     async pipelines() {
       const rows = await pipelines();
       const upcoming = schedules?.upcomingRuns() || new Map();
@@ -1649,6 +1773,48 @@ export function createService({
 
     async production() {
       return { enabled: !!monitoring, monitors: await production() };
+    },
+
+    /**
+     * What broke production: for a monitor that's down or degraded, when it turned bad, the deploys into
+     * its environment just before (domain/incident.js), what the latest of them shipped with each pull
+     * request's risk, who approved them, the timeline, and how to go back to the last good release.
+     * A monitor that's fine answers `active: false`; one not linked to what deploys it, `unlinked`.
+     */
+    async incident(monitorId) {
+      const m = (await production()).find((x) => x.id === monitorId);
+      if (!m) throw Object.assign(new Error('No such monitor.'), { status: 404 });
+      const now = Date.now();
+      const start = incidentStart(m, now);
+      const head = { monitor: { id: m.id, name: m.name, url: m.url || null, state: m.state, issues: m.issues, start }, at: new Date(now).toISOString() };
+      if (!start) return { ...head, active: false };
+      const target = m.link ? (await productionTargets()).find((x) => x.key === m.targetKey) : null;
+      if (!target) return { ...head, active: true, unlinked: true, suspects: [], timeline: incidentTimeline({ monitor: m, start, now }) };
+      const history = await deployHistory(target, 90);
+      const found = suspectDeploys(history, start);
+      const lastGood = lastGoodDeploy(history, start, found);
+      const [changes, approvals, defs] = await Promise.all([
+        found[0] ? this.deployChanges(target.projectId, target.key, found[0].id).catch(() => null) : null,
+        Promise.all(found.map((d) => provider.getDeployApprovals(target, d.id).catch(() => []))),
+        target.type === 'release' ? releases().catch(() => []) : [],
+      ]);
+      const suspects = found.map((d, i) => ({ id: d.id, label: d.label, at: d.at, startedAt: d.startedAt || null, status: d.status, by: d.by || null, webUrl: d.webUrl || null, gapMs: d.gapMs, approvals: approvals[i] }));
+      // Each pull request the latest suspect shipped, with its risk as it was read for its review.
+      const pullRequests = await Promise.all((changes?.pullRequests || []).slice(0, 10).map(async (p) => {
+        const pr = await cached(`pr:${p.projectId}/${p.repoId}/${p.id}`, () => provider.getPullRequest(p.projectId, p.repoId, p.id), 30 * MIN).catch(() => null);
+        const risk = pr ? await riskOf({ ...pr, key: pr.key || `${p.projectId}/${p.repoId}/${p.id}` }).catch(() => null) : null;
+        return { ...p, risk: risk ? { score: risk.score, level: risk.level, reasons: risk.reasons } : null };
+      }));
+      return {
+        ...head,
+        active: true,
+        environment: { key: target.key, name: target.name, type: target.type, projectId: target.projectId, projectName: target.projectName },
+        suspects,
+        shipped: changes ? { deployId: found[0].id, pullRequests, workItems: changes.workItems || [], directCommits: changes.directCommits || [], authors: changes.authors || [], unknown: !!changes.unknown, partial: !!changes.partial } : null,
+        lastGood: lastGood ? { id: lastGood.id, label: lastGood.label, at: lastGood.at, webUrl: lastGood.webUrl || null } : null,
+        redeploy: redeployPlan(target, lastGood, defs),
+        timeline: incidentTimeline({ monitor: m, start, suspects, pullRequests, env: target.name, now }),
+      };
     },
 
     monitors: () => {
@@ -1896,7 +2062,7 @@ export function createService({
 
     /** Per-account UI preferences, merged key by key (small, known keys only). */
     async savePrefs(patch) {
-      const allowed = ['theme', 'notifications', 'language', 'views', 'production', 'claudeRules'];
+      const allowed = ['theme', 'notifications', 'language', 'views', 'production', 'claudeRules', 'home'];
       const clean = Object.fromEntries(Object.entries(patch).filter(([k, v]) => allowed.includes(k) && v && typeof v === 'object'));
       if (JSON.stringify(clean).length > 20_000) throw Object.assign(new Error('Preferences are too large'), { status: 413 });
       const current = (await store.load()).prefs || {};

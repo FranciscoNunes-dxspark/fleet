@@ -91,7 +91,7 @@ Ink calls `setEncoding('utf8')`, so chunks are strings, and an empty string afte
 
 ### 3. Routing events (`App.jsx`, `hooks.js`)
 
-- `App` keeps the layout it just rendered in a ref (`{ mainTop, mainH, promptTop }`: the header and tab rows are fixed, the main area's height is computed, the prompt sits below the activity lines), and hit-tests:
+- `App` keeps the layout it just rendered in a ref (`{ mainTop, mainH, promptTop }`: the top line, which holds the tabs, is row 0, with the repository's facts on row 1 when they don't fit beside the tabs; the main area's height is computed, and the prompt is the kit's command box, over the view while it's open, `box` in the layout and `promptTop` its input row, -1 while it's closed; a click outside it closes it), and hit-tests:
   - the tab row → switch view (close an overlay first: a click on a tab should never do nothing);
   - the prompt box → focus the prompt;
   - the main area → focus the view (keeping the prompt's text, like `esc`) and pass the event on with `y` relative to the main area.
@@ -102,7 +102,7 @@ Ink calls `setEncoding('utf8')`, so chunks are strings, and an empty string afte
 
 ### 4. Views
 
-Each view knows its own geometry (`split`, `listW`, rows start one line under the panel's top border, plus any header rows such as Splice's Repos "Scanning…" line):
+Each view knows its own geometry (`split`, `listW`, rows start one line under the pane's title row, plus any header rows such as Splice's Repos "Scanning…" line):
 
 ```js
 const keys = (input, key) => { /* the existing useInput handler, now named */ };

@@ -5,6 +5,8 @@ import { t } from '../i18n.js';
 import { useSticky } from '../sticky.js';
 import { ErrorBox, Loading } from '../ui.jsx';
 import { MarkdownInput } from '../markdown.jsx';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 /**
  * New work item (drawer). preset: { projectId, teamId, workItemType, parentId, parentTitle, types }
@@ -81,30 +83,30 @@ export default function NewWorkItem({ preset = {} }) {
 
       <div className="form-grid new-wi-grid">
         <label>{t('Project')}
-          <select className="input" value={form.projectId} onChange={(e) => changeProject(e.target.value)} disabled={!!preset.parentId}>
+          <Select className="input" value={form.projectId} onChange={(e) => changeProject(e.target.value)} disabled={!!preset.parentId}>
             {options.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          </Select>
         </label>
         <label>{t('Team')}
-          <select className="input" value={form.teamId} onChange={(e) => set({ teamId: e.target.value })} disabled={!project.teams.length}>
+          <Select className="input" value={form.teamId} onChange={(e) => set({ teamId: e.target.value })} disabled={!project.teams.length}>
             {!project.teams.length && <option value="">{t('No team selected in Settings')}</option>}
             {project.teams.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-          </select>
+          </Select>
         </label>
         <label>{t('Type')}
-          <select className="input" value={form.type} onChange={(e) => set({ type: e.target.value })} required>
+          <Select className="input" value={form.type} onChange={(e) => set({ type: e.target.value })} required>
             {types.map((x) => <option key={x} value={x}>{x}</option>)}
-          </select>
+          </Select>
         </label>
         <label>{t('Priority')}
-          <select className="input" value={form.priority} onChange={(e) => set({ priority: e.target.value })}>
+          <Select className="input" value={form.priority} onChange={(e) => set({ priority: e.target.value })}>
             {['1', '2', '3', '4'].map((x) => <option key={x} value={x}>{x}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
 
       <label className="field-wide">{t('Title')}
-        <input className="input" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={255} required autoFocus placeholder={t('What needs to happen?')} />
+        <TextField.Root variant="surface" color="gray" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={255} required autoFocus placeholder={t('What needs to happen?')} />
       </label>
       <div className="field-wide"><span>{form.type === 'Bug' ? t('Repro steps') : t('Description')} <span className="muted small">{t('(optional)')}</span></span>
         <MarkdownInput rows={6} value={form.description} onChange={(v) => set({ description: v })} label={form.type === 'Bug' ? t('Repro steps') : t('Description')} people={people || []} placeholder={form.type === 'Bug' ? t('Steps, what happened, what you expected') : ''} />
@@ -112,25 +114,25 @@ export default function NewWorkItem({ preset = {} }) {
 
       <div className="form-grid new-wi-grid">
         <label>{t('Assigned to')}
-          <select className="input" value={form.assignedTo} onChange={(e) => set({ assignedTo: e.target.value })}>
+          <Select className="input" value={form.assignedTo} onChange={(e) => set({ assignedTo: e.target.value })}>
             <option value="">{t('Unassigned')}</option>
             {(people || []).map((x) => <option key={x.id} value={x.uniqueName}>{x.displayName}</option>)}
-          </select>
+          </Select>
         </label>
         <label>{t('Plan it for')}
-          <select className="input" value={form.iteration} onChange={(e) => set({ iteration: e.target.value })}>
+          <Select className="input" value={form.iteration} onChange={(e) => set({ iteration: e.target.value })}>
             <option value="backlog">{t('The backlog')}</option>
             <option value="sprint" disabled={!team?.iteration}>{team?.iteration ? t('The current sprint ({name})', { name: team.iteration.name }) : t('The current sprint (none)')}</option>
-          </select>
+          </Select>
         </label>
         <label><span>{t('Tags')} <span className="muted small">{t('(optional)')}</span></span>
-          <input className="input" value={form.tags} onChange={(e) => set({ tags: e.target.value })} placeholder={t('Separate with commas')} />
+          <TextField.Root variant="surface" color="gray" value={form.tags} onChange={(e) => set({ tags: e.target.value })} placeholder={t('Separate with commas')} />
         </label>
       </div>
       {team?.areaPath && <p className="muted small">{t('Area: {path}', { path: team.areaPath })}</p>}
 
       <section className="detail-actions sticky-actions">
-        <button type="submit" className="btn btn-primary btn-small" disabled={saving || !form.title.trim() || !form.type}>{saving ? t('Creating…') : t('Create {type}', { type: form.type || t('work item') })}</button>
+        <Button size="1" variant="solid" type="submit" disabled={saving || !form.title.trim() || !form.type}>{saving ? t('Creating…') : t('Create {type}', { type: form.type || t('work item') })}</Button>
       </section>
     </form>
   );

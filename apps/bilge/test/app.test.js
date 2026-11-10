@@ -13,15 +13,15 @@ afterEach(() => cleanup());
 
 const shows = (app, text) => () => app.lastFrame().includes(text);
 
-test('it reads the folder and asks OSV on opening: the findings worst first, the counts in the header', async () => {
+test('it reads the folder and asks OSV on opening: the findings worst first, the counts in the top line', async () => {
   const app = start();
   await until(shows(app, 'minimist@1.2.5'), 'the findings');
   const frame = app.lastFrame();
-  assert.match(frame, /17 packages {2}2 critical {2}4 high {2}1 medium/);
+  assert.match(frame, /2 critical {2}4 high {2}1 medium/);
   assert.ok(frame.indexOf('minimist@1.2.5') < frame.indexOf('lodash@4.17.20'));
   assert.ok(frame.indexOf('lodash@4.17.20') < frame.indexOf('jsonwebtoken@8.5.1'));
   assert.match(frame, /→ 4\.17\.21/);
-  assert.match(frame, /1 Vulnerabilities 7/);
+  assert.match(frame, /Vulnerabilities 7/);
   assert.deepEqual(app.provider.state.calls.map((c) => c[0]), ['scan', 'audit']);
   app.unmount();
 });

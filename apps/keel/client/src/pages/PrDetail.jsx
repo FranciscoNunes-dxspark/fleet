@@ -2,14 +2,18 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { api, prPath } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { age, dateTime, dateTimeZone, defaultAt, localZone, REVIEW_STATE, VOTES } from '../format.js';
-import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
-import { Markdown } from '../markdown.jsx';
+import { Avatar, Chip, Confirm, ErrorBox, ExternalLink, Loading, buttonLook } from '../ui.jsx';
+import { Markdown, MarkdownInput } from '../markdown.jsx';
+import { DiffTable, DiffViewer, diffNote } from '../diffview.jsx';
+import { Icon } from '../icons.jsx';
 import { t, tj, tx } from '../i18n.js';
 import { useOrgKind, useProjectLabel } from '../orgs.js';
 import MergeStatus from './MergeStatus.jsx';
 import { SuggestedReviewers } from './NewPr.jsx';
 import Trace from '../line/Trace.jsx';
 import { RiskReasons, useRisks } from '../risk.jsx';
+import { RadioGroup, Button, TextArea, TextField } from '@radix-ui/themes';
+import { Checkbox, Select } from '../ui.jsx';
 
 // Labels are getters so they follow the current language.
 const FILE_KIND = {
@@ -47,12 +51,15 @@ function fileTree(items) {
   return compact(root);
 }
 
+/** The files in the order the tree shows them, folders first, so j and k walk the list as it reads. */
+const treeOrder = (node) => [...node.folders.flatMap(treeOrder), ...node.files];
+
 // Where a file's diff opens in Azure DevOps: a PR's Files tab by default (commits pass their own).
 const prFileHref = (webUrl, path) => `${webUrl}?_a=files&path=${encodeURIComponent(path)}`;
 // GitHub: the pull request's Files changed tab.
 export const githubPrFileHref = (webUrl) => `${webUrl}/files`;
 
-function FileRow({ f, webUrl, fileHref = prFileHref, github = false, diffPath }) {
+function FileRow({ f, webUrl, fileHref = prFileHref, github = false, diffPath, onView }) {
   const kind = FILE_KIND[f.kind] || FILE_KIND.edited;
   const [open, setOpen] = useState(false);
   const external = github ? t('Open the diff for {path} on GitHub', { path: f.path }) : t('Open the diff for {path} in Azure DevOps', { path: f.path });
@@ -64,6 +71,11 @@ function FileRow({ f, webUrl, fileHref = prFileHref, github = false, diffPath })
           ? <button type="button" className="file-name file-toggle" aria-expanded={open} onClick={() => setOpen(!open)} title={t('Show what changed in {path}', { path: f.path })}>{f.name}</button>
           : <a className="file-name" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={external}>{f.name}</a>}
         {f.originalPath && <span className="muted small file-from" title={f.originalPath}>{t('from {name}', { name: f.originalPath.split('/').pop() })}</span>}
+        {onView && (
+          <button type="button" className="file-view" onClick={() => onView(f.path)} title={t('Open {path} in the changes window', { path: f.path })} aria-label={t('Open {path} in the changes window', { path: f.path })}>
+            <Icon name="widen" size={13} />
+          </button>
+        )}
         {diffPath && <a className="file-ext muted small" href={fileHref(webUrl, f.path)} target="_blank" rel="noreferrer noopener" title={external} aria-label={external}>↗</a>}
       </div>
       {open && diffPath && <FileDiff url={diffPath(f)} />}
@@ -78,53 +90,41 @@ export const diffQuery = (f) => `?path=${encodeURIComponent(f.path)}${f.original
 function FileDiff({ url }) {
   const { data: d, error, reload } = useApi(url);
   if (!d) return error ? <ErrorBox error={error} onRetry={reload} /> : <Loading />;
-  if (d.skipped) return <p className="muted small file-diff-note">{d.skipped === 'binary' ? t('A binary file: there is no text to compare.') : t('Too large to show here: open it in the browser instead.')}</p>;
-  if (!d.hunks.length) return <p className="muted small file-diff-note">{t('No lines changed (the file was moved or its mode changed).')}</p>;
+  const note = diffNote(d);
+  if (note) return <p className="muted small file-diff-note">{note}</p>;
   return (
     <div className="file-diff" role="region" aria-label={t('Changes')}>
       <div className="file-diff-stat small"><span className="text-ok">+{d.added}</span> <span className="text-bad">−{d.removed}</span></div>
-      <table>
-        <tbody>
-          {d.hunks.map((h, i) => (
-            <Fragment key={i}>
-              <tr className="diff-hunk"><td colSpan={3}>{h.header}</td></tr>
-              {h.lines.map((l, j) => (
-                <tr key={j} className={`diff-${l.t === '+' ? 'add' : l.t === '-' ? 'del' : 'ctx'}`}>
-                  <td className="diff-no">{l.a ?? ''}</td>
-                  <td className="diff-no">{l.b ?? ''}</td>
-                  <td className="diff-text"><span aria-hidden="true">{l.t === ' ' ? ' ' : l.t}</span>{l.text}</td>
-                </tr>
-              ))}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+      <DiffTable d={d} />
     </div>
   );
 }
 
-function Folder({ node, webUrl, depth, fileHref, github, diffPath }) {
+function Folder({ node, webUrl, depth, fileHref, github, diffPath, onView }) {
   return (
     <li>
       <details open={depth < 3 || node.count <= 8}>
         <summary className="folder-row"><span className="folder-name">{node.name}/</span><span className="muted small">{node.count}</span></summary>
-        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} github={github} diffPath={diffPath} />
+        <FolderBody node={node} webUrl={webUrl} depth={depth + 1} fileHref={fileHref} github={github} diffPath={diffPath} onView={onView} />
       </details>
     </li>
   );
 }
 
-function FolderBody({ node, webUrl, depth, fileHref, github, diffPath }) {
+function FolderBody({ node, webUrl, depth, fileHref, github, diffPath, onView }) {
   return (
     <ul className="file-tree">
-      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} github={github} diffPath={diffPath} />)}
-      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} github={github} diffPath={diffPath} />)}
+      {node.folders.map((c) => <Folder key={c.name} node={c} webUrl={webUrl} depth={depth} fileHref={fileHref} github={github} diffPath={diffPath} onView={onView} />)}
+      {node.files.map((f) => <FileRow key={f.path} f={f} webUrl={webUrl} fileHref={fileHref} github={github} diffPath={diffPath} onView={onView} />)}
     </ul>
   );
 }
 
 /** Changed files as a folder tree; also used by the commit panel (CommitDetail.jsx). */
-export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.'), github = false, diffPath }) {
+export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file changes in the latest update.'), github = false, diffPath, title }) {
+  // The file the changes window shows, or null while it's shut.
+  const [viewing, setViewing] = useState(null);
+  const href = fileHref || prFileHref;
   const counts = Object.entries(FILE_KIND)
     .map(([k, v]) => [v.count, files.items.filter((f) => f.kind === k).length])
     .filter(([, n]) => n)
@@ -132,14 +132,25 @@ export function ChangedFiles({ files, webUrl, fileHref, empty = t('No file chang
   const tree = fileTree(files.items);
   return (
     <section className="detail-section">
-      <h3>{t('Files changed')} <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span></h3>
+      <h3>
+        {t('Files changed')} <span className="muted small">{files.total}{files.truncated ? '+' : ''}{counts.length ? ` · ${counts.join(', ')}` : ''}</span>
+        {diffPath && files.items.length > 0 && (
+          <button type="button" className="link-btn small files-view-all" onClick={() => setViewing(files.items[0].path)}>{t('View all changes')}</button>
+        )}
+      </h3>
       {files.error && <p className="text-bad small">{t("Couldn't load the file list: {error}", { error: tx(files.error) })}</p>}
       {!files.error && !files.items.length && <p className="muted small">{empty}</p>}
-      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} github={github} diffPath={diffPath} />
+      <FolderBody node={tree} webUrl={webUrl} depth={0} fileHref={fileHref} github={github} diffPath={diffPath} onView={diffPath ? setViewing : undefined} />
+      {viewing && (
+        <DiffViewer files={treeOrder(tree)} initialPath={viewing} diffPath={diffPath} fileHref={href} webUrl={webUrl} title={title} onClose={() => setViewing(null)} />
+      )}
       {files.truncated && <p className="muted small">{github ? t('GitHub returned the first 3,000 files only.') : t('Azure DevOps returned the first 2,000 files only.')}</p>}
     </section>
   );
 }
+
+/** The Radix colour a chosen vote fills with, by its tone. */
+const VOTE_COLOR = { ok: 'green', warn: 'amber', bad: 'red' };
 
 const VOTE_BUTTONS = [
   { vote: 10, get label() { return t('Approve'); }, tone: 'ok' },
@@ -272,16 +283,17 @@ export default function PrDetail({ target }) {
           )}
           {!ownGithub && <div className="vote-row">
             {(github ? GITHUB_VOTE_BUTTONS : VOTE_BUTTONS).map((b) => (
-              <button
+              <Button
                 key={b.vote}
                 type="button"
-                className={`btn btn-small vote-btn vote-btn-${b.tone} ${pr.myVote === b.vote && b.vote !== 0 ? 'selected' : ''}`}
+                size="1"
+                {...(pr.myVote === b.vote && b.vote !== 0 ? { variant: 'solid', color: VOTE_COLOR[b.tone] } : { variant: 'outline', color: 'gray' })}
                 disabled={!!busy}
                 aria-pressed={pr.myVote === b.vote}
                 onClick={() => act({ type: 'vote', vote: b.vote }, b.vote === 0 ? t('Vote reset') : t('Voted: {vote}', { vote: b.label }))}
               >
                 {busy === `vote${b.vote}` ? '…' : b.label}
-              </button>
+              </Button>
             ))}
           </div>}
         </section>
@@ -327,14 +339,14 @@ export default function PrDetail({ target }) {
         {writable && !github && pr.status === 'active' && (candidates.length > 0 || canAddMe) && (
           <form className="inline-form" onSubmit={async (e) => { e.preventDefault(); if (reviewer && await act({ type: 'addReviewer', reviewerId: reviewer }, t('Reviewer added'))) setReviewer(''); }}>
             {candidates.length > 0 && <>
-              <select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>
+              <Select className="input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label={t('Reviewer to add')}>
                 <option value="">{t('Add a reviewer…')}</option>
                 {candidates.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-              </select>
-              <button type="submit" className="btn btn-small" disabled={!reviewer || !!busy}>{t('Add')}</button>
+              </Select>
+              <Button size="1" variant="outline" color="gray" type="submit" disabled={!reviewer || !!busy}>{t('Add')}</Button>
             </>}
             {/* "me" is resolved on the server, in this pull request's organization. */}
-            {canAddMe && <button type="button" className="btn btn-small btn-ghost" disabled={!!busy} title={t('Add yourself as a reviewer')} onClick={() => act({ type: 'addReviewer', reviewerId: 'me' }, t('You were added as a reviewer'))}>{t('Add me')}</button>}
+            {canAddMe && <Button size="1" variant="ghost" color="gray" type="button" disabled={!!busy} title={t('Add yourself as a reviewer')} onClick={() => act({ type: 'addReviewer', reviewerId: 'me' }, t('You were added as a reviewer'))}>{t('Add me')}</Button>}
           </form>
         )}
         {writable && !github && pr.status === 'active' && pr.files?.items?.length > 0 && (
@@ -365,7 +377,7 @@ export default function PrDetail({ target }) {
         </section>
       )}
 
-      {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} github={github} diffPath={(f) => `${prPath(pr)}/diff${diffQuery(f)}`} fileHref={github ? githubPrFileHref : undefined} />}
+      {pr.files && <ChangedFiles files={pr.files} webUrl={pr.webUrl} github={github} diffPath={(f) => `${prPath(pr)}/diff${diffQuery(f)}`} fileHref={github ? githubPrFileHref : undefined} title={`!${pr.id} ${pr.title}`} />}
 
       <section className="detail-section">
         <h3>{t('Discussion')} <span className="muted small">{t(pr.threads.total === 1 ? '{open} open of {total} thread' : '{open} open of {total} threads', { open: pr.threads.active, total: pr.threads.total })}</span></h3>
@@ -385,8 +397,8 @@ export default function PrDetail({ target }) {
         </ul>
         {writable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', content: comment }, t('Comment posted'))) setComment(''); }}>
-          <textarea className="input" rows={3} placeholder={t('Leave a comment (Markdown supported)')} value={comment} onChange={(e) => setComment(e.target.value)} aria-label={t('Comment')} />
-          <button type="submit" className="btn btn-primary btn-small" disabled={!comment.trim() || !!busy}>{t('Post comment')}</button>
+          <MarkdownInput placeholder={t('Leave a comment')} value={comment} onChange={setComment} label={t('Comment')} people={mentionable} />
+          <Button size="2" variant="solid" type="submit" disabled={!comment.trim() || !!busy}>{t('Post comment')}</Button>
         </form>
         )}
       </section>
@@ -403,30 +415,30 @@ export default function PrDetail({ target }) {
         {pr.status === 'active' && <FlowSteps flow={pr.flow} github={github} />}
         {pr.status !== 'active' && <span className="small muted">{pr.status === 'completed' ? t('This pull request is completed.') : pr.status === 'abandoned' ? t('This pull request is abandoned.') : t('This pull request is {status}.', { status: pr.status })}</span>}
         {/* The current step's button leads (publish, then approve, then complete); later ones wait their turn. */}
-        {writable && pr.status === 'active' && pr.isDraft && <button type="button" className="btn btn-small btn-primary" disabled={!!busy} onClick={() => act({ type: 'publish' }, t('Published'))}>{github ? t('Ready for review') : t('Publish draft')}</button>}
+        {writable && pr.status === 'active' && pr.isDraft && <Button size="1" variant="solid" type="button" disabled={!!busy} onClick={() => act({ type: 'publish' }, t('Published'))}>{github ? t('Ready for review') : t('Publish draft')}</Button>}
         {writable && pr.flow.step === 'approval' && !ownGithub && !pr.isMine && !(pr.myVote >= 5) && (
-          <button type="button" className="btn btn-small btn-primary" disabled={!!busy} onClick={() => act({ type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{busy === 'vote10' ? '…' : t('Approve')}</button>
+          <Button size="1" variant="solid" type="button" disabled={!!busy} onClick={() => act({ type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{busy === 'vote10' ? '…' : t('Approve')}</Button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && !completing && (
-          <button
+          <Button
             type="button"
-            className={`btn btn-small ${pr.flow.step === 'complete' && !held ? 'btn-primary' : ''}`}
+            {...buttonLook(`btn btn-small ${pr.flow.step === 'complete' && !held ? 'btn-primary' : ''}`)}
             disabled={!!busy || pr.hasConflicts || !!held}
             title={pr.hasConflicts ? t('Resolve the merge conflicts first') : held || (pr.flow.step === 'approval' ? t('Not approved yet: branch policies may refuse it') : undefined)}
             onClick={() => setCompleting(true)}
           >
             {t('Complete…')}
-          </button>
+          </Button>
         )}
         {writable && pr.status === 'active' && !pr.isDraft && (github
           ? pr.autoComplete
-            ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-merge turned off'))}>{t('Turn off auto-merge')}</button>
-            : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-merge on'))}>{t('Turn on auto-merge')}</button>
+            ? <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-merge turned off'))}>{t('Turn off auto-merge')}</Button>
+            : <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-merge on'))}>{t('Turn on auto-merge')}</Button>
           : pr.autoComplete
-            ? <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-complete cancelled'))}>{t('Cancel auto-complete')}</button>
-            : <button type="button" className="btn btn-small" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</button>)}
+            ? <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: false }, t('Auto-complete cancelled'))}>{t('Cancel auto-complete')}</Button>
+            : <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy} onClick={() => act({ type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</Button>)}
         {writable && !github && pr.status === 'active' && pr.mergeStatus === 'succeeded' && (
-          <button type="button" className="btn btn-small btn-ghost" disabled={!!busy} title={t('Restart merge checks again without a push, for example after the target branch changed.')} onClick={() => act({ type: 'restartMerge' }, t('Merge restarted'))}>{t('Restart merge')}</button>
+          <Button size="1" variant="ghost" color="gray" type="button" disabled={!!busy} title={t('Restart merge checks again without a push, for example after the target branch changed.')} onClick={() => act({ type: 'restartMerge' }, t('Merge restarted'))}>{t('Restart merge')}</Button>
         )}
         {writable && pr.status === 'active' && (github
           ? <Confirm text={t('Close this pull request without merging?')} onConfirm={() => act({ type: 'abandon' }, t('Pull request closed'))} className="btn btn-small btn-ghost text-bad">{t('Close')}</Confirm>
@@ -550,12 +562,12 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = fal
   return (
     <section className="detail-section complete-form" aria-label={t('Complete pull request')} ref={formRef}>
       <h3>{t('Complete pull request')}</h3>
-      <div className="complete-when" role="radiogroup" aria-label={t('When')}>
-        <label className="check"><input type="radio" name="complete-when" checked={!later} onChange={() => setWhen('now')} /> {t('Now')}</label>
-        <label className="check"><input type="radio" name="complete-when" checked={later} onChange={() => setWhen('at')} /> {t('At')}</label>
-        <input className="input" type="datetime-local" value={at} onChange={(e) => { setAt(e.target.value); setWhen('at'); }} aria-label={t('Complete at')} aria-describedby="complete-at-zone" />
+      <RadioGroup.Root className="complete-when" value={later ? 'at' : 'now'} onValueChange={setWhen} aria-label={t('When')}>
+        <label className="check"><RadioGroup.Item value="now" /> {t('Now')}</label>
+        <label className="check"><RadioGroup.Item value="at" /> {t('At')}</label>
+        <TextField.Root variant="surface" color="gray" type="datetime-local" value={at} onChange={(e) => { setAt(e.target.value); setWhen('at'); }} aria-label={t('Complete at')} aria-describedby="complete-at-zone" />
         {localZone() && <span className="muted small" id="complete-at-zone">{t('{zone} time', { zone: localZone() })}</span>}
-      </div>
+      </RadioGroup.Root>
       {later && <p className="muted small">{t('Keel completes it then, as you, if it is approved, its required checks have passed and it has no conflicts; otherwise it tells you why not. Policies are never overridden.')}</p>}
       {!later && pending.length > 0 && (
         <p className="callout small">
@@ -567,44 +579,44 @@ function CompleteForm({ pr, busy, onCancel, onComplete, onSchedule, github = fal
         </p>
       )}
       <label className="field">{t('Merge type')}
-        <select className="input" value={mergeStrategy} onChange={(e) => setMergeStrategy(e.target.value)}>
+        <Select className="input" value={mergeStrategy} onChange={(e) => setMergeStrategy(e.target.value)}>
           {types.map(([v, label, hint]) => <option key={v} value={v}>{t(label)}: {t(hint)}</option>)}
-        </select>
+        </Select>
       </label>
       {usesMessage && (
         <label className="field">{t('Merge commit message')}
-          <textarea className="input" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
+          <TextArea variant="surface" color="gray" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
         </label>
       )}
-      <label className="check"><input type="checkbox" checked={deleteSourceBranch} onChange={(e) => setDeleteSourceBranch(e.target.checked)} /> {tj('Delete {branch} after merging', { branch: <code className="branch">{pr.sourceBranch}</code> })}</label>
-      {!github && <label className="check"><input type="checkbox" checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> {t('Complete linked work items')}{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>}
-      {!later && !github && <label className="check"><input type="checkbox" checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>}
+      <label className="check"><Checkbox  checked={deleteSourceBranch} onChange={(e) => setDeleteSourceBranch(e.target.checked)} /> {tj('Delete {branch} after merging', { branch: <code className="branch">{pr.sourceBranch}</code> })}</label>
+      {!github && <label className="check"><Checkbox  checked={transitionWorkItems} onChange={(e) => setTransitionWorkItems(e.target.checked)} /> {t('Complete linked work items')}{pr.workItems.length ? ` (${pr.workItems.length})` : ''}</label>}
+      {!later && !github && <label className="check"><Checkbox  checked={bypassPolicy} onChange={(e) => setBypassPolicy(e.target.checked)} /> {t('Override branch policies')} <span className="muted small">{t('(needs bypass permission; recorded in the PR history)')}</span></label>}
       {!later && bypassPolicy && (
         <label className="field">{t('Reason for overriding')}
-          <input className="input" value={bypassReason} onChange={(e) => setBypassReason(e.target.value)} placeholder={t('e.g. Hotfix for production incident')} />
+          <TextField.Root variant="surface" color="gray" value={bypassReason} onChange={(e) => setBypassReason(e.target.value)} placeholder={t('e.g. Hotfix for production incident')} />
         </label>
       )}
       <div className="complete-actions">
         {later ? (
-          <button
+          <Button size="1" variant="solid"
             type="button"
-            className="btn btn-small btn-primary"
+           
             disabled={busy || !at}
             onClick={() => onSchedule({ at: new Date(at).toISOString(), mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems })}
           >
             {busy ? t('Scheduling…') : t('Schedule completion')}
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
             type="button"
-            className={`btn btn-small ${bypassPolicy ? 'btn-danger' : 'btn-primary'}`}
+            {...buttonLook(`btn btn-small ${bypassPolicy ? 'btn-danger' : 'btn-primary'}`)}
             disabled={busy || (bypassPolicy && !bypassReason.trim())}
             onClick={() => onComplete({ mergeStrategy, mergeCommitMessage: usesMessage ? message : undefined, deleteSourceBranch, transitionWorkItems, bypassPolicy, bypassReason })}
           >
             {busy ? t('Completing…') : bypassPolicy ? t('Override and complete merge') : t('Complete merge')}
-          </button>
+          </Button>
         )}
-        <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>{t('Cancel')}</button>
+        <Button size="1" variant="ghost" color="gray" type="button" onClick={onCancel}>{t('Cancel')}</Button>
       </div>
     </section>
   );

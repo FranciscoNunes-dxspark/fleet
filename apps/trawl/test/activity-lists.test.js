@@ -60,7 +60,7 @@ test('J lists the SQL Agent jobs, ↵ shows a failed run’s step, s starts a jo
   assert.match(frame(), /▶ Stats refresh\s+running/);
   assert.match(frame(), /Old archive\s+never run\s+disabled/);
   assert.match(frame(), /4 · 1 failed · 1 running/);
-  assert.match(frame(), /─ Job Backup ClubA ─/);
+  assert.match(frame(), /│ Job Backup ClubA /);
   assert.match(frame(), /Last run\s+failed · /);
   app.stdin.write(KEYS.enter);
   await until(() => frame().includes('recent runs'), 'the job history');

@@ -45,9 +45,9 @@ test('the crew starts, shows each log, restarts, stops, crashes, asks Claude why
     app.stdin.write('j');
     await until(() => /tick \d+/.test(frame()), 'the ticker\'s log');
     app.stdin.write('a');
-    await until(() => frame().includes('╭─ All') && /ticker\s+tick/.test(frame()), 'every log at once');
+    await until(() => frame().includes('│ All') && /ticker\s+tick/.test(frame()), 'every log at once');
     app.stdin.write('a');
-    await until(() => !frame().includes('╭─ All'), 'back to the one');
+    await until(() => !frame().includes('│ All'), 'back to the one');
 
     app.stdin.write('s');
     await until(() => /ticker\s+stopped/.test(frame()), 'the ticker stopped');
@@ -106,7 +106,7 @@ test('new lines redraw only when their log is on screen, and a log shown again i
     const now = tick();
     await until(() => tick() >= now + 3, 'its new lines as they come');
     app.stdin.write('a');
-    await until(() => frame().includes('╭─ All') && /ticker\s+tick/.test(frame()), 'every log at once');
+    await until(() => frame().includes('│ All') && /ticker\s+tick/.test(frame()), 'every log at once');
     const merged = tick();
     await until(() => tick() >= merged + 3, 'new lines in the All pane');
   } finally {
@@ -138,7 +138,7 @@ test('/free asks, then stops what holds the port; /init writes bosun.json from p
     await until(() => frame().includes('Wrote bosun.json'), 'written');
     const spec = JSON.parse(readFileSync(`${dir}/bosun.json`, 'utf8'));
     assert.deepEqual(Object.keys(spec.procs), ['api', 'web']);
-    await until(() => frame().includes('│  bosun.json'), 'read from it now');
+    await until(() => frame().split('\n')[0].includes('  bosun.json'), 'read from it now');
   } finally {
     app.unmount();
   }
@@ -419,13 +419,13 @@ test('a Procfile runs each process on its PORT, and /init writes it out as bosun
   const app = start({ dir });
   const frame = () => app.lastFrame() ?? '';
   try {
-    await until(() => frame().includes('│  Procfile') && frame().includes(`:${port} ✓`), 'the web process answering on the PORT it was given');
+    await until(() => frame().split('\n')[0].includes('  Procfile') && frame().includes(`:${port} ✓`), 'the web process answering on the PORT it was given');
     app.stdin.write('j');
     await until(() => frame().includes(`worker port ${port + 100}`), 'the next one on the PORT after');
     app.stdin.write(':');
     await type(app.stdin, 'init');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('│  bosun.json'), 'read from bosun.json now');
+    await until(() => frame().split('\n')[0].includes('  bosun.json'), 'read from bosun.json now');
     const spec = JSON.parse(readFileSync(join(dir, 'bosun.json'), 'utf8'));
     assert.equal(spec.envFile, '.env');
     assert.equal(spec.procs.web.port, port);

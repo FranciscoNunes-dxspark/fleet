@@ -33,7 +33,8 @@ import { fit, stringWidth } from '@fleet/kit/text.js';
 import { remember } from '@fleet/kit/folders.js';
 import { badgeFor, badgeText, familyReader } from './attention.js';
 import { completeFolder, editLine, isFolder, lineOf, renderAsk, resolveFolder, shortFolder } from './folder.js';
-import { barLayout, colour, renderBar, statusSegments, tabAt } from './bar.js';
+import COMMANDS from './commands.json' with { type: 'json' };
+import { barLayout, colour, hintFor, renderBar, statusSegments, tabAt } from './bar.js';
 import { pasteFor, routeHandoff } from './handoff.js';
 import { DEFAULT_PREFIX, prefixByte, prefixName, prefixesFor, readKeys, takeBarClicks } from './keys.js';
 import { Panels } from './panels.js';
@@ -59,6 +60,23 @@ const STOP_GRACE = 3000;
 const NOTICE_MS = 4000;
 // How often the family's moods and activity are read for the badges.
 const ATTENTION_MS = 3000;
+
+// Fleet's own actions as the palette lists them: the key after the prefix, and what it does.
+export const FLEET_ACTIONS = [
+  ['w', 'What changed lately, across the apps'],
+  ['f', 'Follow a request through every app'],
+  ['r', 'Runbooks: steps handed to the apps'],
+  ['R', 'Record a runbook from what you run'],
+  ['S', 'Security across the apps'],
+  ['P', "Claude's proposals"],
+  ['e', "The project's environment"],
+  ['m', 'Move the fleet to another folder'],
+  ['a', 'Choose the apps on the bar'],
+  ['|', 'Split: this app and the previous side by side'],
+  ['x', 'Back to one app'],
+  ['?', 'Every key'],
+  ['q', 'Quit Fleet and every app'],
+];
 
 /** The help's rows, with the prefix as it's named (`ctrl+b`, host.json's own). */
 export const helpRows = (p = DEFAULT_PREFIX) => [
@@ -126,8 +144,24 @@ export class Host {
     // The apps the bar shows (host.json's "apps", ids), null for all of them, and keeping a new choice.
     chosen = null,
     onChosen = () => {},
+    // Settings the desktop window changes (`bell`, and `prefix` for the next start), to keep in host.json.
+    onSettings = () => {},
+    // Inside Fleet's desktop window (FLEET_DESKTOP=1): the window draws the bar as tabs and a status
+    // strip from the state the host sends it (barState), so the apps get every row.
+    desktop = false,
   }) {
-    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders, onChosen });
+    Object.assign(this, { input, output, spawnApp: spawn, args, truecolor, onSwitch, onUpdate, setTimer, clearTimer, now, attentionEvery, bell, cwd, home, folders, onFolders, onChosen, onSettings, desktop });
+    // The bar's state as last sent to the desktop window, so the same state isn't sent again.
+    this.sentBar = null;
+    // In the desktop window: the panel or help on screen as content ({ title, hint, lines, focus })
+    // for the window to draw as its own overlay (Panels.box), what's left of a message from the window
+    // cut between reads, and whether the bar's state waits (while a pick moves a panel's cursor).
+    this.panelView = null;
+    this.inbox = '';
+    this.barHeld = false;
+    // The newest thing an app off screen said, for the window's toasts: { id, app, title, text, error }.
+    this.toast = null;
+    this.toastCount = 0;
     this.prefixes = prefixesFor(prefix);
     this.prefixLabel = prefixName(prefix);
     this.spaces = spaces.map((s) => ({ ...s, state: 'idle', code: null, child: null, filter: new OutputFilter(), ready: false, paste: null, stderr: '', badge: null }));
@@ -169,14 +203,14 @@ export class Host {
     return this.spaces.find((s) => s.id === id);
   }
 
-  /** The terminal's size, and the part of it the apps get: every row but the bar's. */
+  /** The terminal's size, and the part of it the apps get: every row but the bar's (all of them in the desktop window). */
   size() {
     return { columns: this.output.columns || 80, rows: this.output.rows || 24 };
   }
 
   appSize() {
     const { columns, rows } = this.size();
-    return { columns, rows: Math.max(1, rows - 1) };
+    return { columns, rows: Math.max(1, this.desktop ? rows : rows - 1) };
   }
 
   /** Takes the screen and opens space `id`. Resolves `done` once the host has quit. */
@@ -211,16 +245,63 @@ export class Host {
       return renderAsk({ label, line, hint: hint || '↵ moves every app there · tab completes · esc cancels', keep: Boolean(hint), width: columns });
     }
     const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
-    this.layout = barLayout({ spaces: this.barSpaces(), active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel, status: statusSegments(this.status) });
-    return renderBar(this.layout, this.spaces, { truecolor: this.truecolor });
+    const spaces = this.barSpaces();
+    // The bar goes in after every chunk an app writes and rarely changes between two: it's drawn again
+    // only when something it shows has.
+    const key = JSON.stringify([columns, this.active, shown, this.keys.prefix, this.noticeText, this.status, spaces.map((s) => [s.id, s.state, s.code, s.badge])]);
+    if (key === this.barKey) return this.barCache;
+    this.layout = barLayout({ spaces, active: this.active, shown, width: columns, prefix: this.keys.prefix, notice: this.noticeText, prefixLabel: this.prefixLabel, status: statusSegments(this.status) });
+    this.barKey = key;
+    this.barCache = renderBar(this.layout, this.spaces, { truecolor: this.truecolor });
+    return this.barCache;
   }
 
   /** The bar drawn from a saved cursor, so whatever was drawing carries on where it was. */
   barString() {
+    if (this.desktop) return this.barMessage();
     return `\x1b7\x1b[${this.size().rows};1H${this.barText()}\x1b8`;
   }
 
+  /**
+   * What the desktop window draws the bar from: the spaces on the bar with their states, badges and
+   * accents, the one on screen (and the other pane's), the fleet's own state, and whatever the bar
+   * would say (a notice, the prefix's keys, the folder being asked for, the quit question). `key` is
+   * the prefix as typed, which the window sends before a space's letter when a tab is clicked.
+   */
+  barState() {
+    const shown = this.split?.panes.find((p) => p.id !== this.active)?.id ?? null;
+    const names = this.spaces.filter((s) => s.child).map((s) => s.title);
+    return {
+      spaces: this.barSpaces().map((s) => ({ id: s.id, title: s.title, letter: s.letter, accent: s.accent, state: s.state, code: s.code, badge: badgeText(s.badge) || '', error: Boolean(s.badge?.error), why: s.badge?.reason || '' })),
+      active: this.active,
+      shown,
+      key: this.prefixes[0],
+      prefixLabel: this.prefixLabel,
+      prefix: Boolean(this.keys.prefix),
+      hint: hintFor({ prefix: this.keys.prefix, notice: '', split: Boolean(shown), prefixLabel: this.prefixLabel }),
+      notice: this.noticeText,
+      status: this.status,
+      cwd: shortFolder(this.cwd, this.home),
+      asking: this.asking ? { label: this.asking.from ? `${this.asking.from} asks to move the fleet to` : 'Move the fleet to', text: this.asking.line.text, cursor: this.asking.line.cursor, hint: this.asking.hint || '↵ moves every app there · tab completes · esc cancels' } : null,
+      panel: (this.overlay || this.help) && this.panelView ? this.panelView : null,
+      toast: this.toast,
+      folders: this.folders.slice(0, 12).map((path) => ({ path, short: shortFolder(path, this.home) })),
+      bell: this.bell,
+      claude: this.panels.changesPanel.claude,
+      confirming: this.confirming ? `Quit Fleet? ${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} running and will stop.` : null,
+    };
+  }
+
+  /** The bar's state as a private OSC (5380) for the desktop window, or nothing when it hasn't changed. */
+  barMessage() {
+    const json = JSON.stringify(this.barState());
+    if (json === this.sentBar) return '';
+    this.sentBar = json;
+    return `\x1b]5380;${json}\x07`;
+  }
+
   drawBar() {
+    if (this.barHeld) return;
     this.output.write(this.barString());
   }
 
@@ -277,11 +358,13 @@ export class Host {
       // A proposal is news too, said once, without the bell: it waits for you rather than needing you.
       const p = status.fresh.at(-1);
       const title = this.space(p.app)?.title ?? p.app;
+      this.toast = { id: ++this.toastCount, app: p.app, title: 'Claude', text: `proposes ${status.fresh.length === 1 ? `a line for ${title}` : `${status.fresh.length} lines`}`, proposal: true };
       return this.notice(`Claude proposes ${status.fresh.length === 1 ? `a line for ${title}` : `${status.fresh.length} lines`}: ${this.prefixLabel} P`);
     }
     if (!news) return changed && this.drawBar();
     // Once as it appears: the badge stays until you look, the bell doesn't.
     if (this.bell) this.output.write('\x07');
+    this.toast = { id: ++this.toastCount, app: news.space.id, title: news.space.title, text: news.badge.reason || 'needs you', error: Boolean(news.badge.error) };
     this.notice(`${news.space.title}${news.badge.reason ? `: ${news.badge.reason}` : ' needs you'}`);
   }
 
@@ -341,6 +424,120 @@ export class Host {
     this.notice(`Recorded ${lines.length} step${lines.length === 1 ? '' : 's'} in ${relative(cwd, file) || file}`);
   }
 
+  /**
+   * The desktop window's messages taken out of the input: `ESC ] 5381 ; <json> BEL`, which the window
+   * types into the pseudo-terminal as it types keys. `{ pick: row, open }` is a click on a row of the
+   * panel on screen (a double click opens it, as ↵ would); `{ close: true }` its close button.
+   */
+  takeWindowMessages(text) {
+    let data = this.inbox + text;
+    this.inbox = '';
+    let out = '';
+    for (;;) {
+      const at = data.indexOf('\x1b]5381;');
+      if (at < 0) break;
+      const end = data.indexOf('\x07', at);
+      out += data.slice(0, at);
+      if (end < 0) {
+        // Cut between reads: the rest comes with the next one.
+        this.inbox = data.slice(at);
+        return out;
+      }
+      try {
+        this.windowMessage(JSON.parse(data.slice(at + '\x1b]5381;'.length, end)));
+      } catch {
+        // Not one of the window's: dropped.
+      }
+      data = data.slice(end + 1);
+    }
+    return out + data;
+  }
+
+  windowMessage(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.close) {
+      if (this.help) return this.closeHelp();
+      if (this.overlay) return this.closeOverlay();
+    }
+    if (Number.isInteger(msg.pick) && this.overlay) return this.pickRow(msg.pick, Boolean(msg.open));
+    // The palette: a line for an app, put in its prompt as a hand-off's is (never ↵: you finish it).
+    if (msg.run && typeof msg.run.line === 'string' && this.space(msg.run.app) && msg.run.line.length <= 2000) {
+      return this.sendLine(msg.run.app, msg.run.line.replace(/[\r\n]+/g, ' '));
+    }
+    // The projects list or the open-folder dialog: the fleet moves there.
+    if (typeof msg.move === 'string') {
+      const dir = resolveFolder(msg.move, { cwd: this.cwd, home: this.home });
+      return isFolder(dir) ? this.moveTo(dir) : this.notice(`No folder at ${msg.move}`);
+    }
+    if (msg.settings) return this.windowSettings(msg.settings);
+    // Claude, asked from the window's side panel: the what-changed panel asks with the timeline.
+    if (typeof msg.ask === 'string' && msg.ask.trim()) {
+      this.panels.changes();
+      return this.panels.changesPanel.askClaude(msg.ask.trim().slice(0, 2000));
+    }
+    // The window (re)loaded: everything again.
+    if (msg.hello) {
+      this.sentBar = null;
+      this.drawBar();
+      this.sendCommands();
+    }
+  }
+
+  /** The window's settings: the bell now, the prefix from the next start (the keys are read with it). */
+  windowSettings({ bell, prefix }) {
+    const keep = {};
+    if (typeof bell === 'boolean') {
+      this.bell = bell;
+      keep.bell = bell;
+    }
+    if (typeof prefix === 'string' && prefix !== this.prefixLabel) {
+      if (!prefixByte(prefix)) return this.notice(`${prefix} can't be the prefix: a terminal keeps it, or it isn't ctrl and a key`);
+      keep.prefix = prefix;
+      this.notice(`The prefix is ${prefix} from the next start`);
+    }
+    if (Object.keys(keep).length) this.onSettings(keep);
+    this.drawBar();
+  }
+
+  /**
+   * The palette's list for the desktop window (`ESC ] 5382 ; <json> BEL`): every app's slash commands
+   * (commands.json, made from each app's own table by scripts/commands.js) and Fleet's own keys.
+   */
+  sendCommands() {
+    const apps = this.spaces.map((s) => ({ id: s.id, title: s.title, accent: s.accent, letter: s.letter, commands: COMMANDS[s.id] ?? [] }));
+    const fleet = FLEET_ACTIONS.map(([key, desc]) => ({ key, keys: `${this.prefixLabel} ${key}`, desc }));
+    this.output.write(`\x1b]5382;${JSON.stringify({ apps, fleet })}\x07`);
+  }
+
+  /**
+   * Moves the panel's cursor to the item on row `row` of its lines, a step at a time as the arrow keys
+   * do (every panel knows those, and no text field takes them), until its focus is that row or stops
+   * moving; then ↵ when `open`. The bar's state waits until it's there, so the window sees one change.
+   */
+  pickRow(row, open) {
+    const panel = this.overlay;
+    const focus = () => {
+      panel.render(this.appSize());
+      return this.panelView?.focus?.[0] ?? 0;
+    };
+    this.barHeld = true;
+    try {
+      let at = focus();
+      for (let steps = 0; at !== row && steps < 500; steps++) {
+        panel.keys(row > at ? '\x1b[B' : '\x1b[A');
+        if (this.overlay !== panel) return;
+        const next = focus();
+        if (next === at) break;
+        at = next;
+      }
+      if (open && at === row) panel.keys('\r');
+    } finally {
+      this.barHeld = false;
+    }
+    if (this.overlay) this.showOverlay(this.overlay);
+    else this.drawBar();
+  }
+
   /** You looked at space `id`: its badge goes, and what it said so far is old news. */
   looked(id) {
     const space = this.space(id);
@@ -351,6 +548,7 @@ export class Host {
   // ---- keys -------------------------------------------------------------------------------------
 
   handleInput(text) {
+    if (this.desktop) text = this.takeWindowMessages(text);
     if (!text || this.quitting) return;
     if (this.asking) return this.editFolder(text);
     const { state, actions } = readKeys(this.keys, text, this.barSpaces(), this.prefixes, this.spaces);
@@ -380,7 +578,8 @@ export class Host {
 
   deliver(data) {
     if (this.confirming) return this.answerQuit(/^[yY\r]/.test(data));
-    const { data: rest, clicks } = takeBarClicks(data, this.size().rows);
+    // In the desktop window the last row is an app's, and the bar's clicks are the window's own.
+    const { data: rest, clicks } = this.desktop ? { data, clicks: [] } : takeBarClicks(data, this.size().rows);
     for (const x of clicks) {
       const id = this.layout && tabAt(this.layout, x);
       if (id) return this.switchTo(id);
@@ -491,6 +690,17 @@ export class Host {
 
   showHelp() {
     this.help = true;
+    if (this.desktop) {
+      // The window draws it: the keys and what they do, as the panels' rows are.
+      this.panelView = {
+        title: 'Fleet: the family in one terminal',
+        hint: 'any key closes this',
+        lines: helpRows(this.prefixLabel).map(([k, d]) => (k ? [{ text: k, sgr: '\x1b[1m' }, { text: `  ${d}` }] : [])),
+        focus: [0, 0],
+        help: true,
+      };
+      return this.drawBar();
+    }
     const { columns } = this.size();
     const { rows } = this.appSize();
     const help = helpRows(this.prefixLabel);
@@ -519,11 +729,13 @@ export class Host {
 
   closeOverlay() {
     this.overlay = null;
+    if (!this.help) this.panelView = null;
     this.redraw();
   }
 
   closeHelp() {
     this.help = false;
+    this.panelView = null;
     this.redraw();
   }
 
@@ -786,7 +998,9 @@ export class Host {
     const pane = this.paneOf(space.id);
     if (pane) return this.fromPane(space, pane, text);
     const active = space.id === this.active && !this.help && !this.overlay && !this.split;
-    const out = space.filter.push(text, { active, bar: active ? this.barString() : '' });
+    // The bar goes in after the app's frames only in a terminal: the desktop window's bar isn't in the
+    // grid, and its state is sent when the bar changes (drawBar), not with every chunk an app writes.
+    const out = space.filter.push(text, { active, bar: active && !this.desktop ? this.barString() : '' });
     if (out) this.output.write(out);
   }
 

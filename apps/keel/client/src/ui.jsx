@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Children, Fragment, isValidElement, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { Collapsible, Dialog, Toggle as RxToggle, VisuallyHidden } from 'radix-ui';
+import { AlertDialog, Button, Checkbox as RtCheckbox, Select as RtSelect, Theme, Tooltip as RtTooltip } from '@radix-ui/themes';
 import { initials, VOTES } from './format.js';
 import { t, tx } from './i18n.js';
 import { useApp } from './context.js';
@@ -8,52 +10,48 @@ import { paletteVar, typeColorKey } from './typecolors.js';
 import { useSticky } from './sticky.js';
 import { Icon } from './icons.jsx';
 import { stageName, stageOfPath } from './line/names.js';
-import { BG, PALETTE, pinchPixels } from './pinch.js';
+import { MARK } from './mark.js';
 
-// One rect per run of same-coloured pixels, for each mood. Built once each: the drawing never changes.
-const RUNS = {};
-const pinchRuns = (mood) => (RUNS[mood] ??= pinchPixels(mood).flatMap((row, y) =>
-  [...row.matchAll(/([^.])\1*/g)].map((m) => ({ x: m.index, y, w: m[0].length, fill: PALETTE[m[1]] }))));
+const CHEVRON = `M${MARK.chevron.points.map(([x, y]) => `${x} ${y}`).join(' L')} Z`;
 
-/** Pinch's pixels at (dx, dy). "look" glances from side to side: two frames swapped by CSS, a still one with reduced motion. */
-function PinchPixels({ mood, dx = 0, dy = 0 }) {
-  const rects = (m) => pinchRuns(m).map((r) => <rect key={`${r.x},${r.y}`} x={r.x + dx} y={r.y + dy} width={r.w} height="1.02" fill={r.fill} />);
-  if (mood !== 'look') return rects(mood);
-  return (
+/**
+ * Keel's mark (mark.js, the same drawing as public/favicon.svg): the prompt and its cursor, each cut
+ * across. `mood` (mark.js logoMood) shows on it: the cursor blinks while Keel checks Azure DevOps, and a red
+ * dot shows when it can't reach it.
+ */
+export function Logo({ size = 28, mood = 'idle', title }) {
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const { tile, gap, bar, chevron } = MARK;
+  const clips = (key, cut) => (
     <>
-      <g className="pinch-frame-a">{rects('look')}</g>
-      <g className="pinch-frame-b">{rects('idle')}</g>
+      <clipPath id={`${id}${key}a`}><rect width={MARK.size} height={cut} /></clipPath>
+      <clipPath id={`${id}${key}b`}><rect y={cut + gap} width={MARK.size} height={MARK.size - cut - gap} /></clipPath>
     </>
   );
-}
-
-/** Keel's mark: Pinch the crab on its dark square, without the Azure DevOps badge the app icons carry (same pixels as public/favicon.svg). */
-export function Logo({ size = 28, mood = 'idle', title }) {
+  const halves = (key, shape, draw) => (
+    <>
+      <g clipPath={`url(#${id}${key}a)`}>{draw(shape.colours.above)}</g>
+      <g clipPath={`url(#${id}${key}b)`}>{draw(shape.colours.below)}</g>
+    </>
+  );
   return (
-    <svg className="brand-mark" width={size} height={size} viewBox="0 0 20 20" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
+    <svg className={`brand-mark brand-mark-${mood}`} width={size} height={size} viewBox={`0 0 ${MARK.size} ${MARK.size}`} focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
       {title && <title>{title}</title>}
-      <rect width="20" height="20" rx="3.6" fill={BG} />
-      <PinchPixels mood={mood} dx={2} dy={5} />
+      <defs>{clips('c', chevron.cut)}{clips('b', bar.cut)}</defs>
+      <rect width={MARK.size} height={MARK.size} rx={tile.radius} fill={tile.fill} />
+      {halves('c', chevron, (fill) => <path d={CHEVRON} fill={fill} />)}
+      {halves('b', bar, (fill) => <rect className="mark-cursor" x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={bar.r} fill={fill} />)}
+      {mood === 'worried' && <circle className="mark-alert" cx="54" cy="10" r="8" stroke={tile.fill} strokeWidth="3" />}
     </svg>
   );
 }
 
-/** Pinch on its own, `width` pixels wide, for empty states, loading and errors. */
-export function Pinch({ mood = 'idle', width = 64, title }) {
-  return (
-    <svg className={`pinch pinch-${mood}`} width={width} height={(width * 10) / 16} viewBox="0 0 16 10" focusable="false" {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}>
-      {title && <title>{title}</title>}
-      <PinchPixels mood={mood} />
-    </svg>
-  );
-}
-
-/** What Pinch has to say about its mood (see pinchMood), for the logo's tooltip. */
-export function pinchLine(mood, { attention, live } = {}) {
-  if (mood === 'worried') return t("Pinch can't reach Azure DevOps: {error}", { error: tx(live?.error || '') });
-  if (mood === 'look') return t('Pinch is checking Azure DevOps…');
-  if (mood === 'sleep') return t('Nothing needs you, so Pinch is having a nap.');
-  if (!attention) return t('Pinch is keeping an eye on Azure DevOps.');
+/** What the logo's mood (mark.js logoMood) means, for its tooltip. */
+export function statusLine(mood, { attention, live } = {}) {
+  if (mood === 'worried') return t("Can't reach Azure DevOps: {error}", { error: tx(live?.error || '') });
+  if (mood === 'look') return t('Checking Azure DevOps…');
+  if (mood === 'sleep') return t('Nothing needs you right now.');
+  if (!attention) return t('Keeping an eye on Azure DevOps.');
   const n = attention.summary?.high || 0;
   if (n === 1) return t('One thing needs you now.');
   if (n) return t('{n} things need you now.', { n });
@@ -115,27 +113,25 @@ export function TypeLabel({ type, color }) {
 
 export const Chip = ({ tone = 'muted', children, title }) => <span className={`chip chip-${tone}`} title={title}>{children}</span>;
 
-/** A spinner, or a glancing Pinch when it holds a whole page (the CSS picks which). */
+/** A spinner, or Keel's mark with its cursor blinking when it holds a whole page (the CSS picks which). */
 export function Loading({ label = t('Loading…') }) {
-  return <div className="loading" role="status"><Pinch mood="look" width={48} /><span className="spinner" aria-hidden="true" />{label}</div>;
+  return <div className="loading" role="status"><Logo mood="look" size={48} /><span className="spinner" aria-hidden="true" />{label}</div>;
 }
 
 export function ErrorBox({ error, onRetry }) {
   if (!error) return null;
   return (
     <div className="error-box" role="alert">
-      <Pinch mood="worried" width={32} />
       <strong>{t("Couldn't load this view.")}</strong> {error.message}
-      {onRetry && <button type="button" className="btn btn-small" onClick={onRetry}>{t('Try again')}</button>}
+      {onRetry && <Button size="1" variant="outline" color="gray" type="button" onClick={onRetry}>{t('Try again')}</Button>}
     </div>
   );
 }
 
-/** An empty list's message; `mood` adds Pinch above it (asleep on Inbox zero). */
-export function Empty({ title, mood, children }) {
+/** An empty list's message. */
+export function Empty({ title, children }) {
   return (
     <div className="empty">
-      {mood && <Pinch mood={mood} width={64} />}
       <p className="empty-title">{title}</p>
       {children && <div className="empty-body">{children}</div>}
     </div>
@@ -259,44 +255,75 @@ export function TeamTabs() {
  * page keeps scrolling and stays clickable, and the focus stays where it was, so a list can be
  * walked with the keyboard while the panel follows.
  */
+// Whether the modal panel is opened wide; each viewer's own choice, kept in this browser.
+const WIDE_KEY = 'keel.drawer.wide';
+const readWide = () => { try { return localStorage.getItem(WIDE_KEY) === '1'; } catch { return false; } };
+
 export function Drawer({ open, onClose, children, label, docked = false }) {
   const ref = useRef(null);
+  const [wide, setWide] = useState(readWide);
+  const toggleWide = () => setWide((w) => {
+    try { localStorage.setItem(WIDE_KEY, w ? '0' : '1'); } catch { /* private window: this visit only */ }
+    return !w;
+  });
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  // Focus the panel once when it opens. Re-running this on every parent render
-  // used to pull focus (and scroll) away from the button you just clicked.
+  // The page behind stays put while the panel is open: one scrollbar, the panel's. Docked, the
+  // page makes room for the panel instead, and Escape is ours (a modal panel's is Radix's).
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e) => e.key === 'Escape' && closeRef.current();
+    const onKey = (e) => e.key === 'Escape' && docked && closeRef.current();
     window.addEventListener('keydown', onKey);
-    // The page behind stays put while the panel is open: one scrollbar, the panel's.
-    // Docked, the page makes room for the panel instead.
     const cls = docked ? 'inspector-open' : 'drawer-open';
-    if (!docked) ref.current?.focus({ preventScroll: true });
-    document.documentElement.classList.add(cls);
+    const root = document.documentElement;
+    root.classList.add(cls);
+    // Wide sets the panel's width on the page, where the toasts beside it read it too.
+    root.classList.toggle('drawer-wide-open', wide && !docked);
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.documentElement.classList.remove(cls);
+      root.classList.remove(cls, 'drawer-wide-open');
     };
-  }, [open, docked]);
+  }, [open, docked, wide]);
   if (!open) return null;
-  const close = <button type="button" className="drawer-close" onClick={onClose} aria-label={t('Close panel')}>✕</button>;
+  // The panel's own buttons, pinned to its top corner while its contents scroll under them.
+  const tools = (
+    <div className="drawer-tools">
+      {!docked && (
+        <button type="button" className="drawer-tool drawer-widen" onClick={toggleWide} aria-pressed={wide}
+          aria-label={wide ? t('Narrow the panel') : t('Widen the panel')} title={wide ? t('Narrow the panel') : t('Widen the panel')}>
+          <Icon name={wide ? 'narrow' : 'widen'} size={15} />
+        </button>
+      )}
+      <button type="button" className="drawer-tool" onClick={onClose} aria-label={t('Close panel')} title={t('Close panel')}><Icon name="close" size={16} /></button>
+    </div>
+  );
   if (docked) {
     return (
       <aside className="drawer drawer-docked" aria-label={label} tabIndex={-1} ref={ref}>
-        {close}
+        {tools}
         {children}
       </aside>
     );
   }
+  // Focus the panel once when it opens, not the first button in it.
   return (
-    <div className="drawer-layer">
-      <div className="drawer-scrim" onClick={onClose} aria-hidden="true" />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={ref}>
-        {close}
-        {children}
-      </aside>
-    </div>
+    <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
+      <Dialog.Portal>
+        <Theme asChild>
+         <div className="drawer-layer">
+          <Dialog.Overlay className="drawer-scrim" />
+          <Dialog.Content
+            className={`drawer${wide ? ' drawer-wide' : ''}`} aria-describedby={undefined} tabIndex={-1} ref={ref}
+            onOpenAutoFocus={(e) => { e.preventDefault(); ref.current?.focus({ preventScroll: true }); }}
+          >
+            <VisuallyHidden.Root asChild><Dialog.Title>{label}</Dialog.Title></VisuallyHidden.Root>
+            {tools}
+            {children}
+          </Dialog.Content>
+         </div>
+        </Theme>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -327,11 +354,32 @@ export function sameTarget(a, b) {
     && String(a.repoId ?? '') === String(b.repoId ?? '') && (a.org || '') === (b.org || '');
 }
 
+/**
+ * Radix Button props for the class names callers have always passed (`btn btn-small btn-ghost text-bad`…),
+ * so every button in the app is a Radix one: btn-small is size 1, btn-primary solid in the accent, btn-danger
+ * solid red, btn-ghost ghost, text-bad red, anything else outline gray. Other classes pass through.
+ */
+export function buttonLook(className = '') {
+  const has = (c) => className.split(/\s+/).includes(c);
+  const rest = className.split(/\s+/).filter((c) => c && !['btn', 'btn-small', 'btn-primary', 'btn-ghost', 'btn-danger', 'text-bad'].includes(c)).join(' ');
+  const look = { size: has('btn-small') ? '1' : '2' };
+  if (has('btn-primary')) look.variant = 'solid';
+  else if (has('btn-danger')) Object.assign(look, { variant: 'solid', color: 'red' });
+  else Object.assign(look, { variant: has('btn-ghost') ? 'ghost' : 'outline', color: has('text-bad') ? 'red' : 'gray' });
+  // Radix pulls a ghost button out by its padding; these sit side by side in rows that count on their box.
+  const classes = [rest, look.variant === 'ghost' && 'ghost-boxed'].filter(Boolean).join(' ');
+  if (classes) look.className = classes;
+  return look;
+}
+
 export function ExternalLink({ href, children, className = 'btn btn-ghost btn-small' }) {
   const sourceName = useSourceName();
   if (!href) return null;
   children ??= sourceName(href) === 'GitHub' ? t('Open in GitHub') : t('Open in Azure DevOps');
-  return <a className={className} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
+  const link = (props) => <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}<span className="ext" aria-hidden="true">↗</span></a>;
+  // A plain link when asked for one (className "small"…), else a Radix button wearing the link.
+  if (!/\bbtn\b/.test(className)) return link({ className });
+  return <Button asChild {...buttonLook(className)}>{link({})}</Button>;
 }
 
 /**
@@ -343,15 +391,17 @@ export function FilterFold({ active = 0, lead = null, children }) {
   const [open, setOpen] = useState(false);
   if (!phone) return children;
   return (
-    <>
+    <Collapsible.Root open={open} onOpenChange={setOpen}>
       <div className="filter-fold-bar">
         {lead}
-        <button type="button" className={`btn btn-small filter-fold-btn${active ? ' on' : ''}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          <Icon name="search" size={14} /> {t('Filters')}{active > 0 && <span className="filter-fold-n">{active}</span>}
-        </button>
+        <Collapsible.Trigger asChild>
+          <Button type="button" size="1" variant="outline" color={active ? undefined : 'gray'} className="filter-fold-btn">
+            <Icon name="search" size={14} /> {t('Filters')}{active > 0 && <span className="filter-fold-n">{active}</span>}
+          </Button>
+        </Collapsible.Trigger>
       </div>
-      {open && <div className="filter-fold">{children}</div>}
-    </>
+      <Collapsible.Content className="filter-fold">{children}</Collapsible.Content>
+    </Collapsible.Root>
   );
 }
 
@@ -359,14 +409,85 @@ export function FilterFold({ active = 0, lead = null, children }) {
 export function SortPick({ sort, setSort, options }) {
   return (
     <span className="sort-pick">
-      <select className="input" value={sort.key} onChange={(e) => setSort({ key: e.target.value, dir: sort.dir })} aria-label={t('Sort by')}>
+      <Select value={sort.key} onChange={(e) => setSort({ key: e.target.value, dir: sort.dir })} aria-label={t('Sort by')}>
         {options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select>
-      <button type="button" className="btn btn-small" onClick={() => setSort({ key: sort.key, dir: -sort.dir })} aria-label={sort.dir === 1 ? t('Ascending') : t('Descending')} title={sort.dir === 1 ? t('Ascending') : t('Descending')}>
+      </Select>
+      <Button size="1" variant="outline" color="gray" type="button" onClick={() => setSort({ key: sort.key, dir: -sort.dir })} aria-label={sort.dir === 1 ? t('Ascending') : t('Descending')} title={sort.dir === 1 ? t('Ascending') : t('Descending')}>
         {sort.dir === 1 ? '↑' : '↓'}
-      </button>
+      </Button>
     </span>
   );
+}
+
+// Radix's Select can't hold an empty value (that's its "nothing chosen"), so "" travels as this.
+const NONE = '__keel_none__';
+const textOf = (node) => Children.toArray(node).map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : isValidElement(c) ? textOf(c.props.children) : '')).join('');
+function optionsOf(children, out = []) {
+  Children.forEach(children, (c) => {
+    if (!isValidElement(c)) return;
+    if (c.type === Fragment) optionsOf(c.props.children, out);
+    else if (c.type === 'optgroup') out.push({ group: c.props.label, items: optionsOf(c.props.children, []) });
+    else if (c.type === 'option') out.push({ value: String(c.props.value ?? textOf(c.props.children)), label: c.props.children, disabled: c.props.disabled });
+  });
+  return out;
+}
+
+function LiveSelect({ value, onChange, children, className = '', disabled, required, name, id, title, style, 'aria-label': aria, defaultOpen, autoFocus }) {
+  const opts = optionsOf(children);
+  const flat = opts.flatMap((o) => (o.group !== undefined ? o.items : [o]));
+  const cur = String(value ?? '');
+  const has = flat.some((o) => o.value === cur);
+  const enc = (v) => (v === '' ? NONE : v);
+  const item = (o) => <RtSelect.Item key={o.value} value={enc(o.value)} disabled={o.disabled}>{o.label}</RtSelect.Item>;
+  return (
+    <RtSelect.Root defaultOpen={defaultOpen} value={has ? enc(cur) : ''} onValueChange={(v) => onChange?.({ target: { value: v === NONE ? '' : v, name } })} disabled={disabled} required={required} name={name}>
+      <RtSelect.Trigger autoFocus={autoFocus} id={id} title={title} style={style} aria-label={aria} variant="surface" color="gray" placeholder="—" className={`rt-sel ${className.replace(/\binput(-inline)?\b/g, '').trim()}`} />
+      <RtSelect.Content color="gray">
+        {opts.map((o, i) => (o.group !== undefined
+          ? <RtSelect.Group key={`${o.group}:${i}`}><RtSelect.Label>{o.group}</RtSelect.Label>{o.items.map(item)}</RtSelect.Group>
+          : item(o)))}
+      </RtSelect.Content>
+    </RtSelect.Root>
+  );
+}
+
+/**
+ * Radix Themes' Select behind the shape of a native one: the same value, onChange(e) with
+ * e.target.value and <option>s (and <optgroup>s) as children, so a page swaps one for the other.
+ * A list can hold a hundred of them (a state and an assignee on every row), and each is a whole
+ * Radix tree, so until you point at one, focus it or tap it, it is only its trigger, drawn the same.
+ */
+export function Select(props) {
+  const [live, setLive] = useState(null);
+  if (live) return <LiveSelect {...props} defaultOpen={live === 'open'} autoFocus={live === 'focus'} />;
+  const { value, children, className = '', disabled, id, title, style, 'aria-label': aria } = props;
+  const cur = String(value ?? '');
+  const found = optionsOf(children).flatMap((o) => (o.group !== undefined ? o.items : [o])).find((o) => o.value === cur);
+  return (
+    <button
+      type="button" role="combobox" aria-expanded="false" aria-autocomplete="none" dir="ltr" data-accent-color="gray" data-state="closed"
+      className={`rt-reset rt-SelectTrigger rt-r-size-2 rt-variant-surface rt-sel ${className.replace(/\binput(-inline)?\b/g, '').trim()}`}
+      id={id} title={title} style={style} aria-label={aria} disabled={disabled} data-disabled={disabled ? '' : undefined}
+      onPointerEnter={() => setLive('idle')} onFocus={() => setLive('focus')} onClick={() => setLive('open')}
+    >
+      <span className="rt-SelectTriggerInner"><span style={{ pointerEvents: 'none' }}>{found ? found.label : '—'}</span></span>
+      <svg width="9" height="9" viewBox="0 0 9 9" fill="currentcolor" xmlns="http://www.w3.org/2000/svg" className="rt-SelectIcon" aria-hidden="true"><path d="M0.135232 3.15803C0.324102 2.95657 0.640521 2.94637 0.841971 3.13523L4.5 6.56464L8.158 3.13523C8.3595 2.94637 8.6759 2.95657 8.8648 3.15803C9.0536 3.35949 9.0434 3.67591 8.842 3.86477L4.84197 7.6148C4.64964 7.7951 4.35036 7.7951 4.15803 7.6148L0.158031 3.86477C-0.0434285 3.67591 -0.0536285 3.35949 0.135232 3.15803Z" /></svg>
+    </button>
+  );
+}
+
+/** One radio of Radix Themes' RadioGroup, as a native one: checked, and onChange when it's picked. */
+export function Radio({ checked, onChange, ...rest }) {
+  return (
+    <RtRadioGroup.Root value={checked ? 'on' : ''} onValueChange={() => onChange?.()}>
+      <RtRadioGroup.Item value="on" {...rest} />
+    </RtRadioGroup.Root>
+  );
+}
+
+/** Radix Themes' Checkbox with a native one's onChange(e): e.target.checked. */
+export function Checkbox({ checked, onChange, ...rest }) {
+  return <RtCheckbox checked={!!checked} onCheckedChange={(c) => onChange?.({ target: { checked: c === true } })} {...rest} />;
 }
 
 /** Sortable table header cell. */
@@ -400,10 +521,15 @@ export function useSort(initial, getters) {
 
 export function Toggle({ checked, onChange, children, count }) {
   return (
-    <button type="button" className={`toggle ${checked ? 'on' : ''}`} aria-pressed={checked} onClick={() => onChange(!checked)}>
+    <RxToggle.Root className={`toggle ${checked ? 'on' : ''}`} pressed={checked} onPressedChange={onChange}>
       {children}{count !== undefined && <span className="toggle-count">{count}</span>}
-    </button>
+    </RxToggle.Root>
   );
+}
+
+/** A short label on hover or focus, beside what it names (the dock's icons). */
+export function Tip({ label, side = 'right', children }) {
+  return <RtTooltip content={label} side={side}>{children}</RtTooltip>;
 }
 
 /**
@@ -449,50 +575,16 @@ export function pinInView(el, ms = 6000) {
  * to the button, so the surrounding layout (often a table) never reflows.
  */
 export function Confirm({ text, onConfirm, children, className = 'btn btn-small' }) {
-  // Viewport position of the pop-over; fixed so table scroll containers can't clip it.
-  const [pos, setPos] = useState(null);
-  const wrap = useRef(null);
-  const close = () => setPos(null);
-
-  const open = (e) => {
-    if (pos) return close();
-    const r = e.currentTarget.getBoundingClientRect();
-    const below = window.innerHeight - r.bottom > 110;
-    setPos({
-      right: Math.max(8, window.innerWidth - r.right),
-      ...(below ? { top: r.bottom + 6 } : { bottom: window.innerHeight - r.top + 6 }),
-    });
-    return undefined;
-  };
-
-  useEffect(() => {
-    if (!pos) return undefined;
-    const away = (e) => !wrap.current?.contains(e.target) && close();
-    const esc = (e) => e.key === 'Escape' && close();
-    document.addEventListener('pointerdown', away);
-    document.addEventListener('keydown', esc);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      document.removeEventListener('pointerdown', away);
-      document.removeEventListener('keydown', esc);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [pos]);
-
   return (
-    <span className="confirm-wrap" ref={wrap}>
-      <button type="button" className={className} aria-expanded={!!pos} onClick={open}>{children}</button>
-      {pos && (
-        <span className="confirm-pop" role="dialog" aria-label={text} style={pos}>
-          <span className="confirm-text">{text}</span>
-          <span className="confirm-actions">
-            <button type="button" className="btn btn-small btn-ghost" onClick={close}>{t('Cancel')}</button>
-            <button type="button" className="btn btn-small btn-danger" onClick={() => { close(); onConfirm(); }}>{t('Yes')}</button>
-          </span>
+    <AlertDialog.Root>
+      <AlertDialog.Trigger><Button type="button" {...buttonLook(className)}>{children}</Button></AlertDialog.Trigger>
+      <AlertDialog.Content size="1" maxWidth="340px" className="confirm-pop" aria-describedby={undefined}>
+        <AlertDialog.Title size="3" mb="0">{text}</AlertDialog.Title>
+        <span className="confirm-actions">
+          <AlertDialog.Cancel><Button size="2" variant="soft" color="gray" type="button">{t('Cancel')}</Button></AlertDialog.Cancel>
+          <AlertDialog.Action><Button size="2" variant="solid" color="red" type="button" onClick={onConfirm}>{t('Yes')}</Button></AlertDialog.Action>
         </span>
-      )}
-    </span>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
   );
 }

@@ -176,7 +176,7 @@ test('/history of a deleted file, and /blame with a completed path', async () =>
 
     app.stdin.write('/');
     await type(app.stdin, 'blame note');
-    await until(() => /^\s+notes\.txt\s*$/m.test(frame()), 'the path completion');
+    await until(() => /│ +(› +)?notes\.txt +│/.test(frame()), 'the path completion');
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('Blame notes.txt') && frame().includes('delta'), 'the blame from the command');
   } finally {

@@ -28,6 +28,50 @@ export const SPACES = [
 
 export const IDS = SPACES.map((s) => s.id);
 
+// The accents a team's own tool takes in turn when its entry names none.
+const TOOL_ACCENTS = ['#9aa5b8', '#c3a6ff', '#7fd1c7', '#e6c07b', '#f29e9e'];
+
+/**
+ * A team's own tools as spaces, from host.json's "spaces":
+ *   [{ "id": "deploys", "title": "Deploys", "command": ["node", "/opt/tools/deploys.js"], "accent": "#9aa5b8" }]
+ * Each runs as an app does, hosted (docs/hosted-apps.md says what it must do there). Every letter is the
+ * family's or Fleet's own, so a tool has none: its number in the bar, a click on its tab and the
+ * desktop window's palette reach it. Returns { spaces, problems }, an entry that isn't right said in
+ * `problems` and left out.
+ */
+export function customSpaces(list, taken = IDS) {
+  const spaces = [];
+  const problems = [];
+  const ids = new Set(taken);
+  for (const [i, entry] of (Array.isArray(list) ? list : []).entries()) {
+    const where = `host.json's spaces[${i}]`;
+    const id = String(entry?.id ?? '');
+    if (!/^[a-z][a-z0-9-]{0,30}$/.test(id)) {
+      problems.push(`${where}: "id" must be a short lower-case name`);
+      continue;
+    }
+    if (ids.has(id)) {
+      problems.push(`${where}: there's already a space called ${id}`);
+      continue;
+    }
+    const command = entry.command;
+    if (!Array.isArray(command) || !command.length || !command.every((a) => typeof a === 'string' && a)) {
+      problems.push(`${where}: "command" must be the program and its arguments, as a list of strings`);
+      continue;
+    }
+    const accent = /^#[0-9a-f]{6}$/i.test(entry.accent ?? '') ? entry.accent : TOOL_ACCENTS[spaces.length % TOOL_ACCENTS.length];
+    ids.add(id);
+    spaces.push({ id, title: String(entry.title || id).slice(0, 24), letter: null, accent, command, custom: true });
+  }
+  return { spaces, problems };
+}
+
+/** A `command` for launch.js's appSpawner over `spaces`: a tool's own command, else launchCommand's. */
+export const spaceCommand = (spaces) => (id, args = [], opts = {}) => {
+  const tool = spaces.find((s) => s.id === id && s.command);
+  return tool ? [tool.command[0], [...tool.command.slice(1), ...args]] : launchCommand(id, args, opts);
+};
+
 /** The space `name` names: its id, title or letter, any case; undefined when none. */
 export function spaceNamed(name) {
   const n = String(name ?? '').toLowerCase();

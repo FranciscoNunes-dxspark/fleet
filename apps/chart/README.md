@@ -53,7 +53,7 @@ When Chart opens, it only looks at the folder: a plan can take a while and signs
 
 ### Changes
 
-What the plan does, worst first: `-` destroy and `±` replace in red (with why: an argument that forces replacement changed, no longer in the configuration, tainted…), `~` update yellow, `+` create green; how many attributes change; `! high` (in red, or `! med` yellow…) on what it would deploy insecurely, its worst finding and `+n` more (Security, below); `app` on an App Service app. What doesn't change is hidden (`a` shows it). The header sums it up (`-1 ±1 ~2 +2`) with how many drifted.
+What the plan does, worst first: `-` destroy and `±` replace in red (with why: an argument that forces replacement changed, no longer in the configuration, tainted…), `~` update yellow, `+` create green; how many attributes change; `! high` (in red, or `! med` yellow…) on what it would deploy insecurely, its worst finding and `+n` more (Security, below); `app` on an App Service app. What doesn't change is hidden (`a` shows it). The top line sums it up (`-1 ±1 ~2 +2`) with how many drifted.
 
 | Key | |
 |---|---|
@@ -146,7 +146,7 @@ A project's `.fleet/project.json` (in the folder or one above it, up to its git 
 | `resourceGroup` | Where `/whatif` and `/deploy` go when no `--rg` or `--location` is typed (ahead of the last one used) |
 | `parametersFile` | The what-if's parameters file when none is typed |
 
-The header names the environment (red for production), and a `"prod": true` one draws every frame red and asks once more before anything is applied or deployed. A plan keeps the environment it was made for. While Fleet records a runbook, each slash command Chart runs (and each `/take`) goes in it; a `!` line never does.
+The top line names the environment (red for production), and a `"prod": true` one draws every frame red and asks once more before anything is applied or deployed. A plan keeps the environment it was made for. While Fleet records a runbook, each slash command Chart runs (and each `/take`) goes in it; a `!` line never does.
 
 ## In a pipeline
 
@@ -182,7 +182,7 @@ A plan and a drift found go to the family's activity log, so `/timeline` in the 
 
 ## Mouse
 
-Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Drag to select text, which is copied when you let go. `/mouse off` leaves the mouse to the terminal.
+Click a tab, a row, or a place in the command box (`/` opens it over the view; a click outside it closes it); double-click does `↵`; the wheel scrolls. Drag to select text, which is copied when you let go. `/mouse off` leaves the mouse to the terminal.
 
 ## Settings
 

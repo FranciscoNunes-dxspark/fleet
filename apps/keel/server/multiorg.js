@@ -210,6 +210,13 @@ export function createMultiService(entries) {
     async undeployed() {
       return { targets: (await each((s) => s.undeployed())).flatMap(({ org, value }) => tagAll(org, value.targets)) };
     },
+    async readiness() {
+      const parts = await each((s) => s.readiness());
+      return {
+        targets: parts.flatMap(({ org, value }) => tagAll(org, value.targets)),
+        approvals: parts.flatMap(({ org, value }) => tagAll(org, value.approvals)),
+      };
+    },
 
     /** Delivery metrics computed once over every organization's production environments. */
     async delivery(days) {
@@ -242,6 +249,13 @@ export function createMultiService(entries) {
         blocked: all('blocked'),
         inProgress: parts.reduce((n, { value }) => n + value.inProgress, 0),
       });
+    },
+    /** What moved for Standup mode, every organization's: work item keys and ids only mean something with their org. */
+    async standupData(opts) {
+      const parts = await each((s) => s.standupData(opts));
+      const own = (org, x) => ({ ...x, org: org.key, key: `${org.key}/${x.key}`, open: x.open.type === 'workitem' ? { ...x.open, org: org.key } : x.open });
+      const all = (k) => parts.flatMap(({ org, value }) => (value[k] || []).map((x) => own(org, x)));
+      return { since: parts[0]?.value.since, finished: all('finished'), changed: all('changed'), opened: all('opened'), merged: all('merged') };
     },
     /** Work item flow computed once over every organization's items. */
     async flow(days, type = null) {
@@ -323,6 +337,9 @@ export function createMultiService(entries) {
     async epics(opts) {
       return { projects: (await each((s) => s.epics(opts))).flatMap(({ org, value }) => tagAll(org, value.projects)) };
     },
+    async forecastPace(days) {
+      return { days, projects: (await each((s) => s.forecastPace(days))).flatMap(({ org, value }) => tagAll(org, value.projects)) };
+    },
 
     async pipelines() {
       const rows = (await each((s) => s.pipelines())).flatMap(({ org, value }) => tagAll(org, value));
@@ -381,6 +398,7 @@ export function createMultiService(entries) {
 
     // Production monitors are shared by the server; the primary organization owns them.
     production: () => primary.service.production(),
+    incident: (id) => primary.service.incident(id),
     monitors: () => primary.service.monitors(),
     platformTotals: () => primary.service.platformTotals(),
     platformTotalsFor: (id) => primary.service.platformTotalsFor(id),

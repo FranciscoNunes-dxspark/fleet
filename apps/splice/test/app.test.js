@@ -91,7 +91,7 @@ test('graph, staging, committing and switching branches through the UI', async (
 
     app.stdin.write('/');
     await type(app.stdin, 'checkout feat');
-    await until(() => /^\s+feature\s*$/m.test(frame()), 'ref completion');
+    await until(() => /│ +(› +)?feature +│/.test(frame()), 'ref completion');
     app.stdin.write(KEYS.enter);
     await until(() => git('branch', '--show-current') === 'feature', 'the switch to feature');
     await until(() => frame().includes('⎇ feature'), 'the header to follow');

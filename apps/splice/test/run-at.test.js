@@ -99,9 +99,9 @@ test('w on an old commit: its own worktree, Bosun\'s /move copied; /cleanup remo
     await until(() => copied.length === 2, 'copied again');
 
     app.stdin.write('/');
-    await until(() => frame().includes('> /'), 'the prompt');
+    await until(() => frame().includes('» /'), 'the prompt');
     app.stdin.write('cleanup');
-    await until(() => frame().includes('> /cleanup'), 'typed');
+    await until(() => frame().includes('» /cleanup'), 'typed');
     app.stdin.write('\r');
     await until(() => frame().includes('Delete 1 worktree with nothing of yours on them?'), 'the cleanup question');
     assert.match(frame(), new RegExp(`made by /run-at for ${old.slice(0, 7)}, no changes`));

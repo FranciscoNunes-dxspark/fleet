@@ -4,7 +4,9 @@ import { useApi, useApp } from '../context.js';
 import { isBlocked } from '../format.js';
 import { Avatar, Chip, Empty, ErrorBox, Loading, PageHeader, Toggle, TypeLabel, WorkTabs } from '../ui.jsx';
 import { CATEGORY_TONE } from './WorkItems.jsx';
+import { ForecastChip, ForecastPanel, useForecast } from './EpicForecast.jsx';
 import { t } from '../i18n.js';
+import { Button, TextField } from '@radix-ui/themes';
 
 const isContainer = (w) => /^(epic|feature)$/i.test(w.type);
 
@@ -32,10 +34,13 @@ function matches(node, needle) {
   return node.item.title.toLowerCase().includes(needle) || String(node.item.id) === needle || node.children.some((c) => matches(c, needle));
 }
 
-function TreeNode({ node, depth, expanded, toggle, needle, blockedTag, org }) {
+function TreeNode({ node, depth, expanded, toggle, needle, blockedTag, org, pace, project }) {
   const { openDrawer } = useApp();
   const w = node.item;
   const container = isContainer(w);
+  // Every epic and feature still open gets a forecast at its project's pace (null while it loads).
+  const { left, f } = useForecast(node, container && w.stateCategory !== 'Completed' ? pace : null);
+  const [forecastOpen, setForecastOpen] = useState(false);
   const open = expanded.has(w.id) || (needle && depth < 2 && node.children.some((c) => matches(c, needle)));
   // Under an epic or feature every child is a row, tasks included. Under a
   // story, its tasks collapse into the "2/5 tasks" count instead.
@@ -64,6 +69,7 @@ function TreeNode({ node, depth, expanded, toggle, needle, blockedTag, org }) {
               {r.features > 0 && /epic/i.test(w.type) && <span className="muted small">{t(r.features === 1 ? '{n} feature' : '{n} features', { n: r.features })}</span>}
               {r.openBugs > 0 && <span className="small text-warn">{t(r.openBugs === 1 ? '{n} open bug' : '{n} open bugs', { n: r.openBugs })}</span>}
               {r.blocked > 0 && <Chip tone="bad">{t('{n} blocked', { n: r.blocked })}</Chip>}
+              <ForecastChip f={f} open={forecastOpen} onToggle={() => setForecastOpen((x) => !x)} />
             </>
           ) : (
             <>
@@ -75,9 +81,10 @@ function TreeNode({ node, depth, expanded, toggle, needle, blockedTag, org }) {
           <Avatar person={w.assignedTo} size={20} />
         </span>
       </div>
+      {forecastOpen && f && pace && <ForecastPanel node={node} left={left} pace={pace} project={project} />}
       {open && visibleKids.length > 0 && (
         <ul className="tree">
-          {visibleKids.map((c) => <TreeNode key={c.item.id} node={c} depth={depth + 1} expanded={expanded} toggle={toggle} needle={needle} blockedTag={blockedTag} />)}
+          {visibleKids.map((c) => <TreeNode key={c.item.id} node={c} depth={depth + 1} expanded={expanded} toggle={toggle} needle={needle} blockedTag={blockedTag} org={org} pace={pace} project={project} />)}
         </ul>
       )}
     </li>
@@ -87,6 +94,9 @@ function TreeNode({ node, depth, expanded, toggle, needle, blockedTag, org }) {
 export default function Epics() {
   const [includeClosed, setIncludeClosed] = useSticky('epics.includeClosed', false);
   const { data, error, reload, loading } = useApi(`/epics${includeClosed ? '?closed=1' : ''}`);
+  // Each project's pace for the forecasts, loaded apart so the tree never waits for it.
+  const { data: paceData } = useApi('/epics/pace');
+  const paceOf = useMemo(() => new Map((paceData?.projects || []).map((p) => [`${p.org || ''}:${p.projectId}`, p])), [paceData]);
   const { meta } = useApp();
   const [expanded, setExpanded] = useState(() => new Set());
   const [q, setQ] = useState('');
@@ -118,17 +128,17 @@ export default function Epics() {
         title={t('Epics')}
         sub={`${t(includeClosed
           ? (total === 1 ? '{n} epic across your tracked projects.' : '{n} epics across your tracked projects.')
-          : (total === 1 ? '{n} open epic across your tracked projects.' : '{n} open epics across your tracked projects.'), { n: total })} ${t('Progress counts backlog items (stories, PBIs, bugs) under each epic and feature.')}`}
+          : (total === 1 ? '{n} open epic across your tracked projects.' : '{n} open epics across your tracked projects.'), { n: total })} ${t('Progress counts backlog items (stories, PBIs, bugs) under each epic and feature.')} ${t('Each open one has a delivery forecast from its project\'s pace: open it for the odds and a what-if.')}`}
       >
         {loading && <span className="spinner" aria-label={t('Refreshing')} />}
       </PageHeader>
       <WorkTabs />
       <div className="filters">
-        <input type="search" className="input" placeholder={t('Search epics, features, items or ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search epics')} />
+        <TextField.Root variant="surface" color="gray" type="search" placeholder={t('Search epics, features, items or ID')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search epics')} />
         <Toggle checked={includeClosed} onChange={setIncludeClosed}>{t('Include closed epics')}</Toggle>
         <Toggle checked={hideEmpty} onChange={setHideEmpty}>{t('Hide empty epics')}</Toggle>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setExpanded(new Set(allIds))}>{t('Expand all')}</button>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setExpanded(new Set())}>{t('Collapse all')}</button>
+        <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setExpanded(new Set(allIds))}>{t('Expand all')}</Button>
+        <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setExpanded(new Set())}>{t('Collapse all')}</Button>
       </div>
 
       {!projects.some((p) => p.epics.length) && (
@@ -141,7 +151,7 @@ export default function Epics() {
         <section key={p.projectId} className="epic-project">
           {data.projects.length > 1 && <h2 className="section-title">{p.projectName} <span className="muted small">{p.epics.length}</span></h2>}
           <ul className="tree tree-root">
-            {p.epics.map((e) => <TreeNode key={e.item.id} node={e} depth={0} expanded={expanded} toggle={toggle} needle={needle} blockedTag={meta.blockedTag} org={p.org} />)}
+            {p.epics.map((e) => <TreeNode key={e.item.id} node={e} depth={0} expanded={expanded} toggle={toggle} needle={needle} blockedTag={meta.blockedTag} org={p.org} pace={paceOf.get(`${p.org || ''}:${p.projectId}`)} project={p.projectName} />)}
           </ul>
         </section>
       ))}

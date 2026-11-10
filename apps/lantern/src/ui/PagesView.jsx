@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useInput } from 'ink';
+import { Box, useInput } from 'ink';
 import * as a from '../actions.js';
 import { formatMetric } from '../audit.js';
 import { withoutIgnored } from '../security.js';
@@ -9,6 +9,7 @@ import { countFindings } from '@fleet/kit/findings.js';
 import { fit, relTime } from '@fleet/kit/text.js';
 import { useListNav, useMouse } from '@fleet/kit/ui/hooks.js';
 import { Panel, Row } from '@fleet/kit/ui/parts.jsx';
+import { PET_WIDTH, Pet } from './Pet.jsx';
 
 const SHORT = { critical: 'C', high: 'H', medium: 'M', low: 'L' };
 
@@ -56,7 +57,14 @@ export function PagesView({ pages, selected, history, ignore, env, ctx, width, h
   return (
     <Panel title="Pages" hint={hint} width={width} height={height} focused={active}>
       {pages.length === 0 ? (
-        <Row pointer={false} width={width - 2} segments={[{ text: '  No pages here. /open <url> audits one; lantern.json ({ "pages": [ … ] }) or .fleet/project.json ("lantern": { "url": … } in each environment) names them.', color: theme.dim }]} />
+        <>
+          <Row pointer={false} width={width - 2} segments={[{ text: '  No pages here. /open <url> audits one; lantern.json ({ "pages": [ … ] }) or .fleet/project.json ("lantern": { "url": … } in each environment) names them.', color: theme.dim }]} />
+          {innerH >= 7 ? (
+            <Box marginTop={1} marginLeft={2} flexDirection="column" width={PET_WIDTH}>
+              <Pet mood="idle" />
+            </Box>
+          ) : null}
+        </>
       ) : null}
       {pages.slice(nav.offset, nav.offset + innerH).map((p, i) => {
         const raw = history[p.url]?.at(-1);

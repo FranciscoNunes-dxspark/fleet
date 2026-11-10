@@ -82,7 +82,7 @@ test('K in Problems compares round the latest deployment; /compare-window takes 
     app.stdin.write('\x1bk');
     await until(() => frame().includes('Before and after the deployment 3d ago (Release 2.14.0') && frame().includes('New exception types'), 'the comparison');
     assert.match(frame(), /The 3d before it, against the 3d after/);
-    assert.match(frame(), /New exception types\s*│\n│\s+\d+× TypeError\s+Cannot read properties/);
+    assert.match(frame(), /New exception types\s*\n│\s+\d+× TypeError\s+Cannot read properties/);
     assert.ok(spans.some((s) => /^\S+Z\/\S+Z$/.test(s)), 'asked over the two windows');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('Before and after'), 'closed');

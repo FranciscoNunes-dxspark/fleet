@@ -3,6 +3,7 @@ import { prPath } from '../api.js';
 import { useApi, useApp } from '../context.js';
 import { t, tx } from '../i18n.js';
 import { ErrorBox, Loading } from '../ui.jsx';
+import { Button } from '@radix-ui/themes';
 
 // Azure DevOps conflict kinds, named "<source><target>" (English; t() at render).
 const CONFLICT_LABEL = {
@@ -58,9 +59,9 @@ export default function MergeStatus({ pr, target, writable, busy, onRestart, onR
   };
 
   const restart = writable && !github && (
-    <button type="button" className="btn btn-small" disabled={!!busy || pr.mergeStatus === 'queued'} onClick={onRestart}>
+    <Button size="1" variant="outline" color="gray" type="button" disabled={!!busy || pr.mergeStatus === 'queued'} onClick={onRestart}>
       {busy === 'restartMerge' ? t('Restarting…') : t('Restart merge')}
-    </button>
+    </Button>
   );
 
   return (
@@ -97,7 +98,7 @@ export default function MergeStatus({ pr, target, writable, busy, onRestart, onR
             <summary className="small">{t('Fix them on your computer')}</summary>
             <p className="small muted">{t('Merge {target} into your branch, fix the files, and push. The push runs the merge again.', { target: pr.targetBranch })}</p>
             <pre className="code-block small">{commands}</pre>
-            <button type="button" className="btn btn-small btn-ghost" onClick={copy}>{t('Copy commands')}</button>
+            <Button size="1" variant="ghost" color="gray" type="button" onClick={copy}>{t('Copy commands')}</Button>
           </details>
         </>
       )}

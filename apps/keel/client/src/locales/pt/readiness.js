@@ -1,0 +1,27 @@
+// Go / no-go for a release: the verdicts and their reasons (server/domain/readiness.js REASONS),
+// checked by test/readiness.test.js.
+export default {
+  '{name} is down right now': '{name} está em baixo neste momento',
+  '{name} is degraded right now': '{name} está degradado neste momento',
+  '{pipeline} is failing on {branch}': '{pipeline} está a falhar em {branch}',
+  '{pipeline} is unstable on {branch}': '{pipeline} está instável em {branch}',
+  '{n} new critical security advisories in {repo}': '{n} novos avisos de segurança críticos em {repo}',
+  '{package} {version} in {repo} has a new critical security advisory': '{package} {version} em {repo} tem um novo aviso de segurança crítico',
+  '{n} new high-severity security advisories in {repo}': '{n} novos avisos de segurança de gravidade alta em {repo}',
+  '{package} {version} in {repo} has a new high-severity security advisory': '{package} {version} em {repo} tem um novo aviso de segurança de gravidade alta',
+  '{n} pull requests going out are high risk, the highest !{id} at {score} of 100': '{n} pull requests que vão sair são de risco alto, o mais alto !{id} com {score} em 100',
+  '!{id} going out is high risk: {score} of 100': '!{id}, que vai sair, é de risco alto: {score} em 100',
+  '{n} flaky tests on {where}': '{n} testes instáveis em {where}',
+  '{test} is flaky on {where}': '{test} é instável em {where}',
+  '{n} work items going out are not done ({ids})': '{n} itens de trabalho que vão sair não estão concluídos ({ids})',
+  '{type} {id} going out is still {state}': '{type} {id}, que vai sair, ainda está em {state}',
+  'The last deploy, {label}, did not succeed': 'A última implementação, {label}, não teve êxito',
+  "What's going out couldn't be read, so its pull requests and work items aren't judged": 'Não foi possível ler o que vai sair, por isso os pull requests e os itens de trabalho não são avaliados',
+  // The verdicts, where they show.
+  'Ready to ship': 'Pronto a enviar',
+  'Look before shipping': 'Ver antes de enviar',
+  'Not ready to ship': 'Não está pronto a enviar',
+  'Go / no-go': 'Avançar ou não',
+  'Nothing stands in the way: pipelines green, production healthy, no risky changes or open work going out.': 'Nada o impede: pipelines a verde, produção saudável, nenhuma alteração arriscada nem trabalho por concluir a sair.',
+  'For {name}. It never blocks the decision.': 'Para {name}. Nunca impede a decisão.',
+};

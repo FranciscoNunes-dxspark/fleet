@@ -69,7 +69,7 @@ test('/clone <url> clones next to the open repository, named after it, and opens
     await type(app, `/clone ${server}`);
     app.stdin.write('\r');
     await until(() => frame().includes('The first tool'), "the clone's graph");
-    assert.match(frame().split('\n')[0], /[\\/]tools\s*$/);
+    assert.match(frame().split('\n').slice(0, 2).join('\n'), /[\\/]tools\s*$/);
     assert.equal(run(join(base, 'tools'), 'log', '-1', '--format=%s'), 'The first tool');
   } finally {
     app.unmount();
@@ -97,7 +97,7 @@ test('c in Repos fills in /clone; a folder given is used, and an existing one is
     // Only the line's start: the activity line cuts the rest, sooner the longer the temp folder's path.
     await until(() => frame().includes('fatal: destination path'), "git's refusal");
     assert.ok(existsSync(join(base, 'app', 'a.txt')));
-    assert.match(frame().split('\n')[0], /my tools\s*$/);
+    assert.match(frame().split('\n').slice(0, 2).join('\n'), /my tools\s*$/);
   } finally {
     app.unmount();
   }

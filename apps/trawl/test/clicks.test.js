@@ -100,7 +100,7 @@ test('clicks pick rows, cells and tabs, double-clicks do what ↵ does (but neve
     p = at('T Players');
     mouse.click(p.x, p.y);
     mouse.click(p.x, p.y);
-    await until(() => frame().includes('─ SELECT TOP (500) * FROM [dbo].[Players]; ─') && frame().includes('Rui Costa'), 'the rows of Players');
+    await until(() => frame().includes('│ SELECT TOP (500) * FROM [dbo].[Players]; ') && frame().includes('Rui Costa'), 'the rows of Players');
 
     // In the grid a click picks the row and, the rows being one table's, the cell: y copies it.
     p = at('Marta Reis');
@@ -114,9 +114,9 @@ test('clicks pick rows, cells and tabs, double-clicks do what ↵ does (but neve
     mouse.click(p.x, p.y);
     mouse.click(p.x, p.y);
     await until(() => frame().includes('Row 5 of 12') && frame().includes('esc close'), 'the record');
-    p = at('4 History');
+    p = at('History');
     mouse.click(p.x + 2, p.y);
-    await until(() => frame().includes('─ History ') && !frame().includes('Row 5 of 12'), 'History');
+    await until(() => frame().includes('│ History ') && !frame().includes('Row 5 of 12'), 'History');
 
     // History: a double-click picks the statement and doesn't run it again (↵ would).
     p = at('SELECT TOP (500) * FROM [dbo].[Players]');
@@ -124,26 +124,28 @@ test('clicks pick rows, cells and tabs, double-clicks do what ↵ does (but neve
     mouse.click(p.x, p.y);
     await until(() => /❯.*SELECT TOP \(500\)/.test(frame()), 'the cursor on the statement');
     await new Promise((r) => setTimeout(r, 200));
-    assert.match(frame(), /─ History /);
+    assert.match(frame(), /│ History /);
     assert.equal(frame().split(`${BULLET} SELECT TOP (500)`).length, 2, 'it ran once, from the Explorer');
 
-    // The prompt: a click focuses it, and a click on the view gives the keys back, keeping the text.
-    p = at('Press / for commands');
-    mouse.click(p.x, p.y);
-    await until(() => frame().includes('enter run · tab complete'), 'the prompt focused');
+    // The command box: / opens it over the view, a click in its text moves the cursor there, and a click
+    // outside it closes it.
+    app.stdin.write('/');
+    await until(() => frame().includes('enter run  tab complete'), 'the command box');
     app.stdin.write('x');
-    await until(() => frame().includes('> x'), 'typed into the prompt');
-    p = at('─ History ');
-    mouse.click(p.x, p.y + 1);
-    await until(() => !frame().includes('enter run · tab complete'), 'the view focused again');
-    assert.match(frame(), /> x/);
+    await until(() => frame().includes('» /x'), 'typed into it');
+    p = at('» /x');
+    mouse.click(p.x + 2, p.y);
+    app.stdin.write('y');
+    await until(() => frame().includes('» y/x'), 'typed where the click put the cursor');
+    mouse.click(1, frame().split('\n').length - 1);
+    await until(() => !frame().includes('enter run  tab complete') && !frame().includes('» '), 'the box closed');
 
     // Text selected and copied (mouse.js does that): said for a moment in the bottom line.
     mouse.copy('one\ntwo');
     await until(() => frame().includes('Copied 2 lines'), 'the copy noted');
 
     // In the Explorer, a click on another database picks it and a double-click switches to it.
-    p = at('1 Explorer');
+    p = at('Explorer');
     mouse.click(p.x, p.y);
     await until(() => frame().includes('▸ ClubB'), 'the explorer');
     p = at('▸ ClubB');
@@ -162,10 +164,10 @@ test('the wheel scrolls a list or the grid and leaves the cursor where it was; s
   const app = start({ mouse }, { ran });
   try {
     await until(() => frame().includes('Translations'), 'the explorer');
-    let p = at('4 History');
+    let p = at('History');
     mouse.click(p.x, p.y);
     await until(() => /❯.*SELECT 1 AS n/.test(frame()), 'History, the cursor on top');
-    const firstRow = () => frame().split('\n')[3];
+    const firstRow = () => frame().split('\n')[2];
     mouse.wheel(p.x, 10, 1);
     mouse.wheel(p.x, 10, 1);
     await until(() => firstRow().includes('SELECT 7 AS n'), 'six rows scrolled');
@@ -177,17 +179,19 @@ test('the wheel scrolls a list or the grid and leaves the cursor where it was; s
     await until(() => /❯.*SELECT 2 AS n/.test(firstRow()), 'the cursor one down from where it was, in view');
 
     // The grid, in a terminal too small for all of Players' rows and columns.
-    resize(app, 40, 22);
-    p = at('1 Explorer');
+    // Two rows fewer than the old frame needed: a pane spends one row on its title, not two, and the
+    // command box sits over the view rather than taking a row of its own.
+    resize(app, 40, 20);
+    p = at('Explorer');
     mouse.click(p.x, p.y);
     await until(() => /❯ +T Clubs/.test(frame()), 'the explorer again');
     app.stdin.write('j');
     await until(() => /❯ +T Players/.test(frame()), 'on Players');
     app.stdin.write('\r');
-    const header = () => frame().split('\n')[3];
+    const header = () => frame().split('\n')[2];
     await until(() => frame().includes('Rui Costa') && /^│\s+Id │/.test(header()), 'the rows of Players, not all columns');
     assert.doesNotMatch(header(), /Goals/);
-    const grid = () => frame().split('\n')[5];
+    const grid = () => frame().split('\n')[4];
     mouse.wheel(10, 8, 1);
     await until(() => grid().includes('João Pinto'), 'three rows scrolled');
     assert.doesNotMatch(frame(), /❯/);
@@ -211,9 +215,12 @@ test('in the console a click puts the cursor on the character under it, double a
   const app = start({ mouse, clipboard: async (text) => (copied.push(text), 'system') });
   try {
     await until(() => frame().includes('Translations'), 'the explorer');
-    let p = at('2 Query');
+    let p = at('Query');
     mouse.click(p.x, p.y);
     await until(() => frame().includes('An empty console'), 'the empty console');
+    // The rows the console had under the old frame (header, tabs, welcome box, prompt box and hint
+    // row), so the scrolling below counts the same lines.
+    resize(app, 100, 20);
     app.stdin.write('i');
     await until(() => frame().includes('typing SQL'), 'typing');
     // Pasted in one go: forty lines, the cursor ending on the last.
@@ -261,7 +268,7 @@ test('in the console a click puts the cursor on the character under it, double a
     mouse.click(p.x + 2, p.y);
     await new Promise((r) => setTimeout(r, 100));
     app.stdin.write('--');
-    await until(() => /27 -- +│/.test(frame()), 'the line replaced');
+    await until(() => /27 --\s*$/m.test(frame()), 'the line replaced');
 
     // A drag selects the SQL it covers, and copies it.
     const a = at('SELECT 28 AS n');
@@ -270,7 +277,7 @@ test('in the console a click puts the cursor on the character under it, double a
     await until(() => copied.length === 1 && frame().includes('Copied 2 lines'), 'the drag copied');
     assert.deepEqual(copied, ['SELECT 28 AS n\nSELECT 29 AS n']);
     app.stdin.write('+');
-    await until(() => /28 \+ +│/.test(frame()) && frame().includes('SELECT 30 AS n'), 'the selection replaced');
+    await until(() => /28 \+\s*$/m.test(frame()) && frame().includes('SELECT 30 AS n'), 'the selection replaced');
   } finally {
     app.unmount();
   }
@@ -329,7 +336,7 @@ test('clicks under the console go to the results there, and clicking away from a
   const app = start({ mouse });
   try {
     await until(() => frame().includes('Translations'), 'the explorer');
-    let p = at('2 Query');
+    let p = at('Query');
     mouse.click(p.x, p.y);
     await until(() => frame().includes('An empty console'), 'the console');
     app.stdin.write('i');
@@ -351,14 +358,14 @@ test('clicks under the console go to the results there, and clicking away from a
     mouse.click(p.x - 3, p.y);
     await until(() => frame().includes('selected · ctrl+r runs just this'), 'the statement selected');
     app.stdin.write('\x12'); // ctrl+r
-    await until(() => frame().includes('Club A FC') && frame().includes('─ Console '), 'the results under the console');
+    await until(() => frame().includes('Club A FC') && frame().includes('│ Console '), 'the results under the console');
     // A click on a row there picks it, and typing stops.
     p = at('Union Sud');
     mouse.click(p.x, p.y);
     await until(() => /❯.*Union Sud/.test(frame()) && frame().includes('↵/i type'), 'the row picked, typing stopped');
 
-    // In Results: typing into a cell, then a click on the prompt keeps it, as ↵ would.
-    p = at('3 Results');
+    // In Results: typing into a cell, then a click elsewhere keeps it, as ↵ would.
+    p = at('Results');
     mouse.click(p.x, p.y);
     await until(() => frame().includes('h/l columns'), 'Results');
     p = at('Atlético Norte');
@@ -369,21 +376,18 @@ test('clicks under the console go to the results there, and clicking away from a
     app.stdin.write('\x15');
     app.stdin.write('Club Q2');
     await until(() => frame().includes('Club Q2'), 'typed into the cell');
-    p = at('Press / for commands');
-    mouse.click(p.x, p.y);
-    await until(() => frame().includes('1 edited row not saved') && frame().includes('enter run · tab complete'), 'the change staged, the prompt focused');
+    p = at('│ SELECT * FROM dbo.Clubs');
+    mouse.click(p.x, p.y + 4);
+    await until(() => frame().includes('1 edited row not saved') && !frame().includes('editing the cell'), 'the change staged, the view focused');
 
     // While a question is open, the mouse does nothing: its answers take keys.
-    p = at('─ SELECT * FROM dbo.Clubs');
-    mouse.click(p.x, p.y + 4);
-    await until(() => !frame().includes('enter run · tab complete'), 'the view focused');
     app.stdin.write('s');
     await until(() => frame().includes('Save 1 edited row to dbo.Clubs on demo?'), 'the question');
-    p = at('4 History');
+    p = at('History');
     mouse.click(p.x, p.y);
     await new Promise((r) => setTimeout(r, 100));
     assert.match(frame(), /Save 1 edited row/);
-    assert.doesNotMatch(frame(), /─ History /);
+    assert.doesNotMatch(frame(), /│ History /);
     app.stdin.write('2');
     await until(() => !frame().includes('Save 1 edited row'), 'the question answered');
   } finally {

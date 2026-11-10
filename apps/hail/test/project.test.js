@@ -68,6 +68,9 @@ test("Hail's environment follows the project's; /project-env switches it, asks b
   const home = process.env.FAMILY_HOME;
   startRecording(dir, { home });
   const app = start({ initialFile: join(dir, 'api.http'), cwd: dir });
+  // Wide enough for the top line to say both environments beside the views.
+  Object.defineProperty(app.stdout, 'columns', { value: 160 });
+  app.stdout.emit('resize');
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('Orders') && /env local/.test(frame()) && /project dev/.test(frame()), "the project's dev, Hail's local");

@@ -100,7 +100,7 @@ test('a container app: its details, its logs from its workspace, a restart of it
     await until(() => /❯ ● contoso-worker\s+container/.test(frame()) && frame().includes('contoso-worker--r7'), 'the container app beside the list');
     assert.match(frame(), /image\s+contosocr\.azurecr\.io\/worker:2\.14\.0/);
     app.stdin.write('l');
-    await until(() => frame().includes('╭─ Logs') && frame().includes('contoso-env logs') && frame().includes('Processed'), 'its console log');
+    await until(() => frame().includes('│ Logs') && frame().includes('contoso-env logs') && frame().includes('Processed'), 'its console log');
     app.stdin.write('1');
     await until(() => /❯ ● contoso-worker/.test(frame()), 'back');
     app.stdin.write('\x1br');

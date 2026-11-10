@@ -5,6 +5,8 @@ import {
   LIMITS, buildPrompt, cliLink, desktopLink, folderProblem, lastRepoFor, loadFolders, loadRules, rememberRepo, saveFolder,
 } from '../claude.js';
 import { t, tj } from '../i18n.js';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 /**
  * Work item panel: open Claude Code or Claude Desktop with this item as the prompt. Folded to its
@@ -56,18 +58,18 @@ export default function ClaudeStart({ w }) {
       {open && <div id="claude-start-body" className="claude-body">
         <div className="claude-row">
           <label>{t('Repository')}
-            <select className="input" value={repoId || ''} onChange={(e) => { setPicked(e.target.value); setEditing(false); }} disabled={!repos.length}>
+            <Select className="input" value={repoId || ''} onChange={(e) => { setPicked(e.target.value); setEditing(false); }} disabled={!repos.length}>
               {!repos.length && <option value="">{allRepos ? t('No tracked repos in this project') : t('Loading…')}</option>}
               {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
+            </Select>
           </label>
           {repo && (editing || !folder ? (
             <form className="claude-folder" onSubmit={(e) => { e.preventDefault(); saveDraft(); }}>
               <label>{t('Local folder for {repo}', { repo: repo.name })}
-                <input className="input mono" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="C:\src\repo-name" spellCheck={false} autoComplete="off" aria-invalid={!!problem} />
+                <TextField.Root className="mono" variant="surface" color="gray" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="C:\src\repo-name" spellCheck={false} autoComplete="off" aria-invalid={!!problem} />
               </label>
-              <button type="submit" className="btn btn-small" disabled={!draft.trim() || !!problem}>{t('Save')}</button>
-              {folder && <button type="button" className="btn btn-small btn-ghost" onClick={() => setEditing(false)}>{t('Cancel')}</button>}
+              <Button size="1" variant="outline" color="gray" type="submit" disabled={!draft.trim() || !!problem}>{t('Save')}</Button>
+              {folder && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setEditing(false)}>{t('Cancel')}</Button>}
             </form>
           ) : (
             <div className="claude-folder-set">
@@ -82,9 +84,9 @@ export default function ClaudeStart({ w }) {
         {repo && !folder && !editing && <p className="muted small">{t('Without a folder, Claude Code opens in your home folder and Claude Desktop asks you to pick one.')}</p>}
 
         <div className="detail-actions">
-          <a className="btn btn-small btn-primary" href={cliLink(folder, buildPrompt(w, repo, LIMITS.cli, rules))} onClick={opened}>Claude Code (CLI)</a>
-          <a className="btn btn-small" href={desktopLink(folder, buildPrompt(w, repo, LIMITS.desktop, rules))} onClick={opened}>Claude Desktop</a>
-          <button type="button" className="btn btn-small btn-ghost" onClick={copy}>{t('Copy prompt')}</button>
+          <Button asChild size="1" variant="solid"><a href={cliLink(folder, buildPrompt(w, repo, LIMITS.cli, rules))} onClick={opened}>Claude Code (CLI)</a></Button>
+          <Button asChild size="1" variant="outline" color="gray"><a href={desktopLink(folder, buildPrompt(w, repo, LIMITS.desktop, rules))} onClick={opened}>Claude Desktop</a></Button>
+          <Button size="1" variant="ghost" color="gray" type="button" onClick={copy}>{t('Copy prompt')}</Button>
         </div>
         <p className="muted small">
           {tj('Opens Claude with this item as the prompt. Nothing runs until you press Enter. If nothing opens: for the CLI, send one prompt in an interactive {cmd} session first; for Desktop, install Claude Desktop.', { cmd: <span className="mono">claude</span> })}

@@ -97,9 +97,10 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `dir=${pkg.fleet?.out ?? "dist"}\n`);
           ' "${{ needs.version.outputs.version }}"
       - run: bun ../../packages/kit/scripts/build.js ${{ matrix.targets }}
-      # Fleet's Windows installer, with the Windows Terminal it opens in (apps/fleet/installer).
-      - name: Fleet's installer
-        if: inputs.app == 'fleet' && matrix.os == 'windows-latest'
+      # An app's Windows installer, where it has one (apps/<app>/installer/build.ps1, with Inno Setup):
+      # Fleet's, with the Windows Terminal it opens in.
+      - name: The installer
+        if: matrix.os == 'windows-latest' && hashFiles(format('apps/{0}/installer/build.ps1', inputs.app)) != ''
         shell: pwsh
         run: |
           choco install innosetup --no-progress -y

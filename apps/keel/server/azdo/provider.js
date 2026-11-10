@@ -183,7 +183,9 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
     projectId,
     projectName,
     pipeline: a.releaseDefinition?.name || 'Release',
+    definitionId: a.releaseDefinition?.id ?? null,
     stage: `${a.releaseEnvironment?.name || 'Stage'}${a.approvalType === 'postDeploy' ? ' (after deployment)' : ''}`,
+    postDeploy: a.approvalType === 'postDeploy',
     run: a.release?.id ? { name: a.release.name, webUrl: relUrl(projectName, a.release.id) } : null,
     createdOn: a.createdOn,
     instructions: a.comments || '',
@@ -1311,6 +1313,20 @@ export function createAzdoProvider({ orgUrl = config.orgUrl, pat = config.pat, t
           branch: stripRef(ref.branch?.name || ref.branch?.id) || null,
         };
       }));
+    },
+
+    /**
+     * Who approved or rejected a deploy into a classic release stage (`deployId` is the release): its
+     * stage's pre-deployment approvals, without automatic ones. A YAML run's checks don't name who
+     * passed them in any one call, so a pipeline answers none.
+     */
+    async getDeployApprovals(target, deployId) {
+      if (target.type !== 'release') return [];
+      const r = await api(`${rm}/${seg(target.projectName)}/_apis/release/releases/${Number(deployId)}`);
+      const env = (r.environments || []).find((e) => !target.stage || e.name === target.stage);
+      return (env?.preDeployApprovals || [])
+        .filter((a) => !a.isAutomated && (a.status === 'approved' || a.status === 'rejected'))
+        .map((a) => ({ by: (a.approvedBy || a.approver)?.displayName || null, at: a.modifiedOn || null, status: a.status, comment: a.comments || null }));
     },
 
     // Release files are GitHub's (github/provider.js); Azure DevOps keeps builds' artifacts elsewhere.

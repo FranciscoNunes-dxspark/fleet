@@ -69,13 +69,13 @@ test("/env says the project's environment and switches every app's; on productio
   const dir = projectWithEnvironments();
   const app = start({ cwd: dir });
   await until(shows(app, 'minimist@1.2.5'), 'the findings');
-  assert.match(app.lastFrame(), /shop {2}│ {2}dev/);
+  assert.match(app.lastFrame(), /dev {2}2 critical/);
   await type(app.stdin, '/env');
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'Environment: dev. /env prod switches every app.'), 'which one');
   await type(app.stdin, '/env prod');
   app.stdin.write(KEYS.enter);
-  await until(shows(app, 'prod (production)'), 'the header saying so');
+  await until(shows(app, 'prod (production)'), 'the top line saying so');
   assert.equal(currentEnvironment(dir).name, 'prod', "chosen in the family's folder, for the others");
   assert.ok(readActivity().some((e) => /Switched shop to prod \(production\)/.test(e.text)), 'the switch in the activity log');
   await type(app.stdin, '/fix lodash');

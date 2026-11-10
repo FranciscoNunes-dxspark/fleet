@@ -6,15 +6,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApi, useApp } from '../context.js';
-import { age } from '../format.js';
+import { age, formatDate } from '../format.js';
 import { Loading } from '../ui.jsx';
 import { Icon } from '../icons.jsx';
-import { locale, t } from '../i18n.js';
+import { t } from '../i18n.js';
 import { buildTimeline, serviceTiles } from './views.js';
 import { useLine } from './LineShell.jsx';
+import { Button } from '@radix-ui/themes';
 
 const stateName = (s) => ({ up: t('Up'), down: t('Down'), degraded: t('Degraded'), deploying: t('Deploying'), settling: t('Just deployed') })[s] || t('Not checked yet');
-const time = (iso) => new Date(iso).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+const time = (iso) => formatDate(iso, { hour: '2-digit', minute: '2-digit' });
 
 function eventText(e) {
   switch (e.code) {
@@ -68,8 +69,8 @@ export default function Control() {
     <div className="control" ref={wall}>
       <header className="control-head">
         <div className="control-clock">
-          <span className="control-time">{new Date(now).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })}</span>
-          <span className="control-date">{new Date(now).toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+          <span className="control-time">{formatDate(now, { hour: '2-digit', minute: '2-digit' })}</span>
+          <span className="control-date">{formatDate(now, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
         </div>
         <div className={`control-status control-status-${tone}`} role="status">
           <span className="control-pulse" aria-hidden="true" />
@@ -80,9 +81,9 @@ export default function Control() {
           <div><dt>{t('Merged today')}</dt><dd>{today('merged')}</dd></div>
           <div><dt>{t('Failed runs today')}</dt><dd className={today('run', (e) => e.result === 'failed') ? 'text-bad' : ''}>{today('run', (e) => e.result === 'failed')}</dd></div>
         </dl>
-        <button type="button" className="btn btn-small control-full" onClick={toggleFull}>
+        <Button size="1" variant="outline" color="gray" className="control-full" type="button" onClick={toggleFull}>
           <Icon name={full ? 'collapse' : 'expand'} size={14} /> {full ? t('Leave full screen') : t('Full screen')}
-        </button>
+        </Button>
       </header>
 
       <div className="control-body">

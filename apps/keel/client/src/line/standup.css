@@ -1,0 +1,69 @@
+/* Standup mode (Standup.jsx): the whole window, over the frame, with room left for the docked
+   details panel so a card opened from a slide sits beside it. Built on styles.css's tokens. */
+
+.standup {
+  position: fixed; inset: 0; z-index: 9; display: flex; flex-direction: column;
+  background: var(--canvas); color: var(--ink); overflow: hidden;
+}
+html.inspector-open .standup { right: calc(var(--inspector-w) + var(--frame)); }
+
+.standup-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  padding: 12px 24px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.standup-title { font-size: var(--text-lg); }
+.standup-people { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; padding: 0; list-style: none; flex: 1; min-width: 0; }
+.standup-dot {
+  display: grid; place-items: center; min-width: 32px; height: 32px; padding: 2px;
+  border: 2px solid transparent; border-radius: 999px; background: none; color: var(--ink-2); cursor: pointer;
+  font: inherit; font-size: var(--text-xs);
+}
+.standup-dot.has-stuck { border-color: var(--warn-soft); }
+.standup-dot.on { border-color: var(--accent); }
+.standup-dot-end { padding: 0 10px; border-radius: var(--radius); }
+.standup-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.standup-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.standup-inline { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--ink-2); }
+
+.standup-slide { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; display: grid; align-content: start; gap: 24px; }
+.standup-who { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.standup-who > div:first-of-type { flex: 1; min-width: 0; }
+.standup-name { margin: 0; font-size: var(--text-5xl); line-height: 1.1; }
+.standup-timer { display: flex; align-items: center; gap: 8px; }
+.standup-clock { font-size: var(--text-4xl); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.standup-timer.over .standup-clock { color: var(--bad); }
+.standup-timer.paused .standup-clock { color: var(--muted); }
+
+.standup-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start; }
+@media (max-width: 1100px) { .standup-cols { grid-template-columns: 1fr; } }
+.standup-cols > section { display: grid; gap: 12px; min-width: 0; }
+.standup-sub { margin: 0; font-size: var(--text-md); }
+
+.standup-moved { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.standup-row {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; width: 100%; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: border-color var(--dur-fast);
+}
+.standup-row:hover { border-color: var(--line-strong); }
+.standup-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.standup-row-title { min-width: 0; overflow-wrap: anywhere; }
+.standup-row-sub { grid-column: 2; font-size: var(--text-xs); }
+.standup-tag { align-self: start; padding: 2px 6px; border-radius: var(--radius-xs); font-size: var(--text-xs); white-space: nowrap; }
+.standup-tag-ok { background: var(--ok-soft); color: var(--ok); }
+.standup-tag-info { background: var(--info-soft); color: var(--info); }
+
+.standup-holding { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; padding: 0; list-style: none; color: var(--ink-2); }
+.standup-n { font-size: var(--text-3xl); font-variant-numeric: tabular-nums; color: var(--ink); }
+.standup-quiet { font-size: var(--text-xl); color: var(--ink-2); }
+
+.standup-foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 10px 24px; border-top: 1px solid var(--line); background: var(--surface); font-size: var(--text-sm);
+}
+@media (max-width: 700px) {
+  .standup-bar, .standup-slide, .standup-foot { padding-left: 16px; padding-right: 16px; }
+  .standup-name { font-size: var(--text-3xl); }
+  .standup-clock { font-size: var(--text-2xl); }
+}

@@ -488,7 +488,7 @@ const releaseApprovals = [];
   const store = RELEASE_DEFS[0];
   const r = store.releases[0];
   releaseApprovals.push({
-    kind: 'release', id: 5001, projectId: store.project.id, projectName: store.project.name, pipeline: store.name, stage: 'Production',
+    kind: 'release', id: 5001, projectId: store.project.id, projectName: store.project.name, pipeline: store.name, definitionId: store.id, stage: 'Production', postDeploy: false,
     run: { name: r.name, webUrl: r.webUrl }, createdOn: ago(5 * H), instructions: 'Check the Staging smoke tests first.', minRequired: 1,
     approvers: [ME], canDecide: null, _release: r, _env: r.envs[2],
   });
@@ -1085,6 +1085,17 @@ export function createMockProvider() {
     listDeployments(target, { since }) {
       const from = since ? Date.parse(since) : 0;
       return delay(demoDeployHistory(target).filter((d) => Date.parse(d.at) >= from).map((d) => ({ ...d })));
+    },
+
+    /** A demo release stage after the first was approved by hand, half an hour before it finished. */
+    getDeployApprovals(target, deployId) {
+      if (target.type !== 'release') return delay([]);
+      const def = RELEASE_DEFS.find((d) => d.id === Number(target.definitionId));
+      const r = def?.releases.find((x) => x.id === Number(deployId));
+      const i = r ? r.envs.findIndex((e) => !target.stage || e.name === target.stage) : -1;
+      if (i <= 0 || !['succeeded', 'partiallySucceeded'].includes(r.envs[i].status)) return delay([]);
+      const by = DEVS[r.id % DEVS.length].displayName;
+      return delay([{ by, at: iso(Date.parse(r.envs[i].at) - 30 * 60_000), status: 'approved', comment: null }]);
     },
 
     getCommit(projectId, repoId, commitId) {

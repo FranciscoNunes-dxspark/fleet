@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSticky } from '../sticky.js';
 import { useApi, useApp } from '../context.js';
-import { dateTime } from '../format.js';
+import { dateTime, formatDate } from '../format.js';
 import { CodeTabs, Empty, ErrorBox, Loading, PageHeader, Person } from '../ui.jsx';
-import { locale, t } from '../i18n.js';
+import { t } from '../i18n.js';
 import { useProjectLabel } from '../orgs.js';
 import { SavedViews } from '../views.jsx';
+import { TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 const PERIODS = [1, 7, 14, 30, 90];
 const SHOW_MAX = 500;
@@ -20,7 +22,7 @@ function dayLabel(iso) {
   yesterday.setDate(today.getDate() - 1);
   if (d.toDateString() === today.toDateString()) return t('Today');
   if (d.toDateString() === yesterday.toDateString()) return t('Yesterday');
-  return d.toLocaleDateString(locale(), { weekday: 'long', month: 'short', day: 'numeric', ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) });
+  return formatDate(d, { weekday: 'long', month: 'short', day: 'numeric', ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) });
 }
 
 // Git authors are a name and an email, not Azure DevOps accounts; Person only needs a name.
@@ -116,29 +118,29 @@ export default function Commits() {
       <CodeTabs />
 
       <div className="filters">
-        <input type="search" className="input" placeholder={t('Search message, ID, work item')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search commits')} />
-        <select className="input" value={project} onChange={(e) => { setProject(e.target.value); setRepo(''); setBranch(''); }} aria-label={t('Project')}>
+        <TextField.Root variant="surface" color="gray" type="search" placeholder={t('Search message, ID, work item')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search commits')} />
+        <Select className="input" value={project} onChange={(e) => { setProject(e.target.value); setRepo(''); setBranch(''); }} aria-label={t('Project')}>
           <option value="">{t('All projects')}</option>
           {projects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
-        <select className="input" value={repo} onChange={(e) => { setRepo(e.target.value); setBranch(''); }} aria-label={t('Repository')}>
+        </Select>
+        <Select className="input" value={repo} onChange={(e) => { setRepo(e.target.value); setBranch(''); }} aria-label={t('Repository')}>
           <option value="">{t('All repos')}</option>
           {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
+        </Select>
         {chosen && (
-          <select className="input" value={branch} onChange={(e) => setBranch(e.target.value)} aria-label={t('Branch')}>
+          <Select className="input" value={branch} onChange={(e) => setBranch(e.target.value)} aria-label={t('Branch')}>
             <option value="">{t('{name} (default)', { name: chosen.defaultBranch })}</option>
             {(branches || []).filter((b) => b.name !== chosen.defaultBranch).map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
-          </select>
+          </Select>
         )}
-        <select className="input" value={author} onChange={(e) => setAuthor(e.target.value)} aria-label={t('Author')}>
+        <Select className="input" value={author} onChange={(e) => setAuthor(e.target.value)} aria-label={t('Author')}>
           <option value="">{t('Any author')}</option>
           {authors.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
           {author && !authors.some(([key]) => key === author) && <option value={author}>{author}</option>}
-        </select>
-        <select className="input" value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label={t('Period')}>
+        </Select>
+        <Select className="input" value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label={t('Period')}>
           {PERIODS.map((n) => <option key={n} value={n}>{n === 1 ? t('Last 24 hours') : t('Last {n} days', { n })}</option>)}
-        </select>
+        </Select>
       </div>
       <SavedViews page="commits" filters={filters} apply={applyFilters} />
 
@@ -174,7 +176,7 @@ export default function Commits() {
                       </span>
                     ) : <span className="commit-changes" />}
                     <time className="commit-time muted small" dateTime={c.author?.date} title={dateTime(c.author?.date)}>
-                      {new Date(c.author?.date).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })}
+                      {formatDate(c.author?.date, { hour: '2-digit', minute: '2-digit' })}
                     </time>
                   </li>
                 ))}

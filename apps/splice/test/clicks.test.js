@@ -92,7 +92,7 @@ test('clicks pick rows and tabs, double-clicks do what ↵ does, the wheel scrol
     // between them could take longer than a double-click may.)
     mouse.click(p.x, p.y);
     mouse.click(p.x, p.y);
-    await until(() => /─ [0-9a-f]{7} Commit number 38 ─.*esc close/.test(frame()), 'the diff of the double-clicked commit');
+    await until(() => /│ [0-9a-f]{7} Commit number 38 .*esc close/.test(frame()), 'the diff of the double-clicked commit');
 
     // A tab closes what's open over the view and switches to it.
     p = at(frame(), '3 Branches');
@@ -118,15 +118,18 @@ test('clicks pick rows and tabs, double-clicks do what ↵ does, the wheel scrol
     app.stdin.write('j');
     await until(() => /❯.*Commit number 39/.test(topRow()), 'the cursor one down from where it was, in view');
 
-    // The prompt: a click focuses it, and a click on the view gives the keys back, keeping the text.
-    p = at(frame(), 'Press / for commands');
-    mouse.click(p.x, p.y);
-    await until(() => frame().includes('enter run · tab complete'), 'the prompt focused');
+    // The command box: / opens it over the view, a click in its text moves the cursor there, and a click
+    // outside it closes it.
+    app.stdin.write('/');
+    await until(() => frame().includes('enter run  tab complete'), 'the command box');
     app.stdin.write('x');
-    p = at(frame(), 'Commit number 36');
-    mouse.click(p.x, p.y);
-    await until(() => /❯.*Commit number 36/.test(frame()) && !frame().includes('enter run · tab complete'), 'the view focused again');
-    assert.match(frame(), /> x/);
+    await until(() => frame().includes('» /x'), 'typed into it');
+    p = at(frame(), '» /x');
+    mouse.click(p.x + 2, p.y);
+    app.stdin.write('y');
+    await until(() => frame().includes('» y/x'), 'typed where the click put the cursor');
+    mouse.click(1, frame().split('\n').length - 1);
+    await until(() => !frame().includes('enter run  tab complete') && !frame().includes('» '), 'the box closed');
 
     // Text selected and copied (mouse.js does that): said for a moment in the bottom line.
     mouse.copy('one\ntwo');

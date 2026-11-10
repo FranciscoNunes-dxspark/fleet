@@ -99,7 +99,7 @@ export const HELP = [
     rows: [
       ['j k', 'Rows'],
       ['h l  ← →', 'Columns'],
-      ['[ ]', 'Previous, next result set'],
+      ['[ ]', 'Previous, next result set (a tab for each sits above the grid; click one)'],
       ['↵', 'The row as a record, one column per line'],
       ['w', 'The result set as data (/data): a table to look into, or, on a cell holding JSON text, a tree to open and close (→ ← ↵) · / asks a path like .items[].name (| length, | keys) · y copies a value, p its path, t switches table and tree · esc closes'],
       ['v', 'The whole value of the cell (/cell): JSON and XML laid out, long text wrapped, binary as hex'],

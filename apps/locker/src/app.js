@@ -8,6 +8,7 @@ export const APP = configureApp({
   title: 'Locker',
   version: process.env.LOCKER_VERSION,
   packageUrl: new URL('../package.json', import.meta.url),
+  look: 'shell',
 });
 
 export const { VERSION, COMPILED } = APP;

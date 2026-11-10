@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useApi } from '../context.js';
 import { dateTime } from '../format.js';
-import { Chip, Empty, ErrorBox, ExternalLink, Loading } from '../ui.jsx';
+import { Chip, Empty, ErrorBox, ExternalLink, Loading, buttonLook } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
+import { Button } from '@radix-ui/themes';
 
 const TONE = { critical: 'bad', high: 'bad', medium: 'warn', low: 'info', unknown: 'muted' };
 // Labels are getters so they follow the current language.
@@ -36,17 +37,17 @@ export default function DevOpsSecurity() {
       </p>
       <div className="devops-security-head">
         <span className="chips" role="group" aria-label={t('Severity')}>
-          <button type="button" className={`btn btn-small${level ? ' btn-ghost' : ''}`} aria-pressed={!level} onClick={() => setLevel('')}>{t('All {n}', { n: data.findings.length })}</button>
+          <Button type="button" {...buttonLook(`btn btn-small${level ? ' btn-ghost' : ''}`)} aria-pressed={!level} onClick={() => setLevel('')}>{t('All {n}', { n: data.findings.length })}</Button>
           {counts.map((s) => (
-            <button key={s} type="button" className={`btn btn-small${level === s ? '' : ' btn-ghost'}`} aria-pressed={level === s} onClick={() => setLevel(level === s ? '' : s)}>
+            <Button key={s} type="button" {...buttonLook(`btn btn-small${level === s ? '' : ' btn-ghost'}`)} aria-pressed={level === s} onClick={() => setLevel(level === s ? '' : s)}>
               {SEVERITY[s]} {data.counts[s]}
-            </button>
+            </Button>
           ))}
         </span>
         <span className="muted small devops-security-when">
           {t('{n} projects', { n: data.projects.length })} · {t('Reviewed {when}', { when: dateTime(data.at) })}
         </span>
-        <button type="button" className="btn btn-small" disabled={loading} onClick={() => setFresh((n) => n + 1)}>{loading ? t('Reviewing…') : t('Review again')}</button>
+        <Button size="1" variant="outline" color="gray" type="button" disabled={loading} onClick={() => setFresh((n) => n + 1)}>{loading ? t('Reviewing…') : t('Review again')}</Button>
       </div>
       {data.gaps.length > 0 && (
         <div className="small">
@@ -57,7 +58,7 @@ export default function DevOpsSecurity() {
         </div>
       )}
       {!data.projects.length && <Empty title={t('No tracked Azure DevOps projects')} />}
-      {data.projects.length > 0 && !data.findings.length && <Empty title={t("Nothing found: these projects pass every check Keel makes.")} mood="nap" />}
+      {data.projects.length > 0 && !data.findings.length && <Empty title={t("Nothing found: these projects pass every check Keel makes.")} />}
       {shown.length > 0 && (
         <div className="table-wrap">
           <table className="table">

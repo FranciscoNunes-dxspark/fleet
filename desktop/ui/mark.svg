@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<title>Fleet</title>
+<defs><clipPath id="above-24"><rect width="64" height="24"/></clipPath><clipPath id="below-24"><rect y="27" width="64" height="37"/></clipPath><clipPath id="above-37"><rect width="64" height="37"/></clipPath><clipPath id="below-37"><rect y="40" width="64" height="24"/></clipPath></defs>
+<rect width="64" height="64" rx="13" fill="#16181d"/>
+<g clip-path="url(#above-24)"><path d="M32 9 L38 32 L32 55 L26 32 Z" fill="#bec0c2"/></g><g clip-path="url(#below-24)"><path d="M32 9 L38 32 L32 55 L26 32 Z" fill="#ffffff"/></g>
+<g clip-path="url(#above-37)"><path d="M7 32 a25 25 0 1 0 50 0 a25 25 0 1 0 -50 0 Z M12 32 a20 20 0 1 0 40 0 a20 20 0 1 0 -40 0 Z" fill-rule="evenodd" fill="#e6c07b"/></g><g clip-path="url(#below-37)"><path d="M7 32 a25 25 0 1 0 50 0 a25 25 0 1 0 -50 0 Z M12 32 a20 20 0 1 0 40 0 a20 20 0 1 0 -40 0 Z" fill-rule="evenodd" fill="#a87d3c"/></g>
+</svg>

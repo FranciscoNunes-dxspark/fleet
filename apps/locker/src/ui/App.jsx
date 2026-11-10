@@ -7,7 +7,6 @@ import { HELP } from '../help.js';
 import { commandsSection, sectionFor } from '@fleet/kit/help-layout.js';
 import { askHostToUpdate } from '@fleet/kit/hosted.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { recordCommand } from '@fleet/kit/recording.js';
@@ -15,7 +14,8 @@ import { keymapSection, parseKeymap, shortcutKey, translateKey } from '@fleet/ki
 import { expandLines, userCommands } from '@fleet/kit/usercommands.js';
 import { paletteItems } from '@fleet/kit/palette.js';
 import { Palette } from '@fleet/kit/ui/Palette.jsx';
-import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, PromptBox, Row, SecretPrompt, Spinner, commandBoxFor, commandBoxHit, commandRows, confirmHeight, promptRowFor } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { DriftView } from './DriftView.jsx';
 import { VaultView } from './VaultView.jsx';
@@ -24,8 +24,8 @@ import { SourcesView } from './SourcesView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
 import { Picker } from './Picker.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
-import { FACES, moodFor, troubles } from '../pet.js';
+import { updateLine } from './Pet.jsx';
+import { FACES, PET, moodFor, moodLine, troubles } from '../pet.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 import { label } from '../azure/arm.js';
@@ -61,46 +61,35 @@ const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Header({ data, width, loading, mood, problem, demo, env }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Locker', bold: true },
-  ];
-  if (demo) segs.push({ text: '  demo', color: theme.warn });
-  if (data.dir) segs.push({ text: '  │  ', color: theme.border }, { text: basename(data.dir), bold: true });
-  if (env) segs.push({ text: `  ${env.name}${env.prod ? ' (production)' : ''}`, color: env.prod ? theme.del : theme.info, bold: env.prod });
-  segs.push({ text: '  │  ', color: theme.border }, { text: data.target ? label(data.target) : 'no app', color: data.target ? theme.info : theme.dim });
-  segs.push({ text: ' · ', color: theme.border }, { text: data.vault ? data.vault.name : 'no vault', color: data.vault ? theme.accent : theme.dim });
-  if (data.trouble.expiring.length) segs.push({ text: `  ${data.trouble.expiring.length} expiring`, color: theme.del, bold: true });
-  if (data.trouble.broken.length) segs.push({ text: `  ${data.trouble.broken.length} broken`, color: theme.del, bold: true });
-  if (data.trouble.drift.length) segs.push({ text: `  ${data.trouble.drift.length} differ`, color: theme.warn });
-  if (loading) segs.push({ text: '  reading…', color: theme.dim });
-  if (problem) segs.push({ text: '  │  ', color: theme.border }, { text: firstLine(problem), color: theme.warn });
-  return <Row pointer={false} width={width} segments={segs} />;
-}
-
-/** The tabs' labels and the columns each one covers (`from` up to `to`), which clicks are matched against. */
-function tabLabels(entries, counts) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let text = ` ${i + 1} ${v.label}`;
-    if (v.id === 'log' && entries.length) text += ` ${entries.length}`;
-    if (v.id === 'expiry' && counts.expiring) text += ` ${counts.expiring}`;
-    text += ' ';
-    const from = x;
-    x += stringWidth(text) + 1;
-    return { id: v.id, label: text, from, to: from + stringWidth(text) };
-  });
-}
-
-function Tabs({ view, entries, counts, width }) {
+// What the top line says at its right: demo, the environment, the app and its vault, what's wrong, the
+// folder. What went wrong reading Azure is the status line's.
+function headerContext({ data, loading, demo, env }) {
+  // Most telling first: the top line drops parts from the end when it runs out of room, and gives up its
+  // views' digits, then the other views, before the parts marked `need` (the kit's compact top line).
   const segs = [];
-  for (const t of tabLabels(entries, counts)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : t.id === 'expiry' && counts.expiring ? theme.del : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
+  const gap = () => segs.push({ text: '  ' });
+  if (demo) segs.push({ text: 'demo', color: theme.warn, need: true }), gap();
+  if (env) segs.push({ text: `${env.name}${env.prod ? ' (production)' : ''}`, color: env.prod ? theme.del : theme.info, bold: env.prod, need: true }), gap();
+  // The app and its vault as one part, so a narrow line never shows the one without the other.
+  segs.push({ text: `${data.target ? label(data.target) : 'no app'} · ${data.vault ? data.vault.name : 'no vault'}`, color: data.target || data.vault ? theme.info : theme.dim, need: true });
+  if (data.trouble.expiring.length) gap(), segs.push({ text: `${data.trouble.expiring.length} expiring`, color: theme.del, bold: true });
+  if (data.trouble.broken.length) gap(), segs.push({ text: `${data.trouble.broken.length} broken`, color: theme.del, bold: true });
+  if (data.trouble.drift.length) gap(), segs.push({ text: `${data.trouble.drift.length} differ`, color: theme.warn });
+  if (data.dir) gap(), segs.push({ text: basename(data.dir), bold: true });
+  if (loading) gap(), segs.push({ text: 'reading…', color: theme.dim });
+  return segs;
 }
+
+// The views in the top line: the digit that picks each before it (the compact top line drops it when the
+// line is narrow), the log's and the expiring count after it.
+const viewTabs = (entries, counts) =>
+  VIEWS.map((v, i) => ({
+    id: v.id,
+    key: i + 1,
+    label: v.label,
+    count: v.id === 'log' ? entries.length : v.id === 'expiry' ? counts.expiring : 0,
+    countColor: v.id === 'expiry' ? theme.del : theme.dim,
+  }));
 
 // The last two results, Claude Code style: "● Set Stripe--ApiKey" then "  ⎿  output".
 function activityRows(entries) {
@@ -874,6 +863,10 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
     } else if (!e.drag && e.button !== 'wheel') return;
     if (confirmRef.current || !layout.current) return;
     const { mainTop, mainH, promptTop, sugCount, tabs } = layout.current;
+    // While the command box is open over the view, a click in it is its own and one outside it closes it.
+    const inBox = commandBoxHit(layout.current.box, e);
+    if (inBox === false) return e.drag || e.wheel ? undefined : setFocus('view');
+    if (inBox && (e.drag || e.wheel)) return;
     if (e.drag) {
       const hit = mouseTarget(e.from.y - mainTop);
       if (!hit) return;
@@ -887,20 +880,20 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
       setFocus('view');
       return setView(tab.id);
     }
-    if (e.y >= mainTop && e.y < mainTop + mainH) {
+    if (!inBox && e.y >= mainTop && e.y < mainTop + mainH) {
       if (!e.wheel && focusRef.current === 'prompt') setFocus('view');
       const hit = mouseTarget(e.y - mainTop);
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
+    if (e.y === promptTop) {
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = layout.current.box?.inner ?? columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - (layout.current.box?.textX ?? 3))));
       return setFocus('prompt');
     }
-    const row = e.y - promptTop - 3;
+    const row = e.y - (layout.current.box?.items ?? promptTop + 1);
     if (row >= 0 && row < sugCount) {
       setSugIndex(row);
       if (e.double) promptKeys('', { return: true });
@@ -915,7 +908,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
   const W = columns;
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
   const loaded = !loading;
   const mood = moodFor({ loaded, busy, lastEntry: entries.at(-1), trouble: data.trouble });
   // How Hush feels, for the siblings (family.js's writeMood), whenever that changes.
@@ -923,17 +916,21 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
   useEffect(() => {
     if (config.familyMoods !== false) writeMood('locker', said);
   }, [said.mood, said.reason, config.familyMoods]);
-  const showWelcome = welcome && H >= 28;
-  const reacting = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   const counts = { expiring: data.expiringItems.length };
+  const problem = data.azureProblem ?? data.appProblem;
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Locker', views: viewTabs(entries, counts), view, context: headerContext({ data, loading, demo, env }), width: W, compact: true });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
+  // The command box, over the view while the prompt has the keys (the kit's CommandBox).
+  const cmdBox = commandBoxFor({ open: focus === 'prompt' && !confirmReq, width: W, height: H, count: suggestions.length });
   layout.current = {
-    mainTop: 2,
+    box: cmdBox,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    promptTop: promptRowFor(cmdBox, 1 + mainH + act.length + (busy ? 1 : 0)),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries, counts),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   // The palette's list: this view's keys, yours, then the commands.
@@ -964,9 +961,7 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
     main = <DriftView matrix={data.matrix} filter={filter} ctx={ctx} width={W} height={mainH} active={viewActive} loading={loading} />;
   }
 
-  const left = flash
-    ? flash.text
-    : focus === 'prompt'
+  const keys = focus === 'prompt'
       ? 'enter run · tab complete · ↑↓ pick or history · esc back'
       : overlay?.kind === 'help'
         ? 'j/k section · space scroll · / search · esc close'
@@ -975,28 +970,23 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
           : overlay
             ? 'j/k scroll · space page · y copy · esc close'
             : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ctrl+p palette · ? help';
-  const problem = data.azureProblem ?? data.appProblem;
+  const right = focus === 'prompt' ? '' : '/ commands · ctrl+p palette · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, what went wrong reading Azure,
+  // the welcome until the first command, else how Hush sees things.
+  const info = { loaded, trouble: data.trouble, target: data.target, vault: data.vault };
+  let status = { face: FACES[mood], message: moodLine(mood, info) };
+  if (flash) status = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) status = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
+  else if (problem) status = { face: FACES[mood], message: firstLine(problem), tone: 'warn' };
+  else if (welcome && update) status = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) status = { face: FACES[mood], message: welcomeLine('Locker', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, info)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header data={data} width={W} loading={loading} mood={mood} problem={problem} demo={demo} env={env} />
-      <Tabs view={view} entries={entries} counts={counts} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} info={{ loaded, trouble: data.trouble, target: data.target, vault: data.vault }} width={W} update={update} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reaction.text },
-            { text: '  esc', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -1008,10 +998,9 @@ export function App({ config: initialConfig, provider, local = createLocal(), ma
           <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
         )
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} modal items={suggestions} selected={sel} height={H} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
-      {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row pointer={false} width={W} segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]} />
+      <StatusLine {...status} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

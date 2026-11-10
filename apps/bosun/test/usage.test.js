@@ -171,7 +171,7 @@ test('the Crew view shows each process\'s CPU and memory, /top lists them busies
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('tick') && frame().includes('node ticker.js'), 'its log, from top');
     app.stdin.write(KEYS.esc);
-    await until(() => frame().includes('╭─ Top'), 'back to top');
+    await until(() => frame().includes('│ Top'), 'back to top');
     app.stdin.write(KEYS.esc);
   } finally {
     app.stdin.write('q');

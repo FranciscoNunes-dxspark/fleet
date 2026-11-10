@@ -64,7 +64,7 @@ test('/take exception shows the problems like it, x shows them all; a bare conte
     app.stdin.write(KEYS.backspace);
     await type(app.stdin, encodeContext('exception', { app: 'contoso-api', type: 'System.Data.SqlClient.SqlException', message: 'deadlocked', frames: [] }));
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('╭─ Problems') && frame().includes('only SqlException (x all)') && frame().includes('contoso-prod-ai · contoso-api'), 'only the problems like it');
+    await until(() => frame().includes('│ Problems') && frame().includes('only SqlException (x all)') && frame().includes('contoso-prod-ai · contoso-api'), 'only the problems like it');
     assert.match(frame(), /SqlException\s+contoso-api/);
     assert.doesNotMatch(frame(), /TimeoutException/);
     app.stdin.write('x');
@@ -82,7 +82,7 @@ test('/take logline finds its request in Logs; other kinds are for the app that 
     await until(() => frame().includes('contoso-orders'), 'the apps');
     const op = app.provider.state.telemetry.find((i) => i.itemType === 'request' && i.cloud_RoleName === 'contoso-web' && Date.parse(i.timestamp) > Date.now() - 20 * 3600_000).operation_Id;
     await command(app, takeLine('logline', { process: 'web', text: 'GET /api/cart 500', requestId: op }));
-    await until(() => frame().includes('╭─ Logs') && frame().includes(`operation_Id == '${op}'`) && /\d+ rows/.test(frame()), "the request's whole story in Logs");
+    await until(() => frame().includes('│ Logs') && frame().includes(`operation_Id == '${op}'`) && /\d+ rows/.test(frame()), "the request's whole story in Logs");
     assert.match(frame(), /request/);
     await command(app, takeLine('logline', { process: 'web', text: 'listening on 3000' }));
     await until(() => frame().includes('carries no request or operation id'), 'nothing to look for');

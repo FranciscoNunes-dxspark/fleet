@@ -3,6 +3,8 @@ import { api } from '../api.js';
 import { useApp } from '../context.js';
 import { t } from '../i18n.js';
 import { Chip, Confirm, Loading, Section } from '../ui.jsx';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 /**
  * Settings → Organizations. Everyone sees the organizations Keel connects to
@@ -77,8 +79,8 @@ export default function OrgSettings() {
                   }
                 }}
               >
-                <input
-                  className="input mono"
+                <TextField.Root className="mono" variant="surface" color="gray"
+                 
                   type="password"
                   autoComplete="off"
                   spellCheck={false}
@@ -87,7 +89,7 @@ export default function OrgSettings() {
                   placeholder={o.connected ? t('Paste a new token to replace it') : o.kind === 'github' ? t('Paste your GitHub token (repo and workflow scopes)') : t('Paste your token for this organization')}
                   aria-label={t('Personal access token for {org}', { org: o.name })}
                 />
-                <button type="submit" className="btn btn-small" disabled={!tokens[o.key]?.trim() || busy === `token:${o.key}`}>{busy === `token:${o.key}` ? t('Checking…') : o.connected ? t('Replace token') : t('Connect')}</button>
+                <Button size="1" variant="outline" color="gray" type="submit" disabled={!tokens[o.key]?.trim() || busy === `token:${o.key}`}>{busy === `token:${o.key}` ? t('Checking…') : o.connected ? t('Replace token') : t('Connect')}</Button>
                 {o.connected && (
                   <Confirm text={t('Disconnect {org}? Its projects disappear from Keel for you.', { org: o.name })} onConfirm={() => run(`off:${o.key}`, () => api(`/auth/token?org=${encodeURIComponent(o.key)}`, { method: 'DELETE' }), t('Disconnected from {org}', { org: o.name }))} className="btn btn-small btn-ghost">
                     {t('Disconnect')}
@@ -120,14 +122,14 @@ export default function OrgSettings() {
           <h3 className="small">{t('Add an organization')}</h3>
           <div className="org-add-row">
             <label>{t('Kind')}
-              <select className="input" value={adding.kind} onChange={(e) => setAdding({ ...adding, kind: e.target.value })}>
+              <Select className="input" value={adding.kind} onChange={(e) => setAdding({ ...adding, kind: e.target.value })}>
                 <option value="azdo">Azure DevOps</option>
                 <option value="github">GitHub</option>
-              </select>
+              </Select>
             </label>
-            <label>{t('Address')}<input className="input" value={adding.url} onChange={(e) => setAdding({ ...adding, url: e.target.value })} placeholder={adding.kind === 'github' ? 'https://github.com/your-org' : 'https://dev.azure.com/other-org'} inputMode="url" required /></label>
-            <label><span>{t('Name')} <span className="muted small">{t('(optional)')}</span></span><input className="input" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} placeholder={t('As your team calls it')} /></label>
-            <button type="submit" className="btn btn-small btn-primary" disabled={!adding.url.trim() || busy === 'add'}>{busy === 'add' ? t('Adding…') : t('Add organization')}</button>
+            <label>{t('Address')}<TextField.Root variant="surface" color="gray" value={adding.url} onChange={(e) => setAdding({ ...adding, url: e.target.value })} placeholder={adding.kind === 'github' ? 'https://github.com/your-org' : 'https://dev.azure.com/other-org'} inputMode="url" required /></label>
+            <label><span>{t('Name')} <span className="muted small">{t('(optional)')}</span></span><TextField.Root variant="surface" color="gray" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} placeholder={t('As your team calls it')} /></label>
+            <Button size="1" variant="solid" type="submit" disabled={!adding.url.trim() || busy === 'add'}>{busy === 'add' ? t('Adding…') : t('Add organization')}</Button>
           </div>
         </form>
       )}

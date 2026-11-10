@@ -61,7 +61,7 @@ const type = async (stdin, text) => {
 };
 
 // Whether the prompt holds `text`: all of it, or its end, when a long path has scrolled the start out of the box.
-const typed = (frame, text) => [...frame.matchAll(/│ > (.*?) *│/g)].some(([, shown]) => shown && text.endsWith(shown));
+const typed = (frame, text) => [...frame.matchAll(/» (.*?) *│/g)].some(([, shown]) => shown && text.endsWith(shown));
 
 const command = async (app, text) => {
   app.stdin.write('/');
@@ -96,7 +96,7 @@ test('remotes: add one, push to it, rename and remove it; set and unset an upstr
     assert.equal(git('rev-parse', '--abbrev-ref', 'main@{upstream}'), 'origin/main', 'a branch with an upstream keeps it');
 
     app.stdin.write('\x1br');
-    await until(() => frame().includes('> /remote rename backup'), 'the rename in the prompt');
+    await until(() => frame().includes('» /remote rename backup'), 'the rename in the prompt');
     await type(app.stdin, 'mirror');
     app.stdin.write('\r');
     await until(() => git('remote') === 'mirror\norigin' && /❯ mirror/.test(frame()), 'the rename, shown in the list');
@@ -109,7 +109,7 @@ test('remotes: add one, push to it, rename and remove it; set and unset an upstr
     await until(() => frame().includes('Local (2)'), 'back in Branches');
 
     app.stdin.write('\x1bu');
-    await until(() => frame().includes('> /upstream main origin/main'), 'U to start from the upstream as it is');
+    await until(() => frame().includes('» /upstream main origin/main'), 'U to start from the upstream as it is');
     app.stdin.write('\x15');
     await type(app.stdin, '/upstream topic origin/topic');
     app.stdin.write('\r');

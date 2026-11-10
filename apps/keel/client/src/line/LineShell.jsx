@@ -4,19 +4,23 @@
 // the path change takes), on a stage's pages that stage's tabs, then the page. A phone has no
 // sidebar: its menu, a button in the bottom right corner, holds the views and all the pages.
 // The rules that place change on the line are in stages.js; the stage names and pages in names.js.
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { Avatar, Logo, pinchLine, useMedia } from '../ui.jsx';
+import { Avatar, Logo, Tip, statusLine, useMedia } from '../ui.jsx';
 import { useSticky } from '../sticky.js';
+import { isHomeable, saveHome } from '../home.js';
 import { Icon } from '../icons.jsx';
-import { pinchMood } from '../pinch.js';
+import { logoMood } from '../mark.js';
 import { t, tj, tx } from '../i18n.js';
 import { updateNow, useNewVersion } from '../version.js';
+import InstallBanner from './InstallBanner.jsx';
 import { STAGES, trackTones } from './stages.js';
 import { stageHint, stageName, stageOfPath, stagePages } from './names.js';
 import './line.css';
+import './shell.css';
+import { Badge, Button, DropdownMenu, IconButton, ScrollArea, Separator, Text } from '@radix-ui/themes';
 
 const LineData = createContext(null);
 // The demo banner, once dismissed in this browser.
@@ -55,6 +59,7 @@ export default function LineShell({ children }) {
   useStableHeight(mainRef, refreshKey);
   const [spinning, setSpinning] = useState(false);
   const [onlyMine, setOnlyMine] = useState(false);
+  const [more, setMore] = useState(false);
   const [collapsed, setCollapsed] = useSticky('sidebar.collapsed', false);
   // A phone gets its own frame: one row along the top, no sidebar, the menu in the bottom right corner.
   const phone = useMedia('(max-width: 900px)');
@@ -84,11 +89,20 @@ export default function LineShell({ children }) {
   useEffect(() => {
     document.title = s?.high ? `(${s.high}) Keel` : 'Keel';
   }, [s?.high]);
-  // Pinch in the corner reacts to what Keel sees, and says why on hover.
-  const mood = pinchMood({ attention: attention.data, live, busy: spinning });
+  // The logo in the corner reacts to what Keel sees, and says why on hover.
+  const mood = logoMood({ attention: attention.data, live, busy: spinning });
 
-  const home = pathname === '/';
+  const home = pathname === '/line';
   const here = stageOfPath(pathname);
+  const section = sectionOf(pathname);
+  // A section opens on the page you were last on in it (the board, say, not the work list), kept
+  // in this browser. Where a page has options in its address (?mode=sprint) they come back too.
+  const { search } = useLocation();
+  const [last, setLast] = useSticky('nav.last', {});
+  useEffect(() => {
+    if (section && last[section.id] !== pathname + search) setLast((l) => ({ ...l, [section.id]: pathname + search }));
+  }, [section?.id, pathname, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sectionTo = (sec) => last[sec.id] || sec.to;
   // Three ways to look at the same work: the Line (where is change stuck?), the Desk (what do I do
   // next?) and the Control room (what's happening right now?). The line of stations is the Line's
   // own navigation, so the other two leave it out and take the whole window.
@@ -102,17 +116,17 @@ export default function LineShell({ children }) {
 
   return (
     <LineData.Provider value={line}>
-      <div className={`ls ls-${view}${home ? ' ls-home' : ''}${onlyMine ? ' line-only-mine' : ''}${collapsed ? ' ls-collapsed' : ''}`}>
+      <div className={`ls ls-${view}${home ? ' ls-home' : ''}${onlyMine ? ' line-only-mine' : ''}${phone ? ' ls-phone' : ` ls-dock${collapsed ? ' ls-collapsed' : ''}`}`}>
         {!phone && (
-          <Sidebar
-            view={view} summary={s} mood={mood} attention={attention.data}
-            collapsed={collapsed} setCollapsed={setCollapsed} spinning={spinning} setSpinning={setSpinning}
+          <Dock
+            section={section} sectionTo={sectionTo} summary={s} mood={mood} attention={attention.data}
+            spinning={spinning} setSpinning={setSpinning} collapsed={collapsed} setCollapsed={setCollapsed}
           />
         )}
         <div className="ls-body">
           <header className="line-top">
             {/* Wide screens have Keel at the top of the sidebar instead. */}
-            {phone && <Link to="/" className="line-brand" title={pinchLine(mood, { attention: attention.data, live })}>
+            {phone && <Link to="/" className="line-brand" title={statusLine(mood, { attention: attention.data, live })}>
               <Logo mood={mood} size={30} />
               <span className="line-brand-text">
                 <strong>Keel</strong>
@@ -126,10 +140,13 @@ export default function LineShell({ children }) {
               <NavLink to="/inbox" className={({ isActive }) => `line-needs-label${isActive ? ' on' : ''}`}>
                 <Icon name="inbox" size={15} /> {t('Needs you')}{s?.high ? <span className="line-needs-n">{s.high}</span> : null}
               </NavLink>
-              {needs.length ? needs.map((n) => (
-                <button key={n.label} type="button" className={`line-need line-need-${n.tone}`} onClick={() => { setOnlyMine(!!n.mine); navigate(`/line/${n.stage}`); }}>
+              {needs.length ? needs.map((n, i) => (
+                <Fragment key={n.label}>
+                  {i > 0 && needs[i - 1].mine && !n.mine && <span className="line-needs-sep" aria-hidden="true" />}
+                  <button type="button" className={`line-need line-need-${n.tone}`} onClick={() => { setOnlyMine(!!n.mine); navigate(`/line/${n.stage}`); }}>
                   {n.label}
                 </button>
+                </Fragment>
               )) : attention.data && <span className="line-need line-need-ok">{t('All clear')}</span>}
             </div>
 
@@ -144,9 +161,10 @@ export default function LineShell({ children }) {
           {newVersion && (
             <div className="update-banner" role="status">
               <span>{t('A new version of Keel is available.')}</span>
-              <button type="button" className="btn btn-small btn-primary" onClick={updateNow}>{t('Update')}</button>
+              <Button size="1" variant="solid" type="button" onClick={updateNow}>{t('Update')}</Button>
             </div>
           )}
+          <InstallBanner />
           {meta.mock && !demoHidden && (
             <div className="demo-banner demo-banner-mock">
               <span className="demo-banner-text">
@@ -163,21 +181,21 @@ export default function LineShell({ children }) {
             </div>
           )}
 
-          {/* The stations are the home page's: elsewhere the sidebar (or the phone's menu) is the way around. */}
-          {home && <Rail stages={stages} tracks={line.tracks} history={line.history} here={here} compact={phone} loading={loading} />}
-          {view === 'line' && here && (
-            <nav className="stage-tabs" aria-label={stageName(here)}>
-              {stagePages(here).map(([label, to]) => (
-                <NavLink key={to} to={to} end className={({ isActive }) => (isActive || (to === '/totals' && pathname.startsWith('/totals/')) ? 'on' : '')}>{label}</NavLink>
+          {/* The section's pages as tabs, and the line, slim, as the context every page sits in. */}
+          {section && section.pages.length > 1 && (
+            <nav className="sec-tabs" aria-label={section.label()}>
+              {section.pages.map(([label, to]) => (
+                <NavLink key={to} to={to} end className={() => (tabOn(pathname, to, section) ? 'on' : '')}>{label()}</NavLink>
               ))}
             </nav>
           )}
+          {view !== 'desk' && view !== 'control' && <Rail stages={stages} tracks={line.tracks} history={line.history} here={here} compact={!home || phone} loading={loading} />}
 
           <main className="ls-main" ref={mainRef}>{children}</main>
         </div>
 
         {/* Phones: the menu, in the bottom right corner within reach of a thumb. */}
-        {phone && <Menu view={view} inbox={s?.high} spinning={spinning} setSpinning={setSpinning} />}
+        {phone && <Tabs section={section} sectionTo={sectionTo} summary={s} more={more} setMore={setMore} view={view} spinning={spinning} setSpinning={setSpinning} />}
       </div>
     </LineData.Provider>
   );
@@ -238,13 +256,6 @@ function liveText(live) {
   return ago < 60 ? t('Live · checked {n}s ago', { n: ago }) : t('Live · checked {n}m ago', { n: Math.round(ago / 60) });
 }
 
-// The three ways to look at the same work, shared by the sidebar and the phone's menu.
-const VIEWS = [
-  ['line', '/', 'line', 'Line', 'Where change is stuck'],
-  ['desk', '/desk', 'workItems', 'Desk', 'What to do next'],
-  ['control', '/control', 'production', 'Control room', "What's happening now"],
-];
-
 /** Refresh from Azure DevOps, with the spin while it runs. */
 function useHardRefresh(setSpinning) {
   const { refresh, toast } = useApp();
@@ -278,166 +289,179 @@ function Me({ className }) {
 }
 
 /**
- * Wide screens: the views and every page down the left, grouped by what you're doing, each
- * with the count of what needs you there. Collapsed, icons only (remembered in this browser).
+ * Keel's five sections, the same on a wide screen's dock and a phone's tab bar. A section is
+ * what you're doing, not where a page lives: Now (what needs me), Code, Work, Delivery (the
+ * Line, what waits to ship, pipelines) and Watch (production and how the team is doing).
  */
-function Sidebar({ view, summary: s, mood, attention, collapsed, setCollapsed, spinning, setSpinning }) {
-  const { meta, live } = useApp();
+export const SECTIONS = [
+  { id: 'now', icon: 'inbox', label: () => t('Now'), to: '/desk', pages: [[() => t('Desk'), '/desk'], [() => t('Inbox'), '/inbox'], [() => t('Weekly summary'), '/summary']] },
+  { id: 'code', icon: 'pullRequests', label: () => t('Code'), to: '/prs', pages: [[() => t('Pull requests'), '/prs'], [() => t('Commits'), '/commits'], [() => t('Release notes'), '/release-notes']] },
+  { id: 'work', icon: 'workItems', label: () => t('Work'), to: '/work', pages: [[() => t('Work items'), '/work'], [() => t('Board'), '/board'], [() => t('Epics'), '/epics']] },
+  { id: 'delivery', icon: 'line', label: () => t('Delivery'), to: '/line', pages: [[() => t('The Line'), '/line'], [() => t('Waiting to ship'), '/ship'], [() => t('Pipelines'), '/pipelines']] },
+  { id: 'watch', icon: 'production', label: () => t('Watch'), to: '/control', pages: [[() => t('Control room'), '/control'], [() => t('Monitors'), '/production'], [() => t('Platform totals'), '/totals'], [() => t('Insights'), '/insights']] },
+];
+// Pages that sit beside the sections, in the dock's foot: they have no tabs of their own.
+const FOOT = [
+  { id: 'team', icon: 'team', label: () => t('Team'), to: '/people', paths: ['/people', '/team', '/users'] },
+  { id: 'settings', icon: 'settings', label: () => t('Settings'), to: '/settings', paths: ['/settings'] },
+];
+const under = (pathname, p) => (p === '/' ? pathname === '/' : pathname === p || pathname.startsWith(`${p}/`));
+const EXTRA = { now: [], code: [], work: ['/sprint'], delivery: [], watch: [] };
+/** The section a page belongs to, or null (Settings, Team). */
+export function sectionOf(pathname) {
+  return SECTIONS.find((sec) => sec.pages.some(([, p]) => under(pathname, p)) || EXTRA[sec.id].some((p) => under(pathname, p))) || null;
+}
+const tabOn = (pathname, to) => under(pathname, to);
+
+/** What needs you in each section, for the badge on its icon. */
+function sectionCounts(s) {
+  return {
+    now: { n: s?.high || 0, tone: 'bad' },
+    code: { n: s?.myReviews || 0, tone: 'accent' },
+    delivery: { n: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
+    watch: { n: s?.productionIssues || 0, tone: 'bad' },
+  };
+}
+
+/**
+ * Wide screens: the sidebar, in the theme's own grays. The five sections, the active one opened to
+ * its pages, what needs you as a badge on each; below, search, Team and Settings, and you, whose
+ * menu holds refresh, the live status and sign out. Collapsed, icons only (kept in this browser).
+ */
+function Dock({ section, sectionTo, summary: s, mood, attention, spinning, setSpinning, collapsed, setCollapsed }) {
+  const { meta, live, authMode, signOut, toast } = useApp();
   const { pathname } = useLocation();
   const hardRefresh = useHardRefresh(setSpinning);
-  const groups = [
-    { items: [
-      { to: '/inbox', label: t('Inbox'), icon: 'inbox', count: s?.high, tone: 'bad' },
-      { to: '/summary', label: t('Weekly summary'), icon: 'summary' },
-    ] },
-    { label: t('Work'), items: [
-      { to: '/work', label: t('Work items'), icon: 'workItems', also: ['/epics'] },
-      { to: '/board', label: t('Board'), icon: 'board' },
-    ] },
-    { label: t('Code and delivery'), items: [
-      { to: '/prs', label: t('Pull requests'), icon: 'pullRequests', count: s?.myReviews, tone: 'accent', also: ['/commits', '/release-notes'] },
-      { to: '/ship', label: t('Waiting to ship'), icon: 'totals' },
-      { to: '/pipelines', label: t('Pipelines'), icon: 'pipelines', count: (s?.approvals || 0) + (s?.failingPipelines || 0), tone: s?.failingPipelines ? 'bad' : 'accent' },
-      { to: '/production', label: t('Production'), icon: 'production', count: s?.productionIssues, tone: 'bad', also: ['/totals'] },
-    ] },
-    { label: t('People'), items: [
-      { to: '/people', label: t('Team'), icon: 'team', also: ['/team', '/users'] },
-      { to: '/insights', label: t('Insights'), icon: 'insights' },
-    ] },
-  ];
-  const lit = (n) => pathname === n.to || pathname.startsWith(`${n.to}/`) || !!n.also?.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  const tip = (label) => (collapsed ? label : undefined);
-  const link = (to, label, icon, on, extra) => (
-    <NavLink to={to} className={() => `side-link${on ? ' on' : ''}`} title={tip(label)} aria-label={collapsed ? label : undefined}>
-      <Icon name={icon} /><span className="side-text">{label}</span>{extra}
-    </NavLink>
-  );
+  const counts = sectionCounts(s);
+  const name = meta.account?.name || meta.me.displayName;
+  const org = (meta.orgs?.length || 0) > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\/(dev\.azure\.com\/)?/, '');
+  const tone = !live.connected ? 'amber' : !live.ok && live.error ? 'red' : 'green';
+  // Collapsed, a name is on hover instead.
+  const tip = (label, node) => (collapsed ? <Tip label={label}>{node}</Tip> : node);
+  const badge = (c) => (c?.n > 0 ? <Badge className="sb-n" size="1" variant="solid" color={c.tone === 'bad' ? 'red' : undefined}>{c.n}</Badge> : null);
   return (
-    <nav className="side" aria-label={t('Main')}>
-      <div className="side-brand">
-        <Link to="/" className="line-brand" title={pinchLine(mood, { attention, live })}>
-          <Logo mood={mood} size={30} />
-          <span className="line-brand-text side-text">
-            <strong>Keel</strong>
-            <span className="truncate" title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>
-              {meta.orgs?.length > 1 ? t('{n} organizations', { n: meta.orgs.length }) : meta.orgUrl.replace(/^https?:\/\/(dev\.azure\.com\/)?/, '')}
-            </span>
-          </span>
-        </Link>
-        <button
-          type="button" className="side-toggle" onClick={() => setCollapsed((c) => !c)} aria-expanded={!collapsed}
-          aria-label={collapsed ? t('Expand menu') : t('Collapse menu')} title={collapsed ? t('Expand menu') : t('Collapse menu')}
-        >
-          <Icon name={collapsed ? 'expand' : 'collapse'} />
-        </button>
-      </div>
-      <div className="side-scroll">
-        <ul className="side-group side-views" aria-label={t('Views')}>
-          {VIEWS.map(([id, to, icon, label]) => <li key={id}>{link(to, t(label), icon, view === id && !groups.some((g) => g.items.some(lit)) && pathname !== '/settings')}</li>)}
-        </ul>
-        {groups.map((g, i) => (
-          <div key={g.label || i} className="side-group-wrap">
-            {g.label && <div className="side-label side-text" id={`side-group-${i}`}>{g.label}</div>}
-            <ul className="side-group" aria-labelledby={g.label ? `side-group-${i}` : undefined}>
-              {g.items.map((n) => (
-                <li key={n.to}>
-                  {link(n.to, n.label, n.icon, lit(n), n.count > 0 && (
-                    <span className={`side-count side-count-${n.tone}`} title={t(n.count === 1 ? '{n} needs attention' : '{n} need attention', { n: n.count })}>{n.count}</span>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-      <div className="side-foot">
-        {link('/settings', t('Settings'), 'settings', pathname.startsWith('/settings'))}
-        <button type="button" className="side-link" onClick={hardRefresh} disabled={spinning} title={tip(t('Refresh from Azure DevOps'))} aria-label={collapsed ? t('Refresh from Azure DevOps') : undefined}>
-          <span className={spinning ? 'spin' : ''}><Icon name="refresh" /></span><span className="side-text">{t('Refresh from Azure DevOps')}</span>
-        </button>
-        <div className={`side-live live-${!live.connected ? 'warn' : !live.ok && live.error ? 'bad' : 'ok'}`} title={liveText(live)}>
-          <span className="live-dot" aria-hidden="true" /><span className="side-text">{liveText(live)}</span>
+    <nav className="sb" aria-label={t('Main')}>
+      <div className="sb-brand">
+        <Link to="/" className="sb-logo" title={statusLine(mood, { attention, live })}><Logo mood={mood} size={30} /></Link>
+        <div className="sb-name">
+          <Text as="div" size="3" weight="bold" className="sb-title">Keel</Text>
+          <Text as="div" size="1" color="gray" truncate title={(meta.orgs || []).map((o) => o.url).join('\n') || meta.orgUrl}>{org}</Text>
         </div>
-        <Me className="side-me" />
+        <IconButton variant="ghost" color="gray" size="1" className="sb-toggle" onClick={() => setCollapsed((c) => !c)} aria-expanded={!collapsed} aria-label={collapsed ? t('Expand menu') : t('Collapse menu')}>
+          <Icon name={collapsed ? 'expand' : 'collapse'} size={16} />
+        </IconButton>
+      </div>
+
+      <ScrollArea type="hover" scrollbars="vertical" className="sb-scroll">
+        <ul className="sb-list">
+          {SECTIONS.map((sec) => {
+            const on = section?.id === sec.id;
+            const c = counts[sec.id];
+            return (
+              <li key={sec.id}>
+                {tip(sec.label(), (
+                  <NavLink to={sectionTo(sec)} className={`sb-link${on ? ' on' : ''}`} aria-label={collapsed ? sec.label() : undefined}>
+                    <span className="sb-icon"><Icon name={sec.icon} size={18} />{collapsed && c?.n > 0 && <span className={`sb-dot sb-dot-${c.tone}`} />}</span>
+                    <span className="sb-text">{sec.label()}</span>
+                    {!collapsed && badge(c)}
+                  </NavLink>
+                ))}
+                {on && !collapsed && sec.pages.length > 1 && (
+                  <ul className="sb-sub">
+                    {sec.pages.map(([label, to]) => (
+                      <li key={to}><NavLink to={to} end className={() => `sb-sublink${tabOn(pathname, to, sec) ? ' on' : ''}`}>{label()}</NavLink></li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </ScrollArea>
+
+      <div className="sb-foot">
+        <Separator size="4" className="sb-sep" />
+        {tip(t('Search'), (
+          <button type="button" className="sb-link" onClick={() => window.dispatchEvent(new Event('keel:palette'))}>
+            <span className="sb-icon"><Icon name="search" size={18} /></span><span className="sb-text">{t('Search')}</span>
+            {!collapsed && <kbd className="sb-kbd">{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd>}
+          </button>
+        ))}
+        {FOOT.map((f) => <Fragment key={f.id}>{tip(f.label(), (
+          <NavLink to={f.to} className={`sb-link${f.paths.some((p) => under(pathname, p)) ? ' on' : ''}`} aria-label={collapsed ? f.label() : undefined}>
+            <span className="sb-icon"><Icon name={f.icon} size={18} /></span><span className="sb-text">{f.label()}</span>
+          </NavLink>
+        ))}</Fragment>)}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>
+            <button type="button" className="sb-me" aria-label={name}>
+              <span className="sb-avatar"><Avatar person={{ displayName: name, uniqueName: meta.me.uniqueName }} size={28} title={name} /><span className={`sb-live sb-live-${tone}`} /></span>
+              <span className="sb-text sb-me-text">
+                <Text as="div" size="2" weight="medium" truncate>{name}</Text>
+                <Text as="div" size="1" color="gray" truncate>{liveText(live)}</Text>
+              </span>
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content side="top" align="start" size="1" className="sb-menu">
+            <DropdownMenu.Label>{authMode === 'login' ? `${name} · ${{ admin: 'Admin', developer: 'Developer', pm: 'PM' }[meta.role]}` : name}</DropdownMenu.Label>
+            <DropdownMenu.Item disabled={!isHomeable(pathname)} onSelect={() => { saveHome(pathname); toast(t('This page is now your home page')); }}>{t('Make this page my home page')}</DropdownMenu.Item>
+            <DropdownMenu.Item disabled={spinning} onSelect={hardRefresh}>{t('Refresh from Azure DevOps')}</DropdownMenu.Item>
+            {authMode === 'login' && <><DropdownMenu.Separator /><DropdownMenu.Item color="red" onSelect={signOut}>{t('Sign out')}</DropdownMenu.Item></>}
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
       </div>
     </nav>
   );
 }
 
-/** Phones: everything in one menu behind a button in the bottom right corner. */
-function Menu({ view, inbox, spinning, setSpinning }) {
+/** Phones: the five sections as a bar along the bottom, and More for everything else. */
+function Tabs({ section, sectionTo, summary: s, more, setMore, spinning, setSpinning }) {
   const { live } = useApp();
   const { pathname } = useLocation();
-  const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const hardRefresh = useHardRefresh(setSpinning);
-  useEffect(() => setOpen(false), [pathname]);
+  const counts = sectionCounts(s);
+  useEffect(() => setMore(false), [pathname, setMore]);
   useEffect(() => {
-    if (!open) return undefined;
-    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    const onKey = (e) => e.key === 'Escape' && setOpen(false);
+    if (!more) return undefined;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setMore(false); };
+    const onKey = (e) => e.key === 'Escape' && setMore(false);
     document.addEventListener('pointerdown', close);
     window.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('pointerdown', close); window.removeEventListener('keydown', onKey); };
-  }, [open]);
-  // Re-reads "checked 12s ago" while the menu is open.
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (!open) return undefined;
-    const timer = setInterval(() => setTick((n) => n + 1), 5000);
-    return () => clearInterval(timer);
-  }, [open]);
-
-  // Every page the stages hold, straight to it, each with the stage it sits in (names.js stagePages).
-  const linePages = [
-    ['/work', t('Work items'), 'workItems', 'planned'], ['/board', t('Board'), 'board', 'building'],
-    ['/prs', t('Pull requests'), 'pullRequests', 'review'], ['/commits', t('Commits'), 'pullRequests', 'review'],
-    ['/ship', t('Waiting to ship'), 'totals', 'merged'], ['/pipelines', t('Pipelines'), 'pipelines', 'deploying'],
-    ['/production', t('Production'), 'production', 'live'],
-  ];
-  const pages = [
-    ['/inbox', t('Inbox'), 'inbox'], ['/summary', t('Weekly summary'), 'summary'],
-    ['/people', t('Team'), 'team'], ['/insights', t('Insights'), 'insights'], ['/settings', t('Settings'), 'settings'],
-  ];
+  }, [more, setMore]);
   return (
-    <div className="line-menu line-menu-fab" ref={ref}>
-      {open && (
-        <div className="line-menu-pop">
-          <nav className="line-menu-views" aria-label={t('Views')}>
-            {VIEWS.map(([id, to, icon, label]) => (
-              <NavLink key={id} to={to} className={() => ((id === 'line' ? pathname === '/' || pathname.startsWith('/line/') : view === id) ? 'on' : '')}><Icon name={icon} /><span>{t(label)}</span></NavLink>
-            ))}
-          </nav>
-          <nav className="line-menu-pages line-menu-all" aria-label={t('All pages')}>
-            <span className="line-menu-h">{t('All pages')}</span>
-            {linePages.map(([to, label, icon, stage]) => (
-              <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'on' : '')}>
-                <Icon name={icon} size={15} /> <span className="truncate">{label}</span><span className="line-menu-stage">{stageName(stage)}</span>
-              </NavLink>
-            ))}
-          </nav>
+    <div className="tabbar-wrap" ref={ref}>
+      {more && (
+        <div className="line-menu-pop tabbar-more">
           <nav className="line-menu-pages" aria-label={t('Menu')}>
-            {pages.map(([to, label, icon]) => (
-              <NavLink key={to} to={to} className={({ isActive }) => (isActive || (to === '/people' && /^\/(team|users)(\/|$)/.test(pathname)) ? 'on' : '')}>
-                <Icon name={icon} size={15} /> <span className="truncate">{label}</span>{to === '/inbox' && inbox ? <span className="line-menu-n">{inbox}</span> : null}
-              </NavLink>
-            ))}
+            {FOOT.map((f) => <NavLink key={f.id} to={f.to} className={() => (f.paths.some((p) => under(pathname, p)) ? 'on' : '')}><Icon name={f.icon} size={15} /> <span className="truncate">{f.label()}</span></NavLink>)}
+            <NavLink to="/inbox" className={() => (pathname === '/inbox' ? 'on' : '')}><Icon name="inbox" size={15} /> <span className="truncate">{t('Inbox')}</span></NavLink>
+            <NavLink to="/summary" className={() => (pathname === '/summary' ? 'on' : '')}><Icon name="summary" size={15} /> <span className="truncate">{t('Weekly summary')}</span></NavLink>
           </nav>
           <div className="line-menu-foot">
             <button type="button" className="line-menu-row" onClick={hardRefresh} disabled={spinning}>
               <span className={spinning ? 'spin' : ''}><Icon name="refresh" size={15} /></span> {t('Refresh from Azure DevOps')}
             </button>
-            <div className={`line-menu-live live-${!live.connected ? 'warn' : !live.ok && live.error ? 'bad' : 'ok'}`}>
-              <span className="live-dot" aria-hidden="true" /> {liveText(live)}
-            </div>
+            <div className={`line-menu-live live-${!live.connected ? 'warn' : !live.ok && live.error ? 'bad' : 'ok'}`}><span className="live-dot" aria-hidden="true" /> {liveText(live)}</div>
             <Me className="line-menu-me" />
           </div>
         </div>
       )}
-      <button type="button" className="line-fab" aria-expanded={open} aria-label={t('Menu')} title={t('Menu')} onClick={() => setOpen((o) => !o)}>
-        <Icon name={open ? 'close' : 'more'} />
-        {!open && inbox ? <span className="line-fab-n">{inbox}</span> : null}
-      </button>
+      <nav className="tabbar" aria-label={t('Main')}>
+        {SECTIONS.map((sec) => {
+          const c = counts[sec.id];
+          return (
+            <NavLink key={sec.id} to={sectionTo(sec)} className={() => `tab${section?.id === sec.id ? ' on' : ''}`}>
+              <span className="dock-icon"><Icon name={sec.icon} size={21} />{c?.n > 0 && <span className={`dock-n dock-n-${c.tone}`}>{c.n}</span>}</span>
+              <span className="tab-text">{sec.label()}</span>
+            </NavLink>
+          );
+        })}
+        <button type="button" className={`tab${more ? ' on' : ''}`} aria-expanded={more} onClick={() => setMore((m) => !m)}>
+          <span className="dock-icon"><Icon name={more ? 'close' : 'more'} size={21} /></span><span className="tab-text">{t('More')}</span>
+        </button>
+      </nav>
     </div>
   );
 }

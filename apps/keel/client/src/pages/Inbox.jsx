@@ -3,10 +3,11 @@ import { useSticky } from '../sticky.js';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age } from '../format.js';
+import { age, fullDateTime } from '../format.js';
 import { Empty, ErrorBox, ExternalLink, Loading, PageHeader, sameTarget, typeSlug, useTypeColor } from '../ui.jsx';
 import { t, tx } from '../i18n.js';
 import { useSourceName } from '../orgs.js';
+import { Button } from '@radix-ui/themes';
 
 // Labels are getters so they follow the current language.
 const KINDS = [
@@ -161,8 +162,8 @@ export default function Inbox() {
 
         <div className="inbox-list" ref={listRef}>
           {!items.length && (
-            <Empty title={data.items.length ? t('Nothing in this filter.') : t('Inbox zero.')} mood={data.items.length ? undefined : 'sleep'}>
-              {data.items.length ? t('Pick another filter above.') : `${t('Nothing needs you, so Pinch is having a nap.')} ${t('Reviews, red pipelines, blocked items and stale PRs will show up here as they happen.')}`}
+            <Empty title={data.items.length ? t('Nothing in this filter.') : t('Inbox zero.')}>
+              {data.items.length ? t('Pick another filter above.') : `${t('Nothing needs you right now.')} ${t('Reviews, red pipelines, blocked items and stale PRs will show up here as they happen.')}`}
             </Empty>
           )}
 
@@ -189,7 +190,7 @@ export default function Inbox() {
                         </ul>
                       </div>
                       <div className="strip-side">
-                        {item.at && <span className="strip-age" title={new Date(item.at).toLocaleString()}>{age(item.at)}</span>}
+                        {item.at && <span className="strip-age" title={fullDateTime(item.at)}>{age(item.at)}</span>}
                         <div className="strip-actions">
                           <ExternalLink href={item.webUrl}>{sourceName(item.webUrl)}</ExternalLink>
                           <SnoozeMenu onPick={(d) => snooze(item, d)} />
@@ -218,7 +219,7 @@ function SnoozeMenu({ onPick }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="menu-wrap">
-      <button type="button" className="btn btn-ghost btn-small" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{t('Snooze')}</button>
+      <Button size="1" variant="ghost" color="gray" type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{t('Snooze')}</Button>
       {open && (
         <span className="menu" role="menu" onMouseLeave={() => setOpen(false)}>
           {[[1, 'Until tomorrow'], [3, 'For 3 days'], [7, 'For a week']].map(([d, label]) => (

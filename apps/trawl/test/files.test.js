@@ -95,7 +95,7 @@ test("/migrations compares a folder with Flyway's history, and R runs the pendin
   // CRLF line ends don't change Flyway's checksum; an edit does.
   assert.match(frame(), /✓ applied {2}V1 {2}V1__Create_clubs\.sql /);
   assert.match(frame(), /~ changed {2}V2 {2}V2__Add_players\.sql +checksum -?\d+ now, -?\d+ when applied/);
-  assert.match(frame(), /• pending {2}V3 {2}sql\/V3__Add_stadiums\.sql /);
+  assert.match(frame(), /• pending {2}V3 {2}sql\/V3__Add_stadiums\.sql$/m);
   assert.match(frame(), /1 applied · 1 pending · 1 changed/);
   assert.match(frame(), /alt\+r runs the 1 pending/);
   app.stdin.write('\x1br');

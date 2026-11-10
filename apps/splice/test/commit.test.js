@@ -129,7 +129,7 @@ test('\\n in /commit, then M and /amend --file write the message to a file to ed
     app.stdin.write(KEYS.enter);
     await until(() => frame().includes('The message is empty'), 'the note that the message is empty');
     // The file from the repository's root, short enough to read in the prompt whatever the folder.
-    assert.ok(frame().includes('> /commit --file .git/splice-commit-message.txt '), frame());
+    assert.ok(/» \/commit --file \.git\/splice-commit-message\.txt *│/.test(frame()), frame());
     assert.equal(g('rev-list', '--count', 'HEAD'), '3');
   } finally {
     app.unmount();
@@ -166,7 +166,7 @@ test('W: a subject alone goes in the prompt; with a body, into the message file,
     await until(() => frame().includes('Staged (1)'), 'the Changes view');
     app.stdin.write('\x1bw');
     await until(
-      () => frame().includes('Commit message from Claude') && frame().includes('which made') && /> \/commit --file .*splice-commit-message\.txt/.test(frame()),
+      () => frame().includes('Commit message from Claude') && frame().includes('which made') && /» \/commit --file .*splice-commit-message\.txt/.test(frame()),
       'the message in the viewer, and the file in the prompt',
     );
     // The recent commits' bodies show Claude the style.

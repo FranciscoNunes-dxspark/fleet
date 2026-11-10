@@ -83,8 +83,8 @@ test('Changes lists submodules with their state; I initialises one and o opens i
     // As in until(): the view's key handler needs a moment to see the new selection.
     await new Promise((r) => setTimeout(r, 100));
     app.stdin.write('o');
-    await until(() => frame().includes('│  lib  ⎇ detached'), 'the submodule open as its own repository');
-    assert.match(frame().split('\n')[0], /app[\\/]lib\s*$/);
+    await until(() => frame().includes(' lib  ⎇ detached'), 'the submodule open as its own repository');
+    assert.match(frame().split('\n').slice(0, 2).join('\n'), /app[\\/]lib\s*$/);
   } finally {
     app.unmount();
   }
@@ -161,7 +161,7 @@ test('/submodules lists recorded and checked-out commits, branch and changes; u,
 
     // ↵ opens it as its own repository.
     app.stdin.write('\r');
-    await until(() => frame().includes('│  lib  ⎇ detached'), 'the submodule open as its own repository');
+    await until(() => frame().includes(' lib  ⎇ detached'), 'the submodule open as its own repository');
   } finally {
     app.unmount();
   }

@@ -363,6 +363,9 @@ test('/scan asks again in production, and no sends nothing', async () => {
   writeFileSync(join(prodDir, 'http-client.env.json'), JSON.stringify({ production: { host: badUrl } }));
   writeFileSync(join(prodDir, 'api.http'), '### Home\nGET {{host}}/\n');
   const app = start({ initialFile: join(prodDir, 'api.http'), cwd: prodDir });
+  // Wide enough for the top line to say both environments beside the views.
+  Object.defineProperty(app.stdout, 'columns', { value: 160 });
+  app.stdout.emit('resize');
   const frame = () => app.lastFrame() ?? '';
   try {
     await until(() => frame().includes('Home') && /env production/.test(frame()), 'the file, in production');

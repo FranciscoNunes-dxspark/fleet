@@ -89,7 +89,7 @@ test('your own keys: another key in a view, a command anywhere, never while typi
     assert.match(frame(), /terminals don't send ctrl with shift/);
     // x does what d does in the Explorer: describe the table.
     app.stdin.write('x');
-    await until(() => frame().includes('j/k scroll · space page · esc close'), 'the description');
+    await until(() => frame().includes('j/k scroll  space page  esc close'), 'the description');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('j/k scroll'), 'closed');
     app.stdin.write(KEYS.f5);
@@ -97,7 +97,7 @@ test('your own keys: another key in a view, a command anywhere, never while typi
     // In the prompt x is just x.
     app.stdin.write('/');
     await type(app.stdin, 'x');
-    await until(() => frame().includes('> /x'), 'x typed');
+    await until(() => frame().includes('» /x'), 'x typed');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('enter run'), 'out of the prompt');
     // ? shows them.
@@ -124,7 +124,7 @@ test('ctrl+p: the palette lists the view’s keys and the commands, filters as y
     app.stdin.write(KEYS.down);
     await until(() => /❯ d\s+Describe/.test(frame()), 'd picked');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('j/k scroll · space page · esc close') && !frame().includes('Command palette'), 'd run in the Explorer');
+    await until(() => frame().includes('j/k scroll  space page  esc close') && !frame().includes('Command palette'), 'd run in the Explorer');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('j/k scroll'), 'closed');
     // Your command runs.
@@ -140,7 +140,7 @@ test('ctrl+p: the palette lists the view’s keys and the commands, filters as y
     app.stdin.write(KEYS.ctrlP);
     await until(() => frame().includes('Command palette') && /❯ \/describe/.test(frame()), 'the palette from the prompt');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('> /describe ') && !frame().includes('Command palette'), '/describe waiting in the prompt');
+    await until(() => /» \/describe\s*│/.test(frame()) && !frame().includes('Command palette'), '/describe waiting in the prompt');
     app.stdin.write(KEYS.esc);
     await until(() => !frame().includes('enter run'), 'out of the prompt');
     // esc closes it, and nothing else happens.

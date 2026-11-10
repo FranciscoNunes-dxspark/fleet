@@ -56,7 +56,17 @@ export function chromeArgs(profile, { root = typeof process.getuid === 'function
  * Starts `path` headless and resolves { wsUrl, close } once it says where its DevTools socket is.
  * `close` stops it and removes its profile.
  */
-export function launchChrome(path, { spawnImpl = spawn, timeout = 20_000 } = {}) {
+export async function launchChrome(path, options = {}) {
+  try {
+    return await launchOnce(path, options);
+  } catch (e) {
+    // A Chrome with an update waiting swaps itself in on its first start and exits with 0; the next start works.
+    if (!e.early) throw e;
+    return launchOnce(path, options);
+  }
+}
+
+function launchOnce(path, { spawnImpl = spawn, timeout = 20_000 } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'lantern-chrome-'));
   const child = spawnImpl(path, chromeArgs(profile), { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
   const cleanup = () => {

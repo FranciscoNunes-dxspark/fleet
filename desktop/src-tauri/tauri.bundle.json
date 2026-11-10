@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "externalBin": ["binaries/fleet"],
+    "publisher": "dxspark",
+    "shortDescription": "Fleet: the family of terminal apps in one window",
+    "longDescription": "Splice, Trawl, Sonar, Bosun, Hail, Wharf, Locker, Mooring, Bilge, Chart, Helm, Lantern, Drill, Ballast and Lookout in one window, with Fleet's hand-offs, runbooks, environments and security between them.",
+    "category": "DeveloperTool",
+    "linux": {
+      "deb": { "depends": [] }
+    }
+  }
+}

@@ -75,13 +75,13 @@ test('/env says and switches the environment; in production a push to its branch
   };
   try {
     await until(() => frame().includes('First'), 'the graph');
-    assert.match(frame().split('\n')[0], /│\s+dev/, 'the header names it');
+    assert.match(frame().split('\n').slice(0, 2).join('\n'), /\s{2}dev\b/, 'the header names it');
     await command('env');
     await until(() => frame().includes('Environment: dev. /env prod switches every app.'), 'which one');
 
     await command('env prod');
     await until(() => frame().includes('Environment prod (production), for every app here. A push to main asks first.'), 'switched');
-    await until(() => frame().split('\n')[0].includes('prod (production)') && theme.envProd === true, 'red frames');
+    await until(() => frame().split('\n').slice(0, 2).join('\n').includes('prod (production)') && theme.envProd === true, 'red frames');
     assert.ok(readActivity({ dir: familyHome }).some((e) => e.app === 'splice' && /to prod \(production\)$/.test(e.text)), 'in the activity');
 
     g('commit', '-q', '--allow-empty', '-m', 'Second');
@@ -100,7 +100,7 @@ test('/env says and switches the environment; in production a push to its branch
     // A branch the environment doesn't deploy from goes without a word.
     g('checkout', '-q', '-b', 'feature');
     g('commit', '-q', '--allow-empty', '-m', 'Third');
-    await until(() => frame().includes('Third') && /⎇ feature/.test(frame().split('\n')[0]), 'the feature commit');
+    await until(() => frame().includes('Third') && /⎇ feature/.test(frame().split('\n').slice(0, 2).join('\n')), 'the feature commit');
     app.stdin.write('\x1bp');
     await until(() => remote('branch', '--list', 'feature').includes('feature'), 'feature pushed', 20000);
     assert.ok(!frame().includes('prod is production'));

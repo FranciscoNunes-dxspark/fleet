@@ -15,6 +15,7 @@ export const MODES = [
 
 // Swatch colors are for the picker; the real values live in styles.css per mode.
 export const ACCENTS = [
+  { id: 'buoy', get label() { return t('Keel'); }, swatch: '#d2440c' },
   { id: 'green', get label() { return t('Green'); }, swatch: '#3ec486' },
   { id: 'blue', get label() { return t('Blue'); }, swatch: '#5b9cf5' },
   { id: 'violet', get label() { return t('Violet'); }, swatch: '#a78bfa' },
@@ -24,7 +25,7 @@ export const ACCENTS = [
   { id: 'sand', get label() { return t('Sand'); }, swatch: '#dbab96' },
 ];
 
-const DEFAULT = { mode: 'dark', accent: 'green' };
+const DEFAULT = { mode: 'light', accent: 'buoy' };
 
 export function loadTheme() {
   try {
@@ -47,6 +48,8 @@ export function applyTheme(theme = loadTheme()) {
   root.dataset.mode = mode;
   root.dataset.accent = theme.accent;
   root.style.colorScheme = mode;
+  // The Radix <Theme> in main.jsx follows: it reads the mode and accent from here.
+  window.dispatchEvent(new CustomEvent('keel:theme', { detail: { mode, accent: theme.accent } }));
   return mode;
 }
 
@@ -67,3 +70,6 @@ export function watchSystemTheme() {
   mq?.addEventListener?.('change', onChange);
   return () => mq?.removeEventListener?.('change', onChange);
 }
+
+// Radix Themes' own colour for each of Keel's accents (the scales behind --accent-1…12).
+export const RADIX_ACCENT = { buoy: 'orange', green: 'jade', blue: 'blue', violet: 'violet', teal: 'teal', magenta: 'plum', coral: 'tomato', sand: 'bronze' };

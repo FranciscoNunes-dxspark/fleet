@@ -13,13 +13,13 @@ import { addRun, loadHistory, saveHistory } from '../history.js';
 import { withoutIgnored } from '../security.js';
 import { severityTone } from '../rows.js';
 import { BULLET, theme } from '../theme.js';
-import { fitSegments, stringWidth } from '@fleet/kit/text.js';
 import { VERSION } from '../app.js';
 import { useEnvironment, useKeyTranslation, useTerminalSize } from '@fleet/kit/ui/hooks.js';
 import { recordCommand } from '@fleet/kit/recording.js';
 import { shortcutKey } from '@fleet/kit/keymap.js';
 import { remember } from '@fleet/kit/folders.js';
-import { Confirm, PromptBox, Row, SecretPrompt, Spinner, Suggestions, confirmHeight } from '@fleet/kit/ui/parts.jsx';
+import { Confirm, PromptBox, Row, SecretPrompt, Spinner, commandBoxFor, commandBoxHit, commandRows, confirmHeight, promptRowFor } from '@fleet/kit/ui/parts.jsx';
+import { StatusLine, topLine, welcomeLine } from '@fleet/kit/ui/shell.jsx';
 import { HelpView } from '@fleet/kit/ui/HelpView.jsx';
 import { PagesView } from './PagesView.jsx';
 import { FindingsView } from './FindingsView.jsx';
@@ -28,8 +28,8 @@ import { WaterfallView } from './WaterfallView.jsx';
 import { DomainsView } from './DomainsView.jsx';
 import { LogView } from './LogView.jsx';
 import { Viewer } from './Viewer.jsx';
-import { WELCOME_HEIGHT, Welcome } from './Pet.jsx';
-import { FACES, moodFor } from '../pet.js';
+import { updateLine } from './Pet.jsx';
+import { FACES, PET, moodFor, moodLine } from '../pet.js';
 import { decodeContext, logActivity, pastedLine, readMoods, writeMood } from '@fleet/kit/family.js';
 import { familyMood, reactionTo } from '../moods.js';
 
@@ -55,47 +55,29 @@ const HELP_SECTIONS = [...HELP, commandsSection(COMMANDS)];
 const DOUBLE_CLICK_MS = 400;
 const firstLine = (s) => String(s ?? '').split('\n')[0];
 
-function Header({ page, result, cwd, env, width, mood, chrome }) {
-  const segs = [
-    { text: `${FACES[mood]} `, color: theme.accent, bold: true },
-    { text: 'Lantern', bold: true },
-    { text: '  │  ', color: theme.border },
-    { text: basename(cwd) || cwd, color: theme.dim },
-  ];
-  if (env) segs.push({ text: '  │  ', color: theme.border }, { text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod });
+// What the top line says at its right: the folder, the environment, the page and what its audit found,
+// and a missing Chrome.
+function headerContext({ page, result, cwd, env, chrome }) {
+  const segs = [];
+  const sep = () => segs.push({ text: '  ' });
+  if (chrome === null) segs.push({ text: 'no Chrome found', color: theme.warn, need: true }), sep();
   if (page) {
-    segs.push({ text: '  │  ', color: theme.border }, { text: page.url, color: theme.dim });
+    segs.push({ text: page.url, color: theme.dim });
     if (result) {
       const shown = ['critical', 'high', 'medium', 'low'].filter((s) => result.counts[s]);
       if (!shown.length) segs.push({ text: '  nothing found', color: theme.add });
       for (const s of shown) segs.push({ text: `  ${result.counts[s]} ${s}`, color: severityTone(s), bold: s === 'critical' || s === 'high' });
     } else segs.push({ text: '  not audited', color: theme.dim });
+    sep();
   }
-  if (chrome === null) segs.push({ text: '  │  ', color: theme.border }, { text: 'no Chrome found', color: theme.warn });
-  return <Row pointer={false} width={width} segments={segs} />;
+  if (env) segs.push({ text: env.prod ? `${env.name} (production)` : env.name, color: env.prod ? theme.del : theme.dim, bold: env.prod, need: env.prod }), sep();
+  segs.push({ text: basename(cwd) || cwd, color: theme.dim });
+  return segs;
 }
 
-function tabLabels(entries, counts) {
-  let x = 0;
-  return VIEWS.map((v, i) => {
-    let label = ` ${i + 1} ${v.label}`;
-    if (counts[v.id]) label += ` ${counts[v.id]}`;
-    if (v.id === 'log' && entries.length) label += ` ${entries.length}`;
-    label += ' ';
-    const from = x;
-    x += stringWidth(label) + 1;
-    return { id: v.id, label, from, to: from + stringWidth(label) };
-  });
-}
-
-function Tabs({ view, entries, counts, width }) {
-  const segs = [];
-  for (const t of tabLabels(entries, counts)) {
-    const on = t.id === view;
-    segs.push({ text: t.label, bg: on ? theme.accent : undefined, color: on ? theme.ink : theme.dim, bold: on }, { text: ' ' });
-  }
-  return <Row pointer={false} width={width} segments={segs} />;
-}
+// The views in the top line, the digit that picks each before it and its count after it.
+const viewTabs = (entries, counts) =>
+  VIEWS.map((v, i) => ({ id: v.id, key: i + 1, label: v.label, count: (counts[v.id] || 0) + (v.id === 'log' ? entries.length : 0), countColor: theme.dim }));
 
 function activityRows(entries) {
   const out = [];
@@ -614,6 +596,10 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
     } else if (!e.drag && e.button !== 'wheel') return;
     if (confirmRef.current || !layout.current) return;
     const { mainTop, mainH, promptTop, sugCount, tabs } = layout.current;
+    // While the command box is open over the view, a click in it is its own and one outside it closes it.
+    const inBox = commandBoxHit(layout.current.box, e);
+    if (inBox === false) return e.drag || e.wheel ? undefined : setFocus('view');
+    if (inBox && (e.drag || e.wheel)) return;
     if (e.drag) {
       const hit = mouseTarget(e.from.y - mainTop);
       if (!hit) return;
@@ -627,20 +613,21 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
       setFocus('view');
       return setView(tab.id);
     }
-    if (e.y >= mainTop && e.y < mainTop + mainH) {
+    if (!inBox && e.y >= mainTop && e.y < mainTop + mainH) {
       if (!e.wheel && focusRef.current === 'prompt') setFocus('view');
       const hit = mouseTarget(e.y - mainTop);
       return hit?.target.handle({ ...e, y: hit.y });
     }
     if (e.wheel) return;
-    if (e.y >= promptTop && e.y < promptTop + 3) {
+    if (e.y === promptTop) {
+      // The text starts after the box's edge and "» ", scrolled as the command box scrolls it.
       const { value, cursor } = promptRef.current;
-      const inner = columns - 6;
+      const inner = layout.current.box?.inner ?? columns - 3;
       const start = focusRef.current === 'prompt' ? Math.max(0, cursor - inner + 1) : 0;
-      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - 4)));
+      setPrompt(value, Math.max(0, Math.min(value.length, start + e.x - (layout.current.box?.textX ?? 3))));
       return setFocus('prompt');
     }
-    const row = e.y - promptTop - 3;
+    const row = e.y - (layout.current.box?.items ?? promptTop + 1);
     if (row >= 0 && row < sugCount) {
       setSugIndex(row);
       if (e.double) promptKeys('', { return: true });
@@ -654,23 +641,26 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
   const W = columns;
   const H = Math.max(12, rows - 1);
   const act = activityRows(entries.filter((e) => e.shown !== false));
-  const bottom = confirmReq ? confirmHeight(confirmReq) : 3 + suggestions.length;
+  const bottom = confirmReq ? confirmHeight(confirmReq) : commandRows(suggestions.length);
   const mood = moodFor({ result, busy, lastEntry: entries.at(-1) });
   const feeling = familyMood({ mood, result, lastEntry: entries.at(-1), busy });
   useEffect(() => {
     if (config.familyMoods !== false) writeMood('lantern', feeling);
   }, [feeling.mood, feeling.reason, config.familyMoods]);
-  const showWelcome = welcome && H >= 28;
-  const reacting = reaction ? 1 : 0;
-  const mainH = Math.max(6, H - 2 - reacting - act.length - (busy ? 1 : 0) - bottom - 1 - (showWelcome ? WELCOME_HEIGHT : 0));
   const viewActive = focus === 'view' && !overlay && !confirmReq;
   const tabCounts = { findings: pageFindings.length, domains: domainFindings, pages: pages.length };
+  // The top line, then the view, the activity, the prompt and its suggestions, then the status line.
+  const top = topLine({ face: FACES[mood], title: 'Lantern', views: viewTabs(entries, tabCounts), view, context: headerContext({ page, result, cwd, env, chrome: chromeFound }), width: W, compact: true });
+  const mainH = Math.max(6, H - 1 - act.length - (busy ? 1 : 0) - bottom - 1);
+  // The command box, over the view while the prompt has the keys (the kit's CommandBox).
+  const cmdBox = commandBoxFor({ open: focus === 'prompt' && !confirmReq, width: W, height: H, count: suggestions.length });
   layout.current = {
-    mainTop: 2,
+    box: cmdBox,
+    mainTop: 1,
     mainH,
-    promptTop: 2 + mainH + (showWelcome ? WELCOME_HEIGHT : 0) + reacting + act.length + (busy ? 1 : 0),
+    promptTop: promptRowFor(cmdBox, 1 + mainH + act.length + (busy ? 1 : 0)),
     sugCount: suggestions.length,
-    tabs: tabLabels(entries, tabCounts),
+    tabs: top.tabs.map((t) => ({ id: t.id, from: t.x, to: t.x + t.width })),
   };
 
   const common = { ctx, width: W, height: mainH, active: viewActive };
@@ -693,28 +683,23 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
     main = <PagesView pages={pages} selected={selected} history={history} ignore={config.ignore ?? []} env={env} {...common} />;
   }
 
-  const left = flash ? flash.text : focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.kind === 'help' ? 'j/k section · space scroll · / search · esc close' : overlay ? 'j/k scroll · space page · / search · y copy · esc close' : HINTS[view];
-  const right = focus === 'prompt' ? '' : '  / commands · ! shell · , settings · ? help';
+  const keys = focus === 'prompt' ? 'enter run · tab complete · ↑↓ pick or history · esc back' : overlay?.kind === 'help' ? 'j/k section · space scroll · / search · esc close' : overlay ? 'j/k scroll · space page · / search · y copy · esc close' : HINTS[view];
+  const right = focus === 'prompt' ? '' : '/ commands · ! shell · , settings · ? help';
+  // What the status line says beside the face: a flash, a sibling's news, the welcome until the first
+  // command, else how Flit sees things.
+  const told = { pages, result, chrome: chromeFound };
+  let said = { face: FACES[mood], message: moodLine(mood, told), tone: chromeFound === null ? 'warn' : undefined };
+  if (flash) said = { face: FACES[mood], message: flash.text, news: true };
+  else if (reaction) said = { face: FACES[reaction.mood === 'happy' ? 'happy' : 'worried'], message: [{ text: reaction.text }, { text: '  esc', color: theme.dim }], news: true };
+  else if (welcome && update) said = { face: FACES[mood], message: updateLine(update), tone: 'warn' };
+  else if (welcome) said = { face: FACES[mood], message: welcomeLine('Lantern', VERSION, `${PET.name} the ${PET.kind} here. ${moodLine(mood, told)}`) };
 
   return (
     <Box flexDirection="column" width={W} height={H}>
-      <Header page={page} result={result} cwd={cwd} env={env} width={W} mood={mood} chrome={chromeFound} />
-      <Tabs view={view} entries={entries} counts={tabCounts} width={W} />
+      <Row pointer={false} width={W} segments={top.segments} />
       <Box height={mainH} width={W}>
         {main}
       </Box>
-      {showWelcome ? <Welcome mood={mood} told={{ pages, result, chrome: chromeFound }} width={W} update={update} /> : null}
-      {reaction ? (
-        <Row
-          pointer={false}
-          width={W}
-          segments={[
-            { text: `${FACES[reaction.mood === 'happy' ? 'happy' : 'worried']} `, color: theme.accent, bold: true },
-            { text: reaction.text },
-            { text: '  esc', color: theme.dim },
-          ]}
-        />
-      ) : null}
       {act.map((segs, i) => (
         <Row key={i} pointer={false} width={W} segments={segs} />
       ))}
@@ -726,10 +711,9 @@ export function App({ config: initialConfig, provider = createLantern(), cwd: st
           <Confirm key={confirmReq.id} req={confirmReq} width={W} onDone={onConfirm} />
         )
       ) : (
-        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
+        <PromptBox value={prompt.value} cursor={prompt.cursor} focused={focus === 'prompt'} width={W} modal items={suggestions} selected={sel} height={H} placeholder="Press / for commands, ! to run a shell command, ? for shortcuts" />
       )}
-      {suggestions.length ? <Suggestions items={suggestions} selected={sel} width={W} /> : null}
-      <Row pointer={false} width={W} segments={[...fitSegments([{ text: `  ${left}`, color: theme.dim }], W - stringWidth(right)), { text: right, color: theme.dim }]} />
+      <StatusLine {...said} typing={focus === 'prompt'} keys={keys} right={right} width={W} />
     </Box>
   );
 }

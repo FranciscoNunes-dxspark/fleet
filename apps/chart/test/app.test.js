@@ -24,8 +24,8 @@ test('it looks at the folder on opening and plans only when asked', async () => 
   app.unmount();
 });
 
-test('/plan lists the changes, what is destroyed first, with the summary and drift in the header', async () => {
-  const app = start();
+test('/plan lists the changes, what is destroyed first, with the summary and drift in the top line', async () => {
+  const app = start({ columns: 160 });
   await until(shows(app, '/plan asks terraform'), 'the hint');
   await run(app, '/plan');
   await until(shows(app, 'azurerm_mssql_database.reports'), 'the changes');
@@ -75,7 +75,7 @@ test('the Drift view: what changed in the portal; /drift runs a refresh-only pla
 });
 
 test('/whatif asks Azure for a Bicep file, keeps its arguments, and lists its changes', async () => {
-  const app = start();
+  const app = start({ columns: 160 });
   await until(shows(app, '/plan asks terraform'), 'the hint');
   await run(app, '/whatif --rg shop-prod');
   await until(shows(app, 'Microsoft.Cache/Redis/shop-cache'), 'the what-if');
@@ -91,7 +91,7 @@ test('/deploy runs the what-if first, shows what it does, and deploys only once 
   await until(shows(app, '/plan asks terraform'), 'the hint');
   await run(app, '/deploy --rg shop-prod');
   await until(shows(app, 'Type shop-prod to deploy bicep/main.bicep into shop-prod'), 'the question');
-  assert.match(app.lastFrame(), /Destroyed: +│\n│ +- Microsoft\.Cache\/Redis\/shop-cache/);
+  assert.match(app.lastFrame(), /Destroyed: *\n│ +- Microsoft\.Cache\/Redis\/shop-cache/);
   app.stdin.write(KEYS.enter);
   await until(shows(app, "That isn't shop-prod: nothing was deployed."), 'the answer');
   assert.ok(!app.provider.calls.some((c) => c[0] === 'deploy'), 'a bare ↵ is a No');

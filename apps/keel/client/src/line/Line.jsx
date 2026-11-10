@@ -15,6 +15,8 @@ import { reasonText as sharedReason } from './reasons.js';
 import { lookAt, sinceLastLook } from './digest.js';
 import { useLine } from './LineShell.jsx';
 import NotFound from '../pages/NotFound.jsx';
+import { Button } from '@radix-ui/themes';
+import { Checkbox } from '../ui.jsx';
 
 const DAY = 864e5;
 // How long a card may sit at a stage before its age bar fills: the stage's own idea of "a while".
@@ -119,7 +121,7 @@ function SinceLastLook({ stages, loading }) {
         </div>
         <span className="since-actions">
           <Link to="/summary" className="small">{t('Weekly summary')} →</Link>
-          <button type="button" className="btn btn-small" onClick={gotIt}>{t('Got it')}</button>
+          <Button size="1" variant="outline" color="gray" type="button" onClick={gotIt}>{t('Got it')}</Button>
         </span>
       </div>
       {open && (
@@ -197,11 +199,11 @@ export function StageCards() {
         <div className="page-actions">
           {mine > 0 && (
             <label className="check line-mine">
-              <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
+              <Checkbox  checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
               {t('Only what needs me')} <span className="muted">{mine}</span>
             </label>
           )}
-          {deeper.map(([label, to]) => <Link key={to} to={to} className="btn btn-small">{label} →</Link>)}
+          {deeper.map(([label, to]) => <Button key={to} asChild size="1" variant="outline" color="gray"><Link to={to}>{label} →</Link></Button>)}
         </div>
       </header>
       {!stage.cards.length && <p className="stage-empty">{loading ? t('Loading') : t('Nothing here')}</p>}
@@ -257,10 +259,11 @@ export function Card({ card, onOpen, drawer, typeColor }) {
 /**
  * What can be done right from a card, without opening it: decide an approval waiting on you,
  * approve a pull request waiting on your review, turn on auto-complete for an approved one, run a
- * red pipeline again. Each only where your role allows it; the rest open the card as before.
+ * red pipeline again, see what broke a production app that is down or degraded. Each only where
+ * your role allows it; the rest open the card as before.
  */
 function CardActions({ card }) {
-  const { can, refresh, toast } = useApp();
+  const { can, refresh, toast, openDrawer } = useApp();
   const [busy, setBusy] = useState(false);
   const run = async (path, body, done) => {
     setBusy(true);
@@ -285,10 +288,13 @@ function CardActions({ card }) {
     );
   }
   if (pr && card.mine && can('prs.write')) {
-    actions.push(<button key="vote" type="button" className="btn btn-small btn-primary" disabled={busy} onClick={() => run(prPath, { type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{t('Approve')}</button>);
+    actions.push(<Button size="1" variant="solid" key="vote" type="button" disabled={busy} onClick={() => run(prPath, { type: 'vote', vote: 10 }, t('Voted: {vote}', { vote: t('Approve') }))}>{t('Approve')}</Button>);
   }
   if (pr && card.reviewState === 'approved' && !card.autoComplete && !card.draft && can('prs.write')) {
-    actions.push(<button key="auto" type="button" className="btn btn-small" disabled={busy} onClick={() => run(prPath, { type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</button>);
+    actions.push(<Button size="1" variant="outline" color="gray" key="auto" type="button" disabled={busy} onClick={() => run(prPath, { type: 'autoComplete', enabled: true }, t('Auto-complete set'))}>{t('Set auto-complete')}</Button>);
+  }
+  if (card.incident) {
+    actions.push(<Button size="1" variant="solid" color="red" key="incident" type="button" onClick={() => openDrawer({ type: 'incident', id: card.incident })}>{t('What broke?')}</Button>);
   }
   if (card.rerun && can('pipelines.run')) {
     const { branch } = card.rerun;

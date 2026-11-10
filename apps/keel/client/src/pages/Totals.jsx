@@ -8,6 +8,8 @@ import { areaLabel, figureLabel, keyFigures, orderedAreas, setCatalogue } from '
 import { useSticky } from '../sticky.js';
 import { Chip, Empty, ErrorBox, Loading, PageHeader, ProductionTabs } from '../ui.jsx';
 import { downloadText } from './ReleaseNotes.jsx';
+import { Button } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 // Platform totals (a site's /totals): what each site holds, fetched on a schedule.
 
@@ -55,10 +57,10 @@ const valueFor = (x, month) => {
 function MonthPicker({ months, value, onChange }) {
   return (
     <label className="totals-view">{t('Period')}
-      <select className="input" value={value || ''} onChange={(e) => onChange(Number(e.target.value) || 0)}>
+      <Select className="input" value={value || ''} onChange={(e) => onChange(Number(e.target.value) || 0)}>
         <option value="">{t('Whole season')}</option>
         {months.map((m) => <option key={m} value={m}>{monthLong(m)}</option>)}
-      </select>
+      </Select>
     </label>
   );
 }
@@ -167,12 +169,12 @@ function TotalsOverview() {
           : t('What each site holds, from the Platform Totals screen.')}
       >
         {data.some((s) => s.latest?.totals?.length) && (
-          <button type="button" className="btn btn-small btn-ghost" onClick={() => downloadText(`platform-totals-${new Date().toISOString().slice(0, 10)}.csv`, totalsCsv(data), 'text/csv;charset=utf-8')}>{t('Export CSV')}</button>
+          <Button size="1" variant="ghost" color="gray" type="button" onClick={() => downloadText(`platform-totals-${new Date().toISOString().slice(0, 10)}.csv`, totalsCsv(data), 'text/csv;charset=utf-8')}>{t('Export CSV')}</Button>
         )}
         {can('monitors.manage') && enabled.length > 0 && (
-          <button type="button" className="btn btn-small" onClick={fetchAll} disabled={starting || busy}>{busy ? t('Fetching…') : t('Fetch all')}</button>
+          <Button size="1" variant="outline" color="gray" type="button" onClick={fetchAll} disabled={starting || busy}>{busy ? t('Fetching…') : t('Fetch all')}</Button>
         )}
-        {can('monitors.manage') && <Link className="btn btn-small" to="/settings#production">{t('Manage sites')}</Link>}
+        {can('monitors.manage') && <Button asChild size="1" variant="outline" color="gray"><Link to="/settings#production">{t('Manage sites')}</Link></Button>}
       </PageHeader>
       <ProductionTabs />
 
@@ -188,12 +190,12 @@ function TotalsOverview() {
         <>
           <div className="toolbar">
             <label className="totals-view">{t('Figures')}
-              <select className="input" value={view} onChange={(e) => setView(e.target.value)}>
+              <Select className="input" value={view} onChange={(e) => setView(e.target.value)}>
                 <option value="key">{t('Key figures')}</option>
                 <optgroup label={t('By area')}>
                   {areas.map((a) => <option key={a} value={a}>{areaLabel(a)}</option>)}
                 </optgroup>
-              </select>
+              </Select>
             </label>
             {months.length > 0 && <MonthPicker months={months} value={month} onChange={setMonth} />}
             <span className="muted small">
@@ -294,9 +296,9 @@ function SiteTotals({ id }) {
         title={data.name}
         sub={[latest?.product, latest?.site, latest?.version && t('version {v}', { v: latest.version }), latest?.season?.name ? t('season {name}', { name: latest.season.name }) : latest?.season?.scope === 'all' ? t('all seasons') : null].filter(Boolean).join(' · ') || data.url}
       >
-        <Link className="btn btn-small btn-ghost" to="/totals">{t('All sites')}</Link>
+        <Button asChild size="1" variant="ghost" color="gray"><Link to="/totals">{t('All sites')}</Link></Button>
         {can('monitors.manage') && data.enabled && (
-          <button type="button" className="btn btn-small" onClick={fetchNow} disabled={starting || data.fetching}>{data.fetching ? t('Fetching…') : data.queued ? t('Queued') : t('Fetch now')}</button>
+          <Button size="1" variant="outline" color="gray" type="button" onClick={fetchNow} disabled={starting || data.fetching}>{data.fetching ? t('Fetching…') : data.queued ? t('Queued') : t('Fetch now')}</Button>
         )}
       </PageHeader>
       <ProductionTabs />

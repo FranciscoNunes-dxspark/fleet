@@ -6,6 +6,8 @@ import { age } from '../format.js';
 import { LANGUAGES, getLanguage, locale, t, tx } from '../i18n.js';
 import { KeyField } from './ProductionSettings.jsx';
 import { useProjectLabel } from '../orgs.js';
+import { Button, TextField } from '@radix-ui/themes';
+import { Checkbox, Select } from '../ui.jsx';
 
 const KINDS = [
   { id: 'teams', label: 'Microsoft Teams' },
@@ -28,7 +30,7 @@ const zone = () => {
     return 'UTC';
   }
 };
-const blank = () => ({ key: Math.random(), id: null, name: '', kind: 'teams', url: '', hasUrl: false, events: ['production', 'pipeline', 'approval', 'advisory'], projects: [], weekly: { enabled: true, weekday: 1, hour: 9 }, daily: { enabled: false, hour: 9 }, timeZone: zone(), language: getLanguage() });
+const blank = () => ({ key: Math.random(), id: null, name: '', kind: 'teams', url: '', hasUrl: false, events: ['production', 'pipeline', 'approval', 'advisory'], projects: [], weekly: { enabled: true, weekday: 1, hour: 9 }, daily: { enabled: false, hour: 9 }, standup: { enabled: false, hour: 9 }, timeZone: zone(), language: getLanguage() });
 const snapshot = (rows) => JSON.stringify((rows || []).map(({ key, lastPostAt, lastError, lastErrorAt, lastWeekly, ...rest }) => rest));
 // Monday first, in the current language.
 const weekdays = () => [1, 2, 3, 4, 5, 6, 7].map((d) => ({ d, label: new Date(Date.UTC(2024, 0, d)).toLocaleDateString(locale(), { weekday: 'long', timeZone: 'UTC' }) }));
@@ -51,7 +53,7 @@ export default function ChannelSettings() {
   const projectLabel = useProjectLabel();
 
   const adopt = (res) => {
-    const loaded = res.channels.map((c) => ({ ...c, projects: c.projects || [], daily: c.daily || { enabled: false, hour: 9 }, key: c.id, url: undefined }));
+    const loaded = res.channels.map((c) => ({ ...c, projects: c.projects || [], daily: c.daily || { enabled: false, hour: 9 }, standup: c.standup || { enabled: false, hour: 9 }, key: c.id, url: undefined }));
     setRows(loaded);
     setInfo(res);
     setBaseline(snapshot(loaded));
@@ -83,7 +85,7 @@ export default function ChannelSettings() {
     try {
       adopt(await api('/channels', {
         method: 'PUT',
-        body: { channels: rows.map(({ id, name, kind, url, events, projects: picked, weekly, daily, timeZone, language }) => ({ id, name, kind, url: url || undefined, events, projects: picked, weekly, daily, timeZone, language })) },
+        body: { channels: rows.map(({ id, name, kind, url, events, projects: picked, weekly, daily, standup, timeZone, language }) => ({ id, name, kind, url: url || undefined, events, projects: picked, weekly, daily, standup, timeZone, language })) },
       }));
       setOpen(new Set());
       toast(t('Channels saved'));
@@ -97,9 +99,9 @@ export default function ChannelSettings() {
   const run = async (r, what) => {
     setTests((ts) => ({ ...ts, [r.key]: { running: what } }));
     try {
-      if (what === 'weekly' || what === 'daily') await api(`/channels/${encodeURIComponent(r.id)}/${what}`, { method: 'POST' });
+      if (what === 'weekly' || what === 'daily' || what === 'standup') await api(`/channels/${encodeURIComponent(r.id)}/${what}`, { method: 'POST' });
       else await api('/channels/test', { method: 'POST', body: { id: r.id, kind: r.kind, url: r.url || undefined, language: r.language } });
-      const done = { weekly: t("Last week's summary was posted."), daily: t("The Line's digest was posted.") }[what] || t('Test message posted. Check the channel.');
+      const done = { weekly: t("Last week's summary was posted."), daily: t("The Line's digest was posted."), standup: t('The standup was posted.') }[what] || t('Test message posted. Check the channel.');
       setTests((ts) => ({ ...ts, [r.key]: { ok: done } }));
     } catch (e) {
       setTests((ts) => ({ ...ts, [r.key]: { error: e.message } }));
@@ -136,11 +138,12 @@ export default function ChannelSettings() {
                   {r.projects.length > 0 && <Chip>{r.projects.length === 1 ? projectLabel(projects.find((p) => p.id === r.projects[0])?.name || '…', projects.find((p) => p.id === r.projects[0])?.org) : t('{n} projects', { n: r.projects.length })}</Chip>}
                   {r.weekly.enabled && <Chip tone="info">{t('Weekly summary')}</Chip>}
                   {r.daily?.enabled && <Chip tone="info">{t("The Line's daily digest")}</Chip>}
+                  {r.standup?.enabled && <Chip tone="info">{t('Standup')}</Chip>}
                   {r.ownerName && authMode === 'login' && <Chip>{t('as {name}', { name: r.ownerName })}</Chip>}
                 </div>
                 <div className="monitor-line-actions">
-                  <button type="button" className="btn btn-small btn-ghost" onClick={() => run(r, 'test')} disabled={!!result?.running || (!r.url && !r.hasUrl)}>{result?.running === 'test' ? t('Sending…') : t('Send a test')}</button>
-                  <button type="button" className="btn btn-small" aria-expanded={editing} onClick={() => toggle(r.key)}>{editing ? t('Close') : t('Edit')}</button>
+                  <Button size="1" variant="ghost" color="gray" type="button" onClick={() => run(r, 'test')} disabled={!!result?.running || (!r.url && !r.hasUrl)}>{result?.running === 'test' ? t('Sending…') : t('Send a test')}</Button>
+                  <Button size="1" variant="outline" color="gray" type="button" aria-expanded={editing} onClick={() => toggle(r.key)}>{editing ? t('Close') : t('Edit')}</Button>
                 </div>
               </div>
               {result && !result.running && <p className={`small monitor-test ${result.error ? 'text-bad' : 'text-ok'}`}>{result.error || result.ok}</p>}
@@ -148,17 +151,17 @@ export default function ChannelSettings() {
                 <div className="monitor-editor">
                   <fieldset className="monitor-group">
                     <legend>{t('Channel')}</legend>
-                    <label>{t('Name')}<input className="input" value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder={t('Team channel')} /></label>
+                    <label>{t('Name')}<TextField.Root variant="surface" color="gray" value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder={t('Team channel')} /></label>
                     <label>{t('Service')}
-                      <select className="input" value={r.kind} onChange={(e) => set(r.key, { kind: e.target.value })}>
+                      <Select className="input" value={r.kind} onChange={(e) => set(r.key, { kind: e.target.value })}>
                         {KINDS.map((k) => <option key={k.id} value={k.id}>{t(k.label)}</option>)}
-                      </select>
+                      </Select>
                     </label>
                     <KeyField label={t('Webhook address')} has={r.hasUrl} value={r.url} onChange={(v) => set(r.key, { url: v || undefined })} placeholder="https://…" texts={{ saved: t('Saved. Paste a new address to replace it') }} removable={false} />
                     <label>{t('Language')}
-                      <select className="input" value={r.language} onChange={(e) => set(r.key, { language: e.target.value })}>
+                      <Select className="input" value={r.language} onChange={(e) => set(r.key, { language: e.target.value })}>
                         {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-                      </select>
+                      </Select>
                     </label>
                   </fieldset>
                   <fieldset className="monitor-group channel-events">
@@ -171,14 +174,14 @@ export default function ChannelSettings() {
                     <div className="channel-projects">
                       {projects.map((p) => (
                         <label key={p.id} className="check">
-                          <input type="checkbox" checked={r.projects.includes(p.id)} onChange={(e) => set(r.key, { projects: e.target.checked ? [...r.projects, p.id] : r.projects.filter((x) => x !== p.id) })} />
+                          <Checkbox  checked={r.projects.includes(p.id)} onChange={(e) => set(r.key, { projects: e.target.checked ? [...r.projects, p.id] : r.projects.filter((x) => x !== p.id) })} />
                           {projectLabel(p.name, p.org)}
                         </label>
                       ))}
                       {/* Ticked projects this token can no longer see stay ticked, and can be unticked. */}
                       {r.projects.filter((id) => !projects.some((p) => p.id === id)).map((id) => (
                         <label key={id} className="check muted">
-                          <input type="checkbox" checked onChange={() => set(r.key, { projects: r.projects.filter((x) => x !== id) })} />
+                          <Checkbox  checked onChange={() => set(r.key, { projects: r.projects.filter((x) => x !== id) })} />
                           {settings ? t('A project you have no access to') : '…'}
                         </label>
                       ))}
@@ -188,39 +191,49 @@ export default function ChannelSettings() {
                     <legend>{t('Post when')}</legend>
                     {EVENTS.map((ev) => (
                       <label key={ev.id} className="check">
-                        <input type="checkbox" checked={r.events.includes(ev.id)} onChange={(e) => set(r.key, { events: e.target.checked ? [...r.events, ev.id] : r.events.filter((x) => x !== ev.id) })} />
+                        <Checkbox  checked={r.events.includes(ev.id)} onChange={(e) => set(r.key, { events: e.target.checked ? [...r.events, ev.id] : r.events.filter((x) => x !== ev.id) })} />
                         {t(ev.label)}
                       </label>
                     ))}
                   </fieldset>
                   <fieldset className="monitor-group">
                     <legend>{t('Weekly summary')}</legend>
-                    <label className="check"><input type="checkbox" checked={r.weekly.enabled} onChange={(e) => set(r.key, { weekly: { ...r.weekly, enabled: e.target.checked } })} /> {t("Post last week's summary")}</label>
+                    <label className="check"><Checkbox  checked={r.weekly.enabled} onChange={(e) => set(r.key, { weekly: { ...r.weekly, enabled: e.target.checked } })} /> {t("Post last week's summary")}</label>
                     <label>{t('Day')}
-                      <select className="input" value={r.weekly.weekday} disabled={!r.weekly.enabled} onChange={(e) => set(r.key, { weekly: { ...r.weekly, weekday: Number(e.target.value) } })}>
+                      <Select className="input" value={r.weekly.weekday} disabled={!r.weekly.enabled} onChange={(e) => set(r.key, { weekly: { ...r.weekly, weekday: Number(e.target.value) } })}>
                         {weekdays().map(({ d, label }) => <option key={d} value={d}>{label}</option>)}
-                      </select>
+                      </Select>
                     </label>
                     <label>{t('Time')}
-                      <select className="input" value={r.weekly.hour} disabled={!r.weekly.enabled} onChange={(e) => set(r.key, { weekly: { ...r.weekly, hour: Number(e.target.value) } })}>
+                      <Select className="input" value={r.weekly.hour} disabled={!r.weekly.enabled} onChange={(e) => set(r.key, { weekly: { ...r.weekly, hour: Number(e.target.value) } })}>
                         {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{`${String(h).padStart(2, '0')}:00`}</option>)}
-                      </select>
+                      </Select>
                     </label>
-                    <label>{t('Time zone')}<input className="input" value={r.timeZone} onChange={(e) => set(r.key, { timeZone: e.target.value })} placeholder="Europe/Lisbon" /></label>
+                    <label>{t('Time zone')}<TextField.Root variant="surface" color="gray" value={r.timeZone} onChange={(e) => set(r.key, { timeZone: e.target.value })} placeholder="Europe/Lisbon" /></label>
                   </fieldset>
                   <fieldset className="monitor-group">
                     <legend>{t("The Line's daily digest")}</legend>
-                    <label className="check"><input type="checkbox" checked={r.daily.enabled} onChange={(e) => set(r.key, { daily: { ...r.daily, enabled: e.target.checked } })} /> {t('Post the Line each weekday: every stage, what moved since the day before, and what is stuck the longest')}</label>
+                    <label className="check"><Checkbox  checked={r.daily.enabled} onChange={(e) => set(r.key, { daily: { ...r.daily, enabled: e.target.checked } })} /> {t('Post the Line each weekday: every stage, what moved since the day before, and what is stuck the longest')}</label>
                     <label>{t('Time')}
-                      <select className="input" value={r.daily.hour} disabled={!r.daily.enabled} onChange={(e) => set(r.key, { daily: { ...r.daily, hour: Number(e.target.value) } })}>
+                      <Select className="input" value={r.daily.hour} disabled={!r.daily.enabled} onChange={(e) => set(r.key, { daily: { ...r.daily, hour: Number(e.target.value) } })}>
                         {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{`${String(h).padStart(2, '0')}:00`}</option>)}
-                      </select>
+                      </Select>
+                    </label>
+                  </fieldset>
+                  <fieldset className="monitor-group">
+                    <legend>{t('Standup')}</legend>
+                    <label className="check"><Checkbox  checked={r.standup.enabled} onChange={(e) => set(r.key, { standup: { ...r.standup, enabled: e.target.checked } })} /> {t('Post the standup each weekday: what moved for each person since the previous working day, what they hold, and the blockers')}</label>
+                    <label>{t('Time')}
+                      <Select className="input" value={r.standup.hour} disabled={!r.standup.enabled} onChange={(e) => set(r.key, { standup: { ...r.standup, hour: Number(e.target.value) } })}>
+                        {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{`${String(h).padStart(2, '0')}:00`}</option>)}
+                      </Select>
                     </label>
                   </fieldset>
                   <div className="monitor-editor-foot">
-                    {r.id && <button type="button" className="btn btn-small btn-ghost" onClick={() => run(r, 'weekly')} disabled={!!result?.running || dirty}>{result?.running === 'weekly' ? t('Sending…') : t('Post the summary now')}</button>}
-                    {r.id && <button type="button" className="btn btn-small btn-ghost" onClick={() => run(r, 'daily')} disabled={!!result?.running || dirty}>{result?.running === 'daily' ? t('Sending…') : t('Post the digest now')}</button>}
-                    <button type="button" className="btn btn-small btn-ghost text-bad" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>{t('Remove channel')}</button>
+                    {r.id && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => run(r, 'weekly')} disabled={!!result?.running || dirty}>{result?.running === 'weekly' ? t('Sending…') : t('Post the summary now')}</Button>}
+                    {r.id && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => run(r, 'daily')} disabled={!!result?.running || dirty}>{result?.running === 'daily' ? t('Sending…') : t('Post the digest now')}</Button>}
+                    {r.id && <Button size="1" variant="ghost" color="gray" type="button" onClick={() => run(r, 'standup')} disabled={!!result?.running || dirty}>{result?.running === 'standup' ? t('Sending…') : t('Post the standup now')}</Button>}
+                    <Button size="1" variant="ghost" color="red" type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>{t('Remove channel')}</Button>
                   </div>
                 </div>
               )}
@@ -230,16 +243,16 @@ export default function ChannelSettings() {
       </ul>
       {!rows.length && <p className="muted small">{t('No channels yet.')}</p>}
       <div className="section-foot">
-        <button type="button" className="btn btn-small" onClick={() => {
+        <Button size="1" variant="outline" color="gray" type="button" onClick={() => {
           const row = blank();
           setRows((rs) => [...rs, row]);
           setOpen((o) => new Set(o).add(row.key));
         }}
         >
           {t('Add channel')}
-        </button>
+        </Button>
         {dirty && <span className="small text-warn">{t('Unsaved changes')}</span>}
-        <button type="button" className="btn btn-primary btn-small" onClick={save} disabled={busy || !dirty}>{busy ? t('Saving…') : t('Save channels')}</button>
+        <Button size="1" variant="solid" type="button" onClick={save} disabled={busy || !dirty}>{busy ? t('Saving…') : t('Save channels')}</Button>
       </div>
     </Section>
   );

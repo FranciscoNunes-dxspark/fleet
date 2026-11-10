@@ -97,7 +97,7 @@ test('through the UI: the events stream into the Response view until esc, and ar
     await until(() => f().includes('Ticks'), 'the request');
     app.stdin.write(KEYS.enter);
     await until(() => f().includes('streaming… (esc stops it)') && /Streaming: \d+ events/.test(f()), 'the stream, live in the Response view');
-    assert.match(f(), /─ GET Ticks/);
+    assert.match(f(), /│ GET Ticks/);
     await until(() => /"count": [4-9]/.test(f()), 'later events on screen');
     app.stdin.write(KEYS.esc);
     await until(() => /events · stopped/.test(f()), 'stopped');

@@ -10,6 +10,8 @@ import { Markdown, MarkdownInput } from '../markdown.jsx';
 import { attachUploadPath, attachmentUrl, wiActionsPath, wiPath } from '../orgs.js';
 import { useProjectLabel } from '../orgs.js';
 import Trace from '../line/Trace.jsx';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 // What "Add child" creates by default under each type (the form lets you change it).
 const CHILD_TYPE = { Epic: 'Feature', Feature: 'User Story', 'User Story': 'Task', 'Product Backlog Item': 'Task', Requirement: 'Task', Issue: 'Task', Bug: 'Task' };
@@ -73,27 +75,27 @@ export default function WorkItemDetail({ id, org }) {
         <h3>{t('Update')}</h3>
         <div className="form-grid">
           <label>{t('State')}
-            <select className="input" value={w.state} disabled={busy} onChange={(e) => act({ type: 'update', changes: { state: e.target.value } }, t('Moved to {state}', { state: e.target.value }))}>
+            <Select className="input" value={w.state} disabled={busy} onChange={(e) => act({ type: 'update', changes: { state: e.target.value } }, t('Moved to {state}', { state: e.target.value }))}>
               {w.allowedStates.map((s) => <option key={s.name}>{s.name}</option>)}
-            </select>
+            </Select>
           </label>
           <label>{t('Assigned to')}
-            <select className="input" value={w.assignedTo?.uniqueName || ''} disabled={busy} onChange={(e) => act({ type: 'update', changes: { assignedTo: e.target.value } }, t('Assignee updated'))}>
+            <Select className="input" value={w.assignedTo?.uniqueName || ''} disabled={busy} onChange={(e) => act({ type: 'update', changes: { assignedTo: e.target.value } }, t('Assignee updated'))}>
               <option value="">{t('Unassigned')}</option>
               {w.assignedTo && !(people || []).some((p) => p.uniqueName === w.assignedTo.uniqueName) && <option value={w.assignedTo.uniqueName}>{w.assignedTo.displayName}</option>}
               {(people || []).map((p) => <option key={p.id} value={p.uniqueName}>{p.displayName}</option>)}
-            </select>
+            </Select>
           </label>
           <label>{t('Priority')}
-            <select className="input" value={w.priority ?? ''} disabled={busy} onChange={(e) => act({ type: 'update', changes: { priority: e.target.value } }, t('Priority updated'))}>
+            <Select className="input" value={w.priority ?? ''} disabled={busy} onChange={(e) => act({ type: 'update', changes: { priority: e.target.value } }, t('Priority updated'))}>
               {w.priority == null && <option value="">—</option>}
               {[1, 2, 3, 4].map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+            </Select>
           </label>
           {w.type !== 'Task' && <label>{t('Points')}
-            <input
+            <TextField.Root variant="surface" color="gray"
               key={w.storyPoints ?? ''}
-              className="input"
+             
               type="number"
               min="0"
               step="any"
@@ -108,7 +110,7 @@ export default function WorkItemDetail({ id, org }) {
             />
           </label>}
           {!hasBlockedState && <div className="form-grid-action">
-            <button type="button" className="btn btn-small" disabled={busy} onClick={toggleBlocked}>{blocked ? t('Remove blocked tag') : t('Mark as blocked')}</button>
+            <Button size="1" variant="outline" color="gray" type="button" disabled={busy} onClick={toggleBlocked}>{blocked ? t('Remove blocked tag') : t('Mark as blocked')}</Button>
           </div>}
         </div>
       </section>}
@@ -179,18 +181,18 @@ export default function WorkItemDetail({ id, org }) {
         </ul>
         {editable && (
         <form className="comment-form" onSubmit={async (e) => { e.preventDefault(); if (await act({ type: 'comment', text: comment }, t('Comment posted'))) setComment(''); }}>
-          <MarkdownInput rows={3} placeholder={t('Add a comment')} value={comment} onChange={setComment} label={t('Comment')} people={people || []} />
-          <button type="submit" className="btn btn-primary btn-small" disabled={!comment.trim() || busy}>{t('Post comment')}</button>
+          <MarkdownInput placeholder={t('Add a comment')} value={comment} onChange={setComment} label={t('Comment')} people={people || []} />
+          <Button size="2" variant="solid" type="submit" disabled={!comment.trim() || busy}>{t('Post comment')}</Button>
         </form>
         )}
       </section>
 
       <section className="detail-actions sticky-actions">
         {can('prs.write') && w.type !== 'Epic' && w.type !== 'Feature' && (
-          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newpr', workItemId: w.id, org: w.org || org })}>{t('Create pull request')}</button>
+          <Button size="1" variant="outline" color="gray" type="button" onClick={() => openDrawer({ type: 'newpr', workItemId: w.id, org: w.org || org })}>{t('Create pull request')}</Button>
         )}
         {editable && w.type !== 'Task' && (
-          <button type="button" className="btn btn-small" onClick={() => openDrawer({ type: 'newworkitem', projectName: w.projectName, org: w.org || org, parentId: w.id, parentTitle: w.title, workItemType: CHILD_TYPE[w.type] || 'Task' })}>{t('Add child')}</button>
+          <Button size="1" variant="outline" color="gray" type="button" onClick={() => openDrawer({ type: 'newworkitem', projectName: w.projectName, org: w.org || org, parentId: w.id, parentTitle: w.title, workItemType: CHILD_TYPE[w.type] || 'Task' })}>{t('Add child')}</Button>
         )}
         <ExternalLink href={w.webUrl}>{t('Open in Azure DevOps')}</ExternalLink>
       </section>
@@ -293,9 +295,9 @@ function Attachments({ w, org, editable }) {
       {editable && (
         <div className="attach-add">
           <input ref={picker} type="file" multiple hidden onChange={(e) => { add([...e.target.files]); e.target.value = ''; }} />
-          <button type="button" className="btn btn-small" disabled={!!uploading} onClick={() => picker.current?.click()}>
+          <Button size="1" variant="outline" color="gray" type="button" disabled={!!uploading} onClick={() => picker.current?.click()}>
             {uploading ? t('Attaching {name}…', { name: uploading }) : t('Add files')}
-          </button>
+          </Button>
           <span className="muted small">{t('or drop them here, or paste a screenshot')}</span>
         </div>
       )}

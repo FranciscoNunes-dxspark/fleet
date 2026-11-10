@@ -18,7 +18,7 @@ Azure is read with the Azure CLI's sign-in (`az login`; Locker asks it for token
 
 ## Sources
 
-From the folder Locker started in (the header names it; `/move` reads another one: a path, or a
+From the folder Locker started in (the top line names it; `/move` reads another one: a path, or a
 folder beside this one, completed as you type; alone, a list of the folders read lately, then the
 ones beside this one, those with settings in bold. Its sources take this folder's place, and the App
 Service app named as the new folder, when there is one, becomes the one compared):
@@ -185,7 +185,7 @@ Your own commands and keys go in the settings file, as in the siblings: `"comman
 
 A project names its environments once, for every app in the family, in `.fleet/project.json` (in its
 folder or one above, up to its checkout's root). `/env` says which one is chosen; `/env <name>`
-chooses another for every app (Fleet's `ctrl+b e` too), and the header names it. Locker's section of
+chooses another for every app (Fleet's `ctrl+b e` too), and the top line names it. Locker's section of
 an environment says what to compare there, by name and never with a value:
 
 ```json
@@ -223,7 +223,7 @@ Locker is one of the apps that hand each other what is under their cursor, as li
 
 ## Mouse
 
-Click a tab, a row or the prompt; double-click does `↵`; the wheel scrolls. Drag to select text, copied when you let go (`ctrl+c` copies it again and never quits); `ctrl+v` pastes. `/mouse off` leaves the mouse to the terminal.
+Click a tab, a row, or a place in the command box (`/` opens it over the view; a click outside it closes it); double-click does `↵`; the wheel scrolls. Drag to select text, copied when you let go (`ctrl+c` copies it again and never quits); `ctrl+v` pastes. `/mouse off` leaves the mouse to the terminal.
 
 ## Settings
 

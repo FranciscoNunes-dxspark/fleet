@@ -8,6 +8,7 @@ export const APP = configureApp({
   title: 'Lantern',
   version: process.env.LANTERN_VERSION,
   packageUrl: new URL('../package.json', import.meta.url),
+  look: 'shell',
 });
 
 export const { VERSION, COMPILED } = APP;

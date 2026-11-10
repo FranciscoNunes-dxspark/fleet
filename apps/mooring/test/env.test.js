@@ -29,7 +29,7 @@ test("the environment's host opens at start, /env prod opens its folder, and pro
   startRecording(root);
   const app = start({ cwd: root, connectTo: undefined });
   await until(shows(app, 'demo  /home/demo'), "the dev environment's host opened");
-  assert.match(app.lastFrame(), /Mooring {2}demo {2}dev/);
+  assert.match(app.lastFrame(), /demo {2}dev/);
   await type(app.stdin, '/env');
   app.stdin.write(KEYS.enter);
   await until(shows(app, 'Environment: dev. /env prod switches every app.'), 'which one');

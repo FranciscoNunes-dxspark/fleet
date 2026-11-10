@@ -47,7 +47,7 @@ export default function CommitDetail({ target }) {
         </section>
       )}
 
-      <ChangedFiles files={{ total: c.files.length, items: c.files }} webUrl={c.webUrl} fileHref={commitFileHref} diffPath={(f) => `/commits/${enc(target.projectId)}/${enc(target.repoId)}/${enc(target.id)}/diff${diffQuery(f)}`} empty={t('No file changes in this commit.')} />
+      <ChangedFiles title={`${String(target.id).slice(0, 8)} ${subject}`} files={{ total: c.files.length, items: c.files }} webUrl={c.webUrl} fileHref={commitFileHref} diffPath={(f) => `/commits/${enc(target.projectId)}/${enc(target.repoId)}/${enc(target.id)}/diff${diffQuery(f)}`} empty={t('No file changes in this commit.')} />
 
       <section className="detail-actions">
         <ExternalLink href={c.webUrl} />

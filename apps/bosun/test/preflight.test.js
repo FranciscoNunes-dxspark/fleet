@@ -109,7 +109,7 @@ test('before the crew starts, the checks go to the log; /preflight shows them in
     app.stdin.write('/');
     await type(app.stdin, 'preflight');
     app.stdin.write(KEYS.enter);
-    await until(() => frame().includes('╭─ Pre-flight') && frame().includes("✗ .env isn't there, and .env.example is"), 'the checklist');
+    await until(() => frame().includes('│ Pre-flight') && frame().includes("✗ .env isn't there, and .env.example is"), 'the checklist');
     assert.match(frame(), /│\s+copy \.env\.example to \.env and fill it in/, 'the hint under it');
     assert.doesNotMatch(frame(), /│ ✗ api's port/, 'a running process\'s port is its own');
   } finally {

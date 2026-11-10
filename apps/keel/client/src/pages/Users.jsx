@@ -4,6 +4,8 @@ import { useApi, useApp } from '../context.js';
 import { age, date } from '../format.js';
 import { Avatar, Chip, Confirm, Empty, ErrorBox, Loading, PageHeader, TeamTabs } from '../ui.jsx';
 import { t } from '../i18n.js';
+import { Button, TextField } from '@radix-ui/themes';
+import { Select } from '../ui.jsx';
 
 // Role names stay as they are in every language; hints and status labels are getters so they follow it.
 const ROLES = [
@@ -73,14 +75,14 @@ export default function Users() {
       <form className="panel invite-form" onSubmit={invite}>
         <h2 className="section-title">{t('Invite someone')}</h2>
         <div className="form-row">
-          <label>{t('Email')}<input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
-          <label>{t('Name')}<input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('Optional')} /></label>
+          <label>{t('Email')}<TextField.Root variant="surface" color="gray" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
+          <label>{t('Name')}<TextField.Root variant="surface" color="gray" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('Optional')} /></label>
           <label>{t('Role')}
-            <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <Select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
               {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
+            </Select>
           </label>
-          <button type="submit" className="btn btn-primary" disabled={busy}>{t('Create invite link')}</button>
+          <Button size="2" variant="solid" type="submit" disabled={busy}>{t('Create invite link')}</Button>
         </div>
         <p className="muted small">{t("{hint}. Keel doesn't send email: copy the link and send it yourself. It works once and expires in 7 days.", { hint: ROLES.find((r) => r.id === form.role).hint })}</p>
       </form>
@@ -89,9 +91,9 @@ export default function Users() {
         <div className="panel link-panel" role="status">
           <strong>{link.label}</strong>
           <div className="link-row">
-            <input className="input mono" readOnly value={link.url} onFocus={(e) => e.target.select()} aria-label={t('Link to send')} />
-            <button type="button" className="btn btn-small" onClick={() => copy(link.url)}>{t('Copy')}</button>
-            <button type="button" className="btn btn-small btn-ghost" onClick={() => setLink(null)}>{t('Done')}</button>
+            <TextField.Root className="mono" variant="surface" color="gray" readOnly value={link.url} onFocus={(e) => e.target.select()} aria-label={t('Link to send')} />
+            <Button size="1" variant="outline" color="gray" type="button" onClick={() => copy(link.url)}>{t('Copy')}</Button>
+            <Button size="1" variant="ghost" color="gray" type="button" onClick={() => setLink(null)}>{t('Done')}</Button>
           </div>
         </div>
       )}
@@ -106,7 +108,7 @@ export default function Users() {
                   <span className="person"><Avatar person={{ displayName: u.name }} size={24} /> <span><span className="strong">{u.name}</span>{u.id === meId && <span className="muted small"> {t('(you)')}</span>}<div className="muted small">{u.email}</div></span></span>
                 </td>
                 <td>
-                  <select
+                  <Select
                     className="input input-inline"
                     value={u.role}
                     disabled={busy}
@@ -114,7 +116,7 @@ export default function Users() {
                     aria-label={t('Role for {name}', { name: u.name })}
                   >
                     {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-                  </select>
+                  </Select>
                 </td>
                 <td>
                   <Chip tone={STATUS[u.status].tone}>{STATUS[u.status].label}</Chip>
@@ -123,9 +125,9 @@ export default function Users() {
                 <td className="small">{u.hasToken ? (u.azdoName ? t('Connected as {name}', { name: u.azdoName }) : t('Connected')) : <span className="muted">{t('Not connected')}</span>}</td>
                 <td className="small muted">{u.lastSeenAt ? t('{age} ago', { age: age(u.lastSeenAt) }) : '—'}</td>
                 <td className="row-actions">
-                  <button
+                  <Button size="1" variant="ghost" color="gray"
                     type="button"
-                    className="btn btn-small btn-ghost"
+                   
                     disabled={busy}
                     onClick={async () => {
                       const r = await run(() => api(`/admin/users/${u.id}/link`, { method: 'POST' }), null);
@@ -133,9 +135,9 @@ export default function Users() {
                     }}
                   >
                     {u.status === 'invited' ? t('New invite link') : t('Reset password')}
-                  </button>
+                  </Button>
                   {u.id !== meId && (u.status === 'disabled'
-                    ? <button type="button" className="btn btn-small btn-ghost" disabled={busy} onClick={() => run(() => api(`/admin/users/${u.id}`, { method: 'PATCH', body: { disabled: false } }), t('{name} enabled', { name: u.name }))}>{t('Enable')}</button>
+                    ? <Button size="1" variant="ghost" color="gray" type="button" disabled={busy} onClick={() => run(() => api(`/admin/users/${u.id}`, { method: 'PATCH', body: { disabled: false } }), t('{name} enabled', { name: u.name }))}>{t('Enable')}</Button>
                     : <Confirm text={t("Disable {name}? They're signed out right away.", { name: u.name })} onConfirm={() => run(() => api(`/admin/users/${u.id}`, { method: 'PATCH', body: { disabled: true } }), t('{name} disabled', { name: u.name }))} className="btn btn-small btn-ghost">{t('Disable')}</Confirm>)}
                   {u.id !== meId && (
                     <Confirm text={t("Remove {name} and their settings? This can't be undone.", { name: u.name })} onConfirm={() => run(() => api(`/admin/users/${u.id}`, { method: 'DELETE' }), t('{name} removed', { name: u.name }))} className="btn btn-small btn-ghost text-bad">{t('Remove')}</Confirm>

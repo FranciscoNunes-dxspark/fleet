@@ -272,7 +272,7 @@ test('ctrl+p opens the palette; your own commands run; ? opens the help on the v
   app.unmount();
 });
 
-test('without Azure the folder is still compared, and the header says why', async () => {
+test('without Azure the folder is still compared, and the status line says why', async () => {
   const provider = {
     kind: 'azure',
     currentSubscription: async () => Promise.reject(new Error("ERROR: Please run 'az login' to setup account.")),

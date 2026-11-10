@@ -277,13 +277,13 @@ test("a PR's diff opens side by side when left that way; h/l pick the side c com
       await new Promise((r) => setTimeout(r, 40));
     }
     app.stdin.write('c');
-    await until(() => frame().includes('> /review-comment'), 'the comment in the prompt', frame);
+    await until(() => frame().includes('» /review-comment'), 'the comment in the prompt', frame);
     for (const ch of 'New b') app.stdin.write(ch);
     await new Promise((r) => setTimeout(r, 100));
     app.stdin.write('\r');
     // The prompt gone as well as the comment shown: until then 'New b' is the prompt's own text, and
     // the viewer doesn't have the keys yet.
-    await until(() => posted.length === 1 && !frame().includes('> /review-comment') && frame().includes('New b'), 'the comment posted', frame);
+    await until(() => posted.length === 1 && !frame().includes('» /review-comment') && frame().includes('New b'), 'the comment posted', frame);
     assert.deepEqual(posted[0], { path: 'src/app.js', line: 11, side: 'new', text: '  const b = 3;' });
 
     // Up to the unchanged line, and h to its old side: commented on as it was before.
@@ -292,7 +292,7 @@ test("a PR's diff opens side by side when left that way; h/l pick the side c com
     app.stdin.write('h');
     await new Promise((r) => setTimeout(r, 50));
     app.stdin.write('c');
-    await until(() => frame().includes('> /review-comment'), 'the second comment in the prompt', frame);
+    await until(() => frame().includes('» /review-comment'), 'the second comment in the prompt', frame);
     for (const ch of 'Old a') app.stdin.write(ch);
     await new Promise((r) => setTimeout(r, 100));
     app.stdin.write('\r');
@@ -300,7 +300,7 @@ test("a PR's diff opens side by side when left that way; h/l pick the side c com
     assert.deepEqual(posted[1], { path: 'src/app.js', line: 10, side: 'old', new: 10, text: '  const a = 1;' });
 
     // w: one column again, remembered.
-    await until(() => !frame().includes('> /review-comment'), 'back in the viewer', frame);
+    await until(() => !frame().includes('» /review-comment'), 'back in the viewer', frame);
     app.stdin.write('w');
     await until(() => !sameLine(frame(), '-  const b = 2;', '+  const b = 3;') && saved().sideBySide === false, 'one column, saved', frame);
   } finally {

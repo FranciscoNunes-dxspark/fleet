@@ -152,8 +152,8 @@ test('a stack of branches is rebased from its top with --update-refs, uncommitte
     await until(() => frame().includes('Rebase the stack under s3 onto origin/main?'), 'the question', 15000);
     assert.match(frame(), /Replays 3 commits of s3, the top of the stack, on top of origin\/main/);
     assert.match(frame(), /Moves with it \(--update-refs\):/);
-    assert.match(frame(), /│ {2}s1 /);
-    assert.match(frame(), /│ {2}s2 /);
+    assert.match(frame(), /│ {2}s1 *$/m);
+    assert.match(frame(), /│ {2}s2 *$/m);
     assert.match(frame(), /Then switches back to s1\./);
     app.stdin.write('1');
     await until(() => git('rev-parse', '--abbrev-ref', 'HEAD') === 's1' && git('rev-parse', 's1~1') === git('rev-parse', 'origin/main'), 'the stack rebased, back on s1', 30000);

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApi, useApp } from '../context.js';
-import { age } from '../format.js';
+import { age, fullDateTime } from '../format.js';
 import { t } from '../i18n.js';
 import { stageName } from './names.js';
 import { traceChange, whereNow } from './trace.js';
@@ -74,7 +74,7 @@ export default function Trace({ workItem = null, pr = null }) {
                 : s.open ? <button type="button" className="link-btn" onClick={() => openDrawer(s.open)}>{stepText(s)}</button> : stepText(s)}
               {s.pr?.title && (s.code === 'pr-open' || s.code === 'pr-reviewed') && <span className="muted small"> · {s.pr.title}</span>}
             </span>
-            {s.at && <span className="trace-at muted small" title={new Date(s.at).toLocaleString()}>{age(s.at)}</span>}
+            {s.at && <span className="trace-at muted small" title={fullDateTime(s.at)}>{age(s.at)}</span>}
           </li>
         ))}
       </ol>

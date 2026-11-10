@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useApp } from '../context.js';
 import { dateTime } from '../format.js';
-import { Pinch } from '../ui.jsx';
+import { Logo } from '../ui.jsx';
 import { t, tj } from '../i18n.js';
+import { Button, TextField } from '@radix-ui/themes';
 
 /**
  * Where `keel login` sends you: type the code your terminal shows, see which terminal asked,
@@ -45,7 +46,7 @@ export default function TerminalSignIn() {
       <>
         <h1>{done === 'allowed' ? t('Your terminal is signed in') : t('Sign-in refused')}</h1>
         <p className="signin-lead">{done === 'allowed' ? t('Go back to your terminal: Keel starts there in a moment. You can sign it out at any time in Settings → Your account.') : t("That terminal isn't signed in. If you didn't start it, you don't need to do anything else.")}</p>
-        <Link to="/" className="btn">{t('Go to the Line')}</Link>
+        <Button asChild size="2" variant="outline" color="gray"><Link to="/">{t('Go to Keel')}</Link></Button>
       </>
     );
   } else if (login) {
@@ -63,8 +64,8 @@ export default function TerminalSignIn() {
         </p>
         {error && <p className="text-bad small" role="alert">{error}</p>}
         <div className="account-actions">
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => decide(true)}>{t('Allow')}</button>
-          <button type="button" className="btn" disabled={busy} onClick={() => decide(false)}>{t("Don't allow")}</button>
+          <Button size="2" variant="solid" type="button" disabled={busy} onClick={() => decide(true)}>{t('Allow')}</Button>
+          <Button size="2" variant="outline" color="gray" type="button" disabled={busy} onClick={() => decide(false)}>{t("Don't allow")}</Button>
         </div>
         <p className="muted small">{t("Only allow it if you started keel login yourself, just now, and the code matches your terminal's.")}</p>
       </>
@@ -76,8 +77,8 @@ export default function TerminalSignIn() {
         <p className="signin-lead">{tj('Type the code {command} shows in your terminal.', { command: <code>keel login</code> })}</p>
         <label className="field">
           {t('Code')}
-          <input
-            className="input mono"
+          <TextField.Root className="mono" variant="surface" color="gray"
+           
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="WXYZ-BCDF"
@@ -89,7 +90,7 @@ export default function TerminalSignIn() {
           />
         </label>
         {error && <p className="text-bad small" role="alert">{error}</p>}
-        <button type="submit" className="btn btn-primary" disabled={busy || code.replace(/[^a-z]/gi, '').length !== 8}>{busy ? t('Checking…') : t('Continue')}</button>
+        <Button size="2" variant="solid" type="submit" disabled={busy || code.replace(/[^a-z]/gi, '').length !== 8}>{busy ? t('Checking…') : t('Continue')}</Button>
       </form>
     );
   }
@@ -97,8 +98,8 @@ export default function TerminalSignIn() {
   return (
     <div className="signin terminal-signin">
       <div className="signin-card">
-        <div className="signin-pinch">
-          <Pinch width={72} mood={done === 'allowed' ? 'happy' : 'idle'} />
+        <div className="signin-brand">
+          <Logo size={56} />
         </div>
         {body}
       </div>
