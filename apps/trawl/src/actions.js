@@ -36,7 +36,7 @@ import { LANGUAGE_NAMES, LANGUAGES, languageOf, scaffold } from './scaffold.js';
 import { UNDO_ROWS, reverseScript, snapshotOf, snapshotRows, snapshotSummary, undoPlan, withSnapshot } from './undo.js';
 import { configDir, loadUndo, saveUndo } from './config.js';
 import { hostname } from 'node:os';
-import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, toolsFor } from './backup.js';
+import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, toolFailure, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, toolsFor } from './backup.js';
 import { relTime } from '@fleet/kit/text.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, familyDir, notMine, pathArg as familyPath, projectAt, projectWiring, quoteArg, readActivity, takeLine } from '@fleet/kit/family.js';
 import { timelineItems, wiringText } from './timeline.js';
@@ -3237,7 +3237,7 @@ const fileSize = (p) => {
   }
 };
 
-async function runTool(ctx, tool, kind, command, env, { title, label, cwd, file }) {
+async function runTool(ctx, tool, kind, command, env, { title, label, cwd, file, server }) {
   const from = toolsFor(kind)?.from ?? SQLPACKAGE_FROM;
   return ctx.task(
     title,
@@ -3247,7 +3247,7 @@ async function runTool(ctx, tool, kind, command, env, { title, label, cwd, file 
       } catch (e) {
         if (e.cancelled) throw e;
         if (notInstalled(e)) throw new Error(`${tool} isn't installed, or isn't on PATH: it comes with ${from}.`);
-        throw new Error(`${tool}: ${firstLine(e.message)}`);
+        throw new Error(toolFailure(tool, e, { server }));
       }
       return [];
     },
@@ -3345,7 +3345,7 @@ export async function exportBacpac(ctx, rest = '') {
     return ctx.note(`Couldn't make ${dirname(full)}: ${firstLine(e.message)}`, 'error');
   }
   const { command, env } = sqlpackageCommand(conn, { database, file: full, password });
-  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Export ${database} on ${conn.name} to a .bacpac`, label: `Exporting ${database} with SqlPackage`, cwd: dirname(full), file: full });
+  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Export ${database} on ${conn.name} to a .bacpac`, label: `Exporting ${database} with SqlPackage`, cwd: dirname(full), file: full, server: conn.server });
   if (!r.ok) {
     // Half an export is no bacpac.
     try {
@@ -3380,7 +3380,7 @@ export async function importBacpac(ctx, rest = '') {
   const password = await toolPassword(ctx, conn);
   if (password === undefined) return;
   const { command, env } = sqlpackageCommand(conn, { importing: true, database: target, file: full, password });
-  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Import ${basename(full)} as ${target} on ${conn.name}`, label: `Importing ${target} with SqlPackage`, cwd: dirname(full) });
+  const r = await runTool(ctx, 'sqlpackage', 'sqlserver', command, env, { title: `Import ${basename(full)} as ${target} on ${conn.name}`, label: `Importing ${target} with SqlPackage`, cwd: dirname(full), server: conn.server });
   if (r.ok) {
     ctx.note(`Imported ${basename(full)} as ${target}. /use ${target} to open it.`, 'ok');
     ctx.logActivity?.(`sqlpackage import ${target} on ${conn.name}`, { kind: 'restore' });

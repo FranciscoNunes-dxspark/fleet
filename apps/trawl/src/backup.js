@@ -200,6 +200,29 @@ export function sqlpackageCommand(conn, { importing = false, database, file, pas
           `/${side}EncryptConnection:${encrypt}`,
           ...(trust.length ? [`/${side}TrustServerCertificate:True`] : []),
         ];
-  const parts = importing ? ['sqlpackage', '/Action:Import', `/SourceFile:${q(file)}`, ...where] : ['sqlpackage', '/Action:Export', ...where, `/TargetFile:${q(file)}`];
+  // SqlPackage gives each query 60 seconds by default, and a timeout breaks its connection: an export reading a
+  // big table (or an import building its index) on a slow server then fails with the connection closed. esc cancels.
+  const options = ['/p:CommandTimeout=0'];
+  const parts = importing ? ['sqlpackage', '/Action:Import', `/SourceFile:${q(file)}`, ...where, ...options] : ['sqlpackage', '/Action:Export', ...where, `/TargetFile:${q(file)}`, ...options];
   return { command: parts.join(' '), env: {} };
+}
+
+const DROPPED = /connection (was |is )?(closed|broken|terminated|reset)|closed before|transport-level error|forcibly closed|unable to reconnect|physical connection is not usable|timeout expired/i;
+
+/**
+ * What to say when a client tool (SqlPackage, pg_dump, …) fails: its own lines that say why, not only the
+ * first. SqlPackage starts with "Connecting to …" and "Extracting schema" and puts the cause last, after
+ * "*** Error …", so a failure keeps the lines from its first "***" on, else the last few. A connection
+ * that dropped mid-run gets a line on what to do. `e` is run.js's RunError ({ message, stdout, stderr }).
+ */
+export function toolFailure(tool, e, { server } = {}) {
+  const text = String(e?.stderr || '').trim() || String(e?.stdout || '').trim() || String(e?.message ?? '');
+  const lines = text.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim());
+  const star = lines.findIndex((l) => /^\*\*\*/.test(l));
+  const kept = (star >= 0 ? lines.slice(star) : lines).slice(-8);
+  const out = [`${tool}: ${kept[0] ?? 'failed'}`, ...kept.slice(1)];
+  if (DROPPED.test(text)) {
+    out.push(`The connection${server ? ` to ${server}` : ''} dropped or timed out while ${tool} ran, and it doesn't pick up where it stopped: run it again. On Azure SQL Database a low tier, a scaling operation or failover can do it; the portal's Export runs it inside Azure instead.`);
+  }
+  return out.join('\n');
 }

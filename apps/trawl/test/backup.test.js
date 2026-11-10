@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { DEMO_CONNECTIONS } from '../src/connections.js';
-import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp } from '../src/backup.js';
+import { backupPath, backupRefusal, bacpacRefusal, sqlpackageCommand, toolFailure, dumpCommand, isAzureSqlDatabase, loadCommand, notInstalled, onThisMachine, parseBackupArgs, restoreMoves, restoreSql, serverJoin, shellArg, stamp } from '../src/backup.js';
 import * as a from '../src/actions.js';
 import { App } from '../src/ui/App.jsx';
 
@@ -260,8 +260,20 @@ test('.bacpac: refusals, and SqlPackage command lines', () => {
   assert.deepEqual(parseBackupArgs(['a.bacpac', '--as', 'x'], { restore: true, command: 'import-bacpac' }), { file: 'a.bacpac', as: 'x' });
   assert.match(parseBackupArgs([], { restore: true, command: 'import-bacpac' }).reason, /\.bacpac\? \/import-bacpac <file>/);
   const out = sqlpackageCommand({ ...conn, trustCert: true }, { database: 'Club', file: '/tmp/c.bacpac', password: 'pw' }, 'linux');
-  assert.equal(out.command, "sqlpackage /Action:Export /SourceServerName:'localhost,1433' /SourceDatabaseName:Club /SourceUser:sa /SourcePassword:pw /SourceEncryptConnection:True /SourceTrustServerCertificate:True /TargetFile:/tmp/c.bacpac");
+  assert.equal(out.command, "sqlpackage /Action:Export /SourceServerName:'localhost,1433' /SourceDatabaseName:Club /SourceUser:sa /SourcePassword:pw /SourceEncryptConnection:True /SourceTrustServerCertificate:True /TargetFile:/tmp/c.bacpac /p:CommandTimeout=0");
   const imp = sqlpackageCommand({ name: 'az', server: 'x.database.windows.net', auth: 'azure-cli' }, { importing: true, database: 'New', file: '/tmp/c.bacpac' }, 'linux');
-  assert.match(imp.command, /^sqlpackage \/Action:Import \/SourceFile:\/tmp\/c\.bacpac \/TargetConnectionString:'Data Source=x\.database\.windows\.net;Initial Catalog=New;Authentication=Active Directory Default;Encrypt=True'$/);
+  assert.match(imp.command, /^sqlpackage \/Action:Import \/SourceFile:\/tmp\/c\.bacpac \/TargetConnectionString:'Data Source=x\.database\.windows\.net;Initial Catalog=New;Authentication=Active Directory Default;Encrypt=True' \/p:CommandTimeout=0$/);
   assert.doesNotMatch(imp.command, /Password/);
+});
+
+test('toolFailure keeps SqlPackage\'s cause, not its first line, and says what to do when the connection dropped', () => {
+  const stdout = ['Connecting to database \'Club\' on server \'x.database.windows.net\'.', 'Extracting schema', 'Exporting data from database', 'Processing Table \'[dbo].[Big]\'.'].join('\n');
+  const stderr = ['*** Error exporting database:Could not export package.', 'Unable to reconnect to database: Connection was closed before finishing.'].join('\n');
+  const text = toolFailure('sqlpackage', { message: stderr, stdout, stderr }, { server: 'x.database.windows.net' });
+  assert.match(text, /^sqlpackage: \*\*\* Error exporting database:Could not export package\.\nUnable to reconnect to database: Connection was closed before finishing\.\n/);
+  assert.match(text, /connection to x\.database\.windows\.net dropped or timed out .*run it again/);
+  assert.doesNotMatch(text, /Connecting to/);
+  // Only stdout, and no "***": its last lines.
+  const plain = toolFailure('pg_dump', { message: 'x', stdout: '', stderr: 'pg_dump: error: connection to server failed: FATAL:  password authentication failed' });
+  assert.equal(plain, 'pg_dump: pg_dump: error: connection to server failed: FATAL:  password authentication failed');
 });
