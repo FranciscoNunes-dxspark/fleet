@@ -99,7 +99,18 @@ jobs:
             fi
             sudo sed -i 's#http://azure.archive.ubuntu.com#http://archive.ubuntu.com#g' /etc/apt/sources.list $(ls /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null)
           }
-          timeout 10 getent hosts azure.archive.ubuntu.com >/dev/null || without_azure "doesn't resolve"
+          # The runners' own DNS has also stopped resolving Ubuntu's hosts at all (archive.ubuntu.com
+          # too, while npm and GitHub resolved): then public resolvers are asked instead.
+          resolves() { timeout 10 getent hosts "$1" >/dev/null; }
+          if ! resolves archive.ubuntu.com; then
+            echo "::warning::archive.ubuntu.com doesn't resolve: asking public DNS (1.1.1.1, 8.8.8.8) instead."
+            sudo mkdir -p /etc/systemd/resolved.conf.d
+            printf '[Resolve]\nDNS=1.1.1.1 8.8.8.8\nDomains=~.\n' | sudo tee /etc/systemd/resolved.conf.d/public-dns.conf >/dev/null
+            sudo systemctl restart systemd-resolved || true
+            sudo resolvectl flush-caches 2>/dev/null || true
+            resolves archive.ubuntu.com || echo "::warning::archive.ubuntu.com still doesn't resolve."
+          fi
+          resolves azure.archive.ubuntu.com || without_azure "doesn't resolve"
           if ! install; then
             without_azure "didn't answer"
             install
@@ -136,9 +147,12 @@ jobs:
             desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz*
           if-no-files-found: error
 
+  # Windows and macOS are released even when Linux didn't build (GitHub's Ubuntu machines have failed to
+  # reach Ubuntu's own servers for hours): latest.json then leaves Linux out, so an installed Linux
+  # window keeps what it has until a release that has it. Without Windows or macOS, nothing is released.
   release:
     needs: [plan, bundle]
-    if: needs.plan.outputs.release == 'true'
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.release == 'true' && needs.bundle.result != 'skipped' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -155,6 +169,11 @@ jobs:
         run: |
           node desktop/scripts/latest-json.mjs "$VERSION" bundles > latest.json
           cat latest.json
+          missing=$(node -e 'const p = JSON.parse(require("fs").readFileSync("latest.json", "utf8")).platforms; console.log(["linux-x86_64", "windows-x86_64", "darwin-aarch64"].filter((k) => !p[k]).join(" "))')
+          case " $missing " in
+            *" windows-x86_64 "*|*" darwin-aarch64 "*) echo "::error::No Windows or macOS bundle ($missing missing): not released."; exit 1 ;;
+          esac
+          if [ -n "$missing" ]; then echo "::warning::Released without $missing: those installs keep their version until a release that has them."; fi
           # Never marked latest: GitHub's "latest release" is whichever app released last, and the apps'
           # own updater goes by their tags, never by that.
           find bundles -type f -print0 | xargs -0 gh release create "desktop-v$VERSION" --title "Fleet desktop $VERSION" --notes "Fleet in a window of its own, with every app inside. Installed windows update themselves to this one." --latest=false --target "$GITHUB_SHA"
