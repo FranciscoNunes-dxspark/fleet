@@ -386,25 +386,44 @@ try {
   [System.AppContext]::SetSwitch('Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows', $true)
   # A library with a build per system keeps the real one under runtimes\<rid>\lib\<framework>, and a
   # stand-in at the top of the folder that only says "not supported on this platform" (SqlClient
-  # does). SqlPackage's own .deps.json picks the right one; here it's looked for in the same order:
-  # Windows x64's, then Windows', the newest framework this PowerShell runs, then the top.
+  # does). SqlPackage's own .deps.json picks the right one. Here the real ones are loaded before DacFx
+  # is, so that when it asks for SqlClient it gets the one already loaded: waiting to be asked isn't
+  # enough, as PowerShell's own resolver finds the stand-in beside DacFx first. What's left goes
+  # through the handler below, in the same order: Windows x64's, Windows', then the top.
   $script:runtimeMajor = [Environment]::Version.Major
+  function script:Best-Framework([string] $rid) {
+    $lib = Join-Path $script:dacDir (Join-Path 'runtimes' (Join-Path $rid 'lib'))
+    if (-not (Test-Path -LiteralPath $lib)) { return @() }
+    return @(Get-ChildItem -LiteralPath $lib -Directory | ForEach-Object {
+      $m = [regex]::Match($_.Name, '^net(\d+)\.\d+$')
+      [pscustomobject]@{ Dir = $_.FullName; Major = $(if ($m.Success) { [int]$m.Groups[1].Value } else { 0 }) }
+    } | Where-Object { $_.Major -le $script:runtimeMajor } | Sort-Object Major -Descending | ForEach-Object { $_.Dir })
+  }
   function script:Find-Library([string] $name) {
     foreach ($rid in @('win-x64', 'win')) {
-      $lib = Join-Path $script:dacDir (Join-Path 'runtimes' (Join-Path $rid 'lib'))
-      if (-not (Test-Path -LiteralPath $lib)) { continue }
-      $frameworks = Get-ChildItem -LiteralPath $lib -Directory | ForEach-Object {
-        $m = [regex]::Match($_.Name, '^net(\d+)\.\d+$')
-        [pscustomobject]@{ Dir = $_.FullName; Major = $(if ($m.Success) { [int]$m.Groups[1].Value } else { 0 }) }
-      } | Where-Object { $_.Major -le $script:runtimeMajor } | Sort-Object Major -Descending
-      foreach ($framework in $frameworks) {
-        $path = Join-Path $framework.Dir ($name + '.dll')
+      foreach ($dir in (Best-Framework $rid)) {
+        $path = Join-Path $dir ($name + '.dll')
         if (Test-Path -LiteralPath $path) { return $path }
       }
     }
     $path = Join-Path $script:dacDir ($name + '.dll')
     if (Test-Path -LiteralPath $path) { return $path }
     return $null
+  }
+  $loaded = @{}
+  foreach ($a in [System.AppDomain]::CurrentDomain.GetAssemblies()) { $loaded[$a.GetName().Name] = $true }
+  foreach ($rid in @('win-x64', 'win')) {
+    $dir = Best-Framework $rid | Select-Object -First 1
+    if (-not $dir) { continue }
+    foreach ($dll in Get-ChildItem -LiteralPath $dir -Filter '*.dll') {
+      if ($loaded[$dll.BaseName]) { continue }
+      try {
+        [void][System.Reflection.Assembly]::LoadFrom($dll.FullName)
+        $loaded[$dll.BaseName] = $true
+      } catch {
+        [Console]::Out.WriteLine('Not loaded: ' + $dll.FullName + ' (' + $_.Exception.Message + ')')
+      }
+    }
   }
   [System.AppDomain]::CurrentDomain.add_AssemblyResolve([System.ResolveEventHandler] {
     param($source, $request)
@@ -421,6 +440,8 @@ try {
     $tables.Add([System.Tuple[string,string]]::new($line.Substring(0, $tab), $line.Substring($tab + 1)))
   }
 
+  $script:sqlClient = { ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'Microsoft.Data.SqlClient' } | ForEach-Object { $_.Location }) -join ', ' }
+  [Console]::Out.WriteLine('DacFx from ' + $dac + '; SqlClient from ' + (& $script:sqlClient))
   $services = New-Object Microsoft.SqlServer.Dac.DacServices -ArgumentList $env:TRAWL_DAC_CONNECTION
   try {
     Add-Type -ReferencedAssemblies $dac -TypeDefinition @'
@@ -458,6 +479,7 @@ public static class TrawlDacProgress {
   while ($inner.InnerException) { $inner = $inner.InnerException }
   [Console]::Error.WriteLine('*** Error exporting database: ' + $top.Message)
   if ($inner -ne $top) { [Console]::Error.WriteLine($inner.Message) }
+  if ($script:sqlClient) { [Console]::Error.WriteLine('SqlClient loaded from: ' + (& $script:sqlClient) + '; PowerShell ' + $PSVersionTable.PSVersion + ' on .NET ' + [Environment]::Version) }
   exit 1
 }
 `;
