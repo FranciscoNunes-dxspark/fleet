@@ -685,7 +685,13 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
     scope: resolveScope,
     timespan: () => TIMESPANS[spanRef.current],
     setQuery,
-    setResult,
+    // A result comes with the scope it was looked up in (runQuery), and that's what the title says it
+    // is from: the effect below resolves the scope too, but React runs it after drawing, so the rows
+    // could be on screen with the title still empty.
+    setResult: (r) => {
+      setResult(r);
+      if (r?.scope) showScope(r.scope);
+    },
     result: () => resultRef.current,
     setFilter,
     setComponent: (component) => setScope({ target: null, component, all: Boolean(component) }),
@@ -996,13 +1002,18 @@ export function App({ config: initialConfig, provider, open, load = loadSubscrip
   // Problems are looked for when the view shows, and again when what it looks at or the span changes.
   const [problemsTick, setProblemsTick] = useState(0);
   const scopeKey = `${scopeState.target?.id ?? ''}|${scopeState.component?.id ?? ''}|${scopeState.all}|${view === 'problems' ? selectedRef.current?.id : ''}`;
+  // Each look is shown unless a newer one already has been: restarted as the subscription fills in
+  // (dataStamp), a look that dropped what it found could leave the title empty until the last one ended.
+  const scopeLooks = useRef({ asked: 0, shown: 0 });
+  const showScope = (r, n = ++scopeLooks.current.asked) => {
+    if (n < scopeLooks.current.shown) return;
+    scopeLooks.current.shown = n;
+    setResolved(r);
+  };
   useEffect(() => {
     if (view !== 'problems' && view !== 'logs' && view !== 'alerts') return;
-    let live = true;
-    resolveScope().then((r) => live && setResolved(r));
-    return () => {
-      live = false;
-    };
+    const n = ++scopeLooks.current.asked;
+    resolveScope().then((r) => showScope(r, n));
   }, [view, scopeKey, dataStamp]);
   useEffect(() => {
     if (view !== 'problems' || !data) return;
