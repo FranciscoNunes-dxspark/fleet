@@ -1,6 +1,6 @@
 // Every operation the UI offers, written once. Keys and slash commands both call these.
 // `ctx` is the app's handle: session, schema, query, confirm, note, prefill, and so on (see App.jsx).
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { ADD_USAGE, azureSqlConnection, cleanFolder, commitMode, describeConn, findAzureSql, isReadOnly, parseAddArgs, parseAzureSqlArgs, splitArgs, sshText } from './connections.js';
@@ -36,7 +36,7 @@ import { LANGUAGE_NAMES, LANGUAGES, languageOf, scaffold } from './scaffold.js';
 import { UNDO_ROWS, reverseScript, snapshotOf, snapshotRows, snapshotSummary, undoPlan, withSnapshot } from './undo.js';
 import { configDir, loadUndo, saveUndo } from './config.js';
 import { hostname, tmpdir } from 'node:os';
-import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, toolFailure, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, tableDataFor, toolsFor, DACFX_SCRIPT, POWERSHELL_FROM, dacfxCommand, tableListText, tooLongForShell } from './backup.js';
+import { AZURE_SQL_NOTE, BACKUP_INFO_SQL, SQLPACKAGE_FROM, absoluteOnServer, backupPath, backupRefusal, backupSql, bacpacRefusal, dumpCommand, toolFailure, sqlpackageCommand, fileSafe, loadCommand, multiUserSql, notInstalled, onThisMachine, parseBackupArgs, restoreFilesSql, restoreHeaderSql, restoreMoves, restoreSql, stamp, tableDataFor, toolsFor, DACFX_SCRIPT, POWERSHELL_FROM, dacfxCommand, findPwsh, tableListText, tooLongForShell } from './backup.js';
 import { relTime } from '@fleet/kit/text.js';
 import { APP_NAMES, TAKEN_BY, contextIn, copiedNote, familyDir, notMine, pathArg as familyPath, projectAt, projectWiring, quoteArg, readActivity, takeLine } from '@fleet/kit/family.js';
 import { timelineItems, wiringText } from './timeline.js';
@@ -3357,7 +3357,7 @@ export async function exportBacpac(ctx, rest = '') {
       const list = join(scratch, 'tables.txt');
       writeFileSync(script, DACFX_SCRIPT);
       writeFileSync(list, tableListText(data.keep));
-      run = { tool: 'pwsh', label: `Exporting ${database} with DacFx`, from: POWERSHELL_FROM, ...dacfxCommand(conn, { database, file: full, password, script, list }, platform) };
+      run = { tool: 'pwsh', label: `Exporting ${database} with DacFx`, from: POWERSHELL_FROM, ...dacfxCommand(conn, { database, file: full, password, script, list, pwsh: findPwsh(process.env, existsSync, platform) }, platform) };
     } catch (e) {
       if (scratch) rmSync(scratch, { recursive: true, force: true });
       return ctx.note(`Couldn't write the list of tables to keep: ${firstLine(e.message)}`, 'error');
